@@ -1,9 +1,9 @@
-# AI Travel Agent — Personal Agents + Shared Trips Backlog
+# AI Travel Agent — Personal Agents + Shared Trips 待办清单
 
-**状态：** Hackathon MVP；对应 [PRD](PRD.md) 与 [Tests](test-scenarios.md)  
+**状态：** Hackathon MVP；对应 [PRD](PRD.md) 与 [测试场景](test-scenarios.md)
 **边界：** 使用三名测试用户、两个出发地、两到三个固定目的地候选、至少两种国籍与 sandbox/fixture 工具；不接真实支付。Live API 不可用时明确显示 `Demo data`，不伪装为实时结果。
 
-## 1. Red-team gates
+## 1. 反向审查门槛
 
 | Kill assumption | Fails if | Cheapest test | Action |
 |---|---|---|---|
@@ -147,7 +147,7 @@
 | Native group chat, payment splitting, social features | Shared workspace already solves coordination without copy/paste friction. |
 | Unbounded personality inference and social-memory graph | Violates user-control and privacy-first Agent value. |
 
-## 6. Delivery sequence
+## 6. 交付顺序
 
 1. H1 + H2: prove the Personal Agent and consent model.
 2. H3 + H4 + P1: prove multi-tool, personalized shared planning.

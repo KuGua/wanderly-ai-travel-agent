@@ -1,10 +1,10 @@
-# AI Travel Agent — Personal Agents, Shared Trips Strategy
+# AI Travel Agent — Personal Agents、Shared Trips 产品策略
 
 **状态：** Hackathon 产品策略；所有市场与行为结论均为 **Assumption**  
 **日期：** 2026-08-23  
 **输入：** [Product Discovery](discovery.md)
 
-## 1. Strategic choice
+## 1. 战略选择
 
 产品不是“把群聊导入后生成行程”，也不是一次性旅行规划器。它是一个由两层 Agent 组成的 Travel OS：
 
@@ -13,23 +13,23 @@
 
 原有的“可解释、用户最终确认、不自动扣款”的核心价值保留。原有的群聊截图导入不再是核心路径；原有的站内预订目标保留，但 Hackathon 只证明受控的 booking orchestration/sandbox 路径。
 
-## 2. One Big Thing
+## 2. 核心主张
 
 > **你的旅行 Agent 已经了解你；当朋友加入同一趟旅行时，多个个人 Agent 在不暴露私人记忆的前提下，共同规划、预订并准备每个人真正需要的旅程。**
 
 它的记忆点不在“AI 推荐酒店”，而在于：Alice 的 Agent 知道她喜欢艺术街区且拒绝红眼航班；Bob 的 Agent 知道他预算敏感、持不同国籍；两人加入同一旅程后，Shared Trip Agent 自动协调方案、指出谁需要签证待办，并在价格变化后重排已批准的机酒交通组合。
 
-## 3. First target segment and JTBD
+## 3. 首发目标细分与 JTBD
 
-### First target segment — Assumption
+### 首发目标细分 — 假设
 
 计划进行国际休闲旅行的 2–4 人朋友或伴侣群体；成员有不同国籍、个人偏好、预算或出发限制。单人旅行是同一 Personal Agent 的自然延伸，不做独立 MVP 流程。
 
-### JTBD — Assumption
+### JTBD — 假设
 
 > 当我和朋友计划一次国际旅行时，我想让一个了解我们每个人的 Agent 协调机票、酒店、交通和个人入境待办，并在计划变化时重新处理它们，这样我们不必反复解释自己、在多个平台间切换，或遗漏关键准备事项。
 
-## 4. Value proposition
+## 4. 价值主张
 
 | 部分 | 陈述 |
 |---|---|
@@ -44,7 +44,7 @@
 
 > 不必每次重新告诉 AI 你是谁。每个人的 Personal Travel Agent 记住并保护自己的旅行偏好；当你们一起出发时，它们在共享工作区中协调可订行程与各自的准备事项，而每一步不可逆行动仍由人确认。
 
-## 5. Differentiation
+## 5. 差异化
 
 | 普通旅行 AI | 本产品 |
 |---|---|
@@ -54,7 +54,7 @@
 | 把签证当通用提示 | 对每位成员按国籍、目的地和转机路线生成来源明确的准备待办 |
 | 变化后重新给一段文本 | 根据 Profile、共享约束和预订状态重新规划，并解释影响 |
 
-### Agentic capabilities that serve the product
+### 服务于产品的 Agentic 能力
 
 - **Persistent memory：** 核心能力，不是技术便利。只存用户明确选择的稳定偏好和反馈，区分本次例外。
 - **Multi-agent orchestration：** Personal Agents 向 Shared Trip Agent 提供经同意的旅行约束；Shared Agent 用 Flight、Stay、Ground 和 Visa 专长工具/子 Agent 编排结果。
@@ -65,7 +65,7 @@
 
 不采用群聊截图导入作为主路径，因为它要求用户把既有沟通再复制一次，也会混入未经同意的私人信息。原生群聊也不进入 MVP；共享工作区 + 私人 Agent 对话已足够验证协作。
 
-## 6. Product trade-offs and what we will not build
+## 6. 产品取舍与暂不构建的能力
 
 | 选择 | 放弃 | 原因 |
 |---|---|---|
@@ -77,9 +77,9 @@
 
 **Won't build now：** 群聊导入/截图作为必经流程、原生群聊、支付分摊、自动扣款、签证代办/法律意见、全球库存、退款/改签运营、长期社交网络。
 
-## 7. Hackathon MVP and Hero Demo
+## 7. Hackathon MVP 与 Hero Demo
 
-### Constrained proof
+### 受约束的验证
 
 - 三位预置或演示用户，各有可编辑且默认私有的 Profile；
 - 一个共享国际旅行：成员来自两个出发地，至少两种国籍；
@@ -88,7 +88,7 @@
 - 一个确定性约束或价格/库存变化事件；
 - 三位成员均显式确认当前版本后，调用 booking orchestration sandbox，返回确认参考号；不收款。
 
-### Three-minute demo
+### 三分钟演示
 
 1. **Hook：** “Alice 已经告诉她的 Agent：不要红眼、喜欢艺术街区。Bob 的 Agent 知道他的预算和国籍。为什么他们还要从头开始协调？”
 2. **Trigger：** Alice、Bob、Chen 从两个出发地加入同一趟旅行；三人分别在私有 Agent 中补充本次要求并选择授权字段。
@@ -97,7 +97,7 @@
 5. **Surprise：** 一名成员更改约束，或一个候选的航班价格上涨/售罄。Agent 作废旧方案，在保住其余成员约束的同时重排，并显示候选与约束的 diff。
 6. **Final wow：** 三人分别确认同一最新版本；Shared Agent 调用 sandbox 预订编排，生成机票、酒店、接送的准备状态与每人待办，明确显示“未扣款”。
 
-## 8. Metrics, business model and defensibility
+## 8. 指标、商业模式与防御力
 
 | 指标 | 初始目标（Assumption） |
 |---|---|
@@ -109,7 +109,7 @@
 
 长期商业模式仍是 **Assumption**：可对预订收供应商佣金、对高价值协调服务收费，或提供旅行顾问工作台。潜在壁垒是用户控制下的个人偏好、群组授权模型、真实工具执行/异常反馈和跨成员旅行编排；“使用 LLM”并非壁垒。
 
-## 9. Red-team gates
+## 9. 反向审查门槛
 
 | Assumption | Fails if | Cheapest test | Pivot |
 |---|---|---|---|

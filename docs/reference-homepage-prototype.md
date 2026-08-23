@@ -1,32 +1,32 @@
-# Reference signed-in homepage prototype
+# 登录后首页原型参考
 
-`assets/reference-homepage.html` is a self-contained, static reference for the **signed-in user home screen** of Travel Together. It is **not** a marketing/introductory page, application runtime, API contract, or deployment path.
+`assets/reference-homepage.html` 是 Travel Together **登录用户首页**的独立静态参考。它**不是**营销/介绍页、应用运行时、API 契约或部署方案。
 
-## Purpose
+## 目的
 
-It translates the current product documents into the first workspace a returning traveler sees. The information hierarchy is intentionally action-first:
+它将当前产品文档转化为回访旅行者看到的第一个工作台。信息层级刻意采用行动优先：
 
-1. the user sees whether a current shared trip needs their attention;
-2. they can continue their private Personal Agent conversation;
-3. they can inspect personal tasks and their scoped sharing status; and
-4. they can distinguish stable private preferences from trip-scoped shared preferences.
+1. 用户先看到当前共享行程是否需要自己处理；
+2. 可以继续私有 Personal Agent 对话；
+3. 可以检查个人待办和范围化共享状态；
+4. 可以区分稳定的私有偏好与本次行程范围内的共享偏好。
 
-It also communicates the MVP's central promises:
+它还表达 MVP 的核心承诺：
 
-- each traveler retains a private, editable profile;
-- only explicit, trip-scoped consent enters the shared workspace;
-- coordinated options explain price, service, and preference trade-offs;
-- changes make the prior plan stale and expose a re-plan diff; and
-- booking orchestration never charges or books automatically.
+- 每位旅行者保留可编辑的私密资料；
+- 只有明确、行程范围内的授权进入共享工作台；
+- 协调后的选项解释价格、服务和偏好取舍；
+- 变化会使旧方案过期并展示重规划差异；
+- 预订编排绝不自动扣款或自动预订。
 
-The displayed state is Alice's fixture-style example: a Lisbon plan has been replanned after a price change and needs review. All people, destinations, prices, times, and statuses in the page are illustrative content, not live availability, inventory, legal guidance, or booking data.
+展示的是 Alice 的 fixture 示例：里斯本方案因价格变化已重规划，正等待复核。页面内所有人物、目的地、价格、时间和状态均为示意内容，不是实时可用性、库存、法律指引或预订数据。
 
-## Run and verify
+## 运行与验证
 
-Open `assets/reference-homepage.html` directly in a modern browser. It needs no server, package, environment variable, or backend service.
+直接在现代浏览器中打开 `assets/reference-homepage.html`。无需服务器、软件包、环境变量或后端服务。
 
-Verify the 375px, 768px, 1024px, and 1440px layouts, then navigate with the keyboard. Links and buttons retain visible focus, the document provides a skip link, and reduced-motion users receive no nonessential motion.
+验证 375px、768px、1024px、1440px 布局，然后使用键盘导航。链接和按钮应保持可见焦点，文档提供跳转链接；启用减少动态效果的用户不会看到非必要动画。
 
-## Boundaries
+## 边界
 
-The prototype does not call the backend, store personal data, authenticate a user, request consent, run planning, or initiate booking. A future production interface must source all displayed plan, consent, status, and confirmation data from the server-authoritative model described in the PRD and `TECH_STACK.md`.
+该原型不会调用后端、存储个人数据、认证用户、请求授权、运行规划或发起预订。未来的生产界面必须从 PRD 和 `TECH_STACK.md` 所述的服务端权威模型中获取所有展示的方案、授权、状态和确认数据。

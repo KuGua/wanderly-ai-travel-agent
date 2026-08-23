@@ -3,23 +3,23 @@
 **状态：** 可开发的 Hackathon MVP；所有需求价值均待验证  
 **输入：** [Product Strategy](product-strategy.md) · [Discovery](discovery.md)
 
-## 1. Summary
+## 1. 概述
 
 本 MVP 让每位旅行者拥有一个可控的 Personal Travel Agent：用户通过私有对话维护自己的旅行偏好和资料。创建共享行程后，成员明确授权本次相关信息进入 Shared Trip Workspace；Shared Trip Agent 协调航班、酒店、地面交通，以及按成员国籍区分的 visa/entry readiness 待办。
 
 系统在价格或计划变化后重新编排，并在每位成员明确确认后调用 sandbox/已批准的 booking orchestration 工具。系统不自动扣款、不承诺真实全球预订、不提供法律意见或签证代办。
 
-## 2. Problem, users and objectives
+## 2. 问题、用户与目标
 
-### Problem
+### 问题
 
 现有旅行工具让用户反复解释自己，多个同行者还要在群聊、OTA、地图、签证网站间协调。不同国籍会带来不同准备事项，价格/库存变化会使整个计划重新碎裂。主组织者承担重复沟通与遗漏风险。
 
-### Target users — Assumption
+### 目标用户 — 假设
 
 两到四位共同计划国际休闲旅行的朋友/伴侣；首个 Hero Demo 使用三位测试旅行者、两个出发地、两到三个目的地候选与至少两种国籍。单人旅行使用同一 Personal Agent，但不是单独 MVP 流程。
 
-### Objectives
+### 目标
 
 1. 用户第一次设定 Profile 后，下一次旅行可复用稳定偏好而不必重填。
 2. 三位成员在私有 Agent 中补充要求，并只把明确授权的本次信息共享到共同旅程。
@@ -27,7 +27,7 @@
 4. 变化发生时，系统重新编排并解释每个人及候选方案的影响。
 5. 三位成员明确确认同一最新版本后调用受控 booking orchestration；不得自动付款或无确认预订。
 
-### Non-goals
+### 非目标
 
 - 用户复制/上传群聊，或产品内原生群聊；
 - 未经明确同意推断人格、分享私聊内容或共享所有 Profile；
@@ -35,7 +35,7 @@
 - 真实支付、支付分摊、退款、改签或全天候客服；
 - 完整单人专属 UX、社交网络或通用旅行内容社区。
 
-## 3. Hero user journey
+## 3. Hero 用户旅程
 
 ```mermaid
 flowchart LR
@@ -53,7 +53,7 @@ flowchart LR
 **Aha moment：** 三位成员从两个出发地进入同一共享行程；Alice 的 Agent 自动带入非红眼、艺术街区偏好，Bob 的 Agent 带入预算和授权国籍资料，Chen 带入自己的出发限制，但任何成员都看不到彼此未共享资料。
 **Final wow：** 一项成员约束或航班价格变化后，系统比较两到三个目的地候选，以三人的授权约束重新组合机酒交通，同时保留对应个人 visa 待办；三人确认后，sandbox 返回一个可追踪的编排确认。
 
-## 4. MVP scope
+## 4. MVP 范围
 
 ### HERO
 
@@ -88,44 +88,44 @@ flowchart LR
 - 原生群聊、支付分摊、长期社交功能；
 - 代替用户做任何不可逆行动。
 
-## 5. Functional requirements
+## 5. 功能需求
 
-### FR-1 Personal profile and private Agent
+### FR-1 个人资料与私有 Agent
 
 1. 用户可以保存、查看、编辑和删除稳定偏好：预算区间、住宿风格、旅行节奏、兴趣、航班偏好和风险/舒适度取舍。
 2. 用户可以通过私有对话为本次旅行添加或覆盖偏好；本次覆盖不得静默改写稳定 Profile。
 3. 系统必须显示每条资料的来源（Profile 或本次对话）和最近修改时间。
 4. 系统不得把任何 Profile 或私有对话字段默认共享给同行者。
 
-### FR-2 Shared Trip Workspace and consent
+### FR-2 共享行程工作台与授权
 
 1. 创建者可创建一个共享行程并邀请另外两位测试用户加入。
 2. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
 3. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
 4. 成员更新授权或本次约束时，当前方案标记为过期并触发重算前确认。
 
-### FR-3 End-to-end trip orchestration
+### FR-3 端到端行程编排
 
 1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay 和 Ground 工具/fixture，并将三位成员映射到两个出发地。
 2. 系统必须比较两到三个预设目的地候选；每个候选包含至少一个航班、酒店和地面交通项目，或明确显示缺失项目与原因。
 3. 每个项目必须显示总价/币种（如适用）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。
 4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
 
-### FR-4 Visa/entry readiness
+### FR-4 签证/入境准备
 
 1. 对每位授权共享国籍资料的成员，系统必须基于每个显示的目的地候选及已知转机/路线数据生成独立的 readiness checklist 或明确缺口。
 2. 每项待办必须显示来源、检查时间、适用对象和下一步；无法确认时显示“请向官方来源核验”。
 3. 系统不得声称签证资格已获批准、提供法律意见或代替用户申请。
 4. 未授权国籍资料时，系统只显示“需要该成员自行完成入境准备检查”，不能推断国籍。
 
-### FR-5 Change handling and self-correction
+### FR-5 变化处理与自我修正
 
 1. 系统必须支持一个确定性变化事件：航班价格/库存变化、成员日期/出发地限制变化或酒店失效。
 2. 变化必须生成新的工具和授权快照，并使旧方案/确认过期。
 3. 重新编排必须显示旧/新项目、保留/受影响的成员约束、个人待办影响和原因。
 4. 没有可行替代时，系统必须说明阻塞约束并请求成员调整，而不是静默放弃约束。
 
-### FR-6 Confirmation and booking orchestration
+### FR-6 确认与预订编排
 
 1. 三位 required members 必须对当前方案版本显式选择 `Confirm` 或 `Needs changes`。
 2. 只有三位 required members 全部确认、方案未过期且数据快照一致时，才可调用 sandbox/已批准 booking orchestration 工具。
@@ -133,16 +133,16 @@ flowchart LR
 4. 工具结果必须返回每个项目的确认参考号或失败原因；成功不表示系统已扣款。
 5. 成员拒绝、数据变化、重复请求或工具失败不得产生重复编排或不可逆预订。
 
-### FR-7 Privacy and observability
+### FR-7 隐私与可观测性
 
 1. Profile、共享授权、工具调用、方案、变化和确认均必须有会话/关联 ID 与版本记录。
 2. 日志、metrics 和 traces 不得包含私聊全文、护照/证件号、支付数据或未授权 Profile 字段。
 3. 指标必须跟踪 Profile reuse、共享授权完成、工具成功/失败、方案完成、visa checklist 状态、重算、确认和 orchestration 结果。
 4. 用户可删除个人 Profile 字段；删除后，未来 Agent run 不得使用它。已有审计记录仅保留最小、无敏感摘要，并遵循后续合规政策。
 
-## 6. Important edge cases
+## 6. 重要边界场景
 
-| Scenario | Required behavior |
+| 场景 | 必需行为 |
 |---|---|
 | 成员没有 Profile 或不愿共享任何偏好 | 允许加入；Shared Agent 只使用其本次明确输入，提示资料不足。 |
 | 成员撤回国籍授权 | 失效相关 visa checklist 和当前方案；要求重新计算。 |
@@ -154,9 +154,9 @@ flowchart LR
 | 成员拒绝确认 | 不调用 orchestration；显示谁需要调整和可编辑入口。 |
 | orchestration 回调重复或乱序 | 用请求 ID 幂等处理；最多生成一组参考号。 |
 
-## 7. Success metrics and release criteria
+## 7. 成功指标与发布标准
 
-### Success metrics — Assumptions
+### 成功指标 — 假设
 
 - 三位演示成员创建共享行程时各自至少复用一条 Profile 偏好，无需重新填写；
 - 所有成员能指出共享了什么、没有共享什么；
@@ -164,7 +164,7 @@ flowchart LR
 - 变化后 ≤10 秒给出可解释的重新编排；
 - 0 次自动扣款、无确认编排或无来源签证结论。
 
-### Release criteria
+### 发布标准
 
 - 三名隔离测试用户可完整运行 `Profile → invite → consent → candidate comparison → tools → visa → replan → confirm → sandbox orchestration`；
 - 测试覆盖授权撤回、冲突、工具失败、visa 不确定、变化、成员拒绝与重复 orchestration；

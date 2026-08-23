@@ -1,9 +1,9 @@
-# AI Travel Agent — Personal Agents + Shared Trips Test Scenarios
+# AI Travel Agent — Personal Agents + Shared Trips 测试场景
 
 **对应：** [Backlog](backlog.md) · [PRD](PRD.md)  
 **范围：** 三个虚构用户、两个出发地、两到三个固定目的地候选、至少两种国籍、航班/酒店/地面交通 fixture 或带来源工具、booking sandbox；不使用真实护照、支付资料或真实签证申请。live API 失败时必须使用明确标识的 fixture fallback。
 
-## Fixtures
+## Fixture
 
 - Alice Profile：艺术兴趣、喜欢市中心、拒绝红眼航班；
 - Bob Profile：预算上限、较重舒适度；Bob 可选择是否共享国籍资料；
@@ -13,7 +13,7 @@
 - 航班涨价/售罄、成员日期/出发地变化、visa 来源不确定 fixture；
 - sandbox orchestration 成功、失败、重复及乱序回调。
 
-## HERO tests
+## HERO 测试
 
 ### TS-H1 — Save, reuse and override a private travel profile
 
@@ -148,7 +148,7 @@
 - Price change expires confirmations; stale plan cannot orchestrate.
 - No payment is collected or claimed.
 
-## PROOF and SUPPORT tests
+## PROOF 与 SUPPORT 测试
 
 ### TS-P1 — Run the three-minute Hero Demo deterministically
 
@@ -212,7 +212,7 @@
 - Tool and visa uncertainty are visible with official verification/fallback boundaries.
 - No error path creates confirmation, orchestration, payment or booking.
 
-## Release regression checklist
+## 发布回归检查清单
 
 - Profile memory is explicit, editable, deletable and private by default.
 - Shared workspace never shows unapproved Profile/private-chat fields.

@@ -1,35 +1,35 @@
-# MVP Readiness Review
+# MVP 就绪度评审
 
-**Reviewed:** 2026-08-23  
-**Scope:** `apps/api`, the current TypeScript backend MVP
+**评审日期：** 2026-08-23
+**范围：** `apps/api`，当前 TypeScript 后端 MVP
 
-## Verdict
+## 结论
 
-The architectural direction is suitable for the hackathon: a TypeScript/Fastify modular monolith, PostgreSQL as the system of record, fixture-backed provider adapters, and a model gateway are all appropriate foundations for continued development.
+该架构方向适合 Hackathon：TypeScript/Fastify 模块化单体、作为权威记录的 PostgreSQL、以 fixture 支撑的提供方适配器和模型网关，均可作为继续开发的合适基础。
 
-The implementation is **not yet demo-ready or safely usable**. It builds and type-checks, but its database-backed tests were not executed because neither PostgreSQL nor the local Docker daemon was available. More importantly, several implemented paths do not meet the documented privacy and planning requirements.
+当前实现**尚未达到可演示或可安全使用的标准**。它可以构建并通过类型检查，但由于 PostgreSQL 和本地 Docker daemon 均不可用，未执行依赖数据库的测试。更重要的是，若干已实现路径不符合文档中的隐私与规划要求。
 
-## Required fixes before a demo
+## 演示前必须修复
 
-1. **Plan all configured candidates.** `planning.ts` currently selects only the first destination rather than comparing the configured two or three candidates.
-2. **Use the snapshot for visa checks.** `visa-service.ts` substitutes `US` after nationality consent. It must read each member's authorized nationality from the immutable constraint snapshot, and never infer or substitute one.
-3. **Invalidate immediately on consent changes.** Grant/revoke must atomically stale all affected active plans and confirmations. The current consent service only changes consent rows.
-4. **Replan from persisted trip data.** `change-event-service.ts` currently hard-codes Tokyo, San Francisco, Shanghai, and dates. It must use the affected trip and event data, then persist an actual candidate/constraint diff.
-5. **Protect the sandbox callback.** The callback currently accepts any authenticated demo user and has no provider signature/secret verification. Give it a separate authenticated provider boundary and confirm it is tied to the intended execution.
-6. **Add relational uniqueness and transactions.** Enforce one profile per user; unique trip membership, `(trip_id, version)` snapshots/plans, one confirmation per `(plan_id, user_id)`, and one booking per orchestration request. Wrap state transitions and idempotency record creation in transactions.
-7. **Make seed and migrations repeatable.** The seed currently inserts duplicate demo users on rerun; migrations are imperative startup code without migration history. Use versioned migrations and idempotent seed upserts.
-8. **Restore working quality gates.** Add ESLint flat configuration and run the full test suite against disposable PostgreSQL in CI. Implement the documented OpenTelemetry/metrics integration or reduce the documentation claim until it exists.
+1. **规划所有已配置候选。** `planning.ts` 当前只选第一个目的地，未比较已配置的两个或三个候选。
+2. **签证检查必须使用快照。** `visa-service.ts` 在国籍授权后代入 `US`；它必须从不可变约束快照读取成员已授权国籍，绝不推断或替代。
+3. **授权变化后立即失效。** 授予/撤回必须原子性地使所有受影响的有效方案和确认过期；当前 consent service 仅修改授权行。
+4. **根据持久化行程数据重规划。** `change-event-service.ts` 当前硬编码 Tokyo、San Francisco、Shanghai 和日期；它必须使用受影响行程和事件数据，并持久化真实的候选/约束 diff。
+5. **保护沙箱 callback。** 当前 callback 接受任意已认证演示用户，且未校验提供方签名/密钥。应提供独立的已认证提供方边界，并确认其关联预期执行。
+6. **加入关系唯一性与事务。** 每用户一个 profile；行程成员、`(trip_id, version)` 快照/方案、`(plan_id, user_id)` 确认和每个编排请求的 booking 均须唯一。状态迁移与幂等记录创建须放入事务。
+7. **使 seed 与迁移可重复。** 当前 seed 重跑会插入重复演示用户，迁移是无历史的命令式启动代码。改为版本化迁移与幂等 seed upsert。
+8. **恢复质量门禁。** 增加 ESLint flat 配置，并在 CI 对可丢弃 PostgreSQL 执行完整测试。实现文档所述 OpenTelemetry/metrics 集成，或在实现前降低文档声明。
 
-## Verification performed
+## 已执行验证
 
-| Check | Result |
+| 检查项 | 结果 |
 |---|---|
-| `npm run typecheck` | Passed |
-| `npm run build` | Passed |
-| `npm test` | Failed: database connection to `127.0.0.1:5432` was refused; 12 integration tests were skipped after setup failure and 3 API tests returned 500 for the same reason. |
-| `npm run lint` | Failed: ESLint 9 configuration file is missing. |
-| Docker-backed validation | Not run: local Docker daemon is unavailable. |
+| `npm run typecheck` | 通过 |
+| `npm run build` | 通过 |
+| `npm test` | 失败：`127.0.0.1:5432` 拒绝数据库连接；安装失败后跳过 12 个集成测试，另有 3 个 API 测试因相同原因返回 500。 |
+| `npm run lint` | 失败：缺少 ESLint 9 配置文件。 |
+| Docker 支撑的验证 | 未运行：本地 Docker daemon 不可用。 |
 
-## Repository cleanup
+## 仓库清理
 
-The obsolete Coze/Python scaffold was removed: `.coze`, `pyproject.toml`, `uv.lock`, and the former root `src/` and `scripts/` files. The deployable backend remains at `apps/api/`, a conventional monorepo layout. Empty legacy directories are not tracked by Git and can be removed locally by the developer if their file explorer retains them.
+已移除过时的 Coze/Python 脚手架：`.coze`、`pyproject.toml`、`uv.lock` 以及旧根目录的 `src/`、`scripts/` 文件。可部署后端保留在 `apps/api/`，符合单体仓库惯例。空的旧目录不受 Git 跟踪；若文件浏览器仍显示它们，开发者可在本地移除。
