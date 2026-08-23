@@ -1,0 +1,119 @@
+# AI Travel Agent — Personal Agents, Shared Trips Strategy
+
+**状态：** Hackathon 产品策略；所有市场与行为结论均为 **Assumption**  
+**日期：** 2026-08-23  
+**输入：** [Product Discovery](discovery.md)
+
+## 1. Strategic choice
+
+产品不是“把群聊导入后生成行程”，也不是一次性旅行规划器。它是一个由两层 Agent 组成的 Travel OS：
+
+1. **Personal Travel Agent：** 每位旅行者私下与自己的 Agent 对话。Agent 记住用户明确保存的旅行偏好、预算取舍、兴趣、节奏、历史反馈与旅行资料；用户可以查看、编辑、删除，并控制共享范围。
+2. **Shared Trip Agent：** 用户创建共享行程并邀请同行者。各人的 Personal Agent 仅把该成员明确授权、且与本次旅行相关的信息带入共享工作区；Shared Trip Agent 协调机票、酒店、地面交通、按国籍区分的签证/入境待办，以及行程变化。
+
+原有的“可解释、用户最终确认、不自动扣款”的核心价值保留。原有的群聊截图导入不再是核心路径；原有的站内预订目标保留，但 Hackathon 只证明受控的 booking orchestration/sandbox 路径。
+
+## 2. One Big Thing
+
+> **你的旅行 Agent 已经了解你；当朋友加入同一趟旅行时，多个个人 Agent 在不暴露私人记忆的前提下，共同规划、预订并准备每个人真正需要的旅程。**
+
+它的记忆点不在“AI 推荐酒店”，而在于：Alice 的 Agent 知道她喜欢艺术街区且拒绝红眼航班；Bob 的 Agent 知道他预算敏感、持不同国籍；两人加入同一旅程后，Shared Trip Agent 自动协调方案、指出谁需要签证待办，并在价格变化后重排已批准的机酒交通组合。
+
+## 3. First target segment and JTBD
+
+### First target segment — Assumption
+
+计划进行国际休闲旅行的 2–4 人朋友或伴侣群体；成员有不同国籍、个人偏好、预算或出发限制。单人旅行是同一 Personal Agent 的自然延伸，不做独立 MVP 流程。
+
+### JTBD — Assumption
+
+> 当我和朋友计划一次国际旅行时，我想让一个了解我们每个人的 Agent 协调机票、酒店、交通和个人入境待办，并在计划变化时重新处理它们，这样我们不必反复解释自己、在多个平台间切换，或遗漏关键准备事项。
+
+## 4. Value proposition
+
+| 部分 | 陈述 |
+|---|---|
+| Who | 有不同旅行偏好和潜在不同国籍的 2–4 人国际旅行群体。**Assumption** |
+| Why | 个人偏好无法持续复用；群组协调迫使主组织者重复收集信息；机酒交通与签证待办分散。 |
+| What before | 每次重新填写偏好、群聊协调、在 OTA/地图/签证网站之间切换，并在变化后重新做所有判断。 |
+| How | Personal Agent 保存用户明确授权的 Profile；Shared Trip Workspace 汇聚仅本次获授权的约束；工具编排机酒交通；Visa Agent 按国籍与路线生成带来源的待办；显式确认后执行受控预订。 |
+| What after | 每个人被理解，但私人资料不被默认公开；共享旅程有一个能执行、提醒并随变化调整的单一事实来源。**Assumption** |
+| Alternatives | OTA、地图、群聊、共享文档、通用 AI、旅行顾问。 |
+
+**价值主张：**
+
+> 不必每次重新告诉 AI 你是谁。每个人的 Personal Travel Agent 记住并保护自己的旅行偏好；当你们一起出发时，它们在共享工作区中协调可订行程与各自的准备事项，而每一步不可逆行动仍由人确认。
+
+## 5. Differentiation
+
+| 普通旅行 AI | 本产品 |
+|---|---|
+| 单次提示词、一次性推荐 | 用户拥有可编辑、可撤销的长期旅行偏好 |
+| 所有人共享一段群聊或表单 | 每个人私下维护自己的 Agent，并明确授权共享本次相关信息 |
+| 只规划或跳回 OTA | Shared Trip Agent 跨机票、酒店、地面交通生成可订组合并编排确认 |
+| 把签证当通用提示 | 对每位成员按国籍、目的地和转机路线生成来源明确的准备待办 |
+| 变化后重新给一段文本 | 根据 Profile、共享约束和预订状态重新规划，并解释影响 |
+
+### Agentic capabilities that serve the product
+
+- **Persistent memory：** 核心能力，不是技术便利。只存用户明确选择的稳定偏好和反馈，区分本次例外。
+- **Multi-agent orchestration：** Personal Agents 向 Shared Trip Agent 提供经同意的旅行约束；Shared Agent 用 Flight、Stay、Ground 和 Visa 专长工具/子 Agent 编排结果。
+- **Tool use + real-time data：** 对固定路线调用或模拟航班、酒店、地面交通工具；每项事实带来源和时间。不能可靠获取时，明确标记 sandbox/demo 数据。
+- **Autonomous action：** Agent 可搜索、组合、检测变化、准备预订与提醒；不自动扣款或自动提交不可逆预订。
+- **Self-correction：** 价格、库存、成员日期或签证条件变化后重新检索并提出替代，保留用户批准边界。
+- **Adaptive UI：** 私有 Profile 面板、共享行程面板、每人待办与确认队列随权限不同显示。
+
+不采用群聊截图导入作为主路径，因为它要求用户把既有沟通再复制一次，也会混入未经同意的私人信息。原生群聊也不进入 MVP；共享工作区 + 私人 Agent 对话已足够验证协作。
+
+## 6. Product trade-offs and what we will not build
+
+| 选择 | 放弃 | 原因 |
+|---|---|---|
+| 用户明确保存、可编辑 Profile | 无边界地推断“人格” | 信任与隐私优先，且让记忆可解释。 |
+| 私有 Agent 对话 + 共享工作区 | 导入群聊或自己再造聊天软件 | 消除复制摩擦并保护成员私人偏好。 |
+| 固定示例路线、两种国籍、机票+酒店+地面交通 | 全球多供应商覆盖 | 在 Hackathon 内证明全链路编排。 |
+| Visa readiness checklist | 自动签证申请或法律意见 | 保留高价值提醒，避免高风险承诺。 |
+| 单次明确确认 + sandbox/已批准工具执行 | 自动支付与无感购买 | 保留端到端行动感，但不突破安全边界。 |
+
+**Won't build now：** 群聊导入/截图作为必经流程、原生群聊、支付分摊、自动扣款、签证代办/法律意见、全球库存、退款/改签运营、长期社交网络。
+
+## 7. Hackathon MVP and Hero Demo
+
+### Constrained proof
+
+- 两位预置或演示用户，各有可编辑 Profile；
+- 一个共享国际旅行，演示两种国籍；
+- 一个受控路线上的航班、酒店和地面交通候选；
+- 一条经来源标注的 visa/entry readiness checklist；
+- 一个价格或航班变化事件；
+- 一次用户显式确认后调用 booking orchestration sandbox，返回确认参考号；不收款。
+
+### Three-minute demo
+
+1. **Hook：** “Alice 已经告诉她的 Agent：不要红眼、喜欢艺术街区。Bob 的 Agent 知道他的预算和国籍。为什么他们还要从头开始协调？”
+2. **Trigger：** Alice 创建东京共享旅行，Bob 通过邀请链接加入；二人分别在私有 Agent 中补充本次要求。
+3. **AI action：** Shared Trip Agent 请求各人授权的约束，调用 Flight/Stay/Ground/Visa 工具，生成可订组合和每人待办。
+4. **Proof：** UI 显示 Alice 看不到 Bob 未共享的私有 Profile；Bob 的 visa 卡显示来源和下一步；每个供应项显示来源/时间。
+5. **Surprise：** Alice 的首选航班价格上涨或售罄。Agent 重新组合，同时保住她的红眼禁忌和 Bob 的预算边界，并解释更改。
+6. **Final wow：** 二人分别确认；Shared Agent 调用 sandbox 预订编排，生成机票、酒店、接送的准备状态与每人待办，明确显示“未扣款”。
+
+## 8. Metrics, business model and defensibility
+
+| 指标 | 初始目标（Assumption） |
+|---|---|
+| Profile reuse | 演示用户在创建共享行程时无需重新填写已保存偏好 |
+| Sharing clarity | 用户能解释哪些 Profile 信息共享到该行程、哪些没有 |
+| Plan completeness | 机票、酒店、地面交通和每人 visa readiness 均有状态或明确缺口 |
+| Re-plan clarity | 变化后用户能指出保留的个人约束与受影响的项目 |
+| Action boundary | 0 次自动扣款/未经确认的预订 |
+
+长期商业模式仍是 **Assumption**：可对预订收供应商佣金、对高价值协调服务收费，或提供旅行顾问工作台。潜在壁垒是用户控制下的个人偏好、群组授权模型、真实工具执行/异常反馈和跨成员旅行编排；“使用 LLM”并非壁垒。
+
+## 9. Red-team gates
+
+| Assumption | Fails if | Cheapest test | Pivot |
+|---|---|---|---|
+| 用户愿意保存并复用旅行偏好 | 他们认为 Profile 是重复填写或隐私负担 | 5 人设置 Profile、创建第二次旅行 | 改为本次偏好模板，不做长期记忆宣称 |
+| 私有 Agent + 共享授权比群聊更自然 | 成员仍想复制信息或看不懂共享范围 | 两人完成邀请与授权任务 | 简化为共享表单，不造聊天功能 |
+| Visa readiness 是有用而非恐吓 | 用户不看待办，或认为结论不可信 | 让跨国演示用户检查来源和下一步 | 限为官方来源链接，不做规则推断 |
+| 单次 sandbox 编排足以证明预订价值 | 评委认为只是按钮动画 | 展示工具请求、确认参考号和不可逆确认边界 | 缩小为 book-ready handoff，保留工具证据 |
