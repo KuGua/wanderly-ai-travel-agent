@@ -1,0 +1,85 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build, test, and framework output
+dist/
+coverage/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+
+# Local environment configuration and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Package-manager and application logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# Local databases
+*.sqlite
+*.sqlite3
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Python tooling artifacts
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Native build and vendored dependencies
+*.o
+*.a
+/vendor/
+
+# 视频文件
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.mkv
+*.webm
+*.m4v
+*.mpeg
+*.mpg
+*.3gp
+*.f4v
+*.rmvb
+*.vob
+
+# 归档文件
+*.iso
+*.dmg
+*.rar
+*.zip
+*.gz
+
+# 文档类也默认加入
+*.pdf
+*.docx
+*.doc
+*.xlsx
+*.xls
+*.ppt
+*.pptx
+*.xlsx
+*.csv
+
+# Preview files
+.preview
+
+# CodeGraph index
+.codegraph

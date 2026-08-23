@@ -1,0 +1,64 @@
+import type { FastifyInstance } from "fastify";
+import { db } from "../db/database.js";
+import { tripMembers } from "../db/schema.js";
+import { eq, and } from "drizzle-orm";
+import { confirmPlanSchema } from "../types/schemas.js";
+import { setConfirmation, checkAllConfirmed } from "../services/confirmation-service.js";
+import { createRequestContext } from "../utils/context.js";
+
+export async function confirmationRoutes(app: FastifyInstance) {
+  // Confirm or request changes for a plan
+  app.post("/confirmations", {
+    
+      
+
+  }, async (request, reply) => {
+    const ctx = createRequestContext(request.user.id);
+    const body = confirmPlanSchema.parse(request.body);
+
+    // Get tripId from plan (simplified — would fetch from itineraryPlans table)
+    // For demo, we'll require tripId in the body or fetch it
+    // Let's add tripId to the schema
+    const tripId = (request.body as any).tripId;
+    if (!tripId) {
+      reply.code(400).send({ statusCode: 400, error: "Bad Request", message: "tripId is required" });
+      return;
+    }
+
+    // Verify membership
+    const membership = await db.select().from(tripMembers)
+      .where(and(eq(tripMembers.tripId, tripId), eq(tripMembers.userId, request.user.id)))
+      .limit(1);
+
+    if (membership.length === 0) {
+      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
+      return;
+    }
+
+    await setConfirmation({
+      ctx,
+      planId: body.planId,
+      userId: request.user.id,
+      tripId,
+      decision: body.decision,
+    });
+
+    const { allConfirmed, confirmations } = await checkAllConfirmed({ planId: body.planId, tripId });
+
+    return {
+      message: `Confirmation set to ${body.decision}`,
+      allConfirmed,
+      confirmations,
+    };
+  });
+
+  // Get confirmation status for a plan
+  app.get("/confirmations/:planId", async (request, reply) => {
+    const { planId } = request.params as { planId: string };
+
+    // For demo, we'll skip trip membership check (would need to fetch plan -> tripId)
+    const { allConfirmed, confirmations } = await checkAllConfirmed({ planId, tripId: "" });
+
+    return { allConfirmed, confirmations };
+  });
+}

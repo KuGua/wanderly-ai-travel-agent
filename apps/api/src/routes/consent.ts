@@ -1,0 +1,101 @@
+import type { FastifyInstance } from "fastify";
+import { db } from "../db/database.js";
+import { tripMembers } from "../db/schema.js";
+import { eq, and } from "drizzle-orm";
+import { grantConsentSchema, revokeConsentSchema } from "../types/schemas.js";
+import { grantConsent, revokeConsent, getActiveConsents } from "../services/consent-service.js";
+import { createRequestContext } from "../utils/context.js";
+import { recordAudit } from "../services/audit-service.js";
+
+export async function consentRoutes(app: FastifyInstance) {
+  // Grant consent
+  app.post("/consent/grant", {
+    
+      
+
+  }, async (request, reply) => {
+    const ctx = createRequestContext(request.user.id);
+    const body = grantConsentSchema.parse(request.body);
+
+    // Verify membership
+    const membership = await db.select().from(tripMembers)
+      .where(and(eq(tripMembers.tripId, body.tripId), eq(tripMembers.userId, request.user.id)))
+      .limit(1);
+
+    if (membership.length === 0) {
+      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
+      return;
+    }
+
+    await grantConsent({
+      tripId: body.tripId,
+      userId: request.user.id,
+      scope: body.scope,
+      fieldList: body.fieldList,
+    });
+
+    await recordAudit({
+      ctx,
+      action: "CONSENT_GRANT",
+      actorUserId: request.user.id,
+      tripId: body.tripId,
+      summary: { scope: body.scope, fieldList: body.fieldList },
+    });
+
+    return { message: "Consent granted", scope: body.scope, fieldList: body.fieldList };
+  });
+
+  // Revoke consent
+  app.post("/consent/revoke", {
+    
+      
+
+  }, async (request, reply) => {
+    const ctx = createRequestContext(request.user.id);
+    const body = revokeConsentSchema.parse(request.body);
+
+    // Verify membership
+    const membership = await db.select().from(tripMembers)
+      .where(and(eq(tripMembers.tripId, body.tripId), eq(tripMembers.userId, request.user.id)))
+      .limit(1);
+
+    if (membership.length === 0) {
+      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
+      return;
+    }
+
+    await revokeConsent({
+      tripId: body.tripId,
+      userId: request.user.id,
+      scope: body.scope,
+    });
+
+    await recordAudit({
+      ctx,
+      action: "CONSENT_REVOKE",
+      actorUserId: request.user.id,
+      tripId: body.tripId,
+      summary: { scope: body.scope },
+    });
+
+    return { message: "Consent revoked", scope: body.scope };
+  });
+
+  // Get my active consents for a trip
+  app.get("/consent/:tripId/me", async (request, reply) => {
+    const { tripId } = request.params as { tripId: string };
+
+    // Verify membership
+    const membership = await db.select().from(tripMembers)
+      .where(and(eq(tripMembers.tripId, tripId), eq(tripMembers.userId, request.user.id)))
+      .limit(1);
+
+    if (membership.length === 0) {
+      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
+      return;
+    }
+
+    const consents = await getActiveConsents({ tripId, userId: request.user.id });
+    return { consents };
+  });
+}

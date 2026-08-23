@@ -21,6 +21,39 @@
 - 新增或修改的行为必须有覆盖其关键成功路径和失败路径的测试；不能测试时，说明原因并提供替代验证。
 - 删除已停用、已被替代且不再被任何运行路径、兼容性承诺、迁移计划或文档引用的代码、配置、依赖和测试；同时删除其无效引用。不得长期保留死代码、注释掉的旧实现或“以防万一”的重复实现。若暂不能删除，必须记录保留原因、负责人和明确的移除条件/期限。
 
+## AI Travel Agent MVP 项目约束
+
+以下项目文件共同定义当前 MVP 的事实来源；实现不得与其冲突。发生需求、边界、验收或技术取舍变化时，必须在同一变更中更新相应文件：
+
+- `TECH_STACK.md`：技术选型、系统边界、数据/部署决策与明确不做项；
+- `docs/PRD.md`：功能需求、非目标、验收和发布标准；
+- `docs/backlog.md`：交付优先级与用户故事验收条件；
+- `docs/test-scenarios.md`：功能、故障与回归测试场景。
+
+### Fixture-first 与事实边界
+
+- 版本化 fixture 是三人、两出发地、两到三个候选路线 Hero Demo 的可靠基线；live provider 仅用于增强演示，不得成为通过演示的前提。
+- live provider 超时、失败、缺少数据或结果不可信时，只能使用已版本化的 fallback fixture，并在 UI 和 API 输出中显式标记 `Demo data`。不得将 fixture 伪装为实时库存、报价、汇率、签证结论或真实预订结果。
+- 每一项价格、路线、供应商 offer 与 visa/entry readiness 输出必须带来源及 `captured_at`/检查时间，或带 `Demo data` 标记。签证/入境能力只能输出面向个人的 readiness checklist、核验缺口和官方核验下一步；不得提供法律意见、声称获批或代办申请。
+
+### 授权、状态与不可逆操作
+
+- Profile、私有对话、本次输入、国籍和旅行证件资料默认私有。只有当前成员对当前行程明确授予字段级授权后，服务端才可将最小必要字段写入不可变 `constraint_snapshot`。
+- `constraint_snapshot`、plan version、confirmation、`STALE` 状态、idempotency record 与 booking execution 是服务端和数据库的权威状态。前端状态、模型输出和 provider 返回值均不得直接创建、绕过或取代这些业务不变量。
+- 授权撤回、授权字段变化、成员约束变化、价格/库存变化或工具结果失效时，必须使依赖它们的 plan 与 confirmations 进入 `STALE`，并在新快照下重新编排；不得静默继续使用旧结果。
+- 仅当三位 required members 均对同一最新、未过期的 plan version 显式确认时，才可调用 booking orchestration sandbox。重复请求、重复或乱序 callback 必须以稳定请求 ID 幂等处理，最多产生一组参考号。
+- 禁止自动扣款、真实支付、真实预订、签证申请，以及任何未经当前用户明确确认的不可逆外部操作。
+
+### 隐私与项目级可观测性
+
+- 国籍、旅行证件、私有 Profile 和私有对话是敏感数据。不得进入日志、指标标签、trace 属性、fixture、客户端持久状态或长上下文 prompt；仅在已授权且完成当前服务端操作确有必要时，以最小字段集处理。
+- 必须为授权授予/撤回、snapshot 创建、plan 失效/replan、provider fallback、确认/拒绝、sandbox 请求及重复/乱序 callback 记录安全的审计事件和可关联遥测。使用 `trip_id`、`plan_version`、`run_id`、`orchestration_request_id` 等关联标识时，只能放在 trace/log 上下文中，不能作为指标标签。
+
+### 测试与技术栈收敛
+
+- 任何影响功能行为、授权、状态转换、provider fallback 或用户可见事实的变更，必须同步更新 `docs/test-scenarios.md`，并覆盖适用的未授权访问、授权撤回、数据缺失、live API fallback、plan 过期、成员拒绝确认、重复 callback 与乱序 callback。
+- 以 `TECH_STACK.md` 的 Hackathon MVP 边界为准。未经先行更新相关产品和技术文档并说明取舍，不得引入自由多 Agent、Redis、Temporal、Step Functions、WebSocket、真实支付、额外旅行数据 API 或全局客户端业务真相状态。
+
 ## 面向对象设计
 
 适用于以对象模型为主的生产代码。设计和评审时应明确体现以下原则：
