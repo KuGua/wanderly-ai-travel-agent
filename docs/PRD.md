@@ -17,15 +17,15 @@
 
 ### Target users — Assumption
 
-两到四位共同计划国际休闲旅行的朋友/伴侣；首个 Hero Demo 使用两位、不同国籍的测试旅行者。单人旅行使用同一 Personal Agent，但不是单独 MVP 流程。
+两到四位共同计划国际休闲旅行的朋友/伴侣；首个 Hero Demo 使用三位测试旅行者、两个出发地、两到三个目的地候选与至少两种国籍。单人旅行使用同一 Personal Agent，但不是单独 MVP 流程。
 
 ### Objectives
 
 1. 用户第一次设定 Profile 后，下一次旅行可复用稳定偏好而不必重填。
-2. 成员在私有 Agent 中补充要求，并只把明确授权的本次信息共享到共同旅程。
-3. Shared Agent 输出一套机票、酒店、地面交通组合和每人成员的 visa readiness 待办。
-4. 变化发生时，系统重新编排并解释每个人的影响。
-5. 明确确认后调用受控 booking orchestration；不得自动付款或无确认预订。
+2. 三位成员在私有 Agent 中补充要求，并只把明确授权的本次信息共享到共同旅程。
+3. Shared Agent 比较两到三个目的地候选，并为每个候选输出按两个出发地协调的机票、酒店、地面交通组合和每人的 visa readiness 状态。
+4. 变化发生时，系统重新编排并解释每个人及候选方案的影响。
+5. 三位成员明确确认同一最新版本后调用受控 booking orchestration；不得自动付款或无确认预订。
 
 ### Non-goals
 
@@ -41,16 +41,17 @@
 flowchart LR
   A[私有 Agent/Profile] --> B[创建或加入共享行程]
   B --> C[选择本次允许共享的信息]
-  C --> D[Shared Agent 调用 Flight/Stay/Ground/Visa 工具]
-  D --> E[共同查看可订方案和个人待办]
-  E --> F[价格/计划变化]
-  F --> G[重新编排并显示影响]
-  G --> H[每位成员明确确认]
-  H --> I[Booking orchestration sandbox]
+  C --> D[比较 2-3 个目的地候选]
+  D --> E[Shared Agent 调用 Flight/Stay/Ground/Visa 工具]
+  E --> F[共同查看候选方案和个人待办]
+  F --> G[价格或成员约束变化]
+  G --> H[重新编排并显示 diff]
+  H --> I[三位成员明确确认]
+  I --> J[Booking orchestration sandbox]
 ```
 
-**Aha moment：** Alice 的 Agent 自动带入已保存的非红眼、艺术街区偏好；Bob 的 Agent 带入预算和本次授权的国籍资料，但 Alice 看不到 Bob 没有共享的个人资料。  
-**Final wow：** 航班价格变化后，系统用两人的授权约束重新组合机酒交通，同时将对应的个人 visa 待办保留下来；二人确认后，sandbox 返回一个可追踪的编排确认。
+**Aha moment：** 三位成员从两个出发地进入同一共享行程；Alice 的 Agent 自动带入非红眼、艺术街区偏好，Bob 的 Agent 带入预算和授权国籍资料，Chen 带入自己的出发限制，但任何成员都看不到彼此未共享资料。
+**Final wow：** 一项成员约束或航班价格变化后，系统比较两到三个目的地候选，以三人的授权约束重新组合机酒交通，同时保留对应个人 visa 待办；三人确认后，sandbox 返回一个可追踪的编排确认。
 
 ## 4. MVP scope
 
@@ -59,8 +60,8 @@ flowchart LR
 | ID | Capability | User problem / technical proof |
 |---|---|---|
 | H1 | 可编辑的 Personal Travel Profile 与私有 Agent 对话 | “Agent 了解我”，消除每次重填。 |
-| H2 | Shared Trip Workspace、邀请和按字段授权 | 多人协调，不要求复制群聊，也不暴露隐私。 |
-| H3 | Shared Agent 的 Flight/Stay/Ground 组合 | 用工具编排降低跨平台协调。 |
+| H2 | Shared Trip Workspace、三人邀请和按字段授权 | 多人协调，不要求复制群聊，也不暴露隐私。 |
+| H3 | 两出发地、两到三个目的地候选的 Flight/Stay/Ground 比较 | 用工具编排降低跨平台协调与目的地选择成本。 |
 | H4 | 按成员国籍、目的地和路线的 visa/entry readiness checklist | 减少跨国同行的准备遗漏。 |
 | H5 | 变化检测、重新编排和影响说明 | 自我修正的 Agentic wow。 |
 | H6 | 每成员确认后的 booking orchestration sandbox | 证明从规划到行动，不做自动付款。 |
@@ -74,8 +75,8 @@ flowchart LR
 
 ### SUPPORT
 
-- 最小身份/会话：两名测试用户彼此隔离；
-- 预置 Profile、固定示例路线、两国籍规则数据与稳定变化事件；
+- 最小身份/会话：三名测试用户彼此隔离；
+- 预置 Profile、两个出发地、两到三个目的地候选、至少两国籍规则数据与稳定变化事件；
 - 对无可行方案、缺少授权、工具失败、签证规则不确定和成员拒绝确认给出恢复路径；
 - 结构化日志、低基数指标和 trace，不记录私聊全文、护照号或支付信息。
 
@@ -98,36 +99,36 @@ flowchart LR
 
 ### FR-2 Shared Trip Workspace and consent
 
-1. 创建者可创建一个共享行程并邀请第二位测试用户加入。
+1. 创建者可创建一个共享行程并邀请另外两位测试用户加入。
 2. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
 3. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
 4. 成员更新授权或本次约束时，当前方案标记为过期并触发重算前确认。
 
 ### FR-3 End-to-end trip orchestration
 
-1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay 和 Ground 工具/fixture。
-2. 输出必须包含至少一个航班、酒店和地面交通项目，或明确显示缺失项目与原因。
+1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay 和 Ground 工具/fixture，并将三位成员映射到两个出发地。
+2. 系统必须比较两到三个预设目的地候选；每个候选包含至少一个航班、酒店和地面交通项目，或明确显示缺失项目与原因。
 3. 每个项目必须显示总价/币种（如适用）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。
-4. Agent 必须解释方案如何使用每位成员授权的约束；不得引用未授权资料。
+4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
 
 ### FR-4 Visa/entry readiness
 
-1. 对每位授权共享国籍资料的成员，系统必须基于目的地及已知转机/路线数据生成独立的 readiness checklist。
+1. 对每位授权共享国籍资料的成员，系统必须基于每个显示的目的地候选及已知转机/路线数据生成独立的 readiness checklist 或明确缺口。
 2. 每项待办必须显示来源、检查时间、适用对象和下一步；无法确认时显示“请向官方来源核验”。
 3. 系统不得声称签证资格已获批准、提供法律意见或代替用户申请。
 4. 未授权国籍资料时，系统只显示“需要该成员自行完成入境准备检查”，不能推断国籍。
 
 ### FR-5 Change handling and self-correction
 
-1. 系统必须支持一个确定性变化事件：航班价格/库存变化、成员日期变化或酒店失效。
+1. 系统必须支持一个确定性变化事件：航班价格/库存变化、成员日期/出发地限制变化或酒店失效。
 2. 变化必须生成新的工具和授权快照，并使旧方案/确认过期。
 3. 重新编排必须显示旧/新项目、保留/受影响的成员约束、个人待办影响和原因。
 4. 没有可行替代时，系统必须说明阻塞约束并请求成员调整，而不是静默放弃约束。
 
 ### FR-6 Confirmation and booking orchestration
 
-1. 每个成员必须对当前方案版本显式选择 `Confirm` 或 `Needs changes`。
-2. 只有所有 required members 确认、方案未过期且数据快照一致时，才可调用 sandbox/已批准 booking orchestration 工具。
+1. 三位 required members 必须对当前方案版本显式选择 `Confirm` 或 `Needs changes`。
+2. 只有三位 required members 全部确认、方案未过期且数据快照一致时，才可调用 sandbox/已批准 booking orchestration 工具。
 3. 调用前 UI 必须显示项目、总价/币种、谁确认了、来源和 `No automatic charge` 提示。
 4. 工具结果必须返回每个项目的确认参考号或失败原因；成功不表示系统已扣款。
 5. 成员拒绝、数据变化、重复请求或工具失败不得产生重复编排或不可逆预订。
@@ -145,7 +146,7 @@ flowchart LR
 |---|---|
 | 成员没有 Profile 或不愿共享任何偏好 | 允许加入；Shared Agent 只使用其本次明确输入，提示资料不足。 |
 | 成员撤回国籍授权 | 失效相关 visa checklist 和当前方案；要求重新计算。 |
-| 两名成员预算/时间冲突 | 显示冲突及受影响成员；不静默偏向创建者。 |
+| 三名成员预算、出发地或时间冲突 | 显示冲突及受影响成员；不静默偏向创建者。 |
 | 航班、酒店或地面交通工具无数据 | 显示缺口和来源失败；只可使用明确标注的 demo fixture。 |
 | visa 规则来源不确定或过期 | 显示官方核验链接/提示；不得给出确定结论。 |
 | 航班价格上涨 | 原方案与确认失效；展示重新组合的影响。 |
@@ -157,17 +158,17 @@ flowchart LR
 
 ### Success metrics — Assumptions
 
-- 演示成员创建共享行程时至少复用一条 Profile 偏好，无需重新填写；
+- 三位演示成员创建共享行程时各自至少复用一条 Profile 偏好，无需重新填写；
 - 所有成员能指出共享了什么、没有共享什么；
-- 一个方案中至少有航班、酒店、地面交通和按成员区分的 readiness 输出；
+- 两到三个候选中均有航班、酒店、地面交通和按成员区分的 readiness 输出或可解释缺口；
 - 变化后 ≤10 秒给出可解释的重新编排；
 - 0 次自动扣款、无确认编排或无来源签证结论。
 
 ### Release criteria
 
-- 两名隔离测试用户可完整运行 `Profile → invite → consent → tools → visa → replan → confirm → sandbox orchestration`；
+- 三名隔离测试用户可完整运行 `Profile → invite → consent → candidate comparison → tools → visa → replan → confirm → sandbox orchestration`；
 - 测试覆盖授权撤回、冲突、工具失败、visa 不确定、变化、成员拒绝与重复 orchestration；
 - 每个 Agent/工具结果带 Profile/consent/tool snapshot 版本；
 - sandbox 与真实数据/fixture 的边界对用户清晰可见；
-- 3 分钟 Hero Demo 可以用固定数据稳定复现；
+- 3 分钟 Hero Demo 可以用固定数据稳定复现；live API 不可用时明确切换为 `Demo data` fixture；
 - 不存储未授权 Profile、私聊全文、证件号码或支付信息。

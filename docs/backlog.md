@@ -1,7 +1,7 @@
 # AI Travel Agent — Personal Agents + Shared Trips Backlog
 
 **状态：** Hackathon MVP；对应 [PRD](PRD.md) 与 [Tests](test-scenarios.md)  
-**边界：** 使用固定路线、两名测试用户、两种国籍与 sandbox/fixture 工具；不接真实支付。
+**边界：** 使用三名测试用户、两个出发地、两到三个固定目的地候选、至少两种国籍与 sandbox/fixture 工具；不接真实支付。Live API 不可用时明确显示 `Demo data`，不伪装为实时结果。
 
 ## 1. Red-team gates
 
@@ -34,7 +34,7 @@
 
 **Acceptance criteria:**
 
-1. Organizer can create one shared trip and invite a second test traveler.
+1. Organizer can create one shared trip and invite two additional test travelers.
 2. Each traveler can separately approve or decline sharing each relevant profile field and their nationality/entry data.
 3. Shared trip shows only approved fields with member and consent source; private chat/history is never displayed.
 4. Revoking a shared field immediately expires affected plan and visa outputs.
@@ -42,15 +42,15 @@
 
 ### H3 — Orchestrate a personalized multi-service trip
 
-**Story:** As a group, I want the Shared Trip Agent to combine flights, stay and local transport using our authorized preferences, so that we do not coordinate three separate tools ourselves.
+**Story:** As a group departing from two places, I want the Shared Trip Agent to compare two to three destination options with flights, stay and local transport using our authorized preferences, so that we can make one transparent choice instead of coordinating separate tools ourselves.
 
 **Acceptance criteria:**
 
-1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay and Ground tools/fixtures.
-2. Result includes at least one flight, hotel and ground option, or explicitly names missing service and cause.
+1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay and Ground tools/fixtures and maps the three travelers to two origins.
+2. Result compares two to three configured destination candidates; each candidate includes at least one flight, hotel and ground option, or explicitly names a missing service and cause.
 3. Each item shows source, captured time or `Demo data`, price/currency when available, and linked authorized constraints.
-4. Explanation never references a private or unapproved Profile field.
-5. Tool failure yields a recoverable missing-service state, not fabricated inventory or price.
+4. Comparison explains destination and service trade-offs without referencing a private or unapproved Profile field.
+5. Tool failure yields a recoverable missing-service state and visibly uses labelled fixture fallback when configured; it never fabricates inventory or price.
 
 ### H4 — Produce per-traveler visa and entry readiness
 
@@ -58,7 +58,7 @@
 
 **Acceptance criteria:**
 
-1. For each traveler who authorizes nationality data, the system creates a separate checklist for destination and known route/transit.
+1. For each traveler who authorizes nationality data, the system creates a separate checklist or explicit verification gap for each displayed destination and known route/transit.
 2. Every item names the traveler, source, check time, next action and confidence/uncertainty.
 3. Missing or uncertain data directs traveler to official verification; it never claims visa approval or legal advice.
 4. A traveler who does not authorize nationality data receives no inferred nationality conclusion.
@@ -66,24 +66,24 @@
 
 ### H5 — Self-correct the shared trip after change
 
-**Story:** As a group, I want the Agent to re-plan when price, inventory or a member’s availability changes, so that the plan stays viable without losing our personal constraints.
+**Story:** As a group, I want the Agent to re-plan and compare the changed destination options when price, inventory or a member’s availability/origin changes, so that the plan stays viable without losing our personal constraints.
 
 **Acceptance criteria:**
 
-1. Demo supports deterministic flight price/availability or member-date change.
+1. Demo supports deterministic flight price/availability, member-date or member-origin constraint change.
 2. Event produces new tool and consent snapshots and expires old plan/confirmations.
-3. Re-plan compares old/new services, retained constraints, affected member preferences and visa/entry impact.
+3. Re-plan compares old/new destination ranking and services, retained constraints, affected member preferences and visa/entry impact.
 4. If no feasible alternative exists, it identifies blocking constraints and asks the appropriate member to adjust.
 5. Same event ID is idempotent and cannot cause duplicate plans/actions.
 
 ### H6 — Explicitly confirm and invoke booking orchestration sandbox
 
-**Story:** As a traveler, I want to explicitly approve the current shared plan before my Agent prepares booking actions, so that I retain control over anything that could become a transaction.
+**Story:** As one of three travelers, I want to explicitly approve the current shared plan before my Agent prepares booking actions, so that no member is represented in a possible transaction without control.
 
 **Acceptance criteria:**
 
-1. Every required member can select `Confirm` or `Needs changes` for only the current plan version.
-2. Orchestration is blocked until all required members confirm and snapshots remain current.
+1. Each of the three required members can select `Confirm` or `Needs changes` for only the current plan version.
+2. Orchestration is blocked until all three required members confirm and snapshots remain current.
 3. Confirmation page displays all services, total price/currency where available, sources, approvals and `No automatic charge`.
 4. Sandbox call returns a reference per service or a clear error; success never states that payment was taken.
 5. Duplicate/late callbacks are idempotent by orchestration request ID; stale/declined plans cannot invoke a call.
@@ -107,8 +107,8 @@
 
 **Acceptance criteria:**
 
-1. Demo seed contains two distinct Profiles, a supported route, two nationalities, tool fixtures and one price-change event.
-2. Flow runs `profile → invite → consent → plan → visa → change → re-plan → confirm → sandbox` without manual database edits.
+1. Demo seed contains three distinct Profiles, two origins, two to three supported destination candidates, at least two nationalities, tool fixtures and one price/constraint-change event.
+2. Flow runs `profile → invite → consent → candidate comparison → plan → visa → change → re-plan + diff → three confirmations → sandbox` without manual database edits.
 3. If a live source fails, UI visibly falls back to labelled fixture data.
 4. Demo reset removes trip session data while preserving only explicitly seeded test Profiles.
 

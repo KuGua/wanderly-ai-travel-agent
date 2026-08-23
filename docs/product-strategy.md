@@ -58,7 +58,7 @@
 
 - **Persistent memory：** 核心能力，不是技术便利。只存用户明确选择的稳定偏好和反馈，区分本次例外。
 - **Multi-agent orchestration：** Personal Agents 向 Shared Trip Agent 提供经同意的旅行约束；Shared Agent 用 Flight、Stay、Ground 和 Visa 专长工具/子 Agent 编排结果。
-- **Tool use + real-time data：** 对固定路线调用或模拟航班、酒店、地面交通工具；每项事实带来源和时间。不能可靠获取时，明确标记 sandbox/demo 数据。
+- **Tool use + real-time data：** 对固定的两到三个候选路线调用或模拟航班、酒店、地面交通工具；每项事实带来源和时间。不能可靠获取时，明确标记 sandbox/demo 数据。
 - **Autonomous action：** Agent 可搜索、组合、检测变化、准备预订与提醒；不自动扣款或自动提交不可逆预订。
 - **Self-correction：** 价格、库存、成员日期或签证条件变化后重新检索并提出替代，保留用户批准边界。
 - **Adaptive UI：** 私有 Profile 面板、共享行程面板、每人待办与确认队列随权限不同显示。
@@ -71,7 +71,7 @@
 |---|---|---|
 | 用户明确保存、可编辑 Profile | 无边界地推断“人格” | 信任与隐私优先，且让记忆可解释。 |
 | 私有 Agent 对话 + 共享工作区 | 导入群聊或自己再造聊天软件 | 消除复制摩擦并保护成员私人偏好。 |
-| 固定示例路线、两种国籍、机票+酒店+地面交通 | 全球多供应商覆盖 | 在 Hackathon 内证明全链路编排。 |
+| 三个预置用户、两个出发地、两到三个目的地候选、至少两种国籍、机票+酒店+地面交通 | 全球目的地搜索与多供应商覆盖 | 在 Hackathon 内证明多人成员约束、候选比较和全链路编排，而不把稳定性押在广泛实时库存上。 |
 | Visa readiness checklist | 自动签证申请或法律意见 | 保留高价值提醒，避免高风险承诺。 |
 | 单次明确确认 + sandbox/已批准工具执行 | 自动支付与无感购买 | 保留端到端行动感，但不突破安全边界。 |
 
@@ -81,29 +81,29 @@
 
 ### Constrained proof
 
-- 两位预置或演示用户，各有可编辑 Profile；
-- 一个共享国际旅行，演示两种国籍；
-- 一个受控路线上的航班、酒店和地面交通候选；
-- 一条经来源标注的 visa/entry readiness checklist；
-- 一个价格或航班变化事件；
-- 一次用户显式确认后调用 booking orchestration sandbox，返回确认参考号；不收款。
+- 三位预置或演示用户，各有可编辑且默认私有的 Profile；
+- 一个共享国际旅行：成员来自两个出发地，至少两种国籍；
+- 两到三个受控目的地候选；每个候选可显示按出发地协调的 Flight、Stay、Ground 组合与来源/时间或 `Demo data`；
+- 按成员和候选路线显示经来源标注的 visa/entry readiness；
+- 一个确定性约束或价格/库存变化事件；
+- 三位成员均显式确认当前版本后，调用 booking orchestration sandbox，返回确认参考号；不收款。
 
 ### Three-minute demo
 
 1. **Hook：** “Alice 已经告诉她的 Agent：不要红眼、喜欢艺术街区。Bob 的 Agent 知道他的预算和国籍。为什么他们还要从头开始协调？”
-2. **Trigger：** Alice 创建东京共享旅行，Bob 通过邀请链接加入；二人分别在私有 Agent 中补充本次要求。
-3. **AI action：** Shared Trip Agent 请求各人授权的约束，调用 Flight/Stay/Ground/Visa 工具，生成可订组合和每人待办。
-4. **Proof：** UI 显示 Alice 看不到 Bob 未共享的私有 Profile；Bob 的 visa 卡显示来源和下一步；每个供应项显示来源/时间。
-5. **Surprise：** Alice 的首选航班价格上涨或售罄。Agent 重新组合，同时保住她的红眼禁忌和 Bob 的预算边界，并解释更改。
-6. **Final wow：** 二人分别确认；Shared Agent 调用 sandbox 预订编排，生成机票、酒店、接送的准备状态与每人待办，明确显示“未扣款”。
+2. **Trigger：** Alice、Bob、Chen 从两个出发地加入同一趟旅行；三人分别在私有 Agent 中补充本次要求并选择授权字段。
+3. **AI action：** Shared Trip Agent 以同一授权快照调用 Flight/Stay/Ground/Visa 工具，在两到三个目的地候选间比较总预算、飞行舒适度、兴趣匹配和个人入境待办。
+4. **Proof：** UI 显示 Alice 看不到 Bob/Chen 未共享的私有 Profile；每个候选显示适用成员、来源/时间和取舍；不同国籍的 visa 卡显示来源和下一步。
+5. **Surprise：** 一名成员更改约束，或一个候选的航班价格上涨/售罄。Agent 作废旧方案，在保住其余成员约束的同时重排，并显示候选与约束的 diff。
+6. **Final wow：** 三人分别确认同一最新版本；Shared Agent 调用 sandbox 预订编排，生成机票、酒店、接送的准备状态与每人待办，明确显示“未扣款”。
 
 ## 8. Metrics, business model and defensibility
 
 | 指标 | 初始目标（Assumption） |
 |---|---|
-| Profile reuse | 演示用户在创建共享行程时无需重新填写已保存偏好 |
+| Profile reuse | 三位演示用户在创建共享行程时至少复用一条已保存偏好，无需重新填写 |
 | Sharing clarity | 用户能解释哪些 Profile 信息共享到该行程、哪些没有 |
-| Plan completeness | 机票、酒店、地面交通和每人 visa readiness 均有状态或明确缺口 |
+| Plan completeness | 两到三个候选均有 Flight/Stay/Ground 与每人 visa readiness 状态或明确缺口 |
 | Re-plan clarity | 变化后用户能指出保留的个人约束与受影响的项目 |
 | Action boundary | 0 次自动扣款/未经确认的预订 |
 
