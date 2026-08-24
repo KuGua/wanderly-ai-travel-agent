@@ -190,6 +190,26 @@
 - Fallback is visibly marked `Demo data`.
 - Reset removes shared-trip session state, not seeded Profiles.
 
+### TS-P2 — Explore a map location without fabricating travel facts
+
+**Stories:** P1
+**Objective:** 验证地图探索可收集用户兴趣，同时保持 fixture-first 和隐私边界。
+
+**Starting conditions:** 地图显示两到三个 fixture 目的地，且存在没有候选数据的空白区域。
+
+**Steps:**
+
+1. 点击预置候选地点标记，并查看地点档案。
+2. 点击地图空白区域，并查看临时探索标记和打开的档案。
+3. 将空白区域标记保存为私有灵感，然后刷新页面。
+
+**Expected outcomes:**
+
+- 候选地点档案显示来源/时间或 `Demo data`，且解释只使用当前用户可见的资料。
+- 空白区域档案明确没有可验证候选资料，不生成地点、价格、库存、签证或预订结论。
+- 空白区域只能保存私有灵感或请求后续加入候选；不改变共享约束、方案或确认状态。
+- 原型刷新后临时标记消失；生产实现必须将任何持久化操作交由服务端授权模型处理。
+
 ### TS-S1 — Protect data and trace the Agentic workflow
 
 **Stories:** S1  
