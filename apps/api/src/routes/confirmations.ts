@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { confirmPlanSchema } from "../types/schemas.js";
 import { setConfirmation, checkAllConfirmed } from "../services/confirmation-service.js";
 import { createRequestContext } from "../utils/context.js";
+import { ApiError } from "../middleware/error-handler.js";
 
 export async function confirmationRoutes(app: FastifyInstance) {
   // Confirm or request changes for a plan
@@ -12,7 +13,7 @@ export async function confirmationRoutes(app: FastifyInstance) {
     
       
 
-  }, async (request, reply) => {
+  }, async (request) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = confirmPlanSchema.parse(request.body);
 
@@ -24,8 +25,7 @@ export async function confirmationRoutes(app: FastifyInstance) {
       .limit(1);
 
     if (membership.length === 0) {
-      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
-      return;
+      throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
 
     await setConfirmation({

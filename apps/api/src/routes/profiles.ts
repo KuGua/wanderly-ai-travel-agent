@@ -2,9 +2,38 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
 import { userProfiles } from "../db/schema.js";
 import { eq } from "drizzle-orm";
-import { createProfileSchema, updateProfileSchema } from "../types/schemas.js";
+import {
+  createProfileSchema,
+  errorResponseSchema,
+  profileResponseSchema,
+  toJsonSchema,
+  updateProfileResponseSchema,
+  updateProfileSchema,
+} from "../types/schemas.js";
 import { createRequestContext } from "../utils/context.js";
 import { recordAudit } from "../services/audit-service.js";
+import { ApiError } from "../middleware/error-handler.js";
+
+type ProfileRecord = typeof userProfiles.$inferSelect;
+
+function serializeProfile(profile: ProfileRecord, displayName: string) {
+  return {
+    id: profile.id,
+    userId: profile.userId,
+    displayName,
+    nationality: profile.nationality,
+    dateOfBirth: profile.dateOfBirth,
+    interests: profile.interests,
+    accommodationStyle: profile.accommodationStyle,
+    budgetMaxUsd: profile.budgetMaxUsd,
+    noRedEye: profile.noRedEye,
+    mobilityNotes: profile.mobilityNotes,
+    availableDepartureDates: profile.availableDepartureDates,
+    departureCity: profile.departureCity,
+    createdAt: profile.createdAt.toISOString(),
+    updatedAt: profile.updatedAt.toISOString(),
+  };
+}
 
 export async function profileRoutes(app: FastifyInstance) {
   // Create profile
@@ -28,7 +57,15 @@ export async function profileRoutes(app: FastifyInstance) {
   });
 
   // Get my profile
-  app.get("/profiles/me", async (request) => {
+  app.get("/profiles/me", {
+    schema: {
+      description: "Return the authenticated user's private profile with sensitive document data redacted.",
+      response: {
+        200: toJsonSchema(profileResponseSchema),
+        401: toJsonSchema(errorResponseSchema),
+      },
+    },
+  }, async (request) => {
     const profiles = await db.select().from(userProfiles)
       .where(eq(userProfiles.userId, request.user.id))
       .limit(1);
@@ -37,18 +74,27 @@ export async function profileRoutes(app: FastifyInstance) {
       return { profile: null };
     }
 
-    // Redact sensitive fields
-    const safeProfile: Partial<(typeof profiles)[number]> = { ...profiles[0] };
-    delete safeProfile.passportNumber;
-    return { profile: safeProfile };
+    return profileResponseSchema.parse({
+      profile: serializeProfile(profiles[0], request.user.displayName),
+    });
   });
 
   // Update my profile
   app.put("/profiles/me", {
-    
-      
-
-  }, async (request, reply) => {
+    schema: {
+      description: "Partially update the authenticated user's private profile.",
+      body: toJsonSchema(updateProfileSchema),
+      response: {
+        200: toJsonSchema(updateProfileResponseSchema),
+        400: toJsonSchema(errorResponseSchema),
+        401: toJsonSchema(errorResponseSchema),
+        404: toJsonSchema(errorResponseSchema),
+      },
+    },
+    preValidation: async (request) => {
+      request.body = updateProfileSchema.parse(request.body);
+    },
+  }, async (request) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = updateProfileSchema.parse(request.body);
 
@@ -57,13 +103,13 @@ export async function profileRoutes(app: FastifyInstance) {
       .limit(1);
 
     if (existing.length === 0) {
-      reply.code(404).send({ statusCode: 404, error: "Not Found", message: "Profile not found" });
-      return;
+      throw new ApiError(404, "Not Found", "Profile not found");
     }
 
-    await db.update(userProfiles)
+    const [updatedProfile] = await db.update(userProfiles)
       .set({ ...body, updatedAt: new Date() })
-      .where(eq(userProfiles.userId, request.user.id));
+      .where(eq(userProfiles.userId, request.user.id))
+      .returning();
 
     await recordAudit({
       ctx,
@@ -72,7 +118,10 @@ export async function profileRoutes(app: FastifyInstance) {
       summary: { updatedFields: Object.keys(body) },
     });
 
-    return { message: "Profile updated" };
+    return updateProfileResponseSchema.parse({
+      message: "Profile updated",
+      profile: serializeProfile(updatedProfile, request.user.displayName),
+    });
   });
 
   // Delete my profile

@@ -42,6 +42,10 @@ npm run dev
 curl -H "X-Demo-User: alice" http://localhost:3000/api/v1/profiles/me
 ```
 
+演示身份选择可先调用无需认证的 `GET /api/v1/demo/users`；该接口只返回
+seeded user UUID、`externalId` 和 `displayName`。已选择身份后，其他业务接口
+必须携带 `X-Demo-User`。
+
 ## 核心能力
 
 - **Profile CRUD** — 默认私密；未经明确授权绝不共享。
@@ -65,7 +69,7 @@ npm test
 npm run build
 ```
 
-31 个测试覆盖：跨用户访问拒绝、撤回授权导致方案过期、快照不可变性、fixture 回退标签、fixture 航班查询确定性和缺失数据、双出发地 planning API、不得推断未授权国籍、变化事件幂等、三人确认门槛、旧方案/确认拒绝、重复/乱序 callback 处理，以及错误状态不得创建预订。
+37 个测试覆盖：安全 demo identity discovery、按成员隔离的 trip list、member count/role/date serialization、安全 member display name、严格的 Profile partial update、统一 error/correlation contract、OpenAPI contract、跨用户访问拒绝、撤回授权导致方案过期、快照不可变性、fixture 回退标签、fixture 航班查询确定性和缺失数据、双出发地 planning API、不得推断未授权国籍、变化事件幂等、三人确认门槛、旧方案/确认拒绝、重复/乱序 callback 处理，以及错误状态不得创建预订。
 
 `npm test` 需要按“快速开始”完成本地 PostgreSQL migration；integration tests 会重置测试用 trip/session 数据。
 

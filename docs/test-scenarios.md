@@ -15,6 +15,38 @@
 
 ## HERO 测试
 
+### TS-H0 — Bootstrap demo identity and list only member trips
+
+**Stories:** H1, H2, S1
+
+**Objective:** Verify the frontend can select a safe seeded identity and load
+only that identity's private Profile and trip memberships.
+
+**Starting conditions:** Alice, Bob and Chen exist as seeded users; their trip
+memberships overlap only where explicitly configured.
+
+**Steps:**
+
+1. Call `GET /api/v1/demo/users` without `X-Demo-User`.
+2. Call `GET /api/v1/trips` separately as Alice, Bob and Chen.
+3. Attempt to read an Alice-only trip as Bob.
+4. Read and partially update Alice's Profile, omitting unchanged fields.
+5. Submit an unknown Profile field, a `null` value, a missing/unknown
+   `X-Demo-User`, and an unknown route.
+
+**Expected outcomes:**
+
+- Demo discovery returns exactly the three seeded UUID/`externalId`/`displayName`
+  tuples and no private Profile fields.
+- Each trip list contains only server-verified memberships, with stable order,
+  stored route/date fields, server-derived `memberCount`, and the caller's role.
+- Trip details expose safe member `displayName` but not other members' private
+  Profile data; unrelated access is denied.
+- Profile PUT preserves omitted fields, permits owner nationality edits, rejects
+  `null`/unknown/server-owned fields, and generates `updatedAt` server-side.
+- Every failure uses the normalized error body and a matching
+  `x-correlation-id` header.
+
 ### TS-H3a — Return deterministic normalized flight fixtures
 
 **Stories:** H3, P1

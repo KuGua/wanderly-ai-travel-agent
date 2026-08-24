@@ -113,6 +113,20 @@ Cross-cutting:
 - `buildAuthorizedData()` only includes explicitly granted fields
 - Passport number is **never** included in authorized data or logs
 - Nationality is only used for visa checks when explicitly shared
+- `GET /api/v1/demo/users` is the sole unauthenticated API bootstrap endpoint;
+  it exposes only seeded user UUID, `externalId`, and `displayName` so the demo
+  UI can select an identity and create member references.
+- Trip list/detail queries enforce membership in PostgreSQL before returning
+  trip or safe member presentation data.
+
+### HTTP Contract Boundary
+- Zod defines the canonical request/response contracts and supplies JSON Schema
+  to Fastify OpenAPI for the frontend client boundary.
+- Profile PUT is a strict partial update: omitted fields are preserved, `null`
+  and unknown fields are rejected, and server-owned identity/timestamp fields
+  are immutable.
+- API failures use one correlation-aware error envelope; the response
+  `x-correlation-id` header matches the body `correlationId`.
 
 ### Audit Trail
 - Every sensitive operation records an `audit_event` with:

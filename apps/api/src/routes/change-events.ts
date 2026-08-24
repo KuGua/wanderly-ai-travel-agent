@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { changeEventSchema } from "../types/schemas.js";
 import { processChangeEvent } from "../services/change-event-service.js";
 import { createRequestContext } from "../utils/context.js";
+import { ApiError } from "../middleware/error-handler.js";
 
 export async function changeEventRoutes(app: FastifyInstance) {
   // Submit change event
@@ -12,7 +13,7 @@ export async function changeEventRoutes(app: FastifyInstance) {
     
       
 
-  }, async (request, reply) => {
+  }, async (request) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = changeEventSchema.parse(request.body);
 
@@ -22,8 +23,7 @@ export async function changeEventRoutes(app: FastifyInstance) {
       .limit(1);
 
     if (membership.length === 0) {
-      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
-      return;
+      throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
 
     const result = await processChangeEvent({

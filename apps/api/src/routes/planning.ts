@@ -6,6 +6,7 @@ import { planRequestSchema } from "../types/schemas.js";
 import { createConstraintSnapshot, generatePlan, getLatestActivePlan } from "../services/planning-service.js";
 import { checkVisaReadiness } from "../services/visa-service.js";
 import { createRequestContext } from "../utils/context.js";
+import { ApiError } from "../middleware/error-handler.js";
 
 export async function planningRoutes(app: FastifyInstance) {
   // Generate plan for a trip
@@ -13,7 +14,7 @@ export async function planningRoutes(app: FastifyInstance) {
     
       
 
-  }, async (request, reply) => {
+  }, async (request) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = planRequestSchema.parse(request.body);
 
@@ -23,15 +24,13 @@ export async function planningRoutes(app: FastifyInstance) {
       .limit(1);
 
     if (membership.length === 0) {
-      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
-      return;
+      throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
 
     // Get trip details
     const [trip] = await db.select().from(sharedTrips).where(eq(sharedTrips.id, body.tripId)).limit(1);
     if (!trip) {
-      reply.code(404).send({ statusCode: 404, error: "Not Found", message: "Trip not found" });
-      return;
+      throw new ApiError(404, "Not Found", "Trip not found");
     }
 
     // Get all required members
@@ -81,7 +80,7 @@ export async function planningRoutes(app: FastifyInstance) {
   });
 
   // Get latest plan for a trip
-  app.get("/planning/:tripId/latest", async (request, reply) => {
+  app.get("/planning/:tripId/latest", async (request) => {
     const { tripId } = request.params as { tripId: string };
 
     // Verify membership
@@ -90,14 +89,12 @@ export async function planningRoutes(app: FastifyInstance) {
       .limit(1);
 
     if (membership.length === 0) {
-      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
-      return;
+      throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
 
     const plan = await getLatestActivePlan(tripId);
     if (!plan) {
-      reply.code(404).send({ statusCode: 404, error: "Not Found", message: "No active plan found" });
-      return;
+      throw new ApiError(404, "Not Found", "No active plan found");
     }
 
     return { plan };

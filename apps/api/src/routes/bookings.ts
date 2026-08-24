@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { bookingRequestSchema, sandboxCallbackSchema } from "../types/schemas.js";
 import { submitBooking, handleSandboxCallback } from "../services/booking-service.js";
 import { createRequestContext } from "../utils/context.js";
+import { ApiError } from "../middleware/error-handler.js";
 
 export async function bookingRoutes(app: FastifyInstance) {
   // Submit booking to sandbox
@@ -12,7 +13,7 @@ export async function bookingRoutes(app: FastifyInstance) {
     
       
 
-  }, async (request, reply) => {
+  }, async (request) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = bookingRequestSchema.parse(request.body);
 
@@ -22,8 +23,7 @@ export async function bookingRoutes(app: FastifyInstance) {
       .limit(1);
 
     if (membership.length === 0) {
-      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
-      return;
+      throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
 
     try {
@@ -40,11 +40,11 @@ export async function bookingRoutes(app: FastifyInstance) {
         ...result,
       };
     } catch (error: unknown) {
-      reply.code(400).send({
-        statusCode: 400,
-        error: "Bad Request",
-        message: error instanceof Error ? error.message : "Unknown booking error",
-      });
+      throw new ApiError(
+        400,
+        "Bad Request",
+        error instanceof Error ? error.message : "Unknown booking error",
+      );
     }
   });
 
@@ -53,7 +53,7 @@ export async function bookingRoutes(app: FastifyInstance) {
     
       
 
-  }, async (request, reply) => {
+  }, async (request) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = sandboxCallbackSchema.parse(request.body);
 
@@ -70,11 +70,11 @@ export async function bookingRoutes(app: FastifyInstance) {
         ...result,
       };
     } catch (error: unknown) {
-      reply.code(400).send({
-        statusCode: 400,
-        error: "Bad Request",
-        message: error instanceof Error ? error.message : "Unknown callback error",
-      });
+      throw new ApiError(
+        400,
+        "Bad Request",
+        error instanceof Error ? error.message : "Unknown callback error",
+      );
     }
   });
 }
