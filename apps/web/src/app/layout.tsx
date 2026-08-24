@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     default: "Wanderly",
     template: "%s · Wanderly",
   },
-  description: "A private AI-assisted travel planning workspace.",
+  description: "Explore the world and shape a private AI-assisted travel program.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

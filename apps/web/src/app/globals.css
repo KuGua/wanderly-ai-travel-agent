@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -131,5 +132,65 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+.wanderly-map-marker {
+  position: relative;
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border: 3px solid #0b5264;
+  border-radius: 999px 999px 999px 0;
+  background: #f6bd60;
+  color: #0b5264;
+  box-shadow: 0 8px 18px rgb(8 47 63 / 32%);
+  transform: rotate(-45deg);
+  cursor: pointer;
+}
+
+.wanderly-map-marker::after {
+  content: "✦";
+  font-size: 1rem;
+  font-weight: 900;
+  transform: rotate(45deg);
+}
+
+.wanderly-map-marker span {
+  position: absolute;
+  bottom: 2.9rem;
+  left: 50%;
+  padding: 0.3rem 0.55rem;
+  border-radius: 0.55rem;
+  background: rgb(11 82 100 / 92%);
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.wanderly-map-marker:focus-visible {
+  outline: 4px solid rgb(255 255 255 / 85%);
+  outline-offset: 3px;
+}
+
+.wanderly-map-marker--inspiration {
+  border-color: #ef7654;
+  background: #fffaf3;
+  color: #ef7654;
+}
+
+@media (max-width: 639px) {
+  main[data-drawer-open="false"] .maplibregl-ctrl-bottom-right {
+    bottom: 19rem;
+    right: 0.5rem;
+  }
+
+  main[data-drawer-open="true"] .maplibregl-ctrl-bottom-right {
+    bottom: calc(70dvh + 0.5rem);
+    right: 0.5rem;
   }
 }

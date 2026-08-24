@@ -1,6 +1,6 @@
 "use client";
 
-import { ListChecks, UserRound } from "lucide-react";
+import { Globe2, ListChecks, SlidersHorizontal, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -8,8 +8,9 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { href: "/home", label: "My program", icon: ListChecks },
-  { href: "/profile", label: "Travel preference", icon: UserRound },
+  { href: "/home", label: "Explore", icon: Globe2 },
+  { href: "/projects", label: "My program", icon: ListChecks },
+  { href: "/profile", label: "Travel preference", icon: SlidersHorizontal },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -29,7 +30,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <nav className="flex gap-1 md:mt-3 md:flex-col md:gap-[9px]" aria-label="Primary navigation">
             {navigation.map(({ href, label, icon: Icon }) => {
-              const active = pathname === href || (href === "/home" && pathname.startsWith("/trips/"));
+              const active = pathname === href || (href === "/projects" && pathname.startsWith("/trips/"));
               return (
                 <Link
                   key={href}

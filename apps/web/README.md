@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Wanderly Web
 
-## Getting Started
+Next.js 16 App Router frontend for the AI Travel Agent Hackathon. The current
+slice contains a globe-first Explore page, My program, Travel preference, a
+shared responsive rail, the unified API client, and contract-validated local
+fixtures.
 
-First, run the development server:
+## Routes
+
+- `/` redirects directly to `/home`.
+- `/home` is the interactive Explore globe.
+- `/projects` is My program and displays the confirmed Trip List fields only.
+- `/profile` is Travel preference and retains Profile GET/PUT editing.
+
+There is no seeded-user selector. Production identity comes from a normal
+Cognito sign-in (email/phone configuration belongs to the authentication
+integration). Protected API calls accept a Cognito access-token provider and
+send `Authorization: Bearer <token>`; clients never send a user ID. The account
+button is intentionally a neutral placeholder until the sign-in UI is wired.
+
+## Configuration
+
+Copy `.env.example` to `.env.local` and select one data mode:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
+NEXT_PUBLIC_DATA_MODE=fixture
+NEXT_PUBLIC_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/liberty
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+- `fixture` uses one deterministic, contract-validated example workspace and
+  visibly labels API-backed surfaces `Demo data`.
+- `api` calls Fastify at `${NEXT_PUBLIC_API_BASE_URL}/api/v1`. A signed-in
+  session must provide its Cognito access token to `HttpTravelApi`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+All responses pass through the same Zod schemas. `NEXT_PUBLIC_*` values are
+bundled into browser code and must never contain credentials, private Profile
+data, or a private map token.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+The default style is OpenFreeMap Liberty. It requires attribution, which the
+Explore map exposes through MapLibre's attribution control. OpenFreeMap does
+not provide an availability SLA, so deployment acceptance must include that
+risk or configure another approved provider. The Explore page keeps an
+accessible destination list if the map cannot load.
 
-## Learn More
+## Run locally
 
-To learn more about Next.js, take a look at the following resources:
+Keep Fastify on port 3000 and run Web on port 3001:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+npm install
+npm run dev -- -p 3001
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open `http://localhost:3001`; it redirects to the globe.
 
-## Deploy on Vercel
+## Validation
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Current boundary
+
+Trip cards contain only fields supported by `GET /api/v1/trips`. The Trip
+detail route is an explicit placeholder. Destination suggestions are local UI
+fixtures, not live travel claims. Agent chat, arbitrary-place enrichment,
+consent, planning, visa/readiness, replan, confirmation, booking, Profile
+creation/deletion, and the Cognito sign-in screen remain separate slices.
+`PUT /profiles/me` cannot create a missing Profile or clear nullable values
+under the current backend contract.
