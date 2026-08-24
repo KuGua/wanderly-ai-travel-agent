@@ -12,11 +12,14 @@ export interface ModelGateway {
     stays: StayOffer[];
     ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;
+    signal?: AbortSignal;
+    ctx?: { correlationId: string };
   }): Promise<Record<string, unknown>>;
 
   explainPlanDiff(params: {
     oldPlan: Record<string, unknown>;
     newPlan: Record<string, unknown>;
+    signal?: AbortSignal;
   }): Promise<PlanDiff>;
 }
 

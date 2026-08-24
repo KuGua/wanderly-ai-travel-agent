@@ -14,6 +14,8 @@ import { changeEventRoutes } from "./routes/change-events.js";
 import { demoUserRoutes } from "./routes/demo-users.js";
 import { createRequestContext } from "./utils/context.js";
 import { ApiError } from "./middleware/error-handler.js";
+import { personalTravelAgent } from "./agents/personal-travel-agent.js";
+import { sharedTripAgent } from "./agents/shared-trip-agent.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -75,6 +77,11 @@ export async function buildApp() {
   await app.register(confirmationRoutes, { prefix: "/api/v1" });
   await app.register(bookingRoutes, { prefix: "/api/v1" });
   await app.register(changeEventRoutes, { prefix: "/api/v1" });
+
+  // Register agents (Skills) — must happen before the server accepts traffic so
+  // that handlers can call skill-registry.invokeSkill without races.
+  personalTravelAgent.register();
+  sharedTripAgent.register();
 
   return app;
 }

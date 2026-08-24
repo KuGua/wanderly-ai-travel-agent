@@ -3,7 +3,8 @@ import { constraintSnapshots, itineraryPlans, sourceEvidence, providerOffers } f
 import { eq, and, desc } from "drizzle-orm";
 import { buildAuthorizedData } from "./consent-service.js";
 import { FixtureFlightProvider, FixtureStayProvider, FixtureGroundProvider } from "../providers/fixture-provider.js";
-import { MockModelGateway } from "../providers/model-gateway.js";
+import { createModelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
+import type { ModelGateway } from "../providers/model-gateway.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 import type { FlightOffer, StayOffer, GroundOffer } from "../types/domain.js";
@@ -11,7 +12,12 @@ import type { FlightOffer, StayOffer, GroundOffer } from "../types/domain.js";
 const flightProvider = new FixtureFlightProvider();
 const stayProvider = new FixtureStayProvider();
 const groundProvider = new FixtureGroundProvider();
-const modelGateway = new MockModelGateway();
+let modelGateway: ModelGateway = createModelGateway();
+
+export function __setModelGateway(gateway: ModelGateway): void {
+  modelGateway = gateway;
+  __setModelGatewayForTests(gateway);
+}
 
 export class PlanningDataUnavailableError extends Error {
   readonly statusCode = 422;

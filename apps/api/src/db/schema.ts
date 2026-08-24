@@ -23,6 +23,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "CONFIRMATION_SET",
   "BOOKING_SUBMIT", "BOOKING_RESULT",
   "CHANGE_EVENT",
+  "SKILL_INVOKE", "AGENT_RUN",
 ]);
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -250,4 +251,31 @@ export const outboxEvents = pgTable("outbox_events", {
   status: outboxStatusEnum("status").default("PENDING").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   processedAt: timestamp("processed_at", { withTimezone: true }),
+});
+
+// ─── Agent Runs (LLM gateway observability) ─────────────────────────────────
+
+export const agentRuns = pgTable("agent_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id").notNull(),
+  skillName: varchar("skill_name", { length: 128 }).notNull(),
+  agentName: varchar("agent_name", { length: 32 }).notNull(),
+  modelName: varchar("model_name", { length: 128 }).notNull(),
+  promptVersion: varchar("prompt_version", { length: 64 }).notNull(),
+  outputHash: varchar("output_hash", { length: 64 }).notNull(),
+  latencyMs: integer("latency_ms").notNull(),
+  status: varchar("status", { length: 32 }).notNull(),
+  errorCode: varchar("error_code", { length: 64 }),
+  tokens: jsonb("tokens").$type<{ prompt: number; completion: number; total: number } | null>(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ─── Prompt Versions ────────────────────────────────────────────────────────
+
+export const promptVersions = pgTable("prompt_versions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 128 }).notNull(),
+  version: varchar("version", { length: 64 }).notNull(),
+  templateHash: varchar("template_hash", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
