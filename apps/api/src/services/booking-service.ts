@@ -1,6 +1,6 @@
 import { db } from "../db/database.js";
 import { bookingExecutions, itineraryPlans } from "../db/schema.js";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { checkAllConfirmed } from "./confirmation-service.js";
 import { checkIdempotency, recordIdempotency } from "./idempotency-service.js";
 import { recordAudit } from "./audit-service.js";

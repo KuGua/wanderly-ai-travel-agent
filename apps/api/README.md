@@ -48,7 +48,7 @@ curl -H "X-Demo-User: alice" http://localhost:3000/api/v1/profiles/me
 - **共享行程管理** — 创建行程、邀请成员、管理目的地。
 - **基于授权的数据共享** — 按字段、范围和行程授予/撤回授权。
 - **约束快照** — 每轮规划使用不可变的已授权数据快照。
-- **Fixture 提供方** — 所有航班/住宿/地面交通/签证数据均标记为 `Demo data`。
+- **Fixture 提供方** — 所有航班/住宿/地面交通/签证数据均标记为 `Demo data`；fixture 具有显式版本和固定采集时间，航班查询会按路线和请求日期范围过滤。
 - **入境准备** — 每位成员各有清单；国籍未共享时显示“请向官方来源核验”。
 - **方案版本管理** — 生成、过期、带差异的重规划。
 - **三人确认** — 三位必需成员全部确认后，才可进行预订沙箱。
@@ -59,10 +59,15 @@ curl -H "X-Demo-User: alice" http://localhost:3000/api/v1/profiles/me
 ## 测试
 
 ```bash
+npm run typecheck
+npm run lint
 npm test
+npm run build
 ```
 
-20 个测试覆盖：跨用户访问拒绝、撤回授权导致方案过期、快照不可变性、fixture 回退标签、不得推断未授权国籍、变化事件幂等、三人确认门槛、旧方案/确认拒绝、重复/乱序 callback 处理，以及错误状态不得创建预订。
+31 个测试覆盖：跨用户访问拒绝、撤回授权导致方案过期、快照不可变性、fixture 回退标签、fixture 航班查询确定性和缺失数据、双出发地 planning API、不得推断未授权国籍、变化事件幂等、三人确认门槛、旧方案/确认拒绝、重复/乱序 callback 处理，以及错误状态不得创建预订。
+
+`npm test` 需要按“快速开始”完成本地 PostgreSQL migration；integration tests 会重置测试用 trip/session 数据。
 
 ## 技术栈
 

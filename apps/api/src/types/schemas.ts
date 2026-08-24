@@ -68,13 +68,14 @@ export const changeEventSchema = z.object({
   tripId: uuidSchema,
   eventId: uuidSchema,
   eventType: z.enum(["PRICE_CHANGE", "INVENTORY_CHANGE", "DEPARTURE_RESTRICTION"]),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 // ─── Confirmation ───────────────────────────────────────────────────────────
 
 export const confirmPlanSchema = z.object({
   planId: uuidSchema,
+  tripId: uuidSchema,
   decision: z.enum(["CONFIRMED", "NEEDS_CHANGES"]),
 });
 
@@ -89,7 +90,7 @@ export const bookingRequestSchema = z.object({
 export const sandboxCallbackSchema = z.object({
   orchestrationRequestId: uuidSchema,
   eventId: uuidSchema,
-  serviceResults: z.record(z.object({
+  serviceResults: z.record(z.string(), z.object({
     status: z.enum(["SUCCESS", "FAILED"]),
     reference: z.string().optional(),
     error: z.string().optional(),

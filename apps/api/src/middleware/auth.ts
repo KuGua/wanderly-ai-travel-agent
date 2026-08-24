@@ -49,7 +49,7 @@ export async function demoAuthMiddleware(request: FastifyRequest, reply: Fastify
   }
 
   // Attach user to request
-  (request as any).user = {
+  request.user = {
     id: userRecords[0].id,
     externalId: userRecords[0].externalId,
     displayName: userRecords[0].displayName,

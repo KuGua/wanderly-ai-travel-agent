@@ -13,7 +13,7 @@ export async function bookingRoutes(app: FastifyInstance) {
       
 
   }, async (request, reply) => {
-    const ctx = createRequestContext(request.user.id);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = bookingRequestSchema.parse(request.body);
 
     // Verify membership
@@ -39,11 +39,11 @@ export async function bookingRoutes(app: FastifyInstance) {
         message: result.isDuplicate ? "Duplicate request — returning cached result" : "Booking submitted",
         ...result,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       reply.code(400).send({
         statusCode: 400,
         error: "Bad Request",
-        message: error.message,
+        message: error instanceof Error ? error.message : "Unknown booking error",
       });
     }
   });
@@ -54,7 +54,7 @@ export async function bookingRoutes(app: FastifyInstance) {
       
 
   }, async (request, reply) => {
-    const ctx = createRequestContext(request.user.id);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = sandboxCallbackSchema.parse(request.body);
 
     try {
@@ -69,11 +69,11 @@ export async function bookingRoutes(app: FastifyInstance) {
         message: result.isDuplicate ? "Duplicate callback — ignored" : "Callback processed",
         ...result,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       reply.code(400).send({
         statusCode: 400,
         error: "Bad Request",
-        message: error.message,
+        message: error instanceof Error ? error.message : "Unknown callback error",
       });
     }
   });

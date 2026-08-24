@@ -1,6 +1,11 @@
 import type { FlightOffer, StayOffer, GroundOffer, VisaChecklistItem } from "../types/domain.js";
 
-const NOW = new Date().toISOString();
+/**
+ * Stable provenance for the fixture dataset. Bump the version whenever fixture
+ * facts change so recorded demo results can be traced to an exact dataset.
+ */
+export const FIXTURE_VERSION = "2026-08-23.v1";
+export const FIXTURE_CAPTURED_AT = "2026-08-23T00:00:00.000Z";
 
 // ─── Demo Users ─────────────────────────────────────────────────────────────
 
@@ -52,40 +57,40 @@ export const DEMO_DESTINATIONS = [
 
 export const FLIGHT_FIXTURES: FlightOffer[] = [
   // SFO -> Tokyo
-  { id: "flt-sfo-tyo-01", origin: "San Francisco", destination: "Tokyo", departureTime: "2025-08-01T11:00:00Z", arrivalTime: "2025-08-02T15:00:00Z", priceUsd: 850, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "flt-sfo-tyo-02", origin: "San Francisco", destination: "Tokyo", departureTime: "2025-08-01T23:30:00Z", arrivalTime: "2025-08-02T04:00:00Z", priceUsd: 680, isRedEye: true, airline: "Demo Air", source: "Demo data", capturedAt: NOW, isDemo: true },
+  { id: "flt-sfo-tyo-01", origin: "San Francisco", destination: "Tokyo", departureTime: "2025-08-01T11:00:00Z", arrivalTime: "2025-08-02T15:00:00Z", priceUsd: 850, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "flt-sfo-tyo-02", origin: "San Francisco", destination: "Tokyo", departureTime: "2025-08-01T23:30:00Z", arrivalTime: "2025-08-02T04:00:00Z", priceUsd: 680, isRedEye: true, airline: "Demo Air", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
   // SFO -> Bangkok
-  { id: "flt-sfo-bkk-01", origin: "San Francisco", destination: "Bangkok", departureTime: "2025-08-01T10:00:00Z", arrivalTime: "2025-08-02T18:00:00Z", priceUsd: 720, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: NOW, isDemo: true },
+  { id: "flt-sfo-bkk-01", origin: "San Francisco", destination: "Bangkok", departureTime: "2025-08-01T10:00:00Z", arrivalTime: "2025-08-02T18:00:00Z", priceUsd: 720, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
   // SFO -> Seoul
-  { id: "flt-sfo-icn-01", origin: "San Francisco", destination: "Seoul", departureTime: "2025-08-01T12:00:00Z", arrivalTime: "2025-08-02T17:00:00Z", priceUsd: 780, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: NOW, isDemo: true },
+  { id: "flt-sfo-icn-01", origin: "San Francisco", destination: "Seoul", departureTime: "2025-08-01T12:00:00Z", arrivalTime: "2025-08-02T17:00:00Z", priceUsd: 780, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
   // Shanghai -> Tokyo
-  { id: "flt-sha-tyo-01", origin: "Shanghai", destination: "Tokyo", departureTime: "2025-08-05T09:00:00Z", arrivalTime: "2025-08-05T13:00:00Z", priceUsd: 350, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: NOW, isDemo: true },
+  { id: "flt-sha-tyo-01", origin: "Shanghai", destination: "Tokyo", departureTime: "2025-08-05T09:00:00Z", arrivalTime: "2025-08-05T13:00:00Z", priceUsd: 350, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
   // Shanghai -> Bangkok
-  { id: "flt-sha-bkk-01", origin: "Shanghai", destination: "Bangkok", departureTime: "2025-08-05T08:00:00Z", arrivalTime: "2025-08-05T12:00:00Z", priceUsd: 280, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: NOW, isDemo: true },
+  { id: "flt-sha-bkk-01", origin: "Shanghai", destination: "Bangkok", departureTime: "2025-08-05T08:00:00Z", arrivalTime: "2025-08-05T12:00:00Z", priceUsd: 280, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
   // Shanghai -> Seoul
-  { id: "flt-sha-icn-01", origin: "Shanghai", destination: "Seoul", departureTime: "2025-08-05T10:00:00Z", arrivalTime: "2025-08-05T13:00:00Z", priceUsd: 250, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: NOW, isDemo: true },
+  { id: "flt-sha-icn-01", origin: "Shanghai", destination: "Seoul", departureTime: "2025-08-05T10:00:00Z", arrivalTime: "2025-08-05T13:00:00Z", priceUsd: 250, isRedEye: false, airline: "Demo Air", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
 ];
 
 // ─── Stay Fixtures ──────────────────────────────────────────────────────────
 
 export const STAY_FIXTURES: StayOffer[] = [
-  { id: "stay-tyo-01", destination: "Tokyo", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 180, style: "city_center", location: "Shinjuku", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "stay-tyo-02", destination: "Tokyo", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 90, style: "budget", location: "Asakusa", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "stay-bkk-01", destination: "Bangkok", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 120, style: "city_center", location: "Sukhumvit", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "stay-bkk-02", destination: "Bangkok", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 45, style: "budget", location: "Khao San Road", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "stay-icn-01", destination: "Seoul", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 150, style: "city_center", location: "Myeongdong", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "stay-icn-02", destination: "Seoul", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 65, style: "budget", location: "Hongdae", source: "Demo data", capturedAt: NOW, isDemo: true },
+  { id: "stay-tyo-01", destination: "Tokyo", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 180, style: "city_center", location: "Shinjuku", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "stay-tyo-02", destination: "Tokyo", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 90, style: "budget", location: "Asakusa", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "stay-bkk-01", destination: "Bangkok", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 120, style: "city_center", location: "Sukhumvit", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "stay-bkk-02", destination: "Bangkok", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 45, style: "budget", location: "Khao San Road", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "stay-icn-01", destination: "Seoul", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 150, style: "city_center", location: "Myeongdong", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "stay-icn-02", destination: "Seoul", checkIn: "2025-08-02", checkOut: "2025-08-07", pricePerNightUsd: 65, style: "budget", location: "Hongdae", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
 ];
 
 // ─── Ground Transport Fixtures ──────────────────────────────────────────────
 
 export const GROUND_FIXTURES: GroundOffer[] = [
-  { id: "gnd-tyo-01", destination: "Tokyo", type: "airport_transfer", priceUsd: 35, provider: "Demo Transfer", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "gnd-tyo-02", destination: "Tokyo", type: "local_transport", priceUsd: 15, provider: "Demo Transit", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "gnd-bkk-01", destination: "Bangkok", type: "airport_transfer", priceUsd: 12, provider: "Demo Transfer", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "gnd-bkk-02", destination: "Bangkok", type: "local_transport", priceUsd: 5, provider: "Demo Transit", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "gnd-icn-01", destination: "Seoul", type: "airport_transfer", priceUsd: 25, provider: "Demo Transfer", source: "Demo data", capturedAt: NOW, isDemo: true },
-  { id: "gnd-icn-02", destination: "Seoul", type: "local_transport", priceUsd: 10, provider: "Demo Transit", source: "Demo data", capturedAt: NOW, isDemo: true },
+  { id: "gnd-tyo-01", destination: "Tokyo", type: "airport_transfer", priceUsd: 35, provider: "Demo Transfer", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "gnd-tyo-02", destination: "Tokyo", type: "local_transport", priceUsd: 15, provider: "Demo Transit", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "gnd-bkk-01", destination: "Bangkok", type: "airport_transfer", priceUsd: 12, provider: "Demo Transfer", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "gnd-bkk-02", destination: "Bangkok", type: "local_transport", priceUsd: 5, provider: "Demo Transit", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "gnd-icn-01", destination: "Seoul", type: "airport_transfer", priceUsd: 25, provider: "Demo Transfer", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
+  { id: "gnd-icn-02", destination: "Seoul", type: "local_transport", priceUsd: 10, provider: "Demo Transit", source: "Demo data", capturedAt: FIXTURE_CAPTURED_AT, fixtureVersion: FIXTURE_VERSION, isDemo: true },
 ];
 
 // ─── Visa Readiness Fixtures ────────────────────────────────────────────────

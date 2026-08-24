@@ -9,7 +9,7 @@ import { recordAudit } from "../services/audit-service.js";
 export async function profileRoutes(app: FastifyInstance) {
   // Create profile
   app.post("/profiles", async (request, reply) => {
-    const ctx = createRequestContext(request.user.id);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = createProfileSchema.parse(request.body);
 
     const [profile] = await db.insert(userProfiles).values({
@@ -38,7 +38,8 @@ export async function profileRoutes(app: FastifyInstance) {
     }
 
     // Redact sensitive fields
-    const { passportNumber, ...safeProfile } = profiles[0];
+    const safeProfile: Partial<(typeof profiles)[number]> = { ...profiles[0] };
+    delete safeProfile.passportNumber;
     return { profile: safeProfile };
   });
 
@@ -48,7 +49,7 @@ export async function profileRoutes(app: FastifyInstance) {
       
 
   }, async (request, reply) => {
-    const ctx = createRequestContext(request.user.id);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = updateProfileSchema.parse(request.body);
 
     const existing = await db.select().from(userProfiles)
@@ -76,7 +77,7 @@ export async function profileRoutes(app: FastifyInstance) {
 
   // Delete my profile
   app.delete("/profiles/me", async (request) => {
-    const ctx = createRequestContext(request.user.id);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
 
     await db.delete(userProfiles).where(eq(userProfiles.userId, request.user.id));
 

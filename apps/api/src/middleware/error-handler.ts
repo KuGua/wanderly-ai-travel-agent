@@ -2,7 +2,7 @@ import type { FastifyError, FastifyRequest, FastifyReply } from "fastify";
 import { logger } from "../utils/logger.js";
 
 export async function errorHandler(error: FastifyError, request: FastifyRequest, reply: FastifyReply) {
-  const correlationId = (request as any).correlationId ?? "unknown";
+  const correlationId = request.correlationId ?? "unknown";
 
   logger.error({
     err: error,

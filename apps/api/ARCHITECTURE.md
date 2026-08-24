@@ -52,6 +52,10 @@ Unified interfaces for travel data:
 **Rule**: Any live provider failure must fall back to fixture with `Demo data` marker.
 **Never**: Fabricate real-time prices or inventory.
 
+Fixture datasets expose a stable version and fixed `capturedAt` value. Provider
+queries return copies of matching records and apply their documented filters;
+an unsupported route or date range returns no offers rather than fabricated data.
+
 ### 3. Business Services (`src/services/`)
 
 Core business logic — NOT in LLM/Agent:

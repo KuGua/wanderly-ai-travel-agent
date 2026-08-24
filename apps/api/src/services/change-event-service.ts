@@ -1,7 +1,6 @@
 import { db } from "../db/database.js";
-import { outboxEvents, itineraryPlans, tripMembers } from "../db/schema.js";
+import { outboxEvents, tripMembers } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { checkIdempotency, recordIdempotency } from "./idempotency-service.js";
 import { markPlanStale, getLatestActivePlan, createConstraintSnapshot, generatePlan } from "./planning-service.js";
 import { markConfirmationsStale } from "./confirmation-service.js";

@@ -13,7 +13,7 @@ export async function changeEventRoutes(app: FastifyInstance) {
       
 
   }, async (request, reply) => {
-    const ctx = createRequestContext(request.user.id);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = changeEventSchema.parse(request.body);
 
     // Verify membership

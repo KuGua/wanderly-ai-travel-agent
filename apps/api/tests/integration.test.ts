@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import type { FastifyInstance } from "fastify";
+import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { users, userProfiles, sharedTrips, tripMembers, consentGrants, constraintSnapshots, itineraryPlans, memberConfirmations, bookingExecutions, idempotencyRecords, auditEvents, providerOffers, sourceEvidence, visaReadinessChecks, outboxEvents, preferenceFacts, destinationCandidates } from "../src/db/schema.js";
-import { eq, and } from "drizzle-orm";
+import { users, userProfiles, sharedTrips, tripMembers, consentGrants, constraintSnapshots, itineraryPlans, memberConfirmations, bookingExecutions, idempotencyRecords, auditEvents, providerOffers, sourceEvidence, visaReadinessChecks, preferenceFacts, destinationCandidates } from "../src/db/schema.js";
+import { eq } from "drizzle-orm";
 import { grantConsent, revokeConsent, getActiveConsents, buildAuthorizedData } from "../src/services/consent-service.js";
 import { createConstraintSnapshot, generatePlan, markPlanStale, getLatestActivePlan } from "../src/services/planning-service.js";
 import { setConfirmation, checkAllConfirmed, markConfirmationsStale } from "../src/services/confirmation-service.js";
@@ -15,8 +17,12 @@ let aliceId: string;
 let bobId: string;
 let chenId: string;
 let tripId: string;
+let app: FastifyInstance;
 
 beforeAll(async () => {
+  app = await buildApp();
+  await app.ready();
+
   // Get or create demo users
   const aliceRecords = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
   const bobRecords = await db.select().from(users).where(eq(users.externalId, "bob")).limit(1);
@@ -42,6 +48,10 @@ beforeAll(async () => {
   } else {
     chenId = chenRecords[0].id;
   }
+});
+
+afterAll(async () => {
+  await app.close();
 });
 
 beforeEach(async () => {
@@ -232,6 +242,72 @@ describe("Constraint Snapshot Immutability", () => {
 
     const [plan] = await db.select().from(itineraryPlans).where(eq(itineraryPlans.id, planId)).limit(1);
     expect(plan.snapshotId).toBe(snapshotId);
+  });
+});
+
+describe("Fixture-backed Planning API", () => {
+  it("returns a complete two-origin plan and persists fixture provenance", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/planning/generate",
+      headers: { "x-demo-user": "alice" },
+      payload: { tripId },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    const flights = body.plan.flights as Array<Record<string, unknown>>;
+    expect(flights.map(flight => flight.origin).sort()).toEqual(["San Francisco", "Shanghai"]);
+
+    const offers = await db.select().from(providerOffers).where(eq(providerOffers.planId, body.planId));
+    const evidence = await db.select().from(sourceEvidence).where(eq(sourceEvidence.planId, body.planId));
+
+    expect(new Set(offers.map(offer => offer.category))).toEqual(new Set(["flight", "stay", "ground"]));
+    expect(offers.every(offer => offer.isDemo)).toBe(true);
+    expect(new Set(evidence.map(item => item.category))).toEqual(new Set(["flight", "stay", "ground"]));
+    expect(evidence.every(item =>
+      (item.metadata as Record<string, unknown>).fixtureVersion === "2026-08-23.v1"
+    )).toBe(true);
+  });
+
+  it("returns the same normalized plan for repeated fixture requests", async () => {
+    const request = {
+      method: "POST" as const,
+      url: "/api/v1/planning/generate",
+      headers: { "x-demo-user": "alice" },
+      payload: { tripId },
+    };
+
+    const first = await app.inject(request);
+    const second = await app.inject(request);
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(second.json().plan).toEqual(first.json().plan);
+  });
+
+  it("returns a typed failure and creates no plan for an unsupported fixture route", async () => {
+    await db.update(sharedTrips)
+      .set({ destinationCandidates: ["Singapore"] })
+      .where(eq(sharedTrips.id, tripId));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/planning/generate",
+      headers: { "x-demo-user": "alice" },
+      payload: { tripId },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({
+      error: "PlanningDataUnavailableError",
+      message: expect.stringContaining("flight:San Francisco"),
+      correlationId: expect.any(String),
+    });
+    expect(response.headers["x-correlation-id"]).toBe(response.json().correlationId);
+
+    const plans = await db.select().from(itineraryPlans).where(eq(itineraryPlans.tripId, tripId));
+    expect(plans).toEqual([]);
   });
 });
 

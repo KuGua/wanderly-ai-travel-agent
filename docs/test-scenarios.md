@@ -15,6 +15,27 @@
 
 ## HERO 测试
 
+### TS-H3a — Return deterministic normalized flight fixtures
+
+**Stories:** H3, P1
+**Objective:** Verify the fixture-backed `FlightProvider` respects its normalized search contract without fabricating availability.
+
+**Starting conditions:** Versioned Flight fixtures exist for configured Hero routes and dates.
+
+**Steps:**
+
+1. Search the same supported origin, destination and date range twice under a snapshot ID.
+2. Inspect source, capture time, price and normalized route fields.
+3. Search a date range that excludes the configured departure.
+4. Search an unsupported route.
+
+**Expected outcomes:**
+
+- Repeated supported searches return identical offers.
+- Every result is marked `Demo data` and carries the fixture capture time.
+- Results outside the requested date range are excluded.
+- Unsupported searches return no offers and never fabricate inventory or price.
+
 ### TS-H1 — Save, reuse and override a private travel profile
 
 **Stories:** H1  

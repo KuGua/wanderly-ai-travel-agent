@@ -14,7 +14,7 @@ export async function planningRoutes(app: FastifyInstance) {
       
 
   }, async (request, reply) => {
-    const ctx = createRequestContext(request.user.id);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = planRequestSchema.parse(request.body);
 
     // Verify membership

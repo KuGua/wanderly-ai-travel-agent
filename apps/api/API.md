@@ -206,6 +206,21 @@ Generate a new plan for a trip.
 ```
 
 > All flight/stay/ground data includes `source: "Demo data"` and `isDemo: true`.
+> Fixture offers also include a stable `capturedAt` and `fixtureVersion`. The
+> response includes one selected flight per configured departure origin.
+
+**Unsupported fixture response**: `422`
+
+```json
+{
+  "statusCode": 422,
+  "error": "PlanningDataUnavailableError",
+  "message": "Planning data unavailable: flight:Singapore",
+  "correlationId": "uuid"
+}
+```
+
+No plan is created when a required origin, stay, or ground fixture is missing.
 
 ### `GET /planning/:tripId/latest`
 Get the latest active plan for a trip.
