@@ -69,6 +69,14 @@ npm test
 npm run build
 ```
 
+如只需验证 lockfile 与依赖解析、且不希望执行 `postinstall` 或访问数据库，可运行：
+
+```bash
+npm ci --dry-run --ignore-scripts
+```
+
+安装脚本许可由 `package.json` 的 `allowScripts` 按确切版本维护。更新带安装脚本的依赖后，先运行 `npm approve-scripts --allow-scripts-pending` 审核新增项；不要使用不经审核的 `--all`。生产依赖安全检查使用 `npm audit --omit=dev`。当前 Drizzle Kit 的开发依赖链会触发 esbuild 的开发服务器审计项，npm 提供的自动修复会将 Drizzle Kit 降级到不兼容版本，因此不得直接运行 `npm audit fix --force`。
+
 37 个测试覆盖：安全 demo identity discovery、按成员隔离的 trip list、member count/role/date serialization、安全 member display name、严格的 Profile partial update、统一 error/correlation contract、OpenAPI contract、跨用户访问拒绝、撤回授权导致方案过期、快照不可变性、fixture 回退标签、fixture 航班查询确定性和缺失数据、双出发地 planning API、不得推断未授权国籍、变化事件幂等、三人确认门槛、旧方案/确认拒绝、重复/乱序 callback 处理，以及错误状态不得创建预订。
 
 `npm test` 需要按“快速开始”完成本地 PostgreSQL migration；integration tests 会重置测试用 trip/session 数据。

@@ -2,14 +2,14 @@ import { createHash } from "node:crypto";
 import type { AgentKind, Skill, SkillContext, SkillInvocationRecord, SkillScope } from "./contracts.js";
 import { SkillError } from "./errors.js";
 import { recordAudit } from "../services/audit-service.js";
+import { metrics } from "../observability/metrics.js";
 
 const skillsByName = new Map<string, Skill<unknown, unknown>>();
-const lastUsedVersion = new Map<string, string>();
+const dedupeCache = new Map<string, { outputHash: string; ts: number }>();
 
-const FORBIDDEN_PERSONAL_SCOPES: readonly SkillScope[] = [
-  "bookings",
-  "plan:write:propose",
-];
+const FORBIDDEN_PERSONAL_SCOPES: readonly SkillScope[] = ["bookings", "plan:write:propose"];
+const DEFAULT_DEDUPE_TTL_MS = Number(process.env.SKILL_DEDUPE_TTL_MS ?? 60_000);
+const DEDUPE_MAX_ENTRIES = 256;
 
 function canonicalize(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -57,6 +57,14 @@ export function listSkills(): Skill<unknown, unknown>[] {
   return [...skillsByName.values()];
 }
 
+function recordCacheEntry(key: string, outputHash: string): void {
+  dedupeCache.set(key, { outputHash, ts: Date.now() });
+  if (dedupeCache.size > DEDUPE_MAX_ENTRIES) {
+    const oldest = dedupeCache.keys().next().value;
+    if (oldest) dedupeCache.delete(oldest);
+  }
+}
+
 export async function invokeSkill<I, O>(
   name: string,
   ctx: SkillContext,
@@ -71,6 +79,7 @@ export async function invokeSkill<I, O>(
   try {
     ctx.policyGate.requireScope(skill.allowedTools);
   } catch (err) {
+    metrics.inc("plan_validation_failures_total", { reason: "tool_not_allowed" });
     throw new SkillError("TOOL_NOT_ALLOWED", `Scope rejected for ${name}: ${(err as Error).message}`);
   }
 
@@ -85,38 +94,43 @@ export async function invokeSkill<I, O>(
   const timer = setTimeout(() => controller.abort(), skill.timeoutMs);
   const start = Date.now();
 
-  let output: O;
+  let output: unknown;
   try {
     output = await skill.handler(ctx, input, controller.signal);
   } catch (err) {
     clearTimeout(timer);
     if ((err as { name?: string }).name === "AbortError") {
+      metrics.inc("agent_skill_runs_total", { agent: skill.agent, skill: skill.name, result: "timeout" });
       throw new SkillError("TIMEOUT", `Skill ${name} timed out after ${skill.timeoutMs}ms`);
     }
     throw err;
   }
   clearTimeout(timer);
 
-  let parsed: O;
+  let validated: O;
   try {
-    parsed = skill.output.parse(output) as O;
+    validated = skill.output.parse(output) as O;
   } catch (err) {
+    metrics.inc("agent_skill_runs_total", { agent: skill.agent, skill: skill.name, result: "output_invalid" });
     throw new SkillError("OUTPUT_INVALID", `Output validation failed for ${name}: ${(err as Error).message}`);
   }
 
-  const previousVersion = lastUsedVersion.get(skill.name);
-  if (previousVersion === skill.version) {
+  const outputHash = hashOutput(validated);
+  const cacheKey = `${skill.name}:${skill.version}`;
+  const prev = dedupeCache.get(cacheKey);
+  if (prev && prev.outputHash === outputHash && Date.now() - prev.ts < DEFAULT_DEDUPE_TTL_MS) {
+    metrics.inc("agent_skill_runs_total", { agent: skill.agent, skill: skill.name, result: "stale_reuse" });
     throw new SkillError(
       "OUTPUT_INVALID",
-      `Skill ${skill.name} version ${skill.version} was already invoked in this process (stale_version_reuse)`,
+      `Skill ${skill.name} version ${skill.version} produced the same output within ${DEFAULT_DEDUPE_TTL_MS}ms (stale_version_reuse)`,
     );
   }
-  lastUsedVersion.set(skill.name, skill.version);
+  recordCacheEntry(cacheKey, outputHash);
 
   const record: SkillInvocationRecord = {
     skillName: skill.name,
     version: skill.version,
-    outputHash: hashOutput(parsed),
+    outputHash,
     latencyMs: Date.now() - start,
     status: "SUCCESS",
   };
@@ -126,11 +140,12 @@ export async function invokeSkill<I, O>(
     action: "SKILL_INVOKE",
     summary: record as unknown as Record<string, unknown>,
   });
+  metrics.inc("agent_skill_runs_total", { agent: skill.agent, skill: skill.name, result: "success" });
 
-  return parsed;
+  return validated;
 }
 
 export function __resetRegistryForTests(): void {
   skillsByName.clear();
-  lastUsedVersion.clear();
+  dedupeCache.clear();
 }

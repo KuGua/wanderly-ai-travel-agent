@@ -3,19 +3,17 @@ import { constraintSnapshots, itineraryPlans, sourceEvidence, providerOffers } f
 import { eq, and, desc } from "drizzle-orm";
 import { buildAuthorizedData } from "./consent-service.js";
 import { FixtureFlightProvider, FixtureStayProvider, FixtureGroundProvider } from "../providers/fixture-provider.js";
-import { createModelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
+import { __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
-import type { FlightOffer, StayOffer, GroundOffer } from "../types/domain.js";
+import type { ConstraintSnapshotData, FlightOffer, StayOffer, GroundOffer } from "../types/domain.js";
 
 const flightProvider = new FixtureFlightProvider();
 const stayProvider = new FixtureStayProvider();
 const groundProvider = new FixtureGroundProvider();
-let modelGateway: ModelGateway = createModelGateway();
 
 export function __setModelGateway(gateway: ModelGateway): void {
-  modelGateway = gateway;
   __setModelGatewayForTests(gateway);
 }
 
@@ -90,8 +88,9 @@ export async function createConstraintSnapshot(params: {
 }
 
 /**
- * Generate a new plan based on the constraint snapshot.
- * All provider calls reference the same snapshot ID.
+ * Generate a new plan by routing through the plan.comparison Skill (LLM gateway
+ * + inline validator). Provider offers are collected before the Skill call so
+ * provenance rows can be persisted with the resulting plan.
  */
 export async function generatePlan(params: {
   ctx: RequestContext;
@@ -100,25 +99,13 @@ export async function generatePlan(params: {
   destination: string;
   memberIds: string[];
 }): Promise<string> {
-  // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
     .where(eq(constraintSnapshots.id, params.snapshotId))
     .limit(1);
 
   if (!snapshot) throw new Error("Snapshot not found");
 
-  // Get current plan version for this trip
-  const existingPlans = await db.select().from(itineraryPlans)
-    .where(eq(itineraryPlans.tripId, params.tripId))
-    .orderBy(itineraryPlans.version);
-  
-  const nextVersion = existingPlans.length > 0 ? Math.max(...existingPlans.map(p => p.version)) + 1 : 1;
-
-  // Fetch offers from all providers (all reference same snapshotId)
   const allFlights: FlightOffer[] = [];
-  const allStays: StayOffer[] = [];
-  const allGround: GroundOffer[] = [];
-
   for (const departureCity of snapshot.departureCities) {
     const flights = await flightProvider.searchFlights({
       origin: departureCity,
@@ -136,79 +123,127 @@ export async function generatePlan(params: {
     checkOut: snapshot.travelDateEnd ?? "2025-08-07",
     snapshotId: params.snapshotId,
   });
-  allStays.push(...stays);
 
   const ground = await groundProvider.searchGround({
     destination: params.destination,
     snapshotId: params.snapshotId,
   });
-  allGround.push(...ground);
 
   validateProviderCoverage({
     requiredOrigins: snapshot.departureCities,
     flights: allFlights,
-    stays: allStays,
-    ground: allGround,
+    stays,
+    ground,
   });
 
-  // Generate structured plan via model gateway
-  const memberPreferences = snapshot.authorizedData;
-  const planData = await modelGateway.generateStructuredPlan({
+  const { invokeSkill } = await import("../agents/skill-registry.js");
+  const { DefaultPolicyGate } = await import("../agents/policy-gate.js");
+
+  const planData = await invokeSkill<unknown, Record<string, unknown>>(
+    "plan.comparison",
+    {
+      ctx: params.ctx,
+      snapshot: snapshot.authorizedData as unknown as ConstraintSnapshotData,
+      policyGate: new DefaultPolicyGate("shared"),
+    },
+    {
+      destination: params.destination,
+      flights: allFlights,
+      stays,
+      ground,
+      memberPreferences: snapshot.authorizedData as Record<string, unknown>,
+    },
+  );
+
+  return persistValidatedPlan({
+    ctx: params.ctx,
+    tripId: params.tripId,
+    snapshotId: params.snapshotId,
     destination: params.destination,
     flights: allFlights,
-    stays: allStays,
-    ground: allGround,
-    memberPreferences,
+    stays,
+    ground,
+    planData,
   });
+}
 
-  // Insert plan
+/**
+ * Persist a plan whose structured output has already been validated by
+ * policy/plan-output-validator.ts (i.e. produced by the plan.comparison Skill).
+ * Provider offers and source evidence are derived from the inputs that fed
+ * the Skill, never from the model output — keeps provenance accurate.
+ */
+export async function persistValidatedPlan(params: {
+  ctx: RequestContext;
+  tripId: string;
+  snapshotId: string;
+  destination: string;
+  flights: FlightOffer[];
+  stays: StayOffer[];
+  ground: GroundOffer[];
+  planData: Record<string, unknown>;
+}): Promise<string> {
+  const [snapshot] = await db.select().from(constraintSnapshots)
+    .where(eq(constraintSnapshots.id, params.snapshotId))
+    .limit(1);
+
+  if (!snapshot) throw new Error("Snapshot not found");
+
+  const existingPlans = await db.select().from(itineraryPlans)
+    .where(eq(itineraryPlans.tripId, params.tripId))
+    .orderBy(itineraryPlans.version);
+
+  const nextVersion = existingPlans.length > 0 ? Math.max(...existingPlans.map(p => p.version)) + 1 : 1;
+
   const [plan] = await db.insert(itineraryPlans).values({
     tripId: params.tripId,
     snapshotId: params.snapshotId,
     version: nextVersion,
     status: "ACTIVE",
-    planData,
+    planData: params.planData,
   }).returning();
 
   const normalizedOffers = [
-    ...allFlights.map(offer => ({
+    ...params.flights.map(offer => ({
       category: "flight",
       providerName: offer.airline,
       offer,
     })),
-    ...allStays.map(offer => ({
+    ...params.stays.map(offer => ({
       category: "stay",
       providerName: "FixtureStayProvider",
       offer,
     })),
-    ...allGround.map(offer => ({
+    ...params.ground.map(offer => ({
       category: "ground",
       providerName: offer.provider,
       offer,
     })),
   ];
 
-  await db.insert(providerOffers).values(normalizedOffers.map(({ category, providerName, offer }) => ({
-    snapshotId: params.snapshotId,
-    planId: plan.id,
-    category,
-    providerName,
-    offerData: offer as unknown as Record<string, unknown>,
-    isDemo: offer.isDemo,
-    capturedAt: new Date(offer.capturedAt),
-  })));
-
-  await db.insert(sourceEvidence).values(normalizedOffers.map(({ category, offer }) => ({
-    planId: plan.id,
-    category,
-    itemId: offer.id,
-    source: offer.source,
-    capturedAt: new Date(offer.capturedAt),
-    metadata: {
+  if (normalizedOffers.length > 0) {
+    await db.insert(providerOffers).values(normalizedOffers.map(({ category, providerName, offer }) => ({
+      snapshotId: params.snapshotId,
+      planId: plan.id,
+      category,
+      providerName,
+      offerData: offer as unknown as Record<string, unknown>,
       isDemo: offer.isDemo,
-      fixtureVersion: offer.fixtureVersion,
-    },
-  })));
+      capturedAt: new Date(offer.capturedAt),
+    })));
+
+    await db.insert(sourceEvidence).values(normalizedOffers.map(({ category, offer }) => ({
+      planId: plan.id,
+      category,
+      itemId: offer.id,
+      source: offer.source,
+      capturedAt: new Date(offer.capturedAt),
+      metadata: {
+        isDemo: offer.isDemo,
+        fixtureVersion: offer.fixtureVersion,
+      },
+    })));
+  }
 
   await recordAudit({
     ctx: params.ctx,

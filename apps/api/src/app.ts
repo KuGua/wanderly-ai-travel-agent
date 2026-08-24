@@ -2,8 +2,9 @@ import Fastify from "fastify";
 import fastifyCors from "@fastify/cors";
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
+import { randomUUID } from "node:crypto";
 import { demoAuthMiddleware } from "./middleware/auth.js";
-import { errorHandler } from "./middleware/error-handler.js";
+import { errorHandler, ApiError } from "./middleware/error-handler.js";
 import { profileRoutes } from "./routes/profiles.js";
 import { tripRoutes } from "./routes/trips.js";
 import { consentRoutes } from "./routes/consent.js";
@@ -12,20 +13,19 @@ import { confirmationRoutes } from "./routes/confirmations.js";
 import { bookingRoutes } from "./routes/bookings.js";
 import { changeEventRoutes } from "./routes/change-events.js";
 import { demoUserRoutes } from "./routes/demo-users.js";
-import { createRequestContext } from "./utils/context.js";
-import { ApiError } from "./middleware/error-handler.js";
+import { pinoInstance, correlationChild } from "./observability/telemetry.js";
+import { metrics } from "./observability/metrics.js";
 import { personalTravelAgent } from "./agents/personal-travel-agent.js";
 import { sharedTripAgent } from "./agents/shared-trip-agent.js";
 
 export async function buildApp() {
   const app = Fastify({
-    logger: false, // We use our own pino logger
+    loggerInstance: pinoInstance,
+    genReqId: () => randomUUID(),
   });
 
-  // CORS
   await app.register(fastifyCors, { origin: true });
 
-  // OpenAPI / Swagger
   await app.register(fastifySwagger, {
     openapi: {
       info: {
@@ -41,21 +41,24 @@ export async function buildApp() {
     routePrefix: "/docs",
   });
 
-  // Global error handler
   app.setErrorHandler(errorHandler);
 
-  // Health check (no auth required)
   app.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
 
-  // Auth middleware for all other routes
+  app.get("/metrics", async (_req, reply) => {
+    reply.header("content-type", "text/plain; version=0.0.4; charset=utf-8");
+    return metrics.render();
+  });
+
   app.addHook("onRequest", async (request, reply) => {
-    const requestContext = createRequestContext();
-    request.correlationId = requestContext.correlationId;
-    request.traceId = requestContext.traceId ?? requestContext.correlationId;
+    request.correlationId = request.id ?? randomUUID();
+    request.traceId = request.correlationId;
     reply.header("x-correlation-id", request.correlationId);
+    request.log = correlationChild(pinoInstance, request.correlationId);
 
     if (
       request.url === "/health"
+      || request.url === "/metrics"
       || request.url.startsWith("/docs")
       || (request.method === "GET" && request.url === "/api/v1/demo/users")
     ) {
@@ -68,7 +71,6 @@ export async function buildApp() {
     throw new ApiError(404, "Not Found", "Route not found");
   });
 
-  // Register routes
   await app.register(demoUserRoutes, { prefix: "/api/v1" });
   await app.register(profileRoutes, { prefix: "/api/v1" });
   await app.register(tripRoutes, { prefix: "/api/v1" });
@@ -79,7 +81,7 @@ export async function buildApp() {
   await app.register(changeEventRoutes, { prefix: "/api/v1" });
 
   // Register agents (Skills) — must happen before the server accepts traffic so
-  // that handlers can call skill-registry.invokeSkill without races.
+  // handlers can call skill-registry.invokeSkill without races.
   personalTravelAgent.register();
   sharedTripAgent.register();
 

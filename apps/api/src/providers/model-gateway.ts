@@ -3,7 +3,6 @@ import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/dom
 /**
  * ModelGateway: Application-layer interface for AI model interactions.
  * The model cannot access the database or execute irreversible operations.
- * Future: swap with OpenAI Agents SDK, Bedrock, etc.
  */
 export interface ModelGateway {
   generateStructuredPlan(params: {
@@ -24,8 +23,9 @@ export interface ModelGateway {
 }
 
 /**
- * Mock ModelGateway: returns deterministic structured output.
- * In production, this would call an LLM API.
+ * Mock ModelGateway: deterministic output, signal-aware for cancellation parity
+ * with the real gateway. Aborts promptly when an already-aborted signal is
+ * supplied so Skill timeout tests exercise the same fail path.
  */
 export class MockModelGateway implements ModelGateway {
   async generateStructuredPlan(params: {
@@ -34,9 +34,14 @@ export class MockModelGateway implements ModelGateway {
     stays: StayOffer[];
     ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;
+    signal?: AbortSignal;
   }): Promise<Record<string, unknown>> {
-    // Simple deterministic heuristic: choose one non-red-eye/cheapest flight
-    // per origin, then the cheapest stay and airport transfer.
+    if (params.signal?.aborted) {
+      const err = new Error("MockModelGateway aborted");
+      err.name = "AbortError";
+      throw err;
+    }
+
     const origins = [...new Set(params.flights.map(flight => flight.origin))].sort();
     const bestFlights = origins.map(origin => {
       const originFlights = params.flights.filter(flight => flight.origin === origin);

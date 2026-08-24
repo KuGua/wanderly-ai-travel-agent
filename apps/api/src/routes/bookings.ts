@@ -6,18 +6,21 @@ import { bookingRequestSchema, sandboxCallbackSchema } from "../types/schemas.js
 import { submitBooking, handleSandboxCallback } from "../services/booking-service.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
+import { verifySandboxSignature } from "../middleware/sandbox-signature.js";
+import { metrics } from "../observability/metrics.js";
+import { pinoInstance } from "../observability/telemetry.js";
+
+const DEV_SANDBOX_SECRET = "dev-sandbox-secret-do-not-use-in-prod";
+const sandboxSecret = process.env.SANDBOX_HMAC_SECRET ?? DEV_SANDBOX_SECRET;
+if (!process.env.SANDBOX_HMAC_SECRET) {
+  pinoInstance.warn({ dev: true }, "SANDBOX_HMAC_SECRET unset — using insecure dev default");
+}
 
 export async function bookingRoutes(app: FastifyInstance) {
-  // Submit booking to sandbox
-  app.post("/bookings", {
-    
-      
-
-  }, async (request) => {
+  app.post("/bookings", async (request) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = bookingRequestSchema.parse(request.body);
 
-    // Verify membership
     const membership = await db.select().from(tripMembers)
       .where(and(eq(tripMembers.tripId, body.tripId), eq(tripMembers.userId, request.user.id)))
       .limit(1);
@@ -48,13 +51,21 @@ export async function bookingRoutes(app: FastifyInstance) {
     }
   });
 
-  // Handle sandbox callback
+  // Sandbox callback — provider-authenticated via HMAC; never trusts the
+  // X-Demo-User header for this endpoint.
   app.post("/bookings/callback", {
-    
-      
-
+    config: { rawBody: true },
   }, async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(undefined, request.correlationId, request.traceId);
+    const rawBody = (request as unknown as { rawBody?: string }).rawBody ?? JSON.stringify(request.body ?? {});
+    const headers = request.headers as Record<string, string | string[] | undefined>;
+
+    const verify = verifySandboxSignature(headers, rawBody, sandboxSecret);
+    if (!verify.ok) {
+      metrics.inc("booking_gate_denials_total", { reason: verify.reason });
+      throw new ApiError(401, "Unauthorized", `Sandbox signature rejected: ${verify.reason}`);
+    }
+
     const body = sandboxCallbackSchema.parse(request.body);
 
     try {

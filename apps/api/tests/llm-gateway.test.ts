@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "../src/db/database.js";
 import { agentRuns } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
@@ -25,7 +25,7 @@ function buildClient(behavior: "ok" | "bad" | "abort" | "slow"): FakeClient {
     beta: {
       chat: {
         completions: {
-          parse: async (_req: Record<string, unknown>) => {
+          parse: async () => {
             if (behavior === "ok") {
               return {
                 choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [] } } } }],

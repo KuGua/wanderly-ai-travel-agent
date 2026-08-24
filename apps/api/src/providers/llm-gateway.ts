@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
-import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/domain.js";
+import type { FlightOffer, GroundOffer, PlanDiff, StayOffer } from "../types/domain.js";
 import type { ModelGateway } from "./model-gateway.js";
+import type { AgentRunTokens } from "../observability/agent-runs.js";
+import { recordAgentRun } from "../observability/agent-runs.js";
 import type { RequestContext } from "../utils/context.js";
-import { recordAgentRun, type AgentRunTokens } from "../observability/agent-runs.js";
+import { metrics } from "../observability/metrics.js";
 
 export interface LLMGatewayOptions {
   apiKey: string;
@@ -10,15 +12,19 @@ export interface LLMGatewayOptions {
   promptVersion: string;
   mock: ModelGateway;
   ctx: RequestContext;
-  /** Optional injected client for tests; production code resolves from @openai/agents. */
-  client?: unknown;
-  /** Maximum total tokens, also used to size the retry budget. */
   maxRetries?: number;
+  /** Injected for tests; production code resolves the OpenAI client lazily. */
+  client?: unknown;
 }
 
-interface ParsedCompletion {
-  plan: Record<string, unknown>;
-  usage?: AgentRunTokens;
+interface OpenAIClientLike {
+  responses: {
+    create: (req: Record<string, unknown>) => Promise<{
+      output_parsed?: Record<string, unknown> | null;
+      output_text?: string | null;
+      usage?: AgentRunTokens;
+    }>;
+  };
 }
 
 function canonicalize(value: unknown): string {
@@ -45,14 +51,13 @@ function classifyError(err: unknown): string {
   return "UPSTREAM_FAILURE";
 }
 
-interface OpenAIClientLike {
-  beta: {
-    chat: {
-      completions: {
-        parse: (req: Record<string, unknown>) => Promise<{ choices: Array<{ message: { parsed: ParsedCompletion | null } }>; usage?: AgentRunTokens }>;
-      };
-    };
-  };
+function summarizePayload(destination: string, payload: { flights?: FlightOffer[]; stays?: StayOffer[]; ground?: GroundOffer[] }): string {
+  return JSON.stringify({
+    destination,
+    flights: payload.flights?.length ?? 0,
+    stays: payload.stays?.length ?? 0,
+    ground: payload.ground?.length ?? 0,
+  });
 }
 
 export class LLMGateway implements ModelGateway {
@@ -60,9 +65,19 @@ export class LLMGateway implements ModelGateway {
 
   private async loadClient(): Promise<OpenAIClientLike> {
     if (this.options.client) return this.options.client as OpenAIClientLike;
-    const mod = await import("@openai/agents");
-    const OpenAI = (mod as unknown as { OpenAI: new (config: { apiKey: string }) => OpenAIClientLike }).OpenAI;
+    const mod = await import("openai");
+    const OpenAI = (mod as unknown as { default: new (config: { apiKey: string }) => OpenAIClientLike }).default;
     return new OpenAI({ apiKey: this.options.apiKey });
+  }
+
+  private async loadZodTextFormat(): Promise<(schema: unknown, name: string) => unknown> {
+    const mod = await import("openai/helpers/zod");
+    return (mod as unknown as { zodTextFormat: (schema: unknown, name: string) => unknown }).zodTextFormat;
+  }
+
+  private async loadPlanOutputSchema(): Promise<unknown> {
+    const mod = await import("../policy/plan-output-validator.js");
+    return (mod as { planOutputSchema: unknown }).planOutputSchema;
   }
 
   async generateStructuredPlan(params: {
@@ -78,13 +93,14 @@ export class LLMGateway implements ModelGateway {
     const signal = params.signal;
     const start = Date.now();
 
-    const fallbackToMock = async (errorCode: string, extra?: AgentRunTokens): Promise<Record<string, unknown>> => {
+    const fallbackToMock = async (errorCode: string, tokens?: AgentRunTokens): Promise<Record<string, unknown>> => {
       const plan = await this.options.mock.generateStructuredPlan({
         destination: params.destination,
         flights: params.flights,
         stays: params.stays,
         ground: params.ground,
         memberPreferences: params.memberPreferences,
+        signal,
       });
       await recordAgentRun({
         ctx,
@@ -96,14 +112,19 @@ export class LLMGateway implements ModelGateway {
         latencyMs: Date.now() - start,
         status: "FALLBACK",
         errorCode,
-        tokens: extra,
+        tokens,
       });
+      metrics.inc("provider_fallback_total", { provider: this.options.modelName, outcome: errorCode });
       return plan;
     };
 
     let client: OpenAIClientLike;
+    let zodTextFormat: (schema: unknown, name: string) => unknown;
+    let planOutputSchema: unknown;
     try {
       client = await this.loadClient();
+      zodTextFormat = await this.loadZodTextFormat();
+      planOutputSchema = await this.loadPlanOutputSchema();
     } catch (err) {
       return fallbackToMock(classifyError(err));
     }
@@ -113,49 +134,52 @@ export class LLMGateway implements ModelGateway {
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       try {
-        const response = await client.beta.chat.completions.parse({
+        const response = await client.responses.create({
           model: this.options.modelName,
-          messages: [
+          input: [
             {
               role: "system",
-              content:
-                "You are the Shared Trip planning skill. Return only JSON that matches the response_format. " +
-                "Never include PII, passport numbers, or fields outside the supplied snapshot.",
+              content: [
+                {
+                  type: "text",
+                  text: `You are the Shared Trip planning skill. Return only JSON matching the supplied schema (prompt_version=${this.options.promptVersion}). Never include raw profile, passport, or nationality fields. Use only the snapshot constraints and the supplied offers.`,
+                },
+              ],
             },
             {
               role: "user",
-              content: JSON.stringify({
-                destination: params.destination,
-                flights: params.flights,
-                stays: params.stays,
-                ground: params.ground,
-                memberPreferences: params.memberPreferences,
-              }),
+              content: [
+                {
+                  type: "text",
+                  text: summarizePayload(params.destination, params),
+                },
+              ],
             },
           ],
-          response_format: { type: "json_object" },
+          text: { format: zodTextFormat(planOutputSchema, "plan") },
           signal,
         });
 
-        const parsed = response.choices[0]?.message?.parsed;
-        if (!parsed || typeof parsed.plan !== "object") {
+        const parsed = response.output_parsed;
+        if (!parsed || typeof parsed !== "object") {
           lastError = "SCHEMA_PARSE";
           continue;
         }
 
         const tokens = response.usage;
+        metrics.observe("llm_request_latency_ms", Date.now() - start, { model: this.options.modelName });
         await recordAgentRun({
           ctx,
           skillName: "plan.comparison",
           agentName: "shared",
           modelName: this.options.modelName,
           promptVersion: this.options.promptVersion,
-          outputHash: hashOutput(parsed.plan),
+          outputHash: hashOutput(parsed),
           latencyMs: Date.now() - start,
           status: "SUCCESS",
           tokens,
         });
-        return parsed.plan;
+        return parsed;
       } catch (err) {
         lastError = classifyError(err);
         if (lastError === "TIMEOUT") break;
@@ -173,6 +197,7 @@ export class LLMGateway implements ModelGateway {
     return this.options.mock.explainPlanDiff({
       oldPlan: params.oldPlan,
       newPlan: params.newPlan,
+      signal: params.signal,
     });
   }
 }
