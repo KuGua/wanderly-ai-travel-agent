@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wanderly — AI 地图探索原型</title>
+  <link rel="preconnect" href="https://unpkg.com" />
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
+  <style>
+    :root { --ink:#102a43; --muted:#627d98; --paper:#fffaf3; --card:#fffdf9; --line:#e8e1d8; --sea:#074f61; --teal:#0b8a88; --coral:#ef7654; --sun:#f6bd60; --lime:#d6edc7; --shadow:0 18px 50px #102a4324; }
+    * { box-sizing:border-box; }
+    html,body { height:100%; margin:0; }
+    body { color:var(--ink); font:15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:var(--paper); }
+    button { font:inherit; cursor:pointer; }
+    button:focus-visible, a:focus-visible { outline:3px solid var(--sun); outline-offset:3px; }
+    .skip { position:fixed; z-index:20; top:-60px; left:16px; border-radius:10px; background:#fff; padding:10px 14px; color:var(--ink); transition:top .18s; }
+    .skip:focus { top:16px; }
+    .app { min-height:100%; display:grid; grid-template-columns:88px minmax(0,1fr); }
+    .rail { position:relative; z-index:5; display:flex; flex-direction:column; align-items:center; gap:18px; padding:22px 12px; color:#d9f7ef; background:#073d50; }
+    .brand { display:grid; place-items:center; width:46px; height:46px; border:1px solid #72c8bd; border-radius:16px; background:#0b5264; color:white; font-weight:900; text-decoration:none; letter-spacing:-.08em; }
+    .nav { display:grid; gap:9px; margin-top:12px; }
+    .nav button { display:grid; place-items:center; width:48px; height:48px; border:0; border-radius:14px; background:transparent; color:#bde1db; font-size:20px; }
+    .nav button[aria-current="page"], .nav button:hover { color:#073d50; background:#f6bd60; }
+    .avatar { display:grid; place-items:center; width:39px; height:39px; margin-top:auto; border:2px solid #9ce0d4; border-radius:50%; background:#f6bd60; color:#573314; font-weight:900; }
+    .main { position:relative; min-width:0; min-height:100dvh; overflow:hidden; }
+    #map { position:absolute; inset:0; background:radial-gradient(circle at 52% 48%, #d6eee8, #81bbb5 58%, #2f7881); }
+    .maplibregl-ctrl-bottom-right { bottom:28px; right:28px; }
+    .maplibregl-ctrl-group { border-radius:12px; box-shadow:var(--shadow); }
+    .topbar { position:absolute; z-index:4; top:22px; left:28px; right:28px; display:flex; align-items:center; justify-content:space-between; gap:20px; pointer-events:none; }
+    .topbar > * { pointer-events:auto; }
+    .identity { display:flex; align-items:center; gap:11px; border:1px solid #ffffff90; border-radius:18px; padding:9px 14px 9px 10px; background:#073d50e8; color:white; box-shadow:0 8px 28px #073d5040; }
+    .identity strong { display:block; font-size:14px; }
+    .identity small { color:#bde1db; }
+    .mini-bot { display:grid; place-items:center; width:35px; height:35px; border-radius:13px; background:var(--coral); font-size:19px; }
+    .actions { display:flex; gap:9px; }
+    .round { min-width:44px; height:44px; border:1px solid #ffffffa8; border-radius:14px; background:#073d50e8; color:white; font-size:18px; }
+    .round:hover { background:#0b6574; }
+    .intro { position:absolute; z-index:3; left:28px; bottom:30px; width:min(430px, calc(100% - 56px)); padding:22px; border:1px solid #fff; border-radius:24px; background:#fffdf9f5; box-shadow:var(--shadow); transition:opacity .3s, transform .3s; }
+    .intro[data-hidden="true"] { opacity:0; pointer-events:none; transform:translateY(16px); }
+    .eyebrow { margin:0 0 6px; color:#0b756f; font-size:11px; font-weight:900; letter-spacing:.1em; }
+    h1 { margin:0; font-size:clamp(24px, 3vw, 34px); letter-spacing:-.04em; line-height:1.08; }
+    .intro p { color:var(--muted); margin:11px 0 16px; }
+    .place-list { display:flex; flex-wrap:wrap; gap:8px; }
+    .place { min-height:40px; border:1px solid #dbd8d1; border-radius:999px; padding:8px 12px; background:white; color:var(--ink); font-weight:750; }
+    .place:hover { border-color:var(--teal); background:#effbf7; }
+    .scene { position:absolute; z-index:3; left:50%; top:50%; width:1px; height:1px; pointer-events:none; }
+    .character { position:absolute; left:-27px; top:-27px; width:54px; height:54px; transform-origin:center; transition:transform .2s; }
+    .character .head { position:absolute; left:12px; top:8px; width:30px; height:25px; border:3px solid #073d50; border-radius:11px; background:var(--coral); box-shadow:inset 0 -5px #d85544; }
+    .character .head:before, .character .head:after { content:""; position:absolute; top:8px; width:5px; height:5px; border-radius:50%; background:#fff; }
+    .character .head:before { left:6px; } .character .head:after { right:6px; }
+    .character .antenna { position:absolute; left:26px; top:1px; width:3px; height:10px; background:#073d50; } .character .antenna:before { content:""; position:absolute; left:-3px; top:-4px; width:9px; height:9px; border-radius:50%; background:var(--sun); }
+    .character .body { position:absolute; left:16px; top:31px; width:22px; height:17px; border:3px solid #073d50; border-radius:8px 8px 11px 11px; background:#d6edc7; }
+    .character .shadow { position:absolute; left:8px; bottom:0; width:39px; height:9px; border-radius:50%; background:#073d5033; }
+    .character.idle { animation:bob 2.4s ease-in-out infinite; }
+    @keyframes bob { 50% { transform:translateY(-5px) rotate(-2deg); } }
+    .human { position:absolute; left:-72px; top:-20px; display:none; width:38px; height:52px; }
+    .scene[data-state="talking"] .human { display:block; }
+    .human:before { content:""; position:absolute; left:11px; top:0; width:18px; height:18px; border-radius:50%; background:#6c4031; }
+    .human:after { content:""; position:absolute; left:8px; top:18px; width:24px; height:32px; border-radius:12px 12px 4px 4px; background:#f6bd60; }
+    .bubble { position:absolute; left:-118px; top:-77px; display:none; width:150px; padding:8px 10px; border:2px solid #073d50; border-radius:12px 12px 12px 2px; background:white; color:#073d50; font-size:12px; font-weight:800; box-shadow:0 6px 16px #073d5024; }
+    .scene[data-state="talking"] .bubble { display:block; animation:pop .25s ease-out; }
+    @keyframes pop { from { opacity:0; transform:scale(.7); } to { opacity:1; transform:scale(1); } }
+    .plane { position:absolute; display:grid; place-items:center; left:-16px; top:-18px; width:34px; height:34px; border-radius:50%; background:var(--sun); color:#073d50; box-shadow:0 4px 12px #073d5030; }
+    .plane svg, .nav svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+    .scene[data-state="flying"] .character, .scene[data-state="flying"] .human, .scene[data-state="flying"] .bubble { display:none; }
+    .scene[data-state="flying"] .plane { display:block; }
+    .route { position:absolute; z-index:2; display:none; height:2px; transform-origin:0 50%; border-top:2px dashed var(--coral); pointer-events:none; }
+    .route[data-visible="true"] { display:block; }
+    .drawer { position:absolute; z-index:5; top:0; right:0; width:min(410px, 100%); height:100%; padding:26px; overflow:auto; border-left:1px solid #e8e1d8; background:#fffdf9; box-shadow:-18px 0 55px #102a4328; transform:translateX(105%); transition:transform .35s cubic-bezier(.2,.8,.2,1); }
+    .drawer.open { transform:translateX(0); }
+    .drawer-top { display:flex; justify-content:space-between; gap:12px; align-items:flex-start; }
+    .status { display:inline-flex; align-items:center; gap:6px; border-radius:999px; padding:5px 9px; background:#e4f7f1; color:#08726e; font-size:12px; font-weight:850; }
+    .status:before { content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+    .close { display:grid; place-items:center; width:42px; height:42px; flex:0 0 auto; border:1px solid var(--line); border-radius:13px; background:white; color:var(--ink); font-size:22px; }
+    .drawer h2 { margin:14px 0 8px; font-size:30px; letter-spacing:-.04em; }
+    .drawer > p { color:var(--muted); }
+    .steps { display:grid; gap:10px; margin:23px 0; }
+    .step { display:flex; gap:11px; align-items:flex-start; padding:13px; border:1px solid var(--line); border-radius:16px; background:white; opacity:.45; transition:opacity .25s, border-color .25s, background .25s; }
+    .step.active { opacity:1; border-color:#a4ddd2; background:#f1fbf8; }
+    .step .dot { display:grid; flex:0 0 25px; place-items:center; width:25px; height:25px; border-radius:9px; background:#e4f7f1; color:#08726e; font-size:12px; font-weight:900; }
+    .step strong { display:block; font-size:14px; } .step small { display:block; color:var(--muted); margin-top:2px; }
+    .recommendation { padding:16px; border-radius:18px; background:#073d50; color:white; }
+    .recommendation h3 { margin:0 0 8px; font-size:14px; } .recommendation ul { margin:0; padding-left:18px; color:#d9f7ef; } .recommendation li+li { margin-top:5px; }
+    .note { margin-top:15px; color:#697b8b; font-size:12px; }
+    .cta { width:100%; min-height:47px; margin-top:18px; border:0; border-radius:14px; background:var(--coral); color:white; font-weight:850; transition:background .18s, transform .18s; }
+    .cta:hover { background:#d95d41; } .cta:active { transform:scale(.98); }
+    .toast { position:absolute; z-index:8; left:50%; bottom:27px; max-width:calc(100% - 32px); border-radius:12px; padding:10px 14px; background:#073d50; color:white; box-shadow:var(--shadow); transform:translate(-50%, 80px); opacity:0; transition:.25s; }
+    .toast.show { transform:translate(-50%, 0); opacity:1; }
+    @media (max-width:720px) { .app { grid-template-columns:1fr; grid-template-rows:62px 1fr; } .rail { flex-direction:row; padding:8px 14px; } .brand { width:43px; height:43px; } .nav { display:flex; margin:0 0 0 6px; } .nav button { width:40px; height:40px; } .avatar { margin:0 0 0 auto; } .topbar { top:78px; left:14px; right:14px; } .identity { padding-right:10px; } .intro { left:14px; bottom:17px; width:calc(100% - 28px); padding:18px; } .drawer { width:100%; height:min(76%, 600px); top:auto; bottom:0; border-left:0; border-top:1px solid var(--line); transform:translateY(105%); } .drawer.open { transform:translateY(0); } .maplibregl-ctrl-bottom-right { bottom:calc(76% + 14px); right:14px; } }
+    @media (prefers-reduced-motion:reduce) { *, *:before, *:after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important; } }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#map">跳至探索地图</a>
+  <div class="app">
+    <aside class="rail" aria-label="主导航">
+      <a class="brand" href="#map" aria-label="Wanderly 首页">W.</a>
+      <nav class="nav" aria-label="功能导航"><button aria-current="page" aria-label="探索地图"><svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg></button><button aria-label="我的行程"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 7h16M4 12h11M4 17h16"/></svg></button><button aria-label="收藏地点"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 20s-7-4.3-7-10a4 4 0 0 1 7-2.7A4 4 0 0 1 19 10c0 5.7-7 10-7 10Z"/></svg></button></nav>
+      <div class="avatar" aria-label="当前用户 Alice">A</div>
+    </aside>
+    <main class="main">
+      <div id="map" aria-label="可交互的世界地图。点击任意地点开始探索。"></div>
+      <header class="topbar"><div class="identity"><span class="mini-bot" aria-hidden="true">●</span><span><strong>Wanderly AI</strong><small>从新加坡出发</small></span></div><div class="actions"><button class="round" id="recenter" aria-label="回到新加坡">◎</button><button class="round" id="help" aria-label="查看交互说明">?</button></div></header>
+      <section class="intro" id="intro" aria-labelledby="intro-title"><p class="eyebrow">你的旅行伙伴已就位 · SINGAPORE</p><h1 id="intro-title">想去哪里？<br />点一下地图开始探索。</h1><p>机器人会先和你确认目的地，再飞过去收集值得体验的当地灵感。</p><div class="place-list" aria-label="快速体验"><button class="place" data-place="Tokyo" data-lng="139.6917" data-lat="35.6895">东京</button><button class="place" data-place="Lisbon" data-lng="-9.1393" data-lat="38.7223">里斯本</button><button class="place" data-place="Kyoto" data-lng="135.7681" data-lat="35.0116">京都</button></div></section>
+      <div class="route" id="route" aria-hidden="true"></div>
+      <div class="scene" id="scene" data-state="idle" aria-hidden="true"><div class="bubble">这里怎么样？<br />我们一起去看看！</div><div class="human"></div><div class="character idle"><span class="antenna"></span><span class="head"></span><span class="body"></span><span class="shadow"></span></div><div class="plane"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m3 13 18-6-7 6-3 7-1-6-7-1Z"/></svg></div></div>
+      <aside class="drawer" id="drawer" aria-labelledby="drawer-title" aria-hidden="true"><div class="drawer-top"><div><span class="status" id="drawer-status">等待你的选择</span><h2 id="drawer-title">开始探索</h2></div><button class="close" id="close-drawer" aria-label="关闭探索摘要">×</button></div><p id="drawer-copy">选择地图上的一个地点，让机器人带你开始一段微型旅行。</p><div class="steps" aria-label="探索进度"><div class="step" id="step-talk"><span class="dot">1</span><span><strong>确认目的地</strong><small>人类和机器人聊一聊</small></span></div><div class="step" id="step-fly"><span class="dot">2</span><span><strong>正在飞往目的地</strong><small>从新加坡出发</small></span></div><div class="step" id="step-explore"><span class="dot">3</span><span><strong>开始本地探索</strong><small>旅行推荐准备就绪</small></span></div></div><section class="recommendation" id="recommendation" hidden><h3>AI 的探索笔记</h3><ul id="tips"></ul></section><p class="note" id="data-note">这是前端原型。地图坐标不代表实时价格、库存、签证结论或真实预订。</p><button class="cta" id="plan-button" type="button">围绕这里开始规划</button></aside>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    </main>
+  </div>
+  <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+  <script>
+    const singapore = [103.8198, 1.3521];
+    const mapEl = document.querySelector('#map'), scene = document.querySelector('#scene'), drawer = document.querySelector('#drawer'), intro = document.querySelector('#intro'), route = document.querySelector('#route');
+    const labels = { Tokyo:['在巷弄里寻找小店和季节限定的体验','把一段傍晚留给街区散步','在出发前核验开放时间与交通安排'], Lisbon:['从一段缓坡步行开始认识城市','选一个观景点看日落','为慢节奏的咖啡与街区漫游留白'], Kyoto:['以一座安静的庭园开启早晨','沿着一条小路慢慢探索','出发前核验景点预约与开放时间'], '探索地点':['先保存这片区域作为旅行灵感','之后可请求加入受验证的候选目的地','目前不会为该坐标编造旅行事实'] };
+    let current = singapore, map;
+    function pointToPage(coord) { const p = map.project(coord); return { x:p.x, y:p.y }; }
+    function positionScene(coord) { const p = map.project(coord); scene.style.left = p.x + 'px'; scene.style.top = p.y + 'px'; }
+    function setStep(active) { ['talk','fly','explore'].forEach((key, i) => document.querySelector('#step-' + key).classList.toggle('active', i <= active)); }
+    function openDrawer(title, status, copy) { drawer.classList.add('open'); drawer.setAttribute('aria-hidden','false'); document.querySelector('#drawer-title').textContent = title; document.querySelector('#drawer-status').textContent = status; document.querySelector('#drawer-copy').textContent = copy; }
+    function line(from, to) { const a = pointToPage(from), b = pointToPage(to), dx=b.x-a.x, dy=b.y-a.y; route.style.left=a.x+'px'; route.style.top=a.y+'px'; route.style.width=Math.hypot(dx,dy)+'px'; route.style.transform='rotate('+Math.atan2(dy,dx)+'rad)'; route.dataset.visible='true'; }
+    function showToast(message) { const toast = document.querySelector('#toast'); toast.textContent=message; toast.classList.add('show'); clearTimeout(window.toastTimer); window.toastTimer=setTimeout(()=>toast.classList.remove('show'), 3200); }
+    function finish(title) { scene.dataset.state='exploring'; positionScene(current); route.dataset.visible='false'; setStep(2); document.querySelector('#drawer-status').textContent='已抵达 · 开始探索'; document.querySelector('#drawer-copy').textContent=title === '探索地点' ? '你标记了一片感兴趣的区域。先把它当作灵感保存；后续可将附近地点加入受验证的候选。' : '机器人已抵达 ' + title + '，整理了一份轻量的本地探索灵感。'; document.querySelector('#recommendation').hidden=false; document.querySelector('#tips').innerHTML=labels[title].map(t=>'<li>'+t+'</li>').join(''); document.querySelector('#plan-button').textContent=title === '探索地点' ? '保存为私有灵感' : '围绕 ' + title + ' 开始规划'; }
+    function startJourney(title, destination) { current=destination; intro.dataset.hidden='true'; openDrawer(title, '正在确认目的地', '机器人先和你确认想探索的地方。'); document.querySelector('#recommendation').hidden=true; scene.dataset.state='talking'; positionScene(singapore); setStep(0); drawer.querySelector('#close-drawer').focus(); window.setTimeout(()=>{ scene.dataset.state='flying'; setStep(1); document.querySelector('#drawer-status').textContent='正在从新加坡起飞'; document.querySelector('#drawer-copy').textContent='机器人正在飞往 ' + title + '。'; line(singapore, destination); map.easeTo({center:destination, zoom:4.2, duration:1800, essential:false}); const start=performance.now(), duration=1700; function animate(now){ const t=Math.min(1,(now-start)/duration); const lon=singapore[0]+(destination[0]-singapore[0])*t, lat=singapore[1]+(destination[1]-singapore[1])*t; positionScene([lon,lat]); if(t<1) requestAnimationFrame(animate); else finish(title); } requestAnimationFrame(animate); }, 1050); }
+    function init() { map = new maplibregl.Map({ container:'map', style:'https://demotiles.maplibre.org/globe.json', center:singapore, zoom:2.2, projection:'globe', attributionControl:false }); map.addControl(new maplibregl.NavigationControl({showCompass:false}), 'bottom-right'); map.on('load',()=>{ positionScene(singapore); map.on('move',()=>positionScene(scene.dataset.state==='idle' ? singapore : current)); map.on('click', e=>startJourney('探索地点', [e.lngLat.lng, e.lngLat.lat])); }); map.on('error',()=>showToast('地图暂不可用；这是静态原型的地图回退状态。')); }
+    document.querySelectorAll('.place').forEach(button=>button.addEventListener('click',()=>startJourney(button.dataset.place, [Number(button.dataset.lng),Number(button.dataset.lat)])));
+    document.querySelector('#close-drawer').addEventListener('click',()=>{ drawer.classList.remove('open'); drawer.setAttribute('aria-hidden','true'); });
+    document.querySelector('#recenter').addEventListener('click',()=>{ map.easeTo({center:singapore,zoom:2.2,duration:650,essential:false}); current=singapore; scene.dataset.state='idle'; route.dataset.visible='false'; positionScene(singapore); });
+    document.querySelector('#help').addEventListener('click',()=>showToast('点击地图或下方城市标签，即可查看完整探索动画。'));
+    document.querySelector('#plan-button').addEventListener('click',()=>showToast('原型操作：下一步将进入受验证候选的旅行规划。'));
+    init();
+  </script>
+</body>
+</html>
