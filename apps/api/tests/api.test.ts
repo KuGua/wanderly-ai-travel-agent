@@ -3,17 +3,14 @@ import { buildApp } from "../src/app.js";
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { __buildSandboxSignature } from "../src/middleware/sandbox-signature.js";
+import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 
 let app: FastifyInstance;
 const SANDBOX_SECRET = "test-only-sandbox-secret";
 
-function authHeaders(userId: string) {
-  return { "x-demo-user": userId };
-}
-
 beforeAll(async () => {
   process.env.SANDBOX_HMAC_SECRET = SANDBOX_SECRET;
-  app = await buildApp();
+  app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
   await app.ready();
 });
 
@@ -22,21 +19,30 @@ afterAll(async () => {
 });
 
 describe("Auth & Access Control", () => {
-  it("rejects requests without X-Demo-User header", async () => {
+  it("rejects requests without a bearer access token", async () => {
     const res = await app.inject({ method: "GET", url: "/api/v1/profiles/me" });
     expect(res.statusCode).toBe(401);
   });
 
-  it("rejects invalid demo user", async () => {
+  it("does not accept a client-supplied user ID as authentication", async () => {
     const res = await app.inject({
       method: "GET",
       url: "/api/v1/profiles/me",
-      headers: { "x-demo-user": "invalid" },
+      headers: { "x-demo-user": "alice" },
     });
     expect(res.statusCode).toBe(401);
   });
 
-  it("accepts valid demo user", async () => {
+  it("rejects an invalid bearer access token", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/v1/profiles/me",
+      headers: { authorization: "Bearer invalid" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("accepts a verified bearer access token", async () => {
     const res = await app.inject({
       method: "GET",
       url: "/api/v1/profiles/me",
@@ -123,7 +129,7 @@ describe("Booking Sandbox", () => {
     expect(SANDBOX_CALLBACK_FIXTURES.success.serviceResults.flight.reference).toContain("DEMO");
   });
 
-  it("authenticates the callback without X-Demo-User using the exact raw JSON bytes", async () => {
+  it("authenticates the callback without a bearer token using the exact raw JSON bytes", async () => {
     const timestamp = Date.now();
     const rawBody = `{
       "orchestrationRequestId":"${randomUUID()}",

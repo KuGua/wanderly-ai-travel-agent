@@ -2,13 +2,14 @@
 
 Base URL: `http://localhost:3000/api/v1`
 
-**Authentication**: All endpoints except `/health`, `/metrics`, `/docs`,
-`GET /api/v1/demo/users`, and `POST /api/v1/bookings/callback` require the
-`X-Demo-User` header. The callback uses the independent sandbox HMAC contract
-documented below and never trusts `X-Demo-User`.
+**Authentication**: All endpoints except `/health`, `/metrics`, `/docs`, and
+`POST /api/v1/bookings/callback` require a Cognito access token. The API verifies
+the JWT and derives the database identity from its `sub`; clients never submit a
+user ID to choose an identity. The callback uses the independent sandbox HMAC
+contract documented below and never trusts a user bearer token.
 
 ```
-X-Demo-User: alice | bob | chen
+Authorization: Bearer <cognito-access-token>
 ```
 
 **Error Format**:
@@ -32,32 +33,6 @@ error response body. Request validation failures use `400 Bad Request`.
 No auth required.
 
 **Response**: `{ "status": "ok", "timestamp": "..." }`
-
----
-
-## Demo Users
-
-### `GET /demo/users`
-
-No auth required. Returns only safe identity metadata for the demo identity
-selector. The UUIDs are real seeded `users.id` values and can be passed in
-`memberUserIds` when creating a trip. No Profile or private travel data is
-included.
-
-**Response**:
-```json
-{
-  "users": [
-    { "id": "uuid-alice", "externalId": "alice", "displayName": "Alice" },
-    { "id": "uuid-bob", "externalId": "bob", "displayName": "Bob" },
-    { "id": "uuid-chen", "externalId": "chen", "displayName": "Chen" }
-  ]
-}
-```
-
-The stable order is `alice`, `bob`, `chen`. If the configured seed identities
-are not present in PostgreSQL, the endpoint fails rather than returning a
-partial or fabricated identity list.
 
 ---
 
@@ -90,7 +65,7 @@ Get your profile (sensitive fields redacted).
   "profile": {
     "id": "uuid",
     "userId": "uuid",
-    "displayName": "Alice",
+    "displayName": "Traveler",
     "nationality": "US",
     "dateOfBirth": null,
     "interests": ["art", "museums"],
@@ -130,7 +105,7 @@ update:
 ```json
 {
   "message": "Profile updated",
-  "profile": { "id": "uuid", "displayName": "Alice", "updatedAt": "..." }
+  "profile": { "id": "uuid", "displayName": "Traveler", "updatedAt": "..." }
 }
 ```
 
@@ -208,7 +183,7 @@ Get trip details (members only).
   "members": [
     {
       "userId": "uuid",
-      "displayName": "Alice",
+      "displayName": "Traveler",
       "role": "CREATOR",
       "isRequired": true,
       "joinedAt": "2026-08-24T10:00:00.000Z"

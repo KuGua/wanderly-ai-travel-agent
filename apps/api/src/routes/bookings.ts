@@ -57,8 +57,8 @@ export async function bookingRoutes(app: FastifyInstance) {
     }
   });
 
-  // Sandbox callback — provider-authenticated via HMAC; never trusts the
-  // X-Demo-User header for this endpoint.
+  // Sandbox callback — provider-authenticated via HMAC; never trusts a user
+  // bearer token for this endpoint.
   app.post("/bookings/callback", async (request) => {
     const ctx = createRequestContext(undefined, request.correlationId, request.traceId);
     const rawBody = request.rawBody ?? "";

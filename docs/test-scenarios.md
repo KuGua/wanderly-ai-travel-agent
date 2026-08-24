@@ -15,29 +15,30 @@
 
 ## HERO 测试
 
-### TS-H0 — Bootstrap demo identity and list only member trips
+### TS-H0 — Authenticate with Cognito and list only member trips
 
 **Stories:** H1, H2, S1
 
-**Objective:** Verify the frontend can select a safe seeded identity and load
-only that identity's private Profile and trip memberships.
+**Objective:** Verify an authenticated Cognito subject can load only its own
+private Profile and trip memberships without submitting a user ID.
 
 **Starting conditions:** Alice, Bob and Chen exist as seeded users; their trip
 memberships overlap only where explicitly configured.
 
 **Steps:**
 
-1. Call `GET /api/v1/demo/users` without `X-Demo-User`.
-2. Call `GET /api/v1/trips` separately as Alice, Bob and Chen.
+1. Call a protected endpoint without an access token and with an invalid token.
+2. Call `GET /api/v1/trips` with separately verified Cognito access tokens for
+   Alice, Bob and Chen fixture subjects.
 3. Attempt to read an Alice-only trip as Bob.
 4. Read and partially update Alice's Profile, omitting unchanged fields.
-5. Submit an unknown Profile field, a `null` value, a missing/unknown
-   `X-Demo-User`, and an unknown route.
+5. Submit an unknown Profile field, a `null` value, a missing/invalid bearer
+   token, and an unknown route.
 
 **Expected outcomes:**
 
-- Demo discovery returns exactly the three seeded UUID/`externalId`/`displayName`
-  tuples and no private Profile fields.
+- The API derives identity only from a verified token `sub`; the removed Demo
+  Users endpoint is not published and private routes reject missing/invalid JWTs.
 - Each trip list contains only server-verified memberships, with stable order,
   stored route/date fields, server-derived `memberCount`, and the caller's role.
 - Trip details expose safe member `displayName` but not other members' private
@@ -246,7 +247,7 @@ memberships overlap only where explicitly configured.
 - One non-confirming member blocks orchestration, even when the other two have confirmed.
 - Current, unanimous three-member confirmation displays service items, price/currency, sources and no-charge boundary.
 - Sandbox returns a single set of reference IDs; duplicate/late callbacks do not duplicate action.
-- Callback auth is independent of `X-Demo-User`; valid boundary requests pass,
+- Callback auth is independent of Cognito bearer authentication; valid boundary requests pass,
   while missing/malformed/expired/invalid/tampered requests return the same
   generic `401` without leaking the secret, signature, or failure detail.
 - Price change expires confirmations; stale plan cannot orchestrate.

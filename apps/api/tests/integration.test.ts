@@ -12,6 +12,7 @@ import { processChangeEvent } from "../src/services/change-event-service.js";
 import { checkVisaReadiness } from "../src/services/visa-service.js";
 import { createRequestContext } from "../src/utils/context.js";
 import { randomUUID } from "node:crypto";
+import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 
 let aliceId: string;
 let bobId: string;
@@ -20,7 +21,7 @@ let tripId: string;
 let app: FastifyInstance;
 
 beforeAll(async () => {
-  app = await buildApp();
+  app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
   await app.ready();
 
   // Get or create demo users
@@ -93,22 +94,6 @@ beforeEach(async () => {
 });
 
 describe("Frontend API Contract", () => {
-  it("lists exactly the safe seeded demo identities without authentication", async () => {
-    const response = await app.inject({ method: "GET", url: "/api/v1/demo/users" });
-
-    expect(response.statusCode).toBe(200);
-    const body = response.json();
-    expect(body.users.map((user: { externalId: string }) => user.externalId)).toEqual(["alice", "bob", "chen"]);
-    expect(body.users.map((user: { displayName: string }) => user.displayName)).toEqual(["Alice", "Bob", "Chen"]);
-    expect(body.users.every((user: Record<string, unknown>) =>
-      Object.keys(user).sort().join(",") === "displayName,externalId,id"
-    )).toBe(true);
-
-    const databaseUsers = await db.select().from(users);
-    const databaseIds = new Set(databaseUsers.map(user => user.id));
-    expect(body.users.every((user: { id: string }) => databaseIds.has(user.id))).toBe(true);
-  });
-
   it("lists only member trips with stable ordering, server-derived counts, roles, and dates", async () => {
     const [aliceNewestTrip] = await db.insert(sharedTrips).values({
       name: "Alice Newest",
@@ -145,17 +130,17 @@ describe("Frontend API Contract", () => {
     const aliceResponse = await app.inject({
       method: "GET",
       url: "/api/v1/trips",
-      headers: { "x-demo-user": "alice" },
+      headers: authHeaders("alice"),
     });
     const bobResponse = await app.inject({
       method: "GET",
       url: "/api/v1/trips",
-      headers: { "x-demo-user": "bob" },
+      headers: authHeaders("bob"),
     });
     const chenResponse = await app.inject({
       method: "GET",
       url: "/api/v1/trips",
-      headers: { "x-demo-user": "chen" },
+      headers: authHeaders("chen"),
     });
 
     expect(aliceResponse.statusCode).toBe(200);
@@ -200,12 +185,12 @@ describe("Frontend API Contract", () => {
     const allowed = await app.inject({
       method: "GET",
       url: `/api/v1/trips/${privateTrip.id}`,
-      headers: { "x-demo-user": "alice" },
+      headers: authHeaders("alice"),
     });
     const denied = await app.inject({
       method: "GET",
       url: `/api/v1/trips/${privateTrip.id}`,
-      headers: { "x-demo-user": "bob" },
+      headers: authHeaders("bob"),
     });
 
     expect(allowed.statusCode).toBe(200);
@@ -238,7 +223,7 @@ describe("Frontend API Contract", () => {
     const getResponse = await app.inject({
       method: "GET",
       url: "/api/v1/profiles/me",
-      headers: { "x-demo-user": "alice" },
+      headers: authHeaders("alice"),
     });
     expect(getResponse.statusCode).toBe(200);
     expect(getResponse.json().profile).toMatchObject({
@@ -257,7 +242,7 @@ describe("Frontend API Contract", () => {
     const updateResponse = await app.inject({
       method: "PUT",
       url: "/api/v1/profiles/me",
-      headers: { "x-demo-user": "alice" },
+      headers: authHeaders("alice"),
       payload: { nationality: "CA", noRedEye: false },
     });
     expect(updateResponse.statusCode).toBe(200);
@@ -273,7 +258,7 @@ describe("Frontend API Contract", () => {
       const invalidResponse = await app.inject({
         method: "PUT",
         url: "/api/v1/profiles/me",
-        headers: { "x-demo-user": "alice" },
+        headers: authHeaders("alice"),
         payload,
       });
       expect(invalidResponse.statusCode).toBe(400);
@@ -289,20 +274,20 @@ describe("Frontend API Contract", () => {
   it("normalizes authentication, validation, and not-found failures with matching correlation IDs", async () => {
     const responses = [
       await app.inject({ method: "GET", url: "/api/v1/trips" }),
-      await app.inject({ method: "GET", url: "/api/v1/trips", headers: { "x-demo-user": "unknown" } }),
+      await app.inject({ method: "GET", url: "/api/v1/trips", headers: { authorization: "Bearer invalid" } }),
       await app.inject({
         method: "POST",
         url: "/api/v1/trips",
-        headers: { "x-demo-user": "alice" },
+        headers: authHeaders("alice"),
         payload: { name: "Invalid" },
       }),
       await app.inject({
         method: "PUT",
         url: "/api/v1/profiles/me",
-        headers: { "x-demo-user": "alice" },
+        headers: authHeaders("alice"),
         payload: { interests: ["art"] },
       }),
-      await app.inject({ method: "GET", url: "/api/v1/not-real", headers: { "x-demo-user": "alice" } }),
+      await app.inject({ method: "GET", url: "/api/v1/not-real", headers: authHeaders("alice") }),
     ];
 
     expect(responses.map(response => response.statusCode)).toEqual([401, 401, 400, 404, 404]);
@@ -321,7 +306,7 @@ describe("Frontend API Contract", () => {
     const response = await app.inject({ method: "GET", url: "/docs/json" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().paths).toHaveProperty("/api/v1/demo/users");
+    expect(response.json().paths).not.toHaveProperty("/api/v1/demo/users");
     expect(response.json().paths).toHaveProperty("/api/v1/trips.get");
     expect(response.json().paths).toHaveProperty("/api/v1/profiles/me.get");
     expect(response.json().paths).toHaveProperty("/api/v1/profiles/me.put");
@@ -486,7 +471,7 @@ describe("Fixture-backed Planning API", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/planning/generate",
-      headers: { "x-demo-user": "alice" },
+      headers: authHeaders("alice"),
       payload: { tripId },
     });
 
@@ -510,7 +495,7 @@ describe("Fixture-backed Planning API", () => {
     const request = {
       method: "POST" as const,
       url: "/api/v1/planning/generate",
-      headers: { "x-demo-user": "alice" },
+      headers: authHeaders("alice"),
       payload: { tripId },
     };
 
@@ -530,7 +515,7 @@ describe("Fixture-backed Planning API", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/planning/generate",
-      headers: { "x-demo-user": "alice" },
+      headers: authHeaders("alice"),
       payload: { tripId },
     });
 

@@ -30,7 +30,7 @@ export const auditActionEnum = pgEnum("audit_action", [
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
-  externalId: varchar("external_id", { length: 128 }).unique().notNull(), // Cognito sub in prod, demo name in MVP
+  externalId: varchar("external_id", { length: 128 }).unique().notNull(), // Verified Cognito subject
   displayName: varchar("display_name", { length: 128 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
