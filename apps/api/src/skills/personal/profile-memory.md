@@ -7,24 +7,24 @@ status: implemented
 
 # `personal.profile.memory` Skill
 
-Read-only access to the user's private Profile fields that have been copied
-into the trip's immutable constraint snapshot by
-`services/consent-service.ts:buildAuthorizedData`. Does **not** call the LLM.
+读取当前用户在该行程中已授权的 Profile 字段的快照投影。仅读，不写库，**不调用 LLM**。
+
+> 字段来源于 `services/consent-service.ts:buildAuthorizedData` 写入 `constraint_snapshots.authorizedData` 的内容。该函数已显式排除 `passportNumber`（详见 [../../services/AUDIT.md](../../services/AUDIT.md) §call sites）。
 
 ## 注册元数据
 
-| Field | Value | Source |
+| Field / 字段 | Value / 值 | Source / 源 |
 | --- | --- | --- |
 | `name` | `profile.memory` | `../agents/contracts.ts:Skill.name` |
-| `agent` | `personal` | ... |
-| `version` | `1.0.0` | ... |
-| `allowedTools` | `["profile:read"]` | All within the `personal` allow-list. |
-| `timeoutMs` | `2000` | ... |
-| `needsConfirm` | `false` | ... |
+| `agent` | `personal` | `../agents/contracts.ts:AgentKind` |
+| `version` | `1.0.0` | `Skill.version` |
+| `allowedTools` | `["profile:read"]` | `policy-gate.ts:9-13` 内 `personal` allow-list |
+| `timeoutMs` | `2000` | `Skill.timeoutMs` |
+| `needsConfirm` | `false` | `Skill.needsConfirm` |
 
 ## 输入 Schema
 
-[Source: `./profile-memory-skill.ts:5-9`]
+[源：[./profile-memory-skill.ts:5-9](./profile-memory-skill.ts)]
 
 ```ts
 const profileMemoryInputSchema = z.object({
@@ -34,12 +34,11 @@ const profileMemoryInputSchema = z.object({
 }).strict();
 ```
 
-`fields` filters which authorised Profile keys the caller wants back. Empty
-array means "all authorised keys".
+- `fields` 过滤调用者想读的 Profile 键；空数组表示"全部已授权键"。
 
 ## 输出 Schema
 
-[Source: `./profile-memory-skill.ts:11-17`]
+[源：[./profile-memory-skill.ts:11-17](./profile-memory-skill.ts)]
 
 ```ts
 const profileMemoryOutputSchema = z.object({
@@ -51,44 +50,40 @@ const profileMemoryOutputSchema = z.object({
 }).strict();
 ```
 
-Every item is a single `{ field, value, source }` triple. `source` is
-**always** `"profile"` for this Skill — it reads the long-term Profile only.
+每条 `item` 是单个 `{ field, value, source }` 三元组。本 Skill 中 `source` **始终**为 `"profile"`——它只读取长期 Profile，不读取 trip override。
 
 ## Handler 语义
 
-1. Call `buildAuthorizedData({ tripId, userId })` to get the per-member
-   snapshot projection.
-2. Filter the result's own keys to those requested in `input.fields`
-   (or include all if `fields` is empty).
-3. Map each `{ field, value }` to `{ field, value, source: "profile" }`.
+1. 调用 `buildAuthorizedData({ tripId, userId })` 获取该成员的快照投影。
+2. 按 `input.fields` 过滤返回键（空数组则不过滤）。
+3. 把每个 `{ field, value }` 映射为 `{ field, value, source: "profile" }`。
 
 ## 强制约束
 
-| Constraint | Implementation | Failure |
+| 约束 | 实现位置 | 失败表现 |
 | --- | --- | --- |
-| `allowedTools` within `personal` allow-list | `agents/skill-registry.ts:38-48` | `SkillError('TOOL_NOT_ALLOWED')` at registration. |
-| `version` only invoked once per process | `agents/skill-registry.ts:116-123` | Second call throws `SkillError('OUTPUT_INVALID', 'stale_version_reuse')`. |
-| `input` matches Zod schema | registry `input.parse` | `SkillError('INPUT_INVALID')`. |
+| `allowedTools` 必须落在 `personal` allow-list 内 | `agents/skill-registry.ts:38-48` | 注册期抛 `SkillError('TOOL_NOT_ALLOWED')` |
+| `version` 在同一进程内只允许 invoke 一次 | `agents/skill-registry.ts:116-123` | 第二次调用抛 `SkillError('OUTPUT_INVALID', 'stale_version_reuse')` |
+| `input` 必须匹配 Zod schema | registry `input.parse` | `SkillError('INPUT_INVALID')` |
 
 ## 失败模式
 
-| code | Trigger | HTTP |
-| --- | --- | --- |
-| `INPUT_INVALID` | `input.fields` is not an array of strings, or `tripId/userId` is not a UUID. | 400 |
-| `OUTPUT_INVALID` | (a) Output schema violation; (b) `stale_version_reuse`. | 422 |
-| `TIMEOUT` | Handler exceeds `2000ms`. | 504 |
-| `TOOL_NOT_ALLOWED` | Registration-time only — `allowedTools` contains a non-`personal` scope. | 403 |
+| code | 触发条件 | HTTP 状态 | 客户端可重试? |
+| --- | --- | --- | --- |
+| `INPUT_INVALID` | `input.fields` 不是字符串数组；`tripId/userId` 不是 UUID | 400 | 否（修正请求） |
+| `OUTPUT_INVALID` | 输出 schema 违规；或 `stale_version_reuse` | 422 | 否（重启进程或换 version） |
+| `TIMEOUT` | handler 超过 2000ms | 504 | 是（同 payload） |
+| `TOOL_NOT_ALLOWED` | 仅注册期 — `allowedTools` 含非 `personal` scope | 403 | 否（修正 Skill 定义） |
 
 ## 关联文档
 
-- [../../agents/CONTRACT.md](../agents/CONTRACT.md) — `Skill<I,O>` shape.
-- [../../agents/REGISTRY.md](../agents/REGISTRY.md) — `lastUsedVersion` dedupe.
-- [../../services/consent-service.ts](../../services/consent-service.ts) — the
-  `buildAuthorizedData` source this Skill reads.
+- [../../agents/CONTRACT.md](../agents/CONTRACT.md) — `Skill<I,O>` 形态
+- [../../agents/REGISTRY.md](../agents/REGISTRY.md) — `lastUsedVersion` 严格去重
+- [../../agents/ERROR-CODES.md](../agents/ERROR-CODES.md) — 错误码全集
+- [../../services/consent-service.ts](../../services/consent-service.ts) — 数据源
 
 ## Verification
 
-- `npx vitest run tests/skill-registry.test.ts` — exercises successful
-  registration + invocation.
-- `npx vitest run tests/skill-allowlist.test.ts` — exercises `Personal +
-  bookings` rejection at registration.
+- `npx vitest run tests/skill-registry.test.ts` — 注册 + invoke + dedupe
+- `npx vitest run tests/skill-allowlist.test.ts` — `Personal + bookings` 注册拒绝
+- `npm run docs:verify` — 文档与代码一致

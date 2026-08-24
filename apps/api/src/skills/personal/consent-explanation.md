@@ -7,23 +7,22 @@ status: implemented
 
 # `personal.consent.explanation` Skill
 
-Answers "what am I currently sharing on this trip?". Read-only. Does not
-call the LLM.
+回答"我在这趟行程里当前共享了什么"。只读。**不调用 LLM**。
 
 ## 注册元数据
 
-| Field | Value | Source |
+| Field / 字段 | Value / 值 | Source / 源 |
 | --- | --- | --- |
-| `name` | `consent.explanation` | ... |
-| `agent` | `personal` | ... |
-| `version` | `1.0.0` | ... |
-| `allowedTools` | `["consent:read"]` | Within `personal` allow-list. |
-| `timeoutMs` | `2000` | ... |
-| `needsConfirm` | `false` | ... |
+| `name` | `consent.explanation` | `Skill.name` |
+| `agent` | `personal` | `AgentKind` |
+| `version` | `1.0.0` | `Skill.version` |
+| `allowedTools` | `["consent:read"]` | `personal` allow-list |
+| `timeoutMs` | `2000` | `Skill.timeoutMs` |
+| `needsConfirm` | `false` | `Skill.needsConfirm` |
 
 ## 输入 Schema
 
-[Source: `./consent-explanation-skill.ts:5-8`]
+[源：[./consent-explanation-skill.ts:5-8](./consent-explanation-skill.ts)]
 
 ```ts
 const consentExplanationInputSchema = z.object({
@@ -34,7 +33,7 @@ const consentExplanationInputSchema = z.object({
 
 ## 输出 Schema
 
-[Source: `./consent-explanation-skill.ts:10-15`]
+[源：[./consent-explanation-skill.ts:10-15](./consent-explanation-skill.ts)]
 
 ```ts
 const consentExplanationOutputSchema = z.object({
@@ -45,41 +44,43 @@ const consentExplanationOutputSchema = z.object({
 }).strict();
 ```
 
-`scope` strings are the `consent_scope` SQL enum values:
-`PROFILE_BASIC`, `PROFILE_PREFERENCES`, `PROFILE_NATIONALITY`,
-`PROFILE_DOCUMENTS`, `PROFILE_BUDGET`, `PROFILE_RESTRICTIONS`.
-`fields` is the per-scope `field_list` from `consent_grants`.
+`scope` 是 `consent_scope` SQL enum：
+`PROFILE_BASIC`、`PROFILE_PREFERENCES`、`PROFILE_NATIONALITY`、
+`PROFILE_DOCUMENTS`、`PROFILE_BUDGET`、`PROFILE_RESTRICTIONS`。
+`fields` 是该 scope 下 `consent_grants.field_list`。
 
 ## Handler 语义
 
-1. Call `getActiveConsents({ tripId, userId })` which reads from
-   `consent_grants` filtering `granted = true` and `revoked_at IS NULL`.
-2. Map each grant to `{ scope, fields }`.
+1. 调用 `getActiveConsents({ tripId, userId })` 读取
+   `consent_grants`（过滤 `granted = true` 且 `revoked_at IS NULL`）。
+2. 把每条 grant 映射为 `{ scope, fields }`。
 
-Only **active** grants are returned. Revoked grants are not surfaced (they
-are still in the table with `granted = false` and `revoked_at` set).
+仅返回**当前生效**的 grant。已撤销的（`granted = false` 且 `revoked_at` 非空）不会出现在结果里。
 
 ## 强制约束
 
-| Constraint | Implementation | Failure |
+| 约束 | 实现位置 | 失败表现 |
 | --- | --- | --- |
-| `allowedTools` within `personal` allow-list | registry | `SkillError('TOOL_NOT_ALLOWED')` at registration. |
-| `version` only invoked once per process | `lastUsedVersion` strict dedupe | `SkillError('OUTPUT_INVALID', 'stale_version_reuse')`. |
+| `allowedTools` 落在 `personal` allow-list | registry | 注册期抛 `SkillError('TOOL_NOT_ALLOWED')` |
+| `version` 在同一进程内只允许 invoke 一次 | `lastUsedVersion` 严格去重 | 第二次调用抛 `SkillError('OUTPUT_INVALID', 'stale_version_reuse')` |
 
 ## 失败模式
 
-| code | Trigger | HTTP |
-| --- | --- | --- |
-| `INPUT_INVALID` | `tripId/userId` is not a UUID. | 400 |
-| `OUTPUT_INVALID` | Output schema violation or `stale_version_reuse`. | 422 |
-| `TIMEOUT` | Handler exceeds `2000ms`. | 504 |
+| code | 触发条件 | HTTP 状态 | 客户端可重试? |
+| --- | --- | --- | --- |
+| `INPUT_INVALID` | `tripId/userId` 不是 UUID | 400 | 否 |
+| `OUTPUT_INVALID` | 输出 schema 违规；或 `stale_version_reuse` | 422 | 否 |
+| `TIMEOUT` | handler 超过 2000ms | 504 | 是 |
+| `TOOL_NOT_ALLOWED` | 仅注册期 — `allowedTools` 含非 `personal` scope | 403 | 否 |
 
 ## 关联文档
 
 - [../../agents/CONTRACT.md](../agents/CONTRACT.md)
 - [../../agents/REGISTRY.md](../agents/REGISTRY.md)
+- [../../agents/ERROR-CODES.md](../agents/ERROR-CODES.md)
 
 ## Verification
 
 - `npx vitest run tests/skill-registry.test.ts`
 - `npx vitest run tests/skill-allowlist.test.ts`
+- `npm run docs:verify`
