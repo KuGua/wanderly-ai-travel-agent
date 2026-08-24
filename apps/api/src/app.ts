@@ -3,7 +3,7 @@ import fastifyCors from "@fastify/cors";
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
 import { randomUUID } from "node:crypto";
-import { demoAuthMiddleware } from "./middleware/auth.js";
+import { createAuthMiddleware, type VerifyAccessToken } from "./middleware/auth.js";
 import { errorHandler, ApiError } from "./middleware/error-handler.js";
 import { profileRoutes } from "./routes/profiles.js";
 import { tripRoutes } from "./routes/trips.js";
@@ -12,13 +12,16 @@ import { planningRoutes } from "./routes/planning.js";
 import { confirmationRoutes } from "./routes/confirmations.js";
 import { bookingRoutes } from "./routes/bookings.js";
 import { changeEventRoutes } from "./routes/change-events.js";
-import { demoUserRoutes } from "./routes/demo-users.js";
 import { pinoInstance, correlationChild } from "./observability/telemetry.js";
 import { metrics } from "./observability/metrics.js";
 import { personalTravelAgent } from "./agents/personal-travel-agent.js";
 import { sharedTripAgent } from "./agents/shared-trip-agent.js";
 
-export async function buildApp() {
+export interface BuildAppOptions {
+  verifyAccessToken?: VerifyAccessToken;
+}
+
+export async function buildApp(options: BuildAppOptions = {}) {
   const app = Fastify({
     loggerInstance: pinoInstance,
     genReqId: () => randomUUID(),
@@ -34,6 +37,11 @@ export async function buildApp() {
         version: "0.1.0",
       },
       servers: [{ url: "http://localhost:3000" }],
+      components: {
+        securitySchemes: {
+          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+        },
+      },
     },
   });
 
@@ -42,6 +50,7 @@ export async function buildApp() {
   });
 
   app.setErrorHandler(errorHandler);
+  const authMiddleware = createAuthMiddleware(options.verifyAccessToken);
 
   app.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
 
@@ -60,19 +69,17 @@ export async function buildApp() {
       request.url === "/health"
       || request.url === "/metrics"
       || request.url.startsWith("/docs")
-      || (request.method === "GET" && request.url === "/api/v1/demo/users")
       || (request.method === "POST" && request.url.split("?", 1)[0] === "/api/v1/bookings/callback")
     ) {
       return;
     }
-    await demoAuthMiddleware(request);
+    await authMiddleware(request);
   });
 
   app.setNotFoundHandler(async () => {
     throw new ApiError(404, "Not Found", "Route not found");
   });
 
-  await app.register(demoUserRoutes, { prefix: "/api/v1" });
   await app.register(profileRoutes, { prefix: "/api/v1" });
   await app.register(tripRoutes, { prefix: "/api/v1" });
   await app.register(consentRoutes, { prefix: "/api/v1" });

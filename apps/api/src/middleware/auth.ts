@@ -1,47 +1,84 @@
+import { CognitoJwtVerifier } from "aws-jwt-verify";
+import { eq } from "drizzle-orm";
 import type { FastifyRequest } from "fastify";
+
 import { db } from "../db/database.js";
 import { users } from "../db/schema.js";
-import { eq } from "drizzle-orm";
-import { DEMO_USERS } from "../providers/fixtures.js";
 import { ApiError } from "./error-handler.js";
 
-/**
- * Demo auth middleware.
- * In production, this would validate Cognito JWTs.
- * For MVP, accepts X-Demo-User header with demo user externalId.
- */
-export async function demoAuthMiddleware(request: FastifyRequest) {
-  const demoUser = request.headers["x-demo-user"] as string | undefined;
+export interface AuthenticatedIdentity {
+  subject: string;
+  displayName?: string;
+}
 
-  if (!demoUser) {
-    throw new ApiError(401, "Unauthorized", "Missing X-Demo-User header. Use one of: alice, bob, chen");
+export type VerifyAccessToken = (token: string) => Promise<AuthenticatedIdentity>;
+
+let verifier: ReturnType<typeof CognitoJwtVerifier.create> | undefined;
+let verifierConfiguration: string | undefined;
+
+export async function verifyCognitoAccessToken(token: string): Promise<AuthenticatedIdentity> {
+  const userPoolId = process.env.COGNITO_USER_POOL_ID?.trim();
+  const clientId = process.env.COGNITO_CLIENT_ID?.trim();
+
+  if (!userPoolId || !clientId) {
+    throw new ApiError(503, "Service Unavailable", "Authentication service is not configured");
   }
 
-  const demoConfig = DEMO_USERS.find(u => u.externalId === demoUser);
-  if (!demoConfig) {
-    throw new ApiError(
-      401,
-      "Unauthorized",
-      `Invalid demo user. Use one of: ${DEMO_USERS.map(u => u.externalId).join(", ")}`,
-    );
+  const configuration = `${userPoolId}:${clientId}`;
+  if (!verifier || verifierConfiguration !== configuration) {
+    verifier = CognitoJwtVerifier.create({ userPoolId, clientId, tokenUse: "access" });
+    verifierConfiguration = configuration;
   }
 
-  // Find or create user in DB
-  let userRecords = await db.select().from(users).where(eq(users.externalId, demoConfig.externalId)).limit(1);
-  
-  if (userRecords.length === 0) {
-    const [newUser] = await db.insert(users).values({
-      externalId: demoConfig.externalId,
-      displayName: demoConfig.displayName,
-    }).returning();
-    userRecords = [newUser];
-  }
+  const payload = await verifier.verify(token);
+  return {
+    subject: payload.sub,
+    displayName: typeof payload.username === "string" ? payload.username : undefined,
+  };
+}
 
-  // Attach user to request
-  request.user = {
-    id: userRecords[0].id,
-    externalId: userRecords[0].externalId,
-    displayName: userRecords[0].displayName,
+export function createAuthMiddleware(verifyAccessToken: VerifyAccessToken = verifyCognitoAccessToken) {
+  return async function authMiddleware(request: FastifyRequest) {
+    const authorization = request.headers.authorization;
+    const match = typeof authorization === "string" ? /^Bearer\s+(\S+)$/i.exec(authorization) : null;
+
+    if (!match) {
+      throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+    }
+
+    let identity: AuthenticatedIdentity;
+    try {
+      identity = await verifyAccessToken(match[1]);
+    } catch (error) {
+      if (error instanceof ApiError && error.statusCode === 503) throw error;
+      throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+    }
+
+    if (!identity.subject.trim()) {
+      throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+    }
+
+    const displayName = identity.displayName?.trim().slice(0, 128) || "Traveler";
+    let userRecords = await db.select().from(users).where(eq(users.externalId, identity.subject)).limit(1);
+
+    if (userRecords.length === 0) {
+      await db.insert(users).values({
+        externalId: identity.subject,
+        displayName,
+      }).onConflictDoNothing({ target: users.externalId });
+      userRecords = await db.select().from(users).where(eq(users.externalId, identity.subject)).limit(1);
+    }
+
+    const user = userRecords[0];
+    if (!user) {
+      throw new ApiError(503, "Service Unavailable", "Authenticated user could not be provisioned");
+    }
+
+    request.user = {
+      id: user.id,
+      externalId: user.externalId,
+      displayName: user.displayName,
+    };
   };
 }
 

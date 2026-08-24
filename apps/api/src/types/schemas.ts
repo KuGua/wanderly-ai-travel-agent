@@ -102,18 +102,6 @@ export const tripDetailsResponseSchema = z.object({
   members: z.array(tripMemberSchema),
 });
 
-// ─── Demo Identity ─────────────────────────────────────────────────────────
-
-export const demoUserSchema = z.object({
-  id: uuidSchema,
-  externalId: z.enum(["alice", "bob", "chen"]),
-  displayName: z.string(),
-});
-
-export const demoUsersResponseSchema = z.object({
-  users: z.array(demoUserSchema),
-});
-
 export const joinTripSchema = z.object({
   tripId: uuidSchema,
 });
@@ -192,7 +180,6 @@ export function toJsonSchema(schema: z.ZodType) {
   return z.toJSONSchema(schema, { target: "draft-7" });
 }
 
-export type DemoUser = z.infer<typeof demoUserSchema>;
 export type Profile = z.infer<typeof profileSchema>;
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;
 export type TripSummary = z.infer<typeof tripSummarySchema>;

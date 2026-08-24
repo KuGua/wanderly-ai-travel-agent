@@ -46,30 +46,27 @@ GEMINI_MODEL=gemini-2.5-flash
 原生 API 不兼容该接口的供应商需要单独 provider adapter，不能仅靠更换 key 启用。
 不要将密钥提交到仓库或暴露给浏览器。
 
+## Cognito 登录与 API 认证
+
+受保护 API 只接受 Cognito access token，不接受用户 ID、邮箱或手机号作为身份
+header。用户可在 Cognito User Pool 中通过邮箱或手机号登录，客户端随后发送：
+
+```http
+Authorization: Bearer <cognito-access-token>
+```
+
+本地和部署环境必须配置 `COGNITO_USER_POOL_ID` 与 `COGNITO_CLIENT_ID`。API
+验证签名、issuer、client ID、token use 与过期时间，并使用已验证 token 的
+`sub` 关联数据库用户。缺少或无效 token 返回统一 `401`，不会回显 token 或
+账号信息。
+
 ## Sandbox callback 配置
 
-`POST /api/v1/bookings/callback` 不使用 `X-Demo-User`，而是要求
+`POST /api/v1/bookings/callback` 不使用 Cognito bearer token，而是要求
 `X-Sandbox-Timestamp` 与 `X-Sandbox-Signature`。本地 `.env` 中必须设置仅限
 本地使用的随机 `SANDBOX_HMAC_SECRET`；服务端按
 `${timestamp}.${rawRequestBody}` 计算 HMAC-SHA256，并只接受五分钟窗口内的
 请求。缺少配置或认证失败都会 fail closed，且不会回显具体失败原因。
-
-## 演示用户
-
-| 用户 | 外部 ID | 出发城市 | 关键特征 |
-|-------|------------|----------------|------------|
-| Alice | `alice` | San Francisco | 艺术兴趣、市中心住宿、**不乘红眼航班** |
-| Bob | `bob` | San Francisco | 预算上限 $2500、舒适度偏好 |
-| Chen | `chen` | Shanghai | 历史/寺庙、出发日期受限 |
-
-使用 `X-Demo-User` header 进行演示认证：
-```bash
-curl -H "X-Demo-User: alice" http://localhost:3000/api/v1/profiles/me
-```
-
-演示身份选择可先调用无需认证的 `GET /api/v1/demo/users`；该接口只返回
-seeded user UUID、`externalId` 和 `displayName`。已选择身份后，其他业务接口
-必须携带 `X-Demo-User`。
 
 ## 核心能力
 
@@ -107,7 +104,7 @@ npm ci --dry-run --ignore-scripts
 
 安装脚本许可由 `package.json` 的 `allowScripts` 按确切版本维护。更新带安装脚本的依赖后，先运行 `npm approve-scripts --allow-scripts-pending` 审核新增项；不要使用不经审核的 `--all`。生产依赖安全检查使用 `npm audit --omit=dev`；不得直接运行 `npm audit fix --force`，以免降级 Drizzle Kit。
 
-测试覆盖安全 demo identity、授权撤回后的 plan 失效、fixture fallback、严格的 plan 输出结构/授权/路线/来源/evidence 校验、LLM fallback 与 agent-run 记录、Skill schema/allow-list/timeout、callback HMAC/raw-body/timestamp 边界、安全日志、低基数 metrics、audit summary whitelist，以及预订幂等与乱序 callback。
+测试覆盖 Cognito bearer authentication、授权撤回后的 plan 失效、fixture fallback、严格的 plan 输出结构/授权/路线/来源/evidence 校验、LLM fallback 与 agent-run 记录、Skill schema/allow-list/timeout、callback HMAC/raw-body/timestamp 边界、安全日志、低基数 metrics、audit summary whitelist，以及预订幂等与乱序 callback。
 
 `npm test` 需要按“快速开始”完成本地 PostgreSQL migration；integration tests 会重置测试用 trip/session 数据。
 

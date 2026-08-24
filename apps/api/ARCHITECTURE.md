@@ -139,9 +139,9 @@ Cross-cutting:
 - `buildAuthorizedData()` only includes explicitly granted fields
 - Passport number is **never** included in authorized data or logs
 - Nationality is only used for visa checks when explicitly shared
-- `GET /api/v1/demo/users` is the sole unauthenticated API bootstrap endpoint;
-  it exposes only seeded user UUID, `externalId`, and `displayName` so the demo
-  UI can select an identity and create member references.
+- Cognito login is the identity bootstrap. Protected routes verify bearer
+  access tokens and derive the database user from the verified token `sub`;
+  clients cannot select an identity by submitting a user ID.
 - Trip list/detail queries enforce membership in PostgreSQL before returning
   trip or safe member presentation data.
 
