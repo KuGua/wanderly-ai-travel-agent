@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { z } from "zod";
 import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/domain.js";
 import type { ModelGateway } from "./model-gateway.js";
 import type { RequestContext } from "../utils/context.js";
@@ -10,16 +11,24 @@ export interface LLMGatewayOptions {
   promptVersion: string;
   mock: ModelGateway;
   ctx: RequestContext;
-  /** Optional injected client for tests; production code resolves from @openai/agents. */
+  /** Optional injected client for tests; production code resolves the OpenAI SDK client. */
   client?: unknown;
   /** Maximum total tokens, also used to size the retry budget. */
   maxRetries?: number;
 }
 
-interface ParsedCompletion {
-  plan: Record<string, unknown>;
-  usage?: AgentRunTokens;
-}
+const parsedCompletionSchema = z.object({
+  plan: z.object({
+    destination: z.string().min(1),
+    flights: z.array(z.unknown()),
+    stays: z.array(z.unknown()),
+    ground: z.array(z.unknown()),
+    generatedAt: z.string().min(1),
+    constraintReferences: z.array(z.string().min(1)).optional(),
+  }).strict(),
+}).strict();
+
+type ParsedCompletion = z.infer<typeof parsedCompletionSchema>;
 
 function canonicalize(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -60,9 +69,8 @@ export class LLMGateway implements ModelGateway {
 
   private async loadClient(): Promise<OpenAIClientLike> {
     if (this.options.client) return this.options.client as OpenAIClientLike;
-    const mod = await import("@openai/agents");
-    const OpenAI = (mod as unknown as { OpenAI: new (config: { apiKey: string }) => OpenAIClientLike }).OpenAI;
-    return new OpenAI({ apiKey: this.options.apiKey });
+    const { default: OpenAI } = await import("openai");
+    return new OpenAI({ apiKey: this.options.apiKey }) as unknown as OpenAIClientLike;
   }
 
   async generateStructuredPlan(params: {
@@ -119,7 +127,8 @@ export class LLMGateway implements ModelGateway {
             {
               role: "system",
               content:
-                "You are the Shared Trip planning skill. Return only JSON that matches the response_format. " +
+                "You are the Shared Trip planning skill. Return one JSON object with exactly one top-level plan field. " +
+                "The plan must contain destination, flights, stays, ground, and generatedAt. " +
                 "Never include PII, passport numbers, or fields outside the supplied snapshot.",
             },
             {
@@ -137,11 +146,12 @@ export class LLMGateway implements ModelGateway {
           signal,
         });
 
-        const parsed = response.choices[0]?.message?.parsed;
-        if (!parsed || typeof parsed.plan !== "object") {
+        const completion = parsedCompletionSchema.safeParse(response.choices[0]?.message?.parsed);
+        if (!completion.success) {
           lastError = "SCHEMA_PARSE";
           continue;
         }
+        const parsed = completion.data;
 
         const tokens = response.usage;
         await recordAgentRun({

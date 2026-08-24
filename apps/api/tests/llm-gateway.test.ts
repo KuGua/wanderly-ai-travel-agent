@@ -7,6 +7,20 @@ import { MockModelGateway } from "../src/providers/model-gateway.js";
 import { __setModelGatewayForTests, createModelGateway } from "../src/providers/gateway-factory.js";
 import { createRequestContext } from "../src/utils/context.js";
 
+vi.mock("openai", () => ({
+  default: class FakeOpenAI {
+    beta = {
+      chat: {
+        completions: {
+          parse: async () => ({
+            choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+          }),
+        },
+      },
+    };
+  },
+}));
+
 interface FakeClient {
   beta: {
     chat: {
@@ -25,10 +39,10 @@ function buildClient(behavior: "ok" | "bad" | "abort" | "slow"): FakeClient {
     beta: {
       chat: {
         completions: {
-          parse: async (_req: Record<string, unknown>) => {
+          parse: async () => {
             if (behavior === "ok") {
               return {
-                choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [] } } } }],
+                choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
                 usage: { prompt: 12, completion: 5, total: 17 },
               };
             }
@@ -82,6 +96,29 @@ describe("LLM gateway", () => {
     expect(runs.length).toBeGreaterThan(0);
     expect(runs[0].status).toBe("SUCCESS");
     expect(runs[0].tokens).toEqual({ prompt: 12, completion: 5, total: 17 });
+  });
+
+  it("loads the configured OpenAI client when no test client is injected", async () => {
+    const gateway = new LLMGateway({
+      apiKey: "test",
+      modelName: "gpt-4o-mini",
+      promptVersion: "1.0.0",
+      mock: new MockModelGateway(),
+      ctx: createRequestContext(),
+      maxRetries: 0,
+    });
+
+    const result = await gateway.generateStructuredPlan({
+      destination: "Tokyo",
+      flights: [],
+      stays: [],
+      ground: [],
+      memberPreferences: {},
+    });
+
+    expect(result.destination).toBe("Tokyo");
+    const runs = await db.select().from(agentRuns).where(eq(agentRuns.status, "SUCCESS"));
+    expect(runs).toHaveLength(1);
   });
 
   it("falls back to mock when client returns malformed output", async () => {

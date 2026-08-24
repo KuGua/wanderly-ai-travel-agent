@@ -41,7 +41,6 @@ export async function runMigrations(connectionString: string = buildConnectionSt
         await tx`INSERT INTO schema_migrations(filename) VALUES (${file})`;
       });
       applied.push(file);
-      // eslint-disable-next-line no-console
       console.log(`[migrate] applied ${file}`);
     }
   } finally {
@@ -55,13 +54,11 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   runMigrations()
     .then(files => {
       if (files.length === 0) {
-        // eslint-disable-next-line no-console
         console.log("[migrate] schema already up to date");
       }
       process.exit(0);
     })
     .catch(err => {
-      // eslint-disable-next-line no-console
       console.error("[migrate] failed:", err);
       process.exit(1);
     });

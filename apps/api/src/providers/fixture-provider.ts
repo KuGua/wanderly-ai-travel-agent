@@ -1,6 +1,21 @@
 import type { FlightOffer, StayOffer, GroundOffer, VisaReadinessResult } from "../types/domain.js";
-import type { FlightProvider, StayProvider, GroundProvider, VisaProvider } from "./types.js";
-import { FLIGHT_FIXTURES, STAY_FIXTURES, GROUND_FIXTURES, VISA_FIXTURES } from "./fixtures.js";
+import type { FlightProvider, StayProvider, GroundProvider, ProviderResult, VisaProvider } from "./types.js";
+import { FIXTURE_CAPTURED_AT, FIXTURE_VERSION, FLIGHT_FIXTURES, STAY_FIXTURES, GROUND_FIXTURES, VISA_FIXTURES } from "./fixtures.js";
+
+function fixtureResult<T>(data: T): ProviderResult<T> {
+  return {
+    outcome: "FALLBACK_DEMO",
+    data,
+    source: "Demo data",
+    capturedAt: FIXTURE_CAPTURED_AT,
+    fixtureVersion: FIXTURE_VERSION,
+    reason: "LIVE_PROVIDER_NOT_CONFIGURED",
+  };
+}
+
+function unavailable<T>(): ProviderResult<T> {
+  return { outcome: "UNAVAILABLE", reason: "FIXTURE_NOT_FOUND" };
+}
 
 /**
  * Fixture-based provider: returns deterministic demo data.
@@ -13,11 +28,11 @@ export class FixtureFlightProvider implements FlightProvider {
     dateStart: string;
     dateEnd: string;
     snapshotId: string;
-  }): Promise<FlightOffer[]> {
+  }): Promise<ProviderResult<FlightOffer[]>> {
     const rangeStart = `${params.dateStart}T00:00:00.000Z`;
     const rangeEnd = `${params.dateEnd}T23:59:59.999Z`;
 
-    return FLIGHT_FIXTURES
+    const offers = FLIGHT_FIXTURES
       .filter(f =>
         f.origin === params.origin
         && f.destination === params.destination
@@ -25,6 +40,7 @@ export class FixtureFlightProvider implements FlightProvider {
         && f.departureTime <= rangeEnd
       )
       .map(f => ({ ...f }));
+    return offers.length > 0 ? fixtureResult(offers) : unavailable();
   }
 }
 
@@ -35,12 +51,13 @@ export class FixtureStayProvider implements StayProvider {
     checkOut: string;
     style?: string;
     snapshotId: string;
-  }): Promise<StayOffer[]> {
+  }): Promise<ProviderResult<StayOffer[]>> {
     let results = STAY_FIXTURES.filter(s => s.destination === params.destination);
     if (params.style) {
       results = results.filter(s => s.style === params.style);
     }
-    return results.map(s => ({ ...s }));
+    const offers = results.map(s => ({ ...s }));
+    return offers.length > 0 ? fixtureResult(offers) : unavailable();
   }
 }
 
@@ -48,10 +65,11 @@ export class FixtureGroundProvider implements GroundProvider {
   async searchGround(params: {
     destination: string;
     snapshotId: string;
-  }): Promise<GroundOffer[]> {
-    return GROUND_FIXTURES
+  }): Promise<ProviderResult<GroundOffer[]>> {
+    const offers = GROUND_FIXTURES
       .filter(g => g.destination === params.destination)
       .map(g => ({ ...g }));
+    return offers.length > 0 ? fixtureResult(offers) : unavailable();
   }
 }
 
@@ -60,27 +78,15 @@ export class FixtureVisaProvider implements VisaProvider {
     nationality: string;
     destinationCountry: string;
     snapshotId: string;
-  }): Promise<VisaReadinessResult> {
+  }): Promise<ProviderResult<VisaReadinessResult>> {
     const destFixtures = VISA_FIXTURES[params.destinationCountry];
     const natFixtures = destFixtures?.[params.nationality];
 
     if (!natFixtures) {
-      return {
-        memberId: "", // filled by service
-        destinationCountry: params.destinationCountry,
-        nationality: params.nationality,
-        status: "AUTHORIZED_CHECK",
-        checklist: [
-          { item: "Visa requirements unknown for this nationality/destination combination", source: "Demo data", uncertainty: "No fixture data available — verify with official government sources" },
-        ],
-        confidenceLevel: "UNCERTAIN",
-        source: "Demo data — no fixture available",
-        capturedAt: new Date().toISOString(),
-        disclaimer: "This is a demo checklist. Verify all requirements with official government sources before travel.",
-      };
+      return unavailable();
     }
 
-    return {
+    return fixtureResult({
       memberId: "",
       destinationCountry: params.destinationCountry,
       nationality: params.nationality,
@@ -88,8 +94,8 @@ export class FixtureVisaProvider implements VisaProvider {
       checklist: natFixtures.checklist,
       confidenceLevel: natFixtures.confidence,
       source: natFixtures.source,
-      capturedAt: new Date().toISOString(),
+      capturedAt: FIXTURE_CAPTURED_AT,
       disclaimer: "This is a demo checklist. Verify all requirements with official government sources before travel. This does not constitute legal advice.",
-    };
+    });
   }
 }

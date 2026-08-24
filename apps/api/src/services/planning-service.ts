@@ -5,17 +5,28 @@ import { buildAuthorizedData } from "./consent-service.js";
 import { FixtureFlightProvider, FixtureStayProvider, FixtureGroundProvider } from "../providers/fixture-provider.js";
 import { createModelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
+import type { FlightProvider, GroundProvider, StayProvider } from "../providers/types.js";
+import { validatePlanOutput } from "../policy/plan-output-validator.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 import type { FlightOffer, StayOffer, GroundOffer } from "../types/domain.js";
 
-const flightProvider = new FixtureFlightProvider();
-const stayProvider = new FixtureStayProvider();
-const groundProvider = new FixtureGroundProvider();
-let modelGateway: ModelGateway = createModelGateway();
+export interface PlanningDependencies {
+  flightProvider: FlightProvider;
+  stayProvider: StayProvider;
+  groundProvider: GroundProvider;
+  modelGateway: ModelGateway;
+}
+
+const defaultPlanningDependencies: PlanningDependencies = {
+  flightProvider: new FixtureFlightProvider(),
+  stayProvider: new FixtureStayProvider(),
+  groundProvider: new FixtureGroundProvider(),
+  modelGateway: createModelGateway(),
+};
 
 export function __setModelGateway(gateway: ModelGateway): void {
-  modelGateway = gateway;
+  defaultPlanningDependencies.modelGateway = gateway;
   __setModelGatewayForTests(gateway);
 }
 
@@ -99,7 +110,7 @@ export async function generatePlan(params: {
   snapshotId: string;
   destination: string;
   memberIds: string[];
-}): Promise<string> {
+}, dependencies: PlanningDependencies = defaultPlanningDependencies): Promise<string> {
   // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
     .where(eq(constraintSnapshots.id, params.snapshotId))
@@ -120,29 +131,35 @@ export async function generatePlan(params: {
   const allGround: GroundOffer[] = [];
 
   for (const departureCity of snapshot.departureCities) {
-    const flights = await flightProvider.searchFlights({
+    const result = await dependencies.flightProvider.searchFlights({
       origin: departureCity,
       destination: params.destination,
       dateStart: snapshot.travelDateStart ?? "2025-08-01",
       dateEnd: snapshot.travelDateEnd ?? "2025-08-31",
       snapshotId: params.snapshotId,
     });
-    allFlights.push(...flights);
+    if (result.outcome !== "UNAVAILABLE") {
+      allFlights.push(...result.data);
+    }
   }
 
-  const stays = await stayProvider.searchStays({
+  const stayResult = await dependencies.stayProvider.searchStays({
     destination: params.destination,
     checkIn: snapshot.travelDateStart ?? "2025-08-02",
     checkOut: snapshot.travelDateEnd ?? "2025-08-07",
     snapshotId: params.snapshotId,
   });
-  allStays.push(...stays);
+  if (stayResult.outcome !== "UNAVAILABLE") {
+    allStays.push(...stayResult.data);
+  }
 
-  const ground = await groundProvider.searchGround({
+  const groundResult = await dependencies.groundProvider.searchGround({
     destination: params.destination,
     snapshotId: params.snapshotId,
   });
-  allGround.push(...ground);
+  if (groundResult.outcome !== "UNAVAILABLE") {
+    allGround.push(...groundResult.data);
+  }
 
   validateProviderCoverage({
     requiredOrigins: snapshot.departureCities,
@@ -153,15 +170,30 @@ export async function generatePlan(params: {
 
   // Generate structured plan via model gateway
   const memberPreferences = snapshot.authorizedData;
-  const planData = await modelGateway.generateStructuredPlan({
+  const candidatePlanData = await dependencies.modelGateway.generateStructuredPlan({
     destination: params.destination,
     flights: allFlights,
     stays: allStays,
     ground: allGround,
     memberPreferences,
+    ctx: params.ctx,
   });
 
-  // Insert plan
+  // The model output is untrusted until the deterministic control plane proves
+  // snapshot authorization and an exact match to run-scoped provider evidence.
+  const planData = validatePlanOutput({
+    planData: candidatePlanData,
+    snapshot: {
+      authorizedData: snapshot.authorizedData,
+      departureCities: snapshot.departureCities,
+      destinationCandidates: snapshot.destinationCandidates,
+      travelDateStart: snapshot.travelDateStart ?? undefined,
+      travelDateEnd: snapshot.travelDateEnd ?? undefined,
+    },
+    evidence: { flights: allFlights, stays: allStays, ground: allGround },
+  });
+
+  // Only validated output may cross the authoritative persistence boundary.
   const [plan] = await db.insert(itineraryPlans).values({
     tripId: params.tripId,
     snapshotId: params.snapshotId,

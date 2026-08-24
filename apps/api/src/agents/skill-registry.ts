@@ -64,14 +64,14 @@ export async function invokeSkill<I, O>(
 ): Promise<O> {
   const skill = getSkill(name);
 
-  if (skill.agent === "shared" && !ctx.snapshot) {
-    throw new SkillError("SNAPSHOT_REQUIRED", `Shared skill ${name} requires a snapshot`);
-  }
-
   try {
     ctx.policyGate.requireScope(skill.allowedTools);
   } catch (err) {
     throw new SkillError("TOOL_NOT_ALLOWED", `Scope rejected for ${name}: ${(err as Error).message}`);
+  }
+
+  if (skill.agent === "shared" && !ctx.snapshot) {
+    throw new SkillError("SNAPSHOT_REQUIRED", `Shared skill ${name} requires a snapshot`);
   }
 
   let input: I;
@@ -82,20 +82,29 @@ export async function invokeSkill<I, O>(
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), skill.timeoutMs);
   const start = Date.now();
 
   let output: O;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    output = await skill.handler(ctx, input, controller.signal);
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new SkillError("TIMEOUT", `Skill ${name} timed out after ${skill.timeoutMs}ms`));
+      }, skill.timeoutMs);
+    });
+    output = await Promise.race([
+      skill.handler(ctx, input, controller.signal) as Promise<O>,
+      timeout,
+    ]);
   } catch (err) {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     if ((err as { name?: string }).name === "AbortError") {
       throw new SkillError("TIMEOUT", `Skill ${name} timed out after ${skill.timeoutMs}ms`);
     }
     throw err;
   }
-  clearTimeout(timer);
+  if (timer) clearTimeout(timer);
 
   let parsed: O;
   try {

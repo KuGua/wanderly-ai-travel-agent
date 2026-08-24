@@ -2,6 +2,7 @@ import type { FastifyError, FastifyRequest, FastifyReply } from "fastify";
 import { STATUS_CODES } from "node:http";
 import { ZodError } from "zod";
 import { logger } from "../utils/logger.js";
+import { PlanValidationError } from "../policy/plan-output-validator.js";
 
 export class ApiError extends Error {
   constructor(
@@ -45,5 +46,6 @@ export async function errorHandler(error: FastifyError, request: FastifyRequest,
     error: errorName,
     message,
     correlationId,
+    ...(error instanceof PlanValidationError ? { violations: error.violations } : {}),
   });
 }

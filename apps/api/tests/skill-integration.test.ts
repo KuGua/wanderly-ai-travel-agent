@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { invokeSkill } from "../src/agents/skill-registry.js";
+import { beforeEach, describe, expect, it } from "vitest";
+import { __resetRegistryForTests, invokeSkill, registerSkill } from "../src/agents/skill-registry.js";
 import { planComparisonSkill } from "../src/skills/shared/plan-comparison-skill.js";
 import { __setModelGatewayForTests } from "../src/providers/gateway-factory.js";
 import { MockModelGateway } from "../src/providers/model-gateway.js";
@@ -14,7 +14,12 @@ const snapshot: ConstraintSnapshotData = {
   destinationCandidates: ["Tokyo", "Bangkok", "Seoul"],
 };
 
-describe("plan.comparison skill (inline validator)", () => {
+describe("plan.comparison skill (authoritative validator)", () => {
+  beforeEach(() => {
+    __resetRegistryForTests();
+    registerSkill(planComparisonSkill);
+  });
+
   it("returns a plan whose flights/stays/ground honor snapshot constraints", async () => {
     __setModelGatewayForTests(new MockModelGateway());
     const ctx = {

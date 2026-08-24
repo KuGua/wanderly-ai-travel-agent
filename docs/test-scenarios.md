@@ -68,6 +68,31 @@ memberships overlap only where explicitly configured.
 - Results outside the requested date range are excluded.
 - Unsupported searches return no offers and never fabricate inventory or price.
 
+### TS-H3b — Reject unauthorized or fabricated plan output before persistence
+
+**Stories:** H3, P1
+**Objective:** Verify model output cannot create authoritative facts or bypass the immutable snapshot.
+
+**Starting conditions:** A snapshot authorizes one member preference, two departure origins and Tokyo; deterministic Flight/Stay/Ground evidence exists for the planning run.
+
+**Steps:**
+
+1. Validate a structurally complete plan whose selected offers exactly match provider evidence.
+2. Reference a snapshot field that is absent from `authorizedData`.
+3. Replace a selected origin or destination with an unapproved value.
+4. Remove source provenance or alter a provider-backed price/offer field.
+5. Submit a valid deterministic `LLMGateway`-style structured candidate through `PlanningService`.
+6. Submit malformed or evidence-mismatched `LLMGateway`-style output through `PlanningService` and inspect persistence and the API error.
+
+**Expected outcomes:**
+
+- The valid plan passes with all required origins and provenance intact.
+- A valid LLM-style candidate is persisted only after the authoritative validator succeeds.
+- Unauthorized fields, unapproved routes, missing sources, malformed structure and evidence mismatches fail closed with `PlanValidationError` and HTTP `422`.
+- Violations contain only stable `code`, `fieldPath` and low-risk `reason`; rejected values and private snapshot data are absent.
+- A failed candidate creates no `itineraryPlans`, `providerOffers`, `sourceEvidence` or `PLAN_CREATE` audit record; safe model-run observability may still be recorded.
+- Fixture provider results narrow explicitly between `FALLBACK_DEMO` and `UNAVAILABLE`; unsupported requests contain no fabricated `data`.
+
 ### TS-H1 — Save, reuse and override a private travel profile
 
 **Stories:** H1  
