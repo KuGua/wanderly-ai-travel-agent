@@ -4,10 +4,11 @@ import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/dom
 import type { ModelGateway } from "./model-gateway.js";
 import type { RequestContext } from "../utils/context.js";
 import { recordAgentRun, type AgentRunTokens } from "../observability/agent-runs.js";
-import { metrics } from "../observability/metrics.js";
+import { metrics, type MetricProvider } from "../observability/metrics.js";
 
 export interface LLMGatewayOptions {
   apiKey: string;
+  provider: MetricProvider;
   /** Optional OpenAI-compatible API endpoint; omitted for the OpenAI default. */
   baseUrl?: string;
   modelName: string;
@@ -112,7 +113,7 @@ export class LLMGateway implements ModelGateway {
         errorCode,
         tokens: extra,
       });
-      metrics.inc("provider_fallback_total", { provider: this.options.modelName, outcome: errorCode });
+      metrics.inc("provider_fallback_total", { provider: this.options.provider, outcome: errorCode });
       return plan;
     };
 
@@ -161,7 +162,10 @@ export class LLMGateway implements ModelGateway {
         const parsed = completion.data;
 
         const tokens = response.usage;
-        metrics.observe("llm_request_latency_ms", Date.now() - start, { model: this.options.modelName });
+        metrics.observe("llm_request_latency_ms", Date.now() - start, {
+          provider: this.options.provider,
+          outcome: "success",
+        });
         await recordAgentRun({
           ctx,
           skillName: "plan.comparison",

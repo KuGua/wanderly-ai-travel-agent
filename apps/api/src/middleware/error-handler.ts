@@ -10,6 +10,7 @@ export class ApiError extends Error {
     public readonly statusCode: number,
     public readonly error: string,
     message: string,
+    public readonly logCategory?: string,
   ) {
     super(message);
     this.name = "ApiError";
@@ -43,14 +44,22 @@ export async function errorHandler(error: FastifyError, request: FastifyRequest,
   const isApiError = error instanceof ApiError;
   const statusCode = isValidationError ? 400 : isApiError ? error.statusCode : error.statusCode ?? 500;
 
-  const log = statusCode >= 500 ? logger.error.bind(logger) : logger.info.bind(logger);
-  log({
-    err: error,
-    correlationId,
-    method: request.method,
-    url: request.url,
-    statusCode,
-  }, statusCode >= 500 ? "Request error" : "Request rejected");
+  const route = request.routeOptions?.url ?? "unmatched";
+  if (statusCode >= 500) {
+    logger.error({ err: error, correlationId, method: request.method, route, statusCode }, "Request error");
+  } else {
+    logger.warn({
+      correlationId,
+      method: request.method,
+      route,
+      statusCode,
+      errorCategory: isValidationError
+        ? "VALIDATION_REJECTED"
+        : isApiError
+          ? error.logCategory ?? "API_REJECTED"
+          : "REQUEST_REJECTED",
+    }, "Request rejected");
+  }
 
   const message = statusCode >= 500
     ? "Internal server error"

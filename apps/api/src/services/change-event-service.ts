@@ -37,7 +37,11 @@ export async function processChangeEvent(params: {
     ctx: params.ctx,
     action: "CHANGE_EVENT",
     tripId: params.tripId,
-    summary: { eventId: params.eventId, eventType: params.eventType, payload: params.payload },
+    summary: {
+      eventId: params.eventId,
+      eventType: params.eventType,
+      hasEventData: Object.keys(params.payload).length > 0,
+    },
   });
 
   // Get latest active plan
@@ -56,7 +60,7 @@ export async function processChangeEvent(params: {
   await markPlanStale({
     ctx: params.ctx,
     planId: latestPlan.id,
-    reason: `Change event: ${params.eventType} — ${JSON.stringify(params.payload)}`,
+    reason: `Change event: ${params.eventType}`,
   });
 
   // Mark all confirmations for this plan as STALE

@@ -61,6 +61,7 @@ export async function buildApp() {
       || request.url === "/metrics"
       || request.url.startsWith("/docs")
       || (request.method === "GET" && request.url === "/api/v1/demo/users")
+      || (request.method === "POST" && request.url.split("?", 1)[0] === "/api/v1/bookings/callback")
     ) {
       return;
     }

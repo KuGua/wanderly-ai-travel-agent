@@ -234,14 +234,21 @@ memberships overlap only where explicitly configured.
 1. Alice and Bob confirm; Chen chooses `Needs changes`.
 2. Attempt orchestration.
 3. Chen confirms the current plan; inspect all three confirmations and no-charge disclosure.
-4. Invoke sandbox; deliver success callback twice and a late failure callback.
-5. Change a price and attempt to invoke using old confirmations.
+4. Invoke sandbox; sign the exact callback JSON bytes with the configured HMAC
+   secret and a timestamp exactly at the accepted window boundary.
+5. Deliver the signed success callback twice and a signed late failure callback.
+6. Repeat with a missing signature, malformed timestamp, expired timestamp,
+   invalid signature, and a body modified after signing.
+7. Change a price and attempt to invoke using old confirmations.
 
 **Expected outcomes:**
 
 - One non-confirming member blocks orchestration, even when the other two have confirmed.
 - Current, unanimous three-member confirmation displays service items, price/currency, sources and no-charge boundary.
 - Sandbox returns a single set of reference IDs; duplicate/late callbacks do not duplicate action.
+- Callback auth is independent of `X-Demo-User`; valid boundary requests pass,
+  while missing/malformed/expired/invalid/tampered requests return the same
+  generic `401` without leaking the secret, signature, or failure detail.
 - Price change expires confirmations; stale plan cannot orchestrate.
 - No payment is collected or claimed.
 
@@ -299,6 +306,10 @@ memberships overlap only where explicitly configured.
 2. Inspect timeline for profile edit, consent, tool calls, visa, re-plan, approval and sandbox call.
 3. Inspect logs, traces and metrics by correlation ID.
 4. Search telemetry for private conversation text, document numbers, payment data and unapproved Profile values.
+5. Attempt to emit user/trip/plan/booking/correlation/request identifiers and a
+   free-form model/error message as metric labels.
+6. Attempt audit summaries containing depth greater than three, raw payloads,
+   secrets, functions, class instances, `Buffer`, `Date`, cycles and custom prototypes.
 
 **Expected outcomes:**
 
@@ -306,6 +317,10 @@ memberships overlap only where explicitly configured.
 - Timeline has versions and correlation IDs for every sensitive decision.
 - Metrics show required low-cardinality outcomes and trace errors safely.
 - Prohibited data does not appear in telemetry.
+- Metrics accept only their documented bounded dimensions; high-cardinality or
+  free-form labels are rejected before emission.
+- Audit summaries preserve valid finite primitives, `null`, arrays and plain
+  nested objects through depth three, and explicitly reject unsafe shapes.
 
 ### TS-S2 — Recover from missing, conflicting and uncertain information
 

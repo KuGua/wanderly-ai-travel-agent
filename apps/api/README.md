@@ -46,6 +46,14 @@ GEMINI_MODEL=gemini-2.5-flash
 原生 API 不兼容该接口的供应商需要单独 provider adapter，不能仅靠更换 key 启用。
 不要将密钥提交到仓库或暴露给浏览器。
 
+## Sandbox callback 配置
+
+`POST /api/v1/bookings/callback` 不使用 `X-Demo-User`，而是要求
+`X-Sandbox-Timestamp` 与 `X-Sandbox-Signature`。本地 `.env` 中必须设置仅限
+本地使用的随机 `SANDBOX_HMAC_SECRET`；服务端按
+`${timestamp}.${rawRequestBody}` 计算 HMAC-SHA256，并只接受五分钟窗口内的
+请求。缺少配置或认证失败都会 fail closed，且不会回显具体失败原因。
+
 ## 演示用户
 
 | 用户 | 外部 ID | 出发城市 | 关键特征 |
@@ -78,6 +86,9 @@ seeded user UUID、`externalId` 和 `displayName`。已选择身份后，其他�
 - **预订沙箱** — 不发生真实付款；返回演示参考号。
 - **幂等性** — 规划、变化事件和预订操作均为幂等。
 - **审计轨迹** — 所有敏感操作均以关联 ID 记录。
+- **安全可观测性** — Pino 统一脱敏日志；`/metrics` 仅提供进程内 MVP
+  Prometheus text，标签使用固定低基数 allow-list。仓库当前不包含生产
+  metrics/trace exporter 或持久化遥测后端。
 
 ## 测试
 
@@ -96,7 +107,7 @@ npm ci --dry-run --ignore-scripts
 
 安装脚本许可由 `package.json` 的 `allowScripts` 按确切版本维护。更新带安装脚本的依赖后，先运行 `npm approve-scripts --allow-scripts-pending` 审核新增项；不要使用不经审核的 `--all`。生产依赖安全检查使用 `npm audit --omit=dev`；不得直接运行 `npm audit fix --force`，以免降级 Drizzle Kit。
 
-测试覆盖安全 demo identity、授权撤回后的 plan 失效、fixture fallback、严格的 plan 输出结构/授权/路线/来源/evidence 校验、LLM fallback 与 agent-run 记录、Skill schema/allow-list/timeout，以及预订幂等与乱序 callback。
+测试覆盖安全 demo identity、授权撤回后的 plan 失效、fixture fallback、严格的 plan 输出结构/授权/路线/来源/evidence 校验、LLM fallback 与 agent-run 记录、Skill schema/allow-list/timeout、callback HMAC/raw-body/timestamp 边界、安全日志、低基数 metrics、audit summary whitelist，以及预订幂等与乱序 callback。
 
 `npm test` 需要按“快速开始”完成本地 PostgreSQL migration；integration tests 会重置测试用 trip/session 数据。
 

@@ -1,14 +1,18 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { buildApp } from "../src/app.js";
 import type { FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
+import { __buildSandboxSignature } from "../src/middleware/sandbox-signature.js";
 
 let app: FastifyInstance;
+const SANDBOX_SECRET = "test-only-sandbox-secret";
 
 function authHeaders(userId: string) {
   return { "x-demo-user": userId };
 }
 
 beforeAll(async () => {
+  process.env.SANDBOX_HMAC_SECRET = SANDBOX_SECRET;
   app = await buildApp();
   await app.ready();
 });
@@ -117,5 +121,93 @@ describe("Booking Sandbox", () => {
   it("sandbox does not collect real payments", async () => {
     const { SANDBOX_CALLBACK_FIXTURES } = await import("../src/providers/fixtures.js");
     expect(SANDBOX_CALLBACK_FIXTURES.success.serviceResults.flight.reference).toContain("DEMO");
+  });
+
+  it("authenticates the callback without X-Demo-User using the exact raw JSON bytes", async () => {
+    const timestamp = Date.now();
+    const rawBody = `{
+      "orchestrationRequestId":"${randomUUID()}",
+      "eventId":"${randomUUID()}",
+      "serviceResults":{}
+    }`;
+    const signature = __buildSandboxSignature(SANDBOX_SECRET, timestamp, rawBody);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/bookings/callback",
+      headers: {
+        "content-type": "application/json",
+        "x-sandbox-signature": signature,
+        "x-sandbox-timestamp": String(timestamp),
+      },
+      payload: rawBody,
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().message).toBe("Callback could not be processed");
+    expect(res.json().message).not.toBe("Callback authentication failed");
+  });
+
+  it.each([
+    { headers: {}, expected: 401 },
+    { headers: { "x-sandbox-signature": "invalid", "x-sandbox-timestamp": String(Date.now()) }, expected: 401 },
+    { headers: { "x-sandbox-signature": "a".repeat(64), "x-sandbox-timestamp": "not-a-time" }, expected: 401 },
+  ])("returns one generic 401 for missing, invalid, or malformed callback authentication", async ({ headers, expected }) => {
+    const secretMaterial = "must-never-appear";
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/bookings/callback",
+      headers: { "content-type": "application/json", ...headers },
+      payload: JSON.stringify({ secretMaterial }),
+    });
+
+    expect(res.statusCode).toBe(expected);
+    expect(res.json().message).toBe("Callback authentication failed");
+    expect(res.body).not.toContain(secretMaterial);
+    expect(res.body).not.toContain("bad_signature");
+    expect(res.body).not.toContain("malformed_timestamp");
+  });
+
+  it("rejects a body changed after signing", async () => {
+    const timestamp = Date.now();
+    const original = JSON.stringify({ eventId: randomUUID(), serviceResults: {} });
+    const signature = __buildSandboxSignature(SANDBOX_SECRET, timestamp, original);
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/bookings/callback",
+      headers: {
+        "content-type": "application/json",
+        "x-sandbox-signature": signature,
+        "x-sandbox-timestamp": String(timestamp),
+      },
+      payload: JSON.stringify({ eventId: randomUUID(), serviceResults: {} }),
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().message).toBe("Callback authentication failed");
+  });
+
+  it("fails closed when SANDBOX_HMAC_SECRET is unset", async () => {
+    const configuredSecret = process.env.SANDBOX_HMAC_SECRET;
+    delete process.env.SANDBOX_HMAC_SECRET;
+    try {
+      const timestamp = Date.now();
+      const rawBody = JSON.stringify({ eventId: randomUUID(), serviceResults: {} });
+      const res = await app.inject({
+        method: "POST",
+        url: "/api/v1/bookings/callback",
+        headers: {
+          "content-type": "application/json",
+          "x-sandbox-signature": __buildSandboxSignature(SANDBOX_SECRET, timestamp, rawBody),
+          "x-sandbox-timestamp": String(timestamp),
+        },
+        payload: rawBody,
+      });
+
+      expect(res.statusCode).toBe(401);
+      expect(res.json().message).toBe("Callback authentication failed");
+    } finally {
+      if (configuredSecret === undefined) delete process.env.SANDBOX_HMAC_SECRET;
+      else process.env.SANDBOX_HMAC_SECRET = configuredSecret;
+    }
   });
 });

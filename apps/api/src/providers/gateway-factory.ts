@@ -68,10 +68,11 @@ function gatewayConfiguration(provider: GatewayProvider): GatewayConfiguration |
   return null;
 }
 
-function buildLLM(configuration: GatewayConfiguration): LLMGateway {
+function buildLLM(provider: Exclude<GatewayProvider, "mock">, configuration: GatewayConfiguration): LLMGateway {
   const ctx = createRequestContext();
   return new LLMGateway({
     apiKey: configuration.apiKey!,
+    provider,
     baseUrl: configuration.baseUrl,
     modelName: configuration.modelName,
     promptVersion: configuration.promptVersion,
@@ -87,7 +88,7 @@ function createConfiguredGateway(): ModelGateway {
   if (provider === "mock" || !configuration?.apiKey || !configuration.modelName) {
     return new MockModelGateway();
   }
-  return buildLLM(configuration);
+  return buildLLM(provider, configuration);
 }
 
 export function modelGateway(): ModelGateway {

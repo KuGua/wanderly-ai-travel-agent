@@ -241,7 +241,7 @@ Shared Trip Agent → shared Skills → typed provider adapters / ModelGateway
 3. 每个模型输出先经 Zod，再经 authorization/evidence/action policy 校验；
 4. 不将 passport/document number、raw transcript、unshared profile、credentials 或 raw headers 放入 prompt、日志、trace、metric labels 或客户端持久状态；
 5. schema/policy failure fail closed：不能激活 plan，不能确认，不能 booking；
-6. bookings callback 必须从当前 X-Demo-User 认证迁移为 provider signature/secret 验证，并校验预期 execution。
+6. bookings callback 已独立使用 provider HMAC signature/secret 验证：签名覆盖 timestamp 与精确 raw body，使用五分钟窗口和 timing-safe comparison，并在通过后校验预期 execution。
 
 ## 8. 模型路由与取舍
 
@@ -260,13 +260,13 @@ ModelGateway 是唯一模型边界。`gateway-factory.ts` 根据配置选择 `LL
 
 ## 9. 可观测性与评估
 
-当前仓库已有 RequestContext、Pino 配置、audit_events 和 outbox_events，但 Pino 尚未接入 Fastify（logger 为 false），也未实现 OpenTelemetry/metrics。这是实施 Agent 架构时必须补齐的部分。
+当前仓库已将集中式 Pino 接入 Fastify，并提供 correlation-aware 安全日志、严格 audit summary whitelist 与仅限进程内的低基数 `/metrics` 文本输出。当前仍未初始化 OpenTelemetry trace exporter，也没有生产 metrics exporter、持久化存储或 scraper 配置；不得把 MVP endpoint 描述为完整生产遥测栈。
 
 | 信号 | 必需内容 |
 |---|---|
 | Logs | trace_id、span_id、correlation_id、run_id、trip_id、plan_version、agent、skill、operation、result/error code、duration；禁止敏感字段与 prompt text。 |
 | Traces | HTTP → auth → consent export → 每个 Skill/provider → model → validation → persistence → outbox/callback。 |
-| Metrics | agent_skill_runs_total{agent,skill,result}、agent_skill_duration_ms{agent,skill}、provider_calls_total{provider,category,outcome}、provider_fallback_total{provider,category}、model_calls_total{operation,outcome}、plan_validation_failures_total{reason}、booking_gate_denials_total{reason}。不得以 trip/user/run/request ID 为 label。 |
+| Metrics | 当前 process-local registry 包含 agent/planning/provider/booking/callback/LLM latency 系列，并为 operation、outcome、provider、errorCategory、validationResult、callbackResult 设置精确 allow-list。不得以 trip/user/plan/booking/run/correlation/request ID、model name 或自由文本作为 label。 |
 | Audit | consent grant/revoke、snapshot creation、skill/run start/end、provider fallback、stale/replan、confirmation/denial、booking/callback、duplicate/out-of-order event。 |
 
 以版本化 fixture scenarios 进行确定性 evaluation：
@@ -333,9 +333,9 @@ flowchart TB
 | apps/api/src/services/planning-service.ts | snapshot/plan persistence。 | 支持全部 candidates，拆分 research/synthesis/activation，并持久化 all-category evidence。 |
 | apps/api/src/services/visa-service.ts | ReadinessSkill 基础。 | 从 snapshot 读取实际授权 nationality；删除硬编码 US。 |
 | apps/api/src/services/change-event-service.ts | event-driven replan 基础。 | 从 sharedTrips 读取真实 trip 输入；删除硬编码 Tokyo/日期/出发地。 |
-| apps/api/src/services/confirmation-service.ts、booking-service.ts | 控制平面 gate。 | 加 DB unique constraints、transactions、plan/trip consistency 与 callback signature verification。 |
+| apps/api/src/services/confirmation-service.ts、booking-service.ts、middleware/sandbox-signature.ts | 控制平面 gate。 | callback signature verification、raw-body/timestamp window 与幂等已实现；后续继续加强 DB unique constraints、transactions 与 plan/trip consistency。 |
 | apps/api/src/db/schema.ts | 权威状态模型。 | 增加 trip overrides、agent_runs、agent_step_runs，以及关系唯一约束与版本化 migrations。 |
-| apps/api/src/utils/context.ts、logger.ts、audit-service.ts | correlation/audit 基础。 | 接入 Fastify、OpenTelemetry 与统一敏感数据 sanitization。 |
+| apps/api/src/utils/context.ts、observability/、audit-service.ts | correlation、Pino、process-local metrics 与 audit whitelist 基础。 | 当前已接入 Fastify 并统一敏感数据 sanitization；生产 OpenTelemetry/exporter 仍是后续工作。 |
 
 ### 推荐目录
 
