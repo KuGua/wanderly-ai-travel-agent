@@ -1,40 +1,64 @@
 import { describe, expect, it } from "vitest";
-import { whitelistSummary } from "../src/services/audit-service.js";
-import { redact } from "../src/observability/redaction.js";
+import {
+  AuditSummaryValidationError,
+  whitelistSummary,
+} from "../src/services/audit-service.js";
 
-describe("audit whitelist summary", () => {
-  it("strips sensitive keys at any depth", () => {
-    const result = whitelistSummary({
-      ok: true,
-      payload: { user: { passportNumber: "AB1234567", displayName: "Alice" } },
+describe("audit summary whitelist", () => {
+  it("accepts primitive values, null, arrays, and plain nested summaries", () => {
+    expect(whitelistSummary({
+      stringValue: "processed",
+      numberValue: 3,
+      booleanValue: true,
+      nullValue: null,
+      items: ["flight", 2, false, null],
+      outcome: { callback: { status: "duplicate" } },
+    })).toEqual({
+      stringValue: "processed",
+      numberValue: 3,
+      booleanValue: true,
+      nullValue: null,
+      items: ["flight", 2, false, null],
+      outcome: { callback: { status: "duplicate" } },
     });
-    expect(result).toMatchObject({
-      ok: true,
-      payload: { user: { passportNumber: "[REDACTED]", displayName: "Alice" } },
-    });
   });
 
-  it("clamps to depth 3 by default", () => {
-    const deep = { a: { b: { c: { d: { e: "leaf" } } } } };
-    const result = whitelistSummary(deep);
-    expect(result).toMatchObject({ a: { b: { c: "[REDACTED]" } } });
+  it("accepts structures through depth three", () => {
+    expect(whitelistSummary({ a: { b: { c: { value: "ok" } } } }))
+      .toEqual({ a: { b: { c: { value: "ok" } } } });
   });
 
-  it("allows custom depth", () => {
-    const deep = { a: { b: { c: { d: { e: "leaf" } } } } };
-    const result = whitelistSummary(deep, 5);
-    expect(result).toMatchObject({ a: { b: { c: { d: { e: "leaf" } } } } });
+  it("rejects structures deeper than three", () => {
+    expect(() => whitelistSummary({ a: { b: { c: { d: { value: "too deep" } } } } }))
+      .toThrow(AuditSummaryValidationError);
   });
 
-  it("keeps arrays with depth budget", () => {
-    const result = whitelistSummary({ items: [{ a: 1 }, { b: 2 }] });
-    expect(result).toEqual({ items: [{ a: 1 }, { b: 2 }] });
+  it.each([
+    undefined,
+    () => "unsafe",
+    Symbol("unsafe"),
+    1n,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+  ])("rejects unsupported value %s", value => {
+    expect(() => whitelistSummary({ value })).toThrow(AuditSummaryValidationError);
   });
 
-  it("redact handles null and primitives", () => {
-    expect(redact(null)).toBeNull();
-    expect(redact(42)).toBe(42);
-    expect(redact("hello")).toBe("hello");
-    expect(redact(true)).toBe(true);
+  it.each([
+    Buffer.from("secret"),
+    new Date(),
+    new (class Dangerous { value = "unsafe"; })(),
+    Object.create({ inherited: "unsafe" }) as object,
+  ])("rejects dangerous object shape %#", value => {
+    expect(() => whitelistSummary({ value })).toThrow(AuditSummaryValidationError);
+  });
+
+  it("rejects cycles and sensitive or raw-payload keys", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+
+    expect(() => whitelistSummary(cyclic)).toThrow(AuditSummaryValidationError);
+    expect(() => whitelistSummary({ apiSecret: "do-not-store" })).toThrow(AuditSummaryValidationError);
+    expect(() => whitelistSummary({ payload: { arbitrary: "request body" } })).toThrow(AuditSummaryValidationError);
   });
 });

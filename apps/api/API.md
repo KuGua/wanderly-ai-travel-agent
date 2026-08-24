@@ -2,8 +2,10 @@
 
 Base URL: `http://localhost:3000/api/v1`
 
-**Authentication**: All endpoints except `/health`, `/docs`, and
-`GET /api/v1/demo/users` require the `X-Demo-User` header.
+**Authentication**: All endpoints except `/health`, `/metrics`, `/docs`,
+`GET /api/v1/demo/users`, and `POST /api/v1/bookings/callback` require the
+`X-Demo-User` header. The callback uses the independent sandbox HMAC contract
+documented below and never trusts `X-Demo-User`.
 
 ```
 X-Demo-User: alice | bob | chen
@@ -424,6 +426,33 @@ Submit a booking to the sandbox.
 ### `POST /bookings/callback`
 Handle async sandbox callback.
 
+**Authentication headers**:
+
+```text
+X-Sandbox-Timestamp: <Unix epoch milliseconds>
+X-Sandbox-Signature: <lowercase-or-uppercase hex HMAC-SHA256>
+```
+
+The canonical signed bytes are `${timestamp}.${rawRequestBody}`. The server
+computes HMAC-SHA256 with `SANDBOX_HMAC_SECRET`, compares signatures using a
+timing-safe operation, and accepts timestamps at or within five minutes of the
+server clock. The exact received JSON bytes are signed; reformatting JSON after
+signing invalidates the signature. Missing, malformed, invalid, expired, or
+unconfigured authentication fails closed with the same generic `401` response:
+
+```json
+{
+  "statusCode": 401,
+  "error": "Unauthorized",
+  "message": "Callback authentication failed",
+  "correlationId": "uuid"
+}
+```
+
+Detailed cryptographic failure causes, signatures, and secrets are never
+returned. Providers must use a unique `eventId`; duplicate and late callbacks
+retain the existing idempotent behavior.
+
 **Body**:
 ```json
 {
@@ -435,6 +464,10 @@ Handle async sandbox callback.
   }
 }
 ```
+
+**Response**: `200` with `isDuplicate: false` for the first accepted event, or
+`isDuplicate: true` when the event was already processed or the booking is in a
+terminal state.
 
 ---
 

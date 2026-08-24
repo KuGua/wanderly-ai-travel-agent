@@ -8,15 +8,21 @@ import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { verifySandboxSignature } from "../middleware/sandbox-signature.js";
 import { metrics } from "../observability/metrics.js";
-import { pinoInstance } from "../observability/telemetry.js";
 
-const DEV_SANDBOX_SECRET = "dev-sandbox-secret-do-not-use-in-prod";
-const sandboxSecret = process.env.SANDBOX_HMAC_SECRET ?? DEV_SANDBOX_SECRET;
-if (!process.env.SANDBOX_HMAC_SECRET) {
-  pinoInstance.warn({ dev: true }, "SANDBOX_HMAC_SECRET unset — using insecure dev default");
-}
+const SANDBOX_SECRET_PLACEHOLDER = "replace-with-a-local-random-secret-at-least-32-bytes";
 
 export async function bookingRoutes(app: FastifyInstance) {
+  app.removeContentTypeParser("application/json");
+  app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
+    const rawBody = body.toString("utf8");
+    request.rawBody = rawBody;
+    try {
+      done(null, rawBody.length === 0 ? null : JSON.parse(rawBody));
+    } catch (error) {
+      done(error as Error, undefined);
+    }
+  });
+
   app.post("/bookings", async (request) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = bookingRequestSchema.parse(request.body);
@@ -53,22 +59,30 @@ export async function bookingRoutes(app: FastifyInstance) {
 
   // Sandbox callback — provider-authenticated via HMAC; never trusts the
   // X-Demo-User header for this endpoint.
-  app.post("/bookings/callback", {
-    config: { rawBody: true },
-  }, async (request) => {
+  app.post("/bookings/callback", async (request) => {
     const ctx = createRequestContext(undefined, request.correlationId, request.traceId);
-    const rawBody = (request as unknown as { rawBody?: string }).rawBody ?? JSON.stringify(request.body ?? {});
+    const rawBody = request.rawBody ?? "";
     const headers = request.headers as Record<string, string | string[] | undefined>;
 
-    const verify = verifySandboxSignature(headers, rawBody, sandboxSecret);
+    const configuredSecret = process.env.SANDBOX_HMAC_SECRET?.trim();
+    const secret = configuredSecret && configuredSecret !== SANDBOX_SECRET_PLACEHOLDER
+      ? configuredSecret
+      : undefined;
+    const verify = verifySandboxSignature(headers, rawBody, secret);
     if (!verify.ok) {
-      metrics.inc("booking_gate_denials_total", { reason: verify.reason });
-      throw new ApiError(401, "Unauthorized", `Sandbox signature rejected: ${verify.reason}`);
+      metrics.inc("callback_verifications_total", { callbackResult: verify.reason });
+      metrics.inc("booking_gate_denials_total", { errorCategory: "callback_auth" });
+      throw new ApiError(
+        401,
+        "Unauthorized",
+        "Callback authentication failed",
+        `CALLBACK_${verify.reason.toUpperCase()}`,
+      );
     }
-
-    const body = sandboxCallbackSchema.parse(request.body);
+    metrics.inc("callback_verifications_total", { callbackResult: "valid" });
 
     try {
+      const body = sandboxCallbackSchema.parse(request.body);
       const result = await handleSandboxCallback({
         ctx,
         orchestrationRequestId: body.orchestrationRequestId,
@@ -76,15 +90,21 @@ export async function bookingRoutes(app: FastifyInstance) {
         serviceResults: body.serviceResults,
       });
 
+      metrics.inc("booking_callback_outcomes_total", {
+        callbackResult: result.isDuplicate ? "duplicate" : "processed",
+      });
+
       return {
         message: result.isDuplicate ? "Duplicate callback — ignored" : "Callback processed",
         ...result,
       };
-    } catch (error: unknown) {
+    } catch {
+      metrics.inc("booking_callback_outcomes_total", { callbackResult: "failed" });
       throw new ApiError(
         400,
         "Bad Request",
-        error instanceof Error ? error.message : "Unknown callback error",
+        "Callback could not be processed",
+        "CALLBACK_PROCESSING_REJECTED",
       );
     }
   });

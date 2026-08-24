@@ -162,6 +162,32 @@ Cross-cutting:
   - `action` (enum)
   - `actor_user_id`
   - `summary` (minimal, no PII)
+- Audit summaries accept only finite JSON primitives, `null`, arrays, and plain
+  objects through three nested structure levels. Unsafe keys, raw payloads,
+  functions, class instances, `Buffer`, `Date`, cycles, and custom prototypes
+  are rejected rather than silently stored or truncated.
+
+### Callback Security
+
+- `POST /api/v1/bookings/callback` is the only business route exempt from demo
+  identity auth; it instead requires HMAC-SHA256 over
+  `${timestamp}.${rawRequestBody}`.
+- Exact request bytes, strict timestamp syntax, a five-minute replay window,
+  hex signature format, and timing-safe comparison are enforced before schema
+  parsing or booking lookup.
+- All authentication failures return the same `401` body. Bounded internal
+  categories support warning logs and metrics without exposing cryptographic
+  details.
+
+### Observability
+
+- Fastify uses one centralized Pino logger with correlation IDs and configured
+  redaction for credentials, callback signatures, document fields, nationality,
+  dates of birth, and private model inputs.
+- `/metrics` renders process-local Prometheus text for the MVP. Every metric has
+  an exact bounded label schema; identifiers and free-form values are rejected.
+  There is no durable store, scraper configuration, or production metrics/trace
+  exporter in this repository yet.
 
 ## Idempotency Strategy
 

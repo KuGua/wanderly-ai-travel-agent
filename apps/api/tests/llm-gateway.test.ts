@@ -75,6 +75,7 @@ describe("LLM gateway", () => {
   it("returns parsed plan on success and records SUCCESS run", async () => {
     const gateway = new LLMGateway({
       apiKey: "test",
+      provider: "openai",
       modelName: "gpt-4o-mini",
       promptVersion: "1.0.0",
       mock: new MockModelGateway(),
@@ -101,6 +102,7 @@ describe("LLM gateway", () => {
   it("loads the configured OpenAI client when no test client is injected", async () => {
     const gateway = new LLMGateway({
       apiKey: "test",
+      provider: "openai",
       modelName: "gpt-4o-mini",
       promptVersion: "1.0.0",
       mock: new MockModelGateway(),
@@ -124,6 +126,7 @@ describe("LLM gateway", () => {
   it("falls back to mock when client returns malformed output", async () => {
     const gateway = new LLMGateway({
       apiKey: "test",
+      provider: "openai",
       modelName: "gpt-4o-mini",
       promptVersion: "1.0.0",
       mock: new MockModelGateway(),
@@ -149,6 +152,7 @@ describe("LLM gateway", () => {
   it("records FALLBACK/TIMEOUT when client aborts", async () => {
     const gateway = new LLMGateway({
       apiKey: "test",
+      provider: "openai",
       modelName: "gpt-4o-mini",
       promptVersion: "1.0.0",
       mock: new MockModelGateway(),

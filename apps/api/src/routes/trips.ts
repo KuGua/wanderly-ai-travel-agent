@@ -104,7 +104,7 @@ export async function tripRoutes(app: FastifyInstance) {
       action: "TRIP_CREATE",
       actorUserId: request.user.id,
       tripId: trip.id,
-      summary: { name: body.name, memberCount: body.memberUserIds.length + 1 },
+      summary: { memberCount: body.memberUserIds.length + 1 },
     });
 
     reply.code(201).send({ id: trip.id, message: "Trip created" });

@@ -45,6 +45,7 @@ async function validCandidate(): Promise<Record<string, unknown>> {
 function llmStyleGateway(plan: Record<string, unknown>): LLMGateway {
   return new LLMGateway({
     apiKey: "test",
+    provider: "openai",
     modelName: "gpt-4o-mini",
     promptVersion: "integration-test",
     mock: new MockModelGateway(),
