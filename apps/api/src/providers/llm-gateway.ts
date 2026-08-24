@@ -8,6 +8,8 @@ import { metrics } from "../observability/metrics.js";
 
 export interface LLMGatewayOptions {
   apiKey: string;
+  /** Optional OpenAI-compatible API endpoint; omitted for the OpenAI default. */
+  baseUrl?: string;
   modelName: string;
   promptVersion: string;
   mock: ModelGateway;
@@ -71,7 +73,10 @@ export class LLMGateway implements ModelGateway {
   private async loadClient(): Promise<OpenAIClientLike> {
     if (this.options.client) return this.options.client as OpenAIClientLike;
     const { default: OpenAI } = await import("openai");
-    return new OpenAI({ apiKey: this.options.apiKey }) as unknown as OpenAIClientLike;
+    return new OpenAI({
+      apiKey: this.options.apiKey,
+      ...(this.options.baseUrl ? { baseURL: this.options.baseUrl } : {}),
+    }) as unknown as OpenAIClientLike;
   }
 
   async generateStructuredPlan(params: {

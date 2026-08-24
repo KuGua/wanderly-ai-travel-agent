@@ -93,6 +93,25 @@ memberships overlap only where explicitly configured.
 - A failed candidate creates no `itineraryPlans`, `providerOffers`, `sourceEvidence` or `PLAN_CREATE` audit record; safe model-run observability may still be recorded.
 - Fixture provider results narrow explicitly between `FALLBACK_DEMO` and `UNAVAILABLE`; unsupported requests contain no fabricated `data`.
 
+### TS-H3c — Configure a server-side LLM provider without weakening fallback
+
+**Stories:** H3, P1
+**Objective:** Verify Gemini, OpenAI and OpenAI-compatible configuration resolves only with the necessary server-side settings.
+
+**Steps:**
+
+1. Set `MODEL_GATEWAY_PROVIDER=gemini` with a non-empty `GEMINI_API_KEY` and model.
+2. Set `MODEL_GATEWAY_PROVIDER=openai` without `OPENAI_API_KEY`.
+3. Set `MODEL_GATEWAY_PROVIDER=openai-compatible` first without, then with, API key, base URL and model.
+4. Simulate a configured provider timeout or malformed response.
+
+**Expected outcomes:**
+
+- Gemini uses Google's OpenAI-compatible endpoint; OpenAI retains its default endpoint.
+- A provider with absent required settings resolves to `MockModelGateway` and never sends a request with an empty key.
+- A compatible provider is enabled only when all three required settings are present.
+- Provider failures record safe fallback telemetry and return the deterministic candidate; no key, private snapshot data or provider response body is logged.
+
 ### TS-H1 — Save, reuse and override a private travel profile
 
 **Stories:** H1  

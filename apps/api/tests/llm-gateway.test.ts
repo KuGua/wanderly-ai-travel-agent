@@ -169,7 +169,7 @@ describe("LLM gateway", () => {
     expect(runs.some(r => r.errorCode === "TIMEOUT")).toBe(true);
   });
 
-  it("factory returns MockModelGateway when no OPENAI_API_KEY is set", () => {
+  it("factory returns MockModelGateway when no OpenAI key is set", () => {
     const previous = process.env.MODEL_GATEWAY_PROVIDER;
     delete process.env.OPENAI_API_KEY;
     process.env.MODEL_GATEWAY_PROVIDER = "openai";
@@ -179,5 +179,49 @@ describe("LLM gateway", () => {
 
     if (previous !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous;
     else delete process.env.MODEL_GATEWAY_PROVIDER;
+  });
+
+  it("factory configures Gemini through its OpenAI-compatible endpoint", () => {
+    const previous = {
+      provider: process.env.MODEL_GATEWAY_PROVIDER,
+      key: process.env.GEMINI_API_KEY,
+      model: process.env.GEMINI_MODEL,
+    };
+    process.env.MODEL_GATEWAY_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "test-gemini-key";
+    process.env.GEMINI_MODEL = "gemini-test-model";
+
+    expect(createModelGateway()).toBeInstanceOf(LLMGateway);
+
+    if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
+    else delete process.env.MODEL_GATEWAY_PROVIDER;
+    if (previous.key !== undefined) process.env.GEMINI_API_KEY = previous.key;
+    else delete process.env.GEMINI_API_KEY;
+    if (previous.model !== undefined) process.env.GEMINI_MODEL = previous.model;
+    else delete process.env.GEMINI_MODEL;
+  });
+
+  it("factory configures an OpenAI-compatible provider only with a URL, key, and model", () => {
+    const previous = {
+      provider: process.env.MODEL_GATEWAY_PROVIDER,
+      key: process.env.MODEL_GATEWAY_API_KEY,
+      url: process.env.MODEL_GATEWAY_BASE_URL,
+      model: process.env.MODEL_GATEWAY_MODEL,
+    };
+    process.env.MODEL_GATEWAY_PROVIDER = "openai-compatible";
+    process.env.MODEL_GATEWAY_API_KEY = "test-provider-key";
+    process.env.MODEL_GATEWAY_BASE_URL = "https://llm.example.test/v1";
+    process.env.MODEL_GATEWAY_MODEL = "provider-model";
+
+    expect(createModelGateway()).toBeInstanceOf(LLMGateway);
+
+    if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
+    else delete process.env.MODEL_GATEWAY_PROVIDER;
+    if (previous.key !== undefined) process.env.MODEL_GATEWAY_API_KEY = previous.key;
+    else delete process.env.MODEL_GATEWAY_API_KEY;
+    if (previous.url !== undefined) process.env.MODEL_GATEWAY_BASE_URL = previous.url;
+    else delete process.env.MODEL_GATEWAY_BASE_URL;
+    if (previous.model !== undefined) process.env.MODEL_GATEWAY_MODEL = previous.model;
+    else delete process.env.MODEL_GATEWAY_MODEL;
   });
 });

@@ -29,6 +29,23 @@ npm run dev
 
 服务器运行于 `http://localhost:3000`；OpenAPI 文档位于 `http://localhost:3000/docs`。
 
+## LLM 配置
+
+模型调用只在 API 服务端进行。默认 `MODEL_GATEWAY_PROVIDER=mock`，因此 fixture
+演示不依赖外部模型。要启用 Gemini，请在 `.env` 中设置：
+
+```dotenv
+MODEL_GATEWAY_PROVIDER=gemini
+GEMINI_API_KEY=your_gemini_key
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+也可选择 `MODEL_GATEWAY_PROVIDER=openai` 并设置 `OPENAI_API_KEY`，或选择
+`openai-compatible` 并设置 `MODEL_GATEWAY_API_KEY`、`MODEL_GATEWAY_BASE_URL` 和
+`MODEL_GATEWAY_MODEL`。后者适用于提供 OpenAI Chat Completions 兼容接口的服务。
+原生 API 不兼容该接口的供应商需要单独 provider adapter，不能仅靠更换 key 启用。
+不要将密钥提交到仓库或暴露给浏览器。
+
 ## 演示用户
 
 | 用户 | 外部 ID | 出发城市 | 关键特征 |
@@ -54,7 +71,7 @@ seeded user UUID、`externalId` 和 `displayName`。已选择身份后，其他�
 - **约束快照** — 每轮规划使用不可变的已授权数据快照。
 - **Fixture 提供方** — 所有航班/住宿/地面交通/签证数据均标记为 `Demo data`；fixture 具有显式版本和固定采集时间，航班查询会按路线和请求日期范围过滤。
 - **规划控制平面** — `ModelGateway` 输出在写入前必须通过严格结构、snapshot 字段授权、路线边界、来源完整性与 provider evidence 精确匹配校验；失败返回 correlation-aware `422`，且不创建 plan。
-- **Model/Skill integration** — `gateway-factory.ts` 在 `MockModelGateway` 与 `LLMGateway` 间选择；LLM 路径记录 model/prompt version 和 agent run，并在失败时确定性 fallback。结构化 Skill/model output 始终只是 candidate，仍须通过最终控制平面校验。
+- **Model/Skill integration** — `gateway-factory.ts` 在 `MockModelGateway` 与 Gemini、OpenAI 或任意 OpenAI-compatible `LLMGateway` 间选择；LLM 路径记录 model/prompt version 和 agent run，并在失败时确定性 fallback。结构化 Skill/model output 始终只是 candidate，仍须通过最终控制平面校验。
 - **入境准备** — 每位成员各有清单；国籍未共享时显示“请向官方来源核验”。
 - **方案版本管理** — 生成、过期、带差异的重规划。
 - **三人确认** — 三位必需成员全部确认后，才可进行预订沙箱。
