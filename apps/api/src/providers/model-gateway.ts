@@ -32,27 +32,40 @@ export class MockModelGateway implements ModelGateway {
     ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;
   }): Promise<Record<string, unknown>> {
-    // Simple heuristic: pick best flight (non-red-eye if possible, cheapest)
-    const bestFlight = params.flights
-      .filter(f => !f.isRedEye)
-      .sort((a, b) => a.priceUsd - b.priceUsd)[0] ?? params.flights[0];
+    // Simple deterministic heuristic: choose one non-red-eye/cheapest flight
+    // per origin, then the cheapest stay and airport transfer.
+    const origins = [...new Set(params.flights.map(flight => flight.origin))].sort();
+    const bestFlights = origins.map(origin => {
+      const originFlights = params.flights.filter(flight => flight.origin === origin);
+      const preferredFlights = originFlights.some(flight => !flight.isRedEye)
+        ? originFlights.filter(flight => !flight.isRedEye)
+        : originFlights;
 
-    const bestStay = params.stays.sort((a, b) => a.pricePerNightUsd - b.pricePerNightUsd)[0];
+      return [...preferredFlights].sort((a, b) =>
+        a.priceUsd - b.priceUsd || a.id.localeCompare(b.id)
+      )[0];
+    });
+
+    const bestStay = [...params.stays].sort((a, b) =>
+      a.pricePerNightUsd - b.pricePerNightUsd || a.id.localeCompare(b.id)
+    )[0];
     const bestGround = params.ground.filter(g => g.type === "airport_transfer")[0];
+    const capturedAt = [
+      ...bestFlights.map(flight => flight.capturedAt),
+      bestStay?.capturedAt,
+      bestGround?.capturedAt,
+    ].filter((value): value is string => Boolean(value)).sort().at(-1);
 
     return {
       destination: params.destination,
-      flights: bestFlight ? [bestFlight] : [],
+      flights: bestFlights,
       stays: bestStay ? [bestStay] : [],
       ground: bestGround ? [bestGround] : [],
-      generatedAt: new Date().toISOString(),
+      generatedAt: capturedAt,
     };
   }
 
-  async explainPlanDiff(params: {
-    oldPlan: Record<string, unknown>;
-    newPlan: unknown;
-  }): Promise<PlanDiff> {
+  async explainPlanDiff(): Promise<PlanDiff> {
     return {
       added: ["New flight option due to price change"],
       removed: ["Old flight option (price increased)"],

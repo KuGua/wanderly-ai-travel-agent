@@ -1,6 +1,6 @@
 # AI Travel Agent 技术栈（Hackathon 收敛版）
 
-**状态：** 已按当前 Hero Demo 收敛；未实施
+**状态：** 已按当前 Hero Demo 收敛；`apps/api` fixture-backed backend 已部分实施并验证，frontend、AWS deployment、live providers 与真实 model integration 尚未实施
 
 **基线：** 2026-08-23
 

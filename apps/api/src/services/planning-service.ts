@@ -1,6 +1,6 @@
 import { db } from "../db/database.js";
 import { constraintSnapshots, itineraryPlans, sourceEvidence, providerOffers } from "../db/schema.js";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { buildAuthorizedData } from "./consent-service.js";
 import { FixtureFlightProvider, FixtureStayProvider, FixtureGroundProvider } from "../providers/fixture-provider.js";
 import { MockModelGateway } from "../providers/model-gateway.js";
@@ -12,6 +12,38 @@ const flightProvider = new FixtureFlightProvider();
 const stayProvider = new FixtureStayProvider();
 const groundProvider = new FixtureGroundProvider();
 const modelGateway = new MockModelGateway();
+
+export class PlanningDataUnavailableError extends Error {
+  readonly statusCode = 422;
+  readonly code = "PLANNING_DATA_UNAVAILABLE";
+
+  constructor(readonly missing: string[]) {
+    super(`Planning data unavailable: ${missing.join(", ")}`);
+    this.name = "PlanningDataUnavailableError";
+  }
+}
+
+/**
+ * Deterministic completeness gate for the fixture-backed planning slice.
+ * An empty provider result is an explicit failure, never implicit inventory.
+ */
+export function validateProviderCoverage(params: {
+  requiredOrigins: string[];
+  flights: FlightOffer[];
+  stays: StayOffer[];
+  ground: GroundOffer[];
+}): void {
+  const missing = params.requiredOrigins
+    .filter(origin => !params.flights.some(flight => flight.origin === origin))
+    .map(origin => `flight:${origin}`);
+
+  if (params.stays.length === 0) missing.push("stay");
+  if (params.ground.length === 0) missing.push("ground");
+
+  if (missing.length > 0) {
+    throw new PlanningDataUnavailableError(missing);
+  }
+}
 
 /**
  * Create a new constraint snapshot for a planning round.
@@ -106,16 +138,12 @@ export async function generatePlan(params: {
   });
   allGround.push(...ground);
 
-  // Record provider offers
-  for (const flight of allFlights) {
-    await db.insert(providerOffers).values({
-      snapshotId: params.snapshotId,
-      category: "flight",
-      providerName: flight.airline,
-      offerData: flight as unknown as Record<string, unknown>,
-      isDemo: flight.isDemo,
-    });
-  }
+  validateProviderCoverage({
+    requiredOrigins: snapshot.departureCities,
+    flights: allFlights,
+    stays: allStays,
+    ground: allGround,
+  });
 
   // Generate structured plan via model gateway
   const memberPreferences = snapshot.authorizedData;
@@ -136,16 +164,45 @@ export async function generatePlan(params: {
     planData,
   }).returning();
 
-  // Record source evidence
-  for (const flight of allFlights) {
-    await db.insert(sourceEvidence).values({
-      planId: plan.id,
+  const normalizedOffers = [
+    ...allFlights.map(offer => ({
       category: "flight",
-      itemId: flight.id,
-      source: flight.source,
-      capturedAt: new Date(flight.capturedAt),
-    });
-  }
+      providerName: offer.airline,
+      offer,
+    })),
+    ...allStays.map(offer => ({
+      category: "stay",
+      providerName: "FixtureStayProvider",
+      offer,
+    })),
+    ...allGround.map(offer => ({
+      category: "ground",
+      providerName: offer.provider,
+      offer,
+    })),
+  ];
+
+  await db.insert(providerOffers).values(normalizedOffers.map(({ category, providerName, offer }) => ({
+    snapshotId: params.snapshotId,
+    planId: plan.id,
+    category,
+    providerName,
+    offerData: offer as unknown as Record<string, unknown>,
+    isDemo: offer.isDemo,
+    capturedAt: new Date(offer.capturedAt),
+  })));
+
+  await db.insert(sourceEvidence).values(normalizedOffers.map(({ category, offer }) => ({
+    planId: plan.id,
+    category,
+    itemId: offer.id,
+    source: offer.source,
+    capturedAt: new Date(offer.capturedAt),
+    metadata: {
+      isDemo: offer.isDemo,
+      fixtureVersion: offer.fixtureVersion,
+    },
+  })));
 
   await recordAudit({
     ctx: params.ctx,
@@ -184,7 +241,7 @@ export async function markPlanStale(params: {
 export async function getLatestActivePlan(tripId: string): Promise<{ id: string; version: number; planData: Record<string, unknown> } | null> {
   const plans = await db.select().from(itineraryPlans)
     .where(and(eq(itineraryPlans.tripId, tripId), eq(itineraryPlans.status, "ACTIVE")))
-    .orderBy(itineraryPlans.version)
+    .orderBy(desc(itineraryPlans.version))
     .limit(1);
 
   if (plans.length === 0) return null;

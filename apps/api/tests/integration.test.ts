@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import type { FastifyInstance } from "fastify";
+import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { users, userProfiles, sharedTrips, tripMembers, consentGrants, constraintSnapshots, itineraryPlans, memberConfirmations, bookingExecutions, idempotencyRecords, auditEvents, providerOffers, sourceEvidence, visaReadinessChecks, outboxEvents, preferenceFacts, destinationCandidates } from "../src/db/schema.js";
-import { eq, and } from "drizzle-orm";
+import { users, userProfiles, sharedTrips, tripMembers, consentGrants, constraintSnapshots, itineraryPlans, memberConfirmations, bookingExecutions, idempotencyRecords, auditEvents, providerOffers, sourceEvidence, visaReadinessChecks, preferenceFacts, destinationCandidates } from "../src/db/schema.js";
+import { eq } from "drizzle-orm";
 import { grantConsent, revokeConsent, getActiveConsents, buildAuthorizedData } from "../src/services/consent-service.js";
 import { createConstraintSnapshot, generatePlan, markPlanStale, getLatestActivePlan } from "../src/services/planning-service.js";
 import { setConfirmation, checkAllConfirmed, markConfirmationsStale } from "../src/services/confirmation-service.js";
@@ -15,8 +17,12 @@ let aliceId: string;
 let bobId: string;
 let chenId: string;
 let tripId: string;
+let app: FastifyInstance;
 
 beforeAll(async () => {
+  app = await buildApp();
+  await app.ready();
+
   // Get or create demo users
   const aliceRecords = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
   const bobRecords = await db.select().from(users).where(eq(users.externalId, "bob")).limit(1);
@@ -42,6 +48,10 @@ beforeAll(async () => {
   } else {
     chenId = chenRecords[0].id;
   }
+});
+
+afterAll(async () => {
+  await app.close();
 });
 
 beforeEach(async () => {
@@ -80,6 +90,242 @@ beforeEach(async () => {
     { tripId, userId: bobId, role: "MEMBER", isRequired: true },
     { tripId, userId: chenId, role: "MEMBER", isRequired: true },
   ]);
+});
+
+describe("Frontend API Contract", () => {
+  it("lists exactly the safe seeded demo identities without authentication", async () => {
+    const response = await app.inject({ method: "GET", url: "/api/v1/demo/users" });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.users.map((user: { externalId: string }) => user.externalId)).toEqual(["alice", "bob", "chen"]);
+    expect(body.users.map((user: { displayName: string }) => user.displayName)).toEqual(["Alice", "Bob", "Chen"]);
+    expect(body.users.every((user: Record<string, unknown>) =>
+      Object.keys(user).sort().join(",") === "displayName,externalId,id"
+    )).toBe(true);
+
+    const databaseUsers = await db.select().from(users);
+    const databaseIds = new Set(databaseUsers.map(user => user.id));
+    expect(body.users.every((user: { id: string }) => databaseIds.has(user.id))).toBe(true);
+  });
+
+  it("lists only member trips with stable ordering, server-derived counts, roles, and dates", async () => {
+    const [aliceNewestTrip] = await db.insert(sharedTrips).values({
+      name: "Alice Newest",
+      createdBy: aliceId,
+      departureCities: ["San Francisco"],
+      destinationCandidates: ["Tokyo", "Seoul"],
+      travelDateStart: null,
+      travelDateEnd: null,
+      createdAt: new Date("2030-01-01T00:00:00.000Z"),
+    }).returning();
+    const [aliceOldestTrip] = await db.insert(sharedTrips).values({
+      name: "Alice Oldest",
+      createdBy: aliceId,
+      departureCities: ["San Francisco", "Shanghai"],
+      destinationCandidates: ["Tokyo", "Bangkok"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
+      createdAt: new Date("2020-01-01T00:00:00.000Z"),
+    }).returning();
+    const [bobOnlyTrip] = await db.insert(sharedTrips).values({
+      name: "Bob Only",
+      createdBy: bobId,
+      departureCities: ["San Francisco"],
+      destinationCandidates: ["Tokyo", "Bangkok"],
+    }).returning();
+
+    await db.insert(tripMembers).values([
+      { tripId: aliceNewestTrip.id, userId: aliceId, role: "CREATOR", isRequired: true },
+      { tripId: aliceNewestTrip.id, userId: chenId, role: "MEMBER", isRequired: true },
+      { tripId: aliceOldestTrip.id, userId: aliceId, role: "CREATOR", isRequired: true },
+      { tripId: bobOnlyTrip.id, userId: bobId, role: "CREATOR", isRequired: true },
+    ]);
+
+    const aliceResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/trips",
+      headers: { "x-demo-user": "alice" },
+    });
+    const bobResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/trips",
+      headers: { "x-demo-user": "bob" },
+    });
+    const chenResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/trips",
+      headers: { "x-demo-user": "chen" },
+    });
+
+    expect(aliceResponse.statusCode).toBe(200);
+    expect(aliceResponse.json().trips.map((trip: { name: string }) => trip.name)).toEqual([
+      "Alice Newest",
+      "Test Trip",
+      "Alice Oldest",
+    ]);
+    expect(aliceResponse.json().trips[0]).toMatchObject({
+      id: aliceNewestTrip.id,
+      memberCount: 2,
+      role: "CREATOR",
+      travelDateStart: null,
+      travelDateEnd: null,
+      createdAt: "2030-01-01T00:00:00.000Z",
+    });
+    expect(aliceResponse.json().trips[2]).toMatchObject({
+      departureCities: ["San Francisco", "Shanghai"],
+      destinationCandidates: ["Tokyo", "Bangkok"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
+    });
+    expect(bobResponse.json().trips.map((trip: { name: string }) => trip.name).sort()).toEqual(["Bob Only", "Test Trip"]);
+    expect(chenResponse.json().trips.map((trip: { name: string }) => trip.name).sort()).toEqual(["Alice Newest", "Test Trip"]);
+    expect(aliceResponse.json().trips.some((trip: { name: string }) => trip.name === "Bob Only")).toBe(false);
+  });
+
+  it("returns safe display names in trip details and blocks unrelated members", async () => {
+    const [privateTrip] = await db.insert(sharedTrips).values({
+      name: "Alice Private Trip",
+      createdBy: aliceId,
+      departureCities: ["San Francisco"],
+      destinationCandidates: ["Tokyo", "Bangkok"],
+    }).returning();
+    await db.insert(tripMembers).values({
+      tripId: privateTrip.id,
+      userId: aliceId,
+      role: "CREATOR",
+      isRequired: true,
+    });
+
+    const allowed = await app.inject({
+      method: "GET",
+      url: `/api/v1/trips/${privateTrip.id}`,
+      headers: { "x-demo-user": "alice" },
+    });
+    const denied = await app.inject({
+      method: "GET",
+      url: `/api/v1/trips/${privateTrip.id}`,
+      headers: { "x-demo-user": "bob" },
+    });
+
+    expect(allowed.statusCode).toBe(200);
+    expect(allowed.json().members).toEqual([
+      expect.objectContaining({ userId: aliceId, displayName: "Alice", role: "CREATOR" }),
+    ]);
+    expect(allowed.json().members[0]).not.toHaveProperty("externalId");
+    expect(denied.statusCode).toBe(403);
+    expect(denied.json()).toMatchObject({
+      statusCode: 403,
+      error: "Forbidden",
+      correlationId: expect.any(String),
+    });
+    expect(denied.headers["x-correlation-id"]).toBe(denied.json().correlationId);
+  });
+
+  it("returns the documented profile and applies strict partial-update semantics", async () => {
+    await db.insert(userProfiles).values({
+      userId: aliceId,
+      nationality: "US",
+      interests: ["art", "museums"],
+      accommodationStyle: "city_center",
+      budgetMaxUsd: 5000,
+      noRedEye: true,
+      departureCity: "San Francisco",
+      availableDepartureDates: ["2025-08-01"],
+      updatedAt: new Date("2020-01-01T00:00:00.000Z"),
+    });
+
+    const getResponse = await app.inject({
+      method: "GET",
+      url: "/api/v1/profiles/me",
+      headers: { "x-demo-user": "alice" },
+    });
+    expect(getResponse.statusCode).toBe(200);
+    expect(getResponse.json().profile).toMatchObject({
+      userId: aliceId,
+      displayName: "Alice",
+      interests: ["art", "museums"],
+      accommodationStyle: "city_center",
+      budgetMaxUsd: 5000,
+      noRedEye: true,
+      departureCity: "San Francisco",
+      nationality: "US",
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    });
+    expect(getResponse.json().profile).not.toHaveProperty("passportNumber");
+
+    const updateResponse = await app.inject({
+      method: "PUT",
+      url: "/api/v1/profiles/me",
+      headers: { "x-demo-user": "alice" },
+      payload: { nationality: "CA", noRedEye: false },
+    });
+    expect(updateResponse.statusCode).toBe(200);
+    expect(updateResponse.json().profile).toMatchObject({
+      displayName: "Alice",
+      nationality: "CA",
+      noRedEye: false,
+      interests: ["art", "museums"],
+    });
+    expect(new Date(updateResponse.json().profile.updatedAt).getTime()).toBeGreaterThan(new Date("2020-01-01").getTime());
+
+    for (const payload of [{ displayName: "Mallory" }, { nationality: null }]) {
+      const invalidResponse = await app.inject({
+        method: "PUT",
+        url: "/api/v1/profiles/me",
+        headers: { "x-demo-user": "alice" },
+        payload,
+      });
+      expect(invalidResponse.statusCode).toBe(400);
+      expect(invalidResponse.json()).toMatchObject({
+        statusCode: 400,
+        error: "Bad Request",
+        correlationId: expect.any(String),
+      });
+      expect(invalidResponse.headers["x-correlation-id"]).toBe(invalidResponse.json().correlationId);
+    }
+  });
+
+  it("normalizes authentication, validation, and not-found failures with matching correlation IDs", async () => {
+    const responses = [
+      await app.inject({ method: "GET", url: "/api/v1/trips" }),
+      await app.inject({ method: "GET", url: "/api/v1/trips", headers: { "x-demo-user": "unknown" } }),
+      await app.inject({
+        method: "POST",
+        url: "/api/v1/trips",
+        headers: { "x-demo-user": "alice" },
+        payload: { name: "Invalid" },
+      }),
+      await app.inject({
+        method: "PUT",
+        url: "/api/v1/profiles/me",
+        headers: { "x-demo-user": "alice" },
+        payload: { interests: ["art"] },
+      }),
+      await app.inject({ method: "GET", url: "/api/v1/not-real", headers: { "x-demo-user": "alice" } }),
+    ];
+
+    expect(responses.map(response => response.statusCode)).toEqual([401, 401, 400, 404, 404]);
+    for (const response of responses) {
+      expect(response.json()).toEqual({
+        statusCode: response.statusCode,
+        error: expect.any(String),
+        message: expect.any(String),
+        correlationId: expect.any(String),
+      });
+      expect(response.headers["x-correlation-id"]).toBe(response.json().correlationId);
+    }
+  });
+
+  it("publishes the new canonical endpoints in OpenAPI", async () => {
+    const response = await app.inject({ method: "GET", url: "/docs/json" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().paths).toHaveProperty("/api/v1/demo/users");
+    expect(response.json().paths).toHaveProperty("/api/v1/trips.get");
+    expect(response.json().paths).toHaveProperty("/api/v1/profiles/me.get");
+    expect(response.json().paths).toHaveProperty("/api/v1/profiles/me.put");
+  });
 });
 
 describe("Consent & Authorization", () => {
@@ -232,6 +478,72 @@ describe("Constraint Snapshot Immutability", () => {
 
     const [plan] = await db.select().from(itineraryPlans).where(eq(itineraryPlans.id, planId)).limit(1);
     expect(plan.snapshotId).toBe(snapshotId);
+  });
+});
+
+describe("Fixture-backed Planning API", () => {
+  it("returns a complete two-origin plan and persists fixture provenance", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/planning/generate",
+      headers: { "x-demo-user": "alice" },
+      payload: { tripId },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    const flights = body.plan.flights as Array<Record<string, unknown>>;
+    expect(flights.map(flight => flight.origin).sort()).toEqual(["San Francisco", "Shanghai"]);
+
+    const offers = await db.select().from(providerOffers).where(eq(providerOffers.planId, body.planId));
+    const evidence = await db.select().from(sourceEvidence).where(eq(sourceEvidence.planId, body.planId));
+
+    expect(new Set(offers.map(offer => offer.category))).toEqual(new Set(["flight", "stay", "ground"]));
+    expect(offers.every(offer => offer.isDemo)).toBe(true);
+    expect(new Set(evidence.map(item => item.category))).toEqual(new Set(["flight", "stay", "ground"]));
+    expect(evidence.every(item =>
+      (item.metadata as Record<string, unknown>).fixtureVersion === "2026-08-23.v1"
+    )).toBe(true);
+  });
+
+  it("returns the same normalized plan for repeated fixture requests", async () => {
+    const request = {
+      method: "POST" as const,
+      url: "/api/v1/planning/generate",
+      headers: { "x-demo-user": "alice" },
+      payload: { tripId },
+    };
+
+    const first = await app.inject(request);
+    const second = await app.inject(request);
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(second.json().plan).toEqual(first.json().plan);
+  });
+
+  it("returns a typed failure and creates no plan for an unsupported fixture route", async () => {
+    await db.update(sharedTrips)
+      .set({ destinationCandidates: ["Singapore"] })
+      .where(eq(sharedTrips.id, tripId));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/planning/generate",
+      headers: { "x-demo-user": "alice" },
+      payload: { tripId },
+    });
+
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toMatchObject({
+      error: "PlanningDataUnavailableError",
+      message: expect.stringContaining("flight:San Francisco"),
+      correlationId: expect.any(String),
+    });
+    expect(response.headers["x-correlation-id"]).toBe(response.json().correlationId);
+
+    const plans = await db.select().from(itineraryPlans).where(eq(itineraryPlans.tripId, tripId));
+    expect(plans).toEqual([]);
   });
 });
 

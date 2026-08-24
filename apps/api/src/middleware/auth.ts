@@ -1,40 +1,29 @@
-import type { FastifyRequest, FastifyReply } from "fastify";
+import type { FastifyRequest } from "fastify";
 import { db } from "../db/database.js";
 import { users } from "../db/schema.js";
 import { eq } from "drizzle-orm";
-
-// Demo users for MVP (Cognito integration future)
-const DEMO_USERS = [
-  { externalId: "alice", displayName: "Alice" },
-  { externalId: "bob", displayName: "Bob" },
-  { externalId: "chen", displayName: "Chen" },
-];
+import { DEMO_USERS } from "../providers/fixtures.js";
+import { ApiError } from "./error-handler.js";
 
 /**
  * Demo auth middleware.
  * In production, this would validate Cognito JWTs.
  * For MVP, accepts X-Demo-User header with demo user externalId.
  */
-export async function demoAuthMiddleware(request: FastifyRequest, reply: FastifyReply) {
+export async function demoAuthMiddleware(request: FastifyRequest) {
   const demoUser = request.headers["x-demo-user"] as string | undefined;
 
   if (!demoUser) {
-    reply.code(401).send({
-      statusCode: 401,
-      error: "Unauthorized",
-      message: "Missing X-Demo-User header. Use one of: alice, bob, chen",
-    });
-    return;
+    throw new ApiError(401, "Unauthorized", "Missing X-Demo-User header. Use one of: alice, bob, chen");
   }
 
   const demoConfig = DEMO_USERS.find(u => u.externalId === demoUser);
   if (!demoConfig) {
-    reply.code(401).send({
-      statusCode: 401,
-      error: "Unauthorized",
-      message: `Invalid demo user. Use one of: ${DEMO_USERS.map(u => u.externalId).join(", ")}`,
-    });
-    return;
+    throw new ApiError(
+      401,
+      "Unauthorized",
+      `Invalid demo user. Use one of: ${DEMO_USERS.map(u => u.externalId).join(", ")}`,
+    );
   }
 
   // Find or create user in DB
@@ -49,7 +38,7 @@ export async function demoAuthMiddleware(request: FastifyRequest, reply: Fastify
   }
 
   // Attach user to request
-  (request as any).user = {
+  request.user = {
     id: userRecords[0].id,
     externalId: userRecords[0].externalId,
     displayName: userRecords[0].displayName,

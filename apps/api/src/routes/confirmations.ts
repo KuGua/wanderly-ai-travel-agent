@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { confirmPlanSchema } from "../types/schemas.js";
 import { setConfirmation, checkAllConfirmed } from "../services/confirmation-service.js";
 import { createRequestContext } from "../utils/context.js";
+import { ApiError } from "../middleware/error-handler.js";
 
 export async function confirmationRoutes(app: FastifyInstance) {
   // Confirm or request changes for a plan
@@ -12,18 +13,11 @@ export async function confirmationRoutes(app: FastifyInstance) {
     
       
 
-  }, async (request, reply) => {
-    const ctx = createRequestContext(request.user.id);
+  }, async (request) => {
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = confirmPlanSchema.parse(request.body);
 
-    // Get tripId from plan (simplified — would fetch from itineraryPlans table)
-    // For demo, we'll require tripId in the body or fetch it
-    // Let's add tripId to the schema
-    const tripId = (request.body as any).tripId;
-    if (!tripId) {
-      reply.code(400).send({ statusCode: 400, error: "Bad Request", message: "tripId is required" });
-      return;
-    }
+    const tripId = body.tripId;
 
     // Verify membership
     const membership = await db.select().from(tripMembers)
@@ -31,8 +25,7 @@ export async function confirmationRoutes(app: FastifyInstance) {
       .limit(1);
 
     if (membership.length === 0) {
-      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
-      return;
+      throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
 
     await setConfirmation({
@@ -53,7 +46,7 @@ export async function confirmationRoutes(app: FastifyInstance) {
   });
 
   // Get confirmation status for a plan
-  app.get("/confirmations/:planId", async (request, reply) => {
+  app.get("/confirmations/:planId", async (request) => {
     const { planId } = request.params as { planId: string };
 
     // For demo, we'll skip trip membership check (would need to fetch plan -> tripId)

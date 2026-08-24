@@ -5,6 +5,7 @@ import { eq, and } from "drizzle-orm";
 import { bookingRequestSchema, sandboxCallbackSchema } from "../types/schemas.js";
 import { submitBooking, handleSandboxCallback } from "../services/booking-service.js";
 import { createRequestContext } from "../utils/context.js";
+import { ApiError } from "../middleware/error-handler.js";
 
 export async function bookingRoutes(app: FastifyInstance) {
   // Submit booking to sandbox
@@ -12,8 +13,8 @@ export async function bookingRoutes(app: FastifyInstance) {
     
       
 
-  }, async (request, reply) => {
-    const ctx = createRequestContext(request.user.id);
+  }, async (request) => {
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = bookingRequestSchema.parse(request.body);
 
     // Verify membership
@@ -22,8 +23,7 @@ export async function bookingRoutes(app: FastifyInstance) {
       .limit(1);
 
     if (membership.length === 0) {
-      reply.code(403).send({ statusCode: 403, error: "Forbidden", message: "Not a member of this trip" });
-      return;
+      throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
 
     try {
@@ -39,12 +39,12 @@ export async function bookingRoutes(app: FastifyInstance) {
         message: result.isDuplicate ? "Duplicate request — returning cached result" : "Booking submitted",
         ...result,
       };
-    } catch (error: any) {
-      reply.code(400).send({
-        statusCode: 400,
-        error: "Bad Request",
-        message: error.message,
-      });
+    } catch (error: unknown) {
+      throw new ApiError(
+        400,
+        "Bad Request",
+        error instanceof Error ? error.message : "Unknown booking error",
+      );
     }
   });
 
@@ -53,8 +53,8 @@ export async function bookingRoutes(app: FastifyInstance) {
     
       
 
-  }, async (request, reply) => {
-    const ctx = createRequestContext(request.user.id);
+  }, async (request) => {
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
     const body = sandboxCallbackSchema.parse(request.body);
 
     try {
@@ -69,12 +69,12 @@ export async function bookingRoutes(app: FastifyInstance) {
         message: result.isDuplicate ? "Duplicate callback — ignored" : "Callback processed",
         ...result,
       };
-    } catch (error: any) {
-      reply.code(400).send({
-        statusCode: 400,
-        error: "Bad Request",
-        message: error.message,
-      });
+    } catch (error: unknown) {
+      throw new ApiError(
+        400,
+        "Bad Request",
+        error instanceof Error ? error.message : "Unknown callback error",
+      );
     }
   });
 }

@@ -14,9 +14,17 @@ export class FixtureFlightProvider implements FlightProvider {
     dateEnd: string;
     snapshotId: string;
   }): Promise<FlightOffer[]> {
+    const rangeStart = `${params.dateStart}T00:00:00.000Z`;
+    const rangeEnd = `${params.dateEnd}T23:59:59.999Z`;
+
     return FLIGHT_FIXTURES
-      .filter(f => f.origin === params.origin && f.destination === params.destination)
-      .map(f => ({ ...f, capturedAt: new Date().toISOString() }));
+      .filter(f =>
+        f.origin === params.origin
+        && f.destination === params.destination
+        && f.departureTime >= rangeStart
+        && f.departureTime <= rangeEnd
+      )
+      .map(f => ({ ...f }));
   }
 }
 
@@ -32,7 +40,7 @@ export class FixtureStayProvider implements StayProvider {
     if (params.style) {
       results = results.filter(s => s.style === params.style);
     }
-    return results.map(s => ({ ...s, capturedAt: new Date().toISOString() }));
+    return results.map(s => ({ ...s }));
   }
 }
 
@@ -43,7 +51,7 @@ export class FixtureGroundProvider implements GroundProvider {
   }): Promise<GroundOffer[]> {
     return GROUND_FIXTURES
       .filter(g => g.destination === params.destination)
-      .map(g => ({ ...g, capturedAt: new Date().toISOString() }));
+      .map(g => ({ ...g }));
   }
 }
 

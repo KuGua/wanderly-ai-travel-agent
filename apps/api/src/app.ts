@@ -11,6 +11,9 @@ import { planningRoutes } from "./routes/planning.js";
 import { confirmationRoutes } from "./routes/confirmations.js";
 import { bookingRoutes } from "./routes/bookings.js";
 import { changeEventRoutes } from "./routes/change-events.js";
+import { demoUserRoutes } from "./routes/demo-users.js";
+import { createRequestContext } from "./utils/context.js";
+import { ApiError } from "./middleware/error-handler.js";
 
 export async function buildApp() {
   const app = Fastify({
@@ -44,13 +47,27 @@ export async function buildApp() {
 
   // Auth middleware for all other routes
   app.addHook("onRequest", async (request, reply) => {
-    if (request.url === "/health" || request.url.startsWith("/docs")) {
+    const requestContext = createRequestContext();
+    request.correlationId = requestContext.correlationId;
+    request.traceId = requestContext.traceId ?? requestContext.correlationId;
+    reply.header("x-correlation-id", request.correlationId);
+
+    if (
+      request.url === "/health"
+      || request.url.startsWith("/docs")
+      || (request.method === "GET" && request.url === "/api/v1/demo/users")
+    ) {
       return;
     }
-    await demoAuthMiddleware(request, reply);
+    await demoAuthMiddleware(request);
+  });
+
+  app.setNotFoundHandler(async () => {
+    throw new ApiError(404, "Not Found", "Route not found");
   });
 
   // Register routes
+  await app.register(demoUserRoutes, { prefix: "/api/v1" });
   await app.register(profileRoutes, { prefix: "/api/v1" });
   await app.register(tripRoutes, { prefix: "/api/v1" });
   await app.register(consentRoutes, { prefix: "/api/v1" });

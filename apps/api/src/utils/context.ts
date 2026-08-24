@@ -6,10 +6,21 @@ export interface RequestContext {
   traceId?: string;
 }
 
-export function createRequestContext(actorUserId?: string): RequestContext {
+export function createRequestContext(
+  actorUserId?: string,
+  correlationId: string = randomUUID(),
+  traceId: string = randomUUID(),
+): RequestContext {
   return {
-    correlationId: randomUUID(),
+    correlationId,
     actorUserId,
-    traceId: randomUUID(),
+    traceId,
   };
+}
+
+declare module "fastify" {
+  interface FastifyRequest {
+    correlationId: string;
+    traceId: string;
+  }
 }
