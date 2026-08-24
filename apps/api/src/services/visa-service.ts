@@ -67,11 +67,29 @@ export async function checkVisaReadiness(params: {
   // In production, fetch from constraintSnapshots.authorizedData[memberId].nationality
   const nationality = "US"; // Simplified — would come from snapshot
 
-  const result = await visaProvider.checkReadiness({
+  const providerResult = await visaProvider.checkReadiness({
     nationality,
     destinationCountry: params.destinationCountry,
     snapshotId: params.snapshotId,
   });
+
+  const result: VisaReadinessResult = providerResult.outcome === "UNAVAILABLE"
+    ? {
+        memberId: params.memberId,
+        destinationCountry: params.destinationCountry,
+        nationality,
+        status: "AUTHORIZED_CHECK",
+        checklist: [{
+          item: "Visa requirements unavailable for this nationality and destination",
+          source: "System",
+          uncertainty: "No fixture data is available; verify with official government sources",
+        }],
+        confidenceLevel: "UNCERTAIN",
+        source: "System — provider unavailable",
+        capturedAt: new Date().toISOString(),
+        disclaimer: "No provider result is available. Verify all requirements with official government sources.",
+      }
+    : providerResult.data;
 
   result.memberId = params.memberId;
 

@@ -9,7 +9,7 @@ export interface FlightProvider {
     dateStart: string;
     dateEnd: string;
     snapshotId: string;
-  }): Promise<FlightOffer[]>;
+  }): Promise<ProviderResult<FlightOffer[]>>;
 }
 
 export interface StayProvider {
@@ -19,14 +19,14 @@ export interface StayProvider {
     checkOut: string;
     style?: string;
     snapshotId: string;
-  }): Promise<StayOffer[]>;
+  }): Promise<ProviderResult<StayOffer[]>>;
 }
 
 export interface GroundProvider {
   searchGround(params: {
     destination: string;
     snapshotId: string;
-  }): Promise<GroundOffer[]>;
+  }): Promise<ProviderResult<GroundOffer[]>>;
 }
 
 export interface VisaProvider {
@@ -34,11 +34,25 @@ export interface VisaProvider {
     nationality: string;
     destinationCountry: string;
     snapshotId: string;
-  }): Promise<VisaReadinessResult>;
+  }): Promise<ProviderResult<VisaReadinessResult>>;
 }
 
-export interface ProviderResult<T> {
-  data: T;
-  isDemo: boolean;
-  source: string;
-}
+export type ProviderResult<T> =
+  | {
+      outcome: "LIVE";
+      data: T;
+      source: string;
+      capturedAt: string;
+    }
+  | {
+      outcome: "FALLBACK_DEMO";
+      data: T;
+      source: string;
+      capturedAt: string;
+      fixtureVersion: string;
+      reason: "LIVE_PROVIDER_NOT_CONFIGURED" | "LIVE_PROVIDER_FAILED";
+    }
+  | {
+      outcome: "UNAVAILABLE";
+      reason: "FIXTURE_NOT_FOUND" | "PROVIDER_FAILED";
+    };

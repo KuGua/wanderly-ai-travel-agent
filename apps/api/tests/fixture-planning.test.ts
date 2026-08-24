@@ -6,6 +6,7 @@ import {
 } from "../src/providers/fixture-provider.js";
 import { FIXTURE_CAPTURED_AT, FIXTURE_VERSION } from "../src/providers/fixtures.js";
 import { MockModelGateway } from "../src/providers/model-gateway.js";
+import type { ProviderResult } from "../src/providers/types.js";
 import {
   PlanningDataUnavailableError,
   validateProviderCoverage,
@@ -16,12 +17,19 @@ const stayProvider = new FixtureStayProvider();
 const groundProvider = new FixtureGroundProvider();
 const modelGateway = new MockModelGateway();
 
+function requireData<T>(result: ProviderResult<T>): T {
+  if (result.outcome === "UNAVAILABLE") {
+    throw new Error(`Provider unavailable: ${result.reason}`);
+  }
+  return result.data;
+}
+
 async function buildFixturePlan() {
   const snapshotId = "snapshot-test-001";
   const destination = "Tokyo";
   const requiredOrigins = ["San Francisco", "Shanghai"];
 
-  const flights = (await Promise.all(requiredOrigins.map(origin =>
+  const flightResults = await Promise.all(requiredOrigins.map(origin =>
     flightProvider.searchFlights({
       origin,
       destination,
@@ -29,14 +37,15 @@ async function buildFixturePlan() {
       dateEnd: "2025-08-07",
       snapshotId,
     })
-  ))).flat();
-  const stays = await stayProvider.searchStays({
+  ));
+  const flights = flightResults.flatMap(requireData);
+  const stays = requireData(await stayProvider.searchStays({
     destination,
     checkIn: "2025-08-01",
     checkOut: "2025-08-07",
     snapshotId,
-  });
-  const ground = await groundProvider.searchGround({ destination, snapshotId });
+  }));
+  const ground = requireData(await groundProvider.searchGround({ destination, snapshotId }));
 
   validateProviderCoverage({ requiredOrigins, flights, stays, ground });
 

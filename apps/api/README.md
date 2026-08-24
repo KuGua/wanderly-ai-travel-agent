@@ -53,6 +53,7 @@ seeded user UUID、`externalId` 和 `displayName`。已选择身份后，其他�
 - **基于授权的数据共享** — 按字段、范围和行程授予/撤回授权。
 - **约束快照** — 每轮规划使用不可变的已授权数据快照。
 - **Fixture 提供方** — 所有航班/住宿/地面交通/签证数据均标记为 `Demo data`；fixture 具有显式版本和固定采集时间，航班查询会按路线和请求日期范围过滤。
+- **规划控制平面** — `ModelGateway` 输出在写入前必须通过严格结构、snapshot 字段授权、路线边界、来源完整性与 provider evidence 精确匹配校验；失败返回 correlation-aware `422`，且不创建 plan。
 - **入境准备** — 每位成员各有清单；国籍未共享时显示“请向官方来源核验”。
 - **方案版本管理** — 生成、过期、带差异的重规划。
 - **三人确认** — 三位必需成员全部确认后，才可进行预订沙箱。
@@ -69,7 +70,7 @@ npm test
 npm run build
 ```
 
-37 个测试覆盖：安全 demo identity discovery、按成员隔离的 trip list、member count/role/date serialization、安全 member display name、严格的 Profile partial update、统一 error/correlation contract、OpenAPI contract、跨用户访问拒绝、撤回授权导致方案过期、快照不可变性、fixture 回退标签、fixture 航班查询确定性和缺失数据、双出发地 planning API、不得推断未授权国籍、变化事件幂等、三人确认门槛、旧方案/确认拒绝、重复/乱序 callback 处理，以及错误状态不得创建预订。
+47 个测试覆盖：安全 demo identity discovery、按成员隔离的 trip list、member count/role/date serialization、安全 member display name、严格的 Profile partial update、统一 error/correlation contract、OpenAPI contract、跨用户访问拒绝、撤回授权导致方案过期、快照不可变性、fixture provider outcome narrowing、fixture 航班查询确定性和显式不可用状态、双出发地 planning API、plan output 结构/授权/路线/来源/evidence 校验、校验失败不持久化、不得推断未授权国籍、变化事件幂等、三人确认门槛、旧方案/确认拒绝、重复/乱序 callback 处理，以及错误状态不得创建预订。
 
 `npm test` 需要按“快速开始”完成本地 PostgreSQL migration；integration tests 会重置测试用 trip/session 数据。
 

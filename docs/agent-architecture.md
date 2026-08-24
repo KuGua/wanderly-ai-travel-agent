@@ -203,7 +203,14 @@ profile / consent / constraint / provider change
 | Idempotency / callback | 副作用前原子 claim；callback 必须独立认证、关联预期 booking execution，并按 provider event ID 去重；late callback 不覆盖终态。 |
 | 恢复 | timeout/failed run 保留安全 step outcome；下一次触发从新 snapshot 开始，不恢复使用旧 snapshot 的半完成 plan。 |
 
-建议在 provider 层引入判别联合 ProviderOutcome = LIVE | FALLBACK_DEMO | UNAVAILABLE，而不是只返回 raw arrays。
+provider 层已使用判别联合 `ProviderResult<T>`，其 `outcome` 为 `LIVE | FALLBACK_DEMO | UNAVAILABLE`。fixture 命中返回带固定来源、采集时间、fixture version 与 fallback 原因的 `FALLBACK_DEMO`；fixture 缺失返回不含 `data` 的 `UNAVAILABLE`，调用方必须先 narrowing。
+
+当前 planning control plane 在 `ModelGateway` 输出与 `itineraryPlans` 写入之间执行两层确定性校验：
+
+1. `snapshot-policy.ts` 只允许引用实际存在于 immutable snapshot 的 `authorizedData.<memberId>.<fieldName>`；路径缺失、格式不明确或字段未授权均 fail closed。
+2. `plan-output-validator.ts` 使用 strict Zod schema 校验结构，并校验所有 origin/destination、source/capturedAt/fixtureVersion，以及选中 offer 与当前 planning run provider evidence 的完整对象一致性。
+
+失败统一抛出 `PlanValidationError`（HTTP `422`）。`violations` 仅包含稳定 code、field path 和低风险 reason，不回显模型值或 snapshot 私密内容；失败发生在任何 plan/provider/evidence persistence 之前。
 
 ## 7. Tool、权限与安全
 
@@ -319,7 +326,7 @@ flowchart TB
 
 | 现有位置 | 复用方式 | 必须修正 |
 |---|---|---|
-| apps/api/src/providers/types.ts | CandidateResearch/Readiness Skills 的 typed ports。 | 增加 ProviderOutcome、deadline、cancellation 与 fallback 原因。 |
+| apps/api/src/providers/types.ts | CandidateResearch/Readiness Skills 的 typed ports；已实现 ProviderOutcome 与 fallback 原因。 | 后续增加 deadline 与 cancellation。 |
 | apps/api/src/providers/fixture-provider.ts、fixtures.ts | fixture-first 事实基线。 | 保留真实 fixture captured time，不能每次读取伪装为实时数据。 |
 | apps/api/src/providers/model-gateway.ts | 唯一模型 anti-corruption layer。 | 加 Agent SDK implementation、Skill schemas、feature flag、timeouts、model metadata、deterministic fallback。 |
 | apps/api/src/services/consent-service.ts | ConsentExport 基础。 | 校验 field-to-scope；在 transaction 中使受影响 plan/confirmations stale。 |

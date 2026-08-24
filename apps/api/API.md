@@ -327,6 +327,31 @@ Generate a new plan for a trip.
 
 No plan is created when a required origin, stay, or ground fixture is missing.
 
+**Invalid model plan response**: `422`
+
+```json
+{
+  "statusCode": 422,
+  "error": "PlanValidationError",
+  "message": "Plan output failed deterministic validation",
+  "correlationId": "uuid",
+  "violations": [
+    {
+      "code": "EVIDENCE_MISMATCH",
+      "fieldPath": "flights.0",
+      "reason": "Offer does not exactly match provider evidence"
+    }
+  ]
+}
+```
+
+The planning control plane rejects malformed output, unauthorized snapshot
+field references, unapproved origins/destinations, missing provenance, and
+offers that do not exactly match provider evidence. Optional field references
+use `authorizedData.<memberId>.<fieldName>`. Violation responses contain no
+rejected values or private Profile data. Validation runs before authoritative
+plan persistence, so a rejected candidate creates no plan.
+
 ### `GET /planning/:tripId/latest`
 Get the latest active plan for a trip.
 

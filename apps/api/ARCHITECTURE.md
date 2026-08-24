@@ -48,13 +48,30 @@ Unified interfaces for travel data:
 - `GroundProvider` — search ground transport
 - `VisaProvider` — check visa readiness
 
-**Current**: `FixtureProvider` returns deterministic demo data.
+**Current**: `FixtureProvider` returns deterministic demo data through the
+discriminated `ProviderResult<T>` contract. Usable fixture results use
+`outcome: "FALLBACK_DEMO"` with a stable reason and provenance; unsupported
+queries use `outcome: "UNAVAILABLE"` and carry no fabricated `data` field.
 **Rule**: Any live provider failure must fall back to fixture with `Demo data` marker.
 **Never**: Fabricate real-time prices or inventory.
 
 Fixture datasets expose a stable version and fixed `capturedAt` value. Provider
 queries return copies of matching records and apply their documented filters;
 an unsupported route or date range returns no offers rather than fabricated data.
+
+### 2a. Plan Output Control Plane (`src/policy/`)
+
+`snapshot-policy.ts` accepts only exact
+`authorizedData.<memberId>.<fieldName>` references that exist in the immutable
+snapshot. Missing, malformed, or ambiguous references fail closed.
+
+`plan-output-validator.ts` treats `ModelGateway` output as untrusted. Before an
+`ACTIVE` plan can be inserted, it enforces a strict Zod structure, allowed
+origins/destination, complete provenance, and exact equality between every
+selected offer and the run-scoped provider evidence. A failure raises
+`PlanValidationError` (`422`) with low-risk `{ code, fieldPath, reason }`
+violations; no plan, provider offer, source evidence, or plan audit row is
+written by that planning attempt.
 
 ### 3. Business Services (`src/services/`)
 
@@ -127,6 +144,8 @@ Cross-cutting:
   are immutable.
 - API failures use one correlation-aware error envelope; the response
   `x-correlation-id` header matches the body `correlationId`.
+- Plan policy failures extend that same envelope with structured `violations`;
+  rejected values and private snapshot data are never returned.
 
 ### Audit Trail
 - Every sensitive operation records an `audit_event` with:

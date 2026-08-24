@@ -14,9 +14,16 @@ const baseSearch = {
 
 describe("FixtureFlightProvider", () => {
   it("returns normalized, labelled offers for a supported route and date range", async () => {
-    const offers = await provider.searchFlights(baseSearch);
+    const result = await provider.searchFlights(baseSearch);
 
     expect(FIXTURE_VERSION).toBe("2026-08-23.v1");
+    expect(result).toMatchObject({
+      outcome: "FALLBACK_DEMO",
+      reason: "LIVE_PROVIDER_NOT_CONFIGURED",
+      fixtureVersion: FIXTURE_VERSION,
+    });
+    if (result.outcome === "UNAVAILABLE") throw new Error("Expected fixture data");
+    const offers = result.data;
     expect(offers).toHaveLength(2);
     expect(offers[0]).toMatchObject({
       id: "flt-sfo-tyo-01",
@@ -37,21 +44,21 @@ describe("FixtureFlightProvider", () => {
   });
 
   it("does not return offers outside the requested date range", async () => {
-    const offers = await provider.searchFlights({
+    const result = await provider.searchFlights({
       ...baseSearch,
       dateStart: "2025-08-02",
       dateEnd: "2025-08-07",
     });
 
-    expect(offers).toEqual([]);
+    expect(result).toEqual({ outcome: "UNAVAILABLE", reason: "FIXTURE_NOT_FOUND" });
   });
 
   it("does not fabricate offers for an unsupported route", async () => {
-    const offers = await provider.searchFlights({
+    const result = await provider.searchFlights({
       ...baseSearch,
       destination: "Singapore",
     });
 
-    expect(offers).toEqual([]);
+    expect(result).toEqual({ outcome: "UNAVAILABLE", reason: "FIXTURE_NOT_FOUND" });
   });
 });
