@@ -1,0 +1,9 @@
+-- Idempotent enum extensions. ALTER TYPE ADD VALUE cannot run inside a
+-- transaction, so we wrap each in DO $$ ... EXCEPTION WHEN OTHERS THEN NULL.
+DO $$ BEGIN
+  ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'SKILL_INVOKE';
+EXCEPTION WHEN OTHERS THEN NULL; END $$;
+
+DO $$ BEGIN
+  ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'AGENT_RUN';
+EXCEPTION WHEN OTHERS THEN NULL; END $$;

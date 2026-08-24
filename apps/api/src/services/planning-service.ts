@@ -3,7 +3,7 @@ import { constraintSnapshots, itineraryPlans, sourceEvidence, providerOffers } f
 import { eq, and, desc } from "drizzle-orm";
 import { buildAuthorizedData } from "./consent-service.js";
 import { FixtureFlightProvider, FixtureStayProvider, FixtureGroundProvider } from "../providers/fixture-provider.js";
-import { MockModelGateway } from "../providers/model-gateway.js";
+import { createModelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
 import type { FlightProvider, GroundProvider, StayProvider } from "../providers/types.js";
 import { validatePlanOutput } from "../policy/plan-output-validator.js";
@@ -22,8 +22,13 @@ const defaultPlanningDependencies: PlanningDependencies = {
   flightProvider: new FixtureFlightProvider(),
   stayProvider: new FixtureStayProvider(),
   groundProvider: new FixtureGroundProvider(),
-  modelGateway: new MockModelGateway(),
+  modelGateway: createModelGateway(),
 };
+
+export function __setModelGateway(gateway: ModelGateway): void {
+  defaultPlanningDependencies.modelGateway = gateway;
+  __setModelGatewayForTests(gateway);
+}
 
 export class PlanningDataUnavailableError extends Error {
   readonly statusCode = 422;
@@ -171,6 +176,7 @@ export async function generatePlan(params: {
     stays: allStays,
     ground: allGround,
     memberPreferences,
+    ctx: params.ctx,
   });
 
   // The model output is untrusted until the deterministic control plane proves

@@ -9,7 +9,8 @@ export type AuditAction =
   | "PLAN_CREATE" | "PLAN_STALE" | "PLAN_REPLAN"
   | "CONFIRMATION_SET"
   | "BOOKING_SUBMIT" | "BOOKING_RESULT"
-  | "CHANGE_EVENT";
+  | "CHANGE_EVENT"
+  | "SKILL_INVOKE" | "AGENT_RUN";
 
 export async function recordAudit(params: {
   ctx: RequestContext;

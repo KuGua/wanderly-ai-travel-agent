@@ -38,7 +38,11 @@ Application-layer interface for AI model interactions:
 - `explainPlanDiff()` — explains differences between old/new plans
 
 **Constraints**: Model cannot access database or execute irreversible operations.
-**Future**: Swap `MockModelGateway` with OpenAI Agents SDK, Bedrock, etc.
+**Current**: `gateway-factory.ts` selects the deterministic `MockModelGateway`
+unless an OpenAI key/provider is configured. `LLMGateway` uses structured model
+output, records model/prompt versions and agent-run metadata, and falls back to
+the mock implementation on bounded upstream or parse failures. Both paths return
+candidate data that must pass the control plane below before persistence.
 
 ### 2. TravelProvider Adapters (`src/providers/`)
 
@@ -72,6 +76,11 @@ selected offer and the run-scoped provider evidence. A failure raises
 `PlanValidationError` (`422`) with low-risk `{ code, fieldPath, reason }`
 violations; no plan, provider offer, source evidence, or plan audit row is
 written by that planning attempt.
+
+`PlanComparisonSkill` applies the same validator as an early proposal check,
+but this does not replace the final `PlanningService` check. Skill policy gates
+control which scopes may be invoked; the validator independently proves that
+the proposed facts are authorized and exactly backed by current-run evidence.
 
 ### 3. Business Services (`src/services/`)
 

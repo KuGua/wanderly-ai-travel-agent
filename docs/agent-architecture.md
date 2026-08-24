@@ -153,11 +153,11 @@ Plan-and-Execute 必须有最大步数、总 deadline、每步 schema 校验和�
 1. 服务端校验成员、trip 与 consent；
 2. ConsentExportSkill 生成不可变 snapshot；
 3. Shared Agent 为全部配置候选调用 CandidateResearchSkill 和 ReadinessSkill；
-4. 每个 provider outcome、offer、source 与 demo 标记先持久化；
+4. 收集并 normalize 每个 provider outcome、offer、source 与 demo 标记，作为当前 run 的 evidence；
 5. PlanComparisonSkill 只根据安全 snapshot projection 和已验证 research bundles 生成结构化比较；
 6. 确定性 policy/evidence validator 校验输出；
 7. 可选 PlanReviewSkill 审查取舍、缺口和恢复路径是否表达清楚；
-8. 服务端事务激活 plan、替代旧版本、写 audit/outbox；确认和 booking 始终在 Agent 之外执行。
+8. 校验成功后，服务端持久化 plan、provider offers、source evidence 与 audit，并激活/替代版本；确认和 booking 始终在 Agent 之外执行。校验失败时不写入任何 authoritative plan/evidence state。
 
 ### Reflective Agent 的正确位置
 
@@ -189,7 +189,7 @@ profile / consent / constraint / provider change
 
 ### Sequential、Parallel 与 Event-driven
 
-- **Sequential：** membership/consent 校验 → snapshot → evidence 持久化 → plan synthesis → hard validation → plan activation。
+- **Sequential：** membership/consent 校验 → snapshot → run-scoped evidence 收集 → plan synthesis → hard validation → authoritative plan/evidence persistence 与 activation。
 - **Parallel（有上限）：** 不同 candidate 的研究、不同 departure city 的 flights、member/candidate readiness；使用 Promise.allSettled、并发上限和 request deadline。
 - **Event-driven：** consent/profile/constraint/provider change 和 callback 在事务中写入 outbox_events；MVP 使用进程内 polling worker，无需 Redis、Temporal 或 Step Functions。
 
@@ -245,7 +245,7 @@ Shared Trip Agent → shared Skills → typed provider adapters / ModelGateway
 
 ## 8. 模型路由与取舍
 
-ModelGateway 是唯一模型边界。当前 MockModelGateway 可作为确定性测试/降级实现；已安装但尚未使用的 @openai/agents 只能在它之后接入。
+ModelGateway 是唯一模型边界。`gateway-factory.ts` 根据配置选择 `LLMGateway` 或确定性的 `MockModelGateway`；`LLMGateway` 使用结构化输出、有限 retry、prompt/model version 与 agent-run recording，并在 upstream/schema failure 时降级到 mock。无论来源为何，输出都只是 candidate，必须通过 `plan-output-validator.ts` 后才能写入 authoritative plan state。
 
 | 任务 | 模型策略 | 取舍 |
 |---|---|---|
@@ -328,7 +328,7 @@ flowchart TB
 |---|---|---|
 | apps/api/src/providers/types.ts | CandidateResearch/Readiness Skills 的 typed ports；已实现 ProviderOutcome 与 fallback 原因。 | 后续增加 deadline 与 cancellation。 |
 | apps/api/src/providers/fixture-provider.ts、fixtures.ts | fixture-first 事实基线。 | 保留真实 fixture captured time，不能每次读取伪装为实时数据。 |
-| apps/api/src/providers/model-gateway.ts | 唯一模型 anti-corruption layer。 | 加 Agent SDK implementation、Skill schemas、feature flag、timeouts、model metadata、deterministic fallback。 |
+| apps/api/src/providers/model-gateway.ts、llm-gateway.ts、gateway-factory.ts | 唯一模型 anti-corruption layer；已包含结构化 LLM 调用、配置选择、model/prompt metadata 与 deterministic fallback。 | 保持模型输出为 candidate；任何新 gateway 都必须经过相同 authoritative validator。 |
 | apps/api/src/services/consent-service.ts | ConsentExport 基础。 | 校验 field-to-scope；在 transaction 中使受影响 plan/confirmations stale。 |
 | apps/api/src/services/planning-service.ts | snapshot/plan persistence。 | 支持全部 candidates，拆分 research/synthesis/activation，并持久化 all-category evidence。 |
 | apps/api/src/services/visa-service.ts | ReadinessSkill 基础。 | 从 snapshot 读取实际授权 nationality；删除硬编码 US。 |

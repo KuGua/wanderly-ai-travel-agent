@@ -11,6 +11,7 @@ import {
 } from "../src/policy/plan-output-validator.js";
 import { FixtureFlightProvider, FixtureGroundProvider, FixtureStayProvider } from "../src/providers/fixture-provider.js";
 import { FLIGHT_FIXTURES, GROUND_FIXTURES, STAY_FIXTURES } from "../src/providers/fixtures.js";
+import { LLMGateway } from "../src/providers/llm-gateway.js";
 import { MockModelGateway } from "../src/providers/model-gateway.js";
 import type { ProviderResult } from "../src/providers/types.js";
 import { generatePlan } from "../src/services/planning-service.js";
@@ -38,6 +39,26 @@ async function validCandidate(): Promise<Record<string, unknown>> {
     stays: evidence.stays,
     ground: evidence.ground,
     memberPreferences: snapshot.authorizedData,
+  });
+}
+
+function llmStyleGateway(plan: Record<string, unknown>): LLMGateway {
+  return new LLMGateway({
+    apiKey: "test",
+    modelName: "gpt-4o-mini",
+    promptVersion: "integration-test",
+    mock: new MockModelGateway(),
+    ctx: createRequestContext(),
+    client: {
+      beta: {
+        chat: {
+          completions: {
+            parse: async () => ({ choices: [{ message: { parsed: { plan } } }] }),
+          },
+        },
+      },
+    },
+    maxRetries: 0,
   });
 }
 
@@ -157,7 +178,56 @@ describe("plan output control plane", () => {
     await app.close();
   });
 
-  it("does not persist an authoritative plan when validation fails", async () => {
+  it("persists a validated LLM-style candidate", async () => {
+    const suffix = randomUUID();
+    const [user] = await db.insert(users).values({
+      externalId: `validator-valid-${suffix}`,
+      displayName: "Validator Valid Test",
+    }).returning();
+    const [trip] = await db.insert(sharedTrips).values({
+      name: "Validator Valid Test Trip",
+      createdBy: user.id,
+      departureCities: snapshot.departureCities,
+      destinationCandidates: snapshot.destinationCandidates,
+      travelDateStart: snapshot.travelDateStart,
+      travelDateEnd: snapshot.travelDateEnd,
+    }).returning();
+    const [storedSnapshot] = await db.insert(constraintSnapshots).values({
+      tripId: trip.id,
+      version: 1,
+      authorizedData: {},
+      departureCities: snapshot.departureCities,
+      destinationCandidates: snapshot.destinationCandidates,
+      travelDateStart: snapshot.travelDateStart,
+      travelDateEnd: snapshot.travelDateEnd,
+    }).returning();
+
+    try {
+      const planId = await generatePlan({
+        ctx: createRequestContext(user.id),
+        tripId: trip.id,
+        snapshotId: storedSnapshot.id,
+        destination: "Tokyo",
+        memberIds: [user.id],
+      }, {
+        flightProvider: new FixtureFlightProvider(),
+        stayProvider: new FixtureStayProvider(),
+        groundProvider: new FixtureGroundProvider(),
+        modelGateway: llmStyleGateway(await validCandidate()),
+      });
+
+      expect(await db.select().from(itineraryPlans).where(eq(itineraryPlans.id, planId))).toHaveLength(1);
+      expect(await db.select().from(providerOffers).where(eq(providerOffers.snapshotId, storedSnapshot.id))).not.toEqual([]);
+    } finally {
+      await db.delete(auditEvents).where(eq(auditEvents.actorUserId, user.id));
+      await db.delete(itineraryPlans).where(eq(itineraryPlans.tripId, trip.id));
+      await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, storedSnapshot.id));
+      await db.delete(sharedTrips).where(eq(sharedTrips.id, trip.id));
+      await db.delete(users).where(eq(users.id, user.id));
+    }
+  });
+
+  it("rejects an invalid LLM-style candidate without authoritative persistence", async () => {
     const suffix = randomUUID();
     const [user] = await db.insert(users).values({
       externalId: `validator-${suffix}`,
@@ -181,9 +251,8 @@ describe("plan output control plane", () => {
       travelDateEnd: snapshot.travelDateEnd,
     }).returning();
 
-    const invalidGateway = new MockModelGateway();
-    invalidGateway.generateStructuredPlan = async params => ({
-      ...await new MockModelGateway().generateStructuredPlan(params),
+    const invalidGateway = llmStyleGateway({
+      ...await validCandidate(),
       constraintReferences: ["authorizedData.missing-member.nationality"],
     });
 
@@ -205,6 +274,7 @@ describe("plan output control plane", () => {
       expect(await db.select().from(providerOffers).where(eq(providerOffers.snapshotId, storedSnapshot.id))).toEqual([]);
       expect(await db.select().from(auditEvents).where(eq(auditEvents.tripId, trip.id))).toEqual([]);
     } finally {
+      await db.delete(auditEvents).where(eq(auditEvents.actorUserId, user.id));
       await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, storedSnapshot.id));
       await db.delete(sharedTrips).where(eq(sharedTrips.id, trip.id));
       await db.delete(users).where(eq(users.id, user.id));
