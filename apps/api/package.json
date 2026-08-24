@@ -21,7 +21,8 @@
     "pretest": "npm run db:migrate",
     "test:watch": "vitest",
     "lint": "eslint src/ tests/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "docs:verify": "tsx scripts/verify-docs.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.0.1",
