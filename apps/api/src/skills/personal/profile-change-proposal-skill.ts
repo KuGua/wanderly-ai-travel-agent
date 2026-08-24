@@ -1,15 +1,25 @@
 import { z } from "zod";
 import type { Skill } from "../../agents/contracts.js";
 
+const SENSITIVE_FIELDS = ["passportNumber", "dateOfBirth"];
+
 export const profileChangeProposalInputSchema = z.object({
   userId: z.string().uuid(),
   field: z.string().min(1).max(64)
-    .refine(field => field !== "passportNumber" && field !== "dateOfBirth", {
-      message: "Sensitive fields cannot be proposed via Personal Agent",
+    .refine(field => !SENSITIVE_FIELDS.includes(field), {
+      message: "Sensitive fields (passportNumber, dateOfBirth) cannot be proposed via Personal Agent",
     }),
   value: z.unknown(),
   source: z.enum(["profile", "this_trip"]),
-}).strict();
+}).strict().superRefine((data, ctx) => {
+  if (data.field === "nationality" && data.source !== "this_trip") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["field"],
+      message: "nationality may only be proposed for this trip, not stable profile",
+    });
+  }
+});
 
 export const profileChangeProposalOutputSchema = z.object({
   field: z.string(),

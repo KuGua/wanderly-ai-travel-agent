@@ -71,7 +71,15 @@ npm test
 npm run build
 ```
 
-64 个测试覆盖：安全 demo identity discovery、按成员隔离的 trip list、member count/role/date serialization、安全 member display name、严格的 Profile partial update、统一 error/correlation contract、OpenAPI contract、跨用户访问拒绝、撤回授权导致方案过期、快照不可变性、fixture provider outcome narrowing、fixture 航班查询确定性和显式不可用状态、双出发地 planning API、plan output 结构/授权/路线/来源/evidence 校验、LLM-style candidate 校验前后持久化边界、OpenAI client loading、model fallback/agent-run recording、Skill schema/allow-list/timeout、migration 幂等、不得推断未授权国籍、变化事件幂等、三人确认门槛、旧方案/确认拒绝、重复/乱序 callback 处理，以及错误状态不得创建预订。
+如只需验证 lockfile 与依赖解析、且不希望执行 `postinstall` 或访问数据库，可运行：
+
+```bash
+npm ci --dry-run --ignore-scripts
+```
+
+安装脚本许可由 `package.json` 的 `allowScripts` 按确切版本维护。更新带安装脚本的依赖后，先运行 `npm approve-scripts --allow-scripts-pending` 审核新增项；不要使用不经审核的 `--all`。生产依赖安全检查使用 `npm audit --omit=dev`；不得直接运行 `npm audit fix --force`，以免降级 Drizzle Kit。
+
+测试覆盖安全 demo identity、授权撤回后的 plan 失效、fixture fallback、严格的 plan 输出结构/授权/路线/来源/evidence 校验、LLM fallback 与 agent-run 记录、Skill schema/allow-list/timeout，以及预订幂等与乱序 callback。
 
 `npm test` 需要按“快速开始”完成本地 PostgreSQL migration；integration tests 会重置测试用 trip/session 数据。
 

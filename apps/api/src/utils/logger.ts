@@ -1,23 +1,5 @@
-import pino from "pino";
+import { pinoInstance } from "../observability/telemetry.js";
 
-const LOG_LEVEL = process.env.LOG_LEVEL ?? "info";
-
-export const logger = pino({
-  level: LOG_LEVEL,
-  transport:
-    process.env.NODE_ENV !== "production"
-      ? { target: "pino-pretty", options: { colorize: true } }
-      : undefined,
-  // Redact sensitive fields
-  redact: {
-    paths: [
-      "req.headers.authorization",
-      "req.body.passportNumber",
-      "req.body.nationality",
-      "req.body.dateOfBirth",
-      "res.body.passportNumber",
-      "res.body.nationality",
-    ],
-    censor: "[REDACTED]",
-  },
-});
+// Re-export for backward compatibility — the canonical instance now lives in
+// observability/telemetry.ts so Fastify can wire it consistently.
+export const logger = pinoInstance;

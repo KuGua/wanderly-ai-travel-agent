@@ -1,7 +1,5 @@
 -- 0001_init_existing_schema.sql
--- Baseline schema; idempotent. Equivalent to the previous imperative db/migrate.ts,
--- converted to a versioned, re-runnable file. Safe to apply on a database that
--- already has these tables.
+-- Baseline schema; idempotent. Safe to apply on a DB that already has these tables.
 
 DO $$ BEGIN
   CREATE TYPE trip_status AS ENUM ('PLANNING', 'CONFIRMED', 'BOOKED', 'CANCELLED', 'STALE');

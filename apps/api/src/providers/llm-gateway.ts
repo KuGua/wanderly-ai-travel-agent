@@ -4,6 +4,7 @@ import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/dom
 import type { ModelGateway } from "./model-gateway.js";
 import type { RequestContext } from "../utils/context.js";
 import { recordAgentRun, type AgentRunTokens } from "../observability/agent-runs.js";
+import { metrics } from "../observability/metrics.js";
 
 export interface LLMGatewayOptions {
   apiKey: string;
@@ -106,6 +107,7 @@ export class LLMGateway implements ModelGateway {
         errorCode,
         tokens: extra,
       });
+      metrics.inc("provider_fallback_total", { provider: this.options.modelName, outcome: errorCode });
       return plan;
     };
 
@@ -154,6 +156,7 @@ export class LLMGateway implements ModelGateway {
         const parsed = completion.data;
 
         const tokens = response.usage;
+        metrics.observe("llm_request_latency_ms", Date.now() - start, { model: this.options.modelName });
         await recordAgentRun({
           ctx,
           skillName: "plan.comparison",
@@ -183,6 +186,7 @@ export class LLMGateway implements ModelGateway {
     return this.options.mock.explainPlanDiff({
       oldPlan: params.oldPlan,
       newPlan: params.newPlan,
+      signal: params.signal,
     });
   }
 }

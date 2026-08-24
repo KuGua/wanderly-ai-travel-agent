@@ -47,7 +47,7 @@ const groundOfferSchema = z.object({
   ...provenanceFields,
 }).strict();
 
-const planOutputSchema = z.object({
+export const planOutputSchema = z.object({
   destination: z.string().min(1),
   flights: z.array(flightOfferSchema).min(1),
   stays: z.array(stayOfferSchema).min(1),
