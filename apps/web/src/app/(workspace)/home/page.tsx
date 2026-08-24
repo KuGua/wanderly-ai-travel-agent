@@ -1,5 +1,5 @@
-import { HomeDashboard } from "@/components/home/home-dashboard";
+import { ExploreMapPage } from "@/components/explore/explore-map-page";
 
 export default function HomePage() {
-  return <HomeDashboard />;
+  return <ExploreMapPage />;
 }
