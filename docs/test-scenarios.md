@@ -347,6 +347,15 @@ memberships overlap only where explicitly configured.
 
 ## 发布回归检查清单
 
+### Frontend Slice 回归
+
+- 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话。
+- fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
+- 所有受保护的 HTTP 请求携带当前 Cognito access token；登录会话变化或退出时必须清空 TanStack Query 缓存。
+- Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
+- Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
+- 375px、768px、1024px、1440px 下身份、导航、主要操作与私密提示均可见，交互目标至少 44px，并尊重 reduced motion。
+
 - Profile memory is explicit, editable, deletable and private by default.
 - Shared workspace never shows unapproved Profile/private-chat fields.
 - Flight/Stay/Ground and Visa outputs use one consent snapshot and show source/time or demo label.
