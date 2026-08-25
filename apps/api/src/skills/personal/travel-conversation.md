@@ -21,7 +21,7 @@ Skill Registry with expected version `1.0.0`.
 | `name` | `travel.conversation` | `Skill.name` |
 | `agent` | `personal` | `Skill.agent` |
 | `version` | `1.0.0` | `Skill.version` |
-| `allowedTools` | `chat:read` | Personal Agent allow-list |
+| `allowedTools` | `"chat:read"` | Personal Agent allow-list |
 | `timeoutMs` | `15000` | `Skill.timeoutMs` |
 | `needsConfirm` | `false` | `Skill.needsConfirm` |
 

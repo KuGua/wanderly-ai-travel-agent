@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, MapPin, Plane, RotateCw, Sparkles, Trash2, X } from "lucide-react";
+import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, MapPin, RotateCw, Sparkles, Trash2, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
@@ -28,6 +28,7 @@ type SourceEventDiagnostic = {
 const SINGAPORE: [number, number] = [103.8198, 1.3521];
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 const NEARBY_RADIUS_KM = 50;
+const DESTINATIONS: Destination[] = [];
 
 
 export function ExploreMapPage() {
@@ -51,7 +52,7 @@ export function ExploreMapPage() {
   const tCommon = useTranslations("common");
   const locale = useLocale();
 
-  const destinations: Destination[] = [];
+  const destinations = DESTINATIONS;
 
   useEffect(() => {
     readinessRef.current = readiness;
@@ -359,7 +360,7 @@ export function ExploreMapPage() {
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || readiness.kind !== "ready-supported" || !window.matchMedia("(max-width: 639px)").matches) return;
+    if (!map || readiness.kind !== "ready-supported") return;
 
     if (!chatOpen) {
       if (chatCameraActiveRef.current) {
@@ -374,15 +375,52 @@ export function ExploreMapPage() {
       return;
     }
 
-    const bottomPadding = Math.round(window.innerHeight * 0.43) + 24;
-    const currentCenter = map.getCenter();
-    map.easeTo({
-      center: selected ? selected.coordinates : [currentCenter.lng, currentCenter.lat],
-      zoom: selected ? Math.max(map.getZoom(), 5.4) : map.getZoom() + Math.log2(0.8),
-      padding: { top: 0, right: 0, bottom: bottomPadding, left: 0 },
-      duration: reducedMotion() ? 0 : 650,
-    });
-    chatCameraActiveRef.current = true;
+    const initialZoom = map.getZoom();
+    const adjustCameraForChat = (duration: number) => {
+      const currentCenter = map.getCenter();
+      const isPortrait = window.matchMedia("(orientation: portrait)").matches;
+
+      if (isPortrait) {
+        map.easeTo({
+          center: selected ? selected.coordinates : [currentCenter.lng, currentCenter.lat],
+          zoom: selected ? Math.max(initialZoom, 5.4) : initialZoom + Math.log2(0.8),
+          padding: { top: 0, right: 0, bottom: Math.round(window.innerHeight * 0.6) + 24, left: 0 },
+          duration,
+        });
+      } else {
+        const mapWidth = containerRef.current?.clientWidth || 1024;
+        const mapHeight = containerRef.current?.clientHeight || window.innerHeight;
+        const dialogWidth = document.querySelector<HTMLElement>('[aria-label="Wanderly Agent conversation"]')?.offsetWidth || mapWidth * 0.4;
+        const rightPadding = Math.min(dialogWidth + 24, Math.max(0, mapWidth - 120));
+        const visibleWidth = Math.max(120, mapWidth - rightPadding);
+        const shortEdge = Math.min(mapWidth, mapHeight);
+        const comfortableGlobeDiameter = shortEdge * 0.72;
+        const globeScale = visibleWidth >= comfortableGlobeDiameter
+          ? 1
+          : Math.min(1, (visibleWidth * 0.9) / (shortEdge * 0.9));
+
+        map.easeTo({
+          center: selected ? selected.coordinates : [currentCenter.lng, currentCenter.lat],
+          zoom: selected ? Math.max(initialZoom, 5.4) : initialZoom + Math.log2(globeScale),
+          padding: { top: 0, right: rightPadding, bottom: 0, left: 0 },
+          duration,
+        });
+      }
+
+      chatCameraActiveRef.current = true;
+    };
+
+    adjustCameraForChat(reducedMotion() ? 0 : 650);
+    let resizeTimer: number | undefined;
+    const handleResize = () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => adjustCameraForChat(reducedMotion() ? 0 : 350), 120);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.clearTimeout(resizeTimer);
+    };
   }, [chatOpen, readiness.kind, selected]);
 
   function recenter() {
@@ -463,7 +501,7 @@ export function ExploreMapPage() {
   }, [locale]);
 
   return (
-    <main data-drawer-open={selected && !chatOpen ? "true" : "false"} className="wanderly-explore-map relative isolate h-[calc(100dvh-4rem)] min-h-[620px] overflow-hidden bg-[#bfe9f2] md:h-screen">
+    <main data-drawer-open={selected && !chatOpen ? "true" : "false"} className="wanderly-explore-map relative isolate h-[calc(100dvh-4rem)] min-h-[620px] overflow-hidden bg-[#bfe9f2] landscape:h-screen">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_58%_42%,#dff5ee_0_15%,#8bd2df_35%,#65b7ca_62%,#4b9eb5_100%)]" aria-hidden="true" />
       <div className="absolute inset-0">
         <div ref={containerRef} className="size-full" aria-label={t("globeAriaLabel")} />
@@ -512,25 +550,8 @@ export function ExploreMapPage() {
         </section>
       ) : null}
 
-      <section className={`absolute bottom-20 left-4 z-20 rounded-[24px] bg-card/95 shadow-[0_20px_60px_#082f3f40] backdrop-blur sm:bottom-6 sm:left-6 ${managePinsOpen ? "block w-[min(360px,calc(100%-2rem))] p-4" : "hidden w-[min(420px,calc(100%-2rem))] p-5 sm:block"} ${selected && !managePinsOpen ? "sm:block" : ""}`}>
-        {!managePinsOpen ? (
-          <>
-            <div className="flex items-center gap-2 text-primary">
-              <Sparkles aria-hidden="true" className="size-4" />
-              <p className="text-[11px] font-black uppercase tracking-[0.14em]">{t("panelKicker")}</p>
-            </div>
-            <h1 className="mt-2 text-2xl font-bold tracking-[-0.045em]">{t("panelTitle")}</h1>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">{t("panelBody")}</p>
-            {inspirations.length > 0 ? <p className="mt-2 text-xs font-bold text-primary">{t("pinCount", { count: inspirations.length })}</p> : null}
-            <div className="mt-4 flex flex-wrap gap-2" aria-label={t("suggestionsAriaLabel")}>
-              {destinations.map((destination) => (
-                <button key={destination.id} type="button" onClick={() => selectDestination(destination)} className="inline-flex min-h-10 items-center gap-1.5 rounded-full border bg-background px-3 text-sm font-bold transition hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
-                  <MapPin aria-hidden="true" className="size-3.5" /> {destination.name}
-                </button>
-              ))}
-            </div>
-          </>
-        ) : (
+      {managePinsOpen ? (
+        <section className="absolute bottom-20 left-4 z-20 block w-[min(360px,calc(100%-2rem))] rounded-[24px] bg-card/95 p-4 shadow-[0_20px_60px_#082f3f40] backdrop-blur landscape:bottom-6 landscape:left-6">
           <>
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -570,8 +591,8 @@ export function ExploreMapPage() {
               {checkedInspirationIds.size > 0 ? t("deleteSelectedWithCount", { count: checkedInspirationIds.size }) : t("deleteSelected")}
             </button>
           </>
-        )}
-      </section>
+        </section>
+      ) : null}
 
       {readiness.kind !== "loading" && readiness.kind !== "unavailable-network" ? (
         <LayerToggleGroup
@@ -584,7 +605,7 @@ export function ExploreMapPage() {
       ) : null}
 
       {selected && !managePinsOpen && !chatOpen ? (
-        <aside className="absolute inset-x-0 bottom-0 z-30 max-h-[70dvh] overflow-y-auto rounded-t-[24px] bg-card/95 p-5 pb-24 shadow-[0_20px_60px_#082f3f55] backdrop-blur sm:inset-x-auto sm:bottom-auto sm:right-6 sm:top-28 sm:w-[min(360px,calc(100%-2rem))] sm:rounded-[24px] sm:pb-5">
+        <aside className="absolute inset-x-0 bottom-0 z-30 max-h-[70dvh] overflow-y-auto rounded-t-[24px] bg-card/95 p-5 pb-24 shadow-[0_20px_60px_#082f3f55] backdrop-blur landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(360px,calc(100%-2rem))] landscape:rounded-[24px] landscape:pb-5">
           <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label={t("drawerCloseAriaLabel")} className="absolute right-4 top-4 grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
             <X aria-hidden="true" className="size-4" />
           </button>

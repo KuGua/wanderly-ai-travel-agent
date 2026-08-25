@@ -27,7 +27,7 @@ function goodPlanData() {
       priceUsd: 850,
       isRedEye: false,
       airline: "Demo Air",
-      source: "Demo data",
+      source: "Provider API",
       capturedAt: "2026-08-23T00:00:00.000Z",
     }],
     stays: [{
@@ -38,7 +38,7 @@ function goodPlanData() {
       pricePerNightUsd: 180,
       style: "city_center",
       location: "Shinjuku",
-      source: "Demo data",
+      source: "Provider API",
       capturedAt: "2026-08-23T00:00:00.000Z",
     }],
     ground: [{
@@ -47,7 +47,7 @@ function goodPlanData() {
       type: "airport_transfer" as const,
       priceUsd: 35,
       provider: "Demo Transfer",
-      source: "Demo data",
+      source: "Provider API",
       capturedAt: "2026-08-23T00:00:00.000Z",
     }],
     generatedAt: "2026-08-23T00:00:00.000Z",

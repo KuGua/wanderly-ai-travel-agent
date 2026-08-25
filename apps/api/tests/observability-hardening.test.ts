@@ -50,9 +50,9 @@ describe("logger redaction", () => {
 });
 
 describe("bounded metrics", () => {
-  it("emits only expected bounded callback and provider labels", () => {
+  it("emits only expected bounded callback and model-provider labels", () => {
     metrics.inc("callback_verifications_total", { callbackResult: "valid" });
-    metrics.observe("llm_request_latency_ms", 10, { provider: "gemini", outcome: "success" });
+    metrics.observe("llm_request_latency_ms", 125, { provider: "gemini", outcome: "success" });
 
     const rendered = metrics.render();
     expect(rendered).toContain('callbackResult="valid"');
@@ -67,7 +67,7 @@ describe("bounded metrics", () => {
       callbackResult: "valid",
       tripId: identifier,
     })).toThrow(MetricLabelError);
-    expect(() => metrics.observe("llm_request_latency_ms", 10, {
+    expect(() => metrics.observe("llm_request_latency_ms", 125, {
       provider: "arbitrary-model-name",
       outcome: "success",
     })).toThrow(MetricLabelError);

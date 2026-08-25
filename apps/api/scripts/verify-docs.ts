@@ -183,16 +183,18 @@ async function checkSkillRuntimeMatches(): Promise<void> {
     if (fm.agent !== "personal" && fm.agent !== "shared") continue; // not a Skill doc
 
     const derivedName = deriveSkillNameFromPath(rel);
-    const documentedName = fm.name ?? derivedName;
-    const expectedName = documentedName?.replace(/^(personal|shared)\./, "");
-    const runtime = skillsByName.get(expectedName ?? "");
+    const expectedName = fm.name ?? derivedName;
+    const runtimeName = expectedName?.startsWith(`${fm.agent}.`)
+      ? expectedName.slice(fm.agent.length + 1)
+      : expectedName;
+    const runtime = skillsByName.get(runtimeName ?? "");
     if (!runtime) {
-      fail(rel, `no runtime Skill with name "${expectedName}" registered`);
+      fail(rel, `no runtime Skill with name "${runtimeName}" registered`);
       continue;
     }
 
-    if (runtime.name !== expectedName) {
-      fail(rel, `runtime name "${runtime.name}" != doc name "${expectedName}"`);
+    if (runtime.name !== runtimeName) {
+      fail(rel, `runtime name "${runtime.name}" != documented runtime name "${runtimeName}"`);
     }
     if (runtime.version !== fm.name && !text.includes(`| \`version\` | \`${runtime.version}\` |`)) {
       fail(rel, `runtime version "${runtime.version}" not present in doc table`);
@@ -203,9 +205,9 @@ async function checkSkillRuntimeMatches(): Promise<void> {
     if (!text.includes(`| \`needsConfirm\` | \`${runtime.needsConfirm}\` |`)) {
       fail(rel, `runtime needsConfirm ${runtime.needsConfirm} not present in doc table`);
     }
-    const missingTools = runtime.allowedTools.filter(tool => !text.includes(tool));
+    const missingTools = runtime.allowedTools.filter(tool => !text.includes(`"${tool}"`));
     if (missingTools.length > 0) {
-      fail(rel, `runtime allowedTools missing from doc: ${missingTools.join(", ")}`);
+      fail(rel, `runtime allowedTools [${missingTools.join(", ")}] missing from doc`);
     }
   }
 }
@@ -240,7 +242,7 @@ function checkFrameworkCoverage(
     }
   }
 
-  // SkillScope coverage (7 values)
+  // SkillScope coverage
   const scopes = extractUnionAfter(source, "SkillScope");
   if (scopes.length > 0) {
     for (const s of scopes) {
@@ -260,7 +262,7 @@ function checkFrameworkCoverage(
     }
   }
 
-  // AuditAction coverage (14 values)
+  // AuditAction coverage
   const auditActions = extractUnionAfter(source, "AuditAction");
   if (auditActions.length > 0) {
     for (const action of auditActions) {

@@ -313,6 +313,9 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 2. 连续点击多个地图空白区域，并确认每个经纬坐标都有独立的临时探索标记和档案。
 3. 从地点详情打开私有灵感管理器，分别查看当前区域（当前点 50 km 内）与全部标记。
 4. 手动勾选多个私有灵感并执行批量删除；从详情执行单点删除，然后刷新页面。
+5. 在全球、区域和本地缩放级别，确认国家、省/州和城市按层级显示；分别关闭三个图层。
+6. 打开一个地点抽屉后，确认三个图层开关仍可见并可操作。
+7. 点击国家、城市或省/州名称，再点击空白地图位置。
 
 **Expected outcomes:**
 
@@ -324,6 +327,9 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 - 多个私有灵感在缩放和移动地图时保持绑定各自经纬坐标；管理器默认不打开、不预选标记，单独删除只移除目标标记，批量删除只移除已勾选标记。
 - 没有反向地理编码合同时，不得把距离范围伪装为城市边界；原型的 `Current area` 明确表示当前点 50 km 内。
 - 原型刷新后临时标记消失；生产实现必须将任何持久化操作交由服务端授权模型处理。
+- 国家、城市/省州标签仅来自地图底图，并按缩放渐进显示；它们可打开 `Map location` 预览，但不会创建私有 pin、共享约束、方案、价格、库存、签证或预订结论。空白位置仍仅创建临时私有灵感。
+- 如果配置的 style 缺少兼容的 OpenMapTiles source 或缺失任一必需图层，行政区/城市开关**保持可见但被禁用**，附 `role="status"` caption 说明缺失项（缺 source 或 `missing layers:` 列表）；地图保留原有候选入口和故障回退；不静默隐藏，不报错或伪造地图数据。开发者可在 dev 模式下通过 `window.__wanderlyMap.readiness` 观察 5 种 readiness（loading / ready-supported / ready-style-unsupported-source / ready-style-missing-layers / unavailable-network）。
+- 地图就绪生命周期分两阶段（mounting → ready）：`style.load` 是 style 兼容性检查、globe 投影和图层控件的唯一就绪前置；OpenMapTiles 的 `sourcedata` 只作为开发诊断，慢 TileJSON 或 PBF 不得触发 `unavailable-network`。只有 style 总超时、初始化异常或 style ready 前的 map error 才显示 globe error 回退。dev 模式下 `window.__wanderlyMap.stage` 实时反映当前阶段。
 
 ### TS-S1 — Protect data and trace the Agentic workflow
 

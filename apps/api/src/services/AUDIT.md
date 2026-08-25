@@ -15,6 +15,17 @@ runs **before** any insert. Rejection propagates as
 
 `./audit-service.ts`.
 
+## Audit action vocabulary
+
+`AuditAction` currently permits:
+
+- Profile: `PROFILE_CREATE`, `PROFILE_UPDATE`, `PROFILE_DELETE`.
+- Trip and consent: `TRIP_CREATE`, `TRIP_JOIN`, `CONSENT_GRANT`, `CONSENT_REVOKE`.
+- Planning: `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`, `CONFIRMATION_SET`.
+- Booking and changes: `BOOKING_SUBMIT`, `BOOKING_RESULT`, `CHANGE_EVENT`, `VISA_CHECK`.
+- Chat: `CHAT_THREAD_CREATE`, `CHAT_THREAD_DELETE`, `CHAT_MESSAGE_APPEND`.
+- Agent runtime: `SKILL_INVOKE`, `AGENT_RUN`.
+
 ## Scope & invariants
 
 - `whitelistSummary` **never silently redacts**. If a key, value, depth, or

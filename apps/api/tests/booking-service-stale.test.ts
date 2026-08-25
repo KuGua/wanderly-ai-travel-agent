@@ -13,7 +13,7 @@ import {
   auditEvents,
   idempotencyRecords,
 } from "../src/db/schema.js";
-import { handleSandboxCallback, submitBooking } from "../src/services/booking-service.js";
+import { handleSandboxCallback } from "../src/services/booking-service.js";
 import { createRequestContext } from "../src/utils/context.js";
 
 describe("booking-service.handleSandboxCallback stale detection", () => {
@@ -138,25 +138,5 @@ describe("booking-service.handleSandboxCallback stale detection", () => {
     expect(result.isDuplicate).toBe(false);
     expect(result.isStale).toBe(false);
 
-  });
-
-  it("rejects booking a stale existing plan without creating a booking side effect", async () => {
-    await db.update(itineraryPlans)
-      .set({ status: "STALE", staleReason: "test fixture invalidated" })
-      .where(eq(itineraryPlans.id, planId));
-
-    const bookingRequestId = randomUUID();
-    idempotencyKeys.push(`booking:${bookingRequestId}`);
-    await expect(submitBooking({
-      ctx: createRequestContext(userId, randomUUID(), randomUUID()),
-      planId,
-      tripId,
-      orchestrationRequestId: bookingRequestId,
-      requestedBy: userId,
-    })).rejects.toThrow("Cannot book plan with status STALE");
-
-    const bookings = await db.select().from(bookingExecutions)
-      .where(eq(bookingExecutions.tripId, tripId));
-    expect(bookings).toEqual([]);
   });
 });

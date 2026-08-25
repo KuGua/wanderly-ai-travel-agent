@@ -24,7 +24,7 @@ beforeAll(async () => {
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
   await app.ready();
 
-  // Reuse or create seeded fixture users via the auth helpers' subjects.
+  // Provision only the authenticated subjects required by this test suite.
   const [alice] = await db.insert(users)
     .values({ externalId: "alice", displayName: "Alice" })
     .onConflictDoNothing({ target: users.externalId })

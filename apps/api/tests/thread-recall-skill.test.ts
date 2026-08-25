@@ -5,9 +5,9 @@ import { randomUUID } from "node:crypto";
 import { db } from "../src/db/database.js";
 import {
   users,
-  auditEvents,
   chatThreads,
   chatMessages,
+  auditEvents,
 } from "../src/db/schema.js";
 import { personalTravelAgent } from "../src/agents/personal-travel-agent.js";
 import { createRequestContext } from "../src/utils/context.js";
@@ -41,7 +41,10 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  __resetRegistryForTests();
+  personalTravelAgent.register();
   await db.delete(chatThreads).where(inArray(chatThreads.ownerUserId, [ownerId, otherId]));
+  await db.delete(auditEvents).where(inArray(auditEvents.actorUserId, [ownerId, otherId]));
 });
 
 describe("thread.recall skill", () => {

@@ -2,7 +2,6 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { configureMapAttribution, ExploreMapPage } from "./explore-map-page";
-import { OPEN_FREEMAP_LIBERTY_LAYERS } from "./__fixtures__/openfreemap-liberty-layers";
 import { renderWithIntl } from "@/test/render";
 
 function resetDevHook() {
@@ -37,6 +36,10 @@ const mapMock = vi.hoisted(() => {
     queryResults: [] as Array<{ properties: Record<string, unknown> }>,
     markerButtons: [] as HTMLButtonElement[],
     removedMarkers: [] as string[],
+    easeCalls: [] as Array<{
+      padding?: { top: number; right: number; bottom: number; left: number };
+      zoom?: number;
+    }>,
     geography: {
       source: true,
       layers: new Set<string>([...REQUIRED_LAYER_IDS]),
@@ -53,7 +56,9 @@ function fireSourcedata(event: { sourceId: string; isSourceLoaded: boolean; sour
 vi.mock("maplibre-gl", () => {
   class MapMock {
     addControl() {}
-    easeTo() {}
+    easeTo(options: { padding?: { top: number; right: number; bottom: number; left: number }; zoom?: number }) {
+      mapMock.easeCalls.push(options);
+    }
     getCenter() { return { lng: 103.8198, lat: 1.3521 }; }
     getZoom() { return 2.25; }
     addLayer(layer: { id: string }) { mapMock.layers.push(layer.id); }
@@ -144,6 +149,7 @@ describe("ExploreMapPage private inspirations", () => {
       "label_city_capital",
     ]);
     mapMock.removedMarkers.length = 0;
+    mapMock.easeCalls.length = 0;
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
     mockGlobeStyleFetch();
   });
@@ -163,7 +169,7 @@ describe("ExploreMapPage private inspirations", () => {
       clickMap?.({ lngLat: { lng: -9.139, lat: 38.722 } });
     });
 
-    expect(screen.getByText("3 private pins on this map")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Explore the world" })).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Private inspiration list" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
@@ -184,25 +190,47 @@ describe("ExploreMapPage private inspirations", () => {
 
   it("opens pin context on the first chat click and the preview on the second", async () => {
     renderWithIntl(<ExploreMapPage />);
-    await waitFor(() => expect(mapMock.markerButtons.length).toBeGreaterThanOrEqual(3));
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 } });
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
-    const tokyoMarker = mapMock.markerButtons.find((button) => button.getAttribute("aria-label") === "Explore Tokyo, Japan");
-    expect(tokyoMarker).toBeDefined();
+    const inspirationMarker = mapMock.markerButtons.find((button) => button.getAttribute("aria-label") === "Open Pinned place 1");
+    expect(inspirationMarker).toBeDefined();
 
-    act(() => tokyoMarker?.click());
+    act(() => inspirationMarker?.click());
     expect(screen.getByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ask about Tokyo · Japan" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Tokyo" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ask about Pinned place 1/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Pinned place 1" })).not.toBeInTheDocument();
 
-    act(() => tokyoMarker?.click());
+    act(() => inspirationMarker?.click());
     expect(screen.queryByRole("dialog", { name: "Wanderly Agent conversation" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Tokyo" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pinned place 1" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
     fireEvent.click(screen.getByRole("button", { name: "Close conversation" }));
-    expect(screen.queryByRole("heading", { name: "Tokyo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Pinned place 1" })).not.toBeInTheDocument();
   });
+
+  it("moves the globe into the uncovered landscape area without enlarging it", async () => {
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query.includes("orientation: portrait") ? false : true,
+    }));
+    renderWithIntl(<ExploreMapPage />);
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
+    fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
+
+    await waitFor(() => expect(mapMock.easeCalls.length).toBeGreaterThan(0));
+    const camera = mapMock.easeCalls.at(-1);
+    expect(camera?.padding?.right).toBeGreaterThan(0);
+    expect(camera?.padding?.bottom).toBe(0);
+    expect(camera?.zoom).toBeLessThanOrEqual(2.25);
+  });
+
   it("selects a city label without creating a private inspiration", async () => {
     renderWithIntl(<ExploreMapPage />);
 
@@ -246,7 +274,11 @@ describe("ExploreMapPage private inspirations", () => {
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
     await waitFor(() => expect((window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap).toBeDefined());
-    fireEvent.click(screen.getByRole("button", { name: /^Tokyo$/ }));
+    mapMock.queryResults.push({ properties: { class: "city", "name:en": "Tokyo" } });
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 }, point: { x: 10, y: 10 } });
+    });
+    expect(screen.getByRole("heading", { name: "Tokyo" })).toBeInTheDocument();
 
     const countryControl = screen.getByRole("button", { name: "Countries" });
     expect(countryControl).toHaveAttribute("aria-pressed", "true");
@@ -324,7 +356,7 @@ describe("ExploreMapPage readiness diagnostics", () => {
     expect(handle?.readiness.kind).toBe("ready-supported");
     expect(handle?.missingLayers).toEqual([]);
     expect(handle?.sourcePresent).toBe(true);
-    expect(handle?.styleUrl).toBe(OPEN_FREEMAP_LIBERTY_LAYERS.styleUrl);
+    expect(handle?.styleUrl).toBe("https://tiles.openfreemap.org/styles/liberty");
     expect(handle?.stage).toBe("ready");
     expect(typeof handle?.retry).toBe("function");
   });

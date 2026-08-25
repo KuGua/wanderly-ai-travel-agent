@@ -21,12 +21,25 @@ export interface PlanningDependencies {
 const configuredProviders = createTravelProviders();
 let planningDependenciesOverride: PlanningDependencies | null = null;
 
-export function __setPlanningDependenciesForTests(dependencies: PlanningDependencies | null): void {
+export function __setModelGateway(gateway: ModelGateway): void {
+  __setModelGatewayForTests(gateway);
+}
+
+export function __setPlanningDependenciesForTests(
+  dependencies: PlanningDependencies | null,
+): void {
   planningDependenciesOverride = dependencies;
 }
 
-export function __setModelGateway(gateway: ModelGateway): void {
-  __setModelGatewayForTests(gateway);
+function resolvePlanningDependencies(): PlanningDependencies {
+  if (planningDependenciesOverride) return planningDependenciesOverride;
+
+  return {
+    flightProvider: configuredProviders.flightProvider,
+    stayProvider: configuredProviders.stayProvider,
+    groundProvider: configuredProviders.groundProvider,
+    modelGateway: modelGateway(),
+  };
 }
 
 export class PlanningDataUnavailableError extends Error {
@@ -109,11 +122,7 @@ export async function generatePlan(params: {
   snapshotId: string;
   destination: string;
   memberIds: string[];
-}, dependencies?: PlanningDependencies): Promise<string> {
-  const resolvedDependencies = dependencies ?? planningDependenciesOverride ?? {
-    ...configuredProviders,
-    modelGateway: modelGateway(),
-  };
+}, dependencies: PlanningDependencies = resolvePlanningDependencies()): Promise<string> {
   // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
     .where(eq(constraintSnapshots.id, params.snapshotId))
@@ -140,7 +149,7 @@ export async function generatePlan(params: {
   }
 
   for (const departureCity of snapshot.departureCities) {
-    const result = await resolvedDependencies.flightProvider.searchFlights({
+    const result = await dependencies.flightProvider.searchFlights({
       origin: departureCity,
       destination: params.destination,
       dateStart: snapshot.travelDateStart,
@@ -152,7 +161,7 @@ export async function generatePlan(params: {
     }
   }
 
-  const stayResult = await resolvedDependencies.stayProvider.searchStays({
+  const stayResult = await dependencies.stayProvider.searchStays({
     destination: params.destination,
     checkIn: snapshot.travelDateStart,
     checkOut: snapshot.travelDateEnd,
@@ -162,7 +171,7 @@ export async function generatePlan(params: {
     allStays.push(...stayResult.data);
   }
 
-  const groundResult = await resolvedDependencies.groundProvider.searchGround({
+  const groundResult = await dependencies.groundProvider.searchGround({
     destination: params.destination,
     snapshotId: params.snapshotId,
   });
@@ -179,7 +188,7 @@ export async function generatePlan(params: {
 
   // Generate structured plan via model gateway
   const memberPreferences = snapshot.authorizedData;
-  const candidatePlanData = await resolvedDependencies.modelGateway.generateStructuredPlan({
+  const candidatePlanData = await dependencies.modelGateway.generateStructuredPlan({
     destination: params.destination,
     flights: allFlights,
     stays: allStays,

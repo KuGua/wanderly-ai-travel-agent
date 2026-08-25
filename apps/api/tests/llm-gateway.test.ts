@@ -137,7 +137,7 @@ describe("LLM gateway", () => {
       stays: [],
       ground: [],
       memberPreferences: {},
-    })).rejects.toBeInstanceOf(ModelGatewayError);
+    })).rejects.toMatchObject({ code: "SCHEMA_PARSE" });
 
     const runs = await db.select().from(agentRuns).where(eq(agentRuns.status, "ERROR"));
     expect(runs.length).toBeGreaterThan(0);
@@ -167,12 +167,12 @@ describe("LLM gateway", () => {
     expect(runs.some(r => r.errorCode === "TIMEOUT")).toBe(true);
   });
 
-  it("factory rejects missing real-provider credentials", () => {
+  it("factory fails closed when the configured provider has no API key", () => {
     const previous = process.env.MODEL_GATEWAY_PROVIDER;
     delete process.env.OPENAI_API_KEY;
     process.env.MODEL_GATEWAY_PROVIDER = "openai";
 
-    expect(() => createModelGateway()).toThrow("not fully configured");
+    expect(() => createModelGateway()).toThrow("Model gateway openai is not fully configured");
 
     if (previous !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous;
     else delete process.env.MODEL_GATEWAY_PROVIDER;
