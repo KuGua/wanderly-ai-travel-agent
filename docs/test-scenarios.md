@@ -135,6 +135,28 @@ memberships overlap only where explicitly configured.
 - Deleted field is absent from future Agent inputs.
 - No Profile field appears in a shared view before consent.
 
+### TS-H1b — Persist and delete a private conversation without widening its scope
+
+**Stories:** H1, S1
+**Objective:** Verify that a private conversation is durable and owner-controlled, while its text remains outside shared planning and telemetry.
+
+**Starting conditions:** Alice is authenticated and has a private conversation thread, optionally associated with one shared trip.
+
+**Steps:**
+
+1. Alice sends messages, reloads the application, and reopens the same thread.
+2. Bob and Chen attempt to list, read or delete Alice's thread by guessing its `conversationId`.
+3. Alice creates a shared-trip plan without explicitly confirming any chat-derived Profile or trip override.
+4. Inspect the shared snapshot, plan explanation, logs, traces, metric labels and audit summary.
+5. Alice deletes the thread, then attempts to reopen it; inspect the previously created Profile/override facts.
+
+**Expected outcomes:**
+
+- Only Alice can list, read or delete the thread; reload preserves messages until deletion.
+- A `tripId` association does not grant fellow trip members or the Shared Agent access to the thread.
+- Raw message text is absent from the snapshot, shared plan/explanation and all telemetry/audit outputs; it is not default model context for the planning run.
+- Deletion removes message bodies and makes the thread unavailable to Alice; separately confirmed Profile/override facts remain until independently deleted.
+
 ### TS-H2 — Invite member and enforce field-level sharing
 
 **Stories:** H2  
@@ -303,7 +325,7 @@ memberships overlap only where explicitly configured.
 
 **Steps:**
 
-1. Attempt cross-user reads/writes of unshared Profile and private history.
+1. Attempt cross-user reads/writes of unshared Profile and private conversation threads.
 2. Inspect timeline for profile edit, consent, tool calls, visa, re-plan, approval and sandbox call.
 3. Inspect logs, traces and metrics by correlation ID.
 4. Search telemetry for private conversation text, document numbers, payment data and unapproved Profile values.
@@ -314,7 +336,7 @@ memberships overlap only where explicitly configured.
 
 **Expected outcomes:**
 
-- Cross-user private access is denied.
+- Cross-user access to Profile and private conversation threads is denied.
 - Timeline has versions and correlation IDs for every sensitive decision.
 - Metrics show required low-cardinality outcomes and trace errors safely.
 - Prohibited data does not appear in telemetry.
@@ -355,6 +377,13 @@ memberships overlap only where explicitly configured.
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
 - 375px、768px、1024px、1440px 下身份、导航、主要操作与私密提示均可见，交互目标至少 44px，并尊重 reduced motion。
+
+### 数据库与 Seed 回归
+
+- `npm run db:migrate` 至少连续运行两次幂等：第二次必须报"schema already up to date"且不产生未应用 migration。
+- `npm run db:seed` 至少连续运行两次幂等：第二次必须成功，**不**重复插入 `users` 或 `user_profiles` 行；调用方已通过 API 修改过的 Profile 必须被保留（seed 不覆盖）。
+- 新增 unique 索引 `user_profiles(user_id)`、`trip_members(trip_id,user_id)`、`constraint_snapshots(trip_id,version)`、`itinerary_plans(trip_id,version)`、`member_confirmations(plan_id,user_id)`、`booking_executions(orchestration_request_id)` 在生产部署前必须先走数据预去重（见 `apps/api/migrations/0005_hardening_constraints.sql` 注释与 `docs/mvp-readiness-review.md`）。
+- `audit_events.correlation_id` 上存在索引；按 correlation id 查询审计链的 EXPLAIN 不应触发顺序扫描。
 
 - Profile memory is explicit, editable, deletable and private by default.
 - Shared workspace never shows unapproved Profile/private-chat fields.

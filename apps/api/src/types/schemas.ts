@@ -61,6 +61,39 @@ export const createTripSchema = z.object({
 export const tripStatusSchema = z.enum(["PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
+export const projectDisplayStateSchema = z.enum([
+  "ACTION_REQUIRED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "ARCHIVED",
+  "CANCELLED",
+]);
+
+export const latestPlanStatusSchema = z.enum(["DRAFT", "ACTIVE", "STALE", "SUPERSEDED"]);
+
+export const nextActionTypeSchema = z.enum([
+  "REVIEW_PLAN",
+  "GRANT_CONSENT",
+  "CHECK_READINESS",
+  "CONFIRM_PLAN",
+  "VIEW_PROJECT",
+  "VIEW_HISTORY",
+]);
+
+export const latestPlanSchema = z.object({
+  id: uuidSchema,
+  version: z.number().int().nonnegative(),
+  status: latestPlanStatusSchema,
+  generatedAt: z.string().datetime(),
+  isDemoData: z.boolean(),
+});
+
+export const nextActionSchema = z.object({
+  type: nextActionTypeSchema,
+  label: z.string().min(1).max(128),
+  href: z.string().min(1).max(512),
+});
+
 export const tripSummarySchema = z.object({
   id: uuidSchema,
   name: z.string(),
@@ -72,10 +105,15 @@ export const tripSummarySchema = z.object({
   memberCount: z.number().int().nonnegative(),
   role: tripRoleSchema,
   createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  displayState: projectDisplayStateSchema,
+  latestPlan: latestPlanSchema.nullable(),
+  nextAction: nextActionSchema.nullable(),
 });
 
 export const tripsResponseSchema = z.object({
   trips: z.array(tripSummarySchema),
+  nextCursor: z.string().nullable().optional(),
 });
 
 export const tripMemberSchema = z.object({
@@ -182,6 +220,9 @@ export function toJsonSchema(schema: z.ZodType) {
 
 export type Profile = z.infer<typeof profileSchema>;
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;
+export type LatestPlan = z.infer<typeof latestPlanSchema>;
+export type NextAction = z.infer<typeof nextActionSchema>;
 export type TripSummary = z.infer<typeof tripSummarySchema>;
+export type ProjectDisplayState = z.infer<typeof projectDisplayStateSchema>;
 export type TripsResponse = z.infer<typeof tripsResponseSchema>;
 export type ApiErrorResponse = z.infer<typeof errorResponseSchema>;

@@ -76,7 +76,7 @@
 
 - 静态 shell 使用 Server Component；地图、筛选、搜索、抽屉和 mutation 用 Client Component。
 - 每条路由提供 `loading.tsx`，列表/地图使用稳定尺寸的 skeleton，避免 CLS。
-- API 请求通过统一 typed fetch client，自动添加 `X-Demo-User`、解析标准错误体和 `x-correlation-id`；不得直连数据库或通过 Server Action 绕开 Fastify。
+- API 请求通过统一 typed fetch client，自动添加 `Authorization: Bearer <Cognito access token>`、生成 `X-Request-Id`（UUID v4）、转发上一次响应中的 `X-Correlation-Id`，解析标准错误体和 `x-correlation-id`；不得直连数据库或通过 Server Action 绕开 Fastify。
 - API 失败显示中性且可恢复的错误状态；未授权状态不透露隐藏项目、成员或 Profile 是否存在。
 
 ## 5. 探索首页 `/home`

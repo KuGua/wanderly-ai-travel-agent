@@ -90,6 +90,18 @@ export async function bookingRoutes(app: FastifyInstance) {
         serviceResults: body.serviceResults,
       });
 
+      if (result.isStale) {
+        // Booking already reached a terminal state — the callback cannot
+        // be applied. Surface as 409 so retrying callers know to abandon.
+        metrics.inc("booking_callback_outcomes_total", { callbackResult: "stale" });
+        throw new ApiError(
+          409,
+          "Conflict",
+          "Booking is already in a terminal state; callback cannot be applied",
+          "STALE_CALLBACK",
+        );
+      }
+
       metrics.inc("booking_callback_outcomes_total", {
         callbackResult: result.isDuplicate ? "duplicate" : "processed",
       });
@@ -98,7 +110,8 @@ export async function bookingRoutes(app: FastifyInstance) {
         message: result.isDuplicate ? "Duplicate callback — ignored" : "Callback processed",
         ...result,
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
       metrics.inc("booking_callback_outcomes_total", { callbackResult: "failed" });
       throw new ApiError(
         400,

@@ -33,3 +33,16 @@
 ## 仓库清理
 
 已移除过时的 Coze/Python 脚手架：`.coze`、`pyproject.toml`、`uv.lock` 以及旧根目录的 `src/`、`scripts/` 文件。可部署后端保留在 `apps/api/`，符合单体仓库惯例。空的旧目录不受 Git 跟踪；若文件浏览器仍显示它们，开发者可在本地移除。
+
+## Post-PR open items
+
+本评审列出的 8 条演示前必须修复项已通过本次硬化 PR（详见 `apps/api/migrations/0005_hardening_constraints.sql` 与 `apps/api/src/services/*`、`apps/api/src/routes/*`）落地。以下项目**显式延期**，应在后续 PR 中单独立项：
+
+1. **私有对话线程落地**：`chat_threads` + `chat_messages` 表、Personal Agent 的 `ThreadMemorySkill`、owner-only 读取/删除端点、跨会话脱敏摘要生成。PRD FR-1 / FR-7 与 `docs/agent-architecture.md` §4、§9 的描述已锁定语义，但代码与 schema 留到下个 PR。
+2. **OpenTelemetry `span_id` 全链路传播**：`docs/agent-architecture.md` §9 line 268 已声明 `span_id` 为必需字段，但仓库当前只产生 `correlationId` + `traceId`。需引入 OpenTelemetry SDK + exporter，并把 span 关联到 audit / log。
+3. **生产 metrics/trace exporter 与持久化遥测后端**：当前 `/metrics` 仅暴露进程内 Prometheus text，没有远程写入或 scraper 配置。
+4. **真实支付与商户结算**：MVP 沙箱返回 `DEMO-*` 参考号；任何扣款、退款、改签、PCI 责任、客服履约均不进入本仓库。
+5. **签证代办与法律意见**：visa readiness 始终只输出官方核验 CTA，不代办、不判定。
+6. **共享平台对话原生群聊、支付分摊与社交网络**：产品策略已明确不做（[docs/product-strategy.md §6](docs/product-strategy.md)）。
+7. **Drizzle Kit 自动 migration 与生产数据迁移评审**：本 PR 保留手写 SQL + `IF NOT EXISTS` 以保证可重放；生产部署需为每条新 unique 索引单独评审数据预去重脚本。
+8. **AWS 部署、Multi-AZ、灾备与告警治理**：[TECH_STACK.md 第 7 节](TECH_STACK.md) 列出 Pilot 阶段目标，不在 MVP 范围。

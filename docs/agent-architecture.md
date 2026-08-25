@@ -119,11 +119,12 @@ Personal Agent 默认采用 Memory-Augmented + Tool-Augmented；仅在必要时�
 | 记忆类型 | 现有位置 | 使用规则 |
 |---|---|---|
 | 长期个人偏好 | user_profiles、preference_facts | 用户可查看、编辑、删除；仅 Personal Agent 私有读取。 |
-| 本次行程偏好 | 当前未实现 | 新增独立 trip override；不得静默覆盖长期 Profile。 |
+| 本次行程偏好 | 当前未实现 | 新增独立 trip override；不得静默覆盖长期 Profile。`this trip` 标记 = 线程创建时绑定的 tripId。 |
+| 私有对话 archive | 当前未实现 | `chat_threads`（UUIDv4，归属 `ownerUserId`，可选 `tripId`）+ `chat_messages`；每线程 ownerUserId 唯一，trip 关联不赋予其他成员或 Shared Agent 读取权限。raw transcript 永远不出 owner 会话：默认 LLM 上下文仅含服务端派生的脱敏摘要 + owner 显式标记共享的最近若干轮。 |
 | 共享协作记忆 | consent_grants、constraint_snapshots | 仅通过服务端最小化导出；snapshot 不可变。 |
 | 运行事实 | provider_offers、source_evidence、visa_readiness_checks、itinerary_plans | 用于重建证据；不作为聊天长期记忆。 |
 
-不保存或长期传递 raw conversation transcript。未来若实现私有对话存储，必须先定义 retention、删除、导出和遥测脱敏规则。
+私有对话 archive 是 MVP 已确认的后续能力（本 PR 仅文档落地，不写代码）：保存的 raw transcript 只能由所有者回看，且必须支持线程级删除。MVP 不设自动保留期；消息正文保留至用户删除线程，导出不进入 MVP。它不是长期记忆、共享上下文或默认 prompt 输入；只有用户确认的结构化 Profile/override 可进入后续 Agent run。实现前必须验证 owner-only 授权、删除语义和遥测脱敏；消息正文不得进入日志、trace、metric、audit summary 或 `constraint_snapshot`。
 
 ### Tool-Augmented
 
@@ -264,10 +265,10 @@ ModelGateway 是唯一模型边界。`gateway-factory.ts` 根据配置选择 `LL
 
 | 信号 | 必需内容 |
 |---|---|
-| Logs | trace_id、span_id、correlation_id、run_id、trip_id、plan_version、agent、skill、operation、result/error code、duration；禁止敏感字段与 prompt text。 |
+| Logs | trace_id、span_id、correlation_id、run_id、trip_id、plan_version、conversation_id（仅在 chat thread 涉及的操作出现）、agent、skill、operation、result/error code、duration；禁止敏感字段与 prompt text。 |
 | Traces | HTTP → auth → consent export → 每个 Skill/provider → model → validation → persistence → outbox/callback。 |
-| Metrics | 当前 process-local registry 包含 agent/planning/provider/booking/callback/LLM latency 系列，并为 operation、outcome、provider、errorCategory、validationResult、callbackResult 设置精确 allow-list。不得以 trip/user/plan/booking/run/correlation/request ID、model name 或自由文本作为 label。 |
-| Audit | consent grant/revoke、snapshot creation、skill/run start/end、provider fallback、stale/replan、confirmation/denial、booking/callback、duplicate/out-of-order event。 |
+| Metrics | 当前 process-local registry 包含 agent/planning/provider/booking/callback/LLM latency 系列，并为 operation、outcome、provider、errorCategory、validationResult、callbackResult 设置精确 allow-list。不得以 trip/user/plan/booking/run/correlation/request/conversation ID、model name 或自由文本作为 label。 |
+| Audit | consent grant/revoke、snapshot creation、skill/run start/end、provider fallback、stale/replan、confirmation/denial、booking/callback、duplicate/out-of-order event、chat thread create/delete。audit summary 允许出现 `conversationId`、`ownerUserId`、`tripId?`、`action`、`timestamp`，但绝不含 message body、raw transcript 或任何派生片段。 |
 
 以版本化 fixture scenarios 进行确定性 evaluation：
 
