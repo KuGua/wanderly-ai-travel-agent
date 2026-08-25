@@ -190,6 +190,22 @@
   color: #ef7654;
 }
 
+.wanderly-map-marker--inspiration span {
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.wanderly-map-marker--inspiration:hover span,
+.wanderly-map-marker--inspiration:focus-visible span {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wanderly-map-marker--inspiration span {
+    transition: none;
+  }
+}
+
 @media (max-width: 639px) {
   main[data-drawer-open="false"] .maplibregl-ctrl-bottom-right {
     bottom: 19rem;
