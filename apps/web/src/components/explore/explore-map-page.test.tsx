@@ -1,17 +1,21 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { configureMapAttribution, ExploreMapPage } from "./explore-map-page";
 
 const mapMock = vi.hoisted(() => ({
   handlers: new Map<string, (event: { lngLat: { lng: number; lat: number } }) => void>(),
+  markerButtons: [] as HTMLButtonElement[],
   removedMarkers: [] as string[],
 }));
 
 vi.mock("maplibre-gl", () => {
   class MapMock {
     addControl() {}
+    easeTo() {}
     flyTo() {}
+    getCenter() { return { lng: 103.8198, lat: 1.3521 }; }
+    getZoom() { return 2.25; }
     remove() {}
     setProjection() {}
     once(event: string, callback: () => void) {
@@ -26,6 +30,8 @@ vi.mock("maplibre-gl", () => {
     private label = "marker";
     constructor(options: { element: HTMLElement }) {
       this.label = options.element.textContent ?? "marker";
+      const button = options.element.querySelector("button");
+      if (button) mapMock.markerButtons.push(button);
     }
     addTo() {
       return this;
@@ -46,9 +52,12 @@ vi.mock("maplibre-gl", () => {
   };
 });
 
+afterEach(cleanup);
+
 describe("ExploreMapPage private inspirations", () => {
   beforeEach(() => {
     mapMock.handlers.clear();
+    mapMock.markerButtons.length = 0;
     mapMock.removedMarkers.length = 0;
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
   });
@@ -83,6 +92,28 @@ describe("ExploreMapPage private inspirations", () => {
     expect(within(list).queryByText("Pinned place 1")).not.toBeInTheDocument();
     expect(within(list).getByText("Pinned place 3")).toBeInTheDocument();
     expect(mapMock.removedMarkers).toHaveLength(2);
+  });
+
+  it("opens pin context on the first chat click and the preview on the second", async () => {
+    render(<ExploreMapPage />);
+    await waitFor(() => expect(mapMock.markerButtons.length).toBeGreaterThanOrEqual(3));
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
+    const tokyoMarker = mapMock.markerButtons.find((button) => button.getAttribute("aria-label") === "Explore Tokyo, Japan");
+    expect(tokyoMarker).toBeDefined();
+
+    act(() => tokyoMarker?.click());
+    expect(screen.getByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ask about Tokyo · Japan" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Tokyo" })).not.toBeInTheDocument();
+
+    act(() => tokyoMarker?.click());
+    expect(screen.queryByRole("dialog", { name: "Wanderly Agent conversation" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tokyo" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close conversation" }));
+    expect(screen.queryByRole("heading", { name: "Tokyo" })).not.toBeInTheDocument();
   });
 });
 
