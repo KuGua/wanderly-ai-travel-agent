@@ -135,6 +135,12 @@
   }
 }
 
+.wanderly-map-marker-anchor {
+  width: 2.75rem;
+  height: 3.32rem;
+  pointer-events: none;
+}
+
 .wanderly-map-marker {
   position: relative;
   display: grid;
@@ -148,6 +154,7 @@
   box-shadow: 0 8px 18px rgb(8 47 63 / 32%);
   transform: rotate(-45deg);
   cursor: pointer;
+  pointer-events: auto;
 }
 
 .wanderly-map-marker::after {
