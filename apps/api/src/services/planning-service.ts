@@ -130,12 +130,18 @@ export async function generatePlan(params: {
   const allStays: StayOffer[] = [];
   const allGround: GroundOffer[] = [];
 
+  if (!snapshot.travelDateStart || !snapshot.travelDateEnd) {
+    throw new PlanningDataUnavailableError(
+      snapshot.travelDateStart ? ["travelDateEnd"] : ["travelDateStart"],
+    );
+  }
+
   for (const departureCity of snapshot.departureCities) {
     const result = await dependencies.flightProvider.searchFlights({
       origin: departureCity,
       destination: params.destination,
-      dateStart: snapshot.travelDateStart ?? "2025-08-01",
-      dateEnd: snapshot.travelDateEnd ?? "2025-08-31",
+      dateStart: snapshot.travelDateStart,
+      dateEnd: snapshot.travelDateEnd,
       snapshotId: params.snapshotId,
     });
     if (result.outcome !== "UNAVAILABLE") {
@@ -145,8 +151,8 @@ export async function generatePlan(params: {
 
   const stayResult = await dependencies.stayProvider.searchStays({
     destination: params.destination,
-    checkIn: snapshot.travelDateStart ?? "2025-08-02",
-    checkOut: snapshot.travelDateEnd ?? "2025-08-07",
+    checkIn: snapshot.travelDateStart,
+    checkOut: snapshot.travelDateEnd,
     snapshotId: params.snapshotId,
   });
   if (stayResult.outcome !== "UNAVAILABLE") {
@@ -194,63 +200,70 @@ export async function generatePlan(params: {
   });
 
   // Only validated output may cross the authoritative persistence boundary.
-  const [plan] = await db.insert(itineraryPlans).values({
-    tripId: params.tripId,
-    snapshotId: params.snapshotId,
-    version: nextVersion,
-    status: "ACTIVE",
-    planData,
-  }).returning();
+  // All four writes (plan, offers, evidence, audit) commit atomically; if
+  // any one fails the validated plan is discarded.
+  const planId = await db.transaction(async (tx) => {
+    const [plan] = await tx.insert(itineraryPlans).values({
+      tripId: params.tripId,
+      snapshotId: params.snapshotId,
+      version: nextVersion,
+      status: "ACTIVE",
+      planData,
+    }).returning();
 
-  const normalizedOffers = [
-    ...allFlights.map(offer => ({
-      category: "flight",
-      providerName: offer.airline,
-      offer,
-    })),
-    ...allStays.map(offer => ({
-      category: "stay",
-      providerName: "FixtureStayProvider",
-      offer,
-    })),
-    ...allGround.map(offer => ({
-      category: "ground",
-      providerName: offer.provider,
-      offer,
-    })),
-  ];
+    const normalizedOffers = [
+      ...allFlights.map(offer => ({
+        category: "flight",
+        providerName: offer.airline,
+        offer,
+      })),
+      ...allStays.map(offer => ({
+        category: "stay",
+        providerName: "FixtureStayProvider",
+        offer,
+      })),
+      ...allGround.map(offer => ({
+        category: "ground",
+        providerName: offer.provider,
+        offer,
+      })),
+    ];
 
-  await db.insert(providerOffers).values(normalizedOffers.map(({ category, providerName, offer }) => ({
-    snapshotId: params.snapshotId,
-    planId: plan.id,
-    category,
-    providerName,
-    offerData: offer as unknown as Record<string, unknown>,
-    isDemo: offer.isDemo,
-    capturedAt: new Date(offer.capturedAt),
-  })));
-
-  await db.insert(sourceEvidence).values(normalizedOffers.map(({ category, offer }) => ({
-    planId: plan.id,
-    category,
-    itemId: offer.id,
-    source: offer.source,
-    capturedAt: new Date(offer.capturedAt),
-    metadata: {
+    await tx.insert(providerOffers).values(normalizedOffers.map(({ category, providerName, offer }) => ({
+      snapshotId: params.snapshotId,
+      planId: plan.id,
+      category,
+      providerName,
+      offerData: offer as unknown as Record<string, unknown>,
       isDemo: offer.isDemo,
-      fixtureVersion: offer.fixtureVersion,
-    },
-  })));
+      capturedAt: new Date(offer.capturedAt),
+    })));
 
-  await recordAudit({
-    ctx: params.ctx,
-    action: "PLAN_CREATE",
-    tripId: params.tripId,
-    planId: plan.id,
-    summary: { version: nextVersion, destination: params.destination, snapshotId: params.snapshotId },
+    await tx.insert(sourceEvidence).values(normalizedOffers.map(({ category, offer }) => ({
+      planId: plan.id,
+      category,
+      itemId: offer.id,
+      source: offer.source,
+      capturedAt: new Date(offer.capturedAt),
+      metadata: {
+        isDemo: offer.isDemo,
+        fixtureVersion: offer.fixtureVersion,
+      },
+    })));
+
+    await recordAudit({
+      ctx: params.ctx,
+      action: "PLAN_CREATE",
+      tripId: params.tripId,
+      planId: plan.id,
+      summary: { version: nextVersion, destination: params.destination, snapshotId: params.snapshotId },
+      tx,
+    });
+
+    return plan.id;
   });
 
-  return plan.id;
+  return planId;
 }
 
 /**

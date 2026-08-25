@@ -34,14 +34,14 @@ Amazon RDS for PostgreSQL
 | 层 | MVP 选择 | 为什么适合当前范围 | 明确不做 |
 |---|---|---|---|
 | 客户端 | **Next.js + React + TypeScript**，部署到 **AWS Amplify Hosting** | 浏览器链接最适合三人邀请、独立授权、共同查看、投屏与移动端访问。Amplify 支持 Next.js SSR 部署。[AWS Amplify](https://docs.aws.amazon.com/amplify/latest/userguide/ssr-amplify-support.html) | 原生 iOS/Android App、应用商店发布、离线协作。 |
-| UI | Tailwind CSS + shadcn/ui/Radix；响应式 PWA | 快速构建 Profile、授权抽屉、候选比较、replan diff、个人待办与三人确认队列。 | 复杂地图编辑器、原生群聊、设计系统平台化。 |
+| UI | Tailwind CSS + shadcn/ui/Radix；响应式 PWA | 快速构建 Profile、私有对话 archive、授权抽屉、候选比较、replan diff、个人待办与三人确认队列。 | 复杂地图编辑器、原生群聊、设计系统平台化。 |
 | 前端状态 | **TanStack Query** 管理服务器状态；React Hook Form + Zod 管理表单草稿；仅在必要时以 Zustand 保存局部 UI 状态 | Profile、consent、plan 和 confirmation 都以服务端版本为准。避免 Redux 或客户端复制业务真相。 | 全局客户端 store 作为授权/订单真相。 |
 | 数据获取与状态刷新 | REST/JSON + OpenAPI；planning/replan 期间用 TanStack Query 短轮询或 SSE | 对三分钟 Demo 足够稳定；页面刷新后可从数据库恢复状态。 | 为 MVP 自建 WebSocket 事件总线。 |
 | API / Agent runner | **Node.js LTS + TypeScript + Fastify**，容器化部署到 **AWS App Runner** | 保持 agent、供应商凭据和数据库访问在服务器；App Runner 可直接部署代码或容器并托管运行、扩缩与负载均衡。[AWS App Runner](https://docs.aws.amazon.com/apprunner/latest/dg/what-is-apprunner.html) | Lambda 链式编排、微服务网格、多个独立 agent 服务。 |
 | 身份 | **Amazon Cognito User Pool**，邮箱或手机号登录，API 验证 access token | 身份来自已验证 JWT 的 `sub`，前端不能通过用户 ID 或 demo 角色选择身份。 | 复杂 SSO、社交登录矩阵、组织管理。 |
-| 主数据库 | **Amazon RDS for PostgreSQL** + SQL migrations + Drizzle ORM | 需要事务、关系约束、审计和版本一致性：Profile、字段级 consent、两个出发地、候选方案、三人确认和 callback 去重必须共享一个权威真相源。RDS PostgreSQL 支持 VPC、SSL、快照与时间点恢复。[AWS RDS PostgreSQL](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html) | SQLite 作为云端主库、NoSQL 作为业务真相。 |
+| 主数据库 | **Amazon RDS for PostgreSQL** + SQL migrations + Drizzle ORM | 需要事务、关系约束、审计和版本一致性：Profile、用户私有对话、字段级 consent、两个出发地、候选方案、三人确认和 callback 去重必须共享一个权威真相源。RDS PostgreSQL 支持 VPC、SSL、快照与时间点恢复。[AWS RDS PostgreSQL](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html) | SQLite 作为云端主库、NoSQL 作为业务真相。 |
 | Agent | **OpenAI Agents SDK（TypeScript）**，运行在 App Runner；`ModelGateway` 隔离 provider | 部署到 AWS 不妨碍使用 SDK。Agent 只调用类型化工具；SDK 不是授权、确认或持久状态机。 | 让模型直接读写数据库、付款或自由互聊的多 Agent 群。 |
-| 工具与模型边界 | Zod schema、structured outputs、server-side policy gate | 所有工具都只获得当前 `constraint_snapshot` 的最小授权字段；模型输出不直接成为业务真相。 | 把 Profile/私聊全文放进长 prompt 或向前端暴露供应商 key。 |
+| 工具与模型边界 | Zod schema、structured outputs、server-side policy gate | 对话 archive 仅由所有者读取；所有工具只获得当前 `constraint_snapshot` 的最小授权字段，模型仅接收当前请求和用户明确选择的最小上下文；模型输出不直接成为业务真相。 | 把 Profile/私聊全文放进长 prompt、共享 snapshot、遥测或向前端暴露供应商 key。 |
 | 旅行与数据 API | Amadeus Test Flight/Hotel、openrouteservice Routing、Frankfurter；通过 provider adapters | 恰好覆盖候选比较所需的 Flight/Stay/Ground/预算归一化，并能替换数据源。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA。 |
 | Visa / entry | 固定候选路线的**来源化 fixture**；未来可接 Sherpa/IATA Timatic adapter | H4 是 Hero 必需项，但现有 API 清单没有签证数据源。fixture 必带来源、检查时间、适用成员、下一步与不确定性。 | 以 LLM 或 Wikipedia 推断签证、代办、法律结论。 |
 | 异步与编排 | MVP 用 PostgreSQL 持久状态机、idempotency key、transactional outbox 和同步 sandbox | 当前流程是确定性 demo；不额外引入 workflow 平台，仍能使 plan 失效、三人确认和 sandbox callback 可验证。 | Temporal Cloud、Step Functions、Redis 队列同时进入 MVP。 |
@@ -80,7 +80,7 @@ Agent 不能自行跨越以下边界：
 
 ### 必须存在的领域数据
 
-`user_profile`、`preference_fact`、`shared_trip`、`trip_member`、`consent_grant`、`constraint_snapshot`、`destination_candidate`、`itinerary_plan`、`plan_version`、`member_confirmation`、`visa_readiness_check`、`source_evidence`、`provider_offer`、`booking_execution`、`idempotency_record`、`audit_event`、`outbox_event`。
+`user_profile`、`preference_fact`、`private_conversation`、`private_message`、`shared_trip`、`trip_member`、`consent_grant`、`constraint_snapshot`、`destination_candidate`、`itinerary_plan`、`plan_version`、`member_confirmation`、`visa_readiness_check`、`source_evidence`、`provider_offer`、`booking_execution`、`idempotency_record`、`audit_event`、`outbox_event`。
 
 必须由数据库或服务端规则保证：
 
@@ -89,6 +89,7 @@ Agent 不能自行跨越以下边界：
 3. 只有三个 required members 对同一最新 plan version 为 `CONFIRMED` 才能创建 `booking_execution`。
 4. `orchestration_request_id` 和 provider callback id 全局幂等。
 5. 每个价格、路线和 visa 输出有 `source`、`captured_at` 或 `Demo data` 标签。
+6. 每个 `private_conversation` 仅属于一个用户，使用独立 `conversation_id`，可选关联一个 `trip_id`；消息正文不进入 snapshot、共享视图、日志、trace 或 metric，删除线程时删除正文。
 
 ## 5. API 取舍与 fallback
 

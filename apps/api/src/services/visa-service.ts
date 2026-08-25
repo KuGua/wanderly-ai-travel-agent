@@ -1,6 +1,6 @@
-import { db } from "../db/database.js";
-import { visaReadinessChecks, consentGrants } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
+import { db } from "../db/database.js";
+import { visaReadinessChecks, consentGrants, constraintSnapshots } from "../db/schema.js";
 import { FixtureVisaProvider } from "../providers/fixture-provider.js";
 import type { VisaReadinessResult } from "../types/domain.js";
 
@@ -8,7 +8,11 @@ const visaProvider = new FixtureVisaProvider();
 
 /**
  * Generate visa readiness check for a member.
- * If nationality is not authorized via consent, returns UNAUTHORIZED_NO_CHECK.
+ *
+ * Source of truth for `nationality` is `constraint_snapshots.authorizedData`
+ * — never an inferred or hard-coded value. If the member did not authorize
+ * `PROFILE_NATIONALITY` for this trip, the function returns the
+ * `UNAUTHORIZED_NO_CHECK` branch without consulting the provider.
  */
 export async function checkVisaReadiness(params: {
   planId: string;
@@ -17,7 +21,6 @@ export async function checkVisaReadiness(params: {
   tripId: string;
   destinationCountry: string;
 }): Promise<VisaReadinessResult> {
-  // Check if nationality is authorized via consent
   const nationalityConsent = await db.select().from(consentGrants)
     .where(and(
       eq(consentGrants.tripId, params.tripId),
@@ -28,7 +31,6 @@ export async function checkVisaReadiness(params: {
     .limit(1);
 
   if (nationalityConsent.length === 0) {
-    // Nationality not authorized — cannot check visa
     const result: VisaReadinessResult = {
       memberId: params.memberId,
       destinationCountry: params.destinationCountry,
@@ -46,7 +48,6 @@ export async function checkVisaReadiness(params: {
       disclaimer: "Nationality was not shared. Please verify visa requirements with official government sources.",
     };
 
-    // Record check
     await db.insert(visaReadinessChecks).values({
       planId: params.planId,
       snapshotId: params.snapshotId,
@@ -62,10 +63,43 @@ export async function checkVisaReadiness(params: {
     return result;
   }
 
-  // Nationality is authorized — get it from the snapshot's authorized data
-  // For demo, we'll use a simplified lookup
-  // In production, fetch from constraintSnapshots.authorizedData[memberId].nationality
-  const nationality = "US"; // Simplified — would come from snapshot
+  const nationality = await readNationalityFromSnapshot({
+    snapshotId: params.snapshotId,
+    memberId: params.memberId,
+  });
+
+  if (!nationality) {
+    const result: VisaReadinessResult = {
+      memberId: params.memberId,
+      destinationCountry: params.destinationCountry,
+      status: "UNAUTHORIZED_NO_CHECK",
+      checklist: [
+        {
+          item: "Visa requirements cannot be determined — nationality missing from snapshot authorized data",
+          source: "System",
+          uncertainty: "Snapshot was built without a usable nationality value; user must re-authorize and regenerate the snapshot",
+        },
+      ],
+      confidenceLevel: "UNCERTAIN",
+      source: "System — snapshot missing nationality",
+      capturedAt: new Date().toISOString(),
+      disclaimer: "Nationality is authorized but missing from the current snapshot. Re-authorize and regenerate the plan.",
+    };
+
+    await db.insert(visaReadinessChecks).values({
+      planId: params.planId,
+      snapshotId: params.snapshotId,
+      memberId: params.memberId,
+      destinationCountry: params.destinationCountry,
+      status: "UNAUTHORIZED_NO_CHECK",
+      checklist: result.checklist,
+      confidenceLevel: "UNCERTAIN",
+      source: "System — snapshot missing nationality",
+      disclaimer: result.disclaimer,
+    });
+
+    return result;
+  }
 
   const providerResult = await visaProvider.checkReadiness({
     nationality,
@@ -89,11 +123,12 @@ export async function checkVisaReadiness(params: {
         capturedAt: new Date().toISOString(),
         disclaimer: "No provider result is available. Verify all requirements with official government sources.",
       }
-    : providerResult.data;
+    : { ...providerResult.data, nationality };
 
   result.memberId = params.memberId;
+  result.disclaimer = (result.disclaimer ?? "")
+    + " Nationality sourced from snapshot authorizedData.";
 
-  // Record check
   await db.insert(visaReadinessChecks).values({
     planId: params.planId,
     snapshotId: params.snapshotId,
@@ -108,4 +143,25 @@ export async function checkVisaReadiness(params: {
   });
 
   return result;
+}
+
+/**
+ * Read the authorized nationality for a member from the immutable snapshot.
+ * Returns `null` if the snapshot is missing, the member has no entry, or
+ * the entry does not contain a usable `nationality` string.
+ */
+async function readNationalityFromSnapshot(params: {
+  snapshotId: string;
+  memberId: string;
+}): Promise<string | null> {
+  const [snap] = await db.select({ auth: constraintSnapshots.authorizedData })
+    .from(constraintSnapshots)
+    .where(eq(constraintSnapshots.id, params.snapshotId))
+    .limit(1);
+
+  if (!snap) return null;
+  const memberEntry = (snap.auth as Record<string, Record<string, unknown>> | null)?.[params.memberId];
+  if (!memberEntry) return null;
+  const value = memberEntry.nationality;
+  return typeof value === "string" && value.trim().length > 0 ? value : null;
 }

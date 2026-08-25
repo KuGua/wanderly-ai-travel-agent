@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, timestamp, jsonb, boolean, integer, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, text, timestamp, jsonb, boolean, integer, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -19,10 +19,11 @@ export const auditActionEnum = pgEnum("audit_action", [
   "PROFILE_CREATE", "PROFILE_UPDATE", "PROFILE_DELETE",
   "TRIP_CREATE", "TRIP_JOIN",
   "CONSENT_GRANT", "CONSENT_REVOKE",
-  "PLAN_CREATE", "PLAN_STALE", "PLAN_REPLAN",
+  "PLAN_CREATE", "PLAN_STALE", "PLAN_REPLAN", "PLAN_RESTART",
   "CONFIRMATION_SET",
   "BOOKING_SUBMIT", "BOOKING_RESULT",
   "CHANGE_EVENT",
+  "VISA_CHECK",
   "SKILL_INVOKE", "AGENT_RUN",
 ]);
 
@@ -40,7 +41,7 @@ export const users = pgTable("users", {
 
 export const userProfiles = pgTable("user_profiles", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull().unique(),
   // Private fields — never shared without explicit consent
   nationality: varchar("nationality", { length: 64 }),          // e.g. "CN", "US"
   passportNumber: varchar("passport_number", { length: 64 }),   // sensitive — never logged
@@ -93,7 +94,9 @@ export const tripMembers = pgTable("trip_members", {
   role: varchar("role", { length: 32 }).default("MEMBER").notNull(), // "CREATOR","MEMBER"
   isRequired: boolean("is_required").default(true).notNull(),        // required for confirmation quorum
   joinedAt: timestamp("joined_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  tripUserUnique: uniqueIndex("trip_members_trip_user_unique").on(table.tripId, table.userId),
+}));
 
 // ─── Consent Grants (per trip, per member, per scope) ───────────────────────
 
@@ -122,7 +125,9 @@ export const constraintSnapshots = pgTable("constraint_snapshots", {
   travelDateStart: varchar("travel_date_start", { length: 10 }),
   travelDateEnd: varchar("travel_date_end", { length: 10 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  tripVersionUnique: uniqueIndex("constraint_snapshots_trip_version_unique").on(table.tripId, table.version),
+}));
 
 // ─── Destination Candidates ─────────────────────────────────────────────────
 
@@ -147,7 +152,9 @@ export const itineraryPlans = pgTable("itinerary_plans", {
   staleReason: text("stale_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   supersededAt: timestamp("superseded_at", { withTimezone: true }),
-});
+}, (table) => ({
+  tripVersionUnique: uniqueIndex("itinerary_plans_trip_version_unique").on(table.tripId, table.version),
+}));
 
 // ─── Member Confirmations ───────────────────────────────────────────────────
 
@@ -158,7 +165,9 @@ export const memberConfirmations = pgTable("member_confirmations", {
   tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
   status: confirmationStatusEnum("status").default("PENDING").notNull(),
   decidedAt: timestamp("decided_at", { withTimezone: true }),
-});
+}, (table) => ({
+  planUserUnique: uniqueIndex("member_confirmations_plan_user_unique").on(table.planId, table.userId),
+}));
 
 // ─── Visa Readiness Checks ──────────────────────────────────────────────────
 
@@ -208,7 +217,7 @@ export const bookingExecutions = pgTable("booking_executions", {
   id: uuid("id").primaryKey().defaultRandom(),
   planId: uuid("plan_id").references(() => itineraryPlans.id).notNull(),
   tripId: uuid("trip_id").references(() => sharedTrips.id).notNull(),
-  orchestrationRequestId: uuid("orchestration_request_id").notNull(),
+  orchestrationRequestId: uuid("orchestration_request_id").notNull().unique(),
   status: bookingStatusEnum("status").default("PENDING").notNull(),
   sandboxResults: jsonb("sandbox_results").$type<Record<string, unknown>>(),
   requestedBy: uuid("requested_by").references(() => users.id).notNull(),
@@ -239,7 +248,9 @@ export const auditEvents = pgTable("audit_events", {
   planId: uuid("plan_id").references(() => itineraryPlans.id),
   summary: jsonb("summary"), // minimal, no PII
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  correlationIdIdx: index("audit_events_correlation_id_idx").on(table.correlationId),
+}));
 
 // ─── Outbox Events ──────────────────────────────────────────────────────────
 
@@ -278,4 +289,6 @@ export const promptVersions = pgTable("prompt_versions", {
   version: varchar("version", { length: 64 }).notNull(),
   templateHash: varchar("template_hash", { length: 64 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (table) => ({
+  nameVersionUnique: uniqueIndex("prompt_versions_name_version_unique").on(table.name, table.version),
+}));

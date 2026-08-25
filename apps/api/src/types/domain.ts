@@ -104,6 +104,12 @@ export interface BookingExecutionResult {
   orchestrationRequestId: string;
   results: SandboxResult[];
   isDuplicate: boolean;
+  /**
+   * True when the booking has already reached a terminal status (SUCCESS
+   * or FAILED) and a callback arrives late. The route layer maps this to
+   * HTTP 409 STALE_CALLBACK.
+   */
+  isStale?: boolean;
 }
 
 export type PlanStatus = "DRAFT" | "ACTIVE" | "STALE" | "SUPERSEDED";
