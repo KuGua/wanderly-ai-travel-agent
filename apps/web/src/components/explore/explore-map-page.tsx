@@ -9,6 +9,7 @@ import { applyGeographyContrast, GEOGRAPHY_INTERACTIVE_LAYER_IDS, geographyFeatu
 import { INITIAL_READINESS, layerCaptionFor, mapReadinessStage, panelDisabledReason, type LayerCaption, type MapReadiness, type MapStage } from "./map-readiness";
 
 import { CountryBoundaryOverlay } from "./country-boundary-overlay";
+import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { solidifyGlobeStyle } from "./map-surface-style";
 import { TravelAgentChat } from "./travel-agent-chat";
 import { useOptionalTravelApi } from "@/lib/query/provider";
@@ -66,7 +67,6 @@ export function ExploreMapPage() {
   const tCommon = useTranslations("common");
   const locale = useLocale();
 
-  const destinations: Destination[] = [];
   useEffect(() => {
     readinessRef.current = readiness;
   }, [readiness]);
@@ -387,7 +387,7 @@ export function ExploreMapPage() {
       mapRef.current = null;
       setMapForBoundaryOverlay(null);
     };
-  }, [attachLocationReference, clearJourneyTimers, mapAttempt, selectDestination, t]);
+  }, [attachLocationReference, clearJourneyTimers, locale, mapAttempt, selectDestination, t]);
 
   useEffect(() => {
     if (mapRef.current && readiness.kind === "ready-supported") {
@@ -544,6 +544,7 @@ export function ExploreMapPage() {
         <div ref={containerRef} className="size-full" aria-label={t("globeAriaLabel")} />
       </div>
       <CountryBoundaryOverlay map={mapForBoundaryOverlay} visible={geographyVisibility.countries} />
+      <GeographyLabelOverlay map={mapForBoundaryOverlay} locale={locale} visibility={geographyVisibility} />
 
       {readiness.kind === "loading" ? (
         <div className="pointer-events-none absolute inset-0 z-[4] grid place-items-center" role="status">

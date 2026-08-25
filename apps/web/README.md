@@ -64,7 +64,18 @@ that includes Hong Kong, Macao, Taiwan and the South China Sea linework. If that
 request fails, the complete local Natural Earth file remains visible. Both
 sources appear in the attribution control; neither is used for destination
 lookup or travel facts. The overlay culls the globe's back hemisphere, while
-state/province and city details remain progressive OpenFreeMap style layers.
+state/province boundary details remain progressive OpenFreeMap style layers.
+
+Globe text is a separate camera-projected SVG overlay backed by the versioned
+`public/map-data/geography-labels.geojson` file. It contains compact display-only
+points generated from Natural Earth countries, populated places and Admin 1
+data, plus DataV.GeoAtlas centers for China's province-level regions. Continents
+and countries appear at globe scale, capitals and high-ranking cities at the
+next tier, and state/province names when zoomed further. English and Simplified
+Chinese routes prefer their matching name and fall back to English. Regenerate
+the file deliberately with `node scripts/build-geography-labels.mjs`; the script
+records source URLs in the GeoJSON metadata. These labels are never used as
+location-reference, travel, legal, booking, visa or navigation facts.
 
 ## Run locally
 

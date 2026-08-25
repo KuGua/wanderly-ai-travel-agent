@@ -79,6 +79,7 @@ export function applyGeographyContrast(map: MapLibreMap) {
     map.setPaintProperty(layerId, "text-color", "#073d50");
     map.setPaintProperty(layerId, "text-halo-color", "rgba(255, 253, 249, 0.96)");
     map.setPaintProperty(layerId, "text-halo-width", 1.25);
+    map.setPaintProperty(layerId, "text-opacity", 0);
   }
 }
 

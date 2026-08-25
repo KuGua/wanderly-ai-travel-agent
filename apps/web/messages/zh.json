@@ -255,7 +255,7 @@
       "countries": "国家",
       "regions": "省 / 州",
       "cities": "城市",
-      "captionSupported": "放大以查看地区详情。",
+      "captionSupported": "放大以查看首都、城市和省 / 州。",
       "captionMissingSource": "国家/地区标签已隐藏——该地图样式未提供 openmaptiles 数据源。",
       "captionMissingLayers": "国家/地区标签已隐藏——缺失图层：{layers}。"
     }
