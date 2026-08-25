@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import type { Skill } from "../../agents/contracts.js";
 import { db } from "../../db/database.js";
 import { chatThreads, chatMessages } from "../../db/schema.js";
