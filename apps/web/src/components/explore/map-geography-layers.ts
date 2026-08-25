@@ -2,18 +2,18 @@ import type { Map as MapLibreMap, MapGeoJSONFeature } from "maplibre-gl";
 
 export const OPEN_MAP_TILES_SOURCE = "openmaptiles";
 
-const COUNTRY_LAYER_IDS = ["boundary_2", "label_country_1", "label_country_2", "label_country_3"] as const;
-const REGION_LAYER_IDS = ["boundary_3", "label_state"] as const;
-const CITY_LAYER_IDS = ["label_city", "label_city_capital"] as const;
-const REQUIRED_LAYER_IDS = [...COUNTRY_LAYER_IDS, ...REGION_LAYER_IDS, ...CITY_LAYER_IDS] as const;
+export const GEOGRAPHY_LAYER_IDS = {
+  countries: ["boundary_2", "label_country_1", "label_country_2", "label_country_3"],
+  regions: ["boundary_3", "label_state"],
+  cities: ["label_city", "label_city_capital"],
+} as const;
 
 export const GEOGRAPHY_INTERACTIVE_LAYER_IDS = [
   "label_country_1",
   "label_country_2",
   "label_country_3",
   "label_state",
-  "label_city",
-  "label_city_capital",
+  ...GEOGRAPHY_LAYER_IDS.cities,
 ] as const;
 
 export type GeographyVisibility = {
@@ -22,58 +22,81 @@ export type GeographyVisibility = {
   cities: boolean;
 };
 
+export type GeographyFeature = {
+  name: string;
+  kind: "country" | "city" | "administrative division";
+};
+
 export type GeographyInspection = {
   supported: boolean;
   sourcePresent: boolean;
   missingLayers: readonly string[];
+  styleUrl: string;
 };
 
+export function supportsGeographyLayers(map: MapLibreMap) {
+  return inspectGeographyLayers(map, "").supported;
+}
+
 export function inspectGeographyLayers(map: MapLibreMap, styleUrl: string): GeographyInspection {
-  void styleUrl;
   const sourcePresent = Boolean(map.getSource(OPEN_MAP_TILES_SOURCE));
+  const expected = Object.values(GEOGRAPHY_LAYER_IDS).flat();
   const missingLayers = sourcePresent
-    ? REQUIRED_LAYER_IDS.filter((layerId) => !map.getLayer(layerId))
-    : [...REQUIRED_LAYER_IDS];
+    ? expected.filter((layerId) => !map.getLayer(layerId))
+    : expected;
 
   return {
     supported: sourcePresent && missingLayers.length === 0,
     sourcePresent,
     missingLayers,
+    styleUrl,
   };
 }
 
 export function setGeographyLayerVisibility(map: MapLibreMap, visibility: GeographyVisibility) {
-  setGroupVisibility(map, COUNTRY_LAYER_IDS, visibility.countries);
-  setGroupVisibility(map, REGION_LAYER_IDS, visibility.regions);
-  setGroupVisibility(map, CITY_LAYER_IDS, visibility.cities);
+  setLayerGroupVisibility(map, GEOGRAPHY_LAYER_IDS.countries, visibility.countries);
+  setLayerGroupVisibility(map, GEOGRAPHY_LAYER_IDS.regions, visibility.regions);
+  setLayerGroupVisibility(map, GEOGRAPHY_LAYER_IDS.cities, visibility.cities);
 }
 
 export function applyGeographyContrast(map: MapLibreMap) {
-  for (const layerId of ["boundary_2", "boundary_3"] as const) {
+  const boundaryPaint = [
+    ["boundary_2", "#0b5264", 1.35],
+    ["boundary_3", "#3a7d88", 1],
+  ] as const;
+  for (const [layerId, color, width] of boundaryPaint) {
     if (!map.getLayer(layerId)) continue;
+    map.setPaintProperty(layerId, "line-color", color);
+    map.setPaintProperty(layerId, "line-width", width);
     map.setPaintProperty(layerId, "line-opacity", layerId === "boundary_2" ? 0.72 : 0.5);
+  }
+
+  for (const layerId of GEOGRAPHY_INTERACTIVE_LAYER_IDS) {
+    if (!map.getLayer(layerId)) continue;
+    map.setPaintProperty(layerId, "text-color", "#073d50");
+    map.setPaintProperty(layerId, "text-halo-color", "rgba(255, 253, 249, 0.96)");
+    map.setPaintProperty(layerId, "text-halo-width", 1.25);
   }
 }
 
-export function geographyFeatureFrom(feature: MapGeoJSONFeature | undefined) {
+export function geographyFeatureFrom(feature: MapGeoJSONFeature | undefined): GeographyFeature | null {
   if (!feature?.properties) return null;
   const properties = feature.properties as Record<string, unknown>;
   const name = firstText(properties["name:zh"], properties["name:en"], properties.name);
   if (!name) return null;
 
   const featureClass = firstText(properties.class, properties.type, properties.place)?.toLowerCase();
-  const kind = featureClass === "country"
-    ? "country"
-    : featureClass === "state" || featureClass === "province" || featureClass === "region"
-      ? "state"
-      : featureClass === "city" || featureClass === "town" || featureClass === "village" || featureClass === "capital"
-        ? "city"
-        : null;
-
-  return kind ? { kind, name } as const : null;
+  if (featureClass === "country") return { name, kind: "country" };
+  if (featureClass === "city" || featureClass === "town" || featureClass === "village" || featureClass === "capital") {
+    return { name, kind: "city" };
+  }
+  if (featureClass === "state" || featureClass === "province" || featureClass === "region") {
+    return { name, kind: "administrative division" };
+  }
+  return null;
 }
 
-function setGroupVisibility(map: MapLibreMap, layerIds: readonly string[], visible: boolean) {
+function setLayerGroupVisibility(map: MapLibreMap, layerIds: readonly string[], visible: boolean) {
   for (const layerId of layerIds) {
     if (map.getLayer(layerId)) {
       map.setLayoutProperty(layerId, "visibility", visible ? "visible" : "none");
