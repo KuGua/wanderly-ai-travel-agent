@@ -19,7 +19,7 @@ they describe — see the table below. This index just lists them.
 
 | Document | Source-of-truth `.ts` |
 | --- | --- |
-| [`apps/api/migrations/0005_hardening_constraints.sql`](../migrations/0005_hardening_constraints.sql) | unique indexes + audit correlation lookup; idempotent via `CREATE … IF NOT EXISTS` |
+| [`apps/api/migrations/0005_hardening_constraints.sql`](../migrations/0005_hardening_constraints.sql) | unique indexes + audit correlation lookup + `audit_action` enum gap fix (`VISA_CHECK`, `PLAN_RESTART`); idempotent via `CREATE … IF NOT EXISTS` and `ALTER TYPE … ADD VALUE IF NOT EXISTS` |
 | [`apps/api/src/agents/README.md`](../src/agents/README.md) | directory overview |
 | [`apps/api/src/agents/CONTRACT.md`](../src/agents/CONTRACT.md) | `src/agents/contracts.ts` |
 | [`apps/api/src/agents/REGISTRY.md`](../src/agents/REGISTRY.md) | `src/agents/skill-registry.ts` |
