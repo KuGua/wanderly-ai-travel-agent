@@ -62,8 +62,16 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.addHook("onRequest", async (request, reply) => {
     request.correlationId = request.id ?? randomUUID();
     request.traceId = request.correlationId;
+    request.clientRequestId = readClientRequestId(request);
     reply.header("x-correlation-id", request.correlationId);
-    request.log = correlationChild(pinoInstance, request.correlationId);
+    if (request.clientRequestId) {
+      reply.header("x-request-id", request.clientRequestId);
+    }
+    request.log = correlationChild(
+      pinoInstance,
+      request.correlationId,
+      request.clientRequestId,
+    );
 
     if (
       request.url === "/health"
@@ -94,4 +102,24 @@ export async function buildApp(options: BuildAppOptions = {}) {
   sharedTripAgent.register();
 
   return app;
+}
+
+/**
+ * Read the client-supplied request id from the inbound `X-Request-Id`
+ * header. Returns `undefined` when missing or malformed. The format check
+ * is deliberately permissive (UUIDv4 plus RFC4122 variants) — anything
+ * the browser client generated is accepted, but we cap the length so a
+ * malicious caller cannot poison the log index.
+ */
+function readClientRequestId(request: { headers: { [k: string]: unknown } }): string | undefined {
+  const raw = request.headers["x-request-id"];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > 128) return undefined;
+  // Accept anything printable ASCII; pino and downstream consumers only
+  // stringify this value. Strict UUID validation would reject legitimate
+  // non-UUID request ids from older SDKs.
+  if (!/^[A-Za-z0-9._\-:]+$/.test(trimmed)) return undefined;
+  return trimmed;
 }
