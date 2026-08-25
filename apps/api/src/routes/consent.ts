@@ -5,7 +5,6 @@ import { eq, and } from "drizzle-orm";
 import { grantConsentSchema, revokeConsentSchema } from "../types/schemas.js";
 import { grantConsent, revokeConsent, getActiveConsents } from "../services/consent-service.js";
 import { createRequestContext } from "../utils/context.js";
-import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 
 export async function consentRoutes(app: FastifyInstance) {
@@ -15,7 +14,7 @@ export async function consentRoutes(app: FastifyInstance) {
       
 
   }, async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const body = grantConsentSchema.parse(request.body);
 
     // Verify membership
@@ -28,18 +27,11 @@ export async function consentRoutes(app: FastifyInstance) {
     }
 
     await grantConsent({
+      ctx,
       tripId: body.tripId,
       userId: request.user.id,
       scope: body.scope,
       fieldList: body.fieldList,
-    });
-
-    await recordAudit({
-      ctx,
-      action: "CONSENT_GRANT",
-      actorUserId: request.user.id,
-      tripId: body.tripId,
-      summary: { scope: body.scope, fieldList: body.fieldList },
     });
 
     return { message: "Consent granted", scope: body.scope, fieldList: body.fieldList };
@@ -51,7 +43,7 @@ export async function consentRoutes(app: FastifyInstance) {
       
 
   }, async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const body = revokeConsentSchema.parse(request.body);
 
     // Verify membership
@@ -64,17 +56,10 @@ export async function consentRoutes(app: FastifyInstance) {
     }
 
     await revokeConsent({
+      ctx,
       tripId: body.tripId,
       userId: request.user.id,
       scope: body.scope,
-    });
-
-    await recordAudit({
-      ctx,
-      action: "CONSENT_REVOKE",
-      actorUserId: request.user.id,
-      tripId: body.tripId,
-      summary: { scope: body.scope },
     });
 
     return { message: "Consent revoked", scope: body.scope };

@@ -2,14 +2,19 @@ import { db } from "../db/database.js";
 import { auditEvents } from "../db/schema.js";
 import type { RequestContext } from "../utils/context.js";
 
+// Drizzle transaction callback parameter type. Aliased for readability.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export type AuditAction =
   | "PROFILE_CREATE" | "PROFILE_UPDATE" | "PROFILE_DELETE"
   | "TRIP_CREATE" | "TRIP_JOIN"
   | "CONSENT_GRANT" | "CONSENT_REVOKE"
-  | "PLAN_CREATE" | "PLAN_STALE" | "PLAN_REPLAN"
+  | "PLAN_CREATE" | "PLAN_STALE" | "PLAN_REPLAN" | "PLAN_RESTART"
   | "CONFIRMATION_SET"
   | "BOOKING_SUBMIT" | "BOOKING_RESULT"
   | "CHANGE_EVENT"
+  | "VISA_CHECK"
+  | "CHAT_THREAD_CREATE" | "CHAT_THREAD_DELETE" | "CHAT_MESSAGE_APPEND"
   | "SKILL_INVOKE" | "AGENT_RUN";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
@@ -74,10 +79,14 @@ export async function recordAudit(params: {
   tripId?: string;
   planId?: string;
   summary?: Record<string, unknown>;
+  /** Optional transaction handle so the audit row commits atomically with
+   * the business state change. Defaults to the global `db`. */
+  tx?: Tx;
 }): Promise<void> {
   const sanitized = whitelistSummary(params.summary ?? {}) as Record<string, AuditSummaryValue>;
+  const target = params.tx ?? db;
 
-  await db.insert(auditEvents).values({
+  await target.insert(auditEvents).values({
     correlationId: params.ctx.correlationId,
     action: params.action,
     actorUserId: params.actorUserId ?? params.ctx.actorUserId,

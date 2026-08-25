@@ -24,7 +24,7 @@ export async function bookingRoutes(app: FastifyInstance) {
   });
 
   app.post("/bookings", async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const body = bookingRequestSchema.parse(request.body);
 
     const membership = await db.select().from(tripMembers)
@@ -60,7 +60,7 @@ export async function bookingRoutes(app: FastifyInstance) {
   // Sandbox callback — provider-authenticated via HMAC; never trusts a user
   // bearer token for this endpoint.
   app.post("/bookings/callback", async (request) => {
-    const ctx = createRequestContext(undefined, request.correlationId, request.traceId);
+    const ctx = createRequestContext(undefined, request.correlationId, request.traceId, request.clientRequestId);
     const rawBody = request.rawBody ?? "";
     const headers = request.headers as Record<string, string | string[] | undefined>;
 
@@ -90,6 +90,18 @@ export async function bookingRoutes(app: FastifyInstance) {
         serviceResults: body.serviceResults,
       });
 
+      if (result.isStale) {
+        // Booking already reached a terminal state — the callback cannot
+        // be applied. Surface as 409 so retrying callers know to abandon.
+        metrics.inc("booking_callback_outcomes_total", { callbackResult: "stale" });
+        throw new ApiError(
+          409,
+          "Conflict",
+          "Booking is already in a terminal state; callback cannot be applied",
+          "STALE_CALLBACK",
+        );
+      }
+
       metrics.inc("booking_callback_outcomes_total", {
         callbackResult: result.isDuplicate ? "duplicate" : "processed",
       });
@@ -98,7 +110,8 @@ export async function bookingRoutes(app: FastifyInstance) {
         message: result.isDuplicate ? "Duplicate callback — ignored" : "Callback processed",
         ...result,
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
       metrics.inc("booking_callback_outcomes_total", { callbackResult: "failed" });
       throw new ApiError(
         400,

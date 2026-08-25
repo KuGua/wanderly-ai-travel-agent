@@ -33,3 +33,17 @@
 ## 仓库清理
 
 已移除过时的 Coze/Python 脚手架：`.coze`、`pyproject.toml`、`uv.lock` 以及旧根目录的 `src/`、`scripts/` 文件。可部署后端保留在 `apps/api/`，符合单体仓库惯例。空的旧目录不受 Git 跟踪；若文件浏览器仍显示它们，开发者可在本地移除。
+
+## Post-PR open items
+
+本评审列出的 8 条演示前必须修复项已通过硬化 PR 落地（详见 `apps/api/migrations/0005_hardening_constraints.sql` 与 `apps/api/src/services/*`、`apps/api/src/routes/*`）。**私有对话线程代码**已通过 `apps/api/migrations/0006_chat_threads.sql` + `thread-recall-skill.ts` + `routes/chat-threads.ts` 实现；但服务端生成 `redacted_summary` 的逻辑留到下个 PR。仍需后续单独立项的：
+
+1. **服务端聊天摘要生成**：当前 `chat_messages.redacted_summary` 列存在但服务端尚未填充。需新增 `summarize-chat-message` Skill（或后端 worker）从 raw body 生成脱敏摘要、写入列；然后 `thread.recall` 即可返回非空 `contentRedacted`。
+2. **Shared Agent 读取 consented chat context**：Shared Trip Agent 在做规划时应能读取 owner 标记 shared 的消息作为上下文输入。需新增 `chat:read` scope 给 shared agent 并在 default policy 中允许。
+3. **OpenTelemetry `span_id` 全链路传播**：[docs/agent-architecture.md](docs/agent-architecture.md) §9 line 268 已声明 `span_id` 为必需字段，但仓库当前只产生 `correlationId` + `traceId`。需引入 OpenTelemetry SDK + exporter，并把 span 关联到 audit / log。
+4. **生产 metrics/trace exporter 与持久化遥测后端**：当前 `/metrics` 仅暴露进程内 Prometheus text，没有远程写入或 scraper 配置。
+5. **真实支付与商户结算**：MVP 沙箱返回 `DEMO-*` 参考号；任何扣款、退款、改签、PCI 责任、客服履约均不进入本仓库。
+6. **签证代办与法律意见**：visa readiness 始终只输出官方核验 CTA，不代办、不判定。
+7. **共享平台对话原生群聊、支付分摊与社交网络**：产品策略已明确不做（[docs/product-strategy.md §6](docs/product-strategy.md)）。
+8. **Drizzle Kit 自动 migration 与生产数据迁移评审**：本 PR 保留手写 SQL + `IF NOT EXISTS` 以保证可重放；生产部署需为每条新 unique 索引单独评审数据预去重脚本。
+9. **AWS 部署、Multi-AZ、灾备与告警治理**：[TECH_STACK.md 第 7 节](TECH_STACK.md) 列出 Pilot 阶段目标，不在 MVP 范围。

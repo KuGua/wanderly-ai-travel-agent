@@ -38,7 +38,7 @@ function serializeProfile(profile: ProfileRecord, displayName: string) {
 export async function profileRoutes(app: FastifyInstance) {
   // Create profile
   app.post("/profiles", async (request, reply) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const body = createProfileSchema.parse(request.body);
 
     const [profile] = await db.insert(userProfiles).values({
@@ -95,7 +95,7 @@ export async function profileRoutes(app: FastifyInstance) {
       request.body = updateProfileSchema.parse(request.body);
     },
   }, async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const body = updateProfileSchema.parse(request.body);
 
     const existing = await db.select().from(userProfiles)
@@ -126,7 +126,7 @@ export async function profileRoutes(app: FastifyInstance) {
 
   // Delete my profile
   app.delete("/profiles/me", async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
 
     await db.delete(userProfiles).where(eq(userProfiles.userId, request.user.id));
 

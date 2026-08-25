@@ -26,7 +26,11 @@
 3. A trip-only change does not overwrite the stable Profile without an explicit save action.
 4. Deleting a Profile field prevents it from appearing in future plan inputs.
 5. Private Profile values are not visible in any shared trip by default.
-6. Traveler can tell the private Agent a trip-specific preference; it is shown as `this trip` and is not shared without separate consent.
+6. Traveler can tell the private Agent a trip-specific preference; it is shown as `this trip` (where `this trip` = the trip bound to the thread at creation, see AC7) and is not shared without separate consent.
+7. Traveler can create, list, reopen and delete only their own private conversation threads; a thread may optionally reference one trip but is never shared by that association. `conversationId` is owned by exactly one `ownerUserId`, persists across sessions, and is not visible to fellow trip members or to the Shared Agent by virtue of the trip binding. Default LLM context for any run is the server-derived redacted summary plus the owner-marked shared turns — raw transcript never leaves the owner session.
+8. Deleting a thread removes its message body and does not silently change separately confirmed Profile or trip-override facts; audit retains only `conversationId`, `ownerUserId`, `tripId?`, action, timestamp, and never the message body.
+7. Traveler can create, list, reopen and delete only their own private conversation threads; a thread may optionally reference one trip but is never shared by that association.
+8. Deleting a thread removes its message body and does not silently change separately confirmed Profile or trip-override facts.
 
 ### H2 — Join a shared trip and grant scoped consent
 
@@ -121,8 +125,8 @@
 **Acceptance criteria:**
 
 1. Separate users cannot read or mutate one another’s Profile, consent or private conversation data.
-2. Profile edit, consent change, tool call, plan, visa checklist, re-plan, confirmation and orchestration all have correlation IDs and versions.
-3. Logs/traces omit private chat text, passport/document numbers, payment data and unapproved profile fields.
+2. Every private conversation has a user-owned `conversation_id`; each trip has a `trip_id`; requests, Agent runs and sensitive operations have separate correlation IDs and versions.
+3. Logs/traces/audit summaries omit private chat text, passport/document numbers, payment data and unapproved profile fields; private messages never enter a shared snapshot or default model context.
 4. Low-cardinality metrics count profile reuse, consent completion, tool outcome, visa uncertainty, re-plan, confirmation, orchestration outcome and errors.
 
 ### S2 — Recover from incomplete, conflicting or unreliable data

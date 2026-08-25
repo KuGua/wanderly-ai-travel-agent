@@ -59,7 +59,7 @@ flowchart LR
 
 | ID | Capability | User problem / technical proof |
 |---|---|---|
-| H1 | 可编辑的 Personal Travel Profile 与私有 Agent 对话 | “Agent 了解我”，消除每次重填。 |
+| H1 | 可编辑的 Personal Travel Profile 与可持久化私有 Agent 对话 | “Agent 了解我”，消除每次重填，并让用户可回看和纠正本次沟通。 |
 | H2 | Shared Trip Workspace、三人邀请和按字段授权 | 多人协调，不要求复制群聊，也不暴露隐私。 |
 | H3 | 两出发地、两到三个目的地候选的 Flight/Stay/Ground 比较 | 用工具编排降低跨平台协调与目的地选择成本。 |
 | H4 | 按成员国籍、目的地和路线的 visa/entry readiness checklist | 减少跨国同行的准备遗漏。 |
@@ -93,9 +93,11 @@ flowchart LR
 ### FR-1 个人资料与私有 Agent
 
 1. 用户可以保存、查看、编辑和删除稳定偏好：预算区间、住宿风格、旅行节奏、兴趣、航班偏好和风险/舒适度取舍。
-2. 用户可以通过私有对话为本次旅行添加或覆盖偏好；本次覆盖不得静默改写稳定 Profile。
-3. 系统必须显示每条资料的来源（Profile 或本次对话）和最近修改时间。
-4. 系统不得把任何 Profile 或私有对话字段默认共享给同行者。
+2. 用户可以创建、回看和删除仅自己可访问的私有对话线程；线程归所属用户所有，可选关联一次行程（即`this trip`= 线程创建时绑定的 `tripId`，**不**替代 trip 本身）；同一用户在同一 trip 上可拥有多个线程（例如私有 scratchpad 与个人规划草稿），但每线程的 `ownerUserId` 唯一，其他 trip 成员或 Shared Agent 不得通过 trip 关联读取线程。
+3. 用户可以通过私有对话为本次旅行添加或覆盖偏好；本次覆盖不得静默改写稳定 Profile，且只有用户确认的提案才能写入 Profile 或 trip override。trip override 标记为 `this trip`，与稳定 Profile 严格隔离，且未经独立授权不得自动随 snapshot 共享给同行者。
+4. 系统必须显示每条资料的来源（Profile 或本次对话）和最近修改时间。
+5. 系统不得把任何 Profile 或私有对话字段默认共享给同行者；保存的对话全文不得自动成为长期 Agent memory、共享 snapshot 或模型上下文。模型默认 LLM 上下文仅包含服务端派生的脱敏摘要，以及由 owner 显式标记"共享"的最近若干轮；raw transcript 永远不出 owner 会话。
+6. 删除对话线程须删除其消息正文；仅保留最小、无敏感的审计摘要（线程 id、操作者、时间）。删除 Profile/override 后，未来 Agent run 不得使用对应数据。
 
 ### FR-2 共享行程工作台与授权
 
@@ -135,10 +137,10 @@ flowchart LR
 
 ### FR-7 隐私与可观测性
 
-1. Profile、共享授权、工具调用、方案、变化和确认均必须有会话/关联 ID 与版本记录。
+1. 每个共享行程有独立 `tripId`（UUIDv4）；每个私有对话线程有独立 `conversationId`（UUIDv4，可选关联一个 `tripId`）；每个 HTTP 请求有独立 `correlationId`（UUIDv4，server 在 `x-correlation-id` 响应头与错误体中回显）；每个 Agent run 与敏感操作均有独立 `runId` 与版本记录。四类 ID 各自独立、不得互相替代：`tripId` 标识项目，`conversationId` 标识私聊线程，`correlationId` 标识请求链路，`runId` 标识 Agent 调用。
 2. 日志、metrics 和 traces 不得包含私聊全文、护照/证件号、支付数据或未授权 Profile 字段。
-3. 指标必须跟踪 Profile reuse、共享授权完成、工具成功/失败、方案完成、visa checklist 状态、重算、确认和 orchestration 结果。
-4. 用户可删除个人 Profile 字段；删除后，未来 Agent run 不得使用它。已有审计记录仅保留最小、无敏感摘要，并遵循后续合规政策。
+3. 指标必须跟踪 Profile reuse、共享授权完成、工具成功/失败、方案完成、visa checklist 状态、重算、确认和 orchestration 结果；`conversationId` 仅在 trace/log 中以关联 id 出现，**不**作为 metric label。
+4. 私有消息正文不得进入日志、metric 标签、trace 属性、共享 snapshot 或未经用户选择的模型上下文；审计 summary 仅记录操作与关联 ID（ownerUserId / conversationId / 关联 tripId / 时间），不包含正文片段。
 
 ## 6. 重要边界场景
 
@@ -153,6 +155,7 @@ flowchart LR
 | 成员在重算期间更改私有 Profile | 旧 run 过期；仅使用新的授权/版本快照。 |
 | 成员拒绝确认 | 不调用 orchestration；显示谁需要调整和可编辑入口。 |
 | orchestration 回调重复或乱序 | 用请求 ID 幂等处理；最多生成一组参考号。 |
+| 用户删除私有对话线程 | 本人后续不能读取正文；删除不改变已确认的 Profile/override、共享 snapshot 或既有方案，除非用户另行删除这些结构化数据。 |
 
 ## 7. 成功指标与发布标准
 
@@ -171,4 +174,4 @@ flowchart LR
 - 每个 Agent/工具结果带 Profile/consent/tool snapshot 版本；
 - sandbox 与真实数据/fixture 的边界对用户清晰可见；
 - 3 分钟 Hero Demo 可以用固定数据稳定复现；live API 不可用时明确切换为 `Demo data` fixture；
-- 不存储未授权 Profile、私聊全文、证件号码或支付信息。
+- 私有对话线程可持久化且仅归其所有者；不得进入共享 snapshot、遥测或默认模型上下文；用户删除后不再保留消息正文。

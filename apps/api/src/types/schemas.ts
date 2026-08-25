@@ -61,6 +61,39 @@ export const createTripSchema = z.object({
 export const tripStatusSchema = z.enum(["PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
+export const projectDisplayStateSchema = z.enum([
+  "ACTION_REQUIRED",
+  "IN_PROGRESS",
+  "COMPLETED",
+  "ARCHIVED",
+  "CANCELLED",
+]);
+
+export const latestPlanStatusSchema = z.enum(["DRAFT", "ACTIVE", "STALE", "SUPERSEDED"]);
+
+export const nextActionTypeSchema = z.enum([
+  "REVIEW_PLAN",
+  "GRANT_CONSENT",
+  "CHECK_READINESS",
+  "CONFIRM_PLAN",
+  "VIEW_PROJECT",
+  "VIEW_HISTORY",
+]);
+
+export const latestPlanSchema = z.object({
+  id: uuidSchema,
+  version: z.number().int().nonnegative(),
+  status: latestPlanStatusSchema,
+  generatedAt: z.string().datetime(),
+  isDemoData: z.boolean(),
+});
+
+export const nextActionSchema = z.object({
+  type: nextActionTypeSchema,
+  label: z.string().min(1).max(128),
+  href: z.string().min(1).max(512),
+});
+
 export const tripSummarySchema = z.object({
   id: uuidSchema,
   name: z.string(),
@@ -72,10 +105,15 @@ export const tripSummarySchema = z.object({
   memberCount: z.number().int().nonnegative(),
   role: tripRoleSchema,
   createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  displayState: projectDisplayStateSchema,
+  latestPlan: latestPlanSchema.nullable(),
+  nextAction: nextActionSchema.nullable(),
 });
 
 export const tripsResponseSchema = z.object({
   trips: z.array(tripSummarySchema),
+  nextCursor: z.string().nullable().optional(),
 });
 
 export const tripMemberSchema = z.object({
@@ -149,6 +187,48 @@ export const confirmPlanSchema = z.object({
   decision: z.enum(["CONFIRMED", "NEEDS_CHANGES"]),
 });
 
+// ─── Chat Threads (owner-only private conversation) ────────────────────────
+
+export const createThreadSchema = z.object({
+  title: z.string().min(1).max(256),
+  tripId: uuidSchema.optional(),
+}).strict();
+
+export const threadSummarySchema = z.object({
+  id: uuidSchema,
+  ownerUserId: uuidSchema,
+  tripId: uuidSchema.nullable(),
+  title: z.string(),
+  createdAt: z.string().datetime(),
+  archivedAt: z.string().datetime().nullable(),
+});
+
+export const threadsListResponseSchema = z.object({
+  threads: z.array(threadSummarySchema),
+});
+
+export const appendMessageSchema = z.object({
+  role: z.enum(["USER", "SYSTEM"]),
+  body: z.string().min(1).max(16384),
+  markedSharedByOwner: z.boolean().optional(),
+}).strict();
+
+export const chatMessageRedactedSchema = z.object({
+  id: uuidSchema,
+  role: z.string(),
+  contentRedacted: z.string(),
+  createdAt: z.string().datetime(),
+});
+
+export const threadMessagesResponseSchema = z.object({
+  messages: z.array(chatMessageRedactedSchema),
+});
+
+export const threadDetailsResponseSchema = z.object({
+  thread: threadSummarySchema,
+  messages: z.array(chatMessageRedactedSchema),
+});
+
 // ─── Booking ────────────────────────────────────────────────────────────────
 
 export const bookingRequestSchema = z.object({
@@ -182,6 +262,11 @@ export function toJsonSchema(schema: z.ZodType) {
 
 export type Profile = z.infer<typeof profileSchema>;
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;
+export type LatestPlan = z.infer<typeof latestPlanSchema>;
+export type NextAction = z.infer<typeof nextActionSchema>;
 export type TripSummary = z.infer<typeof tripSummarySchema>;
+export type ProjectDisplayState = z.infer<typeof projectDisplayStateSchema>;
 export type TripsResponse = z.infer<typeof tripsResponseSchema>;
+export type ThreadSummary = z.infer<typeof threadSummarySchema>;
+export type ChatMessageRedacted = z.infer<typeof chatMessageRedactedSchema>;
 export type ApiErrorResponse = z.infer<typeof errorResponseSchema>;

@@ -14,7 +14,7 @@ export async function confirmationRoutes(app: FastifyInstance) {
       
 
   }, async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const body = confirmPlanSchema.parse(request.body);
 
     const tripId = body.tripId;
