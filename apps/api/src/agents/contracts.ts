@@ -11,7 +11,8 @@ export type SkillScope =
   | "plan:write:propose"
   | "readiness:read"
   | "bookings"
-  | "snapshot:read";
+  | "snapshot:read"
+  | "chat:read";
 
 /**
  * Policy gate consulted by the registry before invoking a skill. Implementations
