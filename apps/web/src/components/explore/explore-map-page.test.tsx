@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ExploreMapPage } from "./explore-map-page";
+import { configureMapAttribution, ExploreMapPage } from "./explore-map-page";
 
 const mapMock = vi.hoisted(() => ({
   handlers: new Map<string, (event: { lngLat: { lng: number; lat: number } }) => void>(),
@@ -83,5 +83,37 @@ describe("ExploreMapPage private inspirations", () => {
     expect(within(list).queryByText("Pinned place 1")).not.toBeInTheDocument();
     expect(within(list).getByText("Pinned place 3")).toBeInTheDocument();
     expect(mapMock.removedMarkers).toHaveLength(2);
+  });
+});
+
+describe("configureMapAttribution", () => {
+  it("starts compact attribution closed and toggles it from the info control", () => {
+    const root = document.createElement("div");
+    const attribution = document.createElement("details");
+    const toggle = document.createElement("summary");
+    attribution.open = true;
+    attribution.className = "maplibregl-ctrl-attrib maplibregl-compact maplibregl-compact-show";
+    toggle.className = "maplibregl-ctrl-attrib-button";
+    attribution.append(toggle);
+    root.append(attribution);
+
+    configureMapAttribution(root);
+
+    expect(attribution).not.toHaveAttribute("open");
+    expect(attribution).not.toHaveClass("maplibregl-compact-show");
+    expect(attribution).toHaveClass("maplibregl-compact");
+    expect(attribution).toHaveAttribute("data-wanderly-expanded", "false");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    toggle.click();
+    expect(attribution).toHaveAttribute("open");
+    expect(attribution).toHaveClass("maplibregl-compact-show");
+    expect(attribution).toHaveAttribute("data-wanderly-expanded", "true");
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    toggle.click();
+    expect(attribution).not.toHaveAttribute("open");
+    expect(attribution).not.toHaveClass("maplibregl-compact-show");
+    expect(attribution).toHaveAttribute("data-wanderly-expanded", "false");
   });
 });
