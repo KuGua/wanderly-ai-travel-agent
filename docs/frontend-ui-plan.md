@@ -72,7 +72,7 @@
 - 视觉采用浅暖背景、深海蓝地图、琥珀色热门标记、青绿色推荐标记；所有标记同时提供图标、文字和状态，不能只靠颜色区分。
 - 用户点选地图标记后打开地点详情抽屉：展示地点图片/摘要、所属视图、匹配原因或来源、数据时间，以及 `查看候选方案` 或 `开始规划` 操作。
 - `规划中` 地点以明确文字状态（如“方案 v2，等待复核”）呈现；标记点击与卡片链接到对应 trip/plan 路由。
-- 不采用 Google Earth 嵌入、品牌或数据。后续若探索结果证明地图能提升进入规划的转化，再评估 MapLibre/Mapbox 的 globe 模式及其成本、性能和许可条件。
+- 不采用 Google Earth 嵌入、品牌或数据。当前探索页使用已审批的 OpenFreeMap + MapLibre globe；国家、省/州和城市标签只作为地图参考，直接控制 Liberty 的已验证 style layers，并以固定地图控件渐进显示，不构成目的地、报价、库存、签证或预订事实。若样式不兼容，控制组仍可见但被禁用，并以 `role="status"` 文案说明缺失项（缺 source 或缺图层），保留候选地点入口和地图失败回退；不得静默隐藏以免开发期误判"功能未实现"。
 - 地图实现必须延迟加载、预留稳定容器空间以避免 CLS；网络慢、设备性能有限或 `prefers-reduced-motion` 时，回退为静态地图与可访问地点卡片列表。
 
 ### MVP 实施阶段
@@ -80,6 +80,8 @@
 1. 使用静态 SVG 或轻量地图底图、fixture 地点和四类标记验证信息架构；不依赖实时热点数据。
 2. 加入四个视图切换、地点详情抽屉、推荐原因及通向行程创建/方案详情的深链接。
 3. 用事件验证“查看地点 → 开始规划 / 查看方案”的转化；仅在地图显著改善发现与规划进入率后，评估真实地图引擎与 globe 增强。
+
+   **同阶段强化（§5.2 / §5.2.2 hardening）**：与第 3 步同阶段落地，将 layer panel 的"style 不兼容即隐藏"改为"始终渲染 + 禁用 + caption"，并通过 `window.__wanderlyMap` 给开发者暴露 5 种 readiness（见 `docs/frontend-prototype-handoff.md §5.2.2`）；fixture 由 `apps/web/src/components/explore/__fixtures__/openfreemap-liberty-layers.ts` 固化并与 `GEOGRAPHY_LAYER_IDS` 在测试时做交集校验，捕捉 Liberty 升级或 style URL 变更引起的 layer 漂移。
 
 验收时，键盘用户可在视图切换、标记列表和地点抽屉间完整操作；每个交互目标至少 44px，地图状态有文字替代，且页面在地图尚未加载时仍可进入当前行程和待办。
 
@@ -189,3 +191,9 @@ MVP 仅允许两个出发地、两个或三个 fixture 候选目的地及预置�
 6. 加入 P1 活动/帮助页、组件测试、Playwright Hero 流程、地图到规划的转化事件和四个断点的视觉检查。
 
 当 Alice、Bob、Chen 都能走完 `Profile → join/invite → scoped consent → candidate comparison → readiness → change/replan → unanimous confirmation → sandbox result`，且没有页面宣称真实扣款、预订、签证批准或实时供应商保证时，演示才算完成。
+
+---
+
+## Delivered slices
+
+- **i18n** (2026-08-25): English default + Simplified Chinese via `next-intl` 4.x. `localePrefix: "always"`, locale switcher in the sidebar, per-locale fixture files, status-code-mapped error messages. See [`docs/i18n.md`](./i18n.md).

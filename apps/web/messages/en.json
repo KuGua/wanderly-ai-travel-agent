@@ -1,0 +1,247 @@
+{
+  "common": {
+    "appName": "Wanderly",
+    "brandGlyph": "W.",
+    "brandTagline": "Wanderly AI",
+    "langEnglish": "English",
+    "langChinese": "中文",
+    "navExplore": "Explore",
+    "navProgram": "My program",
+    "navProfile": "Travel preference",
+    "primaryNavAriaLabel": "Primary navigation",
+    "exploreAriaLabel": "Wanderly Explore",
+    "accountAriaLabel": "Account sign-in will connect here",
+    "demoBadge": "Demo data",
+    "loadingGlobe": "Loading the globe…",
+    "loadingProfile": "Loading your private profile",
+    "loadingProfileCapital": "Loading your private Profile",
+    "loadingTrips": "Loading your trips",
+    "errorTitleDefault": "We could not load this yet",
+    "errorUnauthorized": "Access unavailable",
+    "errorTechnicalDetails": "Technical details",
+    "errorCorrelationId": "Correlation ID: {correlationId}",
+    "units": {
+      "km": "{value} km",
+      "coordinate": "{lat}°, {lng}°"
+    }
+  },
+  "home": {
+    "kicker": "Your private travel space",
+    "title": "My program",
+    "subtitle": "Continue a trip that is taking shape, or tune the private preferences that guide your recommendations.",
+    "summary": {
+      "ariaLabel": "Workspace summary",
+      "ready": "Your travel space is ready",
+      "privacyHeadline": "Preferences and trips stay private",
+      "tripsLabel": "Trips",
+      "tripsDetail": "Available in your workspace",
+      "profileLabel": "Profile",
+      "profileReady": "Ready",
+      "profileNotSet": "Not set",
+      "profileDetail": "Private by default",
+      "notSet": "Not set"
+    },
+    "errorStateProfileUnavailable": "Profile unavailable",
+    "errorStateTripsUnavailable": "Trips unavailable",
+    "profile": {
+      "kicker": "Private by default",
+      "heading": "Profile snapshot",
+      "edit": "Edit profile",
+      "departure": "Departure",
+      "interests": "Interests",
+      "stayStyle": "Stay style",
+      "emptyTitle": "No Profile found",
+      "emptyBody": "Profile creation is not exposed by the confirmed GET/PUT slice yet.",
+      "emptyAction": "Review Profile setup"
+    },
+    "trips": {
+      "heading": "Your trips",
+      "showing": "Showing {count}",
+      "emptyTitle": "No trips yet",
+      "emptyBody": "Trips from your account will appear here. Trip creation is a later slice."
+    },
+    "trip": {
+      "status": {
+        "PLANNING": "Planning",
+        "CONFIRMED": "Confirmed",
+        "BOOKED": "Booked",
+        "CANCELLED": "Cancelled",
+        "STALE": "Stale"
+      },
+      "dates": {
+        "notSet": "Dates not set",
+        "range": "{start} – {end}"
+      },
+      "members": "{count, plural, =0 {No members} one {# member} other {# members}}",
+      "membersRoleOrganizer": "Organizer",
+      "membersRoleMember": "Member",
+      "open": "Open",
+      "accommodation": {
+        "city_center": "City center",
+        "budget": "Budget",
+        "luxury": "Luxury"
+      }
+    },
+    "fixtures": {
+      "tripName": "Asia Trip"
+    }
+  },
+  "profile": {
+    "kicker": "Private Profile",
+    "title": "Travel preference",
+    "subtitle": "Nothing here is shared with a trip unless a later consent flow records that choice. Passport numbers are never collected.",
+    "errorSummaryTitle": "Check the highlighted Profile fields.",
+    "errorSummaryBody": "Your changes have not been sent.",
+    "sectionBasicsTitle": "Travel basics",
+    "sectionBasicsDescription": "Private details used only by your Personal Agent until you explicitly share them for a trip.",
+    "sectionPrefsTitle": "Preferences and comfort",
+    "sectionPrefsDescription": "Stable preferences can shape later recommendations without becoming shared trip data automatically.",
+    "fields": {
+      "departureCity": "Departure city",
+      "nationality": "Nationality",
+      "nationalityHint": "Private; not shared in this slice.",
+      "dateOfBirth": "Date of birth",
+      "dateOfBirthHint": "YYYY-MM-DD",
+      "dateOfBirthPlaceholder": "YYYY-MM-DD",
+      "availableDepartureDates": "Available departure dates",
+      "availableDepartureDatesHint": "Comma-separated YYYY-MM-DD dates",
+      "availableDepartureDatesPlaceholder": "2026-10-03, 2026-10-10",
+      "interests": "Interests",
+      "interestsHint": "Comma-separated",
+      "interestsPlaceholder": "art, museums, local food",
+      "accommodationStyle": "Accommodation style",
+      "budgetMaxUsd": "Maximum budget (USD)",
+      "mobilityNotes": "Mobility notes",
+      "mobilityNotesHint": "Do not include document numbers.",
+      "noRedEyeLabel": "Avoid red-eye flights",
+      "noRedEyeHint": "Treat overnight departures as a stable preference."
+    },
+    "accommodation": {
+      "notSet": "Not set",
+      "city_center": "City center",
+      "budget": "Budget",
+      "luxury": "Luxury"
+    },
+    "stickyNote": "Blank edited fields are preserved until the API supports clearing them.",
+    "save": "Save Profile",
+    "saving": "Saving…",
+    "savedToast": "Profile saved. Your private snapshot is up to date.",
+    "saveErrorSuffix": "Your form input has been kept.",
+    "emptyTitle": "No travel preference profile exists yet",
+    "emptyBody": "The confirmed API Slice supports GET and PUT for existing Profiles. Creating a new Profile requires a separate confirmed contract, so no data has been fabricated or saved locally.",
+    "emptyAction": "Return to Explore",
+    "validation": {
+      "max64": "Use 64 characters or fewer",
+      "datePattern": "Use YYYY-MM-DD",
+      "datesList": "Use YYYY-MM-DD dates separated by commas",
+      "wholeNumber": "Enter a whole number"
+    },
+    "fixtures": {
+      "displayName": "Traveler"
+    }
+  },
+  "explore": {
+    "startingFrom": "Starting from Singapore",
+    "globeAriaLabel": "Interactive destination globe",
+    "recenterAriaLabel": "Recenter on Singapore",
+    "recenterTitle": "Recenter",
+    "helpAriaLabel": "Explore map help",
+    "helpTitle": "How to use Explore",
+    "helpHeading": "Explore the map",
+    "helpBody": "Choose a named demo destination, or click anywhere to pin multiple private inspirations. Select pins from the list to remove them individually or together.",
+    "unavailableHeading": "The globe could not load",
+    "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",
+    "retryMap": "Retry map",
+    "panelKicker": "Where should we go next?",
+    "panelTitle": "Explore the world",
+    "panelBody": "Click anywhere on the map to collect private inspirations for this session.",
+    "pinCount": "{count, plural, one {# private pin} other {# private pins}} on this map",
+    "suggestionsAriaLabel": "Destination suggestions",
+    "managePinsKicker": "Private inspirations",
+    "managePinsTitle": "Manage pins",
+    "managePinsCloseAriaLabel": "Close pin manager",
+    "managePinsBody": "Choose only the places you want to remove.",
+    "manageScopeLabel": "Pin display scope",
+    "manageScopeNearby": "Current area",
+    "manageScopeAll": "All pins ({count})",
+    "manageScopeHint": "Current area shows pins within {distance} of this place.",
+    "pinListAriaLabel": "Private inspiration list",
+    "pinCheckboxAriaLabel": "Select {name}",
+    "deleteSelected": "Delete selected",
+    "deleteSelectedWithCount": "Delete selected ({count})",
+    "drawerCloseAriaLabel": "Close destination preview",
+    "drawerKindFixture": "Demo data",
+    "drawerKindGeography": "Map location",
+    "drawerKindInspiration": "Session-only inspiration",
+    "geographyCountryLabel": "Country label from the map",
+    "geographyCityLabel": "City label from the map",
+    "geographyStateLabel": "Province or state label from the map",
+    "geographyNote": "This is a map label, not a verified travel candidate. It has no price, availability, visa or booking data.",
+    "inspirationName": "Pinned place {n}",
+    "inspirationNote": "This is an unverified, session-only inspiration. It has no live price, availability, visa or booking data.",
+    "markerExploreAria": "Explore {name}, {country}",
+    "markerOpenAria": "Open {name}",
+    "state": {
+      "IDLE": "Destination preview",
+      "TALKING": "Preparing your route",
+      "FLYING": "Flying there",
+      "EXPLORING": "Ready to explore"
+    },
+    "action": {
+      "IDLE": "Start a travel plan",
+      "TALKING": "Getting to know the destination…",
+      "FLYING": "Flying across the globe…",
+      "inspiration": "Kept for this session",
+      "geography": "Unverified map location",
+      "fixture": "Explore {name}",
+      "viewGeography": "View this map location",
+      "viewInspiration": "View this inspiration"
+    },
+    "managePinsCta": "Manage pins",
+    "deleteThisCta": "Delete this",
+    "layerPanel": {
+      "groupAriaLabel": "Map detail layers",
+      "kicker": "Map layers",
+      "countries": "Countries",
+      "regions": "States / Provinces",
+      "cities": "Cities",
+      "captionSupported": "Zoom in for regional details.",
+      "captionMissingSource": "Country/region labels are hidden — this map style does not expose the openmaptiles source.",
+      "captionMissingLayers": "Country/region labels are hidden — missing layers: {layers}."
+    },
+    "destinations": {
+      "tokyo": "Tokyo",
+      "tokyoCountry": "Japan",
+      "tokyoNote": "Food, design and neighborhoods that reward wandering.",
+      "lisbon": "Lisbon",
+      "lisbonCountry": "Portugal",
+      "lisbonNote": "Hillside streets, Atlantic light and late dinners.",
+      "reykjavik": "Reykjavík",
+      "reykjavikCountry": "Iceland",
+      "reykjavikNote": "A compact base for geothermal landscapes."
+    }
+  },
+  "trips": {
+    "kicker": "Next implementation phase",
+    "title": "Trip workspace is not connected yet",
+    "body": "This Slice only displays fields confirmed by the Trip List contract. Planning, consent and confirmation states have not been inferred.",
+    "backToHome": "Back to Home"
+  },
+  "errors": {
+    "unauthorized": "This demo identity cannot access the requested data.",
+    "generic": "Something went wrong. Please try again.",
+    "networkUnreachable": "The travel service is unreachable. Check the API and try again.",
+    "invalidResponse": "The travel service returned an unexpected response.",
+    "byStatusCode": {
+      "401": "You need to sign in to view this data.",
+      "403": "You don't have access to this data.",
+      "404": "We couldn't find what you were looking for.",
+      "409": "This action conflicts with the current state. Refresh and try again.",
+      "422": "Some fields are invalid. Check the form and try again.",
+      "500": "Something went wrong on our side. Please try again.",
+      "502": "The travel service is temporarily unavailable. Please try again.",
+      "503": "The travel service is under maintenance. Please try again later.",
+      "fallback": "Something went wrong. Please try again."
+    }
+  }
+}

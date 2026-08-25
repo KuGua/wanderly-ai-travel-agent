@@ -1,6 +1,9 @@
-import { ArrowRight, CalendarDays, MapPin, UsersRound } from "lucide-react";
-import Link from "next/link";
+"use client";
 
+import { ArrowRight, CalendarDays, MapPin, UsersRound } from "lucide-react";
+import { useFormatter, useTranslations } from "next-intl";
+
+import { Link } from "@/i18n/navigation";
 import type { TripSummary } from "@/lib/api/contracts";
 
 const artStyles = [
@@ -9,13 +12,19 @@ const artStyles = [
   "from-[#7667a7] to-[#a088c8]",
 ] as const;
 
+type Translator = ReturnType<typeof useTranslations>;
+type Formatter = ReturnType<typeof useFormatter>;
+
 export function TripList({ trips }: { trips: TripSummary[] }) {
+  const t: Translator = useTranslations("home");
+  const fmt: Formatter = useFormatter();
+
   if (trips.length === 0) {
     return (
       <div className="rounded-[22px] border border-dashed border-[#bfcfc9] bg-card/60 p-10 text-center">
         <MapPin aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
-        <h3 className="mt-4 font-bold">No trips yet</h3>
-        <p className="mt-2 text-sm text-muted-foreground">Trips from your account will appear here. Trip creation is a later slice.</p>
+        <h3 className="mt-4 font-bold">{t("trips.emptyTitle")}</h3>
+        <p className="mt-2 text-sm text-muted-foreground">{t("trips.emptyBody")}</p>
       </div>
     );
   }
@@ -34,16 +43,27 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
           <div className="flex flex-1 flex-col p-4">
             <div className="flex items-start justify-between gap-2">
               <h3 className="text-[19px] font-bold tracking-[-0.035em]">{trip.name}</h3>
-              <span className="shrink-0 rounded-lg bg-secondary px-2 py-1 text-[11px] font-black text-secondary-foreground">{formatStatus(trip.status)}</span>
+              <span className="shrink-0 rounded-lg bg-secondary px-2 py-1 text-[11px] font-black text-secondary-foreground">{formatStatus(trip.status, t)}</span>
             </div>
             <div className="mt-2 space-y-2 text-[13px] text-muted-foreground">
-              <p className="flex gap-2"><MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><span>{trip.departureCities.join(" + ")} → {trip.destinationCandidates.join(", ")}</span></p>
-              <p className="flex gap-2"><CalendarDays aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><span>{formatTripDates(trip.travelDateStart, trip.travelDateEnd)}</span></p>
+              <p className="flex gap-2">
+                <MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                <span>
+                    {trip.departureCities.join(" + ")} → {fmt.list(trip.destinationCandidates, { type: "unit" })}
+                  </span>
+              </p>
+              <p className="flex gap-2">
+                <CalendarDays aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                <span>{formatTripDates(trip.travelDateStart, trip.travelDateEnd, t, fmt)}</span>
+              </p>
             </div>
             <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5"><UsersRound aria-hidden="true" className="size-3.5" />{trip.memberCount} members · {trip.role === "CREATOR" ? "Organizer" : "Member"}</span>
-              <Link href={`/trips/${trip.id}`} className="inline-flex min-h-11 items-center gap-1 font-black text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
-                Open <ArrowRight aria-hidden="true" className="size-3.5" />
+              <span className="flex items-center gap-1.5">
+                <UsersRound aria-hidden="true" className="size-3.5" />
+                {t("trip.members", { count: trip.memberCount })} · {trip.role === "CREATOR" ? t("trip.membersRoleOrganizer") : t("trip.membersRoleMember")}
+              </span>
+              <Link href={`/trips/${trip.id}` as "/trips/[tripId]"} className="inline-flex min-h-11 items-center gap-1 font-black text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                {t("trip.open")} <ArrowRight aria-hidden="true" className="size-3.5" />
               </Link>
             </div>
           </div>
@@ -53,13 +73,16 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
   );
 }
 
-function formatStatus(status: TripSummary["status"]) {
-  return status.charAt(0) + status.slice(1).toLowerCase();
+function formatStatus(status: TripSummary["status"], t: Translator) {
+  return t(`trip.status.${status}`);
 }
 
-function formatTripDates(start: string | null, end: string | null) {
-  if (!start && !end) return "Dates not set";
-  if (!end) return start;
-  if (!start) return end;
-  return `${start} – ${end}`;
+function formatTripDates(start: string | null, end: string | null, t: Translator, fmt: Formatter) {
+  if (!start && !end) return t("trip.dates.notSet");
+  if (!end) return fmt.dateTime(new Date(start as string), { dateStyle: "medium" });
+  if (!start) return fmt.dateTime(new Date(end as string), { dateStyle: "medium" });
+  return t("trip.dates.range", {
+    start: fmt.dateTime(new Date(start as string), { dateStyle: "medium" }),
+    end: fmt.dateTime(new Date(end as string), { dateStyle: "medium" }),
+  });
 }

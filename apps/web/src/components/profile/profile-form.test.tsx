@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { fixtureProfile } from "@/lib/fixtures/profiles";
+import { renderWithIntl } from "@/test/render";
+
 import {
   ProfileForm,
   profileToFormValues,
@@ -15,7 +17,9 @@ describe("ProfileForm", () => {
     if (!baseProfile) throw new Error("Fixture Profile is required");
     const profile = { ...baseProfile, nationality: null, availableDepartureDates: null };
 
-    render(<ProfileForm profile={profile} onSave={vi.fn()} isSaving={false} saveError={null} saved={false} />);
+    renderWithIntl(
+      <ProfileForm profile={profile} onSave={vi.fn()} isSaving={false} saveError={null} saved={false} />,
+    );
 
     expect(screen.getByLabelText("Nationality")).toHaveValue("");
     expect(screen.getByLabelText("Date of birth")).toHaveValue("");
