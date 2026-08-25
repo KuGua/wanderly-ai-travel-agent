@@ -10,7 +10,7 @@
     "navProfile": "Travel preference",
     "primaryNavAriaLabel": "Primary navigation",
     "exploreAriaLabel": "Wanderly Explore",
-    "accountAriaLabel": "Account sign-in will connect here",
+    "accountAriaLabel": "Account",
     "demoBadge": "Demo data",
     "loadingGlobe": "Loading the globe…",
     "loadingProfile": "Loading your private profile",
@@ -24,6 +24,24 @@
       "km": "{value} km",
       "coordinate": "{lat}°, {lng}°"
     }
+  },
+  "auth": {
+    "checking": "Checking your session",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "accountMenu": "Account menu",
+    "signedInAs": "Signed in as {username}",
+    "traveler": "Traveler",
+    "unconfigured": "Sign-in is not configured",
+    "dialogAria": "Sign in to Wanderly",
+    "close": "Close sign-in",
+    "heading": "Sign in",
+    "body": "Use the email address or phone number registered in the Wanderly Cognito User Pool.",
+    "username": "Email or phone",
+    "password": "Password",
+    "signInFailed": "Sign-in failed. Check your details and try again.",
+    "challengeRequired": "This account requires an additional Cognito sign-in step that this MVP screen does not support.",
+    "signOutFailed": "Sign-out failed. Please try again."
   },
   "home": {
     "kicker": "Your private travel space",

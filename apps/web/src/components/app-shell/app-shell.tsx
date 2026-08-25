@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import type { ComponentType, SVGProps } from "react";
 
 import { LocaleSwitcher } from "./locale-switcher";
+import { AccountAuthControl } from "./account-auth-control";
 import { Link, usePathname } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 
@@ -67,14 +68,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="ml-auto flex items-center gap-2 landscape:ml-0 landscape:mt-auto landscape:flex-col">
             <LocaleSwitcher />
-            <button
-              type="button"
-              title={t("accountAriaLabel")}
-              aria-label={t("accountAriaLabel")}
-              className="grid size-11 place-items-center rounded-full border-2 border-[#9ce0d4] bg-[#0b5264] text-sidebar-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar-ring/50"
-            >
-              <ListChecks aria-hidden="true" className="size-5" />
-            </button>
+            <AccountAuthControl />
           </div>
         </div>
       </aside>

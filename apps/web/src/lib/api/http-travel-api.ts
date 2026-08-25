@@ -1,4 +1,4 @@
-import { ApiClient } from "./client";
+import { ApiClient, type GetAccessToken } from "./client";
 import {
   conversationTurnRequestSchema,
   conversationTurnResponseSchema,
@@ -19,7 +19,7 @@ import type { TravelApi } from "./travel-api";
 export class HttpTravelApi implements TravelApi {
   private readonly client: ApiClient;
 
-  constructor(baseUrl: string, fetchImplementation?: typeof fetch, getAccessToken?: () => string | null) {
+  constructor(baseUrl: string, fetchImplementation?: typeof fetch, getAccessToken?: GetAccessToken) {
     this.client = new ApiClient(`${baseUrl.replace(/\/$/, "")}/api/v1`, fetchImplementation, getAccessToken);
   }
 
