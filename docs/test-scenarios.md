@@ -395,9 +395,13 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 - 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话。
 - fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
-- 所有受保护的 HTTP 请求携带当前 Cognito access token；登录会话变化或退出时必须清空 TanStack Query 缓存。
+- 所有受保护的 HTTP 请求在发送时通过 AWS Amplify session 读取当前 Cognito access token；无 session 时不发送 Authorization，token 刷新后使用新 token，登录会话变化或退出时必须清空 TanStack Query 缓存且后续请求不得继续携带旧 token。应用自身不得把 token 复制到 localStorage。
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
+- Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。
+- 私聊首次提问创建当前用户的 private thread，后续提问复用该 thread；刷新后只从本地 thread ID 指针恢复 owner-only history，服务端返回不存在的 thread 时清除失效指针，不在浏览器持久化消息正文。
+- 每个新 turn 使用新的 UUID `requestId`；502/504 或网络失败后的显式重试必须复用原 request ID，发送期间禁止并发重复提交。`MODEL` 正常展示，`SAFE_REFUSAL` 显示核验提示，provider/model 失败不得伪造 assistant fallback。
+- 浏览器聊天请求必须使用真实 Cognito access token；没有可用登录 token provider 时，真实 API 端到端演示属于显式阻塞项，不得硬编码 token 或退回 demo identity。
 - 375px、768px、1024px、1440px 下身份、导航、主要操作与私密提示均可见，交互目标至少 44px，并尊重 reduced motion。
 
 ### 数据库与 Seed 回归

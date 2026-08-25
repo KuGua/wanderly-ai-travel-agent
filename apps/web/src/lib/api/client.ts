@@ -4,6 +4,7 @@ import { apiErrorResponseSchema } from "./contracts";
 import { TravelApiError } from "./errors";
 
 type FetchImplementation = typeof fetch;
+export type GetAccessToken = () => string | null | Promise<string | null>;
 
 function generateRequestId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -30,7 +31,7 @@ export class ApiClient {
   constructor(
     baseUrl: string,
     private readonly fetchImplementation: FetchImplementation = fetch,
-    private readonly getAccessToken: () => string | null = () => null,
+    private readonly getAccessToken: GetAccessToken = () => null,
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
   }
@@ -41,7 +42,7 @@ export class ApiClient {
     options: RequestInit = {},
   ): Promise<T> {
     const headers = new Headers(options.headers);
-    const accessToken = this.getAccessToken();
+    const accessToken = await this.getAccessToken();
 
     if (accessToken && !headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${accessToken}`);
