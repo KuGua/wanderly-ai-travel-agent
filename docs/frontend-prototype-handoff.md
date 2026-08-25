@@ -106,6 +106,61 @@ AppShell
 4. 地图容器需在加载前预留固定/响应式高度；加载失败、WebGL 不可用、低性能设备或减弱动态效果时，呈现静态地图背景和同等可操作的目的地列表。
 5. 地图点选不能是唯一操作方式：候选地点需有键盘可达按钮列表；每个标记有名称和状态文字替代。
 
+### 5.2.1 OpenFreeMap 行政区与城市图层
+
+探索地图直接控制 OpenFreeMap Liberty 已验证的 `openmaptiles` style layers；它们不是旅行候选、地理编码服务或业务真相：
+
+| 图层 | 数据层与筛选 | 渐进显示 |
+|---|---|---|
+| 国家 | `boundary_2`（`admin_level = 2`）与 `label_country_*` | 全球至区域级别 |
+| 省/州 | `boundary_3`（`admin_level` 3–6）与 `label_state` | zoom 5 起 |
+| 城市 | `label_city` 与 `label_city_capital` | zoom 3 起，底图按碰撞规则渐进显示 |
+
+- 国家陆地边界与海岸线共同构成国家视觉轮廓；岛国海岸线不是国际边界数据。保留 Liberty 原始标签作为回退，不能在自定义图层成功前隐藏它们。
+- 用户可独立开关 `Countries`、`States / Provinces` 和 `Cities`，默认开启。控件固定在地图右侧，地点抽屉打开后仍必须可操作。
+- 点击国家、省/州或城市的已渲染标签打开 `Map location` 预览，不创建 pin，也不得由名称、坐标或边界推断旅行价格、库存、签证、可预订性或共享约束。只有空白处点击才创建会话内私有灵感。
+- 遥测最多记录有界的 `feature_class`、`zoom_band` 与 `outcome`；不得写入城市名称、行政区名称、坐标或私有 pin。Map 详情开关（`Countries` / `States / Provinces` / `Cities`）在 style.load 之后始终可见并可被聚焦；style 缺少 `openmaptiles` source 或缺失任一必需图层时，按钮保持原可见态但被禁用，并以一段 `role="status"` 文案说明原因（"does not expose the openmaptiles source" 或 "missing layers: …"）。`/home` 不再静默隐藏控件，避免开发期把"style 不兼容"误判为"功能未实现"。
+
+### 5.2.2 调试速查
+
+`/home` 的地图加载与 style 兼容性通过 `window.__wanderlyMap`（仅 dev 模式可见，生产构建由 SWC dead-code elimination 剥离）暴露。开发者可实时观察 5 种 readiness：
+
+| `readiness.kind` | 含义 | 用户可见影响 |
+|---|---|---|
+| `loading` | style 尚未 load 或超时未到 | 全屏 Loading 蒙层 |
+| `ready-supported` | style 完整且 openmaptiles source 与 8 个必需图层齐全 | 开关可点击 |
+| `ready-style-unsupported-source` | style 已 load 但缺 `openmaptiles` source | 开关禁用，caption 提示换 style |
+| `ready-style-missing-layers` | source 存在但部分图层缺失（列出 `missingLayers`） | 开关禁用，caption 列出缺失图层 |
+| `unavailable-network` | 12 s 超时 / `error` 事件 / 异常 | Globe error 回退卡片 + 列表入口 |
+
+调试片段：
+
+```js
+window.__wanderlyMap.readiness      // 当前 MapReadiness
+window.__wanderlyMap.missingLayers  // ready-style-missing-layers 时的图层 id 列表
+window.__wanderlyMap.sourcePresent  // boolean
+window.__wanderlyMap.styleUrl       // 当前 style URL
+window.__wanderlyMap.retry()        // 强制重试
+```
+
+Layer ID 漂移由 `apps/web/src/components/explore/__fixtures__/openfreemap-liberty-layers.ts` 快照在测试时与 `GEOGRAPHY_LAYER_IDS` 做交集校验；CI 失败即意味着 Liberty 升级或 style URL 变更，需同步更新 fixture。
+
+### 5.2.3 地图就绪生命周期
+
+`/home` 的地图分为两个阶段，期间 dev hook 的 `stage` 与 `readiness` 同步推进：
+
+1. **mounting** — `mapRef` 创建后 style JSON 还没解析。`readiness.kind === "loading"`，`stage === "mounting"`。
+2. **ready** — `style.load` 后立即做 `setProjection({type:"globe"})`、`inspectGeographyLayers`、`applyGeographyContrast`、`setGeographyLayerVisibility`，派生最终 readiness。行政区开关不等待 TileJSON 或首屏 PBF；`stage === "ready"`。
+
+`sourcedata.isSourceLoaded` 表示 source 没有 outstanding request，不代表 TileJSON metadata 已到；它只能用于诊断，不能作为 UI readiness 的门槛。开发模式的 `window.__wanderlyMap.sourceEvents` 最多保留 20 个 OpenMapTiles source event，`mapErrors` 最多保留 20 个 map error message，便于在不记录用户位置或私有资料的前提下排查零 PBF。
+
+失败路径：
+- 12 s 内 `style.load` 没触发 → `unavailable-network(reason: timeout)`
+- `map.on("error")` 在 ready 前触发 → `unavailable-network(reason: error)`
+- 初始化或 style-ready 回调异常 → `unavailable-network(reason: exception)`
+
+所有失败路径都仍挂载 `window.__wanderlyMap`（如果有 `map` 实例则一并挂上），让 dev 模式可以继续 inspect layer / source 状态。
+
 ### 5.3 探索状态机
 
 | 状态 | 触发 | 可见内容 | 允许操作 |
@@ -115,7 +170,8 @@ AppShell
 | `TALKING` | 已确认目标 | 1–1.5 秒人类与机器人对话气泡；抽屉 step 1 | 取消；不阻塞焦点或页面读取 |
 | `FLYING` | 对话结束 | 新加坡至目标的路线、飞机/机器人沿路径移动；抽屉 step 2 | 取消/跳过动画 |
 | `EXPLORING` | 动画完成或减弱动态模式 | 地图聚焦目标、抽屉 step 3、推荐和 CTA | 保存灵感 / 围绕受支持候选进入规划 |
-| `MAP_UNAVAILABLE` | 加载失败 | 无障碍地点列表、可恢复提示 | 选择 fixture 地点、重试地图 |
+| `MAP_UNAVAILABLE` | 加载失败 / style.load 超时 / WebGL/网络异常 | 无障碍地点列表、可恢复提示 | 选择 fixture 地点、重试地图 |
+| `MAP_READY_STYLE_INCOMPATIBLE` | style 已 load 但缺 `openmaptiles` source 或部分图层 | 控件可见并被禁用，附 caption；不静默隐藏 | 通过 `window.__wanderlyMap` 查看 `readiness.kind` 与 `missingLayers`；fixture 入口仍可用 |
 
 动效只表达状态转换；不可让用户等待动画后才可使用核心功能。减弱动态效果下可直接进入 `EXPLORING`，同时文字显示“已抵达”。
 
