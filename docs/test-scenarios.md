@@ -401,6 +401,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话。
 - fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
 - 所有受保护的 HTTP 请求在发送时通过 AWS Amplify session 读取当前 Cognito access token；无 session 时不发送 Authorization，token 刷新后使用新 token，登录会话变化或退出时必须清空 TanStack Query 缓存且后续请求不得继续携带旧 token。`POST /api/v1/explore/location-reference` 是唯一匿名、无持久化且限流的例外。应用自身不得把 token 复制到 localStorage。
+- `AUTH_MODE` 默认必须为 `cognito`。显式 `local-dev` 仅允许 development/test、loopback server 绑定和 loopback socket 客户端；production 或任一非 loopback 边界必须拒绝启动/请求。浏览器不发送 fake token/user ID，服务端固定身份仍须通过原 owner-only thread 授权。
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
 - Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。

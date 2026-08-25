@@ -39,7 +39,7 @@ Amazon RDS for PostgreSQL
 | 前端状态 | **TanStack Query** 管理服务器状态；React Hook Form + Zod 管理表单草稿；仅在必要时以 Zustand 保存局部 UI 状态 | Profile、consent、plan 和 confirmation 都以服务端版本为准。避免 Redux 或客户端复制业务真相。 | 全局客户端 store 作为授权/订单真相。 |
 | 数据获取与状态刷新 | REST/JSON + OpenAPI；planning/replan 期间用 TanStack Query 短轮询或 SSE | 对三分钟 Demo 足够稳定；页面刷新后可从数据库恢复状态。 | 为 MVP 自建 WebSocket 事件总线。 |
 | API / Agent runner | **Node.js LTS + TypeScript + Fastify**，容器化部署到 **AWS App Runner** | 保持 agent、供应商凭据和数据库访问在服务器；App Runner 可直接部署代码或容器并托管运行、扩缩与负载均衡。[AWS App Runner](https://docs.aws.amazon.com/apprunner/latest/dg/what-is-apprunner.html) | Lambda 链式编排、微服务网格、多个独立 agent 服务。 |
-| 身份 | **Amazon Cognito User Pool**，邮箱或手机号登录，API 验证 access token | 身份来自已验证 JWT 的 `sub`，前端不能通过用户 ID 或 demo 角色选择身份。 | 复杂 SSO、社交登录矩阵、组织管理。 |
+| 身份 | **Amazon Cognito User Pool**，邮箱或手机号登录，API 验证 access token | 身份来自已验证 JWT 的 `sub`，前端不能通过用户 ID 或 demo 角色选择身份。Cognito 上线前只允许显式 `local-dev`：非 production、server/client 均 loopback，且身份由服务端固定。 | 复杂 SSO、社交登录矩阵、组织管理。 |
 | 主数据库 | **Amazon RDS for PostgreSQL** + SQL migrations + Drizzle ORM | 需要事务、关系约束、审计和版本一致性：Profile、用户私有对话、字段级 consent、两个出发地、候选方案、三人确认和 callback 去重必须共享一个权威真相源。RDS PostgreSQL 支持 VPC、SSL、快照与时间点恢复。[AWS RDS PostgreSQL](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html) | SQLite 作为云端主库、NoSQL 作为业务真相。 |
 | Agent | **OpenAI Agents SDK（TypeScript）**，运行在 App Runner；`ModelGateway` 隔离 provider | 部署到 AWS 不妨碍使用 SDK。Agent 只调用类型化工具；SDK 不是授权、确认或持久状态机。 | 让模型直接读写数据库、付款或自由互聊的多 Agent 群。 |
 | 工具与模型边界 | Zod schema、structured outputs、server-side policy gate | 对话 archive 仅由所有者读取；所有工具只获得当前 `constraint_snapshot` 的最小授权字段，模型仅接收当前请求和用户明确选择的最小上下文；模型输出不直接成为业务真相。 | 把 Profile/私聊全文放进长 prompt、共享 snapshot、遥测或向前端暴露供应商 key。 |

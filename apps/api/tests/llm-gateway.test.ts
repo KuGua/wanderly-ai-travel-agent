@@ -8,53 +8,47 @@ import { createRequestContext } from "../src/utils/context.js";
 
 vi.mock("openai", () => ({
   default: class FakeOpenAI {
-    beta = {
-      chat: {
-        completions: {
-          parse: async () => ({
-            choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
-          }),
-        },
+    chat = {
+      completions: {
+        parse: async () => ({
+          choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+        }),
       },
     };
   },
 }));
 
 interface FakeClient {
-  beta: {
-    chat: {
-      completions: {
-        parse: (req: Record<string, unknown>) => Promise<{
-          choices: Array<{ message: { parsed: { plan: Record<string, unknown> } | null } }>;
-          usage?: { prompt: number; completion: number; total: number };
-        }>;
-      };
+  chat: {
+    completions: {
+      parse: (req: Record<string, unknown>) => Promise<{
+        choices: Array<{ message: { parsed: { plan: Record<string, unknown> } | null } }>;
+        usage?: { prompt: number; completion: number; total: number };
+      }>;
     };
   };
 }
 
 function buildClient(behavior: "ok" | "bad" | "abort" | "slow"): FakeClient {
   return {
-    beta: {
-      chat: {
-        completions: {
-          parse: async () => {
-            if (behavior === "ok") {
-              return {
-                choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
-                usage: { prompt: 12, completion: 5, total: 17 },
-              };
-            }
-            if (behavior === "bad") return { choices: [{ message: { parsed: null } }] };
-            if (behavior === "abort") {
-              const err = new Error("aborted");
-              err.name = "AbortError";
-              throw err;
-            }
-            // slow
-            await new Promise(resolve => setTimeout(resolve, 100));
-            return { choices: [{ message: { parsed: { plan: { destination: "Tokyo" } } } }] };
-          },
+    chat: {
+      completions: {
+        parse: async () => {
+          if (behavior === "ok") {
+            return {
+              choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+              usage: { prompt: 12, completion: 5, total: 17 },
+            };
+          }
+          if (behavior === "bad") return { choices: [{ message: { parsed: null } }] };
+          if (behavior === "abort") {
+            const err = new Error("aborted");
+            err.name = "AbortError";
+            throw err;
+          }
+          // slow
+          await new Promise(resolve => setTimeout(resolve, 100));
+          return { choices: [{ message: { parsed: { plan: { destination: "Tokyo" } } } }] };
         },
       },
     },

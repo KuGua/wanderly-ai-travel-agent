@@ -20,6 +20,8 @@ import { createCognitoBrowserAuth } from "./cognito-browser-auth";
 
 describe("Cognito browser auth adapter", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.NEXT_PUBLIC_AUTH_MODE;
     process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID = "us-east-1_example";
     process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID = "public-client-id";
     amplifyMocks.getCurrentUser.mockResolvedValue({ username: "traveler@example.test" });
@@ -54,5 +56,16 @@ describe("Cognito browser auth adapter", () => {
 
     expect(service.configured).toBe(false);
     expect(await service.getAccessToken()).toBeNull();
+  });
+
+  it("uses a token-free, explicitly local browser state in local-dev mode", async () => {
+    process.env.NEXT_PUBLIC_AUTH_MODE = "local-dev";
+
+    const service = createCognitoBrowserAuth();
+
+    expect(service.localDevelopment).toBe(true);
+    expect(service.configured).toBe(false);
+    expect(await service.getAccessToken()).toBeNull();
+    expect(amplifyMocks.configure).not.toHaveBeenCalled();
   });
 });

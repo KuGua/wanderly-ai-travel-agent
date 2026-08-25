@@ -33,6 +33,7 @@
     "signedInAs": "Signed in as {username}",
     "traveler": "Traveler",
     "unconfigured": "Sign-in is not configured",
+    "localDevelopment": "Local Development mode",
     "dialogAria": "Sign in to Wanderly",
     "close": "Close sign-in",
     "heading": "Sign in",

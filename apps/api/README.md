@@ -4,6 +4,9 @@
 
 ## 快速开始
 
+完整的本地 browser-to-Agent 双服务配置与 smoke test 请参见
+[`docs/local-development-auth.md`](../../docs/local-development-auth.md)。
+
 ```bash
 # 1. 安装依赖
 npm install
@@ -34,7 +37,7 @@ npm run dev
 ```dotenv
 MODEL_GATEWAY_PROVIDER=gemini
 GEMINI_API_KEY=your_gemini_key
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.5-flash
 ```
 
 也可选择 `MODEL_GATEWAY_PROVIDER=openai` 并设置 `OPENAI_API_KEY`，或选择
@@ -62,6 +65,12 @@ Authorization: Bearer <cognito-access-token>
 明确点击坐标匹配仓库内离线数据，不写数据库、audit 或日志，也不创建身份、灵感、候选或旅行事实。
 每个 API 进程以短暂、加盐哈希的客户端地址状态限流为每分钟 30 次；此限制不跨实例共享，生产多实例
 部署必须在网关或 CDN 追加共享限流。
+
+在 Cognito 尚未配置前，本地 browser-to-Agent 验证可显式设置
+`AUTH_MODE=local-dev`、`NODE_ENV=development`、`HOST=127.0.0.1`。该模式只接受
+loopback socket 请求并由服务端固定映射一个本地身份；production、非 loopback 绑定和
+非 loopback 客户端均 fail closed。浏览器不发送 token 或 user ID。详见
+[`docs/local-development-auth.md`](../../docs/local-development-auth.md)。
 
 ## Sandbox callback 配置
 

@@ -46,6 +46,7 @@ describe("HttpTravelApi private conversation", () => {
     ]);
     const turnOptions = fetchMock.mock.calls[3][1] as RequestInit;
     expect(turnOptions.method).toBe("POST");
+    expect(new Headers(turnOptions.headers).has("Authorization")).toBe(false);
     const body = JSON.parse(String(turnOptions.body));
     expect(body).toEqual({
       requestId: REQUEST_ID,

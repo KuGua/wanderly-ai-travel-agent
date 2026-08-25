@@ -30,7 +30,7 @@ export class ApiClient {
 
   constructor(
     baseUrl: string,
-    private readonly fetchImplementation: FetchImplementation = fetch,
+    private readonly fetchImplementation: FetchImplementation = globalThis.fetch.bind(globalThis),
     private readonly getAccessToken: GetAccessToken = () => null,
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, "");

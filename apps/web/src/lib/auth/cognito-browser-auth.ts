@@ -7,6 +7,7 @@ export type AuthenticatedBrowserUser = {
 
 export interface BrowserAuthService {
   readonly configured: boolean;
+  readonly localDevelopment: boolean;
   restoreSession(): Promise<AuthenticatedBrowserUser | null>;
   signIn(username: string, password: string): Promise<AuthenticatedBrowserUser>;
   signOut(): Promise<void>;
@@ -21,6 +22,11 @@ export class CognitoChallengeRequiredError extends Error {
 }
 
 export function createCognitoBrowserAuth(): BrowserAuthService {
+  const authMode = process.env.NEXT_PUBLIC_AUTH_MODE?.trim() || "cognito";
+  if (authMode === "local-dev" && process.env.NODE_ENV !== "production") {
+    return localDevelopmentAuthService;
+  }
+
   const userPoolId = process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID?.trim();
   const userPoolClientId = process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID?.trim();
 
@@ -38,6 +44,7 @@ export function createCognitoBrowserAuth(): BrowserAuthService {
 
   return {
     configured: true,
+    localDevelopment: false,
     async restoreSession() {
       try {
         const user = await getCurrentUser();
@@ -66,9 +73,21 @@ export function createCognitoBrowserAuth(): BrowserAuthService {
 
 const unconfiguredAuthService: BrowserAuthService = {
   configured: false,
+  localDevelopment: false,
   restoreSession: async () => null,
   signIn: async () => {
     throw new Error("Cognito browser authentication is not configured");
+  },
+  signOut: async () => undefined,
+  getAccessToken: async () => null,
+};
+
+const localDevelopmentAuthService: BrowserAuthService = {
+  configured: false,
+  localDevelopment: true,
+  restoreSession: async () => null,
+  signIn: async () => {
+    throw new Error("Cognito sign-in is disabled in local development auth mode");
   },
   signOut: async () => undefined,
   getAccessToken: async () => null,

@@ -20,10 +20,14 @@ read the current access token at request time and send
 
 ## Configuration
 
+For the complete local browser-to-Agent setup, see
+[`docs/local-development-auth.md`](../../docs/local-development-auth.md).
+
 Copy `.env.example` to `.env.local` and select one data mode:
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
+NEXT_PUBLIC_AUTH_MODE=cognito
 NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_example
 NEXT_PUBLIC_COGNITO_CLIENT_ID=example-public-app-client-id
 NEXT_PUBLIC_DATA_MODE=fixture
@@ -37,6 +41,10 @@ NEXT_PUBLIC_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/liberty
   the API's `COGNITO_USER_POOL_ID` / `COGNITO_CLIENT_ID` configuration for private
   features. The offline map location-reference call is the sole anonymous API call;
   it works without Cognito and returns no persisted user data.
+- Before Cognito is available, a strictly local Web dev server may set
+  `NEXT_PUBLIC_AUTH_MODE=local-dev` only while the API uses its loopback-only
+  `AUTH_MODE=local-dev`. The browser sends no fake bearer token or user ID and
+  displays an explicit Local Development indicator.
 
 All responses pass through the same Zod schemas. `NEXT_PUBLIC_*` values are
 bundled into browser code and must never contain credentials, private Profile
@@ -71,7 +79,7 @@ Keep Fastify on port 3000 and run Web on port 3001:
 
 ```bash
 npm install
-npm run dev -- -p 3001
+npm run dev -- --port 3001
 ```
 
 Open `http://localhost:3001`; it redirects to the globe.
