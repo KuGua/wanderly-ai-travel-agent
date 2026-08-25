@@ -1,22 +1,27 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 import {
   getTravelApiConfiguration,
   type TravelApi,
   type TravelApiConfiguration,
 } from "@/lib/api";
+import type { GetAccessToken } from "@/lib/api/client";
 
 const TravelApiContext = createContext<TravelApiConfiguration | null>(null);
 
 export function QueryProvider({
   children,
   configuration,
+  getAccessToken,
+  sessionRevision = 0,
 }: {
   children: ReactNode;
   configuration?: TravelApiConfiguration;
+  getAccessToken?: GetAccessToken;
+  sessionRevision?: number;
 }) {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
@@ -25,8 +30,16 @@ export function QueryProvider({
     },
   }));
   const [travelApiConfiguration] = useState(
-    () => configuration ?? getTravelApiConfiguration(),
+    () => configuration ?? getTravelApiConfiguration(getAccessToken),
   );
+  const previousSessionRevision = useRef(sessionRevision);
+
+  useEffect(() => {
+    if (previousSessionRevision.current !== sessionRevision) {
+      queryClient.clear();
+      previousSessionRevision.current = sessionRevision;
+    }
+  }, [queryClient, sessionRevision]);
 
   return (
     <QueryClientProvider client={queryClient}>

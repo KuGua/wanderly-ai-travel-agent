@@ -4,6 +4,7 @@ import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
+import type { ConversationPlace } from "@/lib/api/contracts";
 import { applyGeographyContrast, GEOGRAPHY_INTERACTIVE_LAYER_IDS, geographyFeatureFrom, inspectGeographyLayers, OPEN_MAP_TILES_SOURCE, setGeographyLayerVisibility, type GeographyInspection, type GeographyVisibility } from "./map-geography-layers";
 import { INITIAL_READINESS, layerCaptionFor, mapReadinessStage, panelDisabledReason, type LayerCaption, type MapReadiness, type MapStage } from "./map-readiness";
 
@@ -12,16 +13,17 @@ import { TravelAgentChat } from "./travel-agent-chat";
 import { useOptionalTravelApi } from "@/lib/query/provider";
 import type { LocationReferenceResponse } from "@/lib/api/contracts";
 
-type Destination = {
+export type ExploreDestination = {
   id: string;
   name: string;
   country: string;
   coordinates: [number, number];
   note: string;
-  kind: "inspiration" | "geography";
+  kind: "fixture" | "inspiration" | "geography";
   locationReference?: LocationReferenceResponse;
   locationReferenceStatus?: "loading" | "unavailable";
 };
+type Destination = ExploreDestination;
 
 type ExploreState = "IDLE" | "SELECTED" | "TALKING" | "FLYING" | "EXPLORING";
 type PinScope = "nearby" | "all";
@@ -65,7 +67,32 @@ export function ExploreMapPage() {
   const tCommon = useTranslations("common");
   const locale = useLocale();
 
-  const destinations = DESTINATIONS;
+  const destinations = useMemo<Destination[]>(() => [
+    {
+      id: "tokyo",
+      name: "Tokyo",
+      country: t("destinations.tokyoCountry"),
+      coordinates: [139.6917, 35.6895],
+      note: t("destinations.tokyoNote"),
+      kind: "fixture",
+    },
+    {
+      id: "lisbon",
+      name: "Lisbon",
+      country: t("destinations.lisbonCountry"),
+      coordinates: [-9.1393, 38.7223],
+      note: t("destinations.lisbonNote"),
+      kind: "fixture",
+    },
+    {
+      id: "reykjavik",
+      name: "Reykjavík",
+      country: t("destinations.reykjavikCountry"),
+      coordinates: [-21.9426, 64.1466],
+      note: t("destinations.reykjavikNote"),
+      kind: "fixture",
+    },
+  ], [t]);
 
   useEffect(() => {
     readinessRef.current = readiness;
@@ -664,7 +691,11 @@ export function ExploreMapPage() {
           <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em]">{selected.name}</h2>
           <p className="font-semibold text-muted-foreground">{selected.country}</p>
           <p className="mt-3 inline-flex rounded-full bg-secondary px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-secondary-foreground">
-            {selected.kind === "geography" ? t("drawerKindGeography") : t("drawerKindInspiration")}
+            {selected.kind === "fixture"
+              ? t("drawerKindFixture")
+              : selected.kind === "geography"
+                ? t("drawerKindGeography")
+                : t("drawerKindInspiration")}
           </p>
           <p className="mt-4 text-sm leading-6 text-muted-foreground">{selected.note}</p>
           {selected.locationReference?.outcome === "REFERENCE" ? (
@@ -683,7 +714,7 @@ export function ExploreMapPage() {
           {selected.locationReferenceStatus === "unavailable" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceUnavailable")}</p> : null}
           <button type="button" onClick={startExploring} disabled={exploreState !== "SELECTED"} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-primary px-4 font-bold text-primary-foreground transition hover:brightness-110 disabled:cursor-default disabled:opacity-80 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
             {exploreState === "SELECTED" ? (
-              <><MapPin aria-hidden="true" className="size-4" /> {selected.kind === "geography" ? t("action.viewGeography") : t("action.viewInspiration")}</>
+              <><MapPin aria-hidden="true" className="size-4" /> {selected.kind === "fixture" ? t("action.fixture", { name: selected.name }) : selected.kind === "geography" ? t("action.viewGeography") : t("action.viewInspiration")}</>
             ) : stateAction(exploreState, selected.kind, t)}
           </button>
           {selected.kind === "inspiration" ? (
@@ -702,10 +733,20 @@ export function ExploreMapPage() {
         open={chatOpen}
         onOpen={openChat}
         onDismiss={dismissChat}
-        selectedPlace={selected ? { name: selected.name, context: selected.country } : null}
+        selectedPlace={selected ? { place: toConversationPlace(selected), context: selected.country } : null}
       />
     </main>
   );
+}
+
+export function toConversationPlace(selected: ExploreDestination): ConversationPlace {
+  return {
+    sourceId: selected.id,
+    name: selected.name,
+    longitude: selected.coordinates[0],
+    latitude: selected.coordinates[1],
+    sourceType: selected.kind === "fixture" ? "FIXTURE" : "INSPIRATION",
+  };
 }
 
 function reducedMotion() {

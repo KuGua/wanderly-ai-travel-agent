@@ -1,10 +1,10 @@
-# Frontend Chat Prototype
+# Frontend Chat Integration
 
 ## Purpose
 
-The Explore map includes a presentation-only entry point for a future private
-Wanderly Agent conversation. It establishes responsive layout and interaction
-without claiming that an Agent API response has occurred.
+The Explore map connects its private Wanderly Agent panel to the owner-only
+Chat Thread and Personal Agent turn APIs while preserving the existing
+responsive map interaction.
 
 ## Current behavior
 
@@ -37,26 +37,37 @@ without claiming that an Agent API response has occurred.
   overlap the conversation composer; named markers remain available on-map.
 - Compact map attribution starts as an `i` control. Clicking it expands the map
   sources; clicking it again collapses them.
-- Closing the panel returns to the capsule. Messages are held only in React
-  memory and disappear on refresh.
+- The first submitted question creates one private server thread. Later turns
+  reuse it. The browser stores only the thread ID pointer; raw messages remain
+  server-authoritative and are restored from the owner conversation endpoint.
 - A small `Chat history` action opens the conversation without sending a
   message and is hidden while chat is open.
 - While chatting, the first click on a pin adds its compact prompt without a
   Destination Preview. A second click on the same pin closes chat and reveals
   the preview without another camera move. Using the chat close button instead
   clears the selected place and returns directly to the map.
-- The prototype does not call Chat Thread or Agent endpoints, persist raw
-  conversation text, generate travel advice, or share content with trip
-  members.
+- Each new turn uses a new UUID request ID. A retry reuses the same request ID,
+  allowing the backend idempotency boundary to prevent duplicate messages.
+- `MODEL` responses render normally. `SAFE_REFUSAL` renders as an assistant
+  response with a localized verification-required indicator. Provider/model
+  `502` and `504` failures remain errors with an explicit retry action; the UI
+  never fabricates a fallback answer.
+- Canonical map destinations send exact fixture identifiers, names, and
+  `[longitude, latitude]` coordinates. All user-created or geography-derived
+  places are sent as unverified `INSPIRATION`; display-only country text is not
+  included in the API DTO.
+- The browser never sends a message role or sender identity. Thread ownership,
+  fixture provenance, Agent policy and persistence remain server-controlled.
 
 ## Verification
 
 Run `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` from
 `apps/web`. Manually verify the open/close flow at desktop and mobile widths.
 
-## Integration boundary
+## Authentication boundary
 
-Before connecting the UI, the frontend must adopt the authenticated owner-only
-Chat Thread contracts from the API and agree on the separate Agent response
-contract. Client memory must not become the source of truth for persisted
-threads or messages.
+`ApiClient` can attach a token through its existing token-provider callback,
+but the web application does not yet expose a real Cognito/session token
+source. No access token or demo authorization header is hardcoded. Real browser
+conversation calls therefore require the authentication workstream to supply
+that callback.
