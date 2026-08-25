@@ -36,7 +36,7 @@ and which default policy applies at invocation time.
 
 ### `SkillScope` (`contracts.ts:7-14`)
 
-The 7-element union every Skill's `allowedTools` is constrained to:
+The 8-element union every Skill's `allowedTools` is constrained to:
 
 ```ts
 type SkillScope =
@@ -46,7 +46,8 @@ type SkillScope =
   | "plan:write:propose"
   | "readiness:read"
   | "bookings"
-  | "snapshot:read";
+  | "snapshot:read"
+  | "chat:read";
 ```
 
 ### `PolicyGate` (`contracts.ts:20-22`)
@@ -103,7 +104,7 @@ Defined in `policy-gate.ts:9-13`:
 
 | AgentKind | Allowed `SkillScope` values |
 | --- | --- |
-| `personal` | `profile:read`, `profile:write:propose`, `consent:read` |
+| `personal` | `profile:read`, `profile:write:propose`, `consent:read`, `chat:read` |
 | `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read` |
 | `review` | `snapshot:read`, `plan:write:propose` |
 

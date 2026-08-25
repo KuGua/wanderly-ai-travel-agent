@@ -2,8 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "../src/db/database.js";
 import { agentRuns } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
-import { LLMGateway } from "../src/providers/llm-gateway.js";
-import { MockModelGateway } from "../src/providers/model-gateway.js";
+import { LLMGateway, ModelGatewayError } from "../src/providers/llm-gateway.js";
 import { __setModelGatewayForTests, createModelGateway } from "../src/providers/gateway-factory.js";
 import { createRequestContext } from "../src/utils/context.js";
 
@@ -78,7 +77,6 @@ describe("LLM gateway", () => {
       provider: "openai",
       modelName: "gpt-4o-mini",
       promptVersion: "1.0.0",
-      mock: new MockModelGateway(),
       ctx: createRequestContext(),
       client: buildClient("ok"),
       maxRetries: 0,
@@ -105,7 +103,6 @@ describe("LLM gateway", () => {
       provider: "openai",
       modelName: "gpt-4o-mini",
       promptVersion: "1.0.0",
-      mock: new MockModelGateway(),
       ctx: createRequestContext(),
       maxRetries: 0,
     });
@@ -123,63 +120,59 @@ describe("LLM gateway", () => {
     expect(runs).toHaveLength(1);
   });
 
-  it("falls back to mock when client returns malformed output", async () => {
+  it("fails closed when the client returns malformed output", async () => {
     const gateway = new LLMGateway({
       apiKey: "test",
       provider: "openai",
       modelName: "gpt-4o-mini",
       promptVersion: "1.0.0",
-      mock: new MockModelGateway(),
       ctx: createRequestContext(),
       client: buildClient("bad"),
       maxRetries: 1,
     });
 
-    const result = await gateway.generateStructuredPlan({
+    await expect(gateway.generateStructuredPlan({
       destination: "Tokyo",
       flights: [],
       stays: [],
       ground: [],
       memberPreferences: {},
-    });
+    })).rejects.toMatchObject({ code: "SCHEMA_PARSE" });
 
-    expect(result.destination).toBe("Tokyo");
-    const runs = await db.select().from(agentRuns).where(eq(agentRuns.status, "FALLBACK"));
+    const runs = await db.select().from(agentRuns).where(eq(agentRuns.status, "ERROR"));
     expect(runs.length).toBeGreaterThan(0);
     expect(runs[0].errorCode).toBe("SCHEMA_PARSE");
   });
 
-  it("records FALLBACK/TIMEOUT when client aborts", async () => {
+  it("records TIMEOUT and fails closed when the client aborts", async () => {
     const gateway = new LLMGateway({
       apiKey: "test",
       provider: "openai",
       modelName: "gpt-4o-mini",
       promptVersion: "1.0.0",
-      mock: new MockModelGateway(),
       ctx: createRequestContext(),
       client: buildClient("abort"),
       maxRetries: 0,
     });
 
-    await gateway.generateStructuredPlan({
+    await expect(gateway.generateStructuredPlan({
       destination: "Tokyo",
       flights: [],
       stays: [],
       ground: [],
       memberPreferences: {},
-    });
+    })).rejects.toBeInstanceOf(ModelGatewayError);
 
     const runs = await db.select().from(agentRuns);
     expect(runs.some(r => r.errorCode === "TIMEOUT")).toBe(true);
   });
 
-  it("factory returns MockModelGateway when no OpenAI key is set", () => {
+  it("factory fails closed when the configured provider has no API key", () => {
     const previous = process.env.MODEL_GATEWAY_PROVIDER;
     delete process.env.OPENAI_API_KEY;
     process.env.MODEL_GATEWAY_PROVIDER = "openai";
 
-    const gateway = createModelGateway();
-    expect(gateway).toBeInstanceOf(MockModelGateway);
+    expect(() => createModelGateway()).toThrow("Model gateway openai is not fully configured");
 
     if (previous !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous;
     else delete process.env.MODEL_GATEWAY_PROVIDER;

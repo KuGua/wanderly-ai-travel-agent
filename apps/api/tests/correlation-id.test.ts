@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { auditEvents, users } from "../src/db/schema.js";
+import { auditEvents, userProfiles, users } from "../src/db/schema.js";
 import { verifyTestAccessToken, authHeaders } from "./helpers/auth.js";
 import { randomUUID } from "node:crypto";
 
@@ -81,9 +81,8 @@ describe("server-side correlation id chain", () => {
   });
 
   it("persists correlationId on every audit row, even when client supplied its own request id", async () => {
-    // Ensure a Profile row exists for alice so the create path runs.
-    const [alice] = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
-    if (!alice) throw new Error("alice missing — run seed first");
+    const [user] = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
+    await db.delete(userProfiles).where(eq(userProfiles.userId, user.id));
 
     const clientRequestId = `audit-${randomUUID()}`;
     const response = await app.inject({
@@ -109,6 +108,6 @@ describe("server-side correlation id chain", () => {
       .where(eq(auditEvents.correlationId, correlationHeader as string))
       .limit(1);
     expect(audit).toBeDefined();
-    expect(audit.actorUserId).toBe(alice.id);
+    expect(audit.actorUserId).toBe(user.id);
   });
 });

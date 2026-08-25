@@ -3,7 +3,7 @@ import { constraintSnapshots, itineraryPlans, sourceEvidence, providerOffers } f
 import { eq, and, desc } from "drizzle-orm";
 import { buildAuthorizedData } from "./consent-service.js";
 import { createTravelProviders } from "../providers/live-provider-factory.js";
-import { createModelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
+import { modelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
 import type { FlightProvider, GroundProvider, StayProvider } from "../providers/types.js";
 import { validatePlanOutput } from "../policy/plan-output-validator.js";
@@ -19,16 +19,27 @@ export interface PlanningDependencies {
 }
 
 const configuredProviders = createTravelProviders();
-const defaultPlanningDependencies: PlanningDependencies = {
-  flightProvider: configuredProviders.flightProvider,
-  stayProvider: configuredProviders.stayProvider,
-  groundProvider: configuredProviders.groundProvider,
-  modelGateway: createModelGateway(),
-};
+let planningDependenciesOverride: PlanningDependencies | null = null;
 
 export function __setModelGateway(gateway: ModelGateway): void {
-  defaultPlanningDependencies.modelGateway = gateway;
   __setModelGatewayForTests(gateway);
+}
+
+export function __setPlanningDependenciesForTests(
+  dependencies: PlanningDependencies | null,
+): void {
+  planningDependenciesOverride = dependencies;
+}
+
+function resolvePlanningDependencies(): PlanningDependencies {
+  if (planningDependenciesOverride) return planningDependenciesOverride;
+
+  return {
+    flightProvider: configuredProviders.flightProvider,
+    stayProvider: configuredProviders.stayProvider,
+    groundProvider: configuredProviders.groundProvider,
+    modelGateway: modelGateway(),
+  };
 }
 
 export class PlanningDataUnavailableError extends Error {
@@ -111,7 +122,7 @@ export async function generatePlan(params: {
   snapshotId: string;
   destination: string;
   memberIds: string[];
-}, dependencies: PlanningDependencies = defaultPlanningDependencies): Promise<string> {
+}, dependencies: PlanningDependencies = resolvePlanningDependencies()): Promise<string> {
   // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
     .where(eq(constraintSnapshots.id, params.snapshotId))
