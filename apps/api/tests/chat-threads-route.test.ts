@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import { buildApp } from "../src/app.js";
@@ -38,18 +38,12 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await cleanupOwnedChatState();
   await app.close();
 });
 
 beforeEach(async () => {
-  // Best-effort cleanup so this test does not collide with other suites.
-  await db.delete(chatMessages);
-  await db.delete(chatThreads);
-  await db.delete(auditEvents).where(eq(auditEvents.action, "CHAT_THREAD_CREATE"));
-  await db.delete(auditEvents).where(eq(auditEvents.action, "CHAT_THREAD_DELETE"));
-  await db.delete(auditEvents).where(eq(auditEvents.action, "CHAT_MESSAGE_APPEND"));
-  await db.delete(tripMembers);
-  await db.delete(sharedTrips);
+  await cleanupOwnedChatState();
   tripId = randomUUID();
   await db.insert(sharedTrips).values({
     id: tripId,
@@ -79,7 +73,10 @@ describe("chat-threads route — owner-only", () => {
     // Audit row carries CHAT_THREAD_CREATE
     const [audit] = await db.select()
       .from(auditEvents)
-      .where(eq(auditEvents.action, "CHAT_THREAD_CREATE"))
+      .where(and(
+        eq(auditEvents.action, "CHAT_THREAD_CREATE"),
+        eq(auditEvents.actorUserId, aliceId),
+      ))
       .limit(1);
     expect(audit).toBeDefined();
     expect(audit.actorUserId).toBe(aliceId);
@@ -222,8 +219,32 @@ describe("chat-threads route — owner-only", () => {
 
     const [audit] = await db.select()
       .from(auditEvents)
-      .where(eq(auditEvents.action, "CHAT_THREAD_DELETE"))
+      .where(and(
+        eq(auditEvents.action, "CHAT_THREAD_DELETE"),
+        eq(auditEvents.actorUserId, aliceId),
+      ))
       .limit(1);
     expect(audit).toBeDefined();
   });
 });
+
+async function cleanupOwnedChatState(): Promise<void> {
+  if (!aliceId || !bobId) return;
+
+  await db.delete(auditEvents).where(and(
+    inArray(auditEvents.actorUserId, [aliceId, bobId]),
+    inArray(auditEvents.action, [
+      "CHAT_THREAD_CREATE",
+      "CHAT_THREAD_DELETE",
+      "CHAT_MESSAGE_APPEND",
+    ]),
+  ));
+  // Deleting owned threads cascades their messages.
+  await db.delete(chatThreads)
+    .where(inArray(chatThreads.ownerUserId, [aliceId, bobId]));
+
+  if (tripId) {
+    await db.delete(tripMembers).where(eq(tripMembers.tripId, tripId));
+    await db.delete(sharedTrips).where(eq(sharedTrips.id, tripId));
+  }
+}

@@ -265,31 +265,42 @@ Generate a new plan for a trip.
 **Response**:
 ```json
 {
-  "planId": "uuid",
   "snapshotId": "uuid",
-  "plan": {
+  "plans": [
+    {
+      "planId": "uuid",
+      "destination": "Tokyo",
+      "snapshotId": "uuid"
+    }
+  ],
+  "visaChecksByDestination": {
+    "Tokyo": [
+      {
+        "memberId": "uuid",
+        "destinationCountry": "Japan",
+        "status": "AUTHORIZED_CHECK",
+        "checklist": [...],
+        "confidenceLevel": "HIGH",
+        "disclaimer": "..."
+      }
+    ]
+  },
+  "latestPlan": {
     "destination": "Tokyo",
     "flights": [...],
     "stays": [...],
     "ground": [...],
     "generatedAt": "..."
   },
-  "visaChecks": [
-    {
-      "memberId": "uuid",
-      "destinationCountry": "Japan",
-      "status": "AUTHORIZED_CHECK",
-      "checklist": [...],
-      "confidenceLevel": "HIGH",
-      "disclaimer": "..."
-    }
-  ]
+  "message": "Plans generated for 1 destination candidate(s)"
 }
 ```
 
 > All flight/stay/ground data includes `source: "Demo data"` and `isDemo: true`.
 > Fixture offers also include a stable `capturedAt` and `fixtureVersion`. The
-> response includes one selected flight per configured departure origin.
+> Each persisted destination plan includes one selected flight per configured
+> departure origin. `plans` identifies every persisted candidate; `latestPlan`
+> contains the validated data for the latest active plan.
 
 **Unsupported fixture response**: `422`
 
@@ -363,6 +374,88 @@ Confirm or request changes for a plan.
 
 ### `GET /confirmations/:planId`
 Get confirmation status for a plan.
+
+---
+
+## Private Chat Threads
+
+All thread and conversation routes require Cognito bearer authentication and
+enforce `thread.owner_user_id === request.user.id`. Binding a thread to a trip
+does not grant fellow trip members access.
+
+### `POST /threads`
+
+Create an owner-only private thread. Body: `{ "title": "Tokyo ideas", "tripId"?: "uuid" }`.
+
+### `GET /threads`
+
+List only the authenticated owner's threads.
+
+### `POST /threads/:threadId/turns`
+
+Run one idempotent Personal Agent conversation turn. Clients supply no role or
+sender identity; the server persists the question as `USER` and the generated
+reply as `ASSISTANT`.
+
+**Body**:
+
+```json
+{
+  "requestId": "uuid",
+  "question": "Tell me about Tokyo",
+  "place": {
+    "sourceId": "tokyo",
+    "name": "Tokyo",
+    "latitude": 35.6895,
+    "longitude": 139.6917,
+    "sourceType": "FIXTURE"
+  }
+}
+```
+
+`place` is optional. `INSPIRATION` means unverified user-provided context and
+is never authoritative evidence for prices, inventory, visa requirements, or
+booking availability.
+
+**Response**:
+
+```json
+{
+  "threadId": "uuid",
+  "userMessage": {
+    "id": "uuid",
+    "role": "USER",
+    "content": "Tell me about Tokyo",
+    "createdAt": "2026-08-25T00:00:00.000Z"
+  },
+  "assistantMessage": {
+    "id": "uuid",
+    "role": "ASSISTANT",
+    "content": "A bounded travel response.",
+    "createdAt": "2026-08-25T00:00:00.000Z"
+  },
+  "responseMode": "MODEL"
+}
+```
+
+`responseMode` is `MODEL` or `DEMO_FALLBACK`. Repeating the same `requestId`
+for the same thread returns the persisted result without duplicate messages.
+
+### `GET /threads/:threadId/conversation`
+
+Returns up to the latest 100 raw `USER`/`ASSISTANT` messages in chronological
+order for the owner UI. This endpoint is deliberately separate from
+`thread.recall`, which exposes only safe/redacted Agent context.
+
+### `POST /threads/:threadId/messages`
+
+Legacy owner-only, one-way append. The strict body accepts `body` and optional
+`markedSharedByOwner`; the server always writes role `USER`. Client-supplied
+`SYSTEM`, `ASSISTANT`, or sender identity fields are rejected.
+
+### `DELETE /threads/:threadId`
+
+Deletes the owner thread and cascades its message bodies.
 
 ---
 

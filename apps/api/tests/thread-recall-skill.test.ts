@@ -1,10 +1,11 @@
 import { beforeAll, afterAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import { db } from "../src/db/database.js";
 import {
   users,
+  auditEvents,
   chatThreads,
   chatMessages,
 } from "../src/db/schema.js";
@@ -32,15 +33,15 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await db.delete(chatMessages);
-  await db.delete(chatThreads);
+  const testUserIds = [ownerId, otherId];
+  await db.delete(chatThreads).where(inArray(chatThreads.ownerUserId, testUserIds));
+  await db.delete(auditEvents).where(inArray(auditEvents.actorUserId, testUserIds));
   await db.delete(users).where(eq(users.id, ownerId));
   await db.delete(users).where(eq(users.id, otherId));
 });
 
 beforeEach(async () => {
-  await db.delete(chatMessages);
-  await db.delete(chatThreads);
+  await db.delete(chatThreads).where(inArray(chatThreads.ownerUserId, [ownerId, otherId]));
 });
 
 describe("thread.recall skill", () => {
@@ -121,23 +122,21 @@ describe("thread.recall skill", () => {
     expect(contents).toContain("redacted version 2");
   });
 
-  it("owner mismatch → SkillError 404 (not 403, to match route semantics)", async () => {
+  it("owner mismatch returns 403, matching the owner-only thread routes", async () => {
     const [thread] = await db.insert(chatThreads).values({
       ownerUserId: ownerId,
       title: "Owned by alice",
     }).returning();
 
-    // Caller is Bob; should get 404 from the skill handler via ApiError.
-    // (Skill registry wraps ApiError as SkillError; we assert the
-    // registry-level error code is not thrown — the handler throws
-    // ApiError directly.)
+    // The handler throws ApiError directly so the owner-only API contract is
+    // consistent across HTTP routes and Personal Agent recall.
     const ctx = createRequestContext(otherId, randomUUID(), randomUUID());
     await expect(
       invokeSkill("thread.recall", {
         ctx,
         policyGate: new DefaultPolicyGate("personal"),
       }, { threadId: thread.id, limit: 20 }),
-    ).rejects.toMatchObject({ statusCode: 404, message: "Thread not found" });
+    ).rejects.toMatchObject({ statusCode: 403, message: "Not the owner of this thread" });
   });
 
   it("handler never leaks raw body — the output schema cannot carry it", async () => {

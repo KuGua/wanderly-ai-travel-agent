@@ -63,7 +63,7 @@ const profileMemoryOutputSchema = z.object({
 | 约束 | 实现位置 | 失败表现 |
 | --- | --- | --- |
 | `allowedTools` 必须落在 `personal` allow-list 内 | `agents/skill-registry.ts:38-48` | 注册期抛 `SkillError('TOOL_NOT_ALLOWED')` |
-| `version` 在同一进程内只允许 invoke 一次 | `agents/skill-registry.ts:116-123` | 第二次调用抛 `SkillError('OUTPUT_INVALID', 'stale_version_reuse')` |
+| `version` 是可固定的契约版本 | registry `expectedVersion` | 同版本可重复调用；不匹配时 `SKILL_VERSION_MISMATCH` |
 | `input` 必须匹配 Zod schema | registry `input.parse` | `SkillError('INPUT_INVALID')` |
 
 ## 失败模式
@@ -71,14 +71,14 @@ const profileMemoryOutputSchema = z.object({
 | code | 触发条件 | HTTP 状态 | 客户端可重试? |
 | --- | --- | --- | --- |
 | `INPUT_INVALID` | `input.fields` 不是字符串数组；`tripId/userId` 不是 UUID | 400 | 否（修正请求） |
-| `OUTPUT_INVALID` | 输出 schema 违规；或 `stale_version_reuse` | 422 | 否（重启进程或换 version） |
+| `OUTPUT_INVALID` | 输出 schema 违规 | 422 | 否（修正 Skill 输出） |
 | `TIMEOUT` | handler 超过 2000ms | 504 | 是（同 payload） |
 | `TOOL_NOT_ALLOWED` | 仅注册期 — `allowedTools` 含非 `personal` scope | 403 | 否（修正 Skill 定义） |
 
 ## 关联文档
 
 - [../../agents/CONTRACT.md](../agents/CONTRACT.md) — `Skill<I,O>` 形态
-- [../../agents/REGISTRY.md](../agents/REGISTRY.md) — `lastUsedVersion` 严格去重
+- [../../agents/REGISTRY.md](../agents/REGISTRY.md) — 重复调用与 expected-version 契约
 - [../../agents/ERROR-CODES.md](../agents/ERROR-CODES.md) — 错误码全集
 - [../../services/consent-service.ts](../../services/consent-service.ts) — 数据源
 

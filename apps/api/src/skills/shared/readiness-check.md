@@ -59,7 +59,7 @@ Handler 不调 LLM、不查 snapshot 的 `authorizedData`、不查真实签证�
 | --- | --- | --- |
 | `agent === "shared"` 必须有 `ctx.snapshot` | `agents/skill-registry.ts:67-69` | `SkillError('SNAPSHOT_REQUIRED')` |
 | `allowedTools` 落在 `shared` allow-list | registry | 注册期抛 `SkillError('TOOL_NOT_ALLOWED')` |
-| `version` 在同一进程内只允许 invoke 一次 | `lastUsedVersion` 严格去重 | `SkillError('OUTPUT_INVALID', 'stale_version_reuse')` |
+| `version` 是可固定的契约版本 | registry `expectedVersion` | 同版本可重复调用；不匹配时 `SKILL_VERSION_MISMATCH` |
 
 ## 失败模式
 
@@ -67,7 +67,7 @@ Handler 不调 LLM、不查 snapshot 的 `authorizedData`、不查真实签证�
 | --- | --- | --- | --- |
 | `SNAPSHOT_REQUIRED` | `ctx.snapshot` 缺失 | 400 | 否（注入 snapshot） |
 | `INPUT_INVALID` | 空 `memberIds`、非 UUID、空 `destination` | 400 | 否 |
-| `OUTPUT_INVALID` | 输出 schema 违规；或 `stale_version_reuse` | 422 | 否 |
+| `OUTPUT_INVALID` | 输出 schema 违规 | 422 | 否 |
 | `TIMEOUT` | handler 超过 2000ms | 504 | 是 |
 | `TOOL_NOT_ALLOWED` | 仅注册期 — `allowedTools` 含非 `shared` scope | 403 | 否 |
 

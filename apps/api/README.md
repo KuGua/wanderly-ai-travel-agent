@@ -77,6 +77,7 @@ Authorization: Bearer <cognito-access-token>
 - **Fixture 提供方** — 所有航班/住宿/地面交通/签证数据均标记为 `Demo data`；fixture 具有显式版本和固定采集时间，航班查询会按路线和请求日期范围过滤。
 - **规划控制平面** — `ModelGateway` 输出在写入前必须通过严格结构、snapshot 字段授权、路线边界、来源完整性与 provider evidence 精确匹配校验；失败返回 correlation-aware `422`，且不创建 plan。
 - **Model/Skill integration** — `gateway-factory.ts` 在 `MockModelGateway` 与 Gemini、OpenAI 或任意 OpenAI-compatible `LLMGateway` 间选择；LLM 路径记录 model/prompt version 和 agent run，并在失败时确定性 fallback。结构化 Skill/model output 始终只是 candidate，仍须通过最终控制平面校验。
+- **Owner-only Personal Agent 对话** — `/threads/:threadId/turns` 通过 `thread.recall → travel.conversation → ModelGateway` 生成并持久化 USER/ASSISTANT；相同 request ID 幂等，fixture fallback 明确标记为 `DEMO_FALLBACK`。owner UI 可读取原始会话，但安全 recall、audit、metrics 与日志不接收正文。
 - **入境准备** — 每位成员各有清单；国籍未共享时显示“请向官方来源核验”。
 - **方案版本管理** — 生成、过期、带差异的重规划。
 - **三人确认** — 三位必需成员全部确认后，才可进行预订沙箱。
@@ -104,9 +105,13 @@ npm ci --dry-run --ignore-scripts
 
 安装脚本许可由 `package.json` 的 `allowScripts` 按确切版本维护。更新带安装脚本的依赖后，先运行 `npm approve-scripts --allow-scripts-pending` 审核新增项；不要使用不经审核的 `--all`。生产依赖安全检查使用 `npm audit --omit=dev`；不得直接运行 `npm audit fix --force`，以免降级 Drizzle Kit。
 
-测试覆盖 Cognito bearer authentication、授权撤回后的 plan 失效、fixture fallback、严格的 plan 输出结构/授权/路线/来源/evidence 校验、LLM fallback 与 agent-run 记录、Skill schema/allow-list/timeout、callback HMAC/raw-body/timestamp 边界、安全日志、低基数 metrics、audit summary whitelist，以及预订幂等与乱序 callback。
+测试覆盖 Cognito bearer authentication、owner-only Personal Agent conversation、重复 Skill version 调用、聊天 turn 幂等和角色授权、授权撤回后的 plan 失效、fixture fallback、严格的 plan 输出结构/授权/路线/来源/evidence 校验、LLM fallback 与 agent-run 记录、Skill schema/allow-list/timeout、callback HMAC/raw-body/timestamp 边界、安全日志、低基数 metrics、audit summary whitelist，以及预订幂等与乱序 callback。
 
-`npm test` 需要按“快速开始”完成本地 PostgreSQL migration；integration tests 会重置测试用 trip/session 数据。
+`npm test` 使用 `TEST_DATABASE_URL`，并拒绝非 loopback host，且要求数据库名
+或连接的 `search_path` schema 以 `_test` 结尾。默认在本地 `travelagent` 库中
+使用隔离的 `travelagent_test` schema；`pretest` 会创建该 schema 并执行迁移。
+不得将 `TEST_DATABASE_URL` 指向开发、staging 或 production 数据。integration
+tests 只允许在该安全边界内重置测试数据。
 
 ## 技术栈
 

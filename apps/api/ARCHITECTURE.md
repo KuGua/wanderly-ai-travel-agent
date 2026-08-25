@@ -36,6 +36,8 @@ AI Travel Agent is a **modular monolith** — not a microservice architecture. A
 Application-layer interface for AI model interactions:
 - `generateStructuredPlan()` — produces itinerary from provider offers
 - `explainPlanDiff()` — explains differences between old/new plans
+- `generateConversationReply()` — produces a typed private Personal Agent
+  answer with explicit `MODEL | DEMO_FALLBACK` provenance
 
 **Constraints**: Model cannot access database or execute irreversible operations.
 **Current**: `gateway-factory.ts` selects the deterministic `MockModelGateway`
@@ -93,6 +95,8 @@ Core business logic — NOT in LLM/Agent:
 - **VisaService** — readiness checks with nationality authorization
 - **AuditService** — correlation-ID-based audit trail
 - **IdempotencyService** — global idempotency for all operations
+- **ChatConversationService** — owner check, bounded safe recall, Personal
+  Skill orchestration, turn idempotency, and short-transaction persistence
 
 ### 4. Database Layer (`src/db/`)
 
@@ -104,6 +108,8 @@ Core business logic — NOT in LLM/Agent:
 
 ```
 users ──1:1── user_profiles (private)
+  │
+  ├──< chat_threads ──< chat_messages (owner-only USER / server ASSISTANT)
   │
   └──< trip_members >── shared_trips
          │                  │
@@ -155,6 +161,10 @@ Cross-cutting:
   `x-correlation-id` header matches the body `correlationId`.
 - Plan policy failures extend that same envelope with structured `violations`;
   rejected values and private snapshot data are never returned.
+- Public chat clients submit only `requestId`, `question`, and optional bounded
+  place context. Persisted roles and sender identity are server-controlled.
+- Owner-readable raw conversation history is separate from redacted
+  `thread.recall`; neither trip membership nor thread binding widens access.
 
 ### Audit Trail
 - Every sensitive operation records an `audit_event` with:
@@ -195,6 +205,8 @@ All mutating operations use `idempotency_records`:
 - **Planning**: keyed by `change_event:{eventId}`
 - **Booking**: keyed by `booking:{orchestrationRequestId}`
 - **Callbacks**: keyed by `callback:{eventId}`
+- **Chat turns**: keyed by `chat_turn:{threadId}:{requestId}`; stored result
+  metadata contains message IDs and response mode, never message bodies
 
 Duplicate requests return cached results without side effects.
 
@@ -225,4 +237,4 @@ PENDING → SUBMITTED → SUCCESS | FAILED
 - Free-form destination search
 - Redis / Temporal / Step Functions
 - Multi-microservice architecture
-- Cognito integration (demo auth middleware only)
+- Cognito sign-in UI (the API already verifies Cognito access tokens)

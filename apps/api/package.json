@@ -18,9 +18,9 @@
     "env:init": "node -e \"const fs=require('fs');if(!fs.existsSync('.env')&&fs.existsSync('.env.example')){fs.copyFileSync('.env.example','.env');console.log('Created .env from .env.example');}else{console.log('.env already exists or .env.example missing');}\"",
     "postinstall": "node -e \"const fs=require('fs');if(!fs.existsSync('.env')&&fs.existsSync('.env.example')){fs.copyFileSync('.env.example','.env');console.log('Created .env from .env.example');}\"",
     "test": "vitest run",
-    "pretest": "npm run db:migrate",
+    "pretest": "tsx scripts/prepare-test-db.ts",
     "test:watch": "vitest",
-    "lint": "eslint src/ tests/",
+    "lint": "eslint src/ tests/ scripts/ vitest.config.ts",
     "typecheck": "tsc --noEmit",
     "docs:verify": "tsx scripts/verify-docs.ts"
   },

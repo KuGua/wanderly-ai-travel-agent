@@ -101,6 +101,7 @@ Skill = 输入 Zod schema
 | ProfileChangeProposalSkill | Personal | 私有消息 → 字段级 change proposal。 | createProfileSchema、updateProfileSchema。 | 模型不能写库；用户确认后才更新。 |
 | TripOverrideProposalSkill | Personal | 本次要求 → trip-specific constraint proposal。 | 新增 trip override storage/service。 | 与长期 Profile 分离；不能自动共享。 |
 | ConsentExplanationSkill | Personal | 本人 grants → “我正在共享什么”。 | getActiveConsents。 | 不显示其他成员授权。 |
+| TravelConversationSkill | Personal | 当前问题 + 可选最小 place context + 安全 recall → 私有回答。 | ModelGateway.generateConversationReply。 | 不接受客户端角色；不声称 live price、库存、visa 或 booking；fallback 显式标记。 |
 | ConsentExportSkill | 服务端协作边界 | trip + active grants → 最小化 snapshot。 | buildAuthorizedData、createConstraintSnapshot。 | 不由模型执行；禁止 passport number。 |
 | CandidateResearchSkill | Shared | snapshot + candidate → ResearchBundle。 | FlightProvider、StayProvider、GroundProvider、fixtures。 | 只请求已配置候选；失败必须明确 fallback。 |
 | ReadinessSkill | Shared | 授权国籍 + 成员 + 路线 → readiness 或 verification gap。 | VisaProvider、checkVisaReadiness。 | 未授权不得推断；不得法律建议。 |
@@ -120,11 +121,11 @@ Personal Agent 默认采用 Memory-Augmented + Tool-Augmented；仅在必要时�
 |---|---|---|
 | 长期个人偏好 | user_profiles、preference_facts | 用户可查看、编辑、删除；仅 Personal Agent 私有读取。 |
 | 本次行程偏好 | 当前未实现 | 新增独立 trip override；不得静默覆盖长期 Profile。`this trip` 标记 = 线程创建时绑定的 tripId。 |
-| 私有对话 archive | 已实现（migration 0006） | `chat_threads`（UUIDv4，归属 `ownerUserId`，可选 `tripId`）+ `chat_messages`（`thread_id` FK CASCADE、`markedSharedByOwner`、`redacted_summary`）；每线程 ownerUserId 唯一，trip 关联不赋予其他成员或 Shared Agent 读取权限。raw transcript 永远不出 owner 会话：默认 LLM 上下文仅含服务端派生的脱敏摘要 + owner 显式标记 `markedSharedByOwner=true` 的消息。`thread.recall` Personal Agent Skill 强制 owner-only 读取、绝不返回 raw body。 |
+| 私有对话 archive | 已实现（migrations 0006/0007） | `chat_threads`（归属 `ownerUserId`，可选 `tripId`）+ `chat_messages`。USER 由 authenticated owner 发送；ASSISTANT 的 sender 为 null，且角色/sender 组合由 DB CHECK 约束。owner UI 可经专用 endpoint 恢复 raw history；`thread.recall` 仍只返回安全摘要，trip 关联不赋予其他成员或 Shared Agent 读取权限。 |
 | 共享协作记忆 | consent_grants、constraint_snapshots | 仅通过服务端最小化导出；snapshot 不可变。 |
 | 运行事实 | provider_offers、source_evidence、visa_readiness_checks、itinerary_plans | 用于重建证据；不作为聊天长期记忆。 |
 
-私有对话 archive 是 MVP 已确认的能力：保存的 raw transcript 只能由所有者回看，且必须支持线程级删除。MVP 不设自动保留期；消息正文保留至用户删除线程，导出不进入 MVP。它不是长期记忆、共享上下文或默认 prompt 输入；只有用户确认的结构化 Profile/override 可进入后续 Agent run。实现已落 `apps/api/migrations/0006_chat_threads.sql` + `apps/api/src/skills/personal/thread-recall-skill.ts` + `apps/api/src/routes/chat-threads.ts`；owner-only 授权、删除语义、遥测脱敏（[apps/api/src/observability/telemetry.ts](apps/api/src/observability/telemetry.ts) redaction 路径已覆盖 `body/message/privateMessage`）均已在 PR 3 验证。`redacted_summary` 列已存在但服务端**生成**逻辑（将 raw body → 安全摘要）留到下个 PR；在此之前 `markedSharedByOwner=true` 的消息 `contentRedacted` 仍为空字符串，契约正确。
+私有对话 archive 是 MVP 已确认的能力：保存的 raw transcript 只能由所有者通过 `GET /threads/:threadId/conversation` 回看，且支持线程级删除。`POST /threads/:threadId/turns` 先执行 owner/idempotency 检查，再以 `thread.recall → travel.conversation → ModelGateway` 生成回答，最后用短事务持久化 USER、ASSISTANT、安全 audit 与不含正文的幂等结果。模型等待期间不持有数据库事务。默认 recall 只包含最多 20 条、每条最多 1000 字的非空安全摘要；完整 raw transcript 不进入 audit、metrics 或 Shared Agent context。`redacted_summary` 的通用生成 worker 仍未实现，因此未标记/未摘要的历史不会进入后续 Agent recall。
 
 ### Tool-Augmented
 

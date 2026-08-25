@@ -62,14 +62,14 @@ const consentExplanationOutputSchema = z.object({
 | 约束 | 实现位置 | 失败表现 |
 | --- | --- | --- |
 | `allowedTools` 落在 `personal` allow-list | registry | 注册期抛 `SkillError('TOOL_NOT_ALLOWED')` |
-| `version` 在同一进程内只允许 invoke 一次 | `lastUsedVersion` 严格去重 | 第二次调用抛 `SkillError('OUTPUT_INVALID', 'stale_version_reuse')` |
+| `version` 是可固定的契约版本 | registry `expectedVersion` | 同版本可重复调用；不匹配时 `SKILL_VERSION_MISMATCH` |
 
 ## 失败模式
 
 | code | 触发条件 | HTTP 状态 | 客户端可重试? |
 | --- | --- | --- | --- |
 | `INPUT_INVALID` | `tripId/userId` 不是 UUID | 400 | 否 |
-| `OUTPUT_INVALID` | 输出 schema 违规；或 `stale_version_reuse` | 422 | 否 |
+| `OUTPUT_INVALID` | 输出 schema 违规 | 422 | 否 |
 | `TIMEOUT` | handler 超过 2000ms | 504 | 是 |
 | `TOOL_NOT_ALLOWED` | 仅注册期 — `allowedTools` 含非 `personal` scope | 403 | 否 |
 

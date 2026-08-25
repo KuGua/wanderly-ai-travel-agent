@@ -7,7 +7,7 @@ status: implemented
 
 # `shared.plan.comparison` Skill
 
-**唯一**会调用 LLM 的 Skill。结合约束快照中已授权的成员偏好与确定性 provider 证据（fixture flight/stay/ground），生成结构化候选方案；通过 validator 校验后再返回。
+Shared planning 中调用 LLM 的 Skill。结合约束快照中已授权的成员偏好与确定性 provider 证据（fixture flight/stay/ground），生成结构化候选方案；通过 validator 校验后再返回。Personal Agent 的私有问答由独立的 `travel.conversation` Skill 处理。
 
 ## 注册元数据
 
@@ -70,7 +70,7 @@ Skill 实际返回的是经过 validator 校验的 `planOutputSchema`（见 [../
 | Validator 失败即关闭（fail closed） | `policy/plan-output-validator.ts` 永远 throw | `SkillError('PLAN_VALIDATION_FAILED', 422, violations)` |
 | LLM 任何失败都 fallback mock | `providers/llm-gateway.ts` `fallbackToMock` | 4 类触发（client load / retry 耗尽 / timeout / schema parse）——见 [../../providers/LLM-GATEWAY.md](../../providers/LLM-GATEWAY.md) |
 | 敏感字段禁止出现在输出 | `policy/plan-output-validator.ts:STRUCTURE_INVALID`；[../../services/AUDIT.md](../../services/AUDIT.md) 负责日志脱敏 | 方案被拒 / audit 被拒 |
-| `lastUsedVersion` 严格去重 | `agents/skill-registry.ts:116-123` | `SkillError('OUTPUT_INVALID', 'stale_version_reuse')` |
+| 可选 expected version 固定契约 | `agents/skill-registry.ts` | 不匹配时 `SkillError('SKILL_VERSION_MISMATCH')`；同版本可重复调用 |
 
 ## LLM 约束面
 
@@ -92,7 +92,8 @@ Validator 进一步强制 deep-strict-equal 证据匹配、snapshot 字段白名
 | --- | --- | --- | --- |
 | `SNAPSHOT_REQUIRED` | `ctx.snapshot` 缺失 | 400 | 否（注入 snapshot） |
 | `INPUT_INVALID` | 输入 Zod 失败 | 400 | 否 |
-| `OUTPUT_INVALID` | 输出 Zod 失败；或 `stale_version_reuse` | 422 | 否 |
+| `OUTPUT_INVALID` | 输出 Zod 失败 | 422 | 否 |
+| `SKILL_VERSION_MISMATCH` | 调用方固定的版本与注册版本不同 | 409 | 否（升级调用契约） |
 | `PLAN_VALIDATION_FAILED` | `validatePlanOutput` 抛出任何 violation | 422 | 否（修复快照或证据） |
 | `TIMEOUT` | handler 超过 10000ms（LLM 调用） | 504 | 是 |
 | `TOOL_NOT_ALLOWED` | 仅注册期 — `allowedTools` 含非 `shared` scope | 403 | 否 |

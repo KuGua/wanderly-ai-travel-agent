@@ -1,5 +1,6 @@
 export type SkillErrorCode =
   | "UNKNOWN_SKILL"
+  | "SKILL_VERSION_MISMATCH"
   | "TOOL_NOT_ALLOWED"
   | "INPUT_INVALID"
   | "OUTPUT_INVALID"
@@ -11,6 +12,7 @@ export type SkillErrorCode =
 
 export const SKILL_ERROR_STATUS: Record<SkillErrorCode, number> = {
   UNKNOWN_SKILL: 404,
+  SKILL_VERSION_MISMATCH: 409,
   TOOL_NOT_ALLOWED: 403,
   INPUT_INVALID: 400,
   OUTPUT_INVALID: 422,

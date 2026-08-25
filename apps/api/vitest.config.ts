@@ -1,4 +1,13 @@
 import { defineConfig } from "vitest/config";
+import {
+  assertDisposableTestDatabase,
+  resolveTestDatabaseUrl,
+} from "./scripts/test-database.js";
+
+const testDatabaseUrl = resolveTestDatabaseUrl();
+assertDisposableTestDatabase(testDatabaseUrl);
+process.env.DATABASE_URL = testDatabaseUrl;
+process.env.NODE_ENV = "test";
 
 export default defineConfig({
   test: {
@@ -10,6 +19,10 @@ export default defineConfig({
     pool: "forks",
     poolOptions: {
       forks: { singleFork: true },
+    },
+    env: {
+      DATABASE_URL: testDatabaseUrl,
+      NODE_ENV: "test",
     },
   },
 });

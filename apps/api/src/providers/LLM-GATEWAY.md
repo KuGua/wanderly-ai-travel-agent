@@ -109,13 +109,14 @@ else `UPSTREAM_FAILURE`, null/undefined → `UNKNOWN`.
 
 ## `recordAgentRun` writes
 
-Every LLM attempt (success or fallback) writes a row to `agent_runs`:
+Every planning or Personal conversation LLM attempt (success or fallback)
+writes a row to `agent_runs`:
 
 | Column | Source |
 | --- | --- |
 | `runId` | randomUUID per call |
-| `skillName` | always `"plan.comparison"` |
-| `agentName` | always `"shared"` |
+| `skillName` | `"plan.comparison"` or `"travel.conversation"` |
+| `agentName` | `"shared"` or `"personal"`, matching the Skill |
 | `modelName` | `this.options.modelName` |
 | `promptVersion` | `this.options.promptVersion` (env `OPENAI_PROMPT_VERSION`, default `1.0.0`) |
 | `outputHash` | `sha256(canonicalize(plan))` |
@@ -132,6 +133,9 @@ After the `agent_runs` write, an `audit_events` row is appended with
 
 - `apps/api/src/skills/shared/plan-comparison-skill.ts` — calls
   `modelGateway().generateStructuredPlan(...)`.
+- `apps/api/src/skills/personal/travel-conversation-skill.ts` — calls
+  `modelGateway().generateConversationReply(...)` with the current question,
+  optional minimal place context, and bounded safe recall.
 - `apps/api/src/providers/gateway-factory.ts` — builds the
   `LLMGateway` instance and exposes the `modelGateway()` singleton.
 
@@ -140,3 +144,6 @@ After the `agent_runs` write, an `audit_events` row is appended with
 - `npx vitest run tests/llm-gateway.test.ts` — exercises success,
   malformed output fallback, abort fallback, factory-without-key,
   Gemini / openai-compatible provider resolution.
+- `npx vitest run tests/conversation-gateway.test.ts` — exercises deterministic
+  place-aware mock output, structured live-model parsing, explicit fallback,
+  and raw-content exclusion from Agent run metadata.

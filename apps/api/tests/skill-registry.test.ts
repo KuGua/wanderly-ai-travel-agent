@@ -75,20 +75,36 @@ describe("skill registry", () => {
     expect(result).toEqual({ doubled: 4 });
   });
 
-  it("rejects stale-version reuse", async () => {
+  it("allows the same skill version across independent invocations", async () => {
     const skill = buildEchoSkill("1.0.0");
     registerSkill(skill);
 
-    const ctx = { ctx: createRequestContext(), policyGate: new DefaultPolicyGate("personal") };
+    await expect(invokeSkill(skill.name, {
+      ctx: createRequestContext(),
+      policyGate: new DefaultPolicyGate("personal"),
+    }, { v: 1 })).resolves.toEqual({ doubled: 2 });
+    await expect(invokeSkill(skill.name, {
+      ctx: createRequestContext(),
+      policyGate: new DefaultPolicyGate("personal"),
+    }, { v: 2 })).resolves.toEqual({ doubled: 4 });
+  });
 
-    await invokeSkill(skill.name, ctx, { v: 1 });
-    await expect(invokeSkill(skill.name, ctx, { v: 2 })).rejects.toMatchObject({
-      code: "OUTPUT_INVALID",
-    });
+  it("rejects an expected version mismatch before handler execution", async () => {
+    let handlerCalls = 0;
+    const skill = buildEchoSkill("1.0.0");
+    skill.handler = async (_ctx, input) => {
+      handlerCalls += 1;
+      return { doubled: input.v * 2 };
+    };
+    registerSkill(skill);
 
-    const bumped = buildEchoSkill("1.0.1");
-    registerSkill(bumped);
-    await expect(invokeSkill(bumped.name, ctx, { v: 3 })).resolves.toEqual({ doubled: 6 });
+    await expect(invokeSkill(skill.name, {
+      ctx: createRequestContext(),
+      policyGate: new DefaultPolicyGate("personal"),
+    }, { v: 1 }, {
+      expectedVersion: "0.9.0",
+    })).rejects.toMatchObject({ code: "SKILL_VERSION_MISMATCH", statusCode: 409 });
+    expect(handlerCalls).toBe(0);
   });
 
   it("rejects unknown skills", async () => {

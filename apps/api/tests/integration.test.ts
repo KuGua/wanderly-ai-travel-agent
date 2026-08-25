@@ -49,6 +49,11 @@ beforeAll(async () => {
   } else {
     chenId = chenRecords[0].id;
   }
+
+  // Make this file independent from seed/test execution order.
+  await db.update(users).set({ displayName: "Alice" }).where(eq(users.id, aliceId));
+  await db.update(users).set({ displayName: "Bob" }).where(eq(users.id, bobId));
+  await db.update(users).set({ displayName: "Chen" }).where(eq(users.id, chenId));
 });
 
 afterAll(async () => {
@@ -316,6 +321,7 @@ describe("Frontend API Contract", () => {
 describe("Consent & Authorization", () => {
   it("grants and retrieves consent", async () => {
     await grantConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -330,6 +336,7 @@ describe("Consent & Authorization", () => {
 
   it("revoking consent removes it from active list", async () => {
     await grantConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_NATIONALITY",
@@ -340,6 +347,7 @@ describe("Consent & Authorization", () => {
     expect(consents.length).toBe(1);
 
     await revokeConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_NATIONALITY",
@@ -361,6 +369,7 @@ describe("Consent & Authorization", () => {
 
     // Grant only preferences, not nationality
     await grantConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -381,6 +390,7 @@ describe("Consent Revocation Causes Plan Stale", () => {
 
     // Grant consent and create snapshot
     await grantConsent({
+      ctx,
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -410,20 +420,14 @@ describe("Consent Revocation Causes Plan Stale", () => {
 
     // Revoke consent
     await revokeConsent({
+      ctx,
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
     });
 
-    // Mark plan stale (simulating the change event flow)
-    await markPlanStale({
-      ctx,
-      planId,
-      reason: "Consent revoked",
-    });
-
     plan = await getLatestActivePlan(tripId);
-    expect(plan).toBeNull(); // No active plan
+    expect(plan).toBeNull(); // Revocation atomically stales the active plan.
   });
 });
 
@@ -432,6 +436,7 @@ describe("Constraint Snapshot Immutability", () => {
     const ctx = createRequestContext(aliceId);
 
     await grantConsent({
+      ctx,
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -477,11 +482,16 @@ describe("Fixture-backed Planning API", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    const flights = body.plan.flights as Array<Record<string, unknown>>;
+    const tokyoPlan = body.plans.find((plan: { destination: string }) => plan.destination === "Tokyo");
+    expect(tokyoPlan).toBeDefined();
+    const [persistedPlan] = await db.select().from(itineraryPlans)
+      .where(eq(itineraryPlans.id, tokyoPlan.planId))
+      .limit(1);
+    const flights = persistedPlan.planData.flights as Array<Record<string, unknown>>;
     expect(flights.map(flight => flight.origin).sort()).toEqual(["San Francisco", "Shanghai"]);
 
-    const offers = await db.select().from(providerOffers).where(eq(providerOffers.planId, body.planId));
-    const evidence = await db.select().from(sourceEvidence).where(eq(sourceEvidence.planId, body.planId));
+    const offers = await db.select().from(providerOffers).where(eq(providerOffers.planId, tokyoPlan.planId));
+    const evidence = await db.select().from(sourceEvidence).where(eq(sourceEvidence.planId, tokyoPlan.planId));
 
     expect(new Set(offers.map(offer => offer.category))).toEqual(new Set(["flight", "stay", "ground"]));
     expect(offers.every(offer => offer.isDemo)).toBe(true);
@@ -542,6 +552,8 @@ describe("Three-Person Confirmation Threshold", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -575,6 +587,8 @@ describe("Three-Person Confirmation Threshold", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId1 = await generatePlan({
@@ -617,6 +631,8 @@ describe("Change Event Idempotency", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     await generatePlan({
@@ -663,6 +679,8 @@ describe("Booking Sandbox Idempotency", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -712,6 +730,8 @@ describe("Booking Sandbox Idempotency", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -774,6 +794,8 @@ describe("Visa Readiness - Unauthorized Nationality", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -808,6 +830,8 @@ describe("Error States Cannot Create Bookings", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({

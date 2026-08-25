@@ -1,4 +1,16 @@
 import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/domain.js";
+import type { RequestContext } from "../utils/context.js";
+import type { ConversationPlace, ConversationResponseMode } from "../types/schemas.js";
+
+export interface ConversationHistoryMessage {
+  role: "USER" | "ASSISTANT";
+  content: string;
+}
+
+export interface ConversationReply {
+  content: string;
+  responseMode: ConversationResponseMode;
+}
 
 /**
  * ModelGateway: Application-layer interface for AI model interactions.
@@ -20,6 +32,14 @@ export interface ModelGateway {
     newPlan: Record<string, unknown>;
     signal?: AbortSignal;
   }): Promise<PlanDiff>;
+
+  generateConversationReply(params: {
+    question: string;
+    place?: ConversationPlace;
+    history: ConversationHistoryMessage[];
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<ConversationReply>;
 }
 
 /**
@@ -78,6 +98,33 @@ export class MockModelGateway implements ModelGateway {
       added: ["New flight option due to price change"],
       removed: ["Old flight option (price increased)"],
       changed: ["Total estimated cost updated"],
+    };
+  }
+
+  async generateConversationReply(params: {
+    question: string;
+    place?: ConversationPlace;
+    history: ConversationHistoryMessage[];
+    signal?: AbortSignal;
+  }): Promise<ConversationReply> {
+    if (params.signal?.aborted) {
+      const err = new Error("MockModelGateway aborted");
+      err.name = "AbortError";
+      throw err;
+    }
+
+    const place = params.place;
+    const placeText = place
+      ? place.sourceType === "INSPIRATION"
+        ? `${place.name} is an unverified inspiration at ${place.latitude.toFixed(3)}, ${place.longitude.toFixed(3)}.`
+        : `${place.name} is available as a fixture-backed demo destination.`
+      : "No destination is selected yet.";
+
+    return {
+      content:
+        `${placeText} I can help you explore preferences and planning questions, `
+        + "but this demo response does not claim live prices, inventory, visa requirements, or booking availability.",
+      responseMode: "DEMO_FALLBACK",
     };
   }
 }
