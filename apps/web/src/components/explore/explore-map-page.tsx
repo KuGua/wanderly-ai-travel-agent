@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, MapPin, Plane, RotateCw, Sparkles, Trash2, X } from "lucide-react";
+import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, MapPin, RotateCw, Sparkles, Trash2, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
@@ -28,6 +28,7 @@ type SourceEventDiagnostic = {
 const SINGAPORE: [number, number] = [103.8198, 1.3521];
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 const NEARBY_RADIUS_KM = 50;
+const DESTINATIONS: Destination[] = [];
 
 
 export function ExploreMapPage() {
@@ -51,7 +52,7 @@ export function ExploreMapPage() {
   const tCommon = useTranslations("common");
   const locale = useLocale();
 
-  const destinations: Destination[] = [];
+  const destinations = DESTINATIONS;
 
   useEffect(() => {
     readinessRef.current = readiness;

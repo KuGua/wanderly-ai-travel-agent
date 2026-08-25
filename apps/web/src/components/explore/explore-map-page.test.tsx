@@ -2,7 +2,6 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { configureMapAttribution, ExploreMapPage } from "./explore-map-page";
-import { OPEN_FREEMAP_LIBERTY_LAYERS } from "./__fixtures__/openfreemap-liberty-layers";
 import { renderWithIntl } from "@/test/render";
 
 function resetDevHook() {
@@ -191,24 +190,28 @@ describe("ExploreMapPage private inspirations", () => {
 
   it("opens pin context on the first chat click and the preview on the second", async () => {
     renderWithIntl(<ExploreMapPage />);
-    await waitFor(() => expect(mapMock.markerButtons.length).toBeGreaterThanOrEqual(3));
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 } });
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
-    const tokyoMarker = mapMock.markerButtons.find((button) => button.getAttribute("aria-label") === "Explore Tokyo, Japan");
-    expect(tokyoMarker).toBeDefined();
+    const inspirationMarker = mapMock.markerButtons.find((button) => button.getAttribute("aria-label") === "Open Pinned place 1");
+    expect(inspirationMarker).toBeDefined();
 
-    act(() => tokyoMarker?.click());
+    act(() => inspirationMarker?.click());
     expect(screen.getByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ask about Tokyo · Japan" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Tokyo" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ask about Pinned place 1/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Pinned place 1" })).not.toBeInTheDocument();
 
-    act(() => tokyoMarker?.click());
+    act(() => inspirationMarker?.click());
     expect(screen.queryByRole("dialog", { name: "Wanderly Agent conversation" })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Tokyo" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Pinned place 1" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
     fireEvent.click(screen.getByRole("button", { name: "Close conversation" }));
-    expect(screen.queryByRole("heading", { name: "Tokyo" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Pinned place 1" })).not.toBeInTheDocument();
   });
 
   it("moves the globe into the uncovered landscape area without enlarging it", async () => {
@@ -271,7 +274,11 @@ describe("ExploreMapPage private inspirations", () => {
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
     await waitFor(() => expect((window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap).toBeDefined());
-    fireEvent.click(screen.getByRole("button", { name: /^Tokyo$/ }));
+    mapMock.queryResults.push({ properties: { class: "city", "name:en": "Tokyo" } });
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 }, point: { x: 10, y: 10 } });
+    });
+    expect(screen.getByRole("heading", { name: "Tokyo" })).toBeInTheDocument();
 
     const countryControl = screen.getByRole("button", { name: "Countries" });
     expect(countryControl).toHaveAttribute("aria-pressed", "true");
@@ -349,7 +356,7 @@ describe("ExploreMapPage readiness diagnostics", () => {
     expect(handle?.readiness.kind).toBe("ready-supported");
     expect(handle?.missingLayers).toEqual([]);
     expect(handle?.sourcePresent).toBe(true);
-    expect(handle?.styleUrl).toBe(OPEN_FREEMAP_LIBERTY_LAYERS.styleUrl);
+    expect(handle?.styleUrl).toBe("https://tiles.openfreemap.org/styles/liberty");
     expect(handle?.stage).toBe("ready");
     expect(typeof handle?.retry).toBe("function");
   });
