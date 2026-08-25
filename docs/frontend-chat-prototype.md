@@ -12,10 +12,13 @@ without claiming that an Agent API response has occurred.
   non-empty message opens a fixed white panel along the right side. The panel
   keeps a 2:3 width-to-height ratio: narrower landscape widths use roughly 2/5 of
   the viewport bottom edge and scale both dimensions together, while larger
-  fullscreen layouts are capped at 620 px wide and 852 px high.
+  fullscreen layouts are capped at 620 px wide and 852 px high. The closed
+  capsule uses the same width and height as the composer's liquid-glass input
+  at the corresponding viewport size.
 - Portrait layouts show the capsule above the bottom navigation. Sending opens a fixed
   panel at 3/5 of the viewport height so it scales with different portrait
-  aspect ratios; the Explore recommendation card is
+  aspect ratios. The closed capsule also matches the inset and proportions of
+  the input inside that panel; the Explore recommendation card is
   hidden on mobile. The map camera moves into the uncovered
   area: without a selected pin the globe scales to about 80%; with a selected
   pin the zoom is preserved and that coordinate is centered above the panel.
