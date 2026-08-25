@@ -4,6 +4,8 @@ import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
 
+import { TravelAgentChat } from "./travel-agent-chat";
+
 type Destination = {
   id: string;
   name: string;
@@ -32,6 +34,7 @@ export function ExploreMapPage() {
   const inspirationMarkersRef = useRef(new Map<string, MapLibreMarker>());
   const inspirationsRef = useRef<Destination[]>([]);
   const inspirationSequenceRef = useRef(0);
+  const chatCameraActiveRef = useRef(false);
   const journeyTimersRef = useRef<number[]>([]);
   const [mapReady, setMapReady] = useState(false);
   const [mapUnavailable, setMapUnavailable] = useState(false);
@@ -42,6 +45,7 @@ export function ExploreMapPage() {
   const [managePinsOpen, setManagePinsOpen] = useState(false);
   const [manageAnchorCoordinates, setManageAnchorCoordinates] = useState<[number, number] | null>(null);
   const [pinScope, setPinScope] = useState<PinScope>("nearby");
+  const [chatOpen, setChatOpen] = useState(false);
   const [exploreState, setExploreState] = useState<ExploreState>("IDLE");
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -117,6 +121,9 @@ export function ExploreMapPage() {
           window.clearTimeout(loadTimeout);
           map.setProjection({ type: "globe" });
           map.addControl(new maplibregl.AttributionControl({ compact: window.innerWidth < 640 }), "bottom-right");
+          window.queueMicrotask(() => {
+            if (!cancelled) configureMapAttribution(containerRef.current);
+          });
           if (!cancelled) {
             setMapReady(true);
             setMapUnavailable(false);
@@ -192,6 +199,29 @@ export function ExploreMapPage() {
     };
   }, [clearJourneyTimers, mapAttempt, selectDestination]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !window.matchMedia("(max-width: 639px)").matches) return;
+
+    if (!chatOpen) {
+      if (chatCameraActiveRef.current) {
+        map.easeTo({ padding: { top: 0, right: 0, bottom: 0, left: 0 }, duration: reducedMotion() ? 0 : 450 });
+        chatCameraActiveRef.current = false;
+      }
+      return;
+    }
+
+    const bottomPadding = Math.round(window.innerHeight * 0.43) + 24;
+    const currentCenter = map.getCenter();
+    map.easeTo({
+      center: selected ? selected.coordinates : [currentCenter.lng, currentCenter.lat],
+      zoom: selected ? Math.max(map.getZoom(), 5.4) : map.getZoom() + Math.log2(0.8),
+      padding: { top: 0, right: 0, bottom: bottomPadding, left: 0 },
+      duration: reducedMotion() ? 0 : 650,
+    });
+    chatCameraActiveRef.current = true;
+  }, [chatOpen, mapReady, selected]);
+
   function recenter() {
     clearJourneyTimers();
     mapRef.current?.flyTo({ center: SINGAPORE, zoom: 2.25, duration: reducedMotion() ? 0 : 1400 });
@@ -241,7 +271,7 @@ export function ExploreMapPage() {
     : inspirations.filter((inspiration) => distanceInKm(inspiration.coordinates, manageAnchorCoordinates) <= 50);
 
   return (
-    <main data-drawer-open={selected ? "true" : "false"} className="relative isolate h-[calc(100dvh-4rem)] min-h-[620px] overflow-hidden bg-[#bfe9f2] md:h-screen">
+    <main data-drawer-open={selected && !chatOpen ? "true" : "false"} className="wanderly-explore-map relative isolate h-[calc(100dvh-4rem)] min-h-[620px] overflow-hidden bg-[#bfe9f2] md:h-screen">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_58%_42%,#dff5ee_0_15%,#8bd2df_35%,#65b7ca_62%,#4b9eb5_100%)]" aria-hidden="true" />
       <div className="absolute inset-0">
         <div ref={containerRef} className="size-full" aria-label="Interactive destination globe" />
@@ -270,6 +300,10 @@ export function ExploreMapPage() {
         </div>
       </header>
 
+      <button type="button" onClick={() => mapRef.current?.resetNorth({ duration: reducedMotion() ? 0 : 450 })} aria-label="Reset map compass" title="Reset map compass" className={`absolute left-4 z-40 grid size-12 place-items-center rounded-full bg-sidebar/95 text-white shadow-lg backdrop-blur transition-[bottom] duration-500 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50 md:hidden ${chatOpen ? "bottom-[calc(43dvh+1rem)]" : "bottom-20"}`}>
+        <Compass aria-hidden="true" className="size-5" />
+      </button>
+
       {helpOpen ? (
         <aside className="absolute right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] rounded-[20px] bg-card/95 p-4 text-sm leading-6 shadow-xl backdrop-blur sm:right-6 sm:top-24">
           <p className="font-bold">Explore the map</p>
@@ -290,7 +324,7 @@ export function ExploreMapPage() {
         </section>
       ) : null}
 
-      <section className={`absolute bottom-4 left-4 z-20 rounded-[24px] bg-card/95 shadow-[0_20px_60px_#082f3f40] backdrop-blur sm:bottom-6 sm:left-6 ${managePinsOpen ? "w-[min(360px,calc(100%-2rem))] p-4" : "w-[min(420px,calc(100%-2rem))] p-5"} ${selected && !managePinsOpen ? "hidden sm:block" : ""}`}>
+      <section className={`absolute bottom-20 left-4 z-20 rounded-[24px] bg-card/95 shadow-[0_20px_60px_#082f3f40] backdrop-blur sm:bottom-6 sm:left-6 ${managePinsOpen ? "block w-[min(360px,calc(100%-2rem))] p-4" : "hidden w-[min(420px,calc(100%-2rem))] p-5 sm:block"} ${selected && !managePinsOpen ? "sm:block" : ""}`}>
         {!managePinsOpen ? (
           <>
             <div className="flex items-center gap-2 text-primary">
@@ -346,8 +380,8 @@ export function ExploreMapPage() {
         )}
       </section>
 
-      {selected && !managePinsOpen ? (
-        <aside className="absolute inset-x-0 bottom-0 z-30 max-h-[70dvh] overflow-y-auto rounded-t-[24px] bg-card/95 p-5 shadow-[0_20px_60px_#082f3f55] backdrop-blur sm:inset-x-auto sm:bottom-auto sm:right-6 sm:top-28 sm:w-[min(360px,calc(100%-2rem))] sm:rounded-[24px]">
+      {selected && !managePinsOpen && !chatOpen ? (
+        <aside className="absolute inset-x-0 bottom-0 z-30 max-h-[70dvh] overflow-y-auto rounded-t-[24px] bg-card/95 p-5 pb-24 shadow-[0_20px_60px_#082f3f55] backdrop-blur sm:inset-x-auto sm:bottom-auto sm:right-6 sm:top-28 sm:w-[min(360px,calc(100%-2rem))] sm:rounded-[24px] sm:pb-5">
           <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label="Close destination preview" className="absolute right-4 top-4 grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
             <X aria-hidden="true" className="size-4" />
           </button>
@@ -377,6 +411,10 @@ export function ExploreMapPage() {
           ) : null}
         </aside>
       ) : null}
+      <TravelAgentChat
+        onOpenChange={setChatOpen}
+        selectedPlace={selected ? { name: selected.name, context: selected.country } : null}
+      />
     </main>
   );
 }
@@ -424,6 +462,27 @@ function distanceInKm(from: [number, number], to: [number, number]) {
 
 function degreesToRadians(degrees: number) {
   return degrees * (Math.PI / 180);
+}
+
+export function configureMapAttribution(root: ParentNode | null) {
+  const attribution = root?.querySelector<HTMLDetailsElement>(".maplibregl-ctrl-attrib");
+  const toggle = attribution?.querySelector<HTMLElement>(".maplibregl-ctrl-attrib-button");
+  if (!attribution || !toggle || attribution.dataset.wanderlyControlled === "true") return;
+
+  let expanded = false;
+  attribution.dataset.wanderlyControlled = "true";
+  attribution.dataset.wanderlyExpanded = "false";
+  attribution.classList.remove("maplibregl-compact-show");
+  attribution.removeAttribute("open");
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.addEventListener("click", (event) => {
+    event.preventDefault();
+    expanded = !expanded;
+    attribution.dataset.wanderlyExpanded = String(expanded);
+    attribution.classList.toggle("maplibregl-compact-show", expanded);
+    attribution.toggleAttribute("open", expanded);
+    toggle.setAttribute("aria-expanded", String(expanded));
+  });
 }
 
 function stateLabel(state: ExploreState) {
