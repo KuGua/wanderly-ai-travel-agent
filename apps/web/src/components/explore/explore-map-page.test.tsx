@@ -34,7 +34,6 @@ describe("Explore map conversation place DTO", () => {
       sourceType: "INSPIRATION",
     });
   });
-
   it("maps a private inspiration as unverified context", () => {
     expect(toConversationPlace({
       id: "inspiration-1",

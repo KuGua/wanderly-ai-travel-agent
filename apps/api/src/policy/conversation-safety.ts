@@ -1,39 +1,6 @@
 import type { ConversationPlace } from "../types/schemas.js";
 import type { ConversationReply } from "../providers/model-gateway.js";
-
-export const CONVERSATION_PLACE_FIXTURE_VERSION = "2026-08-25.v1";
-
-interface ConversationPlaceFixture extends ConversationPlace {
-  sourceType: "FIXTURE";
-  fixtureVersion: string;
-}
-
-const CONVERSATION_PLACE_FIXTURES: Readonly<Record<string, ConversationPlaceFixture>> = {
-  tokyo: {
-    sourceId: "tokyo",
-    name: "Tokyo",
-    latitude: 35.6895,
-    longitude: 139.6917,
-    sourceType: "FIXTURE",
-    fixtureVersion: CONVERSATION_PLACE_FIXTURE_VERSION,
-  },
-  lisbon: {
-    sourceId: "lisbon",
-    name: "Lisbon",
-    latitude: 38.7223,
-    longitude: -9.1393,
-    sourceType: "FIXTURE",
-    fixtureVersion: CONVERSATION_PLACE_FIXTURE_VERSION,
-  },
-  reykjavik: {
-    sourceId: "reykjavik",
-    name: "Reykjavík",
-    latitude: 64.1466,
-    longitude: -21.9426,
-    sourceType: "FIXTURE",
-    fixtureVersion: CONVERSATION_PLACE_FIXTURE_VERSION,
-  },
-};
+import { getLocationReferenceResolver } from "../location-reference/location-reference-resolver.js";
 
 const PRICE_TERMS = ["price", "prices", "cost", "costs", "fare", "fares", "rate", "rates"];
 const LIVE_TERMS = ["current", "currently", "live", "real time", "today", "tonight", "now", "latest", "up to date"];
@@ -54,21 +21,16 @@ const FLIGHT_STATUS_TERMS = [
 export function resolveConversationPlace(place: ConversationPlace | undefined): ConversationPlace | undefined {
   if (!place) return undefined;
 
-  const fixture = place.sourceType === "FIXTURE" && place.sourceId
-    ? CONVERSATION_PLACE_FIXTURES[place.sourceId]
-    : undefined;
-  if (
-    fixture
-    && fixture.name === place.name
-    && coordinatesMatch(fixture.latitude, place.latitude)
-    && coordinatesMatch(fixture.longitude, place.longitude)
-  ) {
+  const reference = getLocationReferenceResolver().resolve(place.latitude, place.longitude);
+  if (reference.outcome === "REFERENCE") {
     return {
-      sourceId: fixture.sourceId,
-      name: fixture.name,
-      latitude: fixture.latitude,
-      longitude: fixture.longitude,
-      sourceType: "FIXTURE",
+      sourceId: [reference.countryCode, reference.admin1Code, reference.nearestCity]
+        .filter((value): value is string => Boolean(value))
+        .join(":") || undefined,
+      name: reference.nearestCity ?? reference.country,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      sourceType: "REFERENCE",
     };
   }
 
@@ -147,10 +109,6 @@ export function safeConversationRefusal(): ConversationReply {
       "I can help with general destination inspiration and qualitative comparisons, but this chat cannot verify current prices, inventory or availability, visa or entry requirements, booking status, flight status, or other real-time provider facts. Please check the relevant official provider or government source.",
     responseMode: "SAFE_REFUSAL",
   };
-}
-
-function coordinatesMatch(canonical: number, supplied: number): boolean {
-  return Math.abs(canonical - supplied) <= 0.000001;
 }
 
 function normalizePolicyText(value: string): string {

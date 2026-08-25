@@ -34,7 +34,7 @@ describe("HttpTravelApi private conversation", () => {
         name: "Tokyo",
         longitude: 139.6917,
         latitude: 35.6895,
-        sourceType: "FIXTURE",
+        sourceType: "REFERENCE",
       },
     });
 
@@ -55,7 +55,7 @@ describe("HttpTravelApi private conversation", () => {
         name: "Tokyo",
         longitude: 139.6917,
         latitude: 35.6895,
-        sourceType: "FIXTURE",
+        sourceType: "REFERENCE",
       },
     });
     expect(body).not.toHaveProperty("role");

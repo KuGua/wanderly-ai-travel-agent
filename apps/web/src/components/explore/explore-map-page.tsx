@@ -66,6 +66,7 @@ export function ExploreMapPage() {
   const tCommon = useTranslations("common");
   const locale = useLocale();
 
+  const destinations: Destination[] = [];
   useEffect(() => {
     readinessRef.current = readiness;
   }, [readiness]);
@@ -702,7 +703,7 @@ export function toConversationPlace(selected: ExploreDestination): ConversationP
     name: selected.name,
     longitude: selected.coordinates[0],
     latitude: selected.coordinates[1],
-    sourceType: "INSPIRATION",
+    sourceType: selected.locationReference?.outcome === "REFERENCE" ? "REFERENCE" : "INSPIRATION",
   };
 }
 

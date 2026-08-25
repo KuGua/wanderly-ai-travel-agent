@@ -168,7 +168,7 @@ describe("owner-only Personal Agent conversation flow", () => {
             name: "Tokyo",
             latitude: 35.6895,
             longitude: 139.6917,
-            sourceType: "FIXTURE",
+            sourceType: "REFERENCE",
           },
         },
       });
