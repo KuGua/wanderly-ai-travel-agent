@@ -3,7 +3,7 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useEffect, useState } from "react";
 
-export const COUNTRY_BOUNDARY_DATA_URL = "/map-data/natural-earth-admin-0.geojson";
+import { COUNTRY_BOUNDARY_DATA_URL } from "./map-surface-style";
 
 type Projector = (coordinates: [number, number]) => { x: number; y: number };
 
@@ -11,6 +11,7 @@ export function projectCountryBoundaryPaths(
   collection: GeoJSON.FeatureCollection,
   project: Projector,
   viewportWidth: number,
+  isVisible: (coordinates: [number, number]) => boolean = () => true,
 ): string[] {
   return collection.features.flatMap((feature) => {
     if (!feature.geometry) return [];
@@ -19,20 +20,43 @@ export function projectCountryBoundaryPaths(
       : feature.geometry.type === "MultiPolygon"
         ? feature.geometry.coordinates
         : [];
-    return polygons.map((polygon) => pathForPolygon(polygon, project, viewportWidth)).filter((path): path is string => Boolean(path));
+    return polygons.map((polygon) => pathForPolygon(polygon, project, viewportWidth, isVisible)).filter((path): path is string => Boolean(path));
   });
 }
 
-function pathForPolygon(coordinates: number[][][], project: Projector, viewportWidth: number) {
+export function isCoordinateOnVisibleHemisphere(coordinates: [number, number], center: [number, number]) {
+  const longitudeDelta = degreesToRadians(coordinates[0] - center[0]);
+  const latitude = degreesToRadians(coordinates[1]);
+  const centerLatitude = degreesToRadians(center[1]);
+  return Math.sin(latitude) * Math.sin(centerLatitude)
+    + Math.cos(latitude) * Math.cos(centerLatitude) * Math.cos(longitudeDelta) >= 0;
+}
+
+function pathForPolygon(
+  coordinates: number[][][],
+  project: Projector,
+  viewportWidth: number,
+  isVisible: (coordinates: [number, number]) => boolean,
+) {
   return coordinates.map((ring) => {
     let previous: { x: number; y: number } | null = null;
     return ring.reduce<string>((path, coordinate) => {
-      const point = project([coordinate[0], coordinate[1]]);
+      const position: [number, number] = [coordinate[0], coordinate[1]];
+      if (!isVisible(position)) {
+        previous = null;
+        return path;
+      }
+      const point = project(position);
+      const startsVisibleSegment = previous === null;
       const wrapsAcrossGlobe = previous && Math.abs(point.x - previous.x) > viewportWidth * 0.45;
       previous = point;
-      return `${path}${path === "" || wrapsAcrossGlobe ? "M" : "L"}${point.x.toFixed(2)} ${point.y.toFixed(2)} `;
+      return `${path}${path === "" || startsVisibleSegment || wrapsAcrossGlobe ? "M" : "L"}${point.x.toFixed(2)} ${point.y.toFixed(2)} `;
     }, "");
   }).join("");
+}
+
+function degreesToRadians(value: number) {
+  return value * Math.PI / 180;
 }
 
 export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | null; visible: boolean }) {
@@ -63,7 +87,13 @@ export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | nu
       frame = window.requestAnimationFrame(() => {
         frame = null;
         const container = map.getContainer();
-        setPaths(projectCountryBoundaryPaths(data, (coordinates) => map.project(coordinates), container.clientWidth));
+        const center = map.getCenter();
+        setPaths(projectCountryBoundaryPaths(
+          data,
+          (coordinates) => map.project(coordinates),
+          container.clientWidth,
+          (coordinates) => isCoordinateOnVisibleHemisphere(coordinates, [center.lng, center.lat]),
+        ));
       });
     };
     redraw();

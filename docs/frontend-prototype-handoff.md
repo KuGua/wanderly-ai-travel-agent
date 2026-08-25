@@ -118,7 +118,7 @@ AppShell
 
 - 国家陆地边界与海岸线共同构成国家视觉轮廓；岛国海岸线不是国际边界数据。保留 Liberty 原始标签作为回退，不能在自定义图层成功前隐藏它们。
 - 用户可独立开关 `Countries`、`States / Provinces` 和 `Cities`，默认开启。控件固定在地图右侧，地点抽屉打开后仍必须可操作。
-- `Countries` 同时控制 Liberty 的 `boundary_2`/国家标签与本地 Natural Earth Admin 0 国家线兜底层。地图 ready 后将可用的 Liberty 行政区 layer 移至 provider style stack 顶部；Natural Earth 则由独立、不可点击的 SVG overlay 使用 `map.project()` 绘制，并随 move/resize 更新，因此 provider 的 fill/road 重排或 MapLibre GeoJSON source cache 不得遮住或阻塞国界。不得把 URL 直接交给 MapLibre globe 的 GeoJSON loader，也不得新增运行时 GeoJSON source，两者都可能长期 pending 却不触发 error。该 GeoJSON 仅作视觉参考，带 Natural Earth attribution，不可用于反向地理编码、旅行事实或候选推断。
+- `Countries` 同时控制 Liberty 的 `boundary_2`/国家标签与本地 Natural Earth Admin 0 国家线兜底层。地图 ready 后将可用的 Liberty 行政区 layer 移至 provider style stack 顶部；fallback 由独立、不可点击的 SVG overlay 使用 `map.project()` 绘制并随 move/resize 更新，且以当前 map center 做半球可见性判断，背面坐标不得投影穿透正面。不得把 URL 直接交给 MapLibre globe 的 GeoJSON loader。该 GeoJSON 仅作视觉参考，带 Natural Earth attribution，不可用于反向地理编码、旅行事实或候选推断。
 - 点击国家、省/州或城市的已渲染标签打开 `Map location` 预览，不创建 pin，也不得由名称、坐标或边界推断旅行价格、库存、签证、可预订性或共享约束。只有空白处点击才创建会话内私有灵感。
 - 遥测最多记录有界的 `feature_class`、`zoom_band` 与 `outcome`；不得写入城市名称、行政区名称、坐标或私有 pin。Map 详情开关（`Countries` / `States / Provinces` / `Cities`）在 style.load 之后始终可见并可被聚焦；style 缺少 `openmaptiles` source 或缺失任一必需图层时，按钮保持原可见态但被禁用，并以一段 `role="status"` 文案说明原因（"does not expose the openmaptiles source" 或 "missing layers: …"）。`/home` 不再静默隐藏控件，避免开发期把"style 不兼容"误判为"功能未实现"。
 

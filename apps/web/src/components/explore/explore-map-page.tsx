@@ -8,6 +8,7 @@ import { applyGeographyContrast, GEOGRAPHY_INTERACTIVE_LAYER_IDS, geographyFeatu
 import { INITIAL_READINESS, layerCaptionFor, mapReadinessStage, panelDisabledReason, type LayerCaption, type MapReadiness, type MapStage } from "./map-readiness";
 
 import { CountryBoundaryOverlay } from "./country-boundary-overlay";
+import { solidifyGlobeStyle } from "./map-surface-style";
 import { TravelAgentChat } from "./travel-agent-chat";
 
 type Destination = {
@@ -35,7 +36,7 @@ async function loadGlobeStyle(): Promise<StyleSpecification> {
   const styleResponse = await fetch(MAP_STYLE_URL);
   if (!styleResponse.ok) throw new Error(`Map style request failed (${styleResponse.status})`);
   const style = await styleResponse.json() as StyleSpecification;
-  return { ...style, projection: { type: "globe" } };
+  return solidifyGlobeStyle({ ...style, projection: { type: "globe" } });
 }
 
 export function ExploreMapPage() {

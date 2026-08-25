@@ -316,6 +316,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 5. 在全球、区域和本地缩放级别，确认国家、省/州和城市按层级显示；分别关闭三个图层。
 6. 打开一个地点抽屉后，确认三个图层开关仍可见并可操作。
 7. 点击国家、城市或省/州名称，再点击空白地图位置。
+8. 从全球缩放逐步放大到区域缩放，检查陆地与海洋材质和地图标签。
 
 **Expected outcomes:**
 
@@ -331,7 +332,8 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 - 如果配置的 style 缺少兼容的 OpenMapTiles source 或缺失任一必需图层，行政区/城市开关**保持可见但被禁用**，附 `role="status"` caption 说明缺失项（缺 source 或 `missing layers:` 列表）；地图保留原有候选入口和故障回退；不静默隐藏，不报错或伪造地图数据。开发者可在 dev 模式下通过 `window.__wanderlyMap.readiness` 观察 5 种 readiness（loading / ready-supported / ready-style-unsupported-source / ready-style-missing-layers / unavailable-network）。
 - 地图就绪生命周期分两阶段（mounting → ready）：MapLibre 6.6 的 globe projection 必须写入传给 `new Map()` 的 style JSON，`style.load` 是 style 兼容性检查和图层控件的唯一就绪前置；不得在 style 创建前或 `style.load` 后调用 `setProjection()`。OpenMapTiles 的 `sourcedata` 只作为开发诊断，慢 TileJSON 或 PBF 不得触发 `unavailable-network`。只有 style 总超时、初始化异常或 style ready 前的 map error 才显示 globe error 回退。dev 模式下 `window.__wanderlyMap.stage` 实时反映当前阶段。
 - 地图 ready 后，国家边界位于 provider style stack 顶层：即使 Liberty 的 fill/road layer 重排，全球缩放仍可看到本地 Natural Earth Admin 0 兜底线。关闭 Countries 时必须同时隐藏 Liberty 国家层和 fallback；States / Provinces 仅在 zoom 5+、Cities 仅在 zoom 3+ 才预期出现。fallback 不参与地点匹配、反向地理编码或旅行事实。
-- Natural Earth fallback 必须由独立 SVG overlay 获取同源 GeoJSON，并以 `map.project()` 绘制与随 move/resize 更新；不得依赖 globe 模式下可能没有 error 的 GeoJSON source pending。关闭 Countries 时必须隐藏该 SVG overlay。获取失败应保留既有地图和无障碍地点入口。
+- Natural Earth fallback 必须由独立 SVG overlay 获取同源 GeoJSON，并以 `map.project()` 绘制与随 move/resize 更新；Countries 开启时保持显示，并按当前 map center 剔除背半球坐标，背面国界不得穿透正面。不得依赖 globe 模式下可能没有 error 的 GeoJSON source pending。获取失败应保留既有地图和无障碍地点入口。
+- 地球表面必须保持实体不透明：GEBCO `GEBCO_LATEST` WMS shaded relief 同时提供陆地与海底地势，opacity 固定为 1；Liberty Natural Earth 位于其下，仅作为 GEBCO 请求失败时的视觉 fallback。道路、标签和行政边界仍需在 relief 之上可读，放大时不得退化为白色或透明地图。必须显示 GEBCO attribution 与“不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
 
 ### TS-S1 — Protect data and trace the Agentic workflow
 

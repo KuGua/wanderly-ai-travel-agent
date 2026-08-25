@@ -43,15 +43,22 @@ not provide an availability SLA, so deployment acceptance must include that
 risk or configure another approved provider. The Explore page keeps an
 accessible destination list if the map cannot load.
 
+Before MapLibre initializes, the Explore page inserts the public-domain GEBCO
+global shaded-relief WMS beneath OpenFreeMap's vector details. GEBCO provides
+one opaque land-and-seabed texture, so terrain depth does not depend on a
+transparent SVG tint. Liberty's `natural_earth` raster remains underneath as a
+visual fallback if GEBCO is unavailable; roads, labels and administrative
+layers stay above both rasters. GEBCO requires attribution, has no availability
+SLA, and explicitly must not be used for navigation or safety at sea.
+
 For low-zoom global country borders, the Explore page also loads the
 versioned local file `public/map-data/natural-earth-admin-0.geojson` as a
-SVG overlay. The browser fetches this same-origin asset and projects its paths
-with the active map camera, rather than routing it through MapLibre's
-GeoJSON-source worker. It is derived from Natural Earth Admin 0 Countries and is
-shown in the same attribution control; it is a visual fallback only and is
-never used for destination lookup or travel facts. State/province and city
-details remain progressive OpenFreeMap layers, appearing at their style zoom
-thresholds.
+SVG overlay above the provider stack. The browser fetches this same-origin
+asset, culls coordinates on the globe's back hemisphere, and projects the
+remaining paths with the active camera. It is derived from Natural Earth Admin
+0 Countries, appears in the attribution control, and is never used for
+destination lookup or travel facts. State/province and city details remain
+progressive OpenFreeMap style layers.
 
 ## Run locally
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { projectCountryBoundaryPaths } from "./country-boundary-overlay";
+import { isCoordinateOnVisibleHemisphere, projectCountryBoundaryPaths } from "./country-boundary-overlay";
 
 describe("projectCountryBoundaryPaths", () => {
   it("projects polygon rings into SVG paths without MapLibre GeoJSON sources", () => {
@@ -27,5 +27,19 @@ describe("projectCountryBoundaryPaths", () => {
     }, ([lng, lat]) => ({ x: lng, y: lat }), 100);
 
     expect(paths[0]).toContain("M0.00 0.00 M100.00 0.00 M0.00 0.00");
+  });
+
+  it("drops boundary vertices on the back hemisphere", () => {
+    const paths = projectCountryBoundaryPaths({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: {},
+        geometry: { type: "Polygon", coordinates: [[[0, 0], [180, 0], [10, 0], [0, 0]]] },
+      }],
+    }, ([lng, lat]) => ({ x: lng, y: lat }), 400, (coordinates) => isCoordinateOnVisibleHemisphere(coordinates, [0, 0]));
+
+    expect(paths).toEqual(["M0.00 0.00 M10.00 0.00 L0.00 0.00 "]);
+    expect(isCoordinateOnVisibleHemisphere([180, 0], [0, 0])).toBe(false);
   });
 });
