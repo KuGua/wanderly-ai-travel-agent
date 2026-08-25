@@ -216,7 +216,6 @@
     "deleteSelected": "Delete selected",
     "deleteSelectedWithCount": "Delete selected ({count})",
     "drawerCloseAriaLabel": "Close destination preview",
-    "drawerKindFixture": "Demo data",
     "drawerKindGeography": "Map location",
     "drawerKindInspiration": "Session-only inspiration",
     "geographyCountryLabel": "Country label from the map",
@@ -232,7 +231,6 @@
     "locationReferenceUnavailable": "Offline map reference is unavailable. Your private session pin is still saved.",
     "locationReferenceNote": "This is an offline map reference, not an address, travel candidate, price, availability, visa or booking fact.",
     "locationReferenceDataPrefix": "Data:",
-    "markerExploreAria": "Explore {name}, {country}",
     "markerOpenAria": "Open {name}",
     "state": {
       "IDLE": "Destination preview",
@@ -246,7 +244,6 @@
       "FLYING": "Flying across the globe…",
       "inspiration": "Kept for this session",
       "geography": "Unverified map location",
-      "fixture": "Explore {name}",
       "viewGeography": "View this map location",
       "viewInspiration": "View this inspiration"
     },
@@ -261,17 +258,6 @@
       "captionSupported": "Zoom in for regional details.",
       "captionMissingSource": "Country/region labels are hidden — this map style does not expose the openmaptiles source.",
       "captionMissingLayers": "Country/region labels are hidden — missing layers: {layers}."
-    },
-    "destinations": {
-      "tokyo": "Tokyo",
-      "tokyoCountry": "Japan",
-      "tokyoNote": "Food, design and neighborhoods that reward wandering.",
-      "lisbon": "Lisbon",
-      "lisbonCountry": "Portugal",
-      "lisbonNote": "Hillside streets, Atlantic light and late dinners.",
-      "reykjavik": "Reykjavík",
-      "reykjavikCountry": "Iceland",
-      "reykjavikNote": "A compact base for geothermal landscapes."
     }
   },
   "trips": {

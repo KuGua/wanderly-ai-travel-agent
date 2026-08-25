@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isCoordinateOnVisibleHemisphere, projectCountryBoundaryPaths } from "./country-boundary-overlay";
+import { globalBoundariesWithoutChina, isCoordinateOnVisibleHemisphere, projectCountryBoundaryPaths } from "./country-boundary-overlay";
 
 describe("projectCountryBoundaryPaths", () => {
   it("projects polygon rings into SVG paths without MapLibre GeoJSON sources", () => {
@@ -41,5 +41,20 @@ describe("projectCountryBoundaryPaths", () => {
 
     expect(paths).toEqual(["M0.00 0.00 M10.00 0.00 L0.00 0.00 "]);
     expect(isCoordinateOnVisibleHemisphere([180, 0], [0, 0])).toBe(false);
+  });
+});
+
+describe("globalBoundariesWithoutChina", () => {
+  it("lets the China-specific outline replace conflicting Natural Earth features", () => {
+    const collection = globalBoundariesWithoutChina({
+      type: "FeatureCollection",
+      features: ["USA", "CHN", "TWN"].map((code) => ({
+        type: "Feature" as const,
+        properties: { ADM0_A3: code },
+        geometry: { type: "Polygon" as const, coordinates: [] },
+      })),
+    });
+
+    expect(collection.features.map((feature) => feature.properties?.ADM0_A3)).toEqual(["USA"]);
   });
 });

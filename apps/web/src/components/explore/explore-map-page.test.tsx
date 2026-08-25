@@ -18,20 +18,20 @@ function mockGlobeStyleFetch() {
 }
 
 describe("Explore map conversation place DTO", () => {
-  it("maps a canonical fixture using MapLibre [lng, lat] order", () => {
+  it("maps an inspected geography using MapLibre [lng, lat] order", () => {
     expect(toConversationPlace({
-      id: "tokyo",
-      name: "Tokyo",
-      country: "Japan",
-      coordinates: [139.6917, 35.6895],
-      note: "Demo destination",
-      kind: "fixture",
+      id: "geography-1",
+      name: "Map location",
+      country: "Unverified",
+      coordinates: [120.12, 30.28],
+      note: "Map inspection",
+      kind: "geography",
     })).toEqual({
-      sourceId: "tokyo",
-      name: "Tokyo",
-      longitude: 139.6917,
-      latitude: 35.6895,
-      sourceType: "FIXTURE",
+      sourceId: "geography-1",
+      name: "Map location",
+      longitude: 120.12,
+      latitude: 30.28,
+      sourceType: "INSPIRATION",
     });
   });
 
