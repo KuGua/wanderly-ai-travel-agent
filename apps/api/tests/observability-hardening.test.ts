@@ -52,12 +52,12 @@ describe("logger redaction", () => {
 describe("bounded metrics", () => {
   it("emits only expected bounded callback and provider labels", () => {
     metrics.inc("callback_verifications_total", { callbackResult: "valid" });
-    metrics.inc("provider_fallback_total", { provider: "gemini", outcome: "TIMEOUT" });
+    metrics.observe("llm_request_latency_ms", 10, { provider: "gemini", outcome: "success" });
 
     const rendered = metrics.render();
     expect(rendered).toContain('callbackResult="valid"');
     expect(rendered).toContain('provider="gemini"');
-    expect(rendered).toContain('outcome="TIMEOUT"');
+    expect(rendered).toContain('outcome="success"');
   });
 
   it("rejects high-cardinality keys and free-form values before emission", () => {
@@ -67,9 +67,9 @@ describe("bounded metrics", () => {
       callbackResult: "valid",
       tripId: identifier,
     })).toThrow(MetricLabelError);
-    expect(() => metrics.inc("provider_fallback_total", {
+    expect(() => metrics.observe("llm_request_latency_ms", 10, {
       provider: "arbitrary-model-name",
-      outcome: "TIMEOUT",
+      outcome: "success",
     })).toThrow(MetricLabelError);
     expect(metrics.render()).not.toContain(identifier);
     expect(metrics.render()).not.toContain("arbitrary-model-name");

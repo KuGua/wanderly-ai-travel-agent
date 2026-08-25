@@ -7,7 +7,12 @@ import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { createRequestContext } from "../utils/context.js";
 import {
+  getOwnerConversation,
+  submitConversationTurn,
+} from "../services/chat-conversation-service.js";
+import {
   appendMessageSchema,
+  conversationTurnRequestSchema,
   createThreadSchema,
   threadDetailsResponseSchema,
   threadMessagesResponseSchema,
@@ -82,6 +87,33 @@ export async function chatThreadRoutes(app: FastifyInstance) {
     });
   });
 
+  // Owner-readable raw USER/ASSISTANT history for restoring the private UI.
+  // This is deliberately separate from the redacted Agent recall contract.
+  app.get("/threads/:threadId/conversation", async (request) => {
+    const { threadId } = request.params as { threadId: string };
+    const query = (request.query ?? {}) as { limit?: string };
+    return getOwnerConversation({
+      threadId,
+      ownerUserId: request.user.id,
+      limit: clampLimit(query.limit, 100),
+    });
+  });
+
+  // Execute one complete server-controlled USER → ASSISTANT turn.
+  app.post("/threads/:threadId/turns", async (request) => {
+    const { threadId } = request.params as { threadId: string };
+    const ctx = createRequestContext(
+      request.user.id, request.correlationId, request.traceId, request.clientRequestId,
+    );
+    const input = conversationTurnRequestSchema.parse(request.body);
+    return submitConversationTurn({
+      ctx,
+      threadId,
+      ownerUserId: request.user.id,
+      input,
+    });
+  });
+
   // Delete thread (cascade messages via FK)
   app.delete("/threads/:threadId", async (request) => {
     const { threadId } = request.params as { threadId: string };
@@ -122,7 +154,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
       const [msg] = await tx.insert(chatMessages).values({
         threadId,
         senderUserId: request.user.id,
-        role: body.role,
+        role: "USER",
         body: body.body,
         markedSharedByOwner: body.markedSharedByOwner ?? false,
         redactedSummary: null,
@@ -136,7 +168,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
         summary: {
           threadId,
           messageId: msg.id,
-          role: body.role,
+          role: "USER",
           markedSharedByOwner: msg.markedSharedByOwner,
         },
         tx,
@@ -227,9 +259,9 @@ async function fetchRedactedMessages(
   return rows.reverse().map(toRedactedMessage);
 }
 
-function clampLimit(raw: string | undefined): number {
-  if (!raw) return 20;
+function clampLimit(raw: string | undefined, defaultValue: number = 20): number {
+  if (!raw) return defaultValue;
   const n = Number.parseInt(raw, 10);
-  if (!Number.isFinite(n) || n <= 0) return 20;
+  if (!Number.isFinite(n) || n <= 0) return defaultValue;
   return Math.min(n, 100);
 }

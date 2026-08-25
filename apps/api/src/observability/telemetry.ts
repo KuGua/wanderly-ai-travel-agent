@@ -16,6 +16,7 @@ export const LOGGER_REDACT_PATHS = [
   "req.body.nationality",
   "req.body.dateOfBirth",
   "req.body.prompt",
+  "req.body.question",
   "req.body.privateConversation",
   "req.body.memberPreferences",
   "req.body.*.passportNumber",
@@ -37,6 +38,9 @@ export const LOGGER_REDACT_PATHS = [
   "req.body.*.message",
   "req.body.*.privateMessage",
   "res.body.*.body",
+  "res.body.userMessage.content",
+  "res.body.assistantMessage.content",
+  "res.body.messages.*.content",
 ] as const;
 
 export const LOGGER_REDACTION = {

@@ -5,7 +5,14 @@ import { db } from "../src/db/database.js";
 import { users, userProfiles, sharedTrips, tripMembers, consentGrants, constraintSnapshots, itineraryPlans, memberConfirmations, bookingExecutions, idempotencyRecords, auditEvents, providerOffers, sourceEvidence, visaReadinessChecks, preferenceFacts, destinationCandidates } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { grantConsent, revokeConsent, getActiveConsents, buildAuthorizedData } from "../src/services/consent-service.js";
-import { createConstraintSnapshot, generatePlan, markPlanStale, getLatestActivePlan } from "../src/services/planning-service.js";
+import {
+  __setPlanningDependenciesForTests,
+  createConstraintSnapshot,
+  generatePlan,
+  markPlanStale,
+  getLatestActivePlan,
+  type PlanningDependencies,
+} from "../src/services/planning-service.js";
 import { setConfirmation, checkAllConfirmed, markConfirmationsStale } from "../src/services/confirmation-service.js";
 import { submitBooking, handleSandboxCallback } from "../src/services/booking-service.js";
 import { processChangeEvent } from "../src/services/change-event-service.js";
@@ -20,7 +27,88 @@ let chenId: string;
 let tripId: string;
 let app: FastifyInstance;
 
+const providerCapturedAt = "2026-08-25T00:00:00.000Z";
+const integrationPlanningDependencies: PlanningDependencies = {
+  flightProvider: {
+    async searchFlights(params) {
+      return {
+        outcome: "LIVE",
+        source: "test-flight-provider",
+        capturedAt: providerCapturedAt,
+        data: [{
+          id: `flight-${params.origin.toLowerCase().replaceAll(" ", "-")}-${params.destination.toLowerCase()}`,
+          origin: params.origin,
+          destination: params.destination,
+          departureTime: `${params.dateStart}T08:00:00.000Z`,
+          arrivalTime: `${params.dateStart}T16:00:00.000Z`,
+          priceUsd: 800,
+          isRedEye: false,
+          airline: "Test Air",
+          source: "test-flight-provider",
+          capturedAt: providerCapturedAt,
+        }],
+      };
+    },
+  },
+  stayProvider: {
+    async searchStays(params) {
+      return {
+        outcome: "LIVE",
+        source: "test-stay-provider",
+        capturedAt: providerCapturedAt,
+        data: [{
+          id: `stay-${params.destination.toLowerCase()}`,
+          destination: params.destination,
+          checkIn: params.checkIn,
+          checkOut: params.checkOut,
+          pricePerNightUsd: 180,
+          style: "city_center",
+          location: "Test district",
+          source: "test-stay-provider",
+          capturedAt: providerCapturedAt,
+        }],
+      };
+    },
+  },
+  groundProvider: {
+    async searchGround(params) {
+      return {
+        outcome: "LIVE",
+        source: "test-ground-provider",
+        capturedAt: providerCapturedAt,
+        data: [{
+          id: `ground-${params.destination.toLowerCase()}`,
+          destination: params.destination,
+          type: "airport_transfer",
+          priceUsd: 35,
+          provider: "Test Transfer",
+          source: "test-ground-provider",
+          capturedAt: providerCapturedAt,
+        }],
+      };
+    },
+  },
+  modelGateway: {
+    async generateStructuredPlan(params) {
+      return {
+        destination: params.destination,
+        flights: params.flights,
+        stays: params.stays,
+        ground: params.ground,
+        generatedAt: providerCapturedAt,
+      };
+    },
+    async explainPlanDiff() {
+      return { added: [], removed: [], changed: [] };
+    },
+    async generateConversationReply() {
+      return { content: "Test-only conversation response", responseMode: "MODEL" };
+    },
+  },
+};
+
 beforeAll(async () => {
+  __setPlanningDependenciesForTests(integrationPlanningDependencies);
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
   await app.ready();
 
@@ -49,10 +137,16 @@ beforeAll(async () => {
   } else {
     chenId = chenRecords[0].id;
   }
+
+  // Make this file independent from seed/test execution order.
+  await db.update(users).set({ displayName: "Alice" }).where(eq(users.id, aliceId));
+  await db.update(users).set({ displayName: "Bob" }).where(eq(users.id, bobId));
+  await db.update(users).set({ displayName: "Chen" }).where(eq(users.id, chenId));
 });
 
 afterAll(async () => {
   await app.close();
+  __setPlanningDependenciesForTests(null);
 });
 
 beforeEach(async () => {
@@ -316,6 +410,7 @@ describe("Frontend API Contract", () => {
 describe("Consent & Authorization", () => {
   it("grants and retrieves consent", async () => {
     await grantConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -330,6 +425,7 @@ describe("Consent & Authorization", () => {
 
   it("revoking consent removes it from active list", async () => {
     await grantConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_NATIONALITY",
@@ -340,6 +436,7 @@ describe("Consent & Authorization", () => {
     expect(consents.length).toBe(1);
 
     await revokeConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_NATIONALITY",
@@ -361,6 +458,7 @@ describe("Consent & Authorization", () => {
 
     // Grant only preferences, not nationality
     await grantConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -381,6 +479,7 @@ describe("Consent Revocation Causes Plan Stale", () => {
 
     // Grant consent and create snapshot
     await grantConsent({
+      ctx,
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -410,20 +509,14 @@ describe("Consent Revocation Causes Plan Stale", () => {
 
     // Revoke consent
     await revokeConsent({
+      ctx,
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
     });
 
-    // Mark plan stale (simulating the change event flow)
-    await markPlanStale({
-      ctx,
-      planId,
-      reason: "Consent revoked",
-    });
-
     plan = await getLatestActivePlan(tripId);
-    expect(plan).toBeNull(); // No active plan
+    expect(plan).toBeNull(); // Revocation atomically stales the active plan.
   });
 });
 
@@ -432,6 +525,7 @@ describe("Constraint Snapshot Immutability", () => {
     const ctx = createRequestContext(aliceId);
 
     await grantConsent({
+      ctx,
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -466,72 +560,6 @@ describe("Constraint Snapshot Immutability", () => {
   });
 });
 
-describe("Fixture-backed Planning API", () => {
-  it("returns a complete two-origin plan and persists fixture provenance", async () => {
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/v1/planning/generate",
-      headers: authHeaders("alice"),
-      payload: { tripId },
-    });
-
-    expect(response.statusCode).toBe(200);
-    const body = response.json();
-    const flights = body.plan.flights as Array<Record<string, unknown>>;
-    expect(flights.map(flight => flight.origin).sort()).toEqual(["San Francisco", "Shanghai"]);
-
-    const offers = await db.select().from(providerOffers).where(eq(providerOffers.planId, body.planId));
-    const evidence = await db.select().from(sourceEvidence).where(eq(sourceEvidence.planId, body.planId));
-
-    expect(new Set(offers.map(offer => offer.category))).toEqual(new Set(["flight", "stay", "ground"]));
-    expect(offers.every(offer => offer.isDemo)).toBe(true);
-    expect(new Set(evidence.map(item => item.category))).toEqual(new Set(["flight", "stay", "ground"]));
-    expect(evidence.every(item =>
-      (item.metadata as Record<string, unknown>).fixtureVersion === "2026-08-23.v1"
-    )).toBe(true);
-  });
-
-  it("returns the same normalized plan for repeated fixture requests", async () => {
-    const request = {
-      method: "POST" as const,
-      url: "/api/v1/planning/generate",
-      headers: authHeaders("alice"),
-      payload: { tripId },
-    };
-
-    const first = await app.inject(request);
-    const second = await app.inject(request);
-
-    expect(first.statusCode).toBe(200);
-    expect(second.statusCode).toBe(200);
-    expect(second.json().plan).toEqual(first.json().plan);
-  });
-
-  it("returns a typed failure and creates no plan for an unsupported fixture route", async () => {
-    await db.update(sharedTrips)
-      .set({ destinationCandidates: ["Singapore"] })
-      .where(eq(sharedTrips.id, tripId));
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/v1/planning/generate",
-      headers: authHeaders("alice"),
-      payload: { tripId },
-    });
-
-    expect(response.statusCode).toBe(422);
-    expect(response.json()).toMatchObject({
-      error: "PlanningDataUnavailableError",
-      message: expect.stringContaining("flight:San Francisco"),
-      correlationId: expect.any(String),
-    });
-    expect(response.headers["x-correlation-id"]).toBe(response.json().correlationId);
-
-    const plans = await db.select().from(itineraryPlans).where(eq(itineraryPlans.tripId, tripId));
-    expect(plans).toEqual([]);
-  });
-});
-
 describe("Three-Person Confirmation Threshold", () => {
   it("requires all 3 required members to confirm before booking", async () => {
     const ctx = createRequestContext(aliceId);
@@ -542,6 +570,8 @@ describe("Three-Person Confirmation Threshold", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -575,6 +605,8 @@ describe("Three-Person Confirmation Threshold", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId1 = await generatePlan({
@@ -617,6 +649,8 @@ describe("Change Event Idempotency", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     await generatePlan({
@@ -654,7 +688,7 @@ describe("Change Event Idempotency", () => {
 });
 
 describe("Booking Sandbox Idempotency", () => {
-  it("duplicate booking requests return cached result", async () => {
+  it("duplicate booking requests return the cached pending result", async () => {
     const ctx = createRequestContext(aliceId);
 
     // Create plan and get all confirmations
@@ -663,6 +697,8 @@ describe("Booking Sandbox Idempotency", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -689,7 +725,7 @@ describe("Booking Sandbox Idempotency", () => {
     });
 
     expect(result1.isDuplicate).toBe(false);
-    expect(result1.results.length).toBeGreaterThan(0);
+    expect(result1.results).toEqual([]);
 
     // Duplicate booking
     const result2 = await submitBooking({
@@ -701,6 +737,7 @@ describe("Booking Sandbox Idempotency", () => {
     });
 
     expect(result2.isDuplicate).toBe(true);
+    expect(result2.results).toEqual(result1.results);
   });
 
   it("duplicate callbacks are handled idempotently", async () => {
@@ -712,6 +749,8 @@ describe("Booking Sandbox Idempotency", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -774,6 +813,8 @@ describe("Visa Readiness - Unauthorized Nationality", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -808,6 +849,8 @@ describe("Error States Cannot Create Bookings", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({

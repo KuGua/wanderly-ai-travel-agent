@@ -77,9 +77,10 @@ the structured shape the validator emits).
 | code | Triggered by | Notes |
 | --- | --- | --- |
 | `UNKNOWN_SKILL` | Registry missing-name lookup; duplicate registration. | Registry uses this code for both cases. |
+| `SKILL_VERSION_MISMATCH` | `invokeSkill` caller pins an `expectedVersion` different from the registered contract. | Rejected before policy, parsing, or handler execution; HTTP 409. |
 | `TOOL_NOT_ALLOWED` | (a) Registration with scope outside agent-kind allow-list; (b) Runtime when `DefaultPolicyGate.requireScope` rejects. | Wraps a plain `Error` from `policy-gate.ts`. |
 | `INPUT_INVALID` | `skill.input.parse(payload)` Zod failure. | Message includes the Zod issue path. |
-| `OUTPUT_INVALID` | (a) `skill.output.parse(handlerResult)` Zod failure; (b) `lastUsedVersion` strict dedupe (`stale_version_reuse`). | Both reuse the same code. |
+| `OUTPUT_INVALID` | `skill.output.parse(handlerResult)` Zod failure. | Repeated execution of the same Skill version is valid. |
 | `TIMEOUT` | `Promise.race` rejecting timer fires within `skill.timeoutMs`. | Handler must respect the forwarded `signal` to release resources. |
 | `PLAN_VALIDATION_FAILED` | `plan.comparison` Skill when `policy/plan-output-validator.ts` throws `PlanValidationError`. | The Skill catches the validator exception and rethrows as `SkillError(code, message, violations)`. |
 | `SNAPSHOT_REQUIRED` | Shared Skill invoked without `ctx.snapshot`. | Plan comparison throws this when `snapshot` is missing. |

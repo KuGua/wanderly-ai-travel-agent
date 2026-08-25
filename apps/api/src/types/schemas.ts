@@ -206,8 +206,11 @@ export const threadsListResponseSchema = z.object({
   threads: z.array(threadSummarySchema),
 });
 
+export const chatMessageRoleSchema = z.enum(["USER", "ASSISTANT"]);
+
+// Legacy one-way append remains owner-only and can create USER messages only.
+// The browser never chooses a persisted role or sender identity.
 export const appendMessageSchema = z.object({
-  role: z.enum(["USER", "SYSTEM"]),
   body: z.string().min(1).max(16384),
   markedSharedByOwner: z.boolean().optional(),
 }).strict();
@@ -226,6 +229,41 @@ export const threadMessagesResponseSchema = z.object({
 export const threadDetailsResponseSchema = z.object({
   thread: threadSummarySchema,
   messages: z.array(chatMessageRedactedSchema),
+});
+
+export const conversationPlaceSchema = z.object({
+  sourceId: z.string().min(1).max(128).optional(),
+  name: z.string().trim().min(1).max(160),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  sourceType: z.enum(["FIXTURE", "INSPIRATION"]),
+}).strict();
+
+export const conversationTurnRequestSchema = z.object({
+  requestId: uuidSchema,
+  question: z.string().trim().min(1).max(4000),
+  place: conversationPlaceSchema.optional(),
+}).strict();
+
+export const ownerConversationMessageSchema = z.object({
+  id: uuidSchema,
+  role: chatMessageRoleSchema,
+  content: z.string(),
+  createdAt: z.string().datetime(),
+});
+
+export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL"]);
+
+export const conversationTurnResponseSchema = z.object({
+  threadId: uuidSchema,
+  userMessage: ownerConversationMessageSchema.extend({ role: z.literal("USER") }),
+  assistantMessage: ownerConversationMessageSchema.extend({ role: z.literal("ASSISTANT") }),
+  responseMode: conversationResponseModeSchema,
+});
+
+export const ownerConversationResponseSchema = z.object({
+  thread: threadSummarySchema,
+  messages: z.array(ownerConversationMessageSchema),
 });
 
 // ─── Booking ────────────────────────────────────────────────────────────────
@@ -268,4 +306,10 @@ export type ProjectDisplayState = z.infer<typeof projectDisplayStateSchema>;
 export type TripsResponse = z.infer<typeof tripsResponseSchema>;
 export type ThreadSummary = z.infer<typeof threadSummarySchema>;
 export type ChatMessageRedacted = z.infer<typeof chatMessageRedactedSchema>;
+export type ChatMessageRole = z.infer<typeof chatMessageRoleSchema>;
+export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
+export type ConversationTurnRequest = z.infer<typeof conversationTurnRequestSchema>;
+export type OwnerConversationMessage = z.infer<typeof ownerConversationMessageSchema>;
+export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;
+export type ConversationTurnResponse = z.infer<typeof conversationTurnResponseSchema>;
 export type ApiErrorResponse = z.infer<typeof errorResponseSchema>;

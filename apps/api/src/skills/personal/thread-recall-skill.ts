@@ -4,6 +4,7 @@ import type { Skill } from "../../agents/contracts.js";
 import { db } from "../../db/database.js";
 import { chatThreads, chatMessages } from "../../db/schema.js";
 import { ApiError } from "../../middleware/error-handler.js";
+import { chatMessageRoleSchema } from "../../types/schemas.js";
 
 export const threadRecallInputSchema = z.object({
   threadId: z.string().uuid(),
@@ -13,7 +14,7 @@ export const threadRecallInputSchema = z.object({
 export const threadRecallOutputSchema = z.object({
   messages: z.array(z.object({
     id: z.string().uuid(),
-    role: z.string(),
+    role: chatMessageRoleSchema,
     contentRedacted: z.string(),
     createdAt: z.string().datetime(),
   })),
@@ -64,7 +65,7 @@ export const threadRecallSkill: Skill<ThreadRecallInput, ThreadRecallOutput> = {
     return {
       messages: rows.reverse().map(r => ({
         id: r.id,
-        role: r.role,
+        role: chatMessageRoleSchema.parse(r.role),
         contentRedacted:
           r.markedSharedByOwner && r.redactedSummary ? r.redactedSummary : "",
         createdAt: r.createdAt.toISOString(),

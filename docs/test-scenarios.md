@@ -94,7 +94,7 @@ memberships overlap only where explicitly configured.
 - A failed candidate creates no `itineraryPlans`, `providerOffers`, `sourceEvidence` or `PLAN_CREATE` audit record; safe model-run observability may still be recorded.
 - Fixture provider results narrow explicitly between `FALLBACK_DEMO` and `UNAVAILABLE`; unsupported requests contain no fabricated `data`.
 
-### TS-H3c — Configure a server-side LLM provider without weakening fallback
+### TS-H3c — Configure a server-side LLM provider with fail-closed behavior
 
 **Stories:** H3, P1
 **Objective:** Verify Gemini, OpenAI and OpenAI-compatible configuration resolves only with the necessary server-side settings.
@@ -109,9 +109,9 @@ memberships overlap only where explicitly configured.
 **Expected outcomes:**
 
 - Gemini uses Google's OpenAI-compatible endpoint; OpenAI retains its default endpoint.
-- A provider with absent required settings resolves to `MockModelGateway` and never sends a request with an empty key.
+- A provider with absent required settings is rejected and never sends a request with an empty key.
 - A compatible provider is enabled only when all three required settings are present.
-- Provider failures record safe fallback telemetry and return the deterministic candidate; no key, private snapshot data or provider response body is logged.
+- Provider failures record safe failure telemetry and return a controlled error; no fake candidate, key, private snapshot data or provider response body is logged.
 
 ### TS-H1 — Save, reuse and override a private travel profile
 
@@ -144,7 +144,7 @@ memberships overlap only where explicitly configured.
 
 **Steps:**
 
-1. Alice sends messages, reloads the application, and reopens the same thread.
+1. Alice submits two Personal Agent turns for a selected fixture/inspiration, repeats one request ID, reloads the application, and reopens the same thread.
 2. Bob and Chen attempt to list, read or delete Alice's thread by guessing its `conversationId`.
 3. Alice creates a shared-trip plan without explicitly confirming any chat-derived Profile or trip override.
 4. Inspect the shared snapshot, plan explanation, logs, traces, metric labels and audit summary.
@@ -152,12 +152,14 @@ memberships overlap only where explicitly configured.
 
 **Expected outcomes:**
 
-- Only Alice can list, read or delete the thread; reload preserves messages until deletion.
+- Only Alice can submit turns and list, read or delete the thread; reload preserves readable USER/ASSISTANT messages until deletion.
+- The same Skill version can execute for later turns, and duplicate request IDs do not create duplicate USER/ASSISTANT rows.
+- Public clients cannot choose SYSTEM/ASSISTANT roles or sender identity; deterministic policy refusal is visibly `SAFE_REFUSAL`.
 - A `tripId` association does not grant fellow trip members or the Shared Agent access to the thread.
 - Raw message text is absent from the snapshot, shared plan/explanation and all telemetry/audit outputs; it is not default model context for the planning run.
 - Deletion removes message bodies and makes the thread unavailable to Alice; separately confirmed Profile/override facts remain until independently deleted.
 
-Runnable coverage: see `apps/api/tests/chat-threads-route.test.ts` (7 cases, owner enforcement + redaction + cascade delete) and `apps/api/tests/thread-recall-skill.test.ts` (5 cases, output schema strips raw body).
+Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner turn, repeat version, idempotency, roles, raw owner history, safe recall, provider-failure non-persistence), `apps/api/tests/conversation-gateway.test.ts` (structured model and controlled failure), `apps/api/tests/chat-threads-route.test.ts` and `apps/api/tests/thread-recall-skill.test.ts`.
 
 ### TS-H2 — Invite member and enforce field-level sharing
 
@@ -315,6 +317,8 @@ Runnable coverage: see `apps/api/tests/chat-threads-route.test.ts` (7 cases, own
 **Expected outcomes:**
 
 - 候选地点档案显示来源/时间或 `Demo data`，且解释只使用当前用户可见的资料。
+- 客户端提交的 `FIXTURE` 只有在 source ID、名称和坐标均匹配服务端版本化地点时才可信；伪造或不匹配的数据必须降级为未验证灵感。
+- 私聊在模型调用前拒绝实时价格、库存、签证/入境结论和预订状态问题；模型输出若包含此类无 provider 支撑的断言，必须替换为显式 `SAFE_REFUSAL`。
 - 空白区域档案明确没有可验证候选资料，不生成地点、价格、库存、签证或预订结论。
 - 空白区域只能保存私有灵感或请求后续加入候选；不改变共享约束、方案或确认状态。
 - 多个私有灵感在缩放和移动地图时保持绑定各自经纬坐标；管理器默认不打开、不预选标记，单独删除只移除目标标记，批量删除只移除已勾选标记。
@@ -374,6 +378,11 @@ Runnable coverage: see `apps/api/tests/chat-threads-route.test.ts` (7 cases, own
 
 ## 发布回归检查清单
 
+后端集成测试通过 `TEST_DATABASE_URL` 使用隔离数据库。测试运行器只接受
+loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结尾；默认使用
+`travelagent_test` schema。任何会删除数据库记录的测试都必须保留这层守卫，不能
+直接指向日常开发或共享数据库。
+
 ### Frontend Slice 回归
 
 - 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话。
@@ -390,6 +399,7 @@ Runnable coverage: see `apps/api/tests/chat-threads-route.test.ts` (7 cases, own
 - 新增 unique 索引 `user_profiles(user_id)`、`trip_members(trip_id,user_id)`、`constraint_snapshots(trip_id,version)`、`itinerary_plans(trip_id,version)`、`member_confirmations(plan_id,user_id)`、`booking_executions(orchestration_request_id)` 在生产部署前必须先走数据预去重（见 `apps/api/migrations/0005_hardening_constraints.sql` 注释与 `docs/mvp-readiness-review.md`）。
 - `audit_events.correlation_id` 上存在索引；按 correlation id 查询审计链的 EXPLAIN 不应触发顺序扫描。
 - **TS-MIG-0005-replay**：连续跑两次 `npm run db:migrate` 后，`enum_range(NULL::audit_action)` 必须包含 `apps/api/src/db/schema.ts:18-28` 列出的所有值，包括 `VISA_CHECK` 与 `PLAN_RESTART`；断言方式为尝试 `recordAudit({ action: "VISA_CHECK", ctx, summary: {} })` 不抛 `invalid input value for enum`。
+- **TS-MIG-0008-legacy-system**：在 develop 的 `0007_remove_demo_provider_state.sql` 之后，从允许浏览器以认证用户身份写入 `USER | SYSTEM` 的 pre-0008 状态开始，迁移必须原地将 `SYSTEM` 规范化为 `USER`，保留消息 ID、thread、sender、正文、脱敏摘要、分享标记和时间戳；随后强制 `USER/non-null sender` 与 `ASSISTANT/null sender`，且再次运行迁移无新增变更。
 
 - Profile memory is explicit, editable, deletable and private by default.
 - Shared workspace never shows unapproved Profile/private-chat fields.

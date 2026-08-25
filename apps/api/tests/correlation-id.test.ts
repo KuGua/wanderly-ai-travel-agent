@@ -1,14 +1,15 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { auditEvents, users } from "../src/db/schema.js";
+import { auditEvents, userProfiles, users } from "../src/db/schema.js";
 import { verifyTestAccessToken, authHeaders } from "./helpers/auth.js";
 import { randomUUID } from "node:crypto";
 
 let app: FastifyInstance;
+let profileTestUserId: string | undefined;
 
 beforeAll(async () => {
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
@@ -17,7 +18,13 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
-  await db.delete(auditEvents).where(eq(auditEvents.action, "PROFILE_CREATE"));
+});
+
+afterEach(async () => {
+  if (!profileTestUserId) return;
+  await db.delete(auditEvents).where(eq(auditEvents.actorUserId, profileTestUserId));
+  await db.delete(userProfiles).where(eq(userProfiles.userId, profileTestUserId));
+  profileTestUserId = undefined;
 });
 
 describe("server-side correlation id chain", () => {
@@ -81,9 +88,18 @@ describe("server-side correlation id chain", () => {
   });
 
   it("persists correlationId on every audit row, even when client supplied its own request id", async () => {
-    // Ensure a Profile row exists for alice so the create path runs.
+    // Authenticate once so the middleware provisions Alice independent of
+    // seed/test order, then establish an empty profile precondition.
+    await app.inject({
+      method: "GET",
+      url: "/api/v1/profiles/me",
+      headers: authHeaders("alice"),
+    });
     const [alice] = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
-    if (!alice) throw new Error("alice missing — run seed first");
+    if (!alice) throw new Error("alice was not provisioned by test authentication");
+    profileTestUserId = alice.id;
+    await db.delete(auditEvents).where(eq(auditEvents.actorUserId, alice.id));
+    await db.delete(userProfiles).where(eq(userProfiles.userId, alice.id));
 
     const clientRequestId = `audit-${randomUUID()}`;
     const response = await app.inject({

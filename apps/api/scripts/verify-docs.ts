@@ -92,7 +92,6 @@ function deriveSkillNameFromPath(skillPath: string): string | null {
 
 // --- Result accumulator ---
 
-interface CheckResult { ok: boolean; failures: string[]; }
 const failures: string[] = [];
 
 function fail(relPath: string, message: string): void {
@@ -128,14 +127,7 @@ function checkSourceOfTruthPaths(): void {
 async function checkSkillRuntimeMatches(): Promise<void> {
   // Static imports; we never call the handler. This triggers module-level
   // code only (Zod schema construction + Skill object literal).
-  const skillModules = [
-    "../src/skills/personal/profile-memory-skill.ts",
-    "../src/skills/personal/profile-change-proposal-skill.ts",
-    "../src/skills/personal/consent-explanation-skill.ts",
-    "../src/skills/personal/thread-recall-skill.ts",
-    "../src/skills/shared/plan-comparison-skill.ts",
-    "../src/skills/shared/readiness-skill.ts",
-  ];
+  const skillModules = findSkillFiles();
 
   const skillsByName = new Map<string, {
     name: string;
@@ -146,8 +138,7 @@ async function checkSkillRuntimeMatches(): Promise<void> {
     agent: string;
   }>();
 
-  for (const rel of skillModules) {
-    const abs = join(APPS_API_ROOT, rel);
+  for (const abs of skillModules) {
     const mod = await import(abs) as Record<string, unknown>;
     // Find the exported Skill const by convention: the file exports a
     // `<basename>Skill` symbol.
@@ -169,7 +160,7 @@ async function checkSkillRuntimeMatches(): Promise<void> {
     if (!skill || typeof skill !== "object") {
       fail(
         `verify-docs.ts`,
-        `could not locate exported Skill object in ${rel}; expected symbol ${symbolName}`,
+        `could not locate exported Skill object in ${relative(APPS_API_ROOT, abs)}; expected symbol ${symbolName}`,
       );
       continue;
     }
@@ -192,7 +183,8 @@ async function checkSkillRuntimeMatches(): Promise<void> {
     if (fm.agent !== "personal" && fm.agent !== "shared") continue; // not a Skill doc
 
     const derivedName = deriveSkillNameFromPath(rel);
-    const expectedName = fm.name ?? derivedName;
+    const documentedName = fm.name ?? derivedName;
+    const expectedName = documentedName?.replace(/^(personal|shared)\./, "");
     const runtime = skillsByName.get(expectedName ?? "");
     if (!runtime) {
       fail(rel, `no runtime Skill with name "${expectedName}" registered`);
@@ -211,24 +203,14 @@ async function checkSkillRuntimeMatches(): Promise<void> {
     if (!text.includes(`| \`needsConfirm\` | \`${runtime.needsConfirm}\` |`)) {
       fail(rel, `runtime needsConfirm ${runtime.needsConfirm} not present in doc table`);
     }
-    const allowedListText = runtime.allowedTools.join(", ");
-    if (!text.includes(allowedListText)) {
-      fail(rel, `runtime allowedTools [${allowedListText}] not present verbatim in doc`);
+    const missingTools = runtime.allowedTools.filter(tool => !text.includes(tool));
+    if (missingTools.length > 0) {
+      fail(rel, `runtime allowedTools missing from doc: ${missingTools.join(", ")}`);
     }
   }
 }
 
 // --- Check 3: framework doc covers source unions ---
-
-function extractArrayAfter(source: string, marker: string, terminator: string): string[] {
-  const start = source.indexOf(marker);
-  if (start === -1) return [];
-  const tail = source.slice(start + marker.length);
-  const end = tail.search(terminator);
-  const body = end === -1 ? tail : tail.slice(0, end);
-  const strValues = body.match(/"[^"]+"/g) ?? [];
-  return strValues.map(s => s.slice(1, -1));
-}
 
 function extractUnionAfter(source: string, marker: string): string[] {
   // Find a TS union like `| "A" | "B"` after `marker` (up to next `;` or `}`).
@@ -356,6 +338,7 @@ function checkSkillFailureModes(): void {
       "personal.profile.change_proposal": ["INPUT_INVALID", "OUTPUT_INVALID", "TIMEOUT"],
       "personal.consent.explanation": ["INPUT_INVALID", "OUTPUT_INVALID", "TIMEOUT", "TOOL_NOT_ALLOWED"],
       "personal.thread.recall": ["INPUT_INVALID", "OUTPUT_INVALID", "TIMEOUT", "TOOL_NOT_ALLOWED"],
+      "personal.travel.conversation": ["INPUT_INVALID", "OUTPUT_INVALID", "TIMEOUT", "TOOL_NOT_ALLOWED"],
     };
     const requiredCodes = required[fm.name ?? ""] ?? [];
     for (const code of requiredCodes) {

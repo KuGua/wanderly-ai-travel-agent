@@ -29,8 +29,6 @@ function goodPlanData() {
       airline: "Demo Air",
       source: "Demo data",
       capturedAt: "2026-08-23T00:00:00.000Z",
-      fixtureVersion: "2026-08-23.v1",
-      isDemo: true,
     }],
     stays: [{
       id: "stay-tyo-01",
@@ -42,8 +40,6 @@ function goodPlanData() {
       location: "Shinjuku",
       source: "Demo data",
       capturedAt: "2026-08-23T00:00:00.000Z",
-      fixtureVersion: "2026-08-23.v1",
-      isDemo: true,
     }],
     ground: [{
       id: "gnd-tyo-01",
@@ -53,8 +49,6 @@ function goodPlanData() {
       provider: "Demo Transfer",
       source: "Demo data",
       capturedAt: "2026-08-23T00:00:00.000Z",
-      fixtureVersion: "2026-08-23.v1",
-      isDemo: true,
     }],
     generatedAt: "2026-08-23T00:00:00.000Z",
   };

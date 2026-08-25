@@ -6,7 +6,7 @@ export default [
     ignores: ["dist/**", "coverage/**", "node_modules/**"],
   },
   {
-    files: ["src/**/*.ts", "tests/**/*.ts"],
+    files: ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "vitest.config.ts"],
     languageOptions: {
       parser: tsParser,
       parserOptions: {

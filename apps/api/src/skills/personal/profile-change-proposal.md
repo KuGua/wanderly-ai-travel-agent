@@ -83,7 +83,7 @@ Handler **从不**写 `user_profiles` 或任何其他表。调用方在用户接
 | code | 触发条件 | HTTP 状态 | 客户端可重试? |
 | --- | --- | --- | --- |
 | `INPUT_INVALID` | 敏感字段；`nationality` + 非 `this_trip` source；非 UUID `userId`；空 / >64 字符 `field`；非 `profile\|this_trip` 的 `source` | 400 | 否（修正请求） |
-| `OUTPUT_INVALID` | 输出 schema 违规；或 `stale_version_reuse` | 422 | 否 |
+| `OUTPUT_INVALID` | 输出 schema 违规 | 422 | 否 |
 | `TIMEOUT` | handler 超过 1000ms | 504 | 是 |
 
 ## 关联文档

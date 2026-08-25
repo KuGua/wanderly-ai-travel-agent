@@ -4,7 +4,6 @@ import { SkillError } from "./errors.js";
 import { recordAudit } from "../services/audit-service.js";
 
 const skillsByName = new Map<string, Skill<unknown, unknown>>();
-const lastUsedVersion = new Map<string, string>();
 
 const FORBIDDEN_PERSONAL_SCOPES: readonly SkillScope[] = [
   "bookings",
@@ -57,12 +56,24 @@ export function listSkills(): Skill<unknown, unknown>[] {
   return [...skillsByName.values()];
 }
 
+export interface SkillInvocationOptions {
+  expectedVersion?: string;
+}
+
 export async function invokeSkill<I, O>(
   name: string,
   ctx: SkillContext,
   payload: unknown,
+  options: SkillInvocationOptions = {},
 ): Promise<O> {
   const skill = getSkill(name);
+
+  if (options.expectedVersion !== undefined && options.expectedVersion !== skill.version) {
+    throw new SkillError(
+      "SKILL_VERSION_MISMATCH",
+      `Skill ${name} version mismatch: expected ${options.expectedVersion}, registered ${skill.version}`,
+    );
+  }
 
   try {
     ctx.policyGate.requireScope(skill.allowedTools);
@@ -113,15 +124,6 @@ export async function invokeSkill<I, O>(
     throw new SkillError("OUTPUT_INVALID", `Output validation failed for ${name}: ${(err as Error).message}`);
   }
 
-  const previousVersion = lastUsedVersion.get(skill.name);
-  if (previousVersion === skill.version) {
-    throw new SkillError(
-      "OUTPUT_INVALID",
-      `Skill ${skill.name} version ${skill.version} was already invoked in this process (stale_version_reuse)`,
-    );
-  }
-  lastUsedVersion.set(skill.name, skill.version);
-
   const record: SkillInvocationRecord = {
     skillName: skill.name,
     version: skill.version,
@@ -141,5 +143,4 @@ export async function invokeSkill<I, O>(
 
 export function __resetRegistryForTests(): void {
   skillsByName.clear();
-  lastUsedVersion.clear();
 }

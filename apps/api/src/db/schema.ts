@@ -281,7 +281,9 @@ export const chatThreads = pgTable("chat_threads", {
 export const chatMessages = pgTable("chat_messages", {
   id: uuid("id").primaryKey().defaultRandom(),
   threadId: uuid("thread_id").references(() => chatThreads.id, { onDelete: "cascade" }).notNull(),
-  senderUserId: uuid("sender_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // USER rows carry the authenticated owner; ASSISTANT rows deliberately use
+  // null so an Agent response is never misrepresented as owner-authored.
+  senderUserId: uuid("sender_user_id").references(() => users.id, { onDelete: "cascade" }),
   role: varchar("role", { length: 16 }).notNull(),
   body: text("body").notNull(),
   redactedSummary: text("redacted_summary"),

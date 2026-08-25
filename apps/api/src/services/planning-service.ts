@@ -3,7 +3,7 @@ import { constraintSnapshots, itineraryPlans, sourceEvidence, providerOffers } f
 import { eq, and, desc } from "drizzle-orm";
 import { buildAuthorizedData } from "./consent-service.js";
 import { createTravelProviders } from "../providers/live-provider-factory.js";
-import { createModelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
+import { modelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
 import type { FlightProvider, GroundProvider, StayProvider } from "../providers/types.js";
 import { validatePlanOutput } from "../policy/plan-output-validator.js";
@@ -19,15 +19,13 @@ export interface PlanningDependencies {
 }
 
 const configuredProviders = createTravelProviders();
-const defaultPlanningDependencies: PlanningDependencies = {
-  flightProvider: configuredProviders.flightProvider,
-  stayProvider: configuredProviders.stayProvider,
-  groundProvider: configuredProviders.groundProvider,
-  modelGateway: createModelGateway(),
-};
+let planningDependenciesOverride: PlanningDependencies | null = null;
+
+export function __setPlanningDependenciesForTests(dependencies: PlanningDependencies | null): void {
+  planningDependenciesOverride = dependencies;
+}
 
 export function __setModelGateway(gateway: ModelGateway): void {
-  defaultPlanningDependencies.modelGateway = gateway;
   __setModelGatewayForTests(gateway);
 }
 
@@ -111,7 +109,11 @@ export async function generatePlan(params: {
   snapshotId: string;
   destination: string;
   memberIds: string[];
-}, dependencies: PlanningDependencies = defaultPlanningDependencies): Promise<string> {
+}, dependencies?: PlanningDependencies): Promise<string> {
+  const resolvedDependencies = dependencies ?? planningDependenciesOverride ?? {
+    ...configuredProviders,
+    modelGateway: modelGateway(),
+  };
   // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
     .where(eq(constraintSnapshots.id, params.snapshotId))
@@ -138,7 +140,7 @@ export async function generatePlan(params: {
   }
 
   for (const departureCity of snapshot.departureCities) {
-    const result = await dependencies.flightProvider.searchFlights({
+    const result = await resolvedDependencies.flightProvider.searchFlights({
       origin: departureCity,
       destination: params.destination,
       dateStart: snapshot.travelDateStart,
@@ -150,7 +152,7 @@ export async function generatePlan(params: {
     }
   }
 
-  const stayResult = await dependencies.stayProvider.searchStays({
+  const stayResult = await resolvedDependencies.stayProvider.searchStays({
     destination: params.destination,
     checkIn: snapshot.travelDateStart,
     checkOut: snapshot.travelDateEnd,
@@ -160,7 +162,7 @@ export async function generatePlan(params: {
     allStays.push(...stayResult.data);
   }
 
-  const groundResult = await dependencies.groundProvider.searchGround({
+  const groundResult = await resolvedDependencies.groundProvider.searchGround({
     destination: params.destination,
     snapshotId: params.snapshotId,
   });
@@ -177,7 +179,7 @@ export async function generatePlan(params: {
 
   // Generate structured plan via model gateway
   const memberPreferences = snapshot.authorizedData;
-  const candidatePlanData = await dependencies.modelGateway.generateStructuredPlan({
+  const candidatePlanData = await resolvedDependencies.modelGateway.generateStructuredPlan({
     destination: params.destination,
     flights: allFlights,
     stays: allStays,

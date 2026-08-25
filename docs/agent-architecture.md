@@ -101,6 +101,7 @@ Skill = 输入 Zod schema
 | ProfileChangeProposalSkill | Personal | 私有消息 → 字段级 change proposal。 | createProfileSchema、updateProfileSchema。 | 模型不能写库；用户确认后才更新。 |
 | TripOverrideProposalSkill | Personal | 本次要求 → trip-specific constraint proposal。 | 新增 trip override storage/service。 | 与长期 Profile 分离；不能自动共享。 |
 | ConsentExplanationSkill | Personal | 本人 grants → “我正在共享什么”。 | getActiveConsents。 | 不显示其他成员授权。 |
+| TravelConversationSkill | Personal | 当前问题 + 可选最小 place context + 安全 recall → 私有回答。 | ModelGateway.generateConversationReply。 | 不接受客户端角色；不声称 live price、库存、visa 或 booking；fallback 显式标记。 |
 | ConsentExportSkill | 服务端协作边界 | trip + active grants → 最小化 snapshot。 | buildAuthorizedData、createConstraintSnapshot。 | 不由模型执行；禁止 passport number。 |
 | CandidateResearchSkill | Shared | snapshot + candidate → ResearchBundle。 | FlightProvider、StayProvider、GroundProvider、fixtures。 | 只请求已配置候选；失败必须明确 fallback。 |
 | ReadinessSkill | Shared | 授权国籍 + 成员 + 路线 → readiness 或 verification gap。 | VisaProvider、checkVisaReadiness。 | 未授权不得推断；不得法律建议。 |
@@ -120,11 +121,11 @@ Personal Agent 默认采用 Memory-Augmented + Tool-Augmented；仅在必要时�
 |---|---|---|
 | 长期个人偏好 | user_profiles、preference_facts | 用户可查看、编辑、删除；仅 Personal Agent 私有读取。 |
 | 本次行程偏好 | 当前未实现 | 新增独立 trip override；不得静默覆盖长期 Profile。`this trip` 标记 = 线程创建时绑定的 tripId。 |
-| 私有对话 archive | 已实现（migration 0006） | `chat_threads`（UUIDv4，归属 `ownerUserId`，可选 `tripId`）+ `chat_messages`（`thread_id` FK CASCADE、`markedSharedByOwner`、`redacted_summary`）；每线程 ownerUserId 唯一，trip 关联不赋予其他成员或 Shared Agent 读取权限。raw transcript 永远不出 owner 会话：默认 LLM 上下文仅含服务端派生的脱敏摘要 + owner 显式标记 `markedSharedByOwner=true` 的消息。`thread.recall` Personal Agent Skill 强制 owner-only 读取、绝不返回 raw body。 |
+| 私有对话 archive | 已实现（migrations 0006/0008） | `chat_threads`（归属 `ownerUserId`，可选 `tripId`）+ `chat_messages`。USER 由 authenticated owner 发送；ASSISTANT 的 sender 为 null，且角色/sender 组合由 DB CHECK 约束。owner UI 可经专用 endpoint 恢复 raw history；`thread.recall` 仍只返回安全摘要，trip 关联不赋予其他成员或 Shared Agent 读取权限。 |
 | 共享协作记忆 | consent_grants、constraint_snapshots | 仅通过服务端最小化导出；snapshot 不可变。 |
 | 运行事实 | provider_offers、source_evidence、visa_readiness_checks、itinerary_plans | 用于重建证据；不作为聊天长期记忆。 |
 
-私有对话 archive 是 MVP 已确认的能力：保存的 raw transcript 只能由所有者回看，且必须支持线程级删除。MVP 不设自动保留期；消息正文保留至用户删除线程，导出不进入 MVP。它不是长期记忆、共享上下文或默认 prompt 输入；只有用户确认的结构化 Profile/override 可进入后续 Agent run。实现已落 `apps/api/migrations/0006_chat_threads.sql` + `apps/api/src/skills/personal/thread-recall-skill.ts` + `apps/api/src/routes/chat-threads.ts`；owner-only 授权、删除语义、遥测脱敏（[apps/api/src/observability/telemetry.ts](apps/api/src/observability/telemetry.ts) redaction 路径已覆盖 `body/message/privateMessage`）均已在 PR 3 验证。`redacted_summary` 列已存在但服务端**生成**逻辑（将 raw body → 安全摘要）留到下个 PR；在此之前 `markedSharedByOwner=true` 的消息 `contentRedacted` 仍为空字符串，契约正确。
+私有对话 archive 是 MVP 已确认的能力：保存的 raw transcript 只能由所有者通过 `GET /threads/:threadId/conversation` 回看，且支持线程级删除。`POST /threads/:threadId/turns` 先执行 owner/idempotency 检查，再以 `thread.recall → travel.conversation → ModelGateway` 生成回答，最后用短事务持久化 USER、ASSISTANT、安全 audit 与不含正文的幂等结果。模型等待期间不持有数据库事务。默认 recall 只包含最多 20 条、每条最多 1000 字的非空安全摘要；完整 raw transcript 不进入 audit、metrics 或 Shared Agent context。`redacted_summary` 的通用生成 worker 仍未实现，因此未标记/未摘要的历史不会进入后续 Agent recall。
 
 ### Tool-Augmented
 
@@ -246,7 +247,7 @@ Shared Trip Agent → shared Skills → typed provider adapters / ModelGateway
 
 ## 8. 模型路由与取舍
 
-ModelGateway 是唯一模型边界。`gateway-factory.ts` 根据配置选择 `LLMGateway` 或确定性的 `MockModelGateway`；`LLMGateway` 使用结构化输出、有限 retry、prompt/model version 与 agent-run recording，并在 upstream/schema failure 时降级到 mock。无论来源为何，输出都只是 candidate，必须通过 `plan-output-validator.ts` 后才能写入 authoritative plan state。
+ModelGateway 是唯一模型边界。`gateway-factory.ts` 只构建已完整配置的真实 `LLMGateway`；`LLMGateway` 使用结构化输出、有限 retry、prompt/model version 与 agent-run recording，并在 upstream/schema failure 时失败关闭。测试可注入 fake gateway，但生产不使用 mock fallback。模型输出只是 candidate，必须通过对应的 plan 或 conversation policy 后才能持久化。
 
 | 任务 | 模型策略 | 取舍 |
 |---|---|---|
@@ -328,8 +329,8 @@ flowchart TB
 | 现有位置 | 复用方式 | 必须修正 |
 |---|---|---|
 | apps/api/src/providers/types.ts | CandidateResearch/Readiness Skills 的 typed ports；已实现 ProviderOutcome 与 fallback 原因。 | 后续增加 deadline 与 cancellation。 |
-| apps/api/src/providers/fixture-provider.ts、fixtures.ts | fixture-first 事实基线。 | 保留真实 fixture captured time，不能每次读取伪装为实时数据。 |
-| apps/api/src/providers/model-gateway.ts、llm-gateway.ts、gateway-factory.ts | 唯一模型 anti-corruption layer；已包含结构化 LLM 调用、配置选择、model/prompt metadata 与 deterministic fallback。 | 保持模型输出为 candidate；任何新 gateway 都必须经过相同 authoritative validator。 |
+| apps/api/src/providers/live-provider-factory.ts、types.ts | 生产 provider 能力边界。 | 未配置能力明确 unavailable，不生成静态报价或 evidence。 |
+| apps/api/src/providers/model-gateway.ts、llm-gateway.ts、gateway-factory.ts | 唯一模型 anti-corruption layer；已包含结构化 LLM 调用、真实 provider 配置和安全 model/prompt metadata。 | 保持模型输出为 candidate；失败关闭，不使用生产 mock fallback。 |
 | apps/api/src/services/consent-service.ts | ConsentExport 基础。 | 校验 field-to-scope；在 transaction 中使受影响 plan/confirmations stale。 |
 | apps/api/src/services/planning-service.ts | snapshot/plan persistence。 | 支持全部 candidates，拆分 research/synthesis/activation，并持久化 all-category evidence。 |
 | apps/api/src/services/visa-service.ts | ReadinessSkill 基础。 | 从 snapshot 读取实际授权 nationality；删除硬编码 US。 |
@@ -369,9 +370,10 @@ apps/api/src/
     booking-service.ts
   providers/
     types.ts
-    fixture-provider.ts
-    live-with-fallback-provider.ts
+    live-provider-factory.ts
     model-gateway.ts
+    llm-gateway.ts
+    gateway-factory.ts
   policy/
     snapshot-policy.ts
     plan-output-validator.ts
@@ -392,7 +394,7 @@ apps/api/src/
 2. 定义 Skill contracts、registry 和 deterministic policy validator；
 3. 实现 Personal Agent 的 ProfileMemory、proposal、consent explanation Skills；Profile/override 写入必须经用户确认；
 4. 实现 ConsentExportSkill 和 Shared Trip Agent；让 planning 覆盖全部 candidates；
-5. 在持久化所有 provider/evidence/readiness 后接入 PlanComparisonSkill；先保留 MockModelGateway 为 fallback；
+5. 在持久化所有 provider/evidence/readiness 后接入 PlanComparisonSkill；模型不可用时失败关闭；
 6. 在 feature flag 后接入 OpenAI Agents SDK；完成 schema/timeout/failure spike 后再启用；
 7. 最后按需增加单次 PlanReviewSkill，并接入 outbox worker、OpenTelemetry 与集成测试数据库。
 

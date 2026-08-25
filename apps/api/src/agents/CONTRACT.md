@@ -36,7 +36,7 @@ and which default policy applies at invocation time.
 
 ### `SkillScope` (`contracts.ts:7-14`)
 
-The 7-element union every Skill's `allowedTools` is constrained to:
+The 8-element union every Skill's `allowedTools` is constrained to:
 
 ```ts
 type SkillScope =
@@ -46,7 +46,8 @@ type SkillScope =
   | "plan:write:propose"
   | "readiness:read"
   | "bookings"
-  | "snapshot:read";
+  | "snapshot:read"
+  | "chat:read";
 ```
 
 ### `PolicyGate` (`contracts.ts:20-22`)
@@ -88,7 +89,7 @@ throws `SkillError('SNAPSHOT_REQUIRED')` if missing (see
 | `allowedTools` | `readonly SkillScope[]` | yes | Validated against the agent kind allow-list. |
 | `timeoutMs` | `number` | yes | Hard upper bound; exceeded → `SkillError('TIMEOUT')`. |
 | `needsConfirm` | `boolean` | yes | Hint for the UI; does not gate persistence. |
-| `version` | `string` | yes | Drives `lastUsedVersion` strict dedupe. |
+| `version` | `string` | yes | Contract version; callers may pin it with `invokeSkill(..., { expectedVersion })`. It does not limit repeat execution. |
 | `handler` | `(ctx, input, signal) => Promise<O>` | yes | Must respect `AbortSignal`. |
 
 ### `SkillInvocationRecord` (`contracts.ts:42-48`)
@@ -103,7 +104,7 @@ Defined in `policy-gate.ts:9-13`:
 
 | AgentKind | Allowed `SkillScope` values |
 | --- | --- |
-| `personal` | `profile:read`, `profile:write:propose`, `consent:read` |
+| `personal` | `profile:read`, `profile:write:propose`, `consent:read`, `chat:read` |
 | `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read` |
 | `review` | `snapshot:read`, `plan:write:propose` |
 
@@ -122,7 +123,7 @@ is rejected at **registration** with `SkillError('TOOL_NOT_ALLOWED')`
 ## Verification
 
 - `npx vitest run tests/skill-registry.test.ts` — exercises successful
-  registration, `lastUsedVersion` strict dedupe, timeout, output invalid,
+  repeated invocation, expected-version mismatch, timeout, output invalid,
   unknown skill rejection.
 - `npx vitest run tests/skill-allowlist.test.ts` — exercises
   `Personal` + `bookings` registration-time rejection and

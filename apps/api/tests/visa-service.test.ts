@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import { db } from "../src/db/database.js";
@@ -10,6 +10,10 @@ import {
   tripMembers,
   consentGrants,
   constraintSnapshots,
+  auditEvents,
+  itineraryPlans,
+  memberConfirmations,
+  visaReadinessChecks,
 } from "../src/db/schema.js";
 import { buildAuthorizedData, grantConsent } from "../src/services/consent-service.js";
 import { checkVisaReadiness } from "../src/services/visa-service.js";
@@ -21,10 +25,6 @@ const fixtureTrip = {
   travelDateStart: "2025-08-01",
   travelDateEnd: "2025-08-07",
 };
-
-async function cleanup() {
-  await db.delete(memberConfirmations);
-}
 
 async function setupMember(externalId: string, nationality: string | null = null) {
   const [user] = await db.insert(users)
@@ -43,10 +43,10 @@ async function setupMember(externalId: string, nationality: string | null = null
   return resolved;
 }
 
-async function setupTrip() {
+async function setupTrip(createdBy: string) {
   const [trip] = await db.insert(sharedTrips).values({
     name: `visa-test-${randomUUID()}`,
-    createdBy: (await db.select().from(users).limit(1))[0].id,
+    createdBy,
     ...fixtureTrip,
   }).returning();
 
@@ -66,8 +66,6 @@ async function setupSnapshot(tripId: string, memberIds: string[], authorized: Re
   return snap;
 }
 
-import { memberConfirmations, itineraryPlans } from "../src/db/schema.js";
-
 describe("visa-service authorized branch", () => {
   let aliceId: string;
   let bobId: string;
@@ -76,19 +74,12 @@ describe("visa-service authorized branch", () => {
   let planId: string;
 
   beforeEach(async () => {
-    await db.delete(constraintSnapshots);
-    await db.delete(consentGrants);
-    await db.delete(tripMembers);
-    await db.delete(sharedTrips);
-    await db.delete(userProfiles);
-    await db.delete(users);
-
-    const alice = await setupMember("alice", "CN");
-    const bob = await setupMember("bob", "US");
+    const alice = await setupMember(`visa-alice-${randomUUID()}`, "CN");
+    const bob = await setupMember(`visa-bob-${randomUUID()}`, "US");
     aliceId = alice.id;
     bobId = bob.id;
 
-    const trip = await setupTrip();
+    const trip = await setupTrip(aliceId);
     tripId = trip.id;
 
     await db.insert(tripMembers).values([
@@ -114,7 +105,16 @@ describe("visa-service authorized branch", () => {
   });
 
   afterEach(async () => {
-    await cleanup();
+    await db.delete(auditEvents).where(eq(auditEvents.tripId, tripId));
+    await db.delete(memberConfirmations).where(eq(memberConfirmations.tripId, tripId));
+    await db.delete(visaReadinessChecks).where(eq(visaReadinessChecks.planId, planId));
+    await db.delete(itineraryPlans).where(eq(itineraryPlans.tripId, tripId));
+    await db.delete(constraintSnapshots).where(eq(constraintSnapshots.tripId, tripId));
+    await db.delete(consentGrants).where(eq(consentGrants.tripId, tripId));
+    await db.delete(tripMembers).where(eq(tripMembers.tripId, tripId));
+    await db.delete(sharedTrips).where(eq(sharedTrips.id, tripId));
+    await db.delete(userProfiles).where(inArray(userProfiles.userId, [aliceId, bobId]));
+    await db.delete(users).where(inArray(users.id, [aliceId, bobId]));
   });
 
   it("reads nationality from snapshot authorizedData, not from a hardcoded value", async () => {

@@ -1,8 +1,21 @@
 import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/domain.js";
+import type { RequestContext } from "../utils/context.js";
+import type { ConversationPlace, ConversationResponseMode } from "../types/schemas.js";
+
+export interface ConversationHistoryMessage {
+  role: "USER" | "ASSISTANT";
+  content: string;
+}
+
+export interface ConversationReply {
+  content: string;
+  responseMode: ConversationResponseMode;
+}
 
 /**
- * ModelGateway: Application-layer interface for AI model interactions.
+ * Application-layer interface for configured real-model interactions.
  * The model cannot access the database or execute irreversible operations.
+ * Tests may inject a deterministic implementation through gateway-factory.
  */
 export interface ModelGateway {
   generateStructuredPlan(params: {
@@ -20,4 +33,12 @@ export interface ModelGateway {
     newPlan: Record<string, unknown>;
     signal?: AbortSignal;
   }): Promise<PlanDiff>;
+
+  generateConversationReply(params: {
+    question: string;
+    place?: ConversationPlace;
+    history: ConversationHistoryMessage[];
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<ConversationReply>;
 }
