@@ -19,7 +19,8 @@ they describe — see the table below. This index just lists them.
 
 | Document | Source-of-truth `.ts` |
 | --- | --- |
-| [`apps/api/migrations/0005_hardening_constraints.sql`](../migrations/0005_hardening_constraints.sql) | unique indexes + audit correlation lookup; idempotent via `CREATE … IF NOT EXISTS` |
+| [`apps/api/migrations/0005_hardening_constraints.sql`](../migrations/0005_hardening_constraints.sql) | unique indexes + audit correlation lookup + `audit_action` enum gap fix (`VISA_CHECK`, `PLAN_RESTART`); idempotent via `CREATE … IF NOT EXISTS` and `ALTER TYPE … ADD VALUE IF NOT EXISTS` |
+| [`apps/api/migrations/0006_chat_threads.sql`](../migrations/0006_chat_threads.sql) | owner-only `chat_threads` + `chat_messages` tables; three new `audit_action` enum values (`CHAT_THREAD_CREATE`, `CHAT_THREAD_DELETE`, `CHAT_MESSAGE_APPEND`); idempotent via `CREATE … IF NOT EXISTS` and `DO $$ … ADD VALUE IF NOT EXISTS …` |
 | [`apps/api/src/agents/README.md`](../src/agents/README.md) | directory overview |
 | [`apps/api/src/agents/CONTRACT.md`](../src/agents/CONTRACT.md) | `src/agents/contracts.ts` |
 | [`apps/api/src/agents/REGISTRY.md`](../src/agents/REGISTRY.md) | `src/agents/skill-registry.ts` |
@@ -34,6 +35,7 @@ they describe — see the table below. This index just lists them.
 | [`apps/api/src/skills/personal/profile-memory.md`](../src/skills/personal/profile-memory.md) | `src/skills/personal/profile-memory-skill.ts` |
 | [`apps/api/src/skills/personal/profile-change-proposal.md`](../src/skills/personal/profile-change-proposal.md) | `src/skills/personal/profile-change-proposal-skill.ts` |
 | [`apps/api/src/skills/personal/consent-explanation.md`](../src/skills/personal/consent-explanation.md) | `src/skills/personal/consent-explanation-skill.ts` |
+| [`apps/api/src/skills/personal/thread-recall.md`](../src/skills/personal/thread-recall.md) | `src/skills/personal/thread-recall-skill.ts` (Personal Agent — owner-only chat thread recall) |
 | [`apps/api/src/skills/shared/plan-comparison.md`](../src/skills/shared/plan-comparison.md) | `src/skills/shared/plan-comparison-skill.ts` (only LLM-calling Skill) |
 | [`apps/api/src/skills/shared/readiness-check.md`](../src/skills/shared/readiness-check.md) | `src/skills/shared/readiness-skill.ts` |
 | [`apps/api/src/skills/REVIEW.md`](../src/skills/REVIEW.md) | `AgentKind="review"` (no Skills registered) |

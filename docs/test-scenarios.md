@@ -157,6 +157,8 @@ memberships overlap only where explicitly configured.
 - Raw message text is absent from the snapshot, shared plan/explanation and all telemetry/audit outputs; it is not default model context for the planning run.
 - Deletion removes message bodies and makes the thread unavailable to Alice; separately confirmed Profile/override facts remain until independently deleted.
 
+Runnable coverage: see `apps/api/tests/chat-threads-route.test.ts` (7 cases, owner enforcement + redaction + cascade delete) and `apps/api/tests/thread-recall-skill.test.ts` (5 cases, output schema strips raw body).
+
 ### TS-H2 — Invite member and enforce field-level sharing
 
 **Stories:** H2  
