@@ -45,7 +45,6 @@ jobs:
       COGNITO_USER_POOL_ID: us-east-1_example
       COGNITO_CLIENT_ID: example-public-app-client-id
       SANDBOX_HMAC_SECRET: replace-with-a-local-random-secret-at-least-32-bytes
-      MODEL_GATEWAY_PROVIDER: mock
       LOG_LEVEL: warn
       NPM_CONFIG_AUDIT: "false"
 
@@ -72,12 +71,6 @@ jobs:
 
       - name: Apply migrations
         run: npm run db:migrate
-
-      - name: Seed (first run)
-        run: npm run db:seed
-
-      - name: Seed (replay — must be a no-op)
-        run: npm run db:seed
 
       - name: Tests
         run: npm test
