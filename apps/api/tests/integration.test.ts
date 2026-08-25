@@ -5,7 +5,7 @@ import { db } from "../src/db/database.js";
 import { users, userProfiles, sharedTrips, tripMembers, consentGrants, constraintSnapshots, itineraryPlans, memberConfirmations, bookingExecutions, idempotencyRecords, auditEvents, providerOffers, sourceEvidence, visaReadinessChecks, preferenceFacts, destinationCandidates } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { grantConsent, revokeConsent, getActiveConsents, buildAuthorizedData } from "../src/services/consent-service.js";
-import { createConstraintSnapshot, generatePlan, markPlanStale, getLatestActivePlan } from "../src/services/planning-service.js";
+import { createConstraintSnapshot, generatePlan as generatePlanWithDependencies, markPlanStale, getLatestActivePlan, __setPlanningDependenciesForTests } from "../src/services/planning-service.js";
 import { setConfirmation, checkAllConfirmed, markConfirmationsStale } from "../src/services/confirmation-service.js";
 import { submitBooking, handleSandboxCallback } from "../src/services/booking-service.js";
 import { processChangeEvent } from "../src/services/change-event-service.js";
@@ -13,6 +13,11 @@ import { checkVisaReadiness } from "../src/services/visa-service.js";
 import { createRequestContext } from "../src/utils/context.js";
 import { randomUUID } from "node:crypto";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
+import { testPlanningDependencies } from "./helpers/planning.js";
+
+function generatePlan(params: Parameters<typeof generatePlanWithDependencies>[0]) {
+  return generatePlanWithDependencies(params, testPlanningDependencies);
+}
 
 let aliceId: string;
 let bobId: string;
@@ -21,6 +26,7 @@ let tripId: string;
 let app: FastifyInstance;
 
 beforeAll(async () => {
+  __setPlanningDependenciesForTests(testPlanningDependencies);
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
   await app.ready();
 
@@ -53,6 +59,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
+  __setPlanningDependenciesForTests(null);
 });
 
 beforeEach(async () => {
@@ -316,6 +323,7 @@ describe("Frontend API Contract", () => {
 describe("Consent & Authorization", () => {
   it("grants and retrieves consent", async () => {
     await grantConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -330,6 +338,7 @@ describe("Consent & Authorization", () => {
 
   it("revoking consent removes it from active list", async () => {
     await grantConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_NATIONALITY",
@@ -340,6 +349,7 @@ describe("Consent & Authorization", () => {
     expect(consents.length).toBe(1);
 
     await revokeConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_NATIONALITY",
@@ -361,6 +371,7 @@ describe("Consent & Authorization", () => {
 
     // Grant only preferences, not nationality
     await grantConsent({
+      ctx: createRequestContext(aliceId),
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -381,6 +392,7 @@ describe("Consent Revocation Causes Plan Stale", () => {
 
     // Grant consent and create snapshot
     await grantConsent({
+      ctx,
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -410,6 +422,7 @@ describe("Consent Revocation Causes Plan Stale", () => {
 
     // Revoke consent
     await revokeConsent({
+      ctx,
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -432,6 +445,7 @@ describe("Constraint Snapshot Immutability", () => {
     const ctx = createRequestContext(aliceId);
 
     await grantConsent({
+      ctx,
       tripId,
       userId: aliceId,
       scope: "PROFILE_PREFERENCES",
@@ -466,8 +480,8 @@ describe("Constraint Snapshot Immutability", () => {
   });
 });
 
-describe("Fixture-backed Planning API", () => {
-  it("returns a complete two-origin plan and persists fixture provenance", async () => {
+describe("Provider-backed Planning API", () => {
+  it("returns a complete two-origin plan and persists provider provenance", async () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/planning/generate",
@@ -477,21 +491,19 @@ describe("Fixture-backed Planning API", () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    const flights = body.plan.flights as Array<Record<string, unknown>>;
+    const flights = body.latestPlan.flights as Array<Record<string, unknown>>;
     expect(flights.map(flight => flight.origin).sort()).toEqual(["San Francisco", "Shanghai"]);
 
-    const offers = await db.select().from(providerOffers).where(eq(providerOffers.planId, body.planId));
-    const evidence = await db.select().from(sourceEvidence).where(eq(sourceEvidence.planId, body.planId));
+    const planId = body.plans[0].planId as string;
+    const offers = await db.select().from(providerOffers).where(eq(providerOffers.planId, planId));
+    const evidence = await db.select().from(sourceEvidence).where(eq(sourceEvidence.planId, planId));
 
     expect(new Set(offers.map(offer => offer.category))).toEqual(new Set(["flight", "stay", "ground"]));
-    expect(offers.every(offer => offer.isDemo)).toBe(true);
     expect(new Set(evidence.map(item => item.category))).toEqual(new Set(["flight", "stay", "ground"]));
-    expect(evidence.every(item =>
-      (item.metadata as Record<string, unknown>).fixtureVersion === "2026-08-23.v1"
-    )).toBe(true);
+    expect(evidence.every(item => item.source.startsWith("Test "))).toBe(true);
   });
 
-  it("returns the same normalized plan for repeated fixture requests", async () => {
+  it("returns the same normalized plan for repeated provider requests", async () => {
     const request = {
       method: "POST" as const,
       url: "/api/v1/planning/generate",
@@ -504,10 +516,10 @@ describe("Fixture-backed Planning API", () => {
 
     expect(first.statusCode).toBe(200);
     expect(second.statusCode).toBe(200);
-    expect(second.json().plan).toEqual(first.json().plan);
+    expect(second.json().latestPlan).toEqual(first.json().latestPlan);
   });
 
-  it("returns a typed failure and creates no plan for an unsupported fixture route", async () => {
+  it("returns a typed failure and creates no plan for an unsupported provider route", async () => {
     await db.update(sharedTrips)
       .set({ destinationCandidates: ["Singapore"] })
       .where(eq(sharedTrips.id, tripId));
@@ -542,6 +554,8 @@ describe("Three-Person Confirmation Threshold", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -575,6 +589,8 @@ describe("Three-Person Confirmation Threshold", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId1 = await generatePlan({
@@ -617,6 +633,8 @@ describe("Change Event Idempotency", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     await generatePlan({
@@ -663,6 +681,8 @@ describe("Booking Sandbox Idempotency", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -689,7 +709,7 @@ describe("Booking Sandbox Idempotency", () => {
     });
 
     expect(result1.isDuplicate).toBe(false);
-    expect(result1.results.length).toBeGreaterThan(0);
+    expect(result1.results).toEqual([]);
 
     // Duplicate booking
     const result2 = await submitBooking({
@@ -701,6 +721,7 @@ describe("Booking Sandbox Idempotency", () => {
     });
 
     expect(result2.isDuplicate).toBe(true);
+    expect(result2.results).toEqual([]);
   });
 
   it("duplicate callbacks are handled idempotently", async () => {
@@ -712,6 +733,8 @@ describe("Booking Sandbox Idempotency", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -774,6 +797,8 @@ describe("Visa Readiness - Unauthorized Nationality", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({
@@ -808,6 +833,8 @@ describe("Error States Cannot Create Bookings", () => {
       memberIds: [aliceId, bobId, chenId],
       departureCities: ["San Francisco", "Shanghai"],
       destinationCandidates: ["Tokyo"],
+      travelDateStart: "2025-08-01",
+      travelDateEnd: "2025-08-07",
     });
 
     const planId = await generatePlan({

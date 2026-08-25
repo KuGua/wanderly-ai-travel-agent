@@ -102,33 +102,7 @@ describe("Profile CRUD", () => {
   });
 });
 
-describe("Fixture Provider Markers", () => {
-  it("all fixture data is marked as Demo data", async () => {
-    const { FLIGHT_FIXTURES, STAY_FIXTURES, GROUND_FIXTURES } = await import("../src/providers/fixtures.js");
-
-    for (const flight of FLIGHT_FIXTURES) {
-      expect(flight.source).toBe("Demo data");
-      expect(flight.isDemo).toBe(true);
-    }
-
-    for (const stay of STAY_FIXTURES) {
-      expect(stay.source).toBe("Demo data");
-      expect(stay.isDemo).toBe(true);
-    }
-
-    for (const ground of GROUND_FIXTURES) {
-      expect(ground.source).toBe("Demo data");
-      expect(ground.isDemo).toBe(true);
-    }
-  });
-});
-
 describe("Booking Sandbox", () => {
-  it("sandbox does not collect real payments", async () => {
-    const { SANDBOX_CALLBACK_FIXTURES } = await import("../src/providers/fixtures.js");
-    expect(SANDBOX_CALLBACK_FIXTURES.success.serviceResults.flight.reference).toContain("DEMO");
-  });
-
   it("authenticates the callback without a bearer token using the exact raw JSON bytes", async () => {
     const timestamp = Date.now();
     const rawBody = `{

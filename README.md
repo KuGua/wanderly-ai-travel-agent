@@ -4,7 +4,7 @@
 
 ## 仓库结构
 
-- `apps/api/` — TypeScript/Fastify 后端 MVP、PostgreSQL schema、fixture 和测试。`apps/` 是单体仓库中可部署应用的惯用目录；`api` 为后端服务。
+- `apps/api/` — TypeScript/Fastify 后端 MVP、PostgreSQL schema 和测试。`apps/` 是单体仓库中可部署应用的惯用目录；`api` 为后端服务。
 - `docs/` — 产品需求、交付 backlog 和测试场景。
 - `docs/frontend-ui-plan.md` — 登录后 UI 地图、前端技术栈决策与 API 就绪度方案。
 - `docs/frontend-prototype-handoff.md` — 探索首页与“我的项目”原型的前端开发交接、组件/API/验收要求。
@@ -18,7 +18,6 @@ npm install
 cp .env.example .env
 docker compose up -d postgres
 npm run db:migrate
-npm run db:seed
 npm run dev
 ```
 

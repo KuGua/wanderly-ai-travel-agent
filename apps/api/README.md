@@ -1,6 +1,6 @@
 # AI Travel Agent — 后端 MVP
 
-> Hackathon 项目：基于授权数据共享、fixture 数据提供方和预订沙箱的国际旅行协同规划。
+> Hackathon 项目：基于授权数据共享、可验证旅行数据和预订沙箱的国际旅行协同规划。
 
 ## 快速开始
 
@@ -20,10 +20,7 @@ docker compose up -d postgres
 # 4. 执行数据库迁移
 npm run db:migrate
 
-# 5. 写入演示数据
-npm run db:seed
-
-# 6. 启动服务器
+# 5. 启动服务器
 npm run dev
 ```
 
@@ -31,8 +28,8 @@ npm run dev
 
 ## LLM 配置
 
-模型调用只在 API 服务端进行。默认 `MODEL_GATEWAY_PROVIDER=mock`，因此 fixture
-演示不依赖外部模型。要启用 Gemini，请在 `.env` 中设置：
+模型调用只在 API 服务端进行，并且必须配置真实模型 provider。要启用 Gemini，
+请在 `.env` 中设置：
 
 ```dotenv
 MODEL_GATEWAY_PROVIDER=gemini

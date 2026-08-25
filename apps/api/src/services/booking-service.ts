@@ -58,13 +58,13 @@ export async function submitBooking(params: {
       throw new Error("Not all required members have confirmed this plan");
     }
 
-    const [booking] = await tx.insert(bookingExecutions).values({
+    await tx.insert(bookingExecutions).values({
       planId: params.planId,
       tripId: params.tripId,
       orchestrationRequestId: params.orchestrationRequestId,
       status: "PENDING",
       requestedBy: params.requestedBy,
-    }).returning();
+    });
 
     await recordAudit({
       ctx: params.ctx,

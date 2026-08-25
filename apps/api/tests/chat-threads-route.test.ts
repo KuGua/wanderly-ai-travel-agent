@@ -24,7 +24,7 @@ beforeAll(async () => {
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
   await app.ready();
 
-  // Reuse or create seeded fixture users via the auth helpers' subjects.
+  // Provision only the authenticated subjects required by this test suite.
   const [alice] = await db.insert(users)
     .values({ externalId: "alice", displayName: "Alice" })
     .onConflictDoNothing({ target: users.externalId })
@@ -45,11 +45,7 @@ beforeEach(async () => {
   // Best-effort cleanup so this test does not collide with other suites.
   await db.delete(chatMessages);
   await db.delete(chatThreads);
-  await db.delete(auditEvents).where(eq(auditEvents.action, "CHAT_THREAD_CREATE"));
-  await db.delete(auditEvents).where(eq(auditEvents.action, "CHAT_THREAD_DELETE"));
-  await db.delete(auditEvents).where(eq(auditEvents.action, "CHAT_MESSAGE_APPEND"));
-  await db.delete(tripMembers);
-  await db.delete(sharedTrips);
+  await db.delete(auditEvents);
   tripId = randomUUID();
   await db.insert(sharedTrips).values({
     id: tripId,
