@@ -1,10 +1,11 @@
 "use client";
 
-import { Compass, HelpCircle, LoaderCircle, LocateFixed, MapPin, Plane, RotateCw, Sparkles, X } from "lucide-react";
+import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, MapPin, Plane, RotateCw, Sparkles, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
 
 type Destination = {
+  id: string;
   name: string;
   country: string;
   coordinates: [number, number];
@@ -13,27 +14,34 @@ type Destination = {
 };
 
 type ExploreState = "IDLE" | "SELECTED" | "TALKING" | "FLYING" | "EXPLORING";
+type PinScope = "nearby" | "all";
 
 const SINGAPORE: [number, number] = [103.8198, 1.3521];
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 
 const destinations: Destination[] = [
-  { name: "Tokyo", country: "Japan", coordinates: [139.6917, 35.6895], note: "Food, design and neighborhoods that reward wandering.", kind: "fixture" },
-  { name: "Lisbon", country: "Portugal", coordinates: [-9.1393, 38.7223], note: "Hillside streets, Atlantic light and late dinners.", kind: "fixture" },
-  { name: "Reykjavík", country: "Iceland", coordinates: [-21.9426, 64.1466], note: "A compact base for geothermal landscapes.", kind: "fixture" },
+  { id: "tokyo", name: "Tokyo", country: "Japan", coordinates: [139.6917, 35.6895], note: "Food, design and neighborhoods that reward wandering.", kind: "fixture" },
+  { id: "lisbon", name: "Lisbon", country: "Portugal", coordinates: [-9.1393, 38.7223], note: "Hillside streets, Atlantic light and late dinners.", kind: "fixture" },
+  { id: "reykjavik", name: "Reykjavík", country: "Iceland", coordinates: [-21.9426, 64.1466], note: "A compact base for geothermal landscapes.", kind: "fixture" },
 ];
 
 export function ExploreMapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef<MapLibreMarker[]>([]);
-  const inspirationMarkerRef = useRef<MapLibreMarker | null>(null);
-  const inspirationCoordinatesRef = useRef<[number, number] | null>(null);
+  const inspirationMarkersRef = useRef(new Map<string, MapLibreMarker>());
+  const inspirationsRef = useRef<Destination[]>([]);
+  const inspirationSequenceRef = useRef(0);
   const journeyTimersRef = useRef<number[]>([]);
   const [mapReady, setMapReady] = useState(false);
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const [mapAttempt, setMapAttempt] = useState(0);
   const [selected, setSelected] = useState<Destination | null>(null);
+  const [inspirations, setInspirations] = useState<Destination[]>([]);
+  const [checkedInspirationIds, setCheckedInspirationIds] = useState<Set<string>>(new Set());
+  const [managePinsOpen, setManagePinsOpen] = useState(false);
+  const [manageAnchorCoordinates, setManageAnchorCoordinates] = useState<[number, number] | null>(null);
+  const [pinScope, setPinScope] = useState<PinScope>("nearby");
   const [exploreState, setExploreState] = useState<ExploreState>("IDLE");
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -51,9 +59,36 @@ export function ExploreMapPage() {
     }
   }, [clearJourneyTimers]);
 
+  const deleteInspirations = useCallback((ids: Iterable<string>) => {
+    const idsToDelete = new Set(ids);
+    if (idsToDelete.size === 0) return;
+
+    idsToDelete.forEach((id) => {
+      inspirationMarkersRef.current.get(id)?.remove();
+      inspirationMarkersRef.current.delete(id);
+    });
+    inspirationsRef.current = inspirationsRef.current.filter((inspiration) => !idsToDelete.has(inspiration.id));
+    if (inspirationsRef.current.length === 0) inspirationSequenceRef.current = 0;
+    setInspirations(inspirationsRef.current);
+    setCheckedInspirationIds((current) => {
+      const next = new Set(current);
+      idsToDelete.forEach((id) => next.delete(id));
+      return next;
+    });
+    setSelected((current) => {
+      if (current && idsToDelete.has(current.id)) {
+        clearJourneyTimers();
+        setExploreState("IDLE");
+        return null;
+      }
+      return current;
+    });
+  }, [clearJourneyTimers]);
+
   useEffect(() => {
     let cancelled = false;
     let loaded = false;
+    const inspirationMarkers = inspirationMarkersRef.current;
     const loadTimeout = window.setTimeout(() => {
       if (!cancelled && !loaded) {
         setMapUnavailable(true);
@@ -93,33 +128,33 @@ export function ExploreMapPage() {
         });
 
         map.on("click", (event) => {
-          const inspiration = inspirationAt([event.lngLat.lng, event.lngLat.lat]);
-
-          inspirationCoordinatesRef.current = inspiration.coordinates;
-          if (!inspirationMarkerRef.current) {
-            const { anchor, button } = markerElement("Private inspiration", true);
-            button.setAttribute("aria-label", "Session-only private inspiration");
-            button.addEventListener("click", (markerEvent) => {
-              markerEvent.stopPropagation();
-              if (inspirationCoordinatesRef.current) {
-                selectDestination(inspirationAt(inspirationCoordinatesRef.current));
-              }
-            });
-            inspirationMarkerRef.current = new maplibregl.Marker({ element: anchor, anchor: "bottom" })
-              .setLngLat(inspiration.coordinates)
-              .addTo(map);
-          } else {
-            inspirationMarkerRef.current.setLngLat(inspiration.coordinates);
-          }
+          inspirationSequenceRef.current += 1;
+          const inspiration = inspirationAt(
+            `inspiration-${inspirationSequenceRef.current}`,
+            inspirationSequenceRef.current,
+            [event.lngLat.lng, event.lngLat.lat],
+          );
+          const { anchor, button } = markerElement(inspiration.name, true);
+          button.setAttribute("aria-label", `Open ${inspiration.name}`);
+          button.addEventListener("click", (markerEvent) => {
+            markerEvent.stopPropagation();
+            selectDestination(inspiration);
+          });
+          const marker = new maplibregl.Marker({ element: anchor, anchor: "bottom" })
+            .setLngLat(inspiration.coordinates)
+            .addTo(map);
+          inspirationMarkers.set(inspiration.id, marker);
+          inspirationsRef.current = [...inspirationsRef.current, inspiration];
+          setInspirations(inspirationsRef.current);
           selectDestination(inspiration);
         });
 
-        const syncInspirationPosition = () => {
-          if (inspirationMarkerRef.current && inspirationCoordinatesRef.current) {
-            inspirationMarkerRef.current.setLngLat(inspirationCoordinatesRef.current);
-          }
+        const syncInspirationPositions = () => {
+          inspirationsRef.current.forEach((inspiration) => {
+            inspirationMarkers.get(inspiration.id)?.setLngLat(inspiration.coordinates);
+          });
         };
-        map.on("move", syncInspirationPosition);
+        map.on("move", syncInspirationPositions);
 
         markersRef.current = destinations.map((destination) => {
           const { anchor, button } = markerElement(destination.name);
@@ -148,9 +183,10 @@ export function ExploreMapPage() {
       clearJourneyTimers();
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
-      inspirationMarkerRef.current?.remove();
-      inspirationMarkerRef.current = null;
-      inspirationCoordinatesRef.current = null;
+      inspirationMarkers.forEach((marker) => marker.remove());
+      inspirationMarkers.clear();
+      inspirationsRef.current = [];
+      inspirationSequenceRef.current = 0;
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -182,6 +218,27 @@ export function ExploreMapPage() {
     setMapReady(false);
     setMapAttempt((attempt) => attempt + 1);
   }
+
+  function openPinManager() {
+    if (!selected || selected.kind !== "inspiration") return;
+    setManageAnchorCoordinates(selected.coordinates);
+    setPinScope("nearby");
+    setCheckedInspirationIds(new Set());
+    setManagePinsOpen(true);
+  }
+
+  function toggleInspiration(id: string) {
+    setCheckedInspirationIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  const managedInspirations = pinScope === "all" || !manageAnchorCoordinates
+    ? inspirations
+    : inspirations.filter((inspiration) => distanceInKm(inspiration.coordinates, manageAnchorCoordinates) <= 50);
 
   return (
     <main data-drawer-open={selected ? "true" : "false"} className="relative isolate h-[calc(100dvh-4rem)] min-h-[620px] overflow-hidden bg-[#bfe9f2] md:h-screen">
@@ -216,7 +273,7 @@ export function ExploreMapPage() {
       {helpOpen ? (
         <aside className="absolute right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] rounded-[20px] bg-card/95 p-4 text-sm leading-6 shadow-xl backdrop-blur sm:right-6 sm:top-24">
           <p className="font-bold">Explore the map</p>
-          <p className="mt-1 text-muted-foreground">Choose a named demo destination, or click anywhere to create an unverified inspiration that lasts only for this session.</p>
+          <p className="mt-1 text-muted-foreground">Choose a named demo destination, or click anywhere to pin multiple private inspirations. Select pins from the list to remove them individually or together.</p>
         </aside>
       ) : null}
 
@@ -233,28 +290,63 @@ export function ExploreMapPage() {
         </section>
       ) : null}
 
-      <section className={`absolute bottom-4 left-4 z-20 w-[min(420px,calc(100%-2rem))] rounded-[24px] bg-card/95 p-5 shadow-[0_20px_60px_#082f3f40] backdrop-blur sm:bottom-6 sm:left-6 ${selected ? "hidden sm:block" : ""}`}>
-        <div className="flex items-center gap-2 text-primary">
-          <Sparkles aria-hidden="true" className="size-4" />
-          <p className="text-[11px] font-black uppercase tracking-[0.14em]">Where should we go next?</p>
-        </div>
-        <h1 className="mt-2 text-2xl font-bold tracking-[-0.045em]">Explore the world</h1>
-        <p className="mt-1 text-sm leading-6 text-muted-foreground">Pick a marker or use the accessible destination list.</p>
-        <div className="mt-4 flex flex-wrap gap-2" aria-label="Destination suggestions">
-          {destinations.map((destination) => (
-            <button
-              key={destination.name}
-              type="button"
-              onClick={() => selectDestination(destination)}
-              className="inline-flex min-h-10 items-center gap-1.5 rounded-full border bg-background px-3 text-sm font-bold transition hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
-            >
-              <MapPin aria-hidden="true" className="size-3.5" /> {destination.name}
+      <section className={`absolute bottom-4 left-4 z-20 rounded-[24px] bg-card/95 shadow-[0_20px_60px_#082f3f40] backdrop-blur sm:bottom-6 sm:left-6 ${managePinsOpen ? "w-[min(360px,calc(100%-2rem))] p-4" : "w-[min(420px,calc(100%-2rem))] p-5"} ${selected && !managePinsOpen ? "hidden sm:block" : ""}`}>
+        {!managePinsOpen ? (
+          <>
+            <div className="flex items-center gap-2 text-primary">
+              <Sparkles aria-hidden="true" className="size-4" />
+              <p className="text-[11px] font-black uppercase tracking-[0.14em]">Where should we go next?</p>
+            </div>
+            <h1 className="mt-2 text-2xl font-bold tracking-[-0.045em]">Explore the world</h1>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">Click anywhere on the map to collect private inspirations for this session.</p>
+            {inspirations.length > 0 ? <p className="mt-2 text-xs font-bold text-primary">{inspirations.length} private {inspirations.length === 1 ? "pin" : "pins"} on this map</p> : null}
+            <div className="mt-4 flex flex-wrap gap-2" aria-label="Destination suggestions">
+              {destinations.map((destination) => (
+                <button key={destination.id} type="button" onClick={() => selectDestination(destination)} className="inline-flex min-h-10 items-center gap-1.5 rounded-full border bg-background px-3 text-sm font-bold transition hover:border-primary hover:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                  <MapPin aria-hidden="true" className="size-3.5" /> {destination.name}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-primary">
+                  <Sparkles aria-hidden="true" className="size-4" />
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em]">Private inspirations</p>
+                </div>
+                <h1 className="mt-1 text-xl font-bold tracking-[-0.045em]">Manage pins</h1>
+              </div>
+              <button type="button" onClick={() => { setManagePinsOpen(false); setCheckedInspirationIds(new Set()); }} aria-label="Close pin manager" className="grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                <X aria-hidden="true" className="size-4" />
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-muted-foreground">Choose only the places you want to remove.</p>
+            <div className="mt-3 grid grid-cols-2 rounded-[12px] bg-muted p-1" aria-label="Pin display scope">
+              <button type="button" aria-pressed={pinScope === "nearby"} onClick={() => setPinScope("nearby")} className="min-h-9 rounded-[9px] px-2 text-xs font-bold aria-pressed:bg-card aria-pressed:text-primary aria-pressed:shadow-sm">Current area</button>
+              <button type="button" aria-pressed={pinScope === "all"} onClick={() => setPinScope("all")} className="min-h-9 rounded-[9px] px-2 text-xs font-bold aria-pressed:bg-card aria-pressed:text-primary aria-pressed:shadow-sm">All pins ({inspirations.length})</button>
+            </div>
+            <p className="mt-1.5 text-[11px] text-muted-foreground">Current area shows pins within 50 km of this place.</p>
+            <div className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1" role="list" aria-label="Private inspiration list">
+              {managedInspirations.map((inspiration) => (
+                <div key={inspiration.id} role="listitem" className={`flex items-center gap-1.5 rounded-[11px] border p-1.5 transition ${selected?.id === inspiration.id ? "border-primary bg-secondary/60" : "bg-background/75"}`}>
+                  <input type="checkbox" checked={checkedInspirationIds.has(inspiration.id)} onChange={() => toggleInspiration(inspiration.id)} aria-label={`Select ${inspiration.name}`} className="size-4 shrink-0 accent-[var(--primary)]" />
+                  <button type="button" onClick={() => selectDestination(inspiration)} className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                    <span className="block truncate text-xs font-bold">{inspiration.name}</span>
+                    <span className="block truncate text-[11px] text-muted-foreground">{inspiration.country}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" disabled={checkedInspirationIds.size === 0} onClick={() => deleteInspirations(checkedInspirationIds)} className="mt-2.5 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] bg-destructive px-3 text-xs font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-destructive/25">
+              <CheckSquare aria-hidden="true" className="size-4" /> Delete selected{checkedInspirationIds.size > 0 ? ` (${checkedInspirationIds.size})` : ""}
             </button>
-          ))}
-        </div>
+          </>
+        )}
       </section>
 
-      {selected ? (
+      {selected && !managePinsOpen ? (
         <aside className="absolute inset-x-0 bottom-0 z-30 max-h-[70dvh] overflow-y-auto rounded-t-[24px] bg-card/95 p-5 shadow-[0_20px_60px_#082f3f55] backdrop-blur sm:inset-x-auto sm:bottom-auto sm:right-6 sm:top-28 sm:w-[min(360px,calc(100%-2rem))] sm:rounded-[24px]">
           <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label="Close destination preview" className="absolute right-4 top-4 grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
             <X aria-hidden="true" className="size-4" />
@@ -273,6 +365,16 @@ export function ExploreMapPage() {
                 : <><MapPin aria-hidden="true" className="size-4" /> View this inspiration</>
             ) : stateAction(exploreState, selected.kind)}
           </button>
+          {selected.kind === "inspiration" ? (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button type="button" onClick={openPinManager} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[14px] text-sm font-bold text-primary hover:bg-secondary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                <ListChecks aria-hidden="true" className="size-4" /> Manage pins
+              </button>
+              <button type="button" onClick={() => deleteInspirations([selected.id])} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[14px] text-sm font-bold text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-destructive/20">
+                <Trash2 aria-hidden="true" className="size-4" /> Delete this
+              </button>
+            </div>
+          ) : null}
         </aside>
       ) : null}
     </main>
@@ -298,14 +400,30 @@ function markerElement(label: string, inspiration = false) {
   return { anchor, button };
 }
 
-function inspirationAt(coordinates: [number, number]): Destination {
+function inspirationAt(id: string, sequence: number, coordinates: [number, number]): Destination {
   return {
-    name: "Pinned place",
+    id,
+    name: `Pinned place ${sequence}`,
     country: `${coordinates[1].toFixed(3)}°, ${coordinates[0].toFixed(3)}°`,
     coordinates,
     note: "This is an unverified, session-only inspiration. It has no live price, availability, visa or booking data.",
     kind: "inspiration",
   };
+}
+
+function distanceInKm(from: [number, number], to: [number, number]) {
+  const earthRadiusKm = 6371;
+  const latitudeDelta = degreesToRadians(to[1] - from[1]);
+  const longitudeDelta = degreesToRadians(to[0] - from[0]);
+  const fromLatitude = degreesToRadians(from[1]);
+  const toLatitude = degreesToRadians(to[1]);
+  const haversine = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(fromLatitude) * Math.cos(toLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+  return 2 * earthRadiusKm * Math.asin(Math.sqrt(haversine));
+}
+
+function degreesToRadians(degrees: number) {
+  return degrees * (Math.PI / 180);
 }
 
 function stateLabel(state: ExploreState) {
