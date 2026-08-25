@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { configureMapAttribution, ExploreMapPage } from "./explore-map-page";
+import { configureMapAttribution, ExploreMapPage, toConversationPlace } from "./explore-map-page";
 import { renderWithIntl } from "@/test/render";
 
 function resetDevHook() {
@@ -16,6 +16,42 @@ function mockGlobeStyleFetch() {
       : { version: 8, sources: { openmaptiles: { type: "vector", url: "https://tiles.openfreemap.org/planet" } }, layers: [] },
   })));
 }
+
+describe("Explore map conversation place DTO", () => {
+  it("maps a canonical fixture using MapLibre [lng, lat] order", () => {
+    expect(toConversationPlace({
+      id: "tokyo",
+      name: "Tokyo",
+      country: "Japan",
+      coordinates: [139.6917, 35.6895],
+      note: "Demo destination",
+      kind: "fixture",
+    })).toEqual({
+      sourceId: "tokyo",
+      name: "Tokyo",
+      longitude: 139.6917,
+      latitude: 35.6895,
+      sourceType: "FIXTURE",
+    });
+  });
+
+  it("maps a private inspiration as unverified context", () => {
+    expect(toConversationPlace({
+      id: "inspiration-1",
+      name: "Pinned place 1",
+      country: "display-only map label",
+      coordinates: [-71.584, 4.407],
+      note: "Unverified",
+      kind: "inspiration",
+    })).toEqual({
+      sourceId: "inspiration-1",
+      name: "Pinned place 1",
+      longitude: -71.584,
+      latitude: 4.407,
+      sourceType: "INSPIRATION",
+    });
+  });
+});
 
 const mapMock = vi.hoisted(() => {
   const REQUIRED_LAYER_IDS = [
