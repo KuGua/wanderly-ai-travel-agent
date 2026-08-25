@@ -14,7 +14,7 @@ export async function consentRoutes(app: FastifyInstance) {
       
 
   }, async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const body = grantConsentSchema.parse(request.body);
 
     // Verify membership
@@ -43,7 +43,7 @@ export async function consentRoutes(app: FastifyInstance) {
       
 
   }, async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const body = revokeConsentSchema.parse(request.body);
 
     // Verify membership

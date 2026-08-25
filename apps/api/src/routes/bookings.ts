@@ -24,7 +24,7 @@ export async function bookingRoutes(app: FastifyInstance) {
   });
 
   app.post("/bookings", async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const body = bookingRequestSchema.parse(request.body);
 
     const membership = await db.select().from(tripMembers)
@@ -60,7 +60,7 @@ export async function bookingRoutes(app: FastifyInstance) {
   // Sandbox callback — provider-authenticated via HMAC; never trusts a user
   // bearer token for this endpoint.
   app.post("/bookings/callback", async (request) => {
-    const ctx = createRequestContext(undefined, request.correlationId, request.traceId);
+    const ctx = createRequestContext(undefined, request.correlationId, request.traceId, request.clientRequestId);
     const rawBody = request.rawBody ?? "";
     const headers = request.headers as Record<string, string | string[] | undefined>;
 

@@ -176,7 +176,7 @@ export async function tripRoutes(app: FastifyInstance) {
 
   // Create trip
   app.post("/trips", async (request, reply) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const body = createTripSchema.parse(request.body);
 
     const tripId = await db.transaction(async (tx) => {
@@ -225,7 +225,7 @@ export async function tripRoutes(app: FastifyInstance) {
 
   // Join trip
   app.post("/trips/:tripId/join", async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
     const { tripId } = request.params as { tripId: string };
 
     await db.transaction(async (tx) => {
