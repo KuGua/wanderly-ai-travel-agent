@@ -7,12 +7,16 @@ const mapMock = vi.hoisted(() => ({
   handlers: new Map<string, (event: { lngLat: { lng: number; lat: number } }) => void>(),
   markerButtons: [] as HTMLButtonElement[],
   removedMarkers: [] as string[],
+  easeCalls: [] as Array<{ padding?: { top: number; right: number; bottom: number; left: number }; zoom?: number }>,
+  mobile: true,
 }));
 
 vi.mock("maplibre-gl", () => {
   class MapMock {
     addControl() {}
-    easeTo() {}
+    easeTo(options: { padding?: { top: number; right: number; bottom: number; left: number }; zoom?: number }) {
+      mapMock.easeCalls.push(options);
+    }
     flyTo() {}
     getCenter() { return { lng: 103.8198, lat: 1.3521 }; }
     getZoom() { return 2.25; }
@@ -59,7 +63,9 @@ describe("ExploreMapPage private inspirations", () => {
     mapMock.handlers.clear();
     mapMock.markerButtons.length = 0;
     mapMock.removedMarkers.length = 0;
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    mapMock.easeCalls.length = 0;
+    mapMock.mobile = true;
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({ matches: query.includes("orientation: portrait") ? mapMock.mobile : false }));
   });
 
   it("keeps multiple pins and supports individual and batch deletion", async () => {
@@ -75,7 +81,7 @@ describe("ExploreMapPage private inspirations", () => {
       clickMap?.({ lngLat: { lng: -9.139, lat: 38.722 } });
     });
 
-    expect(screen.getByText("3 private pins on this map")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Explore the world" })).not.toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Private inspiration list" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
@@ -114,6 +120,21 @@ describe("ExploreMapPage private inspirations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
     fireEvent.click(screen.getByRole("button", { name: "Close conversation" }));
     expect(screen.queryByRole("heading", { name: "Tokyo" })).not.toBeInTheDocument();
+  });
+
+  it("moves the globe into the uncovered desktop area without enlarging it", async () => {
+    mapMock.mobile = false;
+    render(<ExploreMapPage />);
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
+
+    await waitFor(() => {
+      const camera = mapMock.easeCalls.at(-1);
+      expect(camera?.padding?.right).toBeGreaterThan(0);
+      expect(camera?.padding?.bottom).toBe(0);
+      expect(camera?.zoom).toBeLessThanOrEqual(2.25);
+    });
   });
 });
 
