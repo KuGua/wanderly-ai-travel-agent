@@ -25,7 +25,7 @@ authoritative state.
   never inserted on failure.
 - Each offer in the LLM's plan must `isDeepStrictEqual` match the
   provider-scoped `evidence` (the offers returned by
-  `FixtureFlightProvider`/`FixtureStayProvider`/`FixtureGroundProvider`).
+  configured Flight/Stay/Ground providers).
   The validator never trusts the LLM on price, time, or source — only on
   *which* offer IDs it selects.
 - `constraintReferences` must point to fields the snapshot actually carries
@@ -79,7 +79,7 @@ interface PlanViolation {
 | `DESTINATION_NOT_ALLOWED` | `plan.destination` not in `snapshot.destinationCandidates`. |
 | `DESTINATION_MISMATCH` | An offer's `destination` does not equal `plan.destination`. |
 | `SOURCE_REQUIRED` | An offer's `source` is empty/whitespace. |
-| `PROVENANCE_REQUIRED` | An offer's `capturedAt` is empty/unparseable, or `fixtureVersion` is empty. |
+| `PROVENANCE_REQUIRED` | An offer's `capturedAt` is empty or unparseable. |
 | `EVIDENCE_NOT_FOUND` | An offer's `id` is not present in the provider evidence. |
 | `EVIDENCE_MISMATCH` | An offer with the same `id` does not `isDeepStrictEqual` match the evidence. |
 | `GENERATED_AT_MISMATCH` | `plan.generatedAt` does not equal the latest `capturedAt` across all selected offers. |

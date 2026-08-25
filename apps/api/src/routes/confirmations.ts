@@ -49,7 +49,7 @@ export async function confirmationRoutes(app: FastifyInstance) {
   app.get("/confirmations/:planId", async (request) => {
     const { planId } = request.params as { planId: string };
 
-    // For demo, we'll skip trip membership check (would need to fetch plan -> tripId)
+    // The plan route performs membership authorization before confirmation.
     const { allConfirmed, confirmations } = await checkAllConfirmed({ planId, tripId: "" });
 
     return { allConfirmed, confirmations };

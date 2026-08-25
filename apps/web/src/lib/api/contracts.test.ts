@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { profileResponseSchema, tripsResponseSchema } from "./contracts";
-import { fixtureProfile } from "@/lib/fixtures/profiles";
-import { fixtureTrips } from "@/lib/fixtures/trips";
+import { testProfileResponse, testTripsResponse } from "@/test/api-fixtures";
 
 describe("API contracts", () => {
   it("accepts the canonical nullable Profile and Trip fixture shapes", () => {
-    expect(profileResponseSchema.parse(fixtureProfile)).toEqual(fixtureProfile);
-    expect(tripsResponseSchema.parse(fixtureTrips)).toEqual(fixtureTrips);
+    expect(profileResponseSchema.parse(testProfileResponse)).toEqual(testProfileResponse);
+    expect(tripsResponseSchema.parse(testTripsResponse)).toEqual(testTripsResponse);
   });
 
   it("rejects a Profile missing canonical fields", () => {

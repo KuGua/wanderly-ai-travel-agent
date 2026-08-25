@@ -15,7 +15,7 @@ type Destination = {
   country: string;
   coordinates: [number, number];
   note: string;
-  kind: "fixture" | "inspiration" | "geography";
+  kind: "inspiration" | "geography";
 };
 
 type ExploreState = "IDLE" | "SELECTED" | "TALKING" | "FLYING" | "EXPLORING";
@@ -29,13 +29,6 @@ const SINGAPORE: [number, number] = [103.8198, 1.3521];
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 const NEARBY_RADIUS_KM = 50;
 
-const DESTINATION_IDS = ["tokyo", "lisbon", "reykjavik"] as const;
-
-const FIXTURE_COORDS: Record<(typeof DESTINATION_IDS)[number], [number, number]> = {
-  tokyo: [139.6917, 35.6895],
-  lisbon: [-9.1393, 38.7223],
-  reykjavik: [-21.9426, 64.1466],
-};
 
 export function ExploreMapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -58,18 +51,7 @@ export function ExploreMapPage() {
   const tCommon = useTranslations("common");
   const locale = useLocale();
 
-  const destinations = useMemo<Destination[]>(
-    () =>
-      DESTINATION_IDS.map((id) => ({
-        id,
-        name: t(`destinations.${id}`),
-        country: t(`destinations.${id}Country`),
-        coordinates: FIXTURE_COORDS[id],
-        note: t(`destinations.${id}Note`),
-        kind: "fixture" as const,
-      })),
-    [t],
-  );
+  const destinations: Destination[] = [];
 
   useEffect(() => {
     readinessRef.current = readiness;
@@ -106,9 +88,7 @@ export function ExploreMapPage() {
       }
       return;
     }
-    if (destination.kind === "fixture") {
-      mapRef.current?.flyTo({ center: destination.coordinates, zoom: 4.8, duration: reducedMotion() ? 0 : 1600 });
-    }
+    mapRef.current?.flyTo({ center: destination.coordinates, zoom: 4.8, duration: reducedMotion() ? 0 : 1600 });
   }, [clearJourneyTimers]);
 
   const deleteInspirations = useCallback(
@@ -632,14 +612,12 @@ export function ExploreMapPage() {
           <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em]">{selected.name}</h2>
           <p className="font-semibold text-muted-foreground">{selected.country}</p>
           <p className="mt-3 inline-flex rounded-full bg-secondary px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-secondary-foreground">
-            {selected.kind === "fixture" ? t("drawerKindFixture") : selected.kind === "geography" ? t("drawerKindGeography") : t("drawerKindInspiration")}
+            {selected.kind === "geography" ? t("drawerKindGeography") : t("drawerKindInspiration")}
           </p>
           <p className="mt-4 text-sm leading-6 text-muted-foreground">{selected.note}</p>
           <button type="button" onClick={startExploring} disabled={exploreState !== "SELECTED"} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-primary px-4 font-bold text-primary-foreground transition hover:brightness-110 disabled:cursor-default disabled:opacity-80 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
             {exploreState === "SELECTED" ? (
-              selected.kind === "fixture"
-                ? <><Plane aria-hidden="true" className="size-4" /> {t("action.fixture", { name: selected.name })}</>
-                : <><MapPin aria-hidden="true" className="size-4" /> {selected.kind === "geography" ? t("action.viewGeography") : t("action.viewInspiration")}</>
+              <><MapPin aria-hidden="true" className="size-4" /> {selected.kind === "geography" ? t("action.viewGeography") : t("action.viewInspiration")}</>
             ) : stateAction(exploreState, selected.kind, t)}
           </button>
           {selected.kind === "inspiration" ? (

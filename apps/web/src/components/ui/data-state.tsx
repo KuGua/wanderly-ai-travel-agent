@@ -1,19 +1,9 @@
 "use client";
 
-import { AlertCircle, Database, LoaderCircle, ShieldAlert } from "lucide-react";
+import { AlertCircle, LoaderCircle, ShieldAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { useErrorMessage } from "@/lib/api/use-error-message";
-
-export function DemoDataBadge() {
-  const t = useTranslations("common");
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-      <Database aria-hidden="true" className="size-3.5" />
-      {t("demoBadge")}
-    </span>
-  );
-}
 
 export function LoadingState({ label }: { label: string }) {
   return (

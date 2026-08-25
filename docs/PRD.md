@@ -68,7 +68,7 @@ flowchart LR
 
 ### PROOF
 
-- 每个工具事实都显示来源、时间或 `Demo data` 标签；
+- 每个工具事实都显示来源和检查时间；无可验证数据时显示不可用原因与重试/官方核验下一步；
 - 每条共享约束显示来自哪个成员、哪个 Profile/本次对话字段及其授权状态；
 - 每次 Agent run 记录 Profile 版本、共享授权快照、工具快照和方案版本；
 - 预订编排只在所有所需成员确认后执行，并返回 sandbox 参考号。
@@ -173,5 +173,5 @@ flowchart LR
 - 测试覆盖授权撤回、冲突、工具失败、visa 不确定、变化、成员拒绝与重复 orchestration；
 - 每个 Agent/工具结果带 Profile/consent/tool snapshot 版本；
 - sandbox 与真实数据/fixture 的边界对用户清晰可见；
-- 3 分钟 Hero Demo 可以用固定数据稳定复现；live API 不可用时明确切换为 `Demo data` fixture；
+- 新注册用户可在真实服务配置完整时完成端到端流程；live API 不可用时不创建伪造计划，并明确显示恢复路径；
 - 私有对话线程可持久化且仅归其所有者；不得进入共享 snapshot、遥测或默认模型上下文；用户删除后不再保留消息正文。

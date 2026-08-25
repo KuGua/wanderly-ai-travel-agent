@@ -2,7 +2,7 @@ import { db } from "../db/database.js";
 import { constraintSnapshots, itineraryPlans, sourceEvidence, providerOffers } from "../db/schema.js";
 import { eq, and, desc } from "drizzle-orm";
 import { buildAuthorizedData } from "./consent-service.js";
-import { FixtureFlightProvider, FixtureStayProvider, FixtureGroundProvider } from "../providers/fixture-provider.js";
+import { createTravelProviders } from "../providers/live-provider-factory.js";
 import { createModelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
 import type { FlightProvider, GroundProvider, StayProvider } from "../providers/types.js";
@@ -18,10 +18,11 @@ export interface PlanningDependencies {
   modelGateway: ModelGateway;
 }
 
+const configuredProviders = createTravelProviders();
 const defaultPlanningDependencies: PlanningDependencies = {
-  flightProvider: new FixtureFlightProvider(),
-  stayProvider: new FixtureStayProvider(),
-  groundProvider: new FixtureGroundProvider(),
+  flightProvider: configuredProviders.flightProvider,
+  stayProvider: configuredProviders.stayProvider,
+  groundProvider: configuredProviders.groundProvider,
   modelGateway: createModelGateway(),
 };
 
@@ -41,7 +42,7 @@ export class PlanningDataUnavailableError extends Error {
 }
 
 /**
- * Deterministic completeness gate for the fixture-backed planning slice.
+ * Completeness gate for provider-backed planning.
  * An empty provider result is an explicit failure, never implicit inventory.
  */
 export function validateProviderCoverage(params: {
@@ -219,7 +220,7 @@ export async function generatePlan(params: {
       })),
       ...allStays.map(offer => ({
         category: "stay",
-        providerName: "FixtureStayProvider",
+        providerName: offer.source,
         offer,
       })),
       ...allGround.map(offer => ({
@@ -235,7 +236,6 @@ export async function generatePlan(params: {
       category,
       providerName,
       offerData: offer as unknown as Record<string, unknown>,
-      isDemo: offer.isDemo,
       capturedAt: new Date(offer.capturedAt),
     })));
 
@@ -245,10 +245,7 @@ export async function generatePlan(params: {
       itemId: offer.id,
       source: offer.source,
       capturedAt: new Date(offer.capturedAt),
-      metadata: {
-        isDemo: offer.isDemo,
-        fixtureVersion: offer.fixtureVersion,
-      },
+      metadata: null,
     })));
 
     await recordAudit({

@@ -1,6 +1,6 @@
 # AI Travel Agent 技术栈（Hackathon 收敛版）
 
-**状态：** 已按当前 Hero Demo 收敛；`apps/api` fixture-backed backend 已部分实施并验证，frontend、AWS deployment、live providers 与真实 model integration 尚未实施
+**状态：** 真实身份与服务端模型是唯一运行路径；旅行 provider 尚待配置。无可验证的 provider 数据时，系统返回不可用状态，绝不生成替代报价或库存。
 
 **基线：** 2026-08-23
 
@@ -27,7 +27,7 @@ Amazon RDS for PostgreSQL
         └─ visa/readiness fixture with source + checked time
 ```
 
-三名用户、两个出发地、两到三个目的地候选的 Hero 以可版本化 fixture 为**可靠基线**；live API 只增强演示。任何 live 调用失败都必须显示 `Demo data`，不能伪装成实时库存、报价或签证结论。
+所有用户、偏好和行程均来自已认证用户与数据库。任何 provider 调用失败都必须显示不可用状态，不能伪装成实时库存、报价或签证结论。
 
 ## 2. 各层技术选择
 
@@ -43,7 +43,7 @@ Amazon RDS for PostgreSQL
 | Agent | **OpenAI Agents SDK（TypeScript）**，运行在 App Runner；`ModelGateway` 隔离 provider | 部署到 AWS 不妨碍使用 SDK。Agent 只调用类型化工具；SDK 不是授权、确认或持久状态机。 | 让模型直接读写数据库、付款或自由互聊的多 Agent 群。 |
 | 工具与模型边界 | Zod schema、structured outputs、server-side policy gate | 对话 archive 仅由所有者读取；所有工具只获得当前 `constraint_snapshot` 的最小授权字段，模型仅接收当前请求和用户明确选择的最小上下文；模型输出不直接成为业务真相。 | 把 Profile/私聊全文放进长 prompt、共享 snapshot、遥测或向前端暴露供应商 key。 |
 | 旅行与数据 API | Amadeus Test Flight/Hotel、openrouteservice Routing、Frankfurter；通过 provider adapters | 恰好覆盖候选比较所需的 Flight/Stay/Ground/预算归一化，并能替换数据源。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA。 |
-| Visa / entry | 固定候选路线的**来源化 fixture**；未来可接 Sherpa/IATA Timatic adapter | H4 是 Hero 必需项，但现有 API 清单没有签证数据源。fixture 必带来源、检查时间、适用成员、下一步与不确定性。 | 以 LLM 或 Wikipedia 推断签证、代办、法律结论。 |
+| Visa / entry | 官方核验下一步；未来可接 Sherpa/IATA Timatic adapter | 未配置可靠数据源时只展示核验缺口与官方核验下一步。 | 以 LLM 或 Wikipedia 推断签证、代办、法律结论。 |
 | 异步与编排 | MVP 用 PostgreSQL 持久状态机、idempotency key、transactional outbox 和同步 sandbox | 当前流程是确定性 demo；不额外引入 workflow 平台，仍能使 plan 失效、三人确认和 sandbox callback 可验证。 | Temporal Cloud、Step Functions、Redis 队列同时进入 MVP。 |
 | 可观测性 | OpenTelemetry + CloudWatch；结构化日志和低基数业务指标 | 以 `trip_id`、`plan_version`、`run_id`、`orchestration_request_id` 关联结果；日志不含私聊、国籍明文、证件号、支付数据。 | 先建独立数据湖或全套企业 APM。 |
 | 密钥与部署 | AWS Secrets Manager、最小 IAM role、ECR、GitHub Actions OIDC、IaC | API keys 仅后端可读；GitHub OIDC 避免在 CI 保存长期 AWS 凭据。[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-cloud-providers) | 将 API key、数据库密码或 Cognito secret 放进浏览器、代码库或 demo fixture。 |
@@ -95,10 +95,10 @@ Agent 不能自行跨越以下边界：
 
 | 能力 | 选择 | MVP 行为 | 风险与缓解 |
 |---|---|---|---|
-| Flight / Hotel | Amadeus Test adapter | 每个目的地候选可尝试 live 查询；若失败则使用固定 fixture | Test 数据有限、缓存且非完整库存；Amadeus Self-Service 明确有航司/票价覆盖限制。Demo 的通过条件不依赖其可用性。[Amadeus FAQ](https://admin.developers.amadeus.com/self-service/apis-docs/guides/developer-guides/faq/) |
-| Ground | openrouteservice Routing adapter | 生成机场/住宿/目的地之间的路线时间或 fixture | 公共服务有使用上限和 OSM attribution 要求；两个出发地、少量候选不需要 Matrix 或 Overpass。[openrouteservice restrictions](https://openrouteservice.org/restrictions/) |
-| Budget | Frankfurter adapter | 归一化候选总预算；显示汇率日期与“参考汇率” | 不能被当作支付或结算汇率；API 不可用时使用已标记的 fixture。[Frankfurter](https://frankfurter.dev/providers/ecb/) |
-| Visa readiness | 固定来源化 fixture | 对每名授权成员、每个展示候选给出待办/核验缺口 | 没有实时签证 API 前不得宣称实时正确或给法律建议。未来再评估 Sherpa/IATA Timatic。 |
+| Flight / Hotel | 配置后的供应商 adapter | 每个目的地候选仅使用可验证的 live 查询结果；失败则返回不可用 | 供应商覆盖和商业条款必须在启用前验证。 |
+| Ground | 配置后的路由 adapter | 仅在完整端点和来源可验证时生成路线 | 公共服务有使用上限和 attribution 要求。 |
+| Budget | Frankfurter adapter | 归一化候选总预算；显示汇率日期与“参考汇率” | 不能被当作支付或结算汇率；API 不可用时显示不可用。 |
+| Visa readiness | 官方核验下一步 | 对每名授权成员、每个展示候选给出待办/核验缺口 | 没有可靠数据源前不得宣称实时正确或给法律建议。 |
 
 **明确延期：** Amadeus Activities、Open-Meteo、openrouteservice POI/Overpass、Wikimedia、Nager.Holidays、Google Calendar。它们不能帮助完成当前的授权、候选比较、replan 与三人确认闭环。Google Calendar 尤其会增加 OAuth 和隐私风险；以后如做，仅从最小 `freebusy` 权限开始。[Google Calendar scopes](https://developers.google.com/workspace/calendar/api/auth)
 

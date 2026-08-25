@@ -194,7 +194,7 @@ export const sourceEvidence = pgTable("source_evidence", {
   planId: uuid("plan_id").references(() => itineraryPlans.id, { onDelete: "cascade" }).notNull(),
   category: varchar("category", { length: 32 }).notNull(), // "flight","stay","ground","visa"
   itemId: varchar("item_id", { length: 128 }).notNull(),
-  source: varchar("source", { length: 256 }).notNull(), // provider name or "Demo data"
+  source: varchar("source", { length: 256 }).notNull(),
   capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
   metadata: jsonb("metadata"),
 });
@@ -208,7 +208,6 @@ export const providerOffers = pgTable("provider_offers", {
   category: varchar("category", { length: 32 }).notNull(),
   providerName: varchar("provider_name", { length: 128 }).notNull(),
   offerData: jsonb("offer_data").$type<Record<string, unknown>>().notNull(),
-  isDemo: boolean("is_demo").default(true).notNull(),
   capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

@@ -18,7 +18,7 @@ export class TravelApiError extends Error {
 export function getErrorMessage(error: unknown): string {
   if (error instanceof TravelApiError) {
     return error.isUnauthorized
-      ? "This demo identity cannot access the requested data."
+      ? "Your account cannot access the requested data."
       : error.message;
   }
 

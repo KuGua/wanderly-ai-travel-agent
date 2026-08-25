@@ -85,7 +85,6 @@ export const latestPlanSchema = z.object({
   version: z.number().int().nonnegative(),
   status: latestPlanStatusSchema,
   generatedAt: z.string().datetime(),
-  isDemoData: z.boolean(),
 });
 
 export const nextActionSchema = z.object({

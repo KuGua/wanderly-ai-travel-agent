@@ -49,7 +49,7 @@ export async function processChangeEvent(params: {
       return { replanned: false };
     }
 
-    // Source of truth: persisted trip. Never hardcoded fixtures.
+    // Source of truth: persisted trip. Never hardcoded data.
     const [trip] = await tx.select().from(sharedTrips)
       .where(eq(sharedTrips.id, params.tripId))
       .limit(1);

@@ -5,7 +5,7 @@ import type { AgentKind } from "../agents/contracts.js";
 import type { RequestContext } from "../utils/context.js";
 import { recordAudit } from "../services/audit-service.js";
 
-export type AgentRunStatus = "SUCCESS" | "FALLBACK" | "TIMEOUT" | "ERROR";
+export type AgentRunStatus = "SUCCESS" | "TIMEOUT" | "ERROR";
 
 export interface AgentRunTokens {
   prompt: number;
