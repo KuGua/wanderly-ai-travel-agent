@@ -45,17 +45,23 @@ GEMINI_MODEL=gemini-2.5-flash
 
 ## Cognito 登录与 API 认证
 
-受保护 API 只接受 Cognito access token，不接受用户 ID、邮箱或手机号作为身份
-header。用户可在 Cognito User Pool 中通过邮箱或手机号登录，客户端随后发送：
+除地图位置参考外，受保护 API 只接受 Cognito access token，不接受用户 ID、邮箱或
+手机号作为身份 header。用户可在 Cognito User Pool 中通过邮箱或手机号登录，客户端随后发送：
 
 ```http
 Authorization: Bearer <cognito-access-token>
 ```
 
-本地和部署环境必须配置 `COGNITO_USER_POOL_ID` 与 `COGNITO_CLIENT_ID`。API
+需要调用 Profile、行程、对话、授权、规划、确认或预订接口的本地和部署环境必须配置
+`COGNITO_USER_POOL_ID` 与 `COGNITO_CLIENT_ID`。API
 验证签名、issuer、client ID、token use 与过期时间，并使用已验证 token 的
 `sub` 关联数据库用户。缺少或无效 token 返回统一 `401`，不会回显 token 或
 账号信息。
+
+`POST /api/v1/explore/location-reference` 是唯一的匿名只读例外：它只使用本次请求的
+明确点击坐标匹配仓库内离线数据，不写数据库、audit 或日志，也不创建身份、灵感、候选或旅行事实。
+每个 API 进程以短暂、加盐哈希的客户端地址状态限流为每分钟 30 次；此限制不跨实例共享，生产多实例
+部署必须在网关或 CDN 追加共享限流。
 
 ## Sandbox callback 配置
 

@@ -80,6 +80,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
       || request.url === "/metrics"
       || request.url.startsWith("/docs")
       || (request.method === "POST" && request.url.split("?", 1)[0] === "/api/v1/bookings/callback")
+      || (request.method === "POST" && request.url.split("?", 1)[0] === "/api/v1/explore/location-reference")
     ) {
       return;
     }

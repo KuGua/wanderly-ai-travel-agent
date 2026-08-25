@@ -316,6 +316,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 5. 在全球、区域和本地缩放级别，确认国家、省/州和城市按层级显示；分别关闭三个图层。
 6. 打开一个地点抽屉后，确认三个图层开关仍可见并可操作。
 7. 点击国家、城市或省/州名称，再点击空白地图位置。
+8. 在未登录、未配置 Cognito 的浏览器会话中点击一个陆地点，并连续提交超过 30 次同一地点参考请求。
 
 **Expected outcomes:**
 
@@ -324,6 +325,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 - 私聊在模型调用前拒绝实时价格、库存、签证/入境结论和预订状态问题；模型输出若包含此类无 provider 支撑的断言，必须替换为显式 `SAFE_REFUSAL`。
 - 空白区域档案明确没有可验证候选资料，不生成地点、价格、库存、签证或预订结论。
 - 对覆盖数据内的空白地图点击，离线位置参考可显示国家、一级行政区和最近主要城市，并带来源/版本/检查时间；城市超过 75 km、海洋或边界未匹配时必须省略相应字段或返回 `NO_REFERENCE`，不能猜测。
+- 未登录会话只能匿名调用地点参考端点，成功时替换临时 `Pinned place N`；第 31 次同一客户端一分钟窗口内请求返回 `429`，不记录原始坐标或地址。Profile、行程、私聊、授权、规划、确认和预订在相同未登录会话中仍为 `401`。
 - 空白区域只能保存私有灵感或请求后续加入候选；不改变共享约束、方案或确认状态。
 - 多个私有灵感在缩放和移动地图时保持绑定各自经纬坐标；管理器默认不打开、不预选标记，单独删除只移除目标标记，批量删除只移除已勾选标记。
 - `Current area` 明确表示当前点 50 km 内，不得把距离范围伪装为城市边界。离线位置参考仅能来自版本化、来源化的专用 resolver；不得从地图 tile、地图标签、Natural Earth SVG overlay 或模型推断。
@@ -396,7 +398,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 - 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话。
 - fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
-- 所有受保护的 HTTP 请求在发送时通过 AWS Amplify session 读取当前 Cognito access token；无 session 时不发送 Authorization，token 刷新后使用新 token，登录会话变化或退出时必须清空 TanStack Query 缓存且后续请求不得继续携带旧 token。应用自身不得把 token 复制到 localStorage。
+- 所有受保护的 HTTP 请求在发送时通过 AWS Amplify session 读取当前 Cognito access token；无 session 时不发送 Authorization，token 刷新后使用新 token，登录会话变化或退出时必须清空 TanStack Query 缓存且后续请求不得继续携带旧 token。`POST /api/v1/explore/location-reference` 是唯一匿名、无持久化且限流的例外。应用自身不得把 token 复制到 localStorage。
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
 - Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。

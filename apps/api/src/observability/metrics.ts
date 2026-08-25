@@ -196,7 +196,7 @@ metrics.registerCounter("booking_callback_outcomes_total", "Authenticated bookin
   callbackResult: ["processed", "duplicate", "failed"],
 });
 metrics.registerCounter("location_reference_requests_total", "Offline map location references by bounded outcome.", {
-  outcome: ["reference", "no_reference", "unavailable"],
+  outcome: ["reference", "no_reference", "unavailable", "rate_limited"],
 });
 metrics.registerHistogram(
   "llm_request_latency_ms",

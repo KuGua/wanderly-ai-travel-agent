@@ -34,7 +34,9 @@ NEXT_PUBLIC_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/liberty
   visibly labels API-backed surfaces `Demo data`.
 - `api` calls Fastify at `${NEXT_PUBLIC_API_BASE_URL}/api/v1`. The Cognito app
   client must be a public browser client without a client secret and must match
-  the API's `COGNITO_USER_POOL_ID` / `COGNITO_CLIENT_ID` configuration.
+  the API's `COGNITO_USER_POOL_ID` / `COGNITO_CLIENT_ID` configuration for private
+  features. The offline map location-reference call is the sole anonymous API call;
+  it works without Cognito and returns no persisted user data.
 
 All responses pass through the same Zod schemas. `NEXT_PUBLIC_*` values are
 bundled into browser code and must never contain credentials, private Profile
