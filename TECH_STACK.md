@@ -35,7 +35,7 @@ Amazon RDS for PostgreSQL
 |---|---|---|---|
 | 客户端 | **Next.js + React + TypeScript**，部署到 **AWS Amplify Hosting** | 浏览器链接最适合三人邀请、独立授权、共同查看、投屏与移动端访问。Amplify 支持 Next.js SSR 部署。[AWS Amplify](https://docs.aws.amazon.com/amplify/latest/userguide/ssr-amplify-support.html) | 原生 iOS/Android App、应用商店发布、离线协作。 |
 | UI | Tailwind CSS + shadcn/ui/Radix；响应式 PWA | 快速构建 Profile、私有对话 archive、授权抽屉、候选比较、replan diff、个人待办与三人确认队列。 | 复杂地图编辑器、原生群聊、设计系统平台化。 |
-| 探索地图 | MapLibre globe + OpenFreeMap Liberty；GEBCO WMS shaded relief；Natural Earth 本地国界 fallback | OpenFreeMap 提供道路、标签和行政区；GEBCO 提供 public-domain 的不透明全球陆地/海底地势；本地 fallback 不依赖运行时 GeoJSON worker。 | 不把地图像素当作路线、签证、价格或可预订事实；GEBCO 不用于航海或安全判断。 |
+| 探索地图 | MapLibre globe + OpenFreeMap Liberty；GEBCO WMS shaded relief；Natural Earth / DataV 本地化 SVG 国界与地名覆盖层 | OpenFreeMap 提供道路与行政区；GEBCO 提供 public-domain 的不透明全球陆地/海底地势；本地版本化标签按球面相机投影显示洲、国家、首都/主要城市和省州，不依赖 MapLibre globe 的 symbol worker。 | 不把地图像素或显示标签当作路线、地点解析、签证、价格或可预订事实；GEBCO 不用于航海或安全判断。 |
 | 前端状态 | **TanStack Query** 管理服务器状态；React Hook Form + Zod 管理表单草稿；仅在必要时以 Zustand 保存局部 UI 状态 | Profile、consent、plan 和 confirmation 都以服务端版本为准。避免 Redux 或客户端复制业务真相。 | 全局客户端 store 作为授权/订单真相。 |
 | 数据获取与状态刷新 | REST/JSON + OpenAPI；planning/replan 期间用 TanStack Query 短轮询或 SSE | 对三分钟 Demo 足够稳定；页面刷新后可从数据库恢复状态。 | 为 MVP 自建 WebSocket 事件总线。 |
 | API / Agent runner | **Node.js LTS + TypeScript + Fastify**，容器化部署到 **AWS App Runner** | 保持 agent、供应商凭据和数据库访问在服务器；App Runner 可直接部署代码或容器并托管运行、扩缩与负载均衡。[AWS App Runner](https://docs.aws.amazon.com/apprunner/latest/dg/what-is-apprunner.html) | Lambda 链式编排、微服务网格、多个独立 agent 服务。 |

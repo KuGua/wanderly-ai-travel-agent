@@ -2,7 +2,8 @@ import type { ExpressionSpecification, RasterLayerSpecification, StyleSpecificat
 
 export const WANDERLY_LAND_COLOR = "#d8e2b7";
 export const WANDERLY_OCEAN_COLOR = "#398ea9";
-export const COUNTRY_BOUNDARY_DATA_URL = "/map-data/natural-earth-admin-0.geojson";
+export const GLOBAL_COUNTRY_BOUNDARY_DATA_URL = "/map-data/natural-earth-admin-0.geojson";
+export const CHINA_COUNTRY_BOUNDARY_DATA_URL = "https://geo.datav.aliyun.com/areas_v3/bound/100000.json";
 export const GEBCO_SOURCE_ID = "gebco-global-relief";
 export const GEBCO_LAYER_ID = "gebco-global-relief";
 export const GEBCO_WMS_TILE_URL = "https://wms.gebco.net/mapserv?service=WMS&version=1.1.1&request=GetMap&layers=GEBCO_LATEST&styles=&format=image/png&transparent=FALSE&srs=EPSG:3857&bbox={bbox-epsg-3857}&width=256&height=256";

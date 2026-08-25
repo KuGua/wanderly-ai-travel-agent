@@ -97,7 +97,7 @@ export const conversationPlaceSchema = z.object({
   name: z.string().trim().min(1).max(160),
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
-  sourceType: z.enum(["FIXTURE", "INSPIRATION"]),
+  sourceType: z.enum(["REFERENCE", "INSPIRATION"]),
 }).strict();
 
 export const conversationMessageSchema = z.object({

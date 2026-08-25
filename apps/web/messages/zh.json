@@ -217,7 +217,6 @@
     "deleteSelected": "删除所选",
     "deleteSelectedWithCount": "删除所选（{count}）",
     "drawerCloseAriaLabel": "关闭目的地预览",
-    "drawerKindFixture": "演示数据",
     "drawerKindGeography": "地图位置",
     "drawerKindInspiration": "仅限本次会话的灵感",
     "geographyCountryLabel": "地图上的国家标签",
@@ -233,7 +232,6 @@
     "locationReferenceUnavailable": "离线地图参考暂不可用；私人会话图钉仍会保留。",
     "locationReferenceNote": "这是离线地图参考，不是地址、旅行候选、价格、可用性、签证或预订事实。",
     "locationReferenceDataPrefix": "数据来源：",
-    "markerExploreAria": "探索 {name}，{country}",
     "markerOpenAria": "打开 {name}",
     "state": {
       "IDLE": "目的地预览",
@@ -247,7 +245,6 @@
       "FLYING": "正在飞越地球…",
       "inspiration": "已为本次会话保留",
       "geography": "未经验证的地图位置",
-      "fixture": "探索 {name}",
       "viewGeography": "查看此地图位置",
       "viewInspiration": "查看此灵感"
     },
@@ -259,20 +256,9 @@
       "countries": "国家",
       "regions": "省 / 州",
       "cities": "城市",
-      "captionSupported": "放大以查看地区详情。",
+      "captionSupported": "放大以查看首都、城市和省 / 州。",
       "captionMissingSource": "国家/地区标签已隐藏——该地图样式未提供 openmaptiles 数据源。",
       "captionMissingLayers": "国家/地区标签已隐藏——缺失图层：{layers}。"
-    },
-    "destinations": {
-      "tokyo": "Tokyo",
-      "tokyoCountry": "Japan",
-      "tokyoNote": "Food, design and neighborhoods that reward wandering.",
-      "lisbon": "Lisbon",
-      "lisbonCountry": "Portugal",
-      "lisbonNote": "Hillside streets, Atlantic light and late dinners.",
-      "reykjavik": "Reykjavík",
-      "reykjavikCountry": "Iceland",
-      "reykjavikNote": "A compact base for geothermal landscapes."
     }
   },
   "trips": {

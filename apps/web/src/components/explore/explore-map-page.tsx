@@ -9,6 +9,7 @@ import { applyGeographyContrast, GEOGRAPHY_INTERACTIVE_LAYER_IDS, geographyFeatu
 import { INITIAL_READINESS, layerCaptionFor, mapReadinessStage, panelDisabledReason, type LayerCaption, type MapReadiness, type MapStage } from "./map-readiness";
 
 import { CountryBoundaryOverlay } from "./country-boundary-overlay";
+import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { solidifyGlobeStyle } from "./map-surface-style";
 import { TravelAgentChat } from "./travel-agent-chat";
 import { useOptionalTravelApi } from "@/lib/query/provider";
@@ -20,7 +21,7 @@ export type ExploreDestination = {
   country: string;
   coordinates: [number, number];
   note: string;
-  kind: "fixture" | "inspiration" | "geography";
+  kind: "inspiration" | "geography";
   locationReference?: LocationReferenceResponse;
   locationReferenceStatus?: "loading" | "unavailable";
 };
@@ -49,7 +50,6 @@ export function ExploreMapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [mapForBoundaryOverlay, setMapForBoundaryOverlay] = useState<MapLibreMap | null>(null);
-  const markersRef = useRef<MapLibreMarker[]>([]);
   const inspirationMarkersRef = useRef(new Map<string, MapLibreMarker>());
   const inspirationsRef = useRef<Destination[]>([]);
   const inspirationSequenceRef = useRef(0);
@@ -66,33 +66,6 @@ export function ExploreMapPage() {
   const t = useTranslations("explore");
   const tCommon = useTranslations("common");
   const locale = useLocale();
-
-  const destinations = useMemo<Destination[]>(() => [
-    {
-      id: "tokyo",
-      name: "Tokyo",
-      country: t("destinations.tokyoCountry"),
-      coordinates: [139.6917, 35.6895],
-      note: t("destinations.tokyoNote"),
-      kind: "fixture",
-    },
-    {
-      id: "lisbon",
-      name: "Lisbon",
-      country: t("destinations.lisbonCountry"),
-      coordinates: [-9.1393, 38.7223],
-      note: t("destinations.lisbonNote"),
-      kind: "fixture",
-    },
-    {
-      id: "reykjavik",
-      name: "Reykjavík",
-      country: t("destinations.reykjavikCountry"),
-      coordinates: [-21.9426, 64.1466],
-      note: t("destinations.reykjavikNote"),
-      kind: "fixture",
-    },
-  ], [t]);
 
   useEffect(() => {
     readinessRef.current = readiness;
@@ -317,7 +290,7 @@ export function ExploreMapPage() {
             window.clearTimeout(loadTimeout);
             map.addControl(new maplibregl.AttributionControl({
               compact: window.innerWidth < 640,
-              customAttribution: '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a>',
+              customAttribution: '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a> · <a href="https://help.aliyun.com/zh/datav/datav-7-0/user-guide/china-state-border-4-0" target="_blank" rel="noopener noreferrer">DataV.GeoAtlas China boundary</a>',
             }), "bottom-right");
             finalizeReadiness(map, inspectGeographyLayers(map, MAP_STYLE_URL));
             window.queueMicrotask(() => {
@@ -366,7 +339,7 @@ export function ExploreMapPage() {
             inspirationSequenceRef.current,
             [event.lngLat.lng, event.lngLat.lat],
           );
-          const { anchor, button } = markerElement(inspiration.name, true);
+          const { anchor, button } = markerElement(inspiration.name);
           button.setAttribute("aria-label", t("markerOpenAria", { name: inspiration.name }));
           button.addEventListener("click", (markerEvent) => {
             markerEvent.stopPropagation();
@@ -390,17 +363,6 @@ export function ExploreMapPage() {
         };
         map.on("move", syncInspirationPositions);
 
-        markersRef.current = destinations.map((destination) => {
-          const { anchor, button } = markerElement(destination.name);
-          button.setAttribute("aria-label", t("markerExploreAria", { name: destination.name, country: destination.country }));
-          button.addEventListener("click", (event) => {
-            event.stopPropagation();
-            selectDestination(destination);
-          });
-          return new maplibregl.Marker({ element: anchor, anchor: "bottom" })
-            .setLngLat(destination.coordinates)
-            .addTo(map);
-        });
       } catch {
         if (!cancelled) {
           window.clearTimeout(loadTimeout);
@@ -416,8 +378,6 @@ export function ExploreMapPage() {
       window.clearTimeout(loadTimeout);
       mapRef.current?.off("sourcedata", onSourceData);
       clearJourneyTimers();
-      markersRef.current.forEach((marker) => marker.remove());
-      markersRef.current = [];
       inspirationMarkers.forEach((marker) => marker.remove());
       inspirationMarkers.clear();
       inspirationsRef.current = [];
@@ -427,7 +387,7 @@ export function ExploreMapPage() {
       mapRef.current = null;
       setMapForBoundaryOverlay(null);
     };
-  }, [attachLocationReference, clearJourneyTimers, mapAttempt, selectDestination, destinations, t]);
+  }, [attachLocationReference, clearJourneyTimers, locale, mapAttempt, selectDestination, t]);
 
   useEffect(() => {
     if (mapRef.current && readiness.kind === "ready-supported") {
@@ -584,6 +544,7 @@ export function ExploreMapPage() {
         <div ref={containerRef} className="size-full" aria-label={t("globeAriaLabel")} />
       </div>
       <CountryBoundaryOverlay map={mapForBoundaryOverlay} visible={geographyVisibility.countries} />
+      <GeographyLabelOverlay map={mapForBoundaryOverlay} locale={locale} visibility={geographyVisibility} />
 
       {readiness.kind === "loading" ? (
         <div className="pointer-events-none absolute inset-0 z-[4] grid place-items-center" role="status">
@@ -691,9 +652,7 @@ export function ExploreMapPage() {
           <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em]">{selected.name}</h2>
           <p className="font-semibold text-muted-foreground">{selected.country}</p>
           <p className="mt-3 inline-flex rounded-full bg-secondary px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-secondary-foreground">
-            {selected.kind === "fixture"
-              ? t("drawerKindFixture")
-              : selected.kind === "geography"
+            {selected.kind === "geography"
                 ? t("drawerKindGeography")
                 : t("drawerKindInspiration")}
           </p>
@@ -714,7 +673,7 @@ export function ExploreMapPage() {
           {selected.locationReferenceStatus === "unavailable" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceUnavailable")}</p> : null}
           <button type="button" onClick={startExploring} disabled={exploreState !== "SELECTED"} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-primary px-4 font-bold text-primary-foreground transition hover:brightness-110 disabled:cursor-default disabled:opacity-80 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
             {exploreState === "SELECTED" ? (
-              <><MapPin aria-hidden="true" className="size-4" /> {selected.kind === "fixture" ? t("action.fixture", { name: selected.name }) : selected.kind === "geography" ? t("action.viewGeography") : t("action.viewInspiration")}</>
+              <><MapPin aria-hidden="true" className="size-4" /> {selected.kind === "geography" ? t("action.viewGeography") : t("action.viewInspiration")}</>
             ) : stateAction(exploreState, selected.kind, t)}
           </button>
           {selected.kind === "inspiration" ? (
@@ -745,7 +704,7 @@ export function toConversationPlace(selected: ExploreDestination): ConversationP
     name: selected.name,
     longitude: selected.coordinates[0],
     latitude: selected.coordinates[1],
-    sourceType: selected.kind === "fixture" ? "FIXTURE" : "INSPIRATION",
+    sourceType: selected.locationReference?.outcome === "REFERENCE" ? "REFERENCE" : "INSPIRATION",
   };
 }
 
@@ -753,15 +712,13 @@ function reducedMotion() {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function markerElement(label: string, inspiration = false) {
+function markerElement(label: string) {
   const anchor = document.createElement("div");
   anchor.className = "wanderly-map-marker-anchor";
 
   const button = document.createElement("button");
   button.type = "button";
-  button.className = inspiration
-    ? "wanderly-map-marker wanderly-map-marker--inspiration"
-    : "wanderly-map-marker";
+  button.className = "wanderly-map-marker wanderly-map-marker--inspiration";
   button.innerHTML = `<span>${label}</span>`;
   anchor.append(button);
 

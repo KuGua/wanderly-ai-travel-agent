@@ -20,7 +20,7 @@ const TOKYO: ConversationPlace = {
   name: "Tokyo",
   longitude: 139.6917,
   latitude: 35.6895,
-  sourceType: "FIXTURE",
+  sourceType: "REFERENCE",
 };
 
 afterEach(() => {

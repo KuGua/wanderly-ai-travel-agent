@@ -55,6 +55,10 @@ export function inspectGeographyLayers(map: MapLibreMap, styleUrl: string): Geog
 
 export function setGeographyLayerVisibility(map: MapLibreMap, visibility: GeographyVisibility) {
   setLayerGroupVisibility(map, GEOGRAPHY_LAYER_IDS.countries, visibility.countries);
+  // The SVG boundary overlay is the authoritative country-line presentation.
+  // Keep the provider line hidden so disputed areas are not drawn twice using
+  // two incompatible source worldviews; country labels remain provider-owned.
+  if (map.getLayer("boundary_2")) map.setLayoutProperty("boundary_2", "visibility", "none");
   setLayerGroupVisibility(map, GEOGRAPHY_LAYER_IDS.regions, visibility.regions);
   setLayerGroupVisibility(map, GEOGRAPHY_LAYER_IDS.cities, visibility.cities);
 }
@@ -62,15 +66,12 @@ export function setGeographyLayerVisibility(map: MapLibreMap, visibility: Geogra
 export function applyGeographyContrast(map: MapLibreMap) {
   promoteGeographyLayers(map);
 
-  const boundaryPaint = [
-    ["boundary_2", "#0b5264", 1.35],
-    ["boundary_3", "#3a7d88", 1],
-  ] as const;
+  const boundaryPaint = [["boundary_3", "#3a7d88", 1]] as const;
   for (const [layerId, color, width] of boundaryPaint) {
     if (!map.getLayer(layerId)) continue;
     map.setPaintProperty(layerId, "line-color", color);
     map.setPaintProperty(layerId, "line-width", width);
-    map.setPaintProperty(layerId, "line-opacity", layerId === "boundary_2" ? 0.72 : 0.5);
+    map.setPaintProperty(layerId, "line-opacity", 0.5);
   }
 
   for (const layerId of GEOGRAPHY_INTERACTIVE_LAYER_IDS) {
@@ -78,6 +79,7 @@ export function applyGeographyContrast(map: MapLibreMap) {
     map.setPaintProperty(layerId, "text-color", "#073d50");
     map.setPaintProperty(layerId, "text-halo-color", "rgba(255, 253, 249, 0.96)");
     map.setPaintProperty(layerId, "text-halo-width", 1.25);
+    map.setPaintProperty(layerId, "text-opacity", 0);
   }
 }
 

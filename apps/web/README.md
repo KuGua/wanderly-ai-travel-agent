@@ -64,14 +64,26 @@ visual fallback if GEBCO is unavailable; roads, labels and administrative
 layers stay above both rasters. GEBCO requires attribution, has no availability
 SLA, and explicitly must not be used for navigation or safety at sea.
 
-For low-zoom global country borders, the Explore page also loads the
-versioned local file `public/map-data/natural-earth-admin-0.geojson` as a
-SVG overlay above the provider stack. The browser fetches this same-origin
-asset, culls coordinates on the globe's back hemisphere, and projects the
-remaining paths with the active camera. It is derived from Natural Earth Admin
-0 Countries, appears in the attribution control, and is never used for
-destination lookup or travel facts. State/province and city details remain
-progressive OpenFreeMap style layers.
+For low-zoom global country borders, the Explore page renders a camera-projected
+SVG overlay above the provider stack. Natural Earth Admin 0 supplies the global
+fallback. When the public DataV.GeoAtlas China outline is available, it replaces
+Natural Earth's China and Taiwan features with one nationwide multipart outline
+that includes Hong Kong, Macao, Taiwan and the South China Sea linework. If that
+request fails, the complete local Natural Earth file remains visible. Both
+sources appear in the attribution control; neither is used for destination
+lookup or travel facts. The overlay culls the globe's back hemisphere, while
+state/province boundary details remain progressive OpenFreeMap style layers.
+
+Globe text is a separate camera-projected SVG overlay backed by the versioned
+`public/map-data/geography-labels.geojson` file. It contains compact display-only
+points generated from Natural Earth countries, populated places and Admin 1
+data, plus DataV.GeoAtlas centers for China's province-level regions. Continents
+and countries appear at globe scale, capitals and high-ranking cities at the
+next tier, and state/province names when zoomed further. English and Simplified
+Chinese routes prefer their matching name and fall back to English. Regenerate
+the file deliberately with `node scripts/build-geography-labels.mjs`; the script
+records source URLs in the GeoJSON metadata. These labels are never used as
+location-reference, travel, legal, booking, visa or navigation facts.
 
 ## Run locally
 
