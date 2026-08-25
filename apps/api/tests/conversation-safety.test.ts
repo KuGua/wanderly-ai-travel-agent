@@ -14,36 +14,21 @@ afterEach(() => {
 });
 
 describe("conversation place provenance", () => {
-  it("resolves a matching server-owned destination as a trusted fixture", () => {
+  it("re-resolves client-supplied coordinates through the server location reference", () => {
     expect(resolveConversationPlace({
-      sourceId: "tokyo",
-      name: "Tokyo",
+      sourceId: "untrusted-client-id",
+      name: "Forged place name",
       latitude: 35.6895,
       longitude: 139.6917,
-      sourceType: "FIXTURE",
-    })).toEqual({
-      sourceId: "tokyo",
-      name: "Tokyo",
-      latitude: 35.6895,
-      longitude: 139.6917,
-      sourceType: "FIXTURE",
-    });
+      sourceType: "REFERENCE",
+    })).toMatchObject({ name: "Tokyo", sourceType: "REFERENCE" });
   });
 
-  it.each([
-    ["unknown source id", { sourceId: "not-tokyo", name: "Tokyo", latitude: 35.6895, longitude: 139.6917, sourceType: "FIXTURE" as const }],
-    ["forged name", { sourceId: "tokyo", name: "Fake Tokyo", latitude: 35.6895, longitude: 139.6917, sourceType: "FIXTURE" as const }],
-    ["forged coordinates", { sourceId: "tokyo", name: "Tokyo", latitude: 0, longitude: 0, sourceType: "FIXTURE" as const }],
-  ])("downgrades forged FIXTURE provenance with %s", (_label, place) => {
-    expect(resolveConversationPlace(place)).toMatchObject({ sourceType: "INSPIRATION" });
-  });
-
-  it("keeps client INSPIRATION context unverified even when it resembles a fixture", () => {
+  it("keeps coordinates outside the reference dataset as private inspiration", () => {
     expect(resolveConversationPlace({
-      sourceId: "tokyo",
-      name: "Tokyo",
-      latitude: 35.6895,
-      longitude: 139.6917,
+      name: "Private pin",
+      latitude: 0,
+      longitude: 0,
       sourceType: "INSPIRATION",
     })).toMatchObject({ sourceType: "INSPIRATION" });
   });

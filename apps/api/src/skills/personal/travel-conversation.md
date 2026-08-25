@@ -28,16 +28,15 @@ Skill Registry with expected version `1.0.0`.
 ## Contract
 
 - Input: trimmed question (1–4000 chars), optional validated coordinates and
-  `FIXTURE | INSPIRATION` source type, and at most 20 safe history entries of
+  `REFERENCE | INSPIRATION` source type, and at most 20 safe history entries of
   at most 1000 chars each.
 - Output: non-empty answer plus `MODEL | SAFE_REFUSAL`.
 - Allowed scope: `chat:read`; no profile writes, shared planning, bookings, or
   irreversible tools.
 
-The service resolves `FIXTURE` against the versioned server-owned Explore-chat
-destination registry using source ID, canonical name and coordinates. Any
-mismatch, and every `INSPIRATION`, is passed to the Skill as unverified user
-context. Client provenance is never authoritative.
+The service re-resolves every client-supplied coordinate against the server
+location-reference source. A matching result becomes `REFERENCE`; otherwise it
+remains `INSPIRATION`. Client names and source IDs are never authoritative.
 
 Before model invocation, the Skill deterministically rejects explicit requests
 for live/current prices, inventory or availability, visa/entry conclusions,
