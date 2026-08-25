@@ -11,8 +11,6 @@ import { assertFieldAllowed, SnapshotFieldNotAllowedError } from "./snapshot-pol
 const provenanceFields = {
   source: z.string(),
   capturedAt: z.string(),
-  fixtureVersion: z.string(),
-  isDemo: z.boolean(),
 };
 
 const flightOfferSchema = z.object({
@@ -106,7 +104,6 @@ function validateOfferEvidence<T extends {
   id: string;
   source: string;
   capturedAt: string;
-  fixtureVersion: string;
 }>(params: {
   category: "flights" | "stays" | "ground";
   offers: T[];
@@ -121,7 +118,6 @@ function validateOfferEvidence<T extends {
     if (
       offer.capturedAt.trim().length === 0
       || Number.isNaN(Date.parse(offer.capturedAt))
-      || offer.fixtureVersion.trim().length === 0
     ) {
       addViolation(params.violations, "PROVENANCE_REQUIRED", fieldPath, "Offer provenance is incomplete");
     }

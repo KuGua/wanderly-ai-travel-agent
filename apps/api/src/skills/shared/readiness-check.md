@@ -7,7 +7,7 @@ status: implemented
 
 # `shared.readiness.check` Skill
 
-每位成员入境/签证准备的占位检查。当前对所有成员返回固定 `PENDING` 状态。**不调用 LLM**，**不查询真实签证数据源**（`FixtureVisaProvider` 已存在于 `providers/fixture-provider.ts`，但本 Skill 未接入）。
+每位成员入境/签证准备的受控检查。**不调用 LLM**；没有可靠签证数据源时仅返回官方核验下一步与缺口，不输出资格或法律结论。
 
 ## 注册元数据
 
@@ -77,7 +77,7 @@ Handler 不调 LLM、不查 snapshot 的 `authorizedData`、不查真实签证�
 - [../../agents/REGISTRY.md](../agents/REGISTRY.md)
 - [../../agents/ERROR-CODES.md](../agents/ERROR-CODES.md)
 - [../../policy/VALIDATOR.md](../../policy/VALIDATOR.md) — 兄弟 validator
-- （占位 Skill；未来版本会接入 `FixtureVisaProvider` 与 snapshot 字段授权。）
+- （未来可接入经审查的签证数据 provider；仍须保持 snapshot 字段授权。）
 
 ## Verification
 

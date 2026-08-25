@@ -45,14 +45,6 @@ export type ProviderResult<T> =
       capturedAt: string;
     }
   | {
-      outcome: "FALLBACK_DEMO";
-      data: T;
-      source: string;
-      capturedAt: string;
-      fixtureVersion: string;
-      reason: "LIVE_PROVIDER_NOT_CONFIGURED" | "LIVE_PROVIDER_FAILED";
-    }
-  | {
       outcome: "UNAVAILABLE";
-      reason: "FIXTURE_NOT_FOUND" | "PROVIDER_FAILED";
+      reason: "NOT_CONFIGURED" | "PROVIDER_FAILED" | "NO_RESULTS";
     };

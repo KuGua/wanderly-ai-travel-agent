@@ -1,10 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { db } from "../db/database.js";
 import { visaReadinessChecks, consentGrants, constraintSnapshots } from "../db/schema.js";
-import { FixtureVisaProvider } from "../providers/fixture-provider.js";
 import type { VisaReadinessResult } from "../types/domain.js";
-
-const visaProvider = new FixtureVisaProvider();
 
 /**
  * Generate visa readiness check for a member.
@@ -101,29 +98,21 @@ export async function checkVisaReadiness(params: {
     return result;
   }
 
-  const providerResult = await visaProvider.checkReadiness({
-    nationality,
+  const result: VisaReadinessResult = {
+    memberId: params.memberId,
     destinationCountry: params.destinationCountry,
-    snapshotId: params.snapshotId,
-  });
-
-  const result: VisaReadinessResult = providerResult.outcome === "UNAVAILABLE"
-    ? {
-        memberId: params.memberId,
-        destinationCountry: params.destinationCountry,
-        nationality,
-        status: "AUTHORIZED_CHECK",
-        checklist: [{
-          item: "Visa requirements unavailable for this nationality and destination",
-          source: "System",
-          uncertainty: "No fixture data is available; verify with official government sources",
-        }],
-        confidenceLevel: "UNCERTAIN",
-        source: "System — provider unavailable",
-        capturedAt: new Date().toISOString(),
-        disclaimer: "No provider result is available. Verify all requirements with official government sources.",
-      }
-    : { ...providerResult.data, nationality };
+    nationality,
+    status: "AUTHORIZED_CHECK",
+    checklist: [{
+      item: "Verify entry and visa requirements with the destination's official immigration authority",
+      source: "Official verification required",
+      uncertainty: "No verified visa data provider is configured for this destination",
+    }],
+    confidenceLevel: "UNCERTAIN",
+    source: "System — official verification required",
+    capturedAt: new Date().toISOString(),
+    disclaimer: "No visa eligibility conclusion is provided. Verify all requirements with official government sources.",
+  };
 
   result.memberId = params.memberId;
   result.disclaimer = (result.disclaimer ?? "")

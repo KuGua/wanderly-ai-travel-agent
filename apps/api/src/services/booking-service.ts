@@ -4,7 +4,6 @@ import { bookingExecutions, idempotencyRecords, itineraryPlans } from "../db/sch
 import { checkAllConfirmed } from "./confirmation-service.js";
 import { claimIdempotency } from "./idempotency-service.js";
 import { recordAudit } from "./audit-service.js";
-import { SANDBOX_CALLBACK_FIXTURES } from "../providers/fixtures.js";
 import type { RequestContext } from "../utils/context.js";
 import type { BookingExecutionResult, SandboxResult } from "../types/domain.js";
 
@@ -77,30 +76,14 @@ export async function submitBooking(params: {
       tx,
     });
 
-    // Demo behavior: the sandbox call is simulated against the success
-    // fixture (see apps/api/src/providers/fixtures.ts). Real sandbox
-    // integration is deferred per docs/mvp-readiness-review.md.
-    const sandboxResults = SANDBOX_CALLBACK_FIXTURES.success.serviceResults;
-    const results: SandboxResult[] = Object.entries(sandboxResults).map(([service, result]) => ({
-      service,
-      status: result.status,
-      reference: result.reference,
-      error: "error" in result ? String(result.error) : undefined,
-    }));
-
-    const finalStatus = results.every(r => r.status === "SUCCESS") ? "SUCCESS" : "FAILED";
-    await tx.update(bookingExecutions)
-      .set({
-        status: finalStatus,
-        sandboxResults: sandboxResults as unknown as Record<string, unknown>,
-        completedAt: new Date(),
-      })
-      .where(eq(bookingExecutions.id, booking.id));
+    // A real sandbox callback is the sole authority that can complete a
+    // booking. Do not synthesize references or terminal outcomes here.
+    const results: SandboxResult[] = [];
 
     // Persist the cached result under the same idempotency key so a retry
     // returns the same payload.
     await tx.update(idempotencyRecords)
-      .set({ resultPayload: { results, status: finalStatus } })
+      .set({ resultPayload: { results, status: "PENDING" } })
       .where(eq(idempotencyRecords.idempotencyKey, idempotencyKey));
 
     await recordAudit({
@@ -108,7 +91,7 @@ export async function submitBooking(params: {
       action: "BOOKING_RESULT",
       tripId: params.tripId,
       planId: params.planId,
-      summary: { orchestrationRequestId: params.orchestrationRequestId, status: finalStatus },
+      summary: { orchestrationRequestId: params.orchestrationRequestId, status: "PENDING" },
       tx,
     });
 

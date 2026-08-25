@@ -1,7 +1,7 @@
 import { screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { fixtureProfile as zhProfile } from "@/lib/fixtures/profiles.zh";
+import { testProfileResponse as zhProfile } from "@/test/api-fixtures";
 import { renderWithIntl } from "@/test/render";
 
 import { ProfileForm } from "./profile-form";

@@ -36,7 +36,7 @@ const FORBIDDEN_LABEL_KEYS = new Set([
   "conversationId", "threadId",
 ]);
 
-export type MetricProvider = "openai" | "gemini" | "openai-compatible" | "mock";
+export type MetricProvider = "openai" | "gemini" | "openai-compatible";
 
 export class MetricLabelError extends Error {
   constructor(message: string) {
@@ -179,14 +179,10 @@ export const metrics = new MetricsRegistry();
 
 metrics.registerCounter("agent_skill_runs_total", "Total skill invocations by bounded outcome.", {
   operation: ["profile", "consent", "research", "readiness", "planning", "review", "confirmation", "booking"],
-  outcome: ["success", "failure", "rejected", "timeout", "fallback"],
+  outcome: ["success", "failure", "rejected", "timeout"],
 });
 metrics.registerCounter("plan_validation_failures_total", "Plan validation failures by bounded result.", {
   validationResult: ["schema", "authorization", "route", "provenance", "evidence", "unknown"],
-});
-metrics.registerCounter("provider_fallback_total", "Provider fallback events by provider and bounded outcome.", {
-  provider: ["openai", "gemini", "openai-compatible", "mock"],
-  outcome: ["TIMEOUT", "SCHEMA_PARSE", "NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "UNKNOWN"],
 });
 metrics.registerCounter("booking_gate_denials_total", "Booking gate denials by bounded category.", {
   errorCategory: ["callback_auth", "membership", "quorum", "plan_state", "unknown"],
@@ -204,7 +200,7 @@ metrics.registerHistogram(
   "Latency of successful LLM requests in milliseconds.",
   [50, 100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000],
   {
-    provider: ["openai", "gemini", "openai-compatible", "mock"],
+    provider: ["openai", "gemini", "openai-compatible"],
     outcome: ["success"],
   },
 );

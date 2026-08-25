@@ -13,7 +13,6 @@ export interface LLMGatewayOptions {
   baseUrl?: string;
   modelName: string;
   promptVersion: string;
-  mock: ModelGateway;
   ctx: RequestContext;
   /** Optional injected client for tests; production code resolves the OpenAI SDK client. */
   client?: unknown;
@@ -93,35 +92,27 @@ export class LLMGateway implements ModelGateway {
     const signal = params.signal;
     const start = Date.now();
 
-    const fallbackToMock = async (errorCode: string, extra?: AgentRunTokens): Promise<Record<string, unknown>> => {
-      const plan = await this.options.mock.generateStructuredPlan({
-        destination: params.destination,
-        flights: params.flights,
-        stays: params.stays,
-        ground: params.ground,
-        memberPreferences: params.memberPreferences,
-      });
+    const recordFailure = async (errorCode: string, extra?: AgentRunTokens): Promise<never> => {
       await recordAgentRun({
         ctx,
         skillName: "plan.comparison",
         agentName: "shared",
         modelName: this.options.modelName,
         promptVersion: this.options.promptVersion,
-        outputHash: hashOutput(plan),
+        outputHash: hashOutput({ errorCode }),
         latencyMs: Date.now() - start,
-        status: "FALLBACK",
+        status: errorCode === "TIMEOUT" ? "TIMEOUT" : "ERROR",
         errorCode,
         tokens: extra,
       });
-      metrics.inc("provider_fallback_total", { provider: this.options.provider, outcome: errorCode });
-      return plan;
+      throw new ModelGatewayError(errorCode);
     };
 
     let client: OpenAIClientLike;
     try {
       client = await this.loadClient();
     } catch (err) {
-      return fallbackToMock(classifyError(err));
+      return recordFailure(classifyError(err));
     }
 
     const maxRetries = this.options.maxRetries ?? 1;
@@ -184,7 +175,7 @@ export class LLMGateway implements ModelGateway {
       }
     }
 
-    return fallbackToMock(lastError || "SCHEMA_PARSE");
+    return recordFailure(lastError || "SCHEMA_PARSE");
   }
 
   async explainPlanDiff(params: {
@@ -192,10 +183,23 @@ export class LLMGateway implements ModelGateway {
     newPlan: Record<string, unknown>;
     signal?: AbortSignal;
   }): Promise<PlanDiff> {
-    return this.options.mock.explainPlanDiff({
-      oldPlan: params.oldPlan,
-      newPlan: params.newPlan,
-      signal: params.signal,
-    });
+    if (params.signal?.aborted) {
+      const error = new Error("Plan diff request timed out");
+      error.name = "AbortError";
+      throw error;
+    }
+    const oldOutput = canonicalize(params.oldPlan);
+    const newOutput = canonicalize(params.newPlan);
+    return oldOutput === newOutput
+      ? { added: [], removed: [], changed: [] }
+      : { added: [], removed: [], changed: ["Provider-backed itinerary changed"] };
+  }
+}
+
+export class ModelGatewayError extends Error {
+  readonly code: string;
+  constructor(code: string) {
+    super("The itinerary model is temporarily unavailable. Please retry.");
+    this.code = code;
   }
 }

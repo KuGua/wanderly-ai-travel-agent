@@ -76,12 +76,9 @@ export const apiErrorResponseSchema = z.object({
   correlationId: z.string().uuid(),
 });
 
-export const dataModeSchema = z.enum(["fixture", "api"]);
-
 export type Profile = z.infer<typeof profileSchema>;
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileInputSchema>;
 export type UpdateProfileResponse = z.infer<typeof updateProfileResponseSchema>;
 export type TripSummary = z.infer<typeof tripSummarySchema>;
 export type TripsResponse = z.infer<typeof tripsResponseSchema>;
-export type DataMode = z.infer<typeof dataModeSchema>;

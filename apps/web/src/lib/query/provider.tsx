@@ -36,19 +36,10 @@ export function QueryProvider({
     </QueryClientProvider>
   );
 }
-
 export function useTravelApi(): TravelApi {
   const configuration = useContext(TravelApiContext);
   if (!configuration) {
     throw new Error("useTravelApi must be used within QueryProvider");
   }
   return configuration.api;
-}
-
-export function useDataMode() {
-  const configuration = useContext(TravelApiContext);
-  if (!configuration) {
-    throw new Error("useDataMode must be used within QueryProvider");
-  }
-  return configuration.mode;
 }

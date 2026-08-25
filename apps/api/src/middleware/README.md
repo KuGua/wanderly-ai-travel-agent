@@ -14,7 +14,7 @@ its callbacks (`sandbox-signature.ts`).
 
 | File | Purpose | See |
 | --- | --- | --- |
-| `auth.ts` | `demoAuthMiddleware` — `X-Demo-User` header → `request.user`. Exempts `/health`, `/metrics`, `/docs/*`, `GET /api/v1/demo/users`, `POST /api/v1/bookings/callback`. |  |
+| `auth.ts` | Cognito bearer-token verification and server-side user provisioning. Only health, metrics, documentation and the signed sandbox callback are exempt. |  |
 | `error-handler.ts` | `errorHandler` — converts `SkillError`, `PlanValidationError`, `ZodError`, `ApiError`, generic into a JSON envelope. | [§Error handler](#error-handler) |
 | `sandbox-signature.ts` | `verifySandboxSignature(headers, rawBody, secret)` — HMAC-SHA256 + 5-minute window + `configuration_error` placeholder detection. | [§Sandbox signature](#sandbox-signature) |
 

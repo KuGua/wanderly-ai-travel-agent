@@ -1,11 +1,10 @@
 import type { ModelGateway } from "./model-gateway.js";
-import { MockModelGateway } from "./model-gateway.js";
 import { LLMGateway } from "./llm-gateway.js";
 import { createRequestContext } from "../utils/context.js";
 
 let currentGateway: ModelGateway | null = null;
 
-type GatewayProvider = "mock" | "openai" | "gemini" | "openai-compatible";
+type GatewayProvider = "openai" | "gemini" | "openai-compatible";
 
 interface GatewayConfiguration {
   apiKey?: string;
@@ -20,13 +19,13 @@ const GEMINI_OPENAI_COMPATIBLE_BASE_URL = "https://generativelanguage.googleapis
 function resolveProvider(): GatewayProvider {
   const explicit = process.env.MODEL_GATEWAY_PROVIDER;
   if (
-    explicit === "mock"
-    || explicit === "openai"
+    explicit === "openai"
     || explicit === "gemini"
     || explicit === "openai-compatible"
   ) return explicit;
   if (process.env.GEMINI_API_KEY) return "gemini";
-  return process.env.OPENAI_API_KEY ? "openai" : "mock";
+  if (process.env.OPENAI_API_KEY) return "openai";
+  throw new Error("MODEL_GATEWAY_PROVIDER must name a configured real model provider");
 }
 
 function gatewayConfiguration(provider: GatewayProvider): GatewayConfiguration | null {
@@ -76,7 +75,6 @@ function buildLLM(provider: Exclude<GatewayProvider, "mock">, configuration: Gat
     baseUrl: configuration.baseUrl,
     modelName: configuration.modelName,
     promptVersion: configuration.promptVersion,
-    mock: new MockModelGateway(),
     ctx,
     maxRetries: configuration.maxRetries,
   });
@@ -85,8 +83,8 @@ function buildLLM(provider: Exclude<GatewayProvider, "mock">, configuration: Gat
 function createConfiguredGateway(): ModelGateway {
   const provider = resolveProvider();
   const configuration = gatewayConfiguration(provider);
-  if (provider === "mock" || !configuration?.apiKey || !configuration.modelName) {
-    return new MockModelGateway();
+  if (!configuration?.apiKey || !configuration.modelName) {
+    throw new Error(`Model gateway ${provider} is not fully configured`);
   }
   return buildLLM(provider, configuration);
 }

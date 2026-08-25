@@ -39,8 +39,6 @@ export interface FlightOffer {
   airline: string;
   source: string;
   capturedAt: string;
-  fixtureVersion: string;
-  isDemo: boolean;
 }
 
 export interface StayOffer {
@@ -53,8 +51,6 @@ export interface StayOffer {
   location: string;
   source: string;
   capturedAt: string;
-  fixtureVersion: string;
-  isDemo: boolean;
 }
 
 export interface GroundOffer {
@@ -65,8 +61,6 @@ export interface GroundOffer {
   provider: string;
   source: string;
   capturedAt: string;
-  fixtureVersion: string;
-  isDemo: boolean;
 }
 
 export interface VisaChecklistItem {

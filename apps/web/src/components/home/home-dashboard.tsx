@@ -3,15 +3,13 @@
 import { Heart, MapPinned, Settings2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
-import { DemoDataBadge, ErrorState, LoadingState } from "@/components/ui/data-state";
+import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link } from "@/i18n/navigation";
 import { useMyProfile, useTrips } from "@/lib/query/hooks";
-import { useDataMode } from "@/lib/query/provider";
 
 import { TripList } from "./trip-list";
 
 export function HomeDashboard() {
-  const mode = useDataMode();
   const tHome = useTranslations("home");
   const tCommon = useTranslations("common");
   const profileQuery = useMyProfile();
@@ -25,7 +23,6 @@ export function HomeDashboard() {
           <h1 className="mt-2 text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">{tHome("title")}</h1>
           <p className="mt-3 max-w-xl text-base text-muted-foreground">{tHome("subtitle")}</p>
         </div>
-        {mode === "fixture" ? <DemoDataBadge /> : null}
       </header>
 
       <section className="my-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.45fr_1fr_1fr]" aria-label={tHome("summary.ariaLabel")}>

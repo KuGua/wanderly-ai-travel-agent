@@ -104,7 +104,7 @@ export async function tripRoutes(app: FastifyInstance) {
 
     // 3. Latest plan per trip (one window query).
     const latestPlanByTrip = tripIds.length === 0
-      ? new Map<string, { id: string; version: number; status: string; generatedAt: Date; isDemoData: boolean }>()
+      ? new Map<string, { id: string; version: number; status: string; generatedAt: Date }>()
       : await loadLatestPlanByTrip(tripIds);
 
     // 4. Consent/confirmations per trip to drive displayState.
@@ -147,7 +147,6 @@ export async function tripRoutes(app: FastifyInstance) {
               version: latestPlan.version,
               status: latestPlan.status as LatestPlan["status"],
               generatedAt: latestPlan.generatedAt.toISOString(),
-              isDemoData: latestPlan.isDemoData,
             }
           : null,
         nextAction,
@@ -344,7 +343,7 @@ function orLessThanCursor(createdAt: Date, id: string) {
 
 async function loadLatestPlanByTrip(
   tripIds: string[],
-): Promise<Map<string, { id: string; version: number; status: string; generatedAt: Date; isDemoData: boolean }>> {
+): Promise<Map<string, { id: string; version: number; status: string; generatedAt: Date }>> {
   if (tripIds.length === 0) return new Map();
   // Fetch all plans for the page, then pick the highest version per trip
   // in memory. Page sizes are bounded by MAX_PAGE_LIMIT, so this stays cheap.
@@ -359,7 +358,7 @@ async function loadLatestPlanByTrip(
     .where(inArray(itineraryPlans.tripId, tripIds))
     .orderBy(desc(itineraryPlans.version));
 
-  const map = new Map<string, { id: string; version: number; status: string; generatedAt: Date; isDemoData: boolean }>();
+  const map = new Map<string, { id: string; version: number; status: string; generatedAt: Date }>();
   for (const r of rows) {
     if (map.has(r.tripId)) continue;
     map.set(r.tripId, {
@@ -367,7 +366,6 @@ async function loadLatestPlanByTrip(
       version: r.version,
       status: r.status,
       generatedAt: r.createdAt,
-      isDemoData: true,
     });
   }
   return map;

@@ -88,7 +88,7 @@ Order of operations:
 
 The dedupe is **not** hash-based. Two consequences:
 
-- **Re-running with the same payload** (deterministic demo, replan after
+- **Re-running with the same payload** (a deterministic replan after
   change-event invalidation) must use a new `version` string or be in a
   fresh process. Otherwise the second call throws `OUTPUT_INVALID`.
 - **`__resetRegistryForTests()`** must be called between vitest cases

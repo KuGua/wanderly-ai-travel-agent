@@ -7,7 +7,7 @@ status: implemented
 
 # `shared.plan.comparison` Skill
 
-**唯一**会调用 LLM 的 Skill。结合约束快照中已授权的成员偏好与确定性 provider 证据（fixture flight/stay/ground），生成结构化候选方案；通过 validator 校验后再返回。
+**唯一**会调用 LLM 的 Skill。结合约束快照中已授权的成员偏好与当前 provider evidence，生成结构化候选方案；通过 validator 校验后再返回。provider 或模型不可用时失败关闭，不生成替代方案。
 
 ## 注册元数据
 

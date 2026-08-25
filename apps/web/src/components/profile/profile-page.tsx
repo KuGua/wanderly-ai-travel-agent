@@ -4,17 +4,15 @@ import { LockKeyhole } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
-import { DemoDataBadge, ErrorState, LoadingState } from "@/components/ui/data-state";
+import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link } from "@/i18n/navigation";
 import type { UpdateProfileInput } from "@/lib/api/contracts";
 import { useMyProfile, useUpdateMyProfile } from "@/lib/query/hooks";
-import { useDataMode } from "@/lib/query/provider";
 import { ProfileForm } from "./profile-form";
 
 export function ProfilePageContent() {
   const t = useTranslations("profile");
   const tCommon = useTranslations("common");
-  const mode = useDataMode();
   const profileQuery = useMyProfile();
   const mutation = useUpdateMyProfile();
   const [saved, setSaved] = useState(false);
@@ -35,7 +33,6 @@ export function ProfilePageContent() {
           <h1 className="mt-2 text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">{t("title")}</h1>
           <p className="mt-3 max-w-2xl text-muted-foreground">{t("subtitle")}</p>
         </div>
-        {mode === "fixture" ? <DemoDataBadge /> : null}
       </header>
 
       <div className="mt-10">

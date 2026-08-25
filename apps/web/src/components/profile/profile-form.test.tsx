@@ -1,7 +1,7 @@
 import { screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { fixtureProfile } from "@/lib/fixtures/profiles";
+import { testProfileResponse } from "@/test/api-fixtures";
 import { renderWithIntl } from "@/test/render";
 
 import {
@@ -13,7 +13,7 @@ import {
 
 describe("ProfileForm", () => {
   it("maps nullable Profile values into editable empty fields", () => {
-    const baseProfile = fixtureProfile.profile;
+    const baseProfile = testProfileResponse.profile;
     if (!baseProfile) throw new Error("Fixture Profile is required");
     const profile = { ...baseProfile, nationality: null, availableDepartureDates: null };
 
@@ -27,7 +27,7 @@ describe("ProfileForm", () => {
   });
 
   it("builds a strict partial mutation without read-only Profile fields", () => {
-    const profile = fixtureProfile.profile;
+    const profile = testProfileResponse.profile;
     if (!profile) throw new Error("Fixture Profile is required");
     const values = { ...profileToFormValues(profile), budgetMaxUsd: "4200", nationality: "CA" };
     const dirtyFields: ProfileDirtyFields = { budgetMaxUsd: true, nationality: true };
