@@ -1,0 +1,247 @@
+{
+  "common": {
+    "appName": "Wanderly",
+    "brandGlyph": "W.",
+    "brandTagline": "Wanderly AI",
+    "langEnglish": "English",
+    "langChinese": "中文",
+    "navExplore": "探索",
+    "navProgram": "我的行程",
+    "navProfile": "出行偏好",
+    "primaryNavAriaLabel": "主导航",
+    "exploreAriaLabel": "Wanderly 探索",
+    "accountAriaLabel": "账号登录稍后将接入此处",
+    "demoBadge": "演示数据",
+    "loadingGlobe": "地球加载中…",
+    "loadingProfile": "正在加载您的私人资料",
+    "loadingProfileCapital": "正在加载您的私人 Profile",
+    "loadingTrips": "正在加载您的行程",
+    "errorTitleDefault": "暂时无法加载",
+    "errorUnauthorized": "无法访问",
+    "errorTechnicalDetails": "技术详情",
+    "errorCorrelationId": "关联 ID：{correlationId}",
+    "units": {
+      "km": "{value} 公里",
+      "coordinate": "{lat}°, {lng}°"
+    }
+  },
+  "home": {
+    "kicker": "您的私人旅行空间",
+    "title": "我的行程",
+    "subtitle": "继续规划一段正在成形的旅行，或调整用于指导推荐的私人偏好。",
+    "summary": {
+      "ariaLabel": "工作区概览",
+      "ready": "您的旅行空间已就绪",
+      "privacyHeadline": "偏好与行程保持私密",
+      "tripsLabel": "行程",
+      "tripsDetail": "工作区中可用",
+      "profileLabel": "资料",
+      "profileReady": "已设置",
+      "profileNotSet": "未设置",
+      "profileDetail": "默认私密",
+      "notSet": "未设置"
+    },
+    "errorStateProfileUnavailable": "资料加载失败",
+    "errorStateTripsUnavailable": "行程加载失败",
+    "profile": {
+      "kicker": "默认私密",
+      "heading": "资料快照",
+      "edit": "编辑资料",
+      "departure": "出发地",
+      "interests": "兴趣",
+      "stayStyle": "住宿偏好",
+      "emptyTitle": "未找到资料",
+      "emptyBody": "当前已确认的 GET/PUT 切片暂不支持创建资料。",
+      "emptyAction": "查看资料设置"
+    },
+    "trips": {
+      "heading": "您的行程",
+      "showing": "共 {count} 项",
+      "emptyTitle": "暂无行程",
+      "emptyBody": "您账号下的行程会显示在这里。行程创建将在后续切片中提供。"
+    },
+    "trip": {
+      "status": {
+        "PLANNING": "规划中",
+        "CONFIRMED": "已确认",
+        "BOOKED": "已预订",
+        "CANCELLED": "已取消",
+        "STALE": "已失效"
+      },
+      "dates": {
+        "notSet": "日期未设置",
+        "range": "{start} – {end}"
+      },
+      "members": "{count, plural, =0 {无成员} other {# 位成员}}",
+      "membersRoleOrganizer": "组织者",
+      "membersRoleMember": "成员",
+      "open": "打开",
+      "accommodation": {
+        "city_center": "市中心",
+        "budget": "经济型",
+        "luxury": "豪华型"
+      }
+    },
+    "fixtures": {
+      "tripName": "亚洲之旅"
+    }
+  },
+  "profile": {
+    "kicker": "私人资料",
+    "title": "出行偏好",
+    "subtitle": "除非后续授权流程明确记录此选择，否则此处内容不会与任何行程共享。我们从不收集护照号码。",
+    "errorSummaryTitle": "请检查高亮的资料字段。",
+    "errorSummaryBody": "您的更改尚未提交。",
+    "sectionBasicsTitle": "出行基础信息",
+    "sectionBasicsDescription": "仅在您明确共享给某次行程之前，由您的个人代理使用。",
+    "sectionPrefsTitle": "偏好与舒适度",
+    "sectionPrefsDescription": "稳定的偏好会影响后续推荐，但不会自动成为共享的行程数据。",
+    "fields": {
+      "departureCity": "出发城市",
+      "nationality": "国籍",
+      "nationalityHint": "仅用于本切片，不对外共享。",
+      "dateOfBirth": "出生日期",
+      "dateOfBirthHint": "YYYY-MM-DD",
+      "dateOfBirthPlaceholder": "YYYY-MM-DD",
+      "availableDepartureDates": "可选出发日期",
+      "availableDepartureDatesHint": "以逗号分隔的 YYYY-MM-DD 日期",
+      "availableDepartureDatesPlaceholder": "2026-10-03, 2026-10-10",
+      "interests": "兴趣",
+      "interestsHint": "以逗号分隔",
+      "interestsPlaceholder": "art, museums, local food",
+      "accommodationStyle": "住宿风格",
+      "budgetMaxUsd": "最高预算（美元）",
+      "mobilityNotes": "出行便利说明",
+      "mobilityNotesHint": "请勿填写证件号码。",
+      "noRedEyeLabel": "避免红眼航班",
+      "noRedEyeHint": "将过夜出发视为稳定偏好。"
+    },
+    "accommodation": {
+      "notSet": "未设置",
+      "city_center": "市中心",
+      "budget": "经济型",
+      "luxury": "豪华型"
+    },
+    "stickyNote": "在接口支持清空之前，已编辑的空白字段会被保留。",
+    "save": "保存资料",
+    "saving": "保存中…",
+    "savedToast": "资料已保存。您的私人快照已更新。",
+    "saveErrorSuffix": "您的表单输入已保留。",
+    "emptyTitle": "尚不存在出行偏好资料",
+    "emptyBody": "当前已确认的 API 切片仅支持已有资料的 GET 与 PUT。新建资料需要另行确认的合约，因此我们未编造或本地保存任何数据。",
+    "emptyAction": "返回探索",
+    "validation": {
+      "max64": "请使用不超过 64 个字符",
+      "datePattern": "请使用 YYYY-MM-DD 格式",
+      "datesList": "请使用以逗号分隔的 YYYY-MM-DD 日期",
+      "wholeNumber": "请输入整数"
+    },
+    "fixtures": {
+      "displayName": "旅行者"
+    }
+  },
+  "explore": {
+    "startingFrom": "从新加坡出发",
+    "globeAriaLabel": "可交互的目的地球仪",
+    "recenterAriaLabel": "重新居中至新加坡",
+    "recenterTitle": "重新居中",
+    "helpAriaLabel": "探索地图帮助",
+    "helpTitle": "如何使用探索",
+    "helpHeading": "探索地图",
+    "helpBody": "选择一个命名的演示目的地，或在任意位置点击以添加多个私人灵感。可在列表中选择单个或多个图钉删除。",
+    "unavailableHeading": "地球加载失败",
+    "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",
+    "retryMap": "重试地图",
+    "panelKicker": "下一站去哪里？",
+    "panelTitle": "探索世界",
+    "panelBody": "在地图任意位置点击，为本次会话收集私人灵感。",
+    "pinCount": "{count, plural, other {当前地图上有 # 个私人图钉}}",
+    "suggestionsAriaLabel": "目的地建议",
+    "managePinsKicker": "私人灵感",
+    "managePinsTitle": "管理图钉",
+    "managePinsCloseAriaLabel": "关闭图钉管理",
+    "managePinsBody": "只选择您想移除的位置。",
+    "manageScopeLabel": "图钉显示范围",
+    "manageScopeNearby": "当前区域",
+    "manageScopeAll": "全部图钉（{count}）",
+    "manageScopeHint": "当前区域显示该位置周围 {distance} 范围内的图钉。",
+    "pinListAriaLabel": "私人灵感列表",
+    "pinCheckboxAriaLabel": "选择 {name}",
+    "deleteSelected": "删除所选",
+    "deleteSelectedWithCount": "删除所选（{count}）",
+    "drawerCloseAriaLabel": "关闭目的地预览",
+    "drawerKindFixture": "演示数据",
+    "drawerKindGeography": "地图位置",
+    "drawerKindInspiration": "仅限本次会话的灵感",
+    "geographyCountryLabel": "地图上的国家标签",
+    "geographyCityLabel": "地图上的城市标签",
+    "geographyStateLabel": "地图上的省或州标签",
+    "geographyNote": "这是地图标签，并非已验证的旅行候选。其价格、可达性、签证或预订数据均为空。",
+    "inspirationName": "已标记地点 {n}",
+    "inspirationNote": "这是未经验证的、仅限本次会话的灵感。其实时价格、可达性、签证或预订数据均为空。",
+    "markerExploreAria": "探索 {name}，{country}",
+    "markerOpenAria": "打开 {name}",
+    "state": {
+      "IDLE": "目的地预览",
+      "TALKING": "正在规划路线",
+      "FLYING": "飞行中",
+      "EXPLORING": "准备探索"
+    },
+    "action": {
+      "IDLE": "开启旅行计划",
+      "TALKING": "正在了解目的地…",
+      "FLYING": "正在飞越地球…",
+      "inspiration": "已为本次会话保留",
+      "geography": "未经验证的地图位置",
+      "fixture": "探索 {name}",
+      "viewGeography": "查看此地图位置",
+      "viewInspiration": "查看此灵感"
+    },
+    "managePinsCta": "管理图钉",
+    "deleteThisCta": "删除此项",
+    "layerPanel": {
+      "groupAriaLabel": "地图细节图层",
+      "kicker": "地图图层",
+      "countries": "国家",
+      "regions": "省 / 州",
+      "cities": "城市",
+      "captionSupported": "放大以查看地区详情。",
+      "captionMissingSource": "国家/地区标签已隐藏——该地图样式未提供 openmaptiles 数据源。",
+      "captionMissingLayers": "国家/地区标签已隐藏——缺失图层：{layers}。"
+    },
+    "destinations": {
+      "tokyo": "Tokyo",
+      "tokyoCountry": "Japan",
+      "tokyoNote": "Food, design and neighborhoods that reward wandering.",
+      "lisbon": "Lisbon",
+      "lisbonCountry": "Portugal",
+      "lisbonNote": "Hillside streets, Atlantic light and late dinners.",
+      "reykjavik": "Reykjavík",
+      "reykjavikCountry": "Iceland",
+      "reykjavikNote": "A compact base for geothermal landscapes."
+    }
+  },
+  "trips": {
+    "kicker": "下一实施阶段",
+    "title": "行程工作区尚未接入",
+    "body": "本切片仅展示由行程列表合约确认的字段。规划、授权与确认状态暂未推断。",
+    "backToHome": "返回主页"
+  },
+  "errors": {
+    "unauthorized": "当前演示身份无法访问所请求的数据。",
+    "generic": "出错了，请重试。",
+    "networkUnreachable": "旅行服务不可达。请检查接口并重试。",
+    "invalidResponse": "旅行服务返回了意外响应。",
+    "byStatusCode": {
+      "401": "请先登录后再查看此数据。",
+      "403": "您没有访问此数据的权限。",
+      "404": "未找到您要查找的内容。",
+      "409": "此操作与当前状态冲突。请刷新后重试。",
+      "422": "部分字段无效，请检查表单后重试。",
+      "500": "服务端出错了，请重试。",
+      "502": "旅行服务暂时不可用，请稍后重试。",
+      "503": "旅行服务正在维护，请稍后再试。",
+      "fallback": "出错了，请重试。"
+    }
+  }
+}

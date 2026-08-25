@@ -1,20 +1,31 @@
 "use client";
 
-import { Globe2, ListChecks, SlidersHorizontal, UserRound } from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { Globe2, ListChecks, Settings2 } from "lucide-react";
+import { useTranslations } from "next-intl";
+import type { ComponentType, SVGProps } from "react";
 
+import { LocaleSwitcher } from "./locale-switcher";
+import { Link, usePathname } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 
-const navigation = [
-  { href: "/home", label: "Explore", icon: Globe2 },
-  { href: "/projects", label: "My program", icon: ListChecks },
-  { href: "/profile", label: "Travel preference", icon: SlidersHorizontal },
+type NavEntry = {
+  href: "/home" | "/projects" | "/profile";
+  labelKey: "navExplore" | "navProgram" | "navProfile";
+  icon: ComponentType<SVGProps<SVGSVGElement> & { "aria-hidden"?: boolean | "true" | "false" }>;
+};
+
+const navigation: readonly NavEntry[] = [
+  { href: "/home", labelKey: "navExplore", icon: Globe2 },
+  { href: "/projects", labelKey: "navProgram", icon: ListChecks },
+  { href: "/profile", labelKey: "navProfile", icon: Settings2 },
 ] as const;
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const t = useTranslations("common");
   const pathname = usePathname();
+
+  // Strip the locale prefix before comparing to nav hrefs.
+  const strippedPath = pathname.replace(/^\/(en|zh)/, "") || "/";
 
   return (
     <div className="min-h-screen bg-background md:grid md:grid-cols-[5.5rem_minmax(0,1fr)]">
@@ -22,15 +33,17 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="flex h-full items-center gap-2 px-3 md:flex-col md:gap-[18px] md:px-3 md:py-[22px]">
           <Link
             href="/home"
-            aria-label="Wanderly Explore"
+            aria-label={t("exploreAriaLabel")}
             className="grid size-11 shrink-0 place-items-center rounded-2xl border border-[#72c8bd] bg-[#0b5264] font-black tracking-[-0.08em] text-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar-ring/50 md:size-[46px]"
           >
-            W.
+            {t("brandGlyph")}
           </Link>
 
-          <nav className="flex gap-1 md:mt-3 md:flex-col md:gap-[9px]" aria-label="Primary navigation">
-            {navigation.map(({ href, label, icon: Icon }) => {
-              const active = pathname === href || (href === "/projects" && pathname.startsWith("/trips/"));
+          <nav className="flex gap-1 md:mt-3 md:flex-col md:gap-[9px]" aria-label={t("primaryNavAriaLabel")}>
+            {navigation.map(({ href, labelKey, icon: Icon }) => {
+              const target = href;
+              const active = strippedPath === target || (target === "/projects" && strippedPath.startsWith("/trips/"));
+              const label = t(labelKey);
               return (
                 <Link
                   key={href}
@@ -52,14 +65,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             })}
           </nav>
 
-          <button
-            type="button"
-            title="Account sign-in will connect here"
-            aria-label="Account sign-in will connect here"
-            className="ml-auto grid size-11 place-items-center rounded-full border-2 border-[#9ce0d4] bg-[#0b5264] text-sidebar-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar-ring/50 md:mt-auto md:ml-0"
-          >
-            <UserRound aria-hidden="true" className="size-5" />
-          </button>
+          <div className="ml-auto flex items-center gap-2 md:ml-0 md:mt-auto md:flex-col">
+            <LocaleSwitcher />
+            <button
+              type="button"
+              title={t("accountAriaLabel")}
+              aria-label={t("accountAriaLabel")}
+              className="grid size-11 place-items-center rounded-full border-2 border-[#9ce0d4] bg-[#0b5264] text-sidebar-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar-ring/50"
+            >
+              <ListChecks aria-hidden="true" className="size-5" />
+            </button>
+          </div>
         </div>
       </aside>
 
