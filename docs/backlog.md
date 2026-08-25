@@ -118,6 +118,17 @@
 
 ## 4. SUPPORT
 
+### S3 — Show an anonymous, offline map location reference
+
+**Story:** As a traveler, I want an understandable country/nearby-city hint after I explicitly click a map location, without sending my coordinates to a third-party service or turning a pin into travel data.
+
+**Acceptance criteria:**
+
+1. An unauthenticated explicit-click request returns only `REFERENCE`, `NO_REFERENCE`, `429` rate-limit, or controlled unavailable state from versioned local data; it remains the only anonymous API endpoint.
+2. The result includes source, dataset version and checked time, and is labelled as a map reference rather than an address or candidate.
+3. Coordinates, place names and raw response bodies are absent from logs, trace attributes, metrics labels, audit and database state.
+4. Map movement, zoom, hover and prefetch never invoke the resolver; a failed or distant city match is not guessed.
+
 ### S1 — Enforce privacy, versioning and observability
 
 **Story:** As a team operator, I want every privacy-sensitive Agent decision to be versioned and traceable, so that we can safely debug the demo and prove control boundaries.

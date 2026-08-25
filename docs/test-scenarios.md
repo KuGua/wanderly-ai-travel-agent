@@ -317,6 +317,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 6. 打开一个地点抽屉后，确认三个图层开关仍可见并可操作。
 7. 点击国家、城市或省/州名称，再点击空白地图位置。
 8. 从全球缩放逐步放大到区域缩放，检查陆地与海洋材质和地图标签。
+9. 在未登录、未配置 Cognito 的浏览器会话中点击一个陆地点，并连续提交超过 30 次同一地点参考请求。
 
 **Expected outcomes:**
 
@@ -324,14 +325,16 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 - 客户端提交的 `FIXTURE` 只有在 source ID、名称和坐标均匹配服务端版本化地点时才可信；伪造或不匹配的数据必须降级为未验证灵感。
 - 私聊在模型调用前拒绝实时价格、库存、签证/入境结论和预订状态问题；模型输出若包含此类无 provider 支撑的断言，必须替换为显式 `SAFE_REFUSAL`。
 - 空白区域档案明确没有可验证候选资料，不生成地点、价格、库存、签证或预订结论。
+- 对覆盖数据内的空白地图点击，离线位置参考可显示国家、一级行政区和最近主要城市，并带来源/版本/检查时间；城市超过 75 km、海洋或边界未匹配时必须省略相应字段或返回 `NO_REFERENCE`，不能猜测。
+- 未登录会话只能匿名调用地点参考端点，成功时替换临时 `Pinned place N`；第 31 次同一客户端一分钟窗口内请求返回 `429`，不记录原始坐标或地址。Profile、行程、私聊、授权、规划、确认和预订在相同未登录会话中仍为 `401`。
 - 空白区域只能保存私有灵感或请求后续加入候选；不改变共享约束、方案或确认状态。
 - 多个私有灵感在缩放和移动地图时保持绑定各自经纬坐标；管理器默认不打开、不预选标记，单独删除只移除目标标记，批量删除只移除已勾选标记。
-- 没有反向地理编码合同时，不得把距离范围伪装为城市边界；原型的 `Current area` 明确表示当前点 50 km 内。
+- `Current area` 明确表示当前点 50 km 内，不得把距离范围伪装为城市边界。离线位置参考仅能来自版本化、来源化的专用 resolver；不得从地图 tile、地图标签、Natural Earth SVG overlay 或模型推断。
 - 原型刷新后临时标记消失；生产实现必须将任何持久化操作交由服务端授权模型处理。
 - 国家、城市/省州标签仅来自地图底图，并按缩放渐进显示；它们可打开 `Map location` 预览，但不会创建私有 pin、共享约束、方案、价格、库存、签证或预订结论。空白位置仍仅创建临时私有灵感。
 - 如果配置的 style 缺少兼容的 OpenMapTiles source 或缺失任一必需图层，行政区/城市开关**保持可见但被禁用**，附 `role="status"` caption 说明缺失项（缺 source 或 `missing layers:` 列表）；地图保留原有候选入口和故障回退；不静默隐藏，不报错或伪造地图数据。开发者可在 dev 模式下通过 `window.__wanderlyMap.readiness` 观察 5 种 readiness（loading / ready-supported / ready-style-unsupported-source / ready-style-missing-layers / unavailable-network）。
 - 地图就绪生命周期分两阶段（mounting → ready）：MapLibre 6.6 的 globe projection 必须写入传给 `new Map()` 的 style JSON，`style.load` 是 style 兼容性检查和图层控件的唯一就绪前置；不得在 style 创建前或 `style.load` 后调用 `setProjection()`。OpenMapTiles 的 `sourcedata` 只作为开发诊断，慢 TileJSON 或 PBF 不得触发 `unavailable-network`。只有 style 总超时、初始化异常或 style ready 前的 map error 才显示 globe error 回退。dev 模式下 `window.__wanderlyMap.stage` 实时反映当前阶段。
-- 地图 ready 后，国家边界位于 provider style stack 顶层：即使 Liberty 的 fill/road layer 重排，全球缩放仍可看到本地 Natural Earth Admin 0 兜底线。关闭 Countries 时必须同时隐藏 Liberty 国家层和 fallback；States / Provinces 仅在 zoom 5+、Cities 仅在 zoom 3+ 才预期出现。fallback 不参与地点匹配、反向地理编码或旅行事实。
+- 地图 ready 后，国家边界位于 provider style stack 顶层：即使 Liberty 的 fill/road layer 重排，全球缩放仍可看到本地 Natural Earth Admin 0 兜底线。关闭 Countries 时必须同时隐藏 Liberty 国家层和 fallback；States / Provinces 仅在 zoom 5+、Cities 仅在 zoom 3+ 才预期出现。视觉 fallback 不参与地点匹配、反向地理编码或旅行事实；位置参考只能使用专用、版本化的离线 resolver 数据。
 - Natural Earth fallback 必须由独立 SVG overlay 获取同源 GeoJSON，并以 `map.project()` 绘制与随 move/resize 更新；Countries 开启时保持显示，并按当前 map center 剔除背半球坐标，背面国界不得穿透正面。不得依赖 globe 模式下可能没有 error 的 GeoJSON source pending。获取失败应保留既有地图和无障碍地点入口。
 - 地球表面必须保持实体不透明：GEBCO `GEBCO_LATEST` WMS shaded relief 同时提供陆地与海底地势，opacity 固定为 1；Liberty Natural Earth 位于其下，仅作为 GEBCO 请求失败时的视觉 fallback。道路、标签和行政边界仍需在 relief 之上可读，放大时不得退化为白色或透明地图。必须显示 GEBCO attribution 与“不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
 
@@ -397,9 +400,13 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 - 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话。
 - fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
-- 所有受保护的 HTTP 请求携带当前 Cognito access token；登录会话变化或退出时必须清空 TanStack Query 缓存。
+- 所有受保护的 HTTP 请求在发送时通过 AWS Amplify session 读取当前 Cognito access token；无 session 时不发送 Authorization，token 刷新后使用新 token，登录会话变化或退出时必须清空 TanStack Query 缓存且后续请求不得继续携带旧 token。`POST /api/v1/explore/location-reference` 是唯一匿名、无持久化且限流的例外。应用自身不得把 token 复制到 localStorage。
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
+- Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。
+- 私聊首次提问创建当前用户的 private thread，后续提问复用该 thread；刷新后只从本地 thread ID 指针恢复 owner-only history，服务端返回不存在的 thread 时清除失效指针，不在浏览器持久化消息正文。
+- 每个新 turn 使用新的 UUID `requestId`；502/504 或网络失败后的显式重试必须复用原 request ID，发送期间禁止并发重复提交。`MODEL` 正常展示，`SAFE_REFUSAL` 显示核验提示，provider/model 失败不得伪造 assistant fallback。
+- 浏览器聊天请求必须使用真实 Cognito access token；没有可用登录 token provider 时，真实 API 端到端演示属于显式阻塞项，不得硬编码 token 或退回 demo identity。
 - 375px、768px、1024px、1440px 下身份、导航、主要操作与私密提示均可见，交互目标至少 44px，并尊重 reduced motion。
 
 ### 数据库与 Seed 回归

@@ -13,6 +13,7 @@ import { confirmationRoutes } from "./routes/confirmations.js";
 import { bookingRoutes } from "./routes/bookings.js";
 import { changeEventRoutes } from "./routes/change-events.js";
 import { chatThreadRoutes } from "./routes/chat-threads.js";
+import { locationReferenceRoutes } from "./routes/location-reference.js";
 import { pinoInstance, correlationChild } from "./observability/telemetry.js";
 import { metrics } from "./observability/metrics.js";
 import { personalTravelAgent } from "./agents/personal-travel-agent.js";
@@ -79,6 +80,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
       || request.url === "/metrics"
       || request.url.startsWith("/docs")
       || (request.method === "POST" && request.url.split("?", 1)[0] === "/api/v1/bookings/callback")
+      || (request.method === "POST" && request.url.split("?", 1)[0] === "/api/v1/explore/location-reference")
     ) {
       return;
     }
@@ -97,6 +99,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(bookingRoutes, { prefix: "/api/v1" });
   await app.register(changeEventRoutes, { prefix: "/api/v1" });
   await app.register(chatThreadRoutes, { prefix: "/api/v1" });
+  await app.register(locationReferenceRoutes, { prefix: "/api/v1" });
 
   // Register agents (Skills) — must happen before the server accepts traffic so
   // handlers can call skill-registry.invokeSkill without races.

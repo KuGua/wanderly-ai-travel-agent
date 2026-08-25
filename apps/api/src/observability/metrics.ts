@@ -195,6 +195,9 @@ metrics.registerCounter("callback_verifications_total", "Sandbox callback signat
 metrics.registerCounter("booking_callback_outcomes_total", "Authenticated booking callback outcomes.", {
   callbackResult: ["processed", "duplicate", "failed"],
 });
+metrics.registerCounter("location_reference_requests_total", "Offline map location references by bounded outcome.", {
+  outcome: ["reference", "no_reference", "unavailable", "rate_limited"],
+});
 metrics.registerHistogram(
   "llm_request_latency_ms",
   "Latency of successful LLM requests in milliseconds.",

@@ -12,11 +12,11 @@ fixtures.
 - `/projects` is My program and displays the confirmed Trip List fields only.
 - `/profile` is Travel preference and retains Profile GET/PUT editing.
 
-There is no seeded-user selector. Production identity comes from a normal
-Cognito sign-in (email/phone configuration belongs to the authentication
-integration). Protected API calls accept a Cognito access-token provider and
-send `Authorization: Bearer <token>`; clients never send a user ID. The account
-button is intentionally a neutral placeholder until the sign-in UI is wired.
+There is no seeded-user selector. Production identity comes from the account
+control's Cognito User Pool sign-in using a registered email address or phone
+number. AWS Amplify manages the browser session and refresh; protected API calls
+read the current access token at request time and send
+`Authorization: Bearer <token>`. Clients never send a user ID.
 
 ## Configuration
 
@@ -24,14 +24,19 @@ Copy `.env.example` to `.env.local` and select one data mode:
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
+NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_example
+NEXT_PUBLIC_COGNITO_CLIENT_ID=example-public-app-client-id
 NEXT_PUBLIC_DATA_MODE=fixture
 NEXT_PUBLIC_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/liberty
 ```
 
 - `fixture` uses one deterministic, contract-validated example workspace and
   visibly labels API-backed surfaces `Demo data`.
-- `api` calls Fastify at `${NEXT_PUBLIC_API_BASE_URL}/api/v1`. A signed-in
-  session must provide its Cognito access token to `HttpTravelApi`.
+- `api` calls Fastify at `${NEXT_PUBLIC_API_BASE_URL}/api/v1`. The Cognito app
+  client must be a public browser client without a client secret and must match
+  the API's `COGNITO_USER_POOL_ID` / `COGNITO_CLIENT_ID` configuration for private
+  features. The offline map location-reference call is the sole anonymous API call;
+  it works without Cognito and returns no persisted user data.
 
 All responses pass through the same Zod schemas. `NEXT_PUBLIC_*` values are
 bundled into browser code and must never contain credentials, private Profile
@@ -86,6 +91,6 @@ Trip cards contain only fields supported by `GET /api/v1/trips`. The Trip
 detail route is an explicit placeholder. Destination suggestions are local UI
 fixtures, not live travel claims. Agent chat, arbitrary-place enrichment,
 consent, planning, visa/readiness, replan, confirmation, booking, Profile
-creation/deletion, and the Cognito sign-in screen remain separate slices.
+creation/deletion and advanced Cognito challenges such as MFA remain separate slices.
 `PUT /profiles/me` cannot create a missing Profile or clear nullable values
 under the current backend contract.
