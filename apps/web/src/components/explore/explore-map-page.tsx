@@ -7,6 +7,7 @@ import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification }
 import { applyGeographyContrast, GEOGRAPHY_INTERACTIVE_LAYER_IDS, geographyFeatureFrom, inspectGeographyLayers, OPEN_MAP_TILES_SOURCE, setGeographyLayerVisibility, type GeographyInspection, type GeographyVisibility } from "./map-geography-layers";
 import { INITIAL_READINESS, layerCaptionFor, mapReadinessStage, panelDisabledReason, type LayerCaption, type MapReadiness, type MapStage } from "./map-readiness";
 
+import { CountryBoundaryOverlay } from "./country-boundary-overlay";
 import { TravelAgentChat } from "./travel-agent-chat";
 
 type Destination = {
@@ -30,10 +31,17 @@ const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.op
 const NEARBY_RADIUS_KM = 50;
 const DESTINATIONS: Destination[] = [];
 
+async function loadGlobeStyle(): Promise<StyleSpecification> {
+  const styleResponse = await fetch(MAP_STYLE_URL);
+  if (!styleResponse.ok) throw new Error(`Map style request failed (${styleResponse.status})`);
+  const style = await styleResponse.json() as StyleSpecification;
+  return { ...style, projection: { type: "globe" } };
+}
 
 export function ExploreMapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const [mapForBoundaryOverlay, setMapForBoundaryOverlay] = useState<MapLibreMap | null>(null);
   const markersRef = useRef<MapLibreMarker[]>([]);
   const inspirationMarkersRef = useRef(new Map<string, MapLibreMarker>());
   const inspirationsRef = useRef<Destination[]>([]);
@@ -192,7 +200,9 @@ export function ExploreMapPage() {
               sourceId: OPEN_MAP_TILES_SOURCE,
               missingLayers: inspection.missingLayers,
             };
-      if (inspection.supported) applyGeographyContrast(map);
+      // The country fallback is independent of Liberty's optional layer IDs.
+      // It must initialize even when a custom style is only partially compatible.
+      applyGeographyContrast(map);
       setGeographyLayerVisibility(map, geographyVisibilityRef.current);
       attachDevHook(map, inspection);
       readinessRef.current = next;
@@ -224,17 +234,18 @@ export function ExploreMapPage() {
       if (!containerRef.current || mapRef.current) return;
 
       try {
-        const maplibregl = await import("maplibre-gl");
+        const [maplibregl, globeStyle] = await Promise.all([import("maplibre-gl"), loadGlobeStyle()]);
         if (cancelled || !containerRef.current) return;
 
         const map = new maplibregl.Map({
           container: containerRef.current,
-          style: MAP_STYLE_URL as unknown as StyleSpecification | string,
+          style: globeStyle,
           center: SINGAPORE,
           zoom: 2.25,
           attributionControl: false,
         });
         mapRef.current = map;
+        setMapForBoundaryOverlay(map);
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
         map.on("sourcedata", onSourceData);
 
@@ -243,8 +254,10 @@ export function ExploreMapPage() {
             loaded = true;
             styleLoadedRef.current = true;
             window.clearTimeout(loadTimeout);
-            map.addControl(new maplibregl.AttributionControl({ compact: window.innerWidth < 640 }), "bottom-right");
-            map.setProjection({ type: "globe" });
+            map.addControl(new maplibregl.AttributionControl({
+              compact: window.innerWidth < 640,
+              customAttribution: '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a>',
+            }), "bottom-right");
             finalizeReadiness(map, inspectGeographyLayers(map, MAP_STYLE_URL));
             window.queueMicrotask(() => {
               if (!cancelled) configureMapAttribution(containerRef.current);
@@ -349,6 +362,7 @@ export function ExploreMapPage() {
       styleLoadedRef.current = false;
       mapRef.current?.remove();
       mapRef.current = null;
+      setMapForBoundaryOverlay(null);
     };
   }, [clearJourneyTimers, mapAttempt, selectDestination, destinations, t]);
 
@@ -506,6 +520,7 @@ export function ExploreMapPage() {
       <div className="absolute inset-0">
         <div ref={containerRef} className="size-full" aria-label={t("globeAriaLabel")} />
       </div>
+      <CountryBoundaryOverlay map={mapForBoundaryOverlay} visible={geographyVisibility.countries} />
 
       {readiness.kind === "loading" ? (
         <div className="pointer-events-none absolute inset-0 z-[4] grid place-items-center" role="status">

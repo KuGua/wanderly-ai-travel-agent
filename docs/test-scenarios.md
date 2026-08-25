@@ -329,7 +329,9 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 - 原型刷新后临时标记消失；生产实现必须将任何持久化操作交由服务端授权模型处理。
 - 国家、城市/省州标签仅来自地图底图，并按缩放渐进显示；它们可打开 `Map location` 预览，但不会创建私有 pin、共享约束、方案、价格、库存、签证或预订结论。空白位置仍仅创建临时私有灵感。
 - 如果配置的 style 缺少兼容的 OpenMapTiles source 或缺失任一必需图层，行政区/城市开关**保持可见但被禁用**，附 `role="status"` caption 说明缺失项（缺 source 或 `missing layers:` 列表）；地图保留原有候选入口和故障回退；不静默隐藏，不报错或伪造地图数据。开发者可在 dev 模式下通过 `window.__wanderlyMap.readiness` 观察 5 种 readiness（loading / ready-supported / ready-style-unsupported-source / ready-style-missing-layers / unavailable-network）。
-- 地图就绪生命周期分两阶段（mounting → ready）：`style.load` 是 style 兼容性检查、globe 投影和图层控件的唯一就绪前置；OpenMapTiles 的 `sourcedata` 只作为开发诊断，慢 TileJSON 或 PBF 不得触发 `unavailable-network`。只有 style 总超时、初始化异常或 style ready 前的 map error 才显示 globe error 回退。dev 模式下 `window.__wanderlyMap.stage` 实时反映当前阶段。
+- 地图就绪生命周期分两阶段（mounting → ready）：MapLibre 6.6 的 globe projection 必须写入传给 `new Map()` 的 style JSON，`style.load` 是 style 兼容性检查和图层控件的唯一就绪前置；不得在 style 创建前或 `style.load` 后调用 `setProjection()`。OpenMapTiles 的 `sourcedata` 只作为开发诊断，慢 TileJSON 或 PBF 不得触发 `unavailable-network`。只有 style 总超时、初始化异常或 style ready 前的 map error 才显示 globe error 回退。dev 模式下 `window.__wanderlyMap.stage` 实时反映当前阶段。
+- 地图 ready 后，国家边界位于 provider style stack 顶层：即使 Liberty 的 fill/road layer 重排，全球缩放仍可看到本地 Natural Earth Admin 0 兜底线。关闭 Countries 时必须同时隐藏 Liberty 国家层和 fallback；States / Provinces 仅在 zoom 5+、Cities 仅在 zoom 3+ 才预期出现。fallback 不参与地点匹配、反向地理编码或旅行事实。
+- Natural Earth fallback 必须由独立 SVG overlay 获取同源 GeoJSON，并以 `map.project()` 绘制与随 move/resize 更新；不得依赖 globe 模式下可能没有 error 的 GeoJSON source pending。关闭 Countries 时必须隐藏该 SVG overlay。获取失败应保留既有地图和无障碍地点入口。
 
 ### TS-S1 — Protect data and trace the Agentic workflow
 

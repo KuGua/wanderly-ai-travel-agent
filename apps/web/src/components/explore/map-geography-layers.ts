@@ -60,6 +60,8 @@ export function setGeographyLayerVisibility(map: MapLibreMap, visibility: Geogra
 }
 
 export function applyGeographyContrast(map: MapLibreMap) {
+  promoteGeographyLayers(map);
+
   const boundaryPaint = [
     ["boundary_2", "#0b5264", 1.35],
     ["boundary_3", "#3a7d88", 1],
@@ -76,6 +78,24 @@ export function applyGeographyContrast(map: MapLibreMap) {
     map.setPaintProperty(layerId, "text-color", "#073d50");
     map.setPaintProperty(layerId, "text-halo-color", "rgba(255, 253, 249, 0.96)");
     map.setPaintProperty(layerId, "text-halo-width", 1.25);
+  }
+}
+
+/**
+ * Liberty's layer order is provider-owned. Move the reference layers above
+ * fills and roads after the style has loaded so a future style reorder cannot
+ * make administrative boundaries visually disappear.
+ */
+export function promoteGeographyLayers(map: MapLibreMap) {
+  const orderedLayerIds = [
+    "boundary_2",
+    "boundary_3",
+    ...GEOGRAPHY_LAYER_IDS.countries.slice(1),
+    "label_state",
+    ...GEOGRAPHY_LAYER_IDS.cities,
+  ];
+  for (const layerId of orderedLayerIds) {
+    if (map.getLayer(layerId)) map.moveLayer(layerId);
   }
 }
 

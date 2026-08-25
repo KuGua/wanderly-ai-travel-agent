@@ -31,6 +31,9 @@ const mapMock = vi.hoisted(() => {
   return {
     handlers: new Map<string, (event: unknown) => void>(),
     layers: [] as string[],
+    addedSources: [] as string[],
+    movedLayers: [] as string[],
+    dynamicLayers: new Set<string>(),
     redrawCalls: 0,
     layoutChanges: [] as Array<{ id: string; visibility: string }>,
     queryResults: [] as Array<{ properties: Record<string, unknown> }>,
@@ -55,20 +58,34 @@ function fireSourcedata(event: { sourceId: string; isSourceLoaded: boolean; sour
 
 vi.mock("maplibre-gl", () => {
   class MapMock {
+    constructor(options: { style?: { sources?: Record<string, unknown>; layers?: Array<{ id: string }> } }) {
+      const style = options.style;
+      if (!style) return;
+      if (style.sources?.["wanderly-country-boundaries"]) mapMock.addedSources.push("wanderly-country-boundaries");
+      for (const layer of (style.layers ?? []).filter((candidate) => candidate.id === "wanderly-country-boundaries-line")) {
+        mapMock.layers.push(layer.id);
+        mapMock.dynamicLayers.add(layer.id);
+      }
+    }
     addControl() {}
     easeTo(options: { padding?: { top: number; right: number; bottom: number; left: number }; zoom?: number }) {
       mapMock.easeCalls.push(options);
     }
     getCenter() { return { lng: 103.8198, lat: 1.3521 }; }
     getZoom() { return 2.25; }
-    addLayer(layer: { id: string }) { mapMock.layers.push(layer.id); }
+    addLayer(layer: { id: string }) {
+      mapMock.layers.push(layer.id);
+      mapMock.dynamicLayers.add(layer.id);
+    }
     flyTo() {}
     getLayer(id: string) {
-      return mapMock.geography.layers.has(id) ? { id } : undefined;
+      return mapMock.geography.layers.has(id) || mapMock.dynamicLayers.has(id) ? { id } : undefined;
     }
     getSource(id?: string) {
       if (id === undefined) return mapMock.geography.source ? {} : undefined;
-      return id === "openmaptiles" && mapMock.geography.source ? {} : undefined;
+      if (id === "openmaptiles" && mapMock.geography.source) return {};
+      if (mapMock.addedSources.includes(id)) return {};
+      return undefined;
     }
     getStyle() {
       return {
@@ -80,6 +97,8 @@ vi.mock("maplibre-gl", () => {
     queryRenderedFeatures() { return mapMock.queryResults; }
     remove() {}
     redraw() { mapMock.redrawCalls += 1; }
+    addSource(id: string) { mapMock.addedSources.push(id); }
+    moveLayer(id: string) { mapMock.movedLayers.push(id); }
     setPaintProperty() {}
     setLayoutProperty(id: string, _name: string, visibility: string) { mapMock.layoutChanges.push({ id, visibility }); }
     setProjection() {}
@@ -134,6 +153,9 @@ describe("ExploreMapPage private inspirations", () => {
     mapMock.handlers.clear();
     mapMock.markerButtons.length = 0;
     mapMock.layers.length = 0;
+    mapMock.addedSources.length = 0;
+    mapMock.movedLayers.length = 0;
+    mapMock.dynamicLayers.clear();
     mapMock.redrawCalls = 0;
     mapMock.layoutChanges.length = 0;
     mapMock.queryResults.length = 0;
@@ -248,6 +270,21 @@ describe("ExploreMapPage private inspirations", () => {
     expect(screen.queryByText("1 private pin on this map")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Countries" })).toHaveAttribute("aria-pressed", "true");
     expect(mapMock.layoutChanges).toContainEqual({ id: "label_city", visibility: "visible" });
+  });
+
+  it("promotes Liberty geography layers and links the Countries toggle to its country layers", async () => {
+    renderWithIntl(<ExploreMapPage />);
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+
+    expect(mapMock.movedLayers).toEqual(expect.arrayContaining([
+      "boundary_2",
+      "boundary_3",
+      "label_city",
+    ]));
+
+    fireEvent.click(screen.getByRole("button", { name: "Countries" }));
+    expect(mapMock.layoutChanges).toContainEqual({ id: "boundary_2", visibility: "none" });
   });
 
   it("keeps the layer panel visible but disabled with a source-missing caption when the style lacks OpenMapTiles", async () => {

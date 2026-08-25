@@ -43,6 +43,16 @@ not provide an availability SLA, so deployment acceptance must include that
 risk or configure another approved provider. The Explore page keeps an
 accessible destination list if the map cannot load.
 
+For low-zoom global country borders, the Explore page also loads the
+versioned local file `public/map-data/natural-earth-admin-0.geojson` as a
+SVG overlay. The browser fetches this same-origin asset and projects its paths
+with the active map camera, rather than routing it through MapLibre's
+GeoJSON-source worker. It is derived from Natural Earth Admin 0 Countries and is
+shown in the same attribution control; it is a visual fallback only and is
+never used for destination lookup or travel facts. State/province and city
+details remain progressive OpenFreeMap layers, appearing at their style zoom
+thresholds.
+
 ## Run locally
 
 Keep Fastify on port 3000 and run Web on port 3001:

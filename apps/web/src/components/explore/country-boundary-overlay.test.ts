@@ -1,0 +1,31 @@
+import { describe, expect, it } from "vitest";
+
+import { projectCountryBoundaryPaths } from "./country-boundary-overlay";
+
+describe("projectCountryBoundaryPaths", () => {
+  it("projects polygon rings into SVG paths without MapLibre GeoJSON sources", () => {
+    const paths = projectCountryBoundaryPaths({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: {},
+        geometry: { type: "Polygon", coordinates: [[[1, 2], [3, 4], [1, 2]]] },
+      }],
+    }, ([lng, lat]) => ({ x: lng * 10, y: lat * 10 }), 400);
+
+    expect(paths).toEqual(["M10.00 20.00 L30.00 40.00 L10.00 20.00 "]);
+  });
+
+  it("splits a path instead of drawing across the globe seam", () => {
+    const paths = projectCountryBoundaryPaths({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: {},
+        geometry: { type: "Polygon", coordinates: [[[0, 0], [100, 0], [0, 0]]] },
+      }],
+    }, ([lng, lat]) => ({ x: lng, y: lat }), 100);
+
+    expect(paths[0]).toContain("M0.00 0.00 M100.00 0.00 M0.00 0.00");
+  });
+});
