@@ -108,17 +108,17 @@ AppShell
 
 ### 5.2.1 OpenFreeMap 行政区与城市图层
 
-探索地图直接控制 OpenFreeMap Liberty 已验证的 `openmaptiles` style layers；它们不是旅行候选、地理编码服务或业务真相：
+探索地图使用 OpenFreeMap Liberty 的行政区线，并以版本化的本地 SVG 标签覆盖层显示地名；它们不是旅行候选、地理编码服务或业务真相：
 
 | 图层 | 数据层与筛选 | 渐进显示 |
 |---|---|---|
-| 国家 | `boundary_2`（`admin_level = 2`）与 `label_country_*` | 全球至区域级别 |
-| 省/州 | `boundary_3`（`admin_level` 3–6）与 `label_state` | zoom 5 起 |
-| 城市 | `label_city` 与 `label_city_capital` | zoom 3 起，底图按碰撞规则渐进显示 |
+| 洲 / 国家 | Natural Earth / DataV SVG 国界与 `geography-labels.geojson` 标签 | 全球至区域级别 |
+| 省/州 | `boundary_3`（`admin_level` 3–6）与本地标签 | zoom 4.2 起 |
+| 首都 / 城市 | 本地 Natural Earth 标签 | 首都 zoom 2.6、重要城市 zoom 2.8 起，按碰撞规则渐进显示 |
 
-- 国家陆地边界与海岸线共同构成国家视觉轮廓；岛国海岸线不是国际边界数据。保留 Liberty 原始标签作为回退，不能在自定义图层成功前隐藏它们。
+- 国家陆地边界与海岸线共同构成国家视觉轮廓；岛国海岸线不是国际边界数据。Liberty 原始 symbol 文字保持透明但参与标签点击命中；可见名称由 SVG 覆盖层统一处理球面背面裁剪和中英文显示。
 - 用户可独立开关 `Countries`、`States / Provinces` 和 `Cities`，默认开启。控件固定在地图右侧，地点抽屉打开后仍必须可操作。
-- `Countries` 同时控制 Liberty 的 `boundary_2`/国家标签与本地 Natural Earth Admin 0 国家线兜底层。地图 ready 后将可用的 Liberty 行政区 layer 移至 provider style stack 顶部；fallback 由独立、不可点击的 SVG overlay 使用 `map.project()` 绘制并随 move/resize 更新，且以当前 map center 做半球可见性判断，背面坐标不得投影穿透正面。不得把 URL 直接交给 MapLibre globe 的 GeoJSON loader。该 GeoJSON 仅作视觉参考，带 Natural Earth attribution，不可用于反向地理编码、旅行事实或候选推断。
+- `Countries` 同时控制本地国家线与洲/国家标签；另两个开关分别控制 `boundary_3` 与省州标签、首都/城市标签。边界和标签覆盖层均使用 `map.project()` 随 move/resize 更新，并以当前 map center 做半球可见性判断。`geography-labels.geojson` 由 `apps/web/scripts/build-geography-labels.mjs` 从来源化数据生成，仅作视觉参考，不可用于反向地理编码、旅行事实或候选推断。
 - 点击国家、省/州或城市的已渲染标签打开 `Map location` 预览，不创建 pin，也不得由名称、坐标或边界推断旅行价格、库存、签证、可预订性或共享约束。只有空白处点击才创建会话内私有灵感。
 - 遥测最多记录有界的 `feature_class`、`zoom_band` 与 `outcome`；不得写入城市名称、行政区名称、坐标或私有 pin。Map 详情开关（`Countries` / `States / Provinces` / `Cities`）在 style.load 之后始终可见并可被聚焦；style 缺少 `openmaptiles` source 或缺失任一必需图层时，按钮保持原可见态但被禁用，并以一段 `role="status"` 文案说明原因（"does not expose the openmaptiles source" 或 "missing layers: …"）。`/home` 不再静默隐藏控件，避免开发期把"style 不兼容"误判为"功能未实现"。
 
@@ -153,7 +153,7 @@ Layer ID 漂移由 `apps/web/src/components/explore/__fixtures__/openfreemap-lib
 1. **mounting** — `mapRef` 创建后 style JSON 还没解析。`readiness.kind === "loading"`，`stage === "mounting"`。
 2. **ready** — 先显式获取 Liberty style JSON，并在传给 `new Map()` 前写入 `projection: {type:"globe"}`；`style.load` 后只做 `inspectGeographyLayers`、`applyGeographyContrast`、`setGeographyLayerVisibility`，派生最终 readiness。MapLibre 6.6 不得在 style/source 已建立后调用 `setProjection()`，因为它可能令 vector 和 GeoJSON source cache 长期 pending；也不得在 style 创建前调用该 API。行政区开关不等待 TileJSON 或首屏 PBF；`stage === "ready"`。
 
-国家线 fallback 与 style 兼容性是独立的：即使自定义 style 缺少 `openmaptiles` 或部分 Liberty layer，`Countries` 仍可显示本地 Natural Earth 边界；States / Provinces 与 Cities 则按原有兼容性检查禁用并说明原因。OpenFreeMap 的 `boundary_3`/`label_state` 从 zoom 5 渐进显示，`label_city*` 从 zoom 3 渐进显示，首屏 zoom 2.25 只保证国家边界。
+国家线和地名覆盖层与 style worker 相互独立：首屏 zoom 2.25 显示洲和主要国家，zoom 2.6 起加入首都，zoom 2.8 起加入重要城市，zoom 4.2 起加入省州名称。省州边界仍依赖 OpenFreeMap `boundary_3`；style 兼容性检查和禁用说明保持不变。
 
 `sourcedata.isSourceLoaded` 表示 source 没有 outstanding request，不代表 TileJSON metadata 已到；它只能用于诊断，不能作为 UI readiness 的门槛。开发模式的 `window.__wanderlyMap.sourceEvents` 最多保留 20 个 OpenMapTiles source event，`mapErrors` 最多保留 20 个 map error message，便于在不记录用户位置或私有资料的前提下排查零 PBF。
 

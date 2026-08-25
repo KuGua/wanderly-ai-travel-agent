@@ -255,7 +255,7 @@
       "countries": "Countries",
       "regions": "States / Provinces",
       "cities": "Cities",
-      "captionSupported": "Zoom in for regional details.",
+      "captionSupported": "Zoom in for capitals, cities and states / provinces.",
       "captionMissingSource": "Country/region labels are hidden — this map style does not expose the openmaptiles source.",
       "captionMissingLayers": "Country/region labels are hidden — missing layers: {layers}."
     }
