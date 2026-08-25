@@ -1,6 +1,6 @@
 ---
 name: review-agent-placeholder
-source-of-truth: ./../agents/policy-gate.ts
+source-of-truth: ./../agents/personal-travel-agent.ts + ./../agents/shared-trip-agent.ts
 agent: review
 status: no-skills
 ---

@@ -1,8 +1,11 @@
 "use client";
 
 import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, MapPin, Plane, RotateCw, Sparkles, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
+import { useLocale, useTranslations } from "next-intl";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
+import { applyGeographyContrast, GEOGRAPHY_INTERACTIVE_LAYER_IDS, geographyFeatureFrom, inspectGeographyLayers, OPEN_MAP_TILES_SOURCE, setGeographyLayerVisibility, type GeographyInspection, type GeographyVisibility } from "./map-geography-layers";
+import { INITIAL_READINESS, layerCaptionFor, mapReadinessStage, panelDisabledReason, type LayerCaption, type MapReadiness, type MapStage } from "./map-readiness";
 
 import { TravelAgentChat } from "./travel-agent-chat";
 
@@ -12,20 +15,27 @@ type Destination = {
   country: string;
   coordinates: [number, number];
   note: string;
-  kind: "fixture" | "inspiration";
+  kind: "fixture" | "inspiration" | "geography";
 };
 
 type ExploreState = "IDLE" | "SELECTED" | "TALKING" | "FLYING" | "EXPLORING";
 type PinScope = "nearby" | "all";
+type SourceEventDiagnostic = {
+  sourceDataType: string | null;
+  isSourceLoaded: boolean | null;
+};
 
 const SINGAPORE: [number, number] = [103.8198, 1.3521];
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
+const NEARBY_RADIUS_KM = 50;
 
-const destinations: Destination[] = [
-  { id: "tokyo", name: "Tokyo", country: "Japan", coordinates: [139.6917, 35.6895], note: "Food, design and neighborhoods that reward wandering.", kind: "fixture" },
-  { id: "lisbon", name: "Lisbon", country: "Portugal", coordinates: [-9.1393, 38.7223], note: "Hillside streets, Atlantic light and late dinners.", kind: "fixture" },
-  { id: "reykjavik", name: "Reykjavík", country: "Iceland", coordinates: [-21.9426, 64.1466], note: "A compact base for geothermal landscapes.", kind: "fixture" },
-];
+const DESTINATION_IDS = ["tokyo", "lisbon", "reykjavik"] as const;
+
+const FIXTURE_COORDS: Record<(typeof DESTINATION_IDS)[number], [number, number]> = {
+  tokyo: [139.6917, 35.6895],
+  lisbon: [-9.1393, 38.7223],
+  reykjavik: [-21.9426, 64.1466],
+};
 
 export function ExploreMapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -39,9 +49,33 @@ export function ExploreMapPage() {
   const chatSelectedPinIdRef = useRef<string | null>(null);
   const preserveChatCameraOnCloseRef = useRef(false);
   const journeyTimersRef = useRef<number[]>([]);
-  const [mapReady, setMapReady] = useState(false);
-  const [mapUnavailable, setMapUnavailable] = useState(false);
+  const geographyVisibilityRef = useRef<GeographyVisibility>({ countries: true, regions: true, cities: true });
+  const [readiness, setReadiness] = useState<MapReadiness>(INITIAL_READINESS);
+  const readinessRef = useRef<MapReadiness>(INITIAL_READINESS);
+  const styleLoadedRef = useRef(false);
+
+  const t = useTranslations("explore");
+  const tCommon = useTranslations("common");
+  const locale = useLocale();
+
+  const destinations = useMemo<Destination[]>(
+    () =>
+      DESTINATION_IDS.map((id) => ({
+        id,
+        name: t(`destinations.${id}`),
+        country: t(`destinations.${id}Country`),
+        coordinates: FIXTURE_COORDS[id],
+        note: t(`destinations.${id}Note`),
+        kind: "fixture" as const,
+      })),
+    [t],
+  );
+
+  useEffect(() => {
+    readinessRef.current = readiness;
+  }, [readiness]);
   const [mapAttempt, setMapAttempt] = useState(0);
+  const [geographyVisibility, setGeographyVisibility] = useState<GeographyVisibility>({ countries: true, regions: true, cities: true });
   const [selected, setSelected] = useState<Destination | null>(null);
   const [inspirations, setInspirations] = useState<Destination[]>([]);
   const [checkedInspirationIds, setCheckedInspirationIds] = useState<Set<string>>(new Set());
@@ -77,39 +111,131 @@ export function ExploreMapPage() {
     }
   }, [clearJourneyTimers]);
 
-  const deleteInspirations = useCallback((ids: Iterable<string>) => {
-    const idsToDelete = new Set(ids);
-    if (idsToDelete.size === 0) return;
+  const deleteInspirations = useCallback(
+    (ids: Iterable<string>) => {
+      const idsToDelete = new Set(ids);
+      if (idsToDelete.size === 0) return;
 
-    idsToDelete.forEach((id) => {
-      inspirationMarkersRef.current.get(id)?.remove();
-      inspirationMarkersRef.current.delete(id);
-    });
-    inspirationsRef.current = inspirationsRef.current.filter((inspiration) => !idsToDelete.has(inspiration.id));
-    if (inspirationsRef.current.length === 0) inspirationSequenceRef.current = 0;
-    setInspirations(inspirationsRef.current);
-    setCheckedInspirationIds((current) => {
-      const next = new Set(current);
-      idsToDelete.forEach((id) => next.delete(id));
-      return next;
-    });
-    setSelected((current) => {
-      if (current && idsToDelete.has(current.id)) {
-        clearJourneyTimers();
-        setExploreState("IDLE");
-        return null;
-      }
-      return current;
-    });
-  }, [clearJourneyTimers]);
+      idsToDelete.forEach((id) => {
+        inspirationMarkersRef.current.get(id)?.remove();
+        inspirationMarkersRef.current.delete(id);
+      });
+      inspirationsRef.current = inspirationsRef.current.filter((inspiration) => !idsToDelete.has(inspiration.id));
+      if (inspirationsRef.current.length === 0) inspirationSequenceRef.current = 0;
+      setInspirations(inspirationsRef.current);
+      setCheckedInspirationIds((current) => {
+        const next = new Set(current);
+        idsToDelete.forEach((id) => next.delete(id));
+        return next;
+      });
+      setSelected((current) => {
+        if (current && idsToDelete.has(current.id)) {
+          clearJourneyTimers();
+          setExploreState("IDLE");
+          return null;
+        }
+        return current;
+      });
+    },
+    [clearJourneyTimers],
+  );
 
   useEffect(() => {
     let cancelled = false;
     let loaded = false;
     const inspirationMarkers = inspirationMarkersRef.current;
+    const sourceEvents: SourceEventDiagnostic[] = [];
+    const mapErrors: string[] = [];
+
+    function transitionToUnavailable(map: MapLibreMap | null, reason: "timeout" | "error" | "exception") {
+      const next: MapReadiness = { kind: "unavailable-network", reason, styleUrl: MAP_STYLE_URL };
+      readinessRef.current = next;
+      setReadiness(next);
+      if (process.env.NODE_ENV !== "production") {
+        const existing = (window as unknown as { __wanderlyMap?: Record<string, unknown> }).__wanderlyMap;
+        (window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap = {
+          ...(existing ?? {}),
+          map: map ?? null,
+          get readiness() {
+            return readinessRef.current;
+          },
+          missingLayers: [] as readonly string[],
+          sourcePresent: false,
+          styleUrl: MAP_STYLE_URL,
+          get sourceEvents(): readonly SourceEventDiagnostic[] {
+            return [...sourceEvents];
+          },
+          get mapErrors(): readonly string[] {
+            return [...mapErrors];
+          },
+          get stage(): MapStage {
+            return mapReadinessStage(readinessRef.current, styleLoadedRef.current);
+          },
+          retry: () => retryMap(),
+        };
+      }
+    }
+
+    function attachDevHook(map: MapLibreMap, inspection: GeographyInspection) {
+      if (process.env.NODE_ENV === "production") return;
+      (window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap = {
+        map,
+        get readiness() {
+          return readinessRef.current;
+        },
+        missingLayers: inspection.missingLayers,
+        sourcePresent: inspection.sourcePresent,
+        styleUrl: MAP_STYLE_URL,
+        get sourceEvents(): readonly SourceEventDiagnostic[] {
+          return [...sourceEvents];
+        },
+        get mapErrors(): readonly string[] {
+          return [...mapErrors];
+        },
+        get stage(): MapStage {
+          return mapReadinessStage(readinessRef.current, styleLoadedRef.current);
+        },
+        retry: () => retryMap(),
+      };
+    }
+
+    function finalizeReadiness(map: MapLibreMap, inspection: GeographyInspection) {
+      if (cancelled) return;
+      const next: MapReadiness = inspection.supported
+        ? { kind: "ready-supported", styleUrl: MAP_STYLE_URL }
+        : !inspection.sourcePresent
+          ? { kind: "ready-style-unsupported-source", styleUrl: MAP_STYLE_URL, sourceId: OPEN_MAP_TILES_SOURCE }
+          : {
+              kind: "ready-style-missing-layers",
+              styleUrl: MAP_STYLE_URL,
+              sourceId: OPEN_MAP_TILES_SOURCE,
+              missingLayers: inspection.missingLayers,
+            };
+      if (inspection.supported) applyGeographyContrast(map);
+      setGeographyLayerVisibility(map, geographyVisibilityRef.current);
+      attachDevHook(map, inspection);
+      readinessRef.current = next;
+      setReadiness(next);
+    }
+
+    function onSourceData(event: { sourceId?: string; sourceDataType?: string; isSourceLoaded?: boolean }) {
+      if (event.sourceId !== OPEN_MAP_TILES_SOURCE) return;
+      sourceEvents.push({
+        sourceDataType: event.sourceDataType ?? null,
+        isSourceLoaded: event.isSourceLoaded ?? null,
+      });
+      if (sourceEvents.length > 20) sourceEvents.shift();
+      if (event.sourceDataType === "metadata") {
+        // MapLibre caches style metadata per-source; a metadata refresh usually
+        // means new tiles became available. Ask the renderer to redraw so the
+        // globe reflects them without waiting for the next viewport change.
+        mapRef.current?.redraw();
+      }
+    }
+
     const loadTimeout = window.setTimeout(() => {
       if (!cancelled && !loaded) {
-        setMapUnavailable(true);
+        transitionToUnavailable(null, "timeout");
       }
     }, 12_000);
 
@@ -122,33 +248,63 @@ export function ExploreMapPage() {
 
         const map = new maplibregl.Map({
           container: containerRef.current,
-          style: MAP_STYLE_URL,
+          style: MAP_STYLE_URL as unknown as StyleSpecification | string,
           center: SINGAPORE,
           zoom: 2.25,
           attributionControl: false,
         });
         mapRef.current = map;
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+        map.on("sourcedata", onSourceData);
 
         map.once("style.load", () => {
-          loaded = true;
-          window.clearTimeout(loadTimeout);
-          map.setProjection({ type: "globe" });
-          map.addControl(new maplibregl.AttributionControl({ compact: window.innerWidth < 640 }), "bottom-right");
-          window.queueMicrotask(() => {
-            if (!cancelled) configureMapAttribution(containerRef.current);
-          });
-          if (!cancelled) {
-            setMapReady(true);
-            setMapUnavailable(false);
+          try {
+            loaded = true;
+            styleLoadedRef.current = true;
+            window.clearTimeout(loadTimeout);
+            map.addControl(new maplibregl.AttributionControl({ compact: window.innerWidth < 640 }), "bottom-right");
+            map.setProjection({ type: "globe" });
+            finalizeReadiness(map, inspectGeographyLayers(map, MAP_STYLE_URL));
+            window.queueMicrotask(() => {
+              if (!cancelled) configureMapAttribution(containerRef.current);
+            });
+          } catch {
+            if (!cancelled) transitionToUnavailable(map, "exception");
           }
         });
 
-        map.on("error", () => {
-          if (!loaded && !cancelled) setMapUnavailable(true);
-        });
+        const onMapError = (event: { error?: { message?: string } }) => {
+          if (event.error?.message) {
+            mapErrors.push(event.error.message);
+            if (mapErrors.length > 20) mapErrors.shift();
+          }
+          if (!loaded && !cancelled) {
+            transitionToUnavailable(map, "error");
+          }
+        };
+        map.on("error", onMapError);
 
         map.on("click", (event) => {
+          const geography = event.point
+            ? geographyFeatureFrom(map.queryRenderedFeatures(event.point, { layers: [...GEOGRAPHY_INTERACTIVE_LAYER_IDS] })[0])
+            : null;
+          if (geography) {
+            const countryLabel =
+              geography.kind === "country"
+                ? t("geographyCountryLabel")
+                : geography.kind === "city"
+                  ? t("geographyCityLabel")
+                  : t("geographyStateLabel");
+            selectDestination({
+              id: `geography-${geography.kind}-${event.lngLat.lng.toFixed(5)}-${event.lngLat.lat.toFixed(5)}`,
+              name: geography.name,
+              country: countryLabel,
+              coordinates: [event.lngLat.lng, event.lngLat.lat],
+              note: t("geographyNote"),
+              kind: "geography",
+            });
+            return;
+          }
           inspirationSequenceRef.current += 1;
           const inspiration = inspirationAt(
             `inspiration-${inspirationSequenceRef.current}`,
@@ -156,7 +312,7 @@ export function ExploreMapPage() {
             [event.lngLat.lng, event.lngLat.lat],
           );
           const { anchor, button } = markerElement(inspiration.name, true);
-          button.setAttribute("aria-label", `Open ${inspiration.name}`);
+          button.setAttribute("aria-label", t("markerOpenAria", { name: inspiration.name }));
           button.addEventListener("click", (markerEvent) => {
             markerEvent.stopPropagation();
             selectDestination(inspiration);
@@ -179,7 +335,7 @@ export function ExploreMapPage() {
 
         markersRef.current = destinations.map((destination) => {
           const { anchor, button } = markerElement(destination.name);
-          button.setAttribute("aria-label", `Explore ${destination.name}, ${destination.country}`);
+          button.setAttribute("aria-label", t("markerExploreAria", { name: destination.name, country: destination.country }));
           button.addEventListener("click", (event) => {
             event.stopPropagation();
             selectDestination(destination);
@@ -191,7 +347,7 @@ export function ExploreMapPage() {
       } catch {
         if (!cancelled) {
           window.clearTimeout(loadTimeout);
-          setMapUnavailable(true);
+          transitionToUnavailable(null, "exception");
         }
       }
     }
@@ -201,6 +357,7 @@ export function ExploreMapPage() {
     return () => {
       cancelled = true;
       window.clearTimeout(loadTimeout);
+      mapRef.current?.off("sourcedata", onSourceData);
       clearJourneyTimers();
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
@@ -208,14 +365,21 @@ export function ExploreMapPage() {
       inspirationMarkers.clear();
       inspirationsRef.current = [];
       inspirationSequenceRef.current = 0;
+      styleLoadedRef.current = false;
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [clearJourneyTimers, mapAttempt, selectDestination]);
+  }, [clearJourneyTimers, mapAttempt, selectDestination, destinations, t]);
+
+  useEffect(() => {
+    if (mapRef.current && readiness.kind === "ready-supported") {
+      setGeographyLayerVisibility(mapRef.current, geographyVisibility);
+    }
+  }, [readiness, geographyVisibility]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady) return;
+    if (!map || readiness.kind !== "ready-supported") return;
 
     if (!chatOpen) {
       if (chatCameraActiveRef.current) {
@@ -233,8 +397,9 @@ export function ExploreMapPage() {
     const initialZoom = map.getZoom();
     const adjustCameraForChat = (duration: number) => {
       const currentCenter = map.getCenter();
-      const isMobile = window.matchMedia("(orientation: portrait)").matches;
-      if (isMobile) {
+      const isPortrait = window.matchMedia("(orientation: portrait)").matches;
+
+      if (isPortrait) {
         map.easeTo({
           center: selected ? selected.coordinates : [currentCenter.lng, currentCenter.lat],
           zoom: selected ? Math.max(initialZoom, 5.4) : initialZoom + Math.log2(0.8),
@@ -243,16 +408,16 @@ export function ExploreMapPage() {
         });
       } else {
         const mapWidth = containerRef.current?.clientWidth || 1024;
-        const measuredDialogWidth = document.querySelector<HTMLElement>('[aria-label="Wanderly Agent conversation"]')?.getBoundingClientRect().width;
-        const dialogWidth = measuredDialogWidth && measuredDialogWidth > 0 ? measuredDialogWidth : mapWidth * 0.4;
-        const rightPadding = Math.round(Math.min(dialogWidth + 24, Math.max(0, mapWidth - 120)));
-        const visibleWidth = mapWidth - rightPadding;
         const mapHeight = containerRef.current?.clientHeight || window.innerHeight;
+        const dialogWidth = document.querySelector<HTMLElement>('[aria-label="Wanderly Agent conversation"]')?.offsetWidth || mapWidth * 0.4;
+        const rightPadding = Math.min(dialogWidth + 24, Math.max(0, mapWidth - 120));
+        const visibleWidth = Math.max(120, mapWidth - rightPadding);
         const shortEdge = Math.min(mapWidth, mapHeight);
         const comfortableGlobeDiameter = shortEdge * 0.72;
         const globeScale = visibleWidth >= comfortableGlobeDiameter
           ? 1
           : Math.min(1, (visibleWidth * 0.9) / (shortEdge * 0.9));
+
         map.easeTo({
           center: selected ? selected.coordinates : [currentCenter.lng, currentCenter.lat],
           zoom: selected ? Math.max(initialZoom, 5.4) : initialZoom + Math.log2(globeScale),
@@ -260,6 +425,7 @@ export function ExploreMapPage() {
           duration,
         });
       }
+
       chatCameraActiveRef.current = true;
     };
 
@@ -267,14 +433,14 @@ export function ExploreMapPage() {
     let resizeTimer: number | undefined;
     const handleResize = () => {
       window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(() => adjustCameraForChat(0), 350);
+      resizeTimer = window.setTimeout(() => adjustCameraForChat(reducedMotion() ? 0 : 350), 120);
     };
     window.addEventListener("resize", handleResize);
     return () => {
-      window.clearTimeout(resizeTimer);
       window.removeEventListener("resize", handleResize);
+      window.clearTimeout(resizeTimer);
     };
-  }, [chatOpen, mapReady, selected]);
+  }, [chatOpen, readiness.kind, selected]);
 
   function recenter() {
     clearJourneyTimers();
@@ -298,9 +464,17 @@ export function ExploreMapPage() {
   }
 
   function retryMap() {
-    setMapUnavailable(false);
-    setMapReady(false);
+    readinessRef.current = INITIAL_READINESS;
+    setReadiness(INITIAL_READINESS);
     setMapAttempt((attempt) => attempt + 1);
+  }
+
+  function toggleGeographyLayer(layer: keyof GeographyVisibility) {
+    setGeographyVisibility((current) => {
+      const next = { ...current, [layer]: !current[layer] };
+      geographyVisibilityRef.current = next;
+      return next;
+    });
   }
 
   function openPinManager() {
@@ -338,33 +512,38 @@ export function ExploreMapPage() {
 
   const managedInspirations = pinScope === "all" || !manageAnchorCoordinates
     ? inspirations
-    : inspirations.filter((inspiration) => distanceInKm(inspiration.coordinates, manageAnchorCoordinates) <= 50);
+    : inspirations.filter((inspiration) => distanceInKm(inspiration.coordinates, manageAnchorCoordinates) <= NEARBY_RADIUS_KM);
+
+  const nearbyDistance = useMemo(() => {
+    const formatter = new Intl.NumberFormat(locale || "en", { style: "unit", unit: "kilometer", unitDisplay: "short" });
+    return formatter.format(NEARBY_RADIUS_KM);
+  }, [locale]);
 
   return (
     <main data-drawer-open={selected && !chatOpen ? "true" : "false"} className="wanderly-explore-map relative isolate h-[calc(100dvh-4rem)] min-h-[620px] overflow-hidden bg-[#bfe9f2] landscape:h-screen">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_58%_42%,#dff5ee_0_15%,#8bd2df_35%,#65b7ca_62%,#4b9eb5_100%)]" aria-hidden="true" />
       <div className="absolute inset-0">
-        <div ref={containerRef} className="size-full" aria-label="Interactive destination globe" />
+        <div ref={containerRef} className="size-full" aria-label={t("globeAriaLabel")} />
       </div>
 
-      {!mapReady && !mapUnavailable ? (
+      {readiness.kind === "loading" ? (
         <div className="pointer-events-none absolute inset-0 z-[4] grid place-items-center" role="status">
           <span className="inline-flex items-center gap-2 rounded-full bg-card/90 px-4 py-2 text-sm font-bold text-primary shadow-lg backdrop-blur">
-            <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" /> Loading the globe…
+            <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" /> {tCommon("loadingGlobe")}
           </span>
         </div>
       ) : null}
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 p-4 sm:p-6">
         <div className="pointer-events-auto rounded-[20px] bg-sidebar/95 px-4 py-3 text-white shadow-[0_12px_32px_#0a2f3f33] backdrop-blur">
-          <p className="font-black tracking-[-0.035em]">Wanderly AI</p>
-          <p className="mt-0.5 text-xs text-[#bde1db]">Starting from Singapore</p>
+          <p className="font-black tracking-[-0.035em]">{tCommon("brandTagline")}</p>
+          <p className="mt-0.5 text-xs text-[#bde1db]">{t("startingFrom")}</p>
         </div>
         <div className="pointer-events-auto flex gap-2">
-          <button type="button" onClick={recenter} aria-label="Recenter on Singapore" title="Recenter" className="grid size-12 place-items-center rounded-[16px] bg-sidebar/95 text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
+          <button type="button" onClick={recenter} aria-label={t("recenterAriaLabel")} title={t("recenterTitle")} className="grid size-12 place-items-center rounded-[16px] bg-sidebar/95 text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
             <LocateFixed aria-hidden="true" className="size-5" />
           </button>
-          <button type="button" onClick={() => setHelpOpen((open) => !open)} aria-label="Explore map help" aria-expanded={helpOpen} title="How to use Explore" className="grid size-12 place-items-center rounded-[16px] bg-sidebar/95 text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
+          <button type="button" onClick={() => setHelpOpen((open) => !open)} aria-label={t("helpAriaLabel")} aria-expanded={helpOpen} title={t("helpTitle")} className="grid size-12 place-items-center rounded-[16px] bg-sidebar/95 text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
             <HelpCircle aria-hidden="true" className="size-5" />
           </button>
         </div>
@@ -372,19 +551,19 @@ export function ExploreMapPage() {
 
       {helpOpen ? (
         <aside className="absolute right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] rounded-[20px] bg-card/95 p-4 text-sm leading-6 shadow-xl backdrop-blur sm:right-6 sm:top-24">
-          <p className="font-bold">Explore the map</p>
-          <p className="mt-1 text-muted-foreground">Choose a named demo destination, or click anywhere to pin multiple private inspirations. Select pins from the list to remove them individually or together.</p>
+          <p className="font-bold">{t("helpHeading")}</p>
+          <p className="mt-1 text-muted-foreground">{t("helpBody")}</p>
         </aside>
       ) : null}
 
-      {mapUnavailable ? (
+      {readiness.kind === "unavailable-network" ? (
         <section className="absolute inset-0 z-[5] grid place-items-center bg-[radial-gradient(circle_at_center,#d7edb0_0_19%,transparent_20%),radial-gradient(circle_at_25%_38%,#e8cc89_0_11%,transparent_12%),#82cad8] p-6 text-center">
           <div className="max-w-md rounded-[24px] bg-card/95 p-7 shadow-2xl backdrop-blur">
             <Compass aria-hidden="true" className="mx-auto size-9 text-primary" />
-            <h1 className="mt-4 text-2xl font-bold tracking-[-0.04em]">The globe could not load</h1>
-            <p className="mt-2 text-sm text-muted-foreground">You can still choose a destination below. Map access may be unavailable on this network.</p>
+            <h1 className="mt-4 text-2xl font-bold tracking-[-0.04em]">{t("unavailableHeading")}</h1>
+            <p className="mt-2 text-sm text-muted-foreground">{t("unavailableBody")}</p>
             <button type="button" onClick={retryMap} className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-[14px] bg-primary px-4 font-bold text-primary-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
-              <RotateCw aria-hidden="true" className="size-4" /> Retry map
+              <RotateCw aria-hidden="true" className="size-4" /> {t("retryMap")}
             </button>
           </div>
         </section>
@@ -392,28 +571,33 @@ export function ExploreMapPage() {
 
       {managePinsOpen ? (
         <section className="absolute bottom-20 left-4 z-20 block w-[min(360px,calc(100%-2rem))] rounded-[24px] bg-card/95 p-4 shadow-[0_20px_60px_#082f3f40] backdrop-blur landscape:bottom-6 landscape:left-6">
+          <>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2 text-primary">
                   <Sparkles aria-hidden="true" className="size-4" />
-                  <p className="text-[11px] font-black uppercase tracking-[0.14em]">Private inspirations</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em]">{t("managePinsKicker")}</p>
                 </div>
-                <h1 className="mt-1 text-xl font-bold tracking-[-0.045em]">Manage pins</h1>
+                <h1 className="mt-1 text-xl font-bold tracking-[-0.045em]">{t("managePinsTitle")}</h1>
               </div>
-              <button type="button" onClick={() => { setManagePinsOpen(false); setCheckedInspirationIds(new Set()); }} aria-label="Close pin manager" className="grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+              <button type="button" onClick={() => { setManagePinsOpen(false); setCheckedInspirationIds(new Set()); }} aria-label={t("managePinsCloseAriaLabel")} className="grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
                 <X aria-hidden="true" className="size-4" />
               </button>
             </div>
-            <p className="mt-1 text-xs text-muted-foreground">Choose only the places you want to remove.</p>
-            <div className="mt-3 grid grid-cols-2 rounded-[12px] bg-muted p-1" aria-label="Pin display scope">
-              <button type="button" aria-pressed={pinScope === "nearby"} onClick={() => setPinScope("nearby")} className="min-h-9 rounded-[9px] px-2 text-xs font-bold aria-pressed:bg-card aria-pressed:text-primary aria-pressed:shadow-sm">Current area</button>
-              <button type="button" aria-pressed={pinScope === "all"} onClick={() => setPinScope("all")} className="min-h-9 rounded-[9px] px-2 text-xs font-bold aria-pressed:bg-card aria-pressed:text-primary aria-pressed:shadow-sm">All pins ({inspirations.length})</button>
+            <p className="mt-1 text-xs text-muted-foreground">{t("managePinsBody")}</p>
+            <div className="mt-3 grid grid-cols-2 rounded-[12px] bg-muted p-1" aria-label={t("manageScopeLabel")}>
+              <button type="button" aria-pressed={pinScope === "nearby"} onClick={() => setPinScope("nearby")} className="min-h-9 rounded-[9px] px-2 text-xs font-bold aria-pressed:bg-card aria-pressed:text-primary aria-pressed:shadow-sm">
+                {t("manageScopeNearby")}
+              </button>
+              <button type="button" aria-pressed={pinScope === "all"} onClick={() => setPinScope("all")} className="min-h-9 rounded-[9px] px-2 text-xs font-bold aria-pressed:bg-card aria-pressed:text-primary aria-pressed:shadow-sm">
+                {t("manageScopeAll", { count: inspirations.length })}
+              </button>
             </div>
-            <p className="mt-1.5 text-[11px] text-muted-foreground">Current area shows pins within 50 km of this place.</p>
-            <div className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1" role="list" aria-label="Private inspiration list">
+            <p className="mt-1.5 text-[11px] text-muted-foreground">{t("manageScopeHint", { distance: nearbyDistance })}</p>
+            <div className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1" role="list" aria-label={t("pinListAriaLabel")}>
               {managedInspirations.map((inspiration) => (
                 <div key={inspiration.id} role="listitem" className={`flex items-center gap-1.5 rounded-[11px] border p-1.5 transition ${selected?.id === inspiration.id ? "border-primary bg-secondary/60" : "bg-background/75"}`}>
-                  <input type="checkbox" checked={checkedInspirationIds.has(inspiration.id)} onChange={() => toggleInspiration(inspiration.id)} aria-label={`Select ${inspiration.name}`} className="size-4 shrink-0 accent-[var(--primary)]" />
+                  <input type="checkbox" checked={checkedInspirationIds.has(inspiration.id)} onChange={() => toggleInspiration(inspiration.id)} aria-label={t("pinCheckboxAriaLabel", { name: inspiration.name })} className="size-4 shrink-0 accent-[var(--primary)]" />
                   <button type="button" onClick={() => selectDestination(inspiration)} className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
                     <span className="block truncate text-xs font-bold">{inspiration.name}</span>
                     <span className="block truncate text-[11px] text-muted-foreground">{inspiration.country}</span>
@@ -422,37 +606,49 @@ export function ExploreMapPage() {
               ))}
             </div>
             <button type="button" disabled={checkedInspirationIds.size === 0} onClick={() => deleteInspirations(checkedInspirationIds)} className="mt-2.5 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-[12px] bg-destructive px-3 text-xs font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-destructive/25">
-              <CheckSquare aria-hidden="true" className="size-4" /> Delete selected{checkedInspirationIds.size > 0 ? ` (${checkedInspirationIds.size})` : ""}
+              <CheckSquare aria-hidden="true" className="size-4" />
+              {checkedInspirationIds.size > 0 ? t("deleteSelectedWithCount", { count: checkedInspirationIds.size }) : t("deleteSelected")}
             </button>
+          </>
         </section>
+      ) : null}
+
+      {readiness.kind !== "loading" && readiness.kind !== "unavailable-network" ? (
+        <LayerToggleGroup
+          visibility={geographyVisibility}
+          disabledReason={panelDisabledReason(readiness)}
+          caption={layerCaptionFor(panelDisabledReason(readiness), readiness.kind === "ready-style-missing-layers" ? readiness.missingLayers : [])}
+          onToggle={toggleGeographyLayer}
+          t={t}
+        />
       ) : null}
 
       {selected && !managePinsOpen && !chatOpen ? (
         <aside className="absolute inset-x-0 bottom-0 z-30 max-h-[70dvh] overflow-y-auto rounded-t-[24px] bg-card/95 p-5 pb-24 shadow-[0_20px_60px_#082f3f55] backdrop-blur landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(360px,calc(100%-2rem))] landscape:rounded-[24px] landscape:pb-5">
-          <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label="Close destination preview" className="absolute right-4 top-4 grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+          <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label={t("drawerCloseAriaLabel")} className="absolute right-4 top-4 grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
             <X aria-hidden="true" className="size-4" />
           </button>
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-primary">{stateLabel(exploreState)}</p>
+          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-primary">{stateLabel(exploreState, t)}</p>
           <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em]">{selected.name}</h2>
           <p className="font-semibold text-muted-foreground">{selected.country}</p>
           <p className="mt-3 inline-flex rounded-full bg-secondary px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-secondary-foreground">
-            {selected.kind === "fixture" ? "Demo data" : "Session-only inspiration"}
+            {selected.kind === "fixture" ? t("drawerKindFixture") : selected.kind === "geography" ? t("drawerKindGeography") : t("drawerKindInspiration")}
           </p>
           <p className="mt-4 text-sm leading-6 text-muted-foreground">{selected.note}</p>
           <button type="button" onClick={startExploring} disabled={exploreState !== "SELECTED"} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-primary px-4 font-bold text-primary-foreground transition hover:brightness-110 disabled:cursor-default disabled:opacity-80 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
             {exploreState === "SELECTED" ? (
               selected.kind === "fixture"
-                ? <><Plane aria-hidden="true" className="size-4" /> Explore {selected.name}</>
-                : <><MapPin aria-hidden="true" className="size-4" /> View this inspiration</>
-            ) : stateAction(exploreState, selected.kind)}
+                ? <><Plane aria-hidden="true" className="size-4" /> {t("action.fixture", { name: selected.name })}</>
+                : <><MapPin aria-hidden="true" className="size-4" /> {selected.kind === "geography" ? t("action.viewGeography") : t("action.viewInspiration")}</>
+            ) : stateAction(exploreState, selected.kind, t)}
           </button>
           {selected.kind === "inspiration" ? (
             <div className="mt-2 grid grid-cols-2 gap-2">
               <button type="button" onClick={openPinManager} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[14px] text-sm font-bold text-primary hover:bg-secondary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
-                <ListChecks aria-hidden="true" className="size-4" /> Manage pins
+                <ListChecks aria-hidden="true" className="size-4" /> {t("managePinsCta")}
               </button>
               <button type="button" onClick={() => deleteInspirations([selected.id])} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[14px] text-sm font-bold text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-destructive/20">
-                <Trash2 aria-hidden="true" className="size-4" /> Delete this
+                <Trash2 aria-hidden="true" className="size-4" /> {t("deleteThisCta")}
               </button>
             </div>
           ) : null}
@@ -534,16 +730,72 @@ export function configureMapAttribution(root: ParentNode | null) {
   });
 }
 
-function stateLabel(state: ExploreState) {
-  if (state === "TALKING") return "Preparing your route";
-  if (state === "FLYING") return "Flying there";
-  if (state === "EXPLORING") return "Ready to explore";
-  return "Destination preview";
+function stateLabel(state: ExploreState, t: ReturnType<typeof useTranslations>) {
+  if (state === "TALKING") return t("state.TALKING");
+  if (state === "FLYING") return t("state.FLYING");
+  if (state === "EXPLORING") return t("state.EXPLORING");
+  return t("state.IDLE");
 }
 
-function stateAction(state: ExploreState, kind: Destination["kind"]) {
-  if (state === "TALKING") return "Getting to know the destination…";
-  if (state === "FLYING") return "Flying across the globe…";
-  if (kind === "inspiration") return "Kept for this session";
-  return "Start a travel plan";
+function stateAction(state: ExploreState, kind: Destination["kind"], t: ReturnType<typeof useTranslations>) {
+  if (state === "TALKING") return t("action.TALKING");
+  if (state === "FLYING") return t("action.FLYING");
+  if (kind === "inspiration") return t("action.inspiration");
+  if (kind === "geography") return t("action.geography");
+  return t("action.IDLE");
+}
+
+function LayerToggleGroup({
+  visibility,
+  disabledReason,
+  caption,
+  onToggle,
+  t,
+}: {
+  visibility: GeographyVisibility;
+  disabledReason: null | "missing-source" | "missing-layers";
+  caption: LayerCaption;
+  onToggle: (layer: keyof GeographyVisibility) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const disabled = disabledReason !== null;
+  const labels: Record<keyof GeographyVisibility, string> = {
+    countries: t("layerPanel.countries"),
+    regions: t("layerPanel.regions"),
+    cities: t("layerPanel.cities"),
+  };
+  const captionText = (() => {
+    if (!caption) return t("layerPanel.captionSupported");
+    if (caption.kind === "missing-source") return t("layerPanel.captionMissingSource");
+    return t("layerPanel.captionMissingLayers", { layers: caption.layers.join(", ") });
+  })();
+  return (
+    <section
+      className="absolute left-4 top-32 z-20 w-44 rounded-[18px] bg-card/95 p-2 shadow-lg backdrop-blur sm:left-6 sm:top-36"
+      role="group"
+      aria-label={t("layerPanel.groupAriaLabel")}
+      data-readiness={disabledReason ?? "supported"}
+    >
+      <p className="px-2 pb-1 text-[10px] font-black uppercase tracking-[0.12em] text-muted-foreground">{t("layerPanel.kicker")}</p>
+      {(["countries", "regions", "cities"] as const).map((layer) => (
+        <button
+          key={layer}
+          type="button"
+          aria-pressed={visibility[layer]}
+          disabled={disabled}
+          onClick={() => onToggle(layer)}
+          className="flex min-h-11 w-full items-center rounded-[12px] px-2 text-left text-xs font-bold aria-pressed:bg-secondary aria-pressed:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {labels[layer]}
+        </button>
+      ))}
+      <p
+        className="px-2 pb-1 pt-1 text-[10px] leading-4 text-muted-foreground"
+        role="status"
+        aria-live="polite"
+      >
+        {captionText}
+      </p>
+    </section>
+  );
 }

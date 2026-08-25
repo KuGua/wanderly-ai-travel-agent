@@ -59,7 +59,7 @@ jobs:
           cache-dependency-path: apps/api/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --omit=optional
 
       - name: Typecheck
         run: npm run typecheck

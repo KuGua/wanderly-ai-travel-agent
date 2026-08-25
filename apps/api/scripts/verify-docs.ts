@@ -129,12 +129,12 @@ async function checkSkillRuntimeMatches(): Promise<void> {
   // Static imports; we never call the handler. This triggers module-level
   // code only (Zod schema construction + Skill object literal).
   const skillModules = [
-    "src/skills/personal/profile-memory-skill.ts",
-    "src/skills/personal/profile-change-proposal-skill.ts",
-    "src/skills/personal/consent-explanation-skill.ts",
-    "src/skills/personal/thread-recall-skill.ts",
-    "src/skills/shared/plan-comparison-skill.ts",
-    "src/skills/shared/readiness-skill.ts",
+    "../src/skills/personal/profile-memory-skill.ts",
+    "../src/skills/personal/profile-change-proposal-skill.ts",
+    "../src/skills/personal/consent-explanation-skill.ts",
+    "../src/skills/personal/thread-recall-skill.ts",
+    "../src/skills/shared/plan-comparison-skill.ts",
+    "../src/skills/shared/readiness-skill.ts",
   ];
 
   const skillsByName = new Map<string, {
@@ -193,17 +193,14 @@ async function checkSkillRuntimeMatches(): Promise<void> {
 
     const derivedName = deriveSkillNameFromPath(rel);
     const expectedName = fm.name ?? derivedName;
-    const runtimeName = expectedName?.startsWith(`${fm.agent}.`)
-      ? expectedName.slice(fm.agent.length + 1)
-      : expectedName;
-    const runtime = skillsByName.get(runtimeName ?? "");
+    const runtime = skillsByName.get(expectedName ?? "");
     if (!runtime) {
-      fail(rel, `no runtime Skill with name "${runtimeName}" registered`);
+      fail(rel, `no runtime Skill with name "${expectedName}" registered`);
       continue;
     }
 
-    if (runtime.name !== runtimeName) {
-      fail(rel, `runtime name "${runtime.name}" != documented runtime name "${runtimeName}"`);
+    if (runtime.name !== expectedName) {
+      fail(rel, `runtime name "${runtime.name}" != doc name "${expectedName}"`);
     }
     if (runtime.version !== fm.name && !text.includes(`| \`version\` | \`${runtime.version}\` |`)) {
       fail(rel, `runtime version "${runtime.version}" not present in doc table`);
@@ -214,9 +211,9 @@ async function checkSkillRuntimeMatches(): Promise<void> {
     if (!text.includes(`| \`needsConfirm\` | \`${runtime.needsConfirm}\` |`)) {
       fail(rel, `runtime needsConfirm ${runtime.needsConfirm} not present in doc table`);
     }
-    const missingTools = runtime.allowedTools.filter(tool => !text.includes(`"${tool}"`));
-    if (missingTools.length > 0) {
-      fail(rel, `runtime allowedTools [${missingTools.join(", ")}] missing from doc`);
+    const allowedListText = runtime.allowedTools.join(", ");
+    if (!text.includes(allowedListText)) {
+      fail(rel, `runtime allowedTools [${allowedListText}] not present verbatim in doc`);
     }
   }
 }
@@ -261,7 +258,7 @@ function checkFrameworkCoverage(
     }
   }
 
-  // SkillScope coverage
+  // SkillScope coverage (7 values)
   const scopes = extractUnionAfter(source, "SkillScope");
   if (scopes.length > 0) {
     for (const s of scopes) {
@@ -281,7 +278,7 @@ function checkFrameworkCoverage(
     }
   }
 
-  // AuditAction coverage
+  // AuditAction coverage (14 values)
   const auditActions = extractUnionAfter(source, "AuditAction");
   if (auditActions.length > 0) {
     for (const action of auditActions) {
