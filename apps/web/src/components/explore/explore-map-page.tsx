@@ -35,6 +35,9 @@ export function ExploreMapPage() {
   const inspirationsRef = useRef<Destination[]>([]);
   const inspirationSequenceRef = useRef(0);
   const chatCameraActiveRef = useRef(false);
+  const chatOpenRef = useRef(false);
+  const chatSelectedPinIdRef = useRef<string | null>(null);
+  const preserveChatCameraOnCloseRef = useRef(false);
   const journeyTimersRef = useRef<number[]>([]);
   const [mapReady, setMapReady] = useState(false);
   const [mapUnavailable, setMapUnavailable] = useState(false);
@@ -58,6 +61,17 @@ export function ExploreMapPage() {
     clearJourneyTimers();
     setSelected(destination);
     setExploreState("SELECTED");
+    if (chatOpenRef.current) {
+      if (chatSelectedPinIdRef.current === destination.id) {
+        preserveChatCameraOnCloseRef.current = true;
+        chatOpenRef.current = false;
+        chatSelectedPinIdRef.current = null;
+        setChatOpen(false);
+      } else {
+        chatSelectedPinIdRef.current = destination.id;
+      }
+      return;
+    }
     if (destination.kind === "fixture") {
       mapRef.current?.flyTo({ center: destination.coordinates, zoom: 4.8, duration: reducedMotion() ? 0 : 1600 });
     }
@@ -205,6 +219,11 @@ export function ExploreMapPage() {
 
     if (!chatOpen) {
       if (chatCameraActiveRef.current) {
+        if (preserveChatCameraOnCloseRef.current) {
+          preserveChatCameraOnCloseRef.current = false;
+          chatCameraActiveRef.current = false;
+          return;
+        }
         map.easeTo({ padding: { top: 0, right: 0, bottom: 0, left: 0 }, duration: reducedMotion() ? 0 : 450 });
         chatCameraActiveRef.current = false;
       }
@@ -266,6 +285,22 @@ export function ExploreMapPage() {
     });
   }
 
+  function openChat() {
+    chatOpenRef.current = true;
+    chatSelectedPinIdRef.current = null;
+    setChatOpen(true);
+  }
+
+  function dismissChat() {
+    clearJourneyTimers();
+    chatOpenRef.current = false;
+    chatSelectedPinIdRef.current = null;
+    preserveChatCameraOnCloseRef.current = false;
+    setChatOpen(false);
+    setSelected(null);
+    setExploreState("IDLE");
+  }
+
   const managedInspirations = pinScope === "all" || !manageAnchorCoordinates
     ? inspirations
     : inspirations.filter((inspiration) => distanceInKm(inspiration.coordinates, manageAnchorCoordinates) <= 50);
@@ -299,10 +334,6 @@ export function ExploreMapPage() {
           </button>
         </div>
       </header>
-
-      <button type="button" onClick={() => mapRef.current?.resetNorth({ duration: reducedMotion() ? 0 : 450 })} aria-label="Reset map compass" title="Reset map compass" className={`absolute left-4 z-40 grid size-12 place-items-center rounded-full bg-sidebar/95 text-white shadow-lg backdrop-blur transition-[bottom] duration-500 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50 md:hidden ${chatOpen ? "bottom-[calc(43dvh+1rem)]" : "bottom-20"}`}>
-        <Compass aria-hidden="true" className="size-5" />
-      </button>
 
       {helpOpen ? (
         <aside className="absolute right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] rounded-[20px] bg-card/95 p-4 text-sm leading-6 shadow-xl backdrop-blur sm:right-6 sm:top-24">
@@ -412,7 +443,9 @@ export function ExploreMapPage() {
         </aside>
       ) : null}
       <TravelAgentChat
-        onOpenChange={setChatOpen}
+        open={chatOpen}
+        onOpen={openChat}
+        onDismiss={dismissChat}
         selectedPlace={selected ? { name: selected.name, context: selected.country } : null}
       />
     </main>

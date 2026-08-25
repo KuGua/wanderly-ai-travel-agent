@@ -234,11 +234,6 @@
 }
 
 @media (max-width: 639px) {
-  .wanderly-explore-map .maplibregl-ctrl-bottom-left {
-    bottom: 5rem;
-  }
-
-  .wanderly-explore-map:has([role="dialog"]) .maplibregl-ctrl-bottom-left,
   .wanderly-explore-map:has([role="dialog"]) .maplibregl-ctrl-bottom-right {
     bottom: calc(43dvh + 0.5rem);
   }
