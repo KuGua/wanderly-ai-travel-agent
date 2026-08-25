@@ -31,6 +31,9 @@ const FORBIDDEN_LABEL_KEYS = new Set([
   "userId", "tripId", "planId", "bookingId", "correlationId", "requestId",
   "orchestrationRequestId", "message", "timestamp", "name", "nationality",
   "destination", "origin", "model",
+  // Defense in depth: per PRD FR-7.3, conversationId (and its runtime
+  // alias threadId) must never appear as a metric label.
+  "conversationId", "threadId",
 ]);
 
 export type MetricProvider = "openai" | "gemini" | "openai-compatible" | "mock";

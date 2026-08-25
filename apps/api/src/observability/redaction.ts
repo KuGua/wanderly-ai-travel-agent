@@ -5,7 +5,7 @@
  * the depth budget collapse to "[REDACTED]" as well.
  */
 
-export const DEFAULT_REDACT_KEYS = /^(passportNumber|dateOfBirth|nationality)$/i;
+export const DEFAULT_REDACT_KEYS = /^(passportNumber|dateOfBirth|nationality|body|message|privateMessage|redactedSummary)$/i;
 
 export interface RedactOptions {
   depth?: number;

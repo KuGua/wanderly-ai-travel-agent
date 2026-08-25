@@ -132,6 +132,7 @@ async function checkSkillRuntimeMatches(): Promise<void> {
     "../src/skills/personal/profile-memory-skill.ts",
     "../src/skills/personal/profile-change-proposal-skill.ts",
     "../src/skills/personal/consent-explanation-skill.ts",
+    "../src/skills/personal/thread-recall-skill.ts",
     "../src/skills/shared/plan-comparison-skill.ts",
     "../src/skills/shared/readiness-skill.ts",
   ];
@@ -354,6 +355,7 @@ function checkSkillFailureModes(): void {
       "personal.profile.memory": ["INPUT_INVALID", "OUTPUT_INVALID", "TIMEOUT", "TOOL_NOT_ALLOWED"],
       "personal.profile.change_proposal": ["INPUT_INVALID", "OUTPUT_INVALID", "TIMEOUT"],
       "personal.consent.explanation": ["INPUT_INVALID", "OUTPUT_INVALID", "TIMEOUT", "TOOL_NOT_ALLOWED"],
+      "personal.thread.recall": ["INPUT_INVALID", "OUTPUT_INVALID", "TIMEOUT", "TOOL_NOT_ALLOWED"],
     };
     const requiredCodes = required[fm.name ?? ""] ?? [];
     for (const code of requiredCodes) {

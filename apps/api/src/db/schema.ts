@@ -24,6 +24,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "BOOKING_SUBMIT", "BOOKING_RESULT",
   "CHANGE_EVENT",
   "VISA_CHECK",
+  "CHAT_THREAD_CREATE", "CHAT_THREAD_DELETE", "CHAT_MESSAGE_APPEND",
   "SKILL_INVOKE", "AGENT_RUN",
 ]);
 
@@ -263,6 +264,33 @@ export const outboxEvents = pgTable("outbox_events", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   processedAt: timestamp("processed_at", { withTimezone: true }),
 });
+
+// ─── Chat Threads (owner-only private conversation) ────────────────────────
+
+export const chatThreads = pgTable("chat_threads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 256 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+}, (table) => ({
+  ownerIdx: index("chat_threads_owner_user_id_idx").on(table.ownerUserId),
+  tripIdx: index("chat_threads_trip_id_idx").on(table.tripId),
+}));
+
+export const chatMessages = pgTable("chat_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  threadId: uuid("thread_id").references(() => chatThreads.id, { onDelete: "cascade" }).notNull(),
+  senderUserId: uuid("sender_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  role: varchar("role", { length: 16 }).notNull(),
+  body: text("body").notNull(),
+  redactedSummary: text("redacted_summary"),
+  markedSharedByOwner: boolean("marked_shared_by_owner").default(false).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  threadIdx: index("chat_messages_thread_id_idx").on(table.threadId),
+}));
 
 // ─── Agent Runs (LLM gateway observability) ─────────────────────────────────
 
