@@ -33,6 +33,10 @@ export const LOGGER_REDACT_PATHS = [
   "err.request.headers.authorization",
   "err.request.headers['x-sandbox-signature']",
   "err.response.data",
+  "req.body.*.body",
+  "req.body.*.message",
+  "req.body.*.privateMessage",
+  "res.body.*.body",
 ] as const;
 
 export const LOGGER_REDACTION = {
