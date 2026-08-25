@@ -64,7 +64,8 @@ export function layerCaptionFor(
  */
 export type MapStage = "mounting" | "ready" | "unavailable";
 
-export function mapReadinessStage(readiness: MapReadiness, _styleLoaded: boolean): MapStage {
+export function mapReadinessStage(readiness: MapReadiness, styleLoaded: boolean): MapStage {
+  void styleLoaded;
   if (readiness.kind === "loading") return "mounting";
   if (readiness.kind === "unavailable-network") return "unavailable";
   return "ready";

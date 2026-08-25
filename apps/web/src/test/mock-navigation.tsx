@@ -16,28 +16,23 @@ type NextLinkProps = {
   type?: "button" | "submit" | "reset";
 };
 
-// eslint-disable-next-line react-refresh/only-export-components
 export const Link: React.FC<NextLinkProps> = ({ href, children, ...rest }) => {
   return (
-    // eslint-disable-next-line jsx-a11y/anchor-has-content
     <a href={href} {...rest}>
       {children}
     </a>
   );
 };
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function redirect(url: string) {
   // No-op for tests; router state is asserted by the test itself.
   return url;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function usePathname(): string {
   return "/";
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function useRouter() {
   return {
     replace: () => undefined,
@@ -49,7 +44,6 @@ export function useRouter() {
   };
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function getPathname() {
   return "/";
 }

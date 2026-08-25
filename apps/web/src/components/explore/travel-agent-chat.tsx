@@ -51,10 +51,10 @@ export function TravelAgentChat({ open, onOpen, onDismiss, selectedPlace }: Trav
   if (!open) {
     return (
       <>
-      <button type="button" onClick={onOpen} className="absolute bottom-20 right-4 z-40 rounded-full border border-white/80 bg-white/85 px-3 py-1.5 text-[11px] font-bold text-primary shadow-md backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 md:bottom-24 md:right-6">
+      <button type="button" onClick={onOpen} className="absolute bottom-20 right-4 z-40 rounded-full border border-white/80 bg-white/85 px-3 py-1.5 text-[11px] font-bold text-primary shadow-md backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 landscape:bottom-24 landscape:right-6">
         Chat history
       </button>
-      <form onSubmit={submitMessage} className="wanderly-liquid-glass absolute inset-x-3 bottom-3 z-40 flex min-h-14 items-center gap-2 rounded-full p-1.5 pl-4 md:inset-x-auto md:bottom-6 md:right-6 md:w-[min(420px,calc(100%-2rem))]" aria-label="Start a conversation with Wanderly Agent">
+      <form onSubmit={submitMessage} className="wanderly-liquid-glass absolute inset-x-3 bottom-3 z-40 flex min-h-14 items-center gap-2 rounded-full p-1.5 pl-4 landscape:inset-x-auto landscape:bottom-6 landscape:right-6 landscape:w-[min(420px,calc(100%-2rem))]" aria-label="Start a conversation with Wanderly Agent">
         <Sparkles aria-hidden="true" className="size-4 shrink-0 text-primary" />
         <input value={draft} onChange={(event) => setDraft(event.target.value)} aria-label="Ask Wanderly" placeholder="Where do you want to go?" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none" />
         <button type="submit" aria-label="Send message" className="grid size-11 shrink-0 place-items-center rounded-full bg-sidebar text-white shadow-[0_8px_24px_rgb(8_47_63/28%)] transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70">
@@ -66,8 +66,8 @@ export function TravelAgentChat({ open, onOpen, onDismiss, selectedPlace }: Trav
   }
 
   const conversation = (
-    <aside role="dialog" aria-label="Wanderly Agent conversation" data-expanded={expanded ? "true" : "false"} className={`flex flex-col overflow-hidden shadow-[0_28px_90px_rgb(8_47_63/28%)] transition-[inset,height,border-radius] duration-300 ${expanded ? "fixed inset-0 z-[100] h-dvh rounded-none" : "absolute inset-x-3 bottom-3 z-50 h-[43dvh] min-h-[300px] rounded-[28px] md:inset-y-6 md:left-auto md:right-6 md:h-auto md:min-h-0 md:w-[min(420px,calc(100%-2rem))]"}`}>
-      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden border-x border-t border-white/80 bg-white md:border ${expanded ? "rounded-none" : "rounded-t-[28px] md:rounded-[28px]"}`}>
+    <aside role="dialog" aria-label="Wanderly Agent conversation" data-expanded={expanded ? "true" : "false"} className={`flex flex-col overflow-hidden shadow-[0_28px_90px_rgb(8_47_63/28%)] transition-[inset,height,width,border-radius] duration-300 ${expanded ? "fixed inset-0 z-[100] h-dvh rounded-none" : "absolute inset-x-3 bottom-3 z-50 h-[60dvh] min-h-[300px] rounded-[28px] landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}`}>
+      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden border-x border-t border-white/80 bg-white landscape:border ${expanded ? "rounded-none" : "rounded-t-[28px] landscape:rounded-[28px]"}`}>
         <header className="relative flex items-center gap-2.5 border-b border-[#dbe8e5] px-3 pb-1 pt-2.5">
           <button type="button" onClick={() => setExpanded((current) => !current)} aria-label={expanded ? "Collapse conversation" : "Expand conversation"} className="absolute left-1/2 top-1 -translate-x-1/2 rounded-full bg-muted/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">
             {expanded ? "Collapse" : "Expand"}

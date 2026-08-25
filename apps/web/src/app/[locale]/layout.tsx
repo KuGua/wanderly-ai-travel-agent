@@ -18,11 +18,7 @@ export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
 }
 
-export async function generateMetadata({
-  params,
-}: {
-  params: Promise<{ locale: string }>;
-}): Promise<Metadata> {
+export async function generateMetadata(): Promise<Metadata> {
   // Brand stays locale-invariant; page-specific titles are set in page-level generateMetadata.
   return {
     title: { default: "Wanderly", template: "%s · Wanderly" },

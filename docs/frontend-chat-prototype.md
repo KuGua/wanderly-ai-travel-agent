@@ -8,10 +8,14 @@ without claiming that an Agent API response has occurred.
 
 ## Current behavior
 
-- Desktop shows a liquid-glass message capsule at the lower right. Sending a
-  non-empty message opens a fixed white panel along the right side.
-- Mobile shows the capsule above the bottom navigation. Sending opens a fixed
-  panel at 43% of the viewport height; the Explore recommendation card is
+- Landscape layouts show a liquid-glass message capsule at the lower right. Sending a
+  non-empty message opens a fixed white panel along the right side. The panel
+  keeps a 2:3 width-to-height ratio: narrower landscape widths use roughly 2/5 of
+  the viewport bottom edge and scale both dimensions together, while larger
+  fullscreen layouts are capped at 620 px wide and 852 px high.
+- Portrait layouts show the capsule above the bottom navigation. Sending opens a fixed
+  panel at 3/5 of the viewport height so it scales with different portrait
+  aspect ratios; the Explore recommendation card is
   hidden on mobile. The map camera moves into the uncovered
   area: without a selected pin the globe scales to about 80%; with a selected
   pin the zoom is preserved and that coordinate is centered above the panel.
@@ -22,6 +26,12 @@ without claiming that an Agent API response has occurred.
   prompt and liquid-glass input.
 - Map drag and zoom remain enabled while the conversation is open. The compact
   header omits secondary copy so the map keeps more vertical space.
+- Landscape camera padding follows the panel's measured width. The globe shifts
+  left and scales to fit the uncovered area; selected pins stay centered in
+  that area. The calculation reruns on viewport resize without overriding
+  subsequent manual map gestures.
+- The former “Explore the world” recommendation card is removed so it cannot
+  overlap the conversation composer; named markers remain available on-map.
 - Compact map attribution starts as an `i` control. Clicking it expands the map
   sources; clicking it again collapses them.
 - Closing the panel returns to the capsule. Messages are held only in React
