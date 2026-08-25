@@ -28,6 +28,7 @@ export function ExploreMapPage() {
   const mapRef = useRef<MapLibreMap | null>(null);
   const markersRef = useRef<MapLibreMarker[]>([]);
   const inspirationMarkerRef = useRef<MapLibreMarker | null>(null);
+  const inspirationCoordinatesRef = useRef<[number, number] | null>(null);
   const journeyTimersRef = useRef<number[]>([]);
   const [mapReady, setMapReady] = useState(false);
   const [mapUnavailable, setMapUnavailable] = useState(false);
@@ -45,7 +46,9 @@ export function ExploreMapPage() {
     clearJourneyTimers();
     setSelected(destination);
     setExploreState("SELECTED");
-    mapRef.current?.flyTo({ center: destination.coordinates, zoom: 4.8, duration: reducedMotion() ? 0 : 1600 });
+    if (destination.kind === "fixture") {
+      mapRef.current?.flyTo({ center: destination.coordinates, zoom: 4.8, duration: reducedMotion() ? 0 : 1600 });
+    }
   }, [clearJourneyTimers]);
 
   useEffect(() => {
@@ -90,41 +93,42 @@ export function ExploreMapPage() {
         });
 
         map.on("click", (event) => {
-          const inspiration: Destination = {
-            name: "Pinned place",
-            country: `${event.lngLat.lat.toFixed(3)}°, ${event.lngLat.lng.toFixed(3)}°`,
-            coordinates: [event.lngLat.lng, event.lngLat.lat],
-            note: "This is an unverified, session-only inspiration. It has no live price, availability, visa or booking data.",
-            kind: "inspiration",
-          };
+          const inspiration = inspirationAt([event.lngLat.lng, event.lngLat.lat]);
 
-          inspirationMarkerRef.current?.remove();
-          const marker = document.createElement("button");
-          marker.type = "button";
-          marker.className = "wanderly-map-marker wanderly-map-marker--inspiration";
-          marker.setAttribute("aria-label", `Session-only inspiration at ${inspiration.country}`);
-          marker.innerHTML = "<span>Private inspiration</span>";
-          marker.addEventListener("click", (markerEvent) => {
-            markerEvent.stopPropagation();
-            selectDestination(inspiration);
-          });
-          inspirationMarkerRef.current = new maplibregl.Marker({ element: marker, anchor: "bottom" })
-            .setLngLat(inspiration.coordinates)
-            .addTo(map);
+          inspirationCoordinatesRef.current = inspiration.coordinates;
+          if (!inspirationMarkerRef.current) {
+            const { anchor, button } = markerElement("Private inspiration", true);
+            button.setAttribute("aria-label", "Session-only private inspiration");
+            button.addEventListener("click", (markerEvent) => {
+              markerEvent.stopPropagation();
+              if (inspirationCoordinatesRef.current) {
+                selectDestination(inspirationAt(inspirationCoordinatesRef.current));
+              }
+            });
+            inspirationMarkerRef.current = new maplibregl.Marker({ element: anchor, anchor: "bottom" })
+              .setLngLat(inspiration.coordinates)
+              .addTo(map);
+          } else {
+            inspirationMarkerRef.current.setLngLat(inspiration.coordinates);
+          }
           selectDestination(inspiration);
         });
 
+        const syncInspirationPosition = () => {
+          if (inspirationMarkerRef.current && inspirationCoordinatesRef.current) {
+            inspirationMarkerRef.current.setLngLat(inspirationCoordinatesRef.current);
+          }
+        };
+        map.on("move", syncInspirationPosition);
+
         markersRef.current = destinations.map((destination) => {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "wanderly-map-marker";
+          const { anchor, button } = markerElement(destination.name);
           button.setAttribute("aria-label", `Explore ${destination.name}, ${destination.country}`);
-          button.innerHTML = `<span>${destination.name}</span>`;
           button.addEventListener("click", (event) => {
             event.stopPropagation();
             selectDestination(destination);
           });
-          return new maplibregl.Marker({ element: button, anchor: "bottom" })
+          return new maplibregl.Marker({ element: anchor, anchor: "bottom" })
             .setLngLat(destination.coordinates)
             .addTo(map);
         });
@@ -146,6 +150,7 @@ export function ExploreMapPage() {
       markersRef.current = [];
       inspirationMarkerRef.current?.remove();
       inspirationMarkerRef.current = null;
+      inspirationCoordinatesRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -276,6 +281,31 @@ export function ExploreMapPage() {
 
 function reducedMotion() {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function markerElement(label: string, inspiration = false) {
+  const anchor = document.createElement("div");
+  anchor.className = "wanderly-map-marker-anchor";
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = inspiration
+    ? "wanderly-map-marker wanderly-map-marker--inspiration"
+    : "wanderly-map-marker";
+  button.innerHTML = `<span>${label}</span>`;
+  anchor.append(button);
+
+  return { anchor, button };
+}
+
+function inspirationAt(coordinates: [number, number]): Destination {
+  return {
+    name: "Pinned place",
+    country: `${coordinates[1].toFixed(3)}°, ${coordinates[0].toFixed(3)}°`,
+    coordinates,
+    note: "This is an unverified, session-only inspiration. It has no live price, availability, visa or booking data.",
+    kind: "inspiration",
+  };
 }
 
 function stateLabel(state: ExploreState) {
