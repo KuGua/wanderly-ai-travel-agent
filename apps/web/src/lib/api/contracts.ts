@@ -76,9 +76,33 @@ export const apiErrorResponseSchema = z.object({
   correlationId: z.string().uuid(),
 });
 
+export const locationReferenceInputSchema = z.object({
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
+}).strict();
+
+const locationReferenceBaseSchema = z.object({
+  source: z.literal("Natural Earth + GeoNames"),
+  datasetVersion: z.string().min(1),
+  checkedAt: z.string().datetime(),
+  isTravelFact: z.literal(false),
+});
+
+export const locationReferenceResponseSchema = z.discriminatedUnion("outcome", [
+  locationReferenceBaseSchema.extend({
+    outcome: z.literal("REFERENCE"),
+    country: z.string().min(1), countryCode: z.string().length(2).nullable(),
+    admin1: z.string().min(1).nullable(), admin1Code: z.string().min(1).nullable(),
+    nearestCity: z.string().min(1).nullable(), distanceKm: z.number().nonnegative().nullable(),
+  }),
+  locationReferenceBaseSchema.extend({ outcome: z.literal("NO_REFERENCE") }),
+]);
+
 export type Profile = z.infer<typeof profileSchema>;
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileInputSchema>;
 export type UpdateProfileResponse = z.infer<typeof updateProfileResponseSchema>;
 export type TripSummary = z.infer<typeof tripSummarySchema>;
 export type TripsResponse = z.infer<typeof tripsResponseSchema>;
+export type LocationReferenceInput = z.infer<typeof locationReferenceInputSchema>;
+export type LocationReferenceResponse = z.infer<typeof locationReferenceResponseSchema>;

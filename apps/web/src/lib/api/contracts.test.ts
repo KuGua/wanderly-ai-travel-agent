@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { profileResponseSchema, tripsResponseSchema } from "./contracts";
+import { locationReferenceResponseSchema, profileResponseSchema, tripsResponseSchema } from "./contracts";
 import { testProfileResponse, testTripsResponse } from "@/test/api-fixtures";
 
 describe("API contracts", () => {
@@ -25,5 +25,21 @@ describe("API contracts", () => {
         actionRequired: true,
       }],
     })).toThrow();
+  });
+
+  it("accepts only an explicitly non-authoritative location reference", () => {
+    expect(locationReferenceResponseSchema.parse({
+      outcome: "REFERENCE",
+      country: "Portugal",
+      countryCode: "PT",
+      admin1: "Lisbon",
+      admin1Code: "PT-11",
+      nearestCity: "Lisbon",
+      distanceKm: 0,
+      source: "Natural Earth + GeoNames",
+      datasetVersion: "2026-08-demo.1",
+      checkedAt: "2026-08-25T00:00:00.000Z",
+      isTravelFact: false,
+    }).isTravelFact).toBe(false);
   });
 });

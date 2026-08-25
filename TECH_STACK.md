@@ -42,7 +42,7 @@ Amazon RDS for PostgreSQL
 | 主数据库 | **Amazon RDS for PostgreSQL** + SQL migrations + Drizzle ORM | 需要事务、关系约束、审计和版本一致性：Profile、用户私有对话、字段级 consent、两个出发地、候选方案、三人确认和 callback 去重必须共享一个权威真相源。RDS PostgreSQL 支持 VPC、SSL、快照与时间点恢复。[AWS RDS PostgreSQL](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html) | SQLite 作为云端主库、NoSQL 作为业务真相。 |
 | Agent | **OpenAI Agents SDK（TypeScript）**，运行在 App Runner；`ModelGateway` 隔离 provider | 部署到 AWS 不妨碍使用 SDK。Agent 只调用类型化工具；SDK 不是授权、确认或持久状态机。 | 让模型直接读写数据库、付款或自由互聊的多 Agent 群。 |
 | 工具与模型边界 | Zod schema、structured outputs、server-side policy gate | 对话 archive 仅由所有者读取；所有工具只获得当前 `constraint_snapshot` 的最小授权字段，模型仅接收当前请求和用户明确选择的最小上下文；模型输出不直接成为业务真相。 | 把 Profile/私聊全文放进长 prompt、共享 snapshot、遥测或向前端暴露供应商 key。 |
-| 旅行与数据 API | Amadeus Test Flight/Hotel、openrouteservice Routing、Frankfurter；通过 provider adapters | 恰好覆盖候选比较所需的 Flight/Stay/Ground/预算归一化，并能替换数据源。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA。 |
+| 旅行与数据 API | Amadeus Test Flight/Hotel、openrouteservice Routing、Frankfurter；通过 provider adapters；版本化离线地图位置参考数据 | 前三者覆盖候选比较；离线位置参考仅将用户显式点击的坐标映射为非权威国家/最近城市上下文，不成为旅行事实。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA；地图位置参考不得变成地址、POI 或旅行 provider。 |
 | Visa / entry | 官方核验下一步；未来可接 Sherpa/IATA Timatic adapter | 未配置可靠数据源时只展示核验缺口与官方核验下一步。 | 以 LLM 或 Wikipedia 推断签证、代办、法律结论。 |
 | 异步与编排 | MVP 用 PostgreSQL 持久状态机、idempotency key、transactional outbox 和同步 sandbox | 当前流程是确定性 demo；不额外引入 workflow 平台，仍能使 plan 失效、三人确认和 sandbox callback 可验证。 | Temporal Cloud、Step Functions、Redis 队列同时进入 MVP。 |
 | 可观测性 | OpenTelemetry + CloudWatch；结构化日志和低基数业务指标 | 以 `trip_id`、`plan_version`、`run_id`、`orchestration_request_id` 关联结果；日志不含私聊、国籍明文、证件号、支付数据。 | 先建独立数据湖或全套企业 APM。 |

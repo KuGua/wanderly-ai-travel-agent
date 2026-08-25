@@ -72,6 +72,7 @@ Authorization: Bearer <cognito-access-token>
 - **基于授权的数据共享** — 按字段、范围和行程授予/撤回授权。
 - **约束快照** — 每轮规划使用不可变的已授权数据快照。
 - **Live provider 边界** — 未配置或不可用的航班/住宿/地面交通能力显式返回 unavailable；生产路径不生成静态报价或证据。
+- **离线地图位置参考** — `POST /api/v1/explore/location-reference` 仅处理用户显式点击的坐标，返回来源化国家、可选省/州和最近主要城市。它不是地址、旅行候选或 provider 事实，且坐标不进入日志、指标、trace、审计或数据库；参见 [位置参考数据](../../docs/location-reference-data.md)。
 - **规划控制平面** — `ModelGateway` 输出在写入前必须通过严格结构、snapshot 字段授权、路线边界、来源完整性与 provider evidence 精确匹配校验；失败返回 correlation-aware `422`，且不创建 plan。
 - **Model/Skill integration** — `gateway-factory.ts` 只配置 Gemini、OpenAI 或 OpenAI-compatible `LLMGateway`；LLM 路径记录安全的 model/prompt version 与 Agent run，provider、timeout 或 schema 失败时 fail closed。结构化模型输出仍须通过最终控制平面校验。
 - **Owner-only Personal Agent 对话** — `/threads/:threadId/turns` 通过 `thread.recall → travel.conversation → ModelGateway` 生成并原子持久化 USER/ASSISTANT；相同 request ID 幂等。不支持的实时事实问题返回确定性 `SAFE_REFUSAL`；模型失败返回受控错误且不写消息。owner UI 可读取原始会话，但安全 recall、audit、metrics 与日志不接收正文。

@@ -179,6 +179,13 @@
     "geographyNote": "This is a map label, not a verified travel candidate. It has no price, availability, visa or booking data.",
     "inspirationName": "Pinned place {n}",
     "inspirationNote": "This is an unverified, session-only inspiration. It has no live price, availability, visa or booking data.",
+    "locationReference": "Offline map reference: {city}, {region}, {country}. It is not an address or travel fact.",
+    "locationReferenceNoCity": "no nearby indexed city",
+    "locationReferenceNoRegion": "no indexed state or province",
+    "locationReferenceLoading": "Finding an offline map reference…",
+    "locationReferenceUnavailable": "Offline map reference is unavailable. Your private session pin is still saved.",
+    "locationReferenceNote": "This is an offline map reference, not an address, travel candidate, price, availability, visa or booking fact.",
+    "locationReferenceDataPrefix": "Data:",
     "markerExploreAria": "Explore {name}, {country}",
     "markerOpenAria": "Open {name}",
     "state": {

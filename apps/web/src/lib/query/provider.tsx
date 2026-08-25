@@ -43,3 +43,8 @@ export function useTravelApi(): TravelApi {
   }
   return configuration.api;
 }
+
+/** Optional for session-only UI that must remain usable before API wiring. */
+export function useOptionalTravelApi(): TravelApi | null {
+  return useContext(TravelApiContext)?.api ?? null;
+}

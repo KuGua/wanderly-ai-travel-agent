@@ -36,6 +36,44 @@ No auth required.
 
 ---
 
+## Explore location reference
+
+### `POST /explore/location-reference`
+
+Resolve one user-explicit map click using versioned offline data. This endpoint requires
+the normal Cognito access token. It never stores the coordinate and the result is a
+non-authoritative map reference, not an address, travel candidate, provider offer or
+booking/visa conclusion.
+
+**Body:**
+
+```json
+{ "latitude": 38.7223, "longitude": -9.1393 }
+```
+
+**Response (`REFERENCE`):**
+
+```json
+{
+  "outcome": "REFERENCE",
+  "country": "Portugal",
+  "countryCode": "PT",
+  "admin1": "Lisbon",
+  "admin1Code": "PT-11",
+  "nearestCity": "Lisbon",
+  "distanceKm": 0,
+  "source": "Natural Earth + GeoNames",
+  "datasetVersion": "2026-08-global.1",
+  "checkedAt": "2026-08-25T00:00:00.000Z",
+  "isTravelFact": false
+}
+```
+
+For ocean or unmatched data, the response has `outcome: "NO_REFERENCE"`. A missing
+or unreadable local dataset returns `503` and never guesses a result.
+
+---
+
 ## Profiles
 
 ### `POST /profiles`

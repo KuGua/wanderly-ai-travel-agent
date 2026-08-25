@@ -4,6 +4,8 @@ import {
   tripsResponseSchema,
   updateProfileInputSchema,
   updateProfileResponseSchema,
+  locationReferenceInputSchema,
+  locationReferenceResponseSchema,
   type UpdateProfileInput,
 } from "./contracts";
 import type { TravelApi } from "./travel-api";
@@ -29,5 +31,12 @@ export class HttpTravelApi implements TravelApi {
 
   getTrips() {
     return this.client.request("/trips", tripsResponseSchema);
+  }
+
+  getLocationReference(input: import("./contracts").LocationReferenceInput) {
+    const body = locationReferenceInputSchema.parse(input);
+    return this.client.request("/explore/location-reference", locationReferenceResponseSchema, {
+      method: "POST", body: JSON.stringify(body),
+    });
   }
 }

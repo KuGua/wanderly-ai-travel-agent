@@ -179,6 +179,13 @@
     "geographyNote": "这是地图标签，并非已验证的旅行候选。其价格、可达性、签证或预订数据均为空。",
     "inspirationName": "已标记地点 {n}",
     "inspirationNote": "这是未经验证的、仅限本次会话的灵感。其实时价格、可达性、签证或预订数据均为空。",
+    "locationReference": "离线地图参考：{country}，{region}，附近城市 {city}。这不是地址或旅行事实。",
+    "locationReferenceNoCity": "未找到附近的已索引城市",
+    "locationReferenceNoRegion": "未找到已索引的省/州",
+    "locationReferenceLoading": "正在查找离线地图参考…",
+    "locationReferenceUnavailable": "离线地图参考暂不可用；私人会话图钉仍会保留。",
+    "locationReferenceNote": "这是离线地图参考，不是地址、旅行候选、价格、可用性、签证或预订事实。",
+    "locationReferenceDataPrefix": "数据来源：",
     "markerExploreAria": "探索 {name}，{country}",
     "markerOpenAria": "打开 {name}",
     "state": {
