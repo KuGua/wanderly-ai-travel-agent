@@ -298,8 +298,8 @@ describe("ExploreMapPage private inspirations", () => {
       countryCode: "CN",
       admin1: "Shanghai",
       admin1Code: "CN-SH",
-      nearestCity: "Huangpu",
-      nearestCityCoordinates: { latitude: 31.2378, longitude: 121.4781 },
+      nearestCity: "Shanghai",
+      nearestCityCoordinates: { latitude: 31.22222, longitude: 121.45806 },
       distanceKm: 0.9,
       source: "Natural Earth + GeoNames" as const,
       datasetVersion: "test",
@@ -321,7 +321,7 @@ describe("ExploreMapPage private inspirations", () => {
 
     act(() => window.dispatchEvent(new Event("focus")));
     await waitFor(() => expect(api.getLocationReference).toHaveBeenCalledTimes(4));
-    expect(await screen.findByRole("heading", { name: "Huangpu" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Shanghai" })).toBeInTheDocument();
     expect(mapMock.removedMarkers).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
     expect(screen.getByRole("button", { name: "All pins (1)" })).toBeInTheDocument();
