@@ -35,5 +35,7 @@ describe("CountryBoundaryOverlay fallback", () => {
 
     view.rerender(<CountryBoundaryOverlay map={map} visible />);
     await waitFor(() => expect(view.container.querySelector("path[stroke='#073d50']")).not.toBeNull());
+    expect(map.on).toHaveBeenCalledWith("render", expect.any(Function));
+    expect(map.on).not.toHaveBeenCalledWith("move", expect.any(Function));
   });
 });
