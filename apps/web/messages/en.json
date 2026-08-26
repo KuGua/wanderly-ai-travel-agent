@@ -34,6 +34,7 @@
     "traveler": "Traveler",
     "unconfigured": "Sign-in is not configured",
     "localDevelopment": "Local Development mode",
+    "localDevelopmentInvalid": "Local Development requires a loopback API URL",
     "dialogAria": "Sign in to Wanderly",
     "close": "Close sign-in",
     "heading": "Sign in",

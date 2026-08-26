@@ -9,7 +9,7 @@ import {
   type BrowserAuthService,
 } from "./cognito-browser-auth";
 
-type AuthStatus = "CHECKING" | "LOCAL_DEV" | "UNCONFIGURED" | "SIGNED_OUT" | "SIGNED_IN";
+type AuthStatus = "CHECKING" | "LOCAL_DEV" | "LOCAL_DEV_INVALID" | "UNCONFIGURED" | "SIGNED_OUT" | "SIGNED_IN";
 type AuthError = "SIGN_IN_FAILED" | "CHALLENGE_REQUIRED" | "SIGN_OUT_FAILED" | null;
 
 type AuthContextValue = {
@@ -31,7 +31,7 @@ export function AuthProvider({ children, service: suppliedService }: {
 }) {
   const [service] = useState(() => suppliedService ?? createCognitoBrowserAuth());
   const [status, setStatus] = useState<AuthStatus>(
-    service.localDevelopment ? "LOCAL_DEV" : service.configured ? "CHECKING" : "UNCONFIGURED",
+    service.localDevelopment ? "LOCAL_DEV" : service.localDevelopmentConfigurationInvalid ? "LOCAL_DEV_INVALID" : service.configured ? "CHECKING" : "UNCONFIGURED",
   );
   const [user, setUser] = useState<AuthenticatedBrowserUser | null>(null);
   const [error, setError] = useState<AuthError>(null);
@@ -75,7 +75,7 @@ export function AuthProvider({ children, service: suppliedService }: {
     try {
       await service.signOut();
       setUser(null);
-      setStatus(service.localDevelopment ? "LOCAL_DEV" : service.configured ? "SIGNED_OUT" : "UNCONFIGURED");
+      setStatus(service.localDevelopment ? "LOCAL_DEV" : service.localDevelopmentConfigurationInvalid ? "LOCAL_DEV_INVALID" : service.configured ? "SIGNED_OUT" : "UNCONFIGURED");
       setSessionRevision((current) => current + 1);
       return true;
     } catch {

@@ -18,18 +18,30 @@ import { pinoInstance, correlationChild } from "./observability/telemetry.js";
 import { metrics } from "./observability/metrics.js";
 import { personalTravelAgent } from "./agents/personal-travel-agent.js";
 import { sharedTripAgent } from "./agents/shared-trip-agent.js";
+import {
+  isAllowedLocalDevOrigin,
+  resolveAuthMode,
+  resolveLocalDevAllowedOrigins,
+} from "./middleware/auth-mode.js";
 
 export interface BuildAppOptions {
   verifyAccessToken?: VerifyAccessToken;
 }
 
 export async function buildApp(options: BuildAppOptions = {}) {
+  const authMode = resolveAuthMode();
+  const localDevAllowedOrigins = authMode === "local-dev" ? resolveLocalDevAllowedOrigins() : [];
   const app = Fastify({
     loggerInstance: pinoInstance,
     genReqId: () => randomUUID(),
+    trustProxy: false,
   });
 
-  await app.register(fastifyCors, { origin: true });
+  await app.register(fastifyCors, {
+    origin: authMode === "local-dev"
+      ? (origin, callback) => callback(null, isAllowedLocalDevOrigin(origin, localDevAllowedOrigins))
+      : true,
+  });
 
   await app.register(fastifySwagger, {
     openapi: {
@@ -76,13 +88,21 @@ export async function buildApp(options: BuildAppOptions = {}) {
     );
 
     if (
-      request.url === "/health"
-      || request.url === "/metrics"
-      || request.url.startsWith("/docs")
-      || (request.method === "POST" && request.url.split("?", 1)[0] === "/api/v1/bookings/callback")
-      || (request.method === "POST" && request.url.split("?", 1)[0] === "/api/v1/explore/location-reference")
+      authMode === "local-dev"
+      && isCorsPreflight(request.method, request.headers.origin, request.headers["access-control-request-method"])
+      && !isAllowedLocalDevOrigin(request.headers.origin, localDevAllowedOrigins)
     ) {
+      throw new ApiError(403, "Forbidden", "Local development requests require an allowed browser origin");
+    }
+    if (isAuthenticationExempt(request.method, request.url)) {
       return;
+    }
+    if (
+      authMode === "local-dev"
+      && isUnsafeMethod(request.method)
+      && !isAllowedLocalDevOrigin(request.headers.origin, localDevAllowedOrigins)
+    ) {
+      throw new ApiError(403, "Forbidden", "Local development writes require an allowed browser origin");
     }
     await authMiddleware(request);
   });
@@ -107,6 +127,23 @@ export async function buildApp(options: BuildAppOptions = {}) {
   sharedTripAgent.register();
 
   return app;
+}
+
+function isAuthenticationExempt(method: string, url: string): boolean {
+  const path = url.split("?", 1)[0];
+  return path === "/health"
+    || path === "/metrics"
+    || path.startsWith("/docs")
+    || (method === "POST" && path === "/api/v1/bookings/callback")
+    || (method === "POST" && path === "/api/v1/explore/location-reference");
+}
+
+function isUnsafeMethod(method: string): boolean {
+  return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+}
+
+function isCorsPreflight(method: string, origin: unknown, requestedMethod: unknown): boolean {
+  return method === "OPTIONS" && typeof origin === "string" && typeof requestedMethod === "string";
 }
 
 /**

@@ -8,6 +8,7 @@ export type AuthenticatedBrowserUser = {
 export interface BrowserAuthService {
   readonly configured: boolean;
   readonly localDevelopment: boolean;
+  readonly localDevelopmentConfigurationInvalid?: boolean;
   restoreSession(): Promise<AuthenticatedBrowserUser | null>;
   signIn(username: string, password: string): Promise<AuthenticatedBrowserUser>;
   signOut(): Promise<void>;
@@ -24,6 +25,9 @@ export class CognitoChallengeRequiredError extends Error {
 export function createCognitoBrowserAuth(): BrowserAuthService {
   const authMode = process.env.NEXT_PUBLIC_AUTH_MODE?.trim() || "cognito";
   if (authMode === "local-dev" && process.env.NODE_ENV !== "production") {
+    if (!isLoopbackHttpApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")) {
+      return invalidLocalDevelopmentAuthService;
+    }
     return localDevelopmentAuthService;
   }
 
@@ -71,6 +75,24 @@ export function createCognitoBrowserAuth(): BrowserAuthService {
   };
 }
 
+export function isLoopbackHttpApiBaseUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return parsed.protocol === "http:"
+    && (host === "localhost" || host === "::1" || /^127(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(host))
+    && parsed.pathname === "/"
+    && !parsed.search
+    && !parsed.hash
+    && !parsed.username
+    && !parsed.password;
+}
+
 const unconfiguredAuthService: BrowserAuthService = {
   configured: false,
   localDevelopment: false,
@@ -88,6 +110,18 @@ const localDevelopmentAuthService: BrowserAuthService = {
   restoreSession: async () => null,
   signIn: async () => {
     throw new Error("Cognito sign-in is disabled in local development auth mode");
+  },
+  signOut: async () => undefined,
+  getAccessToken: async () => null,
+};
+
+const invalidLocalDevelopmentAuthService: BrowserAuthService = {
+  configured: false,
+  localDevelopment: false,
+  localDevelopmentConfigurationInvalid: true,
+  restoreSession: async () => null,
+  signIn: async () => {
+    throw new Error("Local development authentication requires a loopback NEXT_PUBLIC_API_BASE_URL");
   },
   signOut: async () => undefined,
   getAccessToken: async () => null,
