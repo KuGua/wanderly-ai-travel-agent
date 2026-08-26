@@ -24,6 +24,7 @@ describe("CountryBoundaryOverlay fallback", () => {
     const map = {
       getContainer: () => ({ clientWidth: 400, clientHeight: 300 }),
       getCenter: () => ({ lng: 0, lat: 0 }),
+      getZoom: () => 2.25,
       project: ([longitude, latitude]: [number, number]) => ({ x: longitude * 10, y: latitude * 10 }),
       on: vi.fn(),
       off: vi.fn(),
@@ -35,7 +36,9 @@ describe("CountryBoundaryOverlay fallback", () => {
 
     view.rerender(<CountryBoundaryOverlay map={map} visible />);
     await waitFor(() => expect(view.container.querySelector("path[stroke='#073d50']")).not.toBeNull());
-    expect(map.on).toHaveBeenCalledWith("render", expect.any(Function));
+    await waitFor(() => expect(map.on).toHaveBeenCalledWith("render", expect.any(Function)));
     expect(map.on).not.toHaveBeenCalledWith("move", expect.any(Function));
+    expect(fetch).toHaveBeenCalledWith("/map-data/country-borders-lod0.geojson");
+    expect(fetch).toHaveBeenCalledWith("/map-data/china-maritime-line.geojson");
   });
 });

@@ -1,7 +1,18 @@
 import type { StyleSpecification } from "maplibre-gl";
 import { describe, expect, it } from "vitest";
 
-import { GEBCO_LAYER_ID, GEBCO_SOURCE_ID, GEBCO_WMS_TILE_URL, solidifyGlobeStyle, WANDERLY_OCEAN_COLOR } from "./map-surface-style";
+import { CHINA_MARITIME_LINE_DATA_URL, COUNTRY_BOUNDARY_LOD_DATA_URLS, GEBCO_LAYER_ID, GEBCO_SOURCE_ID, GEBCO_WMS_TILE_URL, solidifyGlobeStyle, WANDERLY_OCEAN_COLOR } from "./map-surface-style";
+
+describe("country boundary assets", () => {
+  it("uses only local versioned boundary URLs", () => {
+    expect(COUNTRY_BOUNDARY_LOD_DATA_URLS).toEqual({
+      lod0: "/map-data/country-borders-lod0.geojson",
+      lod1: "/map-data/country-borders-lod1.geojson",
+      lod2: "/map-data/country-borders-lod2.geojson",
+    });
+    expect(CHINA_MARITIME_LINE_DATA_URL).toBe("/map-data/china-maritime-line.geojson");
+  });
+});
 
 describe("solidifyGlobeStyle", () => {
   it("adds opaque GEBCO relief above the tuned Natural Earth fallback", () => {

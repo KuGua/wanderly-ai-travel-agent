@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { globalBoundariesWithoutChina, isCoordinateOnVisibleHemisphere, projectCountryBoundaryPaths } from "./country-boundary-overlay";
+import { countryBoundaryLodForZoom, isCoordinateOnVisibleHemisphere, projectCountryBoundaryPaths } from "./country-boundary-overlay";
 
 describe("projectCountryBoundaryPaths", () => {
   it("projects polygon rings into SVG paths without MapLibre GeoJSON sources", () => {
@@ -57,17 +57,23 @@ describe("projectCountryBoundaryPaths", () => {
   });
 });
 
-describe("globalBoundariesWithoutChina", () => {
-  it("lets the China-specific outline replace conflicting Natural Earth features", () => {
-    const collection = globalBoundariesWithoutChina({
-      type: "FeatureCollection",
-      features: ["USA", "CHN", "TWN"].map((code) => ({
-        type: "Feature" as const,
-        properties: { ADM0_A3: code },
-        geometry: { type: "Polygon" as const, coordinates: [] },
-      })),
-    });
+describe("country boundary LODs", () => {
+  it("selects one local mesh for each zoom band", () => {
+    expect(countryBoundaryLodForZoom(0)).toBe("lod0");
+    expect(countryBoundaryLodForZoom(3.4)).toBe("lod1");
+    expect(countryBoundaryLodForZoom(5.5)).toBe("lod2");
+  });
 
-    expect(collection.features.map((feature) => feature.properties?.ADM0_A3)).toEqual(["USA"]);
+  it("projects a shared mesh line only once", () => {
+    const paths = projectCountryBoundaryPaths({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: { class: "country-boundary" },
+        geometry: { type: "MultiLineString", coordinates: [[[1, 2], [3, 4]]] },
+      }],
+    }, ([lng, lat]) => ({ x: lng * 10, y: lat * 10 }), 400);
+
+    expect(paths).toEqual(["M10.00 20.00 L30.00 40.00 "]);
   });
 });

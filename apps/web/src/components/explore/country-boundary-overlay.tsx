@@ -1,26 +1,21 @@
 "use client";
 
 import type { Map as MapLibreMap } from "maplibre-gl";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { CHINA_COUNTRY_BOUNDARY_DATA_URL, GLOBAL_COUNTRY_BOUNDARY_DATA_URL } from "./map-surface-style";
+import { CHINA_MARITIME_LINE_DATA_URL, COUNTRY_BOUNDARY_LOD_DATA_URLS } from "./map-surface-style";
 
 type Projector = (coordinates: [number, number]) => { x: number; y: number };
-type BoundaryData = {
-  global: GeoJSON.FeatureCollection;
-  china: GeoJSON.FeatureCollection | null;
-};
+type BoundaryLod = keyof typeof COUNTRY_BOUNDARY_LOD_DATA_URLS;
 
-const CHINA_NATURAL_EARTH_CODES = new Set(["CHN", "TWN"]);
+const COUNTRY_BOUNDARY_LODS: ReadonlyArray<{ id: BoundaryLod; minZoom: number }> = [
+  { id: "lod0", minZoom: 0 },
+  { id: "lod1", minZoom: 3.4 },
+  { id: "lod2", minZoom: 5.5 },
+];
 
-export function globalBoundariesWithoutChina(collection: GeoJSON.FeatureCollection) {
-  return {
-    ...collection,
-    features: collection.features.filter((feature) => {
-      const code = feature.properties?.ADM0_A3;
-      return typeof code !== "string" || !CHINA_NATURAL_EARTH_CODES.has(code);
-    }),
-  } satisfies GeoJSON.FeatureCollection;
+export function countryBoundaryLodForZoom(zoom: number): BoundaryLod {
+  return [...COUNTRY_BOUNDARY_LODS].reverse().find((lod) => zoom >= lod.minZoom)?.id ?? "lod0";
 }
 
 export function projectCountryBoundaryPaths(
@@ -29,15 +24,27 @@ export function projectCountryBoundaryPaths(
   viewportWidth: number,
   isVisible: (coordinates: [number, number]) => boolean = () => true,
 ): string[] {
-  return collection.features.flatMap((feature) => {
-    if (!feature.geometry) return [];
-    const polygons = feature.geometry.type === "Polygon"
-      ? [feature.geometry.coordinates]
-      : feature.geometry.type === "MultiPolygon"
-        ? feature.geometry.coordinates
-        : [];
-    return polygons.map((polygon) => pathForPolygon(polygon, project, viewportWidth, isVisible)).filter((path): path is string => Boolean(path));
-  });
+  return collection.features.flatMap((feature) => geometryPaths(feature.geometry, project, viewportWidth, isVisible));
+}
+
+function geometryPaths(
+  geometry: GeoJSON.Geometry | null,
+  project: Projector,
+  viewportWidth: number,
+  isVisible: (coordinates: [number, number]) => boolean,
+): string[] {
+  if (!geometry) return [];
+  switch (geometry.type) {
+    case "LineString": return [pathForLine(geometry.coordinates, project, viewportWidth, isVisible)].filter(isPath);
+    case "MultiLineString": return geometry.coordinates.map((line) => pathForLine(line, project, viewportWidth, isVisible)).filter(isPath);
+    case "Polygon": return geometry.coordinates.map((ring) => pathForLine(ring, project, viewportWidth, isVisible)).filter(isPath);
+    case "MultiPolygon": return geometry.coordinates.flatMap((polygon) => polygon.map((ring) => pathForLine(ring, project, viewportWidth, isVisible)).filter(isPath));
+    default: return [];
+  }
+}
+
+function isPath(path: string): path is string {
+  return path.length > 0;
 }
 
 export function isCoordinateOnVisibleHemisphere(coordinates: [number, number], center: [number, number]) {
@@ -48,61 +55,46 @@ export function isCoordinateOnVisibleHemisphere(coordinates: [number, number], c
     + Math.cos(latitude) * Math.cos(centerLatitude) * Math.cos(longitudeDelta) >= 0;
 }
 
-function pathForPolygon(
-  coordinates: number[][][],
-  project: Projector,
-  viewportWidth: number,
-  isVisible: (coordinates: [number, number]) => boolean,
-) {
-  return coordinates.map((ring) => {
-    let previousCoordinate: [number, number] | null = null;
-    let previousPoint: { x: number; y: number } | null = null;
-    let previousVisible = false;
+function pathForLine(coordinates: number[][], project: Projector, viewportWidth: number, isVisible: (coordinates: [number, number]) => boolean) {
+  let previousCoordinate: [number, number] | null = null;
+  let previousPoint: { x: number; y: number } | null = null;
+  let previousVisible = false;
 
-    return ring.reduce<string>((path, coordinate) => {
-      const position: [number, number] = [coordinate[0], coordinate[1]];
-      const visible = isVisible(position);
+  return coordinates.reduce<string>((path, coordinate) => {
+    const position: [number, number] = [coordinate[0], coordinate[1]];
+    const visible = isVisible(position);
 
-      if (!previousCoordinate) {
-        previousCoordinate = position;
-        previousVisible = visible;
-        if (!visible) return path;
-        previousPoint = project(position);
-        return path + "M" + formatPoint(previousPoint) + " ";
-      }
-
-      if (previousVisible && !visible) {
-        const horizonPoint = project(findVisibilityIntersection(previousCoordinate, position, isVisible));
-        path = appendProjectedPoint(path, horizonPoint, previousPoint, viewportWidth, "L");
-        previousPoint = null;
-      } else if (!previousVisible && visible) {
-        const horizonPoint = project(findVisibilityIntersection(previousCoordinate, position, isVisible));
-        path = path + "M" + formatPoint(horizonPoint) + " ";
-        const point = project(position);
-        path = appendProjectedPoint(path, point, horizonPoint, viewportWidth, "L");
-        previousPoint = point;
-      } else if (visible) {
-        const point = project(position);
-        path = appendProjectedPoint(path, point, previousPoint, viewportWidth, "L");
-        previousPoint = point;
-      } else {
-        previousPoint = null;
-      }
-
+    if (!previousCoordinate) {
       previousCoordinate = position;
       previousVisible = visible;
-      return path;
-    }, "");
-  }).join("");
+      if (!visible) return path;
+      previousPoint = project(position);
+      return path + "M" + formatPoint(previousPoint) + " ";
+    }
+    if (previousVisible && !visible) {
+      const horizonPoint = project(findVisibilityIntersection(previousCoordinate, position, isVisible));
+      path = appendProjectedPoint(path, horizonPoint, previousPoint, viewportWidth, "L");
+      previousPoint = null;
+    } else if (!previousVisible && visible) {
+      const horizonPoint = project(findVisibilityIntersection(previousCoordinate, position, isVisible));
+      path = path + "M" + formatPoint(horizonPoint) + " ";
+      const point = project(position);
+      path = appendProjectedPoint(path, point, horizonPoint, viewportWidth, "L");
+      previousPoint = point;
+    } else if (visible) {
+      const point = project(position);
+      path = appendProjectedPoint(path, point, previousPoint, viewportWidth, "L");
+      previousPoint = point;
+    } else {
+      previousPoint = null;
+    }
+    previousCoordinate = position;
+    previousVisible = visible;
+    return path;
+  }, "");
 }
 
-function appendProjectedPoint(
-  path: string,
-  point: { x: number; y: number },
-  previous: { x: number; y: number } | null,
-  viewportWidth: number,
-  preferredCommand: "L" | "M",
-) {
+function appendProjectedPoint(path: string, point: { x: number; y: number }, previous: { x: number; y: number } | null, viewportWidth: number, preferredCommand: "L" | "M") {
   const wrapsAcrossGlobe = previous && Math.abs(point.x - previous.x) > viewportWidth * 0.45;
   const command = path === "" || !previous || wrapsAcrossGlobe ? "M" : preferredCommand;
   return path + command + formatPoint(point) + " ";
@@ -112,24 +104,15 @@ function formatPoint(point: { x: number; y: number }) {
   return point.x.toFixed(2) + " " + point.y.toFixed(2);
 }
 
-function findVisibilityIntersection(
-  start: [number, number],
-  end: [number, number],
-  isVisible: (coordinates: [number, number]) => boolean,
-) {
+function findVisibilityIntersection(start: [number, number], end: [number, number], isVisible: (coordinates: [number, number]) => boolean) {
   const startVisible = isVisible(start);
   let visiblePoint = startVisible ? start : end;
   let hiddenPoint = startVisible ? end : start;
-
   for (let iteration = 0; iteration < 20; iteration += 1) {
     const midpoint = interpolateCoordinate(visiblePoint, hiddenPoint, 0.5);
-    if (isVisible(midpoint)) {
-      visiblePoint = midpoint;
-    } else {
-      hiddenPoint = midpoint;
-    }
+    if (isVisible(midpoint)) visiblePoint = midpoint;
+    else hiddenPoint = midpoint;
   }
-
   return interpolateCoordinate(visiblePoint, hiddenPoint, 0.5);
 }
 
@@ -137,10 +120,7 @@ function interpolateCoordinate(start: [number, number], end: [number, number], p
   const rawLongitudeDelta = end[0] - start[0];
   const normalizedDelta = normalizeLongitude(rawLongitudeDelta);
   const longitudeDelta = normalizedDelta === -180 && rawLongitudeDelta > 0 ? 180 : normalizedDelta;
-  return [
-    normalizeLongitude(start[0] + longitudeDelta * progress),
-    start[1] + (end[1] - start[1]) * progress,
-  ];
+  return [normalizeLongitude(start[0] + longitudeDelta * progress), start[1] + (end[1] - start[1]) * progress];
 }
 
 function normalizeLongitude(longitude: number) {
@@ -152,28 +132,60 @@ function degreesToRadians(value: number) {
 }
 
 export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | null; visible: boolean }) {
-  const [data, setData] = useState<BoundaryData | null>(null);
+  const [lods, setLods] = useState<Partial<Record<BoundaryLod, GeoJSON.FeatureCollection>>>({});
+  const [maritimeLine, setMaritimeLine] = useState<GeoJSON.FeatureCollection | null>(null);
+  const [zoom, setZoom] = useState(0);
+  const requestedLods = useRef(new Set<BoundaryLod>());
   const svgRef = useRef<SVGSVGElement>(null);
   const globalPathRef = useRef<SVGPathElement>(null);
-  const chinaPathRef = useRef<SVGPathElement>(null);
+  const maritimePathRef = useRef<SVGPathElement>(null);
 
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      fetchBoundaryCollection(GLOBAL_COUNTRY_BOUNDARY_DATA_URL),
-      fetchBoundaryCollection(CHINA_COUNTRY_BOUNDARY_DATA_URL).catch(() => null),
-    ]).then(([global, china]) => {
-      if (active) setData({ global, china });
-    })
+    requestedLods.current.add("lod0");
+    void Promise.all([fetchBoundaryCollection(COUNTRY_BOUNDARY_LOD_DATA_URLS.lod0), fetchBoundaryCollection(CHINA_MARITIME_LINE_DATA_URL)])
+      .then(([lod0, maritime]) => {
+        if (!active) return;
+        setLods({ lod0 });
+        setMaritimeLine(maritime);
+      })
       .catch(() => {
-        if (active) setData(null);
+        if (!active) return;
+        setLods({});
+        setMaritimeLine(null);
       });
     return () => { active = false; };
   }, []);
 
   useEffect(() => {
-    if (!map || !data || !visible) return;
+    if (!map) return;
+    let active = true;
+    const loadLodForCurrentZoom = () => {
+      const currentZoom = map.getZoom();
+      setZoom(currentZoom);
+      const lod = countryBoundaryLodForZoom(currentZoom);
+      if (requestedLods.current.has(lod)) return;
+      requestedLods.current.add(lod);
+      void fetchBoundaryCollection(COUNTRY_BOUNDARY_LOD_DATA_URLS[lod]).then((collection) => {
+        if (active) setLods((current) => ({ ...current, [lod]: collection }));
+      }).catch(() => requestedLods.current.delete(lod));
+    };
+    loadLodForCurrentZoom();
+    map.on("zoomend", loadLodForCurrentZoom);
+    return () => {
+      active = false;
+      map.off("zoomend", loadLodForCurrentZoom);
+    };
+  }, [map]);
 
+  const currentBoundary = useMemo(() => {
+    if (!map) return null;
+    const desired = countryBoundaryLodForZoom(zoom);
+    return lods[desired] ?? lods.lod1 ?? lods.lod0 ?? null;
+  }, [lods, map, zoom]);
+
+  useEffect(() => {
+    if (!map || !currentBoundary || !visible) return;
     const redraw = () => {
       const container = map.getContainer();
       const center = map.getCenter();
@@ -183,31 +195,27 @@ export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | nu
         container.clientWidth,
         (coordinates) => isCoordinateOnVisibleHemisphere(coordinates, [center.lng, center.lat]),
       ).join("");
-
       svgRef.current?.setAttribute("viewBox", "0 0 " + container.clientWidth + " " + container.clientHeight);
-      globalPathRef.current?.setAttribute("d", project(data.china ? globalBoundariesWithoutChina(data.global) : data.global));
-      chinaPathRef.current?.setAttribute("d", data.china ? project(data.china) : "");
+      globalPathRef.current?.setAttribute("d", project(currentBoundary));
+      maritimePathRef.current?.setAttribute("d", maritimeLine ? project(maritimeLine) : "");
     };
-
     redraw();
-    // The render event runs after MapLibre updates its camera matrices but
-    // before browser paint, keeping this SVG on the WebGL globe's visual frame.
     map.on("render", redraw);
     map.on("resize", redraw);
     return () => {
       map.off("render", redraw);
       map.off("resize", redraw);
     };
-  }, [data, map, visible]);
+  }, [currentBoundary, map, maritimeLine, visible]);
 
-  if (!map || !data || !visible) return null;
+  if (!map || !currentBoundary || !visible) return null;
   return (
     <svg ref={svgRef} data-wanderly-country-boundaries="true" aria-hidden="true" className="pointer-events-none absolute inset-0 z-[3] size-full overflow-hidden" viewBox={"0 0 " + map.getContainer().clientWidth + " " + map.getContainer().clientHeight}>
-      <g data-boundary-source="natural-earth">
+      <g data-boundary-source="natural-earth-shared-mesh">
         <path ref={globalPathRef} fill="none" stroke="#073d50" strokeOpacity="0.92" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
       </g>
-      <g data-boundary-source="datav-china">
-        <path ref={chinaPathRef} fill="none" stroke="#073d50" strokeOpacity="1" strokeWidth="1.9" vectorEffect="non-scaling-stroke" />
+      <g data-boundary-source="china-maritime-line">
+        <path ref={maritimePathRef} fill="none" stroke="#073d50" strokeOpacity="1" strokeWidth="1.7" vectorEffect="non-scaling-stroke" />
       </g>
     </svg>
   );

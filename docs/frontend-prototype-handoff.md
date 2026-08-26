@@ -112,13 +112,13 @@ AppShell
 
 | 图层 | 数据层与筛选 | 渐进显示 |
 |---|---|---|
-| 洲 / 国家 | Natural Earth / DataV SVG 国界与 `geography-labels.geojson` 标签 | 全球至区域级别 |
+| 洲 / 国家 | Natural Earth 10m 派生的本地共享边界 mesh、独立本地九段线与 `geography-labels.geojson` 标签 | 全球至区域级别 |
 | 省/州 | `boundary_3`（`admin_level` 3–6）与本地标签 | zoom 4.2 起 |
 | 首都 / 城市 | 本地 Natural Earth 标签 | 首都 zoom 2.6、重要城市 zoom 2.8 起，按碰撞规则渐进显示 |
 
 - 国家陆地边界与海岸线共同构成国家视觉轮廓；岛国海岸线不是国际边界数据。Liberty 原始 symbol 文字保持透明但参与标签点击命中；可见名称由 SVG 覆盖层统一处理球面背面裁剪和中英文显示。
 - 用户可独立开关 `Countries`、`States / Provinces` 和 `Cities`，默认开启。控件固定在地图右侧，地点抽屉打开后仍必须可操作。
-- `Countries` 同时控制本地国家线与洲/国家标签；另两个开关分别控制 `boundary_3` 与省州标签、首都/城市标签。边界和标签覆盖层均使用 `map.project()` 随 move/resize 更新，并以当前 map center 做半球可见性判断。`geography-labels.geojson` 由 `apps/web/scripts/build-geography-labels.mjs` 从来源化数据生成，仅作视觉参考，不可用于反向地理编码、旅行事实或候选推断。
+- `Countries` 同时控制本地国家线、独立九段线与洲/国家标签；另两个开关分别控制 `boundary_3` 与省州标签、首都/城市标签。`build-country-boundaries.mjs` 在构建期由 Natural Earth 10m 的单一 topology 生成三档共享 mesh；浏览器按 zoom 懒加载且同一时刻只绘制一档，因此共享国界只描绘一次。边界和标签覆盖层均使用 `map.project()` 随 move/resize 更新，并以当前 map center 做半球可见性判断。`geography-labels.geojson` 由 `apps/web/scripts/build-geography-labels.mjs` 从来源化本地数据生成，仅作视觉参考，不可用于反向地理编码、旅行事实或候选推断；浏览器和标签构建均不调用 DataV。
 - 点击国家、省/州或城市的已渲染标签打开 `Map location` 预览，不创建 pin，也不得由名称、坐标或边界推断旅行价格、库存、签证、可预订性或共享约束。只有空白处点击才创建会话内私有灵感。
 - 遥测最多记录有界的 `feature_class`、`zoom_band` 与 `outcome`；不得写入城市名称、行政区名称、坐标或私有 pin。Map 详情开关（`Countries` / `States / Provinces` / `Cities`）在 style.load 之后始终可见并可被聚焦；style 缺少 `openmaptiles` source 或缺失任一必需图层时，按钮保持原可见态但被禁用，并以一段 `role="status"` 文案说明原因（"does not expose the openmaptiles source" 或 "missing layers: …"）。`/home` 不再静默隐藏控件，避免开发期把"style 不兼容"误判为"功能未实现"。
 

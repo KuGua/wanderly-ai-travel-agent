@@ -426,7 +426,7 @@ export function ExploreMapPage() {
             window.clearTimeout(loadTimeout);
             map.addControl(new maplibregl.AttributionControl({
               compact: window.innerWidth < 640,
-              customAttribution: '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a> · <a href="https://help.aliyun.com/zh/datav/datav-7-0/user-guide/china-state-border-4-0" target="_blank" rel="noopener noreferrer">DataV.GeoAtlas China boundary</a>',
+              customAttribution: '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a> · <a href="https://help.aliyun.com/zh/datav/datav-7-0/user-guide/china-state-border-4-0" target="_blank" rel="noopener noreferrer">China maritime line (local snapshot)</a>',
             }), "bottom-right");
             finalizeReadiness(map, inspectGeographyLayers(map, MAP_STYLE_URL));
             window.queueMicrotask(() => {

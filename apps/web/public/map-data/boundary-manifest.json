@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": null,
+  "sources": [
+    {
+      "name": "Natural Earth Admin 0 Countries",
+      "version": "v5.1.2",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson",
+      "sha256": "239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255",
+      "usage": "Build-time source only; browsers load the derived local line meshes."
+    }
+  ],
+  "datasets": [
+    {
+      "id": "lod0",
+      "path": "map-data/country-borders-lod0.geojson",
+      "minZoom": 0,
+      "maxZoom": 3.4,
+      "simplificationQuantile": 0.005,
+      "bytes": 452181,
+      "gzipBytes": 126507,
+      "sha256": "afae0609b29d620ab01a2fe1c7906a373a24590d2d3b7f892278ee411ee7b2aa"
+    },
+    {
+      "id": "lod1",
+      "path": "map-data/country-borders-lod1.geojson",
+      "minZoom": 3.4,
+      "maxZoom": 5.5,
+      "simplificationQuantile": 0.02,
+      "bytes": 728289,
+      "gzipBytes": 233222,
+      "sha256": "a47dfab47d5eb796791d53f81858907c86a3e00e962b6c72f3fc13e80bfe53de"
+    },
+    {
+      "id": "lod2",
+      "path": "map-data/country-borders-lod2.geojson",
+      "minZoom": 5.5,
+      "maxZoom": null,
+      "simplificationQuantile": 0.035,
+      "bytes": 1004651,
+      "gzipBytes": 336095,
+      "sha256": "a2fe0e24768e40e268172e33eb85a050cec97f017b825871429a4e1aae5ab32f"
+    }
+  ]
+}
