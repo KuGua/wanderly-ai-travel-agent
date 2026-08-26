@@ -9,6 +9,7 @@ export type LocationReference =
       admin1: string | null;
       admin1Code: string | null;
       nearestCity: string | null;
+      nearestCityCoordinates: { latitude: number; longitude: number } | null;
       distanceKm: number | null;
       source: "Natural Earth + GeoNames";
       datasetVersion: string;
@@ -34,12 +35,22 @@ type Admin1Feature = {
   bbox?: [number, number, number, number];
   geometry: { type: "Polygon" | "MultiPolygon"; coordinates: Position[][] | Position[][][] };
 };
-type City = { name: string; countryCode: string; latitude: number; longitude: number };
+type City = {
+  name: string;
+  countryCode: string;
+  latitude: number;
+  longitude: number;
+  featureCode?: string;
+  admin1Code?: string;
+  admin2Code?: string;
+};
 type Manifest = { version: string; checkedAt: string };
 
 const SOURCE = "Natural Earth + GeoNames" as const;
 const MAX_CITY_DISTANCE_KM = 75;
 const MIN_MAJOR_CITY_POPULATION = 50_000;
+const CITY_LEVEL_FEATURE_CODES = new Set(["PPL", "PPLA", "PPLA2", "PPLC"]);
+const AUTHORITY_FEATURE_CODES = new Set(["PPLA", "PPLA2", "PPLC"]);
 
 export class LocationReferenceResolver {
   private readonly countries: CountryFeature[];
@@ -57,7 +68,7 @@ export class LocationReferenceResolver {
     this.manifest = manifest;
     this.citiesByCountry = new Map();
     this.admin1ByCountry = new Map();
-    for (const city of cities) {
+    for (const city of cityLevelProjection(cities)) {
       const grouped = this.citiesByCountry.get(city.countryCode) ?? [];
       grouped.push(city);
       this.citiesByCountry.set(city.countryCode, grouped);
@@ -88,6 +99,9 @@ export class LocationReferenceResolver {
       admin1: region?.properties.name ?? null,
       admin1Code: region?.properties.iso_3166_2 ?? null,
       nearestCity: cityReference?.name ?? null,
+      nearestCityCoordinates: cityReference
+        ? { latitude: cityReference.latitude, longitude: cityReference.longitude }
+        : null,
       distanceKm: cityReference ? roundDistance(cityReference.distanceKm) : null,
       source: SOURCE,
       datasetVersion: this.manifest.version,
@@ -146,8 +160,54 @@ function parseGeoNamesCities(text: string): City[] {
     const isAdministrativeSeat = /^PPLA|^PPLC/.test(featureCode);
     if (!fields[1] || !Number.isFinite(latitude) || !Number.isFinite(longitude) || !/^[A-Z]{2}$/.test(countryCode)
       || (!isAdministrativeSeat && population < MIN_MAJOR_CITY_POPULATION)) return [];
-    return [{ name: fields[1], countryCode, latitude, longitude }];
+    return [{
+      name: fields[1],
+      countryCode,
+      latitude,
+      longitude,
+      featureCode,
+      admin1Code: fields[10] || undefined,
+      admin2Code: fields[11] || undefined,
+    }];
   });
+}
+
+function cityLevelProjection(cities: City[]): City[] {
+  const authorityByAdminArea = new Map<string, City[]>();
+  const authorityByAdmin1 = new Map<string, City[]>();
+  for (const city of cities) {
+    if (!city.featureCode || !AUTHORITY_FEATURE_CODES.has(city.featureCode)) continue;
+    const admin1Key = city.admin1Code ? `${city.countryCode}:${city.admin1Code}` : null;
+    if (admin1Key) {
+      const admin1Seats = authorityByAdmin1.get(admin1Key) ?? [];
+      admin1Seats.push(city);
+      authorityByAdmin1.set(admin1Key, admin1Seats);
+    }
+    const key = adminAreaKey(city);
+    if (!key) continue;
+    const seats = authorityByAdminArea.get(key) ?? [];
+    seats.push(city);
+    authorityByAdminArea.set(key, seats);
+  }
+
+  return cities.filter((city) => {
+    // Tests and callers that provide no GeoNames metadata already represent a city.
+    if (!city.featureCode) return true;
+    if (!CITY_LEVEL_FEATURE_CODES.has(city.featureCode)) return false;
+    if (city.featureCode !== "PPL") return true;
+
+    const key = adminAreaKey(city);
+    if (key) return !authorityByAdminArea.has(key);
+    if (!city.admin1Code) return true;
+    const admin1Seats = authorityByAdmin1.get(`${city.countryCode}:${city.admin1Code}`) ?? [];
+    return !admin1Seats.some((seat) =>
+      haversineKm(city.latitude, city.longitude, seat.latitude, seat.longitude) <= MAX_CITY_DISTANCE_KM);
+  });
+}
+
+function adminAreaKey(city: City): string | null {
+  if (!city.admin1Code || !city.admin2Code) return null;
+  return `${city.countryCode}:${city.admin1Code}:${city.admin2Code}`;
 }
 
 function withBbox(feature: Admin1Feature): Admin1Feature {

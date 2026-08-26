@@ -1,0 +1,80 @@
+{
+  "uid": "ai-travel-agent-correlations",
+  "title": "AI Travel Agent — Trace / Log / Metric correlation",
+  "tags": ["otel", "ai-travel-agent", "mvp"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "trace_id",
+        "type": "textbox",
+        "label": "trace_id",
+        "current": {
+          "value": "",
+          "text": ""
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "1. Tempo — Trace",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "traces",
+      "title": "Trace by trace_id",
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 1 },
+      "options": {
+        "query": {
+          "query": "${trace_id}",
+          "queryType": "traceId"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "2. Logs — by trace_id (pino stdout)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "text",
+      "title": "Logs by trace_id",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 16 },
+      "options": {
+        "mode": "markdown",
+        "content": "Local dev does not stand up Loki. The pino stdout of the API and\n worker containers already carries a `trace_id` field (see\n `apps/api/src/observability/telemetry.ts:62-85`). Run one of:\n\n```bash\n# Single container:\ndocker logs app 2>&1 | jq 'select(.trace_id == \"${trace_id}\")'\n\n# Both API + Worker:\ndocker compose -f docker-compose.yml -f docker-compose.observability.yml \\\n  logs --no-color 2>&1 | jq 'select(.trace_id == \"${trace_id}\")'\n```\n\nIn production, the same `trace_id` is queryable in Grafana Cloud's\n Logs UI via `{job=\"ai-travel-agent-api\"} | json | trace_id=\"${trace_id}\"`."
+      }
+    },
+    {
+      "type": "row",
+      "title": "3. Metrics — — /metrics endpoint",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 25 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "text",
+      "title": "Counters (Prometheus text)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 26 },
+      "options": {
+        "mode": "markdown",
+        "content": "Local dev does not stand up Mimir. The API exposes its registry on\n `GET /metrics` (Prometheus text). Useful snippets:\n\n```bash\n# All series:\ncurl -s http://127.0.0.1:3000/metrics\n\n# A single counter:\ncurl -s http://127.0.0.1:3000/metrics | grep ^agent_skill_runs_total\n\n# Latency histogram:\ncurl -s http://127.0.0.1:3000/metrics | grep ^agent_task_duration_ms\n```\n\nIn production, the same endpoint is scraped by Grafana Cloud Prometheus\n remote-write ingestion; SLO dashboards live in\n `docs/observability-slo.md`."
+      }
+    }
+  ]
+}

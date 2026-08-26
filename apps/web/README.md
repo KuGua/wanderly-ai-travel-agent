@@ -23,28 +23,23 @@ read the current access token at request time and send
 For the complete local browser-to-Agent setup, see
 [`docs/local-development-auth.md`](../../docs/local-development-auth.md).
 
-Copy `.env.example` to `.env.local` and select one data mode:
+Copy `.env.example` to `.env.local`. Until Cognito is available, the team's
+recommended local baseline is the loopback-only `local-dev` mode:
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
-NEXT_PUBLIC_AUTH_MODE=cognito
-NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-east-1_example
-NEXT_PUBLIC_COGNITO_CLIENT_ID=example-public-app-client-id
-NEXT_PUBLIC_DATA_MODE=fixture
+NEXT_PUBLIC_AUTH_MODE=local-dev
 NEXT_PUBLIC_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/liberty
 ```
 
-- `fixture` uses one deterministic, contract-validated example workspace and
-  visibly labels API-backed surfaces `Demo data`.
-- `api` calls Fastify at `${NEXT_PUBLIC_API_BASE_URL}/api/v1`. The Cognito app
-  client must be a public browser client without a client secret and must match
-  the API's `COGNITO_USER_POOL_ID` / `COGNITO_CLIENT_ID` configuration for private
-  features. The offline map location-reference call is the sole anonymous API call;
-  it works without Cognito and returns no persisted user data.
-- Before Cognito is available, a strictly local Web dev server may set
-  `NEXT_PUBLIC_AUTH_MODE=local-dev` only while the API uses its loopback-only
-  `AUTH_MODE=local-dev`. The browser sends no fake bearer token or user ID and
-  displays an explicit Local Development indicator.
+- The Web app calls Fastify at `${NEXT_PUBLIC_API_BASE_URL}/api/v1`. In local-dev,
+  the API base URL must remain loopback; the Web application's Origin must be in
+  the API's `LOCAL_DEV_ALLOWED_ORIGINS`. The browser sends no fake bearer token
+  or user ID and displays an explicit Local Development indicator.
+- When Cognito is available, set `NEXT_PUBLIC_AUTH_MODE=cognito` and configure
+  `NEXT_PUBLIC_COGNITO_USER_POOL_ID` / `NEXT_PUBLIC_COGNITO_CLIENT_ID`. The app
+  client must be public and match the API configuration. The offline map
+  location-reference call remains the sole anonymous API call.
 
 All responses pass through the same Zod schemas. `NEXT_PUBLIC_*` values are
 bundled into browser code and must never contain credentials, private Profile

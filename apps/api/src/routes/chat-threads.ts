@@ -48,7 +48,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
   // Create a new thread
   app.post("/threads", async (request, reply) => {
     const ctx = createRequestContext(
-      request.user.id, request.correlationId, request.traceId, request.clientRequestId,
+      request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
     const body = createThreadSchema.parse(request.body);
 
@@ -104,7 +104,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
   app.post("/threads/:threadId/turns", async (request, reply) => {
     const { threadId } = request.params as { threadId: string };
     const ctx = createRequestContext(
-      request.user.id, request.correlationId, request.traceId, request.clientRequestId,
+      request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
     const input = conversationTurnRequestSchema.parse(request.body);
     const accepted = await acceptConversationTask({
@@ -120,7 +120,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
   app.delete("/threads/:threadId", async (request) => {
     const { threadId } = request.params as { threadId: string };
     const ctx = createRequestContext(
-      request.user.id, request.correlationId, request.traceId, request.clientRequestId,
+      request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
 
     await db.transaction(async (tx) => {
@@ -146,7 +146,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
   app.post("/threads/:threadId/messages", async (request, reply) => {
     const { threadId } = request.params as { threadId: string };
     const ctx = createRequestContext(
-      request.user.id, request.correlationId, request.traceId, request.clientRequestId,
+      request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
     const body = appendMessageSchema.parse(request.body);
 

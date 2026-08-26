@@ -11,6 +11,7 @@ import { modelGateway } from "../../providers/gateway-factory.js";
 import { ModelGatewayError } from "../../providers/llm-gateway.js";
 import {
   chatMessageRoleSchema,
+  conversationIntentSchema,
   conversationPlaceSchema,
   conversationResponseModeSchema,
 } from "../../types/schemas.js";
@@ -18,6 +19,7 @@ import {
 export const travelConversationInputSchema = z.object({
   question: z.string().trim().min(1).max(4000),
   place: conversationPlaceSchema.optional(),
+  intent: conversationIntentSchema.optional(),
   history: z.array(z.object({
     role: chatMessageRoleSchema,
     content: z.string().min(1).max(1000),
@@ -52,6 +54,7 @@ export async function executeTravelConversation(
           question: input.question,
           place: input.place,
           history: input.history,
+          intent: input.intent,
           onDelta,
           signal,
           ctx: ctx.ctx,
@@ -60,6 +63,7 @@ export async function executeTravelConversation(
           question: input.question,
           place: input.place,
           history: input.history,
+          intent: input.intent,
           signal,
           ctx: ctx.ctx,
         });

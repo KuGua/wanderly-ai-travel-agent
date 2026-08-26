@@ -2,6 +2,8 @@ import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/dom
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace, ConversationResponseMode } from "../types/schemas.js";
 
+export type ConversationIntent = "auto_intro" | "user_typed";
+
 export interface ConversationHistoryMessage {
   role: "USER" | "ASSISTANT";
   content: string;
@@ -40,6 +42,17 @@ export interface ModelGateway {
     question: string;
     place?: ConversationPlace;
     history: ConversationHistoryMessage[];
+    intent?: ConversationIntent;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<ConversationReply>;
+
+  streamConversationReply?(params: {
+    question: string;
+    place?: ConversationPlace;
+    history: ConversationHistoryMessage[];
+    intent?: ConversationIntent;
+    onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<ConversationReply>;

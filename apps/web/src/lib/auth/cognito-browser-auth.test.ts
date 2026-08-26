@@ -22,6 +22,7 @@ describe("Cognito browser auth adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     delete process.env.NEXT_PUBLIC_AUTH_MODE;
+    delete process.env.NEXT_PUBLIC_API_BASE_URL;
     process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID = "us-east-1_example";
     process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID = "public-client-id";
     amplifyMocks.getCurrentUser.mockResolvedValue({ username: "traveler@example.test" });
@@ -60,6 +61,7 @@ describe("Cognito browser auth adapter", () => {
 
   it("uses a token-free, explicitly local browser state in local-dev mode", async () => {
     process.env.NEXT_PUBLIC_AUTH_MODE = "local-dev";
+    process.env.NEXT_PUBLIC_API_BASE_URL = "http://localhost:3000";
 
     const service = createCognitoBrowserAuth();
 
@@ -67,5 +69,16 @@ describe("Cognito browser auth adapter", () => {
     expect(service.configured).toBe(false);
     expect(await service.getAccessToken()).toBeNull();
     expect(amplifyMocks.configure).not.toHaveBeenCalled();
+  });
+
+  it("does not activate local-dev when its API base URL is not loopback", async () => {
+    process.env.NEXT_PUBLIC_AUTH_MODE = "local-dev";
+    process.env.NEXT_PUBLIC_API_BASE_URL = "http://192.168.1.10:3000";
+
+    const service = createCognitoBrowserAuth();
+
+    expect(service.localDevelopment).toBe(false);
+    expect(service.localDevelopmentConfigurationInvalid).toBe(true);
+    expect(await service.getAccessToken()).toBeNull();
   });
 });

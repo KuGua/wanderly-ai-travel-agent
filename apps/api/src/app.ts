@@ -3,6 +3,7 @@ import fastifyCors from "@fastify/cors";
 import fastifySwagger from "@fastify/swagger";
 import fastifySwaggerUi from "@fastify/swagger-ui";
 import { randomUUID } from "node:crypto";
+import { context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 import { createAuthMiddleware, type VerifyAccessToken } from "./middleware/auth.js";
 import { errorHandler, ApiError } from "./middleware/error-handler.js";
 import { profileRoutes } from "./routes/profiles.js";
@@ -18,8 +19,21 @@ import { agentRunRoutes } from "./routes/agent-runs.js";
 import { AgentStreamRelay } from "./tasks/agent-stream-relay.js";
 import { pinoInstance, correlationChild } from "./observability/telemetry.js";
 import { metrics } from "./observability/metrics.js";
+import {
+  TRACEPARENT_HEADER,
+  formatTraceparent,
+  getTracer,
+  newSpanId,
+  newTraceId,
+  parseTraceparent,
+} from "./observability/tracing.js";
 import { personalTravelAgent } from "./agents/personal-travel-agent.js";
 import { sharedTripAgent } from "./agents/shared-trip-agent.js";
+import {
+  isAllowedLocalDevOrigin,
+  resolveAuthMode,
+  resolveLocalDevAllowedOrigins,
+} from "./middleware/auth-mode.js";
 
 export interface BuildAppOptions {
   verifyAccessToken?: VerifyAccessToken;
@@ -27,9 +41,12 @@ export interface BuildAppOptions {
 }
 
 export async function buildApp(options: BuildAppOptions = {}) {
+  const authMode = resolveAuthMode();
+  const localDevAllowedOrigins = authMode === "local-dev" ? resolveLocalDevAllowedOrigins() : [];
   const app = Fastify({
     loggerInstance: pinoInstance,
     genReqId: () => randomUUID(),
+    trustProxy: false,
   });
   const agentStreamRelay = options.agentStreamRelay ?? new AgentStreamRelay();
   if (!options.agentStreamRelay) {
@@ -39,7 +56,11 @@ export async function buildApp(options: BuildAppOptions = {}) {
     });
   }
 
-  await app.register(fastifyCors, { origin: true });
+  await app.register(fastifyCors, {
+    origin: authMode === "local-dev"
+      ? (origin, callback) => callback(null, isAllowedLocalDevOrigin(origin, localDevAllowedOrigins))
+      : true,
+  });
 
   await app.register(fastifySwagger, {
     openapi: {
@@ -73,22 +94,97 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
   app.addHook("onRequest", async (request, reply) => {
     request.correlationId = request.id ?? randomUUID();
-    request.traceId = request.correlationId;
     request.clientRequestId = readClientRequestId(request);
     reply.header("x-correlation-id", request.correlationId);
     if (request.clientRequestId) {
       reply.header("x-request-id", request.clientRequestId);
     }
+
+    // W3C trace context: prefer the inbound `traceparent` when present and
+    // well-formed; otherwise mint a fresh trace. The span id is always new
+    // because this request owns a brand-new server span.
+    const rawTraceparent = request.headers[TRACEPARENT_HEADER];
+    const inbound = parseTraceparent(
+      Array.isArray(rawTraceparent) ? rawTraceparent[0] : rawTraceparent,
+    );
+    request.traceId = inbound?.traceId ?? newTraceId();
+    request.spanId = newSpanId();
+
+    // Open the server span. The route pattern is not yet known in onRequest
+    // for Fastify 5, so we set the bare minimum attributes here and enrich
+    // them later via the preHandler hook once routing has matched.
+    const span = getTracer().startSpan(
+      `HTTP ${request.method}`,
+      {
+        kind: SpanKind.SERVER,
+        attributes: {
+          "http.method": request.method,
+          "http.target": request.url,
+          "net.peer.ip": request.ip,
+          "app.correlation_id": request.correlationId,
+        },
+      },
+    );
+    const ctxWithSpan = trace.setSpan(context.active(), span);
+    request._otelContext = ctxWithSpan;
+    request._otelSpan = span;
+
     request.log = correlationChild(
       pinoInstance,
       request.correlationId,
       request.clientRequestId,
+      request.traceId,
+      request.spanId,
     );
 
+    if (
+      authMode === "local-dev"
+      && isCorsPreflight(request.method, request.headers.origin, request.headers["access-control-request-method"])
+      && !isAllowedLocalDevOrigin(request.headers.origin, localDevAllowedOrigins)
+    ) {
+      throw new ApiError(403, "Forbidden", "Local development requests require an allowed browser origin");
+    }
     if (isAuthenticationExempt(request.method, request.url)) {
       return;
     }
+    if (
+      authMode === "local-dev"
+      && isUnsafeMethod(request.method)
+      && !isAllowedLocalDevOrigin(request.headers.origin, localDevAllowedOrigins)
+    ) {
+      throw new ApiError(403, "Forbidden", "Local development writes require an allowed browser origin");
+    }
     await authMiddleware(request);
+  });
+
+  app.addHook("preHandler", async (request) => {
+    // Route matching has happened by preHandler; promote the bare URL to the
+    // stable route pattern and expose it on the span. This attribute is what
+    // dashboards will group by.
+    const span = request._otelSpan;
+    if (!span) return;
+    const route = request.routeOptions?.url ?? "unknown";
+    span.setAttribute("http.route", route);
+    span.updateName(`HTTP ${request.method} ${route}`);
+  });
+
+  app.addHook("onResponse", async (request, reply) => {
+    const span = request._otelSpan;
+    if (span) {
+      const status = reply.statusCode;
+      span.setAttribute("http.status_code", status);
+      if (status >= 500) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: `HTTP ${status}` });
+      }
+      span.end();
+    }
+    // Echo the trace context so clients and downstream services can continue
+    // the trace. The response header mirrors the canonical `traceparent`
+    // value built from `request.traceId`/`request.spanId`.
+    reply.header(
+      TRACEPARENT_HEADER,
+      formatTraceparent(request.traceId, request.spanId, "01"),
+    );
   });
 
   app.setNotFoundHandler(async () => {
@@ -121,6 +217,14 @@ function isAuthenticationExempt(method: string, url: string): boolean {
     || path.startsWith("/docs")
     || (method === "POST" && path === "/api/v1/bookings/callback")
     || (method === "POST" && path === "/api/v1/explore/location-reference");
+}
+
+function isUnsafeMethod(method: string): boolean {
+  return method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+}
+
+function isCorsPreflight(method: string, origin: unknown, requestedMethod: unknown): boolean {
+  return method === "OPTIONS" && typeof origin === "string" && typeof requestedMethod === "string";
 }
 
 /**

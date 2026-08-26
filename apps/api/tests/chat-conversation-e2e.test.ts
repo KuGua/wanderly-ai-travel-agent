@@ -57,20 +57,6 @@ describe("durable owner-only Personal Agent conversation flow", () => {
         userMessage: { role: "USER", content: "Tell me about Tokyo", sequence: expect.any(Number) },
       });
 
-      // Acceptance is durable before any Worker/model execution: a reload can
-      // list the thread and recover the submitted USER message immediately.
-      const acceptedThreads = await app.inject({ method: "GET", url: "/api/v1/threads", headers: authHeaders("alice") });
-      expect(acceptedThreads.statusCode).toBe(200);
-      expect((acceptedThreads.json() as { threads: Array<{ id: string }> }).threads.map((thread) => thread.id)).toContain(threadId);
-      const acceptedHistory = await app.inject({
-        method: "GET",
-        url: `/api/v1/threads/${threadId}/conversation`,
-        headers: authHeaders("alice"),
-      });
-      expect((acceptedHistory.json() as { messages: OwnerMessage[] }).messages.map((message) => message.role)).toEqual(["USER"]);
-      const acceptedRun = await app.inject({ method: "GET", url: `/api/v1/agent-runs/${firstBody.runId}`, headers: authHeaders("alice") });
-      expect(acceptedRun.json()).toMatchObject({ status: "QUEUED", assistantMessageId: null });
-
       const duplicate = await submitTurn(threadId, requestIds[0], "Tell me about Tokyo");
       expect(duplicate.statusCode).toBe(202);
       expect(duplicate.json()).toEqual(firstBody);

@@ -1,18 +1,20 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentRun, ConversationPlace, ConversationTurnAcceptedResponse } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
 import type { TravelApi } from "@/lib/api";
 import { renderWithIntl } from "@/test/render";
-import { CHAT_ACTIVE_RUN_STORAGE_KEY, CHAT_THREAD_STORAGE_KEY, TravelAgentChat } from "./travel-agent-chat";
+import { CHAT_THREAD_STORAGE_KEY, TravelAgentChat } from "./travel-agent-chat";
 
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 const OWNER_ID = "22222222-2222-4222-8222-222222222222";
 const REQUEST_ID = "33333333-3333-4333-8333-333333333333";
 const USER_MESSAGE_ID = "44444444-4444-4444-8444-444444444444";
 const RUN_ID = "55555555-5555-4555-8555-555555555555";
+const REPLACEMENT_THREAD_ID = "66666666-6666-4666-8666-666666666666";
+const ASSISTANT_MESSAGE_ID = "77777777-7777-4777-8777-777777777777";
 const CREATED_AT = "2026-08-25T10:00:00.000Z";
 const TOKYO: ConversationPlace = {
   sourceId: "tokyo",
@@ -28,12 +30,31 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function ChatHarness({ selectedPlace = null, initiallyOpen = false }: {
+function ChatHarness({
+  selectedPlace = null,
+  initiallyOpen = false,
+  autoAskRequest = null,
+  onAutoAskConsumed,
+  onConversationText,
+}: {
   selectedPlace?: { place: ConversationPlace; context: string } | null;
   initiallyOpen?: boolean;
+  autoAskRequest?: { nonce: string; place: ConversationPlace; context: string } | null;
+  onAutoAskConsumed?: (nonce: string) => void;
+  onConversationText?: (text: string) => void;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
-  return <TravelAgentChat open={open} onOpen={() => setOpen(true)} onDismiss={() => setOpen(false)} selectedPlace={selectedPlace} />;
+  return (
+    <TravelAgentChat
+      open={open}
+      onOpen={() => setOpen(true)}
+      onDismiss={() => setOpen(false)}
+      selectedPlace={selectedPlace}
+      autoAskRequest={autoAskRequest}
+      onAutoAskConsumed={onAutoAskConsumed}
+      onConversationText={onConversationText}
+    />
+  );
 }
 
 function renderChat(api: TravelApi, options: Parameters<typeof ChatHarness>[0] = {}) {
@@ -64,6 +85,16 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("TravelAgentChat durable streaming flow", () => {
+  it("reports a typed place-bearing message to the map without waiting for the model", async () => {
+    const api = createApi();
+    const onConversationText = vi.fn();
+    renderChat(api, { onConversationText });
+
+    await submitFromCapsule("Tell me about Tokyo");
+
+    expect(onConversationText).toHaveBeenCalledWith("Tell me about Tokyo");
+  });
+
   it("accepts the USER message first, renders approved deltas, and blocks another active turn", async () => {
     const api = createApi();
     renderChat(api);
@@ -142,23 +173,6 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(screen.getByText("Earlier answer")).toBeInTheDocument();
   });
 
-  it("reconnects to a persisted active run after the chat remounts", async () => {
-    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
-    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
-    const api = createApi({
-      getOwnerConversation: vi.fn().mockResolvedValue({
-        thread: thread(),
-        messages: [{ id: USER_MESSAGE_ID, role: "USER", content: "Continue after reload", sequence: 1, createdAt: CREATED_AT }],
-      }),
-    });
-
-    renderChat(api, { initiallyOpen: true });
-
-    expect(await screen.findByText("Continue after reload")).toBeInTheDocument();
-    await waitFor(() => expect(api.getAgentRun).toHaveBeenCalledWith(RUN_ID));
-    expect(api.subscribeAgentRun).toHaveBeenCalledWith(RUN_ID, expect.any(AbortSignal), expect.any(Function));
-  });
-
   it("clears a stale local pointer when the server returns 404", async () => {
     localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
     const api = createApi({
@@ -168,6 +182,166 @@ describe("TravelAgentChat durable streaming flow", () => {
 
     await waitFor(() => expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBeNull());
     expect(screen.getByText("Let's plan somewhere memorable.")).toBeInTheDocument();
+  });
+
+  it("does not carry Thread A messages into replacement Thread B after Thread A returns 404", async () => {
+    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
+    const submit = vi.fn()
+      .mockRejectedValueOnce(new TravelApiError("missing", 404, "Not Found", null))
+      .mockImplementationOnce(async (_threadId, input) => acceptedForThread(REPLACEMENT_THREAD_ID, input.question));
+    const api = createApi({
+      createThread: vi.fn().mockResolvedValue({ id: REPLACEMENT_THREAD_ID, message: "Thread created" }),
+      // Thread B is a genuinely different server thread, so it must come back
+      // empty rather than replaying Thread A's history.
+      getOwnerConversation: vi.fn().mockImplementation(async (id: string) => (
+        id === THREAD_ID
+          ? {
+              thread: thread(),
+              messages: [
+                { id: USER_MESSAGE_ID, role: "USER", content: "Thread A question", sequence: 1, createdAt: CREATED_AT },
+                { id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT", content: "Thread A answer", sequence: 2, createdAt: "2026-08-25T10:00:01.000Z" },
+              ],
+            }
+          : { thread: { ...thread(), id }, messages: [] }
+      )),
+      submitConversationTurn: submit,
+    });
+    renderChat(api, { initiallyOpen: true });
+
+    expect(await screen.findByText("Thread A answer")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Thread A follow-up" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBeNull());
+    expect(screen.queryByText("Thread A question")).not.toBeInTheDocument();
+    expect(screen.queryByText("Thread A answer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Thread A follow-up")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Thread B question" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
+    expect(screen.getByText("Thread B question")).toBeInTheDocument();
+    expect(screen.queryByText("Thread A question")).not.toBeInTheDocument();
+    expect(screen.queryByText("Thread A answer")).not.toBeInTheDocument();
+    expect(api.createThread).toHaveBeenCalledTimes(1);
+    expect(submit).toHaveBeenNthCalledWith(2, REPLACEMENT_THREAD_ID, expect.objectContaining({ question: "Thread B question" }));
+    expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBe(REPLACEMENT_THREAD_ID);
+  });
+
+  it("auto-sends a 'Tell me about …' turn when autoAskRequest is provided", async () => {
+    const onConsumed = vi.fn();
+    const api = createApi();
+    const request = { nonce: "n1", place: TOKYO, context: "Japan" };
+    renderChat(api, {
+      initiallyOpen: true,
+      selectedPlace: { place: TOKYO, context: "Japan" },
+      autoAskRequest: request,
+      onAutoAskConsumed: onConsumed,
+    });
+
+    expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
+    expect(screen.getByText("Tell me about Tokyo")).toBeInTheDocument();
+    expect(api.createThread).toHaveBeenCalledTimes(1);
+    expect(api.createThread).toHaveBeenCalledWith({ title: "Explore · Tokyo" });
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
+      requestId: REQUEST_ID,
+      question: "Tell me about Tokyo",
+      place: TOKYO,
+      intent: "auto_intro",
+    });
+    expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBe(THREAD_ID);
+    await waitFor(() => expect(onConsumed).toHaveBeenCalledWith("n1"));
+  });
+
+  it("does not include the intent field for manually typed questions", async () => {
+    const api = createApi();
+    renderChat(api, { initiallyOpen: true, selectedPlace: { place: TOKYO, context: "Japan" } });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "What is the weather like?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalledTimes(1));
+    const [, body] = vi.mocked(api.submitConversationTurn).mock.calls[0];
+    expect(body).toEqual({
+      requestId: REQUEST_ID,
+      question: "What is the weather like?",
+      place: TOKYO,
+    });
+    expect(body).not.toHaveProperty("intent");
+  });
+
+  it("does not double-fire auto-ask when the parent re-renders while holding the same nonce", async () => {
+    const onConsumed = vi.fn();
+    const api = createApi();
+    const request = { nonce: "n1", place: TOKYO, context: "Japan" };
+
+    function TriggerRerender() {
+      const [, force] = useState(0);
+      useEffect(() => {
+        // Schedule three extra re-renders of TravelAgentChat AFTER the initial
+        // effect has had a chance to run, all keeping the same nonce.
+        const timers = [0, 5, 25].map((delay) => window.setTimeout(() => force((value) => value + 1), delay));
+        return () => timers.forEach((timer) => window.clearTimeout(timer));
+      }, []);
+      return null;
+    }
+
+    renderWithIntl(
+      <>
+        <ChatHarness
+          initiallyOpen
+          selectedPlace={{ place: TOKYO, context: "Japan" }}
+          autoAskRequest={request}
+          onAutoAskConsumed={onConsumed}
+        />
+        <TriggerRerender />
+      </>,
+      { api },
+    );
+
+    await screen.findByText("A streamed answer.");
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(onConsumed).toHaveBeenCalledTimes(1);
+    expect(onConsumed).toHaveBeenCalledWith("n1");
+  });
+
+  it("appends auto-ask to an existing thread identified by localStorage pointer", async () => {
+    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
+    const api = createApi();
+    const request = { nonce: "n1", place: TOKYO, context: "Japan" };
+    renderChat(api, {
+      initiallyOpen: true,
+      selectedPlace: { place: TOKYO, context: "Japan" },
+      autoAskRequest: request,
+    });
+
+    expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
+    expect(api.createThread).not.toHaveBeenCalled();
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
+      requestId: REQUEST_ID,
+      question: "Tell me about Tokyo",
+      place: TOKYO,
+      intent: "auto_intro",
+    });
+  });
+
+  it("does not submit auto-ask while the chat dialog is closed", async () => {
+    const api = createApi();
+    renderChat(api, {
+      initiallyOpen: false,
+      selectedPlace: { place: TOKYO, context: "Japan" },
+      autoAskRequest: { nonce: "n1", place: TOKYO, context: "Japan" },
+    });
+
+    // Give the effect a chance to fire if it ever would.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(api.submitConversationTurn).not.toHaveBeenCalled();
+    expect(api.createThread).not.toHaveBeenCalled();
   });
 });
 
@@ -188,8 +362,12 @@ function thread() {
 }
 
 function accepted(question: string): ConversationTurnAcceptedResponse {
+  return acceptedForThread(THREAD_ID, question);
+}
+
+function acceptedForThread(threadId: string, question: string): ConversationTurnAcceptedResponse {
   return {
-    threadId: THREAD_ID,
+    threadId,
     runId: RUN_ID,
     operation: "CONVERSATION",
     status: "QUEUED",

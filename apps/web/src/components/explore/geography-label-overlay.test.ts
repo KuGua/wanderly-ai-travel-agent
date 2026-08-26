@@ -29,7 +29,7 @@ describe("geographyLabelsFromFeatures", () => {
       feature("state", "Zhejiang", { rank: 2 }),
     ];
 
-    expect(geographyLabelsFromFeatures(features, 4.5, "en", visible).map((label) => label.kind)).toEqual(["region", "city"]);
-    expect(geographyLabelsFromFeatures(features, 4.5, "en", { countries: true, regions: false, cities: false })).toEqual([]);
+    expect(geographyLabelsFromFeatures(features, 6.0, "en", visible).map((label) => label.kind)).toEqual(["region", "city"]);
+    expect(geographyLabelsFromFeatures(features, 6.0, "en", { countries: true, regions: false, cities: false })).toEqual([]);
   });
 });

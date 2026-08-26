@@ -23,8 +23,9 @@ docker compose up -d postgres
 # 4. 执行数据库迁移
 npm run db:migrate
 
-# 5. 启动 API（durable Worker 在另一终端启动）
+# 5. 分别启动 API 与持久 Agent Worker
 npm run dev
+npm run worker:dev
 ```
 
 服务器运行于 `http://localhost:3000`；OpenAPI 文档位于 `http://localhost:3000/docs`。
@@ -36,34 +37,18 @@ npm run dev
 
 ```dotenv
 MODEL_GATEWAY_PROVIDER=gemini
-GEMINI_API_KEY=your_gemini_key
-GEMINI_MODEL=gemini-3.1-flash-lite
+MODEL_GATEWAY_API_KEY=your_gemini_key
+MODEL_GATEWAY_MODEL=gemini-3.1-flash-lite
 ```
 
-也可选择 `MODEL_GATEWAY_PROVIDER=openai` 并设置 `OPENAI_API_KEY`，或选择
-`openai-compatible` 并设置 `MODEL_GATEWAY_API_KEY`、`MODEL_GATEWAY_BASE_URL` 和
-`MODEL_GATEWAY_MODEL`。后者适用于提供 OpenAI Chat Completions 兼容接口的服务。
+本地 `.env.example` 明确设置 `MODEL_GATEWAY_MODEL=gemini-3.1-flash-lite`，并使用
+内置 OpenAI-compatible endpoint；运行时不会默认选择任何 provider 或模型，缺少任一
+必填配置即 fail closed。也可选择 `MODEL_GATEWAY_PROVIDER=openai`，仍使用
+同一个 `MODEL_GATEWAY_API_KEY`；或选择 `openai-compatible` 并额外设置
+`MODEL_GATEWAY_BASE_URL` 和 `MODEL_GATEWAY_MODEL`。后者适用于提供 OpenAI Chat
+Completions 兼容接口的服务。
 原生 API 不兼容该接口的供应商需要单独 provider adapter，不能仅靠更换 key 启用。
 不要将密钥提交到仓库或暴露给浏览器。
-
-## Durable Conversation 本地进程
-
-持久 Conversation 的 API 接受与执行分离。运行本地浏览器验证时，需要三个进程：
-
-```bash
-# terminal 1
-npm --prefix apps/api run dev
-
-# terminal 2
-npm --prefix apps/api run worker:dev
-
-# terminal 3
-npm --prefix apps/web run dev -- --port 3001
-```
-
-启动 API 与 Worker 前执行 `npm --prefix apps/api run db:migrate`。相关环境变量名称为
-`MODEL_GATEWAY_PROVIDER`、`GEMINI_MODEL` 和 `GEMINI_API_KEY`；密钥仅存在于本机安全配置或
-部署的 Secrets Manager，绝不写入文档或浏览器环境变量。
 
 ## Cognito 登录与 API 认证
 
@@ -109,16 +94,22 @@ loopback socket 请求并由服务端固定映射一个本地身份；production
 - **离线地图位置参考** — `POST /api/v1/explore/location-reference` 仅处理用户显式点击的坐标，返回来源化国家、可选省/州和最近主要城市。它不是地址、旅行候选或 provider 事实，且坐标不进入日志、指标、trace、审计或数据库；参见 [位置参考数据](../../docs/location-reference-data.md)。
 - **规划控制平面** — `ModelGateway` 输出在写入前必须通过严格结构、snapshot 字段授权、路线边界、来源完整性与 provider evidence 精确匹配校验；失败返回 correlation-aware `422`，且不创建 plan。
 - **Model/Skill integration** — `gateway-factory.ts` 只配置 Gemini、OpenAI 或 OpenAI-compatible `LLMGateway`；LLM 路径记录安全的 model/prompt version 与 Agent run，provider、timeout 或 schema 失败时 fail closed。结构化模型输出仍须通过最终控制平面校验。
-- **Owner-only Personal Agent 对话** — `/threads/:threadId/turns` 通过 `thread.recall → travel.conversation → ModelGateway` 生成并原子持久化 USER/ASSISTANT；相同 request ID 幂等。不支持的实时事实问题返回确定性 `SAFE_REFUSAL`；模型失败返回受控错误且不写消息。owner UI 可读取原始会话，但安全 recall、audit、metrics 与日志不接收正文。
+- **Owner-only Personal Agent 对话** — `/threads/:threadId/turns` 原子持久化 USER 与 durable task 并返回 `202`；独立 Worker 通过 `thread.recall → travel.conversation → ModelGateway` 运行 Gemini/OpenAI-compatible stream。只有通过增量安全门的片段可进入鉴权 SSE，最终完整校验通过后才原子写入 ASSISTANT。相同 request ID 幂等，断开浏览器不取消任务，显式 cancel 是唯一取消入口。owner UI 可读取原始会话，但 task、SSE、safe recall、audit、metrics 与日志不持久化正文或 partial output。
 - **入境准备** — 每位成员各有清单；国籍未共享时显示“请向官方来源核验”。
 - **方案版本管理** — 生成、过期、带差异的重规划。
 - **三人确认** — 三位必需成员全部确认后，才可进行预订沙箱。
 - **预订沙箱** — 不发生真实付款；返回演示参考号。
 - **幂等性** — 规划、变化事件和预订操作均为幂等。
 - **审计轨迹** — 所有敏感操作均以关联 ID 记录。
-- **安全可观测性** — Pino 统一脱敏日志；`/metrics` 仅提供进程内 MVP
-  Prometheus text，标签使用固定低基数 allow-list。仓库当前不包含生产
-  metrics/trace exporter 或持久化遥测后端。
+- **安全可观测性** — Pino 统一脱敏日志（39 个 redact path），每条
+  log 自动带 `correlationId`、`clientRequestId` 与 active span 的
+  `trace_id`/`span_id`；`/metrics` 仅提供进程内 MVP Prometheus text，标签
+  使用固定低基数 allow-list。OpenTelemetry SDK 已接入
+  （`apps/api/src/observability/tracing.ts`），由 `OTEL_EXPORTER_OTLP_ENDPOINT`
+  切目的地：本地 dev 指向 docker-compose 里的 `tempo:4318`；prod 指向
+  Grafana Cloud Free OTLP 网关（详细步骤见
+  [`docs/observability-deployment.md`](../../docs/observability-deployment.md)）。
+  SLO / 告警定义见 [`docs/observability-slo.md`](../../docs/observability-slo.md)。
 
 ## 测试
 
@@ -137,7 +128,7 @@ npm ci --dry-run --ignore-scripts
 
 安装脚本许可由 `package.json` 的 `allowScripts` 按确切版本维护。更新带安装脚本的依赖后，先运行 `npm approve-scripts --allow-scripts-pending` 审核新增项；不要使用不经审核的 `--all`。生产依赖安全检查使用 `npm audit --omit=dev`；不得直接运行 `npm audit fix --force`，以免降级 Drizzle Kit。
 
-测试覆盖 Cognito bearer authentication、owner-only Personal Agent conversation、重复 Skill version 调用、聊天 turn 幂等和角色授权、授权撤回后的 plan 失效、fixture fallback、严格的 plan 输出结构/授权/路线/来源/evidence 校验、LLM fallback 与 agent-run 记录、Skill schema/allow-list/timeout、callback HMAC/raw-body/timestamp 边界、安全日志、低基数 metrics、audit summary whitelist，以及预订幂等与乱序 callback。
+测试覆盖 Cognito bearer authentication、owner-only durable Personal Agent conversation、202 acceptance、任务幂等/租约/取消/重试终态、流式 Gateway、消息顺序和角色授权、授权撤回后的 plan 失效、fixture fallback、严格的 plan 输出结构/授权/路线/来源/evidence 校验、LLM failure 与 agent-run 记录、Skill schema/allow-list/timeout、callback HMAC/raw-body/timestamp 边界、安全日志、低基数 metrics、audit summary whitelist，以及预订幂等与乱序 callback。
 
 `npm test` 使用 `TEST_DATABASE_URL`，并拒绝非 loopback host，且要求数据库名
 或连接的 `search_path` schema 以 `_test` 结尾。默认在本地 `travelagent` 库中

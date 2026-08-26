@@ -25,6 +25,10 @@ export const locationReferenceResponseSchema = z.discriminatedUnion("outcome", [
     admin1: z.string().min(1).nullable(),
     admin1Code: z.string().min(1).nullable(),
     nearestCity: z.string().min(1).nullable(),
+    nearestCityCoordinates: z.object({
+      latitude: z.number().finite().min(-90).max(90),
+      longitude: z.number().finite().min(-180).max(180),
+    }).strict().nullable(),
     distanceKm: z.number().nonnegative().nullable(),
   }),
   locationReferenceBaseSchema.extend({ outcome: z.literal("NO_REFERENCE") }),
@@ -264,10 +268,13 @@ export const conversationPlaceSchema = z.object({
   sourceType: z.enum(["REFERENCE", "INSPIRATION"]),
 }).strict();
 
+export const conversationIntentSchema = z.enum(["auto_intro", "user_typed"]);
+
 export const conversationTurnRequestSchema = z.object({
   requestId: uuidSchema,
   question: z.string().trim().min(1).max(4000),
   place: conversationPlaceSchema.optional(),
+  intent: conversationIntentSchema.optional(),
 }).strict();
 
 export const ownerConversationMessageSchema = z.object({
@@ -324,6 +331,16 @@ export const agentRunResponseSchema = z.object({
 const streamBaseSchema = z.object({
   runId: uuidSchema,
   generationAttempt: z.number().int().nonnegative(),
+  /**
+   * Optional W3C `traceparent` header value forwarded from the originating
+   * HTTP request. Carried by every NOTIFY payload so the relay can re-enter
+   * the originating trace context for SSE events. PII / credentials are
+   * never embedded here — only OTel identifiers.
+   */
+  traceparent: z
+    .string()
+    .regex(/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}(-[a-z0-9_,=+/-]{1,256})?$/i)
+    .optional(),
 });
 
 export const agentStreamEventSchema = z.discriminatedUnion("event", [
@@ -401,6 +418,7 @@ export type ChatMessageRedacted = z.infer<typeof chatMessageRedactedSchema>;
 export type ChatMessageRole = z.infer<typeof chatMessageRoleSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
 export type ConversationTurnRequest = z.infer<typeof conversationTurnRequestSchema>;
+export type ConversationIntent = z.infer<typeof conversationIntentSchema>;
 export type OwnerConversationMessage = z.infer<typeof ownerConversationMessageSchema>;
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;
 export type ConversationTurnAcceptedResponse = z.infer<typeof conversationTurnAcceptedResponseSchema>;

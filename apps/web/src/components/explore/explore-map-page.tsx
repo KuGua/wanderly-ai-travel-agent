@@ -9,6 +9,7 @@ import { applyGeographyContrast, GEOGRAPHY_INTERACTIVE_LAYER_IDS, geographyFeatu
 import { INITIAL_READINESS, layerCaptionFor, mapReadinessStage, panelDisabledReason, type LayerCaption, type MapReadiness, type MapStage } from "./map-readiness";
 
 import { CountryBoundaryOverlay } from "./country-boundary-overlay";
+import { cityKey, findMentionedCities, loadCityCatalog, type CatalogCity } from "./city-catalog";
 import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { solidifyGlobeStyle } from "./map-surface-style";
 import { TravelAgentChat } from "./travel-agent-chat";
@@ -24,6 +25,8 @@ export type ExploreDestination = {
   kind: "inspiration" | "geography";
   locationReference?: LocationReferenceResponse;
   locationReferenceStatus?: "loading" | "unavailable";
+  cityKey?: string;
+  cityName?: string;
 };
 type Destination = ExploreDestination;
 
@@ -58,6 +61,9 @@ export function ExploreMapPage() {
   const chatSelectedPinIdRef = useRef<string | null>(null);
   const preserveChatCameraOnCloseRef = useRef(false);
   const journeyTimersRef = useRef<number[]>([]);
+  const noticeTimerRef = useRef<number | null>(null);
+  const pendingChatCityKeysRef = useRef(new Set<string>());
+  const retriedLocationReferenceIdsRef = useRef(new Set<string>());
   const geographyVisibilityRef = useRef<GeographyVisibility>({ countries: true, regions: true, cities: true });
   const [readiness, setReadiness] = useState<MapReadiness>(INITIAL_READINESS);
   const readinessRef = useRef<MapReadiness>(INITIAL_READINESS);
@@ -70,6 +76,10 @@ export function ExploreMapPage() {
   useEffect(() => {
     readinessRef.current = readiness;
   }, [readiness]);
+
+  useEffect(() => () => {
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
+  }, []);
   const [mapAttempt, setMapAttempt] = useState(0);
   const [geographyVisibility, setGeographyVisibility] = useState<GeographyVisibility>({ countries: true, regions: true, cities: true });
   const [selected, setSelected] = useState<Destination | null>(null);
@@ -81,6 +91,17 @@ export function ExploreMapPage() {
   const [chatOpen, setChatOpen] = useState(false);
   const [exploreState, setExploreState] = useState<ExploreState>("IDLE");
   const [helpOpen, setHelpOpen] = useState(false);
+  const [autoAskNonce, setAutoAskNonce] = useState(0);
+  const [mapNotice, setMapNotice] = useState<string | null>(null);
+
+  const showMapNotice = useCallback((message: string) => {
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
+    setMapNotice(message);
+    noticeTimerRef.current = window.setTimeout(() => {
+      setMapNotice(null);
+      noticeTimerRef.current = null;
+    }, 3200);
+  }, []);
 
   const attachLocationReference = useCallback(async (inspiration: Destination) => {
     if (!travelApi) return;
@@ -92,13 +113,48 @@ export function ExploreMapPage() {
       const locationReference = await travelApi.getLocationReference({
         latitude: inspiration.coordinates[1], longitude: inspiration.coordinates[0],
       });
+      const normalizedCityCoordinates = locationReference.outcome === "REFERENCE"
+        ? locationReference.nearestCityCoordinates
+        : null;
+      const normalizedCoordinates: [number, number] = normalizedCityCoordinates
+        ? [normalizedCityCoordinates.longitude, normalizedCityCoordinates.latitude]
+        : inspiration.coordinates;
+      const normalizedCityKey = locationReference.outcome === "REFERENCE" && locationReference.nearestCity
+        ? cityKey(locationReference.countryCode, locationReference.nearestCity)
+        : undefined;
+      const duplicate = normalizedCityKey && locationReference.outcome === "REFERENCE" && locationReference.nearestCity
+        ? inspirationsRef.current.find((item) => item.id !== inspiration.id && isSameCity(
+            item,
+            locationReference.nearestCity!,
+            normalizedCoordinates,
+          ))
+        : undefined;
+      if (duplicate) {
+        inspirationMarkersRef.current.get(inspiration.id)?.remove();
+        inspirationMarkersRef.current.delete(inspiration.id);
+        inspirationsRef.current = inspirationsRef.current.filter((item) => item.id !== inspiration.id);
+        setInspirations(inspirationsRef.current);
+        setSelected(duplicate);
+        mapRef.current?.flyTo({ center: duplicate.coordinates, zoom: 5.4, duration: reducedMotion() ? 0 : 900 });
+        showMapNotice(t("cityAlreadyPinned", { name: duplicate.name }));
+        return;
+      }
       const next = locationReference.outcome === "REFERENCE"
-        ? { ...inspiration, ...referenceDisplay(locationReference, t("locationReferenceNote")), locationReference, locationReferenceStatus: undefined }
+        ? {
+            ...inspiration,
+            ...referenceDisplay(locationReference, t("locationReferenceNote")),
+            coordinates: normalizedCoordinates,
+            cityKey: normalizedCityKey,
+            cityName: locationReference.nearestCity ?? undefined,
+            locationReference,
+            locationReferenceStatus: undefined,
+          }
         : { ...inspiration, locationReference, locationReferenceStatus: undefined };
       inspirationsRef.current = inspirationsRef.current.map((item) => item.id === inspiration.id ? next : item);
       setInspirations(inspirationsRef.current);
       setSelected((current) => current?.id === inspiration.id ? next : current);
       const markerButton = inspirationMarkersRef.current.get(inspiration.id)?.getElement().querySelector("button");
+      inspirationMarkersRef.current.get(inspiration.id)?.setLngLat(next.coordinates);
       if (markerButton) {
         markerButton.textContent = next.name;
         markerButton.setAttribute("aria-label", t("markerOpenAria", { name: next.name }));
@@ -109,7 +165,26 @@ export function ExploreMapPage() {
       setInspirations(inspirationsRef.current);
       setSelected((current) => current?.id === inspiration.id ? unavailable : current);
     }
-  }, [t, travelApi]);
+  }, [showMapNotice, t, travelApi]);
+
+  useEffect(() => {
+    if (!travelApi) return;
+    const retryUnavailableReferences = () => {
+      inspirationsRef.current
+        .filter((inspiration) => inspiration.locationReferenceStatus === "unavailable")
+        .forEach((inspiration) => {
+          if (retriedLocationReferenceIdsRef.current.has(inspiration.id)) return;
+          retriedLocationReferenceIdsRef.current.add(inspiration.id);
+          void attachLocationReference(inspiration);
+        });
+    };
+    const initialRetry = window.setTimeout(retryUnavailableReferences, 750);
+    window.addEventListener("focus", retryUnavailableReferences);
+    return () => {
+      window.clearTimeout(initialRetry);
+      window.removeEventListener("focus", retryUnavailableReferences);
+    };
+  }, [attachLocationReference, travelApi]);
 
   const clearJourneyTimers = useCallback(() => {
     journeyTimersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -142,6 +217,7 @@ export function ExploreMapPage() {
       idsToDelete.forEach((id) => {
         inspirationMarkersRef.current.get(id)?.remove();
         inspirationMarkersRef.current.delete(id);
+        retriedLocationReferenceIdsRef.current.delete(id);
       });
       inspirationsRef.current = inspirationsRef.current.filter((inspiration) => !idsToDelete.has(inspiration.id));
       if (inspirationsRef.current.length === 0) inspirationSequenceRef.current = 0;
@@ -163,10 +239,70 @@ export function ExploreMapPage() {
     [clearJourneyTimers],
   );
 
+  const pinCatalogCity = useCallback(async (city: CatalogCity) => {
+    const map = mapRef.current;
+    if (!map) return;
+    const duplicate = inspirationsRef.current.find((item) => isSameCity(item, city.name, city.coordinates));
+    if (duplicate) {
+      focusChatOnDestination(duplicate, setSelected, setExploreState, chatSelectedPinIdRef);
+      return;
+    }
+    if (pendingChatCityKeysRef.current.has(city.key)) return;
+    pendingChatCityKeysRef.current.add(city.key);
+    try {
+      const maplibregl = await import("maplibre-gl");
+      if (mapRef.current !== map) return;
+      const duplicateAfterLoad = inspirationsRef.current.find((item) => isSameCity(item, city.name, city.coordinates));
+      if (duplicateAfterLoad) {
+        focusChatOnDestination(duplicateAfterLoad, setSelected, setExploreState, chatSelectedPinIdRef);
+        return;
+      }
+
+      inspirationSequenceRef.current += 1;
+      const inspiration: Destination = {
+        ...inspirationAt(
+          `inspiration-${inspirationSequenceRef.current}`,
+          inspirationSequenceRef.current,
+          city.coordinates,
+        ),
+        name: city.localizedName,
+        country: t("chatMentionedCityContext"),
+        note: t("chatMentionedCityNote"),
+        cityKey: cityKey(null, city.name),
+        cityName: city.name,
+      };
+      const { anchor, button } = markerElement(inspiration.name);
+      button.setAttribute("aria-label", t("markerOpenAria", { name: inspiration.name }));
+      button.addEventListener("click", (markerEvent) => {
+        markerEvent.stopPropagation();
+        const current = inspirationsRef.current.find((item) => item.id === inspiration.id) ?? inspiration;
+        selectDestination(current);
+      });
+      const marker = new maplibregl.Marker({ element: anchor, anchor: "bottom" })
+        .setLngLat(inspiration.coordinates)
+        .addTo(map);
+      inspirationMarkersRef.current.set(inspiration.id, marker);
+      inspirationsRef.current = [...inspirationsRef.current, inspiration];
+      setInspirations(inspirationsRef.current);
+      selectDestination(inspiration);
+      showMapNotice(t("cityPinnedFromChat", { name: inspiration.name }));
+    } finally {
+      pendingChatCityKeysRef.current.delete(city.key);
+    }
+  }, [selectDestination, showMapNotice, t]);
+
+  const handleConversationText = useCallback((textValue: string) => {
+    if (!textValue.trim()) return;
+    void loadCityCatalog(locale).then((cities) => {
+      findMentionedCities(textValue, cities).forEach((city) => { void pinCatalogCity(city); });
+    });
+  }, [locale, pinCatalogCity]);
+
   useEffect(() => {
     let cancelled = false;
     let loaded = false;
     const inspirationMarkers = inspirationMarkersRef.current;
+    const retriedLocationReferenceIds = retriedLocationReferenceIdsRef.current;
     const sourceEvents: SourceEventDiagnostic[] = [];
     const mapErrors: string[] = [];
 
@@ -382,6 +518,7 @@ export function ExploreMapPage() {
       inspirationMarkers.clear();
       inspirationsRef.current = [];
       inspirationSequenceRef.current = 0;
+      retriedLocationReferenceIds.clear();
       styleLoadedRef.current = false;
       mapRef.current?.remove();
       mapRef.current = null;
@@ -470,15 +607,12 @@ export function ExploreMapPage() {
   function startExploring() {
     if (!selected) return;
     clearJourneyTimers();
-    if (reducedMotion()) {
-      setExploreState("EXPLORING");
-      return;
-    }
-    setExploreState("TALKING");
-    journeyTimersRef.current = [
-      window.setTimeout(() => setExploreState("FLYING"), 650),
-      window.setTimeout(() => setExploreState("EXPLORING"), 1900),
-    ];
+    // Skip the TALKING/FLYING timers and jump straight to EXPLORING so the
+    // chat dialog can open immediately and the auto-asked intro can stream in
+    // without waiting for the visual transition.
+    setExploreState("EXPLORING");
+    openChat();
+    setAutoAskNonce((current) => current + 1);
   }
 
   function retryMap() {
@@ -551,6 +685,12 @@ export function ExploreMapPage() {
           <span className="inline-flex items-center gap-2 rounded-full bg-card/90 px-4 py-2 text-sm font-bold text-primary shadow-lg backdrop-blur">
             <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" /> {tCommon("loadingGlobe")}
           </span>
+        </div>
+      ) : null}
+
+      {mapNotice ? (
+        <div role="status" aria-live="polite" className="pointer-events-none absolute left-1/2 top-20 z-[60] -translate-x-1/2 rounded-full bg-sidebar/95 px-4 py-2 text-center text-sm font-bold text-white shadow-xl backdrop-blur sm:top-24">
+          {mapNotice}
         </div>
       ) : null}
 
@@ -693,6 +833,15 @@ export function ExploreMapPage() {
         onOpen={openChat}
         onDismiss={dismissChat}
         selectedPlace={selected ? { place: toConversationPlace(selected), context: selected.country } : null}
+        autoAskRequest={autoAskNonce > 0 && selected
+          ? { nonce: String(autoAskNonce), place: toConversationPlace(selected), context: selected.country }
+          : null}
+        onAutoAskConsumed={() => {
+          /* The nonce sequence guarantees uniqueness across clicks, so we intentionally
+             do not reset it here — keeping it lets the consumer re-fire safely if the
+             dialog is reopened with the same destination. */
+        }}
+        onConversationText={handleConversationText}
       />
     </main>
   );
@@ -757,6 +906,23 @@ function distanceInKm(from: [number, number], to: [number, number]) {
   const haversine = Math.sin(latitudeDelta / 2) ** 2
     + Math.cos(fromLatitude) * Math.cos(toLatitude) * Math.sin(longitudeDelta / 2) ** 2;
   return 2 * earthRadiusKm * Math.asin(Math.sqrt(haversine));
+}
+
+function isSameCity(destination: Destination, cityName: string, cityCoordinates: [number, number]) {
+  if (!destination.cityName) return false;
+  return cityKey(null, destination.cityName) === cityKey(null, cityName)
+    && distanceInKm(destination.coordinates, cityCoordinates) <= 25;
+}
+
+function focusChatOnDestination(
+  destination: Destination,
+  setSelected: (destination: Destination) => void,
+  setExploreState: (state: ExploreState) => void,
+  selectedPinIdRef: { current: string | null },
+) {
+  selectedPinIdRef.current = destination.id;
+  setSelected(destination);
+  setExploreState("SELECTED");
 }
 
 function degreesToRadians(degrees: number) {

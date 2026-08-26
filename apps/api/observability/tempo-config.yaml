@@ -1,0 +1,47 @@
+# Local-dev Tempo configuration. Single binary mode with filesystem
+# storage — adequate for a hackathon MVP. The trace block storage is
+# kept under /var/tempo/traces inside the container; the volume mount
+# in docker-compose.observability.yml persists it across restarts.
+server:
+  http_listen_port: 3100
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4317"
+        http:
+          endpoint: "0.0.0.0:4318"
+
+ingester:
+  trace_idle_period: 10s
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 48h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo-local
+
+# Tempo metrics generator disabled in MVP — request latency lives on the
+# API side via `llm_request_latency_ms` and `agent_task_duration_ms`.
+querier:
+  frontend_worker:
+    frontend_address: ""  # disables query frontend for dev
+
+# Lifecycle: TTL for trace blocks (matches `tempo-data` Docker volume
+# retention expectations).
+search_overrides:
+  max_duration: 0

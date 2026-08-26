@@ -1,0 +1,49 @@
+# Local observability override for docker-compose.
+#
+# Use together with `docker-compose.yml`:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+#
+# Adds two services: `tempo` (OTLP/HTTP trace receiver) and `grafana`
+# (provisioned with a Tempo datasource and the bundled `api-correlations`
+# dashboard). Pino logs are read directly from `docker logs <svc> | jq` so
+# we deliberately do not stand up Loki or Mimir locally — see
+# `docs/observability-deployment.md` for the rationale.
+#
+# Both services bind to 127.0.0.1 only. No public ingress.
+services:
+  tempo:
+    image: grafana/tempo:2.6.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    user: "0:0"
+    ports:
+      - "127.0.0.1:4317:4317"  # OTLP gRPC
+      - "127.0.0.1:4318:4318"  # OTLP HTTP
+    volumes:
+      - ./observability/tempo-config.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo/traces
+    healthcheck:
+      test: ["CMD", "/usr/bin/wget", "--spider", "-q", "http://localhost:3100/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: wanderly-dev
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
+    volumes:
+      - ./observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./observability/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./observability/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      tempo:
+        condition: service_healthy
+
+volumes:
+  tempo-data:

@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AgentRun, ConversationTurnAcceptedResponse, CreateThreadResponse, OwnerConversationResponse, Thread } from "@/lib/api/contracts";
+import type { TravelApi } from "@/lib/api";
 import { configureMapAttribution, ExploreMapPage, toConversationPlace } from "./explore-map-page";
 import { renderWithIntl } from "@/test/render";
 
@@ -73,6 +75,7 @@ const mapMock = vi.hoisted(() => {
     layoutChanges: [] as Array<{ id: string; visibility: string }>,
     queryResults: [] as Array<{ properties: Record<string, unknown> }>,
     markerButtons: [] as HTMLButtonElement[],
+    markerLngLats: [] as Array<[number, number]>,
     removedMarkers: [] as string[],
     easeCalls: [] as Array<{
       padding?: { top: number; right: number; bottom: number; left: number };
@@ -151,7 +154,9 @@ vi.mock("maplibre-gl", () => {
 
   class MarkerMock {
     private label = "marker";
+    private element: HTMLElement;
     constructor(options: { element: HTMLElement }) {
+      this.element = options.element;
       this.label = options.element.textContent ?? "marker";
       const button = options.element.querySelector("button");
       if (button) mapMock.markerButtons.push(button);
@@ -159,8 +164,12 @@ vi.mock("maplibre-gl", () => {
     addTo() {
       return this;
     }
-    setLngLat() {
+    setLngLat(coordinates: [number, number]) {
+      mapMock.markerLngLats.push(coordinates);
       return this;
+    }
+    getElement() {
+      return this.element;
     }
     remove() {
       mapMock.removedMarkers.push(this.label);
@@ -187,6 +196,7 @@ describe("ExploreMapPage private inspirations", () => {
   beforeEach(() => {
     mapMock.handlers.clear();
     mapMock.markerButtons.length = 0;
+    mapMock.markerLngLats.length = 0;
     mapMock.layers.length = 0;
     mapMock.addedSources.length = 0;
     mapMock.movedLayers.length = 0;
@@ -208,6 +218,7 @@ describe("ExploreMapPage private inspirations", () => {
     mapMock.removedMarkers.length = 0;
     mapMock.easeCalls.length = 0;
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    localStorage.clear();
     mockGlobeStyleFetch();
   });
 
@@ -243,6 +254,77 @@ describe("ExploreMapPage private inspirations", () => {
     expect(within(list).queryByText("Pinned place 1")).not.toBeInTheDocument();
     expect(within(list).getByText("Pinned place 3")).toBeInTheDocument();
     expect(mapMock.removedMarkers).toHaveLength(2);
+  });
+
+  it("normalizes clicks to the city center and rejects a duplicate city pin", async () => {
+    const api = createTravelApiForAutoAsk();
+    vi.mocked(api.getLocationReference).mockResolvedValue({
+      outcome: "REFERENCE",
+      country: "Portugal",
+      countryCode: "PT",
+      admin1: "Lisbon",
+      admin1Code: "PT-11",
+      nearestCity: "Lisbon",
+      nearestCityCoordinates: { latitude: 38.7167, longitude: -9.1333 },
+      distanceKm: 1.1,
+      source: "Natural Earth + GeoNames",
+      datasetVersion: "test",
+      checkedAt: "2026-08-26T00:00:00.000Z",
+      isTravelFact: false,
+    });
+    renderWithIntl(<ExploreMapPage />, { api });
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: -9.139, lat: 38.722 } });
+    });
+    expect(await screen.findByRole("heading", { name: "Lisbon" })).toBeInTheDocument();
+    expect(mapMock.markerLngLats).toContainEqual([-9.1333, 38.7167]);
+
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: -9.18, lat: 38.74 } });
+    });
+    expect(await screen.findByText("Lisbon is already pinned.")).toBeInTheDocument();
+    expect(mapMock.removedMarkers).toContain("Pinned place 2");
+    fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
+    expect(screen.getByRole("button", { name: "All pins (1)" })).toBeInTheDocument();
+  });
+
+  it("retries unavailable clicked cities once and collapses duplicates after the API recovers", async () => {
+    const api = createTravelApiForAutoAsk();
+    const shanghaiReference = {
+      outcome: "REFERENCE" as const,
+      country: "China",
+      countryCode: "CN",
+      admin1: "Shanghai",
+      admin1Code: "CN-SH",
+      nearestCity: "Shanghai",
+      nearestCityCoordinates: { latitude: 31.22222, longitude: 121.45806 },
+      distanceKm: 0.9,
+      source: "Natural Earth + GeoNames" as const,
+      datasetVersion: "test",
+      checkedAt: "2026-08-26T00:00:00.000Z",
+      isTravelFact: false as const,
+    };
+    vi.mocked(api.getLocationReference)
+      .mockRejectedValueOnce(new Error("API restarting"))
+      .mockRejectedValueOnce(new Error("API restarting"))
+      .mockResolvedValue(shanghaiReference);
+    renderWithIntl(<ExploreMapPage />, { api });
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 121.47, lat: 31.23 } });
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 121.53, lat: 31.05 } });
+    });
+    await waitFor(() => expect(api.getLocationReference).toHaveBeenCalledTimes(2));
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(api.getLocationReference).toHaveBeenCalledTimes(4));
+    expect(await screen.findByRole("heading", { name: "Shanghai" })).toBeInTheDocument();
+    expect(mapMock.removedMarkers).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
+    expect(screen.getByRole("button", { name: "All pins (1)" })).toBeInTheDocument();
   });
 
   it("opens pin context on the first chat click and the preview on the second", async () => {
@@ -340,6 +422,66 @@ describe("ExploreMapPage private inspirations", () => {
     expect(mapMock.layoutChanges).toHaveLength(0);
   });
 
+  it("prompts the agent to introduce the destination when 'View this inspiration' is clicked", async () => {
+    const api = createTravelApiForAutoAsk();
+    renderWithIntl(<ExploreMapPage />, { api });
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("auto-ask-inspiration-id");
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 } });
+    });
+
+    const viewButton = await screen.findByRole("button", { name: /View this inspiration/i });
+    fireEvent.click(viewButton);
+
+    expect(await screen.findByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
+    expect(api.createThread).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+      requestId: "auto-ask-inspiration-id",
+      question: "Tell me about Pinned place 1",
+      place: toConversationPlace({
+        id: "inspiration-1",
+        name: "Pinned place 1",
+        country: "35.690°, 139.692°",
+        coordinates: [139.692, 35.69],
+        note: "This is an unverified, session-only inspiration. It has no live price, availability, visa or booking data.",
+        kind: "inspiration",
+      }),
+      intent: "auto_intro",
+    });
+    expect(await screen.findByText("A calm, general destination answer.")).toBeInTheDocument();
+  });
+
+  it("prompts the agent to introduce a map geography when 'View this map location' is clicked", async () => {
+    const api = createTravelApiForAutoAsk();
+    renderWithIntl(<ExploreMapPage />, { api });
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("auto-ask-geography-id");
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
+    await waitFor(() => expect((window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap).toBeDefined());
+    mapMock.queryResults.push({ properties: { class: "city", "name:en": "Tokyo" } });
+
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 }, point: { x: 10, y: 10 } });
+    });
+
+    const viewButton = await screen.findByRole("button", { name: /View this map location/i });
+    expect(viewButton).toBeInTheDocument();
+    fireEvent.click(viewButton);
+
+    expect(await screen.findByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
+    expect(api.createThread).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", expect.objectContaining({
+      question: "Tell me about Tokyo",
+      place: expect.objectContaining({ name: "Tokyo", sourceType: "INSPIRATION" }),
+    }));
+  });
+
   it("keeps country, regional, and city controls available after opening a destination drawer", async () => {
     renderWithIntl(<ExploreMapPage />);
 
@@ -359,6 +501,69 @@ describe("ExploreMapPage private inspirations", () => {
     expect(mapMock.layoutChanges).toContainEqual({ id: "boundary_2", visibility: "none" });
   });
 });
+
+function createTravelApiForAutoAsk(): TravelApi & {
+  createThread: ReturnType<typeof vi.fn>;
+  submitConversationTurn: ReturnType<typeof vi.fn>;
+  subscribeAgentRun: ReturnType<typeof vi.fn>;
+} {
+  const THREAD_ID = "11111111-1111-4111-8111-111111111111";
+  const RUN_ID = "55555555-5555-4555-8555-555555555555";
+  const CREATED_AT = "2026-08-26T00:00:00.000Z";
+  const thread: Thread = {
+    id: THREAD_ID,
+    ownerUserId: "22222222-2222-4222-8222-222222222222",
+    tripId: null,
+    title: "Explore · Pinned place 1",
+    createdAt: CREATED_AT,
+    archivedAt: null,
+  };
+
+  const agentRun: AgentRun = {
+    runId: RUN_ID,
+    operation: "CONVERSATION",
+    status: "RUNNING",
+    generationAttempt: 1,
+    attemptCount: 1,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    finishedAt: null,
+    errorCode: null,
+    assistantMessageId: null,
+    resultPlanId: null,
+  };
+
+  return {
+    getMyProfile: vi.fn(),
+    updateMyProfile: vi.fn(),
+    getTrips: vi.fn(),
+    getLocationReference: vi.fn().mockResolvedValue({ outcome: "NO_REFERENCE", source: "Natural Earth + GeoNames", datasetVersion: "test", checkedAt: CREATED_AT, isTravelFact: false }),
+    getThreads: vi.fn().mockResolvedValue({ threads: [] }),
+    createThread: vi.fn().mockResolvedValue({ id: THREAD_ID, message: "Thread created" } satisfies CreateThreadResponse),
+    getOwnerConversation: vi.fn().mockResolvedValue({ thread, messages: [] } satisfies OwnerConversationResponse),
+    // The turn command is now only accepted (202); the answer arrives over the
+    // authenticated stream and the durable run is the recovery path.
+    submitConversationTurn: vi.fn().mockImplementation(async (_threadId, input) => {
+      const acceptedTurn: ConversationTurnAcceptedResponse = {
+        threadId: THREAD_ID,
+        runId: RUN_ID,
+        operation: "CONVERSATION",
+        status: "QUEUED",
+        generationAttempt: 0,
+        userMessage: { id: "33333333-3333-4333-8333-333333333333", role: "USER", content: input.question, sequence: 1, createdAt: CREATED_AT },
+      };
+      return acceptedTurn;
+    }),
+    getAgentRun: vi.fn().mockResolvedValue(agentRun),
+    cancelAgentRun: vi.fn().mockResolvedValue({ ...agentRun, status: "CANCEL_REQUESTED" }),
+    subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal: AbortSignal, onEvent) => {
+      onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+      onEvent({ event: "message.delta", runId: RUN_ID, generationAttempt: 1, sequence: 0, delta: "A calm, general destination answer." });
+      if (signal.aborted) return;
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    }),
+  };
+}
 
 describe("ExploreMapPage readiness diagnostics", () => {
   afterEach(() => {

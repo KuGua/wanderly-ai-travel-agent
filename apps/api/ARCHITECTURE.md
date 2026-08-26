@@ -2,7 +2,10 @@
 
 ## Overview
 
-AI Travel Agent is a **modular monolith** — not a microservice architecture. All business logic runs in a single Fastify process with clear module boundaries designed for future extraction if needed.
+AI Travel Agent is a **modular monolith** — not a microservice architecture.
+The API and durable Agent Worker are two process entrypoints over the same code,
+database, policy, and provider modules; HTTP request processes never own accepted
+Agent execution.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -38,6 +41,8 @@ Application-layer interface for AI model interactions:
 - `explainPlanDiff()` — explains differences between old/new plans
 - `generateConversationReply()` — produces a typed private Personal Agent
   answer with explicit `MODEL` provenance
+- `streamConversationReply()` — OpenAI-compatible async chunks for the Worker;
+  chunks remain untrusted until the streaming safety gate approves them
 
 **Constraints**: Model cannot access database or execute irreversible operations.
 **Current**: `gateway-factory.ts` requires a configured real OpenAI, Gemini, or
@@ -95,8 +100,10 @@ Core business logic — NOT in LLM/Agent:
 - **VisaService** — readiness checks with nationality authorization
 - **AuditService** — correlation-ID-based audit trail
 - **IdempotencyService** — global idempotency for all operations
-- **ChatConversationService** — owner check, bounded safe recall, Personal
-  Skill orchestration, turn idempotency, and short-transaction persistence
+- **ChatConversationService** — owner-only deterministic history reads
+- **TaskRepository / AgentTaskWorker** — short acceptance transaction, atomic
+  `SKIP LOCKED` claims, renewable leases, recovery/retry, explicit cancellation,
+  streaming policy enforcement, and conditional final persistence
 
 ### 4. Database Layer (`src/db/`)
 
@@ -110,6 +117,7 @@ Core business logic — NOT in LLM/Agent:
 users ──1:1── user_profiles (private)
   │
   ├──< chat_threads ──< chat_messages (owner-only USER / server ASSISTANT)
+  │          └──< agent_task_runs (durable state; no prompt/partial text)
   │
   └──< trip_members >── shared_trips
          │                  │
@@ -196,8 +204,42 @@ Cross-cutting:
   dates of birth, and private model inputs.
 - `/metrics` renders process-local Prometheus text for the MVP. Every metric has
   an exact bounded label schema; identifiers and free-form values are rejected.
-  There is no durable store, scraper configuration, or production metrics/trace
-  exporter in this repository yet.
+- Distributed tracing is wired through `src/observability/tracing.ts` (see
+  [src/observability/README.md](src/observability/README.md)). The API and the
+  Worker each call `initTracing()` as their first import; the destination
+  is env-driven via `OTEL_EXPORTER_OTLP_ENDPOINT`. **Local dev**: the
+  `docker-compose.observability.yml` override brings up Tempo + Grafana so
+  app/worker send OTLP/HTTP straight to `tempo:4318`. **Production**:
+  Grafana Cloud Free receives OTLP/HTTPS; pino stdout lands in CloudWatch
+  Logs (App Runner / Fargate `awslogs`) and is queried through Grafana
+  Cloud's Logs UI by `trace_id`. The same `safeSetAttribute` policy
+  (`FORBIDDEN_SPAN_ATTRIBUTE_KEYS`) and the same pino redaction list
+  (`LOGGER_REDACT_PATHS`) cover both environments. Detailed runbook:
+  [`docs/observability-deployment.md`](../../docs/observability-deployment.md).
+  SLO / SLI / alert rules:
+  [`docs/observability-slo.md`](../../docs/observability-slo.md).
+
+### Durable task trace context
+
+`agent_task_runs.trace_context` is a JSONB column added by migration
+`0010_agent_task_trace_context.sql`. It carries the W3C trace context
+captured at HTTP ingress (shape: `{ traceparent, tracestate?, correlationId }`),
+so the Worker process — which runs in a separate ECS Fargate task — can
+reconstruct the originating trace without any new inbound call. The
+producer side is `acceptConversationTask` (`apps/api/src/tasks/task-repository.ts`),
+which writes the column inside the same transaction that inserts the run
+row. The consumer side is `ctxFromRun(run)` in
+`apps/api/src/tasks/task-repository.ts`, called by
+`processNextAgentTask` to build a `RequestContext` whose
+`traceparent`/`tracestate` mirror the persisted values.
+
+The Worker root span is `agent_task_worker.run` (`SpanKind.CONSUMER`,
+`apps/api/src/workers/agent-task-worker.ts`). When the task row carries a
+trace context, the span is opened with a `SpanLink` to the originating HTTP
+server span — the parent may already have ended (the Worker polls), so we
+do not assert a parent relationship. When the column is `null` (old rows,
+recovery path, replay), the span is opened as a fresh root and tagged with
+`tasks.recovery=true`.
 
 ## Idempotency Strategy
 
@@ -205,8 +247,9 @@ All mutating operations use `idempotency_records`:
 - **Planning**: keyed by `change_event:{eventId}`
 - **Booking**: keyed by `booking:{orchestrationRequestId}`
 - **Callbacks**: keyed by `callback:{eventId}`
-- **Chat turns**: keyed by `chat_turn:{threadId}:{requestId}`; stored result
-  metadata contains message IDs and response mode, never message bodies
+- **Chat turns**: keyed by `chat_turn:{threadId}:{requestId}`; acceptance stores
+  the durable run ID and USER message exactly once. Completion updates only safe
+  result IDs/response mode, never message bodies or partial stream text.
 
 Duplicate requests return cached results without side effects.
 

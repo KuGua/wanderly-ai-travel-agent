@@ -1,22 +1,73 @@
-import { randomUUID } from "node:crypto";
-
 import { SkillError } from "../agents/errors.js";
+import { context as otelContext, SpanKind, trace as otelTrace } from "@opentelemetry/api";
 import { metrics } from "../observability/metrics.js";
-import { createRequestContext } from "../utils/context.js";
-import { logger } from "../utils/logger.js";
+import {
+  getTracer,
+  parseTraceparent,
+  safeSetAttribute,
+} from "../observability/tracing.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import { handleConversationTask, publishPhase } from "../tasks/handlers/conversation-task-handler.js";
 import {
   claimNextConversationTask,
   completeConversationTask,
+  ctxFromRun,
   failOrRetryTask,
   finishCancelledTask,
   LostTaskLeaseError,
   recoverExpiredAgentTasks,
   renewTaskLease,
   taskCancellationRequested,
+  type AgentTaskRow,
 } from "../tasks/task-repository.js";
 import { publishAgentStreamEvent } from "../tasks/task-stream-publisher.js";
+
+/**
+ * Open the worker root span for a claimed task. The span is linked to the
+ * originating HTTP server span via `parseTraceparent` so the trace stays
+ * continuous across the durable boundary. When the task row has no trace
+ * context (old rows, recovery path, replay) we fall back to a fresh span.
+ */
+function openWorkerRunSpan(run: AgentTaskRow) {
+  const tc = run.traceContext ?? null;
+  const parsed = tc?.traceparent ? parseTraceparent(tc.traceparent) : null;
+  const tracer = getTracer();
+  const links = parsed
+    ? [{ context: { traceId: parsed.traceId, spanId: parsed.spanId, isRemote: true, traceFlags: 1 } }]
+    : undefined;
+  const span = tracer.startSpan(
+    "agent_task_worker.run",
+    {
+      kind: SpanKind.CONSUMER,
+      attributes: {
+        "tasks.operation": "conversation",
+        "tasks.run.id": run.id,
+        "tasks.attempt": run.generationAttempt,
+        "tasks.recovery": tc === null,
+      },
+      links,
+    },
+  );
+  safeSetAttribute(span, "app.correlation_id", tc?.correlationId ?? run.requestId);
+  return span;
+}
+
+/**
+ * Helper that wraps a callback with the worker span set as active. Returns
+ * the callback's return value while ensuring AsyncLocalStorage carries the
+ * span context for child operations.
+ */
+async function withWorkerSpan<T>(
+  run: AgentTaskRow,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const span = openWorkerRunSpan(run);
+  try {
+    return await otelContext.with(otelTrace.setSpan(otelContext.active(), span), fn);
+  } finally {
+    span.end();
+  }
+}
 
 export async function processNextAgentTask(): Promise<boolean> {
   const recovered = await recoverExpiredAgentTasks();
@@ -48,9 +99,10 @@ export async function processNextAgentTask(): Promise<boolean> {
   const run = await claimNextConversationTask();
   if (!run) return recovered.length > 0;
   if (!run.leaseToken) throw new Error("Claimed task has no lease token");
-  logger.info({ component: "agent-task-worker", event: "worker.claimed", runId: run.id, threadId: run.threadId }, "Worker claimed durable Agent run");
 
   const leaseToken = run.leaseToken;
+  const ctx = ctxFromRun(run);
+  const traceparent = ctx.traceparent;
   const abortController = new AbortController();
   let leaseLost = false;
   const leaseTimer = setInterval(() => {
@@ -67,84 +119,96 @@ export async function processNextAgentTask(): Promise<boolean> {
     });
   }, 250);
 
-  try {
-    logger.info({ component: "agent-task-worker", event: "run.started", runId: run.id, threadId: run.threadId }, "Durable Agent run started");
-    await publishAgentStreamEvent({
-      event: "turn.started",
-      runId: run.id,
-      generationAttempt: run.generationAttempt,
-    });
-    await publishPhase(run, "GENERATING");
-    const output = await handleConversationTask({
-      run,
-      ctx: createRequestContext(run.createdByUserId, randomUUID(), randomUUID()),
-      signal: abortController.signal,
-    });
+  return withWorkerSpan(run, async () => {
+    try {
+      await publishAgentStreamEvent({
+        event: "turn.started",
+        runId: run.id,
+        generationAttempt: run.generationAttempt,
+        traceparent,
+      });
+      await publishPhase(run, "GENERATING", traceparent);
+      const output = await handleConversationTask({
+        run,
+        ctx,
+        signal: abortController.signal,
+      });
 
-    if (await taskCancellationRequested(run.id, leaseToken)) {
-      abortController.abort();
-      throw new Error("Agent task cancellation requested");
-    }
-    await publishPhase(run, "PERSISTING");
-    const assistant = await completeConversationTask({
-      ctx: createRequestContext(run.createdByUserId, randomUUID(), randomUUID()), run, leaseToken,
-      content: output.content, responseMode: output.responseMode,
-    });
-    await publishAgentStreamEvent({ event: "turn.completed", runId: run.id, generationAttempt: run.generationAttempt, assistantMessageId: assistant.id });
-    logger.info({ component: "agent-task-worker", event: "run.completed", runId: run.id, threadId: run.threadId, assistantMessageId: assistant.id }, "Durable Agent run completed and message persisted");
-    metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "completed" });
-    metrics.observe("agent_task_duration_ms", Date.now() - run.createdAt.getTime(), {
-      operation: "conversation",
-      outcome: "completed",
-    });
-    return true;
-  } catch (error) {
-    if (leaseLost || error instanceof LostTaskLeaseError) return true;
-    if (await taskCancellationRequested(run.id, leaseToken)) {
-      if (await finishCancelledTask(run.id, leaseToken)) {
-        await publishAgentStreamEvent({
-          event: "turn.cancelled",
-          runId: run.id,
-          generationAttempt: run.generationAttempt,
-        });
-        metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "cancelled" });
+      if (await taskCancellationRequested(run.id, leaseToken)) {
+        abortController.abort();
+        throw new Error("Agent task cancellation requested");
+      }
+      await publishPhase(run, "PERSISTING", traceparent);
+      const assistant = await completeConversationTask({
+        ctx,
+        run,
+        leaseToken,
+        content: output.content,
+        responseMode: output.responseMode,
+      });
+      await publishAgentStreamEvent({
+        event: "turn.completed",
+        runId: run.id,
+        generationAttempt: run.generationAttempt,
+        assistantMessageId: assistant.id,
+        traceparent,
+      });
+      metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "completed" });
+      metrics.observe("agent_task_duration_ms", Date.now() - run.createdAt.getTime(), {
+        operation: "conversation",
+        outcome: "completed",
+      });
+      return true;
+    } catch (error) {
+      if (leaseLost || error instanceof LostTaskLeaseError) return true;
+      if (await taskCancellationRequested(run.id, leaseToken)) {
+        if (await finishCancelledTask(run.id, leaseToken)) {
+          await publishAgentStreamEvent({
+            event: "turn.cancelled",
+            runId: run.id,
+            generationAttempt: run.generationAttempt,
+            traceparent,
+          });
+          metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "cancelled" });
+          metrics.observe("agent_task_duration_ms", Date.now() - run.createdAt.getTime(), {
+            operation: "conversation",
+            outcome: "cancelled",
+          });
+        }
+        return true;
+      }
+
+      const classified = classifyTaskError(error);
+      const outcome = await failOrRetryTask({
+        run,
+        leaseToken,
+        code: classified.code,
+        retryable: classified.retryable,
+      });
+      if (outcome === "RETRYING") {
+        metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "retrying" });
+        await publishPhase(run, "RETRYING", traceparent);
+      } else if (outcome === "FAILED") {
+        metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "failed" });
         metrics.observe("agent_task_duration_ms", Date.now() - run.createdAt.getTime(), {
           operation: "conversation",
-          outcome: "cancelled",
+          outcome: "failed",
+        });
+        await publishAgentStreamEvent({
+          event: "turn.failed",
+          runId: run.id,
+          generationAttempt: run.generationAttempt,
+          code: classified.code,
+          retryable: false,
+          traceparent,
         });
       }
       return true;
+    } finally {
+      clearInterval(leaseTimer);
+      clearInterval(cancellationTimer);
     }
-
-    const classified = classifyTaskError(error);
-    const outcome = await failOrRetryTask({
-      run,
-      leaseToken,
-      code: classified.code,
-      retryable: classified.retryable,
-    });
-    if (outcome === "RETRYING") {
-      metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "retrying" });
-      await publishPhase(run, "RETRYING");
-    } else if (outcome === "FAILED") {
-      metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "failed" });
-      metrics.observe("agent_task_duration_ms", Date.now() - run.createdAt.getTime(), {
-        operation: "conversation",
-        outcome: "failed",
-      });
-      await publishAgentStreamEvent({
-        event: "turn.failed",
-        runId: run.id,
-        generationAttempt: run.generationAttempt,
-        code: classified.code,
-        retryable: false,
-      });
-    }
-    return true;
-  } finally {
-    clearInterval(leaseTimer);
-    clearInterval(cancellationTimer);
-  }
+  });
 }
 
 function classifyTaskError(error: unknown): {

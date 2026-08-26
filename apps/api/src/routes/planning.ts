@@ -13,7 +13,7 @@ export async function planningRoutes(app: FastifyInstance) {
   // (so two to three destinations all get their own flights/stay/ground and
   // visa checks, each anchored to the same shared snapshot).
   app.post("/planning/generate", async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
     const body = planRequestSchema.parse(request.body);
 
     const membership = await db.select().from(tripMembers)

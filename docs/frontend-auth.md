@@ -49,3 +49,6 @@ request returns an authenticated response instead of 401/503.
 For pre-Cognito local integration only, the server also exposes the explicit,
 loopback-only mode documented in [`local-development-auth.md`](./local-development-auth.md).
 It does not create a browser session or token and cannot activate in production.
+It requires a loopback API URL plus the API's exact loopback Origin allow-list;
+it is a one-user smoke-test path, not an alternative to Cognito multi-user
+acceptance.

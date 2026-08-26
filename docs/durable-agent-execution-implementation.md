@@ -1,17 +1,9 @@
 # 持久 Agent 执行与可重连流式输出实施规范
 
-**状态：** 已批准的实施规范
-**范围：** Personal Agent 对话、共享行程规划与重规划
-**取代：** `docs/agent-streaming-implementation.md` 中关于断连/取消的生命周期语义
+**状态：** Conversation slice 已实施；planning/replan Worker 迁移待实施
+**范围：** Personal Agent 对话、共享行程规划与重规划  
+**取代：** `docs/agent-streaming-implementation.md` 中关于断连/取消的生命周期语义  
 **主要实施目标：** Next.js Web + Fastify API + PostgreSQL/RDS + ECS Fargate Worker
-
-## 实施状态（2026-08）
-
-- **Phase 1：** 已在适用范围内实现持久 task 基础设施。
-- **Phase 2：** `CONVERSATION` 的持久接受、独立 Worker、恢复、显式取消、SSE 观察和 Web 恢复已实现并完成本地验证。
-- **Phase 3：** `PLAN` / `REPLAN` 的持久 task 迁移仍是必需的后续工作；本阶段未将其定义为可选或完成。
-- **Phase 4：** 可重连 planning / streaming 工作仍按本规范后续执行。
-- **Phase 5：** 运营硬化与最终验收仍按本规范后续执行。
 
 ## 1. 目标与不可协商规则
 
@@ -183,7 +175,7 @@ Worker 在拥有 active task 时必须于 lease 到期前续租。lease renewal 
 
 ### 5.3 取消
 
-`POST /agent-runs/:runId/cancel` 是唯一取消机制。它验证 owner 或授权 trip member，随后在 transaction 中条件化更新 nonterminal task 为 `CANCEL_REQUESTED`，并记录 audit/outbox state。
+`POST /agent-runs/:runId/cancel` 是唯一取消机制。它验证 owner 或授权 trip member，随后在 transaction 中记录 audit/outbox state。尚未被 Worker claim 的 `QUEUED` task 可直接、幂等地进入 `CANCELLED`；`RUNNING` task 先进入 `CANCEL_REQUESTED`，由持有租约的 Worker 观察并中止上游调用。
 
 Worker 在外部调用前、streaming 中、每个 planning stage 前及 finalization 前立即检查取消状态。取消会调用 task 的 `AbortController`、丢弃 partial memory，并在不产生 ASSISTANT message 或 plan effect 的情况下以 `CANCELLED` 终结。浏览器生命周期事件绝不调用此 endpoint。
 

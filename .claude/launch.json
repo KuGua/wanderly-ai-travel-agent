@@ -3,6 +3,9 @@
   "configurations": [
     {
       "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "apps/web"],
+      "autoPort": true,
       "url": "http://localhost:3001"
     }
   ]

@@ -42,6 +42,7 @@ describe("API contracts", () => {
       admin1: "Lisbon",
       admin1Code: "PT-11",
       nearestCity: "Lisbon",
+      nearestCityCoordinates: { latitude: 38.7167, longitude: -9.1333 },
       distanceKm: 0,
       source: "Natural Earth + GeoNames",
       datasetVersion: "2026-08-demo.1",

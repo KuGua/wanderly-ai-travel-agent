@@ -1,6 +1,6 @@
 "use client";
 
-import { FlaskConical, LoaderCircle, LogIn, LogOut, UserRound, X } from "lucide-react";
+import { FlaskConical, LoaderCircle, LogIn, LogOut, TriangleAlert, UserRound, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { FormEvent, useState } from "react";
 
@@ -27,6 +27,10 @@ export function AccountAuthControl() {
 
   if (auth.status === "LOCAL_DEV") {
     return <span role="status" aria-label={t("localDevelopment")} title={t("localDevelopment")} className="grid size-11 place-items-center rounded-full border-2 border-amber-300 bg-amber-100 text-amber-900"><FlaskConical aria-hidden="true" className="size-5" /></span>;
+  }
+
+  if (auth.status === "LOCAL_DEV_INVALID") {
+    return <span role="status" aria-label={t("localDevelopmentInvalid")} title={t("localDevelopmentInvalid")} className="grid size-11 place-items-center rounded-full border-2 border-destructive/40 bg-destructive/10 text-destructive"><TriangleAlert aria-hidden="true" className="size-5" /></span>;
   }
 
   if (auth.status === "SIGNED_IN") {
