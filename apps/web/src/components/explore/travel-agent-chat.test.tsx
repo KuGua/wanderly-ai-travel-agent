@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConversationPlace, ConversationTurnResponse } from "@/lib/api/contracts";
@@ -29,12 +29,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function ChatHarness({ selectedPlace = null, initiallyOpen = false }: {
+function ChatHarness({
+  selectedPlace = null,
+  initiallyOpen = false,
+  autoAskRequest = null,
+  onAutoAskConsumed,
+}: {
   selectedPlace?: { place: ConversationPlace; context: string } | null;
   initiallyOpen?: boolean;
+  autoAskRequest?: { nonce: string; place: ConversationPlace; context: string } | null;
+  onAutoAskConsumed?: (nonce: string) => void;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
-  return <TravelAgentChat open={open} onOpen={() => setOpen(true)} onDismiss={() => setOpen(false)} selectedPlace={selectedPlace} />;
+  return (
+    <TravelAgentChat
+      open={open}
+      onOpen={() => setOpen(true)}
+      onDismiss={() => setOpen(false)}
+      selectedPlace={selectedPlace}
+      autoAskRequest={autoAskRequest}
+      onAutoAskConsumed={onAutoAskConsumed}
+    />
+  );
 }
 
 function renderChat(api: TravelApi, options: Parameters<typeof ChatHarness>[0] = {}) {
@@ -210,6 +226,102 @@ describe("TravelAgentChat API flow", () => {
     expect(api.createThread).toHaveBeenCalledTimes(1);
     expect(submit).toHaveBeenNthCalledWith(2, REPLACEMENT_THREAD_ID, expect.objectContaining({ question: "Thread B question" }));
     expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBe(REPLACEMENT_THREAD_ID);
+  });
+
+  it("auto-sends a 'Tell me about …' turn when autoAskRequest is provided", async () => {
+    const onConsumed = vi.fn();
+    const api = createApi();
+    const request = { nonce: "n1", place: TOKYO, context: "Japan" };
+    renderChat(api, {
+      initiallyOpen: true,
+      selectedPlace: { place: TOKYO, context: "Japan" },
+      autoAskRequest: request,
+      onAutoAskConsumed: onConsumed,
+    });
+
+    expect(await screen.findByText("A calm, general destination answer.")).toBeInTheDocument();
+    expect(screen.getByText("Tell me about Tokyo")).toBeInTheDocument();
+    expect(api.createThread).toHaveBeenCalledTimes(1);
+    expect(api.createThread).toHaveBeenCalledWith({ title: "Explore · Tokyo" });
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
+      requestId: REQUEST_ID,
+      question: "Tell me about Tokyo",
+      place: TOKYO,
+    });
+    expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBe(THREAD_ID);
+    await waitFor(() => expect(onConsumed).toHaveBeenCalledWith("n1"));
+  });
+
+  it("does not double-fire auto-ask when the parent re-renders while holding the same nonce", async () => {
+    const onConsumed = vi.fn();
+    const api = createApi();
+    const request = { nonce: "n1", place: TOKYO, context: "Japan" };
+
+    function TriggerRerender() {
+      const [, force] = useState(0);
+      useEffect(() => {
+        // Schedule three extra re-renders of TravelAgentChat AFTER the initial
+        // effect has had a chance to run, all keeping the same nonce.
+        const timers = [0, 5, 25].map((delay) => window.setTimeout(() => force((value) => value + 1), delay));
+        return () => timers.forEach((timer) => window.clearTimeout(timer));
+      }, []);
+      return null;
+    }
+
+    renderWithIntl(
+      <>
+        <ChatHarness
+          initiallyOpen
+          selectedPlace={{ place: TOKYO, context: "Japan" }}
+          autoAskRequest={request}
+          onAutoAskConsumed={onConsumed}
+        />
+        <TriggerRerender />
+      </>,
+      { api },
+    );
+
+    await screen.findByText("A calm, general destination answer.");
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(onConsumed).toHaveBeenCalledTimes(1);
+    expect(onConsumed).toHaveBeenCalledWith("n1");
+  });
+
+  it("appends auto-ask to an existing thread identified by localStorage pointer", async () => {
+    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
+    const api = createApi();
+    const request = { nonce: "n1", place: TOKYO, context: "Japan" };
+    renderChat(api, {
+      initiallyOpen: true,
+      selectedPlace: { place: TOKYO, context: "Japan" },
+      autoAskRequest: request,
+    });
+
+    expect(await screen.findByText("A calm, general destination answer.")).toBeInTheDocument();
+    expect(api.createThread).not.toHaveBeenCalled();
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
+      requestId: REQUEST_ID,
+      question: "Tell me about Tokyo",
+      place: TOKYO,
+    });
+  });
+
+  it("does not submit auto-ask while the chat dialog is closed", async () => {
+    const api = createApi();
+    renderChat(api, {
+      initiallyOpen: false,
+      selectedPlace: { place: TOKYO, context: "Japan" },
+      autoAskRequest: { nonce: "n1", place: TOKYO, context: "Japan" },
+    });
+
+    // Give the effect a chance to fire if it ever would.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(api.submitConversationTurn).not.toHaveBeenCalled();
+    expect(api.createThread).not.toHaveBeenCalled();
   });
 });
 
