@@ -73,6 +73,34 @@ describe("conversational ModelGateway", () => {
     expect(parse.mock.calls[0][1]).toHaveProperty("signal");
   });
 
+  it("normalizes Gemini's root-level content response", async () => {
+    const client = {
+      chat: { completions: { parse: vi.fn().mockResolvedValue({
+        choices: [{ message: {
+          parsed: null,
+          content: JSON.stringify({ content: "A Gemini-compatible answer." }),
+        } }],
+      }) } },
+    };
+    const gateway = new LLMGateway({
+      apiKey: "test-key",
+      provider: "gemini",
+      modelName: "gemini-test-model",
+      promptVersion: "chat-test-v1",
+      ctx: createRequestContext(),
+      client,
+      maxRetries: 0,
+    });
+
+    await expect(gateway.generateConversationReply({
+      question: "Tell me about Tokyo",
+      history: [],
+    })).resolves.toEqual({
+      content: "A Gemini-compatible answer.",
+      responseMode: "MODEL",
+    });
+  });
+
   it("throws a controlled error instead of synthesizing a reply for malformed output", async () => {
     const client = {
       chat: { completions: { parse: vi.fn().mockResolvedValue({

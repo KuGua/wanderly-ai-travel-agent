@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AgentRun, ConversationTurnAcceptedResponse, CreateThreadResponse, OwnerConversationResponse, Thread } from "@/lib/api/contracts";
+import type { TravelApi } from "@/lib/api";
 import { configureMapAttribution, ExploreMapPage, toConversationPlace } from "./explore-map-page";
 import { renderWithIntl } from "@/test/render";
 
@@ -208,6 +210,7 @@ describe("ExploreMapPage private inspirations", () => {
     mapMock.removedMarkers.length = 0;
     mapMock.easeCalls.length = 0;
     window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    localStorage.clear();
     mockGlobeStyleFetch();
   });
 
@@ -340,6 +343,65 @@ describe("ExploreMapPage private inspirations", () => {
     expect(mapMock.layoutChanges).toHaveLength(0);
   });
 
+  it("prompts the agent to introduce the destination when 'View this inspiration' is clicked", async () => {
+    const api = createTravelApiForAutoAsk();
+    renderWithIntl(<ExploreMapPage />, { api });
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("auto-ask-inspiration-id");
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 } });
+    });
+
+    const viewButton = await screen.findByRole("button", { name: /View this inspiration/i });
+    fireEvent.click(viewButton);
+
+    expect(await screen.findByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
+    expect(api.createThread).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
+      requestId: "auto-ask-inspiration-id",
+      question: "Tell me about Pinned place 1",
+      place: toConversationPlace({
+        id: "inspiration-1",
+        name: "Pinned place 1",
+        country: "35.690°, 139.692°",
+        coordinates: [139.692, 35.69],
+        note: "This is an unverified, session-only inspiration. It has no live price, availability, visa or booking data.",
+        kind: "inspiration",
+      }),
+    });
+    expect(await screen.findByText("A calm, general destination answer.")).toBeInTheDocument();
+  });
+
+  it("prompts the agent to introduce a map geography when 'View this map location' is clicked", async () => {
+    const api = createTravelApiForAutoAsk();
+    renderWithIntl(<ExploreMapPage />, { api });
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("auto-ask-geography-id");
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
+    await waitFor(() => expect((window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap).toBeDefined());
+    mapMock.queryResults.push({ properties: { class: "city", "name:en": "Tokyo" } });
+
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 }, point: { x: 10, y: 10 } });
+    });
+
+    const viewButton = await screen.findByRole("button", { name: /View this map location/i });
+    expect(viewButton).toBeInTheDocument();
+    fireEvent.click(viewButton);
+
+    expect(await screen.findByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
+    expect(api.createThread).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", expect.objectContaining({
+      question: "Tell me about Tokyo",
+      place: expect.objectContaining({ name: "Tokyo", sourceType: "INSPIRATION" }),
+    }));
+  });
+
   it("keeps country, regional, and city controls available after opening a destination drawer", async () => {
     renderWithIntl(<ExploreMapPage />);
 
@@ -359,6 +421,69 @@ describe("ExploreMapPage private inspirations", () => {
     expect(mapMock.layoutChanges).toContainEqual({ id: "boundary_2", visibility: "none" });
   });
 });
+
+function createTravelApiForAutoAsk(): TravelApi & {
+  createThread: ReturnType<typeof vi.fn>;
+  submitConversationTurn: ReturnType<typeof vi.fn>;
+  subscribeAgentRun: ReturnType<typeof vi.fn>;
+} {
+  const THREAD_ID = "11111111-1111-4111-8111-111111111111";
+  const RUN_ID = "55555555-5555-4555-8555-555555555555";
+  const CREATED_AT = "2026-08-26T00:00:00.000Z";
+  const thread: Thread = {
+    id: THREAD_ID,
+    ownerUserId: "22222222-2222-4222-8222-222222222222",
+    tripId: null,
+    title: "Explore · Pinned place 1",
+    createdAt: CREATED_AT,
+    archivedAt: null,
+  };
+
+  const agentRun: AgentRun = {
+    runId: RUN_ID,
+    operation: "CONVERSATION",
+    status: "RUNNING",
+    generationAttempt: 1,
+    attemptCount: 1,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    finishedAt: null,
+    errorCode: null,
+    assistantMessageId: null,
+    resultPlanId: null,
+  };
+
+  return {
+    getMyProfile: vi.fn(),
+    updateMyProfile: vi.fn(),
+    getTrips: vi.fn(),
+    getLocationReference: vi.fn().mockResolvedValue({ outcome: "NO_REFERENCE", source: "Natural Earth + GeoNames", datasetVersion: "test", checkedAt: CREATED_AT, isTravelFact: false }),
+    getThreads: vi.fn().mockResolvedValue({ threads: [] }),
+    createThread: vi.fn().mockResolvedValue({ id: THREAD_ID, message: "Thread created" } satisfies CreateThreadResponse),
+    getOwnerConversation: vi.fn().mockResolvedValue({ thread, messages: [] } satisfies OwnerConversationResponse),
+    // The turn command is now only accepted (202); the answer arrives over the
+    // authenticated stream and the durable run is the recovery path.
+    submitConversationTurn: vi.fn().mockImplementation(async (_threadId, input) => {
+      const acceptedTurn: ConversationTurnAcceptedResponse = {
+        threadId: THREAD_ID,
+        runId: RUN_ID,
+        operation: "CONVERSATION",
+        status: "QUEUED",
+        generationAttempt: 0,
+        userMessage: { id: "33333333-3333-4333-8333-333333333333", role: "USER", content: input.question, sequence: 1, createdAt: CREATED_AT },
+      };
+      return acceptedTurn;
+    }),
+    getAgentRun: vi.fn().mockResolvedValue(agentRun),
+    cancelAgentRun: vi.fn().mockResolvedValue({ ...agentRun, status: "CANCEL_REQUESTED" }),
+    subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal: AbortSignal, onEvent) => {
+      onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+      onEvent({ event: "message.delta", runId: RUN_ID, generationAttempt: 1, sequence: 0, delta: "A calm, general destination answer." });
+      if (signal.aborted) return;
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    }),
+  };
+}
 
 describe("ExploreMapPage readiness diagnostics", () => {
   afterEach(() => {
