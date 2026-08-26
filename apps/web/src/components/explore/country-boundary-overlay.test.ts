@@ -39,8 +39,21 @@ describe("projectCountryBoundaryPaths", () => {
       }],
     }, ([lng, lat]) => ({ x: lng, y: lat }), 400, (coordinates) => isCoordinateOnVisibleHemisphere(coordinates, [0, 0]));
 
-    expect(paths).toEqual(["M0.00 0.00 M10.00 0.00 L0.00 0.00 "]);
+    expect(paths).toEqual(["M0.00 0.00 L90.00 0.00 M90.00 0.00 L10.00 0.00 L0.00 0.00 "]);
     expect(isCoordinateOnVisibleHemisphere([180, 0], [0, 0])).toBe(false);
+  });
+
+  it("clips crossing segments at the globe horizon instead of popping whole edges", () => {
+    const paths = projectCountryBoundaryPaths({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: {},
+        geometry: { type: "Polygon", coordinates: [[[80, 0], [100, 0], [80, 0]]] },
+      }],
+    }, ([lng, lat]) => ({ x: lng, y: lat }), 400, (coordinates) => isCoordinateOnVisibleHemisphere(coordinates, [0, 0]));
+
+    expect(paths).toEqual(["M80.00 0.00 L90.00 0.00 M90.00 0.00 L80.00 0.00 "]);
   });
 });
 
