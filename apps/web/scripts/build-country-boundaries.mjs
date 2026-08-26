@@ -15,8 +15,8 @@ const inputPath = process.argv[2] ? resolve(process.cwd(), process.argv[2]) : nu
 
 const lods = [
   { id: "lod0", simplificationQuantile: 0.005, minZoom: 0, maxZoom: 3.4 },
-  { id: "lod1", simplificationQuantile: 0.02, minZoom: 3.4, maxZoom: 5.5 },
-  { id: "lod2", simplificationQuantile: 0.035, minZoom: 5.5, maxZoom: null },
+  { id: "lod1", simplificationQuantile: 0.035, minZoom: 3.4, maxZoom: 5.5 },
+  { id: "lod2", simplificationQuantile: 0.07, minZoom: 5.5, maxZoom: null },
 ];
 
 const source = inputPath

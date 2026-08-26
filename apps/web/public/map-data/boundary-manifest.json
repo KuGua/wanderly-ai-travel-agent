@@ -26,20 +26,20 @@
       "path": "map-data/country-borders-lod1.geojson",
       "minZoom": 3.4,
       "maxZoom": 5.5,
-      "simplificationQuantile": 0.02,
-      "bytes": 728289,
-      "gzipBytes": 233222,
-      "sha256": "a47dfab47d5eb796791d53f81858907c86a3e00e962b6c72f3fc13e80bfe53de"
+      "simplificationQuantile": 0.035,
+      "bytes": 1004650,
+      "gzipBytes": 336090,
+      "sha256": "0431ef949c2c969262bc4390b1fe86f093814a580b1a4acfeebf0a154795bdbe"
     },
     {
       "id": "lod2",
       "path": "map-data/country-borders-lod2.geojson",
       "minZoom": 5.5,
       "maxZoom": null,
-      "simplificationQuantile": 0.035,
-      "bytes": 1004651,
-      "gzipBytes": 336095,
-      "sha256": "a2fe0e24768e40e268172e33eb85a050cec97f017b825871429a4e1aae5ab32f"
+      "simplificationQuantile": 0.07,
+      "bytes": 1649463,
+      "gzipBytes": 568966,
+      "sha256": "742c7c26eac32f6736acbb39a2bc5886320c9f021efd96f0482482d9cf9ec003"
     }
   ]
 }
