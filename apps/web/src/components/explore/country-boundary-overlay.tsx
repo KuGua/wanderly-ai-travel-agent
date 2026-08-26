@@ -7,6 +7,22 @@ import { CHINA_MARITIME_LINE_DATA_URL, COUNTRY_BOUNDARY_LOD_DATA_URLS } from "./
 
 type Projector = (coordinates: [number, number]) => { x: number; y: number };
 type BoundaryLod = keyof typeof COUNTRY_BOUNDARY_LOD_DATA_URLS;
+type LongitudeRange = [number, number];
+/**
+ * Latitude band plus one or two longitude ranges (two when the view straddles
+ * the antimeridian) describing what the camera can currently see.
+ */
+export type ViewportBounds = { south: number; north: number; longitudeRanges: LongitudeRange[] };
+type BoundaryLine = { coordinates: number[][]; bbox: [number, number, number, number] };
+
+// Below this zoom the camera already sees a whole hemisphere, so culling by
+// viewport would reject nothing and only cost bbox comparisons.
+const VIEWPORT_CULLING_MIN_ZOOM = 3;
+// Keep a margin of the visible span on every side so strokes just outside the
+// frame still enter the path and joins near the edge stay continuous.
+const VIEWPORT_CULLING_MARGIN = 0.25;
+
+const boundaryLineCache = new WeakMap<GeoJSON.FeatureCollection, BoundaryLine[]>();
 
 const COUNTRY_BOUNDARY_LODS: ReadonlyArray<{ id: BoundaryLod; minZoom: number }> = [
   { id: "lod0", minZoom: 0 },
@@ -23,24 +39,90 @@ export function projectCountryBoundaryPaths(
   project: Projector,
   viewportWidth: number,
   isVisible: (coordinates: [number, number]) => boolean = () => true,
+  viewportBounds?: ViewportBounds | null,
 ): string[] {
-  return collection.features.flatMap((feature) => geometryPaths(feature.geometry, project, viewportWidth, isVisible));
+  return boundaryLines(collection)
+    .filter((line) => !viewportBounds || intersectsViewport(line.bbox, viewportBounds))
+    .map((line) => pathForLine(line.coordinates, project, viewportWidth, isVisible))
+    .filter(isPath);
 }
 
-function geometryPaths(
-  geometry: GeoJSON.Geometry | null,
-  project: Projector,
-  viewportWidth: number,
-  isVisible: (coordinates: [number, number]) => boolean,
-): string[] {
+/**
+ * Flattens every ring and line of a boundary collection once and remembers the
+ * result: redraws run on every map render, and re-walking the geometry tree
+ * per frame is the difference between projecting the visible sliver of the
+ * mesh and projecting the whole planet.
+ */
+function boundaryLines(collection: GeoJSON.FeatureCollection): BoundaryLine[] {
+  const cached = boundaryLineCache.get(collection);
+  if (cached) return cached;
+  const lines = collection.features
+    .flatMap((feature) => geometryLines(feature.geometry))
+    .map((coordinates) => ({ coordinates, bbox: lineBoundingBox(coordinates) }));
+  boundaryLineCache.set(collection, lines);
+  return lines;
+}
+
+function geometryLines(geometry: GeoJSON.Geometry | null): number[][][] {
   if (!geometry) return [];
   switch (geometry.type) {
-    case "LineString": return [pathForLine(geometry.coordinates, project, viewportWidth, isVisible)].filter(isPath);
-    case "MultiLineString": return geometry.coordinates.map((line) => pathForLine(line, project, viewportWidth, isVisible)).filter(isPath);
-    case "Polygon": return geometry.coordinates.map((ring) => pathForLine(ring, project, viewportWidth, isVisible)).filter(isPath);
-    case "MultiPolygon": return geometry.coordinates.flatMap((polygon) => polygon.map((ring) => pathForLine(ring, project, viewportWidth, isVisible)).filter(isPath));
+    case "LineString": return [geometry.coordinates];
+    case "MultiLineString": return geometry.coordinates;
+    case "Polygon": return geometry.coordinates;
+    case "MultiPolygon": return geometry.coordinates.flat();
     default: return [];
   }
+}
+
+function lineBoundingBox(coordinates: number[][]): [number, number, number, number] {
+  let west = Infinity;
+  let south = Infinity;
+  let east = -Infinity;
+  let north = -Infinity;
+  for (const [longitude, latitude] of coordinates) {
+    west = Math.min(west, longitude);
+    east = Math.max(east, longitude);
+    south = Math.min(south, latitude);
+    north = Math.max(north, latitude);
+  }
+  return [west, south, east, north];
+}
+
+function intersectsViewport([west, south, east, north]: [number, number, number, number], bounds: ViewportBounds): boolean {
+  if (north < bounds.south || south > bounds.north) return false;
+  return bounds.longitudeRanges.some(([rangeWest, rangeEast]) => west <= rangeEast && east >= rangeWest);
+}
+
+/**
+ * Reads the camera's visible extent as a latitude band plus longitude ranges,
+ * or null when culling cannot help (zoomed out, or the view wraps the globe).
+ */
+export function viewportBoundsFrom(
+  bounds: { west: number; south: number; east: number; north: number },
+  zoom: number,
+): ViewportBounds | null {
+  if (zoom < VIEWPORT_CULLING_MIN_ZOOM) return null;
+  const longitudeSpan = bounds.east - bounds.west;
+  if (!Number.isFinite(longitudeSpan) || longitudeSpan >= 360) return null;
+  const latitudeMargin = Math.abs(bounds.north - bounds.south) * VIEWPORT_CULLING_MARGIN;
+  const longitudeMargin = Math.abs(longitudeSpan <= 0 ? longitudeSpan + 360 : longitudeSpan) * VIEWPORT_CULLING_MARGIN;
+  const west = bounds.west - longitudeMargin;
+  const east = bounds.east + longitudeMargin;
+  if (east - west >= 360) return null;
+  return {
+    south: bounds.south - latitudeMargin,
+    north: bounds.north + latitudeMargin,
+    longitudeRanges: splitLongitudeRange(west, east),
+  };
+}
+
+function splitLongitudeRange(west: number, east: number): LongitudeRange[] {
+  const normalizedWest = normalizeLongitude(west);
+  const normalizedEast = normalizeLongitude(east);
+  // A view straddling the antimeridian becomes two ranges against the
+  // [-180, 180] coordinates the mesh is stored in.
+  if (normalizedWest > normalizedEast) return [[normalizedWest, 180], [-180, normalizedEast]];
+  return [[normalizedWest, normalizedEast]];
 }
 
 function isPath(path: string): path is string {
@@ -189,11 +271,13 @@ export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | nu
     const redraw = () => {
       const container = map.getContainer();
       const center = map.getCenter();
+      const viewportBounds = visibleViewportBounds(map);
       const project = (collection: GeoJSON.FeatureCollection) => projectCountryBoundaryPaths(
         collection,
         (coordinates) => map.project(coordinates),
         container.clientWidth,
         (coordinates) => isCoordinateOnVisibleHemisphere(coordinates, [center.lng, center.lat]),
+        viewportBounds,
       ).join("");
       svgRef.current?.setAttribute("viewBox", "0 0 " + container.clientWidth + " " + container.clientHeight);
       globalPathRef.current?.setAttribute("d", project(currentBoundary));
@@ -221,8 +305,20 @@ export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | nu
   );
 }
 
-async function fetchBoundaryCollection(url: string) {
-  const response = await fetch(url);
+function visibleViewportBounds(map: MapLibreMap): ViewportBounds | null {
+  try {
+    const bounds = map.getBounds();
+    return viewportBoundsFrom(
+      { west: bounds.getWest(), south: bounds.getSouth(), east: bounds.getEast(), north: bounds.getNorth() },
+      map.getZoom(),
+    );
+  } catch {
+    // A style or projection that cannot report bounds must still draw borders.
+    return null;
+  }
+}
+
+async function fetchBoundaryCollection(url: string) {  const response = await fetch(url);
   if (!response.ok) throw new Error("Country boundary data request failed (" + response.status + ")");
   const collection = await response.json() as GeoJSON.FeatureCollection;
   if (collection.type !== "FeatureCollection" || !Array.isArray(collection.features)) {
