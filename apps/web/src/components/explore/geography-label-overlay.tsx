@@ -219,11 +219,11 @@ type LabelNode = { group: SVGGElement; dot: SVGCircleElement | null };
 
 function labelKind(className: string, capital: boolean, rank: number, zoom: number, visibility: GeographyVisibility): LabelKind | null {
   if (className === "continent" && visibility.countries && zoom < 3.6) return "continent";
-  if (className === "country" && visibility.countries && zoom >= 1.1 && rank <= (zoom < 2.2 ? 1 : zoom < 3 ? 2 : zoom < 4 ? 3 : 6)) return "country";
-  if (className === "capital" && visibility.cities && zoom >= 2.6) return "capital";
-  if (className === "city" && visibility.cities && capital && zoom >= 2.6) return "capital";
-  if (className === "city" && visibility.cities && zoom >= 2.8 && rank <= (zoom < 3.5 ? 2 : zoom < 5 ? 5 : 10)) return "city";
-  if ((className === "region" || className === "state" || className === "province") && visibility.regions && zoom >= 4.2 && rank <= (zoom < 5 ? 2 : 6)) return "region";
+  if (className === "country" && visibility.countries && zoom >= 2.0 && rank <= (zoom < 3.5 ? 2 : zoom < 5 ? 3 : zoom < 6 ? 4 : 6)) return "country";
+  if (className === "capital" && visibility.cities && zoom >= 3.2 && rank <= (zoom < 4.5 ? 2 : zoom < 6 ? 4 : 8)) return "capital";
+  if (className === "city" && visibility.cities && capital && zoom >= 3.2 && rank <= (zoom < 4.5 ? 2 : zoom < 6 ? 4 : 8)) return "capital";
+  if (className === "city" && visibility.cities && zoom >= 3.8 && rank <= (zoom < 5 ? 2 : zoom < 6.5 ? 3 : zoom < 8 ? 5 : 10)) return "city";
+  if ((className === "region" || className === "state" || className === "province") && visibility.regions && zoom >= 5.0 && rank <= (zoom < 6 ? 1 : zoom < 7 ? 2 : 4)) return "region";
   return null;
 }
 
