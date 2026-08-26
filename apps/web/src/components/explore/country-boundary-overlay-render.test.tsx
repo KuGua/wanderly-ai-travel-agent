@@ -78,7 +78,7 @@ describe("CountryBoundaryOverlay fallback", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/map-data/country-borders-lod3/index.json"));
     await waitFor(() => expect(view.container.querySelector("path[stroke='#073d50']")).not.toBeNull());
-    expect(fetchMock).toHaveBeenCalledWith("/map-data/country-borders-lod2.geojson");
+    expect(fetchMock).toHaveBeenCalledWith("/map-data/country-borders-lod1.geojson");
   });
 });
 

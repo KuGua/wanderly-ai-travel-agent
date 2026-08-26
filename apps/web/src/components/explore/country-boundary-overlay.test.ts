@@ -154,10 +154,14 @@ describe("full-fidelity tile keys", () => {
   });
 });
 
-describe("country boundary LODs", () => {  it("selects one local mesh for each zoom band", () => {
+describe("country boundary LODs", () => {
+  it("selects one local mesh for each zoom band", () => {
     expect(countryBoundaryLodForZoom(0)).toBe("lod0");
-    expect(countryBoundaryLodForZoom(3.4)).toBe("lod1");
-    expect(countryBoundaryLodForZoom(5.5)).toBe("lod2");
+    expect(countryBoundaryLodForZoom(1.9)).toBe("lod0");
+    // The coarse startup mesh reads as blocky once the camera frames a
+    // subcontinent, so the finer mesh takes over early and stays on.
+    expect(countryBoundaryLodForZoom(2)).toBe("lod1");
+    expect(countryBoundaryLodForZoom(9)).toBe("lod1");
   });
 
   it("projects a shared mesh line only once", () => {

@@ -17,31 +17,21 @@
       "id": "lod0",
       "path": "map-data/country-borders-lod0.geojson",
       "minZoom": 0,
-      "maxZoom": 3.4,
+      "maxZoom": 2,
       "simplificationQuantile": 0.005,
-      "bytes": 618094,
+      "bytes": 618092,
       "gzipBytes": 173637,
-      "sha256": "69ecf0c6f6c440eaeef7d42a88d36de0975b5694e3a75871fcbc668a04550b12"
+      "sha256": "ae297d19abe83396fc5037743df0d6e9c5c05bf4c2425d47456cc9adaddea3b5"
     },
     {
       "id": "lod1",
       "path": "map-data/country-borders-lod1.geojson",
-      "minZoom": 3.4,
-      "maxZoom": 5.5,
-      "simplificationQuantile": 0.035,
-      "bytes": 1168053,
-      "gzipBytes": 381823,
-      "sha256": "29c66e6ca3c8afae94f2a87ecb6336fc0c9037c8356a0c974ae8d502ded3d05e"
-    },
-    {
-      "id": "lod2",
-      "path": "map-data/country-borders-lod2.geojson",
-      "minZoom": 5.5,
+      "minZoom": 2,
       "maxZoom": null,
-      "simplificationQuantile": 0.07,
-      "bytes": 1809167,
-      "gzipBytes": 613109,
-      "sha256": "b3e3c6241452758f003ecb5c276e40a899158c3a1e00f457d84ace406530d330"
+      "simplificationQuantile": 0.035,
+      "bytes": 1168052,
+      "gzipBytes": 381826,
+      "sha256": "a8a3edf96bcf65e10be79db2d5c4f7e8f3113c364171191f723b6468651ab330"
     },
     {
       "id": "lod3",

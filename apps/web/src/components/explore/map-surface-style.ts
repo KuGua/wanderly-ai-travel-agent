@@ -5,7 +5,6 @@ export const WANDERLY_OCEAN_COLOR = "#398ea9";
 export const COUNTRY_BOUNDARY_LOD_DATA_URLS = {
   lod0: "/map-data/country-borders-lod0.geojson",
   lod1: "/map-data/country-borders-lod1.geojson",
-  lod2: "/map-data/country-borders-lod2.geojson",
 } as const;
 export const CHINA_MARITIME_LINE_DATA_URL = "/map-data/china-maritime-line.geojson";
 export const COUNTRY_BOUNDARY_TILE_INDEX_URL = "/map-data/country-borders-lod3/index.json";
