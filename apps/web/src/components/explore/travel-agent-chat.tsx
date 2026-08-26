@@ -205,6 +205,21 @@ export function TravelAgentChat({
   }, [activeRunId, api, refetchAgentRun]);
 
   useEffect(() => {
+    if (
+      !activeRunId ||
+      !(agentRun.error instanceof TravelApiError && agentRun.error.statusCode === 404)
+    ) {
+      return;
+    }
+    const staleRun = window.setTimeout(() => {
+      setActiveRunId(null);
+      clearStoredActiveRunId();
+      setStreamState(emptyStreamState());
+    }, 0);
+    return () => window.clearTimeout(staleRun);
+  }, [activeRunId, agentRun.error]);
+
+  useEffect(() => {
     const status = agentRun.data?.status;
     if (!activeRunId || !status) return;
     if (status === "COMPLETED" && threadId) {

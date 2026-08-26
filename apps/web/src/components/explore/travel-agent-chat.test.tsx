@@ -6,7 +6,11 @@ import type { AgentRun, ConversationPlace, ConversationTurnAcceptedResponse } fr
 import { TravelApiError } from "@/lib/api/errors";
 import type { TravelApi } from "@/lib/api";
 import { renderWithIntl } from "@/test/render";
-import { CHAT_THREAD_STORAGE_KEY, TravelAgentChat } from "./travel-agent-chat";
+import {
+  CHAT_ACTIVE_RUN_STORAGE_KEY,
+  CHAT_THREAD_STORAGE_KEY,
+  TravelAgentChat,
+} from "./travel-agent-chat";
 
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 const OWNER_ID = "22222222-2222-4222-8222-222222222222";
@@ -182,6 +186,19 @@ describe("TravelAgentChat durable streaming flow", () => {
 
     await waitFor(() => expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBeNull());
     expect(screen.getByText("Let's plan somewhere memorable.")).toBeInTheDocument();
+  });
+
+  it("clears a stale active-run pointer when its durable run can no longer be read", async () => {
+    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
+    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    const api = createApi({
+      getAgentRun: vi.fn().mockRejectedValue(new TravelApiError("missing", 404, "Not Found", null)),
+    });
+    renderChat(api, { initiallyOpen: true });
+
+    await waitFor(() => expect(localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY)).toBeNull());
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
   });
 
   it("does not carry Thread A messages into replacement Thread B after Thread A returns 404", async () => {
