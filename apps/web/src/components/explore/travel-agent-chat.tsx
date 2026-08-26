@@ -58,6 +58,7 @@ export function TravelAgentChat({
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
   const panelInputRef = useRef<HTMLInputElement>(null);
   const firedAutoAskNoncesRef = useRef<Set<string>>(new Set());
+  const pendingTurnAnchorRef = useRef<HTMLParagraphElement>(null);
 
   const api = useTravelApi();
   const conversation = useOwnerConversation(threadId);
@@ -108,6 +109,12 @@ export function TravelAgentChat({
     },
     [createThread, submitTurn, t, selectedPlace, threadId, resetThreadSession],
   );
+
+  useEffect(() => {
+    if (pendingTurn && pendingTurnAnchorRef.current) {
+      pendingTurnAnchorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [pendingTurn]);
 
   useEffect(() => {
     if (panelInputRef.current && !autoAskRequest) {
@@ -289,7 +296,7 @@ export function TravelAgentChat({
               {refusalMessageIds.has(message.id) ? <p className="mt-2 text-[10px] font-black uppercase tracking-[0.1em] text-primary">{t("verificationRequired")}</p> : null}
             </article>
           ))}
-          {pendingTurn ? <p data-role="USER" data-pending="true" className="ml-auto max-w-[86%] rounded-[20px] rounded-tr-[6px] bg-sidebar px-4 py-3 text-sm leading-6 text-white shadow-sm opacity-80">{pendingTurn.question}</p> : null}
+          {pendingTurn ? <p ref={pendingTurnAnchorRef} data-role="USER" data-pending="true" className="ml-auto max-w-[86%] rounded-[20px] rounded-tr-[6px] bg-sidebar px-4 py-3 text-sm leading-6 text-white shadow-sm opacity-80">{pendingTurn.question}</p> : null}
           {activeRunId ? (
             <article data-role="ASSISTANT" data-streaming="true" className="max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-sm leading-6 text-foreground">
               {streamState.text ? <p>{streamState.text}</p> : null}
