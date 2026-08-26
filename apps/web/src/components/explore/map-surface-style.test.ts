@@ -53,7 +53,7 @@ describe("solidifyGlobeStyle", () => {
     expect(result.sources[GEBCO_SOURCE_ID]).toMatchObject({
       type: "raster",
       tiles: [GEBCO_WMS_TILE_URL],
-      maxzoom: 8,
+      maxzoom: 5,
     });
   });
 

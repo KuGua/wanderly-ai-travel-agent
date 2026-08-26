@@ -63,6 +63,7 @@ export function ExploreMapPage() {
   const journeyTimersRef = useRef<number[]>([]);
   const noticeTimerRef = useRef<number | null>(null);
   const pendingChatCityKeysRef = useRef(new Set<string>());
+  const spinAnimationRef = useRef<number | null>(null);
   const retriedLocationReferenceIdsRef = useRef(new Set<string>());
   const geographyVisibilityRef = useRef<GeographyVisibility>({ countries: true, regions: true, cities: true });
   const [readiness, setReadiness] = useState<MapReadiness>(INITIAL_READINESS);
@@ -193,6 +194,7 @@ export function ExploreMapPage() {
 
   const selectDestination = useCallback((destination: Destination) => {
     clearJourneyTimers();
+    stopGlobeSpin(spinAnimationRef);
     setSelected(destination);
     setExploreState("SELECTED");
     if (chatOpenRef.current) {
@@ -239,12 +241,12 @@ export function ExploreMapPage() {
     [clearJourneyTimers],
   );
 
-  const pinCatalogCity = useCallback(async (city: CatalogCity) => {
+  const pinCatalogCity = useCallback(async (city: CatalogCity, skipCamera = false) => {
     const map = mapRef.current;
     if (!map) return;
     const duplicate = inspirationsRef.current.find((item) => isSameCity(item, city.name, city.coordinates));
     if (duplicate) {
-      focusChatOnDestination(duplicate, setSelected, setExploreState, chatSelectedPinIdRef);
+      if (!skipCamera) focusChatOnDestination(duplicate, setSelected, setExploreState, chatSelectedPinIdRef);
       return;
     }
     if (pendingChatCityKeysRef.current.has(city.key)) return;
@@ -284,8 +286,10 @@ export function ExploreMapPage() {
       inspirationMarkersRef.current.set(inspiration.id, marker);
       inspirationsRef.current = [...inspirationsRef.current, inspiration];
       setInspirations(inspirationsRef.current);
-      selectDestination(inspiration);
-      showMapNotice(t("cityPinnedFromChat", { name: inspiration.name }));
+      if (!skipCamera) {
+        selectDestination(inspiration);
+        showMapNotice(t("cityPinnedFromChat", { name: inspiration.name }));
+      }
     } finally {
       pendingChatCityKeysRef.current.delete(city.key);
     }
@@ -293,8 +297,30 @@ export function ExploreMapPage() {
 
   const handleConversationText = useCallback((textValue: string) => {
     if (!textValue.trim()) return;
-    void loadCityCatalog(locale).then((cities) => {
-      findMentionedCities(textValue, cities).forEach((city) => { void pinCatalogCity(city); });
+    void loadCityCatalog(locale).then(async (cities) => {
+      const mentioned = findMentionedCities(textValue, cities);
+      if (mentioned.length === 0) return;
+      if (mentioned.length === 1) {
+        void pinCatalogCity(mentioned[0]);
+        return;
+      }
+      await Promise.all(mentioned.map((city) => pinCatalogCity(city, true)));
+      const map = mapRef.current;
+      if (!map) return;
+      const maplibregl = await import("maplibre-gl");
+      const bounds = new maplibregl.LngLatBounds();
+      mentioned.forEach((city) => bounds.extend(city.coordinates));
+      const camera = map.cameraForBounds(bounds, { padding: 80 });
+      if (camera && (camera.zoom ?? 0) >= 2.25) {
+        stopGlobeSpin(spinAnimationRef);
+        map.fitBounds(bounds, { padding: 80, maxZoom: 6, duration: reducedMotion() ? 0 : 1600 });
+      } else {
+        stopGlobeSpin(spinAnimationRef);
+        map.flyTo({ center: SINGAPORE, zoom: 2.25, duration: reducedMotion() ? 0 : 1400 });
+        if (!reducedMotion()) {
+          map.once("moveend", () => startGlobeSpin(map, spinAnimationRef));
+        }
+      }
     });
   }, [locale, pinCatalogCity]);
 
@@ -418,6 +444,10 @@ export function ExploreMapPage() {
         setMapForBoundaryOverlay(map);
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
         map.on("sourcedata", onSourceData);
+        const stopSpin = () => stopGlobeSpin(spinAnimationRef);
+        map.on("mousedown", stopSpin);
+        map.on("touchstart", stopSpin);
+        map.on("wheel", stopSpin);
 
         map.once("style.load", () => {
           try {
@@ -429,6 +459,7 @@ export function ExploreMapPage() {
               customAttribution: '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a> · <a href="https://help.aliyun.com/zh/datav/datav-7-0/user-guide/china-state-border-4-0" target="_blank" rel="noopener noreferrer">China maritime line (local snapshot)</a>',
             }), "bottom-right");
             finalizeReadiness(map, inspectGeographyLayers(map, MAP_STYLE_URL));
+            if (!cancelled && !reducedMotion()) startGlobeSpin(map, spinAnimationRef);
             window.queueMicrotask(() => {
               if (!cancelled) configureMapAttribution(containerRef.current);
             });
@@ -512,6 +543,7 @@ export function ExploreMapPage() {
     return () => {
       cancelled = true;
       window.clearTimeout(loadTimeout);
+      stopGlobeSpin(spinAnimationRef);
       mapRef.current?.off("sourcedata", onSourceData);
       clearJourneyTimers();
       inspirationMarkers.forEach((marker) => marker.remove());
@@ -599,6 +631,7 @@ export function ExploreMapPage() {
 
   function recenter() {
     clearJourneyTimers();
+    stopGlobeSpin(spinAnimationRef);
     mapRef.current?.flyTo({ center: SINGAPORE, zoom: 2.25, duration: reducedMotion() ? 0 : 1400 });
     setSelected(null);
     setExploreState("IDLE");
@@ -859,6 +892,25 @@ export function toConversationPlace(selected: ExploreDestination): ConversationP
 
 function reducedMotion() {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function startGlobeSpin(map: MapLibreMap, animRef: { current: number | null }) {
+  stopGlobeSpin(animRef);
+  if (reducedMotion()) return;
+  const spin = () => {
+    if (!map.getContainer().isConnected) return;
+    const center = map.getCenter();
+    map.setCenter([center.lng + 0.015, center.lat]);
+    animRef.current = requestAnimationFrame(spin);
+  };
+  animRef.current = requestAnimationFrame(spin);
+}
+
+function stopGlobeSpin(animRef: { current: number | null }) {
+  if (animRef.current !== null) {
+    cancelAnimationFrame(animRef.current);
+    animRef.current = null;
+  }
 }
 
 function markerElement(label: string) {

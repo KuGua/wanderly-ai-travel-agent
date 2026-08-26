@@ -56,7 +56,7 @@ export function TravelAgentChat({
   const [requestError, setRequestError] = useState<unknown>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
-  const panelInputRef = useRef<HTMLInputElement>(null);
+  const panelInputRef = useRef<HTMLTextAreaElement>(null);
   const firedAutoAskNoncesRef = useRef<Set<string>>(new Set());
   const pendingTurnAnchorRef = useRef<HTMLParagraphElement>(null);
   const wasSendingRef = useRef(false);
@@ -129,6 +129,13 @@ export function TravelAgentChat({
       if (open) panelInputRef.current.focus();
     }
   }, [open, autoAskRequest]);
+
+  useEffect(() => {
+    const textarea = panelInputRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+  }, [draft]);
 
   // One-shot auto-ask: when ExploreMapPage sets a new nonce, fire exactly one
   // "Tell me about {name}" turn as soon as the dialog is open. The nonce ensures
@@ -321,8 +328,8 @@ export function TravelAgentChat({
 
       <form onSubmit={submitMessage} className="bg-white px-3 pb-3 pt-2">
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className="mb-1.5 flex h-5 max-w-full items-center rounded-full border border-white/80 bg-[#dff3ed]/90 px-2.5 text-[10px] font-bold text-primary shadow-sm backdrop-blur hover:bg-[#d2eee6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
-        <div className="wanderly-liquid-glass flex min-h-14 items-center gap-2 rounded-full p-1.5 pl-4">
-          <input ref={panelInputRef} value={draft} disabled={isSending} onChange={(event) => setDraft(event.target.value)} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" />
+        <div className="wanderly-liquid-glass flex min-h-14 items-end gap-2 rounded-[20px] p-1.5 pl-4">
+          <textarea ref={panelInputRef} value={draft} disabled={isSending} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className="min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" />
           {submitButton}
         </div>
       </form>
