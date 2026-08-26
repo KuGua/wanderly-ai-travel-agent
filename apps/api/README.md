@@ -36,13 +36,14 @@ npm run dev
 
 ```dotenv
 MODEL_GATEWAY_PROVIDER=gemini
-GEMINI_API_KEY=your_gemini_key
-GEMINI_MODEL=gemini-3.5-flash
+MODEL_GATEWAY_API_KEY=your_gemini_key
 ```
 
-也可选择 `MODEL_GATEWAY_PROVIDER=openai` 并设置 `OPENAI_API_KEY`，或选择
-`openai-compatible` 并设置 `MODEL_GATEWAY_API_KEY`、`MODEL_GATEWAY_BASE_URL` 和
-`MODEL_GATEWAY_MODEL`。后者适用于提供 OpenAI Chat Completions 兼容接口的服务。
+Gemini 默认使用 `gemini-3.1-flash-lite` 与内置 OpenAI-compatible endpoint；可用
+`MODEL_GATEWAY_MODEL` 显式覆盖。也可选择 `MODEL_GATEWAY_PROVIDER=openai`，仍使用
+同一个 `MODEL_GATEWAY_API_KEY`；或选择 `openai-compatible` 并额外设置
+`MODEL_GATEWAY_BASE_URL` 和 `MODEL_GATEWAY_MODEL`。后者适用于提供 OpenAI Chat
+Completions 兼容接口的服务。
 原生 API 不兼容该接口的供应商需要单独 provider adapter，不能仅靠更换 key 启用。
 不要将密钥提交到仓库或暴露给浏览器。
 

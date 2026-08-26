@@ -30,9 +30,10 @@ cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 ```
 
-The examples already contain the proven loopback, database, local-auth, Gemini
-endpoint, model and browser API settings. Each teammate must provide only their
-own real `GEMINI_API_KEY` in `apps/api/.env`:
+The examples already contain the loopback, database, local-auth and browser API
+settings. Each teammate must provide only their own real
+`MODEL_GATEWAY_API_KEY` in `apps/api/.env`. The configured Gemini path uses the
+built-in OpenAI-compatible endpoint and defaults to `gemini-3.1-flash-lite`:
 
 ```dotenv
 # apps/api/.env
@@ -40,8 +41,7 @@ AUTH_MODE=local-dev
 NODE_ENV=development
 HOST=127.0.0.1
 MODEL_GATEWAY_PROVIDER=gemini
-GEMINI_API_KEY=<teammate's local Google AI Studio key>
-GEMINI_MODEL=gemini-3.5-flash
+MODEL_GATEWAY_API_KEY=<teammate's local Google AI Studio key>
 
 # apps/web/.env.local
 NEXT_PUBLIC_AUTH_MODE=local-dev

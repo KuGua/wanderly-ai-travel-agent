@@ -162,34 +162,41 @@ describe("LLM gateway", () => {
   });
 
   it("factory fails closed when the configured provider has no API key", () => {
-    const previous = process.env.MODEL_GATEWAY_PROVIDER;
-    delete process.env.OPENAI_API_KEY;
+    const previous = {
+      provider: process.env.MODEL_GATEWAY_PROVIDER,
+      key: process.env.MODEL_GATEWAY_API_KEY,
+    };
+    delete process.env.MODEL_GATEWAY_API_KEY;
     process.env.MODEL_GATEWAY_PROVIDER = "openai";
 
     expect(() => createModelGateway()).toThrow("Model gateway openai is not fully configured");
 
-    if (previous !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous;
+    if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
     else delete process.env.MODEL_GATEWAY_PROVIDER;
+    if (previous.key !== undefined) process.env.MODEL_GATEWAY_API_KEY = previous.key;
+    else delete process.env.MODEL_GATEWAY_API_KEY;
   });
 
-  it("factory configures Gemini through its OpenAI-compatible endpoint", () => {
+  it("factory configures Gemini through its OpenAI-compatible endpoint with the stable Lite default", () => {
     const previous = {
       provider: process.env.MODEL_GATEWAY_PROVIDER,
-      key: process.env.GEMINI_API_KEY,
-      model: process.env.GEMINI_MODEL,
+      key: process.env.MODEL_GATEWAY_API_KEY,
+      model: process.env.MODEL_GATEWAY_MODEL,
     };
     process.env.MODEL_GATEWAY_PROVIDER = "gemini";
-    process.env.GEMINI_API_KEY = "test-gemini-key";
-    process.env.GEMINI_MODEL = "gemini-test-model";
+    process.env.MODEL_GATEWAY_API_KEY = "test-gemini-key";
+    delete process.env.MODEL_GATEWAY_MODEL;
 
-    expect(createModelGateway()).toBeInstanceOf(LLMGateway);
+    const gateway = createModelGateway();
+    expect(gateway).toBeInstanceOf(LLMGateway);
+    expect((gateway as unknown as { options: { modelName: string } }).options.modelName).toBe("gemini-3.1-flash-lite");
 
     if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
     else delete process.env.MODEL_GATEWAY_PROVIDER;
-    if (previous.key !== undefined) process.env.GEMINI_API_KEY = previous.key;
-    else delete process.env.GEMINI_API_KEY;
-    if (previous.model !== undefined) process.env.GEMINI_MODEL = previous.model;
-    else delete process.env.GEMINI_MODEL;
+    if (previous.key !== undefined) process.env.MODEL_GATEWAY_API_KEY = previous.key;
+    else delete process.env.MODEL_GATEWAY_API_KEY;
+    if (previous.model !== undefined) process.env.MODEL_GATEWAY_MODEL = previous.model;
+    else delete process.env.MODEL_GATEWAY_MODEL;
   });
 
   it("factory configures an OpenAI-compatible provider only with a URL, key, and model", () => {

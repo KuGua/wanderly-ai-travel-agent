@@ -101,8 +101,8 @@ memberships overlap only where explicitly configured.
 
 **Steps:**
 
-1. Set `MODEL_GATEWAY_PROVIDER=gemini` with a non-empty `GEMINI_API_KEY` and model.
-2. Set `MODEL_GATEWAY_PROVIDER=openai` without `OPENAI_API_KEY`.
+1. Set `MODEL_GATEWAY_PROVIDER=gemini` with a non-empty `MODEL_GATEWAY_API_KEY` and verify the default `gemini-3.1-flash-lite` path.
+2. Set `MODEL_GATEWAY_PROVIDER=openai` without `MODEL_GATEWAY_API_KEY`.
 3. Set `MODEL_GATEWAY_PROVIDER=openai-compatible` first without, then with, API key, base URL and model.
 4. Simulate a configured provider timeout or malformed response.
 
