@@ -3,7 +3,7 @@
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { CHINA_MARITIME_LINE_DATA_URL, COUNTRY_BOUNDARY_LOD_DATA_URLS } from "./map-surface-style";
+import { CHINA_MARITIME_LINE_DATA_URL, COUNTRY_BOUNDARY_LOD_DATA_URLS, COUNTRY_BOUNDARY_TILE_INDEX_URL, countryBoundaryTileUrl } from "./map-surface-style";
 
 type Projector = (coordinates: [number, number]) => { x: number; y: number };
 type BoundaryLod = keyof typeof COUNTRY_BOUNDARY_LOD_DATA_URLS;
@@ -23,6 +23,10 @@ const VIEWPORT_CULLING_MIN_ZOOM = 3;
 const VIEWPORT_CULLING_MARGIN = 0.25;
 
 const boundaryLineCache = new WeakMap<GeoJSON.FeatureCollection, BoundaryLine[]>();
+
+type TileIndex = { minZoom: number; tileSizeDegrees: number; keys: Set<string> };
+// Keeps the tile cache bounded after a long pan; the median tile is a few KB.
+const MAX_CACHED_TILES = 24;
 
 const COUNTRY_BOUNDARY_LODS: ReadonlyArray<{ id: BoundaryLod; minZoom: number }> = [
   { id: "lod0", minZoom: 0 },
@@ -125,6 +129,33 @@ function splitLongitudeRange(west: number, east: number): LongitudeRange[] {
   return [[normalizedWest, normalizedEast]];
 }
 
+/**
+ * Tile keys covering a viewport, in the `{west}_{south}` form the build script
+ * writes. Callers must still drop keys the tile index does not list: most of
+ * the grid is open water and carries no boundary geometry.
+ */
+export function tileKeysForViewport(bounds: ViewportBounds, tileSizeDegrees: number): string[] {
+  const south = tileOrigin(Math.max(bounds.south, -90), tileSizeDegrees);
+  const north = tileOrigin(Math.min(bounds.north, 90), tileSizeDegrees);
+  const keys: string[] = [];
+  for (const [west, east] of bounds.longitudeRanges) {
+    // The grid's last column starts at 180 - size, so an east edge sitting
+    // exactly on the antimeridian must not ask for a column beyond it.
+    const lastColumn = Math.min(tileOrigin(east, tileSizeDegrees), 180 - tileSizeDegrees);
+    for (let x = tileOrigin(west, tileSizeDegrees); x <= lastColumn; x += tileSizeDegrees) {
+      for (let y = south; y <= north; y += tileSizeDegrees) {
+        const key = `${x}_${y}`;
+        if (!keys.includes(key)) keys.push(key);
+      }
+    }
+  }
+  return keys;
+}
+
+function tileOrigin(value: number, tileSizeDegrees: number) {
+  return Math.floor(value / tileSizeDegrees) * tileSizeDegrees;
+}
+
 function isPath(path: string): path is string {
   return path.length > 0;
 }
@@ -213,11 +244,42 @@ function degreesToRadians(value: number) {
   return value * Math.PI / 180;
 }
 
+/**
+ * The tiles covering the current view, or null when the simplified LOD must
+ * keep drawing — zoomed out, no index yet, or a tile still in flight. Mixing
+ * the two would double-stroke shared borders, and drawing partial tiles would
+ * leave visible gaps in the boundary.
+ */
+function visibleTileCollections(
+  map: MapLibreMap,
+  viewportBounds: ViewportBounds | null,
+  index: TileIndex | null,
+  tiles: Map<string, GeoJSON.FeatureCollection>,
+): GeoJSON.FeatureCollection[] | null {
+  if (!viewportBounds || !index || map.getZoom() < index.minZoom) return null;
+  const required = tileKeysForViewport(viewportBounds, index.tileSizeDegrees).filter((key) => index.keys.has(key));
+  if (required.length === 0 || required.some((key) => !tiles.has(key))) return null;
+  return required.map((key) => tiles.get(key) as GeoJSON.FeatureCollection);
+}
+
+function evictUnusedTiles(tiles: Map<string, GeoJSON.FeatureCollection>, required: string[]) {
+  for (const key of tiles.keys()) {
+    if (tiles.size <= MAX_CACHED_TILES) return;
+    if (required.includes(key)) continue;
+    tiles.delete(key);
+  }
+}
+
 export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | null; visible: boolean }) {
   const [lods, setLods] = useState<Partial<Record<BoundaryLod, GeoJSON.FeatureCollection>>>({});
   const [maritimeLine, setMaritimeLine] = useState<GeoJSON.FeatureCollection | null>(null);
   const [zoom, setZoom] = useState(0);
   const requestedLods = useRef(new Set<BoundaryLod>());
+  const tileIndex = useRef<TileIndex | null>(null);
+  const tileIndexRequested = useRef(false);
+  const requestedTiles = useRef(new Set<string>());
+  const tiles = useRef(new Map<string, GeoJSON.FeatureCollection>());
+  const redraw = useRef<() => void>(() => {});
   const svgRef = useRef<SVGSVGElement>(null);
   const globalPathRef = useRef<SVGPathElement>(null);
   const maritimePathRef = useRef<SVGPathElement>(null);
@@ -260,6 +322,48 @@ export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | nu
     };
   }, [map]);
 
+  // Source-fidelity tiles for close-up views: only the tiles the camera covers
+  // are fetched, and the simplified LOD keeps drawing until they all arrive.
+  useEffect(() => {
+    if (!map || !visible) return;
+    let active = true;
+    const loadTilesForCurrentView = () => {
+      const bounds = visibleViewportBounds(map);
+      if (!bounds) return;
+      const index = tileIndex.current;
+      if (!index) {
+        if (tileIndexRequested.current) return;
+        tileIndexRequested.current = true;
+        void fetchTileIndex().then((loaded) => {
+          if (!active) return;
+          tileIndex.current = loaded;
+          loadTilesForCurrentView();
+        }).catch(() => { tileIndexRequested.current = false; });
+        return;
+      }
+      if (map.getZoom() < index.minZoom) return;
+      const required = tileKeysForViewport(bounds, index.tileSizeDegrees).filter((key) => index.keys.has(key));
+      for (const key of required) {
+        if (tiles.current.has(key) || requestedTiles.current.has(key)) continue;
+        requestedTiles.current.add(key);
+        void fetchBoundaryCollection(countryBoundaryTileUrl(key)).then((collection) => {
+          if (!active) return;
+          tiles.current.set(key, collection);
+          evictUnusedTiles(tiles.current, required);
+          redraw.current();
+        }).catch(() => requestedTiles.current.delete(key));
+      }
+    };
+    loadTilesForCurrentView();
+    map.on("zoomend", loadTilesForCurrentView);
+    map.on("moveend", loadTilesForCurrentView);
+    return () => {
+      active = false;
+      map.off("zoomend", loadTilesForCurrentView);
+      map.off("moveend", loadTilesForCurrentView);
+    };
+  }, [map, visible]);
+
   const currentBoundary = useMemo(() => {
     if (!map) return null;
     const desired = countryBoundaryLodForZoom(zoom);
@@ -268,7 +372,7 @@ export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | nu
 
   useEffect(() => {
     if (!map || !currentBoundary || !visible) return;
-    const redraw = () => {
+    const drawBoundaries = () => {
       const container = map.getContainer();
       const center = map.getCenter();
       const viewportBounds = visibleViewportBounds(map);
@@ -279,16 +383,19 @@ export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | nu
         (coordinates) => isCoordinateOnVisibleHemisphere(coordinates, [center.lng, center.lat]),
         viewportBounds,
       ).join("");
+      const collections = visibleTileCollections(map, viewportBounds, tileIndex.current, tiles.current)
+        ?? [currentBoundary];
       svgRef.current?.setAttribute("viewBox", "0 0 " + container.clientWidth + " " + container.clientHeight);
-      globalPathRef.current?.setAttribute("d", project(currentBoundary));
+      globalPathRef.current?.setAttribute("d", collections.map(project).join(""));
       maritimePathRef.current?.setAttribute("d", maritimeLine ? project(maritimeLine) : "");
     };
-    redraw();
-    map.on("render", redraw);
-    map.on("resize", redraw);
+    redraw.current = drawBoundaries;
+    drawBoundaries();
+    map.on("render", drawBoundaries);
+    map.on("resize", drawBoundaries);
     return () => {
-      map.off("render", redraw);
-      map.off("resize", redraw);
+      map.off("render", drawBoundaries);
+      map.off("resize", drawBoundaries);
     };
   }, [currentBoundary, map, maritimeLine, visible]);
 
@@ -316,6 +423,17 @@ function visibleViewportBounds(map: MapLibreMap): ViewportBounds | null {
     // A style or projection that cannot report bounds must still draw borders.
     return null;
   }
+}
+
+async function fetchTileIndex(): Promise<TileIndex> {
+  const response = await fetch(COUNTRY_BOUNDARY_TILE_INDEX_URL);
+  if (!response.ok) throw new Error("Country boundary tile index request failed (" + response.status + ")");
+  const index = await response.json() as { minZoom?: number; tileSizeDegrees?: number; tiles?: { key?: string }[] };
+  const keys = (index.tiles ?? []).map((tile) => tile.key).filter((key): key is string => typeof key === "string");
+  if (!Number.isFinite(index.minZoom) || !Number.isFinite(index.tileSizeDegrees) || keys.length === 0) {
+    throw new Error("Country boundary tile index is malformed");
+  }
+  return { minZoom: index.minZoom as number, tileSizeDegrees: index.tileSizeDegrees as number, keys: new Set(keys) };
 }
 
 async function fetchBoundaryCollection(url: string) {  const response = await fetch(url);

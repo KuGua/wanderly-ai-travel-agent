@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { countryBoundaryLodForZoom, isCoordinateOnVisibleHemisphere, projectCountryBoundaryPaths, viewportBoundsFrom } from "./country-boundary-overlay";
+import { countryBoundaryLodForZoom, isCoordinateOnVisibleHemisphere, projectCountryBoundaryPaths, tileKeysForViewport, viewportBoundsFrom } from "./country-boundary-overlay";
 
 const identityProjector = ([lng, lat]: [number, number]) => ({ x: lng, y: lat });
 
@@ -126,8 +126,35 @@ describe("viewport culling", () => {
   });
 });
 
-describe("country boundary LODs", () => {
-  it("selects one local mesh for each zoom band", () => {
+describe("full-fidelity tile keys", () => {
+  it("covers only the tiles the viewport touches", () => {
+    const bounds = viewportBoundsFrom({ west: 103.6, south: 1.2, east: 104.1, north: 1.5 }, 9);
+
+    expect(tileKeysForViewport(bounds!, 20)).toEqual(["100_0"]);
+  });
+
+  it("covers every tile a wider view spans, including the culling margin", () => {
+    const bounds = viewportBoundsFrom({ west: 95, south: -5, east: 125, north: 25 }, 6);
+
+    expect(tileKeysForViewport(bounds!, 20).sort()).toEqual(
+      ["80_-20", "80_0", "80_20", "100_-20", "100_0", "100_20", "120_-20", "120_0", "120_20"].sort(),
+    );
+  });
+
+  it("covers both sides of a view straddling the antimeridian", () => {
+    const bounds = viewportBoundsFrom({ west: 178, south: -18, east: 182, north: -16 }, 9);
+
+    expect(tileKeysForViewport(bounds!, 20).sort()).toEqual(["-180_-20", "160_-20"].sort());
+  });
+
+  it("clamps to the poles instead of inventing tiles beyond them", () => {
+    const bounds = viewportBoundsFrom({ west: 10, south: 78, east: 20, north: 89 }, 6);
+
+    expect(tileKeysForViewport(bounds!, 20).every((key) => Number(key.split("_")[1]) <= 80)).toBe(true);
+  });
+});
+
+describe("country boundary LODs", () => {  it("selects one local mesh for each zoom band", () => {
     expect(countryBoundaryLodForZoom(0)).toBe("lod0");
     expect(countryBoundaryLodForZoom(3.4)).toBe("lod1");
     expect(countryBoundaryLodForZoom(5.5)).toBe("lod2");

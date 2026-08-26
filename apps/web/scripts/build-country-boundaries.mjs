@@ -24,6 +24,23 @@ const lods = [
 // arc of a country whose full geometry spans less than this many degrees is
 // pinned so simplification keeps it at all LODs.
 const smallCountrySpanDegrees = 1.5;
+// LOD-3 carries the source geometry unsimplified so borders stay crisp when the
+// camera is close. A single global file would be 8.5 MB gzipped, so it ships as
+// 20° tiles the overlay fetches by viewport instead.
+const tiledLod = {
+  id: "lod3",
+  minZoom: 5.5,
+  tileSizeDegrees: 20,
+  // ~40 m grid, so the fidelity ceiling is Natural Earth 10m itself rather than
+  // the 400 m grid the simplified LODs quantize to.
+  quantization: 1_000_000,
+  // ~11 m of coordinate precision: far below the source's own accuracy.
+  coordinateDecimals: 4,
+  // Long arcs are cut into runs so a tile holds only nearby geometry and the
+  // overlay's per-line bbox culling stays fine-grained.
+  maxPointsPerRun: 128,
+  directory: "country-borders-lod3",
+};
 
 const source = inputPath
   ? await readFile(inputPath)
@@ -87,8 +104,126 @@ for (const lod of lods) {
   });
 }
 
+await writeTiledLod();
+
 await writeFile(resolve(outputDirectory, "boundary-manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-console.log(`Wrote ${manifest.datasets.length} shared-boundary LOD files from Natural Earth ${naturalEarthVersion}.`);
+console.log(`Wrote ${manifest.datasets.length} shared-boundary datasets from Natural Earth ${naturalEarthVersion}.`);
+
+async function writeTiledLod() {
+  const fullTopology = topology({ countries }, tiledLod.quantization);
+  const borderMesh = mesh(fullTopology, fullTopology.objects.countries);
+  const runs = borderMesh.coordinates.flatMap((line) => splitIntoRuns(line, tiledLod.maxPointsPerRun))
+    .map((run) => run.map(([longitude, latitude]) => [
+      roundCoordinate(longitude, tiledLod.coordinateDecimals),
+      roundCoordinate(latitude, tiledLod.coordinateDecimals),
+    ]));
+
+  const runsByTile = new Map();
+  for (const run of runs) {
+    for (const key of tileKeysForRun(run, tiledLod.tileSizeDegrees)) {
+      const grouped = runsByTile.get(key) ?? [];
+      grouped.push(run);
+      runsByTile.set(key, grouped);
+    }
+  }
+
+  const tileDirectory = resolve(outputDirectory, tiledLod.directory);
+  await mkdir(tileDirectory, { recursive: true });
+  const tiles = [];
+  for (const key of [...runsByTile.keys()].sort()) {
+    const output = {
+      type: "FeatureCollection",
+      metadata: {
+        source: "Natural Earth Admin 0 Countries",
+        version: naturalEarthVersion,
+        lod: tiledLod.id,
+        tile: key,
+        tileSizeDegrees: tiledLod.tileSizeDegrees,
+        topology: "shared arcs at source fidelity; runs are duplicated into every tile they touch",
+      },
+      features: [{
+        type: "Feature",
+        properties: { class: "country-boundary" },
+        geometry: { type: "MultiLineString", coordinates: runsByTile.get(key) },
+      }],
+    };
+    const serialized = `${JSON.stringify(output)}\n`;
+    await writeFile(resolve(tileDirectory, `${key}.geojson`), serialized);
+    tiles.push({
+      key,
+      bytes: Buffer.byteLength(serialized),
+      gzipBytes: gzipSync(serialized).byteLength,
+      sha256: createHash("sha256").update(serialized).digest("hex"),
+    });
+  }
+
+  const index = {
+    schemaVersion: 1,
+    lod: tiledLod.id,
+    minZoom: tiledLod.minZoom,
+    tileSizeDegrees: tiledLod.tileSizeDegrees,
+    source: "Natural Earth Admin 0 Countries",
+    version: naturalEarthVersion,
+    tiles,
+  };
+  const serializedIndex = `${JSON.stringify(index, null, 2)}\n`;
+  await writeFile(resolve(tileDirectory, "index.json"), serializedIndex);
+  manifest.datasets.push({
+    id: tiledLod.id,
+    indexPath: `map-data/${tiledLod.directory}/index.json`,
+    pathTemplate: `map-data/${tiledLod.directory}/{tile}.geojson`,
+    minZoom: tiledLod.minZoom,
+    maxZoom: null,
+    tileSizeDegrees: tiledLod.tileSizeDegrees,
+    quantization: tiledLod.quantization,
+    coordinateDecimals: tiledLod.coordinateDecimals,
+    maxPointsPerRun: tiledLod.maxPointsPerRun,
+    tileCount: tiles.length,
+    totalBytes: tiles.reduce((total, tile) => total + tile.bytes, 0),
+    totalGzipBytes: tiles.reduce((total, tile) => total + tile.gzipBytes, 0),
+    largestTileGzipBytes: Math.max(...tiles.map((tile) => tile.gzipBytes)),
+    indexSha256: createHash("sha256").update(serializedIndex).digest("hex"),
+  });
+}
+
+function splitIntoRuns(line, maxPoints) {
+  if (line.length <= maxPoints) return [line];
+  const runs = [];
+  // Runs overlap by one point so the drawn path has no gap at the seam.
+  for (let start = 0; start < line.length - 1; start += maxPoints - 1) {
+    runs.push(line.slice(start, Math.min(line.length, start + maxPoints)));
+  }
+  return runs;
+}
+
+function roundCoordinate(value, decimals) {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function tileKeysForRun(run, tileSizeDegrees) {
+  let west = Infinity;
+  let south = Infinity;
+  let east = -Infinity;
+  let north = -Infinity;
+  for (const [longitude, latitude] of run) {
+    west = Math.min(west, longitude);
+    east = Math.max(east, longitude);
+    south = Math.min(south, latitude);
+    north = Math.max(north, latitude);
+  }
+  const keys = [];
+  for (let x = tileOrigin(west, tileSizeDegrees); x <= tileOrigin(east, tileSizeDegrees); x += tileSizeDegrees) {
+    for (let y = tileOrigin(south, tileSizeDegrees); y <= tileOrigin(north, tileSizeDegrees); y += tileSizeDegrees) {
+      keys.push(`${x}_${y}`);
+    }
+  }
+  return keys;
+}
+
+function tileOrigin(value, tileSizeDegrees) {
+  return Math.floor(value / tileSizeDegrees) * tileSizeDegrees;
+}
 
 function pinSmallCountryArcs(topo, source, maxSpanDegrees) {
   const smallCountries = new Set(source.features

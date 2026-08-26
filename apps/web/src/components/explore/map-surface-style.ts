@@ -8,9 +8,15 @@ export const COUNTRY_BOUNDARY_LOD_DATA_URLS = {
   lod2: "/map-data/country-borders-lod2.geojson",
 } as const;
 export const CHINA_MARITIME_LINE_DATA_URL = "/map-data/china-maritime-line.geojson";
+export const COUNTRY_BOUNDARY_TILE_INDEX_URL = "/map-data/country-borders-lod3/index.json";
+
+export function countryBoundaryTileUrl(key: string) {
+  return `/map-data/country-borders-lod3/${key}.geojson`;
+}
 export const GEBCO_SOURCE_ID = "gebco-global-relief";
 export const GEBCO_LAYER_ID = "gebco-global-relief";
 export const GEBCO_WMS_TILE_URL = "https://wms.gebco.net/mapserv?service=WMS&version=1.1.1&request=GetMap&layers=GEBCO_LATEST&styles=&format=image/png&transparent=FALSE&srs=EPSG:3857&bbox={bbox-epsg-3857}&width=512&height=512";
+export const GEBCO_MIN_ZOOM = 2.5;
 
 const RELIEF_RASTER_OPACITY: ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 0, 0.78, 3, 0.7, 6, 0.5];
 
@@ -18,6 +24,12 @@ const RELIEF_RASTER_OPACITY: ExpressionSpecification = ["interpolate", ["linear"
  * Adds GEBCO's opaque global relief below OpenFreeMap's vector details. The
  * bundled Natural Earth raster remains beneath it as the no-extra-request
  * fallback when GEBCO tiles are unavailable.
+ *
+ * GEBCO only kicks in at `GEBCO_MIN_ZOOM` and above: at very low zoom the WMS
+ * tiles cover huge bboxes and the remote server is visibly slow, so the
+ * Natural Earth raster (already in the style, no extra request) carries the
+ * relief there. Above `GEBCO_MIN_ZOOM`, GEBCO adds the bathymetric detail the
+ * Natural Earth mosaic lacks.
  */
 export function solidifyGlobeStyle(style: StyleSpecification): StyleSpecification {
   const layers = style.layers.map((layer) => {
@@ -92,7 +104,7 @@ export function solidifyGlobeStyle(style: StyleSpecification): StyleSpecificatio
         type: "raster",
         tiles: [GEBCO_WMS_TILE_URL],
         tileSize: 512,
-        minzoom: 0,
+        minzoom: GEBCO_MIN_ZOOM,
         maxzoom: 5,
         attribution: '<a href="https://www.gebco.net/" target="_blank" rel="noopener noreferrer">GEBCO</a> — not for navigation',
       },
