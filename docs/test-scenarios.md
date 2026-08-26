@@ -454,6 +454,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 ### Frontend Slice 回归
 
+- 自定义账号模式的登录只接受用户名；勾选“30天内记住我”后 token 上限为 30 天并使用持久存储，未勾选时只使用 session storage。忘记密码通过验证邮箱发送六位验证码，60 秒后才可重发；验证码 10 分钟过期、最多失败五次，验证成功后才能设置两次一致的新密码。成功页面可立即返回登录，并在 5 秒后自动返回。生产邮件只经配置好的 AWS SES 发送，日志不得包含邮箱、验证码、reset token 或密码；非生产开发验证码必须明确标记为开发行为。
 - 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话。
 - fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
 - 所有受保护的 HTTP 请求在发送时通过 AWS Amplify session 读取当前 Cognito access token；无 session 时不发送 Authorization，token 刷新后使用新 token，登录会话变化或退出时必须清空 TanStack Query 缓存且后续请求不得继续携带旧 token。`POST /api/v1/explore/location-reference` 是唯一匿名、无持久化且限流的例外。应用自身不得把 token 复制到 localStorage。

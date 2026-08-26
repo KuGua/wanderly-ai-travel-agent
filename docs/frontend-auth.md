@@ -1,9 +1,11 @@
 # Frontend Cognito Authentication
 
-The web app uses the existing Amazon Cognito User Pool contract. The account
-control signs in with the email address or phone number configured as the
-Cognito username. AWS Amplify Auth owns browser session and refresh-token
-storage; Wanderly does not copy access tokens into its own local storage.
+The normal web deployment uses the existing Amazon Cognito User Pool contract.
+The account form accepts a username only. AWS Amplify Auth owns browser session
+and refresh-token storage; Wanderly does not copy Cognito access tokens into its
+own storage. The Cognito app client must use a 30-day refresh-token lifetime for
+the checked “Remember me for 30 days” option. Checked sessions use Amplify's
+persistent storage; unchecked sessions use session storage.
 
 For every protected API request, `ApiClient` calls `fetchAuthSession()` through
 the auth provider and sends the current Cognito **access token** as
@@ -33,6 +35,27 @@ the web environment. A real local sign-in additionally requires a confirmed
 user in that User Pool. The MVP form supports a completed username/password
 sign-in; accounts requiring a new password, MFA, or another Cognito challenge
 receive an explicit unsupported-challenge message rather than an auth bypass.
+
+## Custom password reset prototype
+
+`NEXT_PUBLIC_AUTH_MODE=custom` selects the API-owned username/password prototype.
+Login accepts only `username`; email remains the recovery attribute. The
+forgot-password screen requests a six-digit code, disables resend for 60 seconds,
+verifies the code before accepting a new password, checks both password fields,
+and returns to login immediately or automatically after five seconds. Checked
+login sessions receive a token capped at 30 days and use persistent browser
+storage; unchecked sessions are stored only for the browser session.
+
+The database change is versioned in `0011_custom_auth_credentials.sql`; existing
+Cognito/local-dev users keep nullable credential columns. Reset codes expire in
+10 minutes, permit at most five attempts, and reset tokens are one-use. Codes,
+emails and reset tokens must never enter logs. Production delivery uses AWS SES
+with `AWS_REGION` and `PASSWORD_RESET_FROM_EMAIL`; the sender/domain must be SES
+verified and the workload role needs `ses:SendEmail`. Non-production returns a
+development-only code so the local UI can exercise the flow without pretending
+that an email was sent. Reset challenges are currently process-local, so an API
+restart invalidates them and a multi-instance deployment must move challenge
+state to a shared TTL store before enabling custom auth at scale.
 
 ## Validation
 

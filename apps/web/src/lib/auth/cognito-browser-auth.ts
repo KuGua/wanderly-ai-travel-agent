@@ -1,5 +1,7 @@
 import { Amplify } from "aws-amplify";
 import { fetchAuthSession, getCurrentUser, signIn, signOut } from "aws-amplify/auth";
+import { cognitoUserPoolsTokenProvider } from "aws-amplify/auth/cognito";
+import { defaultStorage, sessionStorage } from "aws-amplify/utils";
 
 export type AuthenticatedBrowserUser = {
   username: string;
@@ -10,7 +12,7 @@ export interface BrowserAuthService {
   readonly localDevelopment: boolean;
   readonly localDevelopmentConfigurationInvalid?: boolean;
   restoreSession(): Promise<AuthenticatedBrowserUser | null>;
-  signIn(username: string, password: string): Promise<AuthenticatedBrowserUser>;
+  signIn(username: string, password: string, rememberMe?: boolean): Promise<AuthenticatedBrowserUser>;
   signOut(): Promise<void>;
   getAccessToken(): Promise<string | null>;
 }
@@ -41,7 +43,7 @@ export function createCognitoBrowserAuth(): BrowserAuthService {
       Cognito: {
         userPoolId,
         userPoolClientId,
-        loginWith: { email: true, phone: true, username: true },
+        loginWith: { username: true },
       },
     },
   });
@@ -57,7 +59,8 @@ export function createCognitoBrowserAuth(): BrowserAuthService {
         return null;
       }
     },
-    async signIn(username, password) {
+    async signIn(username, password, rememberMe = false) {
+      cognitoUserPoolsTokenProvider.setKeyValueStorage(rememberMe ? defaultStorage : sessionStorage);
       const result = await signIn({ username, password });
       if (!result.isSignedIn) {
         throw new CognitoChallengeRequiredError(result.nextStep.signInStep);

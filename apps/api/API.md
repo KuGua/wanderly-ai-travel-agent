@@ -2,8 +2,9 @@
 
 Base URL: `http://localhost:3000/api/v1`
 
-**Authentication**: All endpoints except `/health`, `/metrics`, `/docs`, and
-`POST /api/v1/bookings/callback` require a Cognito access token. The API verifies
+**Authentication**: All endpoints except `/health`, `/metrics`, `/docs`,
+`POST /api/v1/bookings/callback`, the anonymous location-reference endpoint,
+and `/auth/*` account bootstrap/recovery routes require an access token. The API verifies
 the JWT and derives the database identity from its `sub`; clients never submit a
 user ID to choose an identity. The callback uses the independent sandbox HMAC
 contract documented below and never trusts a user bearer token.
@@ -24,6 +25,29 @@ Authorization: Bearer <cognito-access-token>
 
 The `x-correlation-id` response header always matches `correlationId` in an
 error response body. Request validation failures use `400 Bad Request`.
+
+---
+
+## Custom account recovery
+
+These endpoints support the explicit `NEXT_PUBLIC_AUTH_MODE=custom` prototype.
+Normal production identity remains Cognito unless the deployment deliberately
+enables and configures this alternate account flow.
+
+- `POST /auth/login`: accepts `username`, `password`, and optional `rememberMe`.
+  Email is not a login identifier. A remembered token expires after 30 days.
+- `POST /auth/forgot-password`: accepts `email`, returns a generic response and
+  `retryAfterSeconds: 60`. Non-production also returns `developmentCode`;
+  production sends the six-digit code through configured AWS SES.
+- `POST /auth/verify-reset-code`: accepts `email` and a six-digit `code`. The
+  code expires after 10 minutes and is blocked after five failed attempts.
+  Success returns a one-use `resetToken`.
+- `POST /auth/reset-password`: accepts `email`, `resetToken`, `password`, and
+  `confirmPassword`; both password values must match and satisfy policy.
+
+Recovery inputs and secrets are never logged. Production requires a verified SES
+sender via `PASSWORD_RESET_FROM_EMAIL`, `AWS_REGION`, and runtime-role permission
+to call `ses:SendEmail`.
 
 ---
 

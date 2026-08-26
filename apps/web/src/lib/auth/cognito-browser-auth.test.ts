@@ -6,6 +6,7 @@ const amplifyMocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
   signIn: vi.fn(),
   signOut: vi.fn(),
+  setKeyValueStorage: vi.fn(),
 }));
 
 vi.mock("aws-amplify", () => ({ Amplify: { configure: amplifyMocks.configure } }));
@@ -14,6 +15,13 @@ vi.mock("aws-amplify/auth", () => ({
   getCurrentUser: amplifyMocks.getCurrentUser,
   signIn: amplifyMocks.signIn,
   signOut: amplifyMocks.signOut,
+}));
+vi.mock("aws-amplify/auth/cognito", () => ({
+  cognitoUserPoolsTokenProvider: { setKeyValueStorage: amplifyMocks.setKeyValueStorage },
+}));
+vi.mock("aws-amplify/utils", () => ({
+  defaultStorage: { kind: "persistent" },
+  sessionStorage: { kind: "session" },
 }));
 
 import { createCognitoBrowserAuth } from "./cognito-browser-auth";
@@ -36,14 +44,15 @@ describe("Cognito browser auth adapter", () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     const service = createCognitoBrowserAuth();
 
-    expect(await service.signIn("traveler@example.test", "not-a-real-password")).toEqual({ username: "traveler@example.test" });
+    expect(await service.signIn("traveler", "not-a-real-password", true)).toEqual({ username: "traveler@example.test" });
     expect(await service.getAccessToken()).toBe("current-access-token");
     await service.signOut();
 
     expect(amplifyMocks.configure).toHaveBeenCalledWith(expect.objectContaining({
       Auth: { Cognito: expect.objectContaining({ userPoolClientId: "public-client-id" }) },
     }));
-    expect(amplifyMocks.signIn).toHaveBeenCalledWith({ username: "traveler@example.test", password: "not-a-real-password" });
+    expect(amplifyMocks.signIn).toHaveBeenCalledWith({ username: "traveler", password: "not-a-real-password" });
+    expect(amplifyMocks.setKeyValueStorage).toHaveBeenCalledWith({ kind: "persistent" });
     expect(amplifyMocks.fetchAuthSession).toHaveBeenCalledTimes(1);
     expect(amplifyMocks.signOut).toHaveBeenCalledTimes(1);
     expect(setItem).not.toHaveBeenCalled();

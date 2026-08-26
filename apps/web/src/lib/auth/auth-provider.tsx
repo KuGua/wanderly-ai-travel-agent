@@ -20,7 +20,7 @@ type AuthContextValue = {
   busy: boolean;
   sessionRevision: number;
   getAccessToken: () => Promise<string | null>;
-  signIn: (username: string, password: string) => Promise<boolean>;
+  signIn: (username: string, password: string, rememberMe?: boolean) => Promise<boolean>;
   signOut: () => Promise<boolean>;
 };
 
@@ -53,11 +53,11 @@ export function AuthProvider({ children, service: suppliedService }: {
 
   const getAccessToken = useCallback(() => service.getAccessToken(), [service]);
 
-  const handleSignIn = useCallback(async (username: string, password: string) => {
+  const handleSignIn = useCallback(async (username: string, password: string, rememberMe = false) => {
     setBusy(true);
     setError(null);
     try {
-      const authenticatedUser = await service.signIn(username, password);
+      const authenticatedUser = await service.signIn(username, password, rememberMe);
       setUser(authenticatedUser);
       setStatus("SIGNED_IN");
       setSessionRevision((current) => current + 1);

@@ -12,9 +12,11 @@ export default function LoginPage() {
   const tCommon = useTranslations("common");
   const router = useRouter();
   const auth = useAuth();
+  const supportsPasswordReset = process.env.NEXT_PUBLIC_AUTH_MODE === "custom";
 
-  const [identifier, setIdentifier] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -24,7 +26,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const success = await auth.signIn(identifier, password);
+      const success = await auth.signIn(username, password, remember);
       if (success) {
         router.push("/home");
       } else {
@@ -56,18 +58,18 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label htmlFor="identifier" className="mb-1.5 block text-sm font-medium text-foreground">
-                {t("identifier")}
+              <label htmlFor="username" className="mb-1.5 block text-sm font-medium text-foreground">
+                {t("username")}
               </label>
               <input
-                id="identifier"
+                id="username"
                 type="text"
                 required
                 autoComplete="username"
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring/30"
-                placeholder={t("identifierPlaceholder")}
+                placeholder={t("usernamePlaceholder")}
               />
             </div>
 
@@ -85,6 +87,17 @@ export default function LoginPage() {
                 className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring/30"
               />
             </div>
+
+            <label htmlFor="rememberMe" className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
+              <input
+                id="rememberMe"
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="size-4 rounded border-input accent-primary"
+              />
+              {t("rememberMe")}
+            </label>
 
             {error ? (
               <p className="text-xs text-destructive">{error}</p>
@@ -106,11 +119,13 @@ export default function LoginPage() {
                 {t("createAccount")}
               </Link>
             </div>
-            <div>
-              <span className="cursor-default text-muted-foreground underline underline-offset-2">
-                {t("forgotPassword")}
-              </span>
-            </div>
+            {supportsPasswordReset ? (
+              <div>
+                <Link href="/forgot-password" className="text-muted-foreground underline underline-offset-2 transition-colors hover:text-foreground">
+                  {t("forgotPassword")}
+                </Link>
+              </div>
+            ) : null}
           </div>
         </div>
 

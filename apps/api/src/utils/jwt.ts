@@ -1,7 +1,8 @@
 import { createHmac, randomBytes } from "node:crypto";
 
 const JWT_SECRET = process.env.JWT_SECRET?.trim() || randomBytes(32).toString("hex");
-const TOKEN_EXPIRY_SECONDS = 7 * 24 * 60 * 60; // 7 days
+const DEFAULT_TOKEN_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
+export const REMEMBERED_TOKEN_EXPIRY_SECONDS = 30 * 24 * 60 * 60;
 
 function base64url(input: string | Buffer): string {
   const buf = typeof input === "string" ? Buffer.from(input, "utf8") : input;
@@ -16,12 +17,15 @@ export interface JwtPayload {
   exp: number;
 }
 
-export function signJwt(payload: { sub: string; username: string; email: string }): string {
+export function signJwt(
+  payload: { sub: string; username: string; email: string },
+  expiresInSeconds: number = DEFAULT_TOKEN_EXPIRY_SECONDS,
+): string {
   const now = Math.floor(Date.now() / 1000);
   const fullPayload: JwtPayload = {
     ...payload,
     iat: now,
-    exp: now + TOKEN_EXPIRY_SECONDS,
+    exp: now + expiresInSeconds,
   };
 
   const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
