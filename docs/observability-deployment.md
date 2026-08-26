@@ -104,7 +104,7 @@ environment variables to switch destinations:
 | `OTEL_SERVICE_NAME` | `ai-travel-agent-api` (worker overrides) | same |
 
 `apps/api/.env.production.example` shows the production values as a
-commented template — **do not commit the bearer token**.
+template — **do not commit the bearer token**.
 
 ### One-time Grafana Cloud setup
 
@@ -128,22 +128,58 @@ commented template — **do not commit the bearer token**.
 
 ### CI / deploy
 
-The deploy workflow (`.github/workflows/apps-api-deploy.yml`, added in
-PR-B-slim) only updates the four OTel env vars on App Runner and the
-Fargate task definition; it does not provision any infrastructure.
+`.github/workflows/apps-api-deploy.yml` is the **manual** deploy workflow
+(`workflow_dispatch` only; no automatic deploys). It:
+
+1. Validates the supplied Grafana Cloud OTLP endpoint.
+2. Updates the App Runner service runtime configuration: injects the four
+   OTel env vars and the bearer-token secret reference via AWS Secrets
+   Manager.
+3. Reads the current Fargate Worker task definition, patches the
+   container env with the same four OTel vars, registers a new task
+   definition revision, and forces an ECS rolling deploy.
+4. Skips the automated `verify-trace-end-to-end.sh` step (operators run
+   it from a workstation with AWS access for a thorough check).
+
+The deploy workflow never provisions AWS infrastructure; it only mutates
+existing App Runner service / ECS task definition configurations.
 
 ### Verifying a trace end-to-end
 
-The verification script
-`apps/api/scripts/verify-trace-end-to-end.sh` (PR-B-slim) does the
-following:
+`apps/api/scripts/verify-trace-end-to-end.sh` does the following:
 
-1. Sets `OTEL_TRACES_SAMPLER_ARG=1.0` for the duration of the request so
-   the trace is **always** sampled (overrides the prod 5% sampling).
-2. Generates a fresh `traceparent` header.
-3. POSTs `GET /health` (no PII, no auth, traces a real server span).
-4. Polls Grafana Cloud's Tempo API for the trace id (up to 30s).
-5. Exits non-zero on any timeout.
+1. Forces `OTEL_TRACES_SAMPLER_ARG=1.0` for the duration of the probe
+   request so the trace is always sampled. This override does NOT affect
+   the application's running sampling ratio — it applies only to the
+   `curl` request this script generates. (The production default
+   sampling ratio of 5% is documented in `apps/api/.env.production.example`.)
+2. Generates a fresh W3C `traceparent` (`00-<32-hex>-<16-hex>-01`).
+3. Calls `GET /health` with that header (no auth required, no PII).
+4. Polls the OTLP backend's Tempo search API for the trace id (up to
+   `TRACE_TIMEOUT_SECONDS`, default 30).
+5. Exits non-zero on any timeout or HTTP error.
+
+Production invocation:
+
+```bash
+cd apps/api
+GRAFANA_CLOUD_API_TOKEN="<token-from-secrets-manager>" \
+API_BASE_URL="https://<app-runner-dns>" \
+GRAFANA_BASE_URL="https://<stack>.grafana.net" \
+OTEL_EXPORTER_OTLP_ENDPOINT="https://otlp-gateway-prod-<region>.grafana.net/otlp" \
+./scripts/verify-trace-end-to-end.sh
+```
+
+Local invocation:
+
+```bash
+cd apps/api
+docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+API_BASE_URL=http://127.0.0.1:3000 \
+GRAFANA_BASE_URL=http://127.0.0.1:3001 \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318 \
+./scripts/verify-trace-end-to-end.sh
+```
 
 ## Privacy invariants (local + prod)
 
