@@ -1,17 +1,28 @@
 import "dotenv/config";
 
+import { initTracing, shutdownTracing } from "../observability/tracing.js";
 import { personalTravelAgent } from "../agents/personal-travel-agent.js";
 import { assertAuthModeEnvironment, resolveAuthMode } from "../middleware/auth-mode.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import { logger } from "../utils/logger.js";
 import { processNextAgentTask } from "./agent-task-worker.js";
 
+// Tracing MUST be initialized before any agent module is required, so the
+// SDK can patch the modules they import transitively. Service name is
+// suffixed so dashboards can split API and Worker traffic.
+await initTracing({ serviceName: "ai-travel-agent-worker" });
+
 assertAuthModeEnvironment(resolveAuthMode());
 personalTravelAgent.register();
 
 let stopping = false;
-process.once("SIGTERM", () => { stopping = true; });
-process.once("SIGINT", () => { stopping = true; });
+const shutdown = async (signal: NodeJS.Signals) => {
+  stopping = true;
+  logger.info({ signal }, "Worker shutdown initiated");
+  await shutdownTracing();
+};
+process.once("SIGTERM", shutdown);
+process.once("SIGINT", shutdown);
 
 async function main() {
   logger.info({
