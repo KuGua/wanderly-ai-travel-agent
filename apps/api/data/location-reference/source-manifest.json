@@ -1,11 +1,11 @@
 {
-  "version": "2026-08-global.1",
-  "checkedAt": "2026-08-25T00:00:00.000Z",
+  "version": "2026-08-global.2",
+  "checkedAt": "2026-08-26T00:00:00.000Z",
   "countryBoundaries": {
-    "source": "Natural Earth 1:110m Admin 0 Countries",
-    "path": "../../web/public/map-data/natural-earth-admin-0.geojson",
+    "source": "Natural Earth 1:10m Admin 0 Countries v5.1.2",
+    "path": "countries.geojson",
     "license": "Public domain",
-    "sha256": "6866c877d39cba9c357620878839b336d569f8c662d3cfab4cb1dbe2d39c977f"
+    "sha256": "7e429d4c8425e002540f05d0e9e71f0b360c31379370c367b65ec010143b54f5"
   },
   "cities": {
     "source": "GeoNames cities5000",
@@ -20,7 +20,7 @@
     "sha256": "163108e4628cef6afe0c7f3aeace21dcfa327bff59c91b65e9b60dbaf0739904"
   },
   "limitations": [
-    "Country boundaries are low-resolution reference geometry.",
+    "Country boundaries are 1:10m reference geometry; islets and reclaimed offshore land may be missing, so points within 10 km of a coast fall back to the nearest country polygon.",
     "Cities5000 contains major cities and administrative seats, not every settlement.",
     "Results are location references, never addresses or travel facts."
   ]

@@ -5,7 +5,6 @@ RUN npm ci
 COPY apps/api/tsconfig.json apps/api/drizzle.config.ts ./
 COPY apps/api/src/ src/
 COPY apps/api/data/ data/
-COPY apps/web/public/map-data/natural-earth-admin-0.geojson data/location-reference/countries.geojson
 RUN npm run build
 
 FROM node:22-slim AS runner

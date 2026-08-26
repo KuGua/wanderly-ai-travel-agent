@@ -21,4 +21,17 @@ describe("generated country boundary assets", () => {
       expect(collection.metadata.topology).toContain("shared arcs");
     }
   });
+
+  it("keeps micro states outlined at every zoom band", async () => {
+    // Singapore spans ~0.4°; a single global simplification threshold used to
+    // erase it below zoom 5.5, so no boundary framed the default map centre.
+    for (const lod of ["lod0", "lod1", "lod2"]) {
+      const collection = JSON.parse(await readFile(resolve(mapDataDirectory, `country-borders-${lod}.geojson`), "utf8"));
+      const singaporePoints = (collection.features[0].geometry.coordinates as [number, number][][])
+        .flat()
+        .filter(([longitude, latitude]) =>
+          longitude > 103.5 && longitude < 104.2 && latitude > 1.1 && latitude < 1.6);
+      expect(singaporePoints.length, `${lod} lost Singapore's outline`).toBeGreaterThanOrEqual(20);
+    }
+  });
 });

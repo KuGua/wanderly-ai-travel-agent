@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const SOURCES = {
-  countries: "public/map-data/natural-earth-admin-0.geojson",
+  countries: "../api/data/location-reference/countries.geojson",
   places: "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_populated_places.geojson",
   regions: "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson",
   chinaRegions: "public/map-data/china-region-labels.geojson",

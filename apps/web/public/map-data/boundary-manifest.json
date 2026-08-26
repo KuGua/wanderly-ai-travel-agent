@@ -1,6 +1,8 @@
 {
   "schemaVersion": 1,
   "generatedAt": null,
+  "smallCountrySpanDegrees": 1.5,
+  "pinnedArcCount": 166,
   "sources": [
     {
       "name": "Natural Earth Admin 0 Countries",
@@ -17,9 +19,9 @@
       "minZoom": 0,
       "maxZoom": 3.4,
       "simplificationQuantile": 0.005,
-      "bytes": 452181,
-      "gzipBytes": 126507,
-      "sha256": "afae0609b29d620ab01a2fe1c7906a373a24590d2d3b7f892278ee411ee7b2aa"
+      "bytes": 618094,
+      "gzipBytes": 173637,
+      "sha256": "69ecf0c6f6c440eaeef7d42a88d36de0975b5694e3a75871fcbc668a04550b12"
     },
     {
       "id": "lod1",
@@ -27,9 +29,9 @@
       "minZoom": 3.4,
       "maxZoom": 5.5,
       "simplificationQuantile": 0.035,
-      "bytes": 1004650,
-      "gzipBytes": 336090,
-      "sha256": "0431ef949c2c969262bc4390b1fe86f093814a580b1a4acfeebf0a154795bdbe"
+      "bytes": 1168053,
+      "gzipBytes": 381823,
+      "sha256": "29c66e6ca3c8afae94f2a87ecb6336fc0c9037c8356a0c974ae8d502ded3d05e"
     },
     {
       "id": "lod2",
@@ -37,9 +39,9 @@
       "minZoom": 5.5,
       "maxZoom": null,
       "simplificationQuantile": 0.07,
-      "bytes": 1649463,
-      "gzipBytes": 568966,
-      "sha256": "742c7c26eac32f6736acbb39a2bc5886320c9f021efd96f0482482d9cf9ec003"
+      "bytes": 1809167,
+      "gzipBytes": 613109,
+      "sha256": "b3e3c6241452758f003ecb5c276e40a899158c3a1e00f457d84ace406530d330"
     }
   ]
 }
