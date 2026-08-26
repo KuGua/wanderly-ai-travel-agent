@@ -235,6 +235,15 @@ function resolveExporterMode(): ExporterMode {
   return resolveOtlpVariant();
 }
 
+/**
+ * Test-only export so unit tests can assert env-driven exporter selection
+ * without exercising the lazy OTLP exporter module load. Production code
+ * must call {@link initTracing} (which uses the same logic internally).
+ */
+export function resolveExporterModeForTests(): ExporterMode {
+  return resolveExporterMode();
+}
+
 function resolveOtlpVariant(): ExporterMode {
   if (!process.env.OTEL_EXPORTER_OTLP_ENDPOINT) return "none";
   const protocol = process.env.OTEL_EXPORTER_OTLP_PROTOCOL ?? "http/protobuf";

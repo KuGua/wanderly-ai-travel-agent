@@ -206,15 +206,18 @@ Cross-cutting:
   an exact bounded label schema; identifiers and free-form values are rejected.
 - Distributed tracing is wired through `src/observability/tracing.ts` (see
   [src/observability/README.md](src/observability/README.md)). The API and the
-  Worker each call `initTracing()` as their first import; the SDK is opt-in in
-  production (`OTEL_SDK_DISABLED=true` by default until the CloudWatch / OTLP
-  collector sidecar lands). W3C `traceparent` is parsed on `onRequest`,
-  attached as `trace_id` / `span_id` Pino bindings, and echoed back as a
-  response header. Spans are added manually at the highest-value boundaries
-  (HTTP, DB write hot-spots, LLM, skill, worker run, SSE event) — no auto-
-  instrumentation — and every span attribute is gated by
-  `FORBIDDEN_SPAN_ATTRIBUTE_KEYS`. There is no durable trace storage or
-  scraper configuration in this repository yet.
+  Worker each call `initTracing()` as their first import; the destination
+  is env-driven via `OTEL_EXPORTER_OTLP_ENDPOINT`. **Local dev**: the
+  `docker-compose.observability.yml` override brings up Tempo + Grafana so
+  app/worker send OTLP/HTTP straight to `tempo:4318`. **Production**:
+  Grafana Cloud Free receives OTLP/HTTPS; pino stdout lands in CloudWatch
+  Logs (App Runner / Fargate `awslogs`) and is queried through Grafana
+  Cloud's Logs UI by `trace_id`. The same `safeSetAttribute` policy
+  (`FORBIDDEN_SPAN_ATTRIBUTE_KEYS`) and the same pino redaction list
+  (`LOGGER_REDACT_PATHS`) cover both environments. Detailed runbook:
+  [`docs/observability-deployment.md`](../../docs/observability-deployment.md).
+  SLO / SLI / alert rules:
+  [`docs/observability-slo.md`](../../docs/observability-slo.md).
 
 ### Durable task trace context
 

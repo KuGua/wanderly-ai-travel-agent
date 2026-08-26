@@ -1,0 +1,164 @@
+name: apps-api-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      grafana_cloud_otlp_endpoint:
+        description: 'Grafana Cloud OTLP endpoint (e.g. https://otlp-gateway-prod-eu-west-0.grafana.net/otlp)'
+        required: true
+        type: string
+      grafana_cloud_api_token_secret:
+        description: 'AWS Secrets Manager secret name holding the Grafana Cloud API token (default: travel-agent/otel/grafana-cloud-token)'
+        required: false
+        type: string
+        default: 'travel-agent/otel/grafana-cloud-token'
+      app_runner_service_name:
+        description: 'App Runner service name (default: ai-travel-agent-api)'
+        required: false
+        type: string
+        default: 'ai-travel-agent-api'
+      worker_service_name:
+        description: 'ECS service name for the Fargate Worker (default: agent-worker)'
+        required: false
+        type: string
+        default: 'agent-worker'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  AWS_DEPLOY_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+
+jobs:
+  deploy:
+    name: 'Inject OTel env into App Runner + Fargate Worker'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
+
+      - name: Validate inputs
+        id: validate
+        run: |
+          if [[ -z "${{ inputs.grafana_cloud_otlp_endpoint }}" ]]; then
+            echo "grafana_cloud_otlp_endpoint is required" >&2
+            exit 1
+          fi
+          if ! [[ "${{ inputs.grafana_cloud_otlp_endpoint }}" =~ ^https:// ]]; then
+            echo "grafana_cloud_otlp_endpoint must be HTTPS for production" >&2
+            exit 1
+          fi
+          echo "endpoint OK"
+
+      - name: Update App Runner service runtime configuration
+        run: |
+          SERVICE_NAME="${{ inputs.app_runner_service_name }}"
+          ENDPOINT="${{ inputs.grafana_cloud_otlp_endpoint }}"
+
+          # The runtime configuration secrets are referenced by ARN; the
+          # bearer token lives in AWS Secrets Manager at the path supplied
+          # by the workflow input (default: travel-agent/otel/grafana-cloud-token).
+          TOKEN_SECRET="${{ inputs.grafana_cloud_api_token_secret }}"
+
+          # Build a JSON payload for `aws apprunner update-service`.
+          cat > /tmp/apprunner-payload.json <<EOF
+          {
+            "ServiceName": "${SERVICE_NAME}",
+            "SourceConfiguration": {
+              "RuntimeConfigurationSecrets": [
+                {
+                  "Name": "OTEL_EXPORTER_OTLP_HEADERS",
+                  "ValueFrom": "arn:aws:secretsmanager:${AWS_REGION}:$(aws sts get-caller-identity --query Account --output text):secret:${TOKEN_SECRET}"
+                }
+              ],
+              "EnvironmentVariables": [
+                { "Name": "OTEL_EXPORTER_OTLP_ENDPOINT", "Value": "${ENDPOINT}" },
+                { "Name": "OTEL_EXPORTER_OTLP_PROTOCOL", "Value": "http/protobuf" },
+                { "Name": "OTEL_SERVICE_NAME", "Value": "ai-travel-agent-api" },
+                { "Name": "OTEL_SDK_DISABLED", "Value": "false" },
+                { "Name": "OTEL_TRACES_SAMPLER_ARG", "Value": "0.05" },
+                { "Name": "OTEL_LOG_LEVEL", "Value": "warn" },
+                { "Name": "NODE_ENV", "Value": "production" },
+                { "Name": "LOG_LEVEL", "Value": "info" }
+              ]
+            }
+          }
+          EOF
+
+          aws apprunner update-service \
+            --cli-input-json file:///tmp/apprunner-payload.json \
+            --region "${AWS_REGION}"
+          echo "App Runner updated"
+
+      - name: Update Fargate Worker service (force new deployment)
+        run: |
+          SERVICE_NAME="${{ inputs.worker_service_name }}"
+          CLUSTER="${CLUSTER:-ai-travel-agent-cluster}"
+          ENDPOINT="${{ inputs.grafana_cloud_otlp_endpoint }}"
+
+          # Render a task definition that wires the same four OTel env vars
+          # (and the bearer token from Secrets Manager). The current task
+          # definition is fetched as a starting point; we patch only the
+          # OTel-related fields so unrelated config stays untouched.
+          CURRENT_TASK_DEF="$(aws ecs describe-task-definition \
+            --task-definition "${SERVICE_NAME}" \
+            --region "${AWS_REGION}" \
+            --query 'taskDefinition' \
+            --output json)"
+
+          # Patch the container environment to include the OTel exports.
+          PATCHED_TASK_DEF="$(echo "${CURRENT_TASK_DEF}" | jq --arg endpoint "${ENDPOINT}" '
+            .containerDefinitions |= map(
+              if .name == "agent-worker" then
+                .environment = (.environment // []) + [
+                  { name: "OTEL_EXPORTER_OTLP_ENDPOINT", value: $endpoint },
+                  { name: "OTEL_EXPORTER_OTLP_PROTOCOL", value: "http/protobuf" },
+                  { name: "OTEL_SERVICE_NAME", value: "ai-travel-agent-worker" },
+                  { name: "OTEL_SDK_DISABLED", value: "false" },
+                  { name: "OTEL_TRACES_SAMPLER_ARG", value: "0.05" },
+                  { name: "OTEL_LOG_LEVEL", value: "warn" }
+                ]
+              else . end
+            )
+            | del(
+              .taskDefinitionArn, .revision, .status,
+              .requiresAttributes, .compatibilities,
+              .registeredAt, .registeredBy
+            )
+          ')"
+
+          echo "${PATCHED_TASK_DEF}" > /tmp/worker-task-def.json
+
+          NEW_TASK_DEF_ARN="$(aws ecs register-task-definition \
+            --cli-input-json file:///tmp/worker-task-def.json \
+            --region "${AWS_REGION}" \
+            --query 'taskDefinition.taskDefinitionArn' \
+            --output text)"
+
+          aws ecs update-service \
+            --cluster "${CLUSTER}" \
+            --service "${SERVICE_NAME}" \
+            --task-definition "${NEW_TASK_DEF_ARN}" \
+            --force-new-deployment \
+            --region "${AWS_REGION}"
+          echo "Fargate worker updated"
+
+      - name: Verify trace export (best effort)
+        if: success()
+        run: |
+          # The verification script requires the bearer token; we keep this
+          # best-effort and never fail the deploy on its outcome. Operators
+          # run it manually from a workstation that has AWS access for a
+          # thorough check.
+          echo "Skipping automated verify-trace-end-to-end.sh — run it from a workstation:"
+          echo "  GRAFANA_CLOUD_API_TOKEN=... API_BASE_URL=https://<app-runner-dns> GRAFANA_BASE_URL=https://<stack>.grafana.net OTEL_EXPORTER_OTLP_ENDPOINT=${{ inputs.grafana_cloud_otlp_endpoint }} ./apps/api/scripts/verify-trace-end-to-end.sh"

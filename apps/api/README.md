@@ -104,10 +104,12 @@ loopback socket 请求并由服务端固定映射一个本地身份；production
 - **安全可观测性** — Pino 统一脱敏日志（39 个 redact path），每条
   log 自动带 `correlationId`、`clientRequestId` 与 active span 的
   `trace_id`/`span_id`；`/metrics` 仅提供进程内 MVP Prometheus text，标签
-  使用固定低基数 allow-list。仓库当前不包含生产 metrics/trace exporter
-  或持久化遥测后端；OpenTelemetry SDK 已接入（`apps/api/src/observability/tracing.ts`），
-  但默认 `OTEL_SDK_DISABLED=true`，需设置 `OTEL_EXPORTER_OTLP_ENDPOINT`
-  才会向 OTLP 导出。
+  使用固定低基数 allow-list。OpenTelemetry SDK 已接入
+  （`apps/api/src/observability/tracing.ts`），由 `OTEL_EXPORTER_OTLP_ENDPOINT`
+  切目的地：本地 dev 指向 docker-compose 里的 `tempo:4318`；prod 指向
+  Grafana Cloud Free OTLP 网关（详细步骤见
+  [`docs/observability-deployment.md`](../../docs/observability-deployment.md)）。
+  SLO / 告警定义见 [`docs/observability-slo.md`](../../docs/observability-slo.md)。
 
 ## 测试
 
