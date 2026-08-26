@@ -289,6 +289,35 @@ is installed as the active span in `app.ts#onRequest`, so the LLM span
 becomes a child of the inbound HTTP server span by default; background
 callers that have no active span fall back to `ctx.traceparent`.
 
+### Durable Worker trace continuity
+
+The Durable Worker is a separate ECS Fargate process; the HTTP request that
+accepted a conversation turn cannot be held alive while the Worker runs.
+To keep the trace continuous across this boundary:
+
+1. `acceptConversationTask` (`apps/api/src/tasks/task-repository.ts`)
+   writes the inbound `RequestContext.traceparent`/`tracestate` into the
+   new `agent_task_runs.trace_context` JSONB column (migration
+   `0010_agent_task_trace_context.sql`) inside the same transaction that
+   inserts the run row.
+2. `processNextAgentTask` (`apps/api/src/workers/agent-task-worker.ts`)
+   calls `ctxFromRun(run)` to rebuild a `RequestContext` from the
+   persisted column and uses it as the active OTel context.
+3. The Worker opens `agent_task_worker.run` (`SpanKind.CONSUMER`) with a
+   `SpanLink` to the originating HTTP server span. The link is a `link`
+   rather than a parent because the original span may have already ended
+   by the time the Worker polls — causality is preserved without holding
+   the parent alive.
+4. SSE events published by the Worker carry the persisted `traceparent`
+   on the postgres NOTIFY payload. The SSE relay
+   (`apps/api/src/tasks/agent-stream-relay.ts`) re-emits the value to the
+   client and uses it to open `sse.event.<type>` spans linked back to the
+   same originating trace.
+
+When the persisted `trace_context` is `null` (old rows, recovery, replay),
+the Worker opens a fresh root span and tags it with `tasks.recovery=true`
+so dashboards can filter it from the live trace path.
+
 ## 9. 可观测性与评估
 
 当前仓库已将集中式 Pino 接入 Fastify，并提供 correlation-aware 安全日志、严格 audit summary whitelist 与仅限进程内的低基数 `/metrics` 文本输出。当前仍未初始化 OpenTelemetry trace exporter，也没有生产 metrics exporter、持久化存储或 scraper 配置；不得把 MVP endpoint 描述为完整生产遥测栈。

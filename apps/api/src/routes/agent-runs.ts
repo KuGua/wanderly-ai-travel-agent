@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
+import { SpanKind } from "@opentelemetry/api";
 import { createRequestContext } from "../utils/context.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import type { AgentStreamRelay } from "../tasks/agent-stream-relay.js";
@@ -8,6 +9,11 @@ import {
   requestAgentTaskCancellation,
 } from "../tasks/task-repository.js";
 import { uuidSchema, type AgentStreamEvent } from "../types/schemas.js";
+import {
+  getTracer,
+  parseTraceparent,
+  safeSetAttribute,
+} from "../observability/tracing.js";
 
 export async function agentRunRoutes(
   app: FastifyInstance,
@@ -39,6 +45,19 @@ export async function agentRunRoutes(
     const runId = readRunId(request.params);
     await getAuthorizedAgentRun(runId, request.user.id);
 
+    // Open the SSE stream root span. The span is a sibling of the inbound
+    // HTTP server span — events fan in from the Worker via NOTIFY/LISTEN
+    // and arrive minutes after the originating HTTP request may have ended,
+    // so we use `links` (rather than parenting) to keep causality without
+    // holding the parent alive.
+    const streamSpan = getTracer().startSpan("sse.stream", {
+      kind: SpanKind.SERVER,
+      attributes: {
+        "sse.run.id": runId,
+      },
+    });
+    let activeTraceparent: string | undefined = request.traceparent;
+
     // `reply.hijack()` hands the socket to this handler and skips Fastify's
     // onSend chain, so headers already negotiated by onRequest hooks — the CORS
     // decision and the correlation id — must be written onto the raw stream
@@ -55,8 +74,33 @@ export async function agentRunRoutes(
     });
     reply.raw.write(": connected\n\n");
 
+    const tracer = getTracer();
     const unsubscribe = options.relay.subscribe(runId, (event) => {
-      if (!reply.raw.destroyed) reply.raw.write(serializeSseEvent(event));
+      if (reply.raw.destroyed) return;
+      if (event.traceparent && !activeTraceparent) {
+        activeTraceparent = event.traceparent;
+      }
+      const parsedTp = event.traceparent ? parseTraceparent(event.traceparent) : null;
+      const links = parsedTp
+        ? [{ context: { traceId: parsedTp.traceId, spanId: parsedTp.spanId, isRemote: true, traceFlags: 1 } }]
+        : undefined;
+      const eventSpan = tracer.startSpan(
+        `sse.event.${event.event}`,
+        {
+          kind: SpanKind.INTERNAL,
+          attributes: {
+            "sse.run.id": runId,
+            "sse.event.type": event.event,
+          },
+          links,
+        },
+      );
+      try {
+        reply.raw.write(serializeSseEvent(event));
+      } finally {
+        safeSetAttribute(eventSpan, "sse.outcome", "delivered");
+        eventSpan.end();
+      }
     });
     const keepAlive = setInterval(() => {
       if (!reply.raw.destroyed) reply.raw.write(": keep-alive\n\n");
@@ -64,6 +108,8 @@ export async function agentRunRoutes(
     request.raw.once("close", () => {
       clearInterval(keepAlive);
       unsubscribe();
+      safeSetAttribute(streamSpan, "sse.outcome", "closed");
+      streamSpan.end();
     });
   });
 }

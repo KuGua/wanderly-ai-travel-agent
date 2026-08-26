@@ -327,6 +327,16 @@ export const agentRunResponseSchema = z.object({
 const streamBaseSchema = z.object({
   runId: uuidSchema,
   generationAttempt: z.number().int().nonnegative(),
+  /**
+   * Optional W3C `traceparent` header value forwarded from the originating
+   * HTTP request. Carried by every NOTIFY payload so the relay can re-enter
+   * the originating trace context for SSE events. PII / credentials are
+   * never embedded here — only OTel identifiers.
+   */
+  traceparent: z
+    .string()
+    .regex(/^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}(-[a-z0-9_,=+/-]{1,256})?$/i)
+    .optional(),
 });
 
 export const agentStreamEventSchema = z.discriminatedUnion("event", [

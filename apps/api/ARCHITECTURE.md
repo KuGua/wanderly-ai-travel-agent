@@ -216,6 +216,28 @@ Cross-cutting:
   `FORBIDDEN_SPAN_ATTRIBUTE_KEYS`. There is no durable trace storage or
   scraper configuration in this repository yet.
 
+### Durable task trace context
+
+`agent_task_runs.trace_context` is a JSONB column added by migration
+`0010_agent_task_trace_context.sql`. It carries the W3C trace context
+captured at HTTP ingress (shape: `{ traceparent, tracestate?, correlationId }`),
+so the Worker process — which runs in a separate ECS Fargate task — can
+reconstruct the originating trace without any new inbound call. The
+producer side is `acceptConversationTask` (`apps/api/src/tasks/task-repository.ts`),
+which writes the column inside the same transaction that inserts the run
+row. The consumer side is `ctxFromRun(run)` in
+`apps/api/src/tasks/task-repository.ts`, called by
+`processNextAgentTask` to build a `RequestContext` whose
+`traceparent`/`tracestate` mirror the persisted values.
+
+The Worker root span is `agent_task_worker.run` (`SpanKind.CONSUMER`,
+`apps/api/src/workers/agent-task-worker.ts`). When the task row carries a
+trace context, the span is opened with a `SpanLink` to the originating HTTP
+server span — the parent may already have ended (the Worker polls), so we
+do not assert a parent relationship. When the column is `null` (old rows,
+recovery path, replay), the span is opened as a fresh root and tagged with
+`tasks.recovery=true`.
+
 ## Idempotency Strategy
 
 All mutating operations use `idempotency_records`:

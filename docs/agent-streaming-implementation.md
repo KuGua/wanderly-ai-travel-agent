@@ -57,6 +57,15 @@ task row、`FOR UPDATE SKIP LOCKED` claim、租约续期与过期恢复、三次
 条件化事务提交、PostgreSQL `LISTEN/NOTIFY` relay、鉴权 fetch-SSE、TanStack
 Query run recovery、generation-attempt 去重，以及确定性 message sequence。
 
+### Trace 上下文跨 relay
+
+`AgentStreamEvent` 携带可选 `traceparent`（W3C trace-context 字符串，
+`00-<32-hex>-<16-hex>-<flags>`）。Worker 在每次 `publishAgentStreamEvent`
+时把同一 trace 写入 NOTIFY payload；`AgentStreamRelay` 派发时把它一并
+转发给客户端与 SSE handler；`routes/agent-runs.ts` 收到事件时为每条
+`sse.event.<type>` 创建 child span 并通过 `SpanLink` 关联到原 HTTP trace。
+事件 payload 仅含 OTel 标识符，绝不含 prompt / nationality / document。
+
 当前明确限制：
 
 - `PLAN`/`REPLAN` 仍走原同步规划服务；虽然数据库和公开 run contract 已保留

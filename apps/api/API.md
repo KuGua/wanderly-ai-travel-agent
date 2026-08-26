@@ -505,6 +505,11 @@ observer. Events may be missed during disconnects; clients must recover from
 `GET /agent-runs/:runId` and the final conversation history. SSE is not a queue
 and does not own task execution.
 
+Each event carries an optional `traceparent` field (W3C trace-context header
+value, `00-<32-hex>-<16-hex>-<flags>`). When present, it lets an OTel-aware
+observer link an `sse.event.*` span back to the originating HTTP server span.
+PII / credentials are never embedded here — only OTel identifiers.
+
 The handler hijacks the reply to own the socket, so it writes the headers the
 request already negotiated — the configured cross-origin decision and
 `x-correlation-id` — onto the stream itself. A browser that cannot read the

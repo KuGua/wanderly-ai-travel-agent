@@ -19,7 +19,7 @@ export async function handleConversationTask(params: {
   signal: AbortSignal;
 }) {
   const input = travelConversationInputSchema.parse(await loadConversationTaskInput(params.run));
-  const gate = new SafeConversationDeltaGate(params.run);
+  const gate = new SafeConversationDeltaGate(params.run, params.ctx.traceparent);
   const execution = new AbortController();
   const abortFromTask = () => execution.abort(params.signal.reason);
   if (params.signal.aborted) abortFromTask();
@@ -41,7 +41,7 @@ export async function handleConversationTask(params: {
     params.signal.removeEventListener("abort", abortFromTask);
   }
 
-  await publishPhase(params.run, "VALIDATING");
+  await publishPhase(params.run, "VALIDATING", params.ctx.traceparent);
   const parsed = travelConversationOutputSchema.parse(output);
   if (parsed.responseMode === "MODEL" && containsUnsupportedOperationalClaim(parsed.content)) {
     throw new Error("Final conversation safety validation failed");
@@ -55,8 +55,11 @@ class SafeConversationDeltaGate {
   private approved = "";
   private sequence = 0;
   rawText = "";
+  private readonly traceparent: string | undefined;
 
-  constructor(private readonly run: AgentTaskRow) {}
+  constructor(private readonly run: AgentTaskRow, traceparent?: string) {
+    this.traceparent = traceparent;
+  }
 
   async push(delta: string): Promise<void> {
     if (!delta) return;
@@ -95,6 +98,7 @@ class SafeConversationDeltaGate {
         generationAttempt: this.run.generationAttempt,
         sequence: this.sequence,
         delta,
+        traceparent: this.traceparent,
       });
       this.sequence += 1;
     }
@@ -127,11 +131,13 @@ function boundedTextChunks(value: string, maxBytes: number): string[] {
 export function publishPhase(
   run: AgentTaskRow,
   phase: Extract<AgentStreamEvent, { event: "run.phase" }>["phase"],
+  traceparent?: string,
 ) {
   return publishAgentStreamEvent({
     event: "run.phase",
     runId: run.id,
     generationAttempt: run.generationAttempt,
     phase,
+    traceparent,
   });
 }
