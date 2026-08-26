@@ -24,6 +24,7 @@ import {
   type OwnerConversationMessage,
 } from "../types/schemas.js";
 import type { RequestContext } from "../utils/context.js";
+import { createRequestContext } from "../utils/context.js";
 import {
   getTracer,
   recordSpanError,
@@ -34,6 +35,46 @@ import { publishAgentStreamEvent } from "./task-stream-publisher.js";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type AgentTaskRow = typeof agentTaskRuns.$inferSelect;
+
+/**
+ * Build the `agent_task_runs.trace_context` JSONB payload from the inbound
+ * `RequestContext`. The shape is the W3C trace context plus the canonical
+ * server-owned `correlationId`; it is consumed by the Worker's `ctxFromRun`
+ * helper to reconstruct the active OTel context after the durable boundary.
+ * `null` is returned when no trace context was supplied — old rows that
+ * pre-date PR 3 land here, and the Worker falls back to a no-op span.
+ */
+function buildTraceContextForTask(ctx: RequestContext): {
+  traceparent: string;
+  tracestate?: string;
+  correlationId: string;
+} | null {
+  if (!ctx.traceparent) return null;
+  return {
+    traceparent: ctx.traceparent,
+    tracestate: ctx.tracestate,
+    correlationId: ctx.correlationId,
+  };
+}
+
+/**
+ * Inverse of `buildTraceContextForTask`. Reads the persisted
+ * `trace_context` column and rehydrates a `RequestContext` suitable for the
+ * Worker. When the column is `null` (old rows, recovery, or background
+ * replay), returns a context with a freshly-minted UUID so downstream
+ * consumers never see `undefined` ids.
+ */
+export function ctxFromRun(run: AgentTaskRow): RequestContext {
+  const tc = run.traceContext ?? null;
+  return createRequestContext(
+    run.createdByUserId,
+    tc?.correlationId ?? randomUUID(),
+    randomUUID(),
+    undefined,
+    tc?.traceparent,
+    tc?.tracestate,
+  );
+}
 
 const CLAIM_CONVERSATION_SQL = [
   "WITH candidate AS (",
@@ -111,6 +152,8 @@ export async function acceptConversationTask(params: {
         requestId: params.input.requestId,
         userMessageId: userMessage.id,
         expiresAt,
+        traceContext: buildTraceContextForTask(params.ctx),
+        intent: params.input.intent ?? null,
         ...placeColumns(place),
       }).returning();
 
@@ -328,7 +371,7 @@ export async function loadConversationTaskInput(run: AgentTaskRow) {
       content: row.redactedSummary?.trim().slice(0, 1000) ?? "",
     }))
     .filter((row) => row.content.length > 0);
-  return { question: message.body, history, place: taskPlace(run) };
+  return { question: message.body, history, place: taskPlace(run), intent: run.intent ?? undefined };
 }
 
 export async function completeConversationTask(params: {

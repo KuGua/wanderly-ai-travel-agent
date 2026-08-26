@@ -319,6 +319,7 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   placeLatitude: doublePrecision("place_latitude"),
   placeLongitude: doublePrecision("place_longitude"),
   placeSourceType: varchar("place_source_type", { length: 16 }),
+  intent: text("intent"),
   generationAttempt: integer("generation_attempt").default(0).notNull(),
   attemptCount: integer("attempt_count").default(0).notNull(),
   maxAttempts: integer("max_attempts").default(3).notNull(),
@@ -330,6 +331,19 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   errorCode: varchar("error_code", { length: 64 }),
+  /**
+   * W3C trace context carried from the originating HTTP request. The shape
+   * is `{ traceparent: string; tracestate?: string; correlationId: string }`
+   * and is populated by `acceptConversationTask` from the inbound
+   * `RequestContext`. The Worker reconstructs the OTel context from this
+   * column via `ctxFromRun` in `apps/api/src/workers/agent-task-worker.ts`.
+   * Carries only OTel identifiers — never PII, credentials, or model content.
+   */
+  traceContext: jsonb("trace_context").$type<{
+    traceparent: string;
+    tracestate?: string;
+    correlationId: string;
+  }>(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
