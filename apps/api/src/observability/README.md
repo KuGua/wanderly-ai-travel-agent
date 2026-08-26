@@ -16,7 +16,7 @@ must go through these; nothing else.
 
 | File | Purpose | See |
 | --- | --- | --- |
-| `metrics.ts` | In-process `MetricsRegistry` with 6 counters + 1 histogram. Bounded labels via `MetricLabelError`. | [§Metrics](#metrics) |
+| `metrics.ts` | In-process `MetricsRegistry` with bounded-label counters and histograms, including durable Agent task outcomes, recoveries and terminal latency. | [§Metrics](#metrics) |
 | `telemetry.ts` | Pino instance with `LOGGER_REDACTION`, `correlationChild`, `FastifyRequest` augmentation for `rawBody` + `correlationId`. | [§Log redaction](#log-redaction) |
 | `redaction.ts` | Generic `redact(value, opts)` walker with default depth=4 and `DEFAULT_REDACT_KEYS`. | [§Log redaction](#log-redaction) |
 | `agent-runs.ts` | `recordAgentRun({...})` writes `agent_runs` + an `AGENT_RUN` audit event. | [§Agent runs](#agent-runs) |

@@ -84,8 +84,8 @@ authorization checks remain active. Production continues to use Cognito.
 
 Start PostgreSQL before migrations. The repository compose file can run only
 the database service; do not start its `app` service for local-dev because that
-container intentionally uses production settings. API and Web must run in
-separate terminals.
+container intentionally uses production settings. API, durable Agent Worker,
+and Web must run in three separate terminals.
 
 ```powershell
 docker compose -f apps/api/docker-compose.yml up -d postgres
@@ -101,7 +101,14 @@ npm --prefix apps/api run db:migrate
 npm --prefix apps/api run dev
 ```
 
-Start Web in the second terminal:
+Start the task Worker in the second terminal. Without this process a submitted
+turn correctly remains `QUEUED`; the API request itself never runs the model.
+
+```bash
+npm --prefix apps/api run worker:dev
+```
+
+Start Web in the third terminal:
 
 ```bash
 npm --prefix apps/web run dev -- --port 3001
@@ -142,14 +149,18 @@ environment configuration.
 
 1. Open `http://localhost:3001/en/home` and select a destination.
 2. Ask `Tell me more about Tokyo`.
-3. Expect a real assistant bubble backed by Gemini with response mode `MODEL`.
+3. Expect the submitted USER bubble immediately, followed by safety-approved
+   streamed text and then the restored final assistant message backed by Gemini.
 4. Ask `I'm a Chinese citizen, do I need a visa to go to Tokyo?`.
 5. Expect deterministic `SAFE_REFUSAL` behavior with `Verification required`.
 
 In local-dev mode the account control shows an explicit local development
 indicator and `ApiClient` sends no Authorization header. A non-loopback Web API
 configuration instead shows an explicit configuration error. Provider failure
-still fails closed; the application never substitutes a production mock response.
+still fails closed; bounded Worker retries preserve the USER message, never
+persist a partial ASSISTANT message, and never substitute a production mock
+response. Closing the chat or refreshing only disconnects the SSE observer.
+Use the visible Stop control to call the explicit cancel endpoint.
 
 This mode validates one fixed local user only. It is suitable for Profile,
 private-thread and browser-to-Agent smoke tests, but cannot prove the three-user

@@ -2,7 +2,10 @@
 
 ## Overview
 
-AI Travel Agent is a **modular monolith** — not a microservice architecture. All business logic runs in a single Fastify process with clear module boundaries designed for future extraction if needed.
+AI Travel Agent is a **modular monolith** — not a microservice architecture.
+The API and durable Agent Worker are two process entrypoints over the same code,
+database, policy, and provider modules; HTTP request processes never own accepted
+Agent execution.
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
@@ -38,6 +41,8 @@ Application-layer interface for AI model interactions:
 - `explainPlanDiff()` — explains differences between old/new plans
 - `generateConversationReply()` — produces a typed private Personal Agent
   answer with explicit `MODEL` provenance
+- `streamConversationReply()` — OpenAI-compatible async chunks for the Worker;
+  chunks remain untrusted until the streaming safety gate approves them
 
 **Constraints**: Model cannot access database or execute irreversible operations.
 **Current**: `gateway-factory.ts` requires a configured real OpenAI, Gemini, or
@@ -95,8 +100,10 @@ Core business logic — NOT in LLM/Agent:
 - **VisaService** — readiness checks with nationality authorization
 - **AuditService** — correlation-ID-based audit trail
 - **IdempotencyService** — global idempotency for all operations
-- **ChatConversationService** — owner check, bounded safe recall, Personal
-  Skill orchestration, turn idempotency, and short-transaction persistence
+- **ChatConversationService** — owner-only deterministic history reads
+- **TaskRepository / AgentTaskWorker** — short acceptance transaction, atomic
+  `SKIP LOCKED` claims, renewable leases, recovery/retry, explicit cancellation,
+  streaming policy enforcement, and conditional final persistence
 
 ### 4. Database Layer (`src/db/`)
 
@@ -110,6 +117,7 @@ Core business logic — NOT in LLM/Agent:
 users ──1:1── user_profiles (private)
   │
   ├──< chat_threads ──< chat_messages (owner-only USER / server ASSISTANT)
+  │          └──< agent_task_runs (durable state; no prompt/partial text)
   │
   └──< trip_members >── shared_trips
          │                  │
@@ -205,8 +213,9 @@ All mutating operations use `idempotency_records`:
 - **Planning**: keyed by `change_event:{eventId}`
 - **Booking**: keyed by `booking:{orchestrationRequestId}`
 - **Callbacks**: keyed by `callback:{eventId}`
-- **Chat turns**: keyed by `chat_turn:{threadId}:{requestId}`; stored result
-  metadata contains message IDs and response mode, never message bodies
+- **Chat turns**: keyed by `chat_turn:{threadId}:{requestId}`; acceptance stores
+  the durable run ID and USER message exactly once. Completion updates only safe
+  result IDs/response mode, never message bodies or partial stream text.
 
 Duplicate requests return cached results without side effects.
 

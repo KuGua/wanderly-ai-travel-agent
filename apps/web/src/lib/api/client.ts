@@ -117,6 +117,54 @@ export class ApiClient {
     return parsedBody.data;
   }
 
+  async stream(
+    path: string,
+    signal: AbortSignal,
+    onEvent: (eventName: string, data: unknown) => void,
+  ): Promise<void> {
+    const headers = new Headers({ Accept: "text/event-stream" });
+    const accessToken = await this.getAccessToken();
+    if (accessToken) headers.set("Authorization", "Bearer " + accessToken);
+    const requestId = generateRequestId();
+    headers.set("X-Request-Id", requestId);
+    headers.set("X-Correlation-Id", this.lastCorrelationId ?? requestId);
+
+    let response: Response;
+    try {
+      response = await this.fetchImplementation(
+        this.baseUrl + (path.startsWith("/") ? path : "/" + path),
+        { method: "GET", headers, signal },
+      );
+    } catch (cause) {
+      if (signal.aborted) throw cause;
+      throw new TravelApiError(
+        "The Agent stream is unreachable. The accepted task will continue.",
+        null,
+        "Network Error",
+        null,
+        { cause },
+      );
+    }
+
+    const responseCorrelationId = response.headers.get("x-correlation-id");
+    if (responseCorrelationId) this.lastCorrelationId = responseCorrelationId;
+
+    if (!response.ok) {
+      const body = await readResponseBody(response);
+      const parsedError = apiErrorResponseSchema.safeParse(body);
+      throw new TravelApiError(
+        parsedError.success ? parsedError.data.message : "Unable to subscribe to the Agent stream.",
+        response.status,
+        parsedError.success ? parsedError.data.error : "Stream Error",
+        response.headers.get("x-correlation-id"),
+      );
+    }
+    if (!response.body) {
+      throw new TravelApiError("The Agent stream returned no body.", response.status, "Stream Error", null);
+    }
+    await consumeEventStream(response.body, onEvent);
+  }
+
   /**
    * Test-only helper. Resets the last-seen correlation id; used by
    * `http-travel-api.test.ts` to assert that the chain restarts cleanly
@@ -124,6 +172,56 @@ export class ApiClient {
    */
   __resetCorrelationIdForTests(): void {
     this.lastCorrelationId = null;
+  }
+}
+
+async function consumeEventStream(
+  body: ReadableStream<Uint8Array>,
+  onEvent: (eventName: string, data: unknown) => void,
+) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary = eventBoundary(buffer);
+      while (boundary) {
+        const block = buffer.slice(0, boundary.index);
+        buffer = buffer.slice(boundary.index + boundary.length);
+        parseEventBlock(block, onEvent);
+        boundary = eventBoundary(buffer);
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+function eventBoundary(buffer: string): { index: number; length: number } | null {
+  const unix = buffer.indexOf("\n\n");
+  const windows = buffer.indexOf("\r\n\r\n");
+  if (unix < 0 && windows < 0) return null;
+  if (windows >= 0 && (unix < 0 || windows < unix)) return { index: windows, length: 4 };
+  return { index: unix, length: 2 };
+}
+
+function parseEventBlock(block: string, onEvent: (eventName: string, data: unknown) => void) {
+  let eventName = "message";
+  const dataLines: string[] = [];
+  for (const rawLine of block.split(/\r?\n/u)) {
+    if (rawLine.startsWith(":")) continue;
+    if (rawLine.startsWith("event:")) eventName = rawLine.slice(6).trim();
+    if (rawLine.startsWith("data:")) dataLines.push(rawLine.slice(5).trimStart());
+  }
+  if (dataLines.length === 0) return;
+  try {
+    onEvent(eventName, JSON.parse(dataLines.join("\n")));
+  } catch {
+    // Invalid or partial event payloads are ignored. Durable run state remains
+    // authoritative and the caller will recover it through the read endpoint.
   }
 }
 

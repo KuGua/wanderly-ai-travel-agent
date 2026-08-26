@@ -54,7 +54,7 @@ export const threadRecallSkill: Skill<ThreadRecallInput, ThreadRecallOutput> = {
     })
       .from(chatMessages)
       .where(eq(chatMessages.threadId, input.threadId))
-      .orderBy(desc(chatMessages.createdAt))
+      .orderBy(desc(chatMessages.messageSequence))
       .limit(input.limit);
 
     // Reverse to chronological order (oldest first) for the caller.

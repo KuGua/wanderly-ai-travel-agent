@@ -431,9 +431,10 @@ List only the authenticated owner's threads.
 
 ### `POST /threads/:threadId/turns`
 
-Run one idempotent Personal Agent conversation turn. Clients supply no role or
-sender identity; the server persists the question as `USER` and the generated
-reply as `ASSISTANT`.
+Accept one idempotent Personal Agent conversation task. Clients supply no role
+or sender identity. The acceptance transaction persists the question as
+`USER`, creates one durable run, and returns `202` without waiting for Gemini.
+An independent Worker later persists the final, validated `ASSISTANT` message.
 
 **Body**:
 
@@ -446,7 +447,7 @@ reply as `ASSISTANT`.
     "name": "Tokyo",
     "latitude": 35.6895,
     "longitude": 139.6917,
-    "sourceType": "FIXTURE"
+    "sourceType": "REFERENCE"
   }
 }
 ```
@@ -455,31 +456,61 @@ reply as `ASSISTANT`.
 is never authoritative evidence for prices, inventory, visa requirements, or
 booking availability.
 
-**Response**:
+**`202 Accepted` response**:
 
 ```json
 {
   "threadId": "uuid",
+  "runId": "uuid",
+  "operation": "CONVERSATION",
+  "status": "QUEUED",
+  "generationAttempt": 0,
   "userMessage": {
     "id": "uuid",
     "role": "USER",
     "content": "Tell me about Tokyo",
+    "sequence": 1,
     "createdAt": "2026-08-25T00:00:00.000Z"
-  },
-  "assistantMessage": {
-    "id": "uuid",
-    "role": "ASSISTANT",
-    "content": "A bounded travel response.",
-    "createdAt": "2026-08-25T00:00:00.000Z"
-  },
-  "responseMode": "MODEL"
+  }
 }
 ```
 
-`responseMode` is `MODEL` or `SAFE_REFUSAL`. `SAFE_REFUSAL` is a deterministic
-policy response for unsupported live/operational facts, not a model fallback.
-Provider/model failure returns a controlled error and persists no turn. Repeating the same `requestId`
-for the same thread returns the persisted result without duplicate messages.
+Repeating the same `requestId` returns the same accepted run and USER message.
+Only one active run is allowed per thread. Provider failure is handled by the
+Worker's bounded retries; terminal failure preserves the USER message, stores no
+partial ASSISTANT body, and exposes only an allow-listed error code through the
+run read API.
+
+### `GET /agent-runs/:runId`
+
+Returns the authenticated creator's durable operation/status, attempt counters,
+timestamps, safe terminal error code, and final resource IDs. It never returns
+the prompt, question, partial text, model payload, credentials, or private
+snapshot data. Cross-user reads return `403`.
+
+### `POST /agent-runs/:runId/cancel`
+
+The only task cancellation mechanism. A queued run becomes `CANCELLED`
+immediately; a running run becomes `CANCEL_REQUESTED` until its Worker observes
+the request and aborts the upstream call. Closing an SSE connection, refreshing,
+or leaving the page does not call this endpoint and does not cancel work.
+
+### `GET /agent-runs/:runId/events`
+
+Authenticated `text/event-stream` observation endpoint intended for browser
+`fetch` with the normal Bearer header. Events are strict allow-listed envelopes:
+`turn.started`, `run.phase`, safety-approved `message.delta`, and exactly one of
+`turn.completed`, `turn.cancelled`, `turn.stale`, or `turn.failed` for a connected
+observer. Events may be missed during disconnects; clients must recover from
+`GET /agent-runs/:runId` and the final conversation history. SSE is not a queue
+and does not own task execution.
+
+The handler hijacks the reply to own the socket, so it writes the headers the
+request already negotiated — the configured cross-origin decision and
+`x-correlation-id` — onto the stream itself. A browser that cannot read the
+cross-origin headers rejects the stream and silently degrades to polling
+`GET /agent-runs/:runId`, which still returns the correct final answer but loses
+incremental delivery.
 
 ### `GET /threads/:threadId/conversation`
 

@@ -160,7 +160,7 @@ memberships overlap only where explicitly configured.
 - Raw message text is absent from the snapshot, shared plan/explanation and all telemetry/audit outputs; it is not default model context for the planning run.
 - Deletion removes message bodies and makes the thread unavailable to Alice; separately confirmed Profile/override facts remain until independently deleted.
 
-Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner turn, repeat version, idempotency, roles, raw owner history and safe recall), `apps/api/tests/conversation-gateway.test.ts` (structured model and controlled failure), `apps/api/tests/chat-threads-route.test.ts` and `apps/api/tests/thread-recall-skill.test.ts`. Add the streaming scenarios below before release.
+Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 acceptance, owner scope, active-run exclusion, idempotency, Worker completion, explicit queued cancellation, bounded retry failure, deterministic sequence and safe recall), `apps/api/tests/conversation-gateway.test.ts` (structured and streamed model paths plus controlled failure), `apps/web/src/components/explore/travel-agent-chat.test.tsx` (temporary delta ordering, generation-attempt replacement, Stop semantics and history recovery), `apps/web/src/lib/api/http-travel-api.test.ts` (authenticated fetch-SSE parsing), `apps/api/tests/agent-run-stream-headers.test.ts` (cross-origin and correlation headers survive the hijacked stream), `apps/api/tests/chat-threads-route.test.ts` and `apps/api/tests/thread-recall-skill.test.ts`. Worker-process kill/recovery and deployed proxy buffering remain manual release checks.
 
 ### TS-H1c — Stream a durable private Agent turn across disconnects
 
@@ -181,6 +181,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 **Expected outcomes:**
 
 - The command endpoint accepts the existing authenticated conversation request DTO and returns `202`; a separate authenticated `fetch` SSE observer receives live events. No native `EventSource` authorization workaround or WebSocket is required.
+- The stream response itself carries the negotiated cross-origin headers and `x-correlation-id`. A browser observer on an allowed origin renders incremental deltas; it must not fall back to polling the run and revealing the whole answer at once.
 - Event order for a connected observer is `turn.started` → zero or more safe progress/text events → exactly one terminal `turn.completed`, `turn.cancelled`, `turn.stale` or `turn.failed`; no event exposes prompt text, chain-of-thought, raw provider payload, unvalidated token or unapproved data.
 - `COMPLETED` persists exactly one USER and one final-policy-approved ASSISTANT message atomically and is replayable by request ID.
 - Browser/SSE disconnect does not cancel the run. Explicit Stop produces `CANCELLED`; terminal failure preserves the submitted USER message exactly once, persists no partial ASSISTANT body, and exposes only a safe terminal code/status.
@@ -453,7 +454,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
 - Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。
 - 私聊首次提问创建当前用户的 private thread，后续提问复用该 thread；刷新后只从本地 thread ID 指针恢复 owner-only history，服务端返回不存在的 thread 时清除失效指针，不在浏览器持久化消息正文。
-- 每个新 turn 使用新的 UUID `requestId`；502/504 或网络失败后的显式重试必须复用原 request ID，发送期间禁止并发重复提交。`MODEL` 正常展示，`SAFE_REFUSAL` 显示核验提示，provider/model 失败不得伪造 assistant fallback。
+- 每个新 turn 使用新的 UUID `requestId`；acceptance 网络结果不确定时必须复用原 request ID，发送期间禁止并发重复提交。接受成功后 UI 以 durable run status 为准，SSE 断线只降级为轮询；Worker 自动处理受控网络/5xx 重试。最终 `MODEL` 正常展示，`SAFE_REFUSAL` 显示核验提示，terminal provider/model failure 保留 USER、不得持久化 partial ASSISTANT 或伪造 fallback。
 - 浏览器聊天请求在 Cognito 模式必须使用真实 Cognito access token；没有可用登录 token provider 时，三人真实 API 端到端演示属于显式阻塞项，不得硬编码 token 或退回 demo identity。`local-dev` 仅覆盖一个服务端固定身份的单人 smoke test，不能替代三人授权/确认验收。
 - 375px、768px、1024px、1440px 下身份、导航、主要操作与私密提示均可见，交互目标至少 44px，并尊重 reduced motion。
 

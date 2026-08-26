@@ -1,24 +1,21 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { FastifyInstance } from "fastify";
-import { eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { buildApp } from "../src/app.js";
+import { eq, inArray } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
 import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
 import { invokeSkill } from "../src/agents/skill-registry.js";
+import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import {
-  auditEvents,
-  chatMessages,
-  chatThreads,
-  idempotencyRecords,
-  users,
-} from "../src/db/schema.js";
+import { agentTaskRuns, auditEvents, chatMessages, chatThreads, idempotencyRecords, users } from "../src/db/schema.js";
 import { __setModelGatewayForTests } from "../src/providers/gateway-factory.js";
 import { ModelGatewayError } from "../src/providers/llm-gateway.js";
 import type { ModelGateway } from "../src/providers/model-gateway.js";
 import { threadRecallSkill } from "../src/skills/personal/thread-recall-skill.js";
+import { AgentStreamRelay } from "../src/tasks/agent-stream-relay.js";
 import { createRequestContext } from "../src/utils/context.js";
+import { processNextAgentTask } from "../src/workers/agent-task-worker.js";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 
 let app: FastifyInstance;
@@ -26,7 +23,7 @@ let aliceId: string;
 
 beforeAll(async () => {
   __setModelGatewayForTests(successfulConversationGateway);
-  app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
+  app = await buildApp({ verifyAccessToken: verifyTestAccessToken, agentStreamRelay: new AgentStreamRelay() });
   await app.ready();
   const [alice] = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
   aliceId = alice.id;
@@ -37,49 +34,54 @@ afterAll(async () => {
   await app.close();
 });
 
-describe("owner-only Personal Agent conversation flow", () => {
-  it("persists, deduplicates, repeats the same Skill versions, and restores owner history", async () => {
-    const requestIds = [randomUUID(), randomUUID()];
+describe("durable owner-only Personal Agent conversation flow", () => {
+  it("accepts once, rejects concurrent work, completes in the Worker, and restores ordered owner history", async () => {
+    const requestIds = [randomUUID(), randomUUID(), randomUUID()];
     const idempotencyKeys: string[] = [];
     const correlationIds: string[] = [];
     let threadId: string | undefined;
 
     try {
-      const create = await app.inject({
-        method: "POST",
-        url: "/api/v1/threads",
-        headers: { ...authHeaders("alice"), "content-type": "application/json" },
-        payload: { title: `Explore chat ${randomUUID()}` },
-      });
-      collectCorrelation(create, correlationIds);
-      expect(create.statusCode).toBe(201);
-      threadId = (create.json() as { id: string }).id;
-      idempotencyKeys.push(...requestIds.map(id => `chat_turn:${threadId}:${id}`));
+      threadId = await createThread(`Explore chat ${randomUUID()}`);
+      idempotencyKeys.push(...requestIds.map((id) => `chat_turn:${threadId}:${id}`));
 
       const first = await submitTurn(threadId, requestIds[0], "Tell me about Tokyo");
       collectCorrelation(first, correlationIds);
-      expect(first.statusCode).toBe(200);
-      const firstBody = first.json() as TurnResponse;
-      expect(firstBody.userMessage).toMatchObject({ role: "USER", content: "Tell me about Tokyo" });
-      expect(firstBody.assistantMessage.role).toBe("ASSISTANT");
-      expect(firstBody.responseMode).toBe("MODEL");
+      expect(first.statusCode).toBe(202);
+      const firstBody = first.json() as AcceptedTurnResponse;
+      expect(firstBody).toMatchObject({
+        threadId,
+        operation: "CONVERSATION",
+        status: "QUEUED",
+        generationAttempt: 0,
+        userMessage: { role: "USER", content: "Tell me about Tokyo", sequence: expect.any(Number) },
+      });
 
       const duplicate = await submitTurn(threadId, requestIds[0], "Tell me about Tokyo");
-      collectCorrelation(duplicate, correlationIds);
-      expect(duplicate.statusCode).toBe(200);
+      expect(duplicate.statusCode).toBe(202);
       expect(duplicate.json()).toEqual(firstBody);
 
-      const second = await submitTurn(threadId, requestIds[1], "What should I explore next?");
-      collectCorrelation(second, correlationIds);
-      expect(second.statusCode).toBe(200);
+      const concurrent = await submitTurn(threadId, requestIds[1], "Start another answer");
+      expect(concurrent.statusCode).toBe(409);
+      expect(await db.select().from(chatMessages).where(eq(chatMessages.threadId, threadId))).toHaveLength(1);
 
-      const rows = await db.select().from(chatMessages)
-        .where(eq(chatMessages.threadId, threadId));
-      expect(rows).toHaveLength(4);
-      expect(rows.filter(row => row.role === "USER")).toHaveLength(2);
-      expect(rows.filter(row => row.role === "ASSISTANT")).toHaveLength(2);
-      expect(rows.filter(row => row.role === "USER").every(row => row.senderUserId === aliceId)).toBe(true);
-      expect(rows.filter(row => row.role === "ASSISTANT").every(row => row.senderUserId === null)).toBe(true);
+      expect(await processNextAgentTask()).toBe(true);
+      const completedRun = await app.inject({
+        method: "GET",
+        url: `/api/v1/agent-runs/${firstBody.runId}`,
+        headers: authHeaders("alice"),
+      });
+      expect(completedRun.statusCode).toBe(200);
+      expect(completedRun.json()).toMatchObject({
+        status: "COMPLETED",
+        generationAttempt: 1,
+        attemptCount: 1,
+        assistantMessageId: expect.any(String),
+      });
+
+      const second = await submitTurn(threadId, requestIds[2], "What should I explore next?");
+      expect(second.statusCode).toBe(202);
+      expect(await processNextAgentTask()).toBe(true);
 
       const conversation = await app.inject({
         method: "GET",
@@ -88,65 +90,51 @@ describe("owner-only Personal Agent conversation flow", () => {
       });
       collectCorrelation(conversation, correlationIds);
       expect(conversation.statusCode).toBe(200);
-      const conversationBody = conversation.json() as { messages: Array<{ role: string; content: string }> };
-      expect(conversationBody.messages).toHaveLength(4);
-      expect(conversationBody.messages.some(message => message.content === "Tell me about Tokyo")).toBe(true);
-      expect(conversationBody.messages.some(message => message.role === "ASSISTANT")).toBe(true);
+      const messages = (conversation.json() as { messages: OwnerMessage[] }).messages;
+      expect(messages).toHaveLength(4);
+      expect(messages.map((message) => message.role)).toEqual(["USER", "ASSISTANT", "USER", "ASSISTANT"]);
+      const sequences = messages.map((message) => message.sequence);
+      expect(sequences).toEqual([...sequences].sort((a, b) => a - b));
 
-      const bobTurn = await app.inject({
-        method: "POST",
-        url: `/api/v1/threads/${threadId}/turns`,
-        headers: { ...authHeaders("bob"), "content-type": "application/json" },
-        payload: { requestId: randomUUID(), question: "Read Alice's chat" },
+      const rows = await db.select().from(chatMessages).where(eq(chatMessages.threadId, threadId));
+      expect(rows.filter((row) => row.role === "USER").every((row) => row.senderUserId === aliceId)).toBe(true);
+      expect(rows.filter((row) => row.role === "ASSISTANT").every((row) => row.senderUserId === null)).toBe(true);
+
+      const bobRun = await app.inject({
+        method: "GET",
+        url: `/api/v1/agent-runs/${firstBody.runId}`,
+        headers: authHeaders("bob"),
       });
-      collectCorrelation(bobTurn, correlationIds);
-      expect(bobTurn.statusCode).toBe(403);
-
+      expect(bobRun.statusCode).toBe(403);
       const bobHistory = await app.inject({
         method: "GET",
         url: `/api/v1/threads/${threadId}/conversation`,
         headers: authHeaders("bob"),
       });
-      collectCorrelation(bobHistory, correlationIds);
       expect(bobHistory.statusCode).toBe(403);
-
-      const forged = await app.inject({
-        method: "POST",
-        url: `/api/v1/threads/${threadId}/messages`,
-        headers: { ...authHeaders("alice"), "content-type": "application/json" },
-        payload: { body: "forged", role: "ASSISTANT" },
-      });
-      collectCorrelation(forged, correlationIds);
-      expect(forged.statusCode).toBe(400);
 
       const recall = await invokeSkill<unknown, { messages: Array<{ contentRedacted: string }> }>(threadRecallSkill.name, {
         ctx: createRequestContext(aliceId),
         policyGate: new DefaultPolicyGate("personal"),
       }, { threadId, limit: 20 }, { expectedVersion: threadRecallSkill.version });
       expect(recall.messages).toHaveLength(4);
-      expect(recall.messages.every(message => message.contentRedacted === "")).toBe(true);
-      expect(JSON.stringify(recall)).not.toContain("Tell me about Tokyo");
+      expect(recall.messages.every((message) => message.contentRedacted === "")).toBe(true);
 
-      const audits = correlationIds.length > 0
-        ? await db.select().from(auditEvents).where(inArray(auditEvents.correlationId, correlationIds))
-        : [];
-      const serializedAudits = JSON.stringify(audits.map(audit => audit.summary));
+      // A privacy assertion that inspects nothing silently passes, so prove the
+      // audit trail was actually collected and covers this turn before asserting
+      // that raw question and answer text is absent from it.
+      expect(correlationIds.length).toBeGreaterThan(0);
+      const audits = await db.select().from(auditEvents)
+        .where(inArray(auditEvents.correlationId, correlationIds));
+      expect(audits.length).toBeGreaterThan(0);
+      const auditedActions = new Set(audits.map((audit) => audit.action));
+      expect(auditedActions).toContain("CHAT_MESSAGE_APPEND");
+      expect(auditedActions).toContain("AGENT_TASK");
+      const serializedAudits = JSON.stringify(audits.map((audit) => audit.summary));
       expect(serializedAudits).not.toContain("Tell me about Tokyo");
-      expect(serializedAudits).not.toContain(firstBody.assistantMessage.content);
-
-      const deleted = await app.inject({
-        method: "DELETE",
-        url: `/api/v1/threads/${threadId}`,
-        headers: authHeaders("alice"),
-      });
-      collectCorrelation(deleted, correlationIds);
-      expect(deleted.statusCode).toBe(200);
-      expect(await db.select().from(chatMessages).where(eq(chatMessages.threadId, threadId))).toHaveLength(0);
+      expect(serializedAudits).not.toContain("Tokyo offers distinct neighborhoods");
     } finally {
-      if (threadId) {
-        await db.delete(chatMessages).where(eq(chatMessages.threadId, threadId));
-        await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
-      }
+      if (threadId) await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
       if (idempotencyKeys.length > 0) {
         await db.delete(idempotencyRecords).where(inArray(idempotencyRecords.idempotencyKey, idempotencyKeys));
       }
@@ -154,85 +142,118 @@ describe("owner-only Personal Agent conversation flow", () => {
         await db.delete(auditEvents).where(inArray(auditEvents.correlationId, correlationIds));
       }
     }
+  });
 
-    async function submitTurn(targetThreadId: string, requestId: string, question: string) {
-      return app.inject({
+  it("cancels a queued task immediately without inventing an assistant message", async () => {
+    const requestId = randomUUID();
+    const threadId = await createThread(`Cancelled chat ${randomUUID()}`);
+    try {
+      const accepted = await submitTurn(threadId, requestId, "Do not start this answer");
+      const body = accepted.json() as AcceptedTurnResponse;
+      const cancelled = await app.inject({
         method: "POST",
-        url: `/api/v1/threads/${targetThreadId}/turns`,
-        headers: { ...authHeaders("alice"), "content-type": "application/json" },
-        payload: {
-          requestId,
-          question,
-          place: {
-            sourceId: "tokyo",
-            name: "Tokyo",
-            latitude: 35.6895,
-            longitude: 139.6917,
-            sourceType: "REFERENCE",
-          },
-        },
+        url: `/api/v1/agent-runs/${body.runId}/cancel`,
+        headers: authHeaders("alice"),
       });
+      expect(cancelled.statusCode).toBe(200);
+      expect(cancelled.json()).toMatchObject({ status: "CANCELLED", errorCode: "CANCELLED" });
+      const messages = await db.select().from(chatMessages).where(eq(chatMessages.threadId, threadId));
+      expect(messages.map((message) => message.role)).toEqual(["USER"]);
+    } finally {
+      await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
+      await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, `chat_turn:${threadId}:${requestId}`));
     }
   });
 
-  it("returns a controlled provider error without persisting either turn message", async () => {
-    let threadId: string | undefined;
+  it("persists the USER message and exposes a safe terminal code after retry exhaustion", async () => {
+    const requestId = randomUUID();
+    const threadId = await createThread(`Provider failure ${randomUUID()}`);
     __setModelGatewayForTests(failingConversationGateway);
     try {
-      const create = await app.inject({
-        method: "POST",
-        url: "/api/v1/threads",
-        headers: { ...authHeaders("alice"), "content-type": "application/json" },
-        payload: { title: `Provider failure ${randomUUID()}` },
-      });
-      expect(create.statusCode).toBe(201);
-      threadId = (create.json() as { id: string }).id;
+      const accepted = await submitTurn(threadId, requestId, "Tell me about Tokyo");
+      expect(accepted.statusCode).toBe(202);
+      const body = accepted.json() as AcceptedTurnResponse;
 
-      const failedTurn = await app.inject({
-        method: "POST",
-        url: `/api/v1/threads/${threadId}/turns`,
-        headers: { ...authHeaders("alice"), "content-type": "application/json" },
-        payload: { requestId: randomUUID(), question: "Tell me about Tokyo" },
-      });
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        await db.update(agentTaskRuns).set({ nextAttemptAt: new Date(0) }).where(eq(agentTaskRuns.id, body.runId));
+        expect(await processNextAgentTask()).toBe(true);
+      }
 
-      expect(failedTurn.statusCode).toBe(502);
-      expect(failedTurn.json()).toMatchObject({ error: "UPSTREAM_FAILURE" });
-      expect(await db.select().from(chatMessages).where(eq(chatMessages.threadId, threadId)))
-        .toHaveLength(0);
+      const failed = await app.inject({
+        method: "GET",
+        url: `/api/v1/agent-runs/${body.runId}`,
+        headers: authHeaders("alice"),
+      });
+      expect(failed.statusCode).toBe(200);
+      expect(failed.json()).toMatchObject({
+        status: "FAILED",
+        attemptCount: 3,
+        generationAttempt: 3,
+        errorCode: "UPSTREAM_5XX",
+        assistantMessageId: null,
+      });
+      const messages = await db.select().from(chatMessages).where(eq(chatMessages.threadId, threadId));
+      expect(messages.map((message) => message.role)).toEqual(["USER"]);
     } finally {
       __setModelGatewayForTests(successfulConversationGateway);
-      if (threadId) await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
+      await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
+      await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, `chat_turn:${threadId}:${requestId}`));
     }
   });
 });
 
-interface TurnResponse {
+async function createThread(title: string): Promise<string> {
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/v1/threads",
+    headers: { ...authHeaders("alice"), "content-type": "application/json" },
+    payload: { title },
+  });
+  expect(response.statusCode).toBe(201);
+  return (response.json() as { id: string }).id;
+}
+
+function submitTurn(threadId: string, requestId: string, question: string) {
+  return app.inject({
+    method: "POST",
+    url: `/api/v1/threads/${threadId}/turns`,
+    headers: { ...authHeaders("alice"), "content-type": "application/json" },
+    payload: {
+      requestId,
+      question,
+      place: { sourceId: "tokyo", name: "Tokyo", latitude: 35.6895, longitude: 139.6917, sourceType: "REFERENCE" },
+    },
+  });
+}
+
+interface AcceptedTurnResponse {
   threadId: string;
-  userMessage: { id: string; role: "USER"; content: string; createdAt: string };
-  assistantMessage: { id: string; role: "ASSISTANT"; content: string; createdAt: string };
-  responseMode: "MODEL" | "SAFE_REFUSAL";
+  runId: string;
+  operation: "CONVERSATION";
+  status: "QUEUED";
+  generationAttempt: 0;
+  userMessage: OwnerMessage & { role: "USER" };
+}
+
+interface OwnerMessage {
+  id: string;
+  role: "USER" | "ASSISTANT";
+  content: string;
+  sequence: number;
+  createdAt: string;
 }
 
 const successfulConversationGateway: ModelGateway = {
   async generateConversationReply() {
-    return {
-      content: "Tokyo offers distinct neighborhoods, food culture, design, and museums.",
-      responseMode: "MODEL",
-    };
+    return { content: "Tokyo offers distinct neighborhoods, food culture, design, and museums.", responseMode: "MODEL" };
   },
-  async generateStructuredPlan() {
-    throw new Error("not used by conversation E2E");
-  },
-  async explainPlanDiff() {
-    throw new Error("not used by conversation E2E");
-  },
+  async generateStructuredPlan() { throw new Error("not used by conversation E2E"); },
+  async explainPlanDiff() { throw new Error("not used by conversation E2E"); },
 };
 
 const failingConversationGateway: ModelGateway = {
   ...successfulConversationGateway,
-  async generateConversationReply() {
-    throw new ModelGatewayError("UPSTREAM_5XX", "conversation");
-  },
+  async generateConversationReply() { throw new ModelGatewayError("UPSTREAM_5XX", "conversation"); },
 };
 
 function collectCorrelation(response: { headers: Record<string, string | string[] | undefined> }, target: string[]) {

@@ -1,6 +1,6 @@
 import type {
   ConversationTurnRequest,
-  ConversationTurnResponse,
+  ConversationTurnAcceptedResponse,
   CreateThreadInput,
   CreateThreadResponse,
   OwnerConversationResponse,
@@ -11,6 +11,8 @@ import type {
   UpdateProfileResponse,
   LocationReferenceInput,
   LocationReferenceResponse,
+  AgentRun,
+  AgentStreamEvent,
 } from "./contracts";
 
 export interface TravelApi {
@@ -21,5 +23,8 @@ export interface TravelApi {
   getThreads(): Promise<ThreadsResponse>;
   createThread(input: CreateThreadInput): Promise<CreateThreadResponse>;
   getOwnerConversation(threadId: string): Promise<OwnerConversationResponse>;
-  submitConversationTurn(threadId: string, input: ConversationTurnRequest): Promise<ConversationTurnResponse>;
+  submitConversationTurn(threadId: string, input: ConversationTurnRequest): Promise<ConversationTurnAcceptedResponse>;
+  getAgentRun(runId: string): Promise<AgentRun>;
+  cancelAgentRun(runId: string): Promise<AgentRun>;
+  subscribeAgentRun(runId: string, signal: AbortSignal, onEvent: (event: AgentStreamEvent) => void): Promise<void>;
 }

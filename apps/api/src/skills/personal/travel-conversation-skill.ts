@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { Skill } from "../../agents/contracts.js";
+import type { Skill, SkillContext } from "../../agents/contracts.js";
 import { SkillError } from "../../agents/errors.js";
 import {
   containsUnsupportedOperationalClaim,
@@ -32,6 +32,56 @@ export const travelConversationOutputSchema = z.object({
 export type TravelConversationInput = z.infer<typeof travelConversationInputSchema>;
 export type TravelConversationOutput = z.infer<typeof travelConversationOutputSchema>;
 
+export async function executeTravelConversation(
+  ctx: SkillContext,
+  input: TravelConversationInput,
+  signal: AbortSignal,
+  onDelta?: (delta: string) => void | Promise<void>,
+): Promise<TravelConversationOutput> {
+  if (requestsUnsupportedOperationalFacts(input.question)) {
+    const refusal = safeConversationRefusal();
+    if (onDelta) await onDelta(refusal.content);
+    return refusal;
+  }
+
+  let reply;
+  try {
+    const gateway = modelGateway();
+    reply = onDelta && gateway.streamConversationReply
+      ? await gateway.streamConversationReply({
+          question: input.question,
+          place: input.place,
+          history: input.history,
+          onDelta,
+          signal,
+          ctx: ctx.ctx,
+        })
+      : await gateway.generateConversationReply({
+          question: input.question,
+          place: input.place,
+          history: input.history,
+          signal,
+          ctx: ctx.ctx,
+        });
+    if (onDelta && !gateway.streamConversationReply) await onDelta(reply.content);
+  } catch (error) {
+    if (error instanceof ModelGatewayError) {
+      const code = modelErrorCode(error.code);
+      throw new SkillError(code, "The conversation model is temporarily unavailable. Please retry.");
+    }
+    throw error;
+  }
+  if (reply.responseMode === "MODEL" && containsUnsupportedOperationalClaim(reply.content)) {
+    return safeConversationRefusal();
+  }
+  return travelConversationOutputSchema.parse(reply);
+}
+
+function modelErrorCode(code: string): "TIMEOUT" | "NETWORK" | "UPSTREAM_5XX" | "SCHEMA_PARSE" | "UPSTREAM_FAILURE" {
+  if (code === "TIMEOUT" || code === "NETWORK" || code === "UPSTREAM_5XX" || code === "SCHEMA_PARSE") return code;
+  return "UPSTREAM_FAILURE";
+}
+
 export const travelConversationSkill: Skill<TravelConversationInput, TravelConversationOutput> = {
   name: "travel.conversation",
   agent: "personal",
@@ -42,29 +92,6 @@ export const travelConversationSkill: Skill<TravelConversationInput, TravelConve
   input: travelConversationInputSchema,
   output: travelConversationOutputSchema,
   async handler(ctx, input, signal) {
-    if (requestsUnsupportedOperationalFacts(input.question)) {
-      return safeConversationRefusal();
-    }
-
-    let reply;
-    try {
-      reply = await modelGateway().generateConversationReply({
-        question: input.question,
-        place: input.place,
-        history: input.history,
-        signal,
-        ctx: ctx.ctx,
-      });
-    } catch (error) {
-      if (error instanceof ModelGatewayError) {
-        const code = error.code === "TIMEOUT" ? "TIMEOUT" : "UPSTREAM_FAILURE";
-        throw new SkillError(code, "The conversation model is temporarily unavailable. Please retry.");
-      }
-      throw error;
-    }
-    if (reply.responseMode === "MODEL" && containsUnsupportedOperationalClaim(reply.content)) {
-      return safeConversationRefusal();
-    }
-    return reply;
+    return executeTravelConversation(ctx, input, signal);
   },
 };

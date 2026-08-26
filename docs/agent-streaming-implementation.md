@@ -1,6 +1,6 @@
 # Agent 流式显示实施规范
 
-**状态：** 已确认，待实施  
+**状态：** Personal conversation slice 已实施；planning/replan 尚未迁移
 **范围：** Personal Agent 对话的安全增量文本，以及 planning/replan 的安全阶段事件。  
 **任务执行权威规范：** [`durable-agent-execution-implementation.md`](./durable-agent-execution-implementation.md)。该文档定义持久任务、Worker 租约、取消、重试、API、数据库与部署；本文件只保留流式显示的不可变边界。
 
@@ -37,8 +37,31 @@
 |---|---|---|
 | API | `routes/chat-threads.ts`、`routes/planning.ts`、新增 `routes/agent-runs.ts` | 命令改为 `202` task acceptance；新增 task read、explicit cancel 与 SSE subscribe。 |
 | Worker | 新增 `workers/agent-task-worker.ts` | 持有模型 stream，校验 delta 后发布易失 event；不感知浏览器连接。 |
-| Relay | 新增 `observability/agent-stream-relay.ts` | `LISTEN/NOTIFY` 的 schema/大小校验、跨 API instance 分发和连接清理。它不是任务队列。 |
+| Relay | 新增 `tasks/agent-stream-relay.ts` | `LISTEN/NOTIFY` 的 schema/大小校验、跨 API instance 分发和连接清理。它不是任务队列。 |
 | Gateway/Skill | `model-gateway.ts`、`llm-gateway.ts`、conversation skill | 增加受控 async stream、UTF-8/文本上限、安全 gate 与最终完整校验。 |
 | Web | `lib/api/*`、`lib/query/hooks.ts`、`travel-agent-chat.tsx` | 以 task state 驱动 UI；路由卸载只 unsubscribe；Stop 才调用 cancel。 |
 
 目标 AWS 链路必须验证 `text/event-stream` 不被缓冲、Bearer header/CORS 可用、keep-alive 和超时配置正确。对 SSE relay、浏览器或 API instance 的任何故障，唯一允许的效果是实时显示降级，不能影响 Worker 继续执行或最终结果持久化。
+
+SSE handler 通过 `reply.hijack()` 接管 socket，因而跳过 Fastify 的 `onSend`
+链。该 handler 必须自行把请求已协商的 header（CORS 决策与 `x-correlation-id`）
+写入 raw stream；否则浏览器会拒绝跨源流并静默退化为轮询 run state——最终答案
+仍正确，但失去增量显示。回归覆盖见
+`apps/api/tests/agent-run-stream-headers.test.ts`。
+
+## 当前实施状态（2026-08-26）
+
+已落地的 conversation 路径包括：`202` acceptance transaction、PostgreSQL
+task row、`FOR UPDATE SKIP LOCKED` claim、租约续期与过期恢复、三次有界重试、
+显式取消、OpenAI-compatible（含 Gemini）stream、增量 safety gate、最终消息
+条件化事务提交、PostgreSQL `LISTEN/NOTIFY` relay、鉴权 fetch-SSE、TanStack
+Query run recovery、generation-attempt 去重，以及确定性 message sequence。
+
+当前明确限制：
+
+- `PLAN`/`REPLAN` 仍走原同步规划服务；虽然数据库和公开 run contract 已保留
+  operation enum，本次没有迁移尚未确认的 planning UI/API 行为。
+- SSE 是易失观察通道，不提供 event replay。断线期间的 partial text 不恢复；客户端
+  通过 run read 与最终 conversation history 恢复。
+- 生产 App Runner/ECS/ALB 对 buffering、idle timeout、graceful shutdown 和多实例
+  relay 的验证仍是部署前检查，不由本地单元测试替代。

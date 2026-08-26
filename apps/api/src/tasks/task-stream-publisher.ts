@@ -1,0 +1,30 @@
+import { agentStreamEventSchema, type AgentStreamEvent } from "../types/schemas.js";
+import { rawDb } from "../db/database.js";
+import { logger } from "../utils/logger.js";
+import { agentTaskConfig } from "./config.js";
+
+export const AGENT_STREAM_CHANNEL = "wanderly_agent_stream";
+const POSTGRES_NOTIFY_MAX_BYTES = 7_500;
+
+export async function publishAgentStreamEvent(event: AgentStreamEvent): Promise<void> {
+  const parsed = agentStreamEventSchema.parse(event);
+  if (parsed.event === "message.delta" && Buffer.byteLength(parsed.delta, "utf8") > agentTaskConfig.maxDeltaBytes) {
+    throw new Error("Approved stream delta exceeds configured byte limit");
+  }
+  const payload = JSON.stringify(parsed);
+  if (Buffer.byteLength(payload, "utf8") > POSTGRES_NOTIFY_MAX_BYTES) {
+    throw new Error("Agent stream event exceeds PostgreSQL notification limit");
+  }
+  try {
+    await rawDb.notify(AGENT_STREAM_CHANNEL, payload);
+  } catch (error) {
+    // Streaming is an observation channel, not the source of truth. A relay
+    // outage must never roll back or fail an already accepted durable task.
+    logger.warn({
+      component: "agent-stream-publisher",
+      event: parsed.event,
+      runId: parsed.runId,
+      errorClass: (error as Error).name,
+    }, "Agent stream notification failed; clients can recover from run state");
+  }
+}

@@ -1,4 +1,5 @@
-import { pgTable, uuid, varchar, text, timestamp, jsonb, boolean, integer, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, uuid, varchar, text, timestamp, jsonb, boolean, integer, bigint, doublePrecision, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -15,6 +16,10 @@ export const consentScopeEnum = pgEnum("consent_scope", [
 ]);
 export const bookingStatusEnum = pgEnum("booking_status", ["PENDING", "SUBMITTED", "SUCCESS", "FAILED", "DUPLICATE"]);
 export const outboxStatusEnum = pgEnum("outbox_status", ["PENDING", "PROCESSED", "FAILED"]);
+export const agentTaskOperationEnum = pgEnum("agent_task_operation", ["CONVERSATION", "PLAN", "REPLAN"]);
+export const agentTaskStatusEnum = pgEnum("agent_task_status", [
+  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "FAILED", "CANCELLED", "STALE",
+]);
 export const auditActionEnum = pgEnum("audit_action", [
   "PROFILE_CREATE", "PROFILE_UPDATE", "PROFILE_DELETE",
   "TRIP_CREATE", "TRIP_JOIN",
@@ -25,7 +30,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "CHANGE_EVENT",
   "VISA_CHECK",
   "CHAT_THREAD_CREATE", "CHAT_THREAD_DELETE", "CHAT_MESSAGE_APPEND",
-  "SKILL_INVOKE", "AGENT_RUN",
+  "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
 ]);
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -288,9 +293,56 @@ export const chatMessages = pgTable("chat_messages", {
   body: text("body").notNull(),
   redactedSummary: text("redacted_summary"),
   markedSharedByOwner: boolean("marked_shared_by_owner").default(false).notNull(),
+  messageSequence: bigint("message_sequence", { mode: "number" }).generatedByDefaultAsIdentity().notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   threadIdx: index("chat_messages_thread_id_idx").on(table.threadId),
+  threadSequenceIdx: uniqueIndex("chat_messages_thread_sequence_unique").on(table.threadId, table.messageSequence),
+}));
+
+// Durable business tasks. Unlike agentRuns below, these rows are authoritative
+// lifecycle state and never contain prompt text, partial output, or credentials.
+export const agentTaskRuns = pgTable("agent_task_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  operation: agentTaskOperationEnum("operation").notNull(),
+  status: agentTaskStatusEnum("status").default("QUEUED").notNull(),
+  createdByUserId: uuid("created_by_user_id").references(() => users.id).notNull(),
+  threadId: uuid("thread_id").references(() => chatThreads.id, { onDelete: "cascade" }),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }),
+  snapshotId: uuid("snapshot_id").references(() => constraintSnapshots.id),
+  requestId: uuid("request_id").notNull(),
+  userMessageId: uuid("user_message_id").references(() => chatMessages.id, { onDelete: "cascade" }),
+  assistantMessageId: uuid("assistant_message_id").references(() => chatMessages.id, { onDelete: "set null" }),
+  resultPlanId: uuid("result_plan_id").references(() => itineraryPlans.id, { onDelete: "set null" }),
+  placeSourceId: varchar("place_source_id", { length: 128 }),
+  placeName: varchar("place_name", { length: 160 }),
+  placeLatitude: doublePrecision("place_latitude"),
+  placeLongitude: doublePrecision("place_longitude"),
+  placeSourceType: varchar("place_source_type", { length: 16 }),
+  generationAttempt: integer("generation_attempt").default(0).notNull(),
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  maxAttempts: integer("max_attempts").default(3).notNull(),
+  leaseToken: uuid("lease_token"),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  cancelRequestedAt: timestamp("cancel_requested_at", { withTimezone: true }),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  errorCode: varchar("error_code", { length: 64 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  conversationRequestUnique: uniqueIndex("agent_task_runs_thread_request_unique")
+    .on(table.threadId, table.requestId).where(sql`${table.threadId} IS NOT NULL`),
+  planningRequestUnique: uniqueIndex("agent_task_runs_trip_request_unique")
+    .on(table.tripId, table.requestId).where(sql`${table.tripId} IS NOT NULL`),
+  activeConversationUnique: uniqueIndex("agent_task_runs_one_active_conversation")
+    .on(table.threadId).where(sql`${table.threadId} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED')`),
+  activePlanningUnique: uniqueIndex("agent_task_runs_one_active_planning")
+    .on(table.tripId).where(sql`${table.tripId} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED')`),
+  createdByIdx: index("agent_task_runs_created_by_idx").on(table.createdByUserId),
+  claimIdx: index("agent_task_runs_claim_idx").on(table.status, table.nextAttemptAt, table.leaseExpiresAt, table.createdAt),
 }));
 
 // ─── Agent Runs (LLM gateway observability) ─────────────────────────────────

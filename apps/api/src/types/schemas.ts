@@ -274,22 +274,89 @@ export const ownerConversationMessageSchema = z.object({
   id: uuidSchema,
   role: chatMessageRoleSchema,
   content: z.string(),
+  sequence: z.number().int().nonnegative(),
   createdAt: z.string().datetime(),
 });
 
 export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL"]);
 
-export const conversationTurnResponseSchema = z.object({
+export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN"]);
+export const agentTaskStatusSchema = z.enum([
+  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "FAILED", "CANCELLED", "STALE",
+]);
+export const agentRunPhaseSchema = z.enum([
+  "ACCEPTED", "RESEARCHING", "GENERATING", "VALIDATING", "PERSISTING",
+  "RETRYING", "COMPLETED", "STALE", "FAILED",
+]);
+export const agentRunErrorCodeSchema = z.enum([
+  "NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "SCHEMA_PARSE",
+  "POLICY_DENIED", "CANCELLED", "EXPIRED", "RETRY_EXHAUSTED", "INTERNAL",
+]);
+
+export const conversationTurnAcceptedResponseSchema = z.object({
   threadId: uuidSchema,
+  runId: uuidSchema,
+  operation: z.literal("CONVERSATION"),
+  status: z.literal("QUEUED"),
+  generationAttempt: z.literal(0),
   userMessage: ownerConversationMessageSchema.extend({ role: z.literal("USER") }),
-  assistantMessage: ownerConversationMessageSchema.extend({ role: z.literal("ASSISTANT") }),
-  responseMode: conversationResponseModeSchema,
 });
 
 export const ownerConversationResponseSchema = z.object({
   thread: threadSummarySchema,
   messages: z.array(ownerConversationMessageSchema),
 });
+
+export const agentRunResponseSchema = z.object({
+  runId: uuidSchema,
+  operation: agentTaskOperationSchema,
+  status: agentTaskStatusSchema,
+  generationAttempt: z.number().int().nonnegative(),
+  attemptCount: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+  errorCode: agentRunErrorCodeSchema.nullable(),
+  assistantMessageId: uuidSchema.nullable(),
+  resultPlanId: uuidSchema.nullable(),
+});
+
+const streamBaseSchema = z.object({
+  runId: uuidSchema,
+  generationAttempt: z.number().int().nonnegative(),
+});
+
+export const agentStreamEventSchema = z.discriminatedUnion("event", [
+  streamBaseSchema.extend({
+    event: z.literal("turn.started"),
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("run.phase"),
+    phase: agentRunPhaseSchema,
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("message.delta"),
+    sequence: z.number().int().nonnegative(),
+    delta: z.string().min(1).max(2048),
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("turn.completed"),
+    assistantMessageId: uuidSchema.optional(),
+    resultPlanId: uuidSchema.optional(),
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("turn.cancelled"),
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("turn.stale"),
+    code: agentRunErrorCodeSchema,
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("turn.failed"),
+    code: agentRunErrorCodeSchema,
+    retryable: z.boolean(),
+  }).strict(),
+]);
 
 // ─── Booking ────────────────────────────────────────────────────────────────
 
@@ -336,5 +403,9 @@ export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
 export type ConversationTurnRequest = z.infer<typeof conversationTurnRequestSchema>;
 export type OwnerConversationMessage = z.infer<typeof ownerConversationMessageSchema>;
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;
-export type ConversationTurnResponse = z.infer<typeof conversationTurnResponseSchema>;
+export type ConversationTurnAcceptedResponse = z.infer<typeof conversationTurnAcceptedResponseSchema>;
+export type AgentTaskOperation = z.infer<typeof agentTaskOperationSchema>;
+export type AgentTaskStatus = z.infer<typeof agentTaskStatusSchema>;
+export type AgentRunResponse = z.infer<typeof agentRunResponseSchema>;
+export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
 export type ApiErrorResponse = z.infer<typeof errorResponseSchema>;
