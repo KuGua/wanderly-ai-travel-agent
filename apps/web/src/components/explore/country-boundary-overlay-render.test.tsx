@@ -56,7 +56,7 @@ describe("CountryBoundaryOverlay fallback", () => {
     const fetchMock = vi.fn().mockImplementation((url: string) => Promise.resolve({
       ok: true,
       json: async () => (url.endsWith("index.json")
-        ? { schemaVersion: 1, minZoom: 5.5, tileSizeDegrees: 20, tiles: [{ key: "100_0" }, { key: "0_40" }] }
+        ? { schemaVersion: 1, minZoom: 4.5, tileSizeDegrees: 20, tiles: [{ key: "100_0" }, { key: "0_40" }] }
         : collection),
     }));
     vi.stubGlobal("fetch", fetchMock);
@@ -78,7 +78,7 @@ describe("CountryBoundaryOverlay fallback", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/map-data/country-borders-lod3/index.json"));
     await waitFor(() => expect(view.container.querySelector("path[stroke='#073d50']")).not.toBeNull());
-    expect(fetchMock).toHaveBeenCalledWith("/map-data/country-borders-lod2.geojson");
+    expect(fetchMock).toHaveBeenCalledWith("/map-data/country-borders-lod1.geojson");
   });
 });
 

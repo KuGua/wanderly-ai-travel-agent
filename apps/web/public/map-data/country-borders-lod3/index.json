@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "lod": "lod3",
-  "minZoom": 5.5,
+  "minZoom": 4.5,
   "tileSizeDegrees": 20,
   "source": "Natural Earth Admin 0 Countries",
   "version": "v5.1.2",

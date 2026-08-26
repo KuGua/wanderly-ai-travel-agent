@@ -8,7 +8,6 @@ describe("country boundary assets", () => {
     expect(COUNTRY_BOUNDARY_LOD_DATA_URLS).toEqual({
       lod0: "/map-data/country-borders-lod0.geojson",
       lod1: "/map-data/country-borders-lod1.geojson",
-      lod2: "/map-data/country-borders-lod2.geojson",
     });
     expect(CHINA_MARITIME_LINE_DATA_URL).toBe("/map-data/china-maritime-line.geojson");
     expect(COUNTRY_BOUNDARY_TILE_INDEX_URL).toBe("/map-data/country-borders-lod3/index.json");

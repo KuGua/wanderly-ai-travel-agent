@@ -30,8 +30,7 @@ const MAX_CACHED_TILES = 24;
 
 const COUNTRY_BOUNDARY_LODS: ReadonlyArray<{ id: BoundaryLod; minZoom: number }> = [
   { id: "lod0", minZoom: 0 },
-  { id: "lod1", minZoom: 3.4 },
-  { id: "lod2", minZoom: 5.5 },
+  { id: "lod1", minZoom: 2 },
 ];
 
 export function countryBoundaryLodForZoom(zoom: number): BoundaryLod {

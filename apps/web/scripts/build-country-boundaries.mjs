@@ -13,10 +13,13 @@ const naturalEarthVersion = "v5.1.2";
 const naturalEarthUrl = `https://raw.githubusercontent.com/nvkelso/natural-earth-vector/${naturalEarthVersion}/geojson/ne_10m_admin_0_countries.geojson`;
 const inputPath = process.argv[2] ? resolve(process.cwd(), process.argv[2]) : null;
 
+// LOD-0 only has to survive the whole-globe view, where 0.5% of the source
+// points is indistinguishable from more. LOD-1 takes over at zoom 2 — by then
+// the camera frames a subcontinent and the coarse mesh would read as blocky —
+// and stays on as the stand-in until the full-fidelity tiles arrive.
 const lods = [
-  { id: "lod0", simplificationQuantile: 0.005, minZoom: 0, maxZoom: 3.4 },
-  { id: "lod1", simplificationQuantile: 0.035, minZoom: 3.4, maxZoom: 5.5 },
-  { id: "lod2", simplificationQuantile: 0.07, minZoom: 5.5, maxZoom: null },
+  { id: "lod0", simplificationQuantile: 0.005, minZoom: 0, maxZoom: 2 },
+  { id: "lod1", simplificationQuantile: 0.035, minZoom: 2, maxZoom: null },
 ];
 // A single global simplification threshold erases whole micro states: every
 // point of Singapore's ring weighs less than the world-wide quantile, so the
@@ -29,7 +32,7 @@ const smallCountrySpanDegrees = 1.5;
 // 20° tiles the overlay fetches by viewport instead.
 const tiledLod = {
   id: "lod3",
-  minZoom: 5.5,
+  minZoom: 4.5,
   tileSizeDegrees: 20,
   // ~40 m grid, so the fidelity ceiling is Natural Earth 10m itself rather than
   // the 400 m grid the simplified LODs quantize to.

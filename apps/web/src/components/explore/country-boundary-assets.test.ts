@@ -15,7 +15,7 @@ describe("generated country boundary assets", () => {
   });
 
   it("contains one shared multiline mesh per LOD", async () => {
-    for (const lod of ["lod0", "lod1", "lod2"]) {
+    for (const lod of ["lod0", "lod1"]) {
       const collection = JSON.parse(await readFile(resolve(mapDataDirectory, `country-borders-${lod}.geojson`), "utf8"));
       expect(collection.features).toHaveLength(1);
       expect(collection.features[0].geometry.type).toBe("MultiLineString");
@@ -26,7 +26,7 @@ describe("generated country boundary assets", () => {
   it("keeps micro states outlined at every zoom band", async () => {
     // Singapore spans ~0.4°; a single global simplification threshold used to
     // erase it below zoom 5.5, so no boundary framed the default map centre.
-    for (const lod of ["lod0", "lod1", "lod2"]) {
+    for (const lod of ["lod0", "lod1"]) {
       const collection = JSON.parse(await readFile(resolve(mapDataDirectory, `country-borders-${lod}.geojson`), "utf8"));
       const singaporePoints = (collection.features[0].geometry.coordinates as [number, number][][])
         .flat()
@@ -62,6 +62,6 @@ describe("generated country boundary assets", () => {
     };
 
     expect(await pointsIn("country-borders-lod3/100_0.geojson"))
-      .toBeGreaterThan(await pointsIn("country-borders-lod2.geojson"));
+      .toBeGreaterThan(await pointsIn("country-borders-lod1.geojson"));
   });
 });
