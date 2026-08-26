@@ -204,8 +204,17 @@ Cross-cutting:
   dates of birth, and private model inputs.
 - `/metrics` renders process-local Prometheus text for the MVP. Every metric has
   an exact bounded label schema; identifiers and free-form values are rejected.
-  There is no durable store, scraper configuration, or production metrics/trace
-  exporter in this repository yet.
+- Distributed tracing is wired through `src/observability/tracing.ts` (see
+  [src/observability/README.md](src/observability/README.md)). The API and the
+  Worker each call `initTracing()` as their first import; the SDK is opt-in in
+  production (`OTEL_SDK_DISABLED=true` by default until the CloudWatch / OTLP
+  collector sidecar lands). W3C `traceparent` is parsed on `onRequest`,
+  attached as `trace_id` / `span_id` Pino bindings, and echoed back as a
+  response header. Spans are added manually at the highest-value boundaries
+  (HTTP, DB write hot-spots, LLM, skill, worker run, SSE event) — no auto-
+  instrumentation — and every span attribute is gated by
+  `FORBIDDEN_SPAN_ATTRIBUTE_KEYS`. There is no durable trace storage or
+  scraper configuration in this repository yet.
 
 ## Idempotency Strategy
 
