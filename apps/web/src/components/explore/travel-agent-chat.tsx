@@ -59,6 +59,7 @@ export function TravelAgentChat({
   const panelInputRef = useRef<HTMLInputElement>(null);
   const firedAutoAskNoncesRef = useRef<Set<string>>(new Set());
   const pendingTurnAnchorRef = useRef<HTMLParagraphElement>(null);
+  const wasSendingRef = useRef(false);
 
   const api = useTravelApi();
   const conversation = useOwnerConversation(threadId);
@@ -115,6 +116,13 @@ export function TravelAgentChat({
       pendingTurnAnchorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [pendingTurn]);
+
+  useEffect(() => {
+    if (wasSendingRef.current && !isSending && open && panelInputRef.current) {
+      panelInputRef.current.focus();
+    }
+    wasSendingRef.current = isSending;
+  }, [isSending, open]);
 
   useEffect(() => {
     if (panelInputRef.current && !autoAskRequest) {
@@ -186,8 +194,6 @@ export function TravelAgentChat({
       void api.getOwnerConversation(threadId).then((restored) => {
         if (active) {
           setSessionMessages((current) => mergeMessages(current, restored.messages));
-          const lastAssistantMessage = [...restored.messages].reverse().find((message) => message.role === "ASSISTANT");
-          if (lastAssistantMessage) onConversationText?.(lastAssistantMessage.content);
         }
       }).finally(() => {
         if (active) {
@@ -205,7 +211,7 @@ export function TravelAgentChat({
       }, 0);
       return () => window.clearTimeout(clearTerminalRun);
     }
-  }, [activeRunId, agentRun.data?.status, api, onConversationText, threadId]);
+  }, [activeRunId, agentRun.data?.status, api, threadId]);
 
   const messages = useMemo(
     () => mergeMessages(conversation.data?.messages ?? [], sessionMessages),
