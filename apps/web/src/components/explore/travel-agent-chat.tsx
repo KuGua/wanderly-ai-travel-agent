@@ -53,6 +53,7 @@ export function TravelAgentChat({
   // Storage is restored after the first client paint so SSR and hydration do
   // not read browser-only state during their initial render.
   const [threadId, setThreadId] = useState<string | null>(null);
+  const [storageRestored, setStorageRestored] = useState(false);
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([]);
   const [refusalMessageIds, setRefusalMessageIds] = useState<Set<string>>(new Set());
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
@@ -91,6 +92,7 @@ export function TravelAgentChat({
     const restorePointers = window.setTimeout(() => {
       if (storedThreadId) setThreadId(storedThreadId);
       if (storedActiveRunId) setActiveRunId(storedActiveRunId);
+      setStorageRestored(true);
     }, 0);
     return () => window.clearTimeout(restorePointers);
   }, []);
@@ -150,6 +152,7 @@ export function TravelAgentChat({
   // repeated clicks (or re-renders with the same request) do not duplicate.
   useEffect(() => {
     if (!autoAskRequest) return;
+    if (!storageRestored) return;
     if (!open) return;
     if (isSending) return;
     if (firedAutoAskNoncesRef.current.has(autoAskRequest.nonce)) return;
@@ -172,7 +175,7 @@ export function TravelAgentChat({
         onAutoAskConsumed?.(autoAskRequest.nonce);
       }
     })();
-  }, [autoAskRequest, open, isSending, t, sendTurn, onAutoAskConsumed]);
+  }, [autoAskRequest, storageRestored, open, isSending, t, sendTurn, onAutoAskConsumed]);
 
   useEffect(() => {
     if (conversation.error instanceof TravelApiError && conversation.error.statusCode === 404) {
