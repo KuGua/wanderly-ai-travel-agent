@@ -310,6 +310,7 @@
     "passwordMismatch": "两次输入的密码不一致。",
     "haveAccount": "已有账号？",
     "signInLink": "去登录",
+    "backToLogin": "返回登录",
     "backToExplore": "返回探索"
   },
   "errors": {

@@ -310,6 +310,7 @@
     "passwordMismatch": "Passwords do not match.",
     "haveAccount": "Already have an account?",
     "signInLink": "Sign in",
+    "backToLogin": "Back to Sign in",
     "backToExplore": "Back to Explore"
   },
   "errors": {

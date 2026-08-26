@@ -75,9 +75,9 @@ export default function RegisterPage() {
   return (
     <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center bg-background px-4 landscape:min-h-screen">
       <div className="w-full max-w-sm">
-        <Link href="/home" className="mb-8 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <Link href="/login" className="mb-8 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
           <ArrowLeft className="size-4" />
-          {t("backToExplore")}
+          {t("backToLogin")}
         </Link>
 
         <div className="rounded-[20px] border border-border bg-card p-6 shadow-lg">
