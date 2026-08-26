@@ -17,28 +17,26 @@ interface GatewayConfiguration {
 const GEMINI_OPENAI_COMPATIBLE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
 
 function resolveProvider(): GatewayProvider {
-  const explicit = process.env.MODEL_GATEWAY_PROVIDER;
+  const explicit = process.env.MODEL_GATEWAY_PROVIDER?.trim();
   if (
     explicit === "openai"
     || explicit === "gemini"
     || explicit === "openai-compatible"
   ) return explicit;
-  if (process.env.GEMINI_API_KEY) return "gemini";
-  if (process.env.OPENAI_API_KEY) return "openai";
-  throw new Error("MODEL_GATEWAY_PROVIDER must name a configured real model provider");
+  throw new Error("MODEL_GATEWAY_PROVIDER must explicitly name a configured real model provider");
 }
 
 function gatewayConfiguration(provider: GatewayProvider): GatewayConfiguration | null {
-  const promptVersion = process.env.MODEL_GATEWAY_PROMPT_VERSION ?? process.env.OPENAI_PROMPT_VERSION ?? "1.0.0";
-  const maxRetries = Number(process.env.MODEL_GATEWAY_MAX_RETRIES ?? process.env.OPENAI_MAX_RETRIES ?? 1);
+  const promptVersion = process.env.MODEL_GATEWAY_PROMPT_VERSION ?? "1.0.0";
+  const maxRetries = Number(process.env.MODEL_GATEWAY_MAX_RETRIES ?? 1);
+  const apiKey = process.env.MODEL_GATEWAY_API_KEY?.trim();
+  const configuredModel = process.env.MODEL_GATEWAY_MODEL?.trim();
 
   if (provider === "gemini") {
     return {
-      // OPENAI_API_KEY remains a compatibility fallback for existing local .env files
-      // that stored a Gemini key before GEMINI_API_KEY was introduced.
-      apiKey: process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY,
-      baseUrl: process.env.GEMINI_BASE_URL || GEMINI_OPENAI_COMPATIBLE_BASE_URL,
-      modelName: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      apiKey,
+      baseUrl: GEMINI_OPENAI_COMPATIBLE_BASE_URL,
+      modelName: configuredModel ?? "",
       promptVersion,
       maxRetries,
     };
@@ -46,19 +44,20 @@ function gatewayConfiguration(provider: GatewayProvider): GatewayConfiguration |
 
   if (provider === "openai") {
     return {
-      apiKey: process.env.OPENAI_API_KEY,
-      modelName: process.env.OPENAI_MODEL || "gpt-4o-mini",
+      apiKey,
+      modelName: configuredModel ?? "",
       promptVersion,
       maxRetries,
     };
   }
 
   if (provider === "openai-compatible") {
-    if (!process.env.MODEL_GATEWAY_BASE_URL) return null;
+    const baseUrl = process.env.MODEL_GATEWAY_BASE_URL?.trim();
+    if (!baseUrl) return null;
     return {
-      apiKey: process.env.MODEL_GATEWAY_API_KEY,
-      baseUrl: process.env.MODEL_GATEWAY_BASE_URL,
-      modelName: process.env.MODEL_GATEWAY_MODEL ?? "",
+      apiKey,
+      baseUrl,
+      modelName: configuredModel ?? "",
       promptVersion,
       maxRetries,
     };

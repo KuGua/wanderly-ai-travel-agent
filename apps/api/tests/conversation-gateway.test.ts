@@ -12,11 +12,15 @@ beforeEach(() => {
 
 describe("conversational ModelGateway", () => {
   it("validates and returns a structured real-model reply", async () => {
+    const parse = vi.fn().mockResolvedValue({
+      choices: [{ message: {
+        parsed: null,
+        content: JSON.stringify({ reply: { content: "A bounded model answer." } }),
+      } }],
+      usage: { prompt: 10, completion: 5, total: 15 },
+    });
     const client = {
-      beta: { chat: { completions: { parse: vi.fn().mockResolvedValue({
-        choices: [{ message: { parsed: { reply: { content: "A bounded model answer." } } } }],
-        usage: { prompt: 10, completion: 5, total: 15 },
-      }) } } },
+      chat: { completions: { parse } },
     };
     const gateway = buildGateway(client);
 
@@ -34,13 +38,15 @@ describe("conversational ModelGateway", () => {
     }));
     expect(JSON.stringify(recordAgentRun.mock.calls)).not.toContain("Tell me about Tokyo");
     expect(JSON.stringify(recordAgentRun.mock.calls)).not.toContain("A bounded model answer.");
+    expect(parse.mock.calls[0][0]).not.toHaveProperty("signal");
+    expect(parse.mock.calls[0][1]).toHaveProperty("signal");
   });
 
   it("throws a controlled error instead of synthesizing a reply for malformed output", async () => {
     const client = {
-      beta: { chat: { completions: { parse: vi.fn().mockResolvedValue({
+      chat: { completions: { parse: vi.fn().mockResolvedValue({
         choices: [{ message: { parsed: { unexpected: true } } }],
-      }) } } },
+      }) } },
     };
     const gateway = buildGateway(client);
 
@@ -62,7 +68,7 @@ describe("conversational ModelGateway", () => {
     const aborted = new Error("request aborted");
     aborted.name = "AbortError";
     const client = {
-      beta: { chat: { completions: { parse: vi.fn().mockRejectedValue(aborted) } } },
+      chat: { completions: { parse: vi.fn().mockRejectedValue(aborted) } },
     };
     const gateway = buildGateway(client);
 

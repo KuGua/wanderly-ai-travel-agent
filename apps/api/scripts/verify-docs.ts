@@ -18,8 +18,8 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const APPS_API_ROOT = resolve(dirname(__filename), "..");
@@ -85,7 +85,7 @@ function findSkillFiles(): string[] {
 }
 
 function deriveSkillNameFromPath(skillPath: string): string | null {
-  const base = skillPath.split("/").pop()!.replace(/-skill\.ts$/, "");
+  const base = basename(skillPath).replace(/-skill\.ts$/, "");
   const parts = base.split("-");
   return parts.join(".");
 }
@@ -139,10 +139,10 @@ async function checkSkillRuntimeMatches(): Promise<void> {
   }>();
 
   for (const abs of skillModules) {
-    const mod = await import(abs) as Record<string, unknown>;
+    const mod = await import(pathToFileURL(abs).href) as Record<string, unknown>;
     // Find the exported Skill const by convention: the file exports a
     // `<basename>Skill` symbol.
-    const baseName = abs.split("/").pop()!.replace(/-skill\.ts$/, "");
+    const baseName = basename(abs).replace(/-skill\.ts$/, "");
     const symbolName = `${baseName
       .split("-")
       .map((p, i) => (i === 0 ? p : p[0].toUpperCase() + p.slice(1)))

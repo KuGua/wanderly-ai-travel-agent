@@ -8,10 +8,20 @@ select or fall back to a local/mock model.
 ## Runtime contract
 
 `LLMGateway` is the only production path through which a Skill calls a real
-language model. It uses the OpenAI-compatible Chat Completions `parse` API,
+language model. It uses the current OpenAI SDK `chat.completions.parse` path
+for the OpenAI-compatible Chat Completions API,
 validates every structured response with Zod, observes bounded retries, and
 records safe Agent-run metadata. Prompt and response bodies are never written
 to audit summaries, metric labels, or Agent-run metadata.
+
+Gemini's OpenAI-compatible `json_object` response may put the JSON string in
+`message.content` while leaving `message.parsed` null. The gateway parses that
+content only at this adapter boundary and still requires the same operation-
+specific Zod schema before returning any model output.
+
+The invocation `AbortSignal` is passed as an OpenAI SDK request option, never
+serialized into the provider JSON body. This keeps cancellation bounded while
+remaining compatible with Gemini's strict request schema.
 
 The gateway supports two operations:
 
@@ -44,8 +54,11 @@ service therefore persists neither USER nor ASSISTANT message for that turn.
 
 `gateway-factory.ts` supports configured OpenAI, Gemini through its
 OpenAI-compatible endpoint, and explicitly configured OpenAI-compatible
-providers. It requires a server-side key and model name. Tests may inject a
-fake `ModelGateway` or fake SDK client; those fakes are not selectable by the
+providers. Every provider reads the same server-side `MODEL_GATEWAY_API_KEY`.
+The local example explicitly selects `gemini-3.1-flash-lite`; the runtime
+requires an explicit provider and model rather than selecting either default.
+Other compatible providers additionally require an explicit URL. Tests may inject
+a fake `ModelGateway` or fake SDK client; those fakes are not selectable by the
 production factory.
 
 Every success or terminal failure records:

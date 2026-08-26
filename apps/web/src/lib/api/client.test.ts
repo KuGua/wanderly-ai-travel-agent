@@ -1,9 +1,25 @@
 import { z } from "zod";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClient } from "./client";
 
 describe("ApiClient authentication", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("invokes the default browser fetch with the global receiver", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(function (this: unknown) {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      return Promise.resolve(jsonResponse("ok"));
+    });
+    const client = new ApiClient("https://api.example.test");
+
+    await client.request("/health", z.literal("ok"));
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
+
   it("omits Authorization when there is no Cognito session", async () => {
     const fetchMock = vi.fn().mockImplementation(async () => jsonResponse("ok"));
     const client = new ApiClient("https://api.example.test", fetchMock, async () => null);

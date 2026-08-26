@@ -67,13 +67,24 @@ function classifyError(err: unknown): string {
 }
 
 interface OpenAIClientLike {
-  beta: {
-    chat: {
-      completions: {
-        parse: (req: Record<string, unknown>) => Promise<{ choices: Array<{ message: { parsed: unknown } }>; usage?: AgentRunTokens }>;
-      };
+  chat: {
+    completions: {
+      parse: (req: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<{
+        choices: Array<{ message: { parsed: unknown; content?: string | null } }>;
+        usage?: AgentRunTokens;
+      }>;
     };
   };
+}
+
+function completionPayload(message: { parsed: unknown; content?: string | null } | undefined): unknown {
+  if (message?.parsed !== null && message?.parsed !== undefined) return message.parsed;
+  if (!message?.content) return null;
+  try {
+    return JSON.parse(message.content) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 export class LLMGateway implements ModelGateway {
@@ -129,7 +140,7 @@ export class LLMGateway implements ModelGateway {
 
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       try {
-        const response = await client.beta.chat.completions.parse({
+        const response = await client.chat.completions.parse({
           model: this.options.modelName,
           messages: [
             {
@@ -151,10 +162,11 @@ export class LLMGateway implements ModelGateway {
             },
           ],
           response_format: { type: "json_object" },
-          signal,
-        });
+        }, { signal });
 
-        const completion = parsedCompletionSchema.safeParse(response.choices[0]?.message?.parsed);
+        const completion = parsedCompletionSchema.safeParse(
+          completionPayload(response.choices[0]?.message),
+        );
         if (!completion.success) {
           lastError = "SCHEMA_PARSE";
           continue;
@@ -241,7 +253,7 @@ export class LLMGateway implements ModelGateway {
     let lastError = "SCHEMA_PARSE";
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       try {
-        const response = await client.beta.chat.completions.parse({
+        const response = await client.chat.completions.parse({
           model: this.options.modelName,
           messages: [
             {
@@ -261,10 +273,11 @@ export class LLMGateway implements ModelGateway {
             },
           ],
           response_format: { type: "json_object" },
-          signal: params.signal,
-        });
+        }, { signal: params.signal });
 
-        const parsed = parsedConversationCompletionSchema.safeParse(response.choices[0]?.message?.parsed);
+        const parsed = parsedConversationCompletionSchema.safeParse(
+          completionPayload(response.choices[0]?.message),
+        );
         if (!parsed.success) {
           lastError = "SCHEMA_PARSE";
           continue;

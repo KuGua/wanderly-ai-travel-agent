@@ -29,8 +29,7 @@
 6. Traveler can tell the private Agent a trip-specific preference; it is shown as `this trip` (where `this trip` = the trip bound to the thread at creation, see AC7) and is not shared without separate consent.
 7. Traveler can create, list, reopen and delete only their own private conversation threads; a thread may optionally reference one trip but is never shared by that association. `conversationId` is owned by exactly one `ownerUserId`, persists across sessions, and is not visible to fellow trip members or to the Shared Agent by virtue of the trip binding. Default LLM context for any run is the server-derived redacted summary plus the owner-marked shared turns — raw transcript never leaves the owner session.
 8. Deleting a thread removes its message body and does not silently change separately confirmed Profile or trip-override facts; audit retains only `conversationId`, `ownerUserId`, `tripId?`, action, timestamp, and never the message body.
-7. Traveler can create, list, reopen and delete only their own private conversation threads; a thread may optionally reference one trip but is never shared by that association.
-8. Deleting a thread removes its message body and does not silently change separately confirmed Profile or trip-override facts.
+9. A submitted Personal Agent question is persisted with a durable task before streaming begins. Browser close, refresh, network loss and SSE disconnect do not cancel it; only an explicit Stop requests cancellation. The task is lease-recoverable and an ASSISTANT message is persisted only after final safety validation succeeds.
 
 ### H2 — Join a shared trip and grant scoped consent
 
@@ -55,6 +54,7 @@
 3. Each item shows source, captured time or `Demo data`, price/currency when available, and linked authorized constraints.
 4. Comparison explains destination and service trade-offs without referencing a private or unapproved Profile field.
 5. Tool failure yields a recoverable missing-service state and visibly uses labelled fixture fallback when configured; it never fabricates inventory or price.
+6. Planning may publish only safe progress events (`SNAPSHOT_CREATED`, `RESEARCHING`, `VALIDATING`, `PERSISTING`, `COMPLETED` or `FAILED`). It never streams chain-of-thought, raw tool payloads, unvalidated plan candidates, or private snapshot fields; the UI shows a plan only after authoritative validation and persistence.
 
 ### H4 — Produce per-traveler visa and entry readiness
 
@@ -79,6 +79,7 @@
 3. Re-plan compares old/new destination ranking and services, retained constraints, affected member preferences and visa/entry impact.
 4. If no feasible alternative exists, it identifies blocking constraints and asks the appropriate member to adjust.
 5. Same event ID is idempotent and cannot cause duplicate plans/actions.
+6. Replan progress events are scoped to the active `tripId`, `runId`, snapshot and plan version. A stale run is terminal and cannot publish a plan or overwrite a newer run.
 
 ### H6 — Explicitly confirm and invoke booking orchestration sandbox
 
@@ -139,6 +140,7 @@
 2. Every private conversation has a user-owned `conversation_id`; each trip has a `trip_id`; requests, Agent runs and sensitive operations have separate correlation IDs and versions.
 3. Logs/traces/audit summaries omit private chat text, passport/document numbers, payment data and unapproved profile fields; private messages never enter a shared snapshot or default model context.
 4. Low-cardinality metrics count profile reuse, consent completion, tool outcome, visa uncertainty, re-plan, confirmation, orchestration outcome and errors.
+5. `POST` commands create durable tasks and return `202`; authenticated `fetch` SSE only observes safe live events. Browser state is ephemeral and disconnect never cancels execution. Event payloads and audit/telemetry omit prompts, raw provider responses, chain-of-thought and unapproved data; identifiers remain trace/log correlation only, never metric labels.
 
 ### S2 — Recover from incomplete, conflicting or unreliable data
 
@@ -151,6 +153,7 @@
 3. Tool failure is visible and never shown as live availability.
 4. Visa uncertainty has an official-verification action and never permits automatic application/booking.
 5. Error state cannot create confirmation, orchestration, charge or booking.
+6. Only explicit user cancellation stops upstream generation. Browser disconnect leaves the durable task running; network/5xx failures may retry at most twice, while policy/schema/authorization/data failures do not retry. Every terminal path preserves the submitted private USER message exactly once and never persists partial ASSISTANT output that has not passed final safety policy.
 
 ## 5. PRODUCT-LATER
 
@@ -164,8 +167,9 @@
 
 ## 6. 交付顺序
 
-1. H1 + H2: prove the Personal Agent and consent model.
-2. H3 + H4 + P1: prove multi-tool, personalized shared planning.
-3. H5: demonstrate self-correction.
-4. H6 + P2: make planning turn into controlled action.
-5. S1 + S2: make the proof safe and repeatable.
+1. Durable task platform: `agent_task_runs`, idempotency, multi-Worker lease/recovery, explicit cancellation, outbox and safe telemetry.
+2. H1 + H2: Personal Agent command acceptance, Worker execution, gated live text relay and owner-only recovery.
+3. H3 + H4 + P1: planning task execution, immutable snapshot binding, safe progress events and validated result persistence.
+4. H5: stale-aware replan tasks, consent-revocation suppression and verified final diff.
+5. H6 + P2: retain synchronous controlled booking action; no booking side effect is streamed or queued by this platform.
+6. S1 + S2: multi-Worker race, lease-expiry, disconnect, cancellation, retry, privacy and regression coverage as release gates.

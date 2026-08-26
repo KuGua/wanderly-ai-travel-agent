@@ -4,6 +4,9 @@
 
 ## 快速开始
 
+完整的本地 browser-to-Agent 双服务配置与 smoke test 请参见
+[`docs/local-development-auth.md`](../../docs/local-development-auth.md)。
+
 ```bash
 # 1. 安装依赖
 npm install
@@ -33,13 +36,16 @@ npm run dev
 
 ```dotenv
 MODEL_GATEWAY_PROVIDER=gemini
-GEMINI_API_KEY=your_gemini_key
-GEMINI_MODEL=gemini-2.5-flash
+MODEL_GATEWAY_API_KEY=your_gemini_key
+MODEL_GATEWAY_MODEL=gemini-3.1-flash-lite
 ```
 
-也可选择 `MODEL_GATEWAY_PROVIDER=openai` 并设置 `OPENAI_API_KEY`，或选择
-`openai-compatible` 并设置 `MODEL_GATEWAY_API_KEY`、`MODEL_GATEWAY_BASE_URL` 和
-`MODEL_GATEWAY_MODEL`。后者适用于提供 OpenAI Chat Completions 兼容接口的服务。
+本地 `.env.example` 明确设置 `MODEL_GATEWAY_MODEL=gemini-3.1-flash-lite`，并使用
+内置 OpenAI-compatible endpoint；运行时不会默认选择任何 provider 或模型，缺少任一
+必填配置即 fail closed。也可选择 `MODEL_GATEWAY_PROVIDER=openai`，仍使用
+同一个 `MODEL_GATEWAY_API_KEY`；或选择 `openai-compatible` 并额外设置
+`MODEL_GATEWAY_BASE_URL` 和 `MODEL_GATEWAY_MODEL`。后者适用于提供 OpenAI Chat
+Completions 兼容接口的服务。
 原生 API 不兼容该接口的供应商需要单独 provider adapter，不能仅靠更换 key 启用。
 不要将密钥提交到仓库或暴露给浏览器。
 
@@ -62,6 +68,12 @@ Authorization: Bearer <cognito-access-token>
 明确点击坐标匹配仓库内离线数据，不写数据库、audit 或日志，也不创建身份、灵感、候选或旅行事实。
 每个 API 进程以短暂、加盐哈希的客户端地址状态限流为每分钟 30 次；此限制不跨实例共享，生产多实例
 部署必须在网关或 CDN 追加共享限流。
+
+在 Cognito 尚未配置前，本地 browser-to-Agent 验证可显式设置
+`AUTH_MODE=local-dev`、`NODE_ENV=development`、`HOST=127.0.0.1`。该模式只接受
+loopback socket 请求并由服务端固定映射一个本地身份；production、非 loopback 绑定和
+非 loopback 客户端均 fail closed。浏览器不发送 token 或 user ID。详见
+[`docs/local-development-auth.md`](../../docs/local-development-auth.md)。
 
 ## Sandbox callback 配置
 

@@ -10,6 +10,7 @@ describe("AuthProvider", () => {
     let accessToken: string | null = "live-access-token";
     const service: BrowserAuthService = {
       configured: true,
+      localDevelopment: false,
       restoreSession: vi.fn().mockResolvedValue({ username: "traveler@example.test" }),
       signIn: vi.fn(),
       signOut: vi.fn().mockImplementation(async () => { accessToken = null; }),

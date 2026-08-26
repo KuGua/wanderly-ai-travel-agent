@@ -8,53 +8,47 @@ import { createRequestContext } from "../src/utils/context.js";
 
 vi.mock("openai", () => ({
   default: class FakeOpenAI {
-    beta = {
-      chat: {
-        completions: {
-          parse: async () => ({
-            choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
-          }),
-        },
+    chat = {
+      completions: {
+        parse: async () => ({
+          choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+        }),
       },
     };
   },
 }));
 
 interface FakeClient {
-  beta: {
-    chat: {
-      completions: {
-        parse: (req: Record<string, unknown>) => Promise<{
-          choices: Array<{ message: { parsed: { plan: Record<string, unknown> } | null } }>;
-          usage?: { prompt: number; completion: number; total: number };
-        }>;
-      };
+  chat: {
+    completions: {
+      parse: (req: Record<string, unknown>) => Promise<{
+        choices: Array<{ message: { parsed: { plan: Record<string, unknown> } | null } }>;
+        usage?: { prompt: number; completion: number; total: number };
+      }>;
     };
   };
 }
 
 function buildClient(behavior: "ok" | "bad" | "abort" | "slow"): FakeClient {
   return {
-    beta: {
-      chat: {
-        completions: {
-          parse: async () => {
-            if (behavior === "ok") {
-              return {
-                choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
-                usage: { prompt: 12, completion: 5, total: 17 },
-              };
-            }
-            if (behavior === "bad") return { choices: [{ message: { parsed: null } }] };
-            if (behavior === "abort") {
-              const err = new Error("aborted");
-              err.name = "AbortError";
-              throw err;
-            }
-            // slow
-            await new Promise(resolve => setTimeout(resolve, 100));
-            return { choices: [{ message: { parsed: { plan: { destination: "Tokyo" } } } }] };
-          },
+    chat: {
+      completions: {
+        parse: async () => {
+          if (behavior === "ok") {
+            return {
+              choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+              usage: { prompt: 12, completion: 5, total: 17 },
+            };
+          }
+          if (behavior === "bad") return { choices: [{ message: { parsed: null } }] };
+          if (behavior === "abort") {
+            const err = new Error("aborted");
+            err.name = "AbortError";
+            throw err;
+          }
+          // slow
+          await new Promise(resolve => setTimeout(resolve, 100));
+          return { choices: [{ message: { parsed: { plan: { destination: "Tokyo" } } } }] };
         },
       },
     },
@@ -168,34 +162,60 @@ describe("LLM gateway", () => {
   });
 
   it("factory fails closed when the configured provider has no API key", () => {
-    const previous = process.env.MODEL_GATEWAY_PROVIDER;
-    delete process.env.OPENAI_API_KEY;
+    const previous = {
+      provider: process.env.MODEL_GATEWAY_PROVIDER,
+      key: process.env.MODEL_GATEWAY_API_KEY,
+    };
+    delete process.env.MODEL_GATEWAY_API_KEY;
     process.env.MODEL_GATEWAY_PROVIDER = "openai";
 
     expect(() => createModelGateway()).toThrow("Model gateway openai is not fully configured");
 
-    if (previous !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous;
+    if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
     else delete process.env.MODEL_GATEWAY_PROVIDER;
+    if (previous.key !== undefined) process.env.MODEL_GATEWAY_API_KEY = previous.key;
+    else delete process.env.MODEL_GATEWAY_API_KEY;
   });
 
-  it("factory configures Gemini through its OpenAI-compatible endpoint", () => {
+  it("factory fails closed when Gemini has no explicit model", () => {
     const previous = {
       provider: process.env.MODEL_GATEWAY_PROVIDER,
-      key: process.env.GEMINI_API_KEY,
-      model: process.env.GEMINI_MODEL,
+      key: process.env.MODEL_GATEWAY_API_KEY,
+      model: process.env.MODEL_GATEWAY_MODEL,
     };
     process.env.MODEL_GATEWAY_PROVIDER = "gemini";
-    process.env.GEMINI_API_KEY = "test-gemini-key";
-    process.env.GEMINI_MODEL = "gemini-test-model";
+    process.env.MODEL_GATEWAY_API_KEY = "test-gemini-key";
+    delete process.env.MODEL_GATEWAY_MODEL;
 
-    expect(createModelGateway()).toBeInstanceOf(LLMGateway);
+    expect(() => createModelGateway()).toThrow("Model gateway gemini is not fully configured");
 
     if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
     else delete process.env.MODEL_GATEWAY_PROVIDER;
-    if (previous.key !== undefined) process.env.GEMINI_API_KEY = previous.key;
-    else delete process.env.GEMINI_API_KEY;
-    if (previous.model !== undefined) process.env.GEMINI_MODEL = previous.model;
-    else delete process.env.GEMINI_MODEL;
+    if (previous.key !== undefined) process.env.MODEL_GATEWAY_API_KEY = previous.key;
+    else delete process.env.MODEL_GATEWAY_API_KEY;
+    if (previous.model !== undefined) process.env.MODEL_GATEWAY_MODEL = previous.model;
+    else delete process.env.MODEL_GATEWAY_MODEL;
+  });
+
+  it("factory uses an explicitly configured Gemini model", () => {
+    const previous = {
+      provider: process.env.MODEL_GATEWAY_PROVIDER,
+      key: process.env.MODEL_GATEWAY_API_KEY,
+      model: process.env.MODEL_GATEWAY_MODEL,
+    };
+    process.env.MODEL_GATEWAY_PROVIDER = "gemini";
+    process.env.MODEL_GATEWAY_API_KEY = "test-gemini-key";
+    process.env.MODEL_GATEWAY_MODEL = "gemini-3.1-flash-lite";
+
+    const gateway = createModelGateway();
+    expect((gateway as unknown as { options: { modelName: string } }).options.modelName).toBe("gemini-3.1-flash-lite");
+
+    if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
+    else delete process.env.MODEL_GATEWAY_PROVIDER;
+    if (previous.key !== undefined) process.env.MODEL_GATEWAY_API_KEY = previous.key;
+    else delete process.env.MODEL_GATEWAY_API_KEY;
+    if (previous.model !== undefined) process.env.MODEL_GATEWAY_MODEL = previous.model;
+    else delete process.env.MODEL_GATEWAY_MODEL;
   });
 
   it("factory configures an OpenAI-compatible provider only with a URL, key, and model", () => {

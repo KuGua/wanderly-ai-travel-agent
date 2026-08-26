@@ -101,15 +101,16 @@ memberships overlap only where explicitly configured.
 
 **Steps:**
 
-1. Set `MODEL_GATEWAY_PROVIDER=gemini` with a non-empty `GEMINI_API_KEY` and model.
-2. Set `MODEL_GATEWAY_PROVIDER=openai` without `OPENAI_API_KEY`.
-3. Set `MODEL_GATEWAY_PROVIDER=openai-compatible` first without, then with, API key, base URL and model.
-4. Simulate a configured provider timeout or malformed response.
+1. Set `MODEL_GATEWAY_PROVIDER=gemini`, a non-empty `MODEL_GATEWAY_API_KEY`, and `MODEL_GATEWAY_MODEL=gemini-3.1-flash-lite`; verify that explicit model path.
+2. Set `MODEL_GATEWAY_PROVIDER=gemini` without `MODEL_GATEWAY_MODEL`.
+3. Set `MODEL_GATEWAY_PROVIDER=openai` without `MODEL_GATEWAY_API_KEY`.
+4. Set `MODEL_GATEWAY_PROVIDER=openai-compatible` first without, then with, API key, base URL and model.
+5. Simulate a configured provider timeout or malformed response.
 
 **Expected outcomes:**
 
 - Gemini uses Google's OpenAI-compatible endpoint; OpenAI retains its default endpoint.
-- A provider with absent required settings is rejected and never sends a request with an empty key.
+- A provider or model with absent required settings is rejected and never sends a request with an empty key.
 - A compatible provider is enabled only when all three required settings are present.
 - Provider failures record safe failure telemetry and return a controlled error; no fake candidate, key, private snapshot data or provider response body is logged.
 
@@ -159,7 +160,32 @@ memberships overlap only where explicitly configured.
 - Raw message text is absent from the snapshot, shared plan/explanation and all telemetry/audit outputs; it is not default model context for the planning run.
 - Deletion removes message bodies and makes the thread unavailable to Alice; separately confirmed Profile/override facts remain until independently deleted.
 
-Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner turn, repeat version, idempotency, roles, raw owner history, safe recall, provider-failure non-persistence), `apps/api/tests/conversation-gateway.test.ts` (structured model and controlled failure), `apps/api/tests/chat-threads-route.test.ts` and `apps/api/tests/thread-recall-skill.test.ts`.
+Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner turn, repeat version, idempotency, roles, raw owner history and safe recall), `apps/api/tests/conversation-gateway.test.ts` (structured model and controlled failure), `apps/api/tests/chat-threads-route.test.ts` and `apps/api/tests/thread-recall-skill.test.ts`. Add the streaming scenarios below before release.
+
+### TS-H1c — Stream a durable private Agent turn across disconnects
+
+**Stories:** H1, S1, S2
+**Objective:** Verify an authenticated owner receives only safe stream events while a submitted question continues on the server through browser/SSE disconnect, Worker recovery and controlled upstream failure.
+
+**Starting conditions:** Alice owns a thread; the configured model gateway can emit ordered chunks, an unsafe candidate and a controlled failure.
+
+**Steps:**
+
+1. `POST` an authenticated turn command with a fresh `requestId`; verify `202`, a persisted USER message and one `agent_task_runs` row.
+2. Attach an authenticated SSE observer and confirm every displayed segment passed the streaming safety gate; complete the response successfully.
+3. Submit another question, consume at least one event, then close the browser/SSE connection and verify the Worker completes without cancellation.
+4. Submit a third question, issue explicit Stop, and simulate an upstream network/5xx failure on a fourth.
+5. Kill the claiming Worker after it acquires a lease; start/allow another Worker to recover it. Repeat completed and running request IDs concurrently.
+6. Inspect task rows, messages, idempotency records, audit, logs, traces and metric labels.
+
+**Expected outcomes:**
+
+- The command endpoint accepts the existing authenticated conversation request DTO and returns `202`; a separate authenticated `fetch` SSE observer receives live events. No native `EventSource` authorization workaround or WebSocket is required.
+- Event order for a connected observer is `turn.started` → zero or more safe progress/text events → exactly one terminal `turn.completed`, `turn.cancelled`, `turn.stale` or `turn.failed`; no event exposes prompt text, chain-of-thought, raw provider payload, unvalidated token or unapproved data.
+- `COMPLETED` persists exactly one USER and one final-policy-approved ASSISTANT message atomically and is replayable by request ID.
+- Browser/SSE disconnect does not cancel the run. Explicit Stop produces `CANCELLED`; terminal failure preserves the submitted USER message exactly once, persists no partial ASSISTANT body, and exposes only a safe terminal code/status.
+- Concurrent Workers cannot both commit a result: lease expiry/recovery may repeat an external model call, but final persistence is conditional on the current lease token and task state. A concurrent request ID cannot duplicate the USER message or create a second task.
+- Text, prompts, chunks and model payloads are absent from audit summaries, logs, traces and metric labels.
 
 ### TS-H2 — Invite member and enforce field-level sharing
 
@@ -348,7 +374,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 **Steps:**
 
 1. Attempt cross-user reads/writes of unshared Profile and private conversation threads.
-2. Inspect timeline for profile edit, consent, tool calls, visa, re-plan, approval and sandbox call.
+2. Inspect timeline for profile edit, consent, a completed/stopped/failed chat turn, tool calls, visa, re-plan, approval and sandbox call.
 3. Inspect logs, traces and metrics by correlation ID.
 4. Search telemetry for private conversation text, document numbers, payment data and unapproved Profile values.
 5. Attempt to emit user/trip/plan/booking/correlation/request identifiers and a
@@ -366,6 +392,27 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
   free-form labels are rejected before emission.
 - Audit summaries preserve valid finite primitives, `null`, arrays and plain
   nested objects through depth three, and explicitly reject unsafe shapes.
+
+### TS-S1b — Stream only safe planning and replan progress
+
+**Stories:** H3, H5, S1
+**Objective:** Verify planning/replan uses the shared streaming platform without exposing internal reasoning or unverified state.
+
+**Starting conditions:** An authorized trip has an active snapshot; one replan trigger and one consent-revocation trigger are available.
+
+**Steps:**
+
+1. Start planning and capture all stream events through final plan activation.
+2. Trigger replan and verify progress events reference the active run/version while the old plan remains authoritative until replacement is validated.
+3. Revoke consent while a replan is running, then inspect emitted terminal state and persisted plans.
+4. Search client payloads, audit, logs and traces for raw snapshot fields, tool payloads, chain-of-thought and unvalidated plan candidates.
+
+**Expected outcomes:**
+
+- The client receives only documented safe phases and an identifier/version-safe terminal result; it never receives model reasoning, prompt, raw provider payload or unvalidated plan content.
+- A final `COMPLETED` event refers only to an already validated and persisted plan version.
+- Consent revocation or a newer run makes the old stream terminal/stale; it cannot activate, display or overwrite a plan after invalidation.
+- Stream identifiers remain out of metric labels, and no event widens membership or snapshot authorization.
 
 ### TS-S2 — Recover from missing, conflicting and uncertain information
 
@@ -401,12 +448,13 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话。
 - fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
 - 所有受保护的 HTTP 请求在发送时通过 AWS Amplify session 读取当前 Cognito access token；无 session 时不发送 Authorization，token 刷新后使用新 token，登录会话变化或退出时必须清空 TanStack Query 缓存且后续请求不得继续携带旧 token。`POST /api/v1/explore/location-reference` 是唯一匿名、无持久化且限流的例外。应用自身不得把 token 复制到 localStorage。
+- `AUTH_MODE` 默认必须为 `cognito`。显式 `local-dev` 仅允许 `NODE_ENV=development|test`、loopback server 绑定、loopback socket 客户端和 `LOCAL_DEV_ALLOWED_ORIGINS` 中的精确 loopback HTTP Origin；production、staging、缺失环境或任一非 loopback 边界必须拒绝启动/请求。浏览器不发送 fake token/user ID，服务端固定身份仍须通过原 owner-only thread 授权。非允许 Origin 不得获得 CORS 读权限，且对受保护写操作必须返回 `403` 并不创建业务状态。
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
 - Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。
 - 私聊首次提问创建当前用户的 private thread，后续提问复用该 thread；刷新后只从本地 thread ID 指针恢复 owner-only history，服务端返回不存在的 thread 时清除失效指针，不在浏览器持久化消息正文。
 - 每个新 turn 使用新的 UUID `requestId`；502/504 或网络失败后的显式重试必须复用原 request ID，发送期间禁止并发重复提交。`MODEL` 正常展示，`SAFE_REFUSAL` 显示核验提示，provider/model 失败不得伪造 assistant fallback。
-- 浏览器聊天请求必须使用真实 Cognito access token；没有可用登录 token provider 时，真实 API 端到端演示属于显式阻塞项，不得硬编码 token 或退回 demo identity。
+- 浏览器聊天请求在 Cognito 模式必须使用真实 Cognito access token；没有可用登录 token provider 时，三人真实 API 端到端演示属于显式阻塞项，不得硬编码 token 或退回 demo identity。`local-dev` 仅覆盖一个服务端固定身份的单人 smoke test，不能替代三人授权/确认验收。
 - 375px、768px、1024px、1440px 下身份、导航、主要操作与私密提示均可见，交互目标至少 44px，并尊重 reduced motion。
 
 ### 数据库与 Seed 回归
