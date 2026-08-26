@@ -32,7 +32,7 @@ const smallCountrySpanDegrees = 1.5;
 // 20° tiles the overlay fetches by viewport instead.
 const tiledLod = {
   id: "lod3",
-  minZoom: 5.5,
+  minZoom: 4.5,
   tileSizeDegrees: 20,
   // ~40 m grid, so the fidelity ceiling is Natural Earth 10m itself rather than
   // the 400 m grid the simplified LODs quantize to.

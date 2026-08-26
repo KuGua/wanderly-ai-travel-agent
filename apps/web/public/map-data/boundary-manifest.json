@@ -37,7 +37,7 @@
       "id": "lod3",
       "indexPath": "map-data/country-borders-lod3/index.json",
       "pathTemplate": "map-data/country-borders-lod3/{tile}.geojson",
-      "minZoom": 5.5,
+      "minZoom": 4.5,
       "maxZoom": null,
       "tileSizeDegrees": 20,
       "quantization": 1000000,
@@ -47,7 +47,7 @@
       "totalBytes": 10192485,
       "totalGzipBytes": 3284623,
       "largestTileGzipBytes": 119865,
-      "indexSha256": "32d00a14fc07c703a4ecf6967a706bf189052a81224597153c693cc8acaf13e9"
+      "indexSha256": "6e04b5c42b5d0c72b1e8e86a982b972a1b5f1b066e5fbf328b1b42b82922e49f"
     }
   ]
 }
