@@ -169,6 +169,10 @@
     "helpTitle": "如何使用探索",
     "helpHeading": "探索地图",
     "helpBody": "选择一个命名的演示目的地，或在任意位置点击以添加多个私人灵感。可在列表中选择单个或多个图钉删除。",
+    "cityAlreadyPinned": "{name} 已经标记过了。",
+    "cityPinnedFromChat": "已根据对话标记 {name}。",
+    "chatMentionedCityContext": "对话中提到的城市",
+    "chatMentionedCityNote": "此城市由对话文本识别，并标记在地图中心点。它仍然只是当前会话内的灵感。",
     "chat": {
       "history": "聊天记录",
       "startAria": "开始与 Wanderly Agent 对话",

@@ -35,11 +35,13 @@ function ChatHarness({
   initiallyOpen = false,
   autoAskRequest = null,
   onAutoAskConsumed,
+  onConversationText,
 }: {
   selectedPlace?: { place: ConversationPlace; context: string } | null;
   initiallyOpen?: boolean;
   autoAskRequest?: { nonce: string; place: ConversationPlace; context: string } | null;
   onAutoAskConsumed?: (nonce: string) => void;
+  onConversationText?: (text: string) => void;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   return (
@@ -50,6 +52,7 @@ function ChatHarness({
       selectedPlace={selectedPlace}
       autoAskRequest={autoAskRequest}
       onAutoAskConsumed={onAutoAskConsumed}
+      onConversationText={onConversationText}
     />
   );
 }
@@ -82,6 +85,16 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("TravelAgentChat durable streaming flow", () => {
+  it("reports a typed place-bearing message to the map without waiting for the model", async () => {
+    const api = createApi();
+    const onConversationText = vi.fn();
+    renderChat(api, { onConversationText });
+
+    await submitFromCapsule("Tell me about Tokyo");
+
+    expect(onConversationText).toHaveBeenCalledWith("Tell me about Tokyo");
+  });
+
   it("accepts the USER message first, renders approved deltas, and blocks another active turn", async () => {
     const api = createApi();
     renderChat(api);

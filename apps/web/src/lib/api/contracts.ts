@@ -211,7 +211,12 @@ export const locationReferenceResponseSchema = z.discriminatedUnion("outcome", [
     outcome: z.literal("REFERENCE"),
     country: z.string().min(1), countryCode: z.string().length(2).nullable(),
     admin1: z.string().min(1).nullable(), admin1Code: z.string().min(1).nullable(),
-    nearestCity: z.string().min(1).nullable(), distanceKm: z.number().nonnegative().nullable(),
+    nearestCity: z.string().min(1).nullable(),
+    nearestCityCoordinates: z.object({
+      latitude: z.number().finite().min(-90).max(90),
+      longitude: z.number().finite().min(-180).max(180),
+    }).strict().nullable(),
+    distanceKm: z.number().nonnegative().nullable(),
   }),
   locationReferenceBaseSchema.extend({ outcome: z.literal("NO_REFERENCE") }),
 ]);

@@ -169,6 +169,10 @@
     "helpTitle": "How to use Explore",
     "helpHeading": "Explore the map",
     "helpBody": "Choose a named demo destination, or click anywhere to pin multiple private inspirations. Select pins from the list to remove them individually or together.",
+    "cityAlreadyPinned": "{name} is already pinned.",
+    "cityPinnedFromChat": "Pinned {name} from your conversation.",
+    "chatMentionedCityContext": "Mentioned in your conversation",
+    "chatMentionedCityNote": "This city was recognized from the conversation and pinned to its map center. It remains a session-only inspiration.",
     "chat": {
       "history": "Chat history",
       "startAria": "Start a conversation with Wanderly Agent",

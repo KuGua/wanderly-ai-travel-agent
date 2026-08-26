@@ -34,6 +34,7 @@ type TravelAgentChatProps = {
   selectedPlace?: { place: ConversationPlace; context: string } | null;
   autoAskRequest?: AutoAskRequest | null;
   onAutoAskConsumed?: (nonce: string) => void;
+  onConversationText?: (text: string) => void;
 };
 
 export function TravelAgentChat({
@@ -43,6 +44,7 @@ export function TravelAgentChat({
   selectedPlace,
   autoAskRequest = null,
   onAutoAskConsumed,
+  onConversationText,
 }: TravelAgentChatProps) {
   const t = useTranslations("explore.chat");
   const [draft, setDraft] = useState("");
@@ -175,7 +177,11 @@ export function TravelAgentChat({
     if (status === "COMPLETED" && threadId) {
       let active = true;
       void api.getOwnerConversation(threadId).then((restored) => {
-        if (active) setSessionMessages((current) => mergeMessages(current, restored.messages));
+        if (active) {
+          setSessionMessages((current) => mergeMessages(current, restored.messages));
+          const lastAssistantMessage = [...restored.messages].reverse().find((message) => message.role === "ASSISTANT");
+          if (lastAssistantMessage) onConversationText?.(lastAssistantMessage.content);
+        }
       }).finally(() => {
         if (active) {
           setActiveRunId(null);
@@ -192,7 +198,7 @@ export function TravelAgentChat({
       }, 0);
       return () => window.clearTimeout(clearTerminalRun);
     }
-  }, [activeRunId, agentRun.data?.status, api, threadId]);
+  }, [activeRunId, agentRun.data?.status, api, onConversationText, threadId]);
 
   const messages = useMemo(
     () => mergeMessages(conversation.data?.messages ?? [], sessionMessages),
@@ -217,6 +223,7 @@ export function TravelAgentChat({
     setPendingTurn(turn);
     setRequestError(null);
     setDraft("");
+    onConversationText?.(question);
     onOpen();
     void sendTurn(turn);
   }

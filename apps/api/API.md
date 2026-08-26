@@ -61,6 +61,7 @@ booking/visa conclusion.
   "admin1": "Lisbon",
   "admin1Code": "PT-11",
   "nearestCity": "Lisbon",
+  "nearestCityCoordinates": { "latitude": 38.7167, "longitude": -9.1333 },
   "distanceKm": 0,
   "source": "Natural Earth + GeoNames",
   "datasetVersion": "2026-08-global.1",
@@ -71,6 +72,8 @@ booking/visa conclusion.
 
 For ocean or unmatched data, the response has `outcome: "NO_REFERENCE"`. A missing
 or unreadable local dataset returns `503` and never guesses a result.
+`nearestCityCoordinates` is the indexed GeoNames city center used for map pin
+normalization; it is `null` whenever `nearestCity` is `null`.
 
 ---
 

@@ -9,6 +9,7 @@ export type LocationReference =
       admin1: string | null;
       admin1Code: string | null;
       nearestCity: string | null;
+      nearestCityCoordinates: { latitude: number; longitude: number } | null;
       distanceKm: number | null;
       source: "Natural Earth + GeoNames";
       datasetVersion: string;
@@ -88,6 +89,9 @@ export class LocationReferenceResolver {
       admin1: region?.properties.name ?? null,
       admin1Code: region?.properties.iso_3166_2 ?? null,
       nearestCity: cityReference?.name ?? null,
+      nearestCityCoordinates: cityReference
+        ? { latitude: cityReference.latitude, longitude: cityReference.longitude }
+        : null,
       distanceKm: cityReference ? roundDistance(cityReference.distanceKm) : null,
       source: SOURCE,
       datasetVersion: this.manifest.version,

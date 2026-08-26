@@ -24,6 +24,7 @@ describe("LocationReferenceResolver", () => {
       admin1: "Test Province",
       admin1Code: "TL-TP",
       nearestCity: "Example City",
+      nearestCityCoordinates: { latitude: 5, longitude: 5 },
       distanceKm: 0,
       source: "Natural Earth + GeoNames",
       datasetVersion: "test.1",
@@ -34,10 +35,17 @@ describe("LocationReferenceResolver", () => {
 
   it("does not fabricate a city when the closest indexed city is too distant", () => {
     const reference = resolver.resolve(0.1, 0.1);
-    expect(reference).toMatchObject({ outcome: "REFERENCE", country: "Testland", nearestCity: null, distanceKm: null });
+    expect(reference).toMatchObject({
+      outcome: "REFERENCE",
+      country: "Testland",
+      nearestCity: null,
+      nearestCityCoordinates: null,
+      distanceKm: null,
+    });
   });
 
   it("returns no reference for a coordinate outside a country boundary", () => {
     expect(resolver.resolve(-5, -5)).toMatchObject({ outcome: "NO_REFERENCE", isTravelFact: false });
   });
+
 });

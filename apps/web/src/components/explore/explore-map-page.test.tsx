@@ -75,6 +75,7 @@ const mapMock = vi.hoisted(() => {
     layoutChanges: [] as Array<{ id: string; visibility: string }>,
     queryResults: [] as Array<{ properties: Record<string, unknown> }>,
     markerButtons: [] as HTMLButtonElement[],
+    markerLngLats: [] as Array<[number, number]>,
     removedMarkers: [] as string[],
     easeCalls: [] as Array<{
       padding?: { top: number; right: number; bottom: number; left: number };
@@ -153,7 +154,9 @@ vi.mock("maplibre-gl", () => {
 
   class MarkerMock {
     private label = "marker";
+    private element: HTMLElement;
     constructor(options: { element: HTMLElement }) {
+      this.element = options.element;
       this.label = options.element.textContent ?? "marker";
       const button = options.element.querySelector("button");
       if (button) mapMock.markerButtons.push(button);
@@ -161,8 +164,12 @@ vi.mock("maplibre-gl", () => {
     addTo() {
       return this;
     }
-    setLngLat() {
+    setLngLat(coordinates: [number, number]) {
+      mapMock.markerLngLats.push(coordinates);
       return this;
+    }
+    getElement() {
+      return this.element;
     }
     remove() {
       mapMock.removedMarkers.push(this.label);
@@ -189,6 +196,7 @@ describe("ExploreMapPage private inspirations", () => {
   beforeEach(() => {
     mapMock.handlers.clear();
     mapMock.markerButtons.length = 0;
+    mapMock.markerLngLats.length = 0;
     mapMock.layers.length = 0;
     mapMock.addedSources.length = 0;
     mapMock.movedLayers.length = 0;
@@ -246,6 +254,77 @@ describe("ExploreMapPage private inspirations", () => {
     expect(within(list).queryByText("Pinned place 1")).not.toBeInTheDocument();
     expect(within(list).getByText("Pinned place 3")).toBeInTheDocument();
     expect(mapMock.removedMarkers).toHaveLength(2);
+  });
+
+  it("normalizes clicks to the city center and rejects a duplicate city pin", async () => {
+    const api = createTravelApiForAutoAsk();
+    vi.mocked(api.getLocationReference).mockResolvedValue({
+      outcome: "REFERENCE",
+      country: "Portugal",
+      countryCode: "PT",
+      admin1: "Lisbon",
+      admin1Code: "PT-11",
+      nearestCity: "Lisbon",
+      nearestCityCoordinates: { latitude: 38.7167, longitude: -9.1333 },
+      distanceKm: 1.1,
+      source: "Natural Earth + GeoNames",
+      datasetVersion: "test",
+      checkedAt: "2026-08-26T00:00:00.000Z",
+      isTravelFact: false,
+    });
+    renderWithIntl(<ExploreMapPage />, { api });
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: -9.139, lat: 38.722 } });
+    });
+    expect(await screen.findByRole("heading", { name: "Lisbon" })).toBeInTheDocument();
+    expect(mapMock.markerLngLats).toContainEqual([-9.1333, 38.7167]);
+
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: -9.18, lat: 38.74 } });
+    });
+    expect(await screen.findByText("Lisbon is already pinned.")).toBeInTheDocument();
+    expect(mapMock.removedMarkers).toContain("Pinned place 2");
+    fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
+    expect(screen.getByRole("button", { name: "All pins (1)" })).toBeInTheDocument();
+  });
+
+  it("retries unavailable clicked cities once and collapses duplicates after the API recovers", async () => {
+    const api = createTravelApiForAutoAsk();
+    const shanghaiReference = {
+      outcome: "REFERENCE" as const,
+      country: "China",
+      countryCode: "CN",
+      admin1: "Shanghai",
+      admin1Code: "CN-SH",
+      nearestCity: "Huangpu",
+      nearestCityCoordinates: { latitude: 31.2378, longitude: 121.4781 },
+      distanceKm: 0.9,
+      source: "Natural Earth + GeoNames" as const,
+      datasetVersion: "test",
+      checkedAt: "2026-08-26T00:00:00.000Z",
+      isTravelFact: false as const,
+    };
+    vi.mocked(api.getLocationReference)
+      .mockRejectedValueOnce(new Error("API restarting"))
+      .mockRejectedValueOnce(new Error("API restarting"))
+      .mockResolvedValue(shanghaiReference);
+    renderWithIntl(<ExploreMapPage />, { api });
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 121.47, lat: 31.23 } });
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 121.53, lat: 31.05 } });
+    });
+    await waitFor(() => expect(api.getLocationReference).toHaveBeenCalledTimes(2));
+
+    act(() => window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(api.getLocationReference).toHaveBeenCalledTimes(4));
+    expect(await screen.findByRole("heading", { name: "Huangpu" })).toBeInTheDocument();
+    expect(mapMock.removedMarkers).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
+    expect(screen.getByRole("button", { name: "All pins (1)" })).toBeInTheDocument();
   });
 
   it("opens pin context on the first chat click and the preview on the second", async () => {
