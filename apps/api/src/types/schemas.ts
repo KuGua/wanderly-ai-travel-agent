@@ -264,10 +264,13 @@ export const conversationPlaceSchema = z.object({
   sourceType: z.enum(["REFERENCE", "INSPIRATION"]),
 }).strict();
 
+export const conversationIntentSchema = z.enum(["auto_intro", "user_typed"]);
+
 export const conversationTurnRequestSchema = z.object({
   requestId: uuidSchema,
   question: z.string().trim().min(1).max(4000),
   place: conversationPlaceSchema.optional(),
+  intent: conversationIntentSchema.optional(),
 }).strict();
 
 export const ownerConversationMessageSchema = z.object({
@@ -401,6 +404,7 @@ export type ChatMessageRedacted = z.infer<typeof chatMessageRedactedSchema>;
 export type ChatMessageRole = z.infer<typeof chatMessageRoleSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
 export type ConversationTurnRequest = z.infer<typeof conversationTurnRequestSchema>;
+export type ConversationIntent = z.infer<typeof conversationIntentSchema>;
 export type OwnerConversationMessage = z.infer<typeof ownerConversationMessageSchema>;
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;
 export type ConversationTurnAcceptedResponse = z.infer<typeof conversationTurnAcceptedResponseSchema>;

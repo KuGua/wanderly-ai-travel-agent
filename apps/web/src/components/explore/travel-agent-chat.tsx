@@ -127,6 +127,7 @@ export function TravelAgentChat({
       requestId: crypto.randomUUID(),
       question: t("askQuestion", { name: autoAskRequest.place.name }),
       place: autoAskRequest.place,
+      intent: "auto_intro",
     };
     setPendingTurn(turn);
     setRequestError(null);

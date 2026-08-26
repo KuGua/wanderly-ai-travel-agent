@@ -371,6 +371,7 @@ describe("ExploreMapPage private inspirations", () => {
         note: "This is an unverified, session-only inspiration. It has no live price, availability, visa or booking data.",
         kind: "inspiration",
       }),
+      intent: "auto_intro",
     });
     expect(await screen.findByText("A calm, general destination answer.")).toBeInTheDocument();
   });

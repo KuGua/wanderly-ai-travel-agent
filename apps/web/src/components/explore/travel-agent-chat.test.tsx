@@ -236,9 +236,27 @@ describe("TravelAgentChat durable streaming flow", () => {
       requestId: REQUEST_ID,
       question: "Tell me about Tokyo",
       place: TOKYO,
+      intent: "auto_intro",
     });
     expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBe(THREAD_ID);
     await waitFor(() => expect(onConsumed).toHaveBeenCalledWith("n1"));
+  });
+
+  it("does not include the intent field for manually typed questions", async () => {
+    const api = createApi();
+    renderChat(api, { initiallyOpen: true, selectedPlace: { place: TOKYO, context: "Japan" } });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "What is the weather like?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalledTimes(1));
+    const [, body] = vi.mocked(api.submitConversationTurn).mock.calls[0];
+    expect(body).toEqual({
+      requestId: REQUEST_ID,
+      question: "What is the weather like?",
+      place: TOKYO,
+    });
+    expect(body).not.toHaveProperty("intent");
   });
 
   it("does not double-fire auto-ask when the parent re-renders while holding the same nonce", async () => {
@@ -295,6 +313,7 @@ describe("TravelAgentChat durable streaming flow", () => {
       requestId: REQUEST_ID,
       question: "Tell me about Tokyo",
       place: TOKYO,
+      intent: "auto_intro",
     });
   });
 

@@ -110,10 +110,13 @@ export const conversationMessageSchema = z.object({
 
 export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL"]);
 
+export const conversationIntentSchema = z.enum(["auto_intro", "user_typed"]);
+
 export const conversationTurnRequestSchema = z.object({
   requestId: z.string().uuid(),
   question: z.string().trim().min(1).max(4000),
   place: conversationPlaceSchema.optional(),
+  intent: conversationIntentSchema.optional(),
 }).strict();
 
 export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN"]);
