@@ -1,0 +1,27 @@
+apiVersion: 1
+
+datasources:
+  - name: Tempo
+    type: tempo
+    access: proxy
+    uid: tempo
+    orgId: 1
+    url: http://tempo:4317
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: GET
+      tracesToLogsV2:
+        # Local dev: log lines are read via `docker logs`, not via a Loki
+        # datasource. The dashboard's "Logs by trace_id" panel documents the
+        # exact shell snippet so engineers can grep the trace_id out of the
+        # API container's pino stdout.
+        datasourceUid: ""
+        customQuery: false
+        spanStartTimeShift: ""
+        spanEndTimeShift: ""
+        filters: []
+      serviceMap:
+        datasourceUid: ""
+      nodeGraph:
+        enabled: true

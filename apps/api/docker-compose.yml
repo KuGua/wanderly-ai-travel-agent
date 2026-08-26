@@ -28,9 +28,37 @@ services:
       DB_PASSWORD: travelagent
       DB_NAME: travelagent
       NODE_ENV: production
+      # OpenTelemetry — local dev points at the tempo service defined in
+      # docker-compose.observability.yml. Override per environment.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318/v1/traces
+      OTEL_SERVICE_NAME: ai-travel-agent-api
+      OTEL_SDK_DISABLED: "false"
+      OTEL_TRACES_SAMPLER_ARG: "1.0"
     depends_on:
       postgres:
         condition: service_healthy
+
+  worker:
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "dist/workers/worker-main.js"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: travelagent
+      DB_PASSWORD: travelagent
+      DB_NAME: travelagent
+      NODE_ENV: production
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318/v1/traces
+      OTEL_SERVICE_NAME: ai-travel-agent-worker
+      OTEL_SDK_DISABLED: "false"
+      OTEL_TRACES_SAMPLER_ARG: "1.0"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      app:
+        condition: service_started
 
 volumes:
   pgdata:
