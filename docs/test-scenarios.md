@@ -468,6 +468,59 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - **TS-MIG-0005-replay**：连续跑两次 `npm run db:migrate` 后，`enum_range(NULL::audit_action)` 必须包含 `apps/api/src/db/schema.ts:18-28` 列出的所有值，包括 `VISA_CHECK` 与 `PLAN_RESTART`；断言方式为尝试 `recordAudit({ action: "VISA_CHECK", ctx, summary: {} })` 不抛 `invalid input value for enum`。
 - **TS-MIG-0008-legacy-system**：在 develop 的 `0007_remove_demo_provider_state.sql` 之后，从允许浏览器以认证用户身份写入 `USER | SYSTEM` 的 pre-0008 状态开始，迁移必须原地将 `SYSTEM` 规范化为 `USER`，保留消息 ID、thread、sender、正文、脱敏摘要、分享标记和时间戳；随后强制 `USER/non-null sender` 与 `ASSISTANT/null sender`，且再次运行迁移无新增变更。
 
+### TS-OTEL-1 — Inbound `traceparent` propagation through the request lifecycle
+
+**Stories:** P3
+**Objective:** Verify that one owner HTTP request produces a single OpenTelemetry trace from HTTP ingress through the LLM outbound call and the DB hot-spots, with `trace_id`/`span_id` bindings on every Pino log line.
+
+**Starting conditions:** Local API + Worker dev servers, `NODE_ENV=test` so spans flush to the in-memory exporter; one test thread owned by `test-alice`.
+
+**Steps:**
+
+1. `app.inject("POST", "/api/v1/threads/:threadId/turns", { headers: { "traceparent": "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-1111111111111111-01" }, payload: { requestId, question, ... } })`.
+2. Capture the response headers — must include `traceparent` whose `trace-id` equals `aaaa…aaaa` and `span-id` differs.
+3. Capture the in-memory exporter span list — must include one `http.*` span whose `http.route` is the thread path, one `db.agent_task_runs.INSERT` span, one `llm.openai.stream` span (or `llm.openai.parse` if not streamed). All three must carry the same `trace_id`; the LLM and DB spans must have `parent_span_id` matching the HTTP span's `span_id`.
+4. Capture the Pino log lines for the request — every line must include both `trace_id=aaaa…aaaa` and `span_id=<matching http span id>` bindings.
+5. Repeat the call without an inbound `traceparent` and confirm the server mints a fresh 32-hex trace id; the response `traceparent` echoes that id; no span in the exporter shares its `trace_id` with any prior call.
+
+### TS-OTEL-2 — Worker continuity after durable boundary
+
+**Stories:** P3
+**Objective:** Verify that the Worker process reattaches to the originating trace by reading `agent_task_runs.trace_context` and that the `agent_task_worker.run` span is a `CONSUMER` with a `SpanLink` to the inbound HTTP span.
+
+**Starting conditions:** Same as TS-OTEL-1; one accepted conversation turn from `test-alice`.
+
+**Steps:**
+
+1. After step 3 of TS-OTEL-1 finishes, trigger one `processNextAgentTask()` cycle on the Worker.
+2. Capture the in-memory exporter span list on the Worker — must include `agent_task_worker.run` whose `trace_id` equals the inbound HTTP trace id from step 2 of TS-OTEL-1, with `kind=CONSUMER`, `tasks.run.id` matching the agent_task_runs row, and at least one link with `trace_id` equal to the same trace.
+3. Capture the SSE event stream — first `turn.started` and `run.phase` events must carry the inbound `traceparent` in the JSON payload (server-side assert via `agentStreamEventSchema.parse`).
+
+### TS-OTEL-3 — Forbidden span attribute enforcement
+
+**Stories:** S1, P3
+**Objective:** Verify that `safeSetAttribute` rejects every key in `FORBIDDEN_SPAN_ATTRIBUTE_KEYS` and that no production source file calls `safeSetAttribute` with a forbidden key.
+
+**Starting conditions:** Clean checkout.
+
+**Steps:**
+
+1. `npx vitest run tests/spans-forbidden-attributes.test.ts` — all suites must pass. The "throws on every key in the forbidden set" suite asserts every member of `FORBIDDEN_SPAN_ATTRIBUTE_KEYS` triggers a throw. The "no production call site uses a forbidden key" suite statically scans `apps/api/src` and fails on any forbidden match.
+2. Manually introduce a temporary `safeSetAttribute(span, "nationality", "DE")` in any source file under `apps/api/src/` — the static-scan suite must fail with the file path and line number reported.
+
+### TS-OTEL-4 — Pino trace binding preserves redaction
+
+**Stories:** S1, P3
+**Objective:** Verify that adding the `trace_id`/`span_id` Pino bindings does not weaken `LOGGER_REDACTION` — passport, nationality, message bodies still appear as `[REDACTED]` while the trace binding survives.
+
+**Starting conditions:** In-memory Pino stream for capture; `correlationChild` invoked under an active span.
+
+**Steps:**
+
+1. Capture a `correlationChild` log line that includes `req.body.passportNumber`, `req.body.nationality`, `req.body.prompt`.
+2. Assert `trace_id` and `span_id` are present and match the active span.
+3. Assert `req.body.passportNumber === "[REDACTED]"`, `req.body.nationality === "[REDACTED]"`, `req.body.prompt === "[REDACTED]"`.
+
 - Profile memory is explicit, editable, deletable and private by default.
 - Shared workspace never shows unapproved Profile/private-chat fields.
 - Flight/Stay/Ground and Visa outputs use one consent snapshot and show source/time or demo label.

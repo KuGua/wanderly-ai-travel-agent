@@ -101,9 +101,13 @@ loopback socket 请求并由服务端固定映射一个本地身份；production
 - **预订沙箱** — 不发生真实付款；返回演示参考号。
 - **幂等性** — 规划、变化事件和预订操作均为幂等。
 - **审计轨迹** — 所有敏感操作均以关联 ID 记录。
-- **安全可观测性** — Pino 统一脱敏日志；`/metrics` 仅提供进程内 MVP
-  Prometheus text，标签使用固定低基数 allow-list。仓库当前不包含生产
-  metrics/trace exporter 或持久化遥测后端。
+- **安全可观测性** — Pino 统一脱敏日志（39 个 redact path），每条
+  log 自动带 `correlationId`、`clientRequestId` 与 active span 的
+  `trace_id`/`span_id`；`/metrics` 仅提供进程内 MVP Prometheus text，标签
+  使用固定低基数 allow-list。仓库当前不包含生产 metrics/trace exporter
+  或持久化遥测后端；OpenTelemetry SDK 已接入（`apps/api/src/observability/tracing.ts`），
+  但默认 `OTEL_SDK_DISABLED=true`，需设置 `OTEL_EXPORTER_OTLP_ENDPOINT`
+  才会向 OTLP 导出。
 
 ## 测试
 

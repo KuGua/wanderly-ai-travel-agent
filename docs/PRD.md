@@ -141,7 +141,7 @@ flowchart LR
 
 ### FR-7 隐私与可观测性
 
-1. 每个共享行程有独立 `tripId`（UUIDv4）；每个私有对话线程有独立 `conversationId`（UUIDv4，可选关联一个 `tripId`）；每个 HTTP 请求有独立 `correlationId`（UUIDv4，server 在 `x-correlation-id` 响应头与错误体中回显）；每个 Agent run 与敏感操作均有独立 `runId` 与版本记录。四类 ID 各自独立、不得互相替代：`tripId` 标识项目，`conversationId` 标识私聊线程，`correlationId` 标识请求链路，`runId` 标识 Agent 调用。
+1. 每个共享行程有独立 `tripId`（UUIDv4）；每个私有对话线程有独立 `conversationId`（UUIDv4，可选关联一个 `tripId`）；每个 HTTP 请求有独立 `correlationId`（UUIDv4，server 在 `x-correlation-id` 响应头与错误体中回显）；每个 Agent run 与敏感操作均有独立 `runId` 与版本记录。四类 ID 各自独立、不得互相替代：`tripId` 标识项目，`conversationId` 标识私聊线程，`correlationId` 标识请求链路，`runId` 标识 Agent 调用。W3C `traceparent` 是附加在 correlation 之上的 OTel 链路标识：HTTP 入口解析、worker 持久化 trace_context、SSE 事件回传 traceparent。`trace_id` 与 `span_id` 必须出现在 log（`trace_id`/`span_id` bindings）与 span 属性（由 SDK 自动绑定），但不能以字段形式附加到 span 属性集合中。
 2. 日志、metrics 和 traces 不得包含私聊全文、护照/证件号、支付数据或未授权 Profile 字段。
 3. 指标必须跟踪 Profile reuse、共享授权完成、工具成功/失败、方案完成、visa checklist 状态、重算、确认和 orchestration 结果；`conversationId` 仅在 trace/log 中以关联 id 出现，**不**作为 metric label。
 4. 私有消息正文不得进入日志、metric 标签、trace 属性、共享 snapshot 或未经用户选择的模型上下文；审计 summary 仅记录操作与关联 ID（ownerUserId / conversationId / 关联 tripId / 时间），不包含正文片段。

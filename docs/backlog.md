@@ -130,6 +130,19 @@
 3. Coordinates, place names and raw response bodies are absent from logs, trace attributes, metrics labels, audit and database state.
 4. Map movement, zoom, hover and prefetch never invoke the resolver; a failed or distant city match is not guessed.
 
+### P3 — Observe one owner request across API → DB → Worker → SSE
+
+**Story:** As a team operator, I want a single owner request to be traceable as one OTel trace across the API, the DB hot-spots, the durable Worker, and the SSE event stream, so that the Hero Demo and post-demo debugging show a complete end-to-end flow.
+
+**Acceptance criteria:**
+
+1. Inbound `traceparent` is parsed at HTTP ingress, attached as `trace_id`/`span_id` Pino bindings, and echoed as a response header.
+2. `agent_task_runs.trace_context` JSONB column carries the same `traceparent` plus `correlationId` from the originating request so the Worker process can reconstruct the active OTel context.
+3. The Worker's `agent_task_worker.run` span is a `CONSUMER` with a `SpanLink` referencing the originating HTTP server span; when `trace_context` is null, it is a fresh root tagged `tasks.recovery=true`.
+4. SSE events published via PostgreSQL carry the originating `traceparent` in the payload; `AgentStreamRelay` propagates it and `routes/agent-runs.ts` opens `sse.event.<type>` spans with `SpanLink`s to the same trace.
+5. `safeSetAttribute` rejects any forbidden key (PII, credentials, high-cardinality identifiers); `tests/spans-forbidden-attributes.test.ts` statically asserts no production call site uses a forbidden key.
+6. Pino `LOGGER_REDACTION` continues to redact passport/nationality/DOB/`prompt`/message bodies after the trace bindings are merged.
+
 ### S1 — Enforce privacy, versioning and observability
 
 **Story:** As a team operator, I want every privacy-sensitive Agent decision to be versioned and traceable, so that we can safely debug the demo and prove control boundaries.

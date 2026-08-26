@@ -57,10 +57,10 @@ samples and is used by tests.
 
 ## Log redaction
 
-### Pino paths (`telemetry.ts:4-36`)
+### Pino paths (`telemetry.ts:6-46`)
 
-`LOGGER_REDACT_PATHS` is a 31-entry string list array. that Pino replaces with
-`"[REDACTED]"` at log time. Categories (verbatim):
+`LOGGER_REDACT_PATHS` is a 39-entry string list array. Pino replaces every
+matched path with `"[REDACTED]"` at log time. Categories (verbatim):
 
 - `req.headers.authorization`, `cookie`, `x-api-key`, `x-sandbox-signature`
 - `req.body.password`, `secret`, `apiKey`, `accessToken`, `refreshToken`,
