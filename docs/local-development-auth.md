@@ -65,8 +65,9 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
 `LOCAL_DEV_ALLOWED_ORIGINS` is a comma-separated allow-list of exact browser
 Origins. Every value must be an `http://` loopback Origin (for example
 `http://localhost:3001`), with no path, query, credentials or public/LAN host.
-The Web API base URL must also be loopback and must match one entry. Do not add
-a phone, LAN, tunnel or deployed URL to this mode.
+The Web application's browser Origin must match one entry; its API base URL must
+separately remain loopback (normally `http://localhost:3000`). Do not add a
+phone, LAN, tunnel or deployed URL to this mode.
 
 The key belongs only in ignored `apps/api/.env`. Never put it in
 `apps/web/.env.local`, any `NEXT_PUBLIC_*` variable, source code, tests, logs or
