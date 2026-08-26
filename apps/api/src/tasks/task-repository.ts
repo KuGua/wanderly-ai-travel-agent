@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
+import { SpanKind } from "@opentelemetry/api";
 
 import { db, rawDb } from "../db/database.js";
 import {
@@ -23,6 +24,11 @@ import {
   type OwnerConversationMessage,
 } from "../types/schemas.js";
 import type { RequestContext } from "../utils/context.js";
+import {
+  getTracer,
+  recordSpanError,
+  safeSetAttribute,
+} from "../observability/tracing.js";
 import { agentTaskConfig } from "./config.js";
 import { publishAgentStreamEvent } from "./task-stream-publisher.js";
 
@@ -60,75 +66,95 @@ export async function acceptConversationTask(params: {
   ownerUserId: string;
   input: ConversationTurnRequest;
 }): Promise<ConversationTurnAcceptedResponse> {
-  const place = resolveConversationPlace(params.input.place);
-  const idempotencyKey = conversationIdempotencyKey(params.threadId, params.input.requestId);
-  const runId = randomUUID();
-  const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
-
-  const accepted = await db.transaction(async (tx) => {
-    await requireThreadOwner(tx, params.threadId, params.ownerUserId);
-    const claimed = await claimIdempotency(tx, { key: idempotencyKey, entityType: "agent_conversation_task" });
-    if (!claimed) return null;
-
-    const [activeRun] = await tx.select({ id: agentTaskRuns.id }).from(agentTaskRuns).where(and(
-      eq(agentTaskRuns.threadId, params.threadId),
-      inArray(agentTaskRuns.status, ["QUEUED", "RUNNING", "CANCEL_REQUESTED"]),
-    )).limit(1);
-    if (activeRun) {
-      throw new ApiError(409, "Conflict", "This conversation already has an active Agent run");
-    }
-
-    const [userMessage] = await tx.insert(chatMessages).values({
-      threadId: params.threadId,
-      senderUserId: params.ownerUserId,
-      role: "USER",
-      body: params.input.question,
-      markedSharedByOwner: false,
-      redactedSummary: null,
-    }).returning();
-
-    const [run] = await tx.insert(agentTaskRuns).values({
-      id: runId,
-      operation: "CONVERSATION",
-      status: "QUEUED",
-      createdByUserId: params.ownerUserId,
-      threadId: params.threadId,
-      requestId: params.input.requestId,
-      userMessageId: userMessage.id,
-      expiresAt,
-      ...placeColumns(place),
-    }).returning();
-
-    await tx.update(idempotencyRecords).set({
-      entityId: run.id,
-      resultPayload: { runId: run.id },
-    }).where(eq(idempotencyRecords.idempotencyKey, idempotencyKey));
-    await tx.insert(outboxEvents).values({
-      eventId: randomUUID(),
-      eventType: "AGENT_TASK_QUEUED",
-      payload: { taskId: run.id, operation: run.operation },
-    });
-    await recordAudit({
-      ctx: params.ctx,
-      action: "CHAT_MESSAGE_APPEND",
-      actorUserId: params.ownerUserId,
-      summary: { threadId: params.threadId, messageId: userMessage.id, role: "USER" },
-      tx,
-    });
-    await recordAudit({
-      ctx: params.ctx,
-      action: "AGENT_TASK",
-      actorUserId: params.ownerUserId,
-      summary: { taskId: run.id, operation: run.operation, status: run.status },
-      tx,
-    });
-    return acceptedResponse(run, toOwnerMessage(userMessage));
+  const span = getTracer().startSpan("db.agent_task_runs.INSERT", {
+    kind: SpanKind.CLIENT,
+    attributes: {
+      "db.system": "postgresql",
+      "db.operation": "INSERT",
+      "db.sql.table": "agent_task_runs",
+    },
   });
+  try {
+    const place = resolveConversationPlace(params.input.place);
+    const idempotencyKey = conversationIdempotencyKey(params.threadId, params.input.requestId);
+    const runId = randomUUID();
+    const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
 
-  if (accepted) return accepted;
-  const existing = await loadAcceptedConversationTask(params.threadId, params.ownerUserId, params.input.requestId);
-  if (existing) return existing;
-  throw new ApiError(409, "Conflict", "Conversation turn is already being accepted");
+    const accepted = await db.transaction(async (tx) => {
+      await requireThreadOwner(tx, params.threadId, params.ownerUserId);
+      const claimed = await claimIdempotency(tx, { key: idempotencyKey, entityType: "agent_conversation_task" });
+      if (!claimed) return null;
+
+      const [activeRun] = await tx.select({ id: agentTaskRuns.id }).from(agentTaskRuns).where(and(
+        eq(agentTaskRuns.threadId, params.threadId),
+        inArray(agentTaskRuns.status, ["QUEUED", "RUNNING", "CANCEL_REQUESTED"]),
+      )).limit(1);
+      if (activeRun) {
+        throw new ApiError(409, "Conflict", "This conversation already has an active Agent run");
+      }
+
+      const [userMessage] = await tx.insert(chatMessages).values({
+        threadId: params.threadId,
+        senderUserId: params.ownerUserId,
+        role: "USER",
+        body: params.input.question,
+        markedSharedByOwner: false,
+        redactedSummary: null,
+      }).returning();
+
+      const [run] = await tx.insert(agentTaskRuns).values({
+        id: runId,
+        operation: "CONVERSATION",
+        status: "QUEUED",
+        createdByUserId: params.ownerUserId,
+        threadId: params.threadId,
+        requestId: params.input.requestId,
+        userMessageId: userMessage.id,
+        expiresAt,
+        ...placeColumns(place),
+      }).returning();
+
+      await tx.update(idempotencyRecords).set({
+        entityId: run.id,
+        resultPayload: { runId: run.id },
+      }).where(eq(idempotencyRecords.idempotencyKey, idempotencyKey));
+      await tx.insert(outboxEvents).values({
+        eventId: randomUUID(),
+        eventType: "AGENT_TASK_QUEUED",
+        payload: { taskId: run.id, operation: run.operation },
+      });
+      await recordAudit({
+        ctx: params.ctx,
+        action: "CHAT_MESSAGE_APPEND",
+        actorUserId: params.ownerUserId,
+        summary: { threadId: params.threadId, messageId: userMessage.id, role: "USER" },
+        tx,
+      });
+      await recordAudit({
+        ctx: params.ctx,
+        action: "AGENT_TASK",
+        actorUserId: params.ownerUserId,
+        summary: { taskId: run.id, operation: run.operation, status: run.status },
+        tx,
+      });
+      return acceptedResponse(run, toOwnerMessage(userMessage));
+    });
+
+    if (accepted) {
+      safeSetAttribute(span, "db.outcome", "success");
+      return accepted;
+    }
+    safeSetAttribute(span, "db.outcome", "duplicate");
+    const existing = await loadAcceptedConversationTask(params.threadId, params.ownerUserId, params.input.requestId);
+    if (existing) return existing;
+    throw new ApiError(409, "Conflict", "Conversation turn is already being accepted");
+  } catch (err) {
+    safeSetAttribute(span, "db.outcome", "failure");
+    recordSpanError(err);
+    throw err;
+  } finally {
+    span.end();
+  }
 }
 
 export async function getAuthorizedAgentRun(runId: string, userId: string): Promise<AgentRunResponse> {
@@ -228,13 +254,33 @@ export async function recoverExpiredAgentTasks(): Promise<RecoveredAgentTask[]> 
 }
 
 export async function claimNextConversationTask(): Promise<AgentTaskRow | null> {
-  const rows = await rawDb.unsafe<Array<{ id: string }>>(
-    CLAIM_CONVERSATION_SQL,
-    [randomUUID(), agentTaskConfig.leaseSeconds],
-  );
-  if (!rows[0]) return null;
-  const [run] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, rows[0].id)).limit(1);
-  return run ?? null;
+  const span = getTracer().startSpan("db.agent_task_runs.SELECT", {
+    kind: SpanKind.CLIENT,
+    attributes: {
+      "db.system": "postgresql",
+      "db.operation": "SELECT",
+      "db.sql.table": "agent_task_runs",
+    },
+  });
+  try {
+    const rows = await rawDb.unsafe<Array<{ id: string }>>(
+      CLAIM_CONVERSATION_SQL,
+      [randomUUID(), agentTaskConfig.leaseSeconds],
+    );
+    if (!rows[0]) {
+      safeSetAttribute(span, "db.outcome", "empty");
+      return null;
+    }
+    const [run] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, rows[0].id)).limit(1);
+    safeSetAttribute(span, "db.outcome", run ? "success" : "failure");
+    return run ?? null;
+  } catch (err) {
+    safeSetAttribute(span, "db.outcome", "failure");
+    recordSpanError(err);
+    throw err;
+  } finally {
+    span.end();
+  }
 }
 
 export async function renewTaskLease(runId: string, leaseToken: string): Promise<boolean> {
@@ -293,64 +339,82 @@ export async function completeConversationTask(params: {
   responseMode: "MODEL" | "SAFE_REFUSAL";
 }): Promise<OwnerConversationMessage> {
   if (!params.run.threadId) throw new Error("Conversation task has no thread");
-  return db.transaction(async (tx) => {
-    const [assistant] = await tx.insert(chatMessages).values({
-      threadId: params.run.threadId!,
-      senderUserId: null,
-      role: "ASSISTANT",
-      body: params.content,
-      markedSharedByOwner: false,
-      redactedSummary: null,
-    }).returning();
-    const [completed] = await tx.update(agentTaskRuns).set({
-      status: "COMPLETED",
-      assistantMessageId: assistant.id,
-      leaseToken: null,
-      leaseExpiresAt: null,
-      finishedAt: new Date(),
-      updatedAt: new Date(),
-      errorCode: null,
-    }).where(and(
-      eq(agentTaskRuns.id, params.run.id),
-      eq(agentTaskRuns.leaseToken, params.leaseToken),
-      eq(agentTaskRuns.status, "RUNNING"),
-    )).returning();
-    if (!completed) throw new LostTaskLeaseError();
-
-    await tx.update(idempotencyRecords).set({
-      entityId: params.run.id,
-      resultPayload: {
-        runId: params.run.id,
-        assistantMessageId: assistant.id,
-        responseMode: params.responseMode,
-      },
-    }).where(eq(idempotencyRecords.idempotencyKey, conversationIdempotencyKey(params.run.threadId!, params.run.requestId)));
-    await tx.insert(outboxEvents).values({
-      eventId: randomUUID(),
-      eventType: "AGENT_TASK_COMPLETED",
-      payload: { taskId: params.run.id, operation: params.run.operation },
-    });
-    await recordAudit({
-      ctx: params.ctx,
-      action: "CHAT_MESSAGE_APPEND",
-      actorUserId: params.run.createdByUserId,
-      summary: {
-        threadId: params.run.threadId!,
-        messageId: assistant.id,
-        role: "ASSISTANT",
-        responseMode: params.responseMode,
-      },
-      tx,
-    });
-    await recordAudit({
-      ctx: params.ctx,
-      action: "AGENT_TASK",
-      actorUserId: params.run.createdByUserId,
-      summary: { taskId: params.run.id, operation: params.run.operation, status: "COMPLETED" },
-      tx,
-    });
-    return toOwnerMessage(assistant);
+  const span = getTracer().startSpan("db.agent_task_runs.UPDATE", {
+    kind: SpanKind.CLIENT,
+    attributes: {
+      "db.system": "postgresql",
+      "db.operation": "UPDATE",
+      "db.sql.table": "agent_task_runs",
+    },
   });
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [assistant] = await tx.insert(chatMessages).values({
+        threadId: params.run.threadId!,
+        senderUserId: null,
+        role: "ASSISTANT",
+        body: params.content,
+        markedSharedByOwner: false,
+        redactedSummary: null,
+      }).returning();
+      const [completed] = await tx.update(agentTaskRuns).set({
+        status: "COMPLETED",
+        assistantMessageId: assistant.id,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+        errorCode: null,
+      }).where(and(
+        eq(agentTaskRuns.id, params.run.id),
+        eq(agentTaskRuns.leaseToken, params.leaseToken),
+        eq(agentTaskRuns.status, "RUNNING"),
+      )).returning();
+      if (!completed) throw new LostTaskLeaseError();
+
+      await tx.update(idempotencyRecords).set({
+        entityId: params.run.id,
+        resultPayload: {
+          runId: params.run.id,
+          assistantMessageId: assistant.id,
+          responseMode: params.responseMode,
+        },
+      }).where(eq(idempotencyRecords.idempotencyKey, conversationIdempotencyKey(params.run.threadId!, params.run.requestId)));
+      await tx.insert(outboxEvents).values({
+        eventId: randomUUID(),
+        eventType: "AGENT_TASK_COMPLETED",
+        payload: { taskId: params.run.id, operation: params.run.operation },
+      });
+      await recordAudit({
+        ctx: params.ctx,
+        action: "CHAT_MESSAGE_APPEND",
+        actorUserId: params.run.createdByUserId,
+        summary: {
+          threadId: params.run.threadId!,
+          messageId: assistant.id,
+          role: "ASSISTANT",
+          responseMode: params.responseMode,
+        },
+        tx,
+      });
+      await recordAudit({
+        ctx: params.ctx,
+        action: "AGENT_TASK",
+        actorUserId: params.run.createdByUserId,
+        summary: { taskId: params.run.id, operation: params.run.operation, status: "COMPLETED" },
+        tx,
+      });
+      return toOwnerMessage(assistant);
+    });
+    safeSetAttribute(span, "db.outcome", "success");
+    return result;
+  } catch (err) {
+    safeSetAttribute(span, "db.outcome", "failure");
+    recordSpanError(err);
+    throw err;
+  } finally {
+    span.end();
+  }
 }
 
 export async function finishCancelledTask(runId: string, leaseToken: string): Promise<boolean> {

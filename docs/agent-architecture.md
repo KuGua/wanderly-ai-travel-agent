@@ -260,6 +260,35 @@ ModelGateway 是唯一模型边界。`gateway-factory.ts` 只构建已完整配�
 
 每次模型调用设置 deadline、max output size、JSON schema、低 temperature 以及 prompt/schema/template version。记录模型名、token/cost、结果和安全 hash 到 agent_runs；默认不保存 raw prompt/completion。
 
+### LLM gateway trace sites
+
+`apps/api/src/providers/llm-gateway.ts` opens a `SpanKind.CLIENT` span on
+each of its three outbound paths (`generateStructuredPlan`,
+`generateConversationReply`, `streamConversationReply`). The span name is
+`llm.openai.parse` for structured calls and `llm.openai.stream` for the
+streaming conversation path. Attributes use the `llm.*` namespace and are
+gated by `apps/api/src/observability/tracing.ts#FORBIDDEN_SPAN_ATTRIBUTE_KEYS`:
+
+| Attribute | Source | Notes |
+| --- | --- | --- |
+| `llm.system` | constant | always `"openai-compatible"` |
+| `llm.provider` | `LLMGatewayOptions.provider` | low-cardinality enum |
+| `llm.model.name` | `LLMGatewayOptions.modelName` | model name (already configured, not free-form) |
+| `llm.model.prompt_version` | `LLMGatewayOptions.promptVersion` | static at deployment |
+| `llm.method` | per-site | `plan.comparison` or `travel.conversation` |
+| `llm.stream` | per-site | bool |
+| `llm.skill.name` | per-site | matches `skillName` in `agent_runs` |
+| `llm.tokens.{prompt,completion,total}` | response usage | low-cardinality integer |
+| `llm.outcome` | per-site | `"success"` or `classifyError(err)` |
+| `llm.error_code` | per-site | bounded enum (TIMEOUT/SCHEMA_PARSE/NETWORK/UPSTREAM_5XX/UPSTREAM_FAILURE) |
+
+The W3C `traceparent` header is forwarded on every outbound SDK call via
+`outboundTraceHeaders(ctx)` so downstream services (and OpenAI-aware
+proxies) can continue the trace. Inbound `traceparent` from the API request
+is installed as the active span in `app.ts#onRequest`, so the LLM span
+becomes a child of the inbound HTTP server span by default; background
+callers that have no active span fall back to `ctx.traceparent`.
+
 ## 9. 可观测性与评估
 
 当前仓库已将集中式 Pino 接入 Fastify，并提供 correlation-aware 安全日志、严格 audit summary whitelist 与仅限进程内的低基数 `/metrics` 文本输出。当前仍未初始化 OpenTelemetry trace exporter，也没有生产 metrics exporter、持久化存储或 scraper 配置；不得把 MVP endpoint 描述为完整生产遥测栈。

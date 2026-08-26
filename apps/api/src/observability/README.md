@@ -152,9 +152,37 @@ The API's `onRequest` hook:
 
 `safeSetAttribute(span, key, value)` throws on any forbidden key.
 `trySetAttribute` returns `false` instead of throwing. Production span sites
-must use these helpers — never `span.setAttribute(...)` directly. PR 2
-introduces the per-site allow-list tables for `db.*` and `llm.*` spans;
-this PR ships the policy mechanism only.
+must use these helpers — never `span.setAttribute(...)` directly.
+
+### Span catalogue
+
+Each span site uses one of the prefixes below; attributes are restricted to
+the keys listed for that prefix. Adding a new key requires updating both the
+allow-list and the `docs/agent-architecture.md` trace map.
+
+| Prefix | Site | Allowed attributes |
+| --- | --- | --- |
+| `http.*` | `app.ts` `onRequest`/`preHandler`/`onResponse` | `http.method`, `http.route`, `http.status_code`, `http.target`, `net.peer.ip`, `app.correlation_id` |
+| `db.*` | `tasks/task-repository.ts` hot-spots | `db.system` (=`"postgresql"`), `db.operation` (`INSERT`/`SELECT`/`UPDATE`), `db.sql.table` (=`"agent_task_runs"`), `db.outcome` (`success`/`failure`/`duplicate`/`empty`) |
+| `llm.*` | `providers/llm-gateway.ts` (3 sites) | `llm.system` (=`"openai-compatible"`), `llm.provider` (∈ openai/gemini/openai-compatible), `llm.model.name`, `llm.model.prompt_version`, `llm.method` (plan.comparison / travel.conversation), `llm.stream` (bool), `llm.skill.name`, `llm.outcome` (`success`/error code), `llm.error_code`, `llm.tokens.{prompt,completion,total}` |
+
+The trace context itself (the W3C `traceparent` value and the active
+`trace_id`/`span_id` pair) is **not** duplicated as a span attribute — it
+already rides on every span by virtue of the SDK. The `app.correlation_id`
+attribute on the `http.*` span is the join key back to Pino logs and audit
+rows.
+
+### Span trace propagation
+
+- HTTP server span → outbound LLM call: `traceparent` header injected on the
+  OpenAI SDK call via `outboundTraceHeaders()` in `llm-gateway.ts`.
+- HTTP server span → durable Worker: persisted in
+  `agent_task_runs.trace_context` JSONB column (see PR 3 for the
+  migration). The Worker reconstructs the span context via
+  `ctxFromRun(run)` in `workers/agent-task-worker.ts`.
+- Worker root span → SSE event: stored in `AgentStreamRelay` and re-applied
+  per event as a `SpanLink` rather than a child (the SSE stream lives
+  across process boundaries where the parent span may have already ended).
 
 ### Tests
 
@@ -162,6 +190,11 @@ this PR ships the policy mechanism only.
   `parseTraceparent` / `formatTraceparent`, ID generators, forbidden-key
   policy, `initTracing` env-driven exporter selection, and active-span
   integration with `recordSpanError`.
+- `npx vitest run tests/llm-gateway-tracing.test.ts` — covers
+  `traceparent` header injection on outbound SDK calls and span attribute
+  policy enforcement on `llm.openai.parse`.
+- `npx vitest run tests/db-span-attributes.test.ts` — covers the forbidden
+  span attribute policy and the attribute set shape for the `db.*` prefix.
 
 ## Agent runs
 
