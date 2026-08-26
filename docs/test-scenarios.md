@@ -159,7 +159,32 @@ memberships overlap only where explicitly configured.
 - Raw message text is absent from the snapshot, shared plan/explanation and all telemetry/audit outputs; it is not default model context for the planning run.
 - Deletion removes message bodies and makes the thread unavailable to Alice; separately confirmed Profile/override facts remain until independently deleted.
 
-Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner turn, repeat version, idempotency, roles, raw owner history, safe recall, provider-failure non-persistence), `apps/api/tests/conversation-gateway.test.ts` (structured model and controlled failure), `apps/api/tests/chat-threads-route.test.ts` and `apps/api/tests/thread-recall-skill.test.ts`.
+Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner turn, repeat version, idempotency, roles, raw owner history and safe recall), `apps/api/tests/conversation-gateway.test.ts` (structured model and controlled failure), `apps/api/tests/chat-threads-route.test.ts` and `apps/api/tests/thread-recall-skill.test.ts`. Add the streaming scenarios below before release.
+
+### TS-H1c — Stream a durable private Agent turn across disconnects
+
+**Stories:** H1, S1, S2
+**Objective:** Verify an authenticated owner receives only safe stream events while a submitted question continues on the server through browser/SSE disconnect, Worker recovery and controlled upstream failure.
+
+**Starting conditions:** Alice owns a thread; the configured model gateway can emit ordered chunks, an unsafe candidate and a controlled failure.
+
+**Steps:**
+
+1. `POST` an authenticated turn command with a fresh `requestId`; verify `202`, a persisted USER message and one `agent_task_runs` row.
+2. Attach an authenticated SSE observer and confirm every displayed segment passed the streaming safety gate; complete the response successfully.
+3. Submit another question, consume at least one event, then close the browser/SSE connection and verify the Worker completes without cancellation.
+4. Submit a third question, issue explicit Stop, and simulate an upstream network/5xx failure on a fourth.
+5. Kill the claiming Worker after it acquires a lease; start/allow another Worker to recover it. Repeat completed and running request IDs concurrently.
+6. Inspect task rows, messages, idempotency records, audit, logs, traces and metric labels.
+
+**Expected outcomes:**
+
+- The command endpoint accepts the existing authenticated conversation request DTO and returns `202`; a separate authenticated `fetch` SSE observer receives live events. No native `EventSource` authorization workaround or WebSocket is required.
+- Event order for a connected observer is `turn.started` → zero or more safe progress/text events → exactly one terminal `turn.completed`, `turn.cancelled`, `turn.stale` or `turn.failed`; no event exposes prompt text, chain-of-thought, raw provider payload, unvalidated token or unapproved data.
+- `COMPLETED` persists exactly one USER and one final-policy-approved ASSISTANT message atomically and is replayable by request ID.
+- Browser/SSE disconnect does not cancel the run. Explicit Stop produces `CANCELLED`; terminal failure preserves the submitted USER message exactly once, persists no partial ASSISTANT body, and exposes only a safe terminal code/status.
+- Concurrent Workers cannot both commit a result: lease expiry/recovery may repeat an external model call, but final persistence is conditional on the current lease token and task state. A concurrent request ID cannot duplicate the USER message or create a second task.
+- Text, prompts, chunks and model payloads are absent from audit summaries, logs, traces and metric labels.
 
 ### TS-H2 — Invite member and enforce field-level sharing
 
@@ -348,7 +373,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
 **Steps:**
 
 1. Attempt cross-user reads/writes of unshared Profile and private conversation threads.
-2. Inspect timeline for profile edit, consent, tool calls, visa, re-plan, approval and sandbox call.
+2. Inspect timeline for profile edit, consent, a completed/stopped/failed chat turn, tool calls, visa, re-plan, approval and sandbox call.
 3. Inspect logs, traces and metrics by correlation ID.
 4. Search telemetry for private conversation text, document numbers, payment data and unapproved Profile values.
 5. Attempt to emit user/trip/plan/booking/correlation/request identifiers and a
@@ -366,6 +391,27 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (owner tur
   free-form labels are rejected before emission.
 - Audit summaries preserve valid finite primitives, `null`, arrays and plain
   nested objects through depth three, and explicitly reject unsafe shapes.
+
+### TS-S1b — Stream only safe planning and replan progress
+
+**Stories:** H3, H5, S1
+**Objective:** Verify planning/replan uses the shared streaming platform without exposing internal reasoning or unverified state.
+
+**Starting conditions:** An authorized trip has an active snapshot; one replan trigger and one consent-revocation trigger are available.
+
+**Steps:**
+
+1. Start planning and capture all stream events through final plan activation.
+2. Trigger replan and verify progress events reference the active run/version while the old plan remains authoritative until replacement is validated.
+3. Revoke consent while a replan is running, then inspect emitted terminal state and persisted plans.
+4. Search client payloads, audit, logs and traces for raw snapshot fields, tool payloads, chain-of-thought and unvalidated plan candidates.
+
+**Expected outcomes:**
+
+- The client receives only documented safe phases and an identifier/version-safe terminal result; it never receives model reasoning, prompt, raw provider payload or unvalidated plan content.
+- A final `COMPLETED` event refers only to an already validated and persisted plan version.
+- Consent revocation or a newer run makes the old stream terminal/stale; it cannot activate, display or overwrite a plan after invalidation.
+- Stream identifiers remain out of metric labels, and no event widens membership or snapshot authorization.
 
 ### TS-S2 — Recover from missing, conflicting and uncertain information
 

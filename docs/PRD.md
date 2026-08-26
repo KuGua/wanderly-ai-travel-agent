@@ -99,6 +99,7 @@ flowchart LR
 4. 系统必须显示每条资料的来源（Profile 或本次对话）和最近修改时间。
 5. 系统不得把任何 Profile 或私有对话字段默认共享给同行者；保存的对话全文不得自动成为长期 Agent memory、共享 snapshot 或模型上下文。模型默认 LLM 上下文仅包含服务端派生的脱敏摘要，以及由 owner 显式标记"共享"的最近若干轮；raw transcript 永远不出 owner 会话。
 6. 删除对话线程须删除其消息正文；仅保留最小、无敏感的审计摘要（线程 id、操作者、时间）。删除 Profile/override 后，未来 Agent run 不得使用对应数据。
+7. Personal Agent 对话、planning 与 replan 均须作为服务端持久任务执行，并支持鉴权流式状态事件。浏览器关闭、刷新、网络断开或 SSE 断开不得取消已接受任务；只有用户显式 Stop 可以请求取消。私有对话文本仅在通过流式安全 gate 后增量显示，且只有最终完整校验成功的 ASSISTANT 内容可持久化。
 
 ### FR-2 共享行程工作台与授权
 
@@ -113,6 +114,7 @@ flowchart LR
 2. 系统必须比较两到三个预设目的地候选；每个候选包含至少一个航班、酒店和地面交通项目，或明确显示缺失项目与原因。
 3. 每个项目必须显示总价/币种（如适用）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。
 4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
+5. Planning/replan 运行期间可实时显示安全阶段状态（例如 snapshot、research、validation、persistence），但不得向客户端发送内部推理、原始 prompt、未验证模型输出、未持久化 provider 结果或未授权 snapshot 数据；最终 plan 仅在验证并持久化后展示。
 
 ### FR-4 签证/入境准备
 
@@ -127,6 +129,7 @@ flowchart LR
 2. 变化必须生成新的工具和授权快照，并使旧方案/确认过期。
 3. 重新编排必须显示旧/新项目、保留/受影响的成员约束、个人待办影响和原因。
 4. 没有可行替代时，系统必须说明阻塞约束并请求成员调整，而不是静默放弃约束。
+5. Replan 的流式阶段事件必须绑定当前 `tripId`、`runId` 与 plan/snapshot version；撤回授权、约束变更或 run 过期后，旧 run 不得继续发布可操作结果。
 
 ### FR-6 确认与预订编排
 
@@ -142,6 +145,7 @@ flowchart LR
 2. 日志、metrics 和 traces 不得包含私聊全文、护照/证件号、支付数据或未授权 Profile 字段。
 3. 指标必须跟踪 Profile reuse、共享授权完成、工具成功/失败、方案完成、visa checklist 状态、重算、确认和 orchestration 结果；`conversationId` 仅在 trace/log 中以关联 id 出现，**不**作为 metric label。
 4. 私有消息正文不得进入日志、metric 标签、trace 属性、共享 snapshot 或未经用户选择的模型上下文；审计 summary 仅记录操作与关联 ID（ownerUserId / conversationId / 关联 tripId / 时间），不包含正文片段。
+5. 流式协议事件不得包含 prompt、模型思维链、未验证 assistant token、原始 provider payload、私有全文或未授权约束。`conversationId`、`tripId`、`runId` 和 request ID 仅可用于连接、日志/trace 关联和服务端状态查询，不得成为 metric label。
 
 ## 6. 重要边界场景
 
@@ -157,6 +161,9 @@ flowchart LR
 | 成员拒绝确认 | 不调用 orchestration；显示谁需要调整和可编辑入口。 |
 | orchestration 回调重复或乱序 | 用请求 ID 幂等处理；最多生成一组参考号。 |
 | 用户删除私有对话线程 | 本人后续不能读取正文；删除不改变已确认的 Profile/override、共享 snapshot 或既有方案，除非用户另行删除这些结构化数据。 |
+| 用户显式停止对话或规划 | 已提交输入保留；服务端记录取消请求并由 Worker 中止上游调用，任务最终为 `CANCELLED`；不保存任何未完成或未经最终安全校验的 ASSISTANT 内容。 |
+| 浏览器/SSE 断连 | 不改变服务端任务状态或取消上游调用；用户回来后从 task 状态和最终持久化结果恢复，运行中的任务仅继续发送之后的易失流式事件。 |
+| provider 流中失败 | 保留输入与最小安全错误码；仅网络/5xx 类短暂失败最多自动重试两次。安全拒绝、schema/policy、授权失效和数据不足不重试，且不得泄露流中半成品。 |
 
 ## 7. 成功指标与发布标准
 
