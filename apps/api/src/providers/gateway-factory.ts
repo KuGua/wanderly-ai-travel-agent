@@ -36,7 +36,7 @@ function gatewayConfiguration(provider: GatewayProvider): GatewayConfiguration |
     return {
       apiKey,
       baseUrl: GEMINI_OPENAI_COMPATIBLE_BASE_URL,
-      modelName: configuredModel || "gemini-3.1-flash-lite",
+      modelName: configuredModel ?? "",
       promptVersion,
       maxRetries,
     };
@@ -45,7 +45,7 @@ function gatewayConfiguration(provider: GatewayProvider): GatewayConfiguration |
   if (provider === "openai") {
     return {
       apiKey,
-      modelName: configuredModel || "gpt-4o-mini",
+      modelName: configuredModel ?? "",
       promptVersion,
       maxRetries,
     };

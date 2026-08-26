@@ -6,7 +6,7 @@ default and the production authentication mechanism.
 
 Local development mode is fail-closed:
 
-- it is rejected when `NODE_ENV=production`;
+- it is rejected unless `NODE_ENV` is `development` or `test`;
 - API startup is rejected unless `HOST` is loopback-only;
 - each protected request is rejected unless its actual socket peer is loopback
   (`trustProxy` is not enabled, so forwarded client headers do not choose it);
@@ -42,8 +42,10 @@ if (!(Test-Path apps/web/.env.local)) { Copy-Item apps/web/.env.example apps/web
 
 The examples already contain the loopback, database, local-auth and browser API
 settings. Each teammate must provide only their own real
-`MODEL_GATEWAY_API_KEY` in `apps/api/.env`. The configured Gemini path uses the
-built-in OpenAI-compatible endpoint and defaults to `gemini-3.1-flash-lite`:
+`MODEL_GATEWAY_API_KEY` and `MODEL_GATEWAY_MODEL` in `apps/api/.env`. This local
+configuration explicitly selects `gemini-3.1-flash-lite` through Gemini's
+built-in OpenAI-compatible endpoint; the runtime defaults neither provider nor
+model:
 
 ```dotenv
 # apps/api/.env
@@ -53,6 +55,7 @@ HOST=127.0.0.1
 LOCAL_DEV_ALLOWED_ORIGINS=http://localhost:3001,http://127.0.0.1:3001
 MODEL_GATEWAY_PROVIDER=gemini
 MODEL_GATEWAY_API_KEY=<teammate's local Google AI Studio key>
+MODEL_GATEWAY_MODEL=gemini-3.1-flash-lite
 
 # apps/web/.env.local
 NEXT_PUBLIC_AUTH_MODE=local-dev

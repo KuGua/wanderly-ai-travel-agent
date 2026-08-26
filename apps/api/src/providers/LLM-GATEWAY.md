@@ -55,8 +55,9 @@ service therefore persists neither USER nor ASSISTANT message for that turn.
 `gateway-factory.ts` supports configured OpenAI, Gemini through its
 OpenAI-compatible endpoint, and explicitly configured OpenAI-compatible
 providers. Every provider reads the same server-side `MODEL_GATEWAY_API_KEY`.
-Gemini defaults to `gemini-3.1-flash-lite`; OpenAI defaults to `gpt-4o-mini`;
-other compatible providers require an explicit URL and model. Tests may inject
+The local example explicitly selects `gemini-3.1-flash-lite`; the runtime
+requires an explicit provider and model rather than selecting either default.
+Other compatible providers additionally require an explicit URL. Tests may inject
 a fake `ModelGateway` or fake SDK client; those fakes are not selectable by the
 production factory.
 

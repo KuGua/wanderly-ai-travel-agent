@@ -177,7 +177,7 @@ describe("LLM gateway", () => {
     else delete process.env.MODEL_GATEWAY_API_KEY;
   });
 
-  it("factory configures Gemini through its OpenAI-compatible endpoint with the stable Lite default", () => {
+  it("factory fails closed when Gemini has no explicit model", () => {
     const previous = {
       provider: process.env.MODEL_GATEWAY_PROVIDER,
       key: process.env.MODEL_GATEWAY_API_KEY,
@@ -187,8 +187,27 @@ describe("LLM gateway", () => {
     process.env.MODEL_GATEWAY_API_KEY = "test-gemini-key";
     delete process.env.MODEL_GATEWAY_MODEL;
 
+    expect(() => createModelGateway()).toThrow("Model gateway gemini is not fully configured");
+
+    if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
+    else delete process.env.MODEL_GATEWAY_PROVIDER;
+    if (previous.key !== undefined) process.env.MODEL_GATEWAY_API_KEY = previous.key;
+    else delete process.env.MODEL_GATEWAY_API_KEY;
+    if (previous.model !== undefined) process.env.MODEL_GATEWAY_MODEL = previous.model;
+    else delete process.env.MODEL_GATEWAY_MODEL;
+  });
+
+  it("factory uses an explicitly configured Gemini model", () => {
+    const previous = {
+      provider: process.env.MODEL_GATEWAY_PROVIDER,
+      key: process.env.MODEL_GATEWAY_API_KEY,
+      model: process.env.MODEL_GATEWAY_MODEL,
+    };
+    process.env.MODEL_GATEWAY_PROVIDER = "gemini";
+    process.env.MODEL_GATEWAY_API_KEY = "test-gemini-key";
+    process.env.MODEL_GATEWAY_MODEL = "gemini-3.1-flash-lite";
+
     const gateway = createModelGateway();
-    expect(gateway).toBeInstanceOf(LLMGateway);
     expect((gateway as unknown as { options: { modelName: string } }).options.modelName).toBe("gemini-3.1-flash-lite");
 
     if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
