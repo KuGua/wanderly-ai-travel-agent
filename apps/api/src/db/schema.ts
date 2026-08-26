@@ -37,8 +37,11 @@ export const auditActionEnum = pgEnum("audit_action", [
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
-  externalId: varchar("external_id", { length: 128 }).unique().notNull(), // Verified Cognito subject
+  externalId: varchar("external_id", { length: 128 }).unique().notNull(), // Verified Cognito subject or "custom:<username>"
   displayName: varchar("display_name", { length: 128 }).notNull(),
+  username: varchar("username", { length: 32 }).unique(),
+  email: varchar("email", { length: 256 }).unique(),
+  passwordHash: varchar("password_hash", { length: 256 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

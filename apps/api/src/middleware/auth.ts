@@ -4,6 +4,7 @@ import type { FastifyRequest } from "fastify";
 
 import { db } from "../db/database.js";
 import { users } from "../db/schema.js";
+import { verifyJwt } from "../utils/jwt.js";
 import { ApiError } from "./error-handler.js";
 import {
   assertAuthModeEnvironment,
@@ -73,11 +74,16 @@ export function createAuthMiddleware(
         throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
       }
 
-      try {
-        identity = await verifyAccessToken(match[1]);
-      } catch (error) {
-        if (error instanceof ApiError && error.statusCode === 503) throw error;
-        throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+      const customPayload = verifyJwt(match[1]);
+      if (customPayload) {
+        identity = { subject: customPayload.sub, displayName: customPayload.username };
+      } else {
+        try {
+          identity = await verifyAccessToken(match[1]);
+        } catch (error) {
+          if (error instanceof ApiError && error.statusCode === 503) throw error;
+          throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+        }
       }
     }
 

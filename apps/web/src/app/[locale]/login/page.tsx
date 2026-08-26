@@ -1,0 +1,123 @@
+"use client";
+
+import { ArrowLeft, LoaderCircle, LogIn } from "lucide-react";
+import { useTranslations } from "next-intl";
+import { useState, type FormEvent } from "react";
+
+import { Link, useRouter } from "@/i18n/navigation";
+import { useAuth } from "@/lib/auth/auth-provider";
+
+export default function LoginPage() {
+  const t = useTranslations("login");
+  const tCommon = useTranslations("common");
+  const router = useRouter();
+  const auth = useAuth();
+
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      const success = await auth.signIn(identifier, password);
+      if (success) {
+        router.push("/home");
+      } else {
+        setError(t("failed"));
+      }
+    } catch {
+      setError(t("failed"));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-[calc(100dvh-4rem)] items-center justify-center bg-background px-4 landscape:min-h-screen">
+      <div className="w-full max-w-sm">
+        <Link href="/home" className="mb-8 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <ArrowLeft className="size-4" />
+          {t("backToExplore")}
+        </Link>
+
+        <div className="rounded-[20px] border border-border bg-card p-6 shadow-lg">
+          <div className="mb-6 text-center">
+            <div className="mx-auto mb-3 grid size-12 place-items-center rounded-2xl bg-sidebar text-white">
+              <LogIn className="size-5" />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight text-foreground">{t("heading")}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{t("body")}</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="identifier" className="mb-1.5 block text-sm font-medium text-foreground">
+                {t("identifier")}
+              </label>
+              <input
+                id="identifier"
+                type="text"
+                required
+                autoComplete="username"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring/30"
+                placeholder={t("identifierPlaceholder")}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="mb-1.5 block text-sm font-medium text-foreground">
+                {t("password")}
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring/30"
+              />
+            </div>
+
+            {error ? (
+              <p className="text-xs text-destructive">{error}</p>
+            ) : null}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-sidebar font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 disabled:opacity-60"
+            >
+              {loading ? <LoaderCircle className="size-4 animate-spin" /> : null}
+              {t("submit")}
+            </button>
+          </form>
+
+          <div className="mt-5 space-y-2 text-center text-sm">
+            <div>
+              <Link href="/register" className="font-medium text-primary transition-colors hover:text-primary/80">
+                {t("createAccount")}
+              </Link>
+            </div>
+            <div>
+              <span className="cursor-default text-muted-foreground underline underline-offset-2">
+                {t("forgotPassword")}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          {tCommon("brandTagline")}
+        </p>
+      </div>
+    </div>
+  );
+}

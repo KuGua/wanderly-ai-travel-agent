@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, MapPin, RotateCw, Sparkles, Trash2, X } from "lucide-react";
+import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, LogIn, MapPin, RotateCw, Sparkles, Trash2, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
@@ -14,6 +14,8 @@ import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { solidifyGlobeStyle } from "./map-surface-style";
 import { TravelAgentChat } from "./travel-agent-chat";
 import { useOptionalTravelApi } from "@/lib/query/provider";
+import { useAuth } from "@/lib/auth/auth-provider";
+import { Link } from "@/i18n/navigation";
 import type { LocationReferenceResponse } from "@/lib/api/contracts";
 
 export type ExploreDestination = {
@@ -739,6 +741,12 @@ export function ExploreMapPage() {
           <button type="button" onClick={() => setHelpOpen((open) => !open)} aria-label={t("helpAriaLabel")} aria-expanded={helpOpen} title={t("helpTitle")} className="grid size-12 place-items-center rounded-[16px] bg-sidebar/95 text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
             <HelpCircle aria-hidden="true" className="size-5" />
           </button>
+          <Link href="/login" aria-label={t("loginAriaLabel")} title={t("loginTitle")} className="grid h-12 w-24 place-items-center rounded-[16px] bg-sidebar/95 text-sm font-bold text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
+            <span className="flex items-center gap-1.5">
+              <LogIn aria-hidden="true" className="size-4" />
+              {t("loginButton")}
+            </span>
+          </Link>
         </div>
       </header>
 

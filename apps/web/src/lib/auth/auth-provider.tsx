@@ -8,6 +8,7 @@ import {
   type AuthenticatedBrowserUser,
   type BrowserAuthService,
 } from "./cognito-browser-auth";
+import { createCustomBrowserAuth } from "./custom-browser-auth";
 
 type AuthStatus = "CHECKING" | "LOCAL_DEV" | "LOCAL_DEV_INVALID" | "UNCONFIGURED" | "SIGNED_OUT" | "SIGNED_IN";
 type AuthError = "SIGN_IN_FAILED" | "CHALLENGE_REQUIRED" | "SIGN_OUT_FAILED" | null;
@@ -29,7 +30,7 @@ export function AuthProvider({ children, service: suppliedService }: {
   children: ReactNode;
   service?: BrowserAuthService;
 }) {
-  const [service] = useState(() => suppliedService ?? createCognitoBrowserAuth());
+  const [service] = useState(() => suppliedService ?? resolveAuthService());
   const [status, setStatus] = useState<AuthStatus>(
     service.localDevelopment ? "LOCAL_DEV" : service.localDevelopmentConfigurationInvalid ? "LOCAL_DEV_INVALID" : service.configured ? "CHECKING" : "UNCONFIGURED",
   );
@@ -106,4 +107,10 @@ export function useAuth() {
   const auth = useContext(AuthContext);
   if (!auth) throw new Error("useAuth must be used within AuthProvider");
   return auth;
+}
+
+function resolveAuthService(): BrowserAuthService {
+  const mode = process.env.NEXT_PUBLIC_AUTH_MODE?.trim() || "cognito";
+  if (mode === "custom") return createCustomBrowserAuth();
+  return createCognitoBrowserAuth();
 }
