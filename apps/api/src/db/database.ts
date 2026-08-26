@@ -8,4 +8,8 @@ const connectionString = process.env.DATABASE_URL ??
 const queryClient = postgres(connectionString);
 
 export const db = drizzle(queryClient, { schema });
+export const rawDb = queryClient;
+export function createDedicatedDatabaseClient() {
+  return postgres(connectionString, { max: 1 });
+}
 export type DB = typeof db;

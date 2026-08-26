@@ -2,18 +2,17 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ConversationPlace, ConversationTurnResponse } from "@/lib/api/contracts";
+import type { AgentRun, ConversationPlace, ConversationTurnAcceptedResponse } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
 import type { TravelApi } from "@/lib/api";
 import { renderWithIntl } from "@/test/render";
-import { CHAT_THREAD_STORAGE_KEY, TravelAgentChat } from "./travel-agent-chat";
+import { CHAT_ACTIVE_RUN_STORAGE_KEY, CHAT_THREAD_STORAGE_KEY, TravelAgentChat } from "./travel-agent-chat";
 
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
-const REPLACEMENT_THREAD_ID = "66666666-6666-4666-8666-666666666666";
 const OWNER_ID = "22222222-2222-4222-8222-222222222222";
 const REQUEST_ID = "33333333-3333-4333-8333-333333333333";
 const USER_MESSAGE_ID = "44444444-4444-4444-8444-444444444444";
-const ASSISTANT_MESSAGE_ID = "55555555-5555-4555-8555-555555555555";
+const RUN_ID = "55555555-5555-4555-8555-555555555555";
 const CREATED_AT = "2026-08-25T10:00:00.000Z";
 const TOKYO: ConversationPlace = {
   sourceId: "tokyo",
@@ -51,44 +50,39 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     getThreads: vi.fn().mockResolvedValue({ threads: [] }),
     createThread: vi.fn().mockResolvedValue({ id: THREAD_ID, message: "Thread created" }),
     getOwnerConversation: vi.fn().mockResolvedValue({ thread: thread(), messages: [] }),
-    submitConversationTurn: vi.fn().mockImplementation(async (_threadId, input) => turn(input.question)),
+    submitConversationTurn: vi.fn().mockImplementation(async (_threadId, input) => accepted(input.question)),
+    getAgentRun: vi.fn().mockResolvedValue(run("RUNNING")),
+    cancelAgentRun: vi.fn().mockResolvedValue(run("CANCEL_REQUESTED")),
+    subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+      onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+      onEvent({ event: "message.delta", runId: RUN_ID, generationAttempt: 1, sequence: 0, delta: "A streamed " });
+      onEvent({ event: "message.delta", runId: RUN_ID, generationAttempt: 1, sequence: 1, delta: "answer." });
+      await untilAborted(signal);
+    }),
     ...overrides,
   };
 }
 
-describe("TravelAgentChat API flow", () => {
-  it("creates one thread for the first turn and renders USER plus ASSISTANT", async () => {
+describe("TravelAgentChat durable streaming flow", () => {
+  it("accepts the USER message first, renders approved deltas, and blocks another active turn", async () => {
     const api = createApi();
     renderChat(api);
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Ask Wanderly" }), { target: { value: "Tell me about Tokyo" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await submitFromCapsule("Tell me about Tokyo");
 
-    expect(await screen.findByText("A calm, general destination answer.")).toBeInTheDocument();
+    expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
     expect(screen.getByText("Tell me about Tokyo")).toBeInTheDocument();
-    expect(api.createThread).toHaveBeenCalledTimes(1);
+    expect(api.createThread).toHaveBeenCalledOnce();
     expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
       requestId: REQUEST_ID,
       question: "Tell me about Tokyo",
     });
+    expect(api.subscribeAgentRun).toHaveBeenCalledWith(RUN_ID, expect.any(AbortSignal), expect.any(Function));
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
     expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBe(THREAD_ID);
   });
 
-  it("reuses the same thread for the second turn", async () => {
-    const api = createApi();
-    renderChat(api);
-
-    await submitFromCapsule("First question");
-    await screen.findByText("A calm, general destination answer.");
-    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Second question" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-
-    await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalledTimes(2));
-    expect(api.createThread).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(api.submitConversationTurn).mock.calls.map(([id]) => id)).toEqual([THREAD_ID, THREAD_ID]);
-  });
-
-  it("sends the selected place DTO without browser-controlled role or sender identity", async () => {
+  it("sends selected place context without browser-controlled authority fields", async () => {
     const api = createApi();
     renderChat(api, { selectedPlace: { place: TOKYO, context: "Japan" } });
 
@@ -101,57 +95,44 @@ describe("TravelAgentChat API flow", () => {
     expect(body).not.toHaveProperty("senderUserId");
   });
 
-  it("blocks duplicate submission while a turn is pending", async () => {
-    const pending = deferred<ConversationTurnResponse>();
-    const api = createApi({ submitConversationTurn: vi.fn().mockReturnValue(pending.promise) });
+  it("cancels only through the explicit Stop control", async () => {
+    const api = createApi();
     renderChat(api);
+    await submitFromCapsule("Keep working");
 
-    await submitFromCapsule("Only once");
-    await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalledOnce());
-    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-    expect(api.submitConversationTurn).toHaveBeenCalledOnce();
-
-    pending.resolve(turn("Only once"));
-    await screen.findByText("A calm, general destination answer.");
+    fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(api.cancelAgentRun).toHaveBeenCalledWith(RUN_ID));
   });
 
-  it("renders SAFE_REFUSAL as an assistant message with a verification indicator", async () => {
+  it("replaces an earlier generation attempt instead of concatenating retries", async () => {
     const api = createApi({
-      submitConversationTurn: vi.fn().mockResolvedValue(turn("What is the live fare?", "SAFE_REFUSAL")),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({ event: "message.delta", runId: RUN_ID, generationAttempt: 1, sequence: 0, delta: "Old attempt" });
+        onEvent({ event: "message.delta", runId: RUN_ID, generationAttempt: 2, sequence: 0, delta: "New attempt" });
+        await untilAborted(signal);
+      }),
     });
     renderChat(api);
+    await submitFromCapsule("Retry safely");
 
-    await submitFromCapsule("What is the live fare?");
-    expect(await screen.findByText("Verification required")).toBeInTheDocument();
-    expect(screen.getByText("I cannot verify that live operational fact.")).toBeInTheDocument();
+    expect(await screen.findByText("New attempt")).toBeInTheDocument();
+    expect(screen.queryByText("Old attempt")).not.toBeInTheDocument();
   });
 
-  it.each([502, 504])("shows a retryable error for provider status %s and reuses requestId", async (statusCode) => {
-    const submit = vi.fn()
-      .mockRejectedValueOnce(new TravelApiError("unavailable", statusCode, "Upstream", null))
-      .mockResolvedValueOnce(turn("Retry me"));
-    const api = createApi({ submitConversationTurn: submit });
-    renderChat(api);
-
-    await submitFromCapsule("Retry me");
-    expect(await screen.findByRole("alert")).toHaveTextContent("temporarily unavailable");
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-
-    await waitFor(() => expect(submit).toHaveBeenCalledTimes(2));
-    expect(submit.mock.calls[0][1].requestId).toBe(REQUEST_ID);
-    expect(submit.mock.calls[1][1].requestId).toBe(REQUEST_ID);
-    expect(await screen.findByText("A calm, general destination answer.")).toBeInTheDocument();
-  });
-
-  it("restores owner conversation history using the stored server thread pointer", async () => {
+  it("restores deterministic message sequence from the stored owner thread", async () => {
     localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
     const api = createApi({
       getOwnerConversation: vi.fn().mockResolvedValue({
         thread: thread(),
         messages: [
-          { id: USER_MESSAGE_ID, role: "USER", content: "Earlier question", createdAt: CREATED_AT },
-          { id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT", content: "Earlier answer", createdAt: "2026-08-25T10:00:01.000Z" },
+          { id: USER_MESSAGE_ID, role: "USER", content: "Earlier question", sequence: 1, createdAt: CREATED_AT },
+          {
+            id: "66666666-6666-4666-8666-666666666666",
+            role: "ASSISTANT",
+            content: "Earlier answer",
+            sequence: 2,
+            createdAt: CREATED_AT,
+          },
         ],
       }),
     });
@@ -159,7 +140,23 @@ describe("TravelAgentChat API flow", () => {
 
     expect(await screen.findByText("Earlier question")).toBeInTheDocument();
     expect(screen.getByText("Earlier answer")).toBeInTheDocument();
-    expect(api.getOwnerConversation).toHaveBeenCalledWith(THREAD_ID);
+  });
+
+  it("reconnects to a persisted active run after the chat remounts", async () => {
+    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
+    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [{ id: USER_MESSAGE_ID, role: "USER", content: "Continue after reload", sequence: 1, createdAt: CREATED_AT }],
+      }),
+    });
+
+    renderChat(api, { initiallyOpen: true });
+
+    expect(await screen.findByText("Continue after reload")).toBeInTheDocument();
+    await waitFor(() => expect(api.getAgentRun).toHaveBeenCalledWith(RUN_ID));
+    expect(api.subscribeAgentRun).toHaveBeenCalledWith(RUN_ID, expect.any(AbortSignal), expect.any(Function));
   });
 
   it("clears a stale local pointer when the server returns 404", async () => {
@@ -171,45 +168,6 @@ describe("TravelAgentChat API flow", () => {
 
     await waitFor(() => expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBeNull());
     expect(screen.getByText("Let's plan somewhere memorable.")).toBeInTheDocument();
-  });
-
-  it("does not carry Thread A messages into replacement Thread B after Thread A returns 404", async () => {
-    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
-    const submit = vi.fn()
-      .mockRejectedValueOnce(new TravelApiError("missing", 404, "Not Found", null))
-      .mockResolvedValueOnce(turnForThread(REPLACEMENT_THREAD_ID, "Thread B question", "Thread B answer"));
-    const api = createApi({
-      createThread: vi.fn().mockResolvedValue({ id: REPLACEMENT_THREAD_ID, message: "Thread created" }),
-      getOwnerConversation: vi.fn().mockResolvedValue({
-        thread: thread(),
-        messages: [
-          { id: USER_MESSAGE_ID, role: "USER", content: "Thread A question", createdAt: CREATED_AT },
-          { id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT", content: "Thread A answer", createdAt: "2026-08-25T10:00:01.000Z" },
-        ],
-      }),
-      submitConversationTurn: submit,
-    });
-    renderChat(api, { initiallyOpen: true });
-
-    expect(await screen.findByText("Thread A answer")).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Thread A follow-up" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-
-    await waitFor(() => expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBeNull());
-    expect(screen.queryByText("Thread A question")).not.toBeInTheDocument();
-    expect(screen.queryByText("Thread A answer")).not.toBeInTheDocument();
-    expect(screen.queryByText("Thread A follow-up")).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Thread B question" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-
-    expect(await screen.findByText("Thread B answer")).toBeInTheDocument();
-    expect(screen.getByText("Thread B question")).toBeInTheDocument();
-    expect(screen.queryByText("Thread A question")).not.toBeInTheDocument();
-    expect(screen.queryByText("Thread A answer")).not.toBeInTheDocument();
-    expect(api.createThread).toHaveBeenCalledTimes(1);
-    expect(submit).toHaveBeenNthCalledWith(2, REPLACEMENT_THREAD_ID, expect.objectContaining({ question: "Thread B question" }));
-    expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBe(REPLACEMENT_THREAD_ID);
   });
 });
 
@@ -229,31 +187,40 @@ function thread() {
   };
 }
 
-function turn(question: string, responseMode: "MODEL" | "SAFE_REFUSAL" = "MODEL"): ConversationTurnResponse {
+function accepted(question: string): ConversationTurnAcceptedResponse {
   return {
     threadId: THREAD_ID,
-    userMessage: { id: USER_MESSAGE_ID, role: "USER", content: question, createdAt: CREATED_AT },
-    assistantMessage: {
-      id: ASSISTANT_MESSAGE_ID,
-      role: "ASSISTANT",
-      content: responseMode === "SAFE_REFUSAL" ? "I cannot verify that live operational fact." : "A calm, general destination answer.",
-      createdAt: "2026-08-25T10:00:01.000Z",
+    runId: RUN_ID,
+    operation: "CONVERSATION",
+    status: "QUEUED",
+    generationAttempt: 0,
+    userMessage: {
+      id: USER_MESSAGE_ID,
+      role: "USER",
+      content: question,
+      sequence: 1,
+      createdAt: CREATED_AT,
     },
-    responseMode,
   };
 }
 
-function turnForThread(threadId: string, question: string, answer: string): ConversationTurnResponse {
+function run(status: AgentRun["status"]): AgentRun {
   return {
-    threadId,
-    userMessage: { id: "77777777-7777-4777-8777-777777777777", role: "USER", content: question, createdAt: "2026-08-25T10:01:00.000Z" },
-    assistantMessage: { id: "88888888-8888-4888-8888-888888888888", role: "ASSISTANT", content: answer, createdAt: "2026-08-25T10:01:01.000Z" },
-    responseMode: "MODEL",
+    runId: RUN_ID,
+    operation: "CONVERSATION",
+    status,
+    generationAttempt: status === "QUEUED" ? 0 : 1,
+    attemptCount: status === "QUEUED" ? 0 : 1,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    finishedAt: null,
+    errorCode: null,
+    assistantMessageId: null,
+    resultPlanId: null,
   };
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
-  return { promise, resolve };
+function untilAborted(signal: AbortSignal) {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
 }

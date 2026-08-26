@@ -11,6 +11,37 @@ beforeEach(() => {
 });
 
 describe("conversational ModelGateway", () => {
+  it("streams OpenAI-compatible deltas in order and records only safe telemetry", async () => {
+    const create = vi.fn().mockResolvedValue((async function* () {
+      yield { choices: [{ delta: { content: "A bounded " } }] };
+      yield {
+        choices: [{ delta: { content: "streamed answer." } }],
+        usage: { prompt: 10, completion: 4, total: 14 },
+      };
+    })());
+    const gateway = buildGateway({ chat: { completions: { create } } });
+    const deltas: string[] = [];
+
+    await expect(gateway.streamConversationReply!({
+      question: "Tell me about Tokyo",
+      history: [],
+      onDelta: async (delta) => { deltas.push(delta); },
+    })).resolves.toEqual({ content: "A bounded streamed answer.", responseMode: "MODEL" });
+
+    expect(deltas).toEqual(["A bounded ", "streamed answer."]);
+    expect(create.mock.calls[0][0]).toMatchObject({
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+    expect(recordAgentRun).toHaveBeenCalledWith(expect.objectContaining({
+      skillName: "travel.conversation",
+      status: "SUCCESS",
+      tokens: { prompt: 10, completion: 4, total: 14 },
+    }));
+    expect(JSON.stringify(recordAgentRun.mock.calls)).not.toContain("Tell me about Tokyo");
+    expect(JSON.stringify(recordAgentRun.mock.calls)).not.toContain("streamed answer");
+  });
+
   it("validates and returns a structured real-model reply", async () => {
     const parse = vi.fn().mockResolvedValue({
       choices: [{ message: {

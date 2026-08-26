@@ -1,7 +1,9 @@
 import { ApiClient, type GetAccessToken } from "./client";
 import {
   conversationTurnRequestSchema,
-  conversationTurnResponseSchema,
+  conversationTurnAcceptedResponseSchema,
+  agentRunResponseSchema,
+  agentStreamEventSchema,
   createThreadInputSchema,
   createThreadResponseSchema,
   ownerConversationResponseSchema,
@@ -71,8 +73,44 @@ export class HttpTravelApi implements TravelApi {
     const body = conversationTurnRequestSchema.parse(input);
     return this.client.request(
       `/threads/${encodeURIComponent(threadId)}/turns`,
-      conversationTurnResponseSchema,
+      conversationTurnAcceptedResponseSchema,
       { method: "POST", body: JSON.stringify(body) },
     );
   }
+
+  getAgentRun(runId: string) {
+    return this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId),
+      agentRunResponseSchema,
+    );
+  }
+
+  cancelAgentRun(runId: string) {
+    return this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/cancel",
+      agentRunResponseSchema,
+      { method: "POST" },
+    );
+  }
+
+  subscribeAgentRun(
+    runId: string,
+    signal: AbortSignal,
+    onEvent: (event: import("./contracts").AgentStreamEvent) => void,
+  ) {
+    return this.client.stream(
+      "/agent-runs/" + encodeURIComponent(runId) + "/events",
+      signal,
+      (eventName, data) => {
+        const parsed = agentStreamEventSchema.safeParse({ ...asRecord(data), event: eventName });
+        if (parsed.success) onEvent(parsed.data);
+      },
+    );
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }

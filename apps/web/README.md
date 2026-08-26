@@ -7,10 +7,10 @@ fixtures.
 
 ## Routes
 
-- `/` redirects directly to `/home`.
-- `/home` is the interactive Explore globe.
-- `/projects` is My program and displays the confirmed Trip List fields only.
-- `/profile` is Travel preference and retains Profile GET/PUT editing.
+- `/` is locale-detected by next-intl and redirects to the locale-aware Explore globe.
+- `/en/home` and `/zh/home` are the interactive Explore globe routes.
+- `/en/projects` and `/zh/projects` are My program and display the confirmed Trip List fields only.
+- `/en/profile` and `/zh/profile` are Travel preference and retain Profile GET/PUT editing.
 
 There is no seeded-user selector. Production identity comes from the account
 control's Cognito User Pool sign-in using a registered email address or phone
@@ -94,7 +94,21 @@ npm install
 npm run dev -- --port 3001
 ```
 
-Open `http://localhost:3001`; it redirects to the globe.
+Open `http://localhost:3001`; next-intl redirects it to the locale-aware globe.
+
+Durable Conversation development also requires the API and its independent
+Worker in separate terminals:
+
+```bash
+npm --prefix apps/api run db:migrate
+npm --prefix apps/api run dev
+npm --prefix apps/api run worker:dev
+npm --prefix apps/web run dev -- --port 3001
+```
+
+The server-only model settings are `MODEL_GATEWAY_PROVIDER`, `GEMINI_MODEL`,
+and `GEMINI_API_KEY`; never add their secret values to `.env.local` or browser
+configuration.
 
 ## Validation
 
@@ -109,8 +123,11 @@ npm run build
 
 Trip cards contain only fields supported by `GET /api/v1/trips`. The Trip
 detail route is an explicit placeholder. Destination suggestions are local UI
-fixtures, not live travel claims. Agent chat, arbitrary-place enrichment,
-consent, planning, visa/readiness, replan, confirmation, booking, Profile
-creation/deletion and advanced Cognito challenges such as MFA remain separate slices.
+fixtures, not live travel claims. Owner-only Agent chat uses server-owned
+Conversation threads and durable run recovery; streaming text is transient and
+the final assistant response is recovered from the server. Arbitrary-place
+enrichment, consent, planning, visa/readiness, replan, confirmation, booking,
+Profile creation/deletion and advanced Cognito challenges such as MFA remain
+separate slices.
 `PUT /profiles/me` cannot create a missing Profile or clear nullable values
 under the current backend contract.

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type {
   ConversationTurnRequest,
-  ConversationTurnResponse,
+  ConversationTurnAcceptedResponse,
   CreateThreadInput,
   OwnerConversationResponse,
   UpdateProfileInput,
@@ -67,13 +67,35 @@ export function useSubmitConversationTurn() {
   return useMutation({
     mutationFn: ({ threadId, input }: { threadId: string; input: ConversationTurnRequest }) =>
       api.submitConversationTurn(threadId, input),
-    onSuccess: (turn: ConversationTurnResponse) => {
+    onSuccess: (turn: ConversationTurnAcceptedResponse) => {
       queryClient.setQueryData<OwnerConversationResponse>(
         threadKeys.conversation(turn.threadId),
         (current) => current
-          ? { ...current, messages: mergeConversationMessages(current.messages, [turn.userMessage, turn.assistantMessage]) }
+          ? { ...current, messages: mergeConversationMessages(current.messages, [turn.userMessage]) }
           : current,
       );
+    },
+  });
+}
+
+export function useAgentRun(runId: string | null) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: ["agent-runs", runId ?? "none"],
+    queryFn: () => api.getAgentRun(runId!),
+    enabled: Boolean(runId),
+    refetchInterval: 1_500,
+    retry: false,
+  });
+}
+
+export function useCancelAgentRun() {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (runId: string) => api.cancelAgentRun(runId),
+    onSuccess: (run) => {
+      queryClient.setQueryData(["agent-runs", run.runId], run);
     },
   });
 }
@@ -84,5 +106,5 @@ function mergeConversationMessages(
 ) {
   const messages = new Map(current.map((message) => [message.id, message]));
   incoming.forEach((message) => messages.set(message.id, message));
-  return [...messages.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return [...messages.values()].sort((a, b) => a.sequence - b.sequence);
 }

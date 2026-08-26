@@ -58,6 +58,7 @@ export function listSkills(): Skill<unknown, unknown>[] {
 
 export interface SkillInvocationOptions {
   expectedVersion?: string;
+  signal?: AbortSignal;
 }
 
 export async function invokeSkill<I, O>(
@@ -93,6 +94,9 @@ export async function invokeSkill<I, O>(
   }
 
   const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abortFromCaller();
+  else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
   const start = Date.now();
 
   let output: O;
@@ -110,12 +114,15 @@ export async function invokeSkill<I, O>(
     ]);
   } catch (err) {
     if (timer) clearTimeout(timer);
+    options.signal?.removeEventListener("abort", abortFromCaller);
     if ((err as { name?: string }).name === "AbortError") {
+      if (options.signal?.aborted) throw err;
       throw new SkillError("TIMEOUT", `Skill ${name} timed out after ${skill.timeoutMs}ms`);
     }
     throw err;
   }
   if (timer) clearTimeout(timer);
+  options.signal?.removeEventListener("abort", abortFromCaller);
 
   let parsed: O;
   try {

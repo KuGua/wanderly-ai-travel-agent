@@ -5,13 +5,22 @@ import { useTranslations } from "next-intl";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { ConversationMessage, ConversationPlace, ConversationTurnRequest } from "@/lib/api/contracts";
+import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
-import { useCreateThread, useOwnerConversation, useSubmitConversationTurn } from "@/lib/query/hooks";
+import { useAgentRun, useCancelAgentRun, useCreateThread, useOwnerConversation, useSubmitConversationTurn, useThreads } from "@/lib/query/hooks";
+import { useTravelApi } from "@/lib/query/provider";
 
 export const CHAT_THREAD_STORAGE_KEY = "wanderly.privateChatThreadId.v1";
+export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
 
 type PendingTurn = ConversationTurnRequest;
+type StreamState = {
+  attempt: number;
+  nextSequence: number;
+  pending: Record<number, string>;
+  text: string;
+  phase: string | null;
+};
 
 type TravelAgentChatProps = {
   open: boolean;
@@ -24,24 +33,37 @@ export function TravelAgentChat({ open, onOpen, onDismiss, selectedPlace }: Trav
   const t = useTranslations("explore.chat");
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const [threadId, setThreadId] = useState<string | null>(readStoredThreadId);
+  // Browser storage is deliberately restored after the first client paint.  The
+  // server cannot see it, so reading it during useState initialization makes
+  // the first client render differ from SSR when an active run is persisted.
+  const [threadId, setThreadId] = useState<string | null>(null);
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([]);
   const [refusalMessageIds, setRefusalMessageIds] = useState<Set<string>>(new Set());
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
   const [requestError, setRequestError] = useState<unknown>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
   const panelInputRef = useRef<HTMLInputElement>(null);
 
+  const api = useTravelApi();
   const conversation = useOwnerConversation(threadId);
+  const threads = useThreads();
+  const agentRun = useAgentRun(activeRunId);
+  const refetchAgentRun = agentRun.refetch;
+  const cancelRun = useCancelAgentRun();
   const createThread = useCreateThread();
   const submitTurn = useSubmitConversationTurn();
-  const isSending = createThread.isPending || submitTurn.isPending;
+  const isSending = createThread.isPending || submitTurn.isPending || Boolean(activeRunId);
 
   const resetThreadSession = useCallback(() => {
     clearStoredThreadId();
+    clearStoredActiveRunId();
     setThreadId(null);
     setSessionMessages([]);
     setRefusalMessageIds(new Set());
     setPendingTurn(null);
+    setActiveRunId(null);
+    setStreamState(emptyStreamState());
     setRequestError(null);
   }, []);
 
@@ -50,11 +72,77 @@ export function TravelAgentChat({ open, onOpen, onDismiss, selectedPlace }: Trav
   }, [open]);
 
   useEffect(() => {
+    const storedThreadId = readStoredThreadId();
+    const storedActiveRunId = readStoredActiveRunId();
+    const restorePointers = window.setTimeout(() => {
+      if (storedThreadId) setThreadId(storedThreadId);
+      if (storedActiveRunId) setActiveRunId(storedActiveRunId);
+    }, 0);
+    return () => window.clearTimeout(restorePointers);
+  }, []);
+
+  useEffect(() => {
+    if (threadId || !threads.data?.threads[0]) return;
+    const recovered = threads.data.threads[0].id;
+    const restoreLatestThread = window.setTimeout(() => {
+      storeThreadId(recovered);
+      setThreadId(recovered);
+    }, 0);
+    return () => window.clearTimeout(restoreLatestThread);
+  }, [threadId, threads.data]);
+
+  useEffect(() => {
     if (conversation.error instanceof TravelApiError && conversation.error.statusCode === 404) {
       const clearPointer = window.setTimeout(resetThreadSession, 0);
       return () => window.clearTimeout(clearPointer);
     }
   }, [conversation.error, resetThreadSession]);
+
+  useEffect(() => {
+    if (!activeRunId) return;
+    const controller = new AbortController();
+    void api.subscribeAgentRun(activeRunId, controller.signal, (event) => {
+      setStreamState((current) => applyStreamEvent(current, event));
+      if (
+        event.event === "turn.completed"
+        || event.event === "turn.cancelled"
+        || event.event === "turn.failed"
+        || event.event === "turn.stale"
+      ) {
+        void refetchAgentRun();
+      }
+    }).catch(() => {
+      // A dropped observation connection never cancels the accepted task.
+      // Polling the durable run state remains the recovery path.
+    });
+    return () => controller.abort();
+  }, [activeRunId, api, refetchAgentRun]);
+
+  useEffect(() => {
+    const status = agentRun.data?.status;
+    if (!activeRunId || !status) return;
+    if (status === "COMPLETED" && threadId) {
+      let active = true;
+      void api.getOwnerConversation(threadId).then((restored) => {
+        if (active) setSessionMessages((current) => mergeMessages(current, restored.messages));
+      }).finally(() => {
+        if (active) {
+          setActiveRunId(null);
+          clearStoredActiveRunId();
+          setStreamState(emptyStreamState());
+        }
+      });
+      return () => { active = false; };
+    }
+    if (status === "FAILED" || status === "STALE" || status === "CANCELLED") {
+      const clearTerminalRun = window.setTimeout(() => {
+        setActiveRunId(null);
+        setStreamState(emptyStreamState());
+        if (status === "FAILED") setRequestError(new Error("Agent run failed"));
+      }, 0);
+      return () => window.clearTimeout(clearTerminalRun);
+    }
+  }, [activeRunId, agentRun.data?.status, api, threadId]);
 
   const messages = useMemo(
     () => mergeMessages(conversation.data?.messages ?? [], sessionMessages),
@@ -97,10 +185,10 @@ export function TravelAgentChat({ open, onOpen, onDismiss, selectedPlace }: Trav
       }
 
       const response = await submitTurn.mutateAsync({ threadId: targetThreadId, input: turn });
-      setSessionMessages((current) => mergeMessages(current, [response.userMessage, response.assistantMessage]));
-      if (response.responseMode === "SAFE_REFUSAL") {
-        setRefusalMessageIds((current) => new Set(current).add(response.assistantMessage.id));
-      }
+      setSessionMessages((current) => mergeMessages(current, [response.userMessage]));
+      setStreamState(emptyStreamState());
+      setActiveRunId(response.runId);
+      storeActiveRunId(response.runId);
       setPendingTurn(null);
     } catch (error) {
       if (error instanceof TravelApiError && error.statusCode === 404) {
@@ -119,6 +207,10 @@ export function TravelAgentChat({ open, onOpen, onDismiss, selectedPlace }: Trav
   function closeConversation() {
     setExpanded(false);
     onDismiss();
+  }
+
+  function stopActiveRun() {
+    if (activeRunId && !cancelRun.isPending) void cancelRun.mutateAsync(activeRunId);
   }
 
   function askAboutSelectedPlace() {
@@ -169,7 +261,13 @@ export function TravelAgentChat({ open, onOpen, onDismiss, selectedPlace }: Trav
             </article>
           ))}
           {pendingTurn ? <p data-role="USER" data-pending="true" className="ml-auto max-w-[86%] rounded-[20px] rounded-tr-[6px] bg-sidebar px-4 py-3 text-sm leading-6 text-white shadow-sm opacity-80">{pendingTurn.question}</p> : null}
-          {isSending ? <p role="status" className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground"><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{t("sending")}</p> : null}
+          {activeRunId ? (
+            <article data-role="ASSISTANT" data-streaming="true" className="max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-sm leading-6 text-foreground">
+              {streamState.text ? <p>{streamState.text}</p> : null}
+              <p role="status" className="mt-1 inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground"><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{t("sending")}</p>
+              <button type="button" onClick={stopActiveRun} disabled={cancelRun.isPending} className="mt-2 rounded-full border border-primary/20 bg-white px-3 py-1 text-xs font-bold text-primary disabled:opacity-50">{t("stop")}</button>
+            </article>
+          ) : isSending ? <p role="status" className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground"><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{t("sending")}</p> : null}
           {visibleError ? (
             <div role="alert" className="rounded-[16px] border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
               <p className="font-bold">{errorMessage(visibleError, t)}</p>
@@ -205,10 +303,46 @@ function clearStoredThreadId() {
   try { window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY); } catch { /* optional pointer */ }
 }
 
+function readStoredActiveRunId(): string | null {
+  if (typeof window === "undefined") return null;
+  try { return window.localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY); } catch { return null; }
+}
+
+function storeActiveRunId(runId: string) {
+  try { window.localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, runId); } catch { /* optional pointer */ }
+}
+
+function clearStoredActiveRunId() {
+  try { window.localStorage.removeItem(CHAT_ACTIVE_RUN_STORAGE_KEY); } catch { /* optional pointer */ }
+}
+
 function mergeMessages(current: ConversationMessage[], incoming: ConversationMessage[]) {
   const messages = new Map(current.map((message) => [message.id, message]));
   incoming.forEach((message) => messages.set(message.id, message));
-  return [...messages.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return [...messages.values()].sort((a, b) => a.sequence - b.sequence);
+}
+
+function emptyStreamState(): StreamState {
+  return { attempt: 0, nextSequence: 0, pending: {}, text: "", phase: null };
+}
+
+function applyStreamEvent(current: StreamState, event: AgentStreamEvent): StreamState {
+  if (event.generationAttempt < current.attempt) return current;
+  const base = event.generationAttempt > current.attempt
+    ? { ...emptyStreamState(), attempt: event.generationAttempt }
+    : current;
+  if (event.event === "run.phase") return { ...base, phase: event.phase };
+  if (event.event !== "message.delta" || event.sequence < base.nextSequence) return base;
+
+  const pending = { ...base.pending, [event.sequence]: event.delta };
+  let nextSequence = base.nextSequence;
+  let text = base.text;
+  while (Object.prototype.hasOwnProperty.call(pending, nextSequence)) {
+    text += pending[nextSequence];
+    delete pending[nextSequence];
+    nextSequence += 1;
+  }
+  return { ...base, pending, nextSequence, text };
 }
 
 function isRetryable(error: unknown) {

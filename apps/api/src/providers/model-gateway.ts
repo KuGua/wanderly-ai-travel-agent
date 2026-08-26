@@ -12,6 +12,8 @@ export interface ConversationReply {
   responseMode: ConversationResponseMode;
 }
 
+export type ConversationDeltaHandler = (delta: string) => void | Promise<void>;
+
 /**
  * Application-layer interface for configured real-model interactions.
  * The model cannot access the database or execute irreversible operations.
@@ -38,6 +40,15 @@ export interface ModelGateway {
     question: string;
     place?: ConversationPlace;
     history: ConversationHistoryMessage[];
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<ConversationReply>;
+
+  streamConversationReply?(params: {
+    question: string;
+    place?: ConversationPlace;
+    history: ConversationHistoryMessage[];
+    onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<ConversationReply>;

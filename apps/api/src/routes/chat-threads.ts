@@ -8,8 +8,8 @@ import { ApiError } from "../middleware/error-handler.js";
 import { createRequestContext } from "../utils/context.js";
 import {
   getOwnerConversation,
-  submitConversationTurn,
 } from "../services/chat-conversation-service.js";
+import { acceptConversationTask } from "../tasks/task-repository.js";
 import {
   appendMessageSchema,
   conversationTurnRequestSchema,
@@ -99,19 +99,21 @@ export async function chatThreadRoutes(app: FastifyInstance) {
     });
   });
 
-  // Execute one complete server-controlled USER → ASSISTANT turn.
-  app.post("/threads/:threadId/turns", async (request) => {
+  // Persist the USER message and durable task, then return without waiting for
+  // the model. The separate Worker owns execution and the browser only observes.
+  app.post("/threads/:threadId/turns", async (request, reply) => {
     const { threadId } = request.params as { threadId: string };
     const ctx = createRequestContext(
       request.user.id, request.correlationId, request.traceId, request.clientRequestId,
     );
     const input = conversationTurnRequestSchema.parse(request.body);
-    return submitConversationTurn({
+    const accepted = await acceptConversationTask({
       ctx,
       threadId,
       ownerUserId: request.user.id,
       input,
     });
+    return reply.code(202).send(accepted);
   });
 
   // Delete thread (cascade messages via FK)
@@ -252,7 +254,7 @@ async function fetchRedactedMessages(
   const rows = await db.select()
     .from(chatMessages)
     .where(eq(chatMessages.threadId, threadId))
-    .orderBy(desc(chatMessages.createdAt))
+    .orderBy(desc(chatMessages.messageSequence))
     .limit(limit);
 
   // Reverse to chronological order (oldest first) for the caller.

@@ -207,5 +207,21 @@ metrics.registerHistogram(
     outcome: ["success"],
   },
 );
+metrics.registerCounter("agent_task_outcomes_total", "Durable Agent task outcomes by bounded operation and result.", {
+  operation: ["conversation", "plan", "replan"],
+  outcome: ["completed", "failed", "cancelled", "retrying"],
+});
+metrics.registerCounter("agent_task_recoveries_total", "Expired Agent task leases and queue entries recovered.", {
+  outcome: ["retrying", "failed", "cancelled"],
+});
+metrics.registerHistogram(
+  "agent_task_duration_ms",
+  "Accepted-to-terminal durable Agent task latency in milliseconds.",
+  [100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000, 300_000],
+  {
+    operation: ["conversation", "plan", "replan"],
+    outcome: ["completed", "failed", "cancelled"],
+  },
+);
 
 export type Metrics = typeof metrics;

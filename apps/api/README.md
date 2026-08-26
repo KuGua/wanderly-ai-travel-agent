@@ -23,7 +23,7 @@ docker compose up -d postgres
 # 4. 执行数据库迁移
 npm run db:migrate
 
-# 5. 启动服务器
+# 5. 启动 API（durable Worker 在另一终端启动）
 npm run dev
 ```
 
@@ -37,7 +37,7 @@ npm run dev
 ```dotenv
 MODEL_GATEWAY_PROVIDER=gemini
 GEMINI_API_KEY=your_gemini_key
-GEMINI_MODEL=gemini-3.5-flash
+GEMINI_MODEL=gemini-3.1-flash-lite
 ```
 
 也可选择 `MODEL_GATEWAY_PROVIDER=openai` 并设置 `OPENAI_API_KEY`，或选择
@@ -45,6 +45,25 @@ GEMINI_MODEL=gemini-3.5-flash
 `MODEL_GATEWAY_MODEL`。后者适用于提供 OpenAI Chat Completions 兼容接口的服务。
 原生 API 不兼容该接口的供应商需要单独 provider adapter，不能仅靠更换 key 启用。
 不要将密钥提交到仓库或暴露给浏览器。
+
+## Durable Conversation 本地进程
+
+持久 Conversation 的 API 接受与执行分离。运行本地浏览器验证时，需要三个进程：
+
+```bash
+# terminal 1
+npm --prefix apps/api run dev
+
+# terminal 2
+npm --prefix apps/api run worker:dev
+
+# terminal 3
+npm --prefix apps/web run dev -- --port 3001
+```
+
+启动 API 与 Worker 前执行 `npm --prefix apps/api run db:migrate`。相关环境变量名称为
+`MODEL_GATEWAY_PROVIDER`、`GEMINI_MODEL` 和 `GEMINI_API_KEY`；密钥仅存在于本机安全配置或
+部署的 Secrets Manager，绝不写入文档或浏览器环境变量。
 
 ## Cognito 登录与 API 认证
 

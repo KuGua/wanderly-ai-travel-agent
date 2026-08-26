@@ -104,6 +104,7 @@ export const conversationMessageSchema = z.object({
   id: z.string().uuid(),
   role: z.enum(["USER", "ASSISTANT"]),
   content: z.string(),
+  sequence: z.number().int().nonnegative(),
   createdAt: z.string().datetime(),
 });
 
@@ -115,17 +116,73 @@ export const conversationTurnRequestSchema = z.object({
   place: conversationPlaceSchema.optional(),
 }).strict();
 
-export const conversationTurnResponseSchema = z.object({
+export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN"]);
+export const agentTaskStatusSchema = z.enum([
+  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "FAILED", "CANCELLED", "STALE",
+]);
+export const agentRunPhaseSchema = z.enum([
+  "ACCEPTED", "RESEARCHING", "GENERATING", "VALIDATING", "PERSISTING",
+  "RETRYING", "COMPLETED", "STALE", "FAILED",
+]);
+export const agentRunErrorCodeSchema = z.enum([
+  "NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "SCHEMA_PARSE",
+  "POLICY_DENIED", "CANCELLED", "EXPIRED", "RETRY_EXHAUSTED", "INTERNAL",
+]);
+
+export const conversationTurnAcceptedResponseSchema = z.object({
   threadId: z.string().uuid(),
+  runId: z.string().uuid(),
+  operation: z.literal("CONVERSATION"),
+  status: z.literal("QUEUED"),
+  generationAttempt: z.literal(0),
   userMessage: conversationMessageSchema.extend({ role: z.literal("USER") }),
-  assistantMessage: conversationMessageSchema.extend({ role: z.literal("ASSISTANT") }),
-  responseMode: conversationResponseModeSchema,
 });
 
 export const ownerConversationResponseSchema = z.object({
   thread: threadSchema,
   messages: z.array(conversationMessageSchema),
 });
+
+export const agentRunResponseSchema = z.object({
+  runId: z.string().uuid(),
+  operation: agentTaskOperationSchema,
+  status: agentTaskStatusSchema,
+  generationAttempt: z.number().int().nonnegative(),
+  attemptCount: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  finishedAt: z.string().datetime().nullable(),
+  errorCode: agentRunErrorCodeSchema.nullable(),
+  assistantMessageId: z.string().uuid().nullable(),
+  resultPlanId: z.string().uuid().nullable(),
+});
+
+const streamBaseSchema = z.object({
+  runId: z.string().uuid(),
+  generationAttempt: z.number().int().nonnegative(),
+});
+
+export const agentStreamEventSchema = z.discriminatedUnion("event", [
+  streamBaseSchema.extend({ event: z.literal("turn.started") }).strict(),
+  streamBaseSchema.extend({ event: z.literal("run.phase"), phase: agentRunPhaseSchema }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("message.delta"),
+    sequence: z.number().int().nonnegative(),
+    delta: z.string().min(1).max(2048),
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("turn.completed"),
+    assistantMessageId: z.string().uuid().optional(),
+    resultPlanId: z.string().uuid().optional(),
+  }).strict(),
+  streamBaseSchema.extend({ event: z.literal("turn.cancelled") }).strict(),
+  streamBaseSchema.extend({ event: z.literal("turn.stale"), code: agentRunErrorCodeSchema }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("turn.failed"),
+    code: agentRunErrorCodeSchema,
+    retryable: z.boolean(),
+  }).strict(),
+]);
 
 export const apiErrorResponseSchema = z.object({
   statusCode: z.number(),
@@ -172,5 +229,7 @@ export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;
 export type ConversationTurnRequest = z.infer<typeof conversationTurnRequestSchema>;
-export type ConversationTurnResponse = z.infer<typeof conversationTurnResponseSchema>;
+export type ConversationTurnAcceptedResponse = z.infer<typeof conversationTurnAcceptedResponseSchema>;
 export type OwnerConversationResponse = z.infer<typeof ownerConversationResponseSchema>;
+export type AgentRun = z.infer<typeof agentRunResponseSchema>;
+export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
