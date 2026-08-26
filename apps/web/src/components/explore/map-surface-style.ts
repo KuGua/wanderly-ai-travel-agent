@@ -6,7 +6,7 @@ export const GLOBAL_COUNTRY_BOUNDARY_DATA_URL = "/map-data/natural-earth-admin-0
 export const CHINA_COUNTRY_BOUNDARY_DATA_URL = "https://geo.datav.aliyun.com/areas_v3/bound/100000.json";
 export const GEBCO_SOURCE_ID = "gebco-global-relief";
 export const GEBCO_LAYER_ID = "gebco-global-relief";
-export const GEBCO_WMS_TILE_URL = "https://wms.gebco.net/mapserv?service=WMS&version=1.1.1&request=GetMap&layers=GEBCO_LATEST&styles=&format=image/png&transparent=FALSE&srs=EPSG:3857&bbox={bbox-epsg-3857}&width=256&height=256";
+export const GEBCO_WMS_TILE_URL = "https://wms.gebco.net/mapserv?service=WMS&version=1.1.1&request=GetMap&layers=GEBCO_LATEST&styles=&format=image/png&transparent=FALSE&srs=EPSG:3857&bbox={bbox-epsg-3857}&width=512&height=512";
 
 const RELIEF_RASTER_OPACITY: ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 0, 0.78, 3, 0.7, 6, 0.5];
 
@@ -87,9 +87,9 @@ export function solidifyGlobeStyle(style: StyleSpecification): StyleSpecificatio
       [GEBCO_SOURCE_ID]: {
         type: "raster",
         tiles: [GEBCO_WMS_TILE_URL],
-        tileSize: 256,
+        tileSize: 512,
         minzoom: 0,
-        maxzoom: 8,
+        maxzoom: 5,
         attribution: '<a href="https://www.gebco.net/" target="_blank" rel="noopener noreferrer">GEBCO</a> — not for navigation',
       },
     },
