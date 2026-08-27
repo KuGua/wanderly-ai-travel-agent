@@ -1,6 +1,6 @@
 import type { ConversationPlace } from "../types/schemas.js";
 import type { ConversationReply } from "../providers/model-gateway.js";
-import { getLocationReferenceResolver } from "../location-reference/location-reference-resolver.js";
+import { getLocationReferenceSource } from "../location-reference/location-reference-source.js";
 
 const PRICE_TERMS = ["price", "prices", "cost", "costs", "fare", "fares", "rate", "rates"];
 const LIVE_TERMS = ["current", "currently", "live", "real time", "today", "tonight", "now", "latest", "up to date"];
@@ -18,20 +18,26 @@ const FLIGHT_STATUS_TERMS = [
   "status", "delayed", "delay", "late", "cancelled", "canceled", "on time", "departure gate", "arrival gate",
 ];
 
-export function resolveConversationPlace(place: ConversationPlace | undefined): ConversationPlace | undefined {
+export async function resolveConversationPlace(place: ConversationPlace | undefined): Promise<ConversationPlace | undefined> {
   if (!place) return undefined;
 
-  const reference = getLocationReferenceResolver().resolve(place.latitude, place.longitude);
-  if (reference.outcome === "REFERENCE") {
-    return {
-      sourceId: [reference.countryCode, reference.admin1Code, reference.nearestCity]
-        .filter((value): value is string => Boolean(value))
-        .join(":") || undefined,
-      name: reference.nearestCity ?? reference.country,
-      latitude: place.latitude,
-      longitude: place.longitude,
-      sourceType: "REFERENCE",
-    };
+  try {
+    const reference = await getLocationReferenceSource().resolve(place.latitude, place.longitude);
+    if (reference.outcome === "REFERENCE") {
+      return {
+        sourceId: [reference.countryCode, reference.admin1Code, reference.nearestCity]
+          .filter((value): value is string => Boolean(value))
+          .join(":") || undefined,
+        name: reference.nearestCity ?? reference.country,
+        latitude: place.latitude,
+        longitude: place.longitude,
+        sourceType: "REFERENCE",
+      };
+    }
+  } catch {
+    // Soft-degrade to INSPIRATION on any source failure (resolver throw, sidecar
+    // down/timeout/schema-drift, or disabled mode). Documented in
+    // `apps/api/src/location-reference/SIDECAR.md` §"Failure modes".
   }
 
   return {

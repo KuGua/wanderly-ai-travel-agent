@@ -87,6 +87,19 @@ export const createTripSchema = z.object({
   memberUserIds: z.array(uuidSchema).min(2).max(10),
 });
 
+/**
+ * Solo-trip create schema used by `POST /trips/personal`. Only the
+ * authenticated caller is added as a CREATOR member — no other memberUserIds
+ * required. Per docs/PRD.md:20 a single traveler uses the same Personal
+ * Agent and binds their private chat threads to this scratch trip.
+ */
+export const createPersonalTripSchema = z.object({
+  departureCities: z.array(z.string().min(1)).min(1),
+  destinationCandidates: z.array(z.string().min(1)).min(2).max(5),
+  travelDateStart: dateStr.optional(),
+  travelDateEnd: dateStr.optional(),
+}).strict();
+
 export const tripStatusSchema = z.enum(["PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
@@ -217,15 +230,27 @@ export const confirmPlanSchema = z.object({
 
 // ─── Chat Threads (owner-only private conversation) ────────────────────────
 
+export const chatThreadScopeSchema = z.enum(["TRIP"]);
+export type ChatThreadScope = z.infer<typeof chatThreadScopeSchema>;
+
+// Deprecated: the optional `tripId` field has been removed; thread
+// creation is now Trip-scoped only.  Kept exported for any in-flight
+// migration tooling, but no route accepts it any more.
 export const createThreadSchema = z.object({
   title: z.string().min(1).max(256),
   tripId: uuidSchema.optional(),
 }).strict();
 
+export const createTripThreadSchema = z.object({
+  title: z.string().trim().min(1).max(256),
+}).strict();
+
 export const threadSummarySchema = z.object({
   id: uuidSchema,
   ownerUserId: uuidSchema,
-  tripId: uuidSchema.nullable(),
+  tripId: uuidSchema,
+  scope: chatThreadScopeSchema,
+  isDefault: z.boolean(),
   title: z.string(),
   createdAt: z.string().datetime(),
   archivedAt: z.string().datetime().nullable(),
@@ -400,6 +425,45 @@ export const errorResponseSchema = z.object({
   error: z.string(),
   message: z.string(),
   correlationId: z.string().uuid(),
+});
+
+// ─── Trip Invitations ──────────────────────────────────────────────────────
+
+export const tripInvitationStatusSchema = z.enum([
+  "PENDING", "ACCEPTED", "REVOKED", "EXPIRED",
+]);
+
+export const createTripInvitationSchema = z.object({
+  invitedUserId: uuidSchema,
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const tripInvitationCreateResponseSchema = z.object({
+  invitationId: uuidSchema,
+  inviteToken: z.string().min(32).max(256),
+  expiresAt: z.string().datetime(),
+});
+
+export const tripInvitationSummarySchema = z.object({
+  id: uuidSchema,
+  tripId: uuidSchema,
+  invitedUserId: uuidSchema,
+  invitedByUserId: uuidSchema,
+  status: tripInvitationStatusSchema,
+  expiresAt: z.string().datetime(),
+  acceptedAt: z.string().datetime().nullable(),
+  revokedAt: z.string().datetime().nullable(),
+  createdAt: z.string().datetime(),
+});
+
+export const acceptInvitationResponseSchema = z.object({
+  tripId: uuidSchema,
+  membership: tripRoleSchema,
+  defaultThread: z.object({
+    id: uuidSchema,
+    tripId: uuidSchema,
+    isDefault: z.literal(true),
+  }).strict(),
 });
 
 export function toJsonSchema(schema: z.ZodType) {

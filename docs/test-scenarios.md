@@ -354,6 +354,11 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - 私聊在模型调用前拒绝实时价格、库存、签证/入境结论和预订状态问题；模型输出若包含此类无 provider 支撑的断言，必须替换为显式 `SAFE_REFUSAL`。
 - 空白区域档案明确没有可验证候选资料，不生成地点、价格、库存、签证或预订结论。
 - 对覆盖数据内的空白地图点击，离线位置参考可显示国家、一级行政区和最近主要城市，并带来源/版本/检查时间；城市超过 75 km、海洋或边界未匹配时必须省略相应字段或返回 `NO_REFERENCE`，不能猜测。
+- 国家参考数据必须使用 Natural Earth 1:10m Admin 0，覆盖新加坡、香港、澳门、马耳他、摩纳哥、巴林等微型行政体：点击新加坡岛内坐标必须返回 `Singapore`/`SG`，不得返回马来西亚等邻国；France、Norway 等源记录 `ISO_A2` 为 `-99` 的国家仍必须返回 `FR`、`NO` 并能解析省/州与最近城市。
+- 坐标不落在任何国家多边形内时，只在 10 km 海岸容差内回退到最近国家（例如圣淘沙返回 `Singapore`）；容差外的公海（例如 `0,80`）仍返回 `NO_REFERENCE`。容差回退结果与多边形命中同为位置参考，不得表述为行政归属、边界主张或地址。数据文件缺失或不可读时返回 `503`，不推断。
+- 两档简化国家边界 mesh 必须都能画出跨度小于 1.5° 的微型国家轮廓（新加坡在 LOD-0/1 均有完整环），LOD-0 gzip 仍需在 200 KB 首屏预算内。
+- 国家边界覆盖层的视口剪裁不得改变可见结果：视口内的 arc 必须绘制，横穿视口但端点都在视口外的 arc 不得被丢弃，跨 ±180° 的视口两侧都要绘制；zoom < 3、视口跨度接近全球或 map 无法报告 bounds 时退回不剪裁，绝不能出现边界整段消失。
+- zoom ≥4.5 的全精度边界瓦片只能按视口请求：低 zoom 不得请求 `country-borders-lod3/index.json`，只请求视口覆盖且索引中列出的瓦片（不得因海洋瓦片缺失产生 404），瓦片信息必须与 `index.json` 的 sha256 一致且单片 gzip ≤150 KB。索引或任一必需瓦片缺失/失败时必须继续绘制 LOD-1 且不得出现边界缺口，也不得与瓦片同时绘制造成重复描边；失败的瓦片允许后续重试。
 - 未登录会话只能匿名调用地点参考端点，成功时替换临时 `Pinned place N`；第 31 次同一客户端一分钟窗口内请求返回 `429`，不记录原始坐标或地址。Profile、行程、私聊、授权、规划、确认和预订在相同未登录会话中仍为 `401`。
 - 空白区域只能保存私有灵感或请求后续加入候选；不改变共享约束、方案或确认状态。
 - 命中城市的私有灵感使用服务端 `nearestCityCoordinates` 固定到 GeoNames 市级中心；区、县、街道和街区记录保留在版本化原始数据中，但不得成为地图 pin 或地点预览。上海的区级点击归一到上海，南京与苏州等不同城市仍保持独立。同名且中心点相距不超过 25 km 的第二次城市点击不新增图钉，并通过 `role="status"` 提示已标记。当前去重范围仅为城市，省/州/国家不得套用同一规则。
@@ -364,9 +369,34 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - 国家、城市/省州标签仅来自地图底图，并按缩放渐进显示；它们可打开 `Map location` 预览，但不会创建私有 pin、共享约束、方案、价格、库存、签证或预订结论。空白位置仍仅创建临时私有灵感。
 - 如果配置的 style 缺少兼容的 OpenMapTiles source 或缺失任一必需图层，行政区/城市开关**保持可见但被禁用**，附 `role="status"` caption 说明缺失项（缺 source 或 `missing layers:` 列表）；地图保留原有候选入口和故障回退；不静默隐藏，不报错或伪造地图数据。开发者可在 dev 模式下通过 `window.__wanderlyMap.readiness` 观察 5 种 readiness（loading / ready-supported / ready-style-unsupported-source / ready-style-missing-layers / unavailable-network）。
 - 地图就绪生命周期分两阶段（mounting → ready）：MapLibre 6.6 的 globe projection 必须写入传给 `new Map()` 的 style JSON，`style.load` 是 style 兼容性检查和图层控件的唯一就绪前置；不得在 style 创建前或 `style.load` 后调用 `setProjection()`。OpenMapTiles 的 `sourcedata` 只作为开发诊断，慢 TileJSON 或 PBF 不得触发 `unavailable-network`。只有 style 总超时、初始化异常或 style ready 前的 map error 才显示 globe error 回退。dev 模式下 `window.__wanderlyMap.stage` 实时反映当前阶段。
-- 地图 ready 后，国家边界位于 provider style stack 顶层：即使 Liberty 的 fill/road layer 重排，全球缩放仍可看到本地 Natural Earth / DataV 线。关闭 Countries 时必须同时隐藏国家线与洲/国家名称；zoom 2.6 起显示首都、zoom 2.8 起显示重要城市、zoom 4.2 起显示省州名称。SVG 标签必须在 MapLibre `render` 帧内同步重投影并随 resize 更新，平移或缩放时不得落后 WebGL 地球（标签位置只能直接写入 DOM，不得经由 React state 提交，否则会慢一帧并出现漂移）；必须剔除背半球并进行屏幕碰撞去重；已离开候选集但尚未卸载的标签节点必须当帧隐藏，不得停留在过期位置。切换对应图层后标签即时消失。视觉边界和标签不参与地点匹配、反向地理编码或旅行事实；位置参考只能使用专用、版本化的离线 resolver 数据。
-- Natural Earth fallback 必须由独立 SVG overlay 获取同源 GeoJSON，并以 `map.project()` 绘制；它必须在 MapLibre `render` 帧内同步更新、在半球边缘裁剪相交线段并随 resize 更新，旋转时不得落后 WebGL 地球或因顶点跨越背面而抖动。Countries 开启时保持显示，并按当前 map center 剔除背半球坐标，背面国界不得穿透正面。不得依赖 globe 模式下可能没有 error 的 GeoJSON source pending。获取失败应保留既有地图和无障碍地点入口。
-- 地球表面必须保持实体不透明：GEBCO `GEBCO_LATEST` WMS shaded relief 同时提供陆地与海底地势，opacity 固定为 1；Liberty Natural Earth 位于其下，仅作为 GEBCO 请求失败时的视觉 fallback。道路、标签和行政边界仍需在 relief 之上可读，放大时不得退化为白色或透明地图。必须显示 GEBCO attribution 与“不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
+- 地图 ready 后，国家边界位于 provider style stack 顶层：即使 Liberty 的 fill/road layer 重排，全球缩放仍可看到本地 Natural Earth 共享 mesh 与独立九段线。关闭 Countries 时必须同时隐藏国家线、九段线与洲/国家名称；zoom 2.6 起显示首都、zoom 2.8 起显示重要城市、zoom 4.2 起显示省州名称。SVG 标签必须在 MapLibre `render` 帧内同步重投影并随 resize 更新，平移或缩放时不得落后 WebGL 地球（标签位置只能直接写入 DOM，不得经由 React state 提交，否则会慢一帧并出现漂移）；必须剔除背半球并进行屏幕碰撞去重；已离开候选集但尚未卸载的标签节点必须当帧隐藏，不得停留在过期位置。切换对应图层后标签即时消失。视觉边界和标签不参与地点匹配、反向地理编码或旅行事实；位置参考只能使用专用、版本化的离线 resolver 数据。
+- 国界构建必须仅在构建期读取 Natural Earth 10m，并从同一个 TopoJSON topology 输出三档共享 mesh；同一时刻前端只绘制当前 zoom 的一档，任意共享边界只出现一次。首屏只请求 LOD-0 与本地九段线，LOD-0 gzip 不得超过 200 KB；LOD-1/2 仅在进入对应 zoom 后请求。浏览器与 `build-geography-labels.mjs` 对 `geo.datav.aliyun.com` 的请求必须为 0。每一档必须在 MapLibre `render` 帧内同步更新、在半球边缘裁剪相交线段并随 resize 更新，旋转时不得落后 WebGL 地球或因顶点跨越背面而抖动。获取失败应保留既有地图和无障碍地点入口。
+- 地球表面必须保持实体不透明：GEBCO `GEBCO_LATEST` WMS shaded relief 同时提供陆地与海底地势，opacity 固定为 1；Liberty Natural Earth 位于其下，仅作为 GEBCO 请求失败时的视觉 fallback。道路、标签和行政边界仍需在 relief 之上可读，放大时不得退化为白色或透明地图。必须显示 GEBCO attribution 与”不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
+
+### TS-P2-LR — Resolve coordinates through the three source modes
+
+**Stories:** P1
+**Objective:** Verify the `LOCATION_REFERENCE_MODE` source abstraction keeps the public route, internal caller, rate limit, and metric contract identical across `in-process`, `sidecar`, and `disabled` modes. See `apps/api/src/location-reference/SIDECAR.md` for the full failure-mode matrix.
+
+**Starting conditions:** API is running locally; Postgres is up; `apps/api/data/location-reference/` data is versioned.
+
+**Steps:**
+
+1. With `LOCATION_REFERENCE_MODE` unset (default `in-process`), POST `{ “latitude”: 38.7223, “longitude”: -9.1393 }` to `/api/v1/explore/location-reference`. Record the full response body.
+2. Stop the API. Start the sidecar via `docker compose --profile location-reference up -d` and restart the API with `LOCATION_REFERENCE_MODE=sidecar LOCATION_REFERENCE_SIDECAR_URL=http://127.0.0.1:3002`. Repeat the same POST.
+3. Restart the API with `LOCATION_REFERENCE_MODE=disabled`. Repeat the same POST.
+4. In each mode, fire 31 rapid POSTs from the same client IP and confirm the 31st returns `429 LOCATION_REFERENCE_RATE_LIMITED`.
+5. With `LOCATION_REFERENCE_MODE=sidecar`, stop the sidecar container and POST again. Then with `LOCATION_REFERENCE_MODE=sidecar` but a stale URL, POST again.
+6. With `LOCATION_REFERENCE_MODE=sidecar` and the sidecar down, POST a conversation turn with a `place` field (e.g. via `apps/web` explore chat) and observe `place.sourceType`.
+
+**Expected outcomes:**
+
+- Steps 1 and 2 produce **byte-identical** JSON for the same coordinates; `disabled` (step 3) returns `{ “outcome”: “NO_REFERENCE”, “datasetVersion”: “disabled”, ... }` with the rest of the discriminated union intact.
+- Step 4: rate limit is honored in all three modes; the `429` body and `location_reference_requests_total{outcome=”rate_limited”}` label are unchanged.
+- Step 5: sidecar HTTP 5xx / timeout / connection-refused all return `503 LOCATION_REFERENCE_UNAVAILABLE` with `outcome=”unavailable”`. Schema drift (sidecar returns `{“wrong”:”shape”}`) also returns `503`, never silently fabricates a result.
+- Step 6: the conversation turn returns `202`; the persisted `place` has `sourceType: “INSPIRATION”`, not `500`. The conversation-safety `resolveConversationPlace` soft-degrades and never throws to the caller.
+- The sidecar container's `/health` reports `{ status: “ok”, dataLoaded: true }` after the 70 MB GeoJSON warm-up completes; `GET /api/v1/explore/location-reference` rate-limit metrics never double-count (the sidecar does not rate-limit).
+- Switching modes does not require code changes; flipping `LOCATION_REFERENCE_MODE` is sufficient. The default `in-process` mode is what production deploys inherit with zero configuration change.
 
 ### TS-S1 — Protect data and trace the Agentic workflow
 
@@ -449,17 +479,18 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 ### Frontend Slice 回归
 
-- 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话。
+- 自定义账号模式的登录只接受用户名；勾选“30天内记住我”后 token 上限为 30 天并使用持久存储，未勾选时只使用 session storage。当前本地和线上 demo 均采用 `PASSWORD_RESET_MODE=direct`：输入邮箱后直接设置两次一致的新密码；该模式未验证邮箱所有权，是 demo 阶段明确接受的风险，接入真实用户前必须替换。切换为 `email-code` 后恢复六位验证码、60 秒重发、10 分钟过期和最多五次失败的流程。成功页面可立即返回登录，并在 5 秒后自动返回。生产邮件只经配置好的 AWS SES 发送，日志不得包含邮箱、验证码、reset token 或密码。
+- 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话，或仅在 loopback `custom-local` 模式来自 API 验证的本地用户名/密码会话。
 - fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
-- 所有受保护的 HTTP 请求在发送时通过 AWS Amplify session 读取当前 Cognito access token；无 session 时不发送 Authorization，token 刷新后使用新 token，登录会话变化或退出时必须清空 TanStack Query 缓存且后续请求不得继续携带旧 token。`POST /api/v1/explore/location-reference` 是唯一匿名、无持久化且限流的例外。应用自身不得把 token 复制到 localStorage。
-- `AUTH_MODE` 默认必须为 `cognito`。显式 `local-dev` 仅允许 `NODE_ENV=development|test`、loopback server 绑定、loopback socket 客户端和 `LOCAL_DEV_ALLOWED_ORIGINS` 中的精确 loopback HTTP Origin；production、staging、缺失环境或任一非 loopback 边界必须拒绝启动/请求。浏览器不发送 fake token/user ID，服务端固定身份仍须通过原 owner-only thread 授权。非允许 Origin 不得获得 CORS 读权限，且对受保护写操作必须返回 `403` 并不创建业务状态。
+- 所有受保护的 HTTP 请求在 Cognito 模式通过 AWS Amplify session 读取当前 access token；`custom-local` 仅在 loopback 开发环境从受控浏览器会话读取 API JWT。无 session 时不发送 Authorization，token 刷新后使用新 token；登录会话变化或退出时必须替换 TanStack Query client，使旧私有缓存不可见且活跃查询以新会话重新执行。`POST /api/v1/explore/location-reference` 是唯一匿名、无持久化且限流的例外。应用自身不得把 Cognito token 复制到 localStorage。
+- `AUTH_MODE` 默认必须为 `cognito`。显式 `local-dev`（固定单用户）和 `custom-local`（数据库用户名/密码、多用户）仅允许 `NODE_ENV=development|test`、loopback server 绑定、loopback socket 客户端和 `LOCAL_DEV_ALLOWED_ORIGINS` 中的精确 loopback HTTP Origin；`custom-local` 还必须有至少 32 字符的 API `JWT_SECRET`。production、staging、缺失环境或任一非 loopback 边界必须拒绝启动/请求。浏览器不能发送 fake token/user ID；`local-dev` 的固定身份和 `custom-local` 的已验证 JWT 身份都须通过原 owner-only thread 授权。非允许 Origin 不得获得 CORS 读权限，且对受保护写操作必须返回 `403` 并不创建业务状态。
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
 - Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。
 - 私聊首次提问创建当前用户的 private thread，后续提问复用该 thread；刷新后只从本地 thread ID 指针恢复 owner-only history，服务端返回不存在的 thread 时清除失效指针，不在浏览器持久化消息正文。
 - 每个新 turn 使用新的 UUID `requestId`；acceptance 网络结果不确定时必须复用原 request ID，发送期间禁止并发重复提交。接受成功后 UI 以 durable run status 为准，SSE 断线只降级为轮询；Worker 自动处理受控网络/5xx 重试。最终 `MODEL` 正常展示，terminal provider/model failure 保留 USER、不得持久化 partial ASSISTANT 或伪造 fallback。
   **已知缺口（202/SSE 切换引入）**：`SAFE_REFUSAL` 的核验提示当前不显示。旧的同步响应会返回 `responseMode`，acceptance 响应不再包含它，而 `responseMode` 目前只写入 idempotency `resultPayload` 与 audit summary，既不在 `chat_messages` 上，也不在 `AgentRunResponse` 或 `turn.completed` 事件中。恢复该提示需要先扩展契约，与后续的签证/拒答呈现设计一并处理。
-- 浏览器聊天请求在 Cognito 模式必须使用真实 Cognito access token；没有可用登录 token provider 时，三人真实 API 端到端演示属于显式阻塞项，不得硬编码 token 或退回 demo identity。`local-dev` 仅覆盖一个服务端固定身份的单人 smoke test，不能替代三人授权/确认验收。
+- 浏览器聊天请求在 Cognito 模式必须使用真实 Cognito access token；没有可用登录 token provider 时，三人真实 API 端到端演示属于显式阻塞项，不得硬编码 token 或退回 demo identity。`local-dev` 仅覆盖一个服务端固定身份的单人 smoke test；本地三用户隔离验收可使用 `custom-local` 的独立数据库账户，登录后必须确认 A 无法读取 B 的 Trip、私有 thread 与消息，且切换账号会清空前一账号的查询缓存。
 - 375px、768px、1024px、1440px 下身份、导航、主要操作与私密提示均可见，交互目标至少 44px，并尊重 reduced motion。
 
 ### 数据库与 Seed 回归

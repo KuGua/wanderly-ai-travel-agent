@@ -6,6 +6,7 @@ const amplifyMocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
   signIn: vi.fn(),
   signOut: vi.fn(),
+  setKeyValueStorage: vi.fn(),
 }));
 
 vi.mock("aws-amplify", () => ({ Amplify: { configure: amplifyMocks.configure } }));
@@ -14,6 +15,13 @@ vi.mock("aws-amplify/auth", () => ({
   getCurrentUser: amplifyMocks.getCurrentUser,
   signIn: amplifyMocks.signIn,
   signOut: amplifyMocks.signOut,
+}));
+vi.mock("aws-amplify/auth/cognito", () => ({
+  cognitoUserPoolsTokenProvider: { setKeyValueStorage: amplifyMocks.setKeyValueStorage },
+}));
+vi.mock("aws-amplify/utils", () => ({
+  defaultStorage: { kind: "persistent" },
+  sessionStorage: { kind: "session" },
 }));
 
 import { createCognitoBrowserAuth } from "./cognito-browser-auth";
@@ -34,16 +42,17 @@ describe("Cognito browser auth adapter", () => {
 
   it("uses Amplify-managed session state without application-owned token persistence", async () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
-    const service = createCognitoBrowserAuth();
+    const service = await createCognitoBrowserAuth();
 
-    expect(await service.signIn("traveler@example.test", "not-a-real-password")).toEqual({ username: "traveler@example.test" });
+    expect(await service.signIn("traveler", "not-a-real-password", true)).toEqual({ username: "traveler@example.test" });
     expect(await service.getAccessToken()).toBe("current-access-token");
     await service.signOut();
 
     expect(amplifyMocks.configure).toHaveBeenCalledWith(expect.objectContaining({
       Auth: { Cognito: expect.objectContaining({ userPoolClientId: "public-client-id" }) },
     }));
-    expect(amplifyMocks.signIn).toHaveBeenCalledWith({ username: "traveler@example.test", password: "not-a-real-password" });
+    expect(amplifyMocks.signIn).toHaveBeenCalledWith({ username: "traveler", password: "not-a-real-password" });
+    expect(amplifyMocks.setKeyValueStorage).toHaveBeenCalledWith({ kind: "persistent" });
     expect(amplifyMocks.fetchAuthSession).toHaveBeenCalledTimes(1);
     expect(amplifyMocks.signOut).toHaveBeenCalledTimes(1);
     expect(setItem).not.toHaveBeenCalled();
@@ -53,7 +62,7 @@ describe("Cognito browser auth adapter", () => {
     delete process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID;
     delete process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
 
-    const service = createCognitoBrowserAuth();
+    const service = await createCognitoBrowserAuth();
 
     expect(service.configured).toBe(false);
     expect(await service.getAccessToken()).toBeNull();
@@ -63,7 +72,7 @@ describe("Cognito browser auth adapter", () => {
     process.env.NEXT_PUBLIC_AUTH_MODE = "local-dev";
     process.env.NEXT_PUBLIC_API_BASE_URL = "http://localhost:3000";
 
-    const service = createCognitoBrowserAuth();
+    const service = await createCognitoBrowserAuth();
 
     expect(service.localDevelopment).toBe(true);
     expect(service.configured).toBe(false);
@@ -71,11 +80,22 @@ describe("Cognito browser auth adapter", () => {
     expect(amplifyMocks.configure).not.toHaveBeenCalled();
   });
 
+  it("selects the database-backed adapter in custom-local mode", async () => {
+    process.env.NEXT_PUBLIC_AUTH_MODE = "custom-local";
+    process.env.NEXT_PUBLIC_API_BASE_URL = "http://localhost:3000";
+
+    const service = await createCognitoBrowserAuth();
+
+    expect(service.configured).toBe(true);
+    expect(service.localDevelopment).toBe(false);
+    expect(amplifyMocks.configure).not.toHaveBeenCalled();
+  });
+
   it("does not activate local-dev when its API base URL is not loopback", async () => {
     process.env.NEXT_PUBLIC_AUTH_MODE = "local-dev";
     process.env.NEXT_PUBLIC_API_BASE_URL = "http://192.168.1.10:3000";
 
-    const service = createCognitoBrowserAuth();
+    const service = await createCognitoBrowserAuth();
 
     expect(service.localDevelopment).toBe(false);
     expect(service.localDevelopmentConfigurationInvalid).toBe(true);

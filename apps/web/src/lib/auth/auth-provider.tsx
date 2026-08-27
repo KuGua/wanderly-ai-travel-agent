@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 
 import {
   CognitoChallengeRequiredError,
-  createCognitoBrowserAuth,
+  resolveSyncAuthFallback,
   type AuthenticatedBrowserUser,
   type BrowserAuthService,
 } from "./cognito-browser-auth";
@@ -19,7 +19,7 @@ type AuthContextValue = {
   busy: boolean;
   sessionRevision: number;
   getAccessToken: () => Promise<string | null>;
-  signIn: (username: string, password: string) => Promise<boolean>;
+  signIn: (username: string, password: string, rememberMe?: boolean) => Promise<boolean>;
   signOut: () => Promise<boolean>;
 };
 
@@ -29,7 +29,13 @@ export function AuthProvider({ children, service: suppliedService }: {
   children: ReactNode;
   service?: BrowserAuthService;
 }) {
-  const [service] = useState(() => suppliedService ?? createCognitoBrowserAuth());
+  // Initial state comes from the sync fallback service. In local-dev /
+  // unconfigured / supplied-service modes this is the final service — no
+  // async work, no `aws-amplify` load. In Cognito mode the fallback is
+  // `unconfiguredAuthService` and the real service is loaded below.
+  const [service, setService] = useState<BrowserAuthService>(
+    () => suppliedService ?? resolveSyncAuthFallback(),
+  );
   const [status, setStatus] = useState<AuthStatus>(
     service.localDevelopment ? "LOCAL_DEV" : service.localDevelopmentConfigurationInvalid ? "LOCAL_DEV_INVALID" : service.configured ? "CHECKING" : "UNCONFIGURED",
   );
@@ -37,6 +43,30 @@ export function AuthProvider({ children, service: suppliedService }: {
   const [error, setError] = useState<AuthError>(null);
   const [busy, setBusy] = useState(false);
   const [sessionRevision, setSessionRevision] = useState(0);
+
+  useEffect(() => {
+    if (suppliedService) return;
+    let active = true;
+    void (async () => {
+      // Dynamic import keeps `cognito-browser-auth.runtime.ts` — and
+      // therefore all of `aws-amplify` — out of the initial bundle. Only
+      // this `useEffect` ever triggers the load.
+      const { createCognitoBrowserAuth } = await import("./cognito-browser-auth");
+      const next = await createCognitoBrowserAuth();
+      if (!active) return;
+      setService(next);
+      setStatus(
+        next.localDevelopment
+          ? "LOCAL_DEV"
+          : next.localDevelopmentConfigurationInvalid
+            ? "LOCAL_DEV_INVALID"
+            : next.configured
+              ? "CHECKING"
+              : "UNCONFIGURED",
+      );
+    })();
+    return () => { active = false; };
+  }, [suppliedService]);
 
   useEffect(() => {
     if (!service.configured) return;
@@ -52,11 +82,11 @@ export function AuthProvider({ children, service: suppliedService }: {
 
   const getAccessToken = useCallback(() => service.getAccessToken(), [service]);
 
-  const handleSignIn = useCallback(async (username: string, password: string) => {
+  const handleSignIn = useCallback(async (username: string, password: string, rememberMe = false) => {
     setBusy(true);
     setError(null);
     try {
-      const authenticatedUser = await service.signIn(username, password);
+      const authenticatedUser = await service.signIn(username, password, rememberMe);
       setUser(authenticatedUser);
       setStatus("SIGNED_IN");
       setSessionRevision((current) => current + 1);
@@ -106,4 +136,8 @@ export function useAuth() {
   const auth = useContext(AuthContext);
   if (!auth) throw new Error("useAuth must be used within AuthProvider");
   return auth;
+}
+
+export function createLocalDevBrowserAuth(): BrowserAuthService {
+  return resolveSyncAuthFallback();
 }

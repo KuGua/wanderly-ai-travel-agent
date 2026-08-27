@@ -19,6 +19,10 @@ services:
     build:
       context: ../..
       dockerfile: apps/api/Dockerfile
+    # Default `docker compose up -d` starts only postgres. The API container
+    # is gated by the `full` profile so dev can opt in to the full stack
+    # with `docker compose --profile full up -d`.
+    profiles: ["full"]
     ports:
       - "3000:3000"
     environment:
@@ -42,6 +46,8 @@ services:
     build:
       context: ../..
       dockerfile: apps/api/Dockerfile
+    # The worker shares the `full` profile with the API.
+    profiles: ["full"]
     command: ["node", "dist/workers/worker-main.js"]
     environment:
       DB_HOST: postgres
@@ -54,11 +60,35 @@ services:
       OTEL_SERVICE_NAME: ai-travel-agent-worker
       OTEL_SDK_DISABLED: "false"
       OTEL_TRACES_SAMPLER_ARG: "1.0"
+      # The worker never calls the resolver. Force `disabled` mode so even
+      # if the in-process fallback path is reached, no 70 MB GeoJSON gets
+      # loaded into this container.
+      LOCATION_REFERENCE_MODE: disabled
     depends_on:
       postgres:
         condition: service_healthy
       app:
         condition: service_started
+
+  location-reference:
+    # Dev-only sidecar for the ~70 MB GeoJSON resolver. Off by default
+    # (lives behind the `location-reference` profile). The API reaches it
+    # via `LOCATION_REFERENCE_MODE=sidecar LOCATION_REFERENCE_SIDECAR_URL=...`.
+    # See `apps/api/src/location-reference/SIDECAR.md` for the contract and
+    # threat model. Bound to loopback only; never publish or expose publicly.
+    build:
+      context: ../..
+      dockerfile: apps/api/Dockerfile
+    command: ["node", "--max-old-space-size=512", "dist/location-reference/sidecar-main.js"]
+    environment:
+      PORT: 3002
+      HOST: 127.0.0.1
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:3002:3002"
+    mem_limit: 768m
+    mem_reservation: 384m
+    profiles: ["location-reference"]
 
 volumes:
   pgdata:

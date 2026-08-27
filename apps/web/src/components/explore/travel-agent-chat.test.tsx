@@ -6,19 +6,15 @@ import type { AgentRun, ConversationPlace, ConversationTurnAcceptedResponse } fr
 import { TravelApiError } from "@/lib/api/errors";
 import type { TravelApi } from "@/lib/api";
 import { renderWithIntl } from "@/test/render";
-import {
-  CHAT_ACTIVE_RUN_STORAGE_KEY,
-  CHAT_THREAD_STORAGE_KEY,
-  TravelAgentChat,
-} from "./travel-agent-chat";
+import { CHAT_ACTIVE_RUN_STORAGE_KEY, TravelAgentChat } from "./travel-agent-chat";
 
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 const OWNER_ID = "22222222-2222-4222-8222-222222222222";
 const REQUEST_ID = "33333333-3333-4333-8333-333333333333";
 const USER_MESSAGE_ID = "44444444-4444-4444-8444-444444444444";
 const RUN_ID = "55555555-5555-4555-8555-555555555555";
-const REPLACEMENT_THREAD_ID = "66666666-6666-4666-8666-666666666666";
 const ASSISTANT_MESSAGE_ID = "77777777-7777-4777-8777-777777777777";
+const TRIP_ID = "99999999-9999-4999-8999-999999999999";
 const CREATED_AT = "2026-08-25T10:00:00.000Z";
 const TOKYO: ConversationPlace = {
   sourceId: "tokyo",
@@ -35,17 +31,21 @@ afterEach(() => {
 });
 
 function ChatHarness({
+  controlledThreadId = THREAD_ID,
+  initiallyOpen = true,
   selectedPlace = null,
-  initiallyOpen = false,
   autoAskRequest = null,
   onAutoAskConsumed,
   onConversationText,
+  onThreadInvalidated,
 }: {
-  selectedPlace?: { place: ConversationPlace; context: string } | null;
+  controlledThreadId?: string | null;
   initiallyOpen?: boolean;
+  selectedPlace?: { place: ConversationPlace; context: string } | null;
   autoAskRequest?: { nonce: string; place: ConversationPlace; context: string } | null;
   onAutoAskConsumed?: (nonce: string) => void;
   onConversationText?: (text: string) => void;
+  onThreadInvalidated?: () => void;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   return (
@@ -53,6 +53,8 @@ function ChatHarness({
       open={open}
       onOpen={() => setOpen(true)}
       onDismiss={() => setOpen(false)}
+      threadId={controlledThreadId}
+      onThreadInvalidated={onThreadInvalidated}
       selectedPlace={selectedPlace}
       autoAskRequest={autoAskRequest}
       onAutoAskConsumed={onAutoAskConsumed}
@@ -71,9 +73,12 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     getMyProfile: vi.fn(),
     updateMyProfile: vi.fn(),
     getTrips: vi.fn(),
+    getTrip: vi.fn(),
+    createPersonalTrip: vi.fn(),
     getLocationReference: vi.fn(),
-    getThreads: vi.fn().mockResolvedValue({ threads: [] }),
-    createThread: vi.fn().mockResolvedValue({ id: THREAD_ID, message: "Thread created" }),
+    getTripThreads: vi.fn(),
+    createTripThread: vi.fn(),
+    getOrCreateDefaultTripThread: vi.fn(),
     getOwnerConversation: vi.fn().mockResolvedValue({ thread: thread(), messages: [] }),
     submitConversationTurn: vi.fn().mockImplementation(async (_threadId, input) => accepted(input.question)),
     getAgentRun: vi.fn().mockResolvedValue(run("RUNNING")),
@@ -107,14 +112,12 @@ describe("TravelAgentChat durable streaming flow", () => {
 
     expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
     expect(screen.getByText("Tell me about Tokyo")).toBeInTheDocument();
-    expect(api.createThread).toHaveBeenCalledOnce();
     expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
       requestId: REQUEST_ID,
       question: "Tell me about Tokyo",
     });
     expect(api.subscribeAgentRun).toHaveBeenCalledWith(RUN_ID, expect.any(AbortSignal), expect.any(Function));
     expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
-    expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBe(THREAD_ID);
   });
 
   it("sends selected place context without browser-controlled authority fields", async () => {
@@ -154,15 +157,14 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(screen.queryByText("Old attempt")).not.toBeInTheDocument();
   });
 
-  it("restores deterministic message sequence from the stored owner thread", async () => {
-    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
+  it("restores a thread from the controlled threadId prop", async () => {
     const api = createApi({
       getOwnerConversation: vi.fn().mockResolvedValue({
         thread: thread(),
         messages: [
           { id: USER_MESSAGE_ID, role: "USER", content: "Earlier question", sequence: 1, createdAt: CREATED_AT },
           {
-            id: "66666666-6666-4666-8666-666666666666",
+            id: ASSISTANT_MESSAGE_ID,
             role: "ASSISTANT",
             content: "Earlier answer",
             sequence: 2,
@@ -171,25 +173,23 @@ describe("TravelAgentChat durable streaming flow", () => {
         ],
       }),
     });
-    renderChat(api, { initiallyOpen: true });
+    renderChat(api);
 
     expect(await screen.findByText("Earlier question")).toBeInTheDocument();
     expect(screen.getByText("Earlier answer")).toBeInTheDocument();
   });
 
-  it("clears a stale local pointer when the server returns 404", async () => {
-    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
+  it("calls onThreadInvalidated when the server returns 404 from getOwnerConversation", async () => {
+    const onInvalidated = vi.fn();
     const api = createApi({
       getOwnerConversation: vi.fn().mockRejectedValue(new TravelApiError("missing", 404, "Not Found", null)),
     });
-    renderChat(api, { initiallyOpen: true });
+    renderChat(api, { onThreadInvalidated: onInvalidated });
 
-    await waitFor(() => expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBeNull());
-    expect(screen.getByText("Let's plan somewhere memorable.")).toBeInTheDocument();
+    await waitFor(() => expect(onInvalidated).toHaveBeenCalledTimes(1));
   });
 
   it("clears a stale active-run pointer when its durable run can no longer be read", async () => {
-    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
     localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
     const api = createApi({
       getAgentRun: vi.fn().mockRejectedValue(new TravelApiError("missing", 404, "Not Found", null)),
@@ -201,49 +201,67 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
   });
 
-  it("does not carry Thread A messages into replacement Thread B after Thread A returns 404", async () => {
-    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
-    const submit = vi.fn()
-      .mockRejectedValueOnce(new TravelApiError("missing", 404, "Not Found", null))
-      .mockImplementationOnce(async (_threadId, input) => acceptedForThread(REPLACEMENT_THREAD_ID, input.question));
+  it("restores a running durable run after mount without submitting another turn", async () => {
+    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    const api = createApi();
+
+    renderChat(api);
+
+    await waitFor(() => expect(api.subscribeAgentRun).toHaveBeenCalledWith(RUN_ID, expect.any(AbortSignal), expect.any(Function)));
+    expect(api.submitConversationTurn).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+  });
+
+  it("clears a completed durable-run pointer after restoring persisted history", async () => {
+    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
     const api = createApi({
-      createThread: vi.fn().mockResolvedValue({ id: REPLACEMENT_THREAD_ID, message: "Thread created" }),
-      // Thread B is a genuinely different server thread, so it must come back
-      // empty rather than replaying Thread A's history.
-      getOwnerConversation: vi.fn().mockImplementation(async (id: string) => (
-        id === THREAD_ID
-          ? {
-              thread: thread(),
-              messages: [
-                { id: USER_MESSAGE_ID, role: "USER", content: "Thread A question", sequence: 1, createdAt: CREATED_AT },
-                { id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT", content: "Thread A answer", sequence: 2, createdAt: "2026-08-25T10:00:01.000Z" },
-              ],
-            }
-          : { thread: { ...thread(), id }, messages: [] }
-      )),
-      submitConversationTurn: submit,
+      getAgentRun: vi.fn().mockResolvedValue(run("COMPLETED")),
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [
+          { id: USER_MESSAGE_ID, role: "USER", content: "Earlier question", sequence: 1, createdAt: CREATED_AT },
+          { id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT", content: "Persisted answer", sequence: 2, createdAt: CREATED_AT },
+        ],
+      }),
     });
-    renderChat(api, { initiallyOpen: true });
 
-    expect(await screen.findByText("Thread A answer")).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Thread A follow-up" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    renderChat(api);
 
-    await waitFor(() => expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBeNull());
-    expect(screen.queryByText("Thread A question")).not.toBeInTheDocument();
-    expect(screen.queryByText("Thread A answer")).not.toBeInTheDocument();
-    expect(screen.queryByText("Thread A follow-up")).not.toBeInTheDocument();
+    expect(await screen.findByText("Persisted answer")).toBeInTheDocument();
+    await waitFor(() => expect(localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY)).toBeNull());
+    expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
+  });
 
-    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Thread B question" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+  it("calls onThreadInvalidated when submitConversationTurn returns 404", async () => {
+    const onInvalidated = vi.fn();
+    const api = createApi({
+      submitConversationTurn: vi.fn().mockRejectedValue(new TravelApiError("missing", 404, "Not Found", null)),
+    });
+    renderChat(api, { onThreadInvalidated: onInvalidated });
 
-    expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
-    expect(screen.getByText("Thread B question")).toBeInTheDocument();
-    expect(screen.queryByText("Thread A question")).not.toBeInTheDocument();
-    expect(screen.queryByText("Thread A answer")).not.toBeInTheDocument();
-    expect(api.createThread).toHaveBeenCalledTimes(1);
-    expect(submit).toHaveBeenNthCalledWith(2, REPLACEMENT_THREAD_ID, expect.objectContaining({ question: "Thread B question" }));
-    expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBe(REPLACEMENT_THREAD_ID);
+    await submitFromCapsule("Anything");
+
+    await waitFor(() => expect(onInvalidated).toHaveBeenCalledTimes(1));
+  });
+
+  it("surfaces the generic error when threadId is null at submit time", async () => {
+    const api = createApi();
+    // Render with a threadId so the panel mounts, then drop to null and submit
+    // via the auto-ask effect: with threadId === null the effect's guard
+    // short-circuits, so submitConversationTurn is never called.
+    const onConsumed = vi.fn();
+    renderChat(api, {
+      controlledThreadId: null,
+     
+      selectedPlace: { place: TOKYO, context: "Japan" },
+      autoAskRequest: { nonce: "n1", place: TOKYO, context: "Japan" },
+      onAutoAskConsumed: onConsumed,
+    });
+
+    // Give the auto-ask effect a chance to fire if it ever would.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(api.submitConversationTurn).not.toHaveBeenCalled();
+    expect(onConsumed).not.toHaveBeenCalled();
   });
 
   it("auto-sends a 'Tell me about …' turn when autoAskRequest is provided", async () => {
@@ -251,7 +269,6 @@ describe("TravelAgentChat durable streaming flow", () => {
     const api = createApi();
     const request = { nonce: "n1", place: TOKYO, context: "Japan" };
     renderChat(api, {
-      initiallyOpen: true,
       selectedPlace: { place: TOKYO, context: "Japan" },
       autoAskRequest: request,
       onAutoAskConsumed: onConsumed,
@@ -259,8 +276,6 @@ describe("TravelAgentChat durable streaming flow", () => {
 
     expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
     expect(screen.getByText("Tell me about Tokyo")).toBeInTheDocument();
-    expect(api.createThread).toHaveBeenCalledTimes(1);
-    expect(api.createThread).toHaveBeenCalledWith({ title: "Explore · Tokyo" });
     expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
     expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
       requestId: REQUEST_ID,
@@ -268,13 +283,12 @@ describe("TravelAgentChat durable streaming flow", () => {
       place: TOKYO,
       intent: "auto_intro",
     });
-    expect(localStorage.getItem(CHAT_THREAD_STORAGE_KEY)).toBe(THREAD_ID);
     await waitFor(() => expect(onConsumed).toHaveBeenCalledWith("n1"));
   });
 
   it("does not include the intent field for manually typed questions", async () => {
     const api = createApi();
-    renderChat(api, { initiallyOpen: true, selectedPlace: { place: TOKYO, context: "Japan" } });
+    renderChat(api, { selectedPlace: { place: TOKYO, context: "Japan" } });
 
     fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "What is the weather like?" } });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
@@ -308,7 +322,8 @@ describe("TravelAgentChat durable streaming flow", () => {
     renderWithIntl(
       <>
         <ChatHarness
-          initiallyOpen
+          controlledThreadId={THREAD_ID}
+         
           selectedPlace={{ place: TOKYO, context: "Japan" }}
           autoAskRequest={request}
           onAutoAskConsumed={onConsumed}
@@ -326,18 +341,17 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(onConsumed).toHaveBeenCalledWith("n1");
   });
 
-  it("appends auto-ask to an existing thread identified by localStorage pointer", async () => {
-    localStorage.setItem(CHAT_THREAD_STORAGE_KEY, THREAD_ID);
+  it("appends auto-ask to the controlled threadId", async () => {
     const api = createApi();
     const request = { nonce: "n1", place: TOKYO, context: "Japan" };
     renderChat(api, {
-      initiallyOpen: true,
+      controlledThreadId: THREAD_ID,
+     
       selectedPlace: { place: TOKYO, context: "Japan" },
       autoAskRequest: request,
     });
 
     expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
-    expect(api.createThread).not.toHaveBeenCalled();
     expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
     expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
       requestId: REQUEST_ID,
@@ -358,12 +372,11 @@ describe("TravelAgentChat durable streaming flow", () => {
     // Give the effect a chance to fire if it ever would.
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(api.submitConversationTurn).not.toHaveBeenCalled();
-    expect(api.createThread).not.toHaveBeenCalled();
   });
 });
 
 async function submitFromCapsule(question: string) {
-  fireEvent.change(screen.getByRole("textbox", { name: "Ask Wanderly" }), { target: { value: question } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: question } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 }
 
@@ -371,7 +384,9 @@ function thread() {
   return {
     id: THREAD_ID,
     ownerUserId: OWNER_ID,
-    tripId: null,
+    tripId: TRIP_ID,
+    scope: "TRIP" as const,
+    isDefault: false,
     title: "Explore conversation",
     createdAt: CREATED_AT,
     archivedAt: null,

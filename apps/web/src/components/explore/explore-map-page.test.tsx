@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AgentRun, ConversationTurnAcceptedResponse, CreateThreadResponse, OwnerConversationResponse, Thread } from "@/lib/api/contracts";
+import type { AgentRun, ConversationTurnAcceptedResponse, OwnerConversationResponse, Thread } from "@/lib/api/contracts";
 import type { TravelApi } from "@/lib/api";
 import { configureMapAttribution, ExploreMapPage, toConversationPlace } from "./explore-map-page";
 import { renderWithIntl } from "@/test/render";
@@ -328,7 +328,8 @@ describe("ExploreMapPage private inspirations", () => {
   });
 
   it("opens pin context on the first chat click and the preview on the second", async () => {
-    renderWithIntl(<ExploreMapPage />);
+    const api = createTravelApiForAutoAsk();
+    renderWithIntl(<ExploreMapPage />, { api });
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
     act(() => {
@@ -357,10 +358,12 @@ describe("ExploreMapPage private inspirations", () => {
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
       matches: query.includes("orientation: portrait") ? false : true,
     }));
-    renderWithIntl(<ExploreMapPage />);
+    const api = createTravelApiForAutoAsk();
+    renderWithIntl(<ExploreMapPage />, { api });
 
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Chat history" })).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
 
     await waitFor(() => expect(mapMock.easeCalls.length).toBeGreaterThan(0));
@@ -437,7 +440,6 @@ describe("ExploreMapPage private inspirations", () => {
     fireEvent.click(viewButton);
 
     expect(await screen.findByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
-    expect(api.createThread).toHaveBeenCalledTimes(1);
     expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
     expect(api.submitConversationTurn).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
       requestId: "auto-ask-inspiration-id",
@@ -474,7 +476,6 @@ describe("ExploreMapPage private inspirations", () => {
     fireEvent.click(viewButton);
 
     expect(await screen.findByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
-    expect(api.createThread).toHaveBeenCalledTimes(1);
     expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
     expect(api.submitConversationTurn).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", expect.objectContaining({
       question: "Tell me about Tokyo",
@@ -503,17 +504,20 @@ describe("ExploreMapPage private inspirations", () => {
 });
 
 function createTravelApiForAutoAsk(): TravelApi & {
-  createThread: ReturnType<typeof vi.fn>;
+  getOrCreateDefaultTripThread: ReturnType<typeof vi.fn>;
   submitConversationTurn: ReturnType<typeof vi.fn>;
   subscribeAgentRun: ReturnType<typeof vi.fn>;
 } {
   const THREAD_ID = "11111111-1111-4111-8111-111111111111";
   const RUN_ID = "55555555-5555-4555-8555-555555555555";
+  const TRIP_ID = "99999999-9999-4999-8999-999999999999";
   const CREATED_AT = "2026-08-26T00:00:00.000Z";
   const thread: Thread = {
     id: THREAD_ID,
     ownerUserId: "22222222-2222-4222-8222-222222222222",
-    tripId: null,
+    tripId: TRIP_ID,
+    scope: "TRIP",
+    isDefault: false,
     title: "Explore · Pinned place 1",
     createdAt: CREATED_AT,
     archivedAt: null,
@@ -536,10 +540,26 @@ function createTravelApiForAutoAsk(): TravelApi & {
   return {
     getMyProfile: vi.fn(),
     updateMyProfile: vi.fn(),
-    getTrips: vi.fn(),
+    getTrips: vi.fn().mockResolvedValue({
+      trips: [{
+        id: TRIP_ID,
+        name: "Asia Trip",
+        status: "PLANNING",
+        departureCities: ["San Francisco"],
+        destinationCandidates: ["Tokyo", "Bangkok"],
+        travelDateStart: null,
+        travelDateEnd: null,
+        memberCount: 2,
+        role: "CREATOR",
+        createdAt: CREATED_AT,
+      }],
+    }),
+    getTrip: vi.fn(),
+    createPersonalTrip: vi.fn(),
     getLocationReference: vi.fn().mockResolvedValue({ outcome: "NO_REFERENCE", source: "Natural Earth + GeoNames", datasetVersion: "test", checkedAt: CREATED_AT, isTravelFact: false }),
-    getThreads: vi.fn().mockResolvedValue({ threads: [] }),
-    createThread: vi.fn().mockResolvedValue({ id: THREAD_ID, message: "Thread created" } satisfies CreateThreadResponse),
+    getTripThreads: vi.fn().mockResolvedValue({ threads: [thread] }),
+    createTripThread: vi.fn(),
+    getOrCreateDefaultTripThread: vi.fn().mockResolvedValue({ id: THREAD_ID, message: "Thread created" }),
     getOwnerConversation: vi.fn().mockResolvedValue({ thread, messages: [] } satisfies OwnerConversationResponse),
     // The turn command is now only accepted (202); the answer arrives over the
     // authenticated stream and the durable run is the recovery path.

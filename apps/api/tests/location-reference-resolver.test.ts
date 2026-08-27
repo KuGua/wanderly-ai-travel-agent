@@ -48,6 +48,21 @@ describe("LocationReferenceResolver", () => {
     expect(resolver.resolve(-5, -5)).toMatchObject({ outcome: "NO_REFERENCE", isTravelFact: false });
   });
 
+  it("falls back to the nearest coast for offshore land the dataset omits", () => {
+    // 1 km south of the polygon edge: an islet Natural Earth Admin 0 does not carry.
+    expect(resolver.resolve(-0.009, 5)).toMatchObject({
+      outcome: "REFERENCE",
+      country: "Testland",
+      countryCode: "TL",
+      nearestCity: null,
+    });
+  });
+
+  it("returns no reference beyond the coastal tolerance", () => {
+    // ~22 km south of the polygon edge: open water, not omitted land.
+    expect(resolver.resolve(-0.2, 5)).toMatchObject({ outcome: "NO_REFERENCE", isTravelFact: false });
+  });
+
   it("projects districts and neighborhoods to city level without collapsing distinct cities", () => {
     const chinaResolver = new LocationReferenceResolver([
       {

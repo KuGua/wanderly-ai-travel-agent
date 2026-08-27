@@ -8,14 +8,22 @@ import { __setModelGatewayForTests } from "../src/providers/gateway-factory.js";
 import { travelConversationSkill } from "../src/skills/personal/travel-conversation-skill.js";
 import { createRequestContext } from "../src/utils/context.js";
 import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
+import {
+  __resetLocationReferenceSourceForTests,
+  getLocationReferenceSource,
+  LocationReferenceSourceError,
+} from "../src/location-reference/location-reference-source.js";
 
 afterEach(() => {
   __setModelGatewayForTests(null);
+  __resetLocationReferenceSourceForTests();
+  delete process.env.LOCATION_REFERENCE_MODE;
+  delete process.env.LOCATION_REFERENCE_SIDECAR_URL;
 });
 
 describe("conversation place provenance", () => {
-  it("re-resolves client-supplied coordinates through the server location reference", () => {
-    expect(resolveConversationPlace({
+  it("re-resolves client-supplied coordinates through the server location reference", async () => {
+    expect(await resolveConversationPlace({
       sourceId: "untrusted-client-id",
       name: "Forged place name",
       latitude: 35.6895,
@@ -24,13 +32,34 @@ describe("conversation place provenance", () => {
     })).toMatchObject({ name: "Tokyo", sourceType: "REFERENCE" });
   });
 
-  it("keeps coordinates outside the reference dataset as private inspiration", () => {
-    expect(resolveConversationPlace({
+  it("keeps coordinates outside the reference dataset as private inspiration", async () => {
+    expect(await resolveConversationPlace({
       name: "Private pin",
       latitude: 0,
       longitude: 0,
       sourceType: "INSPIRATION",
     })).toMatchObject({ sourceType: "INSPIRATION" });
+  });
+
+  it("soft-degrades to INSPIRATION when the sidecar source is unavailable", async () => {
+    process.env.LOCATION_REFERENCE_MODE = "sidecar";
+    process.env.LOCATION_REFERENCE_SIDECAR_URL = "http://127.0.0.1:1";
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new LocationReferenceSourceError("UNAVAILABLE", "down");
+    }) as typeof fetch;
+
+    try {
+      expect(await resolveConversationPlace({
+        name: "Tokyo",
+        latitude: 35.6895,
+        longitude: 139.6917,
+        sourceType: "REFERENCE",
+      })).toMatchObject({ sourceType: "INSPIRATION" });
+      expect(getLocationReferenceSource().mode).toBe("sidecar");
+    } finally {
+      globalThis.fetch = original;
+    }
   });
 });
 

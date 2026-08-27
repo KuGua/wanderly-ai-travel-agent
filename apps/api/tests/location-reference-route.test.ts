@@ -31,6 +31,49 @@ describe("location reference route", () => {
     expect(body.admin1).toBeTruthy();
   });
 
+  it("resolves micro states the 1:110m dataset omitted instead of naming a neighbour", async () => {
+    const response = await app.inject({
+      method: "POST", url: "/api/v1/explore/location-reference",
+      payload: { latitude: 1.3521, longitude: 103.8198 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      outcome: "REFERENCE", country: "Singapore", countryCode: "SG", isTravelFact: false,
+    });
+  });
+
+  it("resolves offshore land within the coastal tolerance", async () => {
+    // Sentosa is not a Natural Earth Admin 0 polygon; it must not read as open water.
+    const response = await app.inject({
+      method: "POST", url: "/api/v1/explore/location-reference",
+      payload: { latitude: 1.2494, longitude: 103.8303 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ outcome: "REFERENCE", country: "Singapore", countryCode: "SG" });
+  });
+
+  it("keeps country codes for source records whose ISO_A2 is -99", async () => {
+    const response = await app.inject({
+      method: "POST", url: "/api/v1/explore/location-reference",
+      payload: { latitude: 48.8566, longitude: 2.3522 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ outcome: "REFERENCE", countryCode: "FR", nearestCity: "Paris" });
+  });
+
+  it("returns no reference for open water", async () => {
+    const response = await app.inject({
+      method: "POST", url: "/api/v1/explore/location-reference",
+      payload: { latitude: 0, longitude: 80 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ outcome: "NO_REFERENCE", isTravelFact: false });
+  });
+
   it("rejects invalid coordinates before resolving them", async () => {
     const response = await app.inject({
       method: "POST", url: "/api/v1/explore/location-reference",

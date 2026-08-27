@@ -50,9 +50,21 @@ describe("migration runner", () => {
         RETURNING id
       `;
       userId = user.id;
+      // Per docs/trip-scoped-private-threads-implementation.md §1.1 every
+      // chat thread must belong to a Trip.  Provision one so the legacy
+      // role-normalization migration can run its scenario.
+      const tripId = randomUUID();
+      await client`
+        INSERT INTO shared_trips (id, name, created_by, departure_cities, destination_candidates)
+        VALUES (${tripId}, 'Migration Trip', ${userId}, ${["San Francisco"]}, ${["Tokyo"]})
+      `;
+      await client`
+        INSERT INTO trip_members (trip_id, user_id, role, is_required)
+        VALUES (${tripId}, ${userId}, 'CREATOR', true)
+      `;
       const [thread] = await client<{ id: string }[]>`
-        INSERT INTO chat_threads (owner_user_id, title)
-        VALUES (${userId}, ${title})
+        INSERT INTO chat_threads (owner_user_id, trip_id, scope, is_default, title)
+        VALUES (${userId}, ${tripId}, 'TRIP', false, ${title})
         RETURNING id
       `;
       threadId = thread.id;
@@ -133,6 +145,8 @@ describe("migration runner", () => {
       expect(await runMigrations(conn)).toEqual([]);
     } finally {
       if (threadId) await client`DELETE FROM chat_threads WHERE id = ${threadId}`;
+      if (userId) await client`DELETE FROM trip_members WHERE user_id = ${userId}`;
+      if (userId) await client`DELETE FROM shared_trips WHERE created_by = ${userId}`;
       if (userId) await client`DELETE FROM users WHERE id = ${userId}`;
       await client.end({ timeout: 5 });
     }

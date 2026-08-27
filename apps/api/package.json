@@ -12,6 +12,8 @@
     "dev": "tsx watch src/server.ts",
     "worker": "node dist/workers/worker-main.js",
     "worker:dev": "tsx watch src/workers/worker-main.ts",
+    "sidecar": "node dist/location-reference/sidecar-main.js",
+    "sidecar:dev": "tsx watch src/location-reference/sidecar-main.ts",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
@@ -26,6 +28,7 @@
     "docs:verify": "tsx scripts/verify-docs.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1118.0",
     "@fastify/cors": "^11.0.1",
     "@fastify/swagger": "^9.5.0",
     "@fastify/swagger-ui": "^6.1.1",
@@ -39,6 +42,7 @@
     "@opentelemetry/sdk-trace-node": "^1.30.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
     "aws-jwt-verify": "^5.2.1",
+    "bcryptjs": "^3.0.3",
     "dotenv": "^16.4.5",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.3.3",
@@ -50,6 +54,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.15.29",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^8.34.0",

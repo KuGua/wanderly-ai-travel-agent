@@ -6,6 +6,8 @@ export const profileKeys = {
 export const tripKeys = {
   all: ["trips"] as const,
   list: ["trips", "list"] as const,
+  detail: (tripId: string) => ["trips", tripId, "detail"] as const,
+  threads: (tripId: string) => ["trips", tripId, "my-threads"] as const,
 };
 
 export const threadKeys = {

@@ -3,17 +3,17 @@ import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const SOURCES = {
-  countries: "public/map-data/natural-earth-admin-0.geojson",
+  countries: "../api/data/location-reference/countries.geojson",
   places: "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_populated_places.geojson",
   regions: "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson",
-  chinaRegions: "https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json",
+  chinaRegions: "public/map-data/china-region-labels.geojson",
 };
 
 const [countries, places, regions, chinaRegions] = await Promise.all([
   JSON.parse(await readFile(resolve(root, SOURCES.countries), "utf8")),
   fetchJson(SOURCES.places),
   fetchJson(SOURCES.regions),
-  fetchJson(SOURCES.chinaRegions),
+  JSON.parse(await readFile(resolve(root, SOURCES.chinaRegions), "utf8")),
 ]);
 
 const features = [
@@ -28,8 +28,8 @@ const features = [
     .filter(({ properties }) => properties.scalerank <= 4 && properties.adm0_a3 !== "CHN" && properties.adm0_a3 !== "TWN")
     .map(({ properties }) => pointFeature("region", properties.name_en ?? properties.name, properties.name_zh, properties.longitude, properties.latitude, properties.scalerank)),
   ...chinaRegions.features
-    .filter(({ properties }) => typeof properties.adcode === "number" && Array.isArray(properties.center))
-    .map(({ properties }) => pointFeature("region", chinaRegionEnglish(properties.adcode) ?? properties.name, properties.name, properties.center[0], properties.center[1], 1)),
+    .filter(({ properties, geometry }) => typeof properties.adcode === "number" && geometry?.type === "Point")
+    .map(({ properties, geometry }) => pointFeature("region", chinaRegionEnglish(properties.adcode) ?? properties.name, properties.name, geometry.coordinates[0], geometry.coordinates[1], 1)),
 ].filter(Boolean);
 
 const collection = {

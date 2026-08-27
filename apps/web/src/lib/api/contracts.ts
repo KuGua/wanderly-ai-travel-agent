@@ -72,7 +72,9 @@ export const tripsResponseSchema = z.object({
 export const threadSchema = z.object({
   id: z.string().uuid(),
   ownerUserId: z.string().uuid(),
-  tripId: z.string().uuid().nullable(),
+  tripId: z.string().uuid(),
+  scope: z.enum(["TRIP"]).default("TRIP"),
+  isDefault: z.boolean().default(false),
   title: z.string(),
   createdAt: z.string().datetime(),
   archivedAt: z.string().datetime().nullable(),
@@ -82,14 +84,45 @@ export const threadsResponseSchema = z.object({
   threads: z.array(threadSchema),
 });
 
-export const createThreadInputSchema = z.object({
-  title: z.string().min(1).max(256),
-  tripId: z.string().uuid().optional(),
+export const createTripThreadInputSchema = z.object({
+  title: z.string().trim().min(1).max(256),
 }).strict();
+
+export const createPersonalTripInputSchema = z.object({
+  departureCities: z.array(z.string().min(1)).min(1),
+  destinationCandidates: z.array(z.string().min(1)).min(2).max(5),
+  travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+}).strict();
+
+export const createPersonalTripResponseSchema = z.object({
+  id: z.string().uuid(),
+  message: z.literal("Personal trip created"),
+});
 
 export const createThreadResponseSchema = z.object({
   id: z.string().uuid(),
   message: z.literal("Thread created"),
+});
+
+// Single-trip detail DTO returned by GET /api/v1/trips/:tripId.
+export const tripDetailSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  createdBy: z.string().uuid(),
+  status: tripStatusSchema,
+  departureCities: z.array(z.string()),
+  destinationCandidates: z.array(z.string()),
+  travelDateStart: dateSchema.nullable(),
+  travelDateEnd: dateSchema.nullable(),
+  memberCount: z.number().int().nonnegative(),
+  role: tripRoleSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const tripDetailResponseSchema = z.object({
+  trip: tripDetailSchema,
 });
 
 export const conversationPlaceSchema = z.object({
@@ -231,8 +264,12 @@ export type LocationReferenceInput = z.infer<typeof locationReferenceInputSchema
 export type LocationReferenceResponse = z.infer<typeof locationReferenceResponseSchema>;
 export type Thread = z.infer<typeof threadSchema>;
 export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
-export type CreateThreadInput = z.infer<typeof createThreadInputSchema>;
+export type CreateTripThreadInput = z.infer<typeof createTripThreadInputSchema>;
 export type CreateThreadResponse = z.infer<typeof createThreadResponseSchema>;
+export type CreatePersonalTripInput = z.infer<typeof createPersonalTripInputSchema>;
+export type CreatePersonalTripResponse = z.infer<typeof createPersonalTripResponseSchema>;
+export type TripDetail = z.infer<typeof tripDetailSchema>;
+export type TripDetailResponse = z.infer<typeof tripDetailResponseSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;

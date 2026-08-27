@@ -2,8 +2,9 @@
 
 Base URL: `http://localhost:3000/api/v1`
 
-**Authentication**: All endpoints except `/health`, `/metrics`, `/docs`, and
-`POST /api/v1/bookings/callback` require a Cognito access token. The API verifies
+**Authentication**: All endpoints except `/health`, `/metrics`, `/docs`,
+`POST /api/v1/bookings/callback`, the anonymous location-reference endpoint,
+and `/auth/*` account bootstrap/recovery routes require an access token. The API verifies
 the JWT and derives the database identity from its `sub`; clients never submit a
 user ID to choose an identity. The callback uses the independent sandbox HMAC
 contract documented below and never trusts a user bearer token.
@@ -24,6 +25,35 @@ Authorization: Bearer <cognito-access-token>
 
 The `x-correlation-id` response header always matches `correlationId` in an
 error response body. Request validation failures use `400 Bad Request`.
+
+---
+
+## Custom account recovery
+
+These endpoints support the explicit `NEXT_PUBLIC_AUTH_MODE=custom` prototype.
+Normal production identity remains Cognito unless the deployment deliberately
+enables and configures this alternate account flow.
+
+- `POST /auth/login`: accepts `username`, `password`, and optional `rememberMe`.
+  Email is not a login identifier. A remembered token expires after 30 days.
+- `POST /auth/forgot-password`: accepts `email`. In the temporary
+  `PASSWORD_RESET_MODE=direct` prototype it returns `mode: "direct"` and a
+  one-use `resetToken`, allowing the client to continue without a code. In
+  `email-code` mode it returns a generic response and `retryAfterSeconds: 60`;
+  non-production also returns `developmentCode`, while production sends the
+  six-digit code through configured AWS SES.
+- `POST /auth/verify-reset-code`: accepts `email` and a six-digit `code`. The
+  code expires after 10 minutes and is blocked after five failed attempts.
+  Success returns a one-use `resetToken`.
+- `POST /auth/reset-password`: accepts `email`, `resetToken`, `password`, and
+  `confirmPassword`; both password values must match and satisfy policy.
+
+Direct mode does not prove mailbox ownership and is an explicitly accepted risk
+for the current demo; it must be replaced before real user accounts are allowed.
+Recovery inputs and secrets are never logged. Email-code mode in
+production requires a verified SES
+sender via `PASSWORD_RESET_FROM_EMAIL`, `AWS_REGION`, and runtime-role permission
+to call `ses:SendEmail`.
 
 ---
 
@@ -210,9 +240,7 @@ Create a shared trip.
 **Response**: `201 { "id": "uuid", "message": "Trip created" }`
 
 ### `POST /trips/:tripId/join`
-Join an existing trip.
-
-**Response**: `{ "message": "Joined trip" }`
+> **Removed.** Join-by-UUID was replaced by Trip invitations: creators issue `POST /trips/:tripId/invitations` and invitees redeem the token at `POST /trip-invitations/:inviteToken/accept`. See the Trip Invitations section below.
 
 ### `GET /trips/:tripId`
 Get trip details (members only).
@@ -418,6 +446,29 @@ Get confirmation status for a plan.
 
 ---
 
+## Trip-scoped chat threads
+
+Every chat thread belongs to exactly one shared trip (see migration `0012_trip_scoped_threads.sql`). These are the only endpoints new clients should call.
+
+### `GET /trips/:tripId/threads`
+List the caller's own threads within the trip (server-filtered by `ownerUserId`).
+
+**Response**: `{ "threads": [ThreadSummary, …] }`
+
+### `POST /trips/:tripId/threads`
+Create a non-default thread in the trip. Caller must be a trip member.
+
+**Body**: `{ "title": "Hotel ideas" }`
+
+**Response**: `201 ThreadSummary`
+
+### `POST /trips/:tripId/threads/default`
+Idempotent provision of the caller's per-trip default scratchpad (used by `TravelAgentChat` on Explore). Creates the row on first call, returns the existing one thereafter. Caller must be a trip member.
+
+**Response**: `200 ThreadSummary`
+
+---
+
 ## Private Chat Threads
 
 All thread and conversation routes require Cognito bearer authentication and
@@ -426,9 +477,15 @@ does not grant fellow trip members access.
 
 ### `POST /threads`
 
-Create an owner-only private thread. Body: `{ "title": "Tokyo ideas", "tripId"?: "uuid" }`.
+> **Deprecated.** Use `POST /trips/:tripId/threads` (create) or
+> `POST /trips/:tripId/threads/default` (idempotent default). This shim
+> remains so existing fixtures/tests keep working; new clients must not call it.
+
+Create an owner-only private thread. Body: `{ "title": "Tokyo ideas", "tripId"?: "uuid" }`. `tripId` is required and the caller must be a member of that trip.
 
 ### `GET /threads`
+
+> **Deprecated.** Use `GET /trips/:tripId/threads`.
 
 List only the authenticated owner's threads.
 

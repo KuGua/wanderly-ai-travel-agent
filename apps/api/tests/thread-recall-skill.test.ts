@@ -8,12 +8,15 @@ import {
   chatThreads,
   chatMessages,
   auditEvents,
+  sharedTrips,
+  tripMembers,
 } from "../src/db/schema.js";
 import { personalTravelAgent } from "../src/agents/personal-travel-agent.js";
 import { createRequestContext } from "../src/utils/context.js";
 import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
 import { invokeSkill } from "../src/agents/skill-registry.js";
 import { __resetRegistryForTests } from "../src/agents/skill-registry.js";
+import { provisionTripAndMember } from "./helpers/trip.js";
 
 let ownerId: string;
 let otherId: string;
@@ -34,7 +37,10 @@ beforeAll(async () => {
 
 afterAll(async () => {
   const testUserIds = [ownerId, otherId];
+  await db.delete(chatMessages).where(inArray(chatMessages.senderUserId, testUserIds));
   await db.delete(chatThreads).where(inArray(chatThreads.ownerUserId, testUserIds));
+  await db.delete(tripMembers).where(inArray(tripMembers.userId, testUserIds));
+  await db.delete(sharedTrips).where(inArray(sharedTrips.createdBy, testUserIds));
   await db.delete(auditEvents).where(inArray(auditEvents.actorUserId, testUserIds));
   await db.delete(users).where(eq(users.id, ownerId));
   await db.delete(users).where(eq(users.id, otherId));
@@ -43,16 +49,26 @@ afterAll(async () => {
 beforeEach(async () => {
   __resetRegistryForTests();
   personalTravelAgent.register();
+  await db.delete(chatMessages).where(inArray(chatMessages.senderUserId, [ownerId, otherId]));
   await db.delete(chatThreads).where(inArray(chatThreads.ownerUserId, [ownerId, otherId]));
   await db.delete(auditEvents).where(inArray(auditEvents.actorUserId, [ownerId, otherId]));
 });
 
+async function insertThread(owner: string, title: string) {
+  const { tripId } = await provisionTripAndMember({ ownerUserId: owner });
+  const [thread] = await db.insert(chatThreads).values({
+    ownerUserId: owner,
+    tripId,
+    scope: "TRIP",
+    isDefault: false,
+    title,
+  }).returning();
+  return thread;
+}
+
 describe("thread.recall skill", () => {
   it("returns empty array when the thread has no messages", async () => {
-    const [thread] = await db.insert(chatThreads).values({
-      ownerUserId: ownerId,
-      title: "Empty",
-    }).returning();
+    const thread = await insertThread(ownerId, "Empty");
 
     const ctx = createRequestContext(ownerId, randomUUID(), randomUUID());
     const result = await invokeSkill("thread.recall", {
@@ -64,10 +80,7 @@ describe("thread.recall skill", () => {
   });
 
   it("returns contentRedacted='' for unshared messages", async () => {
-    const [thread] = await db.insert(chatThreads).values({
-      ownerUserId: ownerId,
-      title: "Unshared",
-    }).returning();
+    const thread = await insertThread(ownerId, "Unshared");
 
     await db.insert(chatMessages).values({
       threadId: thread.id,
@@ -88,10 +101,7 @@ describe("thread.recall skill", () => {
   });
 
   it("returns redacted_summary only when markedSharedByOwner && redactedSummary non-null", async () => {
-    const [thread] = await db.insert(chatThreads).values({
-      ownerUserId: ownerId,
-      title: "Shared",
-    }).returning();
+    const thread = await insertThread(ownerId, "Shared");
 
     // Case 1: marked true but redacted_summary null → empty
     await db.insert(chatMessages).values({
@@ -126,10 +136,7 @@ describe("thread.recall skill", () => {
   });
 
   it("owner mismatch returns 403, matching the owner-only thread routes", async () => {
-    const [thread] = await db.insert(chatThreads).values({
-      ownerUserId: ownerId,
-      title: "Owned by alice",
-    }).returning();
+    const thread = await insertThread(ownerId, "Owned by alice");
 
     // The handler throws ApiError directly so the owner-only API contract is
     // consistent across HTTP routes and Personal Agent recall.
@@ -143,10 +150,7 @@ describe("thread.recall skill", () => {
   });
 
   it("handler never leaks raw body — the output schema cannot carry it", async () => {
-    const [thread] = await db.insert(chatThreads).values({
-      ownerUserId: ownerId,
-      title: "Leak test",
-    }).returning();
+    const thread = await insertThread(ownerId, "Leak test");
 
     await db.insert(chatMessages).values({
       threadId: thread.id,

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": null,
+  "smallCountrySpanDegrees": 1.5,
+  "pinnedArcCount": 166,
+  "sources": [
+    {
+      "name": "Natural Earth Admin 0 Countries",
+      "version": "v5.1.2",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries.geojson",
+      "sha256": "239eec57ac17f100a11e2536cffc56752c318b50ae765b0918ff7aab4ce8f255",
+      "usage": "Build-time source only; browsers load the derived local line meshes."
+    }
+  ],
+  "datasets": [
+    {
+      "id": "lod0",
+      "path": "map-data/country-borders-lod0.geojson",
+      "minZoom": 0,
+      "maxZoom": 2,
+      "simplificationQuantile": 0.005,
+      "bytes": 618092,
+      "gzipBytes": 173637,
+      "sha256": "ae297d19abe83396fc5037743df0d6e9c5c05bf4c2425d47456cc9adaddea3b5"
+    },
+    {
+      "id": "lod1",
+      "path": "map-data/country-borders-lod1.geojson",
+      "minZoom": 2,
+      "maxZoom": null,
+      "simplificationQuantile": 0.035,
+      "bytes": 1168052,
+      "gzipBytes": 381826,
+      "sha256": "a8a3edf96bcf65e10be79db2d5c4f7e8f3113c364171191f723b6468651ab330"
+    },
+    {
+      "id": "lod3",
+      "indexPath": "map-data/country-borders-lod3/index.json",
+      "pathTemplate": "map-data/country-borders-lod3/{tile}.geojson",
+      "minZoom": 4.5,
+      "maxZoom": null,
+      "tileSizeDegrees": 20,
+      "quantization": 1000000,
+      "coordinateDecimals": 4,
+      "maxPointsPerRun": 128,
+      "tileCount": 164,
+      "totalBytes": 10192485,
+      "totalGzipBytes": 3284623,
+      "largestTileGzipBytes": 119865,
+      "indexSha256": "6e04b5c42b5d0c72b1e8e86a982b972a1b5f1b066e5fbf328b1b42b82922e49f"
+    }
+  ]
+}

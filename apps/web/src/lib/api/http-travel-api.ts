@@ -4,10 +4,13 @@ import {
   conversationTurnAcceptedResponseSchema,
   agentRunResponseSchema,
   agentStreamEventSchema,
-  createThreadInputSchema,
+  createPersonalTripInputSchema,
+  createPersonalTripResponseSchema,
   createThreadResponseSchema,
+  createTripThreadInputSchema,
   ownerConversationResponseSchema,
   profileResponseSchema,
+  tripDetailResponseSchema,
   tripsResponseSchema,
   threadsResponseSchema,
   updateProfileInputSchema,
@@ -16,7 +19,8 @@ import {
   locationReferenceResponseSchema,
   type UpdateProfileInput,
   type ConversationTurnRequest,
-  type CreateThreadInput,
+  type CreatePersonalTripInput,
+  type CreateTripThreadInput,
 } from "./contracts";
 import type { TravelApi } from "./travel-api";
 
@@ -43,6 +47,10 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request("/trips", tripsResponseSchema);
   }
 
+  getTrip(tripId: string) {
+    return this.client.request("/trips/" + encodeURIComponent(tripId), tripDetailResponseSchema);
+  }
+
   getLocationReference(input: import("./contracts").LocationReferenceInput) {
     const body = locationReferenceInputSchema.parse(input);
     return this.client.request("/explore/location-reference", locationReferenceResponseSchema, {
@@ -50,16 +58,34 @@ export class HttpTravelApi implements TravelApi {
     });
   }
 
-  getThreads() {
-    return this.client.request("/threads", threadsResponseSchema);
+  createPersonalTrip(input: CreatePersonalTripInput) {
+    const body = createPersonalTripInputSchema.parse(input);
+    return this.client.request(
+      "/trips/personal",
+      createPersonalTripResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
   }
 
-  createThread(input: CreateThreadInput) {
-    const body = createThreadInputSchema.parse(input);
-    return this.client.request("/threads", createThreadResponseSchema, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
+  getTripThreads(tripId: string) {
+    return this.client.request("/trips/" + encodeURIComponent(tripId) + "/threads", threadsResponseSchema);
+  }
+
+  createTripThread(tripId: string, input: CreateTripThreadInput) {
+    const body = createTripThreadInputSchema.parse(input);
+    return this.client.request(
+      "/trips/" + encodeURIComponent(tripId) + "/threads",
+      createThreadResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  }
+
+  getOrCreateDefaultTripThread(tripId: string) {
+    return this.client.request(
+      "/trips/" + encodeURIComponent(tripId) + "/threads/default",
+      createThreadResponseSchema,
+      { method: "POST" },
+    );
   }
 
   getOwnerConversation(threadId: string) {

@@ -59,20 +59,21 @@ visual fallback if GEBCO is unavailable; roads, labels and administrative
 layers stay above both rasters. GEBCO requires attribution, has no availability
 SLA, and explicitly must not be used for navigation or safety at sea.
 
-For low-zoom global country borders, the Explore page renders a camera-projected
-SVG overlay above the provider stack. Natural Earth Admin 0 supplies the global
-fallback. When the public DataV.GeoAtlas China outline is available, it replaces
-Natural Earth's China and Taiwan features with one nationwide multipart outline
-that includes Hong Kong, Macao, Taiwan and the South China Sea linework. If that
-request fails, the complete local Natural Earth file remains visible. Both
-sources appear in the attribution control; neither is used for destination
-lookup or travel facts. The overlay culls the globe's back hemisphere, while
-state/province boundary details remain progressive OpenFreeMap style layers.
+For country borders, the Explore page renders a camera-projected SVG overlay
+above the provider stack. `build-country-boundaries.mjs` uses Natural Earth
+Admin 0 10m only at build time, turns it into one shared topology, and writes
+three local line meshes for progressive zoom loading. The browser loads only
+the selected mesh, so neighbouring countries never double-stroke a shared
+border. The versioned local China maritime-line asset is rendered separately;
+there is no browser DataV data request. These display assets are not used for
+destination lookup or travel facts. The overlay culls the globe's back
+hemisphere, while state/province boundary details remain progressive OpenFreeMap
+style layers.
 
 Globe text is a separate camera-projected SVG overlay backed by the versioned
 `public/map-data/geography-labels.geojson` file. It contains compact display-only
 points generated from Natural Earth countries, populated places and Admin 1
-data, plus DataV.GeoAtlas centers for China's province-level regions. Continents
+data, plus the local versioned China province-level display centers. Continents
 and countries appear at globe scale, capitals and high-ranking cities at the
 next tier, and state/province names when zoomed further. English and Simplified
 Chinese routes prefer their matching name and fall back to English. Regenerate

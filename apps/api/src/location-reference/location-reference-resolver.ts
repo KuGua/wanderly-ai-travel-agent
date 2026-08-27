@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 export type LocationReference =
@@ -48,6 +48,12 @@ type Manifest = { version: string; checkedAt: string };
 
 const SOURCE = "Natural Earth + GeoNames" as const;
 const MAX_CITY_DISTANCE_KM = 75;
+// Natural Earth Admin 0 omits small offshore and reclaimed land (for example
+// Sentosa off Singapore). A click there is inside no country polygon, so fall
+// back to the nearest coast within this tolerance instead of claiming the point
+// has no reference. Open water stays NO_REFERENCE.
+const NEAREST_COUNTRY_TOLERANCE_KM = 10;
+const KM_PER_DEGREE_LATITUDE = 111.32;
 const MIN_MAJOR_CITY_POPULATION = 50_000;
 const CITY_LEVEL_FEATURE_CODES = new Set(["PPL", "PPLA", "PPLA2", "PPLC"]);
 const AUTHORITY_FEATURE_CODES = new Set(["PPLA", "PPLA2", "PPLC"]);
@@ -83,7 +89,8 @@ export class LocationReferenceResolver {
   }
 
   resolve(latitude: number, longitude: number): LocationReference {
-    const country = this.countries.find((feature) => containsCoordinate(feature, longitude, latitude));
+    const country = this.countries.find((feature) => containsCoordinate(feature, longitude, latitude))
+      ?? nearestCountryWithinTolerance(this.countries, longitude, latitude);
     if (!country?.properties.ADMIN) return this.noReference();
 
     const countryCode = normalizedCountryCode(country.properties.ISO_A2);
@@ -125,10 +132,8 @@ let defaultResolver: LocationReferenceResolver | undefined;
 
 export function getLocationReferenceResolver(): LocationReferenceResolver {
   if (defaultResolver) return defaultResolver;
-  const bundledCountriesPath = resolve(process.cwd(), "data/location-reference/countries.geojson");
-  const developmentCountriesPath = resolve(process.cwd(), "../web/public/map-data/natural-earth-admin-0.geojson");
   const countriesPath = process.env.LOCATION_REFERENCE_COUNTRIES_PATH
-    ?? (existsSync(bundledCountriesPath) ? bundledCountriesPath : developmentCountriesPath);
+    ?? resolve(process.cwd(), "data/location-reference/countries.geojson");
   const countries = JSON.parse(readFileSync(countriesPath, "utf8")) as { features: CountryFeature[] };
   const admin1 = JSON.parse(readFileSync(resolve(process.cwd(), "data/location-reference/admin1.geojson"), "utf8")) as { features: Admin1Feature[] };
   const cities = parseGeoNamesCities(readFileSync(resolve(process.cwd(), "data/location-reference/cities5000.txt"), "utf8"));
@@ -226,6 +231,75 @@ function withBbox(feature: Admin1Feature): Admin1Feature {
     maxLatitude = Math.max(maxLatitude, latitude);
   }
   return { ...feature, bbox: [minLongitude, minLatitude, maxLongitude, maxLatitude] };
+}
+
+function nearestCountryWithinTolerance(
+  countries: CountryFeature[],
+  longitude: number,
+  latitude: number,
+): CountryFeature | undefined {
+  const longitudeKmPerDegree = Math.max(KM_PER_DEGREE_LATITUDE * Math.cos(latitude * (Math.PI / 180)), 1e-6);
+  const latitudeSlack = NEAREST_COUNTRY_TOLERANCE_KM / KM_PER_DEGREE_LATITUDE;
+  const longitudeSlack = NEAREST_COUNTRY_TOLERANCE_KM / longitudeKmPerDegree;
+  let nearest: CountryFeature | undefined;
+  let nearestDistanceKm = NEAREST_COUNTRY_TOLERANCE_KM;
+  for (const feature of countries) {
+    if (!feature.properties.ADMIN) continue;
+    if (feature.bbox && (longitude < feature.bbox[0] - longitudeSlack || longitude > feature.bbox[2] + longitudeSlack
+      || latitude < feature.bbox[1] - latitudeSlack || latitude > feature.bbox[3] + latitudeSlack)) continue;
+    const distanceKm = distanceToGeometryKm(feature.geometry, longitude, latitude, longitudeKmPerDegree);
+    if (distanceKm < nearestDistanceKm) {
+      nearest = feature;
+      nearestDistanceKm = distanceKm;
+    }
+  }
+  return nearest;
+}
+
+function distanceToGeometryKm(
+  geometry: CountryFeature["geometry"],
+  longitude: number,
+  latitude: number,
+  longitudeKmPerDegree: number,
+): number {
+  const polygons = geometry.type === "Polygon"
+    ? [geometry.coordinates as Position[][]]
+    : geometry.coordinates as Position[][][];
+  let nearestKm = Infinity;
+  for (const polygon of polygons) {
+    for (const ring of polygon) {
+      for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index++) {
+        const distanceKm = distanceToSegmentKm(
+          ring[previous], ring[index], longitude, latitude, longitudeKmPerDegree,
+        );
+        if (distanceKm < nearestKm) nearestKm = distanceKm;
+      }
+    }
+  }
+  return nearestKm;
+}
+
+function distanceToSegmentKm(
+  [startLongitude, startLatitude]: Position,
+  [endLongitude, endLatitude]: Position,
+  longitude: number,
+  latitude: number,
+  longitudeKmPerDegree: number,
+): number {
+  // Local equirectangular projection: exact enough at the 10 km tolerance scale.
+  const pointX = longitude * longitudeKmPerDegree;
+  const pointY = latitude * KM_PER_DEGREE_LATITUDE;
+  const startX = startLongitude * longitudeKmPerDegree;
+  const startY = startLatitude * KM_PER_DEGREE_LATITUDE;
+  const endX = endLongitude * longitudeKmPerDegree;
+  const endY = endLatitude * KM_PER_DEGREE_LATITUDE;
+  const segmentX = endX - startX;
+  const segmentY = endY - startY;
+  const segmentLengthSquared = segmentX ** 2 + segmentY ** 2;
+  const projection = segmentLengthSquared === 0
+    ? 0
+    : Math.min(1, Math.max(0, ((pointX - startX) * segmentX + (pointY - startY) * segmentY) / segmentLengthSquared));
+  return Math.hypot(pointX - (startX + projection * segmentX), pointY - (startY + projection * segmentY));
 }
 
 function pointInPolygon(point: Position, rings: Position[][]): boolean {

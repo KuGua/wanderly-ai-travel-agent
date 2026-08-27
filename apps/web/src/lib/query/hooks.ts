@@ -5,7 +5,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   ConversationTurnRequest,
   ConversationTurnAcceptedResponse,
-  CreateThreadInput,
+  CreatePersonalTripInput,
+  CreateTripThreadInput,
   OwnerConversationResponse,
   UpdateProfileInput,
 } from "@/lib/api/contracts";
@@ -28,6 +29,38 @@ export function useTrips() {
   });
 }
 
+export function useTrip(tripId: string | null) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.detail(tripId ?? "none"),
+    queryFn: () => api.getTrip(tripId as string),
+    enabled: Boolean(tripId),
+    retry: false,
+  });
+}
+
+export function useTripThreads(tripId: string | null) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.threads(tripId ?? "none"),
+    queryFn: () => api.getTripThreads(tripId as string),
+    enabled: Boolean(tripId),
+    retry: false,
+  });
+}
+
+export function useCreatePersonalTrip() {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreatePersonalTripInput) => api.createPersonalTrip(input),
+    onSuccess: ({ id }) => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.list });
+      void queryClient.invalidateQueries({ queryKey: tripKeys.detail(id) });
+    },
+  });
+}
+
 export function useUpdateMyProfile() {
   const api = useTravelApi();
   const queryClient = useQueryClient();
@@ -40,11 +73,6 @@ export function useUpdateMyProfile() {
   });
 }
 
-export function useThreads() {
-  const api = useTravelApi();
-  return useQuery({ queryKey: threadKeys.list, queryFn: () => api.getThreads() });
-}
-
 export function useOwnerConversation(threadId: string | null) {
   const api = useTravelApi();
   return useQuery({
@@ -55,9 +83,26 @@ export function useOwnerConversation(threadId: string | null) {
   });
 }
 
-export function useCreateThread() {
+export function useCreateTripThread(tripId: string) {
   const api = useTravelApi();
-  return useMutation({ mutationFn: (input: CreateThreadInput) => api.createThread(input) });
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateTripThreadInput) => api.createTripThread(tripId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.threads(tripId) });
+    },
+  });
+}
+
+export function useGetOrCreateDefaultTripThread(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.getOrCreateDefaultTripThread(tripId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.threads(tripId) });
+    },
+  });
 }
 
 export function useSubmitConversationTurn() {

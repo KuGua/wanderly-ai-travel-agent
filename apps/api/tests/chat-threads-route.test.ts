@@ -87,12 +87,12 @@ describe("chat-threads route — owner-only", () => {
     await app.inject({
       method: "POST", url: "/api/v1/threads",
       headers: { ...authHeaders("alice"), "content-type": "application/json" },
-      payload: { title: "Alice thread" },
+      payload: { title: "Alice thread", tripId },
     });
     await app.inject({
       method: "POST", url: "/api/v1/threads",
       headers: { ...authHeaders("bob"), "content-type": "application/json" },
-      payload: { title: "Bob thread" },
+      payload: { title: "Bob thread", tripId },
     });
 
     const aliceList = await app.inject({
@@ -114,7 +114,7 @@ describe("chat-threads route — owner-only", () => {
     const create = await app.inject({
       method: "POST", url: "/api/v1/threads",
       headers: { ...authHeaders("alice"), "content-type": "application/json" },
-      payload: { title: "Alice private" },
+      payload: { title: "Alice private", tripId },
     });
     const { id } = create.json() as { id: string };
 
@@ -137,7 +137,7 @@ describe("chat-threads route — owner-only", () => {
     const create = await app.inject({
       method: "POST", url: "/api/v1/threads",
       headers: { ...authHeaders("alice"), "content-type": "application/json" },
-      payload: { title: "Redaction test" },
+      payload: { title: "Redaction test", tripId },
     });
     const { id: threadId } = create.json() as { id: string };
 
@@ -169,7 +169,7 @@ describe("chat-threads route — owner-only", () => {
     const create = await app.inject({
       method: "POST", url: "/api/v1/threads",
       headers: { ...authHeaders("alice"), "content-type": "application/json" },
-      payload: { title: "Empty redaction test" },
+      payload: { title: "Empty redaction test", tripId },
     });
     const { id: threadId } = create.json() as { id: string };
 
@@ -193,7 +193,7 @@ describe("chat-threads route — owner-only", () => {
     const create = await app.inject({
       method: "POST", url: "/api/v1/threads",
       headers: { ...authHeaders("alice"), "content-type": "application/json" },
-      payload: { title: "To be deleted" },
+      payload: { title: "To be deleted", tripId },
     });
     const { id: threadId } = create.json() as { id: string };
 

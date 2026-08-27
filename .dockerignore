@@ -1,0 +1,35 @@
+# Exclude everything not explicitly COPYed by apps/api/Dockerfile.
+# The Dockerfile copies only apps/api/{package.json,package-lock.json,tsconfig.json,
+# drizzle.config.ts,src,data,migrations} from the repo root context. Anything else
+# is safe to exclude — keep build context small for `docker build` on macOS where
+# Docker Desktop tars the context into a Linux VM.
+.git
+.github
+.husky
+.next
+.claude
+docs
+assets
+README.md
+AGENTS.md
+CLAUDE.md
+TECH_STACK.md
+
+# Frontend build artifacts — never needed by the API image.
+apps/web/node_modules
+apps/web/.next
+apps/web/coverage
+apps/web/scripts
+apps/web/__mocks__
+
+# Local API artifacts (rebuilt by the Dockerfile's `npm run build`).
+apps/api/node_modules
+apps/api/dist
+apps/api/coverage
+
+# Generic fallbacks for monorepo expansion.
+**/__pycache__
+**/node_modules
+**/dist
+**/.turbo
+**/.cache

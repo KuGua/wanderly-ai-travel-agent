@@ -1,4 +1,4 @@
-export type AuthMode = "cognito" | "local-dev";
+export type AuthMode = "cognito" | "local-dev" | "custom-local";
 
 export const LOCAL_DEV_EXTERNAL_ID = "local-dev:default-traveler";
 export const LOCAL_DEV_DISPLAY_NAME = "Local Developer";
@@ -6,19 +6,29 @@ const LOCAL_DEV_NODE_ENVS = new Set(["development", "test"]);
 
 export function resolveAuthMode(value: string | undefined = process.env.AUTH_MODE): AuthMode {
   const mode = value?.trim() || "cognito";
-  if (mode === "cognito" || mode === "local-dev") return mode;
+  if (mode === "cognito" || mode === "local-dev" || mode === "custom-local") return mode;
   throw new Error(`Unsupported AUTH_MODE: ${mode}`);
 }
 
 export function assertAuthModeEnvironment(mode: AuthMode, nodeEnv: string | undefined = process.env.NODE_ENV) {
-  if (mode === "local-dev" && !LOCAL_DEV_NODE_ENVS.has(nodeEnv ?? "")) {
-    throw new Error("AUTH_MODE=local-dev requires NODE_ENV to be development or test");
+  if ((mode === "local-dev" || mode === "custom-local") && !LOCAL_DEV_NODE_ENVS.has(nodeEnv ?? "")) {
+    throw new Error(`AUTH_MODE=${mode} requires NODE_ENV to be development or test`);
   }
 }
 
 export function assertLocalDevServerHost(mode: AuthMode, host: string) {
-  if (mode === "local-dev" && !isLoopbackHost(host)) {
-    throw new Error("AUTH_MODE=local-dev requires HOST to be a loopback address");
+  if ((mode === "local-dev" || mode === "custom-local") && !isLoopbackHost(host)) {
+    throw new Error(`AUTH_MODE=${mode} requires HOST to be a loopback address`);
+  }
+}
+
+export function assertCustomLocalJwtSecret(
+  mode: AuthMode,
+  value: string | undefined = process.env.JWT_SECRET,
+) {
+  if (mode !== "custom-local") return;
+  if (!value?.trim() || value.trim().length < 32) {
+    throw new Error("AUTH_MODE=custom-local requires JWT_SECRET with at least 32 characters");
   }
 }
 
@@ -36,14 +46,14 @@ export function isLoopbackHost(host: string): boolean {
 }
 
 /**
- * Parse the only browser origins that may access a fixed local-dev identity.
+ * Parse the only browser origins that may access either local authentication mode.
  * The value is intentionally limited to loopback HTTP origins: accepting a LAN
  * or public origin would let an unrelated site exercise the local identity.
  */
 export function resolveLocalDevAllowedOrigins(value: string | undefined = process.env.LOCAL_DEV_ALLOWED_ORIGINS): string[] {
   const configured = value?.split(",").map(origin => origin.trim()).filter(Boolean) ?? [];
   if (configured.length === 0) {
-    throw new Error("AUTH_MODE=local-dev requires LOCAL_DEV_ALLOWED_ORIGINS");
+    throw new Error("Local authentication requires LOCAL_DEV_ALLOWED_ORIGINS");
   }
 
   const origins = configured.map((origin) => {

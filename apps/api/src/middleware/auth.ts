@@ -4,6 +4,7 @@ import type { FastifyRequest } from "fastify";
 
 import { db } from "../db/database.js";
 import { users } from "../db/schema.js";
+import { verifyJwt } from "../utils/jwt.js";
 import { ApiError } from "./error-handler.js";
 import {
   assertAuthModeEnvironment,
@@ -73,11 +74,20 @@ export function createAuthMiddleware(
         throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
       }
 
-      try {
-        identity = await verifyAccessToken(match[1]);
-      } catch (error) {
-        if (error instanceof ApiError && error.statusCode === 503) throw error;
-        throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+      if (mode === "custom-local") {
+        const customPayload = verifyJwt(match[1]);
+        if (!customPayload) {
+          throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+        }
+        request.user = await resolveCustomLocalUser(customPayload.sub);
+        return;
+      } else {
+        try {
+          identity = await verifyAccessToken(match[1]);
+        } catch (error) {
+          if (error instanceof ApiError && error.statusCode === 503) throw error;
+          throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+        }
       }
     }
 
@@ -86,6 +96,19 @@ export function createAuthMiddleware(
     }
 
     request.user = await provisionAuthenticatedUser(identity);
+  };
+}
+
+async function resolveCustomLocalUser(userId: string) {
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) {
+    throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+  }
+
+  return {
+    id: user.id,
+    externalId: user.externalId,
+    displayName: user.displayName,
   };
 }
 
