@@ -1,8 +1,9 @@
-# Strict Local Development Authentication
+# Local Development Authentication
 
-`AUTH_MODE=local-dev` exists only to run the real browser → API → database →
-Agent path before an AWS Cognito User Pool is available. Cognito remains the
-default and the production authentication mechanism.
+`AUTH_MODE=local-dev` exists only for a single-user browser → API smoke path.
+`AUTH_MODE=custom-local` is the loopback-only, database-backed multi-user mode
+for isolation, invitation and private-thread tests. Cognito remains the default
+and the production authentication mechanism.
 
 Local development mode is fail-closed:
 
@@ -18,6 +19,11 @@ Local development mode is fail-closed:
   cannot select another identity;
 - normal route ownership, authorization, idempotency and persistence checks are
   unchanged.
+
+`custom-local` additionally verifies a database password, issues a signed API
+JWT to the browser session, and requires an API-only `JWT_SECRET` of at least
+32 characters. It is the recommended mode for local multi-user isolation work.
+`local-dev` stays token-free and deliberately represents one fixed user.
 
 ## Fresh-checkout setup
 
@@ -49,16 +55,17 @@ model:
 
 ```dotenv
 # apps/api/.env
-AUTH_MODE=local-dev
+AUTH_MODE=custom-local
 NODE_ENV=development
 HOST=127.0.0.1
 LOCAL_DEV_ALLOWED_ORIGINS=http://localhost:3001,http://127.0.0.1:3001
+JWT_SECRET=<unique-local-secret-at-least-32-characters>
 MODEL_GATEWAY_PROVIDER=gemini
 MODEL_GATEWAY_API_KEY=<teammate's local Google AI Studio key>
 MODEL_GATEWAY_MODEL=gemini-3.1-flash-lite
 
 # apps/web/.env.local
-NEXT_PUBLIC_AUTH_MODE=local-dev
+NEXT_PUBLIC_AUTH_MODE=custom-local
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
 ```
 
@@ -154,18 +161,22 @@ environment configuration.
 4. Ask `I'm a Chinese citizen, do I need a visa to go to Tokyo?`.
 5. Expect deterministic `SAFE_REFUSAL` behavior with `Verification required`.
 
-In local-dev mode the account control shows an explicit local development
-indicator and `ApiClient` sends no Authorization header. A non-loopback Web API
-configuration instead shows an explicit configuration error. Provider failure
+In `custom-local` mode, sign in using a database username/password; the browser
+stores only its API session token and sends it for protected requests. Sign out
+or a new sign-in clears cached private data. In `local-dev` mode the account
+control instead shows an explicit local development indicator and `ApiClient`
+sends no Authorization header. A non-loopback Web API configuration instead
+shows an explicit configuration error. Provider failure
 still fails closed; bounded Worker retries preserve the USER message, never
 persist a partial ASSISTANT message, and never substitute a production mock
 response. Closing the chat or refreshing only disconnects the SSE observer.
 Use the visible Stop control to call the explicit cancel endpoint.
 
-This mode validates one fixed local user only. It is suitable for Profile,
-private-thread and browser-to-Agent smoke tests, but cannot prove the three-user
-invite, consent and unanimous-confirmation Hero Journey. Run that acceptance
-flow using three real Cognito test accounts.
+`local-dev` validates one fixed local user only. It is suitable for Profile,
+private-thread and browser-to-Agent smoke tests, but cannot prove the
+three-user invite, consent and unanimous-confirmation Hero Journey.
+`custom-local` can exercise that isolation path with three local database
+accounts; production acceptance still uses real Cognito test accounts.
 
 Return both applications to Cognito mode by removing the ignored local-dev
 overrides or setting `AUTH_MODE=cognito` and `NEXT_PUBLIC_AUTH_MODE=cognito`.

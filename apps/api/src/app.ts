@@ -45,7 +45,7 @@ export interface BuildAppOptions {
 
 export async function buildApp(options: BuildAppOptions = {}) {
   const authMode = resolveAuthMode();
-  const localDevAllowedOrigins = authMode === "local-dev" ? resolveLocalDevAllowedOrigins() : [];
+  const localDevAllowedOrigins = authMode === "local-dev" || authMode === "custom-local" ? resolveLocalDevAllowedOrigins() : [];
   const app = Fastify({
     loggerInstance: pinoInstance,
     genReqId: () => randomUUID(),
@@ -60,7 +60,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   }
 
   await app.register(fastifyCors, {
-    origin: authMode === "local-dev"
+    origin: authMode === "local-dev" || authMode === "custom-local"
       ? (origin, callback) => callback(null, isAllowedLocalDevOrigin(origin, localDevAllowedOrigins))
       : true,
   });
@@ -141,21 +141,21 @@ export async function buildApp(options: BuildAppOptions = {}) {
     );
 
     if (
-      authMode === "local-dev"
+      (authMode === "local-dev" || authMode === "custom-local")
       && isCorsPreflight(request.method, request.headers.origin, request.headers["access-control-request-method"])
       && !isAllowedLocalDevOrigin(request.headers.origin, localDevAllowedOrigins)
     ) {
       throw new ApiError(403, "Forbidden", "Local development requests require an allowed browser origin");
     }
-    if (isAuthenticationExempt(request.method, request.url)) {
-      return;
-    }
     if (
-      authMode === "local-dev"
+      (authMode === "local-dev" || authMode === "custom-local")
       && isUnsafeMethod(request.method)
       && !isAllowedLocalDevOrigin(request.headers.origin, localDevAllowedOrigins)
     ) {
       throw new ApiError(403, "Forbidden", "Local development writes require an allowed browser origin");
+    }
+    if (isAuthenticationExempt(request.method, request.url)) {
+      return;
     }
     await authMiddleware(request);
   });

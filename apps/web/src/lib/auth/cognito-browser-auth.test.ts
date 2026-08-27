@@ -80,6 +80,17 @@ describe("Cognito browser auth adapter", () => {
     expect(amplifyMocks.configure).not.toHaveBeenCalled();
   });
 
+  it("selects the database-backed adapter in custom-local mode", async () => {
+    process.env.NEXT_PUBLIC_AUTH_MODE = "custom-local";
+    process.env.NEXT_PUBLIC_API_BASE_URL = "http://localhost:3000";
+
+    const service = await createCognitoBrowserAuth();
+
+    expect(service.configured).toBe(true);
+    expect(service.localDevelopment).toBe(false);
+    expect(amplifyMocks.configure).not.toHaveBeenCalled();
+  });
+
   it("does not activate local-dev when its API base URL is not loopback", async () => {
     process.env.NEXT_PUBLIC_AUTH_MODE = "local-dev";
     process.env.NEXT_PUBLIC_API_BASE_URL = "http://192.168.1.10:3000";

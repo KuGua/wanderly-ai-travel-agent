@@ -36,9 +36,9 @@ user in that User Pool. The MVP form supports a completed username/password
 sign-in; accounts requiring a new password, MFA, or another Cognito challenge
 receive an explicit unsupported-challenge message rather than an auth bypass.
 
-## Custom password reset prototype
+## Custom-local password authentication
 
-`NEXT_PUBLIC_AUTH_MODE=custom` selects the API-owned username/password prototype.
+`NEXT_PUBLIC_AUTH_MODE=custom-local` selects the API-owned username/password flow.
 Login accepts only `username`; email remains the recovery attribute. The
 forgot-password screen currently requests an email and continues directly to a
 new password form, checks both password fields, and returns to login immediately
@@ -62,6 +62,11 @@ that an email was sent. Reset challenges are currently process-local, so an API
 restart invalidates them and a multi-instance deployment must move challenge
 state to a shared TTL store before enabling custom auth at scale.
 
+`custom-local` is refused outside local development and requires a loopback API
+URL, an exact loopback Origin allow-list, and an API-only `JWT_SECRET` of at
+least 32 characters. It supports local multi-user isolation tests only; normal
+and production authentication remains Cognito.
+
 ## Validation
 
 ```bash
@@ -74,9 +79,6 @@ After supplying ignored local configuration, run the API on port 3000 and Web
 on port 3001, sign in through the account control, and verify a protected API
 request returns an authenticated response instead of 401/503.
 
-For pre-Cognito local integration only, the server also exposes the explicit,
-loopback-only mode documented in [`local-development-auth.md`](./local-development-auth.md).
-It does not create a browser session or token and cannot activate in production.
-It requires a loopback API URL plus the API's exact loopback Origin allow-list;
-it is a one-user smoke-test path, not an alternative to Cognito multi-user
-acceptance.
+[`local-development-auth.md`](./local-development-auth.md) distinguishes
+`custom-local` from `local-dev`: the latter remains a token-free, fixed-user
+smoke-test path and cannot validate multi-user behavior.

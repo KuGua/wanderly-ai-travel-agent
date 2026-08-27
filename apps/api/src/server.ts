@@ -3,6 +3,7 @@ import { initTracing, shutdownTracing } from "./observability/tracing.js";
 import { buildApp } from "./app.js";
 import {
   assertAuthModeEnvironment,
+  assertCustomLocalJwtSecret,
   assertLocalDevServerHost,
   resolveAuthMode,
   resolveLocalDevAllowedOrigins,
@@ -18,7 +19,8 @@ const HOST = process.env.HOST ?? "0.0.0.0";
 const AUTH_MODE = resolveAuthMode();
 assertAuthModeEnvironment(AUTH_MODE);
 assertLocalDevServerHost(AUTH_MODE, HOST);
-if (AUTH_MODE === "local-dev") resolveLocalDevAllowedOrigins();
+assertCustomLocalJwtSecret(AUTH_MODE);
+if (AUTH_MODE === "local-dev" || AUTH_MODE === "custom-local") resolveLocalDevAllowedOrigins();
 
 async function main() {
   const app = await buildApp();

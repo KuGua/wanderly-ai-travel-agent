@@ -74,9 +74,13 @@ export function createAuthMiddleware(
         throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
       }
 
-      const customPayload = verifyJwt(match[1]);
-      if (customPayload) {
-        identity = { subject: customPayload.sub, displayName: customPayload.username };
+      if (mode === "custom-local") {
+        const customPayload = verifyJwt(match[1]);
+        if (!customPayload) {
+          throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+        }
+        request.user = await resolveCustomLocalUser(customPayload.sub);
+        return;
       } else {
         try {
           identity = await verifyAccessToken(match[1]);
@@ -92,6 +96,19 @@ export function createAuthMiddleware(
     }
 
     request.user = await provisionAuthenticatedUser(identity);
+  };
+}
+
+async function resolveCustomLocalUser(userId: string) {
+  const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+  if (!user) {
+    throw new ApiError(401, "Unauthorized", "A valid bearer access token is required");
+  }
+
+  return {
+    id: user.id,
+    externalId: user.externalId,
+    displayName: user.displayName,
   };
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertAuthModeEnvironment,
+  assertCustomLocalJwtSecret,
   assertLocalDevServerHost,
   isLoopbackAddress,
   isAllowedLocalDevOrigin,
@@ -21,6 +22,17 @@ describe("authentication mode safety", () => {
     expect(() => assertAuthModeEnvironment("local-dev", "production")).toThrow(/development or test/);
     expect(() => assertAuthModeEnvironment("local-dev", "staging")).toThrow(/development or test/);
     expect(() => createAuthMiddleware(undefined, { mode: "local-dev", nodeEnv: "production" })).toThrow(/development or test/);
+    expect(() => assertAuthModeEnvironment("custom-local", "development")).not.toThrow();
+    expect(() => assertAuthModeEnvironment("custom-local", "production")).toThrow(/development or test/);
+    expect(() => assertCustomLocalJwtSecret("custom-local", "x".repeat(32))).not.toThrow();
+    expect(() => assertCustomLocalJwtSecret("custom-local", undefined)).toThrow(/JWT_SECRET/);
+  });
+
+  it("rejects malformed custom-local bearer tokens", async () => {
+    const middleware = createAuthMiddleware(undefined, { mode: "custom-local", nodeEnv: "development" });
+    await expect(middleware({ headers: { authorization: "Bearer malformed" }, ip: "127.0.0.1" } as never)).rejects.toMatchObject({
+      statusCode: 401,
+    });
   });
 
   it("requires a loopback server binding and loopback request source", async () => {

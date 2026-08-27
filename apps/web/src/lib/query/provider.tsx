@@ -1,7 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import {
   getTravelApiConfiguration,
@@ -23,29 +23,26 @@ export function QueryProvider({
   getAccessToken?: GetAccessToken;
   sessionRevision?: number;
 }) {
-  const [queryClient] = useState(() => new QueryClient({
-    defaultOptions: {
-      queries: { retry: 1, staleTime: 30_000 },
-      mutations: { retry: false },
-    },
-  }));
+  // A login, logout, or restored session changes which private resources the
+  // browser may read. Recreate the client rather than only clearing it: active
+  // observers then mount against an empty cache and refetch with the new token.
+  const queryClient = useMemo(() => {
+    void sessionRevision;
+    return new QueryClient({
+      defaultOptions: {
+        queries: { retry: 1, staleTime: 30_000 },
+        mutations: { retry: false },
+      },
+    });
+  }, [sessionRevision]);
   // Derive the api configuration lazily so the test harness can inject a
   // new mock api on each render without us caching the first one.
   const travelApiConfiguration = useMemo(
     () => configuration ?? getTravelApiConfiguration(getAccessToken),
     [configuration, getAccessToken],
   );
-  const previousSessionRevision = useRef(sessionRevision);
-
-  useEffect(() => {
-    if (previousSessionRevision.current !== sessionRevision) {
-      queryClient.clear();
-      previousSessionRevision.current = sessionRevision;
-    }
-  }, [queryClient, sessionRevision]);
-
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider key={sessionRevision} client={queryClient}>
       <TravelApiContext.Provider value={travelApiConfiguration}>
         {children}
       </TravelApiContext.Provider>
