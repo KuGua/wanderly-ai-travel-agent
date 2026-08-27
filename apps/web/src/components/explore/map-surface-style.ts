@@ -19,6 +19,26 @@ export const GEBCO_MIN_ZOOM = 2.5;
 
 const RELIEF_RASTER_OPACITY: ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 0, 0.78, 3, 0.7, 6, 0.5];
 
+// Half-stop offsets around the source's min/max zoom keep the relief visible
+// at the edges while the opacity expression below fades GEBCO in/out. Without
+// this band the layer would snap on/off (raster-fade-duration is 0), producing
+// the "suddenly lighter" jump between zoomed-in and zoomed-out views.
+const GEBCO_FADE_IN_START = GEBCO_MIN_ZOOM - 0.5;
+const GEBCO_FADE_OUT_END = 5.5;
+const GEBCO_RASTER_OPACITY: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  GEBCO_FADE_IN_START,
+  0,
+  GEBCO_MIN_ZOOM,
+  1,
+  5,
+  1,
+  GEBCO_FADE_OUT_END,
+  0,
+];
+
 /**
  * Adds GEBCO's opaque global relief below OpenFreeMap's vector details. The
  * bundled Natural Earth raster remains beneath it as the no-extra-request
@@ -50,10 +70,14 @@ export function solidifyGlobeStyle(style: StyleSpecification): StyleSpecificatio
         paint: {
           ...layer.paint,
           "raster-opacity": RELIEF_RASTER_OPACITY,
-          "raster-brightness-min": 0.03,
-          "raster-brightness-max": 0.92,
-          "raster-saturation": 0.05,
-          "raster-contrast": 0.25,
+          // Restore enough saturation/contrast to read as colored terrain at
+          // low zoom (where this raster is the only land source). The previous
+          // 0.05 saturation rendered continents almost grayscale, which
+          // produced the "washed-out" look users reported when zoomed out.
+          "raster-brightness-min": 0.04,
+          "raster-brightness-max": 0.95,
+          "raster-saturation": 0.35,
+          "raster-contrast": 0.18,
           "raster-fade-duration": 0,
         },
       };
@@ -85,7 +109,7 @@ export function solidifyGlobeStyle(style: StyleSpecification): StyleSpecificatio
     type: "raster",
     source: GEBCO_SOURCE_ID,
     paint: {
-      "raster-opacity": 1,
+      "raster-opacity": GEBCO_RASTER_OPACITY,
       "raster-brightness-min": 0.02,
       "raster-brightness-max": 0.94,
       "raster-saturation": -0.28,
@@ -103,8 +127,11 @@ export function solidifyGlobeStyle(style: StyleSpecification): StyleSpecificatio
         type: "raster",
         tiles: [GEBCO_WMS_TILE_URL],
         tileSize: 512,
-        minzoom: GEBCO_MIN_ZOOM,
-        maxzoom: 5,
+        // Source must cover the fade-in/fade-out band so MapLibre has tiles
+        // available while the layer's raster-opacity ramps up at GEBCO_MIN_ZOOM
+        // and back down at GEBCO_FADE_OUT_END.
+        minzoom: GEBCO_FADE_IN_START,
+        maxzoom: GEBCO_FADE_OUT_END,
         attribution: '<a href="https://www.gebco.net/" target="_blank" rel="noopener noreferrer">GEBCO</a> — not for navigation',
       },
     },
