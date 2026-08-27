@@ -35,6 +35,13 @@ export class LocationReferenceSourceError extends Error {
   }
 }
 
+export type LocationReferencePrewarmResult = {
+  ok: boolean;
+  mode: LocationReferenceMode;
+  durationMs: number;
+  error?: string;
+};
+
 export interface LocationReferenceSource {
   /**
    * Resolve `(latitude, longitude)` to a `LocationReference`. Always async
@@ -48,10 +55,34 @@ export interface LocationReferenceSource {
   ): Promise<LocationReference>;
   /** Mode string used to select this implementation; surfaced for logging/tests. */
   readonly mode: LocationReferenceMode;
+  /**
+   * Synchronously load any heavy backing data so the first `resolve()` is
+   * fast. The result is for logging; a failure here must not crash the
+   * process because the lazy path inside `resolve()` already returns 503
+   * when the dataset is missing.
+   */
+  prewarm(): LocationReferencePrewarmResult;
 }
 
 class InProcessLocationReferenceSource implements LocationReferenceSource {
   readonly mode = "in-process" as const;
+
+  prewarm(): LocationReferencePrewarmResult {
+    const startedAt = Date.now();
+    try {
+      // First call performs the ~70 MB JSON parse across countries/admin1/cities;
+      // subsequent calls hit the cached singleton, so this only matters at startup.
+      getLocationReferenceResolver();
+      return { ok: true, mode: this.mode, durationMs: Date.now() - startedAt };
+    } catch (error) {
+      return {
+        ok: false,
+        mode: this.mode,
+        durationMs: Date.now() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
 
   async resolve(latitude: number, longitude: number): Promise<LocationReference> {
     // `getLocationReferenceResolver` is lazy; the first call performs the
@@ -72,6 +103,10 @@ class InProcessLocationReferenceSource implements LocationReferenceSource {
 
 class DisabledLocationReferenceSource implements LocationReferenceSource {
   readonly mode = "disabled" as const;
+
+  prewarm(): LocationReferencePrewarmResult {
+    return { ok: true, mode: this.mode, durationMs: 0 };
+  }
 
   async resolve(): Promise<LocationReference> {
     return Promise.resolve({
@@ -104,6 +139,14 @@ function resolveSidecarConfig(env: NodeJS.ProcessEnv): SidecarConfig | null {
 
 class SidecarLocationReferenceSource implements LocationReferenceSource {
   readonly mode = "sidecar" as const;
+
+  prewarm(): LocationReferencePrewarmResult {
+    // The heavy state lives in the sidecar process, so prewarming is a no-op.
+    // We deliberately do not ping the sidecar here: the rate limiter on the
+    // API route would double-count, and a connectivity probe at startup would
+    // mask misconfigured deployments until the first user click.
+    return { ok: true, mode: this.mode, durationMs: 0 };
+  }
 
   constructor(private readonly config: SidecarConfig) {}
 

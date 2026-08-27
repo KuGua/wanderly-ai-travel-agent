@@ -1,6 +1,7 @@
 import "dotenv/config";
 import { initTracing, shutdownTracing } from "./observability/tracing.js";
 import { buildApp } from "./app.js";
+import { getLocationReferenceSource } from "./location-reference/location-reference-source.js";
 import {
   assertAuthModeEnvironment,
   assertCustomLocalJwtSecret,
@@ -24,6 +25,15 @@ if (AUTH_MODE === "local-dev" || AUTH_MODE === "custom-local") resolveLocalDevAl
 
 async function main() {
   const app = await buildApp();
+
+  // Pre-warm the in-process location-reference resolver so the first map
+  // click does not pay the ~70 MB dataset parse cost. `buildApp` itself
+  // does not load this data; prewarming keeps the test surface light while
+  // moving cold-start latency from the user-facing click path to startup.
+  // A failure here is non-fatal: the lazy path inside `resolve()` already
+  // returns 503 when the dataset files are missing.
+  const prewarm = getLocationReferenceSource().prewarm();
+  logger.info(prewarm, "Location-reference source prewarmed");
 
   const shutdown = async (signal: NodeJS.Signals) => {
     logger.info({ signal }, "API shutdown initiated");
