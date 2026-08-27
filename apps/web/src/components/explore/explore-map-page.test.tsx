@@ -243,7 +243,7 @@ describe("ExploreMapPage private inspirations", () => {
     expect(screen.queryByRole("list", { name: "Private inspiration list" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
-    expect(screen.getByRole("button", { name: "Current area" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Within 50 km" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "All pins (3)" }));
     const list = screen.getByRole("list", { name: "Private inspiration list" });
     expect(within(list).getByText("Pinned place 1")).toBeInTheDocument();

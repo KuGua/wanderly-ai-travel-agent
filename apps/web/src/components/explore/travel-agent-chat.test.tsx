@@ -178,6 +178,35 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(screen.getByText("Earlier answer")).toBeInTheDocument();
   });
 
+  it("opens restored chat history at the latest message", async () => {
+    const scrollHeight = vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(640);
+    const scrollTop = vi.spyOn(HTMLElement.prototype, "scrollTop", "set");
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [
+          { id: USER_MESSAGE_ID, role: "USER", content: "First question", sequence: 1, createdAt: CREATED_AT },
+          {
+            id: ASSISTANT_MESSAGE_ID,
+            role: "ASSISTANT",
+            content: "Latest answer",
+            sequence: 2,
+            createdAt: CREATED_AT,
+          },
+        ],
+      }),
+    });
+    renderChat(api, { initiallyOpen: false });
+
+    expect(await screen.findByRole("button", { name: "Chat history" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
+
+    expect(await screen.findByText("Latest answer")).toBeInTheDocument();
+    await waitFor(() => expect(scrollTop).toHaveBeenCalledWith(640));
+    scrollHeight.mockRestore();
+    scrollTop.mockRestore();
+  });
+
   it("calls onThreadInvalidated when the server returns 404 from getOwnerConversation", async () => {
     const onInvalidated = vi.fn();
     const api = createApi({
