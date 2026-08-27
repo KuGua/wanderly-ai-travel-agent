@@ -802,7 +802,7 @@ export function ExploreMapPage() {
             <p className="mt-1 text-xs text-muted-foreground">{t("managePinsBody")}</p>
             <div className="mt-3 grid grid-cols-2 rounded-[12px] bg-muted p-1" aria-label={t("manageScopeLabel")}>
               <button type="button" aria-pressed={pinScope === "nearby"} onClick={() => setPinScope("nearby")} className="min-h-9 rounded-[9px] px-2 text-xs font-bold aria-pressed:bg-card aria-pressed:text-primary aria-pressed:shadow-sm">
-                {t("manageScopeNearby")}
+                {t("manageScopeNearby", { distance: nearbyDistance })}
               </button>
               <button type="button" aria-pressed={pinScope === "all"} onClick={() => setPinScope("all")} className="min-h-9 rounded-[9px] px-2 text-xs font-bold aria-pressed:bg-card aria-pressed:text-primary aria-pressed:shadow-sm">
                 {t("manageScopeAll", { count: inspirations.length })}

@@ -287,19 +287,27 @@ export function TravelAgentChat({
 
   useEffect(() => {
     if (!open) return;
-    const node = panelScrollRef.current;
-    if (!node) return;
-    // Defer one frame so layout settles after mount, the open transition,
-    // or async conversation history arriving.
-    const handle = window.setTimeout(() => {
+    const scrollToLatest = () => {
+      const node = panelScrollRef.current;
+      if (!node) return;
       try {
         node.scrollTop = node.scrollHeight;
       } catch {
         /* no-op in test environments without DOM scroll metrics */
       }
-    }, 0);
-    return () => window.clearTimeout(handle);
-  }, [open, messages.length]);
+    };
+
+    // History can arrive before or after the panel mounts, and the panel's
+    // responsive height settles over its opening transition. Scroll once on
+    // the next frame and once after the transition so both paths land on the
+    // newest message instead of restoring the beginning of the thread.
+    const frame = window.requestAnimationFrame(scrollToLatest);
+    const afterTransition = window.setTimeout(scrollToLatest, 350);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(afterTransition);
+    };
+  }, [open, conversation.isLoading, messages.length]);
 
   function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
