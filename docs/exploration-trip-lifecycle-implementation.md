@@ -1,6 +1,6 @@
 # 探索会话与 Trip 生命周期实施方案
 
-**状态：** 已确认，待实施  
+**状态：** 已实施  
 **范围：** `/home` 探索入口、私有对话初始化、Trip 草稿及从探索进入协作规划。  
 **关联事实来源：** `TECH_STACK.md`、`docs/PRD.md`、`docs/backlog.md`、`docs/test-scenarios.md`。
 
@@ -51,6 +51,8 @@ type ExplorationSession = {
 - `LocaleLayout` 下客户端路由保留 Provider；刷新、关闭/新开标签页和认证账号切换都重建 Provider。
 - 认证 `sessionRevision` 改变时强制 reset；不得让后登录用户重用旧 session 的 ID。
 - `tripId`/`threadId` 仅是 UI 上下文；数据库和服务端仍是 membership、thread ownership、task Trip 归属的唯一权威。
+- 地图的“开始探索”只打开聊天面板并保留所选地点作为输入提示；不得通过 effect、自动问句或任何地图事件调用 start/turn 接口。
+- 可见的“开始新的探索”操作只调用 `reset()`；进行中的 turn 期间必须禁用，避免切换 UI 上下文而遗漏仍在运行的任务。
 
 ### 2.2 服务端约束
 
@@ -130,7 +132,7 @@ DRAFT | PLANNING | CONFIRMED | BOOKED | CANCELLED | STALE
 | 新增 | `apps/web/src/lib/exploration/*` | Provider、context/hook、首次发送初始化 mutation、auth reset |
 | 修改 | `apps/web/src/app/providers.tsx` | 在现有认证/Query 边界内挂载 Provider |
 | 修改 | `ExploreChatHost` | 移除 `useTrips()`/`trips[0]` 自动选取和 Trip picker；改为读取 Session |
-| 修改 | `TravelAgentChat` | 在首发前 await `onEnsureThreadForFirstSend`；其余 history、SSE、Stop 均复用 |
+| 修改 | `TravelAgentChat` | 在首发前 await `onEnsureThreadForFirstSend`；地图选择只预填问题，不自动发送；提供禁用态的“开始新的探索”，其余 history、SSE、Stop 均复用 |
 | 修改 | projects/Trip workspace | 支持 `DRAFT` 展示、编辑和 activate 入口；旧项目仅显式打开 |
 | 修改 | Drizzle schema/migration/types | `DRAFT` enum、创建/激活 DTO 与数据库 migration |
 | 新增 | exploration route/service/schema | start 的原子事务、idempotency、审计、OpenAPI |

@@ -4,6 +4,7 @@ import { tripMembers } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { bookingRequestSchema, sandboxCallbackSchema } from "../types/schemas.js";
 import { submitBooking, handleSandboxCallback } from "../services/booking-service.js";
+import { requireActiveTrip } from "../services/trip-status-guard.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { verifySandboxSignature } from "../middleware/sandbox-signature.js";
@@ -34,6 +35,8 @@ export async function bookingRoutes(app: FastifyInstance) {
     if (membership.length === 0) {
       throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
+
+    await requireActiveTrip(body.tripId, "booking");
 
     try {
       const result = await submitBooking({

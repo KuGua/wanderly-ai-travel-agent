@@ -3,7 +3,7 @@ import { pgTable, uuid, varchar, text, timestamp, jsonb, boolean, integer, bigin
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-export const tripStatusEnum = pgEnum("trip_status", ["PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
+export const tripStatusEnum = pgEnum("trip_status", ["DRAFT", "PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
 export const planStatusEnum = pgEnum("plan_status", ["DRAFT", "ACTIVE", "STALE", "SUPERSEDED"]);
 export const confirmationStatusEnum = pgEnum("confirmation_status", ["PENDING", "CONFIRMED", "NEEDS_CHANGES", "STALE"]);
 export const consentScopeEnum = pgEnum("consent_scope", [
@@ -32,6 +32,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "CHAT_THREAD_CREATE", "CHAT_THREAD_DELETE", "CHAT_MESSAGE_APPEND",
   "TRIP_INVITATION_CREATE", "TRIP_INVITATION_ACCEPT",
   "TRIP_INVITATION_REVOKE", "TRIP_DEFAULT_THREAD_PROVISION",
+  "EXPLORATION_START", "TRIP_ACTIVATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
 ]);
 

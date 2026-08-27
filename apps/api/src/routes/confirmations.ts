@@ -4,6 +4,7 @@ import { tripMembers } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { confirmPlanSchema } from "../types/schemas.js";
 import { setConfirmation, checkAllConfirmed } from "../services/confirmation-service.js";
+import { requireActiveTrip } from "../services/trip-status-guard.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
 
@@ -27,6 +28,8 @@ export async function confirmationRoutes(app: FastifyInstance) {
     if (membership.length === 0) {
       throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
+
+    await requireActiveTrip(tripId, "confirmation");
 
     await setConfirmation({
       ctx,

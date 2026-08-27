@@ -208,3 +208,30 @@ map.once("style.load", () => {
 在 `style.load` 中直接完成 layer inspection、projection 和 UI readiness；不要用 `isSourceLoaded` 或 `idle` 作为初始化前置条件，也不要设置 source-specific 的 6 秒失败定时器。若仍要观察 TileJSON，应在 source 事件的 `sourceDataType === "metadata"` 分支记录诊断信息，而不能将其作为“所有 tile 已完成”的判断。
 
 若在上述最小生命周期下仍出现零 PBF，请建立独立的 MapLibre + Liberty 最小复现并采集 `sourcedata` 的 `sourceDataType`、`TileManager.used/_updated/_sourceLoaded` 和 `error` 事件；届时才能判断是否为 MapLibre/OpenFreeMap/运行环境问题。
+
+## 12. 2026-08-27 缩放后地表瓦片缓慢复现
+
+### 复现
+
+在本地开发页 `/zh/home`（默认 `zoom: 2.25`）连续点击地图的 Zoom in。页面没有 console error，但资源清单显示 12 个 GEBCO WMS `GetMap` 请求和 32 个 OpenFreeMap Natural Earth PNG 请求；本轮没有观察到 OpenFreeMap vector PBF 资源。地球和本地边界/标签最终可显示，故这不是本报告先前讨论的 sourceCache 零派发故障。
+
+### 量化结果（Asia/Singapore 本机）
+
+| 资源 | 单请求实测 | 观察到的数量 | 结论 |
+| --- | --- | ---: | --- |
+| GEBCO WMS `GetMap`，512×512 PNG | 首字节约 1.26 s；完成约 2.14 s；约 518 KB | 12 | 缩放等待的主要来源；并发下载量约 6 MB。 |
+| OpenFreeMap Natural Earth PNG | 首字节约 0.11 s；完成约 0.12 s；约 273 KB | 32 | 明显更快，且可作为地表视觉 fallback。 |
+
+`map-surface-style.ts` 的 `GEBCO_MIN_ZOOM` 是 2.5，但 source 的 `minzoom` 实际设置为 `GEBCO_MIN_ZOOM - 0.5`（2.0），而默认相机已在 2.25。因此 GEBCO 请求在首屏/刚开始缩放时就会发生；代码注释中“2.5 以上才接入”的产品意图与实际请求门槛不一致。
+
+### 后续修复方向（未在本轮实施）
+
+1. 令 GEBCO source 的 `minzoom` 与视觉启用门槛一致，或延后到更高 zoom，确保默认首屏只用已有的 Natural Earth raster。
+2. 若仍保留 GEBCO 高倍细节，优先将版本化、可长期缓存的地表瓦片放在受控 CDN/本地资源；公共 WMS 不应成为交互缩放的关键路径。
+3. 保留 Natural Earth 作为不阻塞的视觉 fallback，并新增浏览器性能验收：默认首屏与相邻 zoom 不得等待 GEBCO 瓦片才能呈现不透明地表。
+
+### 落地（2026-08-27）
+
+初版将 `GEBCO_MIN_ZOOM` 调整为 4.5，虽消除了默认 WMS 请求，但 Natural Earth 的浅色海面不足以维持地球视觉质量，不能作为可接受方案。
+
+随后视觉复核发现先前 `GEBCO` 在 5.5 后淡出为 0，同时 Liberty `natural_earth` layer 的 `maxzoom: 7` 也会移除唯一的 raster fallback；加上水层 0.16 opacity，导致高 zoom 露出蓝底、低 zoom 呈现浅色/方块感。现已取消 GEBCO 的淡出、将其 source 最大层级设为 6 并允许 overzoom；同时移除 Natural Earth layer 的 `maxzoom`，并将 vector water opacity 设为 1。GEBCO 恢复为默认视角的渐进增强，但以 1024 逻辑 tile size 限制 WMS 请求扇出；其 opacity 固定为 1，避免默认相机恰好落在渐变起点而让已加载的 relief 保持透明。这样公共 WMS 不会阻塞 fallback，任何缩放层级也保留连续的地表和海面。

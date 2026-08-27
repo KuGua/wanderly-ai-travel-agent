@@ -43,6 +43,7 @@ export const updateProfileResponseSchema = z.object({
 });
 
 export const tripStatusSchema = z.enum([
+  "DRAFT",
   "PLANNING",
   "CONFIRMED",
   "BOOKED",
@@ -214,6 +215,60 @@ export const apiErrorResponseSchema = z.object({
   correlationId: z.string().uuid(),
 });
 
+// Exploration session: first chat message in /home creates a DRAFT Trip
+// on the server. The browser only carries the resulting trip / thread ids
+// in memory — never in URL, localStorage, or sessionStorage.
+export const explorationStartRequestSchema = z.object({
+  requestId: z.string().uuid(),
+}).strict();
+
+export const explorationDraftTripSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  status: z.literal("DRAFT"),
+  departureCities: z.array(z.string()).length(0),
+  destinationCandidates: z.array(z.string()).length(0),
+  travelDateStart: z.null(),
+  travelDateEnd: z.null(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const explorationStartResponseSchema = z.object({
+  trip: explorationDraftTripSchema,
+  defaultThread: z.object({
+    id: z.string().uuid(),
+    tripId: z.string().uuid(),
+    scope: z.literal("TRIP"),
+    isDefault: z.literal(true),
+  }).strict(),
+});
+
+// Activate mirrors the server `tripActivationRequestSchema`. The brief
+// must satisfy the same constraints as `POST /trips` (at least one
+// departure city, two to five destinations).
+export const tripActivationRequestSchema = z.object({
+  name: z.string().trim().min(1).max(256),
+  departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(2).max(5),
+  travelDateStart: dateSchema.nullable().optional(),
+  travelDateEnd: dateSchema.nullable().optional(),
+}).strict();
+
+export const tripActivationResponseSchema = z.object({
+  trip: z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+    status: z.literal("PLANNING"),
+    departureCities: z.array(z.string()),
+    destinationCandidates: z.array(z.string()),
+    travelDateStart: dateSchema.nullable(),
+    travelDateEnd: dateSchema.nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  }).strict(),
+});
+
 export const locationReferenceInputSchema = z.object({
   latitude: z.number().finite().min(-90).max(90),
   longitude: z.number().finite().min(-180).max(180),
@@ -247,8 +302,13 @@ export type UpdateProfileInput = z.infer<typeof updateProfileInputSchema>;
 export type UpdateProfileResponse = z.infer<typeof updateProfileResponseSchema>;
 export type TripSummary = z.infer<typeof tripSummarySchema>;
 export type TripsResponse = z.infer<typeof tripsResponseSchema>;
+export type ApiErrorResponse = z.infer<typeof apiErrorResponseSchema>;
 export type LocationReferenceInput = z.infer<typeof locationReferenceInputSchema>;
 export type LocationReferenceResponse = z.infer<typeof locationReferenceResponseSchema>;
+export type ExplorationStartRequest = z.infer<typeof explorationStartRequestSchema>;
+export type ExplorationStartResponse = z.infer<typeof explorationStartResponseSchema>;
+export type TripActivationRequest = z.infer<typeof tripActivationRequestSchema>;
+export type TripActivationResponse = z.infer<typeof tripActivationResponseSchema>;
 export type Thread = z.infer<typeof threadSchema>;
 export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
 export type CreateTripThreadInput = z.infer<typeof createTripThreadInputSchema>;

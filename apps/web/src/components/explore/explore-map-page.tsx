@@ -14,7 +14,6 @@ import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { solidifyGlobeStyle } from "./map-surface-style";
 import { ExploreChatHost } from "./explore-chat-host";
 import { useOptionalTravelApi } from "@/lib/query/provider";
-import { useAuth } from "@/lib/auth/auth-provider";
 import { Link } from "@/i18n/navigation";
 import type { LocationReferenceResponse } from "@/lib/api/contracts";
 
@@ -94,7 +93,6 @@ export function ExploreMapPage() {
   const [chatOpen, setChatOpen] = useState(false);
   const [exploreState, setExploreState] = useState<ExploreState>("IDLE");
   const [helpOpen, setHelpOpen] = useState(false);
-  const [autoAskNonce, setAutoAskNonce] = useState(0);
   const [mapNotice, setMapNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -652,12 +650,10 @@ export function ExploreMapPage() {
   function startExploring() {
     if (!selected) return;
     clearJourneyTimers();
-    // Skip the TALKING/FLYING timers and jump straight to EXPLORING so the
-    // chat dialog can open immediately and the auto-asked intro can stream in
-    // without waiting for the visual transition.
+    // Opening chat from the map never persists a trip or sends a message.
+    // The user's first explicit Send is the only provisioning trigger.
     setExploreState("EXPLORING");
     openChat();
-    setAutoAskNonce((current) => current + 1);
   }
 
   function retryMap() {
@@ -886,14 +882,6 @@ export function ExploreMapPage() {
         onOpen={openChat}
         onDismiss={dismissChat}
         selectedPlace={selected ? { place: toConversationPlace(selected), context: selected.country } : null}
-        autoAskRequest={autoAskNonce > 0 && selected
-          ? { nonce: String(autoAskNonce), place: toConversationPlace(selected), context: selected.country }
-          : null}
-        onAutoAskConsumed={() => {
-          /* The nonce sequence guarantees uniqueness across clicks, so we intentionally
-             do not reset it here — keeping it lets the consumer re-fire safely if the
-             dialog is reopened with the same destination. */
-        }}
         onConversationText={handleConversationText}
       />
     </main>

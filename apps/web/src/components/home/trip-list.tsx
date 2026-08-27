@@ -38,7 +38,7 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
         >
           <div className={`relative h-[87px] shrink-0 overflow-hidden bg-gradient-to-br ${artStyles[index % artStyles.length]}`} aria-hidden="true">
             <span className="absolute -right-8 -top-[68px] size-[125px] rounded-full border-2 border-white/55" />
-            <span className="absolute bottom-[-23px] left-[6%] h-[35px] w-[90%] -rotate-[5deg] rounded-[50%] border border-dashed border-white/60" />
+            <span className="absolute bottom-[-23px] left-[6%] h-[35px] w-[90%] -rotate-[5deg] rounded-[50%] border border-dashed border-white-60" />
           </div>
           <div className="flex flex-1 flex-col p-4">
             <div className="flex items-start justify-between gap-2">
@@ -46,24 +46,37 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
               <span className="shrink-0 rounded-lg bg-secondary px-2 py-1 text-[11px] font-black text-secondary-foreground">{formatStatus(trip.status, t)}</span>
             </div>
             <div className="mt-2 space-y-2 text-[13px] text-muted-foreground">
-              <p className="flex gap-2">
-                <MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-                <span>
-                    {trip.departureCities.join(" + ")} → {fmt.list(trip.destinationCandidates, { type: "unit" })}
-                  </span>
-              </p>
-              <p className="flex gap-2">
-                <CalendarDays aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-                <span>{formatTripDates(trip.travelDateStart, trip.travelDateEnd, t, fmt)}</span>
-              </p>
+              {trip.status === "DRAFT" ? (
+                <p className="flex gap-2">
+                  <MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                  <span>{t("trip.draft.short")}</span>
+                </p>
+              ) : (
+                <>
+                  <p className="flex gap-2">
+                    <MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                    <span>
+                      {trip.departureCities.join(" + ")} → {fmt.list(trip.destinationCandidates, { type: "unit" })}
+                    </span>
+                  </p>
+                  <p className="flex gap-2">
+                    <CalendarDays aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                    <span>{formatTripDates(trip.travelDateStart, trip.travelDateEnd, t, fmt)}</span>
+                  </p>
+                </>
+              )}
             </div>
             <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
                 <UsersRound aria-hidden="true" className="size-3.5" />
                 {t("trip.members", { count: trip.memberCount })} · {trip.role === "CREATOR" ? t("trip.membersRoleOrganizer") : t("trip.membersRoleMember")}
               </span>
-              <Link href={`/trips/${trip.id}` as "/trips/[tripId]"} className="inline-flex min-h-11 items-center gap-1 font-black text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
-                {t("trip.open")} <ArrowRight aria-hidden="true" className="size-3.5" />
+              <Link
+                href={`/trips/${trip.id}` as "/trips/[tripId]"}
+                className="inline-flex min-h-11 items-center gap-1 font-black text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+              >
+                {trip.status === "DRAFT" ? t("trip.draft.continueCta") : t("trip.open")}
+                <ArrowRight aria-hidden="true" className="size-3.5" />
               </Link>
             </div>
           </div>

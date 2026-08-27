@@ -25,6 +25,8 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+export { AuthContext };
+
 export function AuthProvider({ children, service: suppliedService }: {
   children: ReactNode;
   service?: BrowserAuthService;
@@ -136,6 +138,16 @@ export function useAuth() {
   const auth = useContext(AuthContext);
   if (!auth) throw new Error("useAuth must be used within AuthProvider");
   return auth;
+}
+
+/**
+ * Optional variant that returns null instead of throwing when no
+ * AuthProvider is mounted in the tree. Used by isolated providers (such
+ * as ExplorationSessionProvider) that must work both inside the full app
+ * shell and inside leaner test harnesses.
+ */
+export function useOptionalAuth() {
+  return useContext(AuthContext);
 }
 
 export function createLocalDevBrowserAuth(): BrowserAuthService {

@@ -340,7 +340,6 @@ describe("ExploreMapPage private inspirations", () => {
     const inspirationMarker = mapMock.markerButtons.find((button) => button.getAttribute("aria-label") === "Open Pinned place 1");
     expect(inspirationMarker).toBeDefined();
     await waitFor(() => expect(inspirationMarker).toHaveAttribute("aria-pressed", "true"));
-    await waitFor(() => expect(inspirationMarker).toHaveAttribute("aria-pressed", "true"));
 
     act(() => inspirationMarker?.click());
     expect(screen.getByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
@@ -427,10 +426,9 @@ describe("ExploreMapPage private inspirations", () => {
     expect(mapMock.layoutChanges).toHaveLength(0);
   });
 
-  it("prompts the agent to introduce the destination when 'View this inspiration' is clicked", async () => {
+  it("opens chat without persisting or sending when 'View this inspiration' is clicked", async () => {
     const api = createTravelApiForAutoAsk();
     renderWithIntl(<ExploreMapPage />, { api });
-    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("auto-ask-inspiration-id");
 
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
@@ -442,27 +440,14 @@ describe("ExploreMapPage private inspirations", () => {
     fireEvent.click(viewButton);
 
     expect(await screen.findByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
-    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
-    expect(api.submitConversationTurn).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
-      requestId: "auto-ask-inspiration-id",
-      question: "Tell me about Pinned place 1",
-      place: toConversationPlace({
-        id: "inspiration-1",
-        name: "Pinned place 1",
-        country: "35.690°, 139.692°",
-        coordinates: [139.692, 35.69],
-        note: "This is an unverified, session-only inspiration. It has no live price, availability, visa or booking data.",
-        kind: "inspiration",
-      }),
-      intent: "auto_intro",
-    });
-    expect(await screen.findByText("A calm, general destination answer.")).toBeInTheDocument();
+    expect(api.startExploration).not.toHaveBeenCalled();
+    expect(api.submitConversationTurn).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Ask about Pinned place 1/ })).toBeInTheDocument();
   });
 
-  it("prompts the agent to introduce a map geography when 'View this map location' is clicked", async () => {
+  it("opens chat without persisting or sending when 'View this map location' is clicked", async () => {
     const api = createTravelApiForAutoAsk();
     renderWithIntl(<ExploreMapPage />, { api });
-    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("auto-ask-geography-id");
 
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
@@ -478,11 +463,9 @@ describe("ExploreMapPage private inspirations", () => {
     fireEvent.click(viewButton);
 
     expect(await screen.findByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
-    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
-    expect(api.submitConversationTurn).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", expect.objectContaining({
-      question: "Tell me about Tokyo",
-      place: expect.objectContaining({ name: "Tokyo", sourceType: "INSPIRATION" }),
-    }));
+    expect(api.startExploration).not.toHaveBeenCalled();
+    expect(api.submitConversationTurn).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Ask about Tokyo/ })).toBeInTheDocument();
   });
 
   it("keeps country, regional, and city controls available after opening a destination drawer", async () => {
@@ -509,6 +492,7 @@ function createTravelApiForAutoAsk(): TravelApi & {
   getOrCreateDefaultTripThread: ReturnType<typeof vi.fn>;
   submitConversationTurn: ReturnType<typeof vi.fn>;
   subscribeAgentRun: ReturnType<typeof vi.fn>;
+  startExploration: ReturnType<typeof vi.fn>;
 } {
   const THREAD_ID = "11111111-1111-4111-8111-111111111111";
   const RUN_ID = "55555555-5555-4555-8555-555555555555";
@@ -583,6 +567,26 @@ function createTravelApiForAutoAsk(): TravelApi & {
       if (signal.aborted) return;
       await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
     }),
+    startExploration: vi.fn().mockResolvedValue({
+      trip: {
+        id: TRIP_ID,
+        name: "Untitled exploration",
+        status: "DRAFT",
+        departureCities: [],
+        destinationCandidates: [],
+        travelDateStart: null,
+        travelDateEnd: null,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+      },
+      defaultThread: {
+        id: THREAD_ID,
+        tripId: TRIP_ID,
+        scope: "TRIP",
+        isDefault: true,
+      },
+    }),
+    activateTrip: vi.fn(),
   };
 }
 

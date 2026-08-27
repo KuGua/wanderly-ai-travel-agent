@@ -80,6 +80,8 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
         signal.addEventListener("abort", () => resolve(), { once: true });
       });
     }),
+    startExploration: vi.fn(),
+    activateTrip: vi.fn(),
     ...overrides,
   };
 }

@@ -75,6 +75,56 @@ the normal Cognito access token. It never stores the coordinate and the result i
 non-authoritative map reference, not an address, travel candidate, provider offer or
 booking/visa conclusion.
 
+### `POST /explorations/start`
+> Added with the Draft Trip lifecycle (see
+> [exploration-trip-lifecycle-implementation.md](../docs/exploration-trip-lifecycle-implementation.md)).
+>
+> Create a `DRAFT` Trip + creator membership + default private thread for
+> the authenticated user, all in a single database transaction. The body
+> carries only the client-generated `requestId` UUIDv4 used as the
+> per-user idempotency key. No place, profile, message body or nationality
+> crosses this boundary.
+
+**Body**:
+```json
+{ "requestId": "uuid-v4" }
+```
+
+**Response**:
+- `201 Created` on the first successful claim.
+- `200 OK` on idempotent replay of the same `requestId` — body identical.
+
+```json
+{
+  "trip": {
+    "id": "uuid",
+    "name": "Untitled exploration",
+    "status": "DRAFT",
+    "departureCities": [],
+    "destinationCandidates": [],
+    "travelDateStart": null,
+    "travelDateEnd": null,
+    "createdAt": "2026-08-27T00:00:00.000Z",
+    "updatedAt": "2026-08-27T00:00:00.000Z"
+  },
+  "defaultThread": {
+    "id": "uuid",
+    "tripId": "uuid",
+    "scope": "TRIP",
+    "isDefault": true
+  }
+}
+```
+
+**Errors**:
+- `400 Bad Request` — body missing or `requestId` is not a UUIDv4.
+- `409 Conflict` — a concurrent first call is still in flight; retry with
+  the same `requestId`.
+
+`DRAFT` trips reject invitation, consent, planning, replan, confirmation,
+and booking commands with `409 TRIP_NOT_ACTIVE` until the creator activates
+them via `POST /trips/:tripId/activate`.
+
 **Body:**
 
 ```json
@@ -216,7 +266,7 @@ ascending as a deterministic tie-breaker.
 }
 ```
 
-- `status`: `PLANNING | CONFIRMED | BOOKED | CANCELLED | STALE`.
+- `status`: `DRAFT | PLANNING | CONFIRMED | BOOKED | CANCELLED | STALE`.
 - `role`: the requesting member's `CREATOR | MEMBER` role.
 - `travelDateStart` and `travelDateEnd`: nullable `YYYY-MM-DD` strings.
 - `departureCities` and `destinationCandidates`: stored trip-record values.
@@ -244,6 +294,48 @@ accepted invitation provisions that member's own default private thread.
 
 ### `POST /trips/:tripId/join`
 > **Removed.** Join-by-UUID was replaced by Trip invitations: creators issue `POST /trips/:tripId/invitations` and invitees redeem the token at `POST /trip-invitations/:inviteToken/accept`. See the Trip Invitations section below.
+
+### `POST /trips/:tripId/activate`
+> Added with the Draft Trip lifecycle (see [exploration-trip-lifecycle-implementation.md](../docs/exploration-trip-lifecycle-implementation.md)).
+>
+> Move a `DRAFT` trip to `PLANNING`. The caller must be the trip creator. The
+> brief must satisfy the same constraints as `POST /trips`: at least one
+> departure city, two to five candidate destinations. Only the explicit
+> activate path leaves the `DRAFT` state; a database trigger blocks any
+> service- or SQL-driven `DRAFT → CONFIRMED | BOOKED | STALE` transition.
+
+**Body**:
+```json
+{
+  "name": "Asia Trip 2026",
+  "departureCities": ["San Francisco", "Shanghai"],
+  "destinationCandidates": ["Tokyo", "Bangkok", "Seoul"],
+  "travelDateStart": "2026-10-01",
+  "travelDateEnd": "2026-10-10"
+}
+```
+
+**Response**: `200`
+```json
+{
+  "trip": {
+    "id": "uuid",
+    "name": "Asia Trip 2026",
+    "status": "PLANNING",
+    "departureCities": ["San Francisco", "Shanghai"],
+    "destinationCandidates": ["Tokyo", "Bangkok", "Seoul"],
+    "travelDateStart": "2026-10-01",
+    "travelDateEnd": "2026-10-10",
+    "createdAt": "2026-08-27T00:00:00.000Z",
+    "updatedAt": "2026-08-27T00:00:00.000Z"
+  }
+}
+```
+
+**Errors**:
+- `403 Forbidden` — caller is not the creator.
+- `404 Not Found` — no trip with that id.
+- `409 Conflict` (`TRIP_NOT_DRAFT`) — trip is not in `DRAFT` status.
 
 ### `GET /trips/:tripId`
 Get trip details (members only).

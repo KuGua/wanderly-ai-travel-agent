@@ -15,40 +15,34 @@ export function countryBoundaryTileUrl(key: string) {
 export const GEBCO_SOURCE_ID = "gebco-global-relief";
 export const GEBCO_LAYER_ID = "gebco-global-relief";
 export const GEBCO_WMS_TILE_URL = "https://wms.gebco.net/mapserv?service=WMS&version=1.1.1&request=GetMap&layers=GEBCO_LATEST&styles=&format=image/png&transparent=FALSE&srs=EPSG:3857&bbox={bbox-epsg-3857}&width=512&height=512";
-export const GEBCO_MIN_ZOOM = 2.5;
+// Natural Earth's relief is an always-available fallback, but its ocean is
+// intentionally pale. Start GEBCO at the default globe zoom so the finished
+// globe has a coherent sea-and-land surface; its coarser logical tile size
+// below keeps the public WMS request fan-out bounded.
+export const GEBCO_MIN_ZOOM = 2.25;
+// With a 1024px logical tile MapLibre selects one lower source zoom than its
+// camera zoom. Keep this source floor separate from the display threshold so
+// the default globe can fetch the coarser GEBCO tiles it needs.
+export const GEBCO_SOURCE_MIN_ZOOM = 1;
+// GEBCO publishes raster source levels through z6. MapLibre can overzoom the
+// final level, which is preferable to removing terrain and exposing a blank
+// ocean while vector details continue to load.
+export const GEBCO_MAX_ZOOM = 6;
+export const GEBCO_TILE_SIZE = 1024;
 
 const RELIEF_RASTER_OPACITY: ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 0, 0.78, 3, 0.7, 6, 0.5];
 
-// Half-stop offsets around the source's min/max zoom keep the relief visible
-// at the edges while the opacity expression below fades GEBCO in/out. Without
-// this band the layer would snap on/off (raster-fade-duration is 0), producing
-// the "suddenly lighter" jump between zoomed-in and zoomed-out views.
-const GEBCO_FADE_IN_START = GEBCO_MIN_ZOOM - 0.5;
-const GEBCO_FADE_OUT_END = 5.5;
-const GEBCO_RASTER_OPACITY: ExpressionSpecification = [
-  "interpolate",
-  ["linear"],
-  ["zoom"],
-  GEBCO_FADE_IN_START,
-  0,
-  GEBCO_MIN_ZOOM,
-  1,
-  5,
-  1,
-  GEBCO_FADE_OUT_END,
-  0,
-];
+const GEBCO_RASTER_OPACITY: ExpressionSpecification = 1;
 
 /**
  * Adds GEBCO's opaque global relief below OpenFreeMap's vector details. The
  * bundled Natural Earth raster remains beneath it as the no-extra-request
  * fallback when GEBCO tiles are unavailable.
  *
- * GEBCO only kicks in at `GEBCO_MIN_ZOOM` and above: at very low zoom the WMS
- * tiles cover huge bboxes and the remote server is visibly slow, so the
- * Natural Earth raster (already in the style, no extra request) carries the
- * relief there. Above `GEBCO_MIN_ZOOM`, GEBCO adds the bathymetric detail the
- * Natural Earth mosaic lacks.
+ * GEBCO requests tiles from `GEBCO_MIN_ZOOM` upward, but treats each 512px WMS
+ * response as a 1024px logical tile. This reduces request fan-out on the
+ * globe while preserving the colored sea-and-land surface; Natural Earth
+ * remains visible while GEBCO is in flight or unavailable.
  */
 export function solidifyGlobeStyle(style: StyleSpecification): StyleSpecification {
   const layers = style.layers.map((layer) => {
@@ -64,8 +58,13 @@ export function solidifyGlobeStyle(style: StyleSpecification): StyleSpecificatio
     }
 
     if (layer.type === "raster" && layer.id === "natural_earth") {
+      // The Liberty layer has maxzoom: 7. Do not remove the only guaranteed
+      // land texture past that point: MapLibre can safely overzoom its z6
+      // source tiles until provider vector details have arrived.
+      const naturalEarthLayer = { ...layer };
+      delete naturalEarthLayer.maxzoom;
       return {
-        ...layer,
+        ...naturalEarthLayer,
         layout: { ...layer.layout, visibility: "visible" as const },
         paint: {
           ...layer.paint,
@@ -89,7 +88,10 @@ export function solidifyGlobeStyle(style: StyleSpecification): StyleSpecificatio
         paint: {
           ...layer.paint,
           "fill-color": WANDERLY_OCEAN_COLOR,
-          "fill-opacity": 0.16,
+          // When GEBCO is deferred or unavailable, a translucent water fill
+          // reveals the pale Natural Earth ocean and makes the globe look as
+          // though tiles are missing. Keep the base ocean solid instead.
+          "fill-opacity": 1,
         },
       };
     }
@@ -126,12 +128,12 @@ export function solidifyGlobeStyle(style: StyleSpecification): StyleSpecificatio
       [GEBCO_SOURCE_ID]: {
         type: "raster",
         tiles: [GEBCO_WMS_TILE_URL],
-        tileSize: 512,
-        // Source must cover the fade-in/fade-out band so MapLibre has tiles
-        // available while the layer's raster-opacity ramps up at GEBCO_MIN_ZOOM
-        // and back down at GEBCO_FADE_OUT_END.
-        minzoom: GEBCO_FADE_IN_START,
-        maxzoom: GEBCO_FADE_OUT_END,
+        // Lower request fan-out for the public WMS. The WMS image remains
+        // 512px, but MapLibre displays it as a 1024px logical tile; detailed
+        // roads and labels still arrive from the vector style above it.
+        tileSize: GEBCO_TILE_SIZE,
+        minzoom: GEBCO_SOURCE_MIN_ZOOM,
+        maxzoom: GEBCO_MAX_ZOOM,
         attribution: '<a href="https://www.gebco.net/" target="_blank" rel="noopener noreferrer">GEBCO</a> — not for navigation',
       },
     },

@@ -20,12 +20,6 @@ type StreamState = {
   phase: string | null;
 };
 
-type AutoAskRequest = {
-  nonce: string;
-  place: ConversationPlace;
-  context: string;
-};
-
 export type ChatThreadStatus = "preparing" | "ready" | "error";
 
 type TravelAgentChatProps = {
@@ -47,9 +41,18 @@ type TravelAgentChatProps = {
    * the workspace default.
    */
   onThreadInvalidated?: () => void;
+  /**
+   * Optional one-shot provisioner invoked once before the very first
+   * Send when `threadId` is still null. The exploration page uses this
+   * to call `POST /explorations/start` and surface the resulting
+   * `threadId` from the in-memory session. Trip-scoped chat hosts can
+   * leave it unset; their `threadId` arrives via `useTripThreads` /
+   * `getOrCreateDefaultTripThread`.
+   */
+  onEnsureThreadForFirstSend?: () => Promise<{ threadId: string }>;
+  /** Clears the current in-memory exploration. It never creates a Trip. */
+  onStartNewExploration?: () => void;
   selectedPlace?: { place: ConversationPlace; context: string } | null;
-  autoAskRequest?: AutoAskRequest | null;
-  onAutoAskConsumed?: (nonce: string) => void;
   onConversationText?: (text: string) => void;
 };
 
@@ -61,19 +64,23 @@ export function TravelAgentChat({
   threadStatus,
   onRetryThread,
   onThreadInvalidated,
+  onEnsureThreadForFirstSend,
+  onStartNewExploration,
   selectedPlace,
-  autoAskRequest = null,
-  onAutoAskConsumed,
   onConversationText,
 }: TravelAgentChatProps) {
   const t = useTranslations("explore.chat");
   const effectiveThreadId = controlledThreadId;
   const resolvedThreadStatus = threadStatus ?? (effectiveThreadId ? "ready" : "preparing");
-  const canSend = resolvedThreadStatus === "ready" && Boolean(effectiveThreadId);
+  // Send is allowed when we already have a thread, or when the parent
+  // has supplied a provisioner the first send can use (exploration
+  // flow). It is blocked only when there is no thread AND no provisioner,
+  // or when the last provision attempt errored.
+  const canSend = (Boolean(effectiveThreadId) || Boolean(onEnsureThreadForFirstSend))
+    && resolvedThreadStatus !== "error";
 
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const [storageRestored, setStorageRestored] = useState(false);
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([]);
   const [refusalMessageIds, setRefusalMessageIds] = useState<Set<string>>(new Set());
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
@@ -81,7 +88,6 @@ export function TravelAgentChat({
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
   const panelInputRef = useRef<HTMLTextAreaElement>(null);
-  const firedAutoAskNoncesRef = useRef<Set<string>>(new Set());
   const pendingTurnAnchorRef = useRef<HTMLParagraphElement>(null);
   const wasSendingRef = useRef(false);
 
@@ -108,7 +114,6 @@ export function TravelAgentChat({
     const restorePointers = window.setTimeout(() => {
       const storedActiveRunId = readStoredActiveRunId();
       if (storedActiveRunId) setActiveRunId(storedActiveRunId);
-      setStorageRestored(true);
     }, 0);
     return () => window.clearTimeout(restorePointers);
   }, []);
@@ -117,16 +122,25 @@ export function TravelAgentChat({
     async (turn: PendingTurn) => {
       setRequestError(null);
       try {
-        if (!effectiveThreadId) {
+        let activeThreadId = effectiveThreadId;
+        if (!activeThreadId) {
           // Controlled callers must always supply a threadId. The parent
           // (ExploreChatHost / TripWorkspace) owns provisioning; if the
           // id is still null at submit time we surface a request error
           // rather than try to create a thread out-of-band.
-          setRequestError(new Error("No active thread for this conversation"));
-          return;
+          if (!onEnsureThreadForFirstSend) {
+            setRequestError(new Error("No active thread for this conversation"));
+            return;
+          }
+          const provisioned = await onEnsureThreadForFirstSend();
+          if (!provisioned.threadId) {
+            setRequestError(new Error("Could not provision a thread for this conversation"));
+            return;
+          }
+          activeThreadId = provisioned.threadId;
         }
 
-        const response = await submitTurn.mutateAsync({ threadId: effectiveThreadId, input: turn });
+        const response = await submitTurn.mutateAsync({ threadId: activeThreadId, input: turn });
         setSessionMessages((current) => mergeMessages(current, [response.userMessage]));
         setStreamState(emptyStreamState());
         setActiveRunId(response.runId);
@@ -144,6 +158,7 @@ export function TravelAgentChat({
     [
       submitTurn,
       effectiveThreadId,
+      onEnsureThreadForFirstSend,
       clearLocalSessionState,
       onThreadInvalidated,
     ],
@@ -170,10 +185,10 @@ export function TravelAgentChat({
   }, [isSending, open]);
 
   useEffect(() => {
-    if (panelInputRef.current && open && !autoAskRequest) {
+    if (panelInputRef.current && open) {
       panelInputRef.current.focus();
     }
-  }, [open, autoAskRequest]);
+  }, [open]);
 
   useEffect(() => {
     const textarea = panelInputRef.current;
@@ -181,39 +196,6 @@ export function TravelAgentChat({
     textarea.style.height = "auto";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
   }, [draft]);
-
-  // One-shot auto-ask: when ExploreMapPage sets a new nonce, fire exactly
-  // one "Tell me about {name}" turn as soon as the dialog is open. The
-  // nonce ensures repeated clicks (or re-renders with the same request)
-  // do not duplicate. Auto-ask waits until `threadId` is provisioned by
-  // the parent (ExploreChatHost / TripWorkspace).
-  useEffect(() => {
-  if (!autoAskRequest) return;
-  if (!storageRestored) return;
-  if (!open || !canSend) return;
-  if (isSending) return;
-  if (!effectiveThreadId) return;
-  if (firedAutoAskNoncesRef.current.has(autoAskRequest.nonce)) return;
-  firedAutoAskNoncesRef.current.add(autoAskRequest.nonce);
-
-  const turn: PendingTurn = {
-    requestId: crypto.randomUUID(),
-    question: t("askQuestion", { name: autoAskRequest.place.name }),
-    place: autoAskRequest.place,
-    intent: "auto_intro",
-  };
-  setPendingTurn(turn);
-  setRequestError(null);
-  setDraft("");
-  setExpanded(false);
-  void (async () => {
-    try {
-      await sendTurn(turn);
-    } finally {
-      onAutoAskConsumed?.(autoAskRequest.nonce);
-    }
-  })();
-  }, [autoAskRequest, storageRestored, open, canSend, isSending, effectiveThreadId, t, sendTurn, onAutoAskConsumed]);
 
   useEffect(() => {
   if (conversation.error instanceof TravelApiError && conversation.error.statusCode === 404) {
@@ -337,6 +319,13 @@ export function TravelAgentChat({
     if (selectedPlace) setDraft(t("askQuestion", { name: selectedPlace.place.name }));
   }
 
+  function startNewExploration() {
+    if (isSending || !onStartNewExploration) return;
+    clearLocalSessionState();
+    setDraft("");
+    onStartNewExploration();
+  }
+
   const submitButton = (
     <button type="submit" aria-label={t("sendAria")} disabled={inputDisabled} className="grid size-11 shrink-0 place-items-center rounded-full bg-sidebar text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70">
       {isSending ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : <ArrowUp aria-hidden="true" className="size-5" />}
@@ -366,6 +355,7 @@ export function TravelAgentChat({
           <button type="button" onClick={() => setExpanded((current) => !current)} aria-label={expanded ? t("collapse") : t("expand")} className="absolute left-1/2 top-1 -translate-x-1/2 rounded-full bg-muted/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">{expanded ? t("collapse") : t("expand")}</button>
           <span className="grid size-7 place-items-center rounded-[10px] bg-sidebar text-white shadow-sm"><MessageCircle aria-hidden="true" className="size-4" /></span>
           <p className="min-w-0 flex-1 text-sm font-black tracking-[-0.025em] text-sidebar">{t("agentName")}</p>
+          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} className="rounded-full border border-primary/20 bg-white px-2.5 py-1 text-[10px] font-bold text-primary hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">{t("startNewExploration")}</button> : null}
           <button type="button" onClick={closeConversation} aria-label={t("close")} className="grid size-7 place-items-center rounded-full bg-sidebar text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar/25"><X aria-hidden="true" className="size-3.5" /></button>
         </header>
 
