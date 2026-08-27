@@ -5,16 +5,16 @@ import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
 import type { ConversationPlace } from "@/lib/api/contracts";
-import { applyGeographyContrast, GEOGRAPHY_INTERACTIVE_LAYER_IDS, geographyFeatureFrom, inspectGeographyLayers, OPEN_MAP_TILES_SOURCE, setGeographyLayerVisibility, type GeographyInspection, type GeographyVisibility } from "./map-geography-layers";
+import { applyGeographyContrast, inspectGeographyLayers, OPEN_MAP_TILES_SOURCE, setGeographyLayerVisibility, type GeographyInspection, type GeographyVisibility } from "./map-geography-layers";
 import { INITIAL_READINESS, layerCaptionFor, mapReadinessStage, panelDisabledReason, type LayerCaption, type MapReadiness, type MapStage } from "./map-readiness";
 
 import { CountryBoundaryOverlay } from "./country-boundary-overlay";
 import { cityKey, findMentionedCities, loadCityCatalog, type CatalogCity } from "./city-catalog";
 import { GeographyLabelOverlay } from "./geography-label-overlay";
+import { loadAdministrativeCenters, pinGranularityForZoom, pinSelectionForReference, type PinGranularity } from "./pin-selection";
 import { solidifyGlobeStyle } from "./map-surface-style";
 import { ExploreChatHost } from "./explore-chat-host";
 import { useOptionalTravelApi } from "@/lib/query/provider";
-import { useAuth } from "@/lib/auth/auth-provider";
 import { Link } from "@/i18n/navigation";
 import type { LocationReferenceResponse } from "@/lib/api/contracts";
 
@@ -29,6 +29,10 @@ export type ExploreDestination = {
   locationReferenceStatus?: "loading" | "unavailable";
   cityKey?: string;
   cityName?: string;
+  requestedPinGranularity?: PinGranularity;
+  pinGranularity?: PinGranularity;
+  pinKey?: string;
+  manualPinSequence?: number;
 };
 type Destination = ExploreDestination;
 
@@ -116,50 +120,69 @@ export function ExploreMapPage() {
       const locationReference = await travelApi.getLocationReference({
         latitude: inspiration.coordinates[1], longitude: inspiration.coordinates[0],
       });
-      const normalizedCityCoordinates = locationReference.outcome === "REFERENCE"
-        ? locationReference.nearestCityCoordinates
+      const centers = locationReference.outcome === "REFERENCE"
+        ? await loadAdministrativeCenters(locale).catch(() => [])
+        : [];
+      const selection = locationReference.outcome === "REFERENCE"
+        ? pinSelectionForReference(
+            inspiration.requestedPinGranularity ?? "city",
+            locationReference,
+            inspiration.coordinates,
+            centers,
+          )
         : null;
-      const normalizedCoordinates: [number, number] = normalizedCityCoordinates
-        ? [normalizedCityCoordinates.longitude, normalizedCityCoordinates.latitude]
-        : inspiration.coordinates;
-      const normalizedCityKey = locationReference.outcome === "REFERENCE" && locationReference.nearestCity
-        ? cityKey(locationReference.countryCode, locationReference.nearestCity)
-        : undefined;
-      const duplicate = normalizedCityKey && locationReference.outcome === "REFERENCE" && locationReference.nearestCity
-        ? inspirationsRef.current.find((item) => item.id !== inspiration.id && isSameCity(
-            item,
-            locationReference.nearestCity!,
-            normalizedCoordinates,
+      const referencedCityCenter: [number, number] | null = locationReference.outcome === "REFERENCE" && locationReference.nearestCityCoordinates
+        ? [locationReference.nearestCityCoordinates.longitude, locationReference.nearestCityCoordinates.latitude]
+        : null;
+      const duplicate = selection
+        ? inspirationsRef.current.find((item) => item.id !== inspiration.id && (
+            item.pinKey === selection.key
+            || (selection.granularity === "city" && selection.cityName && referencedCityCenter
+              ? isSameCity(item, selection.cityName, referencedCityCenter)
+              : false)
           ))
         : undefined;
       if (duplicate) {
-        inspirationMarkersRef.current.get(inspiration.id)?.remove();
-        inspirationMarkersRef.current.delete(inspiration.id);
-        inspirationsRef.current = inspirationsRef.current.filter((item) => item.id !== inspiration.id);
-        setInspirations(inspirationsRef.current);
-        setSelected(duplicate);
-        mapRef.current?.flyTo({ center: duplicate.coordinates, zoom: 5.4, duration: reducedMotion() ? 0 : 900 });
-        showMapNotice(t("cityAlreadyPinned", { name: duplicate.name }));
-        return;
+        const duplicateIsNewer = (duplicate.manualPinSequence ?? Number.NEGATIVE_INFINITY)
+          > (inspiration.manualPinSequence ?? Number.NEGATIVE_INFINITY);
+        if (duplicateIsNewer) {
+          inspirationMarkersRef.current.get(inspiration.id)?.remove();
+          inspirationMarkersRef.current.delete(inspiration.id);
+          retriedLocationReferenceIdsRef.current.delete(inspiration.id);
+          inspirationsRef.current = inspirationsRef.current.filter((item) => item.id !== inspiration.id);
+          setInspirations(inspirationsRef.current);
+          setSelected((current) => current?.id === inspiration.id ? duplicate : current);
+          showMapNotice(t("pinUpdated", { name: selection?.name ?? duplicate.name }));
+          return;
+        }
+        inspirationMarkersRef.current.get(duplicate.id)?.remove();
+        inspirationMarkersRef.current.delete(duplicate.id);
+        retriedLocationReferenceIdsRef.current.delete(duplicate.id);
+        inspirationsRef.current = inspirationsRef.current.filter((item) => item.id !== duplicate.id);
+        showMapNotice(t("pinUpdated", { name: selection?.name ?? duplicate.name }));
       }
-      const next = locationReference.outcome === "REFERENCE"
+      const next = locationReference.outcome === "REFERENCE" && selection
         ? {
             ...inspiration,
-            ...referenceDisplay(locationReference, t("locationReferenceNote")),
-            coordinates: normalizedCoordinates,
-            cityKey: normalizedCityKey,
-            cityName: locationReference.nearestCity ?? undefined,
+            name: selection.name,
+            country: referenceContext(locationReference, selection.granularity),
+            note: t("locationReferenceNote"),
+            coordinates: selection.coordinates,
+            pinKey: selection.key,
+            pinGranularity: selection.granularity,
+            cityKey: selection.granularity === "city" ? selection.key : undefined,
+            cityName: selection.cityName,
             locationReference,
             locationReferenceStatus: undefined,
           }
         : { ...inspiration, locationReference, locationReferenceStatus: undefined };
       inspirationsRef.current = inspirationsRef.current.map((item) => item.id === inspiration.id ? next : item);
       setInspirations(inspirationsRef.current);
-      setSelected((current) => current?.id === inspiration.id ? next : current);
+      setSelected((current) => current?.id === inspiration.id || current?.id === duplicate?.id ? next : current);
       const markerButton = inspirationMarkersRef.current.get(inspiration.id)?.getElement().querySelector("button");
       inspirationMarkersRef.current.get(inspiration.id)?.setLngLat(next.coordinates);
       if (markerButton) {
-        markerButton.textContent = next.name;
+        setMarkerLabel(markerButton, next.name);
         markerButton.setAttribute("aria-label", t("markerOpenAria", { name: next.name }));
       }
     } catch {
@@ -168,7 +191,7 @@ export function ExploreMapPage() {
       setInspirations(inspirationsRef.current);
       setSelected((current) => current?.id === inspiration.id ? unavailable : current);
     }
-  }, [showMapNotice, t, travelApi]);
+  }, [locale, showMapNotice, t, travelApi]);
 
   useEffect(() => {
     if (!travelApi) return;
@@ -274,6 +297,9 @@ export function ExploreMapPage() {
         note: t("chatMentionedCityNote"),
         cityKey: cityKey(null, city.name),
         cityName: city.name,
+        requestedPinGranularity: "city",
+        pinGranularity: "city",
+        pinKey: cityKey(null, city.name),
       };
       const { anchor, button } = markerElement(inspiration.name);
       button.setAttribute("aria-label", t("markerOpenAria", { name: inspiration.name }));
@@ -482,31 +508,12 @@ export function ExploreMapPage() {
         map.on("error", onMapError);
 
         map.on("click", (event) => {
-          const geography = event.point
-            ? geographyFeatureFrom(map.queryRenderedFeatures(event.point, { layers: [...GEOGRAPHY_INTERACTIVE_LAYER_IDS] })[0])
-            : null;
-          if (geography) {
-            const countryLabel =
-              geography.kind === "country"
-                ? t("geographyCountryLabel")
-                : geography.kind === "city"
-                  ? t("geographyCityLabel")
-                  : t("geographyStateLabel");
-            selectDestination({
-              id: `geography-${geography.kind}-${event.lngLat.lng.toFixed(5)}-${event.lngLat.lat.toFixed(5)}`,
-              name: geography.name,
-              country: countryLabel,
-              coordinates: [event.lngLat.lng, event.lngLat.lat],
-              note: t("geographyNote"),
-              kind: "geography",
-            });
-            return;
-          }
           inspirationSequenceRef.current += 1;
           const inspiration = inspirationAt(
             `inspiration-${inspirationSequenceRef.current}`,
             inspirationSequenceRef.current,
             [event.lngLat.lng, event.lngLat.lat],
+            pinGranularityForZoom(map.getZoom()),
           );
           const { anchor, button } = markerElement(inspiration.name);
           button.setAttribute("aria-label", t("markerOpenAria", { name: inspiration.name }));
@@ -928,13 +935,27 @@ function markerElement(label: string) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "wanderly-map-marker wanderly-map-marker--inspiration";
-  button.innerHTML = `<span>${label}</span>`;
+  setMarkerLabel(button, label);
   anchor.append(button);
 
   return { anchor, button };
 }
 
-function inspirationAt(id: string, sequence: number, coordinates: [number, number]): Destination {
+function setMarkerLabel(button: HTMLButtonElement, label: string) {
+  let span = button.querySelector("span");
+  if (!span) {
+    span = document.createElement("span");
+    button.append(span);
+  }
+  span.textContent = label;
+}
+
+function inspirationAt(
+  id: string,
+  sequence: number,
+  coordinates: [number, number],
+  requestedPinGranularity: PinGranularity = "city",
+): Destination {
   return {
     id,
     name: `Pinned place ${sequence}`,
@@ -942,19 +963,19 @@ function inspirationAt(id: string, sequence: number, coordinates: [number, numbe
     coordinates,
     note: "This is an unverified, session-only inspiration. It has no live price, availability, visa or booking data.",
     kind: "inspiration",
+    requestedPinGranularity,
+    manualPinSequence: sequence,
   };
 }
 
-function referenceDisplay(reference: Extract<LocationReferenceResponse, { outcome: "REFERENCE" }>, note: string) {
-  const name = reference.nearestCity ?? reference.admin1 ?? reference.country;
-  const context = [reference.admin1, reference.country]
+function referenceContext(
+  reference: Extract<LocationReferenceResponse, { outcome: "REFERENCE" }>,
+  granularity: PinGranularity,
+) {
+  if (granularity === "country") return reference.country;
+  return [reference.admin1, reference.country]
     .filter((value, index, values) => value && values.indexOf(value) === index)
     .join(" · ");
-  return {
-    name,
-    country: context || reference.country,
-    note,
-  };
 }
 
 function distanceInKm(from: [number, number], to: [number, number]) {

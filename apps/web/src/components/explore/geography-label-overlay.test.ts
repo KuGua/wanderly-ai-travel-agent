@@ -23,13 +23,16 @@ describe("geographyLabelsFromFeatures", () => {
     expect(labels.map((label) => label.name)).toEqual(["亚洲", "中国"]);
   });
 
-  it("adds important cities and regions progressively and honors layer visibility", () => {
+  it("uses exclusive country, region, and city selection tiers", () => {
     const features = [
+      feature("country", "China", { rank: 1 }),
       feature("city", "Shanghai", { rank: 1, capital: 4 }),
       feature("state", "Zhejiang", { rank: 2 }),
     ];
 
-    expect(geographyLabelsFromFeatures(features, 6.0, "en", visible).map((label) => label.kind)).toEqual(["region", "city"]);
+    expect(geographyLabelsFromFeatures(features, 4.4, "en", visible).map((label) => label.kind)).toEqual(["country"]);
+    expect(geographyLabelsFromFeatures(features, 5.0, "en", visible).map((label) => label.kind)).toEqual(["region"]);
+    expect(geographyLabelsFromFeatures(features, 6.5, "en", visible).map((label) => label.kind)).toEqual(["city"]);
     expect(geographyLabelsFromFeatures(features, 6.0, "en", { countries: true, regions: false, cities: false })).toEqual([]);
   });
 });
