@@ -7,6 +7,7 @@ import type {
   ConversationTurnAcceptedResponse,
   CreateTripThreadInput,
   OwnerConversationResponse,
+  ThreadsResponse,
   UpdateProfileInput,
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
@@ -86,8 +87,13 @@ export function useGetOrCreateDefaultTripThread(tripId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => api.getOrCreateDefaultTripThread(tripId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: tripKeys.threads(tripId) });
+    onSuccess: (thread) => {
+      // The POST response is the authoritative persisted thread. Publish it
+      // immediately so chat readiness does not depend on a second GET request
+      // completing successfully after provisioning.
+      queryClient.setQueryData<ThreadsResponse>(tripKeys.threads(tripId), (current) => ({
+        threads: mergeThreads(current?.threads ?? [], [thread]),
+      }));
     },
   });
 }
@@ -139,4 +145,13 @@ function mergeConversationMessages(
   const messages = new Map(current.map((message) => [message.id, message]));
   incoming.forEach((message) => messages.set(message.id, message));
   return [...messages.values()].sort((a, b) => a.sequence - b.sequence);
+}
+
+function mergeThreads(
+  current: ThreadsResponse["threads"],
+  incoming: ThreadsResponse["threads"],
+) {
+  const threads = new Map(current.map((thread) => [thread.id, thread]));
+  incoming.forEach((thread) => threads.set(thread.id, thread));
+  return [...threads.values()];
 }

@@ -52,11 +52,8 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     getTrip: vi.fn().mockResolvedValue(buildTripResponse()),
     getLocationReference: vi.fn(),
     getTripThreads: vi.fn().mockResolvedValue({ threads: [] }),
-    createTripThread: vi.fn().mockImplementation(async () => ({
-      id: SECOND_THREAD_ID,
-      message: "Thread created" as const,
-    })),
-    getOrCreateDefaultTripThread: vi.fn().mockResolvedValue({ id: DEFAULT_THREAD_ID, message: "Thread created" as const }),
+    createTripThread: vi.fn().mockResolvedValue(buildThread(SECOND_THREAD_ID, "New thread", false)),
+    getOrCreateDefaultTripThread: vi.fn().mockResolvedValue(buildThread(DEFAULT_THREAD_ID, "Default", true)),
     getOwnerConversation: vi.fn().mockResolvedValue({ thread: buildThread(DEFAULT_THREAD_ID, "Default", true), messages: [] }),
     submitConversationTurn: vi.fn().mockResolvedValue({
       threadId: DEFAULT_THREAD_ID,

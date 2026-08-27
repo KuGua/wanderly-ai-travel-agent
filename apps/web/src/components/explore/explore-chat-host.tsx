@@ -6,7 +6,6 @@ import { useTranslations } from "next-intl";
 
 import type { ConversationPlace } from "@/lib/api/contracts";
 import { TravelAgentChat } from "./travel-agent-chat";
-import { useTravelApi } from "@/lib/query/provider";
 import {
   useGetOrCreateDefaultTripThread,
   useTripThreads,
@@ -127,28 +126,29 @@ function ExploreChatHostBody({
   switchTripAria,
 }: BodyProps) {
   const queryClient = useQueryClient();
-  const api = useTravelApi();
   // Chat only attaches to a trip that already exists. Entering Explore must
   // never create a hidden scratch trip as a side effect.
   const activeTripId = activeTrip?.id ?? null;
   const threadsQuery = useTripThreads(activeTripId);
   const threads = useMemo(() => threadsQuery.data?.threads ?? [], [threadsQuery.data?.threads]);
   const ensureDefault = useGetOrCreateDefaultTripThread(activeTripId ?? "");
-  const autoProvisionAttemptedRef = useRef(false);
+  const autoProvisionTripIdRef = useRef<string | null>(null);
 
   // Eager auto-provision the per-trip default thread once we know the
   // caller's threads list is empty. Mirrors trip-workspace.tsx §8.1.
   useEffect(() => {
     if (!activeTripId) {
-      autoProvisionAttemptedRef.current = false;
+      autoProvisionTripIdRef.current = null;
       return;
     }
-    if (autoProvisionAttemptedRef.current) return;
+    if (autoProvisionTripIdRef.current === activeTripId) return;
     if (!threadsQuery.data) return;
     if (threads.length !== 0) return;
-    autoProvisionAttemptedRef.current = true;
+    autoProvisionTripIdRef.current = activeTripId;
     void ensureDefault.mutateAsync().catch(() => {
-      autoProvisionAttemptedRef.current = false;
+      if (autoProvisionTripIdRef.current === activeTripId) {
+        autoProvisionTripIdRef.current = null;
+      }
     });
   }, [activeTripId, threadsQuery.data, threads.length, ensureDefault]);
 
@@ -175,26 +175,32 @@ function ExploreChatHostBody({
     if (!activeTripId) {
       return;
     }
-    autoProvisionAttemptedRef.current = false;
+    autoProvisionTripIdRef.current = null;
     if (threadsQuery.isError) {
       void threadsQuery.refetch();
       return;
     }
     void ensureDefault.mutateAsync().catch(() => {
-      autoProvisionAttemptedRef.current = false;
+      if (autoProvisionTripIdRef.current === activeTripId) {
+        autoProvisionTripIdRef.current = null;
+      }
     });
   }, [activeTripId, ensureDefault, onRetryTrips, threadsQuery, tripsFailed]);
 
   const handleInvalidated = useCallback(() => {
     if (!activeTripId) return;
-    void queryClient.invalidateQueries({ queryKey: tripKeys.threads(activeTripId) });
-    autoProvisionAttemptedRef.current = false;
-    void api
-      .getOrCreateDefaultTripThread(activeTripId)
+    // The active id was rejected by the server. Drop the stale list before
+    // provisioning so the returned default becomes the only readiness source.
+    queryClient.setQueryData(tripKeys.threads(activeTripId), { threads: [] });
+    autoProvisionTripIdRef.current = null;
+    void ensureDefault
+      .mutateAsync()
       .catch(() => {
-        autoProvisionAttemptedRef.current = false;
+        if (autoProvisionTripIdRef.current === activeTripId) {
+          autoProvisionTripIdRef.current = null;
+        }
       });
-  }, [activeTripId, api, queryClient]);
+  }, [activeTripId, ensureDefault, queryClient]);
 
   return (
     <div className="contents">

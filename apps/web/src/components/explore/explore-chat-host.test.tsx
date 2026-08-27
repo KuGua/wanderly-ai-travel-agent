@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TravelApi } from "@/lib/api";
@@ -10,6 +10,19 @@ const TRIP_B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const THREAD_A = "11111111-1111-4111-8111-111111111111";
 const THREAD_B = "22222222-2222-4222-8222-222222222222";
 const CREATED_AT = "2026-08-26T00:00:00.000Z";
+
+function defaultThread(tripId = TRIP_A, threadId = THREAD_A) {
+  return {
+    id: threadId,
+    ownerUserId: "owner",
+    tripId,
+    scope: "TRIP" as const,
+    isDefault: true,
+    title: "Personal trip scratchpad",
+    createdAt: CREATED_AT,
+    archivedAt: null,
+  };
+}
 
 const TRIP_A_SUMMARY = {
   id: TRIP_A,
@@ -45,7 +58,7 @@ function makeApi(overrides: Partial<TravelApi> = {}): TravelApi {
     getLocationReference: vi.fn(),
     getTripThreads: vi.fn().mockResolvedValue({ threads: [] }),
     createTripThread: vi.fn(),
-    getOrCreateDefaultTripThread: vi.fn().mockResolvedValue({ id: THREAD_A, message: "Thread created" }),
+    getOrCreateDefaultTripThread: vi.fn().mockResolvedValue(defaultThread()),
     getOwnerConversation: vi.fn().mockResolvedValue({
       thread: {
         id: THREAD_A,
@@ -135,6 +148,46 @@ describe("ExploreChatHost trip provisioning", () => {
       timeout: 3000,
     });
     expect(api.getOrCreateDefaultTripThread).toHaveBeenCalledTimes(1);
+  });
+
+  it("becomes ready from the provision response without waiting for a second thread-list request", async () => {
+    const api = makeApi({
+      getTripThreads: vi.fn()
+        .mockResolvedValueOnce({ threads: [] })
+        .mockImplementation(() => new Promise(() => {})),
+    });
+    renderWithIntl(<ExploreChatHost />, { api });
+
+    await waitFor(() => expect(api.getOrCreateDefaultTripThread).toHaveBeenCalledWith(TRIP_A));
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Ask Wanderly" })).toBeEnabled());
+    expect(screen.queryByText("Preparing your private chat…")).not.toBeInTheDocument();
+    expect(api.getOwnerConversation).toHaveBeenCalledWith(THREAD_A);
+  });
+
+  it("provisions an empty trip after the user switches trips", async () => {
+    const createdTrips = new Set<string>();
+    const api = makeApi({
+      getTrips: vi.fn().mockResolvedValue({ trips: [TRIP_A_SUMMARY, TRIP_B_SUMMARY] }),
+      getTripThreads: vi.fn().mockImplementation(async (tripId: string) => ({
+        threads: createdTrips.has(tripId)
+          ? [defaultThread(tripId, tripId === TRIP_A ? THREAD_A : THREAD_B)]
+          : [],
+      })),
+      getOrCreateDefaultTripThread: vi.fn().mockImplementation(async (tripId: string) => {
+        createdTrips.add(tripId);
+        return defaultThread(tripId, tripId === TRIP_A ? THREAD_A : THREAD_B);
+      }),
+    });
+    renderWithIntl(<ExploreChatHost />, { api });
+
+    await waitFor(() => expect(api.getOrCreateDefaultTripThread).toHaveBeenCalledWith(TRIP_A));
+    fireEvent.click(await screen.findByRole("button", { name: /Switch trip/i }));
+    const europeOption = await screen.findByRole("option", { name: "Europe Trip" });
+    fireEvent.click(within(europeOption).getByRole("button", { name: "Europe Trip" }));
+
+    await waitFor(() => expect(api.getOrCreateDefaultTripThread).toHaveBeenCalledWith(TRIP_B));
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Ask Wanderly" })).toBeEnabled());
+    expect(screen.queryByText("Preparing your private chat…")).not.toBeInTheDocument();
   });
 
   it("does not provision a default when the trip already has a thread", async () => {
