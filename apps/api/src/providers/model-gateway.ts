@@ -5,7 +5,15 @@ import type { PersonalTripContext } from "../skills/personal/personal-trip-conte
 
 export type ConversationIntent = "auto_intro" | "user_typed";
 
-export interface ConversationHistoryMessage {
+/**
+ * Single entry in the bounded same-thread LLM context window. The shape
+ * intentionally matches the `ThreadContextMessage` produced by
+ * `apps/api/src/services/conversation-context-service.ts` so the Skill
+ * can pass the builder's output straight through to the gateway without
+ * a translation layer. Both modules define the type locally to keep the
+ * service free of any dependency on the providers package.
+ */
+export interface ThreadContextMessage {
   role: "USER" | "ASSISTANT";
   content: string;
 }
@@ -42,7 +50,13 @@ export interface ModelGateway {
   generateConversationReply(params: {
     question: string;
     place?: ConversationPlace;
-    history: ConversationHistoryMessage[];
+    /**
+     * Server-built, bounded same-thread LLM context window.  Built only
+     * by `apps/api/src/services/conversation-context-service.ts` from the
+     * accepted task's `threadId` + `userMessageId`.  Browsers never see,
+     * submit, or store this field.
+     */
+    threadContext: ThreadContextMessage[];
     intent?: ConversationIntent;
     /**
      * Server-derived minimal Trip context.  When provided, the gateway
@@ -57,18 +71,9 @@ export interface ModelGateway {
   streamConversationReply?(params: {
     question: string;
     place?: ConversationPlace;
-    history: ConversationHistoryMessage[];
+    threadContext: ThreadContextMessage[];
     intent?: ConversationIntent;
     tripContext?: PersonalTripContext;
-    onDelta: ConversationDeltaHandler;
-    signal?: AbortSignal;
-    ctx?: RequestContext;
-  }): Promise<ConversationReply>;
-
-  streamConversationReply?(params: {
-    question: string;
-    place?: ConversationPlace;
-    history: ConversationHistoryMessage[];
     onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;

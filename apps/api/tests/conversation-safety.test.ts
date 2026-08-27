@@ -134,7 +134,7 @@ async function invokeConversation(question: string) {
     policyGate: new DefaultPolicyGate("personal"),
   }, {
     question,
-    history: [],
+    threadContext: [],
   }, new AbortController().signal);
 }
 
