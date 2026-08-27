@@ -272,6 +272,20 @@ describe("TravelAgentChat durable streaming flow", () => {
     await waitFor(() => expect(onInvalidated).toHaveBeenCalledTimes(1));
   });
 
+  it("offers a same-request retry after a transient server error", async () => {
+    const submitConversationTurn = vi.fn()
+      .mockRejectedValueOnce(new TravelApiError("failed", 500, "Internal Server Error", null))
+      .mockImplementationOnce(async (_threadId, input) => accepted(input.question));
+    const api = createApi({ submitConversationTurn });
+    renderChat(api);
+
+    await submitFromCapsule("Try Japan again");
+    fireEvent.click(await screen.findByRole("button", { name: "Retry" }));
+
+    await waitFor(() => expect(submitConversationTurn).toHaveBeenCalledTimes(2));
+    expect(submitConversationTurn.mock.calls[1]).toEqual(submitConversationTurn.mock.calls[0]);
+  });
+
   it("does not include the intent field for manually typed questions", async () => {
     const api = createApi();
     renderChat(api, { selectedPlace: { place: TOKYO, context: "Japan" } });
