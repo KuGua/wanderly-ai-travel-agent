@@ -97,7 +97,8 @@ describe("ExploreChatHost trip provisioning", () => {
     expect(screen.getByRole("form", { name: "Start a conversation with Wanderly Agent" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Ask Wanderly" })).toBeDisabled();
     expect(screen.getByText("Preparing your private chat…")).toBeInTheDocument();
-    expect(screen.getByTestId("explore-chat-host").firstElementChild).not.toHaveClass("relative");
+    expect(screen.getByTestId("explore-chat-host")).toHaveClass("contents");
+    expect(screen.getByTestId("explore-chat-host").firstElementChild).toHaveClass("contents");
   });
 
   it("keeps the chat entry visible when thread provisioning fails", async () => {

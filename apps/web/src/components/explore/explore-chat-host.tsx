@@ -62,7 +62,7 @@ export function ExploreChatHost({
   );
 
   return (
-    <div data-testid="explore-chat-host">
+    <div data-testid="explore-chat-host" className="contents">
       <ExploreChatHostBody
         selectedPlace={selectedPlace}
         autoAskRequest={autoAskRequest}
@@ -226,7 +226,7 @@ function ExploreChatHostBody({
   }, [activeTripId, api, queryClient]);
 
   return (
-    <div>
+    <div className="contents">
       {allTrips.length > 1 && activeTripId ? (
         <TripPickerChip
           label={pickerLabel}
