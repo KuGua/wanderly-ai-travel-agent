@@ -101,6 +101,16 @@ export function ExploreMapPage() {
   const [autoAskNonce, setAutoAskNonce] = useState(0);
   const [mapNotice, setMapNotice] = useState<string | null>(null);
 
+  useEffect(() => {
+    inspirationMarkersRef.current.forEach((marker, id) => {
+      const button = marker.getElement().querySelector<HTMLButtonElement>("button");
+      if (!button) return;
+      const isSelected = selected?.id === id;
+      button.classList.toggle("wanderly-map-marker--selected", isSelected);
+      button.setAttribute("aria-pressed", String(isSelected));
+    });
+  }, [selected]);
+
   const showMapNotice = useCallback((message: string) => {
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
     setMapNotice(message);
@@ -837,7 +847,9 @@ export function ExploreMapPage() {
             <X aria-hidden="true" className="size-4" />
           </button>
           <p className="text-[11px] font-black uppercase tracking-[0.14em] text-primary">{stateLabel(exploreState, t)}</p>
-          <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em]">{selected.name}</h2>
+          <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em]" aria-live="polite">
+            {selected.locationReferenceStatus === "loading" ? t("resolvingLocation") : selected.name}
+          </h2>
           <p className="font-semibold text-muted-foreground">{selected.country}</p>
           <p className="mt-3 inline-flex rounded-full bg-secondary px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-secondary-foreground">
             {selected.kind === "geography"
@@ -935,6 +947,7 @@ function markerElement(label: string) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "wanderly-map-marker wanderly-map-marker--inspiration";
+  button.setAttribute("aria-pressed", "false");
   setMarkerLabel(button, label);
   anchor.append(button);
 

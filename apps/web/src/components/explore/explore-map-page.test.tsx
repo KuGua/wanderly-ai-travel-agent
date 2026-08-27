@@ -396,6 +396,7 @@ describe("ExploreMapPage private inspirations", () => {
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
     const inspirationMarker = mapMock.markerButtons.find((button) => button.getAttribute("aria-label") === "Open Pinned place 1");
     expect(inspirationMarker).toBeDefined();
+    await waitFor(() => expect(inspirationMarker).toHaveAttribute("aria-pressed", "true"));
 
     act(() => inspirationMarker?.click());
     expect(screen.getByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();

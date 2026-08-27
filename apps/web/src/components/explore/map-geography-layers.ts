@@ -112,6 +112,15 @@ export function geographyFeatureFrom(feature: MapGeoJSONFeature | undefined): Ge
   if (featureClass === "city" || featureClass === "town" || featureClass === "village" || featureClass === "capital") {
     return { name, kind: "city" };
   }
+  // OpenMapTiles labels sub-city admin areas (district / borough / suburb /
+  // neighborhood) under class="suburb" inside the `label_city` layer at high
+  // zoom. We treat them as "city" so the existing short-circuit path returns
+  // immediately instead of falling back to the slow API resolver. The
+  // displayed name is still the OSM admin name (e.g. "杨浦", "Putuo"), so the
+  // user gets zero-latency district-level resolution.
+  if (featureClass === "suburb") {
+    return { name, kind: "city" };
+  }
   if (featureClass === "state" || featureClass === "province" || featureClass === "region") {
     return { name, kind: "administrative division" };
   }

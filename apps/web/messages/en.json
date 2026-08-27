@@ -82,11 +82,16 @@
     },
     "trip": {
       "status": {
+        "DRAFT": "Draft",
         "PLANNING": "Planning",
         "CONFIRMED": "Confirmed",
         "BOOKED": "Booked",
         "CANCELLED": "Cancelled",
         "STALE": "Stale"
+      },
+      "draft": {
+        "short": "Untitled exploration · only you can see it",
+        "continueCta": "Continue"
       },
       "dates": {
         "notSet": "Dates not set",
@@ -244,6 +249,7 @@
     "locationReferenceNoCity": "no nearby indexed city",
     "locationReferenceNoRegion": "no indexed state or province",
     "locationReferenceLoading": "Finding an offline map reference…",
+    "resolvingLocation": "Resolving…",
     "locationReferenceUnavailable": "Offline map reference is unavailable. Your private session pin is still saved.",
     "locationReferenceNote": "This is an offline map reference, not an address, travel candidate, price, availability, visa or booking fact.",
     "locationReferenceDataPrefix": "Data:",
@@ -288,6 +294,7 @@
     "header": {
       "status": "Status",
       "statusValue": {
+        "DRAFT": "Draft",
         "PLANNING": "Planning",
         "CONFIRMED": "Confirmed",
         "BOOKED": "Booked",
@@ -299,6 +306,23 @@
       "datesUnknown": "Dates not set",
       "destinations": "Candidate destinations",
       "members": "{count, plural, =0 {No members yet} =1 {1 member} other {# members}}"
+    },
+    "draft": {
+      "kicker": "Draft exploration",
+      "body": "Your private conversation is saved. Add a brief, then activate the trip to invite co-travelers.",
+      "formAriaLabel": "Activate draft trip",
+      "nameLabel": "Trip name",
+      "departureLabel": "Departure cities (1–3)",
+      "departurePlaceholder": "Add a departure city and press Enter",
+      "candidatesLabel": "Candidate destinations (2–5)",
+      "candidatesPlaceholder": "Add a candidate destination and press Enter",
+      "dateStartLabel": "Earliest travel date (optional)",
+      "dateEndLabel": "Latest travel date (optional)",
+      "addCity": "Add city",
+      "addCandidate": "Add candidate",
+      "removeChip": "Remove {value}",
+      "activateHint": "Activation moves this trip to Planning and unlocks invitations, consent, and the Shared Agent.",
+      "activateCta": "Start planning / Invite co-travelers"
     },
     "threads": {
       "heading": "Your threads",
