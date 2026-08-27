@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { DefaultPolicyGate } from "../../agents/policy-gate.js";
 import { db } from "../../db/database.js";
@@ -40,9 +40,12 @@ export async function handleConversationTask(params: {
   }
   const [membership] = await db.select({ userId: tripMembers.userId })
     .from(tripMembers)
-    .where(eq(tripMembers.tripId, params.run.tripId))
+    .where(and(
+      eq(tripMembers.tripId, params.run.tripId),
+      eq(tripMembers.userId, params.run.createdByUserId),
+    ))
     .limit(1);
-  if (!membership || membership.userId !== params.run.createdByUserId) {
+  if (!membership) {
     throw new ApiError(403, "Forbidden", "Thread owner is no longer a member of this trip");
   }
 

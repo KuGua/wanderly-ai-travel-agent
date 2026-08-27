@@ -88,22 +88,9 @@ export const createTripThreadInputSchema = z.object({
   title: z.string().trim().min(1).max(256),
 }).strict();
 
-export const createPersonalTripInputSchema = z.object({
-  departureCities: z.array(z.string().min(1)).min(1),
-  destinationCandidates: z.array(z.string().min(1)).min(2).max(5),
-  travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-}).strict();
-
-export const createPersonalTripResponseSchema = z.object({
-  id: z.string().uuid(),
-  message: z.literal("Personal trip created"),
-});
-
-export const createThreadResponseSchema = z.object({
-  id: z.string().uuid(),
-  message: z.literal("Thread created"),
-});
+// Thread creation returns the same persisted summary used in thread lists.
+// This keeps the active trip/thread metadata available to the UI immediately.
+export const createThreadResponseSchema = threadSchema;
 
 // Single-trip detail DTO returned by GET /api/v1/trips/:tripId.
 export const tripDetailSchema = z.object({
@@ -266,8 +253,6 @@ export type Thread = z.infer<typeof threadSchema>;
 export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
 export type CreateTripThreadInput = z.infer<typeof createTripThreadInputSchema>;
 export type CreateThreadResponse = z.infer<typeof createThreadResponseSchema>;
-export type CreatePersonalTripInput = z.infer<typeof createPersonalTripInputSchema>;
-export type CreatePersonalTripResponse = z.infer<typeof createPersonalTripResponseSchema>;
 export type TripDetail = z.infer<typeof tripDetailSchema>;
 export type TripDetailResponse = z.infer<typeof tripDetailResponseSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;

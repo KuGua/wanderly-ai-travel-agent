@@ -406,6 +406,9 @@ export async function completeConversationTask(params: {
   });
   try {
     const result = await db.transaction(async (tx) => {
+      // A member can be removed after Worker pickup. Re-check inside the
+      // final write transaction so no assistant output is committed then.
+      await requireOwnedTripThread(tx, params.run.threadId!, params.run.createdByUserId);
       const [assistant] = await tx.insert(chatMessages).values({
         threadId: params.run.threadId!,
         senderUserId: null,

@@ -3,7 +3,6 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
 import { sharedTrips, tripMembers, users, itineraryPlans, memberConfirmations, consentGrants } from "../db/schema.js";
 import {
-  createPersonalTripSchema,
   createTripSchema,
   errorResponseSchema,
   toJsonSchema,
@@ -16,6 +15,7 @@ import {
 import { createRequestContext } from "../utils/context.js";
 import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
+import { getOrCreateDefaultThread } from "../services/trip-invitation-service.js";
 
 const DEFAULT_PAGE_LIMIT = 20;
 const MAX_PAGE_LIMIT = 100;
@@ -195,25 +195,25 @@ export async function tripRoutes(app: FastifyInstance) {
         role: "CREATOR",
         isRequired: true,
       });
-
-      const seen = new Set<string>([request.user.id]);
-      for (const userId of body.memberUserIds) {
-        if (userId === request.user.id || seen.has(userId)) continue;
-        seen.add(userId);
-        await tx.insert(tripMembers).values({
-          tripId: trip.id,
-          userId,
-          role: "MEMBER",
-          isRequired: true,
-        });
-      }
+      const defaultThreadId = await getOrCreateDefaultThread(tx, {
+        tripId: trip.id,
+        ownerUserId: request.user.id,
+      });
 
       await recordAudit({
         ctx,
         action: "TRIP_CREATE",
         actorUserId: request.user.id,
         tripId: trip.id,
-        summary: { memberCount: seen.size },
+        summary: { memberCount: 1 },
+        tx,
+      });
+      await recordAudit({
+        ctx,
+        action: "TRIP_DEFAULT_THREAD_PROVISION",
+        actorUserId: request.user.id,
+        tripId: trip.id,
+        summary: { threadId: defaultThreadId, source: "trip_create" },
         tx,
       });
 
@@ -221,58 +221,6 @@ export async function tripRoutes(app: FastifyInstance) {
     });
 
     reply.code(201).send({ id: tripId, message: "Trip created" });
-  });
-
-  // Create a solo (single-member) trip bound only to the authenticated
-  // caller. Used by the Explore page's first-message flow so a new user
-  // can chat with the Personal Agent before being onboarded into a
-  // multi-member trip. Per docs/PRD.md:20 solo travelers reuse the same
-  // Personal Agent and bind private chat threads to this scratch trip.
-  // The handler runs before any /trips/:tripId routes so the literal
-  // `/trips/personal` path is matched (Fastify's radix prefers static
-  // segments over parametric ones).
-  app.post("/trips/personal", async (request, reply) => {
-    const ctx = createRequestContext(
-      request.user.id,
-      request.correlationId,
-      request.traceId,
-      request.clientRequestId,
-      request.traceparent,
-      request.tracestate,
-      request.spanId,
-    );
-    const body = createPersonalTripSchema.parse(request.body);
-
-    const tripId = await db.transaction(async (tx) => {
-      const [trip] = await tx.insert(sharedTrips).values({
-        name: "Personal scratch trip",
-        createdBy: request.user.id,
-        departureCities: body.departureCities,
-        destinationCandidates: body.destinationCandidates,
-        travelDateStart: body.travelDateStart,
-        travelDateEnd: body.travelDateEnd,
-      }).returning();
-
-      await tx.insert(tripMembers).values({
-        tripId: trip.id,
-        userId: request.user.id,
-        role: "CREATOR",
-        isRequired: true,
-      });
-
-      await recordAudit({
-        ctx,
-        action: "TRIP_CREATE",
-        actorUserId: request.user.id,
-        tripId: trip.id,
-        summary: { memberCount: 1, kind: "personal" },
-        tx,
-      });
-
-      return trip.id;
-    });
-
-    reply.code(201).send({ id: tripId, message: "Personal trip created" });
   });
 
   // Join-by-UUID was removed when Trip invitations were introduced. Members

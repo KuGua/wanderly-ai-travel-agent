@@ -36,7 +36,7 @@
 | 权限 | thread owner guard、Trip membership guard、Cognito subject → user ID | 复用并组合；所有 Trip-scoped thread 命令执行 owner + membership 双重校验。 |
 | 审计与遥测 | `recordAudit`、Pino redaction、OTel trace、低基数 metrics | 复用；添加 invitation/thread provisioning 审计 action，ID 只作 log/trace 关联。 |
 
-现有 `POST /threads` 接受可选 `tripId`，但不验证调用者是否为该 Trip member；现有 `POST /trips/:tripId/join` 也不校验邀请。实施本方案时必须移除这两个绕过路径，而不是在新路由旁保留它们。
+`POST /trips/:tripId/join` 已移除。历史 `GET/POST /threads` 仅作为受保护的短期兼容 shim：创建时强制既有 `tripId` 与 active membership，读取只返回调用者 own threads。新的产品入口与客户端 contract 只使用 `/trips/:tripId/threads`；shim 在所有已发布客户端切换后删除。
 
 ## 3. 目标系统架构
 
@@ -229,7 +229,7 @@ ACCEPTED / REVOKED / EXPIRED -------------------> terminal
 
 保留 `GET /threads/:threadId/conversation`、`POST /threads/:threadId/turns`、`POST /threads/:threadId/messages`、`DELETE /threads/:threadId` 及 agent-run read/cancel/SSE API，但均使用新的 `requireOwnedTripThread`。
 
-删除 `POST /threads` 和 `GET /threads` 的产品入口与公开 OpenAPI contract；若需短期迁移兼容，可让它们固定返回 `410 Gone` 与安全迁移说明，不能继续接受 `tripId`。
+新的产品入口与公开 OpenAPI contract 不包含 `POST /threads` 和 `GET /threads`。当前受保护兼容 shim 不得被新客户端调用；所有已发布客户端完成迁移后删除该 shim。
 
 ## 7. Personal Agent 最小只读 Trip 上下文
 

@@ -50,7 +50,6 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     updateMyProfile: vi.fn(),
     getTrips: vi.fn(),
     getTrip: vi.fn().mockResolvedValue(buildTripResponse()),
-    createPersonalTrip: vi.fn(),
     getLocationReference: vi.fn(),
     getTripThreads: vi.fn().mockResolvedValue({ threads: [] }),
     createTripThread: vi.fn().mockImplementation(async () => ({

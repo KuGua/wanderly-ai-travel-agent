@@ -84,20 +84,6 @@ export const createTripSchema = z.object({
   destinationCandidates: z.array(z.string().min(1)).min(2).max(5),
   travelDateStart: dateStr.optional(),
   travelDateEnd: dateStr.optional(),
-  memberUserIds: z.array(uuidSchema).min(2).max(10),
-});
-
-/**
- * Solo-trip create schema used by `POST /trips/personal`. Only the
- * authenticated caller is added as a CREATOR member — no other memberUserIds
- * required. Per docs/PRD.md:20 a single traveler uses the same Personal
- * Agent and binds their private chat threads to this scratch trip.
- */
-export const createPersonalTripSchema = z.object({
-  departureCities: z.array(z.string().min(1)).min(1),
-  destinationCandidates: z.array(z.string().min(1)).min(2).max(5),
-  travelDateStart: dateStr.optional(),
-  travelDateEnd: dateStr.optional(),
 }).strict();
 
 export const tripStatusSchema = z.enum(["PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);

@@ -1,8 +1,6 @@
 import type {
   ConversationTurnRequest,
   ConversationTurnAcceptedResponse,
-  CreatePersonalTripInput,
-  CreatePersonalTripResponse,
   CreateThreadResponse,
   CreateTripThreadInput,
   OwnerConversationResponse,
@@ -23,7 +21,6 @@ export interface TravelApi {
   updateMyProfile(input: UpdateProfileInput): Promise<UpdateProfileResponse>;
   getTrips(): Promise<TripsResponse>;
   getTrip(tripId: string): Promise<TripDetailResponse>;
-  createPersonalTrip(input: CreatePersonalTripInput): Promise<CreatePersonalTripResponse>;
   getLocationReference(input: LocationReferenceInput): Promise<LocationReferenceResponse>;
   getTripThreads(tripId: string): Promise<ThreadsResponse>;
   createTripThread(tripId: string, input: CreateTripThreadInput): Promise<CreateThreadResponse>;

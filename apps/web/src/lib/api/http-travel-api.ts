@@ -4,8 +4,6 @@ import {
   conversationTurnAcceptedResponseSchema,
   agentRunResponseSchema,
   agentStreamEventSchema,
-  createPersonalTripInputSchema,
-  createPersonalTripResponseSchema,
   createThreadResponseSchema,
   createTripThreadInputSchema,
   ownerConversationResponseSchema,
@@ -19,7 +17,6 @@ import {
   locationReferenceResponseSchema,
   type UpdateProfileInput,
   type ConversationTurnRequest,
-  type CreatePersonalTripInput,
   type CreateTripThreadInput,
 } from "./contracts";
 import type { TravelApi } from "./travel-api";
@@ -56,15 +53,6 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request("/explore/location-reference", locationReferenceResponseSchema, {
       method: "POST", body: JSON.stringify(body),
     });
-  }
-
-  createPersonalTrip(input: CreatePersonalTripInput) {
-    const body = createPersonalTripInputSchema.parse(input);
-    return this.client.request(
-      "/trips/personal",
-      createPersonalTripResponseSchema,
-      { method: "POST", body: JSON.stringify(body) },
-    );
   }
 
   getTripThreads(tripId: string) {

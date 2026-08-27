@@ -99,7 +99,7 @@ flowchart LR
 4. 系统必须显示每条资料的来源（Profile 或本次对话）和最近修改时间。
 5. 系统不得把任何 Profile 或私有对话字段默认共享给同行者；保存的对话全文不得自动成为长期 Agent memory、共享 snapshot 或模型上下文。模型默认 LLM 上下文仅包含服务端派生的脱敏摘要，以及由 owner 显式标记"共享"的最近若干轮；raw transcript 永远不出 owner 会话。
 6. 删除对话线程须删除其消息正文；仅保留最小、无敏感的审计摘要（线程 id、操作者、时间）。删除 Profile/override 后，未来 Agent run 不得使用对应数据。
-7. Personal Agent 对话、planning 与 replan 均须作为服务端持久任务执行，并支持鉴权流式状态事件。浏览器关闭、刷新、网络断开或 SSE 断开不得取消已接受任务；只有用户显式 Stop 可以请求取消。私有对话文本仅在通过流式安全 gate 后增量显示，且只有最终完整校验成功的 ASSISTANT 内容可持久化。
+7. Personal Agent 对话、planning 与 replan 均须作为服务端持久任务执行，并支持鉴权流式状态事件。每条 Personal Agent 对话必须绑定一个既有 Trip、归属于唯一 owner；加入 Trip 的成员自动获得空白默认私有线程，并可在该 Trip 下创建更多私有线程。浏览器关闭、刷新、网络断开或 SSE 断开不得取消已接受任务；只有用户显式 Stop 可以请求取消。私有对话文本仅在通过流式安全 gate 后增量显示，且只有最终完整校验成功的 ASSISTANT 内容可持久化。
 
 ### FR-2 共享行程工作台与授权
 

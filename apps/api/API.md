@@ -232,12 +232,15 @@ Create a shared trip.
   "departureCities": ["San Francisco", "Shanghai"],
   "destinationCandidates": ["Tokyo", "Bangkok", "Seoul"],
   "travelDateStart": "2025-08-01",
-  "travelDateEnd": "2025-08-07",
-  "memberUserIds": ["uuid-bob", "uuid-chen"]
+  "travelDateEnd": "2025-08-07"
 }
 ```
 
 **Response**: `201 { "id": "uuid", "message": "Trip created" }`
+
+The creator is the only initial member and receives a default private thread.
+Invite additional registered users through the trip-invitation endpoints; an
+accepted invitation provisions that member's own default private thread.
 
 ### `POST /trips/:tripId/join`
 > **Removed.** Join-by-UUID was replaced by Trip invitations: creators issue `POST /trips/:tripId/invitations` and invitees redeem the token at `POST /trip-invitations/:inviteToken/accept`. See the Trip Invitations section below.

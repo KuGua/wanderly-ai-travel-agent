@@ -5,7 +5,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   ConversationTurnRequest,
   ConversationTurnAcceptedResponse,
-  CreatePersonalTripInput,
   CreateTripThreadInput,
   OwnerConversationResponse,
   UpdateProfileInput,
@@ -46,18 +45,6 @@ export function useTripThreads(tripId: string | null) {
     queryFn: () => api.getTripThreads(tripId as string),
     enabled: Boolean(tripId),
     retry: false,
-  });
-}
-
-export function useCreatePersonalTrip() {
-  const api = useTravelApi();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (input: CreatePersonalTripInput) => api.createPersonalTrip(input),
-    onSuccess: ({ id }) => {
-      void queryClient.invalidateQueries({ queryKey: tripKeys.list });
-      void queryClient.invalidateQueries({ queryKey: tripKeys.detail(id) });
-    },
   });
 }
 

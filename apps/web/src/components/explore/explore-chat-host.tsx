@@ -8,7 +8,6 @@ import type { ConversationPlace } from "@/lib/api/contracts";
 import { TravelAgentChat } from "./travel-agent-chat";
 import { useTravelApi } from "@/lib/query/provider";
 import {
-  useCreatePersonalTrip,
   useGetOrCreateDefaultTripThread,
   useTripThreads,
   useTrips,
@@ -129,40 +128,9 @@ function ExploreChatHostBody({
 }: BodyProps) {
   const queryClient = useQueryClient();
   const api = useTravelApi();
-  const createPersonalTrip = useCreatePersonalTrip();
-  const [personalTripId, setPersonalTripId] = useState<string | null>(null);
-  const personalInFlightRef = useRef(false);
-
-  const provisionPersonalTrip = useCallback(() => {
-    if (personalInFlightRef.current || personalTripId) return;
-    personalInFlightRef.current = true;
-    void createPersonalTrip
-      .mutateAsync({
-        departureCities: ["San Francisco"],
-        destinationCandidates: ["Tokyo", "Bangkok"],
-      })
-      .then((created: { id: string }) => {
-        setPersonalTripId(created.id);
-        void queryClient.invalidateQueries({ queryKey: tripKeys.list });
-      })
-      .catch(() => {
-        // The visible retry control owns the next attempt.
-      })
-      .finally(() => {
-        personalInFlightRef.current = false;
-      });
-  }, [createPersonalTrip, personalTripId, queryClient]);
-
-  // When the user has zero trips, lazily create a personal scratch trip
-  // (one-time) so we can bind a default thread to it.
-  useEffect(() => {
-    if (!tripsLoaded) return;
-    if (tripsCount > 0) return;
-    if (personalTripId) return;
-    provisionPersonalTrip();
-  }, [tripsLoaded, tripsCount, personalTripId, provisionPersonalTrip]);
-
-  const activeTripId = activeTrip?.id ?? personalTripId;
+  // Chat only attaches to a trip that already exists. Entering Explore must
+  // never create a hidden scratch trip as a side effect.
+  const activeTripId = activeTrip?.id ?? null;
   const threadsQuery = useTripThreads(activeTripId);
   const threads = useMemo(() => threadsQuery.data?.threads ?? [], [threadsQuery.data?.threads]);
   const ensureDefault = useGetOrCreateDefaultTripThread(activeTripId ?? "");
@@ -190,7 +158,11 @@ function ExploreChatHostBody({
   }, [threads]);
 
   const effectiveThreadId = existing?.id ?? null;
-  const hasProvisioningError = tripsFailed || createPersonalTrip.isError || threadsQuery.isError || ensureDefault.isError;
+  const hasProvisioningError =
+    tripsFailed ||
+    (tripsLoaded && tripsCount === 0) ||
+    threadsQuery.isError ||
+    ensureDefault.isError;
   const threadStatus: ChatThreadStatus = hasProvisioningError
     ? "error"
     : effectiveThreadId ? "ready" : "preparing";
@@ -201,7 +173,6 @@ function ExploreChatHostBody({
       return;
     }
     if (!activeTripId) {
-      provisionPersonalTrip();
       return;
     }
     autoProvisionAttemptedRef.current = false;
@@ -212,7 +183,7 @@ function ExploreChatHostBody({
     void ensureDefault.mutateAsync().catch(() => {
       autoProvisionAttemptedRef.current = false;
     });
-  }, [activeTripId, ensureDefault, onRetryTrips, provisionPersonalTrip, threadsQuery, tripsFailed]);
+  }, [activeTripId, ensureDefault, onRetryTrips, threadsQuery, tripsFailed]);
 
   const handleInvalidated = useCallback(() => {
     if (!activeTripId) return;

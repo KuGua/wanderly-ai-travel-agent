@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 
 import { db } from "../db/database.js";
 import { chatThreads, sharedTrips, tripInvitations, tripMembers, users } from "../db/schema.js";
@@ -73,6 +73,13 @@ export async function createInvitation(params: {
       throw new ApiError(409, "Conflict", "User is already a member of this trip");
     }
 
+    await tx.update(tripInvitations).set({ status: "EXPIRED" }).where(and(
+      eq(tripInvitations.tripId, params.tripId),
+      eq(tripInvitations.invitedUserId, params.invitedUserId),
+      eq(tripInvitations.status, "PENDING"),
+      lt(tripInvitations.expiresAt, new Date()),
+    ));
+
     const [existingPending] = await tx.select({ id: tripInvitations.id })
       .from(tripInvitations)
       .where(and(
@@ -80,7 +87,8 @@ export async function createInvitation(params: {
         eq(tripInvitations.invitedUserId, params.invitedUserId),
         eq(tripInvitations.status, "PENDING"),
       ))
-      .limit(1);
+      .limit(1)
+      .for("update");
     if (existingPending) {
       throw new ApiError(409, "Conflict", "A pending invitation already exists for this user");
     }
@@ -168,7 +176,12 @@ export async function acceptInvitation(params: {
       }
       return { tripId: invitation.tripId, defaultThreadId: existingDefault.id };
     }
-    if (invitation.status === "EXPIRED" || invitation.expiresAt.getTime() <= Date.now()) {
+    if (invitation.status === "EXPIRED") {
+      throw new ApiError(410, "Gone", "Invitation has expired");
+    }
+    if (invitation.expiresAt.getTime() <= Date.now()) {
+      await tx.update(tripInvitations).set({ status: "EXPIRED" })
+        .where(eq(tripInvitations.id, invitation.id));
       throw new ApiError(410, "Gone", "Invitation has expired");
     }
 
@@ -183,7 +196,7 @@ export async function acceptInvitation(params: {
         userId: params.actorUserId,
         role: "MEMBER",
         isRequired: true,
-      });
+      }).onConflictDoNothing();
     }
 
     const defaultThreadId = await getOrCreateDefaultThread(tx, {

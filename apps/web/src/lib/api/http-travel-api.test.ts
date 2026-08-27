@@ -12,7 +12,7 @@ const CREATED_AT = "2026-08-25T10:00:00.000Z";
 describe("HttpTravelApi private conversation", () => {
   it("uses the trip-scoped thread endpoints and sends only the strict turn contract", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ id: THREAD_ID, message: "Thread created" }, 200))
+      .mockResolvedValueOnce(jsonResponse(thread(), 200))
       .mockResolvedValueOnce(jsonResponse({ thread: thread(), messages: [] }))
       .mockResolvedValueOnce(jsonResponse({
         threadId: THREAD_ID,

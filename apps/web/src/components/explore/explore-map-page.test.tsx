@@ -555,7 +555,6 @@ function createTravelApiForAutoAsk(): TravelApi & {
       }],
     }),
     getTrip: vi.fn(),
-    createPersonalTrip: vi.fn(),
     getLocationReference: vi.fn().mockResolvedValue({ outcome: "NO_REFERENCE", source: "Natural Earth + GeoNames", datasetVersion: "test", checkedAt: CREATED_AT, isTravelFact: false }),
     getTripThreads: vi.fn().mockResolvedValue({ threads: [thread] }),
     createTripThread: vi.fn(),

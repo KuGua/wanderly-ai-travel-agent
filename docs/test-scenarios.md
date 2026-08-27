@@ -517,6 +517,28 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 4. Capture the Pino log lines for the request — every line must include both `trace_id=aaaa…aaaa` and `span_id=<matching http span id>` bindings.
 5. Repeat the call without an inbound `traceparent` and confirm the server mints a fresh 32-hex trace id; the response `traceparent` echoes that id; no span in the exporter shares its `trace_id` with any prior call.
 
+### TS-THREAD-TRIP-1 — Trip-scoped private thread lifecycle
+
+**Stories:** H1, S1
+**Objective:** Verify that every conversation is attached to an existing Trip, each member receives an owner-only default thread, and chat never creates a Trip.
+
+**Starting conditions:** Alice has created a Trip; Bob is a registered user invited to that Trip.
+
+**Steps:**
+
+1. Create the Trip and assert the response creates only Alice's membership plus one `is_default=true` thread owned by Alice.
+2. Attempt to pass `memberUserIds` to `POST /trips`; expect validation failure. Create and accept Bob's invitation concurrently; assert one membership and one Bob-owned default thread result.
+3. Have Alice and Bob each list Trip threads, create an additional thread, and request conversations using the other's thread ID.
+4. Remove Alice's membership after a turn is queued but before Worker completion, then process the task.
+5. Open Explore for a user with no Trip and retry the disabled chat entry.
+
+**Expected outcomes:**
+
+- Direct membership injection and non-member thread creation are rejected; invitation acceptance is idempotent.
+- Each list contains only the caller's threads. Cross-owner read, write, delete, run and SSE access return `403` without message content or thread metadata.
+- The removed owner cannot cause an assistant message to persist after task pickup.
+- Explore does not call a Trip-creation endpoint; it cannot become sendable until an existing Trip is selected.
+
 ### TS-OTEL-2 — Worker continuity after durable boundary
 
 **Stories:** P3

@@ -74,7 +74,6 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     updateMyProfile: vi.fn(),
     getTrips: vi.fn(),
     getTrip: vi.fn(),
-    createPersonalTrip: vi.fn(),
     getLocationReference: vi.fn(),
     getTripThreads: vi.fn(),
     createTripThread: vi.fn(),

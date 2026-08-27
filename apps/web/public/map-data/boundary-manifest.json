@@ -44,10 +44,10 @@
       "coordinateDecimals": 4,
       "maxPointsPerRun": 128,
       "tileCount": 164,
-      "totalBytes": 10192485,
-      "totalGzipBytes": 3284623,
-      "largestTileGzipBytes": 119865,
-      "indexSha256": "6e04b5c42b5d0c72b1e8e86a982b972a1b5f1b066e5fbf328b1b42b82922e49f"
+      "totalBytes": 10192649,
+      "totalGzipBytes": 3285098,
+      "largestTileGzipBytes": 119867,
+      "indexSha256": "43f8f6b6560816bb86f4cbeb354ce8f5725ee9e23914a861a4be70ad4fef688c"
     }
   ]
 }

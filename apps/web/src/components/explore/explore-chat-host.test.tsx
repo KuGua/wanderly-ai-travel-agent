@@ -42,7 +42,6 @@ function makeApi(overrides: Partial<TravelApi> = {}): TravelApi {
     updateMyProfile: vi.fn(),
     getTrips: vi.fn().mockResolvedValue({ trips: [TRIP_A_SUMMARY] }),
     getTrip: vi.fn(),
-    createPersonalTrip: vi.fn().mockResolvedValue({ id: TRIP_A, message: "Personal trip created" }),
     getLocationReference: vi.fn(),
     getTripThreads: vi.fn().mockResolvedValue({ threads: [] }),
     createTripThread: vi.fn(),
@@ -112,7 +111,7 @@ describe("ExploreChatHost trip provisioning", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 
-  it("auto-creates a personal scratch trip when the user has no trips", async () => {
+  it("does not create a trip when the user has no trips", async () => {
     const api = makeApi({
       getTrips: vi.fn().mockResolvedValue({ trips: [] }),
     });
@@ -121,10 +120,8 @@ describe("ExploreChatHost trip provisioning", () => {
       { api },
     );
 
-    await waitFor(() => expect((api.createPersonalTrip as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(0), { timeout: 3000 });
-    await waitFor(() => expect(api.getOrCreateDefaultTripThread).toHaveBeenCalledWith(TRIP_A), {
-      timeout: 3000,
-    });
+    expect(await screen.findByText("Private chat is unavailable.")).toBeInTheDocument();
+    expect(api.getOrCreateDefaultTripThread).not.toHaveBeenCalled();
   });
 
   it("provisions the default thread on mount when the trip has no threads yet", async () => {

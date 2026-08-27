@@ -69,6 +69,58 @@ async function cleanup(): Promise<void> {
 }
 
 describe("trip default thread provisioning", () => {
+  it("creates the creator membership and default private thread with a new trip", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/trips",
+      headers: authHeaders("alice"),
+      payload: {
+        name: `created-trip-${crypto.randomUUID()}`,
+        departureCities: ["San Francisco"],
+        destinationCandidates: ["Tokyo", "Bangkok"],
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    const createdTripId = (response.json() as { id: string }).id;
+    try {
+      const memberships = await db.select().from(tripMembers).where(and(
+        eq(tripMembers.tripId, createdTripId),
+        eq(tripMembers.userId, aliceId),
+      ));
+      expect(memberships).toHaveLength(1);
+      expect(memberships[0]?.role).toBe("CREATOR");
+
+      const threads = await db.select().from(chatThreads).where(and(
+        eq(chatThreads.tripId, createdTripId),
+        eq(chatThreads.ownerUserId, aliceId),
+      ));
+      expect(threads).toHaveLength(1);
+      expect(threads[0]).toMatchObject({ isDefault: true, scope: "TRIP" });
+    } finally {
+      await db.delete(auditEvents).where(eq(auditEvents.tripId, createdTripId));
+      await db.delete(chatThreads).where(eq(chatThreads.tripId, createdTripId));
+      await db.delete(tripMembers).where(eq(tripMembers.tripId, createdTripId));
+      await db.delete(sharedTrips).where(eq(sharedTrips.id, createdTripId));
+    }
+  });
+
+  it("rejects direct member assignment during trip creation", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/trips",
+      headers: authHeaders("alice"),
+      payload: {
+        name: "invalid-direct-member-assignment",
+        departureCities: ["San Francisco"],
+        destinationCandidates: ["Tokyo", "Bangkok"],
+        memberUserIds: [bobId],
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+  });
+
   it("provisions a default thread for a member on first call", async () => {
     const res = await app.inject({
       method: "POST",
