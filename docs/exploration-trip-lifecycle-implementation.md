@@ -1,6 +1,6 @@
 # 探索会话与 Trip 生命周期实施方案
 
-**状态：** 已实施  
+**状态：** 已实施
 **范围：** `/home` 探索入口、私有对话初始化、Trip 草稿及从探索进入协作规划。  
 **关联事实来源：** `TECH_STACK.md`、`docs/PRD.md`、`docs/backlog.md`、`docs/test-scenarios.md`。
 

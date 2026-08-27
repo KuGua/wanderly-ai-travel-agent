@@ -189,7 +189,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 
 ### TS-H1d — Same-thread bounded LLM context survives re-entry
 
-**Stories:** H1, S1  
+**Stories:** H1, S1
 **Objective:** Verify that reopening the same private thread restores a bounded same-thread LLM context without widening owner, Trip, persistence, or telemetry boundaries.
 
 **Starting conditions:** Alice owns a Trip thread containing more than the configured context window of alternating `USER` and `ASSISTANT` messages. Bob is an active member of the same Trip and owns a separate thread. A fake model gateway captures its request payload; the Worker is able to retry an accepted task.

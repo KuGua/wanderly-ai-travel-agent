@@ -1,7 +1,7 @@
 # 同一私有 Thread 的 LLM 上下文记忆实施方案
 
-**状态：** 已批准，待实施  
-**范围：** Personal Agent 私有对话的同一 `chat_thread` 上下文记忆。  
+**状态：** 已批准，待实施
+**范围：** Personal Agent 私有对话的同一 `chat_thread` 上下文记忆。
 **事实来源：** [TECH_STACK.md](../TECH_STACK.md)、[PRD.md](PRD.md)、[backlog.md](backlog.md)、[test-scenarios.md](test-scenarios.md)、[agent-architecture.md](agent-architecture.md)。
 
 ## 1. 目标与固定边界
