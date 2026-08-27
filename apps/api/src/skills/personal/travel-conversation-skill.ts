@@ -10,12 +10,31 @@ import {
 import { modelGateway } from "../../providers/gateway-factory.js";
 import { ModelGatewayError } from "../../providers/llm-gateway.js";
 import {
-  chatMessageRoleSchema,
   conversationIntentSchema,
   conversationPlaceSchema,
   conversationResponseModeSchema,
 } from "../../types/schemas.js";
 import { personalTripContextSchema } from "./personal-trip-context-schema.js";
+
+/**
+ * Server-built same-thread context assembled by
+ * `apps/api/src/services/conversation-context-service.ts`. The Skill MUST
+ * NOT accept a browser-supplied history — any field carrying the same
+ * name in the inbound HTTP request is rejected by the strict
+ * `conversationTurnRequestSchema` before the Worker ever reaches this
+ * module.
+ *
+ * Per-message cap is the streaming-output defense ceiling in the LLM
+ * gateway (matches `parsedConversationCompletionSchema.reply.content`).
+ * The aggregate `superRefine` mirrors the budget contract from
+ * `docs/thread-context-memory-implementation.md` §3.2 so a builder
+ * regression pushing too many characters is caught at the Skill boundary
+ * rather than only at the model.
+ */
+const threadContextMessageSchema = z.object({
+  role: z.enum(["USER", "ASSISTANT"]),
+  content: z.string().min(1).max(8000),
+}).strict();
 
 export const travelConversationInputSchema = z.object({
   question: z.string().trim().min(1).max(4000),
@@ -25,10 +44,16 @@ export const travelConversationInputSchema = z.object({
   // membership re-verification.  Optional so existing tests / non-trip
   // unit paths keep working; in production this is always present.
   tripContext: personalTripContextSchema.optional(),
-  history: z.array(z.object({
-    role: chatMessageRoleSchema,
-    content: z.string().min(1).max(1000),
-  }).strict()).max(20),
+  threadContext: z.array(threadContextMessageSchema).max(24)
+    .superRefine((messages, ctx) => {
+      const total = messages.reduce((sum, message) => sum + message.content.length, 0);
+      if (total > 20_000) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "threadContext exceeds conversation context character budget",
+        });
+      }
+    }),
 }).strict();
 
 export const travelConversationOutputSchema = z.object({
@@ -58,7 +83,7 @@ export async function executeTravelConversation(
       ? await gateway.streamConversationReply({
           question: input.question,
           place: input.place,
-          history: input.history,
+          threadContext: input.threadContext,
           intent: input.intent,
           tripContext: input.tripContext,
           onDelta,
@@ -68,7 +93,7 @@ export async function executeTravelConversation(
       : await gateway.generateConversationReply({
           question: input.question,
           place: input.place,
-          history: input.history,
+          threadContext: input.threadContext,
           intent: input.intent,
           tripContext: input.tripContext,
           signal,

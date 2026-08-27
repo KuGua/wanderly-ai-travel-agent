@@ -390,6 +390,14 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
    * column via `ctxFromRun` in `apps/api/src/workers/agent-task-worker.ts`.
    * Carries only OTel identifiers — never PII, credentials, or model content.
    */
+  /**
+   * Upper message_sequence (chat_messages.message_sequence) the Worker may
+   * include when building this task's same-thread LLM context. Set at
+   * acceptance to the just-inserted USER row's sequence; NULL for legacy
+   * rows (resolved at runtime from `user_message_id`, no backfill).
+   * PLAN/REPLAN tasks keep NULL.
+   */
+  contextMaxMessageSequence: bigint("context_max_message_sequence", { mode: "number" }),
   traceContext: jsonb("trace_context").$type<{
     traceparent: string;
     tracestate?: string;

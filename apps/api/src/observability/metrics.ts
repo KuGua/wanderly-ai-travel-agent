@@ -223,6 +223,19 @@ metrics.registerCounter("draft_command_rejected_total", "Collaboration commands 
 metrics.registerCounter("agent_task_recoveries_total", "Expired Agent task leases and queue entries recovered.", {
   outcome: ["retrying", "failed", "cancelled"],
 });
+// Bounded same-thread LLM context builder metrics.  See
+// docs/thread-context-memory-implementation.md §8.  No labels carry
+// threadId/tripId/runId — those identifiers live in trace/log context,
+// never on metrics.  Values are content-free: counts, character totals,
+// and bounded enums.
+metrics.registerCounter("conversation_context_build_total", "Same-thread LLM context build outcomes.", {
+  result: ["success", "empty", "denied", "error"],
+});
+metrics.registerCounter("conversation_context_messages", "Total messages returned by the same-thread LLM context builder (count, no labels).");
+metrics.registerCounter("conversation_context_chars", "Total UTF-16 characters returned by the same-thread LLM context builder (count, no labels).");
+metrics.registerCounter("conversation_context_truncated_total", "Same-thread LLM context builder truncations by bounded reason.", {
+  reason: ["turn_limit", "char_limit"],
+});
 metrics.registerHistogram(
   "agent_task_duration_ms",
   "Accepted-to-terminal durable Agent task latency in milliseconds.",

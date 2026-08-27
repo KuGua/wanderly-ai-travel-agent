@@ -7,6 +7,7 @@ import { ApiError } from "../../middleware/error-handler.js";
 import {
   containsUnsupportedOperationalClaim,
 } from "../../policy/conversation-safety.js";
+import { buildConversationContext } from "../../services/conversation-context-service.js";
 import {
   executeTravelConversation,
   travelConversationSkill,
@@ -19,7 +20,7 @@ import type { RequestContext } from "../../utils/context.js";
 import { agentTaskConfig } from "../config.js";
 import { publishAgentStreamEvent } from "../task-stream-publisher.js";
 import type { AgentTaskRow } from "../task-repository.js";
-import { loadConversationTaskInput } from "../task-repository.js";
+import { loadConversationTurnInput } from "../task-repository.js";
 
 export async function handleConversationTask(params: {
   run: AgentTaskRow;
@@ -49,9 +50,17 @@ export async function handleConversationTask(params: {
     throw new ApiError(403, "Forbidden", "Thread owner is no longer a member of this trip");
   }
 
-  const baseInput = await loadConversationTaskInput(params.run);
+  const turnInput = await loadConversationTurnInput(params.run);
   const tripContext = await loadPersonalTripContext(params.run.tripId);
-  const input = travelConversationInputSchema.parse({ ...baseInput, tripContext });
+  // The bounded same-thread LLM context is built in its own service so
+  // the read path stays pure and retryable (§3.1.4 / §6). Failures here
+  // bubble up as a terminal task error before any model call.
+  const context = await buildConversationContext(params.run);
+  const input = travelConversationInputSchema.parse({
+    ...turnInput,
+    tripContext,
+    threadContext: context.messages,
+  });
 
   const gate = new SafeConversationDeltaGate(params.run, params.ctx.traceparent);
   const execution = new AbortController();
