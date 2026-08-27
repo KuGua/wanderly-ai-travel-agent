@@ -13,7 +13,7 @@ import {
   users,
 } from "../src/db/schema.js";
 import { AgentStreamRelay } from "../src/tasks/agent-stream-relay.js";
-import { loadConversationTaskInput } from "../src/tasks/task-repository.js";
+import { loadConversationTurnInput } from "../src/tasks/task-repository.js";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 import { provisionTripAndMember } from "./helpers/trip.js";
 
@@ -40,7 +40,7 @@ afterAll(async () => {
 });
 
 describe("agent_task_runs.intent persistence", () => {
-  it("persists intent through accept → loadConversationTaskInput", async () => {
+  it("persists intent through accept → loadConversationTurnInput and pins the context boundary", async () => {
     const requestId = randomUUID();
     let threadId: string | undefined;
     let runId: string | undefined;
@@ -84,7 +84,7 @@ describe("agent_task_runs.intent persistence", () => {
       const [fullRun] = await db.select().from(agentTaskRuns)
         .where(eq(agentTaskRuns.id, runId))
         .limit(1);
-      const input = await loadConversationTaskInput(fullRun);
+      const input = await loadConversationTurnInput(fullRun);
       expect(input.intent).toBe("auto_intro");
       expect(input.question).toBe("Tell me about Kyoto");
       expect(input.place).toMatchObject({
@@ -93,6 +93,12 @@ describe("agent_task_runs.intent persistence", () => {
         longitude: 135.7681,
         sourceType: "REFERENCE",
       });
+      // Per docs/thread-context-memory-implementation.md §4.1 the context
+      // boundary MUST be pinned to the just-inserted USER row's sequence
+      // at acceptance time.  This guarantees retries cannot widen the
+      // window into messages appended after the user pressed send.
+      expect(fullRun.contextMaxMessageSequence).not.toBeNull();
+      expect(fullRun.contextMaxMessageSequence).toBeGreaterThan(0);
     } finally {
       if (threadId) await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
       await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, idempotencyKey));
@@ -131,8 +137,11 @@ describe("agent_task_runs.intent persistence", () => {
       const [fullRun] = await db.select().from(agentTaskRuns)
         .where(eq(agentTaskRuns.id, runId))
         .limit(1);
-      const input = await loadConversationTaskInput(fullRun);
+      const input = await loadConversationTurnInput(fullRun);
       expect(input.intent).toBeUndefined();
+      // PLAN/REPLAN tasks do not exist in this suite, but the column
+      // shape is the same — for a CONVERSATION task the boundary is set.
+      expect(fullRun.contextMaxMessageSequence).not.toBeNull();
     } finally {
       if (threadId) await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
       await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, idempotencyKey));

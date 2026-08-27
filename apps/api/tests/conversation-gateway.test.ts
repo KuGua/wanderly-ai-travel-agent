@@ -24,7 +24,7 @@ describe("conversational ModelGateway", () => {
 
     await expect(gateway.streamConversationReply!({
       question: "Tell me about Tokyo",
-      history: [],
+      threadContext: [],
       onDelta: async (delta) => { deltas.push(delta); },
     })).resolves.toEqual({ content: "A bounded streamed answer.", responseMode: "MODEL" });
 
@@ -57,7 +57,7 @@ describe("conversational ModelGateway", () => {
 
     await expect(gateway.generateConversationReply({
       question: "Tell me about Tokyo",
-      history: [],
+      threadContext: [],
     })).resolves.toEqual({
       content: "A bounded model answer.",
       responseMode: "MODEL",
@@ -94,7 +94,7 @@ describe("conversational ModelGateway", () => {
 
     await expect(gateway.generateConversationReply({
       question: "Tell me about Tokyo",
-      history: [],
+      threadContext: [],
     })).resolves.toEqual({
       content: "A Gemini-compatible answer.",
       responseMode: "MODEL",
@@ -111,7 +111,7 @@ describe("conversational ModelGateway", () => {
 
     await expect(gateway.generateConversationReply({
       question: "Tell me about Tokyo",
-      history: [],
+      threadContext: [],
     })).rejects.toMatchObject({
       name: "ModelGatewayError",
       code: "SCHEMA_PARSE",
@@ -133,7 +133,7 @@ describe("conversational ModelGateway", () => {
 
     await expect(gateway.generateConversationReply({
       question: "Tell me about Tokyo",
-      history: [],
+      threadContext: [],
     })).rejects.toBeInstanceOf(ModelGatewayError);
     expect(recordAgentRun).toHaveBeenCalledWith(expect.objectContaining({
       status: "TIMEOUT",

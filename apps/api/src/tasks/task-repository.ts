@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { SpanKind } from "@opentelemetry/api";
 
 import { db, rawDb } from "../db/database.js";
@@ -156,6 +156,11 @@ export async function acceptConversationTask(params: {
         tripId: thread.tripId,
         requestId: params.input.requestId,
         userMessageId: userMessage.id,
+        // Pin the upper message-sequence boundary to the just-inserted
+        // USER row's identity value so a retry can never widen the window
+        // into messages appended after acceptance.  See
+        // docs/thread-context-memory-implementation.md §4.1 and §1.6.
+        contextMaxMessageSequence: userMessage.messageSequence,
         expiresAt,
         traceContext: buildTraceContextForTask(params.ctx),
         intent: params.input.intent ?? null,
@@ -167,6 +172,15 @@ export async function acceptConversationTask(params: {
       // or the locking helper regressed — fail loudly.
       if (!run.threadId || !run.tripId) {
         throw new ApiError(500, "Internal Server Error", "Conversation task missing threadId/tripId");
+      }
+      // The acceptance-time boundary MUST be a positive integer (the
+      // USER row's identity-generated `message_sequence`). Anything else
+      // is a schema/replication regression and would silently widen the
+      // context window for retries.
+      if (typeof run.contextMaxMessageSequence !== "number"
+        || !Number.isInteger(run.contextMaxMessageSequence)
+        || run.contextMaxMessageSequence <= 0) {
+        throw new ApiError(500, "Internal Server Error", "Conversation task missing contextMaxMessageSequence");
       }
 
       await tx.update(idempotencyRecords).set({
@@ -360,32 +374,30 @@ export async function taskCancellationRequested(runId: string, leaseToken: strin
   return !run || run.leaseToken !== leaseToken || run.status === "CANCEL_REQUESTED";
 }
 
-export async function loadConversationTaskInput(run: AgentTaskRow) {
+/**
+ * Load the current-turn input that the Worker hands to the conversation
+ * Skill. Returns only the fields the route layer controls (the current
+ * question, place, intent); the bounded same-thread history window is
+ * built separately by `buildConversationContext` in
+ * `apps/api/src/services/conversation-context-service.ts` so the two
+ * read paths can evolve independently and so neither side has to
+ * compose the other's contract.
+ *
+ * Fails closed when the run row's USER message has gone missing — the
+ * Worker must not invent a question.
+ */
+export async function loadConversationTurnInput(run: AgentTaskRow): Promise<{
+  question: string;
+  place?: ConversationPlace;
+  intent?: "auto_intro" | "user_typed";
+}> {
   if (!run.threadId || !run.userMessageId) throw new Error("Conversation task references are incomplete");
   const [message] = await db.select().from(chatMessages)
     .where(and(eq(chatMessages.id, run.userMessageId), eq(chatMessages.threadId, run.threadId)))
     .limit(1);
   if (!message || message.role !== "USER") throw new Error("Conversation USER message is unavailable");
-
-  const rows = await db.select({
-    role: chatMessages.role,
-    redactedSummary: chatMessages.redactedSummary,
-    messageSequence: chatMessages.messageSequence,
-  }).from(chatMessages)
-    .where(and(
-      eq(chatMessages.threadId, run.threadId),
-      eq(chatMessages.markedSharedByOwner, true),
-    ))
-    .orderBy(desc(chatMessages.messageSequence))
-    .limit(20);
-  const history = rows.reverse()
-    .filter((row) => row.role === "USER" || row.role === "ASSISTANT")
-    .map((row) => ({
-      role: row.role as "USER" | "ASSISTANT",
-      content: row.redactedSummary?.trim().slice(0, 1000) ?? "",
-    }))
-    .filter((row) => row.content.length > 0);
-  return { question: message.body, history, place: taskPlace(run), intent: run.intent ?? undefined };
+  const intent = run.intent === "auto_intro" || run.intent === "user_typed" ? run.intent : undefined;
+  return { question: message.body, place: taskPlace(run), intent };
 }
 
 export async function completeConversationTask(params: {
