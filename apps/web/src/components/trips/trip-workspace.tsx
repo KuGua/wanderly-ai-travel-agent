@@ -1,20 +1,23 @@
 "use client";
 
-import { CalendarDays, ListChecks, MapPinned, MessageSquarePlus, Pin, Plus } from "lucide-react";
+import { CalendarDays, ListChecks, MapPinned, MessageSquarePlus, Pencil, Pin, Plus } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useRef } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link, useRouter } from "@/i18n/navigation";
 import {
+  useActivateTrip,
   useCreateTripThread,
   useGetOrCreateDefaultTripThread,
   useTrip,
   useTripThreads,
+  useUpdateTripTitle,
 } from "@/lib/query/hooks";
 import { TravelApiError } from "@/lib/api/errors";
+import { buildTripTitlePreview } from "@/lib/trips/trip-title";
 
 const DEFAULT_THREAD_QUERY = "thread";
 
@@ -36,6 +39,9 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const threadsQuery = useTripThreads(tripId);
   const createThread = useCreateTripThread(tripId);
   const ensureDefault = useGetOrCreateDefaultTripThread(tripId);
+  const updateTitle = useUpdateTripTitle(tripId);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [manualTitle, setManualTitle] = useState("");
 
   const autoProvisionAttemptedRef = useRef(false);
 
@@ -142,10 +148,14 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const trip = tripQuery.data?.trip;
   if (!trip) {
     return (
-      <main className="mx-auto w-full max-w-[1240px] px-5 py-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
+      <main className="mx-auto w-full max-w-[1240px] px-5 py-8 sm:px-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
         <p className="text-sm text-muted-foreground">{t("notFound")}</p>
       </main>
     );
+  }
+
+  if (trip.status === "DRAFT") {
+    return <DraftTripWorkspace tripId={tripId} />;
   }
 
   return (
@@ -153,7 +163,30 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       <header className="flex flex-wrap items-start justify-between gap-6">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.11em] text-primary">{t("kicker")}</p>
-          <h1 className="mt-2 text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">{trip.name}</h1>
+          {editingTitle ? (
+            <form
+              className="mt-2 flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const name = manualTitle.trim();
+                if (!name) return;
+                void updateTitle.mutateAsync({ name }).then(() => setEditingTitle(false));
+              }}
+            >
+              <input aria-label={t("title.editLabel")} autoFocus maxLength={256} value={manualTitle} onChange={(event) => setManualTitle(event.target.value)} className="min-w-[260px] rounded-[12px] border bg-background px-3 py-2 text-xl font-bold tracking-[-0.04em] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30" />
+              <button type="submit" disabled={updateTitle.isPending} className="rounded-[10px] bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">{t("title.save")}</button>
+              <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[10px] px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-secondary">{t("title.cancel")}</button>
+            </form>
+          ) : (
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <h1 className="text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">{trip.name}</h1>
+              {trip.role === "CREATOR" ? (
+                <button type="button" onClick={() => { setManualTitle(trip.name); setEditingTitle(true); }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[10px] px-2 text-sm font-bold text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                  <Pencil aria-hidden="true" className="size-3.5" /> {t("title.edit")}
+                </button>
+              ) : null}
+            </div>
+          )}
           <p className="mt-3 max-w-xl text-base text-muted-foreground">{t("body")}</p>
         </div>
         <Link href="/home" className="inline-flex min-h-11 items-center rounded-[14px] px-3 text-sm font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
@@ -290,4 +323,225 @@ function formatDate(locale: string, iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function DraftTripWorkspace({ tripId }: { tripId: string }) {
+  const t = useTranslations("trips.draft");
+  const tCommon = useTranslations("common");
+  const router = useRouter();
+  const locale = useLocale();
+  const activate = useActivateTrip(tripId);
+  const [departureInput, setDepartureInput] = useState("");
+  const [candidateInput, setCandidateInput] = useState("");
+  const [departureCities, setDepartureCities] = useState<string[]>([]);
+  const [destinationCandidates, setDestinationCandidates] = useState<string[]>([]);
+  const [travelDateStart, setTravelDateStart] = useState("");
+  const [travelDateEnd, setTravelDateEnd] = useState("");
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const canSubmit = useMemo(() => {
+    return departureCities.length >= 1
+      && destinationCandidates.length >= 2
+      && destinationCandidates.length <= 5;
+  }, [departureCities.length, destinationCandidates.length]);
+
+  const titlePreview = useMemo(() => buildTripTitlePreview({
+    destinationCandidates,
+    travelDateStart: travelDateStart || null,
+    travelDateEnd: travelDateEnd || null,
+    locale: locale === "zh" ? "zh" : "en",
+  }), [destinationCandidates, locale, travelDateEnd, travelDateStart]);
+
+  const handleAddDeparture = useCallback(() => {
+    const value = departureInput.trim();
+    if (value.length === 0) return;
+    setDepartureCities((current) => {
+      if (current.includes(value)) return current;
+      if (current.length >= 3) return current;
+      return [...current, value];
+    });
+    setDepartureInput("");
+  }, [departureInput]);
+
+  const handleAddCandidate = useCallback(() => {
+    const value = candidateInput.trim();
+    if (value.length === 0) return;
+    setDestinationCandidates((current) => {
+      if (current.includes(value)) return current;
+      if (current.length >= 5) return current;
+      return [...current, value];
+    });
+    setCandidateInput("");
+  }, [candidateInput]);
+
+  const handleSubmit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canSubmit) return;
+    setSubmitError(null);
+    try {
+      await activate.mutateAsync({
+        departureCities,
+        destinationCandidates,
+        travelDateStart: travelDateStart || null,
+        travelDateEnd: travelDateEnd || null,
+        titleLocale: locale === "zh" ? "zh" : "en",
+      });
+      router.replace(`/trips/${tripId}` as Parameters<typeof router.replace>[0]);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : String(error));
+    }
+  }, [activate, canSubmit, departureCities, destinationCandidates, locale, router, travelDateEnd, travelDateStart, tripId]);
+
+  return (
+    <main className="mx-auto w-full max-w-[860px] px-5 py-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
+      <header>
+        <p className="text-[11px] font-black uppercase tracking-[0.11em] text-primary">{t("kicker")}</p>
+        <h1 className="mt-2 text-[clamp(2rem,5vw,2.75rem)] font-bold leading-none tracking-[-0.05em]">{titlePreview}</h1>
+        <p className="mt-3 max-w-xl text-base text-muted-foreground">{t("body")}</p>
+      </header>
+
+      <form onSubmit={handleSubmit} className="mt-6 space-y-6" aria-label={t("formAriaLabel")}>
+        <section className="rounded-[22px] border bg-card p-5 shadow-[0_8px_24px_#102a4308]">
+          <p className="text-sm font-semibold text-foreground">{t("titlePreviewLabel")}</p>
+          <output className="mt-2 block rounded-[12px] border border-dashed border-border bg-secondary/30 px-3 py-2 text-sm font-bold text-foreground">
+            {titlePreview}
+          </output>
+          <p className="mt-2 text-xs text-muted-foreground">{t("titlePreviewHint")}</p>
+        </section>
+
+        <section className="rounded-[22px] border bg-card p-5 shadow-[0_8px_24px_#102a4308]">
+          <label className="flex flex-col gap-2 text-sm font-semibold text-foreground">
+            {t("departureLabel")}
+          </label>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {departureCities.map((city) => (
+              <span key={city} className="inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs font-bold text-secondary-foreground">
+                {city}
+                <button
+                  type="button"
+                  aria-label={t("removeChip", { value: city })}
+                  onClick={() => setDepartureCities((current) => current.filter((c) => c !== city))}
+                  className="rounded-full p-0.5 text-secondary-foreground/80 hover:bg-secondary-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <input
+              type="text"
+              value={departureInput}
+              onChange={(event) => setDepartureInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleAddDeparture();
+                }
+              }}
+              maxLength={64}
+              placeholder={t("departurePlaceholder")}
+              className="min-w-[160px] flex-1 rounded-[10px] border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+              disabled={departureCities.length >= 3}
+            />
+            <button
+              type="button"
+              onClick={handleAddDeparture}
+              disabled={departureCities.length >= 3 || departureInput.trim().length === 0}
+              className="inline-flex min-h-11 items-center gap-2 rounded-[12px] bg-primary px-4 text-sm font-bold text-primary-foreground transition disabled:cursor-not-allowed disabled:opacity-40 hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+            >
+              {t("addCity")}
+            </button>
+          </div>
+        </section>
+
+        <section className="rounded-[22px] border bg-card p-5 shadow-[0_8px_24px_#102a4308]">
+          <label className="flex flex-col gap-2 text-sm font-semibold text-foreground">
+            {t("candidatesLabel")}
+          </label>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {destinationCandidates.map((city) => (
+              <span key={city} className="inline-flex items-center gap-2 rounded-full bg-secondary px-3 py-1 text-xs font-bold text-secondary-foreground">
+                {city}
+                <button
+                  type="button"
+                  aria-label={t("removeChip", { value: city })}
+                  onClick={() => setDestinationCandidates((current) => current.filter((c) => c !== city))}
+                  className="rounded-full p-0.5 text-secondary-foreground/80 hover:bg-secondary-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            <input
+              type="text"
+              value={candidateInput}
+              onChange={(event) => setCandidateInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  handleAddCandidate();
+                }
+              }}
+              maxLength={64}
+              placeholder={t("candidatesPlaceholder")}
+              className="min-w-[160px] flex-1 rounded-[10px] border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+              disabled={destinationCandidates.length >= 5}
+            />
+            <button
+              type="button"
+              onClick={handleAddCandidate}
+              disabled={destinationCandidates.length >= 5 || candidateInput.trim().length === 0}
+              className="inline-flex min-h-11 items-center gap-2 rounded-[12px] bg-primary px-4 text-sm font-bold text-primary-foreground transition disabled:cursor-not-allowed disabled:opacity-40 hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+            >
+              {t("addCandidate")}
+            </button>
+          </div>
+        </section>
+
+        <section className="grid gap-3 sm:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm font-semibold text-foreground">
+            {t("dateStartLabel")}
+            <input
+              type="date"
+              value={travelDateStart}
+              onChange={(event) => setTravelDateStart(event.target.value)}
+              className="rounded-[10px] border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-semibold text-foreground">
+            {t("dateEndLabel")}
+            <input
+              type="date"
+              value={travelDateEnd}
+              onChange={(event) => setTravelDateEnd(event.target.value)}
+              className="rounded-[10px] border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+            />
+          </label>
+        </section>
+
+        <p className="text-xs text-muted-foreground">{t("activateHint")}</p>
+
+        {submitError ? (
+          <p role="alert" className="rounded-[14px] border border-destructive/30 bg-destructive/5 px-4 py-2 text-sm text-destructive">
+            {submitError}
+          </p>
+        ) : null}
+
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            disabled={!canSubmit || activate.isPending}
+            className="inline-flex min-h-12 items-center gap-2 rounded-[14px] bg-sidebar px-5 text-sm font-bold text-white shadow-md transition disabled:cursor-not-allowed disabled:opacity-40 hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar/25"
+          >
+            {activate.isPending ? tCommon("loadingTrips") : t("activateCta")}
+          </button>
+          <Link
+            href="/home"
+            className="inline-flex min-h-11 items-center text-sm font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+          >
+            {tCommon("navExplore")}
+          </Link>
+        </div>
+      </form>
+    </main>
+  );
 }

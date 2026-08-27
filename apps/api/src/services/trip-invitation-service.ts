@@ -6,11 +6,31 @@ import { db } from "../db/database.js";
 import { chatThreads, sharedTrips, tripInvitations, tripMembers, users } from "../db/schema.js";
 import { recordAudit } from "./audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
+import { metrics } from "../observability/metrics.js";
 import type { RequestContext } from "../utils/context.js";
 
+const TOKEN_BYTES = 32;
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-const TOKEN_BYTES = 32;
+// Reject any invitation flow while the Trip is still a Draft. The Trip
+// status guard throws ApiError(409, ...) which the route maps to a clean
+// rejection without partial state. Used by both `createInvitation` and
+// `acceptInvitation`.
+async function assertTripActive(tripId: string): Promise<void> {
+  const [trip] = await db.select({ status: sharedTrips.status })
+    .from(sharedTrips)
+    .where(eq(sharedTrips.id, tripId))
+    .limit(1);
+  if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
+  if (trip.status === "DRAFT") {
+    metrics.inc("draft_command_rejected_total", { operation: "invitation" });
+    throw new ApiError(
+      409,
+      "Conflict",
+      "TRIP_NOT_ACTIVE: activate the trip before running collaboration commands",
+    );
+  }
+}
 
 export type InvitationCreateResult = {
   invitationId: string;
@@ -39,6 +59,8 @@ export async function createInvitation(params: {
   }
 
   return await db.transaction(async (tx) => {
+    await assertTripActive(params.tripId);
+
     const [trip] = await tx.select({ id: sharedTrips.id })
       .from(sharedTrips)
       .where(eq(sharedTrips.id, params.tripId))
@@ -143,6 +165,8 @@ export async function acceptInvitation(params: {
     if (!invitation) {
       throw new ApiError(404, "Not Found", "Invitation not found");
     }
+
+    await assertTripActive(invitation.tripId);
 
     // Reject when caller is not the invited user; never 404 in place of
     // 403 to avoid enumeration.

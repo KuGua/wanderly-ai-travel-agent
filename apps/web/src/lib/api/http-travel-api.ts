@@ -6,8 +6,14 @@ import {
   agentStreamEventSchema,
   createThreadResponseSchema,
   createTripThreadInputSchema,
+  explorationStartRequestSchema,
+  explorationStartResponseSchema,
   ownerConversationResponseSchema,
   profileResponseSchema,
+  tripActivationRequestSchema,
+  tripActivationResponseSchema,
+  updateTripTitleInputSchema,
+  updateTripTitleResponseSchema,
   tripDetailResponseSchema,
   tripsResponseSchema,
   threadsResponseSchema,
@@ -18,6 +24,9 @@ import {
   type UpdateProfileInput,
   type ConversationTurnRequest,
   type CreateTripThreadInput,
+  type ExplorationStartRequest,
+  type TripActivationRequest,
+  type UpdateTripTitleInput,
 } from "./contracts";
 import type { TravelApi } from "./travel-api";
 
@@ -120,6 +129,31 @@ export class HttpTravelApi implements TravelApi {
         if (parsed.success) onEvent(parsed.data);
       },
     );
+  }
+
+  startExploration(input: ExplorationStartRequest) {
+    const body = explorationStartRequestSchema.parse(input);
+    return this.client.request(
+      "/explorations/start",
+      explorationStartResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  }
+
+  activateTrip(tripId: string, input: TripActivationRequest) {
+    const body = tripActivationRequestSchema.parse(input);
+    return this.client.request(
+      "/trips/" + encodeURIComponent(tripId) + "/activate",
+      tripActivationResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  }
+
+  updateTripTitle(tripId: string, input: UpdateTripTitleInput) {
+    const body = updateTripTitleInputSchema.parse(input);
+    return this.client.request("/trips/" + encodeURIComponent(tripId) + "/title", updateTripTitleResponseSchema, {
+      method: "PATCH", body: JSON.stringify(body),
+    });
   }
 }
 

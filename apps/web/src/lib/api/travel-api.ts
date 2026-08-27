@@ -14,6 +14,12 @@ import type {
   LocationReferenceResponse,
   AgentRun,
   AgentStreamEvent,
+  ExplorationStartRequest,
+  ExplorationStartResponse,
+  TripActivationRequest,
+  TripActivationResponse,
+  UpdateTripTitleInput,
+  UpdateTripTitleResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -30,4 +36,7 @@ export interface TravelApi {
   getAgentRun(runId: string): Promise<AgentRun>;
   cancelAgentRun(runId: string): Promise<AgentRun>;
   subscribeAgentRun(runId: string, signal: AbortSignal, onEvent: (event: AgentStreamEvent) => void): Promise<void>;
+  startExploration(input: ExplorationStartRequest): Promise<ExplorationStartResponse>;
+  activateTrip(tripId: string, input: TripActivationRequest): Promise<TripActivationResponse>;
+  updateTripTitle(tripId: string, input: UpdateTripTitleInput): Promise<UpdateTripTitleResponse>;
 }

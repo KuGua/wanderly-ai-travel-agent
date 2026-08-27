@@ -1,4 +1,5 @@
 import { eq, and, asc, count, desc, inArray, sql, type SQL } from "drizzle-orm";
+import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
 import { sharedTrips, tripMembers, users, itineraryPlans, memberConfirmations, consentGrants } from "../db/schema.js";
@@ -6,16 +7,24 @@ import {
   createTripSchema,
   errorResponseSchema,
   toJsonSchema,
+  tripActivationRequestSchema,
+  tripActivationResponseSchema,
+  updateTripTitleRequestSchema,
+  updateTripTitleResponseSchema,
   tripDetailsResponseSchema,
   tripsResponseSchema,
   type LatestPlan,
   type NextAction,
   type ProjectDisplayState,
 } from "../types/schemas.js";
+import { buildTripTitle, isValidTripDate } from "../services/trip-title-service.js";
 import { createRequestContext } from "../utils/context.js";
 import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { getOrCreateDefaultThread } from "../services/trip-invitation-service.js";
+import { metrics } from "../observability/metrics.js";
+
+const tripIdParamSchema = z.object({ tripId: z.string().uuid() }).strict();
 
 const DEFAULT_PAGE_LIMIT = 20;
 const MAX_PAGE_LIMIT = 100;
@@ -23,7 +32,7 @@ const MAX_PAGE_LIMIT = 100;
 type TripListRow = {
   id: string;
   name: string;
-  status: "PLANNING" | "CONFIRMED" | "BOOKED" | "CANCELLED" | "STALE";
+  status: "DRAFT" | "PLANNING" | "CONFIRMED" | "BOOKED" | "CANCELLED" | "STALE";
   departureCities: string[];
   destinationCandidates: string[];
   travelDateStart: string | null;
@@ -228,6 +237,164 @@ export async function tripRoutes(app: FastifyInstance) {
   // POST /trips/:tripId/invitations and the invitee redeems the token at
   // POST /trip-invitations/:inviteToken/accept.
 
+  // Activate a DRAFT trip with a complete brief. The only path that moves
+  // a Trip out of DRAFT. The database trigger permits `DRAFT → PLANNING`
+  // and `DRAFT → CANCELLED` only; all other transitions throw, which is
+  // the second line of defense behind this route's status check.
+  app.post("/trips/:tripId/activate", {
+    schema: {
+      description: "Activate a DRAFT Trip by writing a complete brief and transitioning to PLANNING.",
+      tags: ["trips"],
+      params: toJsonSchema(tripIdParamSchema),
+      body: toJsonSchema(tripActivationRequestSchema),
+      response: {
+        200: toJsonSchema(tripActivationResponseSchema),
+        403: toJsonSchema(errorResponseSchema),
+        404: toJsonSchema(errorResponseSchema),
+        409: toJsonSchema(errorResponseSchema),
+      },
+    },
+  }, async (request, reply) => {
+    const { tripId } = tripIdParamSchema.parse(request.params);
+    const ctx = createRequestContext(
+      request.user.id, request.correlationId, request.traceId,
+      request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
+    );
+    const body = tripActivationRequestSchema.parse(request.body);
+    if ((body.travelDateStart && !isValidTripDate(body.travelDateStart))
+      || (body.travelDateEnd && !isValidTripDate(body.travelDateEnd))
+      || (body.travelDateStart && body.travelDateEnd && body.travelDateEnd < body.travelDateStart)) {
+      throw new ApiError(400, "Bad Request", "Travel dates must be valid calendar dates with an end date on or after the start date");
+    }
+    const generatedTitle = buildTripTitle({
+      destinationCandidates: body.destinationCandidates,
+      travelDateStart: body.travelDateStart,
+      travelDateEnd: body.travelDateEnd,
+      locale: body.titleLocale,
+    });
+
+    await db.transaction(async (tx) => {
+      const [trip] = await tx.select().from(sharedTrips)
+        .where(eq(sharedTrips.id, tripId))
+        .for("update")
+        .limit(1);
+      if (!trip) {
+        metrics.inc("trip_activation_total", { result: "error" });
+        throw new ApiError(404, "Not Found", "Trip not found");
+      }
+      if (trip.status !== "DRAFT") {
+        metrics.inc("trip_activation_total", { result: "conflict" });
+        throw new ApiError(
+          409,
+          "Conflict",
+          `TRIP_NOT_DRAFT: trip is in status ${trip.status}`,
+        );
+      }
+      if (trip.createdBy !== request.user.id) {
+        metrics.inc("trip_activation_total", { result: "forbidden" });
+        throw new ApiError(403, "Forbidden", "Only the creator may activate the trip");
+      }
+
+      await tx.update(sharedTrips).set({
+        name: generatedTitle,
+        nameSource: "AUTO",
+        titleLocale: body.titleLocale,
+        departureCities: body.departureCities,
+        destinationCandidates: body.destinationCandidates,
+        travelDateStart: body.travelDateStart ?? null,
+        travelDateEnd: body.travelDateEnd ?? null,
+        status: "PLANNING",
+        updatedAt: new Date(),
+      }).where(eq(sharedTrips.id, tripId));
+
+      await recordAudit({
+        ctx,
+        action: "TRIP_ACTIVATE",
+        actorUserId: request.user.id,
+        tripId,
+        summary: {
+          briefLength: {
+            cities: body.departureCities.length,
+            candidates: body.destinationCandidates.length,
+          },
+        },
+        tx,
+      });
+    });
+
+    metrics.inc("trip_activation_total", { result: "success" });
+
+    const [trip] = await db.select().from(sharedTrips)
+      .where(eq(sharedTrips.id, tripId)).limit(1);
+    if (!trip) {
+      throw new ApiError(500, "Internal Server Error", "Trip vanished after activate");
+    }
+    return reply.code(200).send(tripActivationResponseSchema.parse({
+      trip: {
+        id: trip.id,
+        name: trip.name,
+        status: "PLANNING",
+        departureCities: trip.departureCities as string[],
+        destinationCandidates: trip.destinationCandidates as string[],
+        travelDateStart: trip.travelDateStart,
+        travelDateEnd: trip.travelDateEnd,
+        createdAt: trip.createdAt.toISOString(),
+        updatedAt: trip.updatedAt.toISOString(),
+      },
+    }));
+  });
+
+  app.patch("/trips/:tripId/title", {
+    schema: {
+      description: "Set a creator-managed trip title. This never reads chat history or calls an LLM.",
+      tags: ["trips"],
+      params: toJsonSchema(tripIdParamSchema),
+      body: toJsonSchema(updateTripTitleRequestSchema),
+      response: {
+        200: toJsonSchema(updateTripTitleResponseSchema),
+        403: toJsonSchema(errorResponseSchema),
+        404: toJsonSchema(errorResponseSchema),
+      },
+    },
+  }, async (request) => {
+    const { tripId } = tripIdParamSchema.parse(request.params);
+    const body = updateTripTitleRequestSchema.parse(request.body);
+    const ctx = createRequestContext(
+      request.user.id, request.correlationId, request.traceId,
+      request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
+    );
+
+    const updatedAt = await db.transaction(async (tx) => {
+      const [trip] = await tx.select().from(sharedTrips)
+        .where(eq(sharedTrips.id, tripId)).for("update").limit(1);
+      if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
+      if (trip.createdBy !== request.user.id) {
+        throw new ApiError(403, "Forbidden", "Only the creator may rename the trip");
+      }
+
+      const now = new Date();
+      await tx.update(sharedTrips).set({
+        name: body.name,
+        nameSource: "MANUAL",
+        titleLocale: null,
+        updatedAt: now,
+      }).where(eq(sharedTrips.id, tripId));
+      await recordAudit({
+        ctx,
+        action: "TRIP_TITLE_UPDATE",
+        actorUserId: request.user.id,
+        tripId,
+        summary: { source: "manual" },
+        tx,
+      });
+      return now;
+    });
+
+    return updateTripTitleResponseSchema.parse({
+      trip: { id: tripId, name: body.name, nameSource: "MANUAL", titleLocale: null, updatedAt: updatedAt.toISOString() },
+    });
+  });
+
   // Get trip details
   app.get("/trips/:tripId", {
     schema: {
@@ -381,6 +548,7 @@ function deriveDisplayState(params: {
   confirmations: Array<{ userId: string; status: string }>;
   hasAnyConsent: boolean;
 }): ProjectDisplayState {
+  if (params.tripStatus === "DRAFT") return "DRAFT";
   if (params.tripStatus === "CANCELLED") return "CANCELLED";
   if (params.tripStatus === "STALE" || params.tripStatus === "BOOKED") {
     return params.tripStatus === "BOOKED" ? "COMPLETED" : "ARCHIVED";
@@ -402,6 +570,9 @@ function deriveNextAction(params: {
   latestPlan: { id: string; version: number; status: string } | null;
   hasAnyConsent: boolean;
 }): NextAction | null {
+  if (params.displayState === "DRAFT") {
+    return { type: "EDIT_DRAFT", label: "Continue exploration", href: `/trips/${params.tripId}` };
+  }
   if (params.displayState === "CANCELLED" || params.displayState === "ARCHIVED") {
     return { type: "VIEW_HISTORY", label: "View history", href: `/trips/${params.tripId}` };
   }

@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentRun, ConversationPlace, ConversationTurnAcceptedResponse } from "@/lib/api/contracts";
@@ -34,16 +34,14 @@ function ChatHarness({
   controlledThreadId = THREAD_ID,
   initiallyOpen = true,
   selectedPlace = null,
-  autoAskRequest = null,
-  onAutoAskConsumed,
+  onStartNewExploration,
   onConversationText,
   onThreadInvalidated,
 }: {
   controlledThreadId?: string | null;
   initiallyOpen?: boolean;
   selectedPlace?: { place: ConversationPlace; context: string } | null;
-  autoAskRequest?: { nonce: string; place: ConversationPlace; context: string } | null;
-  onAutoAskConsumed?: (nonce: string) => void;
+  onStartNewExploration?: () => void;
   onConversationText?: (text: string) => void;
   onThreadInvalidated?: () => void;
 }) {
@@ -56,8 +54,7 @@ function ChatHarness({
       threadId={controlledThreadId}
       onThreadInvalidated={onThreadInvalidated}
       selectedPlace={selectedPlace}
-      autoAskRequest={autoAskRequest}
-      onAutoAskConsumed={onAutoAskConsumed}
+      onStartNewExploration={onStartNewExploration}
       onConversationText={onConversationText}
     />
   );
@@ -88,6 +85,9 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
       onEvent({ event: "message.delta", runId: RUN_ID, generationAttempt: 1, sequence: 1, delta: "answer." });
       await untilAborted(signal);
     }),
+    startExploration: vi.fn(),
+    activateTrip: vi.fn(),
+    updateTripTitle: vi.fn(),
     ...overrides,
   };
 }
@@ -243,48 +243,6 @@ describe("TravelAgentChat durable streaming flow", () => {
     await waitFor(() => expect(onInvalidated).toHaveBeenCalledTimes(1));
   });
 
-  it("surfaces the generic error when threadId is null at submit time", async () => {
-    const api = createApi();
-    // Render with a threadId so the panel mounts, then drop to null and submit
-    // via the auto-ask effect: with threadId === null the effect's guard
-    // short-circuits, so submitConversationTurn is never called.
-    const onConsumed = vi.fn();
-    renderChat(api, {
-      controlledThreadId: null,
-     
-      selectedPlace: { place: TOKYO, context: "Japan" },
-      autoAskRequest: { nonce: "n1", place: TOKYO, context: "Japan" },
-      onAutoAskConsumed: onConsumed,
-    });
-
-    // Give the auto-ask effect a chance to fire if it ever would.
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(api.submitConversationTurn).not.toHaveBeenCalled();
-    expect(onConsumed).not.toHaveBeenCalled();
-  });
-
-  it("auto-sends a 'Tell me about …' turn when autoAskRequest is provided", async () => {
-    const onConsumed = vi.fn();
-    const api = createApi();
-    const request = { nonce: "n1", place: TOKYO, context: "Japan" };
-    renderChat(api, {
-      selectedPlace: { place: TOKYO, context: "Japan" },
-      autoAskRequest: request,
-      onAutoAskConsumed: onConsumed,
-    });
-
-    expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
-    expect(screen.getByText("Tell me about Tokyo")).toBeInTheDocument();
-    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
-    expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
-      requestId: REQUEST_ID,
-      question: "Tell me about Tokyo",
-      place: TOKYO,
-      intent: "auto_intro",
-    });
-    await waitFor(() => expect(onConsumed).toHaveBeenCalledWith("n1"));
-  });
-
   it("does not include the intent field for manually typed questions", async () => {
     const api = createApi();
     renderChat(api, { selectedPlace: { place: TOKYO, context: "Japan" } });
@@ -302,74 +260,14 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(body).not.toHaveProperty("intent");
   });
 
-  it("does not double-fire auto-ask when the parent re-renders while holding the same nonce", async () => {
-    const onConsumed = vi.fn();
+  it("offers an explicit Start new exploration action without sending a turn", () => {
     const api = createApi();
-    const request = { nonce: "n1", place: TOKYO, context: "Japan" };
+    const onStartNewExploration = vi.fn();
+    renderChat(api, { onStartNewExploration });
 
-    function TriggerRerender() {
-      const [, force] = useState(0);
-      useEffect(() => {
-        // Schedule three extra re-renders of TravelAgentChat AFTER the initial
-        // effect has had a chance to run, all keeping the same nonce.
-        const timers = [0, 5, 25].map((delay) => window.setTimeout(() => force((value) => value + 1), delay));
-        return () => timers.forEach((timer) => window.clearTimeout(timer));
-      }, []);
-      return null;
-    }
+    fireEvent.click(screen.getByRole("button", { name: "Start new exploration" }));
 
-    renderWithIntl(
-      <>
-        <ChatHarness
-          controlledThreadId={THREAD_ID}
-         
-          selectedPlace={{ place: TOKYO, context: "Japan" }}
-          autoAskRequest={request}
-          onAutoAskConsumed={onConsumed}
-        />
-        <TriggerRerender />
-      </>,
-      { api },
-    );
-
-    await screen.findByText("A streamed answer.");
-
-    await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
-    expect(onConsumed).toHaveBeenCalledTimes(1);
-    expect(onConsumed).toHaveBeenCalledWith("n1");
-  });
-
-  it("appends auto-ask to the controlled threadId", async () => {
-    const api = createApi();
-    const request = { nonce: "n1", place: TOKYO, context: "Japan" };
-    renderChat(api, {
-      controlledThreadId: THREAD_ID,
-     
-      selectedPlace: { place: TOKYO, context: "Japan" },
-      autoAskRequest: request,
-    });
-
-    expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
-    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
-    expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
-      requestId: REQUEST_ID,
-      question: "Tell me about Tokyo",
-      place: TOKYO,
-      intent: "auto_intro",
-    });
-  });
-
-  it("does not submit auto-ask while the chat dialog is closed", async () => {
-    const api = createApi();
-    renderChat(api, {
-      initiallyOpen: false,
-      selectedPlace: { place: TOKYO, context: "Japan" },
-      autoAskRequest: { nonce: "n1", place: TOKYO, context: "Japan" },
-    });
-
-    // Give the effect a chance to fire if it ever would.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(onStartNewExploration).toHaveBeenCalledTimes(1);
     expect(api.submitConversationTurn).not.toHaveBeenCalled();
   });
 });

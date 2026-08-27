@@ -4,6 +4,7 @@ import { tripMembers } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { grantConsentSchema, revokeConsentSchema } from "../types/schemas.js";
 import { grantConsent, revokeConsent, getActiveConsents } from "../services/consent-service.js";
+import { requireActiveTrip } from "../services/trip-status-guard.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
 
@@ -25,6 +26,8 @@ export async function consentRoutes(app: FastifyInstance) {
     if (membership.length === 0) {
       throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
+
+    await requireActiveTrip(body.tripId, "consent");
 
     await grantConsent({
       ctx,
@@ -55,6 +58,8 @@ export async function consentRoutes(app: FastifyInstance) {
       throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
 
+    await requireActiveTrip(body.tripId, "consent");
+
     await revokeConsent({
       ctx,
       tripId: body.tripId,
@@ -77,6 +82,8 @@ export async function consentRoutes(app: FastifyInstance) {
     if (membership.length === 0) {
       throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
+
+    await requireActiveTrip(tripId, "consent");
 
     const consents = await getActiveConsents({ tripId, userId: request.user.id });
     return { consents };

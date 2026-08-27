@@ -3,6 +3,7 @@ import { render, type RenderOptions, type RenderResult } from "@testing-library/
 import type { ReactElement } from "react";
 import type { TravelApi } from "@/lib/api";
 import { QueryProvider } from "@/lib/query/provider";
+import { ExplorationSessionProvider } from "@/lib/exploration/exploration-session-provider";
 
 import enMessages from "../../messages/en.json";
 import zhMessages from "../../messages/zh.json";
@@ -16,7 +17,9 @@ export function renderWithIntl(
 ): RenderResult {
   return render(
     <NextIntlClientProvider locale={locale} messages={messages[locale]}>
-      <QueryProvider configuration={api ? { api } : undefined}>{ui}</QueryProvider>
+      <QueryProvider configuration={api ? { api } : undefined}>
+        <ExplorationSessionProvider>{ui}</ExplorationSessionProvider>
+      </QueryProvider>
     </NextIntlClientProvider>,
     options,
   );

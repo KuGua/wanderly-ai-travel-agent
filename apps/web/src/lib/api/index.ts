@@ -22,3 +22,4 @@ export function getTravelApiConfiguration(getAccessToken?: GetAccessToken): Trav
 }
 
 export type { TravelApi } from "./travel-api";
+export type { ExplorationStartResponse } from "./contracts";

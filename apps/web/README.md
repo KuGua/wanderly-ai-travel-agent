@@ -51,13 +51,14 @@ not provide an availability SLA, so deployment acceptance must include that
 risk or configure another approved provider. The Explore page keeps an
 accessible destination list if the map cannot load.
 
-Before MapLibre initializes, the Explore page inserts the public-domain GEBCO
-global shaded-relief WMS beneath OpenFreeMap's vector details. GEBCO provides
-one opaque land-and-seabed texture, so terrain depth does not depend on a
-transparent SVG tint. Liberty's `natural_earth` raster remains underneath as a
-visual fallback if GEBCO is unavailable; roads, labels and administrative
-layers stay above both rasters. GEBCO requires attribution, has no availability
-SLA, and explicitly must not be used for navigation or safety at sea.
+The Explore page immediately renders Liberty's CDN-backed `natural_earth`
+raster and a solid water surface, then progressively overlays the public-domain
+GEBCO global shaded-relief WMS beneath OpenFreeMap's vector details. GEBCO uses
+1024px logical tiles to bound public-WMS request fan-out, while Natural Earth
+remains visible, including by overzooming its final source level, if GEBCO or
+vector details are unavailable. Roads, labels and administrative layers stay
+above both rasters. GEBCO requires attribution, has no availability SLA, and
+explicitly must not be used for navigation or safety at sea.
 
 For country borders, the Explore page renders a camera-projected SVG overlay
 above the provider stack. `build-country-boundaries.mjs` uses Natural Earth

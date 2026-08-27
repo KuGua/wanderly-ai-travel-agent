@@ -5,6 +5,7 @@ import { sharedTrips, tripMembers } from "../db/schema.js";
 import { planRequestSchema } from "../types/schemas.js";
 import { createConstraintSnapshot, generatePlan, getLatestActivePlan } from "../services/planning-service.js";
 import { checkVisaReadiness } from "../services/visa-service.js";
+import { requireActiveTrip } from "../services/trip-status-guard.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
 
@@ -23,6 +24,8 @@ export async function planningRoutes(app: FastifyInstance) {
     if (membership.length === 0) {
       throw new ApiError(403, "Forbidden", "Not a member of this trip");
     }
+
+    await requireActiveTrip(body.tripId, "planning");
 
     const [trip] = await db.select().from(sharedTrips).where(eq(sharedTrips.id, body.tripId)).limit(1);
     if (!trip) {

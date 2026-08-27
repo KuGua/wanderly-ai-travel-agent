@@ -211,6 +211,15 @@ metrics.registerCounter("agent_task_outcomes_total", "Durable Agent task outcome
   operation: ["conversation", "plan", "replan"],
   outcome: ["completed", "failed", "cancelled", "retrying"],
 });
+metrics.registerCounter("exploration_start_total", "Exploration-start idempotency outcomes.", {
+  result: ["created", "cached", "conflict", "error"],
+});
+metrics.registerCounter("trip_activation_total", "Draft Trip activation outcomes.", {
+  result: ["success", "conflict", "forbidden", "invalid", "error"],
+});
+metrics.registerCounter("draft_command_rejected_total", "Collaboration commands rejected because the Trip is still a Draft.", {
+  operation: ["invitation", "consent", "planning", "confirmation", "booking", "change_event"],
+});
 metrics.registerCounter("agent_task_recoveries_total", "Expired Agent task leases and queue entries recovered.", {
   outcome: ["retrying", "failed", "cancelled"],
 });

@@ -187,6 +187,29 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - Concurrent Workers cannot both commit a result: lease expiry/recovery may repeat an external model call, but final persistence is conditional on the current lease token and task state. A concurrent request ID cannot duplicate the USER message or create a second task.
 - Text, prompts, chunks and model payloads are absent from audit summaries, logs, traces and metric labels.
 
+### TS-H1d — Same-thread bounded LLM context survives re-entry
+
+**Stories:** H1, S1
+**Objective:** Verify that reopening the same private thread restores a bounded same-thread LLM context without widening owner, Trip, persistence, or telemetry boundaries.
+
+**Starting conditions:** Alice owns a Trip thread containing more than the configured context window of alternating `USER` and `ASSISTANT` messages. Bob is an active member of the same Trip and owns a separate thread. A fake model gateway captures its request payload; the Worker is able to retry an accepted task.
+
+**Steps:**
+
+1. Reopen Alice's existing thread after a full browser reload, then submit a follow-up that depends on a recent prior turn.
+2. Inspect the fake gateway payload and assert it contains chronological raw messages only from Alice's thread, plus the current question and the existing allow-listed Trip context.
+3. Seed enough prior messages to exceed both the configured turn and character budget. Submit another turn and inspect the payload.
+4. Accept a turn, append a later legacy message before Worker retry, then retry the same task after a controlled transient model failure.
+5. Attempt the same operations as Bob and inspect all fake-gateway, audit, log, span, metric, SSE, idempotency, and task-row data.
+
+**Expected outcomes:**
+
+- The recent context survives reload/re-entry because it is rebuilt from the authoritative thread archive; neither the browser nor TanStack Query persists or submits message history.
+- Context contains only complete `USER`/`ASSISTANT` messages from the accepted task's `threadId`, in chronological order, and never another thread, Profile, consent, snapshot, plan, provider fact, or shared-member field.
+- The current user message is always present. The oldest messages are removed first to satisfy the configured complete-turn and character budgets; the model is permitted to state that earlier context is unavailable.
+- A retry uses the task's saved upper message-sequence boundary and therefore cannot include content appended after task acceptance. It may repeat the bounded model call but persists at most one final assistant message.
+- Raw context appears only in the outbound configured-model request. It is absent from `agent_task_runs`, audit summaries, logs, traces, metric labels, SSE events, browser storage, and all Bob-visible responses.
+
 ### TS-H2 — Invite member and enforce field-level sharing
 
 **Stories:** H2  
@@ -370,7 +393,8 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - 地图就绪生命周期分两阶段（mounting → ready）：MapLibre 6.6 的 globe projection 必须写入传给 `new Map()` 的 style JSON，`style.load` 是 style 兼容性检查和图层控件的唯一就绪前置；不得在 style 创建前或 `style.load` 后调用 `setProjection()`。OpenMapTiles 的 `sourcedata` 只作为开发诊断，慢 TileJSON 或 PBF 不得触发 `unavailable-network`。只有 style 总超时、初始化异常或 style ready 前的 map error 才显示 globe error 回退。dev 模式下 `window.__wanderlyMap.stage` 实时反映当前阶段。
 - 地图 ready 后，国家边界位于 provider style stack 顶层：即使 Liberty 的 fill/road layer 重排，全球缩放仍可看到本地 Natural Earth 共享 mesh 与独立九段线。关闭 Countries 时必须同时隐藏国家线、九段线与洲/国家名称；zoom 2.6 起显示首都、zoom 2.8 起显示重要城市、zoom 4.2 起显示省州名称。SVG 标签必须在 MapLibre `render` 帧内同步重投影并随 resize 更新，平移或缩放时不得落后 WebGL 地球（标签位置只能直接写入 DOM，不得经由 React state 提交，否则会慢一帧并出现漂移）；必须剔除背半球并进行屏幕碰撞去重；已离开候选集但尚未卸载的标签节点必须当帧隐藏，不得停留在过期位置。切换对应图层后标签即时消失。视觉边界和标签不参与地点匹配、反向地理编码或旅行事实；位置参考只能使用专用、版本化的离线 resolver 数据。
 - 国界构建必须仅在构建期读取 Natural Earth 10m，并从同一个 TopoJSON topology 输出三档共享 mesh；同一时刻前端只绘制当前 zoom 的一档，任意共享边界只出现一次。首屏只请求 LOD-0 与本地九段线，LOD-0 gzip 不得超过 200 KB；LOD-1/2 仅在进入对应 zoom 后请求。浏览器与 `build-geography-labels.mjs` 对 `geo.datav.aliyun.com` 的请求必须为 0。每一档必须在 MapLibre `render` 帧内同步更新、在半球边缘裁剪相交线段并随 resize 更新，旋转时不得落后 WebGL 地球或因顶点跨越背面而抖动。获取失败应保留既有地图和无障碍地点入口。
-- 地球表面必须保持实体不透明：GEBCO `GEBCO_LATEST` WMS shaded relief 同时提供陆地与海底地势，opacity 固定为 1；Liberty Natural Earth 位于其下，仅作为 GEBCO 请求失败时的视觉 fallback。道路、标签和行政边界仍需在 relief 之上可读，放大时不得退化为白色或透明地图。必须显示 GEBCO attribution 与”不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
+- 地球表面必须保持实体不透明：默认首屏可渐进加载 GEBCO `GEBCO_LATEST` WMS 的陆地与海底地势，但在其返回前 Natural Earth 与实色水面必须持续可见，不得出现白色、透明或方块状缺失地表。GEBCO source 必须使用 1024 逻辑 tile size 与相应的低一级 source minzoom，以限制公共 WMS 的并发请求且不阻塞默认 globe。zoom 更高时继续保留最后可用层级而非淡出为蓝底。GEBCO 未返回或失败时，Natural Earth 必须持续可见（包括高 zoom 的 overzoom）且不阻塞缩放。道路、标签和行政边界仍需在 relief 之上可读。必须显示 GEBCO attribution 与”不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
+- 本地 SVG 国界、九段线与地名覆盖层必须按当前 MapLibre globe 的屏幕地平线轮廓裁剪，不能只按页面矩形裁剪。旋转、缩放、跨日期变更线或高纬度视图下，任何边界、九段线、文字或标记均不得显示在球体轮廓之外，或让背半球内容穿透到前景。地名必须在锚点接近地平线、或整个文字包围框不能留在球内时隐藏；若无法计算有效轮廓则 fail-closed 隐藏 SVG 覆盖层。裁剪路径与位置必须在 `render` 帧内更新，不能通过 React state 造成一帧滞后。
 
 ### TS-P2-LR — Resolve coordinates through the three source modes
 
@@ -562,6 +586,27 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
 - Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
+
+### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields only
+
+**Stories:** H1, H2
+**Objective:** Verify title generation is deterministic, localized and independent of private conversation text.
+
+**Starting conditions:** Alice owns a Draft Trip and has sent private messages containing destinations or dates that differ from the explicit activation brief.
+
+**Steps:**
+
+1. Activate with two destinations, `2026-10-01` through `2026-10-07`, and `titleLocale: en`.
+2. Activate another Draft with a Chinese locale and destinations but no complete date range.
+3. Submit an invalid or reverse date range.
+4. As Bob, attempt `PATCH /trips/:tripId/title`; then rename as Alice and inspect audit data.
+
+**Expected outcomes:**
+
+- The first title is `Tokyo · Bangkok Trip Planner｜7 Days`; the Chinese title uses `行程规划` and no day suffix when dates are incomplete.
+- The title never reflects private chat text, profiles or inferred facts, and no LLM call is made.
+- Invalid calendar dates and reverse ranges are rejected; no title is fabricated from them.
+- Only the creator may manually rename. The change sets `name_source=MANUAL`; the audit event records the source but never title text.
 - Bob cannot submit through, view, or restore Alice's old session identifiers.
 
 ### TS-OTEL-2 — Worker continuity after durable boundary

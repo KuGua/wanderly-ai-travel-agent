@@ -8,6 +8,7 @@ import type {
   CreateTripThreadInput,
   OwnerConversationResponse,
   ThreadsResponse,
+  TripActivationRequest,
   UpdateProfileInput,
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
@@ -134,6 +135,30 @@ export function useCancelAgentRun() {
     mutationFn: (runId: string) => api.cancelAgentRun(runId),
     onSuccess: (run) => {
       queryClient.setQueryData(["agent-runs", run.runId], run);
+    },
+  });
+}
+
+export function useActivateTrip(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: TripActivationRequest) => api.activateTrip(tripId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.all });
+      void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
+export function useUpdateTripTitle(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: import("../api/contracts").UpdateTripTitleInput) => api.updateTripTitle(tripId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.all });
+      void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
     },
   });
 }

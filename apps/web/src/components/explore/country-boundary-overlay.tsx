@@ -4,6 +4,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CHINA_MARITIME_LINE_DATA_URL, COUNTRY_BOUNDARY_LOD_DATA_URLS, COUNTRY_BOUNDARY_TILE_INDEX_URL, countryBoundaryTileUrl } from "./map-surface-style";
+import { globeClipFrom } from "./globe-visibility";
 
 type Projector = (coordinates: [number, number]) => { x: number; y: number };
 type BoundaryLod = keyof typeof COUNTRY_BOUNDARY_LOD_DATA_URLS;
@@ -159,12 +160,12 @@ function isPath(path: string): path is string {
   return path.length > 0;
 }
 
-export function isCoordinateOnVisibleHemisphere(coordinates: [number, number], center: [number, number]) {
+export function isCoordinateOnVisibleHemisphere(coordinates: [number, number], center: [number, number], minimumDotProduct = 0) {
   const longitudeDelta = degreesToRadians(coordinates[0] - center[0]);
   const latitude = degreesToRadians(coordinates[1]);
   const centerLatitude = degreesToRadians(center[1]);
   return Math.sin(latitude) * Math.sin(centerLatitude)
-    + Math.cos(latitude) * Math.cos(centerLatitude) * Math.cos(longitudeDelta) >= 0;
+    + Math.cos(latitude) * Math.cos(centerLatitude) * Math.cos(longitudeDelta) >= minimumDotProduct;
 }
 
 function pathForLine(coordinates: number[][], project: Projector, viewportWidth: number, isVisible: (coordinates: [number, number]) => boolean) {
@@ -280,6 +281,8 @@ export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | nu
   const tiles = useRef(new Map<string, GeoJSON.FeatureCollection>());
   const redraw = useRef<() => void>(() => {});
   const svgRef = useRef<SVGSVGElement>(null);
+  const globeClipPathRef = useRef<SVGPathElement>(null);
+  const boundaryGroupRef = useRef<SVGGElement>(null);
   const globalPathRef = useRef<SVGPathElement>(null);
   const maritimePathRef = useRef<SVGPathElement>(null);
 
@@ -374,7 +377,11 @@ export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | nu
     const drawBoundaries = () => {
       const container = map.getContainer();
       const center = map.getCenter();
+      const globeClip = globeClipFrom(map);
       const viewportBounds = visibleViewportBounds(map);
+      globeClipPathRef.current?.setAttribute("d", globeClip?.path ?? "");
+      if (boundaryGroupRef.current) boundaryGroupRef.current.style.display = globeClip ? "" : "none";
+      if (!globeClip) return;
       const project = (collection: GeoJSON.FeatureCollection) => projectCountryBoundaryPaths(
         collection,
         (coordinates) => map.project(coordinates),
@@ -401,11 +408,14 @@ export function CountryBoundaryOverlay({ map, visible }: { map: MapLibreMap | nu
   if (!map || !currentBoundary || !visible) return null;
   return (
     <svg ref={svgRef} data-wanderly-country-boundaries="true" aria-hidden="true" className="pointer-events-none absolute inset-0 z-[3] size-full overflow-hidden" viewBox={"0 0 " + map.getContainer().clientWidth + " " + map.getContainer().clientHeight}>
-      <g data-boundary-source="natural-earth-shared-mesh">
-        <path ref={globalPathRef} fill="none" stroke="#073d50" strokeOpacity="0.92" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-      </g>
-      <g data-boundary-source="china-maritime-line">
-        <path ref={maritimePathRef} fill="none" stroke="#073d50" strokeOpacity="1" strokeWidth="1.7" vectorEffect="non-scaling-stroke" />
+      <defs><clipPath id="wanderly-globe-clip-boundaries"><path ref={globeClipPathRef} /></clipPath></defs>
+      <g ref={boundaryGroupRef} clipPath="url(#wanderly-globe-clip-boundaries)">
+        <g data-boundary-source="natural-earth-shared-mesh">
+          <path ref={globalPathRef} fill="none" stroke="#073d50" strokeOpacity="0.92" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        </g>
+        <g data-boundary-source="china-maritime-line">
+          <path ref={maritimePathRef} fill="none" stroke="#073d50" strokeOpacity="1" strokeWidth="1.7" vectorEffect="non-scaling-stroke" />
+        </g>
       </g>
     </svg>
   );

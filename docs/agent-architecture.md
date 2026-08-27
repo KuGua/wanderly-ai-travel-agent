@@ -122,11 +122,11 @@ Personal Agent 默认采用 Memory-Augmented + Tool-Augmented；仅在必要时�
 |---|---|---|
 | 长期个人偏好 | user_profiles、preference_facts | 用户可查看、编辑、删除；仅 Personal Agent 私有读取。 |
 | 本次行程偏好 | 当前未实现 | 新增独立 trip override；不得静默覆盖长期 Profile。`this trip` 标记 = 线程创建时绑定的 tripId。 |
-| 私有对话 archive | 已实现（migrations 0006/0008） | `chat_threads`（归属 `ownerUserId`，可选 `tripId`）+ `chat_messages`。USER 由 authenticated owner 发送；ASSISTANT 的 sender 为 null，且角色/sender 组合由 DB CHECK 约束。owner UI 可经专用 endpoint 恢复 raw history；`thread.recall` 仍只返回安全摘要，trip 关联不赋予其他成员或 Shared Agent 读取权限。 |
+| 私有对话 archive 与 session context | 已实现 archive；有界原文 context 待实施 | `chat_threads`（归属 `ownerUserId`，绑定 `tripId`）+ `chat_messages`。USER 由 authenticated owner 发送；ASSISTANT 的 sender 为 null，且角色/sender 组合由 DB CHECK 约束。owner UI 可经专用 endpoint 恢复 raw history；待实施的 `ConversationContextBuilder` 仅为同一 owner 的同一 thread 提取最近、有预算的原文窗口，供 Personal Agent 使用。trip 关联不赋予其他成员或 Shared Agent 读取权限。 |
 | 共享协作记忆 | consent_grants、constraint_snapshots | 仅通过服务端最小化导出；snapshot 不可变。 |
 | 运行事实 | provider_offers、source_evidence、visa_readiness_checks、itinerary_plans | 用于重建证据；不作为聊天长期记忆。 |
 
-私有对话 archive 是 MVP 已确认的能力：保存的 raw transcript 只能由所有者通过 `GET /threads/:threadId/conversation` 回看，且支持线程级删除。`POST /threads/:threadId/turns` 先执行 owner/idempotency 检查，再以 `thread.recall → travel.conversation → ModelGateway` 生成回答，最后用短事务持久化 USER、ASSISTANT、安全 audit 与不含正文的幂等结果。模型等待期间不持有数据库事务。默认 recall 只包含最多 20 条、每条最多 1000 字的非空安全摘要；完整 raw transcript 不进入 audit、metrics 或 Shared Agent context。`redacted_summary` 的通用生成 worker 仍未实现，因此未标记/未摘要的历史不会进入后续 Agent recall。
+私有对话 archive 是 MVP 已确认的能力：保存的 raw transcript 只能由所有者通过 `GET /threads/:threadId/conversation` 回看，且支持线程级删除。`POST /threads/:threadId/turns` 先执行 owner/idempotency 检查，再由待实施的 `ConversationContextBuilder → travel.conversation → ModelGateway` 生成回答，最后用短事务持久化 USER、ASSISTANT、安全 audit 与不含正文的幂等结果。模型等待期间不持有数据库事务。Context Builder 只从同一 owner 的同一 thread 读取不晚于 task acceptance sequence boundary 的最近原文窗口，并受固定轮次与字符预算限制；完整 archive 不进入 audit、metrics、trace、Shared Agent context 或长期 Profile memory。`thread.recall` 仍只返回安全摘要，不能替代运行时原文 context；`redacted_summary` 的通用生成 worker 仍未实现，也不是本方案的前置依赖。详见 [同一私有 Thread 的 LLM 上下文记忆实施方案](thread-context-memory-implementation.md)。
 
 ### Tool-Augmented
 

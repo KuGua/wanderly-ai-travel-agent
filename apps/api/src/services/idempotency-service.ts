@@ -85,3 +85,45 @@ export async function claimIdempotency(
   }
   return { key: inserted[0].idempotencyKey, entityType: inserted[0].entityType };
 }
+
+/**
+ * Fill the result payload on a previously-claimed idempotency row. Must be
+ * invoked inside the same transaction as `claimIdempotency` so a caller
+ * replaying the same key sees a populated `resultPayload`. The `entityId`
+ * is the canonical resource id (e.g. the new Trip) so replay reads can
+ * resolve without consulting business tables.
+ */
+export async function completeIdempotency(
+  tx: Tx,
+  key: string,
+  entityType: string,
+  entityId: string,
+  resultPayload: Record<string, unknown>,
+): Promise<void> {
+  await tx.update(idempotencyRecords)
+    .set({ entityId, resultPayload, entityType })
+    .where(eq(idempotencyRecords.idempotencyKey, key));
+}
+
+/**
+ * Load the cached result for a previously-completed idempotency key. Used
+ * by replay paths to return the exact same response body without writing
+ * new business state. Returns `null` when the key is unknown or its
+ * payload is not yet populated.
+ */
+export async function loadIdempotencyResult(
+  key: string,
+): Promise<{ entityId: string; resultPayload: Record<string, unknown> } | null> {
+  const [row] = await db.select({
+    entityId: idempotencyRecords.entityId,
+    resultPayload: idempotencyRecords.resultPayload,
+  })
+    .from(idempotencyRecords)
+    .where(eq(idempotencyRecords.idempotencyKey, key))
+    .limit(1);
+  if (!row?.entityId || !row.resultPayload) return null;
+  return {
+    entityId: row.entityId,
+    resultPayload: row.resultPayload as Record<string, unknown>,
+  };
+}

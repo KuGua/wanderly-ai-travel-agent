@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { users, userProfiles, sharedTrips, tripMembers, consentGrants, constraintSnapshots, itineraryPlans, memberConfirmations, bookingExecutions, idempotencyRecords, auditEvents, providerOffers, sourceEvidence, visaReadinessChecks, preferenceFacts, destinationCandidates } from "../src/db/schema.js";
+import { users, userProfiles, sharedTrips, tripMembers, consentGrants, constraintSnapshots, itineraryPlans, memberConfirmations, bookingExecutions, idempotencyRecords, auditEvents, providerOffers, sourceEvidence, visaReadinessChecks, preferenceFacts, destinationCandidates, chatThreads, chatMessages } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { grantConsent, revokeConsent, getActiveConsents, buildAuthorizedData } from "../src/services/consent-service.js";
 import { createConstraintSnapshot, generatePlan as generatePlanWithDependencies, markPlanStale, getLatestActivePlan, __setPlanningDependenciesForTests } from "../src/services/planning-service.js";
@@ -82,6 +82,11 @@ beforeEach(async () => {
   await db.delete(constraintSnapshots);
   await db.delete(consentGrants);
   await db.delete(preferenceFacts);
+  // chat_threads.trip_id is ON DELETE SET NULL but NOT NULL post-0012, so
+  // any leftover chat_threads from sibling test files would block the
+  // sharedTrips delete. Clear them before tripMembers/trips.
+  await db.delete(chatMessages);
+  await db.delete(chatThreads);
   await db.delete(tripMembers);
   await db.delete(sharedTrips);
   await db.delete(userProfiles);

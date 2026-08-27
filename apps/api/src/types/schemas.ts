@@ -86,10 +86,11 @@ export const createTripSchema = z.object({
   travelDateEnd: dateStr.optional(),
 }).strict();
 
-export const tripStatusSchema = z.enum(["PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
+export const tripStatusSchema = z.enum(["DRAFT", "PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
 export const projectDisplayStateSchema = z.enum([
+  "DRAFT",
   "ACTION_REQUIRED",
   "IN_PROGRESS",
   "COMPLETED",
@@ -100,6 +101,7 @@ export const projectDisplayStateSchema = z.enum([
 export const latestPlanStatusSchema = z.enum(["DRAFT", "ACTIVE", "STALE", "SUPERSEDED"]);
 
 export const nextActionTypeSchema = z.enum([
+  "EDIT_DRAFT",
   "REVIEW_PLAN",
   "GRANT_CONSENT",
   "CHECK_READINESS",
@@ -449,6 +451,73 @@ export const acceptInvitationResponseSchema = z.object({
     id: uuidSchema,
     tripId: uuidSchema,
     isDefault: z.literal(true),
+  }).strict(),
+});
+
+// ─── Exploration & Draft Trip ──────────────────────────────────────────────
+
+// Exploration start carries only the client's idempotency key.  No message
+// body, place, profile, or nationality data crosses this boundary, so audit
+// and log lines stay free of PII and trip business state.
+export const explorationStartRequestSchema = z.object({
+  requestId: uuidSchema,
+}).strict();
+
+export const explorationStartResponseSchema = z.object({
+  trip: z.object({
+    id: uuidSchema,
+    name: z.string(),
+    status: z.literal("DRAFT"),
+    departureCities: z.array(z.string()).length(0),
+    destinationCandidates: z.array(z.string()).length(0),
+    travelDateStart: z.null(),
+    travelDateEnd: z.null(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  }).strict(),
+  defaultThread: z.object({
+    id: uuidSchema,
+    tripId: uuidSchema,
+    scope: z.literal("TRIP"),
+    isDefault: z.literal(true),
+  }).strict(),
+});
+
+// Activate mirrors `createTripSchema` (the full brief validation) so the only
+// way out of DRAFT is a structurally complete brief.
+export const tripActivationRequestSchema = z.object({
+  departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(2).max(5),
+  travelDateStart: dateStr.nullable().optional(),
+  travelDateEnd: dateStr.nullable().optional(),
+  titleLocale: z.enum(["en", "zh"]),
+}).strict();
+
+export const updateTripTitleRequestSchema = z.object({
+  name: z.string().trim().min(1).max(256),
+}).strict();
+
+export const updateTripTitleResponseSchema = z.object({
+  trip: z.object({
+    id: uuidSchema,
+    name: z.string(),
+    nameSource: z.literal("MANUAL"),
+    titleLocale: z.null(),
+    updatedAt: z.string().datetime(),
+  }).strict(),
+});
+
+export const tripActivationResponseSchema = z.object({
+  trip: z.object({
+    id: uuidSchema,
+    name: z.string(),
+    status: z.literal("PLANNING"),
+    departureCities: z.array(z.string()),
+    destinationCandidates: z.array(z.string()),
+    travelDateStart: dateStr.nullable(),
+    travelDateEnd: dateStr.nullable(),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
   }).strict(),
 });
 

@@ -4,6 +4,7 @@ import type { Map as MapLibreMap } from "maplibre-gl";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { isCoordinateOnVisibleHemisphere } from "./country-boundary-overlay";
+import { globeClipFrom, screenRectIsInsideGlobe } from "./globe-visibility";
 import type { GeographyVisibility } from "./map-geography-layers";
 import { CITY_SELECTION_MIN_ZOOM, REGION_SELECTION_MIN_ZOOM } from "./pin-selection";
 
@@ -20,6 +21,7 @@ export type GeographyLabel = {
 type PlaceFeature = GeoJSON.Feature<GeoJSON.Point>;
 
 export const GEOGRAPHY_LABEL_DATA_URL = "/map-data/geography-labels.geojson";
+const LABEL_HORIZON_INSET = 0.08;
 
 export function geographyLabelsFromFeatures(
   features: PlaceFeature[],
@@ -62,6 +64,8 @@ export function GeographyLabelOverlay({
   // frame, so they visibly slid behind the terrain while the map was moving.
   const [candidates, setCandidates] = useState<GeographyLabel[]>([]);
   const svgRef = useRef<SVGSVGElement>(null);
+  const globeClipPathRef = useRef<SVGPathElement>(null);
+  const labelGroupRef = useRef<SVGGElement>(null);
   const nodesRef = useRef(new Map<string, LabelNode>());
   const membershipRef = useRef("");
   const candidateCacheRef = useRef<{ key: string; labels: GeographyLabel[] } | null>(null);
@@ -88,6 +92,13 @@ export function GeographyLabelOverlay({
       const container = map.getContainer();
       const center = map.getCenter();
       const zoom = map.getZoom();
+      const globeClip = globeClipFrom(map);
+      globeClipPathRef.current?.setAttribute("d", globeClip?.path ?? "");
+      if (labelGroupRef.current) labelGroupRef.current.style.display = globeClip ? "" : "none";
+      if (!globeClip) {
+        for (const node of nodesRef.current.values()) node.group.style.display = "none";
+        return;
+      }
 
       // The candidate set depends on zoom, locale and layer visibility but not
       // on the centre, so panning reuses it instead of rebuilding every frame.
@@ -116,7 +127,7 @@ export function GeographyLabelOverlay({
         if (!node) continue;
 
         const fontSize = labelFontSize(candidate.kind, zoom);
-        let visible = isCoordinateOnVisibleHemisphere(candidate.coordinates, [center.lng, center.lat]);
+        let visible = isCoordinateOnVisibleHemisphere(candidate.coordinates, [center.lng, center.lat], LABEL_HORIZON_INSET);
         let point = { x: 0, y: 0 };
         if (visible) {
           point = map.project(candidate.coordinates);
@@ -128,6 +139,7 @@ export function GeographyLabelOverlay({
             bottom: point.y + fontSize * 0.55 + 4,
           };
           if (bounds.right < 0 || bounds.left > container.clientWidth || bounds.bottom < 0 || bounds.top > container.clientHeight) visible = false;
+          else if (!screenRectIsInsideGlobe(bounds, globeClip)) visible = false;
           else if (occupied.some((existing) => intersects(existing, bounds))) visible = false;
           else occupied.push(bounds);
         }
@@ -185,33 +197,36 @@ export function GeographyLabelOverlay({
       className="pointer-events-none absolute inset-0 z-[4] size-full overflow-hidden"
       viewBox={`0 0 ${map.getContainer().clientWidth || 1} ${map.getContainer().clientHeight || 1}`}
     >
-      {candidates.map((label) => (
-        <g
-          key={label.key}
-          data-label-kind={label.kind}
-          data-label-key={label.key}
-          style={{ display: "none" }}
-          ref={(element) => {
-            if (element) nodesRef.current.set(label.key, { group: element, dot: element.querySelector("circle") });
-            else nodesRef.current.delete(label.key);
-          }}
-        >
-          {label.kind === "capital" ? <circle r="2.2" fill="#f4a340" stroke="#fffdf9" strokeWidth="1.2" /> : null}
-          <text
-            textAnchor="middle"
-            dominantBaseline="central"
-            fill="#073d50"
-            fillOpacity={label.kind === "continent" ? 0.72 : 0.96}
-            stroke="#fffdf9"
-            strokeOpacity="0.94"
-            strokeWidth={label.kind === "continent" ? 4 : 3}
-            strokeLinejoin="round"
-            style={{ fontSize: "inherit", fontWeight: label.kind === "city" || label.kind === "region" ? 700 : 800, letterSpacing: label.kind === "continent" ? "0.08em" : undefined, paintOrder: "stroke" }}
+      <defs><clipPath id="wanderly-globe-clip-labels"><path ref={globeClipPathRef} /></clipPath></defs>
+      <g ref={labelGroupRef} clipPath="url(#wanderly-globe-clip-labels)">
+        {candidates.map((label) => (
+          <g
+            key={label.key}
+            data-label-kind={label.kind}
+            data-label-key={label.key}
+            style={{ display: "none" }}
+            ref={(element) => {
+              if (element) nodesRef.current.set(label.key, { group: element, dot: element.querySelector("circle") });
+              else nodesRef.current.delete(label.key);
+            }}
           >
-            {label.name}
-          </text>
-        </g>
-      ))}
+            {label.kind === "capital" ? <circle r="2.2" fill="#f4a340" stroke="#fffdf9" strokeWidth="1.2" /> : null}
+            <text
+              textAnchor="middle"
+              dominantBaseline="central"
+              fill="#073d50"
+              fillOpacity={label.kind === "continent" ? 0.72 : 0.96}
+              stroke="#fffdf9"
+              strokeOpacity="0.94"
+              strokeWidth={label.kind === "continent" ? 4 : 3}
+              strokeLinejoin="round"
+              style={{ fontSize: "inherit", fontWeight: label.kind === "city" || label.kind === "region" ? 700 : 800, letterSpacing: label.kind === "continent" ? "0.08em" : undefined, paintOrder: "stroke" }}
+            >
+              {label.name}
+            </text>
+          </g>
+        ))}
+      </g>
     </svg>
   );
 }
