@@ -235,3 +235,9 @@ map.once("style.load", () => {
 初版将 `GEBCO_MIN_ZOOM` 调整为 4.5，虽消除了默认 WMS 请求，但 Natural Earth 的浅色海面不足以维持地球视觉质量，不能作为可接受方案。
 
 随后视觉复核发现先前 `GEBCO` 在 5.5 后淡出为 0，同时 Liberty `natural_earth` layer 的 `maxzoom: 7` 也会移除唯一的 raster fallback；加上水层 0.16 opacity，导致高 zoom 露出蓝底、低 zoom 呈现浅色/方块感。现已取消 GEBCO 的淡出、将其 source 最大层级设为 6 并允许 overzoom；同时移除 Natural Earth layer 的 `maxzoom`，并将 vector water opacity 设为 1。GEBCO 恢复为默认视角的渐进增强，但以 1024 逻辑 tile size 限制 WMS 请求扇出；其 opacity 固定为 1，避免默认相机恰好落在渐变起点而让已加载的 relief 保持透明。这样公共 WMS 不会阻塞 fallback，任何缩放层级也保留连续的地表和海面。
+
+## 13. 2026-08-27 SVG 覆盖层地平线穿透修复
+
+国界和地名是位于 WebGL globe 之上的 SVG，不受 MapLibre 的 globe stencil 裁剪。此前国界仅按顶点前/后半球切线、地名仅按锚点前半球判断；两者都只被页面矩形裁剪。因此接近地平线的文字可伸出球外，复杂线段也可能在边缘露出。
+
+现通过共享的 `globe-visibility.ts` 按相机中心每帧采样大圆地平线并投影为 SVG `clipPath`。国界与九段线统一放入该裁剪组；地名额外采用 0.08 的前半球安全余量，并要求完整文字包围框均在轮廓中。轮廓无效时两个覆盖层 fail-closed 隐藏。此实现不创建 React 位置 state、不增加网络请求，也不记录位置数据。

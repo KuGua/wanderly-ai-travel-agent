@@ -82,6 +82,7 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     }),
     startExploration: vi.fn(),
     activateTrip: vi.fn(),
+    updateTripTitle: vi.fn(),
     ...overrides,
   };
 }
@@ -140,6 +141,20 @@ describe("TripWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /Create thread/ }));
 
     await waitFor(() => expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { title: "Hotel ideas" }));
+  });
+
+  it("lets the creator set a manual title", async () => {
+    const updateTripTitle = vi.fn().mockResolvedValue({
+      trip: { id: TRIP_ID, name: "Autumn escape", nameSource: "MANUAL", titleLocale: null, updatedAt: "2026-08-22T10:00:00.000Z" },
+    });
+    const api = createApi({ updateTripTitle, getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }) });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    fireEvent.click(await screen.findByRole("button", { name: /Rename/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Trip title/ }), { target: { value: "Autumn escape" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateTripTitle).toHaveBeenCalledWith(TRIP_ID, { name: "Autumn escape" }));
   });
 
   it("shows a generic membership-revoked error on 403/410 from the trip detail", async () => {

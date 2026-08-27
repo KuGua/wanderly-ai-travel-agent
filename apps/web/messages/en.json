@@ -292,7 +292,7 @@
     "errors": {
       "membershipRevoked": "You no longer have access to this trip."
     },
-    "header": {
+      "header": {
       "status": "Status",
       "statusValue": {
         "DRAFT": "Draft",
@@ -306,13 +306,20 @@
       "datesRange": "{start} – {end}",
       "datesUnknown": "Dates not set",
       "destinations": "Candidate destinations",
-      "members": "{count, plural, =0 {No members yet} =1 {1 member} other {# members}}"
-    },
-    "draft": {
+        "members": "{count, plural, =0 {No members yet} =1 {1 member} other {# members}}"
+      },
+      "title": {
+        "edit": "Rename",
+        "editLabel": "Trip title",
+        "save": "Save",
+        "cancel": "Cancel"
+      },
+      "draft": {
       "kicker": "Draft exploration",
       "body": "Your private conversation is saved. Add a brief, then activate the trip to invite co-travelers.",
       "formAriaLabel": "Activate draft trip",
-      "nameLabel": "Trip name",
+        "titlePreviewLabel": "Trip title preview",
+        "titlePreviewHint": "Generated only from the destinations and dates below; it never uses your chat history.",
       "departureLabel": "Departure cities (1–3)",
       "departurePlaceholder": "Add a departure city and press Enter",
       "candidatesLabel": "Candidate destinations (2–5)",

@@ -673,6 +673,7 @@ function createTravelApiForAutoAsk(): TravelApi & {
       },
     }),
     activateTrip: vi.fn(),
+    updateTripTitle: vi.fn(),
   };
 }
 

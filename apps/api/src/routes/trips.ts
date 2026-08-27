@@ -9,12 +9,15 @@ import {
   toJsonSchema,
   tripActivationRequestSchema,
   tripActivationResponseSchema,
+  updateTripTitleRequestSchema,
+  updateTripTitleResponseSchema,
   tripDetailsResponseSchema,
   tripsResponseSchema,
   type LatestPlan,
   type NextAction,
   type ProjectDisplayState,
 } from "../types/schemas.js";
+import { buildTripTitle, isValidTripDate } from "../services/trip-title-service.js";
 import { createRequestContext } from "../utils/context.js";
 import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
@@ -258,6 +261,17 @@ export async function tripRoutes(app: FastifyInstance) {
       request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
     const body = tripActivationRequestSchema.parse(request.body);
+    if ((body.travelDateStart && !isValidTripDate(body.travelDateStart))
+      || (body.travelDateEnd && !isValidTripDate(body.travelDateEnd))
+      || (body.travelDateStart && body.travelDateEnd && body.travelDateEnd < body.travelDateStart)) {
+      throw new ApiError(400, "Bad Request", "Travel dates must be valid calendar dates with an end date on or after the start date");
+    }
+    const generatedTitle = buildTripTitle({
+      destinationCandidates: body.destinationCandidates,
+      travelDateStart: body.travelDateStart,
+      travelDateEnd: body.travelDateEnd,
+      locale: body.titleLocale,
+    });
 
     await db.transaction(async (tx) => {
       const [trip] = await tx.select().from(sharedTrips)
@@ -282,7 +296,9 @@ export async function tripRoutes(app: FastifyInstance) {
       }
 
       await tx.update(sharedTrips).set({
-        name: body.name,
+        name: generatedTitle,
+        nameSource: "AUTO",
+        titleLocale: body.titleLocale,
         departureCities: body.departureCities,
         destinationCandidates: body.destinationCandidates,
         travelDateStart: body.travelDateStart ?? null,
@@ -326,6 +342,57 @@ export async function tripRoutes(app: FastifyInstance) {
         updatedAt: trip.updatedAt.toISOString(),
       },
     }));
+  });
+
+  app.patch("/trips/:tripId/title", {
+    schema: {
+      description: "Set a creator-managed trip title. This never reads chat history or calls an LLM.",
+      tags: ["trips"],
+      params: toJsonSchema(tripIdParamSchema),
+      body: toJsonSchema(updateTripTitleRequestSchema),
+      response: {
+        200: toJsonSchema(updateTripTitleResponseSchema),
+        403: toJsonSchema(errorResponseSchema),
+        404: toJsonSchema(errorResponseSchema),
+      },
+    },
+  }, async (request) => {
+    const { tripId } = tripIdParamSchema.parse(request.params);
+    const body = updateTripTitleRequestSchema.parse(request.body);
+    const ctx = createRequestContext(
+      request.user.id, request.correlationId, request.traceId,
+      request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
+    );
+
+    const updatedAt = await db.transaction(async (tx) => {
+      const [trip] = await tx.select().from(sharedTrips)
+        .where(eq(sharedTrips.id, tripId)).for("update").limit(1);
+      if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
+      if (trip.createdBy !== request.user.id) {
+        throw new ApiError(403, "Forbidden", "Only the creator may rename the trip");
+      }
+
+      const now = new Date();
+      await tx.update(sharedTrips).set({
+        name: body.name,
+        nameSource: "MANUAL",
+        titleLocale: null,
+        updatedAt: now,
+      }).where(eq(sharedTrips.id, tripId));
+      await recordAudit({
+        ctx,
+        action: "TRIP_TITLE_UPDATE",
+        actorUserId: request.user.id,
+        tripId,
+        summary: { source: "manual" },
+        tx,
+      });
+      return now;
+    });
+
+    return updateTripTitleResponseSchema.parse({
+      trip: { id: tripId, name: body.name, nameSource: "MANUAL", titleLocale: null, updatedAt: updatedAt.toISOString() },
+    });
   });
 
   // Get trip details

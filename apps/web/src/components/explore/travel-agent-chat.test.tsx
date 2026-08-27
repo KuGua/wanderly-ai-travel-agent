@@ -87,6 +87,7 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     }),
     startExploration: vi.fn(),
     activateTrip: vi.fn(),
+    updateTripTitle: vi.fn(),
     ...overrides,
   };
 }

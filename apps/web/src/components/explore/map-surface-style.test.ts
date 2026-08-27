@@ -47,7 +47,7 @@ describe("solidifyGlobeStyle", () => {
       type: "raster",
       source: GEBCO_SOURCE_ID,
       paint: {
-        "raster-opacity": 1,
+        "raster-opacity": ["interpolate", ["linear"], ["zoom"], 2.25, 1, 6, 1],
       },
     });
     expect(result.layers[3]).toMatchObject({

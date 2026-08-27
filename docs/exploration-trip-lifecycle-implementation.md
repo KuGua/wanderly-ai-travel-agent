@@ -107,7 +107,7 @@ DRAFT | PLANNING | CONFIRMED | BOOKED | CANCELLED | STALE
 
 ```json
 {
-  "trip": { "id": "uuid", "name": "Untitled exploration", "status": "DRAFT", "departureCities": [], "destinationCandidates": [], "travelDateStart": null, "travelDateEnd": null },
+  "trip": { "id": "uuid", "name": "Trip Planner", "status": "DRAFT", "departureCities": [], "destinationCandidates": [], "travelDateStart": null, "travelDateEnd": null },
   "defaultThread": { "id": "uuid", "tripId": "uuid", "scope": "TRIP", "isDefault": true }
 }
 ```

@@ -33,7 +33,7 @@ EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- DRAFT 默认标题占位（仅展示用途，无 PII）
 INSERT INTO shared_trips (id, name, created_by, status, departure_cities, destination_candidates)
-SELECT gen_random_uuid(), 'Untitled exploration', u.id, 'DRAFT', '[]'::jsonb, '[]'::jsonb
+SELECT gen_random_uuid(), 'Trip Planner', u.id, 'DRAFT', '[]'::jsonb, '[]'::jsonb
 FROM users u WHERE FALSE; -- 仅占位说明，运行时由 service 写入
 
 -- 触发器：除 activate 路径外，DRAFT 不允许离开 DRAFT；activate 由 service 显式控制，
@@ -129,7 +129,7 @@ export async function startExploration(params: {
 
     // 2. 单事务写 shared_trips(DRAFT) / trip_members(CREATOR) / chat_threads(default)
     const [trip] = await tx.insert(sharedTrips).values({
-      name: "Untitled exploration",
+      name: "Trip Planner",
       createdBy: params.userId,
       status: "DRAFT",
       departureCities: [],
@@ -147,7 +147,7 @@ export async function startExploration(params: {
       tripId: trip.id,
       scope: "TRIP",
       isDefault: true,
-      title: "Untitled exploration",
+      title: "Trip Planner",
     }).returning();
 
     await recordAudit({ ctx, action: "EXPLORATION_START",
@@ -376,7 +376,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
 explore.session.error.start: "Couldn't start a new exploration. Please retry."
 explore.session.error.idempotencyConflict: "An exploration is already in progress for this tab."
 explore.session.startNew: "Start a new exploration"
-trip.draft.title: "Untitled exploration"
+trip.draft.title: "Trip Planner"
 trip.draft.activateCta: "Start planning / Invite co-travelers"
 trip.draft.activateHint: "Add at least one departure city and 2–5 candidate destinations to continue."
 trip.draft.empty: "No draft — start a new exploration from the home map."
@@ -474,7 +474,7 @@ Pino redaction：
 | 刷新语义错误 | Provider 严格 in-memory；禁止任何持久化；测试断言 `localStorage`/`sessionStorage` 写入次数为 0。 |
 | 状态绕过 | 每条协作 route/service 调用 `requireActiveTrip`；数据库触发器兜底；新增 `draft-guard.test.ts` 全量覆盖。 |
 | 空数组泄漏到 planning | Draft 允许 `[]`；activate 通过 Zod schema 校验非空；既有 `POST /trips` 校验保留。 |
-| 隐私泄露 | 默认 trip 名 `Untitled exploration`；start/activate DTO 与 audit 不携带正文 / place / profile；测试断言 schema `.strict()`。 |
+| 隐私泄露 | 默认 trip 名 `Trip Planner`；start/activate DTO 与 audit 不携带正文 / place / profile；测试断言 schema `.strict()`。 |
 
 ## 6. 验证清单（实施完成后）
 

@@ -486,12 +486,26 @@ export const explorationStartResponseSchema = z.object({
 // Activate mirrors `createTripSchema` (the full brief validation) so the only
 // way out of DRAFT is a structurally complete brief.
 export const tripActivationRequestSchema = z.object({
-  name: z.string().trim().min(1).max(256),
   departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3),
   destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(2).max(5),
   travelDateStart: dateStr.nullable().optional(),
   travelDateEnd: dateStr.nullable().optional(),
+  titleLocale: z.enum(["en", "zh"]),
 }).strict();
+
+export const updateTripTitleRequestSchema = z.object({
+  name: z.string().trim().min(1).max(256),
+}).strict();
+
+export const updateTripTitleResponseSchema = z.object({
+  trip: z.object({
+    id: uuidSchema,
+    name: z.string(),
+    nameSource: z.literal("MANUAL"),
+    titleLocale: z.null(),
+    updatedAt: z.string().datetime(),
+  }).strict(),
+});
 
 export const tripActivationResponseSchema = z.object({
   trip: z.object({

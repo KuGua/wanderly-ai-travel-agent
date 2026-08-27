@@ -145,6 +145,18 @@ export function useActivateTrip(tripId: string) {
   });
 }
 
+export function useUpdateTripTitle(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: import("../api/contracts").UpdateTripTitleInput) => api.updateTripTitle(tripId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.all });
+      void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
 function mergeConversationMessages(
   current: OwnerConversationResponse["messages"],
   incoming: OwnerConversationResponse["messages"],

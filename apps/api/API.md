@@ -98,7 +98,7 @@ booking/visa conclusion.
 {
   "trip": {
     "id": "uuid",
-    "name": "Untitled exploration",
+    "name": "Trip Planner",
     "status": "DRAFT",
     "departureCities": [],
     "destinationCandidates": [],
@@ -307,11 +307,11 @@ accepted invitation provisions that member's own default private thread.
 **Body**:
 ```json
 {
-  "name": "Asia Trip 2026",
   "departureCities": ["San Francisco", "Shanghai"],
   "destinationCandidates": ["Tokyo", "Bangkok", "Seoul"],
   "travelDateStart": "2026-10-01",
-  "travelDateEnd": "2026-10-10"
+  "travelDateEnd": "2026-10-10",
+  "titleLocale": "en"
 }
 ```
 
@@ -320,7 +320,7 @@ accepted invitation provisions that member's own default private thread.
 {
   "trip": {
     "id": "uuid",
-    "name": "Asia Trip 2026",
+    "name": "Tokyo · Bangkok · Seoul Trip Planner｜10 Days",
     "status": "PLANNING",
     "departureCities": ["San Francisco", "Shanghai"],
     "destinationCandidates": ["Tokyo", "Bangkok", "Seoul"],
@@ -336,6 +336,12 @@ accepted invitation provisions that member's own default private thread.
 - `403 Forbidden` — caller is not the creator.
 - `404 Not Found` — no trip with that id.
 - `409 Conflict` (`TRIP_NOT_DRAFT`) — trip is not in `DRAFT` status.
+
+The server derives the title only from the explicit destinations, complete date
+range and `titleLocale`; it does not read private conversation history or call
+an LLM. Dates are counted inclusively. `PATCH /trips/:tripId/title` lets only
+the creator set a manual title; the audit record contains only `source: manual`
+and never the title text.
 
 ### `GET /trips/:tripId`
 Get trip details (members only).

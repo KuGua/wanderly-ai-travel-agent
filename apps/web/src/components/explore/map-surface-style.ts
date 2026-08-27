@@ -32,7 +32,15 @@ export const GEBCO_TILE_SIZE = 1024;
 
 const RELIEF_RASTER_OPACITY: ExpressionSpecification = ["interpolate", ["linear"], ["zoom"], 0, 0.78, 3, 0.7, 6, 0.5];
 
-const GEBCO_RASTER_OPACITY: ExpressionSpecification = 1;
+const GEBCO_RASTER_OPACITY: ExpressionSpecification = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  GEBCO_MIN_ZOOM,
+  1,
+  GEBCO_MAX_ZOOM,
+  1,
+];
 
 /**
  * Adds GEBCO's opaque global relief below OpenFreeMap's vector details. The

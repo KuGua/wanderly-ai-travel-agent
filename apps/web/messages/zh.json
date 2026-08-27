@@ -292,7 +292,7 @@
     "errors": {
       "membershipRevoked": "你已无法访问此行程。"
     },
-    "header": {
+      "header": {
       "status": "状态",
       "statusValue": {
         "DRAFT": "草稿",
@@ -306,13 +306,20 @@
       "datesRange": "{start} – {end}",
       "datesUnknown": "尚未设置",
       "destinations": "候选目的地",
-      "members": "{count, plural, =0 {暂无成员} other {# 位成员}}"
-    },
-    "draft": {
+        "members": "{count, plural, =0 {暂无成员} other {# 位成员}}"
+      },
+      "title": {
+        "edit": "重命名",
+        "editLabel": "行程标题",
+        "save": "保存",
+        "cancel": "取消"
+      },
+      "draft": {
       "kicker": "草稿探索",
       "body": "你的私有对话已保存。填写简报并激活后即可邀请同行者。",
       "formAriaLabel": "激活草稿行程",
-      "nameLabel": "行程名称",
+        "titlePreviewLabel": "行程标题预览",
+        "titlePreviewHint": "标题仅根据下方目的地和日期生成，绝不会使用聊天记录。",
       "departureLabel": "出发地 (1–3)",
       "departurePlaceholder": "输入出发地后回车",
       "candidatesLabel": "候选目的地 (2–5)",

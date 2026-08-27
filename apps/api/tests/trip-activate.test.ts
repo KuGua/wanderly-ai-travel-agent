@@ -63,11 +63,11 @@ async function createDraftFor(userId: string, externalId: "alice" | "bob"): Prom
 }
 
 const validBrief = {
-  name: "Asia Trip",
   departureCities: ["San Francisco", "Shanghai"],
   destinationCandidates: ["Tokyo", "Bangkok"],
   travelDateStart: "2026-10-01",
   travelDateEnd: "2026-10-10",
+  titleLocale: "en" as const,
 };
 
 describe("Trip activation", () => {
@@ -83,7 +83,7 @@ describe("Trip activation", () => {
     expect(res.statusCode).toBe(200);
     const body = res.json();
     expect(body.trip.status).toBe("PLANNING");
-    expect(body.trip.name).toBe(validBrief.name);
+    expect(body.trip.name).toBe("Tokyo · Bangkok Trip Planner｜10 Days");
     expect(body.trip.departureCities).toEqual(validBrief.departureCities);
     expect(body.trip.destinationCandidates).toEqual(validBrief.destinationCandidates);
     expect(body.trip.travelDateStart).toBe(validBrief.travelDateStart);
@@ -121,9 +121,9 @@ describe("Trip activation", () => {
       url: `/api/v1/trips/${draftId}/activate`,
       headers: authHeaders("alice"),
       payload: {
-        name: "X",
         departureCities: [],
         destinationCandidates: ["Tokyo", "Bangkok"],
+        titleLocale: "en",
       },
     });
     expect(res.statusCode).toBe(400);
@@ -131,6 +131,43 @@ describe("Trip activation", () => {
     const [persisted] = await db.select().from(sharedTrips)
       .where(eq(sharedTrips.id, draftId)).limit(1);
     expect(persisted.status).toBe("DRAFT");
+  });
+
+  it("rejects invalid or reverse date ranges rather than deriving a title from them", async () => {
+    const draftId = await createDraftFor(aliceId, "alice");
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/activate`,
+      headers: authHeaders("alice"),
+      payload: { ...validBrief, travelDateStart: "2026-10-10", travelDateEnd: "2026-10-01" },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("allows only the creator to replace an automatic title manually and records no title text in audit", async () => {
+    const draftId = await createDraftFor(aliceId, "alice");
+    await app.inject({
+      method: "POST", url: `/api/v1/trips/${draftId}/activate`, headers: authHeaders("alice"), payload: validBrief,
+    });
+
+    const forbidden = await app.inject({
+      method: "PATCH", url: `/api/v1/trips/${draftId}/title`, headers: authHeaders("bob"), payload: { name: "Bob title" },
+    });
+    expect(forbidden.statusCode).toBe(403);
+
+    const renamed = await app.inject({
+      method: "PATCH", url: `/api/v1/trips/${draftId}/title`, headers: authHeaders("alice"), payload: { name: "Friends' escape" },
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json().trip).toMatchObject({ name: "Friends' escape", nameSource: "MANUAL", titleLocale: null });
+
+    const [persisted] = await db.select().from(sharedTrips).where(eq(sharedTrips.id, draftId)).limit(1);
+    expect(persisted.nameSource).toBe("MANUAL");
+    expect(persisted.titleLocale).toBeNull();
+    const titleAudit = (await db.select().from(auditEvents).where(eq(auditEvents.tripId, draftId)))
+      .find((event) => event.action === "TRIP_TITLE_UPDATE");
+    expect(titleAudit?.summary).toEqual({ source: "manual" });
+    expect(JSON.stringify(titleAudit?.summary)).not.toContain("Friends' escape");
   });
 
   it("rejects a trip that is not in DRAFT with 409", async () => {

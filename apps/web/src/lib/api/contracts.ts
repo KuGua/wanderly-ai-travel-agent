@@ -248,11 +248,11 @@ export const explorationStartResponseSchema = z.object({
 // must satisfy the same constraints as `POST /trips` (at least one
 // departure city, two to five destinations).
 export const tripActivationRequestSchema = z.object({
-  name: z.string().trim().min(1).max(256),
   departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3),
   destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(2).max(5),
   travelDateStart: dateSchema.nullable().optional(),
   travelDateEnd: dateSchema.nullable().optional(),
+  titleLocale: z.enum(["en", "zh"]),
 }).strict();
 
 export const tripActivationResponseSchema = z.object({
@@ -266,6 +266,13 @@ export const tripActivationResponseSchema = z.object({
     travelDateEnd: dateSchema.nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
+  }).strict(),
+});
+
+export const updateTripTitleInputSchema = z.object({ name: z.string().trim().min(1).max(256) }).strict();
+export const updateTripTitleResponseSchema = z.object({
+  trip: z.object({
+    id: z.string().uuid(), name: z.string(), nameSource: z.literal("MANUAL"), titleLocale: z.null(), updatedAt: z.string().datetime(),
   }).strict(),
 });
 
@@ -309,6 +316,8 @@ export type ExplorationStartRequest = z.infer<typeof explorationStartRequestSche
 export type ExplorationStartResponse = z.infer<typeof explorationStartResponseSchema>;
 export type TripActivationRequest = z.infer<typeof tripActivationRequestSchema>;
 export type TripActivationResponse = z.infer<typeof tripActivationResponseSchema>;
+export type UpdateTripTitleInput = z.infer<typeof updateTripTitleInputSchema>;
+export type UpdateTripTitleResponse = z.infer<typeof updateTripTitleResponseSchema>;
 export type Thread = z.infer<typeof threadSchema>;
 export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
 export type CreateTripThreadInput = z.infer<typeof createTripThreadInputSchema>;

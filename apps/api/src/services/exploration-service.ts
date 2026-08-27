@@ -83,7 +83,9 @@ export async function startExploration(params: {
     }
 
     const [trip] = await tx.insert(sharedTrips).values({
-      name: "Untitled exploration",
+      name: "Trip Planner",
+      nameSource: "AUTO",
+      titleLocale: "en",
       createdBy: params.userId,
       status: "DRAFT",
       departureCities: [],
@@ -104,7 +106,7 @@ export async function startExploration(params: {
       tripId: trip.id,
       scope: "TRIP",
       isDefault: true,
-      title: "Untitled exploration",
+      title: "Trip Planner",
     }).returning();
 
     await recordAudit({

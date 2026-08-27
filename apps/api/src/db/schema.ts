@@ -32,7 +32,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "CHAT_THREAD_CREATE", "CHAT_THREAD_DELETE", "CHAT_MESSAGE_APPEND",
   "TRIP_INVITATION_CREATE", "TRIP_INVITATION_ACCEPT",
   "TRIP_INVITATION_REVOKE", "TRIP_DEFAULT_THREAD_PROVISION",
-  "EXPLORATION_START", "TRIP_ACTIVATE",
+  "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
 ]);
 
@@ -95,6 +95,8 @@ export const preferenceFacts = pgTable("preference_facts", {
 export const sharedTrips = pgTable("shared_trips", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 256 }).notNull(),
+  nameSource: varchar("name_source", { length: 16 }).$type<"AUTO" | "MANUAL">().default("MANUAL").notNull(),
+  titleLocale: varchar("title_locale", { length: 8 }).$type<"en" | "zh" | null>(),
   createdBy: uuid("created_by").references(() => users.id).notNull(),
   status: tripStatusEnum("status").default("PLANNING").notNull(),
   departureCities: jsonb("departure_cities").$type<string[]>().notNull(),   // ["Shanghai","San Francisco"]

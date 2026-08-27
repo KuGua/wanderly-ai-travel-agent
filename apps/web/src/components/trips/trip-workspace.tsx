@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, ListChecks, MapPinned, MessageSquarePlus, Pin, Plus } from "lucide-react";
+import { CalendarDays, ListChecks, MapPinned, MessageSquarePlus, Pencil, Pin, Plus } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,8 +14,10 @@ import {
   useGetOrCreateDefaultTripThread,
   useTrip,
   useTripThreads,
+  useUpdateTripTitle,
 } from "@/lib/query/hooks";
 import { TravelApiError } from "@/lib/api/errors";
+import { buildTripTitlePreview } from "@/lib/trips/trip-title";
 
 const DEFAULT_THREAD_QUERY = "thread";
 
@@ -37,6 +39,9 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const threadsQuery = useTripThreads(tripId);
   const createThread = useCreateTripThread(tripId);
   const ensureDefault = useGetOrCreateDefaultTripThread(tripId);
+  const updateTitle = useUpdateTripTitle(tripId);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [manualTitle, setManualTitle] = useState("");
 
   const autoProvisionAttemptedRef = useRef(false);
 
@@ -150,7 +155,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   }
 
   if (trip.status === "DRAFT") {
-    return <DraftTripWorkspace tripId={tripId} tripName={trip.name} />;
+    return <DraftTripWorkspace tripId={tripId} />;
   }
 
   return (
@@ -158,7 +163,30 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       <header className="flex flex-wrap items-start justify-between gap-6">
         <div>
           <p className="text-[11px] font-black uppercase tracking-[0.11em] text-primary">{t("kicker")}</p>
-          <h1 className="mt-2 text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">{trip.name}</h1>
+          {editingTitle ? (
+            <form
+              className="mt-2 flex flex-wrap items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                const name = manualTitle.trim();
+                if (!name) return;
+                void updateTitle.mutateAsync({ name }).then(() => setEditingTitle(false));
+              }}
+            >
+              <input aria-label={t("title.editLabel")} autoFocus maxLength={256} value={manualTitle} onChange={(event) => setManualTitle(event.target.value)} className="min-w-[260px] rounded-[12px] border bg-background px-3 py-2 text-xl font-bold tracking-[-0.04em] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30" />
+              <button type="submit" disabled={updateTitle.isPending} className="rounded-[10px] bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">{t("title.save")}</button>
+              <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[10px] px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-secondary">{t("title.cancel")}</button>
+            </form>
+          ) : (
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <h1 className="text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">{trip.name}</h1>
+              {trip.role === "CREATOR" ? (
+                <button type="button" onClick={() => { setManualTitle(trip.name); setEditingTitle(true); }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[10px] px-2 text-sm font-bold text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                  <Pencil aria-hidden="true" className="size-3.5" /> {t("title.edit")}
+                </button>
+              ) : null}
+            </div>
+          )}
           <p className="mt-3 max-w-xl text-base text-muted-foreground">{t("body")}</p>
         </div>
         <Link href="/home" className="inline-flex min-h-11 items-center rounded-[14px] px-3 text-sm font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
@@ -297,12 +325,12 @@ function formatDate(locale: string, iso: string): string {
   }
 }
 
-function DraftTripWorkspace({ tripId, tripName }: { tripId: string; tripName: string }) {
+function DraftTripWorkspace({ tripId }: { tripId: string }) {
   const t = useTranslations("trips.draft");
   const tCommon = useTranslations("common");
   const router = useRouter();
+  const locale = useLocale();
   const activate = useActivateTrip(tripId);
-  const [name, setName] = useState(tripName);
   const [departureInput, setDepartureInput] = useState("");
   const [candidateInput, setCandidateInput] = useState("");
   const [departureCities, setDepartureCities] = useState<string[]>([]);
@@ -312,11 +340,17 @@ function DraftTripWorkspace({ tripId, tripName }: { tripId: string; tripName: st
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const canSubmit = useMemo(() => {
-    return name.trim().length > 0
-      && departureCities.length >= 1
+    return departureCities.length >= 1
       && destinationCandidates.length >= 2
       && destinationCandidates.length <= 5;
-  }, [name, departureCities.length, destinationCandidates.length]);
+  }, [departureCities.length, destinationCandidates.length]);
+
+  const titlePreview = useMemo(() => buildTripTitlePreview({
+    destinationCandidates,
+    travelDateStart: travelDateStart || null,
+    travelDateEnd: travelDateEnd || null,
+    locale: locale === "zh" ? "zh" : "en",
+  }), [destinationCandidates, locale, travelDateEnd, travelDateStart]);
 
   const handleAddDeparture = useCallback(() => {
     const value = departureInput.trim();
@@ -346,40 +380,33 @@ function DraftTripWorkspace({ tripId, tripName }: { tripId: string; tripName: st
     setSubmitError(null);
     try {
       await activate.mutateAsync({
-        name: name.trim(),
         departureCities,
         destinationCandidates,
         travelDateStart: travelDateStart || null,
         travelDateEnd: travelDateEnd || null,
+        titleLocale: locale === "zh" ? "zh" : "en",
       });
       router.replace(`/trips/${tripId}` as Parameters<typeof router.replace>[0]);
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : String(error));
     }
-  }, [activate, canSubmit, departureCities, destinationCandidates, name, router, travelDateEnd, travelDateStart, tripId]);
+  }, [activate, canSubmit, departureCities, destinationCandidates, locale, router, travelDateEnd, travelDateStart, tripId]);
 
   return (
     <main className="mx-auto w-full max-w-[860px] px-5 py-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
       <header>
         <p className="text-[11px] font-black uppercase tracking-[0.11em] text-primary">{t("kicker")}</p>
-        <h1 className="mt-2 text-[clamp(2rem,5vw,2.75rem)] font-bold leading-none tracking-[-0.05em]">{tripName}</h1>
+        <h1 className="mt-2 text-[clamp(2rem,5vw,2.75rem)] font-bold leading-none tracking-[-0.05em]">{titlePreview}</h1>
         <p className="mt-3 max-w-xl text-base text-muted-foreground">{t("body")}</p>
       </header>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-6" aria-label={t("formAriaLabel")}>
         <section className="rounded-[22px] border bg-card p-5 shadow-[0_8px_24px_#102a4308]">
-          <label className="flex flex-col gap-2 text-sm font-semibold text-foreground" htmlFor="draft-name">
-            {t("nameLabel")}
-          </label>
-          <input
-            id="draft-name"
-            type="text"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={256}
-            className="mt-2 w-full rounded-[12px] border border-border bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
-            required
-          />
+          <p className="text-sm font-semibold text-foreground">{t("titlePreviewLabel")}</p>
+          <output className="mt-2 block rounded-[12px] border border-dashed border-border bg-secondary/30 px-3 py-2 text-sm font-bold text-foreground">
+            {titlePreview}
+          </output>
+          <p className="mt-2 text-xs text-muted-foreground">{t("titlePreviewHint")}</p>
         </section>
 
         <section className="rounded-[22px] border bg-card p-5 shadow-[0_8px_24px_#102a4308]">
