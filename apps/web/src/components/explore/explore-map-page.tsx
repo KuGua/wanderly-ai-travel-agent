@@ -97,6 +97,16 @@ export function ExploreMapPage() {
   const [autoAskNonce, setAutoAskNonce] = useState(0);
   const [mapNotice, setMapNotice] = useState<string | null>(null);
 
+  useEffect(() => {
+    inspirationMarkersRef.current.forEach((marker, id) => {
+      const button = marker.getElement().querySelector<HTMLButtonElement>("button");
+      if (!button) return;
+      const isSelected = selected?.id === id;
+      button.classList.toggle("wanderly-map-marker--selected", isSelected);
+      button.setAttribute("aria-pressed", String(isSelected));
+    });
+  }, [selected]);
+
   const showMapNotice = useCallback((message: string) => {
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
     setMapNotice(message);
@@ -159,7 +169,7 @@ export function ExploreMapPage() {
       const markerButton = inspirationMarkersRef.current.get(inspiration.id)?.getElement().querySelector("button");
       inspirationMarkersRef.current.get(inspiration.id)?.setLngLat(next.coordinates);
       if (markerButton) {
-        markerButton.textContent = next.name;
+        markerButton.querySelector("span")!.textContent = next.name;
         markerButton.setAttribute("aria-label", t("markerOpenAria", { name: next.name }));
       }
     } catch {
@@ -930,7 +940,10 @@ function markerElement(label: string) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "wanderly-map-marker wanderly-map-marker--inspiration";
-  button.innerHTML = `<span>${label}</span>`;
+  button.setAttribute("aria-pressed", "false");
+  const markerLabel = document.createElement("span");
+  markerLabel.textContent = label;
+  button.append(markerLabel);
   anchor.append(button);
 
   return { anchor, button };

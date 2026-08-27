@@ -35,6 +35,11 @@ responsive map interaction.
   subsequent manual map gestures.
 - The former “Explore the world” recommendation card is removed so it cannot
   overlap the conversation composer; named markers remain available on-map.
+- Private inspiration markers use a compact circular pin with a white center,
+  pointed map anchor and on-demand label. Hover, keyboard focus and selection
+  reveal the label; the selected pin also changes to the primary map color and
+  gains an amber halo. This state is exposed through `aria-pressed` and all
+  marker motion is disabled for users who prefer reduced motion.
 - Compact map attribution starts as an `i` control. Clicking it expands the map
   sources; clicking it again collapses them.
 - The first submitted question creates one private server thread. Later turns
