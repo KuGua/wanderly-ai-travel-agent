@@ -72,6 +72,7 @@ const mapMock = vi.hoisted(() => {
     movedLayers: [] as string[],
     dynamicLayers: new Set<string>(),
     redrawCalls: 0,
+    zoom: 2.25,
     layoutChanges: [] as Array<{ id: string; visibility: string }>,
     queryResults: [] as Array<{ properties: Record<string, unknown> }>,
     markerButtons: [] as HTMLButtonElement[],
@@ -110,7 +111,7 @@ vi.mock("maplibre-gl", () => {
       mapMock.easeCalls.push(options);
     }
     getCenter() { return { lng: 103.8198, lat: 1.3521 }; }
-    getZoom() { return 2.25; }
+    getZoom() { return mapMock.zoom; }
     addLayer(layer: { id: string }) {
       mapMock.layers.push(layer.id);
       mapMock.dynamicLayers.add(layer.id);
@@ -202,6 +203,7 @@ describe("ExploreMapPage private inspirations", () => {
     mapMock.movedLayers.length = 0;
     mapMock.dynamicLayers.clear();
     mapMock.redrawCalls = 0;
+    mapMock.zoom = 2.25;
     mapMock.layoutChanges.length = 0;
     mapMock.queryResults.length = 0;
     mapMock.geography.source = true;
@@ -256,7 +258,8 @@ describe("ExploreMapPage private inspirations", () => {
     expect(mapMock.removedMarkers).toHaveLength(2);
   });
 
-  it("normalizes clicks to the city center and rejects a duplicate city pin", async () => {
+  it("keeps the exact manual coordinate and replaces an earlier pin for the same city", async () => {
+    mapMock.zoom = 6.5;
     const api = createTravelApiForAutoAsk();
     vi.mocked(api.getLocationReference).mockResolvedValue({
       outcome: "REFERENCE",
@@ -279,18 +282,72 @@ describe("ExploreMapPage private inspirations", () => {
       mapMock.handlers.get("click")?.({ lngLat: { lng: -9.139, lat: 38.722 } });
     });
     expect(await screen.findByRole("heading", { name: "Lisbon" })).toBeInTheDocument();
-    expect(mapMock.markerLngLats).toContainEqual([-9.1333, 38.7167]);
+    expect(mapMock.markerLngLats).toContainEqual([-9.139, 38.722]);
 
     act(() => {
       mapMock.handlers.get("click")?.({ lngLat: { lng: -9.18, lat: 38.74 } });
     });
-    expect(await screen.findByText("Lisbon is already pinned.")).toBeInTheDocument();
-    expect(mapMock.removedMarkers).toContain("Pinned place 2");
+    expect(await screen.findByText("Updated the Lisbon pin to your latest click.")).toBeInTheDocument();
+    expect(mapMock.markerLngLats).toContainEqual([-9.18, 38.74]);
+    expect(mapMock.removedMarkers).toContain("Pinned place 1");
     fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
     expect(screen.getByRole("button", { name: "All pins (1)" })).toBeInTheDocument();
   });
 
+  it("replaces a country pin with the latest exact click inside that country", async () => {
+    mapMock.zoom = 2.25;
+    const api = createTravelApiForAutoAsk();
+    vi.mocked(api.getLocationReference).mockResolvedValue(locationReference(
+      "Russia", "RU", "Krasnoyarsk Krai", "RU-KYA", "Krasnoyarsk", [92.8672, 56.0097],
+    ));
+    renderWithIntl(<ExploreMapPage />, { api });
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 82.4, lat: 60.1 } });
+    });
+    expect(await screen.findByRole("heading", { name: "Russia" })).toBeInTheDocument();
+    expect(mapMock.markerLngLats).toContainEqual([82.4, 60.1]);
+
+    act(() => {
+      mapMock.handlers.get("click")?.({ lngLat: { lng: 101.7, lat: 62.3 } });
+    });
+    expect(await screen.findByText("Updated the Russia pin to your latest click.")).toBeInTheDocument();
+    expect(mapMock.markerLngLats).toContainEqual([101.7, 62.3]);
+    expect(mapMock.removedMarkers).toContain("Pinned place 1");
+    fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
+    expect(screen.getByRole("button", { name: "All pins (1)" })).toBeInTheDocument();
+  });
+
+  it("keeps country, province, and city pins as separate fixed selections", async () => {
+    const api = createTravelApiForAutoAsk();
+    vi.mocked(api.getLocationReference).mockResolvedValue(locationReference(
+      "China", "CN", "Zhejiang", "CN-ZJ", "Hangzhou", [120.1551, 30.2741],
+    ));
+    renderWithIntl(<ExploreMapPage />, { api });
+
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    const clickMap = mapMock.handlers.get("click");
+
+    mapMock.zoom = 2.25;
+    act(() => clickMap?.({ lngLat: { lng: 120.2, lat: 30.3 } }));
+    expect(await screen.findByRole("heading", { name: "China" })).toBeInTheDocument();
+
+    mapMock.zoom = 5;
+    act(() => clickMap?.({ lngLat: { lng: 120.25, lat: 30.25 } }));
+    expect(await screen.findByRole("heading", { name: "Zhejiang" })).toBeInTheDocument();
+
+    mapMock.zoom = 7;
+    act(() => clickMap?.({ lngLat: { lng: 120.22, lat: 30.28 } }));
+    expect(await screen.findByRole("heading", { name: "Hangzhou" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
+    expect(screen.getByRole("button", { name: "All pins (3)" })).toBeInTheDocument();
+    expect(mapMock.markerLngLats).toContainEqual([120.22, 30.28]);
+  });
+
   it("retries unavailable clicked cities once and collapses duplicates after the API recovers", async () => {
+    mapMock.zoom = 6.5;
     const api = createTravelApiForAutoAsk();
     const shanghaiReference = {
       outcome: "REFERENCE" as const,
@@ -374,8 +431,10 @@ describe("ExploreMapPage private inspirations", () => {
     expect(camera?.zoom).toBeLessThanOrEqual(2.25);
   });
 
-  it("selects a city label without creating a private inspiration", async () => {
-    renderWithIntl(<ExploreMapPage />);
+  it("uses zoom granularity instead of the label directly under the pointer", async () => {
+    const api = createTravelApiForAutoAsk();
+    vi.mocked(api.getLocationReference).mockResolvedValue(locationReference("China", "CN", "Zhejiang", "CN-ZJ", "Hangzhou", [120.1551, 30.2741]));
+    renderWithIntl(<ExploreMapPage />, { api });
 
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
@@ -386,9 +445,9 @@ describe("ExploreMapPage private inspirations", () => {
       mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 }, point: { x: 10, y: 10 } });
     });
 
-    expect(screen.getByRole("heading", { name: "东京" })).toBeInTheDocument();
-    expect(screen.getByText("Map location")).toBeInTheDocument();
-    expect(screen.queryByText("1 private pin on this map")).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "China" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
+    expect(screen.getByRole("button", { name: "All pins (1)" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Countries" })).toHaveAttribute("aria-pressed", "true");
     expect(mapMock.layoutChanges).toContainEqual({ id: "label_city", visibility: "visible" });
   });
@@ -445,8 +504,9 @@ describe("ExploreMapPage private inspirations", () => {
     expect(screen.getByRole("button", { name: /Ask about Pinned place 1/ })).toBeInTheDocument();
   });
 
-  it("opens chat without persisting or sending when 'View this map location' is clicked", async () => {
+  it("opens chat without persisting or sending when a zoom-selected administrative pin is viewed", async () => {
     const api = createTravelApiForAutoAsk();
+    vi.mocked(api.getLocationReference).mockResolvedValue(locationReference("Japan", "JP", "Tokyo", "JP-13", "Tokyo", [139.692, 35.69]));
     renderWithIntl(<ExploreMapPage />, { api });
 
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
@@ -458,18 +518,20 @@ describe("ExploreMapPage private inspirations", () => {
       mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 }, point: { x: 10, y: 10 } });
     });
 
-    const viewButton = await screen.findByRole("button", { name: /View this map location/i });
+    const viewButton = await screen.findByRole("button", { name: /View this inspiration/i });
     expect(viewButton).toBeInTheDocument();
     fireEvent.click(viewButton);
 
     expect(await screen.findByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
     expect(api.startExploration).not.toHaveBeenCalled();
     expect(api.submitConversationTurn).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /Ask about Tokyo/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Ask about Japan/ })).toBeInTheDocument();
   });
 
   it("keeps country, regional, and city controls available after opening a destination drawer", async () => {
-    renderWithIntl(<ExploreMapPage />);
+    const api = createTravelApiForAutoAsk();
+    vi.mocked(api.getLocationReference).mockResolvedValue(locationReference("Japan", "JP", "Tokyo", "JP-13", "Tokyo", [139.692, 35.69]));
+    renderWithIntl(<ExploreMapPage />, { api });
 
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
@@ -478,7 +540,7 @@ describe("ExploreMapPage private inspirations", () => {
     act(() => {
       mapMock.handlers.get("click")?.({ lngLat: { lng: 139.692, lat: 35.69 }, point: { x: 10, y: 10 } });
     });
-    expect(screen.getByRole("heading", { name: "Tokyo" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Japan" })).toBeInTheDocument();
 
     const countryControl = screen.getByRole("button", { name: "Countries" });
     expect(countryControl).toHaveAttribute("aria-pressed", "true");
@@ -487,6 +549,30 @@ describe("ExploreMapPage private inspirations", () => {
     expect(mapMock.layoutChanges).toContainEqual({ id: "boundary_2", visibility: "none" });
   });
 });
+
+function locationReference(
+  country: string,
+  countryCode: string,
+  admin1: string,
+  admin1Code: string,
+  nearestCity: string,
+  cityCoordinates: [number, number],
+) {
+  return {
+    outcome: "REFERENCE" as const,
+    country,
+    countryCode,
+    admin1,
+    admin1Code,
+    nearestCity,
+    nearestCityCoordinates: { longitude: cityCoordinates[0], latitude: cityCoordinates[1] },
+    distanceKm: 1,
+    source: "Natural Earth + GeoNames" as const,
+    datasetVersion: "test",
+    checkedAt: "2026-08-27T00:00:00.000Z",
+    isTravelFact: false as const,
+  };
+}
 
 function createTravelApiForAutoAsk(): TravelApi & {
   getOrCreateDefaultTripThread: ReturnType<typeof vi.fn>;
