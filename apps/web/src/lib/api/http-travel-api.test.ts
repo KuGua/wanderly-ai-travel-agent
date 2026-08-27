@@ -10,10 +10,9 @@ const RUN_ID = "55555555-5555-4555-8555-555555555555";
 const CREATED_AT = "2026-08-25T10:00:00.000Z";
 
 describe("HttpTravelApi private conversation", () => {
-  it("uses the thread endpoints and sends only the strict turn contract", async () => {
+  it("uses the trip-scoped thread endpoints and sends only the strict turn contract", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ id: THREAD_ID, message: "Thread created" }, 201))
-      .mockResolvedValueOnce(jsonResponse({ threads: [thread()] }))
+      .mockResolvedValueOnce(jsonResponse({ id: THREAD_ID, message: "Thread created" }, 200))
       .mockResolvedValueOnce(jsonResponse({ thread: thread(), messages: [] }))
       .mockResolvedValueOnce(jsonResponse({
         threadId: THREAD_ID,
@@ -25,8 +24,8 @@ describe("HttpTravelApi private conversation", () => {
       }, 202));
     const api = new HttpTravelApi("https://api.example.test", fetchMock);
 
-    await api.createThread({ title: "Explore · Tokyo" });
-    await api.getThreads();
+    const tripId = "99999999-9999-4999-8999-999999999999";
+    await api.getOrCreateDefaultTripThread(tripId);
     await api.getOwnerConversation(THREAD_ID);
     await api.submitConversationTurn(THREAD_ID, {
       requestId: REQUEST_ID,
@@ -41,12 +40,11 @@ describe("HttpTravelApi private conversation", () => {
     });
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "https://api.example.test/api/v1/threads",
-      "https://api.example.test/api/v1/threads",
+      `https://api.example.test/api/v1/trips/${tripId}/threads/default`,
       `https://api.example.test/api/v1/threads/${THREAD_ID}/conversation`,
       `https://api.example.test/api/v1/threads/${THREAD_ID}/turns`,
     ]);
-    const turnOptions = fetchMock.mock.calls[3][1] as RequestInit;
+    const turnOptions = fetchMock.mock.calls[2][1] as RequestInit;
     expect(turnOptions.method).toBe("POST");
     expect(new Headers(turnOptions.headers).has("Authorization")).toBe(false);
     const body = JSON.parse(String(turnOptions.body));
@@ -123,7 +121,9 @@ function thread() {
   return {
     id: THREAD_ID,
     ownerUserId: OWNER_ID,
-    tripId: null,
+    tripId: "99999999-9999-4999-8999-999999999999",
+    scope: "TRIP" as const,
+    isDefault: false,
     title: "Explore · Tokyo",
     createdAt: CREATED_AT,
     archivedAt: null,

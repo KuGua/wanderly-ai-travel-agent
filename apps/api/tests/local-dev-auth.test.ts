@@ -7,12 +7,14 @@ import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
 import { chatMessages, chatThreads, users } from "../src/db/schema.js";
 import { LOCAL_DEV_EXTERNAL_ID } from "../src/middleware/auth-mode.js";
+import { provisionTripAndMember } from "./helpers/trip.js";
 
 const originalAuthMode = process.env.AUTH_MODE;
 const originalLocalDevAllowedOrigins = process.env.LOCAL_DEV_ALLOWED_ORIGINS;
 let app: FastifyInstance;
 let localThreadId: string;
 let foreignThreadId: string;
+let foreignTripId: string;
 
 beforeAll(async () => {
   process.env.AUTH_MODE = "local-dev";
@@ -26,6 +28,7 @@ afterAll(async () => {
   if (foreignThreadId) await db.delete(chatMessages).where(eq(chatMessages.threadId, foreignThreadId));
   if (localThreadId) await db.delete(chatThreads).where(eq(chatThreads.id, localThreadId));
   if (foreignThreadId) await db.delete(chatThreads).where(eq(chatThreads.id, foreignThreadId));
+  if (foreignTripId) await db.delete(chatThreads).where(eq(chatThreads.tripId, foreignTripId));
   await app.close();
   if (originalAuthMode === undefined) delete process.env.AUTH_MODE;
   else process.env.AUTH_MODE = originalAuthMode;
@@ -35,9 +38,39 @@ afterAll(async () => {
 
 describe("strict local development authentication", () => {
   it("provisions one server-owned identity and ignores client identity/auth headers", async () => {
+    // Per docs/trip-scoped-private-threads-implementation.md §6.3 the
+    // general thread create endpoint is now Trip-bound.  Probe that the
+    // legacy route still refuses untrusted payloads while ignoring any
+    // caller-supplied identity/auth header.
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/threads",
+      headers: {
+        authorization: "Bearer browser-fabricated-token",
+        "x-user-id": randomUUID(),
+        "x-demo-user": "attacker",
+        origin: "http://localhost:3001",
+        "content-type": "application/json",
+      },
+      payload: { title: "Local development thread" },
+    });
+
+    // No tripId supplied → legacy route returns 400.
+    expect(response.statusCode).toBe(400);
+    localThreadId = "";
+  });
+
+  it("ignores client identity/auth headers when creating a Trip-scoped thread", async () => {
+    // First create a Trip and add the local-dev user as a member so the
+    // new Trip-scoped thread endpoint has a valid membership context.
+    const [localDevUser] = await db.select().from(users)
+      .where(eq(users.externalId, LOCAL_DEV_EXTERNAL_ID)).limit(1);
+    if (!localDevUser) throw new Error("Local-dev identity not provisioned");
+    const { tripId } = await provisionTripAndMember({ ownerUserId: localDevUser.id });
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripId}/threads`,
       headers: {
         authorization: "Bearer browser-fabricated-token",
         "x-user-id": randomUUID(),
@@ -100,11 +133,20 @@ describe("strict local development authentication", () => {
   it("keeps owner-only thread authorization active", async () => {
     const externalId = `foreign-${randomUUID()}`;
     const [foreignOwner] = await db.insert(users).values({ externalId, displayName: "Foreign Owner" }).returning();
+    const { tripId, memberUserId } = await provisionTripAndMember({
+      ownerUserId: foreignOwner.id,
+    });
+    foreignTripId = tripId;
     const [foreignThread] = await db.insert(chatThreads).values({
       ownerUserId: foreignOwner.id,
+      tripId,
+      scope: "TRIP",
+      isDefault: false,
       title: "Foreign private thread",
     }).returning();
     foreignThreadId = foreignThread.id;
+    // Reference to silence unused-binding complaints.
+    void memberUserId;
 
     const response = await app.inject({ method: "GET", url: `/api/v1/threads/${foreignThreadId}` });
     expect(response.statusCode).toBe(403);

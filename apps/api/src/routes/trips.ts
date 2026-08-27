@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
 import { sharedTrips, tripMembers, users, itineraryPlans, memberConfirmations, consentGrants } from "../db/schema.js";
 import {
+  createPersonalTripSchema,
   createTripSchema,
   errorResponseSchema,
   toJsonSchema,
@@ -222,43 +223,62 @@ export async function tripRoutes(app: FastifyInstance) {
     reply.code(201).send({ id: tripId, message: "Trip created" });
   });
 
-  // Join trip
-  app.post("/trips/:tripId/join", async (request) => {
-    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
-    const { tripId } = request.params as { tripId: string };
+  // Create a solo (single-member) trip bound only to the authenticated
+  // caller. Used by the Explore page's first-message flow so a new user
+  // can chat with the Personal Agent before being onboarded into a
+  // multi-member trip. Per docs/PRD.md:20 solo travelers reuse the same
+  // Personal Agent and bind private chat threads to this scratch trip.
+  // The handler runs before any /trips/:tripId routes so the literal
+  // `/trips/personal` path is matched (Fastify's radix prefers static
+  // segments over parametric ones).
+  app.post("/trips/personal", async (request, reply) => {
+    const ctx = createRequestContext(
+      request.user.id,
+      request.correlationId,
+      request.traceId,
+      request.clientRequestId,
+      request.traceparent,
+      request.tracestate,
+      request.spanId,
+    );
+    const body = createPersonalTripSchema.parse(request.body);
 
-    await db.transaction(async (tx) => {
-      const [trip] = await tx.select().from(sharedTrips).where(eq(sharedTrips.id, tripId)).limit(1);
-      if (!trip) {
-        throw new ApiError(404, "Not Found", "Trip not found");
-      }
-
-      const existing = await tx.select().from(tripMembers)
-        .where(and(eq(tripMembers.tripId, tripId), eq(tripMembers.userId, request.user.id)))
-        .limit(1);
-
-      if (existing.length > 0) {
-        throw new ApiError(409, "Conflict", "Already a member");
-      }
+    const tripId = await db.transaction(async (tx) => {
+      const [trip] = await tx.insert(sharedTrips).values({
+        name: "Personal scratch trip",
+        createdBy: request.user.id,
+        departureCities: body.departureCities,
+        destinationCandidates: body.destinationCandidates,
+        travelDateStart: body.travelDateStart,
+        travelDateEnd: body.travelDateEnd,
+      }).returning();
 
       await tx.insert(tripMembers).values({
-        tripId,
+        tripId: trip.id,
         userId: request.user.id,
-        role: "MEMBER",
+        role: "CREATOR",
         isRequired: true,
       });
 
       await recordAudit({
         ctx,
-        action: "TRIP_JOIN",
+        action: "TRIP_CREATE",
         actorUserId: request.user.id,
-        tripId,
+        tripId: trip.id,
+        summary: { memberCount: 1, kind: "personal" },
         tx,
       });
+
+      return trip.id;
     });
 
-    return { message: "Joined trip" };
+    reply.code(201).send({ id: tripId, message: "Personal trip created" });
   });
+
+  // Join-by-UUID was removed when Trip invitations were introduced. Members
+  // must now be added via the invitation flow: the creator calls
+  // POST /trips/:tripId/invitations and the invitee redeems the token at
+  // POST /trip-invitations/:inviteToken/accept.
 
   // Get trip details
   app.get("/trips/:tripId", {

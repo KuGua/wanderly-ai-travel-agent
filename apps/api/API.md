@@ -240,9 +240,7 @@ Create a shared trip.
 **Response**: `201 { "id": "uuid", "message": "Trip created" }`
 
 ### `POST /trips/:tripId/join`
-Join an existing trip.
-
-**Response**: `{ "message": "Joined trip" }`
+> **Removed.** Join-by-UUID was replaced by Trip invitations: creators issue `POST /trips/:tripId/invitations` and invitees redeem the token at `POST /trip-invitations/:inviteToken/accept`. See the Trip Invitations section below.
 
 ### `GET /trips/:tripId`
 Get trip details (members only).
@@ -448,6 +446,29 @@ Get confirmation status for a plan.
 
 ---
 
+## Trip-scoped chat threads
+
+Every chat thread belongs to exactly one shared trip (see migration `0012_trip_scoped_threads.sql`). These are the only endpoints new clients should call.
+
+### `GET /trips/:tripId/threads`
+List the caller's own threads within the trip (server-filtered by `ownerUserId`).
+
+**Response**: `{ "threads": [ThreadSummary, …] }`
+
+### `POST /trips/:tripId/threads`
+Create a non-default thread in the trip. Caller must be a trip member.
+
+**Body**: `{ "title": "Hotel ideas" }`
+
+**Response**: `201 ThreadSummary`
+
+### `POST /trips/:tripId/threads/default`
+Idempotent provision of the caller's per-trip default scratchpad (used by `TravelAgentChat` on Explore). Creates the row on first call, returns the existing one thereafter. Caller must be a trip member.
+
+**Response**: `200 ThreadSummary`
+
+---
+
 ## Private Chat Threads
 
 All thread and conversation routes require Cognito bearer authentication and
@@ -456,9 +477,15 @@ does not grant fellow trip members access.
 
 ### `POST /threads`
 
-Create an owner-only private thread. Body: `{ "title": "Tokyo ideas", "tripId"?: "uuid" }`.
+> **Deprecated.** Use `POST /trips/:tripId/threads` (create) or
+> `POST /trips/:tripId/threads/default` (idempotent default). This shim
+> remains so existing fixtures/tests keep working; new clients must not call it.
+
+Create an owner-only private thread. Body: `{ "title": "Tokyo ideas", "tripId"?: "uuid" }`. `tripId` is required and the caller must be a member of that trip.
 
 ### `GET /threads`
+
+> **Deprecated.** Use `GET /trips/:tripId/threads`.
 
 List only the authenticated owner's threads.
 

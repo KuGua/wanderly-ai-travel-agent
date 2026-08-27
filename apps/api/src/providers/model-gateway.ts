@@ -1,6 +1,7 @@
 import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/domain.js";
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace, ConversationResponseMode } from "../types/schemas.js";
+import type { PersonalTripContext } from "../skills/personal/personal-trip-context-schema.js";
 
 export type ConversationIntent = "auto_intro" | "user_typed";
 
@@ -43,6 +44,12 @@ export interface ModelGateway {
     place?: ConversationPlace;
     history: ConversationHistoryMessage[];
     intent?: ConversationIntent;
+    /**
+     * Server-derived minimal Trip context.  When provided, the gateway
+     * MUST treat it as the sole Trip-side information available to
+     * the model — never substitute a richer DB read.
+     */
+    tripContext?: PersonalTripContext;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<ConversationReply>;
@@ -52,6 +59,7 @@ export interface ModelGateway {
     place?: ConversationPlace;
     history: ConversationHistoryMessage[];
     intent?: ConversationIntent;
+    tripContext?: PersonalTripContext;
     onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;

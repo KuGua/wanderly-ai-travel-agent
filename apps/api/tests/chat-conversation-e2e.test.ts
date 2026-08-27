@@ -17,9 +17,11 @@ import { AgentStreamRelay } from "../src/tasks/agent-stream-relay.js";
 import { createRequestContext } from "../src/utils/context.js";
 import { processNextAgentTask } from "../src/workers/agent-task-worker.js";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
+import { provisionTripAndMember } from "./helpers/trip.js";
 
 let app: FastifyInstance;
 let aliceId: string;
+let tripId: string;
 
 beforeAll(async () => {
   __setModelGatewayForTests(successfulConversationGateway);
@@ -27,6 +29,12 @@ beforeAll(async () => {
   await app.ready();
   const [alice] = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
   aliceId = alice.id;
+  // Per docs/trip-scoped-private-threads-implementation.md §1.1 every
+  // chat thread must belong to a Trip and the creator must be an active
+  // member.  Provision a Trip for this test suite up-front so the
+  // POST /threads compatibility shim can accept the body.
+  const provisioned = await provisionTripAndMember({ ownerUserId: aliceId });
+  tripId = provisioned.tripId;
 });
 
 afterAll(async () => {
@@ -207,7 +215,7 @@ async function createThread(title: string): Promise<string> {
     method: "POST",
     url: "/api/v1/threads",
     headers: { ...authHeaders("alice"), "content-type": "application/json" },
-    payload: { title },
+    payload: { title, tripId },
   });
   expect(response.statusCode).toBe(201);
   return (response.json() as { id: string }).id;

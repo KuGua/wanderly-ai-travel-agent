@@ -1,7 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   getTravelApiConfiguration,
@@ -29,8 +29,11 @@ export function QueryProvider({
       mutations: { retry: false },
     },
   }));
-  const [travelApiConfiguration] = useState(
+  // Derive the api configuration lazily so the test harness can inject a
+  // new mock api on each render without us caching the first one.
+  const travelApiConfiguration = useMemo(
     () => configuration ?? getTravelApiConfiguration(getAccessToken),
+    [configuration, getAccessToken],
   );
   const previousSessionRevision = useRef(sessionRevision);
 

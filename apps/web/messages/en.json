@@ -198,6 +198,11 @@
       "providerUnavailable": "The Agent is temporarily unavailable. You can retry this same turn safely.",
       "threadMissing": "That private conversation no longer exists. Retry to start a new one.",
       "genericError": "The message could not be sent. Please try again.",
+      "preparingPrivateChat": "Preparing your private chat…",
+      "privateChatUnavailable": "Private chat is unavailable.",
+      "retryPrivateChat": "Retry",
+      "tripPickerLabel": "Trip",
+      "switchTripAria": "Switch trip",
       "askAbout": "Ask about {name} · {context}",
       "askQuestion": "Tell me about {name}",
       "messageInputAria": "Message Wanderly Agent",
@@ -271,10 +276,44 @@
     }
   },
   "trips": {
-    "kicker": "Next implementation phase",
-    "title": "Trip workspace is not connected yet",
-    "body": "This Slice only displays fields confirmed by the Trip List contract. Planning, consent and confirmation states have not been inferred.",
-    "backToHome": "Back to Home"
+    "kicker": "Trip workspace",
+    "title": "Plan and chat with your co-travelers",
+    "body": "Browse your private threads for this trip. Other members cannot see your threads, and your threads are bound to this trip only.",
+    "backToHome": "Back to Home",
+    "notFound": "Trip not found.",
+    "errors": {
+      "membershipRevoked": "You no longer have access to this trip."
+    },
+    "header": {
+      "status": "Status",
+      "statusValue": {
+        "PLANNING": "Planning",
+        "CONFIRMED": "Confirmed",
+        "BOOKED": "Booked",
+        "CANCELLED": "Cancelled",
+        "STALE": "Needs review"
+      },
+      "dates": "Travel dates",
+      "datesRange": "{start} – {end}",
+      "datesUnknown": "Dates not set",
+      "destinations": "Candidate destinations",
+      "members": "{count, plural, =0 {No members yet} =1 {1 member} other {# members}}"
+    },
+    "threads": {
+      "heading": "Your threads",
+      "loading": "Loading your threads…",
+      "errorTitle": "Threads unavailable",
+      "emptyTitle": "No threads yet",
+      "emptyBody": "Create your first thread to start a private conversation with your trip assistant.",
+      "defaultBadge": "Default",
+      "newThread": {
+        "label": "New thread",
+        "placeholder": "e.g. Visa prep, Budget, Day-by-day plan",
+        "submit": "Create thread",
+        "submitting": "Creating…",
+        "validation": "Title must be 1–256 characters."
+      }
+    }
   },
   "login": {
     "heading": "Sign in",

@@ -6,15 +6,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { auditEvents, chatThreads, idempotencyRecords } from "../src/db/schema.js";
+import { auditEvents, chatThreads, idempotencyRecords, users } from "../src/db/schema.js";
 import { AgentStreamRelay } from "../src/tasks/agent-stream-relay.js";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
+import { provisionTripAndMember } from "./helpers/trip.js";
 
 // The SSE handler hijacks the reply, which bypasses Fastify's onSend chain.
 // `app.inject` cannot observe what actually reaches the socket in that case, so
 // these assertions run against a real loopback listener.
 let app: FastifyInstance;
 let baseUrl: string;
+let tripId: string;
 
 beforeAll(async () => {
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken, agentStreamRelay: new AgentStreamRelay() });
@@ -23,6 +25,13 @@ beforeAll(async () => {
   const address = app.server.address();
   if (!address || typeof address === "string") throw new Error("Expected a TCP test listener");
   baseUrl = `http://127.0.0.1:${address.port}`;
+  // Per docs/trip-scoped-private-threads-implementation.md §1.1 every
+  // chat thread must belong to a Trip and the creator must be an active
+  // member.  Provision a Trip for the alice test user once per suite.
+  const [alice] = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
+  if (!alice) throw new Error("alice test user not provisioned");
+  const provisioned = await provisionTripAndMember({ ownerUserId: alice.id });
+  tripId = provisioned.tripId;
 });
 
 afterAll(async () => {
@@ -77,7 +86,7 @@ async function createThread(title: string): Promise<string> {
   const response = await fetch(`${baseUrl}/api/v1/threads`, {
     method: "POST",
     headers: { ...authHeaders("alice"), "content-type": "application/json", origin: "http://localhost:3001" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, tripId }),
   });
   expect(response.status).toBe(201);
   return (await response.json() as { id: string }).id;

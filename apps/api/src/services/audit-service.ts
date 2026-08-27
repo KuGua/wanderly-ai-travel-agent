@@ -15,6 +15,8 @@ export type AuditAction =
   | "CHANGE_EVENT"
   | "VISA_CHECK"
   | "CHAT_THREAD_CREATE" | "CHAT_THREAD_DELETE" | "CHAT_MESSAGE_APPEND"
+  | "TRIP_INVITATION_CREATE" | "TRIP_INVITATION_ACCEPT"
+  | "TRIP_INVITATION_REVOKE" | "TRIP_DEFAULT_THREAD_PROVISION"
   | "SKILL_INVOKE" | "AGENT_RUN" | "AGENT_TASK";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {

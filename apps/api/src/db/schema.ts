@@ -30,7 +30,17 @@ export const auditActionEnum = pgEnum("audit_action", [
   "CHANGE_EVENT",
   "VISA_CHECK",
   "CHAT_THREAD_CREATE", "CHAT_THREAD_DELETE", "CHAT_MESSAGE_APPEND",
+  "TRIP_INVITATION_CREATE", "TRIP_INVITATION_ACCEPT",
+  "TRIP_INVITATION_REVOKE", "TRIP_DEFAULT_THREAD_PROVISION",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
+]);
+
+// Chat thread scope — MVP allows only TRIP-scoped threads; adding new
+// scopes later requires explicit schema + migration work.
+export const chatThreadScopeEnum = pgEnum("chat_thread_scope", ["TRIP"]);
+
+export const tripInvitationStatusEnum = pgEnum("trip_invitation_status", [
+  "PENDING", "ACCEPTED", "REVOKED", "EXPIRED",
 ]);
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -277,13 +287,48 @@ export const outboxEvents = pgTable("outbox_events", {
 export const chatThreads = pgTable("chat_threads", {
   id: uuid("id").primaryKey().defaultRandom(),
   ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "set null" }),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  // MVP invariant: every thread belongs to exactly one shared trip.
+  // Non-trip threads are not permitted; the value list is intentionally
+  // a single-entry enum to express that, not for future extensibility.
+  scope: chatThreadScopeEnum("scope").notNull().default("TRIP"),
+  // Only invitation acceptance (or the idempotent get-or-create route)
+  // sets this true.  Enforced by the partial unique index
+  // `chat_threads_one_active_default_per_member_trip`.
+  isDefault: boolean("is_default").notNull().default(false),
   title: varchar("title", { length: 256 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
 }, (table) => ({
   ownerIdx: index("chat_threads_owner_user_id_idx").on(table.ownerUserId),
   tripIdx: index("chat_threads_trip_id_idx").on(table.tripId),
+  oneActiveDefaultPerMemberTrip: uniqueIndex("chat_threads_one_active_default_per_member_trip")
+    .on(table.ownerUserId, table.tripId)
+    .where(sql`${table.isDefault} = true AND ${table.archivedAt} IS NULL`),
+  tripOwnerActiveIdx: index("chat_threads_trip_owner_active_idx")
+    .on(table.tripId, table.ownerUserId, table.createdAt)
+    .where(sql`${table.archivedAt} IS NULL`),
+}));
+
+export const tripInvitations = pgTable("trip_invitations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  invitedUserId: uuid("invited_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  invitedByUserId: uuid("invited_by_user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
+  status: tripInvitationStatusEnum("status").notNull().default("PENDING"),
+  // SHA-256 of the raw invite token; raw token is returned once at
+  // creation time and never persisted.
+  tokenHash: varchar("token_hash", { length: 128 }).notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  onePendingInvitee: uniqueIndex("trip_invitations_one_pending_invitee")
+    .on(table.tripId, table.invitedUserId)
+    .where(sql`${table.status} = 'PENDING'`),
+  acceptLookupIdx: index("trip_invitations_accept_lookup_idx")
+    .on(table.tokenHash, table.status, table.expiresAt),
 }));
 
 export const chatMessages = pgTable("chat_messages", {

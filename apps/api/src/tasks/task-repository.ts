@@ -6,13 +6,13 @@ import { db, rawDb } from "../db/database.js";
 import {
   agentTaskRuns,
   chatMessages,
-  chatThreads,
   idempotencyRecords,
   outboxEvents,
 } from "../db/schema.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { resolveConversationPlace } from "../policy/conversation-safety.js";
 import { recordAudit } from "../services/audit-service.js";
+import { requireOwnedTripThread } from "../services/chat-thread-service.js";
 import { claimIdempotency } from "../services/idempotency-service.js";
 import {
   agentRunResponseSchema,
@@ -122,7 +122,7 @@ export async function acceptConversationTask(params: {
     const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
 
     const accepted = await db.transaction(async (tx) => {
-      await requireThreadOwner(tx, params.threadId, params.ownerUserId);
+      const thread = await requireThreadOwner(tx, params.threadId, params.ownerUserId);
       const claimed = await claimIdempotency(tx, { key: idempotencyKey, entityType: "agent_conversation_task" });
       if (!claimed) return null;
 
@@ -149,6 +149,11 @@ export async function acceptConversationTask(params: {
         status: "QUEUED",
         createdByUserId: params.ownerUserId,
         threadId: params.threadId,
+        // tripId is server-derived from the locked thread row; clients
+        // never influence it via path or body.  This guarantees the
+        // invariant in docs/trip-scoped-private-threads-implementation.md
+        // §4.3 that conversation tasks carry the thread's trip_id.
+        tripId: thread.tripId,
         requestId: params.input.requestId,
         userMessageId: userMessage.id,
         expiresAt,
@@ -156,6 +161,13 @@ export async function acceptConversationTask(params: {
         intent: params.input.intent ?? null,
         ...placeColumns(place),
       }).returning();
+
+      // Consistency check: a CONVERSATION task MUST have both threadId
+      // and tripId.  If either is missing, the schema is misconfigured
+      // or the locking helper regressed — fail loudly.
+      if (!run.threadId || !run.tripId) {
+        throw new ApiError(500, "Internal Server Error", "Conversation task missing threadId/tripId");
+      }
 
       await tx.update(idempotencyRecords).set({
         entityId: run.id,
@@ -170,6 +182,7 @@ export async function acceptConversationTask(params: {
         ctx: params.ctx,
         action: "CHAT_MESSAGE_APPEND",
         actorUserId: params.ownerUserId,
+        tripId: thread.tripId,
         summary: { threadId: params.threadId, messageId: userMessage.id, role: "USER" },
         tx,
       });
@@ -177,6 +190,7 @@ export async function acceptConversationTask(params: {
         ctx: params.ctx,
         action: "AGENT_TASK",
         actorUserId: params.ownerUserId,
+        tripId: thread.tripId,
         summary: { taskId: run.id, operation: run.operation, status: run.status },
         tx,
       });
@@ -534,9 +548,10 @@ async function loadAcceptedConversationTask(
 }
 
 async function requireThreadOwner(tx: Tx, threadId: string, ownerUserId: string) {
-  const [thread] = await tx.select().from(chatThreads).where(eq(chatThreads.id, threadId)).limit(1).for("update");
-  if (!thread) throw new ApiError(404, "Not Found", "Thread not found");
-  if (thread.ownerUserId !== ownerUserId) throw new ApiError(403, "Forbidden", "Not the owner of this thread");
+  // Delegates to the shared helper that enforces both ownership AND
+  // trip membership in a single transaction.  Returns the locked row
+  // so callers can persist server-derived trip_id onto related rows.
+  return await requireOwnedTripThread(tx, threadId, ownerUserId);
 }
 
 function toOwnerMessage(row: typeof chatMessages.$inferSelect): OwnerConversationMessage {

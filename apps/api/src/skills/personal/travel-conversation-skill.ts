@@ -15,11 +15,16 @@ import {
   conversationPlaceSchema,
   conversationResponseModeSchema,
 } from "../../types/schemas.js";
+import { personalTripContextSchema } from "./personal-trip-context-schema.js";
 
 export const travelConversationInputSchema = z.object({
   question: z.string().trim().min(1).max(4000),
   place: conversationPlaceSchema.optional(),
   intent: conversationIntentSchema.optional(),
+  // Server-derived minimal Trip context, attached by the worker after
+  // membership re-verification.  Optional so existing tests / non-trip
+  // unit paths keep working; in production this is always present.
+  tripContext: personalTripContextSchema.optional(),
   history: z.array(z.object({
     role: chatMessageRoleSchema,
     content: z.string().min(1).max(1000),
@@ -55,6 +60,7 @@ export async function executeTravelConversation(
           place: input.place,
           history: input.history,
           intent: input.intent,
+          tripContext: input.tripContext,
           onDelta,
           signal,
           ctx: ctx.ctx,
@@ -64,6 +70,7 @@ export async function executeTravelConversation(
           place: input.place,
           history: input.history,
           intent: input.intent,
+          tripContext: input.tripContext,
           signal,
           ctx: ctx.ctx,
         });

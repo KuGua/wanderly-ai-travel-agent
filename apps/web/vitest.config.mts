@@ -13,6 +13,7 @@ export default defineConfig({
       "next-intl/server": fileURLToPath(new URL("./src/test/empty.ts", import.meta.url)),
       "next-intl/navigation": fileURLToPath(new URL("./src/test/mock-navigation.tsx", import.meta.url)),
       "next/root-params": fileURLToPath(new URL("./src/test/empty.ts", import.meta.url)),
+      "next/navigation": fileURLToPath(new URL("./src/test/mock-next-navigation.ts", import.meta.url)),
     },
   },
   test: {

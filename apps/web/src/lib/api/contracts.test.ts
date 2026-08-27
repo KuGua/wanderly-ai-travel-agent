@@ -55,7 +55,9 @@ describe("API contracts", () => {
     const thread = {
       id: "11111111-1111-4111-8111-111111111111",
       ownerUserId: "22222222-2222-4222-8222-222222222222",
-      tripId: null,
+      tripId: "99999999-9999-4999-8999-999999999999",
+      scope: "TRIP",
+      isDefault: false,
       title: "Explore conversation",
       createdAt: "2026-08-25T10:00:00.000Z",
       archivedAt: null,

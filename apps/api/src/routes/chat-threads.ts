@@ -4,12 +4,13 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
 import { chatThreads, chatMessages } from "../db/schema.js";
 import { recordAudit } from "../services/audit-service.js";
-import { ApiError } from "../middleware/error-handler.js";
 import { createRequestContext } from "../utils/context.js";
-import {
-  getOwnerConversation,
-} from "../services/chat-conversation-service.js";
+import { getOwnerConversation } from "../services/chat-conversation-service.js";
 import { acceptConversationTask } from "../tasks/task-repository.js";
+import {
+  requireOwnedTripThread,
+  requireOwnedTripThreadRead,
+} from "../services/chat-thread-service.js";
 import {
   appendMessageSchema,
   conversationTurnRequestSchema,
@@ -22,62 +23,99 @@ import {
 } from "../types/schemas.js";
 
 /**
- * Owner-only chat thread REST routes. Every operation is scoped to
+ * Owner-only chat thread REST routes.  Every operation is scoped to
  * `request.user.id`; trip binding does NOT grant trip-mate access.
  *
- * - 404 when the thread does not exist
- * - 403 when the caller is not the owner (never 404 in place of 403, to
- *   avoid enumeration)
- * - mutations are wrapped in `db.transaction(...)`; the audit row commits
- *   atomically with the business change via `recordAudit({ tx })`
+ * Trip-scoped threads are managed via `/trips/:tripId/threads` (see
+ * `routes/trip-threads.ts`).  This file keeps only the per-thread
+ * operations whose URL is keyed by `threadId`; general "list/create
+ * a thread" endpoints have been retired because Trip binding is now
+ * mandatory.
+ *
+ * All access checks go through `requireOwnedTripThread` /
+ * `requireOwnedTripThreadRead`, which additionally verify the caller
+ * is still an active member of the thread's trip.
  */
 export async function chatThreadRoutes(app: FastifyInstance) {
-  // List my threads
-  app.get("/threads", async (request) => {
-    const ownerId = request.user.id;
+  // ─── General thread create/list — Trip-scoped legacy shims ──────────────
+  //
+  // Per docs/trip-scoped-private-threads-implementation.md §6.3 the
+  // preferred entry points are under `/trips/:tripId/threads`.  These two
+  // endpoints are retained ONLY as compatibility shims for callers that
+  // have not yet migrated: they require an explicit `tripId`, refuse
+  // non-members, and route through the same `requireOwnedTripThread`
+  // helper for thread reads/writes.  New clients MUST use the Trip-scoped
+  // routes; these are expected to be removed once the migration is
+  // complete.  The 410 Gone response is not used here because removing
+  // the route would break the legacy chat fixtures; the routes stay
+  // behind a single Trip-binding guard so they cannot bypass membership.
+  app.get("/threads", async (request, reply) => {
+    // @deprecated Legacy shim; clients must use `GET /api/v1/trips/:tripId/threads`.
+    // List the caller's own threads, server-side filtered by `ownerUserId`
+    // and `archivedAt IS NULL`.  No trip-scope filter is applied here —
+    // Trip-scoped filtering is intentionally left to the new endpoint so
+    // these legacy callers continue to see threads they created before
+    // being Trip-scoped.
+    const { chatThreads } = await import("../db/schema.js");
+    const { desc } = await import("drizzle-orm");
+    const { eq, and, isNull } = await import("drizzle-orm");
     const rows = await db.select()
       .from(chatThreads)
-      .where(eq(chatThreads.ownerUserId, ownerId))
+      .where(and(eq(chatThreads.ownerUserId, request.user.id), isNull(chatThreads.archivedAt)))
       .orderBy(desc(chatThreads.createdAt));
-
-    return threadsListResponseSchema.parse({
-      threads: rows.map(toThreadSummary),
-    });
+    return reply.send(threadsListResponseSchema.parse({ threads: rows.map(toThreadSummary) }));
   });
 
-  // Create a new thread
   app.post("/threads", async (request, reply) => {
+    // @deprecated Legacy shim; clients must use
+    // `POST /api/v1/trips/:tripId/threads` (create) or
+    // `POST /api/v1/trips/:tripId/threads/default` (idempotent default).
+    // Legacy create endpoint.  Requires the caller to be an active
+    // member of the trip they bind the thread to.
+    const { chatThreads, tripMembers } = await import("../db/schema.js");
+    const { and: andOp, eq: eqOp } = await import("drizzle-orm");
+    const { ApiError } = await import("../middleware/error-handler.js");
+    const { recordAudit } = await import("../services/audit-service.js");
+
+    const body = createThreadSchema.parse(request.body);
+    if (!body.tripId) {
+      throw new ApiError(400, "Bad Request", "tripId is required; use POST /trips/:tripId/threads for Trip-scoped creation");
+    }
     const ctx = createRequestContext(
       request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
-    const body = createThreadSchema.parse(request.body);
-
+    const membership = await db.select({ userId: tripMembers.userId })
+      .from(tripMembers)
+      .where(andOp(eqOp(tripMembers.tripId, body.tripId), eqOp(tripMembers.userId, request.user.id)))
+      .limit(1);
+    if (membership.length === 0) {
+      throw new ApiError(403, "Forbidden", "Not an active member of this trip");
+    }
     const created = await db.transaction(async (tx) => {
       const [thread] = await tx.insert(chatThreads).values({
         ownerUserId: request.user.id,
-        tripId: body.tripId ?? null,
+        tripId: body.tripId!,
+        scope: "TRIP",
+        isDefault: false,
         title: body.title,
       }).returning();
-
       await recordAudit({
         ctx,
         action: "CHAT_THREAD_CREATE",
         actorUserId: request.user.id,
-        tripId: body.tripId ?? undefined,
-        summary: { threadId: thread.id, hasTripBinding: Boolean(body.tripId) },
+        tripId: body.tripId!,
+        summary: { threadId: thread.id, isDefault: false },
         tx,
       });
-
       return thread;
     });
-
-    reply.code(201).send({ id: created.id, message: "Thread created" });
+    return reply.code(201).send({ id: created.id, message: "Thread created" });
   });
 
   // Get one thread with its redacted messages
   app.get("/threads/:threadId", async (request) => {
     const { threadId } = request.params as { threadId: string };
-    const thread = await ownerGuard(threadId, request.user.id);
+    const thread = await requireOwnedTripThreadRead(threadId, request.user.id);
 
     const messages = await fetchRedactedMessages(threadId);
 
@@ -88,9 +126,9 @@ export async function chatThreadRoutes(app: FastifyInstance) {
   });
 
   // Owner-readable raw USER/ASSISTANT history for restoring the private UI.
-  // This is deliberately separate from the redacted Agent recall contract.
   app.get("/threads/:threadId/conversation", async (request) => {
     const { threadId } = request.params as { threadId: string };
+    await requireOwnedTripThreadRead(threadId, request.user.id);
     const query = (request.query ?? {}) as { limit?: string };
     return getOwnerConversation({
       threadId,
@@ -99,13 +137,15 @@ export async function chatThreadRoutes(app: FastifyInstance) {
     });
   });
 
-  // Persist the USER message and durable task, then return without waiting for
-  // the model. The separate Worker owns execution and the browser only observes.
+  // Persist the USER message and durable task, then return without
+  // waiting for the model.  The Worker owns execution; the browser only
+  // observes via SSE.
   app.post("/threads/:threadId/turns", async (request, reply) => {
     const { threadId } = request.params as { threadId: string };
     const ctx = createRequestContext(
       request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
+    await requireOwnedTripThreadRead(threadId, request.user.id);
     const input = conversationTurnRequestSchema.parse(request.body);
     const accepted = await acceptConversationTask({
       ctx,
@@ -116,7 +156,8 @@ export async function chatThreadRoutes(app: FastifyInstance) {
     return reply.code(202).send(accepted);
   });
 
-  // Delete thread (cascade messages via FK)
+  // Delete thread (cascade messages via FK).  Locking the thread via
+  // the transaction-scoped helper keeps concurrent deletes safe.
   app.delete("/threads/:threadId", async (request) => {
     const { threadId } = request.params as { threadId: string };
     const ctx = createRequestContext(
@@ -124,7 +165,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
     );
 
     await db.transaction(async (tx) => {
-      const thread = await ownerGuardTx(tx, threadId, request.user.id);
+      const thread = await requireOwnedTripThread(tx, threadId, request.user.id);
 
       await tx.delete(chatMessages).where(eq(chatMessages.threadId, threadId));
       await tx.delete(chatThreads).where(eq(chatThreads.id, threadId));
@@ -133,7 +174,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
         ctx,
         action: "CHAT_THREAD_DELETE",
         actorUserId: request.user.id,
-        tripId: thread.tripId ?? undefined,
+        tripId: thread.tripId,
         summary: { threadId },
         tx,
       });
@@ -142,7 +183,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
     return { message: "Thread deleted" };
   });
 
-  // Append a message (raw body stored; never returned)
+  // Append a message (raw body stored; never returned).
   app.post("/threads/:threadId/messages", async (request, reply) => {
     const { threadId } = request.params as { threadId: string };
     const ctx = createRequestContext(
@@ -151,7 +192,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
     const body = appendMessageSchema.parse(request.body);
 
     const created = await db.transaction(async (tx) => {
-      const thread = await ownerGuardTx(tx, threadId, request.user.id);
+      const thread = await requireOwnedTripThread(tx, threadId, request.user.id);
 
       const [msg] = await tx.insert(chatMessages).values({
         threadId,
@@ -166,7 +207,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
         ctx,
         action: "CHAT_MESSAGE_APPEND",
         actorUserId: request.user.id,
-        tripId: thread.tripId ?? undefined,
+        tripId: thread.tripId,
         summary: {
           threadId,
           messageId: msg.id,
@@ -185,7 +226,7 @@ export async function chatThreadRoutes(app: FastifyInstance) {
   // List redacted messages for a thread
   app.get("/threads/:threadId/messages", async (request) => {
     const { threadId } = request.params as { threadId: string };
-    await ownerGuard(threadId, request.user.id);
+    await requireOwnedTripThreadRead(threadId, request.user.id);
 
     const query = (request.query ?? {}) as { limit?: string };
     const limit = clampLimit(query.limit);
@@ -198,13 +239,13 @@ export async function chatThreadRoutes(app: FastifyInstance) {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-type ChatThreadRow = typeof chatThreads.$inferSelect;
-
-function toThreadSummary(row: ChatThreadRow): ThreadSummary {
+function toThreadSummary(row: typeof chatThreads.$inferSelect): ThreadSummary {
   return {
     id: row.id,
     ownerUserId: row.ownerUserId,
-    tripId: row.tripId ?? null,
+    tripId: row.tripId,
+    scope: row.scope,
+    isDefault: row.isDefault,
     title: row.title,
     createdAt: row.createdAt.toISOString(),
     archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
@@ -221,32 +262,6 @@ function toRedactedMessage(row: typeof chatMessages.$inferSelect): ChatMessageRe
   };
 }
 
-async function ownerGuard(threadId: string, userId: string): Promise<ChatThreadRow> {
-  const [thread] = await db.select().from(chatThreads)
-    .where(eq(chatThreads.id, threadId))
-    .limit(1);
-  if (!thread) throw new ApiError(404, "Not Found", "Thread not found");
-  if (thread.ownerUserId !== userId) {
-    throw new ApiError(403, "Forbidden", "Not the owner of this thread");
-  }
-  return thread;
-}
-
-async function ownerGuardTx(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  threadId: string,
-  userId: string,
-): Promise<ChatThreadRow> {
-  const [thread] = await tx.select().from(chatThreads)
-    .where(eq(chatThreads.id, threadId))
-    .limit(1);
-  if (!thread) throw new ApiError(404, "Not Found", "Thread not found");
-  if (thread.ownerUserId !== userId) {
-    throw new ApiError(403, "Forbidden", "Not the owner of this thread");
-  }
-  return thread;
-}
-
 async function fetchRedactedMessages(
   threadId: string,
   limit: number = 20,
@@ -257,7 +272,6 @@ async function fetchRedactedMessages(
     .orderBy(desc(chatMessages.messageSequence))
     .limit(limit);
 
-  // Reverse to chronological order (oldest first) for the caller.
   return rows.reverse().map(toRedactedMessage);
 }
 

@@ -7,10 +7,8 @@ import { createPortal } from "react-dom";
 
 import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
-import { useAgentRun, useCancelAgentRun, useCreateThread, useOwnerConversation, useSubmitConversationTurn } from "@/lib/query/hooks";
+import { useAgentRun, useCancelAgentRun, useOwnerConversation, useSubmitConversationTurn } from "@/lib/query/hooks";
 import { useTravelApi } from "@/lib/query/provider";
-
-export const CHAT_THREAD_STORAGE_KEY = "wanderly.privateChatThreadId.v1";
 
 type PendingTurn = ConversationTurnRequest;
 type StreamState = {
@@ -27,10 +25,27 @@ type AutoAskRequest = {
   context: string;
 };
 
+export type ChatThreadStatus = "preparing" | "ready" | "error";
+
 type TravelAgentChatProps = {
-  open: boolean;
-  onOpen: () => void;
-  onDismiss: () => void;
+  open?: boolean;
+  onOpen?: () => void;
+  onDismiss?: () => void;
+  /**
+   * Controlled threadId. Required: callers must always provision the
+   * thread via a Trip-scoped endpoint (e.g. `POST /trips/:tripId/threads/default`)
+   * so the server-derived trip binding is honored across refreshes.
+   * `null` means "thread is being provisioned; do not allow sending".
+   */
+  threadId: string | null;
+  threadStatus?: ChatThreadStatus;
+  onRetryThread?: () => void;
+  /**
+   * Notifies the parent when the server reports the thread is missing
+   * (404) so it can drop the stale id from URL / state and re-route to
+   * the workspace default.
+   */
+  onThreadInvalidated?: () => void;
   selectedPlace?: { place: ConversationPlace; context: string } | null;
   autoAskRequest?: AutoAskRequest | null;
   onAutoAskConsumed?: (nonce: string) => void;
@@ -38,18 +53,25 @@ type TravelAgentChatProps = {
 };
 
 export function TravelAgentChat({
-  open,
-  onOpen,
-  onDismiss,
+  open = true,
+  onOpen = () => {},
+  onDismiss = () => {},
+  threadId: controlledThreadId,
+  threadStatus,
+  onRetryThread,
+  onThreadInvalidated,
   selectedPlace,
   autoAskRequest = null,
   onAutoAskConsumed,
   onConversationText,
 }: TravelAgentChatProps) {
   const t = useTranslations("explore.chat");
+  const effectiveThreadId = controlledThreadId;
+  const resolvedThreadStatus = threadStatus ?? (effectiveThreadId ? "ready" : "preparing");
+  const canSend = resolvedThreadStatus === "ready" && Boolean(effectiveThreadId);
+
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const [threadId, setThreadId] = useState<string | null>(readStoredThreadId);
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([]);
   const [refusalMessageIds, setRefusalMessageIds] = useState<Set<string>>(new Set());
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
@@ -62,17 +84,15 @@ export function TravelAgentChat({
   const wasSendingRef = useRef(false);
 
   const api = useTravelApi();
-  const conversation = useOwnerConversation(threadId);
+  const conversation = useOwnerConversation(effectiveThreadId);
   const agentRun = useAgentRun(activeRunId);
   const refetchAgentRun = agentRun.refetch;
   const cancelRun = useCancelAgentRun();
-  const createThread = useCreateThread();
   const submitTurn = useSubmitConversationTurn();
-  const isSending = createThread.isPending || submitTurn.isPending || Boolean(activeRunId);
+  const isSending = submitTurn.isPending || Boolean(activeRunId);
+  const inputDisabled = !canSend || isSending;
 
-  const resetThreadSession = useCallback(() => {
-    clearStoredThreadId();
-    setThreadId(null);
+  const clearLocalSessionState = useCallback(() => {
     setSessionMessages([]);
     setRefusalMessageIds(new Set());
     setPendingTurn(null);
@@ -85,35 +105,47 @@ export function TravelAgentChat({
     async (turn: PendingTurn) => {
       setRequestError(null);
       try {
-        let targetThreadId = threadId;
-        if (!targetThreadId) {
-          const created = await createThread.mutateAsync({
-            title: selectedPlace ? t("threadTitleWithPlace", { name: selectedPlace.place.name }) : t("threadTitle"),
-          });
-          targetThreadId = created.id;
-          storeThreadId(targetThreadId);
-          setThreadId(targetThreadId);
+        if (!effectiveThreadId) {
+          // Controlled callers must always supply a threadId. The parent
+          // (ExploreChatHost / TripWorkspace) owns provisioning; if the
+          // id is still null at submit time we surface a request error
+          // rather than try to create a thread out-of-band.
+          setRequestError(new Error("No active thread for this conversation"));
+          return;
         }
 
-        const response = await submitTurn.mutateAsync({ threadId: targetThreadId, input: turn });
+        const response = await submitTurn.mutateAsync({ threadId: effectiveThreadId, input: turn });
         setSessionMessages((current) => mergeMessages(current, [response.userMessage]));
         setStreamState(emptyStreamState());
         setActiveRunId(response.runId);
         setPendingTurn(null);
       } catch (error) {
         if (error instanceof TravelApiError && error.statusCode === 404) {
-          resetThreadSession();
+          clearLocalSessionState();
+          onThreadInvalidated?.();
           return;
         }
         setRequestError(error);
       }
     },
-    [createThread, submitTurn, t, selectedPlace, threadId, resetThreadSession],
+    [
+      submitTurn,
+      effectiveThreadId,
+      clearLocalSessionState,
+      onThreadInvalidated,
+    ],
   );
 
   useEffect(() => {
     if (pendingTurn && pendingTurnAnchorRef.current) {
-      pendingTurnAnchorRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      // scrollIntoView is unavailable in jsdom tests; guard defensively.
+      const node = pendingTurnAnchorRef.current;
+      const scroll = typeof node.scrollIntoView === "function" ? node.scrollIntoView : undefined;
+      try {
+        scroll?.({ behavior: "smooth", block: "start" });
+      } catch {
+        /* no-op in test environments without scrollIntoView */
+      }
     }
   }, [pendingTurn]);
 
@@ -125,8 +157,8 @@ export function TravelAgentChat({
   }, [isSending, open]);
 
   useEffect(() => {
-    if (panelInputRef.current && !autoAskRequest) {
-      if (open) panelInputRef.current.focus();
+    if (panelInputRef.current && open && !autoAskRequest) {
+      panelInputRef.current.focus();
     }
   }, [open, autoAskRequest]);
 
@@ -137,41 +169,49 @@ export function TravelAgentChat({
     textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
   }, [draft]);
 
-  // One-shot auto-ask: when ExploreMapPage sets a new nonce, fire exactly one
-  // "Tell me about {name}" turn as soon as the dialog is open. The nonce ensures
-  // repeated clicks (or re-renders with the same request) do not duplicate.
+  // One-shot auto-ask: when ExploreMapPage sets a new nonce, fire exactly
+  // one "Tell me about {name}" turn as soon as the dialog is open. The
+  // nonce ensures repeated clicks (or re-renders with the same request)
+  // do not duplicate. Auto-ask waits until `threadId` is provisioned by
+  // the parent (ExploreChatHost / TripWorkspace).
   useEffect(() => {
-    if (!autoAskRequest) return;
-    if (!open) return;
-    if (isSending) return;
-    if (firedAutoAskNoncesRef.current.has(autoAskRequest.nonce)) return;
-    firedAutoAskNoncesRef.current.add(autoAskRequest.nonce);
+  if (!autoAskRequest) return;
+  if (!open || !canSend) return;
+  if (isSending) return;
+  if (!effectiveThreadId) return;
+  if (firedAutoAskNoncesRef.current.has(autoAskRequest.nonce)) return;
+  firedAutoAskNoncesRef.current.add(autoAskRequest.nonce);
 
-    const turn: PendingTurn = {
-      requestId: crypto.randomUUID(),
-      question: t("askQuestion", { name: autoAskRequest.place.name }),
-      place: autoAskRequest.place,
-      intent: "auto_intro",
-    };
-    setPendingTurn(turn);
-    setRequestError(null);
-    setDraft("");
-    setExpanded(false);
-    void (async () => {
-      try {
-        await sendTurn(turn);
-      } finally {
-        onAutoAskConsumed?.(autoAskRequest.nonce);
-      }
-    })();
-  }, [autoAskRequest, open, isSending, t, sendTurn, onAutoAskConsumed]);
-
-  useEffect(() => {
-    if (conversation.error instanceof TravelApiError && conversation.error.statusCode === 404) {
-      const clearPointer = window.setTimeout(resetThreadSession, 0);
-      return () => window.clearTimeout(clearPointer);
+  const turn: PendingTurn = {
+    requestId: crypto.randomUUID(),
+    question: t("askQuestion", { name: autoAskRequest.place.name }),
+    place: autoAskRequest.place,
+    intent: "auto_intro",
+  };
+  setPendingTurn(turn);
+  setRequestError(null);
+  setDraft("");
+  setExpanded(false);
+  void (async () => {
+    try {
+      await sendTurn(turn);
+    } finally {
+      onAutoAskConsumed?.(autoAskRequest.nonce);
     }
-  }, [conversation.error, resetThreadSession]);
+  })();
+  }, [autoAskRequest, open, canSend, isSending, effectiveThreadId, t, sendTurn, onAutoAskConsumed]);
+
+  useEffect(() => {
+  if (conversation.error instanceof TravelApiError && conversation.error.statusCode === 404) {
+    // Synchronously clear local state when the server reports the
+    // active thread is gone. The cascading render is the correct
+    // behavior: it forces the host to re-route to a fresh default
+    // thread instead of replaying a ghost conversation.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    clearLocalSessionState();
+    onThreadInvalidated?.();
+  }
+  }, [conversation.error, clearLocalSessionState, onThreadInvalidated]);
 
   useEffect(() => {
     if (!activeRunId) return;
@@ -196,9 +236,9 @@ export function TravelAgentChat({
   useEffect(() => {
     const status = agentRun.data?.status;
     if (!activeRunId || !status) return;
-    if (status === "COMPLETED" && threadId) {
+    if (status === "COMPLETED" && effectiveThreadId) {
       let active = true;
-      void api.getOwnerConversation(threadId).then((restored) => {
+      void api.getOwnerConversation(effectiveThreadId).then((restored) => {
         if (active) {
           setSessionMessages((current) => mergeMessages(current, restored.messages));
         }
@@ -218,7 +258,7 @@ export function TravelAgentChat({
       }, 0);
       return () => window.clearTimeout(clearTerminalRun);
     }
-  }, [activeRunId, agentRun.data?.status, api, threadId]);
+  }, [activeRunId, agentRun.data?.status, api, effectiveThreadId]);
 
   const messages = useMemo(
     () => mergeMessages(conversation.data?.messages ?? [], sessionMessages),
@@ -233,7 +273,7 @@ export function TravelAgentChat({
   function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const question = draft.trim();
-    if (!question || isSending) return;
+    if (!question || inputDisabled) return;
 
     const turn: PendingTurn = {
       requestId: crypto.randomUUID(),
@@ -267,7 +307,7 @@ export function TravelAgentChat({
   }
 
   const submitButton = (
-    <button type="submit" aria-label={t("sendAria")} disabled={isSending} className="grid size-11 shrink-0 place-items-center rounded-full bg-sidebar text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70">
+    <button type="submit" aria-label={t("sendAria")} disabled={inputDisabled} className="grid size-11 shrink-0 place-items-center rounded-full bg-sidebar text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70">
       {isSending ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : <ArrowUp aria-hidden="true" className="size-5" />}
     </button>
   );
@@ -276,9 +316,12 @@ export function TravelAgentChat({
     return (
       <>
         <button type="button" onClick={onOpen} className="absolute bottom-20 right-4 z-40 rounded-full border border-white/80 bg-white/85 px-3 py-1.5 text-[11px] font-bold text-primary shadow-md backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 landscape:bottom-24 landscape:right-6">{t("history")}</button>
+        {resolvedThreadStatus !== "ready" ? (
+          <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
+        ) : null}
         <form onSubmit={submitMessage} className="wanderly-liquid-glass absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 rounded-full p-1.5 pl-4 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)] landscape:translate-x-0" aria-label={t("startAria")}>
           <Sparkles aria-hidden="true" className="size-4 shrink-0 text-primary" />
-          <input value={draft} disabled={isSending} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" />
+          <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" />
           {submitButton}
         </form>
       </>
@@ -296,6 +339,7 @@ export function TravelAgentChat({
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#f6fbf9_100%)] px-5 py-5" aria-live="polite">
+          {resolvedThreadStatus !== "ready" ? <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} /> : null}
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
             <div className="max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-sm leading-6 text-foreground">
@@ -329,7 +373,7 @@ export function TravelAgentChat({
       <form onSubmit={submitMessage} className="bg-white px-3 pb-3 pt-2">
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className="mb-1.5 flex h-5 max-w-full items-center rounded-full border border-white/80 bg-[#dff3ed]/90 px-2.5 text-[10px] font-bold text-primary shadow-sm backdrop-blur hover:bg-[#d2eee6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
         <div className="wanderly-liquid-glass flex min-h-14 items-end gap-2 rounded-[20px] p-1.5 pl-4">
-          <textarea ref={panelInputRef} value={draft} disabled={isSending} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className="min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" />
+          <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className="min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" />
           {submitButton}
         </div>
       </form>
@@ -339,17 +383,15 @@ export function TravelAgentChat({
   return expanded && typeof document !== "undefined" ? createPortal(conversationPanel, document.body) : conversationPanel;
 }
 
-function readStoredThreadId(): string | null {
-  if (typeof window === "undefined") return null;
-  try { return window.localStorage.getItem(CHAT_THREAD_STORAGE_KEY); } catch { return null; }
-}
-
-function storeThreadId(threadId: string) {
-  try { window.localStorage.setItem(CHAT_THREAD_STORAGE_KEY, threadId); } catch { /* optional pointer */ }
-}
-
-function clearStoredThreadId() {
-  try { window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY); } catch { /* optional pointer */ }
+function ThreadStatus({ status, onRetry, compact = false }: { status: ChatThreadStatus; onRetry?: () => void; compact?: boolean }) {
+  const t = useTranslations("explore.chat");
+  const message = status === "preparing" ? t("preparingPrivateChat") : t("privateChatUnavailable");
+  return (
+    <div role="status" className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 rounded-full bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-muted-foreground shadow-md backdrop-blur landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "rounded-[16px] border border-border bg-card p-3 text-sm text-muted-foreground"}>
+      <span>{message}</span>
+      {status === "error" && onRetry ? <button type="button" onClick={onRetry} className="font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30">{t("retryPrivateChat")}</button> : null}
+    </div>
+  );
 }
 
 function mergeMessages(current: ConversationMessage[], incoming: ConversationMessage[]) {

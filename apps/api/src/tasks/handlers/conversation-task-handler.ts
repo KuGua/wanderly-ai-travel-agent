@@ -1,11 +1,19 @@
+import { eq } from "drizzle-orm";
+
 import { DefaultPolicyGate } from "../../agents/policy-gate.js";
-import { containsUnsupportedOperationalClaim } from "../../policy/conversation-safety.js";
+import { db } from "../../db/database.js";
+import { sharedTrips, tripMembers } from "../../db/schema.js";
+import { ApiError } from "../../middleware/error-handler.js";
+import {
+  containsUnsupportedOperationalClaim,
+} from "../../policy/conversation-safety.js";
 import {
   executeTravelConversation,
   travelConversationSkill,
   travelConversationInputSchema,
   travelConversationOutputSchema,
 } from "../../skills/personal/travel-conversation-skill.js";
+import { personalTripContextSchema, type PersonalTripContext } from "../../skills/personal/personal-trip-context-schema.js";
 import type { AgentStreamEvent } from "../../types/schemas.js";
 import type { RequestContext } from "../../utils/context.js";
 import { agentTaskConfig } from "../config.js";
@@ -18,7 +26,30 @@ export async function handleConversationTask(params: {
   ctx: RequestContext;
   signal: AbortSignal;
 }) {
-  const input = travelConversationInputSchema.parse(await loadConversationTaskInput(params.run));
+  // Re-check that the creator is still an active member of the
+  // thread's Trip.  Membership may have changed between acceptance
+  // (when the row was locked) and worker pick-up (now).  Per
+  // docs/trip-scoped-private-threads-implementation.md §7, this
+  // short-circuits the task before any Trip metadata is loaded and
+  // any agent output is rendered.
+  if (!params.run.threadId) {
+    throw new ApiError(500, "Internal Server Error", "Conversation task missing threadId");
+  }
+  if (!params.run.tripId) {
+    throw new ApiError(500, "Internal Server Error", "Conversation task missing tripId");
+  }
+  const [membership] = await db.select({ userId: tripMembers.userId })
+    .from(tripMembers)
+    .where(eq(tripMembers.tripId, params.run.tripId))
+    .limit(1);
+  if (!membership || membership.userId !== params.run.createdByUserId) {
+    throw new ApiError(403, "Forbidden", "Thread owner is no longer a member of this trip");
+  }
+
+  const baseInput = await loadConversationTaskInput(params.run);
+  const tripContext = await loadPersonalTripContext(params.run.tripId);
+  const input = travelConversationInputSchema.parse({ ...baseInput, tripContext });
+
   const gate = new SafeConversationDeltaGate(params.run, params.ctx.traceparent);
   const execution = new AbortController();
   const abortFromTask = () => execution.abort(params.signal.reason);
@@ -48,6 +79,44 @@ export async function handleConversationTask(params: {
   }
   if (gate.rawText === parsed.content) await gate.flush();
   return parsed;
+}
+
+/**
+ * Loads the server-derived PersonalTripContext for a single trip.
+ * The result is the closed allow-list defined in
+ * skills/personal/personal-trip-context-schema.ts — no other Trip data
+ * (members, plans, consent, snapshots) is ever returned.
+ *
+ * Throws if the trip row no longer exists; the caller treats this as a
+ * terminal task failure.
+ */
+async function loadPersonalTripContext(tripId: string): Promise<PersonalTripContext> {
+  const [trip] = await db.select({
+    id: sharedTrips.id,
+    name: sharedTrips.name,
+    status: sharedTrips.status,
+    travelDateStart: sharedTrips.travelDateStart,
+    travelDateEnd: sharedTrips.travelDateEnd,
+    destinationCandidates: sharedTrips.destinationCandidates,
+  }).from(sharedTrips).where(eq(sharedTrips.id, tripId)).limit(1);
+  if (!trip) {
+    throw new ApiError(404, "Not Found", "Trip not found while loading PersonalTripContext");
+  }
+  // CONFIRMED, BOOKED, CANCELLED all map to "CONFIRMED" only for
+  // personal-agent purposes; anything other than PLANNING/STALE is
+  // surfaced as CONFIRMED so the agent has a stable, non-leaky label.
+  const tripStatus: PersonalTripContext["tripStatus"] =
+    trip.status === "PLANNING" || trip.status === "STALE"
+      ? trip.status
+      : "CONFIRMED";
+  return personalTripContextSchema.parse({
+    tripId: trip.id,
+    tripName: trip.name,
+    tripStatus,
+    travelDateStart: trip.travelDateStart,
+    travelDateEnd: trip.travelDateEnd,
+    destinationCandidates: trip.destinationCandidates,
+  });
 }
 
 class SafeConversationDeltaGate {

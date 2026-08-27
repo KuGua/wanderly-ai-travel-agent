@@ -14,6 +14,8 @@ import { confirmationRoutes } from "./routes/confirmations.js";
 import { bookingRoutes } from "./routes/bookings.js";
 import { changeEventRoutes } from "./routes/change-events.js";
 import { chatThreadRoutes } from "./routes/chat-threads.js";
+import { tripInvitationRoutes } from "./routes/trip-invitations.js";
+import { tripThreadRoutes } from "./routes/trip-threads.js";
 import { locationReferenceRoutes } from "./routes/location-reference.js";
 import { agentRunRoutes } from "./routes/agent-runs.js";
 import { authRoutes } from "./routes/auth.js";
@@ -200,6 +202,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(bookingRoutes, { prefix: "/api/v1" });
   await app.register(changeEventRoutes, { prefix: "/api/v1" });
   await app.register(chatThreadRoutes, { prefix: "/api/v1" });
+  await app.register(tripInvitationRoutes, { prefix: "/api/v1" });
+  await app.register(tripThreadRoutes, { prefix: "/api/v1" });
   await app.register(locationReferenceRoutes, { prefix: "/api/v1" });
   await app.register(agentRunRoutes, { prefix: "/api/v1", relay: agentStreamRelay });
   await app.register(authRoutes, { prefix: "/api/v1" });

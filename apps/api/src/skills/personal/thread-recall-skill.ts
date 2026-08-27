@@ -2,9 +2,9 @@ import { z } from "zod";
 import { eq, desc } from "drizzle-orm";
 import type { Skill } from "../../agents/contracts.js";
 import { db } from "../../db/database.js";
-import { chatThreads, chatMessages } from "../../db/schema.js";
-import { ApiError } from "../../middleware/error-handler.js";
+import { chatMessages } from "../../db/schema.js";
 import { chatMessageRoleSchema } from "../../types/schemas.js";
+import { requireOwnedTripThreadRead } from "../../services/chat-thread-service.js";
 
 export const threadRecallInputSchema = z.object({
   threadId: z.string().uuid(),
@@ -33,17 +33,18 @@ export const threadRecallSkill: Skill<ThreadRecallInput, ThreadRecallOutput> = {
   input: threadRecallInputSchema,
   output: threadRecallOutputSchema,
   async handler({ ctx }, input) {
-    // Owner-only enforcement: the thread must belong to the calling user.
-    // 404 when the thread does not exist; 403 when the caller is not the
-    // owner (matches the trips.ts pattern; never 404 in place of 403 to
-    // avoid enumeration).
-    const [thread] = await db.select().from(chatThreads)
-      .where(eq(chatThreads.id, input.threadId))
-      .limit(1);
-    if (!thread) throw new ApiError(404, "Not Found", "Thread not found");
-    if (thread.ownerUserId !== ctx.actorUserId) {
-      throw new ApiError(403, "Forbidden", "Not the owner of this thread");
+    // Ownership + Trip-membership check delegated to the shared helper.
+    // Throws 404 when the thread does not exist; 403 when the caller is
+    // not the owner or is no longer an active member of the thread's
+    // trip — never 404 in place of 403 to avoid enumeration.
+    // `ctx` here is the RequestContext (SkillContext is the outer arg);
+    // actorUserId is optional but the skill is always invoked from an
+    // authenticated task, so it must be present.
+    const actorUserId = ctx.actorUserId;
+    if (!actorUserId) {
+      throw new Error("Skill invoked without an authenticated actor");
     }
+    await requireOwnedTripThreadRead(input.threadId, actorUserId);
 
     const rows = await db.select({
       id: chatMessages.id,

@@ -10,12 +10,15 @@ import {
   agentTaskRuns,
   chatThreads,
   idempotencyRecords,
+  users,
 } from "../src/db/schema.js";
 import { AgentStreamRelay } from "../src/tasks/agent-stream-relay.js";
 import { loadConversationTaskInput } from "../src/tasks/task-repository.js";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
+import { provisionTripAndMember } from "./helpers/trip.js";
 
 let app: FastifyInstance;
+let tripId: string;
 
 beforeAll(async () => {
   app = await buildApp({
@@ -23,6 +26,13 @@ beforeAll(async () => {
     agentStreamRelay: new AgentStreamRelay(),
   });
   await app.ready();
+  // Per docs/trip-scoped-private-threads-implementation.md §1.1 every
+  // chat thread must belong to a Trip and the creator must be an active
+  // member.  Provision a Trip for the alice test user once per suite.
+  const [alice] = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
+  if (!alice) throw new Error("alice test user not provisioned");
+  const provisioned = await provisionTripAndMember({ ownerUserId: alice.id });
+  tripId = provisioned.tripId;
 });
 
 afterAll(async () => {
@@ -41,7 +51,7 @@ describe("agent_task_runs.intent persistence", () => {
         method: "POST",
         url: "/api/v1/threads",
         headers: { ...authHeaders("alice"), "content-type": "application/json" },
-        payload: { title: `Intent persistence ${randomUUID()}` },
+        payload: { title: `Intent persistence ${randomUUID()}`, tripId },
       });
       expect(created.statusCode).toBe(201);
       threadId = (created.json() as { id: string }).id;
@@ -100,7 +110,7 @@ describe("agent_task_runs.intent persistence", () => {
         method: "POST",
         url: "/api/v1/threads",
         headers: { ...authHeaders("alice"), "content-type": "application/json" },
-        payload: { title: `Intent null ${randomUUID()}` },
+        payload: { title: `Intent null ${randomUUID()}`, tripId },
       });
       threadId = (created.json() as { id: string }).id;
 

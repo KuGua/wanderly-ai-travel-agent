@@ -10,6 +10,7 @@ import type {
 } from "./model-gateway.js";
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace } from "../types/schemas.js";
+import type { PersonalTripContext } from "../skills/personal/personal-trip-context-schema.js";
 import { recordAgentRun, type AgentRunTokens } from "../observability/agent-runs.js";
 import { metrics, type MetricProvider } from "../observability/metrics.js";
 import {
@@ -440,6 +441,7 @@ export class LLMGateway implements ModelGateway {
     place?: ConversationPlace;
     history: ConversationHistoryMessage[];
     intent?: "auto_intro" | "user_typed";
+    tripContext?: PersonalTripContext;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<ConversationReply> {
@@ -504,6 +506,7 @@ export class LLMGateway implements ModelGateway {
                 place: params.place ?? null,
                 intent: params.intent ?? null,
                 safeHistory: params.history,
+                tripContext: params.tripContext ?? null,
               }),
             },
           ],
@@ -567,6 +570,7 @@ export class LLMGateway implements ModelGateway {
     place?: ConversationPlace;
     history: ConversationHistoryMessage[];
     intent?: "auto_intro" | "user_typed";
+    tripContext?: PersonalTripContext;
     onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;
@@ -615,6 +619,7 @@ export class LLMGateway implements ModelGateway {
               place: params.place ?? null,
               intent: params.intent ?? null,
               safeHistory: params.history,
+              tripContext: params.tripContext ?? null,
             }),
           },
         ],

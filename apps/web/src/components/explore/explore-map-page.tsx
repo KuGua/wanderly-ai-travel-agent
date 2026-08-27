@@ -12,7 +12,7 @@ import { CountryBoundaryOverlay } from "./country-boundary-overlay";
 import { cityKey, findMentionedCities, loadCityCatalog, type CatalogCity } from "./city-catalog";
 import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { solidifyGlobeStyle } from "./map-surface-style";
-import { TravelAgentChat } from "./travel-agent-chat";
+import { ExploreChatHost } from "./explore-chat-host";
 import { useOptionalTravelApi } from "@/lib/query/provider";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { Link } from "@/i18n/navigation";
@@ -869,7 +869,7 @@ export function ExploreMapPage() {
           ) : null}
         </aside>
       ) : null}
-      <TravelAgentChat
+      <ExploreChatHost
         open={chatOpen}
         onOpen={openChat}
         onDismiss={dismissChat}

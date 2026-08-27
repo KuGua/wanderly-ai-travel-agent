@@ -198,6 +198,11 @@
       "providerUnavailable": "Agent 暂时不可用。你可以安全地重试同一轮消息。",
       "threadMissing": "该私人对话已不存在。重试即可新建对话。",
       "genericError": "消息发送失败，请重试。",
+      "preparingPrivateChat": "正在准备你的私人对话…",
+      "privateChatUnavailable": "私人对话暂不可用。",
+      "retryPrivateChat": "重试",
+      "tripPickerLabel": "行程",
+      "switchTripAria": "切换行程",
       "askAbout": "询问 {name} · {context}",
       "askQuestion": "介绍一下 {name}",
       "messageInputAria": "向 Wanderly Agent 发送消息",
@@ -271,10 +276,44 @@
     }
   },
   "trips": {
-    "kicker": "下一实施阶段",
-    "title": "行程工作区尚未接入",
-    "body": "本切片仅展示由行程列表合约确认的字段。规划、授权与确认状态暂未推断。",
-    "backToHome": "返回主页"
+    "kicker": "行程工作区",
+    "title": "与同行旅伴一起规划与对话",
+    "body": "在此查看你针对本行程的私有对话。其他成员无法看到你的对话，且对话仅归属于此行程。",
+    "backToHome": "返回主页",
+    "notFound": "未找到该行程。",
+    "errors": {
+      "membershipRevoked": "你已无法访问此行程。"
+    },
+    "header": {
+      "status": "状态",
+      "statusValue": {
+        "PLANNING": "规划中",
+        "CONFIRMED": "已确认",
+        "BOOKED": "已预订",
+        "CANCELLED": "已取消",
+        "STALE": "需要复核"
+      },
+      "dates": "出行日期",
+      "datesRange": "{start} – {end}",
+      "datesUnknown": "尚未设置",
+      "destinations": "候选目的地",
+      "members": "{count, plural, =0 {暂无成员} other {# 位成员}}"
+    },
+    "threads": {
+      "heading": "你的对话",
+      "loading": "正在加载你的对话…",
+      "errorTitle": "对话暂不可用",
+      "emptyTitle": "暂无对话",
+      "emptyBody": "创建第一条对话以开始与你的行程助手交流。",
+      "defaultBadge": "默认",
+      "newThread": {
+        "label": "新建对话",
+        "placeholder": "例如：签证准备、预算、逐日行程",
+        "submit": "创建",
+        "submitting": "创建中…",
+        "validation": "标题需为 1–256 字符。"
+      }
+    }
   },
   "login": {
     "heading": "登录",
