@@ -1,6 +1,6 @@
 # AI Travel Agent 技术栈（Hackathon 收敛版）
 
-**状态：** 真实身份与服务端模型是唯一运行路径；旅行 provider 尚待配置。无可验证的 provider 数据时，系统返回不可用状态，绝不生成替代报价或库存。
+**状态：** 真实身份与服务端模型是唯一运行路径；旅行 provider 尚待配置。无可验证的 provider 数据时，系统返回 `UNAVAILABLE`，绝不生成替代报价、库存或 Demo data。
 
 **基线：** 2026-08-23
 
@@ -16,15 +16,15 @@ Responsive Web / PWA (Next.js on AWS Amplify Hosting)
         ▼
 Node.js API + Agent runner (AWS App Runner)
         │                 │
-        │                 ├─ OpenAI Agents SDK → ModelGateway → OpenAI API
+        │                 ├─ ModelGateway → configured OpenAI-compatible LLM
         │                 └─ typed provider adapters
         ▼
 Amazon RDS for PostgreSQL
         │
-        ├─ Amadeus Test (Flight / Hotel; optional live enhancement)
+        ├─ Amadeus Self-Service Flight Offers Search (adapter; server-side only)
         ├─ openrouteservice (Ground routing; optional live enhancement)
         ├─ Frankfurter (budget normalization; optional live enhancement)
-        └─ visa/readiness fixture with source + checked time
+        └─ official visa/readiness verification sources
 ```
 
 所有用户、偏好和行程均来自已认证用户与数据库。唯一例外是匿名、无持久化、限流的离线地图位置参考：它不创建用户或业务状态。任何 provider 调用失败都必须显示不可用状态，不能伪装成实时库存、报价或签证结论。
@@ -42,13 +42,19 @@ Amazon RDS for PostgreSQL
 | 离线地图位置参考 | 进程内 `LocationReferenceResolver`（生产默认）/ `disabled` 模式（仅返回 `NO_REFERENCE`）/ 本地 dev 可选 `sidecar` 容器（`apps/api/src/location-reference/location-reference-source.ts`） | 生产保留单进程以降低 RPS 内存与跨实例限流复杂度；本地 dev 通过 `LOCATION_REFERENCE_MODE=sidecar` 把 ~70 MB GeoJSON 抽到独立容器，避免 API/Worker 重复加载；`disabled` 模式跳过数据加载直接返回 `NO_REFERENCE`，用于 16GB Mac 端到端 demo | 把位置参考改为共享 Redis 缓存、把 sidecar 推到生产、把 `disabled` 当作"零成本"代替 fixture。 |
 | 身份 | **Amazon Cognito User Pool**，邮箱或手机号登录，API 验证 access token | 身份来自已验证 JWT 的 `sub`，前端不能通过用户 ID 或 demo 角色选择身份。生产使用 Cognito；本地仅允许显式 `local-dev`（固定单一身份 smoke test）或 `custom-local`（数据库用户名/密码和 API JWT，用于多用户隔离测试）。两者均仅限 development/test 与 server/client loopback。 | 复杂 SSO、社交登录矩阵、组织管理。 |
 | 主数据库 | **Amazon RDS for PostgreSQL** + SQL migrations + Drizzle ORM | 需要事务、关系约束、审计和版本一致性：Profile、用户私有对话、字段级 consent、两个出发地、候选方案、三人确认和 callback 去重必须共享一个权威真相源。RDS PostgreSQL 支持 VPC、SSL、快照与时间点恢复。[AWS RDS PostgreSQL](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html) | SQLite 作为云端主库、NoSQL 作为业务真相。 |
-| Agent | **OpenAI Agents SDK（TypeScript）**，运行在 App Runner；`ModelGateway` 隔离 provider | 部署到 AWS 不妨碍使用 SDK。Agent 只调用类型化工具；SDK 不是授权、确认或持久状态机。 | 让模型直接读写数据库、付款或自由互聊的多 Agent 群。 |
-| 工具与模型边界 | Zod schema、structured outputs、server-side policy gate | 对话 archive 仅由所有者读取；所有工具只获得当前 `constraint_snapshot` 的最小授权字段，模型仅接收当前请求和用户明确选择的最小上下文；模型输出不直接成为业务真相。 | 把 Profile/私聊全文放进长 prompt、共享 snapshot、遥测或向前端暴露供应商 key。 |
-| 旅行与数据 API | Amadeus Test Flight/Hotel、openrouteservice Routing、Frankfurter；通过 provider adapters；版本化离线地图位置参考数据 | 前三者覆盖候选比较；唯一匿名端点按每客户端每分钟 30 次限流，仅将用户显式点击的坐标映射为非权威国家/最近城市上下文，不成为旅行事实或持久化数据。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA；地图位置参考不得变成地址、POI 或旅行 provider。 |
+| Agent | **受限 Skill Registry + ModelGateway**，运行在 App Runner | 模型只能通过服务器暴露的、类型化 function-tool 契约请求能力；具体 LLM 为可配置的 OpenAI-compatible provider。SDK 不是授权、确认或持久状态机。 | 让模型直接读写数据库、付款或自由互聊的多 Agent 群。 |
+| 工具与模型边界 | Zod schema、structured outputs、server-side policy gate | 对话 archive 仅由所有者读取；所有工具只获得当前 `constraint_snapshot` 的最小授权字段。模型发起 Tool 调用，服务端校验参数、执行 provider 请求并决定完整性；模型输出不直接成为业务真相。 | 把 Profile/私聊全文放进长 prompt、共享 snapshot、遥测或向前端暴露供应商 key。 |
+| 旅行与数据 API | Amadeus Self-Service Flight Offers Search、openrouteservice Routing、Frankfurter；通过 provider adapters；版本化离线地图位置参考数据 | Flight adapter 仅在服务端启用并以 `UNAVAILABLE` fail closed；Amadeus Test 仅用于开发集成验证，不向产品展示为实时结果。唯一匿名端点按每客户端每分钟 30 次限流，仅将用户显式点击的坐标映射为非权威国家/最近城市上下文，不成为旅行事实或持久化数据。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA；地图位置参考不得变成地址、POI 或旅行 provider。 |
 | Visa / entry | 官方核验下一步；未来可接 Sherpa/IATA Timatic adapter | 未配置可靠数据源时只展示核验缺口与官方核验下一步。 | 以 LLM 或 Wikipedia 推断签证、代办、法律结论。 |
 | 异步与编排 | PostgreSQL 持久任务状态机、租约领取、idempotency key、transactional outbox、`agent_task_runs`；Fargate Worker；同步 booking sandbox | 对话、planning 与 replan 都以 `QUEUED → RUNNING → COMPLETED/FAILED/STALE/CANCELLED` 执行；显式 Stop 是唯一取消源。租约过期可恢复，最终提交按 lease token 和版本条件化；不把 partial 文本作为业务记录。 | Temporal Cloud、Step Functions、Redis 队列同时进入 MVP；把浏览器/SSE 断开视为取消。 |
 | 可观测性 | OpenTelemetry + CloudWatch；结构化日志和低基数业务指标 | 以 `trip_id`、`plan_version`、`run_id`、`orchestration_request_id` 关联结果；日志不含私聊、国籍明文、证件号、支付数据。 | 先建独立数据湖或全套企业 APM。 |
 | 密钥与部署 | AWS Secrets Manager、最小 IAM role、ECR、GitHub Actions OIDC、IaC | API keys 仅后端可读；GitHub OIDC 避免在 CI 保存长期 AWS 凭据。[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-cloud-providers) | 将 API key、数据库密码或 Cognito secret 放进浏览器、代码库或 demo fixture。 |
+
+### 探索会话与 Draft Trip 生命周期
+
+`/home` 进入只创建浏览器内存中的探索会话，不立即写数据库；地图浏览、坐标点击和打开聊天均不持久化业务状态。用户提交第一条聊天消息时，Fastify 通过幂等、单事务的 `POST /explorations/start` 创建 `DRAFT` Trip、创建者 membership 与默认私有 thread，随后浏览器调用既有 thread turn endpoint。每次新标签页、整页刷新或重新打开开始新的内存会话；同一标签页内客户端路由切换保留该会话。不得使用 URL、`localStorage` 或 `sessionStorage` 恢复当前探索 Trip。
+
+`DRAFT` 仅允许私有探索对话与编辑 brief，不能邀请、授权、创建 snapshot、planning/replan、确认或 booking。只有 creator 显式“开始规划/邀请同行者”且 brief 满足正式约束后，服务端才将其激活为 `PLANNING`。实现细节见 [探索会话与 Trip 生命周期实施方案](docs/exploration-trip-lifecycle-implementation.md)。
 
 ## 3. 为什么不用 SQLite 作主数据库
 
@@ -90,14 +96,14 @@ Agent 不能自行跨越以下边界：
 2. 授权撤回或约束变化会使依赖它的 plan 和 confirmations 进入 `STALE`。
 3. 只有三个 required members 对同一最新 plan version 为 `CONFIRMED` 才能创建 `booking_execution`。
 4. `orchestration_request_id` 和 provider callback id 全局幂等。
-5. 每个价格、路线和 visa 输出有 `source`、`captured_at` 或 `Demo data` 标签。
+5. 每个价格、路线和 visa 输出有 `source` 与 `captured_at`；报价额外带 `expires_at`。无可验证数据只返回 `UNAVAILABLE`。
 6. 每个 `private_conversation` 仅属于一个用户，使用独立 `conversation_id`，可选关联一个 `trip_id`；消息正文不进入 snapshot、共享视图、日志、trace 或 metric，删除线程时删除正文。
 
-## 5. API 取舍与 fallback
+## 5. API 取舍与不可用语义
 
 | 能力 | 选择 | MVP 行为 | 风险与缓解 |
 |---|---|---|---|
-| Flight / Hotel | 配置后的供应商 adapter | 每个目的地候选仅使用可验证的 live 查询结果；失败则返回不可用 | 供应商覆盖和商业条款必须在启用前验证。 |
+| Flight | Amadeus Self-Service Flight Offers Search adapter | 每个目的地候选仅使用可验证的 provider 查询结果；Test 环境只用于开发验证，生产展示仅使用 Production 查询结果；失败则返回 `UNAVAILABLE` | 供应商覆盖、商业条款、报价过期和模型 Tool-calling 兼容性必须在启用前验证。 |
 | Ground | 配置后的路由 adapter | 仅在完整端点和来源可验证时生成路线 | 公共服务有使用上限和 attribution 要求。 |
 | Budget | Frankfurter adapter | 归一化候选总预算；显示汇率日期与“参考汇率” | 不能被当作支付或结算汇率；API 不可用时显示不可用。 |
 | Visa readiness | 官方核验下一步 | 对每名授权成员、每个展示候选给出待办/核验缺口 | 没有可靠数据源前不得宣称实时正确或给法律建议。 |
@@ -110,15 +116,15 @@ Agent 不能自行跨越以下边界：
 ### 当前决定
 
 - 应用前端、API、数据库、密钥和可观测性部署在 AWS。
-- OpenAI Agents SDK 继续作为 TypeScript agent orchestration 库。
-- OpenAI 模型调用经 `ModelGateway` 在后端发起；密钥存于 Secrets Manager。
+- `ModelGateway` 通过 OpenAI-compatible Tool-calling 契约调用已配置模型；密钥存于 Secrets Manager。
+- `flight.search` 由模型请求、服务器执行；每种 LLM provider 必须先通过 function-tool compatibility spike。
 - 不在 MVP 强行引入 Bedrock AgentCore、Bedrock Agents 或 Bedrock 模型。
 
-AWS AgentCore 的确支持包括 OpenAI Agents SDK 在内的多种框架，但这只能说明它是将来的可选运行环境，并不证明本次赛事必须用它。[AWS AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/using-any-agent-framework.html)
+AWS AgentCore 的确支持多种框架，但这只能说明它是将来的可选运行环境，并不证明本次赛事必须用它；当前方案不以任何特定 Agent SDK 为运行时依赖。[AWS AgentCore](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/using-any-agent-framework.html)
 
 ### 防止 provider lock-in
 
-`ModelGateway` 对上提供 `generateStructuredPlan()` / `explainPlanDiff()` 等应用能力，对下隐藏 OpenAI、Bedrock 或其他模型的 SDK。`TravelProvider` 对上提供 `searchFlights()`、`searchStays()`、`routeGround()`、`checkReadiness()`，隐藏 Amadeus/openrouteservice/fixture 的返回格式。
+`ModelGateway` 对上提供结构化生成和受限 Tool-calling 能力，对下隐藏 OpenAI-compatible LLM 的差异。`TravelProvider` 对上提供 `searchFlights()`、`searchStays()`、`routeGround()`、`checkReadiness()`，隐藏 Amadeus/openrouteservice 的返回格式。
 
 这不是为多云做抽象秀：它保护两个已知的真实变化点——hackathon live API 可能失效，后续模型/赛事限制可能变化。
 
@@ -127,7 +133,7 @@ AWS AgentCore 的确支持包括 OpenAI Agents SDK 在内的多种框架，但�
 | 维度 | Hackathon MVP | Pilot / 未来 |
 |---|---|---|
 | 用户与路线 | 三个 seed 用户、两个出发地、两到三个预设目的地、至少两国籍 | 真实注册用户、可配置城市和更广覆盖 |
-| 数据 | fixture 为基线，live API 为增强 | 正式供应商合同、SLAs、监控与多 provider routing |
+| 数据 | 已配置 provider 的可验证结果；失败明确 `UNAVAILABLE` | 正式供应商合同、SLAs、监控与多 provider routing |
 | 工作流 | 数据库状态机 + 同步 booking sandbox | Step Functions Standard 或 Temporal，用于长等待、真实 callback、补偿和人工处理 |
 | 支付与订单 | 无支付；sandbox reference | 在 merchant-of-record、退款、PCI、客服责任明确后才接支付与真实订单 |
 | 签证 | 来源化 checklist / official verification CTA | 商业签证数据 provider、审计、法律/产品评审；仍不承诺批准 |
@@ -142,17 +148,17 @@ AWS AgentCore 的确支持包括 OpenAI Agents SDK 在内的多种框架，但�
 
 | 风险 | 最小控制 |
 |---|---|
-| live API 不稳定 | 所有工具均有版本化 fixture；UI 明示数据来源。 |
+| live API 不稳定 | 受控 `UNAVAILABLE` 状态、恢复操作和失败遥测；不创建 plan 或替代报价。 |
 | 三人多约束导致 demo 拖沓 | 预置 Profile、两出发地、最多三个候选、一个确定性变化事件；不允许自由目的地搜索。 |
 | 未授权信息泄露 | 服务器创建最小授权 snapshot；共享页面只读取其字段；测试跨用户读取与授权撤回。 |
-| OpenAI 或 AWS 服务变更 | ModelGateway；API/部署和 agent framework 分离。 |
+| LLM 或 AWS 服务变更 | ModelGateway；API/部署和 OpenAI-compatible provider 分离。 |
 | 重复 callback / 重复 sandbox | plan version + idempotency key；三人确认是执行前硬门槛。 |
 
 ## 9. 实现前仅需验证的事项
 
 1. 取得赛事规则原文，确认 “部署到 AWS” 是否要求特定 AWS 服务或区域。
-2. 确定 Hero 的两个出发地、两到三个目的地候选、三位测试用户和至少两种国籍；将其制作为稳定 fixture。
-3. 对该固定场景试跑一次 Amadeus Test、openrouteservice、Frankfurter；任何失败都不改变 fixture-first 基线。
-4. 完成最小 OpenAI Agents SDK tool-call spike，确认 structured output、超时与错误处理；失败时降级为同一 `ModelGateway` 下的直接 OpenAI Responses 调用。
+2. 确定 Hero 的两个出发地、两到三个目的地候选、三位测试用户和至少两种国籍；将测试数据限制在 test-only 依赖注入路径。
+3. 对该固定场景试跑 Amadeus Test，验证认证、IATA 路线、限流和返回字段；Test 结果不进入产品运行路径。
+4. 对目标 OpenAI-compatible LLM 完成 function-tool compatibility spike，确认多轮 tool loop、schema、超时、取消和错误处理；失败时保持服务器检索 + 模型解释，不启用自主 Tool 调用。
 
 在以上验证通过前，不应将平台宣传为真实库存、实时签证判断或可实际购票的生产 OTA。

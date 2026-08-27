@@ -18,7 +18,7 @@
 
 | 层 | 责任 | 实现方式 |
 |---|---|---|
-| Agent / Skill 平面 | 理解意图、选择允许的 Skills、有限任务规划、解释取舍、生成变更提案及审查说明质量。 | 经 ModelGateway 接入 OpenAI Agents SDK；每个 Skill 有类型、权限与输出契约。 |
+| Agent / Skill 平面 | 理解意图、选择允许的 Skills、有限任务规划、解释取舍、生成变更提案及审查说明质量。 | 经 ModelGateway 接入已配置的 OpenAI-compatible LLM；每个 Skill 有类型、权限与输出契约。 |
 | 协作平面 | Personal Agent 将明确授权的约束交给 Shared Trip Agent；Shared Agent 综合多人约束。 | consent grants 经服务端构建为 constraint snapshots，而不是 Agent 间聊天。 |
 | 控制平面 | 守住业务不变量和不可逆操作边界。 | PostgreSQL、领域服务、事务、版本、STALE、确认门槛、幂等、audit 和 outbox。 |
 
@@ -34,10 +34,10 @@
 
 - 用户明确保存的 user_profiles 和 preference_facts；
 - 本行程获授权的 consent_grants 和 constraint_snapshots；
-- 版本化 travel / visa fixtures，或未来的 typed live provider；
+- 已配置 typed provider 的规范化结果与官方核验来源；
 - provider_offers、source_evidence 与 visa_readiness_checks。
 
-三位用户、2–3 个固定候选目的地和版本化 fixture 不构成非结构化知识检索问题。RAG 会增加索引更新、来源过期、误检索、prompt injection 与敏感数据暴露面，却不能解决本项目核心问题：授权边界和多成员方案一致性。
+三位用户、2–3 个固定候选目的地和结构化 provider 结果不构成非结构化知识检索问题。RAG 会增加索引更新、来源过期、误检索、prompt injection 与敏感数据暴露面，却不能解决本项目核心问题：授权边界和多成员方案一致性。
 
 ## 2. Agent 拓扑
 
@@ -103,7 +103,8 @@ Skill = 输入 Zod schema
 | ConsentExplanationSkill | Personal | 本人 grants → “我正在共享什么”。 | getActiveConsents。 | 不显示其他成员授权。 |
 | TravelConversationSkill | Personal | 当前问题 + 可选最小 place context + 安全 recall → 私有回答。 | ModelGateway.generateConversationReply。 | 不接受客户端角色；不声称 live price、库存、visa 或 booking；fallback 显式标记。 |
 | ConsentExportSkill | 服务端协作边界 | trip + active grants → 最小化 snapshot。 | buildAuthorizedData、createConstraintSnapshot。 | 不由模型执行；禁止 passport number。 |
-| CandidateResearchSkill | Shared | snapshot + candidate → ResearchBundle。 | FlightProvider、StayProvider、GroundProvider、fixtures。 | 只请求已配置候选；失败必须明确 fallback。 |
+| FlightSearchSkill | Shared | snapshot-bound origin + candidate → normalized Flight evidence 或 `UNAVAILABLE`。 | FlightProvider、Amadeus adapter。 | LLM 可请求 Tool；服务端校验参数并保证研究覆盖；不成功不生成替代 offer。 |
+| CandidateResearchSkill | Shared | snapshot + candidate → ResearchBundle。 | FlightProvider、StayProvider、GroundProvider。 | 只请求已配置候选；失败必须明确 `UNAVAILABLE`。 |
 | ReadinessSkill | Shared | 授权国籍 + 成员 + 路线 → readiness 或 verification gap。 | VisaProvider、checkVisaReadiness。 | 未授权不得推断；不得法律建议。 |
 | PlanComparisonSkill | Shared | candidate bundles + 约束摘要 → 带 evidence ID 的 PlanSynthesis。 | ModelGateway.generateStructuredPlan。 | 不生成新的 offer、价格或签证结论。 |
 | PlanDiffExplanationSkill | Shared | safe old/new plan → diff explanation。 | ModelGateway.explainPlanDiff。 | 只解释持久化差异，不改变状态。 |
@@ -199,18 +200,18 @@ profile / consent / constraint / provider change
 
 | 边界 | 规则 |
 |---|---|
-| Travel provider | 单调用 deadline；只对瞬态失败做有限 retry；失败、无数据或不可信时返回版本化 fixture，明确标记 Demo data。 |
+| Travel provider | 单调用 deadline；只对瞬态失败做有限 retry；失败、无数据或不可信时返回 `UNAVAILABLE`，不返回替代数据。 |
 | Model / Skill 执行 | 限制最大步骤、输出大小和总 deadline；只对传输/限流错误做一次 retry。schema/policy failure 不扩大 prompt 重试，而是安全失败。 |
 | Plan comparison | 模型失败时降级为确定性候选列表和 evidence 摘要；不得生成未经验证的解释或事实。 |
 | Idempotency / callback | 副作用前原子 claim；callback 必须独立认证、关联预期 booking execution，并按 provider event ID 去重；late callback 不覆盖终态。 |
 | 恢复 | timeout/failed run 保留安全 step outcome；下一次触发从新 snapshot 开始，不恢复使用旧 snapshot 的半完成 plan。 |
 
-provider 层已使用判别联合 `ProviderResult<T>`，其 `outcome` 为 `LIVE | FALLBACK_DEMO | UNAVAILABLE`。fixture 命中返回带固定来源、采集时间、fixture version 与 fallback 原因的 `FALLBACK_DEMO`；fixture 缺失返回不含 `data` 的 `UNAVAILABLE`，调用方必须先 narrowing。
+provider 层使用判别联合 `ProviderResult<T>`，其 `outcome` 为 `LIVE | UNAVAILABLE`。`LIVE` 必须有可验证来源、采集时间和报价有效期；`UNAVAILABLE` 不含 `data`，调用方必须先 narrowing，且不得创建替代报价或 evidence。
 
 当前 planning control plane 在 `ModelGateway` 输出与 `itineraryPlans` 写入之间执行两层确定性校验：
 
 1. `snapshot-policy.ts` 只允许引用实际存在于 immutable snapshot 的 `authorizedData.<memberId>.<fieldName>`；路径缺失、格式不明确或字段未授权均 fail closed。
-2. `plan-output-validator.ts` 使用 strict Zod schema 校验结构，并校验所有 origin/destination、source/capturedAt/fixtureVersion，以及选中 offer 与当前 planning run provider evidence 的完整对象一致性。
+2. `plan-output-validator.ts` 使用 strict Zod schema 校验结构，并校验所有 origin/destination、source/capturedAt/expiresAt，以及选中 offer 与当前 planning run provider evidence 的完整对象一致性。
 
 失败统一抛出 `PlanValidationError`（HTTP `422`）。`violations` 仅包含稳定 code、field path 和低风险 reason，不回显模型值或 snapshot 私密内容；失败发生在任何 plan/provider/evidence persistence 之前。
 
@@ -238,7 +239,7 @@ Shared Trip Agent → shared Skills → typed provider adapters / ModelGateway
 
 ### Prompt injection / tool misuse 防护
 
-1. 用户、provider、fixture 和未来外部文本都是数据，不是指令；
+1. 用户、provider 和未来外部文本都是数据，不是指令；
 2. 所有进入模型的内容先做 schema normalization；模型只可调用 allow-list Skills；
 3. 每个模型输出先经 Zod，再经 authorization/evidence/action policy 校验；
 4. 不将 passport/document number、raw transcript、unshared profile、credentials 或 raw headers 放入 prompt、日志、trace、metric labels 或客户端持久状态；
@@ -255,7 +256,7 @@ ModelGateway 是唯一模型边界。`gateway-factory.ts` 只构建已完整配�
 | 私有资料或 consent 解释 | 直接 Skill 或小模型总结。 | 事实由服务端提供，无需昂贵推理。 |
 | 候选比较 | 确定性筛选先行，结构化模型解释取舍。 | 输入只有 2–3 candidates；优先 schema reliability 与可解释性。 |
 | Plan diff | 结构化模型解释已验证 diff；确定性 field diff 是 fallback。 | 使用低成本、低延迟模型。 |
-| Readiness、价格、库存、授权、确认、booking | 不用模型。 | 只能由 fixture/provider 和领域服务决定。 |
+| Readiness、价格、库存、授权、确认、booking | 模型可请求受限 `flight.search`；事实与状态只由 provider 和领域服务决定。 | 服务器校验 Tool 参数、研究覆盖和证据；模型不能创造事实。 |
 | Plan review | 可选小模型、单次受限 review。 | 只提升说明质量；不替代硬性 validator。 |
 
 每次模型调用设置 deadline、max output size、JSON schema、低 temperature 以及 prompt/schema/template version。记录模型名、token/cost、结果和安全 hash 到 agent_runs；默认不保存 raw prompt/completion。
@@ -327,22 +328,22 @@ so dashboards can filter it from the live trace path.
 | Logs | trace_id、span_id、correlation_id、run_id、trip_id、plan_version、conversation_id（仅在 chat thread 涉及的操作出现）、agent、skill、operation、result/error code、duration；禁止敏感字段与 prompt text。 |
 | Traces | HTTP → auth → consent export → 每个 Skill/provider → model → validation → persistence → outbox/callback。 |
 | Metrics | 当前 process-local registry 包含 agent/planning/provider/booking/callback/LLM latency 系列，并为 operation、outcome、provider、errorCategory、validationResult、callbackResult 设置精确 allow-list。不得以 trip/user/plan/booking/run/correlation/request/conversation ID、model name 或自由文本作为 label。 |
-| Audit | consent grant/revoke、snapshot creation、skill/run start/end、provider fallback、stale/replan、confirmation/denial、booking/callback、duplicate/out-of-order event、chat thread create/delete。audit summary 允许出现 `conversationId`、`ownerUserId`、`tripId?`、`action`、`timestamp`，但绝不含 message body、raw transcript 或任何派生片段。 |
+| Audit | consent grant/revoke、snapshot creation、skill/run start/end、provider unavailable、stale/replan、confirmation/denial、booking/callback、duplicate/out-of-order event、chat thread create/delete。audit summary 允许出现 `conversationId`、`ownerUserId`、`tripId?`、`action`、`timestamp`，但绝不含 message body、raw transcript 或任何派生片段。 |
 
-以版本化 fixture scenarios 进行确定性 evaluation：
+以 test-only provider doubles 进行确定性 evaluation：
 
 - Personal Agent 不读取或输出其他成员数据；
 - Profile 提案未经确认不写入；
 - ConsentExport 只导出允许字段；
 - 所有 candidates 都被研究，选中项都引用有效 evidence ID；
 - 未授权 nationality 只输出 verification gap；
-- provider failure 显式降级到 Demo data 或 missing-data state；
+- provider failure 显式返回 `UNAVAILABLE` 或 missing-data state；
 - 模型/PlanReview 输出不能改变事实、consent、状态或 booking eligibility；
 - consent/profile/constraint change 原子地使 plan 与 confirmations stale；
 - duplicate event/callback 只产生一个逻辑结果；
 - 无 current unanimous quorum 时不能 booking。
 
-核心指标为：plan completeness、evidence coverage、skill schema/policy rejection rate、provider fallback rate、planning p50/p95 latency、token/cost per run、stale-to-replan success、被阻断的 unsafe action attempts，以及可选 explanation quality rubric。
+核心指标为：plan completeness、evidence coverage、skill schema/policy rejection rate、provider unavailable rate、planning p50/p95 latency、token/cost per run、stale-to-replan success、被阻断的 unsafe action attempts，以及可选 explanation quality rubric。
 
 ## 10. 架构图
 
@@ -362,7 +363,7 @@ flowchart TB
 
   SNAP --> STA["Shared Trip Agent<br/>Skill-driven collaboration"]
   STA --> RESEARCH["CandidateResearchSkill<br/>ReadinessSkill"]
-  RESEARCH --> PROVIDERS["Typed live / fixture providers"]
+  RESEARCH --> PROVIDERS["Typed provider adapters"]
   PROVIDERS --> EVID[("offers / evidence / readiness")]
 
   EVID --> PLAN["PlanComparisonSkill"]
@@ -386,7 +387,7 @@ flowchart TB
 
 | 现有位置 | 复用方式 | 必须修正 |
 |---|---|---|
-| apps/api/src/providers/types.ts | CandidateResearch/Readiness Skills 的 typed ports；已实现 ProviderOutcome 与 fallback 原因。 | 后续增加 deadline 与 cancellation。 |
+| apps/api/src/providers/types.ts | CandidateResearch/Readiness Skills 的 typed ports；已实现 `LIVE` / `UNAVAILABLE` 结果与稳定不可用原因。 | 后续增加 deadline 与 cancellation。 |
 | apps/api/src/providers/live-provider-factory.ts、types.ts | 生产 provider 能力边界。 | 未配置能力明确 unavailable，不生成静态报价或 evidence。 |
 | apps/api/src/providers/model-gateway.ts、llm-gateway.ts、gateway-factory.ts | 唯一模型 anti-corruption layer；已包含结构化 LLM 调用、真实 provider 配置和安全 model/prompt metadata。 | 保持模型输出为 candidate；失败关闭，不使用生产 mock fallback。 |
 | apps/api/src/services/consent-service.ts | ConsentExport 基础。 | 校验 field-to-scope；在 transaction 中使受影响 plan/confirmations stale。 |
@@ -453,7 +454,7 @@ apps/api/src/
 3. 实现 Personal Agent 的 ProfileMemory、proposal、consent explanation Skills；Profile/override 写入必须经用户确认；
 4. 实现 ConsentExportSkill 和 Shared Trip Agent；让 planning 覆盖全部 candidates；
 5. 在持久化所有 provider/evidence/readiness 后接入 PlanComparisonSkill；模型不可用时失败关闭；
-6. 在 feature flag 后接入 OpenAI Agents SDK；完成 schema/timeout/failure spike 后再启用；
+6. 在 feature flag 后接入目标 OpenAI-compatible LLM 的 function-tool loop；完成 schema、tool-call ID、多轮、timeout、abort 和 failure spike 后再启用；
 7. 最后按需增加单次 PlanReviewSkill，并接入 outbox worker、OpenTelemetry 与集成测试数据库。
 
 实施完成前，必须扩展 Vitest/API tests 覆盖上述 evaluation 场景，并将 npm run typecheck、npm run build、npm run lint 与依赖数据库的 npm test 设为实际 release gates。

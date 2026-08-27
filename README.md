@@ -9,6 +9,7 @@
 - `docs/frontend-ui-plan.md` — 登录后 UI 地图、前端技术栈决策与 API 就绪度方案。
 - `docs/frontend-prototype-handoff.md` — 探索首页与“我的项目”原型的前端开发交接、组件/API/验收要求。
 - `TECH_STACK.md` — 前后端、Agent、数据、AWS 部署与安全边界的推荐技术栈记录。
+- `docs/flight-llm-tool-implementation.md` — Amadeus Flight Offers Search 与受限 LLM Tool 的实施契约、模块拆分和验收标准。
 
 ## 运行后端
 

@@ -1,7 +1,7 @@
 # AI Travel Agent — Personal Agents + Shared Trips 测试场景
 
 **对应：** [Backlog](backlog.md) · [PRD](PRD.md)  
-**范围：** 三个虚构用户、两个出发地、两到三个固定目的地候选、至少两种国籍、航班/酒店/地面交通 fixture 或带来源工具、booking sandbox；不使用真实护照、支付资料或真实签证申请。live API 失败时必须使用明确标识的 fixture fallback。
+**范围：** 三个虚构用户、两个出发地、两到三个固定目的地候选、至少两种国籍、带来源的航班/酒店/地面交通工具、booking sandbox；不使用真实护照、支付资料或真实签证申请。产品运行时 live API 失败必须返回 `UNAVAILABLE`，不得使用 fixture fallback。
 
 ## Fixture
 
@@ -9,7 +9,7 @@
 - Bob Profile：预算上限、较重舒适度；Bob 可选择是否共享国籍资料；
 - Chen Profile：第二出发地、有限出发时间与本次偏好；Chen 可选择是否共享国籍资料；
 - 两个出发地、两到三个固定目的地候选、至少两国籍 readiness 规则与官方来源/检查时间；
-- 每个候选的 Flight、Stay、Ground 成功、缺失和失败 fixture；
+- 测试专用 Flight、Stay、Ground 成功、缺失和失败 doubles；
 - 航班涨价/售罄、成员日期/出发地变化、visa 来源不确定 fixture；
 - sandbox orchestration 成功、失败、重复及乱序回调。
 
@@ -48,12 +48,12 @@ memberships overlap only where explicitly configured.
 - Every failure uses the normalized error body and a matching
   `x-correlation-id` header.
 
-### TS-H3a — Return deterministic normalized flight fixtures
+### TS-H3a — Normalize flight provider results and fail closed
 
 **Stories:** H3, P1
-**Objective:** Verify the fixture-backed `FlightProvider` respects its normalized search contract without fabricating availability.
+**Objective:** Verify `FlightProvider` validates and normalizes provider results without fabricating availability or using runtime fixture fallback.
 
-**Starting conditions:** Versioned Flight fixtures exist for configured Hero routes and dates.
+**Starting conditions:** A test-only FlightProvider double and an Amadeus adapter contract fixture cover configured Hero routes, dates and provider failures.
 
 **Steps:**
 
@@ -64,8 +64,7 @@ memberships overlap only where explicitly configured.
 
 **Expected outcomes:**
 
-- Repeated supported searches return identical offers.
-- Every result is marked `Demo data` and carries the fixture capture time.
+- Test-only supported searches return deterministic normalized offers; production adapter responses carry their real source, capture time and expiry.
 - Results outside the requested date range are excluded.
 - Unsupported searches return no offers and never fabricate inventory or price.
 
@@ -92,7 +91,7 @@ memberships overlap only where explicitly configured.
 - Unauthorized fields, unapproved routes, missing sources, malformed structure and evidence mismatches fail closed with `PlanValidationError` and HTTP `422`.
 - Violations contain only stable `code`, `fieldPath` and low-risk `reason`; rejected values and private snapshot data are absent.
 - A failed candidate creates no `itineraryPlans`, `providerOffers`, `sourceEvidence` or `PLAN_CREATE` audit record; safe model-run observability may still be recorded.
-- Fixture provider results narrow explicitly between `FALLBACK_DEMO` and `UNAVAILABLE`; unsupported requests contain no fabricated `data`.
+- Provider results narrow explicitly between `LIVE` and `UNAVAILABLE`; unsupported requests contain no fabricated `data` or Demo data fallback.
 
 ### TS-H3c — Configure a server-side LLM provider with fail-closed behavior
 
@@ -215,22 +214,22 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 **Stories:** H3, P1  
 **Objective:** Confirm multi-service orchestration uses one authorized snapshot to compare two to three destinations for three travelers departing from two origins.
 
-**Starting conditions:** Both members have current consent; Flight/Stay/Ground fixtures available.
+**Starting conditions:** Both members have current consent; Flight/Stay/Ground provider results are available through test-only doubles.
 
 **Steps:**
 
 1. Start Shared Agent planning with Alice and Bob at origin A and Chen at origin B.
 2. Inspect input snapshot IDs for all three tools and destination candidates.
 3. Review destination comparison, per-origin flight, hotel and ground results, sources/times/prices and linked constraints.
-4. Disable Ground fixture/tool for one candidate.
-5. Inspect the missing-service and labelled-fallback response.
+4. Disable Ground tool for one candidate.
+5. Inspect the `UNAVAILABLE` missing-service response.
 
 **Expected outcomes:**
 
 - All tools and candidates use the same consent/constraint snapshot.
 - Two to three candidates show three services when data exists and explain authorized constraints only.
-- Each fact has a source/time or `Demo data` label.
-- Tool failure is explicit; no inventory or price is fabricated.
+- Each fact has a source/time and, for flight offers, an expiry.
+- Tool failure is explicit `UNAVAILABLE`; no inventory or price is fabricated or substituted.
 
 ### TS-H4 — Create individualized visa readiness safely
 
@@ -259,7 +258,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 **Stories:** H5  
 **Objective:** Validate self-correction while preserving consent and personal constraints.
 
-**Starting conditions:** Current shared plan includes three members, two origins, destination candidates, fixtures and authorizations.
+**Starting conditions:** Current shared plan includes three members, two origins, destination candidates, provider evidence and authorizations.
 
 **Steps:**
 
@@ -267,7 +266,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 2. Inspect new tool/consent snapshots and old-plan expiry.
 3. Review old/new destination ranking, flight, stay, ground, constraints, visa impact and explanation.
 4. Trigger same event ID again.
-5. Trigger a no-feasible-alternative fixture.
+5. Trigger a no-feasible-alternative provider result.
 
 **Expected outcomes:**
 
@@ -313,7 +312,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 **Stories:** P2  
 **Objective:** Verify the stated demo can run without manual data edits or unstable tools.
 
-**Starting conditions:** Three seeded Profiles, two origins, two to three destination candidates, nationality rules, fixtures and shock event available.
+**Starting conditions:** Three seeded Profiles, two origins, two to three destination candidates, nationality rules, test-only provider doubles and a shock event are available.
 
 **Steps:**
 
@@ -323,8 +322,8 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 
 **Expected outcomes:**
 
-- Entire flow completes in three minutes with fixed data.
-- Fallback is visibly marked `Demo data`.
+- Entire flow completes in three minutes with deterministic test-only provider doubles.
+- A production-like unavailable provider is visibly represented as `UNAVAILABLE`; no substitute data is shown.
 - Reset removes shared-trip session state, not seeded Profiles.
 
 ### TS-P2 — Explore a map location without fabricating travel facts
@@ -487,7 +486,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
 - Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。
-- 私聊首次提问创建当前用户的 private thread，后续提问复用该 thread；刷新后只从本地 thread ID 指针恢复 owner-only history，服务端返回不存在的 thread 时清除失效指针，不在浏览器持久化消息正文。
+- Explore 私聊首次提问通过幂等 start 命令创建当前用户的 Draft Trip 与默认 private thread，后续提问复用该 thread；站内路由切换只从内存探索会话恢复 owner-only history，整页刷新或新标签页不恢复 thread 指针，也不在浏览器持久化消息正文。
 - 每个新 turn 使用新的 UUID `requestId`；acceptance 网络结果不确定时必须复用原 request ID，发送期间禁止并发重复提交。接受成功后 UI 以 durable run status 为准，SSE 断线只降级为轮询；Worker 自动处理受控网络/5xx 重试。最终 `MODEL` 正常展示，terminal provider/model failure 保留 USER、不得持久化 partial ASSISTANT 或伪造 fallback。
   **已知缺口（202/SSE 切换引入）**：`SAFE_REFUSAL` 的核验提示当前不显示。旧的同步响应会返回 `responseMode`，acceptance 响应不再包含它，而 `responseMode` 目前只写入 idempotency `resultPayload` 与 audit summary，既不在 `chat_messages` 上，也不在 `AgentRunResponse` 或 `turn.completed` 事件中。恢复该提示需要先扩展契约，与后续的签证/拒答呈现设计一并处理。
 - 浏览器聊天请求在 Cognito 模式必须使用真实 Cognito access token；没有可用登录 token provider 时，三人真实 API 端到端演示属于显式阻塞项，不得硬编码 token 或退回 demo identity。`local-dev` 仅覆盖一个服务端固定身份的单人 smoke test；本地三用户隔离验收可使用 `custom-local` 的独立数据库账户，登录后必须确认 A 无法读取 B 的 Trip、私有 thread 与消息，且切换账号会清空前一账号的查询缓存。
@@ -520,7 +519,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 ### TS-THREAD-TRIP-1 — Trip-scoped private thread lifecycle
 
 **Stories:** H1, S1
-**Objective:** Verify that every conversation is attached to an existing Trip, each member receives an owner-only default thread, and chat never creates a Trip.
+**Objective:** Verify that every accepted conversation is attached to an existing Trip, each member receives an owner-only default thread, and direct thread turns never create or replace a Trip.
 
 **Starting conditions:** Alice has created a Trip; Bob is a registered user invited to that Trip.
 
@@ -530,14 +529,40 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 2. Attempt to pass `memberUserIds` to `POST /trips`; expect validation failure. Create and accept Bob's invitation concurrently; assert one membership and one Bob-owned default thread result.
 3. Have Alice and Bob each list Trip threads, create an additional thread, and request conversations using the other's thread ID.
 4. Remove Alice's membership after a turn is queued but before Worker completion, then process the task.
-5. Open Explore for a user with no Trip and retry the disabled chat entry.
+5. Directly call the thread turn endpoint without a valid owner thread and assert it cannot create or select a Trip.
 
 **Expected outcomes:**
 
 - Direct membership injection and non-member thread creation are rejected; invitation acceptance is idempotent.
 - Each list contains only the caller's threads. Cross-owner read, write, delete, run and SSE access return `403` without message content or thread metadata.
 - The removed owner cannot cause an assistant message to persist after task pickup.
-- Explore does not call a Trip-creation endpoint; it cannot become sendable until an existing Trip is selected.
+- The thread turn endpoint never accepts a client `tripId` or creates/replaces a Trip; Explore initialization is covered separately by TS-EXPLORE-TRIP-1.
+
+### TS-EXPLORE-TRIP-1 — Create a Draft Trip only on first submitted exploration message
+
+**Stories:** H1a, H1, S1
+**Objective:** Verify Explore creates no empty archive records, creates exactly one owner-only Draft Trip when the user first sends a message, and preserves the agreed browser lifecycle.
+
+**Starting conditions:** Alice is authenticated and has zero or more historical Trip records; API exposes the exploration start endpoint and the normal durable conversation endpoint.
+
+**Steps:**
+
+1. Open `/home`, browse the map, click several locations, open and close chat, then inspect `shared_trips`, `chat_threads`, idempotency and audit rows.
+2. Submit the first message. Force a client retry, a double-click and two concurrent start requests with the same start request ID; then accept the first conversation turn.
+3. Simulate start success followed by turn rejection/network loss; retry the start and the conversation command.
+4. Navigate client-side `/home → /projects → /profile → /home`; submit another message. Then perform a full browser reload and open `/home` in a new tab before submitting messages there.
+5. Click “Start new exploration”, then activate the original Draft with a valid brief. Attempt invitation, consent, planning, confirmation and booking both before and after activation.
+6. Repeat with Alice logged out and Bob logged in before returning to `/home`.
+
+**Expected outcomes:**
+
+- Before the first submitted message, no Trip, thread, idempotency or audit row is created; map input is not persisted as a business fact.
+- One start request ID yields exactly one `DRAFT` Trip, one creator membership and one owner-only default `TRIP` thread, even under concurrent retry. Audit summaries contain IDs/status only, never the question or map data.
+- The first task derives the created thread's `trip_id`; start success plus turn failure/retry cannot create another Trip.
+- Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
+- `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
+- Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
+- Bob cannot submit through, view, or restore Alice's old session identifiers.
 
 ### TS-OTEL-2 — Worker continuity after durable boundary
 

@@ -382,4 +382,4 @@ Structured audit/log/trace context 可以包含安全 correlation identifier、o
 - 不得将 partial assistant message 持久化为新的 message role，也不得将 streamed text 作为 business record。
 - 不得将 browser state、SSE connection、frontend store、model response 或 provider response 作为 task status、authorization、plan version、confirmation 或 booking 的权威来源。
 - 不得用用户提供的 run/thread/trip identifier 绕过 owner/membership check。
-- 不得为了异步执行更容易而削弱 provider evidence、`Demo data` label、visa readiness boundary、consent snapshot 或 plan validation。
+- 不得为了异步执行更容易而削弱 provider evidence、`UNAVAILABLE` 边界、visa readiness boundary、consent snapshot 或 plan validation。

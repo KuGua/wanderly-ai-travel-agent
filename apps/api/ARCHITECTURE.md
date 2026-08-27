@@ -59,16 +59,14 @@ Unified interfaces for travel data:
 - `GroundProvider` — search ground transport
 - `VisaProvider` — check visa readiness
 
-**Current**: `FixtureProvider` returns deterministic demo data through the
-discriminated `ProviderResult<T>` contract. Usable fixture results use
-`outcome: "FALLBACK_DEMO"` with a stable reason and provenance; unsupported
-queries use `outcome: "UNAVAILABLE"` and carry no fabricated `data` field.
-**Rule**: Any live provider failure must fall back to fixture with `Demo data` marker.
-**Never**: Fabricate real-time prices or inventory.
+**Current**: the provider factory returns `UNAVAILABLE` until an approved,
+configured supplier adapter exists. The product runtime has no fixture fallback:
+provider failure, no result, timeout, or untrusted data carries no `data` field
+and cannot create a plan or offer evidence. **Never** fabricate or substitute
+prices or inventory.
 
-Fixture datasets expose a stable version and fixed `capturedAt` value. Provider
-queries return copies of matching records and apply their documented filters;
-an unsupported route or date range returns no offers rather than fabricated data.
+Test-only provider doubles may be deterministic, but are injected only by test
+code. They are not imported, configured, or reachable from product runtime.
 
 ### 2a. Plan Output Control Plane (`src/policy/`)
 
@@ -275,7 +273,7 @@ PENDING → SUBMITTED → SUCCESS | FAILED
 ## Out-of-Scope (MVP)
 
 - Real payment processing
-- Live supplier API integration (only fixtures)
+- Additional supplier API integrations beyond the approved flight adapter
 - Native group chat
 - Free-form destination search
 - Redis / Temporal / Step Functions

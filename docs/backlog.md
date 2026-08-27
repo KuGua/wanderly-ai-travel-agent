@@ -31,6 +31,18 @@
 8. Deleting a thread removes its message body and does not silently change separately confirmed Profile or trip-override facts; audit retains only `conversationId`, `ownerUserId`, `tripId?`, action, timestamp, and never the message body.
 9. A submitted Personal Agent question is persisted with a durable task before streaming begins. Browser close, refresh, network loss and SSE disconnect do not cancel it; only an explicit Stop requests cancellation. The task is lease-recoverable and an ASSISTANT message is persisted only after final safety validation succeeds.
 
+### H1a — Start and resume an exploration-scoped private Trip
+
+**Story:** As a traveler, I want my first message in a new exploration to start a private Trip, while map browsing creates nothing, so that unrelated ideas do not overwrite prior projects or create empty archives.
+
+**Acceptance criteria:**
+
+1. New tabs, full reloads and reopened Explore pages begin an in-memory exploration session; client-side navigation away and back preserves it.
+2. Map browsing, coordinate clicks and opening/closing chat create no Trip, thread or audit event.
+3. The first submitted message atomically and idempotently creates one `DRAFT` Trip, creator membership and owner-only default thread, then enters the existing durable conversation flow.
+4. The visible “Start new exploration” action resets only the in-memory session; it never deletes or silently changes an existing Trip.
+5. Draft Trip collaboration commands are rejected server-side until the creator explicitly activates a complete brief as `PLANNING`.
+
 ### H2 — Join a shared trip and grant scoped consent
 
 **Story:** As a traveler, I want to join a friend’s trip and choose exactly what my Agent may share for it, so that I get personalized coordination without exposing my private history.
@@ -49,11 +61,11 @@
 
 **Acceptance criteria:**
 
-1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay and Ground tools/fixtures and maps the three travelers to two origins.
+1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay and Ground tools and maps the three travelers to two origins. `flight.search` may be requested by the LLM, but the server validates every parameter and guarantees all required origin/candidate combinations are researched.
 2. Result compares two to three configured destination candidates; each candidate includes at least one flight, hotel and ground option, or explicitly names a missing service and cause.
-3. Each item shows source, captured time or `Demo data`, price/currency when available, and linked authorized constraints.
+3. Each item shows source, captured time, offer expiry when applicable, price/currency when available, and linked authorized constraints.
 4. Comparison explains destination and service trade-offs without referencing a private or unapproved Profile field.
-5. Tool failure yields a recoverable missing-service state and visibly uses labelled fixture fallback when configured; it never fabricates inventory or price.
+5. Tool failure yields a recoverable `UNAVAILABLE` missing-service state; it never fabricates or substitutes inventory or price.
 6. Planning may publish only safe progress events (`SNAPSHOT_CREATED`, `RESEARCHING`, `VALIDATING`, `PERSISTING`, `COMPLETED` or `FAILED`). It never streams chain-of-thought, raw tool payloads, unvalidated plan candidates, or private snapshot fields; the UI shows a plan only after authoritative validation and persistence.
 
 ### H4 — Produce per-traveler visa and entry readiness
@@ -103,7 +115,7 @@
 
 1. Plan can show whether a constraint came from Profile, trip-specific input or an authorized shared field.
 2. Private/unapproved values are redacted from the shared view and Agent explanation.
-3. Each travel/visa fact shows source and time, or a clear `Demo data` label.
+3. Each travel/visa fact shows source and time; unavailable facts show `UNAVAILABLE` and a recovery path.
 4. Every Agent/tool run references Profile, consent and tool snapshot IDs.
 
 ### P2 — Run the repeatable Hero Demo
@@ -112,9 +124,9 @@
 
 **Acceptance criteria:**
 
-1. Demo seed contains three distinct Profiles, two origins, two to three supported destination candidates, at least two nationalities, tool fixtures and one price/constraint-change event.
+1. Demo seed contains three distinct Profiles, two origins, two to three supported destination candidates, at least two nationalities, test-only tool doubles and one price/constraint-change event.
 2. Flow runs `profile → invite → consent → candidate comparison → plan → visa → change → re-plan + diff → three confirmations → sandbox` without manual database edits.
-3. If a live source fails, UI visibly falls back to labelled fixture data.
+3. If a live source fails, UI visibly shows `UNAVAILABLE`; no plan or substitute offer is created.
 4. Demo reset removes trip session data while preserving only explicitly seeded test Profiles.
 
 ## 4. SUPPORT

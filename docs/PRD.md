@@ -99,7 +99,9 @@ flowchart LR
 4. 系统必须显示每条资料的来源（Profile 或本次对话）和最近修改时间。
 5. 系统不得把任何 Profile 或私有对话字段默认共享给同行者；保存的对话全文不得自动成为长期 Agent memory、共享 snapshot 或模型上下文。模型默认 LLM 上下文仅包含服务端派生的脱敏摘要，以及由 owner 显式标记"共享"的最近若干轮；raw transcript 永远不出 owner 会话。
 6. 删除对话线程须删除其消息正文；仅保留最小、无敏感的审计摘要（线程 id、操作者、时间）。删除 Profile/override 后，未来 Agent run 不得使用对应数据。
-7. Personal Agent 对话、planning 与 replan 均须作为服务端持久任务执行，并支持鉴权流式状态事件。每条 Personal Agent 对话必须绑定一个既有 Trip、归属于唯一 owner；加入 Trip 的成员自动获得空白默认私有线程，并可在该 Trip 下创建更多私有线程。浏览器关闭、刷新、网络断开或 SSE 断开不得取消已接受任务；只有用户显式 Stop 可以请求取消。私有对话文本仅在通过流式安全 gate 后增量显示，且只有最终完整校验成功的 ASSISTANT 内容可持久化。
+7. Personal Agent 对话、planning 与 replan 均须作为服务端持久任务执行，并支持鉴权流式状态事件。每条已接受的 Personal Agent 对话必须绑定一个既有 Trip、归属于唯一 owner；加入 Trip 的成员自动获得空白默认私有线程，并可在该 Trip 下创建更多私有线程。浏览器关闭、刷新、网络断开或 SSE 断开不得取消已接受任务；只有用户显式 Stop 可以请求取消。私有对话文本仅在通过流式安全 gate 后增量显示，且只有最终完整校验成功的 ASSISTANT 内容可持久化。
+8. 探索首页进入、新地图浏览、坐标点击和打开聊天不得创建 Trip。用户首次提交聊天消息时，系统必须以幂等单事务创建其 `DRAFT` Trip、默认私有 thread 与初始 membership，再在该 thread 接受 turn。站内路由返回探索页继续当前浏览器内存会话；新标签页、整页刷新或重新打开探索页开始新会话。未发送消息的探索不得持久化为项目。
+9. `DRAFT` Trip 仅限创建者进行私有探索和编辑 brief；不得邀请成员、授权字段、创建 snapshot、planning/replan、确认或 booking。创建者填写正式 brief 后点击“开始规划/邀请同行者”才可激活为 `PLANNING`。
 
 ### FR-2 共享行程工作台与授权
 
@@ -110,7 +112,7 @@ flowchart LR
 
 ### FR-3 端到端行程编排
 
-1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay 和 Ground 工具/fixture，并将三位成员映射到两个出发地。
+1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay 和 Ground 工具，并将三位成员映射到两个出发地。模型可请求 `flight.search`，但服务端必须校验参数并保证已查询所有必需的候选目的地与出发地组合。
 2. 系统必须比较两到三个预设目的地候选；每个候选包含至少一个航班、酒店和地面交通项目，或明确显示缺失项目与原因。
 3. 每个项目必须显示总价/币种（如适用）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。
 4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
@@ -154,7 +156,7 @@ flowchart LR
 | 成员没有 Profile 或不愿共享任何偏好 | 允许加入；Shared Agent 只使用其本次明确输入，提示资料不足。 |
 | 成员撤回国籍授权 | 失效相关 visa checklist 和当前方案；要求重新计算。 |
 | 三名成员预算、出发地或时间冲突 | 显示冲突及受影响成员；不静默偏向创建者。 |
-| 航班、酒店或地面交通工具无数据 | 显示缺口和来源失败；只可使用明确标注的 demo fixture。 |
+| 航班、酒店或地面交通工具无数据 | 显示 `UNAVAILABLE`、缺口和来源失败；不得使用替代报价或 demo fixture。 |
 | visa 规则来源不确定或过期 | 显示官方核验链接/提示；不得给出确定结论。 |
 | 航班价格上涨 | 原方案与确认失效；展示重新组合的影响。 |
 | 成员在重算期间更改私有 Profile | 旧 run 过期；仅使用新的授权/版本快照。 |
@@ -180,6 +182,6 @@ flowchart LR
 - 三名隔离测试用户可完整运行 `Profile → invite → consent → candidate comparison → tools → visa → replan → confirm → sandbox orchestration`；
 - 测试覆盖授权撤回、冲突、工具失败、visa 不确定、变化、成员拒绝与重复 orchestration；
 - 每个 Agent/工具结果带 Profile/consent/tool snapshot 版本；
-- sandbox 与真实数据/fixture 的边界对用户清晰可见；
+- sandbox、真实 provider 数据与 `UNAVAILABLE` 的边界对用户清晰可见；
 - 新注册用户可在真实服务配置完整时完成端到端流程；live API 不可用时不创建伪造计划，并明确显示恢复路径；
 - 私有对话线程可持久化且仅归其所有者；不得进入共享 snapshot、遥测或默认模型上下文；用户删除后不再保留消息正文。
