@@ -36,16 +36,22 @@ enables and configures this alternate account flow.
 
 - `POST /auth/login`: accepts `username`, `password`, and optional `rememberMe`.
   Email is not a login identifier. A remembered token expires after 30 days.
-- `POST /auth/forgot-password`: accepts `email`, returns a generic response and
-  `retryAfterSeconds: 60`. Non-production also returns `developmentCode`;
-  production sends the six-digit code through configured AWS SES.
+- `POST /auth/forgot-password`: accepts `email`. In the temporary
+  `PASSWORD_RESET_MODE=direct` prototype it returns `mode: "direct"` and a
+  one-use `resetToken`, allowing the client to continue without a code. In
+  `email-code` mode it returns a generic response and `retryAfterSeconds: 60`;
+  non-production also returns `developmentCode`, while production sends the
+  six-digit code through configured AWS SES.
 - `POST /auth/verify-reset-code`: accepts `email` and a six-digit `code`. The
   code expires after 10 minutes and is blocked after five failed attempts.
   Success returns a one-use `resetToken`.
 - `POST /auth/reset-password`: accepts `email`, `resetToken`, `password`, and
   `confirmPassword`; both password values must match and satisfy policy.
 
-Recovery inputs and secrets are never logged. Production requires a verified SES
+Direct mode does not prove mailbox ownership and is an explicitly accepted risk
+for the current demo; it must be replaced before real user accounts are allowed.
+Recovery inputs and secrets are never logged. Email-code mode in
+production requires a verified SES
 sender via `PASSWORD_RESET_FROM_EMAIL`, `AWS_REGION`, and runtime-role permission
 to call `ses:SendEmail`.
 

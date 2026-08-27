@@ -40,18 +40,23 @@ receive an explicit unsupported-challenge message rather than an auth bypass.
 
 `NEXT_PUBLIC_AUTH_MODE=custom` selects the API-owned username/password prototype.
 Login accepts only `username`; email remains the recovery attribute. The
-forgot-password screen requests a six-digit code, disables resend for 60 seconds,
-verifies the code before accepting a new password, checks both password fields,
-and returns to login immediately or automatically after five seconds. Checked
+forgot-password screen currently requests an email and continues directly to a
+new password form, checks both password fields, and returns to login immediately
+or automatically after five seconds. This `PASSWORD_RESET_MODE=direct` path is
+used by the current local and deployed demos, but it does not prove mailbox ownership.
+Checked
 login sessions receive a token capped at 30 days and use persistent browser
 storage; unchecked sessions are stored only for the browser session.
 
-The database change is versioned in `0011_custom_auth_credentials.sql`; existing
+Set `PASSWORD_RESET_MODE=email-code` when mail delivery becomes available to
+restore the retained six-digit code UI/API flow and 60-second resend delay. The
+database change is versioned in `0011_custom_auth_credentials.sql`; existing
 Cognito/local-dev users keep nullable credential columns. Reset codes expire in
 10 minutes, permit at most five attempts, and reset tokens are one-use. Codes,
 emails and reset tokens must never enter logs. Production delivery uses AWS SES
 with `AWS_REGION` and `PASSWORD_RESET_FROM_EMAIL`; the sender/domain must be SES
-verified and the workload role needs `ses:SendEmail`. Non-production returns a
+verified and the workload role needs `ses:SendEmail`. Email-code mode outside
+production returns a
 development-only code so the local UI can exercise the flow without pretending
 that an email was sent. Reset challenges are currently process-local, so an API
 restart invalidates them and a multi-instance deployment must move challenge

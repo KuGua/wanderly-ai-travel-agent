@@ -18,6 +18,7 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [resetToken, setResetToken] = useState("");
+  const [usesEmailCode, setUsesEmailCode] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,13 @@ export default function ForgotPasswordPage() {
 
     try {
       const result = await requestPasswordReset(email);
+      if (result.mode === "direct" && result.resetToken) {
+        setUsesEmailCode(false);
+        setResetToken(result.resetToken);
+        setStep("password");
+        return;
+      }
+      setUsesEmailCode(true);
       if (result.developmentCode) setCode(result.developmentCode);
       startCooldown();
       setStep("code");
@@ -150,7 +158,11 @@ export default function ForgotPasswordPage() {
       <div className="w-full max-w-sm">
         <Link
           href={step === "success" ? "/login" : step === "email" ? "/login" : "#"}
-          onClick={step !== "email" && step !== "success" ? (e) => { e.preventDefault(); setStep(step === "code" ? "email" : "code"); setError(null); } : undefined}
+          onClick={step !== "email" && step !== "success" ? (e) => {
+            e.preventDefault();
+            setStep(step === "code" || !usesEmailCode ? "email" : "code");
+            setError(null);
+          } : undefined}
           className="mb-8 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
@@ -193,7 +205,7 @@ export default function ForgotPasswordPage() {
                   className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-sidebar font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 disabled:opacity-60"
                 >
                   {loading ? <LoaderCircle className="size-4 animate-spin" /> : null}
-                  {t("sendCode")}
+                  {t("continue")}
                 </button>
               </form>
             </>

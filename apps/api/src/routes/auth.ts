@@ -19,7 +19,8 @@ const CODE_COOLDOWN_MS = 60 * 1000; // 60 seconds between sends
 const MAX_CODE_ATTEMPTS = 5;
 
 type ResetEntry = {
-  codeHash: string;
+  mode: "direct" | "email-code";
+  codeHash?: string;
   expiresAt: number;
   sentAt: number;
   attempts: number;
@@ -49,6 +50,12 @@ function safelyMatches(value: string, expectedHash: string): boolean {
   const actual = Buffer.from(digest(value), "hex");
   const expected = Buffer.from(expectedHash, "hex");
   return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+function passwordResetMode(): "direct" | "email-code" {
+  const configured = process.env.PASSWORD_RESET_MODE?.trim().toLowerCase();
+  if (configured === "direct" || configured === "email-code") return configured;
+  return "direct";
 }
 
 function pruneExpiredCodes() {
@@ -189,8 +196,9 @@ export async function authRoutes(app: FastifyInstance) {
     pruneExpiredCodes();
 
     const key = digest(email);
+    const mode = passwordResetMode();
     const existing = resetCodes.get(key);
-    if (existing && Date.now() - existing.sentAt < CODE_COOLDOWN_MS) {
+    if (mode === "email-code" && existing && Date.now() - existing.sentAt < CODE_COOLDOWN_MS) {
       const waitSeconds = Math.ceil((CODE_COOLDOWN_MS - (Date.now() - existing.sentAt)) / 1000);
       throw new ApiError(429, "Too Many Requests", `Please wait ${waitSeconds} seconds before requesting a new code`);
     }
@@ -200,8 +208,28 @@ export async function authRoutes(app: FastifyInstance) {
       .where(eq(users.email, email))
       .limit(1);
 
-    const code = generateCode();
     const now = Date.now();
+
+    if (mode === "direct") {
+      const resetToken = randomBytes(32).toString("hex");
+      resetCodes.set(key, {
+        mode,
+        expiresAt: now + CODE_EXPIRY_MS,
+        sentAt: now,
+        attempts: 0,
+        userExists: Boolean(user),
+        resetTokenHash: digest(resetToken),
+      });
+
+      reply.send({
+        mode,
+        resetToken,
+        message: "Continue to set a new password.",
+      });
+      return;
+    }
+
+    const code = generateCode();
 
     if (process.env.NODE_ENV === "production") {
       if (!passwordResetEmailConfigured()) {
@@ -216,6 +244,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     resetCodes.set(key, {
+      mode,
       codeHash: digest(code),
       expiresAt: now + CODE_EXPIRY_MS,
       sentAt: now,
@@ -225,6 +254,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     // Always return success to prevent email enumeration
     const response: Record<string, unknown> = {
+      mode,
       message: "If an account with that email exists, a verification code has been sent.",
       retryAfterSeconds: CODE_COOLDOWN_MS / 1000,
     };
@@ -250,7 +280,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     const key = digest(email);
     const entry = resetCodes.get(key);
-    if (!entry || entry.expiresAt < Date.now() || entry.attempts >= MAX_CODE_ATTEMPTS) {
+    if (!entry || entry.mode !== "email-code" || !entry.codeHash || entry.expiresAt < Date.now() || entry.attempts >= MAX_CODE_ATTEMPTS) {
       throw new ApiError(401, "Unauthorized", "Invalid or expired verification code");
     }
 
@@ -287,7 +317,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     const key = digest(email);
     const entry = resetCodes.get(key);
-    if (!entry?.resetTokenHash || !safelyMatches(resetToken, entry.resetTokenHash) || entry.expiresAt < Date.now()) {
+    if (!entry?.userExists || !entry.resetTokenHash || !safelyMatches(resetToken, entry.resetTokenHash) || entry.expiresAt < Date.now()) {
       throw new ApiError(401, "Unauthorized", "Invalid or expired reset token");
     }
 

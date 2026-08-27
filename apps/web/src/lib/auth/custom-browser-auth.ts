@@ -129,7 +129,14 @@ export async function registerUser(body: {
   return data;
 }
 
-export async function requestPasswordReset(email: string): Promise<{ developmentCode?: string; retryAfterSeconds: number }> {
+export type PasswordResetRequest = {
+  mode: "direct" | "email-code";
+  resetToken?: string;
+  developmentCode?: string;
+  retryAfterSeconds?: number;
+};
+
+export async function requestPasswordReset(email: string): Promise<PasswordResetRequest> {
   const response = await fetch(`${getApiBaseUrl()}/api/v1/auth/forgot-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -138,10 +145,10 @@ export async function requestPasswordReset(email: string): Promise<{ development
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({})) as { message?: string };
-    throw new Error(error.message ?? "Failed to send verification code");
+    throw new Error(error.message ?? "Failed to start password reset");
   }
 
-  return (await response.json()) as { developmentCode?: string; retryAfterSeconds: number };
+  return (await response.json()) as PasswordResetRequest;
 }
 
 export async function verifyResetCode(email: string, code: string): Promise<string> {

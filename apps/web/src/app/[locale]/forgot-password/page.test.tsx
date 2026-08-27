@@ -20,21 +20,16 @@ import ForgotPasswordPage from "./page";
 describe("ForgotPasswordPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    resetMocks.request.mockResolvedValue({ developmentCode: "123456", retryAfterSeconds: 60 });
+    resetMocks.request.mockResolvedValue({ mode: "direct", resetToken: "direct-reset-token" });
     resetMocks.verify.mockResolvedValue("one-use-reset-token");
     resetMocks.reset.mockResolvedValue(undefined);
   });
 
-  it("completes email, six-digit verification, matching password, and success steps", async () => {
+  it("continues directly from email to matching password and success steps", async () => {
     renderWithIntl(<ForgotPasswordPage />);
 
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "traveler@example.test" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send verification code" }));
-
-    const codeInput = await screen.findByLabelText("Verification code");
-    expect(codeInput).toHaveValue("123456");
-    expect(screen.getByText("Resend in 60s")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     const password = await screen.findByLabelText("New password");
     const confirmation = screen.getByLabelText("Confirm new password");
@@ -53,9 +48,29 @@ describe("ForgotPasswordPage", () => {
     expect(screen.getByText("Redirecting to sign in in 5s...")).toBeInTheDocument();
     await waitFor(() => expect(resetMocks.reset).toHaveBeenCalledWith({
       email: "traveler@example.test",
-      resetToken: "one-use-reset-token",
+      resetToken: "direct-reset-token",
       password: "NewPassword1",
       confirmPassword: "NewPassword1",
     }));
+  });
+
+  it("keeps the email-code verification path available", async () => {
+    resetMocks.request.mockResolvedValue({
+      mode: "email-code",
+      developmentCode: "123456",
+      retryAfterSeconds: 60,
+    });
+    renderWithIntl(<ForgotPasswordPage />);
+
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "traveler@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    const codeInput = await screen.findByLabelText("Verification code");
+    expect(codeInput).toHaveValue("123456");
+    expect(screen.getByText("Resend in 60s")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Verify" }));
+
+    expect(await screen.findByLabelText("New password")).toBeInTheDocument();
+    expect(resetMocks.verify).toHaveBeenCalledWith("traveler@example.test", "123456");
   });
 });

@@ -10,6 +10,7 @@ import { verifyJwt } from "../src/utils/jwt.js";
 const suffix = Math.random().toString(36).slice(2, 10);
 const username = `reset_${suffix}`;
 const email = `${username}@example.test`;
+const originalPasswordResetMode = process.env.PASSWORD_RESET_MODE;
 let app: FastifyInstance;
 
 beforeAll(async () => {
@@ -18,6 +19,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (originalPasswordResetMode === undefined) {
+    delete process.env.PASSWORD_RESET_MODE;
+  } else {
+    process.env.PASSWORD_RESET_MODE = originalPasswordResetMode;
+  }
   await db.delete(users).where(eq(users.email, email));
   await app.close();
 });
@@ -50,6 +56,7 @@ describe("custom username login and password reset", () => {
   });
 
   it("enforces cooldown, six-digit verification, and one-time password reset", async () => {
+    process.env.PASSWORD_RESET_MODE = "email-code";
     const request = await app.inject({
       method: "POST",
       url: "/api/v1/auth/forgot-password",
@@ -116,5 +123,38 @@ describe("custom username login and password reset", () => {
       payload: { username, password: "NewPassword1" },
     });
     expect(newLogin.statusCode).toBe(200);
+  });
+
+  it("supports the temporary direct reset mode without a verification code", async () => {
+    process.env.PASSWORD_RESET_MODE = "direct";
+
+    const request = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/forgot-password",
+      payload: { email },
+    });
+    expect(request.statusCode).toBe(200);
+    const body = request.json() as { mode: string; resetToken: string };
+    expect(body.mode).toBe("direct");
+    expect(body.resetToken).toHaveLength(64);
+
+    const reset = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/reset-password",
+      payload: {
+        email,
+        resetToken: body.resetToken,
+        password: "DirectPassword1",
+        confirmPassword: "DirectPassword1",
+      },
+    });
+    expect(reset.statusCode).toBe(200);
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { username, password: "DirectPassword1" },
+    });
+    expect(login.statusCode).toBe(200);
   });
 });
