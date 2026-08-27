@@ -42,7 +42,7 @@ describe("Cognito browser auth adapter", () => {
 
   it("uses Amplify-managed session state without application-owned token persistence", async () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
-    const service = createCognitoBrowserAuth();
+    const service = await createCognitoBrowserAuth();
 
     expect(await service.signIn("traveler", "not-a-real-password", true)).toEqual({ username: "traveler@example.test" });
     expect(await service.getAccessToken()).toBe("current-access-token");
@@ -62,7 +62,7 @@ describe("Cognito browser auth adapter", () => {
     delete process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID;
     delete process.env.NEXT_PUBLIC_COGNITO_CLIENT_ID;
 
-    const service = createCognitoBrowserAuth();
+    const service = await createCognitoBrowserAuth();
 
     expect(service.configured).toBe(false);
     expect(await service.getAccessToken()).toBeNull();
@@ -72,7 +72,7 @@ describe("Cognito browser auth adapter", () => {
     process.env.NEXT_PUBLIC_AUTH_MODE = "local-dev";
     process.env.NEXT_PUBLIC_API_BASE_URL = "http://localhost:3000";
 
-    const service = createCognitoBrowserAuth();
+    const service = await createCognitoBrowserAuth();
 
     expect(service.localDevelopment).toBe(true);
     expect(service.configured).toBe(false);
@@ -84,7 +84,7 @@ describe("Cognito browser auth adapter", () => {
     process.env.NEXT_PUBLIC_AUTH_MODE = "local-dev";
     process.env.NEXT_PUBLIC_API_BASE_URL = "http://192.168.1.10:3000";
 
-    const service = createCognitoBrowserAuth();
+    const service = await createCognitoBrowserAuth();
 
     expect(service.localDevelopment).toBe(false);
     expect(service.localDevelopmentConfigurationInvalid).toBe(true);

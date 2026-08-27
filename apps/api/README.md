@@ -14,19 +14,26 @@ npm install
 # 2. 复制环境配置
 cp .env.example .env
 
-# 3. 启动 PostgreSQL（本地或 Docker）
-# 方案 A：Docker
+# 3. 启动 PostgreSQL（默认 profile 仅 Postgres；不构建 API 镜像）
 docker compose up -d postgres
 
-# 方案 B：本地 PostgreSQL（确保 DB_HOST、DB_PORT 等与 .env 一致）
+# 3b. 可选：完整三服务栈（API + Worker + Postgres）
+#     `--profile full` 显式拉起 API 与 Worker；不传则只跑 Postgres
+#     docker compose --profile full up -d --build
 
 # 4. 执行数据库迁移
 npm run db:migrate
 
-# 5. 分别启动 API 与持久 Agent Worker
+# 5. 分别启动 API 与持久 Agent Worker（容器外由 tsx watch 启动，便于快速 reload）
 npm run dev
 npm run worker:dev
 ```
+
+> **Profile 行为**：`docker compose up -d` 在 `apps/api/docker-compose.yml` 中只启动
+> `postgres`；`app` 与 `worker` 在 `profiles: ["full"]` 下，需要
+> `--profile full` 才会构建并启动。Mac 端推荐默认只跑 Postgres，
+> API/Worker 用 `npm run dev` / `npm run worker:dev` 本地进程跑，
+> 以节省 Docker Desktop 的 Linux VM 资源。
 
 服务器运行于 `http://localhost:3000`；OpenAPI 文档位于 `http://localhost:3000/docs`。
 

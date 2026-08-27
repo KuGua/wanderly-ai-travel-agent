@@ -30,6 +30,7 @@ they describe — see the table below. This index just lists them.
 | [`apps/api/src/providers/README.md`](../src/providers/README.md) | directory overview |
 | [`apps/api/src/providers/LLM-GATEWAY.md`](../src/providers/LLM-GATEWAY.md) | `src/providers/llm-gateway.ts`, `src/providers/gateway-factory.ts`, `src/providers/types.ts` |
 | [`apps/api/src/observability/README.md`](../src/observability/README.md) | `src/observability/{metrics,telemetry,redaction,agent-runs}.ts` |
+| [`apps/api/src/location-reference/SIDECAR.md`](../src/location-reference/SIDECAR.md) | `src/location-reference/location-reference-source.ts` (modes `in-process`, `sidecar`, `disabled`; no public sidecar, no rate limit at sidecar, no OTel from sidecar) |
 | [`apps/api/src/services/AUDIT.md`](../src/services/AUDIT.md) | `src/services/audit-service.ts` |
 | [`apps/api/src/middleware/README.md`](../src/middleware/README.md) | `src/middleware/{error-handler,sandbox-signature,auth}.ts` |
 | [`apps/api/src/skills/personal/profile-memory.md`](../src/skills/personal/profile-memory.md) | `src/skills/personal/profile-memory-skill.ts` |

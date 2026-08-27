@@ -12,6 +12,8 @@
     "dev": "tsx watch src/server.ts",
     "worker": "node dist/workers/worker-main.js",
     "worker:dev": "tsx watch src/workers/worker-main.ts",
+    "sidecar": "node dist/location-reference/sidecar-main.js",
+    "sidecar:dev": "tsx watch src/location-reference/sidecar-main.ts",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",

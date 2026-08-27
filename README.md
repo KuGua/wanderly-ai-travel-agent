@@ -12,13 +12,20 @@
 
 ## 运行后端
 
+后端使用 docker compose **profile** 控制默认行为。`docker compose up -d` 仅启动 Postgres；显式加上 `--profile full` 才会拉起 API + Worker 镜像：
+
 ```bash
 cd apps/api
 npm install
 cp .env.example .env
+
+# 仅 Postgres（默认；不构建 API 镜像，省 Mac 资源）
 docker compose up -d postgres
 npm run db:migrate
 npm run dev
+
+# 完整三服务栈（显式开启）
+docker compose --profile full up -d --build
 ```
 
 API 地址为 `http://localhost:3000`；OpenAPI 文档位于 `/docs`。

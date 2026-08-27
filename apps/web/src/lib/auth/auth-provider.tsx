@@ -4,11 +4,10 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 
 import {
   CognitoChallengeRequiredError,
-  createCognitoBrowserAuth,
+  resolveSyncAuthFallback,
   type AuthenticatedBrowserUser,
   type BrowserAuthService,
 } from "./cognito-browser-auth";
-import { createCustomBrowserAuth } from "./custom-browser-auth";
 
 type AuthStatus = "CHECKING" | "LOCAL_DEV" | "LOCAL_DEV_INVALID" | "UNCONFIGURED" | "SIGNED_OUT" | "SIGNED_IN";
 type AuthError = "SIGN_IN_FAILED" | "CHALLENGE_REQUIRED" | "SIGN_OUT_FAILED" | null;
@@ -30,7 +29,13 @@ export function AuthProvider({ children, service: suppliedService }: {
   children: ReactNode;
   service?: BrowserAuthService;
 }) {
-  const [service] = useState(() => suppliedService ?? resolveAuthService());
+  // Initial state comes from the sync fallback service. In local-dev /
+  // unconfigured / supplied-service modes this is the final service — no
+  // async work, no `aws-amplify` load. In Cognito mode the fallback is
+  // `unconfiguredAuthService` and the real service is loaded below.
+  const [service, setService] = useState<BrowserAuthService>(
+    () => suppliedService ?? resolveSyncAuthFallback(),
+  );
   const [status, setStatus] = useState<AuthStatus>(
     service.localDevelopment ? "LOCAL_DEV" : service.localDevelopmentConfigurationInvalid ? "LOCAL_DEV_INVALID" : service.configured ? "CHECKING" : "UNCONFIGURED",
   );
@@ -38,6 +43,30 @@ export function AuthProvider({ children, service: suppliedService }: {
   const [error, setError] = useState<AuthError>(null);
   const [busy, setBusy] = useState(false);
   const [sessionRevision, setSessionRevision] = useState(0);
+
+  useEffect(() => {
+    if (suppliedService) return;
+    let active = true;
+    void (async () => {
+      // Dynamic import keeps `cognito-browser-auth.runtime.ts` — and
+      // therefore all of `aws-amplify` — out of the initial bundle. Only
+      // this `useEffect` ever triggers the load.
+      const { createCognitoBrowserAuth } = await import("./cognito-browser-auth");
+      const next = await createCognitoBrowserAuth();
+      if (!active) return;
+      setService(next);
+      setStatus(
+        next.localDevelopment
+          ? "LOCAL_DEV"
+          : next.localDevelopmentConfigurationInvalid
+            ? "LOCAL_DEV_INVALID"
+            : next.configured
+              ? "CHECKING"
+              : "UNCONFIGURED",
+      );
+    })();
+    return () => { active = false; };
+  }, [suppliedService]);
 
   useEffect(() => {
     if (!service.configured) return;
@@ -109,8 +138,6 @@ export function useAuth() {
   return auth;
 }
 
-function resolveAuthService(): BrowserAuthService {
-  const mode = process.env.NEXT_PUBLIC_AUTH_MODE?.trim() || "cognito";
-  if (mode === "custom") return createCustomBrowserAuth();
-  return createCognitoBrowserAuth();
+export function createLocalDevBrowserAuth(): BrowserAuthService {
+  return resolveSyncAuthFallback();
 }
