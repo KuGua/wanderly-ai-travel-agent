@@ -88,6 +88,7 @@ export function TravelAgentChat({
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
   const panelInputRef = useRef<HTMLTextAreaElement>(null);
+  const panelScrollRef = useRef<HTMLDivElement>(null);
   const pendingTurnAnchorRef = useRef<HTMLParagraphElement>(null);
   const wasSendingRef = useRef(false);
 
@@ -167,10 +168,11 @@ export function TravelAgentChat({
   useEffect(() => {
     if (pendingTurn && pendingTurnAnchorRef.current) {
       // scrollIntoView is unavailable in jsdom tests; guard defensively.
+      // Call through the element so the host-method `this` binding is preserved;
+      // detaching `node.scrollIntoView` to a local throws "Illegal invocation".
       const node = pendingTurnAnchorRef.current;
-      const scroll = typeof node.scrollIntoView === "function" ? node.scrollIntoView : undefined;
       try {
-        scroll?.({ behavior: "smooth", block: "start" });
+        node.scrollIntoView({ behavior: "smooth", block: "start" });
       } catch {
         /* no-op in test environments without scrollIntoView */
       }
@@ -283,6 +285,22 @@ export function TravelAgentChat({
       : null
   );
 
+  useEffect(() => {
+    if (!open) return;
+    const node = panelScrollRef.current;
+    if (!node) return;
+    // Defer one frame so layout settles after mount, the open transition,
+    // or async conversation history arriving.
+    const handle = window.setTimeout(() => {
+      try {
+        node.scrollTop = node.scrollHeight;
+      } catch {
+        /* no-op in test environments without DOM scroll metrics */
+      }
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, [open, messages.length]);
+
   function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const question = draft.trim();
@@ -359,7 +377,7 @@ export function TravelAgentChat({
           <button type="button" onClick={closeConversation} aria-label={t("close")} className="grid size-7 place-items-center rounded-full bg-sidebar text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar/25"><X aria-hidden="true" className="size-3.5" /></button>
         </header>
 
-        <div className="flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#f6fbf9_100%)] px-5 py-5" aria-live="polite">
+        <div ref={panelScrollRef} className="flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#f6fbf9_100%)] px-5 py-5" aria-live="polite">
           {resolvedThreadStatus !== "ready" ? <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} /> : null}
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (

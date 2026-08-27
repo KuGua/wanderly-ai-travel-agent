@@ -43,7 +43,7 @@ Amazon RDS for PostgreSQL
 | 身份 | **Amazon Cognito User Pool**，邮箱或手机号登录，API 验证 access token | 身份来自已验证 JWT 的 `sub`，前端不能通过用户 ID 或 demo 角色选择身份。生产使用 Cognito；本地仅允许显式 `local-dev`（固定单一身份 smoke test）或 `custom-local`（数据库用户名/密码和 API JWT，用于多用户隔离测试）。两者均仅限 development/test 与 server/client loopback。 | 复杂 SSO、社交登录矩阵、组织管理。 |
 | 主数据库 | **Amazon RDS for PostgreSQL** + SQL migrations + Drizzle ORM | 需要事务、关系约束、审计和版本一致性：Profile、用户私有对话、字段级 consent、两个出发地、候选方案、三人确认和 callback 去重必须共享一个权威真相源。RDS PostgreSQL 支持 VPC、SSL、快照与时间点恢复。[AWS RDS PostgreSQL](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html) | SQLite 作为云端主库、NoSQL 作为业务真相。 |
 | Agent | **受限 Skill Registry + ModelGateway**，运行在 App Runner | 模型只能通过服务器暴露的、类型化 function-tool 契约请求能力；具体 LLM 为可配置的 OpenAI-compatible provider。SDK 不是授权、确认或持久状态机。 | 让模型直接读写数据库、付款或自由互聊的多 Agent 群。 |
-| 工具与模型边界 | Zod schema、structured outputs、server-side policy gate | 对话 archive 仅由所有者读取；所有工具只获得当前 `constraint_snapshot` 的最小授权字段。模型发起 Tool 调用，服务端校验参数、执行 provider 请求并决定完整性；模型输出不直接成为业务真相。 | 把 Profile/私聊全文放进长 prompt、共享 snapshot、遥测或向前端暴露供应商 key。 |
+| 工具与模型边界 | Zod schema、structured outputs、server-side policy gate、受限 thread context builder | 对话 archive 仅由所有者读取。Personal Agent 仅可由服务端从同一 owner 的同一私有 thread 构造最近、有预算的原文上下文；该上下文只发送给已配置模型 provider，不进入共享 snapshot、Profile、日志、trace、audit、metric 或客户端持久状态。所有共享工具只获得当前 `constraint_snapshot` 的最小授权字段。模型输出不直接成为业务真相。 | 将整段私聊、其他 thread 或共享/未授权数据放进 prompt；由浏览器提交 history；向量库、Redis 或独立 memory service；向遥测或前端暴露供应商 key。 |
 | 旅行与数据 API | Amadeus Self-Service Flight Offers Search、openrouteservice Routing、Frankfurter；通过 provider adapters；版本化离线地图位置参考数据 | Flight adapter 仅在服务端启用并以 `UNAVAILABLE` fail closed；Amadeus Test 仅用于开发集成验证，不向产品展示为实时结果。唯一匿名端点按每客户端每分钟 30 次限流，仅将用户显式点击的坐标映射为非权威国家/最近城市上下文，不成为旅行事实或持久化数据。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA；地图位置参考不得变成地址、POI 或旅行 provider。 |
 | Visa / entry | 官方核验下一步；未来可接 Sherpa/IATA Timatic adapter | 未配置可靠数据源时只展示核验缺口与官方核验下一步。 | 以 LLM 或 Wikipedia 推断签证、代办、法律结论。 |
 | 异步与编排 | PostgreSQL 持久任务状态机、租约领取、idempotency key、transactional outbox、`agent_task_runs`；Fargate Worker；同步 booking sandbox | 对话、planning 与 replan 都以 `QUEUED → RUNNING → COMPLETED/FAILED/STALE/CANCELLED` 执行；显式 Stop 是唯一取消源。租约过期可恢复，最终提交按 lease token 和版本条件化；不把 partial 文本作为业务记录。 | Temporal Cloud、Step Functions、Redis 队列同时进入 MVP；把浏览器/SSE 断开视为取消。 |
@@ -97,7 +97,7 @@ Agent 不能自行跨越以下边界：
 3. 只有三个 required members 对同一最新 plan version 为 `CONFIRMED` 才能创建 `booking_execution`。
 4. `orchestration_request_id` 和 provider callback id 全局幂等。
 5. 每个价格、路线和 visa 输出有 `source` 与 `captured_at`；报价额外带 `expires_at`。无可验证数据只返回 `UNAVAILABLE`。
-6. 每个 `private_conversation` 仅属于一个用户，使用独立 `conversation_id`，可选关联一个 `trip_id`；消息正文不进入 snapshot、共享视图、日志、trace 或 metric，删除线程时删除正文。
+6. 每个 `private_conversation` 仅属于一个用户，使用独立 `conversation_id`，可选关联一个 `trip_id`；消息正文不进入 snapshot、共享视图、日志、trace、metric 或 audit。仅在该 owner 对同一 thread 发起 Personal Agent turn 时，服务端可在固定轮次和上下文预算内将原文窗口发送给已配置的模型 provider；删除线程时删除正文。
 
 ## 5. API 取舍与不可用语义
 

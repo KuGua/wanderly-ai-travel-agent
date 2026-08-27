@@ -187,6 +187,29 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - Concurrent Workers cannot both commit a result: lease expiry/recovery may repeat an external model call, but final persistence is conditional on the current lease token and task state. A concurrent request ID cannot duplicate the USER message or create a second task.
 - Text, prompts, chunks and model payloads are absent from audit summaries, logs, traces and metric labels.
 
+### TS-H1d — Same-thread bounded LLM context survives re-entry
+
+**Stories:** H1, S1  
+**Objective:** Verify that reopening the same private thread restores a bounded same-thread LLM context without widening owner, Trip, persistence, or telemetry boundaries.
+
+**Starting conditions:** Alice owns a Trip thread containing more than the configured context window of alternating `USER` and `ASSISTANT` messages. Bob is an active member of the same Trip and owns a separate thread. A fake model gateway captures its request payload; the Worker is able to retry an accepted task.
+
+**Steps:**
+
+1. Reopen Alice's existing thread after a full browser reload, then submit a follow-up that depends on a recent prior turn.
+2. Inspect the fake gateway payload and assert it contains chronological raw messages only from Alice's thread, plus the current question and the existing allow-listed Trip context.
+3. Seed enough prior messages to exceed both the configured turn and character budget. Submit another turn and inspect the payload.
+4. Accept a turn, append a later legacy message before Worker retry, then retry the same task after a controlled transient model failure.
+5. Attempt the same operations as Bob and inspect all fake-gateway, audit, log, span, metric, SSE, idempotency, and task-row data.
+
+**Expected outcomes:**
+
+- The recent context survives reload/re-entry because it is rebuilt from the authoritative thread archive; neither the browser nor TanStack Query persists or submits message history.
+- Context contains only complete `USER`/`ASSISTANT` messages from the accepted task's `threadId`, in chronological order, and never another thread, Profile, consent, snapshot, plan, provider fact, or shared-member field.
+- The current user message is always present. The oldest messages are removed first to satisfy the configured complete-turn and character budgets; the model is permitted to state that earlier context is unavailable.
+- A retry uses the task's saved upper message-sequence boundary and therefore cannot include content appended after task acceptance. It may repeat the bounded model call but persists at most one final assistant message.
+- Raw context appears only in the outbound configured-model request. It is absent from `agent_task_runs`, audit summaries, logs, traces, metric labels, SSE events, browser storage, and all Bob-visible responses.
+
 ### TS-H2 — Invite member and enforce field-level sharing
 
 **Stories:** H2  

@@ -682,7 +682,9 @@ incremental delivery.
 
 Returns up to the latest 100 raw `USER`/`ASSISTANT` messages in chronological
 order for the owner UI. This endpoint is deliberately separate from
-`thread.recall`, which exposes only safe/redacted Agent context.
+`thread.recall`, which exposes only safe/redacted Agent context. It is not the
+LLM context API: the browser must never submit this history; the Worker builds
+the bounded, same-thread model context server-side.
 
 ### `POST /threads/:threadId/messages`
 

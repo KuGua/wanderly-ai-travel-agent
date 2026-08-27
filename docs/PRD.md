@@ -97,7 +97,7 @@ flowchart LR
 2. 用户可以创建、回看和删除仅自己可访问的私有对话线程；线程归所属用户所有，可选关联一次行程（即`this trip`= 线程创建时绑定的 `tripId`，**不**替代 trip 本身）；同一用户在同一 trip 上可拥有多个线程（例如私有 scratchpad 与个人规划草稿），但每线程的 `ownerUserId` 唯一，其他 trip 成员或 Shared Agent 不得通过 trip 关联读取线程。
 3. 用户可以通过私有对话为本次旅行添加或覆盖偏好；本次覆盖不得静默改写稳定 Profile，且只有用户确认的提案才能写入 Profile 或 trip override。trip override 标记为 `this trip`，与稳定 Profile 严格隔离，且未经独立授权不得自动随 snapshot 共享给同行者。
 4. 系统必须显示每条资料的来源（Profile 或本次对话）和最近修改时间。
-5. 系统不得把任何 Profile 或私有对话字段默认共享给同行者；保存的对话全文不得自动成为长期 Agent memory、共享 snapshot 或模型上下文。模型默认 LLM 上下文仅包含服务端派生的脱敏摘要，以及由 owner 显式标记"共享"的最近若干轮；raw transcript 永远不出 owner 会话。
+5. 系统不得把任何 Profile 或私有对话字段默认共享给同行者。对同一 owner 的同一私有 thread，Personal Agent 可使用服务端构造的最近、有预算的原文对话窗口作为 LLM 上下文，以便用户重新进入该 thread 后延续对话；窗口外的内容不送入模型，模型应在需要时坦诚说明未保留早期上下文。原文窗口只能发送给已配置模型 provider，绝不进入长期 Profile memory、共享 snapshot、Shared Agent、日志、trace、audit、metric 或客户端持久状态；浏览器不得提交或拼接 history。
 6. 删除对话线程须删除其消息正文；仅保留最小、无敏感的审计摘要（线程 id、操作者、时间）。删除 Profile/override 后，未来 Agent run 不得使用对应数据。
 7. Personal Agent 对话、planning 与 replan 均须作为服务端持久任务执行，并支持鉴权流式状态事件。每条已接受的 Personal Agent 对话必须绑定一个既有 Trip、归属于唯一 owner；加入 Trip 的成员自动获得空白默认私有线程，并可在该 Trip 下创建更多私有线程。浏览器关闭、刷新、网络断开或 SSE 断开不得取消已接受任务；只有用户显式 Stop 可以请求取消。私有对话文本仅在通过流式安全 gate 后增量显示，且只有最终完整校验成功的 ASSISTANT 内容可持久化。
 8. 探索首页进入、新地图浏览、坐标点击和打开聊天不得创建 Trip。用户首次提交聊天消息时，系统必须以幂等单事务创建其 `DRAFT` Trip、默认私有 thread 与初始 membership，再在该 thread 接受 turn。站内路由返回探索页继续当前浏览器内存会话；新标签页、整页刷新或重新打开探索页开始新会话。未发送消息的探索不得持久化为项目。
