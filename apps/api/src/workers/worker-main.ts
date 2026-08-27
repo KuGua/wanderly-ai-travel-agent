@@ -13,6 +13,10 @@ import { processNextAgentTask } from "./agent-task-worker.js";
 await initTracing({ serviceName: "ai-travel-agent-worker" });
 
 assertAuthModeEnvironment(resolveAuthMode());
+// The Worker never calls the resolver. Force `disabled` mode so even an
+// accidental transitive call returns NO_REFERENCE without reading 70 MB of
+// GeoJSON into the Worker process. See `apps/api/src/location-reference/SIDECAR.md`.
+process.env.LOCATION_REFERENCE_MODE = process.env.LOCATION_REFERENCE_MODE ?? "disabled";
 personalTravelAgent.register();
 
 let stopping = false;

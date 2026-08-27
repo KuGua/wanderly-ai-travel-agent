@@ -371,7 +371,32 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - 地图就绪生命周期分两阶段（mounting → ready）：MapLibre 6.6 的 globe projection 必须写入传给 `new Map()` 的 style JSON，`style.load` 是 style 兼容性检查和图层控件的唯一就绪前置；不得在 style 创建前或 `style.load` 后调用 `setProjection()`。OpenMapTiles 的 `sourcedata` 只作为开发诊断，慢 TileJSON 或 PBF 不得触发 `unavailable-network`。只有 style 总超时、初始化异常或 style ready 前的 map error 才显示 globe error 回退。dev 模式下 `window.__wanderlyMap.stage` 实时反映当前阶段。
 - 地图 ready 后，国家边界位于 provider style stack 顶层：即使 Liberty 的 fill/road layer 重排，全球缩放仍可看到本地 Natural Earth 共享 mesh 与独立九段线。关闭 Countries 时必须同时隐藏国家线、九段线与洲/国家名称；zoom 2.6 起显示首都、zoom 2.8 起显示重要城市、zoom 4.2 起显示省州名称。SVG 标签必须在 MapLibre `render` 帧内同步重投影并随 resize 更新，平移或缩放时不得落后 WebGL 地球（标签位置只能直接写入 DOM，不得经由 React state 提交，否则会慢一帧并出现漂移）；必须剔除背半球并进行屏幕碰撞去重；已离开候选集但尚未卸载的标签节点必须当帧隐藏，不得停留在过期位置。切换对应图层后标签即时消失。视觉边界和标签不参与地点匹配、反向地理编码或旅行事实；位置参考只能使用专用、版本化的离线 resolver 数据。
 - 国界构建必须仅在构建期读取 Natural Earth 10m，并从同一个 TopoJSON topology 输出三档共享 mesh；同一时刻前端只绘制当前 zoom 的一档，任意共享边界只出现一次。首屏只请求 LOD-0 与本地九段线，LOD-0 gzip 不得超过 200 KB；LOD-1/2 仅在进入对应 zoom 后请求。浏览器与 `build-geography-labels.mjs` 对 `geo.datav.aliyun.com` 的请求必须为 0。每一档必须在 MapLibre `render` 帧内同步更新、在半球边缘裁剪相交线段并随 resize 更新，旋转时不得落后 WebGL 地球或因顶点跨越背面而抖动。获取失败应保留既有地图和无障碍地点入口。
-- 地球表面必须保持实体不透明：GEBCO `GEBCO_LATEST` WMS shaded relief 同时提供陆地与海底地势，opacity 固定为 1；Liberty Natural Earth 位于其下，仅作为 GEBCO 请求失败时的视觉 fallback。道路、标签和行政边界仍需在 relief 之上可读，放大时不得退化为白色或透明地图。必须显示 GEBCO attribution 与“不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
+- 地球表面必须保持实体不透明：GEBCO `GEBCO_LATEST` WMS shaded relief 同时提供陆地与海底地势，opacity 固定为 1；Liberty Natural Earth 位于其下，仅作为 GEBCO 请求失败时的视觉 fallback。道路、标签和行政边界仍需在 relief 之上可读，放大时不得退化为白色或透明地图。必须显示 GEBCO attribution 与”不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
+
+### TS-P2-LR — Resolve coordinates through the three source modes
+
+**Stories:** P1
+**Objective:** Verify the `LOCATION_REFERENCE_MODE` source abstraction keeps the public route, internal caller, rate limit, and metric contract identical across `in-process`, `sidecar`, and `disabled` modes. See `apps/api/src/location-reference/SIDECAR.md` for the full failure-mode matrix.
+
+**Starting conditions:** API is running locally; Postgres is up; `apps/api/data/location-reference/` data is versioned.
+
+**Steps:**
+
+1. With `LOCATION_REFERENCE_MODE` unset (default `in-process`), POST `{ “latitude”: 38.7223, “longitude”: -9.1393 }` to `/api/v1/explore/location-reference`. Record the full response body.
+2. Stop the API. Start the sidecar via `docker compose --profile location-reference up -d` and restart the API with `LOCATION_REFERENCE_MODE=sidecar LOCATION_REFERENCE_SIDECAR_URL=http://127.0.0.1:3002`. Repeat the same POST.
+3. Restart the API with `LOCATION_REFERENCE_MODE=disabled`. Repeat the same POST.
+4. In each mode, fire 31 rapid POSTs from the same client IP and confirm the 31st returns `429 LOCATION_REFERENCE_RATE_LIMITED`.
+5. With `LOCATION_REFERENCE_MODE=sidecar`, stop the sidecar container and POST again. Then with `LOCATION_REFERENCE_MODE=sidecar` but a stale URL, POST again.
+6. With `LOCATION_REFERENCE_MODE=sidecar` and the sidecar down, POST a conversation turn with a `place` field (e.g. via `apps/web` explore chat) and observe `place.sourceType`.
+
+**Expected outcomes:**
+
+- Steps 1 and 2 produce **byte-identical** JSON for the same coordinates; `disabled` (step 3) returns `{ “outcome”: “NO_REFERENCE”, “datasetVersion”: “disabled”, ... }` with the rest of the discriminated union intact.
+- Step 4: rate limit is honored in all three modes; the `429` body and `location_reference_requests_total{outcome=”rate_limited”}` label are unchanged.
+- Step 5: sidecar HTTP 5xx / timeout / connection-refused all return `503 LOCATION_REFERENCE_UNAVAILABLE` with `outcome=”unavailable”`. Schema drift (sidecar returns `{“wrong”:”shape”}`) also returns `503`, never silently fabricates a result.
+- Step 6: the conversation turn returns `202`; the persisted `place` has `sourceType: “INSPIRATION”`, not `500`. The conversation-safety `resolveConversationPlace` soft-degrades and never throws to the caller.
+- The sidecar container's `/health` reports `{ status: “ok”, dataLoaded: true }` after the 70 MB GeoJSON warm-up completes; `GET /api/v1/explore/location-reference` rate-limit metrics never double-count (the sidecar does not rate-limit).
+- Switching modes does not require code changes; flipping `LOCATION_REFERENCE_MODE` is sufficient. The default `in-process` mode is what production deploys inherit with zero configuration change.
 
 ### TS-S1 — Protect data and trace the Agentic workflow
 

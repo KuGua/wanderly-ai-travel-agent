@@ -116,7 +116,7 @@ export async function acceptConversationTask(params: {
     },
   });
   try {
-    const place = resolveConversationPlace(params.input.place);
+    const place = await resolveConversationPlace(params.input.place);
     const idempotencyKey = conversationIdempotencyKey(params.threadId, params.input.requestId);
     const runId = randomUUID();
     const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
