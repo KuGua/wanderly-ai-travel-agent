@@ -19,27 +19,27 @@ import { eq } from "drizzle-orm";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 
 let app: FastifyInstance;
-let aliceId: string;
 let bobId: string;
 
 beforeAll(async () => {
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
   await app.ready();
 
+  // Ensure both `alice` and `bob` users exist so `authHeaders("alice")`
+  // resolves a known identity in the draft-guard tests and the non-creator
+  // invitation test has bob's id to pass as `invitedUserId`.
   for (const subject of ["alice", "bob"] as const) {
     const [existing] = await db.select().from(users)
       .where(eq(users.externalId, subject)).limit(1);
     if (existing) {
-      if (subject === "alice") aliceId = existing.id;
-      else bobId = existing.id;
+      if (subject === "bob") bobId = existing.id;
       continue;
     }
     const [created] = await db.insert(users).values({
       externalId: subject,
       displayName: subject.charAt(0).toUpperCase() + subject.slice(1),
     }).returning();
-    if (subject === "alice") aliceId = created.id;
-    else bobId = created.id;
+    if (subject === "bob") bobId = created.id;
   }
 });
 

@@ -19,7 +19,6 @@
  */
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { eq } from "drizzle-orm";
 import { db } from "../db/database.js";
 import { locationIntroductionCatalogOverrides } from "../db/schema.js";
 

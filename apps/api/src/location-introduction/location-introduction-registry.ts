@@ -13,7 +13,6 @@
  * the override table (e.g. a sidecar container).
  */
 import { writeFile, rename } from "node:fs/promises";
-import { resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import { db } from "../db/database.js";
 import { locationIntroductionCatalogOverrides } from "../db/schema.js";

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { db } from "../src/db/database.js";
 import { agentRuns } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";

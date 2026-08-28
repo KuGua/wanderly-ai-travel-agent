@@ -807,7 +807,7 @@ export class LLMGateway implements ModelGateway {
         // is never written.
         try {
           assertLocationIntroductionOutputSafe(parsed.data);
-        } catch (err) {
+        } catch {
           lastError = "POLICY_DENIED";
           safeSetAttribute(span, "llm.error_code", lastError);
           continue;

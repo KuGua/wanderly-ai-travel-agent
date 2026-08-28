@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +13,6 @@ import {
 import {
   __resetLocationIntroductionCatalogForTests,
   invalidateLocationIntroductionOverrideCache,
-  resolveLocationIntroductionCatalogEntrySync,
 } from "../src/location-introduction/location-introduction-catalog.js";
 
 const FIXTURE_PATH = "/tmp/li-catalog-test-catalog.json";
