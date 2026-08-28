@@ -35,9 +35,12 @@ interface FrontMatter {
 }
 
 function parseFrontMatter(markdown: string): FrontMatter {
-  const match = markdown.match(/^---\n([\s\S]*?)\n---/);
+  // Accept both LF and CRLF line endings — GitHub-hosted runners and Windows
+  // checkouts can leave `\r\n` in tracked Markdown, and the parser must not
+  // fail silently when front-matter delimiters use either.
+  const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!match) return {};
-  const lines = match[1].split("\n");
+  const lines = match[1].split(/\r?\n/);
   const fm: FrontMatter = {};
   for (const line of lines) {
     const kv = line.match(/^([A-Za-z_-]+):\s*(.+)$/);
