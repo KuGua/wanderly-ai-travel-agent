@@ -109,8 +109,9 @@ Full mapping: [ERROR-CODES.md](./ERROR-CODES.md).
 
 - `../skills/shared/plan-comparison-skill.ts` and
   `../skills/personal/travel-conversation-skill.ts` invoke the model gateway.
-- `apps/api/src/services/chat-conversation-service.ts` invokes
-  `thread.recall` and `travel.conversation` for the owner-only conversation path.
+- The Worker invokes `travel.conversation` after the server-side
+  `ConversationContextBuilder` builds a bounded same-thread context. `thread.recall`
+  remains an independent redacted owner-only Skill and is not on that path.
 
 ## Verification
 

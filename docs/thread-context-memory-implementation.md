@@ -1,6 +1,6 @@
 # 同一私有 Thread 的 LLM 上下文记忆实施方案
 
-**状态：** 已批准，待实施
+**状态：** 已实施
 **范围：** Personal Agent 私有对话的同一 `chat_thread` 上下文记忆。
 **事实来源：** [TECH_STACK.md](../TECH_STACK.md)、[PRD.md](PRD.md)、[backlog.md](backlog.md)、[test-scenarios.md](test-scenarios.md)、[agent-architecture.md](agent-architecture.md)。
 
@@ -105,7 +105,7 @@ ALTER TABLE agent_task_runs
 |---|---|---|
 | 新增 | `src/services/conversation-context-service.ts` | 导出 `buildConversationContext(run)`；拥有严格查询、完整轮次裁剪、预算与输入 validation。不得写 DB 或调用模型。 |
 | 新增 | `tests/conversation-context-service.test.ts` | 覆盖排序、空历史、完整轮、字符裁剪、上界、跨 thread 和角色过滤。 |
-| 修改 | `migrations/0015_conversation_context_boundary.sql` | 添加列、旧数据兼容检查和新 constraint（若可安全部署）。迁移编号须在实现时按当前未应用 migration 序列确认，禁止冲突。 |
+| 修改 | `migrations/0015_conversation_context_boundary.sql` | 已添加 `context_max_message_sequence`、正数 check 与 legacy row 兼容语义；部署时必须执行迁移。 |
 | 修改 | `src/db/schema.ts` | 增加内部 sequence boundary 映射。 |
 | 修改 | `src/tasks/task-repository.ts` | acceptance transaction 写 boundary；移除以 `marked_shared_by_owner` / `redacted_summary` 构造模型 history 的逻辑。 |
 | 修改 | `src/tasks/handlers/conversation-task-handler.ts` | 调用 Context Builder，传入其返回的 history；保持 member re-check 在 builder 前。 |
@@ -177,12 +177,12 @@ interface ConversationContextBuilder {
 
 | 阶段 | 工作项 | 前置依赖 | 完成条件 |
 |---|---|---|---|
-| 0 | 更新事实来源与实施文档 | 本文批准 | 本文、TECH_STACK、PRD、backlog、test scenarios、agent architecture 一致。 |
-| 1 | 配置 schema、纯 Context Builder、单元测试 | 无 | 可确定性地返回同 thread 的完整轮次窗口，所有越权/超额场景失败关闭。 |
-| 2 | migration、Drizzle、task acceptance sequence boundary | 阶段 1 | 新 conversation task 存储 upper sequence；升级库和空库 migration 均通过。 |
-| 3 | Worker、Skill、Gateway payload/prompt 集成 | 阶段 1、2 | 每次模型调用只使用 builder 输出，stream/non-stream 路径一致。 |
-| 4 | observability、集成/Worker/SSE/安全回归 | 阶段 3 | 测试场景 TS-H1d 和所有既有 thread/privacy/task tests 通过。 |
-| 5 | 受控发布与观测 | 阶段 4 | 观察 latency、token usage、截断率和错误率；不存储 prompt。 |
+| 0 | 更新事实来源与实施文档 | 本文批准 | 已完成。 |
+| 1 | 配置 schema、纯 Context Builder、单元测试 | 无 | 已完成：确定性地返回同 thread 的完整轮次窗口。 |
+| 2 | migration、Drizzle、task acceptance sequence boundary | 阶段 1 | 已完成：新 conversation task 存储 upper sequence，legacy row 运行时使用 USER sequence。 |
+| 3 | Worker、Skill、Gateway payload/prompt 集成 | 阶段 1、2 | 已完成：stream/non-stream 均只使用 builder 输出。 |
+| 4 | observability、集成/Worker/SSE/安全回归 | 阶段 3 | 已完成，受 TS-H1d 与 API tests 覆盖。 |
+| 5 | 受控发布与观测 | 阶段 4 | 待部署环境执行迁移并观测 latency、token usage、截断率和错误率；不存储 prompt。 |
 
 阶段 1 与阶段 2 不得并行合并：Builder 的纯函数和预算契约先稳定，持久边界随后落地。阶段 3 前不得修改前端以伪造 memory UX。
 

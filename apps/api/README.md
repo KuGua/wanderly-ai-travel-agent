@@ -101,7 +101,7 @@ loopback socket 请求并由服务端固定映射一个本地身份；production
 - **离线地图位置参考** — `POST /api/v1/explore/location-reference` 仅处理用户显式点击的坐标，返回来源化国家、可选省/州和最近主要城市。它不是地址、旅行候选或 provider 事实，且坐标不进入日志、指标、trace、审计或数据库；参见 [位置参考数据](../../docs/location-reference-data.md)。
 - **规划控制平面** — `ModelGateway` 输出在写入前必须通过严格结构、snapshot 字段授权、路线边界、来源完整性与 provider evidence 精确匹配校验；失败返回 correlation-aware `422`，且不创建 plan。
 - **Model/Skill integration** — `gateway-factory.ts` 只配置 Gemini、OpenAI 或 OpenAI-compatible `LLMGateway`；LLM 路径记录安全的 model/prompt version 与 Agent run，provider、timeout 或 schema 失败时 fail closed。结构化模型输出仍须通过最终控制平面校验。
-- **Owner-only Personal Agent 对话** — `/threads/:threadId/turns` 原子持久化 USER 与 durable task 并返回 `202`；独立 Worker 通过 `thread.recall → travel.conversation → ModelGateway` 运行 Gemini/OpenAI-compatible stream。只有通过增量安全门的片段可进入鉴权 SSE，最终完整校验通过后才原子写入 ASSISTANT。相同 request ID 幂等，断开浏览器不取消任务，显式 cancel 是唯一取消入口。owner UI 可读取原始会话，但 task、SSE、safe recall、audit、metrics 与日志不持久化正文或 partial output。
+- **Owner-only Personal Agent 对话** — `/threads/:threadId/turns` 原子持久化 USER 与 durable task 并返回 `202`；独立 Worker 通过 `ConversationContextBuilder → travel.conversation → ModelGateway` 运行 Gemini/OpenAI-compatible stream。Builder 只从同一 owner 的同一 thread 读取在 task 接收时已存在的最近完整轮次，并受 `CONVERSATION_CONTEXT_MAX_TURNS` / `CONVERSATION_CONTEXT_MAX_CHARS` 双重限制；浏览器不得提交 history。只有通过增量安全门的片段可进入鉴权 SSE，最终完整校验通过后才原子写入 ASSISTANT。相同 request ID 幂等，断开浏览器不取消任务，显式 cancel 是唯一取消入口。owner UI 可读取原始会话，但 task、SSE、safe recall、audit、metrics 与日志不持久化正文或 partial output。
 - **入境准备** — 每位成员各有清单；国籍未共享时显示“请向官方来源核验”。
 - **方案版本管理** — 生成、过期、带差异的重规划。
 - **三人确认** — 三位必需成员全部确认后，才可进行预订沙箱。

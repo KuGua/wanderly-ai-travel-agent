@@ -187,4 +187,4 @@ flowchart LR
 - 每个 Agent/工具结果带 Profile/consent/tool snapshot 版本；
 - sandbox、真实 provider 数据与 `UNAVAILABLE` 的边界对用户清晰可见；
 - 新注册用户可在真实服务配置完整时完成端到端流程；live API 不可用时不创建伪造计划，并明确显示恢复路径；
-- 私有对话线程可持久化且仅归其所有者；不得进入共享 snapshot、遥测或默认模型上下文；用户删除后不再保留消息正文。
+- 私有对话线程可持久化且仅归其所有者；不得进入共享 snapshot 或遥测。Personal Agent 仅可使用同 owner、同 thread 的服务端有界原文窗口作为模型上下文；用户删除后不再保留消息正文。
