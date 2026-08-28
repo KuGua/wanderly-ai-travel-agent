@@ -8,7 +8,7 @@ interface AgentScopePolicy {
 
 const DEFAULT_POLICY: AgentScopePolicy = {
   personal: ["profile:read", "profile:write:propose", "consent:read", "chat:read"],
-  shared: ["snapshot:read", "plan:write:propose", "readiness:read"],
+  shared: ["snapshot:read", "plan:write:propose", "readiness:read", "flight:search"],
   review: ["snapshot:read", "plan:write:propose"],
 };
 

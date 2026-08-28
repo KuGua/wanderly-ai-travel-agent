@@ -36,7 +36,7 @@ and which default policy applies at invocation time.
 
 ### `SkillScope` (`contracts.ts:7-14`)
 
-The 8-element union every Skill's `allowedTools` is constrained to:
+The 9-element union every Skill's `allowedTools` is constrained to:
 
 ```ts
 type SkillScope =
@@ -47,7 +47,8 @@ type SkillScope =
   | "readiness:read"
   | "bookings"
   | "snapshot:read"
-  | "chat:read";
+  | "chat:read"
+  | "flight:search";
 ```
 
 ### `PolicyGate` (`contracts.ts:20-22`)
@@ -70,6 +71,7 @@ plain error into `SkillError('TOOL_NOT_ALLOWED')` (see
 interface SkillContext {
   ctx: RequestContext;
   snapshot?: ConstraintSnapshotData;
+  flightSearch?: FlightSearchExecutionContext;
   policyGate: PolicyGate;
 }
 ```
@@ -105,7 +107,7 @@ Defined in `policy-gate.ts:9-13`:
 | AgentKind | Allowed `SkillScope` values |
 | --- | --- |
 | `personal` | `profile:read`, `profile:write:propose`, `consent:read`, `chat:read` |
-| `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read` |
+| `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read`, `flight:search` |
 | `review` | `snapshot:read`, `plan:write:propose` |
 
 Any Skill whose `allowedTools` contains a value not in its agent kind's list

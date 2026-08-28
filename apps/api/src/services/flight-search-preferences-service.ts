@@ -6,6 +6,25 @@ import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 import type { TripSearchPreferencesRequest } from "../types/schemas.js";
 
+export class SearchPreferencesStaleError extends Error {
+  constructor() {
+    super("Confirmed flight search preferences are missing or stale");
+    this.name = "SearchPreferencesStaleError";
+  }
+}
+
+export async function loadCurrentConfirmedSearchPreferences(params: {
+  tripId: string;
+  version: number;
+}) {
+  const [latest] = await db.select().from(tripSearchPreferences)
+    .where(eq(tripSearchPreferences.tripId, params.tripId))
+    .orderBy(desc(tripSearchPreferences.version))
+    .limit(1);
+  if (!latest || latest.version !== params.version) throw new SearchPreferencesStaleError();
+  return latest;
+}
+
 export async function saveConfirmedSearchPreferences(params: {
   ctx: RequestContext;
   tripId: string;

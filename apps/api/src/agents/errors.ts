@@ -11,6 +11,7 @@ export type SkillErrorCode =
   | "PLAN_VALIDATION_FAILED"
   | "SNAPSHOT_REQUIRED"
   | "POLICY_DENIED"
+  | "SEARCH_PREFERENCES_STALE"
   | "UPSTREAM_FAILURE";
 
 export const SKILL_ERROR_STATUS: Record<SkillErrorCode, number> = {
@@ -26,6 +27,7 @@ export const SKILL_ERROR_STATUS: Record<SkillErrorCode, number> = {
   PLAN_VALIDATION_FAILED: 422,
   SNAPSHOT_REQUIRED: 400,
   POLICY_DENIED: 403,
+  SEARCH_PREFERENCES_STALE: 409,
   UPSTREAM_FAILURE: 502,
 };
 

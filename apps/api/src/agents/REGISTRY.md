@@ -101,6 +101,7 @@ timeout, and audit enforcement.
 | Plan-output validation rejection (caller) | `PLAN_VALIDATION_FAILED` | 422 |
 | Missing snapshot (shared) | `SNAPSHOT_REQUIRED` | 400 |
 | Policy gate rejected (runtime) | `TOOL_NOT_ALLOWED` | 403 |
+| Current confirmed flight-search preferences superseded | `SEARCH_PREFERENCES_STALE` | 409 |
 | Upstream failure (Skill-specific) | `UPSTREAM_FAILURE` | 502 |
 
 Full mapping: [ERROR-CODES.md](./ERROR-CODES.md).

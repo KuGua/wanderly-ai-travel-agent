@@ -31,6 +31,7 @@ type SkillErrorCode =
   | "PLAN_VALIDATION_FAILED"
   | "SNAPSHOT_REQUIRED"
   | "POLICY_DENIED"
+  | "SEARCH_PREFERENCES_STALE"
   | "UPSTREAM_FAILURE";
 ```
 
@@ -50,6 +51,7 @@ const SKILL_ERROR_STATUS: Record<SkillErrorCode, number> = {
   PLAN_VALIDATION_FAILED: 422,
   SNAPSHOT_REQUIRED: 400,
   POLICY_DENIED: 403,
+  SEARCH_PREFERENCES_STALE: 409,
   UPSTREAM_FAILURE: 502,
 };
 ```
@@ -96,6 +98,7 @@ the structured shape the validator emits).
 | `PLAN_VALIDATION_FAILED` | `plan.comparison` Skill when `policy/plan-output-validator.ts` throws `PlanValidationError`. | The Skill catches the validator exception and rethrows as `SkillError(code, message, violations)`. |
 | `SNAPSHOT_REQUIRED` | Shared Skill invoked without `ctx.snapshot`. | Plan comparison throws this when `snapshot` is missing. |
 | `POLICY_DENIED` | Invalid `agent` kind value at registration. | Not a runtime/operational error path. |
+| `SEARCH_PREFERENCES_STALE` | `flight.search` execution context points to a missing, superseded, or changed confirmed preference version. | Terminal; create a fresh planning execution context. |
 | `UPSTREAM_FAILURE` | Other classified model/provider failure. | Durable conversation execution retries only within the server-owned task budget; production never substitutes mock text. |
 
 ## HTTP envelope (`error-handler.ts`)

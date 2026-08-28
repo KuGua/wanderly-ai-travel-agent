@@ -12,7 +12,26 @@ export type SkillScope =
   | "readiness:read"
   | "bookings"
   | "snapshot:read"
-  | "chat:read";
+  | "chat:read"
+  | "flight:search";
+
+/**
+ * Server-derived authorization data for a Shared flight-search invocation.
+ * It is never accepted from a browser or model and is deliberately separate
+ * from the immutable snapshot's sensitive authorized member data.
+ */
+export interface FlightSearchExecutionContext {
+  tripId: string;
+  snapshotId: string;
+  searchPreferencesVersion: number;
+  searchPreferences: {
+    tripType: "ONE_WAY" | "ROUND_TRIP";
+    adults: number;
+    cabin: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST";
+    currency: string;
+  };
+  agentTaskRunId?: string;
+}
 
 /**
  * Policy gate consulted by the registry before invoking a skill. Implementations
@@ -25,6 +44,7 @@ export interface PolicyGate {
 export interface SkillContext {
   ctx: RequestContext;
   snapshot?: ConstraintSnapshotData;
+  flightSearch?: FlightSearchExecutionContext;
   policyGate: PolicyGate;
 }
 
