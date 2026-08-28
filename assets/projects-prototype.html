@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Wanderly — 我的项目原型</title>
   <style>
-    :root { --ink:#102a43; --muted:#627d98; --paper:#fffaf3; --card:#fffdf9; --line:#e8e1d8; --sea:#073d50; --teal:#0b8a88; --coral:#ef7654; --sun:#f6bd60; --lime:#d6edc7; --grey:#e8eef1; --shadow:0 18px 50px #102a4320; }
+    :root {
+      --moss:#67768f; --primary:#404e5b; --info:#599db5; --highlight:#65bbb0; --fog:#f1edea; --white:#fff;
+      --page:color-mix(in srgb,var(--fog),var(--white) 74%); --line:color-mix(in srgb,var(--fog),var(--white) 38%); --mist:color-mix(in srgb,var(--fog),var(--white) 62%); --shadow:0 14px 34px color-mix(in srgb,var(--moss),transparent 89%);
+      --ink:#1d1d1b; --muted:#414141; --paper:var(--page); --card:var(--white); --sea:var(--primary); --teal:var(--info); --coral:var(--highlight); --sun:var(--highlight); --lime:var(--mist); --grey:var(--fog);
+    }
     * { box-sizing:border-box; } html,body { min-height:100%; margin:0; } body { color:var(--ink); background:var(--paper); font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif; }
     button { font:inherit; cursor:pointer; } button:focus-visible,a:focus-visible { outline:3px solid var(--sun); outline-offset:3px; }
     .skip { position:fixed; z-index:20; top:-56px; left:16px; border-radius:10px; padding:10px 14px; color:var(--ink); background:#fff; transition:top .18s; } .skip:focus { top:16px; }
@@ -38,6 +42,55 @@
     @media (max-width:900px) { .summary { grid-template-columns:1fr 1fr; } .summary-card.primary { grid-column:span 2; } .grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .continue { grid-template-columns:130px minmax(0,1fr); } .continue-action { grid-column:2; justify-content:flex-start; padding-top:0; } }
     @media (max-width:650px) { .app { grid-template-columns:1fr; grid-template-rows:62px 1fr; } .rail { position:relative; height:62px; flex-direction:row; padding:8px 14px; } .brand { width:43px; height:43px; } .nav { display:flex; margin:0 0 0 6px; } .nav button { width:40px; height:40px; } .avatar { margin:0 0 0 auto; } main { padding:28px 16px 48px; } .header { display:block; } .new { width:100%; margin-top:20px; } .summary { grid-template-columns:1fr; margin:25px 0; } .summary-card.primary { grid-column:auto; } .toolbar { align-items:stretch; flex-direction:column; } .search { width:100%; } .continue { grid-template-columns:1fr; } .route-art { min-height:104px; } .continue-action { grid-column:auto; justify-content:stretch; padding:0 20px 20px; } .continue-action button { width:100%; } .grid { grid-template-columns:1fr; } }
     @media (prefers-reduced-motion:reduce) { *,*:before,*:after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; } }
+
+    /* Hand-drawn outlined comic treatment: visual style only, no borrowed imagery or palette. */
+    body { color:var(--ink); background-color:var(--page); background-image:radial-gradient(color-mix(in srgb,var(--moss),transparent 88%) 1px,transparent 1px); background-size:8px 8px; }
+    button:focus-visible,a:focus-visible { outline:3px solid var(--ink); outline-offset:4px; }
+    .rail { border-right:2px solid var(--ink); background:var(--fog); color:var(--ink); }
+    .brand { border:2px solid var(--ink); border-radius:15px 12px 16px 10px; background:var(--white); color:var(--ink); box-shadow:3px 3px 0 var(--ink); }
+    .nav button { border:2px solid transparent; border-radius:14px 11px 13px 10px; color:var(--ink); }
+    .nav button:hover,.nav button[aria-current="page"] { border-color:var(--ink); background:var(--highlight); color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
+    .avatar { border:2px solid var(--ink); background:var(--white); color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
+    .skip { border:2px solid var(--ink); border-radius:11px 8px 12px 9px; background:var(--white); color:var(--ink); box-shadow:3px 3px 0 var(--ink); }
+    .eyebrow,.lead,.summary-card p,.section-title span,.continue p,.project p,.project-footer,.open { color:var(--ink); }
+    .eyebrow { text-decoration:underline 2px var(--highlight); text-underline-offset:4px; }
+    h1,h2,h3,strong { color:var(--ink); }
+    .new,.continue-action button { border:2px solid var(--ink); border-radius:14px 10px 13px 9px; background:var(--highlight); color:var(--ink); box-shadow:4px 4px 0 var(--ink); }
+    .new:hover,.continue-action button:hover { background:var(--info); color:var(--ink); box-shadow:2px 2px 0 var(--ink); transform:translate(2px,2px); }
+    .summary-card,.project { border:2px solid var(--ink); border-radius:19px 14px 20px 13px; background:var(--white); box-shadow:4px 4px 0 var(--ink); }
+    .summary-card:nth-child(2),.project:nth-child(3n+2) { transform:rotate(-.35deg); }
+    .summary-card:nth-child(3),.project:nth-child(3n) { transform:rotate(.35deg); }
+    .summary-card.primary { border-color:var(--ink); background:var(--white); }
+    .bot { border:2px solid var(--ink); border-radius:16px 12px 17px 10px; background:var(--info); box-shadow:3px 3px 0 var(--ink); }
+    .bot:before { border-color:var(--ink); background:var(--white); }.bot:after { background:var(--ink); box-shadow:13px 0 var(--ink); }
+    .filter,.search { border:2px solid var(--ink); border-radius:12px 9px 13px 10px; background:var(--white); color:var(--ink); }
+    .filter[aria-pressed="true"] { border-color:var(--ink); background:var(--highlight); color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
+    .search svg,.search input { color:var(--ink); }.search input::placeholder { color:var(--ink); opacity:.58; }
+    .continue { border:2px solid var(--ink); border-radius:21px 15px 19px 14px; background:var(--white); box-shadow:5px 5px 0 var(--ink); }
+    .route-art { background:var(--fog); }.route-art:before { border-color:var(--primary); }.route-art:after { border-color:var(--ink); background:var(--highlight); }
+    .badge { border:2px solid var(--ink); border-radius:10px 8px 11px 7px; background:var(--fog); color:var(--ink); }
+    .meta span { border:1.5px solid var(--ink); border-radius:8px 6px 9px 5px; color:var(--ink); background:var(--white); }
+    .project:hover { border-color:var(--ink); box-shadow:2px 2px 0 var(--ink); transform:translate(2px,2px) rotate(0); }
+    .project-art { border-bottom:2px solid var(--ink); }.project-art:before { border-color:color-mix(in srgb,var(--ink),transparent 35%); }.project-art:after { border-color:color-mix(in srgb,var(--ink),transparent 30%); }
+    .project:nth-child(1) .project-art { background:linear-gradient(135deg,var(--info),var(--highlight)) !important; }
+    .project:nth-child(2) .project-art { background:linear-gradient(135deg,var(--moss),var(--info)) !important; }
+    .project:nth-child(3) .project-art { background:linear-gradient(135deg,var(--fog),var(--moss)) !important; }
+    .project:nth-child(4) .project-art { background:linear-gradient(135deg,var(--highlight),var(--fog)) !important; }
+    .project:nth-child(5) .project-art { background:linear-gradient(135deg,var(--primary),var(--moss)) !important; }
+    .state { border:1.5px solid var(--ink); border-radius:8px 6px 9px 5px; color:var(--ink); background:var(--white); }
+    .open { text-decoration:underline 2px var(--highlight); text-underline-offset:3px; }.open:hover { color:var(--ink); }
+    .empty { border:2px dashed var(--ink); border-radius:19px 13px 21px 12px; background:var(--white); color:var(--ink); }
+    .toast { border:2px solid var(--ink); background:var(--highlight); color:var(--ink); box-shadow:4px 4px 0 var(--ink); }
+
+    /* Long floating navigation card; it uses the established blue-grey palette. */
+    .rail { position:fixed; z-index:8; top:18px; bottom:18px; left:14px; width:64px; height:auto; gap:13px; padding:12px 8px; border:2px solid var(--ink); border-radius:24px 17px 26px 16px; background:var(--primary); box-shadow:5px 5px 0 var(--ink); }
+    /* A fixed rail leaves normal grid flow; keep the workspace explicitly in column two. */
+    main { grid-column:2; min-width:0; }
+    .brand { width:44px; height:44px; border-radius:14px 9px 15px 10px; background:var(--white); color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
+    .nav { gap:8px; margin-top:4px; }.nav button { width:44px; height:44px; border:1.5px solid var(--ink); border-radius:12px 8px 13px 9px; background:var(--fog); color:var(--ink); }.nav button:hover,.nav button[aria-current="page"] { background:var(--highlight); color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
+    .avatar { width:38px; height:38px; border-color:var(--ink); background:var(--white); color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
+    @media (max-width:650px) { .rail { position:relative; top:auto; right:auto; bottom:auto; left:auto; width:auto; height:62px; margin:0; padding:8px 14px; border:0; border-bottom:2px solid var(--ink); border-radius:0; background:var(--primary); box-shadow:none; }.brand,.nav button { width:40px; height:40px; }.nav { margin:0 0 0 6px; }.avatar { width:39px; height:39px; } main { grid-column:1; } }
+
   </style>
 </head>
 <body>

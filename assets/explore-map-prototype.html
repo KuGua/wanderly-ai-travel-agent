@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://unpkg.com" />
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" />
   <style>
-    :root { --ink:#102a43; --muted:#627d98; --paper:#fffaf3; --card:#fffdf9; --line:#e8e1d8; --sea:#074f61; --teal:#0b8a88; --coral:#ef7654; --sun:#f6bd60; --lime:#d6edc7; --shadow:0 18px 50px #102a4324; }
+    :root { --moss:#67768f; --primary:#404e5b; --info:#599db5; --highlight:#65bbb0; --fog:#f1edea; --white:#fff; --page:color-mix(in srgb,var(--fog),var(--white) 74%); --line:color-mix(in srgb,var(--fog),var(--white) 38%); --mist:color-mix(in srgb,var(--fog),var(--white) 62%); --shadow:0 14px 34px color-mix(in srgb,var(--moss),transparent 89%); --ink:#1d1d1b; --muted:#414141; --paper:var(--page); --card:var(--white); --sea:var(--primary); --teal:var(--info); --coral:var(--highlight); --sun:var(--highlight); --lime:var(--mist); }
     * { box-sizing:border-box; }
     html,body { height:100%; margin:0; }
     body { color:var(--ink); font:15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background:var(--paper); }
@@ -88,6 +88,36 @@
     .toast.show { transform:translate(-50%, 0); opacity:1; }
     @media (max-width:720px) { .app { grid-template-columns:1fr; grid-template-rows:62px 1fr; } .rail { flex-direction:row; padding:8px 14px; } .brand { width:43px; height:43px; } .nav { display:flex; margin:0 0 0 6px; } .nav button { width:40px; height:40px; } .avatar { margin:0 0 0 auto; } .topbar { top:78px; left:14px; right:14px; } .identity { padding-right:10px; } .intro { left:14px; bottom:17px; width:calc(100% - 28px); padding:18px; } .drawer { width:100%; height:min(76%, 600px); top:auto; bottom:0; border-left:0; border-top:1px solid var(--line); transform:translateY(105%); } .drawer.open { transform:translateY(0); } .maplibregl-ctrl-bottom-right { bottom:calc(76% + 14px); right:14px; } }
     @media (prefers-reduced-motion:reduce) { *, *:before, *:after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important; } }
+
+    /* Shared hand-drawn outlined comic treatment — visual language only. */
+    body { color:var(--ink); background-color:var(--page); background-image:radial-gradient(color-mix(in srgb,var(--moss),transparent 88%) 1px,transparent 1px); background-size:8px 8px; }
+    button:focus-visible,a:focus-visible { outline:3px solid var(--ink); outline-offset:4px; }
+    .app { grid-template-columns:88px minmax(0,1fr); }
+    .rail { position:fixed; z-index:8; top:18px; bottom:18px; left:14px; width:64px; height:auto; gap:13px; padding:12px 8px; border:2px solid var(--ink); border-radius:24px 17px 26px 16px; background:var(--primary); color:var(--ink); box-shadow:5px 5px 0 var(--ink); }
+    .main { grid-column:2; min-width:0; }
+    .brand { width:44px; height:44px; border:2px solid var(--ink); border-radius:14px 9px 15px 10px; background:var(--white); color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
+    .nav { gap:8px; margin-top:4px; }.nav button { width:44px; height:44px; border:1.5px solid var(--ink); border-radius:12px 8px 13px 9px; background:var(--fog); color:var(--ink); }.nav button:hover,.nav button[aria-current="page"] { background:var(--highlight); color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
+    .avatar { border-color:var(--ink); background:var(--white); color:var(--ink); box-shadow:2px 2px 0 var(--ink); }
+    .skip,.identity,.intro,.drawer,.place,.round,.close,.step,.recommendation,.cta,.toast { border:2px solid var(--ink); color:var(--ink); }
+    .skip,.intro,.drawer,.place,.round,.close,.step { background:var(--white); box-shadow:4px 4px 0 var(--ink); }
+    .identity { border-radius:18px 12px 19px 11px; background:var(--white); box-shadow:4px 4px 0 var(--ink); }.identity small,.intro p,.drawer > p,.step small,.note { color:var(--ink); }
+    .mini-bot,.character .head { border:2px solid var(--ink); background:var(--info); color:var(--ink); }.character .head { box-shadow:none; }.character .antenna { background:var(--ink); }.character .antenna:before { border:2px solid var(--ink); background:var(--highlight); }.character .body { border-color:var(--ink); background:var(--fog); }
+    .eyebrow { color:var(--ink); text-decoration:underline 2px var(--highlight); text-underline-offset:4px; }.place:hover,.round:hover { border-color:var(--ink); background:var(--highlight); }.bubble { border-color:var(--ink); background:var(--white); color:var(--ink); box-shadow:3px 3px 0 var(--ink); }.plane { border:2px solid var(--ink); background:var(--highlight); color:var(--ink); box-shadow:3px 3px 0 var(--ink); }.route { border-color:var(--ink); }
+    .drawer { border-radius:23px 0 0 17px; background:var(--page); }.status,.step .dot { border:1.5px solid var(--ink); background:var(--fog); color:var(--ink); }.step.active { border-color:var(--ink); background:var(--mist); }.recommendation { border-radius:17px 12px 18px 10px; background:var(--primary); color:var(--white); box-shadow:4px 4px 0 var(--ink); }.recommendation ul { color:var(--white); }.cta { border-radius:14px 10px 13px 9px; background:var(--highlight); box-shadow:4px 4px 0 var(--ink); }.cta:hover { background:var(--info); transform:translate(2px,2px); box-shadow:2px 2px 0 var(--ink); }.toast { background:var(--highlight); box-shadow:4px 4px 0 var(--ink); }
+    .maplibregl-ctrl-group { border:2px solid var(--ink); border-radius:12px 9px 13px 8px; box-shadow:3px 3px 0 var(--ink); }.maplibregl-ctrl button { background:var(--white); }
+    @media (max-width:720px) { .app { grid-template-columns:1fr; }.rail { position:relative; top:auto; right:auto; bottom:auto; left:auto; width:auto; height:62px; margin:0; padding:8px 14px; border:0; border-bottom:2px solid var(--ink); border-radius:0; background:var(--primary); box-shadow:none; }.brand,.nav button { width:40px; height:40px; }.nav { margin:0 0 0 6px; }.main { grid-column:1; }.drawer { border-radius:18px 18px 0 0; } }
+
+    /* Cosmic map: the existing blue-grey palette is reassigned to deep space, nebulae, and flight trails. */
+    :root { --space:color-mix(in srgb,var(--primary),#000 72%); --space-mid:color-mix(in srgb,var(--primary),#000 47%); --space-panel:color-mix(in srgb,var(--primary),transparent 7%); --space-line:color-mix(in srgb,var(--fog),transparent 35%); }
+    .app { background:var(--space); }
+    #map { overflow:hidden; background:var(--space); }
+    #map canvas { filter:brightness(.58) saturate(.76) contrast(1.16); }
+    #map::after { content:""; position:absolute; z-index:2; inset:0; pointer-events:none; opacity:.72; background-image:radial-gradient(circle at 9% 14%,var(--fog) 0 1px,transparent 1.8px),radial-gradient(circle at 72% 17%,var(--fog) 0 1px,transparent 1.6px),radial-gradient(circle at 88% 72%,var(--highlight) 0 1.2px,transparent 2px),radial-gradient(circle at 38% 82%,var(--fog) 0 1px,transparent 1.7px),radial-gradient(circle at 57% 43%,var(--info) 0 1px,transparent 1.7px),radial-gradient(circle at 17% 52%,var(--fog) 0 1px,transparent 1.7px); background-size:220px 180px,310px 240px,260px 210px,340px 280px,190px 160px,290px 230px; }
+    .maplibregl-control-container { position:relative; z-index:3; }
+    .identity,.intro,.drawer { border-color:var(--space-line); background:var(--space-panel); color:var(--fog); box-shadow:4px 4px 0 var(--ink),0 18px 40px color-mix(in srgb,var(--space),transparent 20%); }
+    .identity small,.intro p,.drawer > p,.step small,.note,.drawer h2,.intro h1 { color:var(--fog); }.eyebrow { color:var(--fog); text-decoration-color:var(--highlight); }
+    .place,.round,.close,.step { border-color:var(--space-line); background:color-mix(in srgb,var(--space-mid),transparent 4%); color:var(--fog); box-shadow:3px 3px 0 var(--ink); }.place:hover,.round:hover { border-color:var(--fog); background:var(--highlight); color:var(--ink); }
+    .drawer { border-left-color:var(--space-line); }.status,.step .dot { border-color:var(--space-line); background:var(--space-mid); color:var(--fog); }.step.active { border-color:var(--highlight); background:color-mix(in srgb,var(--info),var(--space) 64%); }.recommendation { border-color:var(--space-line); background:var(--space-mid); }.toast { border-color:var(--space-line); }.maplibregl-ctrl-group { border-color:var(--space-line); background:var(--space-panel); }.maplibregl-ctrl button { background:var(--space-panel); filter:invert(1); }
   </style>
 </head>
 <body>
