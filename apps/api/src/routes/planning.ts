@@ -1,10 +1,11 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
-import { sharedTrips, tripMembers } from "../db/schema.js";
+import { sharedTrips, tripMembers, tripSearchPreferences } from "../db/schema.js";
 import { planRequestSchema } from "../types/schemas.js";
-import { createConstraintSnapshot, generatePlan, getLatestActivePlan } from "../services/planning-service.js";
-import { checkVisaReadiness } from "../services/visa-service.js";
+import { createConstraintSnapshot, getLatestActivePlan } from "../services/planning-service.js";
+import { acceptPlanningTask } from "../tasks/task-repository.js";
 import { requireActiveTrip } from "../services/trip-status-guard.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
@@ -13,7 +14,7 @@ export async function planningRoutes(app: FastifyInstance) {
   // Generate plans for a trip — produces one plan per destination candidate
   // (so two to three destinations all get their own flights/stay/ground and
   // visa checks, each anchored to the same shared snapshot).
-  app.post("/planning/generate", async (request) => {
+  app.post("/planning/generate", async (request, reply) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
     const body = planRequestSchema.parse(request.body);
 
@@ -55,43 +56,16 @@ export async function planningRoutes(app: FastifyInstance) {
       travelDateEnd,
     });
 
-    // One plan per destination candidate, all referencing the same snapshot.
-    const plans: Array<{ destination: string; planId: string; snapshotId: string }> = [];
-    for (const destination of destinationCandidates) {
-      const planId = await generatePlan({
-        ctx,
-        tripId: body.tripId,
-        snapshotId,
-        destination,
-        memberIds,
-      });
-      plans.push({ destination, planId, snapshotId });
-    }
-
-    // Visa checks run per (destination, member) pair against the same snapshot.
-    const visaChecksByDestination: Record<string, unknown[]> = {};
-    for (const plan of plans) {
-      const checks = await Promise.all(
-        memberIds.map(memberId => checkVisaReadiness({
-          planId: plan.planId,
-          snapshotId,
-          memberId,
-          tripId: body.tripId,
-          destinationCountry: plan.destination,
-        })),
-      );
-      visaChecksByDestination[plan.destination] = checks;
-    }
-
-    const latestPlan = await getLatestActivePlan(body.tripId);
-
-    return {
-      snapshotId,
-      plans,
-      visaChecksByDestination,
-      latestPlan: latestPlan?.planData,
-      message: `Plans generated for ${plans.length} destination candidate(s)`,
-    };
+    const latestPreference = await db.select().from(tripSearchPreferences)
+      .where(eq(tripSearchPreferences.tripId, body.tripId))
+      .orderBy(desc(tripSearchPreferences.version)).limit(1);
+    if (!latestPreference[0]) throw new ApiError(422, "Unprocessable Entity", "Confirmed flight search preferences are required");
+    const accepted = await acceptPlanningTask({
+      ctx, tripId: body.tripId, userId: request.user.id, snapshotId,
+      flightSearchPreferencesVersion: latestPreference[0].version,
+      operation: "PLAN", requestId: request.clientRequestId ?? randomUUID(),
+    });
+    return reply.code(202).send({ ...accepted, snapshotId });
   });
 
   app.get("/planning/:tripId/latest", async (request) => {

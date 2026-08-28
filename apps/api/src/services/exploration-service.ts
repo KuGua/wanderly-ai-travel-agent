@@ -1,5 +1,3 @@
-import { eq } from "drizzle-orm";
-
 import { db } from "../db/database.js";
 import { chatThreads, sharedTrips, tripMembers } from "../db/schema.js";
 import { recordAudit } from "./audit-service.js";

@@ -331,7 +331,8 @@ export const agentRunPhaseSchema = z.enum([
 ]);
 export const agentRunErrorCodeSchema = z.enum([
   "NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "SCHEMA_PARSE",
-  "POLICY_DENIED", "CANCELLED", "EXPIRED", "RETRY_EXHAUSTED", "INTERNAL",
+  "POLICY_DENIED", "SEARCH_PREFERENCES_STALE", "PLANNING_DATA_UNAVAILABLE",
+  "UNKNOWN_SKILL", "TOOL_CALL_MAX_TURNS", "CANCELLED", "EXPIRED", "RETRY_EXHAUSTED", "INTERNAL",
 ]);
 
 export const conversationTurnAcceptedResponseSchema = z.object({

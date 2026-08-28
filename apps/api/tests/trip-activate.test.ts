@@ -6,8 +6,15 @@ import { db } from "../src/db/database.js";
 import {
   auditEvents,
   chatThreads,
+  constraintSnapshots,
   idempotencyRecords,
+  itineraryPlans,
+  providerOffers,
+  providerSearchRuns,
   sharedTrips,
+  sourceEvidence,
+  tripSearchPreferences,
+  agentTaskRuns,
   tripMembers,
   users,
 } from "../src/db/schema.js";
@@ -16,7 +23,6 @@ import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 
 let app: FastifyInstance;
 let aliceId: string;
-let bobId: string;
 
 beforeAll(async () => {
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
@@ -27,7 +33,7 @@ beforeAll(async () => {
       .where(eq(users.externalId, subject)).limit(1);
     if (existing) {
       if (subject === "alice") aliceId = existing.id;
-      else bobId = existing.id;
+      // Bob only needs to exist for authenticated request fixtures.
       continue;
     }
     const [created] = await db.insert(users).values({
@@ -35,7 +41,7 @@ beforeAll(async () => {
       displayName: subject.charAt(0).toUpperCase() + subject.slice(1),
     }).returning();
     if (subject === "alice") aliceId = created.id;
-    else bobId = created.id;
+    // Bob only needs to exist for authenticated request fixtures.
   }
 });
 
@@ -46,6 +52,13 @@ afterAll(async () => {
 beforeEach(async () => {
   await db.delete(auditEvents);
   await db.delete(idempotencyRecords);
+  await db.delete(sourceEvidence);
+  await db.delete(providerOffers);
+  await db.delete(providerSearchRuns);
+  await db.delete(itineraryPlans);
+  await db.delete(agentTaskRuns);
+  await db.delete(constraintSnapshots);
+  await db.delete(tripSearchPreferences);
   await db.delete(chatThreads);
   await db.delete(tripMembers);
   await db.delete(sharedTrips);

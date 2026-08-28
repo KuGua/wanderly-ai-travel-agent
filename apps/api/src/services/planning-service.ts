@@ -1,12 +1,17 @@
 import { db } from "../db/database.js";
-import { constraintSnapshots, itineraryPlans, sourceEvidence, providerOffers } from "../db/schema.js";
-import { eq, and, desc } from "drizzle-orm";
+import { constraintSnapshots, itineraryPlans, sourceEvidence, providerOffers, agentTaskRuns, tripSearchPreferences } from "../db/schema.js";
+import { eq, and, desc, gt } from "drizzle-orm";
 import { buildAuthorizedData } from "./consent-service.js";
 import { createTravelProviders } from "../providers/live-provider-factory.js";
 import { modelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
 import type { FlightProvider, GroundProvider, StayProvider } from "../providers/types.js";
 import { validatePlanOutput } from "../policy/plan-output-validator.js";
+import { DefaultPolicyGate } from "../agents/policy-gate.js";
+import { invokeSkill } from "../agents/skill-registry.js";
+import { flightSearchModelArgumentsSchema } from "./flight-search-service.js";
+import { loadCurrentConfirmedSearchPreferences } from "./flight-search-preferences-service.js";
+import { evaluateFlightResearchCompleteness, FlightResearchIncompleteError } from "./flight-research-matrix-service.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 import type { FlightOffer, StayOffer, GroundOffer } from "../types/domain.js";
@@ -122,6 +127,10 @@ export async function generatePlan(params: {
   snapshotId: string;
   destination: string;
   memberIds: string[];
+  agentTaskRunId?: string;
+  flightSearchPreferencesVersion?: number;
+  signal?: AbortSignal;
+  leaseToken?: string;
 }, dependencies: PlanningDependencies = resolvePlanningDependencies()): Promise<string> {
   // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
@@ -148,16 +157,16 @@ export async function generatePlan(params: {
     );
   }
 
-  for (const departureCity of snapshot.departureCities) {
-    const result = await dependencies.flightProvider.searchFlights({
+  if (!params.agentTaskRunId || !params.flightSearchPreferencesVersion) {
+    for (const departureCity of snapshot.departureCities) {
+      const result = await dependencies.flightProvider.searchFlights({
       origin: departureCity,
       destination: params.destination,
       dateStart: snapshot.travelDateStart,
       dateEnd: snapshot.travelDateEnd,
       snapshotId: params.snapshotId,
     });
-    if (result.outcome !== "UNAVAILABLE") {
-      allFlights.push(...result.data);
+      if (result.outcome !== "UNAVAILABLE") allFlights.push(...result.data);
     }
   }
 
@@ -179,23 +188,55 @@ export async function generatePlan(params: {
     allGround.push(...groundResult.data);
   }
 
-  validateProviderCoverage({
-    requiredOrigins: snapshot.departureCities,
-    flights: allFlights,
-    stays: allStays,
-    ground: allGround,
-  });
-
-  // Generate structured plan via model gateway
   const memberPreferences = snapshot.authorizedData;
-  const candidatePlanData = await dependencies.modelGateway.generateStructuredPlan({
-    destination: params.destination,
-    flights: allFlights,
-    stays: allStays,
-    ground: allGround,
-    memberPreferences,
-    ctx: params.ctx,
-  });
+  let candidatePlanData: Record<string, unknown>;
+  if (params.agentTaskRunId && params.flightSearchPreferencesVersion) {
+    const toolGateway = dependencies.modelGateway.generateStructuredPlanWithTools;
+    if (!toolGateway) throw new PlanningDataUnavailableError(["tool_calling_not_supported"]);
+    const preferences = await loadCurrentConfirmedSearchPreferences({
+      tripId: params.tripId, version: params.flightSearchPreferencesVersion,
+    });
+    candidatePlanData = await toolGateway.call(dependencies.modelGateway, {
+      destination: params.destination, stays: allStays, ground: allGround, memberPreferences,
+      maxTurns: Number(process.env.MODEL_GATEWAY_TOOL_CALLING_MAX_TURNS ?? 8), signal: params.signal, ctx: params.ctx,
+      beforeFinal: async () => {
+        const matrix = await evaluateFlightResearchCompleteness({
+          snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId!,
+          departureCities: snapshot.departureCities as string[], destinationCandidates: snapshot.destinationCandidates as string[],
+        });
+        if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
+      },
+      tools: [{
+        name: "flight.search", description: "Search normalized flights for one controlled origin and destination.",
+        parameters: { type: "object", additionalProperties: false, required: ["originId", "destinationId", "tripType", "departureDate", "adults", "cabin", "currency"], properties: {
+          originId: { type: "string" }, destinationId: { type: "string" }, tripType: { type: "string", enum: ["ONE_WAY", "ROUND_TRIP"] },
+          departureDate: { type: "string" }, returnDate: { type: "string" }, adults: { type: "integer" }, cabin: { type: "string" }, currency: { type: "string" },
+        } },
+      }],
+      dispatchTool: async (call) => {
+        if (call.name !== "flight.search") throw new Error("UNKNOWN_SKILL");
+        const modelArgs = flightSearchModelArgumentsSchema.parse(call.arguments);
+        const result = await invokeSkill("flight.search", {
+          ctx: params.ctx, snapshot: {
+            authorizedData: snapshot.authorizedData as Record<string, unknown>, departureCities: snapshot.departureCities as string[],
+            destinationCandidates: snapshot.destinationCandidates as string[], travelDateStart: snapshot.travelDateStart ?? undefined, travelDateEnd: snapshot.travelDateEnd ?? undefined,
+          },
+          flightSearch: {
+            tripId: params.tripId, snapshotId: params.snapshotId, searchPreferencesVersion: preferences.version,
+            searchPreferences: { tripType: preferences.tripType as "ONE_WAY" | "ROUND_TRIP", adults: preferences.adults, cabin: preferences.cabin as "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST", currency: preferences.currency },
+            agentTaskRunId: params.agentTaskRunId,
+          }, policyGate: new DefaultPolicyGate("shared"),
+        }, { ...modelArgs, snapshotId: params.snapshotId }, { signal: params.signal });
+        if ((result as { outcome: string }).outcome === "LIVE") allFlights.push(...(result as { offers: FlightOffer[] }).offers);
+        return result;
+      },
+    });
+  } else {
+    validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights, stays: allStays, ground: allGround });
+    candidatePlanData = await dependencies.modelGateway.generateStructuredPlan({ destination: params.destination, flights: allFlights, stays: allStays, ground: allGround, memberPreferences, ctx: params.ctx, signal: params.signal });
+  }
+
+  validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights, stays: allStays, ground: allGround });
 
   // The model output is untrusted until the deterministic control plane proves
   // snapshot authorization and an exact match to run-scoped provider evidence.
@@ -215,6 +256,30 @@ export async function generatePlan(params: {
   // All four writes (plan, offers, evidence, audit) commit atomically; if
   // any one fails the validated plan is discarded.
   const planId = await db.transaction(async (tx) => {
+    if (params.agentTaskRunId) {
+      if (!params.leaseToken || !params.flightSearchPreferencesVersion) throw new Error("Planning task lease authority is incomplete");
+      const [currentTask] = await tx.select().from(agentTaskRuns).where(and(
+        eq(agentTaskRuns.id, params.agentTaskRunId), eq(agentTaskRuns.leaseToken, params.leaseToken),
+        eq(agentTaskRuns.status, "RUNNING"), eq(agentTaskRuns.snapshotId, params.snapshotId),
+        gt(agentTaskRuns.leaseExpiresAt, new Date()),
+      )).limit(1);
+      const [latestPreference] = await tx.select().from(tripSearchPreferences).where(eq(tripSearchPreferences.tripId, params.tripId)).orderBy(desc(tripSearchPreferences.version)).limit(1);
+      if (!currentTask || latestPreference?.version !== params.flightSearchPreferencesVersion) {
+        throw new Error("Planning task is stale or no longer owns finalization");
+      }
+      // This is the authoritative completion gate.  The earlier beforeFinal
+      // check avoids an unnecessary final model response, but evidence can
+      // change after that check; re-read it through this transaction before
+      // any plan state is made durable.
+      const matrix = await evaluateFlightResearchCompleteness({
+        snapshotId: params.snapshotId,
+        agentTaskRunId: params.agentTaskRunId,
+        departureCities: snapshot.departureCities as string[],
+        destinationCandidates: snapshot.destinationCandidates as string[],
+        client: tx,
+      });
+      if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
+    }
     const [plan] = await tx.insert(itineraryPlans).values({
       tripId: params.tripId,
       snapshotId: params.snapshotId,
@@ -267,6 +332,17 @@ export async function generatePlan(params: {
       summary: { version: nextVersion, destination: params.destination, snapshotId: params.snapshotId },
       tx,
     });
+
+    if (params.agentTaskRunId) {
+      const [completed] = await tx.update(agentTaskRuns).set({
+        status: "COMPLETED", resultPlanId: plan.id, leaseToken: null, leaseExpiresAt: null,
+        finishedAt: new Date(), updatedAt: new Date(), errorCode: null,
+      }).where(and(
+        eq(agentTaskRuns.id, params.agentTaskRunId), eq(agentTaskRuns.leaseToken, params.leaseToken!),
+        eq(agentTaskRuns.status, "RUNNING"), gt(agentTaskRuns.leaseExpiresAt, new Date()),
+      )).returning();
+      if (!completed) throw new Error("Planning task lost finalization lease");
+    }
 
     return plan.id;
   });

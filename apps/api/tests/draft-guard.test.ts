@@ -19,7 +19,6 @@ import { eq } from "drizzle-orm";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 
 let app: FastifyInstance;
-let aliceId: string;
 let bobId: string;
 
 beforeAll(async () => {
@@ -30,16 +29,14 @@ beforeAll(async () => {
     const [existing] = await db.select().from(users)
       .where(eq(users.externalId, subject)).limit(1);
     if (existing) {
-      if (subject === "alice") aliceId = existing.id;
-      else bobId = existing.id;
+      if (subject === "bob") bobId = existing.id;
       continue;
     }
     const [created] = await db.insert(users).values({
       externalId: subject,
       displayName: subject.charAt(0).toUpperCase() + subject.slice(1),
     }).returning();
-    if (subject === "alice") aliceId = created.id;
-    else bobId = created.id;
+    if (subject === "bob") bobId = created.id;
   }
 });
 

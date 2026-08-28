@@ -7,10 +7,10 @@ import {
   constraintSnapshots,
 } from "../db/schema.js";
 import { claimIdempotency } from "./idempotency-service.js";
-import {
-  createConstraintSnapshot,
-  generatePlan,
-} from "./planning-service.js";
+import { createConstraintSnapshot } from "./planning-service.js";
+import { acceptPlanningTask } from "../tasks/task-repository.js";
+import { tripSearchPreferences } from "../db/schema.js";
+import { desc } from "drizzle-orm";
 import { stalePlansAndConfirmationsForTrip } from "./consent-service.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
@@ -35,10 +35,13 @@ export async function processChangeEvent(params: {
   payload: Record<string, unknown>;
 }): Promise<{
   replanned: boolean;
+  runId?: string;
   newPlanId?: string;
   oldPlanId?: string;
   diff?: Record<string, unknown>;
 }> {
+  const actorUserId = params.ctx.actorUserId;
+  if (!actorUserId) throw new Error("Change event requires an authenticated actor");
   const idempotencyKey = `change_event:${params.eventId}`;
   return await db.transaction(async (tx) => {
     const claimed = await claimIdempotency(tx, {
@@ -117,27 +120,26 @@ export async function processChangeEvent(params: {
       travelDateEnd,
     });
 
-    // One plan per event for the primary destination. The route layer
-    // iterates all candidates for full planning rounds; replan focuses on
-    // the current primary so booking/confirmation/audit history stays
-    // traceable per change event.
-    const primaryDestination = destinationCandidates[0];
-    const newPlanId = await generatePlan({
-      ctx: params.ctx,
-      tripId: params.tripId,
-      snapshotId: newSnapshotId,
-      destination: primaryDestination,
-      memberIds,
+    const [preference] = await tx.select().from(tripSearchPreferences)
+      .where(eq(tripSearchPreferences.tripId, params.tripId))
+      .orderBy(desc(tripSearchPreferences.version)).limit(1);
+    if (!preference) throw new Error("Confirmed flight search preferences are required for replan");
+    // This is durable acceptance only.  Provider/model execution belongs to
+    // the Worker after the transaction commits.
+    const accepted = await acceptPlanningTask({
+      ctx: params.ctx, tripId: params.tripId, userId: actorUserId,
+      snapshotId: newSnapshotId, flightSearchPreferencesVersion: preference.version,
+      operation: "REPLAN", requestId: params.eventId, tx,
     });
 
     await recordAudit({
       ctx: params.ctx,
       action: "PLAN_REPLAN",
       tripId: params.tripId,
-      planId: newPlanId,
       summary: {
         oldPlanIds: stalePlanIds,
         eventId: params.eventId,
+        runId: accepted.runId,
         changedFields: diff.changedFields,
       },
       tx,
@@ -149,7 +151,8 @@ export async function processChangeEvent(params: {
 
     return {
       replanned: true,
-      newPlanId,
+      newPlanId: undefined,
+      runId: accepted.runId,
       oldPlanId: stalePlanIds[0],
       diff,
     };

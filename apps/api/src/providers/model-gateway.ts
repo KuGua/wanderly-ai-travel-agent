@@ -25,6 +25,20 @@ export interface ConversationReply {
 
 export type ConversationDeltaHandler = (delta: string) => void | Promise<void>;
 
+/** A provider-neutral OpenAI-compatible function declaration. */
+export interface ModelToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+/** Server-owned dispatcher invoked only after the gateway receives a tool call. */
+export type ModelToolDispatcher = (call: {
+  id: string;
+  name: string;
+  arguments: unknown;
+}) => Promise<unknown>;
+
 /**
  * Application-layer interface for configured real-model interactions.
  * The model cannot access the database or execute irreversible operations.
@@ -39,6 +53,25 @@ export interface ModelGateway {
     memberPreferences: Record<string, unknown>;
     signal?: AbortSignal;
     ctx?: { correlationId: string };
+  }): Promise<Record<string, unknown>>;
+
+  /**
+   * Optional capability used exclusively by Shared durable planning.  Older
+   * deterministic test gateways can omit it; production planning fails
+   * closed rather than silently prefetching flight data.
+   */
+  generateStructuredPlanWithTools?(params: {
+    destination: string;
+    stays: StayOffer[];
+    ground: GroundOffer[];
+    memberPreferences: Record<string, unknown>;
+    tools: ModelToolDefinition[];
+    dispatchTool: ModelToolDispatcher;
+    /** Server-only gate evaluated before accepting a no-tool final response. */
+    beforeFinal?: () => Promise<void>;
+    maxTurns: number;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
   }): Promise<Record<string, unknown>>;
 
   explainPlanDiff(params: {

@@ -7,6 +7,8 @@ import type {
   ConversationDeltaHandler,
   ConversationReply,
   ModelGateway,
+  ModelToolDefinition,
+  ModelToolDispatcher,
 } from "./model-gateway.js";
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace } from "../types/schemas.js";
@@ -96,10 +98,7 @@ interface OpenAIClientLike {
       create: (
         req: Record<string, unknown>,
         options?: { signal?: AbortSignal; headers?: Record<string, string> },
-      ) => Promise<AsyncIterable<{
-        choices: Array<{ delta: { content?: string | null } }>;
-        usage?: AgentRunTokens;
-      }>>;
+      ) => Promise<unknown>;
     };
   };
 }
@@ -438,6 +437,76 @@ export class LLMGateway implements ModelGateway {
     return recordFailure(lastError || "SCHEMA_PARSE");
   }
 
+  async generateStructuredPlanWithTools(params: {
+    destination: string;
+    stays: StayOffer[];
+    ground: GroundOffer[];
+    memberPreferences: Record<string, unknown>;
+    tools: ModelToolDefinition[];
+    dispatchTool: ModelToolDispatcher;
+    beforeFinal?: () => Promise<void>;
+    maxTurns: number;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<Record<string, unknown>> {
+    if (process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED !== "true") {
+      throw new ModelGatewayError("TOOL_CALLING_DISABLED");
+    }
+    if (!Number.isInteger(params.maxTurns) || params.maxTurns < 1) {
+      throw new ModelGatewayError("TOOL_CALLING_MAX_TURNS");
+    }
+    const client = await this.loadClient();
+    const ctx = params.ctx ?? this.options.ctx;
+    const messages: Array<Record<string, unknown>> = [
+      {
+        role: "system",
+        content: "You are the Shared Trip planning skill. Use flight.search when flight evidence is needed. "
+          + "Tool arguments are ordinary search parameters only; never invent authority fields. "
+          + "After research, return exactly one JSON object with a top-level plan field.",
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          destination: params.destination,
+          stays: params.stays,
+          ground: params.ground,
+          memberPreferences: params.memberPreferences,
+        }),
+      },
+    ];
+    for (let turn = 0; turn < params.maxTurns; turn += 1) {
+      if (params.signal?.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
+      const raw = await client.chat.completions.create({
+        model: this.options.modelName,
+        messages,
+        tools: params.tools.map((tool) => ({ type: "function", function: tool })),
+        tool_choice: "auto",
+        response_format: { type: "json_object" },
+      }, { signal: params.signal, headers: outboundTraceHeaders(ctx) }) as {
+        choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }>;
+      };
+      const message = raw.choices?.[0]?.message;
+      const calls = message?.tool_calls ?? [];
+      if (calls.length === 0) {
+        await params.beforeFinal?.();
+        const completion = parsedCompletionSchema.safeParse(completionPayload({ parsed: null, content: message?.content }));
+        if (!completion.success) throw new ModelGatewayError("SCHEMA_PARSE");
+        return completion.data.plan;
+      }
+      messages.push({ role: "assistant", content: message?.content ?? null, tool_calls: calls });
+      for (const call of calls) {
+        const name = call.function?.name;
+        const id = call.id;
+        if (!name || !id) throw new ModelGatewayError("SCHEMA_PARSE");
+        let args: unknown;
+        try { args = JSON.parse(call.function?.arguments ?? ""); } catch { throw new ModelGatewayError("SCHEMA_PARSE"); }
+        const result = await params.dispatchTool({ id, name, arguments: args });
+        messages.push({ role: "tool", tool_call_id: id, content: JSON.stringify(result) });
+      }
+    }
+    throw new ModelGatewayError("TOOL_CALL_MAX_TURNS");
+  }
+
   async explainPlanDiff(params: {
     oldPlan: Record<string, unknown>;
     newPlan: Record<string, unknown>;
@@ -644,7 +713,10 @@ export class LLMGateway implements ModelGateway {
         ],
         stream: true,
         stream_options: { include_usage: true },
-      }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+      }, { signal: params.signal, headers: outboundTraceHeaders(ctx) }) as AsyncIterable<{
+        choices: Array<{ delta: { content?: string | null } }>;
+        usage?: AgentRunTokens;
+      }>;
 
       for await (const chunk of stream) {
         if (params.signal?.aborted) {

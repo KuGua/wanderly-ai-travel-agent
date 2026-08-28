@@ -446,7 +446,9 @@ Get your active consents for a trip.
 ## Planning
 
 ### `POST /planning/generate`
-Generate a new plan for a trip.
+Accept a durable Shared `PLAN` task for a trip. The HTTP request never calls a
+provider or model synchronously. The Worker owns execution; retrieve the task
+by `runId` or subscribe to its SSE stream for safe progress and terminal state.
 
 **Body**:
 ```json
@@ -455,83 +457,29 @@ Generate a new plan for a trip.
 }
 ```
 
-**Response**:
+**Accepted response** (`202`):
 ```json
 {
   "snapshotId": "uuid",
-  "plans": [
-    {
-      "planId": "uuid",
-      "destination": "Tokyo",
-      "snapshotId": "uuid"
-    }
-  ],
-  "visaChecksByDestination": {
-    "Tokyo": [
-      {
-        "memberId": "uuid",
-        "destinationCountry": "Japan",
-        "status": "AUTHORIZED_CHECK",
-        "checklist": [...],
-        "confidenceLevel": "HIGH",
-        "disclaimer": "..."
-      }
-    ]
-  },
-  "latestPlan": {
-    "destination": "Tokyo",
-    "flights": [...],
-    "stays": [...],
-    "ground": [...],
-    "generatedAt": "..."
-  },
-  "message": "Plans generated for 1 destination candidate(s)"
+  "runId": "uuid",
+  "operation": "PLAN",
+  "status": "QUEUED",
+  "generationAttempt": 0
 }
 ```
 
-> All flight/stay/ground data includes `source: "Demo data"` and `isDemo: true`.
-> Fixture offers also include a stable `capturedAt` and `fixtureVersion`. The
-> Each persisted destination plan includes one selected flight per configured
-> departure origin. `plans` identifies every persisted candidate; `latestPlan`
-> contains the validated data for the latest active plan.
+The task is bound to the immutable snapshot and the accepted confirmed-flight
+preference version. During execution the Shared model may request only the
+registered `flight.search` Skill. The server validates every request against
+that task authority and persists normalized Amadeus evidence. Every required
+origin × destination-candidate cell must have same-task, same-snapshot `LIVE`
+evidence before final model synthesis and guarded atomic plan finalization.
+`UNAVAILABLE` is persisted safely but never creates or activates a plan.
 
-**Unsupported fixture response**: `422`
-
-```json
-{
-  "statusCode": 422,
-  "error": "PlanningDataUnavailableError",
-  "message": "Planning data unavailable: flight:Singapore",
-  "correlationId": "uuid"
-}
-```
-
-No plan is created when a required origin, stay, or ground fixture is missing.
-
-**Invalid model plan response**: `422`
-
-```json
-{
-  "statusCode": 422,
-  "error": "PlanValidationError",
-  "message": "Plan output failed deterministic validation",
-  "correlationId": "uuid",
-  "violations": [
-    {
-      "code": "EVIDENCE_MISMATCH",
-      "fieldPath": "flights.0",
-      "reason": "Offer does not exactly match provider evidence"
-    }
-  ]
-}
-```
-
-The planning control plane rejects malformed output, unauthorized snapshot
-field references, unapproved origins/destinations, missing provenance, and
-offers that do not exactly match provider evidence. Optional field references
-use `authorizedData.<memberId>.<fieldName>`. Violation responses contain no
-rejected values or private Profile data. Validation runs before authoritative
-plan persistence, so a rejected candidate creates no plan.
+Use `GET /agent-runs/:runId` for a terminal `resultPlanId` or stable error
+code; use `GET /planning/:tripId/latest` only after a successful completion.
+Raw provider payloads, tool arguments, OAuth material and snapshot-private
+data are never returned by this endpoint or the task stream.
 
 ### `GET /planning/:tripId/latest`
 Get the latest active plan for a trip.

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { users, userProfiles, sharedTrips, tripMembers, consentGrants, constraintSnapshots, itineraryPlans, memberConfirmations, bookingExecutions, idempotencyRecords, auditEvents, providerOffers, sourceEvidence, visaReadinessChecks, preferenceFacts, destinationCandidates, chatThreads, chatMessages } from "../src/db/schema.js";
+import { users, userProfiles, sharedTrips, tripMembers, consentGrants, constraintSnapshots, itineraryPlans, memberConfirmations, bookingExecutions, idempotencyRecords, auditEvents, providerOffers, providerSearchRuns, sourceEvidence, visaReadinessChecks, preferenceFacts, destinationCandidates, tripSearchPreferences, agentTaskRuns, chatThreads, chatMessages } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { grantConsent, revokeConsent, getActiveConsents, buildAuthorizedData } from "../src/services/consent-service.js";
 import { createConstraintSnapshot, generatePlan as generatePlanWithDependencies, markPlanStale, getLatestActivePlan, __setPlanningDependenciesForTests } from "../src/services/planning-service.js";
@@ -14,6 +14,7 @@ import { createRequestContext } from "../src/utils/context.js";
 import { randomUUID } from "node:crypto";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 import { testPlanningDependencies } from "./helpers/planning.js";
+import { saveConfirmedSearchPreferences } from "../src/services/flight-search-preferences-service.js";
 
 function generatePlan(params: Parameters<typeof generatePlanWithDependencies>[0]) {
   return generatePlanWithDependencies(params, testPlanningDependencies);
@@ -77,9 +78,12 @@ beforeEach(async () => {
   await db.delete(visaReadinessChecks);
   await db.delete(sourceEvidence);
   await db.delete(providerOffers);
+  await db.delete(providerSearchRuns);
   await db.delete(itineraryPlans);
+  await db.delete(agentTaskRuns);
   await db.delete(destinationCandidates);
   await db.delete(constraintSnapshots);
+  await db.delete(tripSearchPreferences);
   await db.delete(consentGrants);
   await db.delete(preferenceFacts);
   // chat_threads.trip_id is ON DELETE SET NULL but NOT NULL post-0012, so
@@ -108,6 +112,10 @@ beforeEach(async () => {
     { tripId, userId: bobId, role: "MEMBER", isRequired: true },
     { tripId, userId: chenId, role: "MEMBER", isRequired: true },
   ]);
+  await saveConfirmedSearchPreferences({
+    ctx: createRequestContext(aliceId), tripId, confirmedBy: aliceId,
+    input: { tripType: "ROUND_TRIP", currency: "USD", adults: 1, cabin: "ECONOMY", offerFreshnessMinutes: 30 },
+  });
 });
 
 describe("Frontend API Contract", () => {
@@ -492,18 +500,9 @@ describe("Provider-backed Planning API", () => {
       payload: { tripId },
     });
 
-    expect(response.statusCode).toBe(200);
+    expect(response.statusCode).toBe(202);
     const body = response.json();
-    const flights = body.latestPlan.flights as Array<Record<string, unknown>>;
-    expect(flights.map(flight => flight.origin).sort()).toEqual(["San Francisco", "Shanghai"]);
-
-    const planId = body.plans[0].planId as string;
-    const offers = await db.select().from(providerOffers).where(eq(providerOffers.planId, planId));
-    const evidence = await db.select().from(sourceEvidence).where(eq(sourceEvidence.planId, planId));
-
-    expect(new Set(offers.map(offer => offer.category))).toEqual(new Set(["flight", "stay", "ground"]));
-    expect(new Set(evidence.map(item => item.category))).toEqual(new Set(["flight", "stay", "ground"]));
-    expect(evidence.every(item => item.source.startsWith("Test "))).toBe(true);
+    expect(body).toMatchObject({ operation: "PLAN", status: "QUEUED", runId: expect.any(String), snapshotId: expect.any(String) });
   });
 
   it("returns the same normalized plan for repeated provider requests", async () => {
@@ -517,9 +516,8 @@ describe("Provider-backed Planning API", () => {
     const first = await app.inject(request);
     const second = await app.inject(request);
 
-    expect(first.statusCode).toBe(200);
-    expect(second.statusCode).toBe(200);
-    expect(second.json().latestPlan).toEqual(first.json().latestPlan);
+    expect(first.statusCode).toBe(202);
+    expect(second.statusCode).toBe(409);
   });
 
   it("returns a typed failure and creates no plan for an unsupported provider route", async () => {
@@ -534,13 +532,8 @@ describe("Provider-backed Planning API", () => {
       payload: { tripId },
     });
 
-    expect(response.statusCode).toBe(422);
-    expect(response.json()).toMatchObject({
-      error: "PlanningDataUnavailableError",
-      message: expect.stringContaining("flight:San Francisco"),
-      correlationId: expect.any(String),
-    });
-    expect(response.headers["x-correlation-id"]).toBe(response.json().correlationId);
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({ operation: "PLAN", status: "QUEUED", runId: expect.any(String) });
 
     const plans = await db.select().from(itineraryPlans).where(eq(itineraryPlans.tripId, tripId));
     expect(plans).toEqual([]);

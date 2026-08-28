@@ -14,7 +14,7 @@ export async function changeEventRoutes(app: FastifyInstance) {
     
       
 
-  }, async (request) => {
+  }, async (request, reply) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
     const body = changeEventSchema.parse(request.body);
 
@@ -37,9 +37,9 @@ export async function changeEventRoutes(app: FastifyInstance) {
       payload: body.payload,
     });
 
-    return {
-      message: result.replanned ? "Change event processed, plan regenerated" : "Change event recorded",
+    return reply.code(result.replanned ? 202 : 200).send({
+      message: result.replanned ? "Change event accepted for durable replan" : "Change event recorded",
       ...result,
-    };
+    });
   });
 }

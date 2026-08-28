@@ -2,6 +2,7 @@ import "dotenv/config";
 
 import { initTracing, shutdownTracing } from "../observability/tracing.js";
 import { personalTravelAgent } from "../agents/personal-travel-agent.js";
+import { sharedTripAgent } from "../agents/shared-trip-agent.js";
 import { assertAuthModeEnvironment, resolveAuthMode } from "../middleware/auth-mode.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import { logger } from "../utils/logger.js";
@@ -18,6 +19,7 @@ assertAuthModeEnvironment(resolveAuthMode());
 // GeoJSON into the Worker process. See `apps/api/src/location-reference/SIDECAR.md`.
 process.env.LOCATION_REFERENCE_MODE = process.env.LOCATION_REFERENCE_MODE ?? "disabled";
 personalTravelAgent.register();
+sharedTripAgent.register();
 
 let stopping = false;
 const shutdown = async (signal: NodeJS.Signals) => {

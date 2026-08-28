@@ -8,6 +8,7 @@ import {
   chatMessages,
   idempotencyRecords,
   outboxEvents,
+  tripMembers,
 } from "../db/schema.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { resolveConversationPlace } from "../policy/conversation-safety.js";
@@ -93,6 +94,9 @@ const CLAIM_CONVERSATION_SQL = [
   "    generation_attempt = task.generation_attempt + 1, updated_at = NOW()",
   "FROM candidate WHERE task.id = candidate.id RETURNING task.id",
 ].join("\n");
+
+const CLAIM_PLANNING_SQL = CLAIM_CONVERSATION_SQL
+  .replace("operation = 'CONVERSATION'", "operation IN ('PLAN', 'REPLAN')");
 
 export class LostTaskLeaseError extends Error {
   constructor() {
@@ -228,10 +232,73 @@ export async function acceptConversationTask(params: {
   }
 }
 
+/** Accept a Shared PLAN/REPLAN run.  The route has already frozen the
+ * snapshot; this transaction persists only server-derived authority. */
+export async function acceptPlanningTask(params: {
+  ctx: RequestContext;
+  tripId: string;
+  userId: string;
+  snapshotId: string;
+  flightSearchPreferencesVersion: number;
+  operation: "PLAN" | "REPLAN";
+  requestId: string;
+  tx?: Tx;
+}): Promise<{ runId: string; operation: "PLAN" | "REPLAN"; status: "QUEUED"; generationAttempt: 0 }> {
+  const runId = randomUUID();
+  const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
+  const accept = async (tx: Tx) => {
+    const [active] = await tx.select({ id: agentTaskRuns.id }).from(agentTaskRuns).where(and(
+      eq(agentTaskRuns.tripId, params.tripId),
+      inArray(agentTaskRuns.status, ["QUEUED", "RUNNING", "CANCEL_REQUESTED"]),
+    )).limit(1);
+    if (active) {
+      if (params.operation !== "REPLAN") {
+        throw new ApiError(409, "Conflict", "This trip already has an active planning run");
+      }
+      // A new change-driven replan supersedes an older planning round. The
+      // old Worker may still be in an upstream call, but its final guarded
+      // transaction requires RUNNING plus its lease, so it cannot activate a
+      // plan after this durable revocation.
+      await tx.update(agentTaskRuns).set({
+        status: "CANCELLED",
+        cancelRequestedAt: new Date(),
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+        errorCode: "CANCELLED",
+      }).where(and(
+        eq(agentTaskRuns.id, active.id),
+        inArray(agentTaskRuns.status, ["QUEUED", "RUNNING", "CANCEL_REQUESTED"]),
+      ));
+    }
+    const [run] = await tx.insert(agentTaskRuns).values({
+      id: runId,
+      operation: params.operation,
+      status: "QUEUED",
+      createdByUserId: params.userId,
+      tripId: params.tripId,
+      snapshotId: params.snapshotId,
+      flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
+      requestId: params.requestId,
+      expiresAt,
+      traceContext: buildTraceContextForTask(params.ctx),
+    }).returning();
+    await tx.insert(outboxEvents).values({
+      eventId: randomUUID(), eventType: "AGENT_TASK_QUEUED",
+      payload: { taskId: run.id, operation: run.operation },
+    });
+    await recordAudit({
+      ctx: params.ctx, action: "AGENT_TASK", actorUserId: params.userId, tripId: params.tripId,
+      summary: { taskId: run.id, operation: run.operation, status: run.status }, tx,
+    });
+    return { runId: run.id, operation: params.operation, status: "QUEUED" as const, generationAttempt: 0 as const };
+  };
+  return params.tx ? accept(params.tx) : db.transaction(accept);
+}
+
 export async function getAuthorizedAgentRun(runId: string, userId: string): Promise<AgentRunResponse> {
   const [run] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, runId)).limit(1);
   if (!run) throw new ApiError(404, "Not Found", "Agent run not found");
-  if (run.createdByUserId !== userId) throw new ApiError(403, "Forbidden", "Not authorized for this Agent run");
+  await requireRunAccess(run, userId);
   return toRunResponse(run);
 }
 
@@ -243,7 +310,7 @@ export async function requestAgentTaskCancellation(params: {
   const result = await db.transaction(async (tx) => {
     const [run] = await tx.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, params.runId)).limit(1);
     if (!run) throw new ApiError(404, "Not Found", "Agent run not found");
-    if (run.createdByUserId !== params.userId) throw new ApiError(403, "Forbidden", "Not authorized for this Agent run");
+    await requireRunAccess(run, params.userId, tx);
     if (!["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(run.status)) return toRunResponse(run);
 
     const cancelledBeforeStart = run.status === "QUEUED";
@@ -281,6 +348,19 @@ export async function requestAgentTaskCancellation(params: {
     });
   }
   return result;
+}
+
+async function requireRunAccess(run: AgentTaskRow, userId: string, tx?: Tx): Promise<void> {
+  if (run.operation === "CONVERSATION") {
+    if (run.createdByUserId !== userId) throw new ApiError(403, "Forbidden", "Not authorized for this Agent run");
+    return;
+  }
+  if (!run.tripId) throw new ApiError(403, "Forbidden", "Planning task is not trip-bound");
+  const query = tx ?? db;
+  const [member] = await query.select({ userId: tripMembers.userId }).from(tripMembers).where(and(
+    eq(tripMembers.tripId, run.tripId), eq(tripMembers.userId, userId),
+  )).limit(1);
+  if (!member) throw new ApiError(403, "Forbidden", "Not authorized for this planning run");
 }
 
 export type RecoveredAgentTask = {
@@ -354,6 +434,13 @@ export async function claimNextConversationTask(): Promise<AgentTaskRow | null> 
   }
 }
 
+export async function claimNextPlanningTask(): Promise<AgentTaskRow | null> {
+  const rows = await rawDb.unsafe<Array<{ id: string }>>(CLAIM_PLANNING_SQL, [randomUUID(), agentTaskConfig.leaseSeconds]);
+  if (!rows[0]) return null;
+  const [run] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, rows[0].id)).limit(1);
+  return run ?? null;
+}
+
 export async function renewTaskLease(runId: string, leaseToken: string): Promise<boolean> {
   const rows = await db.update(agentTaskRuns).set({
     leaseExpiresAt: new Date(Date.now() + agentTaskConfig.leaseSeconds * 1000),
@@ -371,7 +458,9 @@ export async function taskCancellationRequested(runId: string, leaseToken: strin
     status: agentTaskRuns.status,
     leaseToken: agentTaskRuns.leaseToken,
   }).from(agentTaskRuns).where(eq(agentTaskRuns.id, runId)).limit(1);
-  return !run || run.leaseToken !== leaseToken || run.status === "CANCEL_REQUESTED";
+  // Any transition away from RUNNING revokes the Worker authority. This also
+  // makes a superseded/cancelled planning run fail closed before finalization.
+  return !run || run.leaseToken !== leaseToken || run.status !== "RUNNING";
 }
 
 /**

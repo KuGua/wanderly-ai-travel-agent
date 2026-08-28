@@ -706,6 +706,26 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Missing consent, tool failure, visa uncertainty, member conflict, consent revocation and duplicate callback are tested.
 # Confirmed chat brief update
 
+### TS-FLIGHT-TOOL-1 — Durable Shared flight research and guarded plan finalization
+
+**Stories:** H2, H3, S1
+**Objective:** Verify that only the Shared PLAN/REPLAN Worker can ground a plan with live, task-bound flight evidence.
+
+**Steps:**
+
+1. Confirm flight search preferences, create a trip snapshot with two controlled origins and two destination candidates, then accept a `PLAN` command.
+2. Drive the Worker with a deterministic model double that requests `flight.search` for every origin × destination cell and then requests final synthesis.
+3. Verify each Tool request against the task snapshot, controlled airport reference and accepted preference version; inspect only normalized `provider_search_runs` and offers.
+4. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, and a lost lease.
+
+**Expected outcomes:**
+
+- The HTTP command returns `202` with a run ID; browser disconnect does not cancel it. Trip members can read, subscribe and cancel the run; non-members cannot. Private conversation runs remain owner-only.
+- Only same-task, same-snapshot `LIVE` evidence fills a matrix cell. Wrong-task/wrong-snapshot evidence and `UNAVAILABLE` never satisfy coverage.
+- The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, airports, dates, passengers, cabin or currency; raw Amadeus payloads, OAuth values and private snapshot data never leave the server boundary.
+- Final model synthesis and the atomic plan/task completion transaction are rejected unless the full matrix is live, the task is still `RUNNING` with its lease, and the accepted preference version is still current. Repeated or late finalization cannot activate a second plan.
+- Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, matrix and bounded-tool-loop failures are terminal and create no active plan.
+
 - A DRAFT-trip private-chat turn may emit only an in-memory destination/days candidate; raw conversation content is never included in the event, audit summary, or client persistence.
 - The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write.
 - A non-creator and a trip no longer in `DRAFT` receive `403` and `409` respectively; a MANUAL title remains unchanged after confirmation.

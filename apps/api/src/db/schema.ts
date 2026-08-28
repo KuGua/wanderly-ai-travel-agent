@@ -246,6 +246,8 @@ export const providerSearchRuns = pgTable("provider_search_runs", {
   agentTaskRunId: uuid("agent_task_run_id").references(() => agentTaskRuns.id, { onDelete: "set null" }),
   category: varchar("category", { length: 32 }).notNull().default("flight"),
   providerName: varchar("provider_name", { length: 128 }).notNull(),
+  originId: varchar("origin_id", { length: 16 }),
+  destinationId: varchar("destination_id", { length: 16 }),
   requestFingerprint: varchar("request_fingerprint", { length: 64 }).notNull(),
   outcome: varchar("outcome", { length: 16 }).notNull(),
   errorCode: varchar("error_code", { length: 64 }),
@@ -400,6 +402,8 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   threadId: uuid("thread_id").references(() => chatThreads.id, { onDelete: "cascade" }),
   tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }),
   snapshotId: uuid("snapshot_id").references(() => constraintSnapshots.id),
+  /** Immutable confirmed-search-preference version bound at PLAN/REPLAN acceptance. */
+  flightSearchPreferencesVersion: integer("flight_search_preferences_version"),
   requestId: uuid("request_id").notNull(),
   userMessageId: uuid("user_message_id").references(() => chatMessages.id, { onDelete: "cascade" }),
   assistantMessageId: uuid("assistant_message_id").references(() => chatMessages.id, { onDelete: "set null" }),

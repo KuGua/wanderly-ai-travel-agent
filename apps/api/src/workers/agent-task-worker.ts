@@ -8,8 +8,10 @@ import {
 } from "../observability/tracing.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import { handleConversationTask, publishPhase } from "../tasks/handlers/conversation-task-handler.js";
+import { handlePlanningTask } from "../tasks/handlers/planning-task-handler.js";
 import {
   claimNextConversationTask,
+  claimNextPlanningTask,
   completeConversationTask,
   ctxFromRun,
   failOrRetryTask,
@@ -96,7 +98,7 @@ export async function processNextAgentTask(): Promise<boolean> {
       });
     }
   }
-  const run = await claimNextConversationTask();
+  const run = await claimNextConversationTask() ?? await claimNextPlanningTask();
   if (!run) return recovered.length > 0;
   if (!run.leaseToken) throw new Error("Claimed task has no lease token");
 
@@ -127,12 +129,16 @@ export async function processNextAgentTask(): Promise<boolean> {
         generationAttempt: run.generationAttempt,
         traceparent,
       });
+      if (run.operation !== "CONVERSATION") {
+        await publishPhase(run, "RESEARCHING", traceparent);
+        const planId = await handlePlanningTask({ run, ctx, signal: abortController.signal, leaseToken });
+        await publishPhase(run, "PERSISTING", traceparent);
+        await publishAgentStreamEvent({ event: "turn.completed", runId: run.id, generationAttempt: run.generationAttempt, resultPlanId: planId, traceparent });
+        metrics.inc("agent_task_outcomes_total", { operation: run.operation.toLowerCase(), outcome: "completed" });
+        return true;
+      }
       await publishPhase(run, "GENERATING", traceparent);
-      const output = await handleConversationTask({
-        run,
-        ctx,
-        signal: abortController.signal,
-      });
+      const output = await handleConversationTask({ run, ctx, signal: abortController.signal });
 
       if (await taskCancellationRequested(run.id, leaseToken)) {
         abortController.abort();
@@ -221,7 +227,7 @@ export async function processNextAgentTask(): Promise<boolean> {
 }
 
 function classifyTaskError(error: unknown): {
-  code: "NETWORK" | "UPSTREAM_5XX" | "UPSTREAM_FAILURE" | "TIMEOUT" | "SCHEMA_PARSE" | "POLICY_DENIED" | "INTERNAL";
+  code: "NETWORK" | "UPSTREAM_5XX" | "UPSTREAM_FAILURE" | "TIMEOUT" | "SCHEMA_PARSE" | "POLICY_DENIED" | "SEARCH_PREFERENCES_STALE" | "PLANNING_DATA_UNAVAILABLE" | "UNKNOWN_SKILL" | "TOOL_CALL_MAX_TURNS" | "INTERNAL";
   retryable: boolean;
 } {
   const code = error instanceof SkillError ? error.code : (error as { code?: string }).code;
@@ -231,5 +237,9 @@ function classifyTaskError(error: unknown): {
   if (code === "UPSTREAM_FAILURE") return { code: "UPSTREAM_FAILURE", retryable: true };
   if (code === "SCHEMA_PARSE" || code === "OUTPUT_INVALID") return { code: "SCHEMA_PARSE", retryable: false };
   if (code === "POLICY_DENIED") return { code: "POLICY_DENIED", retryable: false };
+  if (code === "SEARCH_PREFERENCES_STALE") return { code: "SEARCH_PREFERENCES_STALE", retryable: false };
+  if (code === "PLANNING_DATA_UNAVAILABLE") return { code: "PLANNING_DATA_UNAVAILABLE", retryable: false };
+  if (code === "UNKNOWN_SKILL") return { code: "UNKNOWN_SKILL", retryable: false };
+  if (code === "TOOL_CALL_MAX_TURNS") return { code: "TOOL_CALL_MAX_TURNS", retryable: false };
   return { code: "INTERNAL", retryable: false };
 }
