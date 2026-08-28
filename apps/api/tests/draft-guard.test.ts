@@ -7,13 +7,19 @@ import {
   auditEvents,
   bookingExecutions,
   chatThreads,
+  constraintSnapshots,
   consentGrants,
+  destinationCandidates,
   idempotencyRecords,
   itineraryPlans,
   memberConfirmations,
+  preferenceFacts,
+  providerOffers,
   sharedTrips,
+  sourceEvidence,
   tripMembers,
   users,
+  visaReadinessChecks,
 } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
@@ -48,11 +54,21 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  // Order matters: clear leaf tables before their parents so FK cascades
+  // from `shared_trips` (e.g. → `constraint_snapshots`) are not blocked by
+  // rows in `provider_offers` / `visa_readiness_checks` left over from
+  // sibling test files (the test DB is shared across files in one run).
   await db.delete(bookingExecutions);
+  await db.delete(providerOffers);
+  await db.delete(sourceEvidence);
+  await db.delete(visaReadinessChecks);
+  await db.delete(itineraryPlans);
+  await db.delete(destinationCandidates);
+  await db.delete(constraintSnapshots);
   await db.delete(idempotencyRecords);
   await db.delete(auditEvents);
   await db.delete(memberConfirmations);
-  await db.delete(itineraryPlans);
+  await db.delete(preferenceFacts);
   await db.delete(consentGrants);
   await db.delete(tripMembers);
   await db.delete(chatThreads);
