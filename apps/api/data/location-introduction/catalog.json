@@ -313,7 +313,7 @@
     {
       "sourceId": "bali",
       "canonicalPlaceId": "denpasar-id",
-      "name": "Bali (Denpasar)",
+      "name": "Denpasar",
       "country": "Indonesia",
       "countryCode": "ID",
       "admin1": "Bali",
@@ -420,6 +420,2484 @@
       "nearestCityCoordinates": {
         "longitude": 144.9631,
         "latitude": -37.8136
+      }
+    },
+    {
+      "sourceId": "kabul",
+      "canonicalPlaceId": "kabul-af",
+      "name": "Kabul",
+      "country": "Afghanistan",
+      "countryCode": "AF",
+      "admin1": "Kabul",
+      "admin1Code": "AF-KAB",
+      "nearestCity": "Kabul",
+      "nearestCityCoordinates": {
+        "longitude": 69.1726,
+        "latitude": 34.5289
+      }
+    },
+    {
+      "sourceId": "tirana",
+      "canonicalPlaceId": "tirana-al",
+      "name": "Tirana",
+      "country": "Albania",
+      "countryCode": "AL",
+      "admin1": "Tirana",
+      "admin1Code": "AL-11",
+      "nearestCity": "Tirana",
+      "nearestCityCoordinates": {
+        "longitude": 19.8189,
+        "latitude": 41.3275
+      }
+    },
+    {
+      "sourceId": "algiers",
+      "canonicalPlaceId": "algiers-dz",
+      "name": "Algiers",
+      "country": "Algeria",
+      "countryCode": "DZ",
+      "admin1": "Algiers",
+      "admin1Code": "DZ-16",
+      "nearestCity": "Algiers",
+      "nearestCityCoordinates": {
+        "longitude": 3.042,
+        "latitude": 36.7538
+      }
+    },
+    {
+      "sourceId": "andorralavella",
+      "canonicalPlaceId": "andorralavella-ad",
+      "name": "Andorra la Vella",
+      "country": "Andorra",
+      "countryCode": "AD",
+      "admin1": "Andorra la Vella",
+      "admin1Code": "AD-07",
+      "nearestCity": "Andorra la Vella",
+      "nearestCityCoordinates": {
+        "longitude": 1.5218,
+        "latitude": 42.5063
+      }
+    },
+    {
+      "sourceId": "luanda",
+      "canonicalPlaceId": "luanda-ao",
+      "name": "Luanda",
+      "country": "Angola",
+      "countryCode": "AO",
+      "admin1": "Luanda",
+      "admin1Code": "AO-LUA",
+      "nearestCity": "Luanda",
+      "nearestCityCoordinates": {
+        "longitude": 13.2343,
+        "latitude": -8.839
+      }
+    },
+    {
+      "sourceId": "saintjohns",
+      "canonicalPlaceId": "saintjohns-ag",
+      "name": "St. John's",
+      "country": "Antigua and Barbuda",
+      "countryCode": "AG",
+      "admin1": "St. John",
+      "admin1Code": "AG-04",
+      "nearestCity": "St. John's",
+      "nearestCityCoordinates": {
+        "longitude": -61.8456,
+        "latitude": 17.1175
+      }
+    },
+    {
+      "sourceId": "buenosaires",
+      "canonicalPlaceId": "buenosaires-ar",
+      "name": "Buenos Aires",
+      "country": "Argentina",
+      "countryCode": "AR",
+      "admin1": "Buenos Aires",
+      "admin1Code": "AR-C",
+      "nearestCity": "Buenos Aires",
+      "nearestCityCoordinates": {
+        "longitude": -58.3816,
+        "latitude": -34.6037
+      }
+    },
+    {
+      "sourceId": "yerevan",
+      "canonicalPlaceId": "yerevan-am",
+      "name": "Yerevan",
+      "country": "Armenia",
+      "countryCode": "AM",
+      "admin1": "Yerevan",
+      "admin1Code": "AM-ER",
+      "nearestCity": "Yerevan",
+      "nearestCityCoordinates": {
+        "longitude": 44.5126,
+        "latitude": 40.1792
+      }
+    },
+    {
+      "sourceId": "canberra",
+      "canonicalPlaceId": "canberra-au",
+      "name": "Canberra",
+      "country": "Australia",
+      "countryCode": "AU",
+      "admin1": "Australian Capital Territory",
+      "admin1Code": "AU-ACT",
+      "nearestCity": "Canberra",
+      "nearestCityCoordinates": {
+        "longitude": 149.13,
+        "latitude": -35.2809
+      }
+    },
+    {
+      "sourceId": "baku",
+      "canonicalPlaceId": "baku-az",
+      "name": "Baku",
+      "country": "Azerbaijan",
+      "countryCode": "AZ",
+      "admin1": "Baku",
+      "admin1Code": "AZ-BA",
+      "nearestCity": "Baku",
+      "nearestCityCoordinates": {
+        "longitude": 49.8671,
+        "latitude": 40.4093
+      }
+    },
+    {
+      "sourceId": "nassau",
+      "canonicalPlaceId": "nassau-bs",
+      "name": "Nassau",
+      "country": "Bahamas",
+      "countryCode": "BS",
+      "admin1": "New Providence",
+      "admin1Code": "BS-NP",
+      "nearestCity": "Nassau",
+      "nearestCityCoordinates": {
+        "longitude": -77.3554,
+        "latitude": 25.0443
+      }
+    },
+    {
+      "sourceId": "manama",
+      "canonicalPlaceId": "manama-bh",
+      "name": "Manama",
+      "country": "Bahrain",
+      "countryCode": "BH",
+      "admin1": "Capital",
+      "admin1Code": "BH-13",
+      "nearestCity": "Manama",
+      "nearestCityCoordinates": {
+        "longitude": 50.586,
+        "latitude": 26.2235
+      }
+    },
+    {
+      "sourceId": "dhaka",
+      "canonicalPlaceId": "dhaka-bd",
+      "name": "Dhaka",
+      "country": "Bangladesh",
+      "countryCode": "BD",
+      "admin1": "Dhaka",
+      "admin1Code": "BD-13",
+      "nearestCity": "Dhaka",
+      "nearestCityCoordinates": {
+        "longitude": 90.4125,
+        "latitude": 23.8103
+      }
+    },
+    {
+      "sourceId": "bridgetown",
+      "canonicalPlaceId": "bridgetown-bb",
+      "name": "Bridgetown",
+      "country": "Barbados",
+      "countryCode": "BB",
+      "admin1": "Saint Michael",
+      "admin1Code": "BB-08",
+      "nearestCity": "Bridgetown",
+      "nearestCityCoordinates": {
+        "longitude": -59.6106,
+        "latitude": 13.0975
+      }
+    },
+    {
+      "sourceId": "minsk",
+      "canonicalPlaceId": "minsk-by",
+      "name": "Minsk",
+      "country": "Belarus",
+      "countryCode": "BY",
+      "admin1": "Minsk",
+      "admin1Code": "BY-HM",
+      "nearestCity": "Minsk",
+      "nearestCityCoordinates": {
+        "longitude": 27.5615,
+        "latitude": 53.9006
+      }
+    },
+    {
+      "sourceId": "brussels",
+      "canonicalPlaceId": "brussels-be",
+      "name": "Brussels",
+      "country": "Belgium",
+      "countryCode": "BE",
+      "admin1": "Brussels-Capital Region",
+      "admin1Code": "BE-BR",
+      "nearestCity": "Brussels",
+      "nearestCityCoordinates": {
+        "longitude": 4.3517,
+        "latitude": 50.8503
+      }
+    },
+    {
+      "sourceId": "belmopan",
+      "canonicalPlaceId": "belmopan-bz",
+      "name": "Belmopan",
+      "country": "Belize",
+      "countryCode": "BZ",
+      "admin1": "Cayo",
+      "admin1Code": "BZ-CY",
+      "nearestCity": "Belmopan",
+      "nearestCityCoordinates": {
+        "longitude": -88.7714,
+        "latitude": 17.25
+      }
+    },
+    {
+      "sourceId": "portonovo",
+      "canonicalPlaceId": "portonovo-bj",
+      "name": "Porto-Novo",
+      "country": "Benin",
+      "countryCode": "BJ",
+      "admin1": "Ouémé",
+      "admin1Code": "BJ-OU",
+      "nearestCity": "Porto-Novo",
+      "nearestCityCoordinates": {
+        "longitude": 2.6325,
+        "latitude": 6.4969
+      }
+    },
+    {
+      "sourceId": "thimphu",
+      "canonicalPlaceId": "thimphu-bt",
+      "name": "Thimphu",
+      "country": "Bhutan",
+      "countryCode": "BT",
+      "admin1": "Thimphu",
+      "admin1Code": "BT-15",
+      "nearestCity": "Thimphu",
+      "nearestCityCoordinates": {
+        "longitude": 89.6339,
+        "latitude": 27.4728
+      }
+    },
+    {
+      "sourceId": "lapaz",
+      "canonicalPlaceId": "lapaz-bo",
+      "name": "La Paz",
+      "country": "Bolivia",
+      "countryCode": "BO",
+      "admin1": "La Paz",
+      "admin1Code": "BO-L",
+      "nearestCity": "La Paz",
+      "nearestCityCoordinates": {
+        "longitude": -68.1193,
+        "latitude": -16.4897
+      }
+    },
+    {
+      "sourceId": "sarajevo",
+      "canonicalPlaceId": "sarajevo-ba",
+      "name": "Sarajevo",
+      "country": "Bosnia and Herzegovina",
+      "countryCode": "BA",
+      "admin1": "Sarajevo Canton",
+      "admin1Code": "BA-BIH",
+      "nearestCity": "Sarajevo",
+      "nearestCityCoordinates": {
+        "longitude": 18.4131,
+        "latitude": 43.8563
+      }
+    },
+    {
+      "sourceId": "gaborone",
+      "canonicalPlaceId": "gaborone-bw",
+      "name": "Gaborone",
+      "country": "Botswana",
+      "countryCode": "BW",
+      "admin1": "South-East",
+      "admin1Code": "BW-SE",
+      "nearestCity": "Gaborone",
+      "nearestCityCoordinates": {
+        "longitude": 25.9201,
+        "latitude": -24.6282
+      }
+    },
+    {
+      "sourceId": "brasilia",
+      "canonicalPlaceId": "brasilia-br",
+      "name": "Brasília",
+      "country": "Brazil",
+      "countryCode": "BR",
+      "admin1": "Federal District",
+      "admin1Code": "BR-DF",
+      "nearestCity": "Brasília",
+      "nearestCityCoordinates": {
+        "longitude": -47.8825,
+        "latitude": -15.7942
+      }
+    },
+    {
+      "sourceId": "bandarseribegawan",
+      "canonicalPlaceId": "bandarseribegawan-bn",
+      "name": "Bandar Seri Begawan",
+      "country": "Brunei",
+      "countryCode": "BN",
+      "admin1": "Brunei-Muara",
+      "admin1Code": "BN-BM",
+      "nearestCity": "Bandar Seri Begawan",
+      "nearestCityCoordinates": {
+        "longitude": 114.7278,
+        "latitude": 4.9431
+      }
+    },
+    {
+      "sourceId": "sofia",
+      "canonicalPlaceId": "sofia-bg",
+      "name": "Sofia",
+      "country": "Bulgaria",
+      "countryCode": "BG",
+      "admin1": "Sofia-Capital",
+      "admin1Code": "BG-23",
+      "nearestCity": "Sofia",
+      "nearestCityCoordinates": {
+        "longitude": 23.3219,
+        "latitude": 42.6977
+      }
+    },
+    {
+      "sourceId": "ouagadougou",
+      "canonicalPlaceId": "ouagadougou-bf",
+      "name": "Ouagadougou",
+      "country": "Burkina Faso",
+      "countryCode": "BF",
+      "admin1": "Centre",
+      "admin1Code": "BF-03",
+      "nearestCity": "Ouagadougou",
+      "nearestCityCoordinates": {
+        "longitude": -1.5197,
+        "latitude": 12.3714
+      }
+    },
+    {
+      "sourceId": "bujumbura",
+      "canonicalPlaceId": "bujumbura-bi",
+      "name": "Bujumbura",
+      "country": "Burundi",
+      "countryCode": "BI",
+      "admin1": "Bujumbura Mairie",
+      "admin1Code": "BI-BM",
+      "nearestCity": "Bujumbura",
+      "nearestCityCoordinates": {
+        "longitude": 29.3644,
+        "latitude": -3.3614
+      }
+    },
+    {
+      "sourceId": "phnompenh",
+      "canonicalPlaceId": "phnompenh-kh",
+      "name": "Phnom Penh",
+      "country": "Cambodia",
+      "countryCode": "KH",
+      "admin1": "Phnom Penh",
+      "admin1Code": "KH-12",
+      "nearestCity": "Phnom Penh",
+      "nearestCityCoordinates": {
+        "longitude": 104.9163,
+        "latitude": 11.5564
+      }
+    },
+    {
+      "sourceId": "yaounde",
+      "canonicalPlaceId": "yaounde-cm",
+      "name": "Yaoundé",
+      "country": "Cameroon",
+      "countryCode": "CM",
+      "admin1": "Centre",
+      "admin1Code": "CM-CE",
+      "nearestCity": "Yaoundé",
+      "nearestCityCoordinates": {
+        "longitude": 11.5174,
+        "latitude": 3.848
+      }
+    },
+    {
+      "sourceId": "ottawa",
+      "canonicalPlaceId": "ottawa-ca",
+      "name": "Ottawa",
+      "country": "Canada",
+      "countryCode": "CA",
+      "admin1": "Ontario",
+      "admin1Code": "CA-ON",
+      "nearestCity": "Ottawa",
+      "nearestCityCoordinates": {
+        "longitude": -75.6972,
+        "latitude": 45.4215
+      }
+    },
+    {
+      "sourceId": "praia",
+      "canonicalPlaceId": "praia-cv",
+      "name": "Praia",
+      "country": "Cabo Verde",
+      "countryCode": "CV",
+      "admin1": "Praia",
+      "admin1Code": "CV-PR",
+      "nearestCity": "Praia",
+      "nearestCityCoordinates": {
+        "longitude": -23.5087,
+        "latitude": 14.9331
+      }
+    },
+    {
+      "sourceId": "bangui",
+      "canonicalPlaceId": "bangui-cf",
+      "name": "Bangui",
+      "country": "Central African Republic",
+      "countryCode": "CF",
+      "admin1": "Bangui",
+      "admin1Code": "CF-BGF",
+      "nearestCity": "Bangui",
+      "nearestCityCoordinates": {
+        "longitude": 18.5582,
+        "latitude": 4.3947
+      }
+    },
+    {
+      "sourceId": "njamena",
+      "canonicalPlaceId": "njamena-td",
+      "name": "N'Djamena",
+      "country": "Chad",
+      "countryCode": "TD",
+      "admin1": "N'Djamena",
+      "admin1Code": "TD-ND",
+      "nearestCity": "N'Djamena",
+      "nearestCityCoordinates": {
+        "longitude": 15.0469,
+        "latitude": 12.1348
+      }
+    },
+    {
+      "sourceId": "santiago",
+      "canonicalPlaceId": "santiago-cl",
+      "name": "Santiago",
+      "country": "Chile",
+      "countryCode": "CL",
+      "admin1": "Santiago Metropolitan",
+      "admin1Code": "CL-RM",
+      "nearestCity": "Santiago",
+      "nearestCityCoordinates": {
+        "longitude": -70.6483,
+        "latitude": -33.4489
+      }
+    },
+    {
+      "sourceId": "beijing",
+      "canonicalPlaceId": "beijing-cn",
+      "name": "Beijing",
+      "country": "China",
+      "countryCode": "CN",
+      "admin1": "Beijing",
+      "admin1Code": "CN-11",
+      "nearestCity": "Beijing",
+      "nearestCityCoordinates": {
+        "longitude": 116.4074,
+        "latitude": 39.9042
+      }
+    },
+    {
+      "sourceId": "bogota",
+      "canonicalPlaceId": "bogota-co",
+      "name": "Bogotá",
+      "country": "Colombia",
+      "countryCode": "CO",
+      "admin1": "Bogotá D.C.",
+      "admin1Code": "CO-DC",
+      "nearestCity": "Bogotá",
+      "nearestCityCoordinates": {
+        "longitude": -74.0721,
+        "latitude": 4.711
+      }
+    },
+    {
+      "sourceId": "moroni",
+      "canonicalPlaceId": "moroni-km",
+      "name": "Moroni",
+      "country": "Comoros",
+      "countryCode": "KM",
+      "admin1": "Grande Comore",
+      "admin1Code": "KM-G",
+      "nearestCity": "Moroni",
+      "nearestCityCoordinates": {
+        "longitude": 43.2551,
+        "latitude": -11.7172
+      }
+    },
+    {
+      "sourceId": "kinshasa",
+      "canonicalPlaceId": "kinshasa-cd",
+      "name": "Kinshasa",
+      "country": "DR Congo",
+      "countryCode": "CD",
+      "admin1": "Kinshasa",
+      "admin1Code": "CD-KN",
+      "nearestCity": "Kinshasa",
+      "nearestCityCoordinates": {
+        "longitude": 15.2663,
+        "latitude": -4.4419
+      }
+    },
+    {
+      "sourceId": "brazzaville",
+      "canonicalPlaceId": "brazzaville-cg",
+      "name": "Brazzaville",
+      "country": "Republic of the Congo",
+      "countryCode": "CG",
+      "admin1": "Brazzaville",
+      "admin1Code": "CG-BZV",
+      "nearestCity": "Brazzaville",
+      "nearestCityCoordinates": {
+        "longitude": 15.2663,
+        "latitude": -4.2634
+      }
+    },
+    {
+      "sourceId": "sanjose",
+      "canonicalPlaceId": "sanjose-cr",
+      "name": "San José",
+      "country": "Costa Rica",
+      "countryCode": "CR",
+      "admin1": "San José",
+      "admin1Code": "CR-SJ",
+      "nearestCity": "San José",
+      "nearestCityCoordinates": {
+        "longitude": -84.0833,
+        "latitude": 9.9281
+      }
+    },
+    {
+      "sourceId": "zagreb",
+      "canonicalPlaceId": "zagreb-hr",
+      "name": "Zagreb",
+      "country": "Croatia",
+      "countryCode": "HR",
+      "admin1": "Zagreb",
+      "admin1Code": "HR-21",
+      "nearestCity": "Zagreb",
+      "nearestCityCoordinates": {
+        "longitude": 15.9819,
+        "latitude": 45.815
+      }
+    },
+    {
+      "sourceId": "havana",
+      "canonicalPlaceId": "havana-cu",
+      "name": "Havana",
+      "country": "Cuba",
+      "countryCode": "CU",
+      "admin1": "Havana",
+      "admin1Code": "CU-03",
+      "nearestCity": "Havana",
+      "nearestCityCoordinates": {
+        "longitude": -82.3666,
+        "latitude": 23.1136
+      }
+    },
+    {
+      "sourceId": "nicosia",
+      "canonicalPlaceId": "nicosia-cy",
+      "name": "Nicosia",
+      "country": "Cyprus",
+      "countryCode": "CY",
+      "admin1": "Nicosia",
+      "admin1Code": "CY-01",
+      "nearestCity": "Nicosia",
+      "nearestCityCoordinates": {
+        "longitude": 33.3822,
+        "latitude": 35.1856
+      }
+    },
+    {
+      "sourceId": "copenhagen",
+      "canonicalPlaceId": "copenhagen-dk",
+      "name": "Copenhagen",
+      "country": "Denmark",
+      "countryCode": "DK",
+      "admin1": "Capital",
+      "admin1Code": "DK-84",
+      "nearestCity": "Copenhagen",
+      "nearestCityCoordinates": {
+        "longitude": 12.5683,
+        "latitude": 55.6761
+      }
+    },
+    {
+      "sourceId": "djibouti",
+      "canonicalPlaceId": "djibouti-dj",
+      "name": "Djibouti",
+      "country": "Djibouti",
+      "countryCode": "DJ",
+      "admin1": "Djibouti",
+      "admin1Code": "DJ-DJ",
+      "nearestCity": "Djibouti",
+      "nearestCityCoordinates": {
+        "longitude": 43.145,
+        "latitude": 11.5721
+      }
+    },
+    {
+      "sourceId": "roseau",
+      "canonicalPlaceId": "roseau-dm",
+      "name": "Roseau",
+      "country": "Dominica",
+      "countryCode": "DM",
+      "admin1": "Saint George",
+      "admin1Code": "DM-04",
+      "nearestCity": "Roseau",
+      "nearestCityCoordinates": {
+        "longitude": -61.388,
+        "latitude": 15.3092
+      }
+    },
+    {
+      "sourceId": "santodomingo",
+      "canonicalPlaceId": "santodomingo-do",
+      "name": "Santo Domingo",
+      "country": "Dominican Republic",
+      "countryCode": "DO",
+      "admin1": "Distrito Nacional",
+      "admin1Code": "DO-01",
+      "nearestCity": "Santo Domingo",
+      "nearestCityCoordinates": {
+        "longitude": -69.9312,
+        "latitude": 18.4861
+      }
+    },
+    {
+      "sourceId": "quito",
+      "canonicalPlaceId": "quito-ec",
+      "name": "Quito",
+      "country": "Ecuador",
+      "countryCode": "EC",
+      "admin1": "Pichincha",
+      "admin1Code": "EC-P",
+      "nearestCity": "Quito",
+      "nearestCityCoordinates": {
+        "longitude": -78.4678,
+        "latitude": -0.1807
+      }
+    },
+    {
+      "sourceId": "cairo",
+      "canonicalPlaceId": "cairo-eg",
+      "name": "Cairo",
+      "country": "Egypt",
+      "countryCode": "EG",
+      "admin1": "Cairo",
+      "admin1Code": "EG-C",
+      "nearestCity": "Cairo",
+      "nearestCityCoordinates": {
+        "longitude": 31.2357,
+        "latitude": 30.0444
+      }
+    },
+    {
+      "sourceId": "sansalvador",
+      "canonicalPlaceId": "sansalvador-sv",
+      "name": "San Salvador",
+      "country": "El Salvador",
+      "countryCode": "SV",
+      "admin1": "San Salvador",
+      "admin1Code": "SV-SS",
+      "nearestCity": "San Salvador",
+      "nearestCityCoordinates": {
+        "longitude": -89.2182,
+        "latitude": 13.6929
+      }
+    },
+    {
+      "sourceId": "malabo",
+      "canonicalPlaceId": "malabo-gq",
+      "name": "Malabo",
+      "country": "Equatorial Guinea",
+      "countryCode": "GQ",
+      "admin1": "Bioko Norte",
+      "admin1Code": "GQ-BN",
+      "nearestCity": "Malabo",
+      "nearestCityCoordinates": {
+        "longitude": 8.7741,
+        "latitude": 3.7523
+      }
+    },
+    {
+      "sourceId": "asmara",
+      "canonicalPlaceId": "asmara-er",
+      "name": "Asmara",
+      "country": "Eritrea",
+      "countryCode": "ER",
+      "admin1": "Maekel",
+      "admin1Code": "ER-MA",
+      "nearestCity": "Asmara",
+      "nearestCityCoordinates": {
+        "longitude": 38.9189,
+        "latitude": 15.3229
+      }
+    },
+    {
+      "sourceId": "tallinn",
+      "canonicalPlaceId": "tallinn-ee",
+      "name": "Tallinn",
+      "country": "Estonia",
+      "countryCode": "EE",
+      "admin1": "Harju",
+      "admin1Code": "EE-37",
+      "nearestCity": "Tallinn",
+      "nearestCityCoordinates": {
+        "longitude": 24.7536,
+        "latitude": 59.437
+      }
+    },
+    {
+      "sourceId": "addisababa",
+      "canonicalPlaceId": "addisababa-et",
+      "name": "Addis Ababa",
+      "country": "Ethiopia",
+      "countryCode": "ET",
+      "admin1": "Addis Ababa",
+      "admin1Code": "ET-AA",
+      "nearestCity": "Addis Ababa",
+      "nearestCityCoordinates": {
+        "longitude": 38.7578,
+        "latitude": 9.145
+      }
+    },
+    {
+      "sourceId": "suva",
+      "canonicalPlaceId": "suva-fj",
+      "name": "Suva",
+      "country": "Fiji",
+      "countryCode": "FJ",
+      "admin1": "Rewa",
+      "admin1Code": "FJ-R",
+      "nearestCity": "Suva",
+      "nearestCityCoordinates": {
+        "longitude": 178.4501,
+        "latitude": -18.1248
+      }
+    },
+    {
+      "sourceId": "helsinki",
+      "canonicalPlaceId": "helsinki-fi",
+      "name": "Helsinki",
+      "country": "Finland",
+      "countryCode": "FI",
+      "admin1": "Uusimaa",
+      "admin1Code": "FI-18",
+      "nearestCity": "Helsinki",
+      "nearestCityCoordinates": {
+        "longitude": 24.9384,
+        "latitude": 60.1699
+      }
+    },
+    {
+      "sourceId": "libreville",
+      "canonicalPlaceId": "libreville-ga",
+      "name": "Libreville",
+      "country": "Gabon",
+      "countryCode": "GA",
+      "admin1": "Estuaire",
+      "admin1Code": "GA-1",
+      "nearestCity": "Libreville",
+      "nearestCityCoordinates": {
+        "longitude": 9.4545,
+        "latitude": 0.4162
+      }
+    },
+    {
+      "sourceId": "banjul",
+      "canonicalPlaceId": "banjul-gm",
+      "name": "Banjul",
+      "country": "Gambia",
+      "countryCode": "GM",
+      "admin1": "Banjul",
+      "admin1Code": "GM-B",
+      "nearestCity": "Banjul",
+      "nearestCityCoordinates": {
+        "longitude": -16.5775,
+        "latitude": 13.4549
+      }
+    },
+    {
+      "sourceId": "tbilisi",
+      "canonicalPlaceId": "tbilisi-ge",
+      "name": "Tbilisi",
+      "country": "Georgia",
+      "countryCode": "GE",
+      "admin1": "Tbilisi",
+      "admin1Code": "GE-TB",
+      "nearestCity": "Tbilisi",
+      "nearestCityCoordinates": {
+        "longitude": 44.8271,
+        "latitude": 41.7151
+      }
+    },
+    {
+      "sourceId": "accra",
+      "canonicalPlaceId": "accra-gh",
+      "name": "Accra",
+      "country": "Ghana",
+      "countryCode": "GH",
+      "admin1": "Greater Accra",
+      "admin1Code": "GH-AA",
+      "nearestCity": "Accra",
+      "nearestCityCoordinates": {
+        "longitude": -0.187,
+        "latitude": 5.6037
+      }
+    },
+    {
+      "sourceId": "athens",
+      "canonicalPlaceId": "athens-gr",
+      "name": "Athens",
+      "country": "Greece",
+      "countryCode": "GR",
+      "admin1": "Attica",
+      "admin1Code": "GR-I",
+      "nearestCity": "Athens",
+      "nearestCityCoordinates": {
+        "longitude": 23.7275,
+        "latitude": 37.9838
+      }
+    },
+    {
+      "sourceId": "saintgeorges",
+      "canonicalPlaceId": "saintgeorges-gd",
+      "name": "St. George's",
+      "country": "Grenada",
+      "countryCode": "GD",
+      "admin1": "St. George",
+      "admin1Code": "GD-03",
+      "nearestCity": "St. George's",
+      "nearestCityCoordinates": {
+        "longitude": -61.7449,
+        "latitude": 12.0561
+      }
+    },
+    {
+      "sourceId": "guatemalacity",
+      "canonicalPlaceId": "guatemalacity-gt",
+      "name": "Guatemala City",
+      "country": "Guatemala",
+      "countryCode": "GT",
+      "admin1": "Guatemala",
+      "admin1Code": "GT-GU",
+      "nearestCity": "Guatemala City",
+      "nearestCityCoordinates": {
+        "longitude": -90.5069,
+        "latitude": 14.6349
+      }
+    },
+    {
+      "sourceId": "conakry",
+      "canonicalPlaceId": "conakry-gn",
+      "name": "Conakry",
+      "country": "Guinea",
+      "countryCode": "GN",
+      "admin1": "Conakry",
+      "admin1Code": "GN-C",
+      "nearestCity": "Conakry",
+      "nearestCityCoordinates": {
+        "longitude": -13.712,
+        "latitude": 9.6412
+      }
+    },
+    {
+      "sourceId": "bissau",
+      "canonicalPlaceId": "bissau-gw",
+      "name": "Bissau",
+      "country": "Guinea-Bissau",
+      "countryCode": "GW",
+      "admin1": "Bissau",
+      "admin1Code": "GW-BS",
+      "nearestCity": "Bissau",
+      "nearestCityCoordinates": {
+        "longitude": -15.1804,
+        "latitude": 11.8816
+      }
+    },
+    {
+      "sourceId": "georgetown",
+      "canonicalPlaceId": "georgetown-gy",
+      "name": "Georgetown",
+      "country": "Guyana",
+      "countryCode": "GY",
+      "admin1": "Georgetown",
+      "admin1Code": "GY-DE",
+      "nearestCity": "Georgetown",
+      "nearestCityCoordinates": {
+        "longitude": -58.1551,
+        "latitude": 6.8013
+      }
+    },
+    {
+      "sourceId": "portauprince",
+      "canonicalPlaceId": "portauprince-ht",
+      "name": "Port-au-Prince",
+      "country": "Haiti",
+      "countryCode": "HT",
+      "admin1": "Ouest",
+      "admin1Code": "HT-OU",
+      "nearestCity": "Port-au-Prince",
+      "nearestCityCoordinates": {
+        "longitude": -72.3385,
+        "latitude": 18.5944
+      }
+    },
+    {
+      "sourceId": "tegucigalpa",
+      "canonicalPlaceId": "tegucigalpa-hn",
+      "name": "Tegucigalpa",
+      "country": "Honduras",
+      "countryCode": "HN",
+      "admin1": "Francisco Morazán",
+      "admin1Code": "HN-FM",
+      "nearestCity": "Tegucigalpa",
+      "nearestCityCoordinates": {
+        "longitude": -87.1921,
+        "latitude": 14.0723
+      }
+    },
+    {
+      "sourceId": "budapest",
+      "canonicalPlaceId": "budapest-hu",
+      "name": "Budapest",
+      "country": "Hungary",
+      "countryCode": "HU",
+      "admin1": "Budapest",
+      "admin1Code": "HU-BU",
+      "nearestCity": "Budapest",
+      "nearestCityCoordinates": {
+        "longitude": 19.0402,
+        "latitude": 47.4979
+      }
+    },
+    {
+      "sourceId": "newdelhi",
+      "canonicalPlaceId": "newdelhi-in",
+      "name": "New Delhi",
+      "country": "India",
+      "countryCode": "IN",
+      "admin1": "Delhi",
+      "admin1Code": "IN-DL",
+      "nearestCity": "New Delhi",
+      "nearestCityCoordinates": {
+        "longitude": 77.209,
+        "latitude": 28.6139
+      }
+    },
+    {
+      "sourceId": "jakarta",
+      "canonicalPlaceId": "jakarta-id",
+      "name": "Jakarta",
+      "country": "Indonesia",
+      "countryCode": "ID",
+      "admin1": "DKI Jakarta",
+      "admin1Code": "ID-JK",
+      "nearestCity": "Jakarta",
+      "nearestCityCoordinates": {
+        "longitude": 106.8456,
+        "latitude": -6.2088
+      }
+    },
+    {
+      "sourceId": "tehran",
+      "canonicalPlaceId": "tehran-ir",
+      "name": "Tehran",
+      "country": "Iran",
+      "countryCode": "IR",
+      "admin1": "Tehran",
+      "admin1Code": "IR-23",
+      "nearestCity": "Tehran",
+      "nearestCityCoordinates": {
+        "longitude": 51.389,
+        "latitude": 35.6892
+      }
+    },
+    {
+      "sourceId": "baghdad",
+      "canonicalPlaceId": "baghdad-iq",
+      "name": "Baghdad",
+      "country": "Iraq",
+      "countryCode": "IQ",
+      "admin1": "Baghdad",
+      "admin1Code": "IQ-BG",
+      "nearestCity": "Baghdad",
+      "nearestCityCoordinates": {
+        "longitude": 44.3615,
+        "latitude": 33.3152
+      }
+    },
+    {
+      "sourceId": "dublin",
+      "canonicalPlaceId": "dublin-ie",
+      "name": "Dublin",
+      "country": "Ireland",
+      "countryCode": "IE",
+      "admin1": "Leinster",
+      "admin1Code": "IE-L",
+      "nearestCity": "Dublin",
+      "nearestCityCoordinates": {
+        "longitude": -6.2603,
+        "latitude": 53.3498
+      }
+    },
+    {
+      "sourceId": "jerusalem",
+      "canonicalPlaceId": "jerusalem-il",
+      "name": "Jerusalem",
+      "country": "Israel",
+      "countryCode": "IL",
+      "admin1": "Jerusalem District",
+      "admin1Code": "IL-JM",
+      "nearestCity": "Jerusalem",
+      "nearestCityCoordinates": {
+        "longitude": 35.2137,
+        "latitude": 31.7683
+      }
+    },
+    {
+      "sourceId": "amman",
+      "canonicalPlaceId": "amman-jo",
+      "name": "Amman",
+      "country": "Jordan",
+      "countryCode": "JO",
+      "admin1": "Amman",
+      "admin1Code": "JO-AM",
+      "nearestCity": "Amman",
+      "nearestCityCoordinates": {
+        "longitude": 35.9304,
+        "latitude": 31.9539
+      }
+    },
+    {
+      "sourceId": "astana",
+      "canonicalPlaceId": "astana-kz",
+      "name": "Astana",
+      "country": "Kazakhstan",
+      "countryCode": "KZ",
+      "admin1": "Astana",
+      "admin1Code": "KZ-71",
+      "nearestCity": "Astana",
+      "nearestCityCoordinates": {
+        "longitude": 71.4704,
+        "latitude": 51.1605
+      }
+    },
+    {
+      "sourceId": "nairobi",
+      "canonicalPlaceId": "nairobi-ke",
+      "name": "Nairobi",
+      "country": "Kenya",
+      "countryCode": "KE",
+      "admin1": "Nairobi",
+      "admin1Code": "KE-30",
+      "nearestCity": "Nairobi",
+      "nearestCityCoordinates": {
+        "longitude": 36.8219,
+        "latitude": -1.2921
+      }
+    },
+    {
+      "sourceId": "tarawa",
+      "canonicalPlaceId": "tarawa-kr",
+      "name": "Tarawa",
+      "country": "Kiribati",
+      "countryCode": "KI",
+      "admin1": "Tarawa",
+      "admin1Code": "KI-I",
+      "nearestCity": "Tarawa",
+      "nearestCityCoordinates": {
+        "longitude": 172.979,
+        "latitude": 1.4518
+      }
+    },
+    {
+      "sourceId": "pyongyang",
+      "canonicalPlaceId": "pyongyang-kp",
+      "name": "Pyongyang",
+      "country": "North Korea",
+      "countryCode": "KP",
+      "admin1": "Pyongyang",
+      "admin1Code": "KP-01",
+      "nearestCity": "Pyongyang",
+      "nearestCityCoordinates": {
+        "longitude": 125.7625,
+        "latitude": 39.0392
+      }
+    },
+    {
+      "sourceId": "pristina",
+      "canonicalPlaceId": "pristina-xk",
+      "name": "Pristina",
+      "country": "Kosovo",
+      "countryCode": "XK",
+      "admin1": "Pristina",
+      "admin1Code": "XK-01",
+      "nearestCity": "Pristina",
+      "nearestCityCoordinates": {
+        "longitude": 21.1655,
+        "latitude": 42.6629
+      }
+    },
+    {
+      "sourceId": "kuwaitcity",
+      "canonicalPlaceId": "kuwaitcity-kw",
+      "name": "Kuwait City",
+      "country": "Kuwait",
+      "countryCode": "KW",
+      "admin1": "Capital",
+      "admin1Code": "KW-KU",
+      "nearestCity": "Kuwait City",
+      "nearestCityCoordinates": {
+        "longitude": 47.4818,
+        "latitude": 29.3759
+      }
+    },
+    {
+      "sourceId": "bishkek",
+      "canonicalPlaceId": "bishkek-kg",
+      "name": "Bishkek",
+      "country": "Kyrgyzstan",
+      "countryCode": "KG",
+      "admin1": "Bishkek",
+      "admin1Code": "KG-GB",
+      "nearestCity": "Bishkek",
+      "nearestCityCoordinates": {
+        "longitude": 74.606,
+        "latitude": 42.8746
+      }
+    },
+    {
+      "sourceId": "vientiane",
+      "canonicalPlaceId": "vientiane-la",
+      "name": "Vientiane",
+      "country": "Laos",
+      "countryCode": "LA",
+      "admin1": "Vientiane",
+      "admin1Code": "LA-VT",
+      "nearestCity": "Vientiane",
+      "nearestCityCoordinates": {
+        "longitude": 102.63,
+        "latitude": 17.9757
+      }
+    },
+    {
+      "sourceId": "riga",
+      "canonicalPlaceId": "riga-lv",
+      "name": "Riga",
+      "country": "Latvia",
+      "countryCode": "LV",
+      "admin1": "Riga",
+      "admin1Code": "LV-RIX",
+      "nearestCity": "Riga",
+      "nearestCityCoordinates": {
+        "longitude": 24.1052,
+        "latitude": 56.9496
+      }
+    },
+    {
+      "sourceId": "beirut",
+      "canonicalPlaceId": "beirut-lb",
+      "name": "Beirut",
+      "country": "Lebanon",
+      "countryCode": "LB",
+      "admin1": "Beirut",
+      "admin1Code": "LB-BA",
+      "nearestCity": "Beirut",
+      "nearestCityCoordinates": {
+        "longitude": 35.5018,
+        "latitude": 33.8938
+      }
+    },
+    {
+      "sourceId": "maseru",
+      "canonicalPlaceId": "maseru-ls",
+      "name": "Maseru",
+      "country": "Lesotho",
+      "countryCode": "LS",
+      "admin1": "Maseru",
+      "admin1Code": "LS-A",
+      "nearestCity": "Maseru",
+      "nearestCityCoordinates": {
+        "longitude": 27.4854,
+        "latitude": -29.3151
+      }
+    },
+    {
+      "sourceId": "monrovia",
+      "canonicalPlaceId": "monrovia-lr",
+      "name": "Monrovia",
+      "country": "Liberia",
+      "countryCode": "LR",
+      "admin1": "Montserrado",
+      "admin1Code": "LR-MO",
+      "nearestCity": "Monrovia",
+      "nearestCityCoordinates": {
+        "longitude": -10.7969,
+        "latitude": 6.3004
+      }
+    },
+    {
+      "sourceId": "tripoli",
+      "canonicalPlaceId": "tripoli-ly",
+      "name": "Tripoli",
+      "country": "Libya",
+      "countryCode": "LY",
+      "admin1": "Tripoli",
+      "admin1Code": "LY-TB",
+      "nearestCity": "Tripoli",
+      "nearestCityCoordinates": {
+        "longitude": 13.191,
+        "latitude": 32.8872
+      }
+    },
+    {
+      "sourceId": "vilnius",
+      "canonicalPlaceId": "vilnius-lt",
+      "name": "Vilnius",
+      "country": "Lithuania",
+      "countryCode": "LT",
+      "admin1": "Vilnius",
+      "admin1Code": "LT-VL",
+      "nearestCity": "Vilnius",
+      "nearestCityCoordinates": {
+        "longitude": 25.2796,
+        "latitude": 54.6872
+      }
+    },
+    {
+      "sourceId": "luxembourg",
+      "canonicalPlaceId": "luxembourg-lu",
+      "name": "Luxembourg",
+      "country": "Luxembourg",
+      "countryCode": "LU",
+      "admin1": "Luxembourg",
+      "admin1Code": "LU-L",
+      "nearestCity": "Luxembourg",
+      "nearestCityCoordinates": {
+        "longitude": 6.1296,
+        "latitude": 49.6116
+      }
+    },
+    {
+      "sourceId": "antananarivo",
+      "canonicalPlaceId": "antananarivo-mg",
+      "name": "Antananarivo",
+      "country": "Madagascar",
+      "countryCode": "MG",
+      "admin1": "Analamanga",
+      "admin1Code": "MG-A",
+      "nearestCity": "Antananarivo",
+      "nearestCityCoordinates": {
+        "longitude": 47.5219,
+        "latitude": -18.8792
+      }
+    },
+    {
+      "sourceId": "lilongwe",
+      "canonicalPlaceId": "lilongwe-mw",
+      "name": "Lilongwe",
+      "country": "Malawi",
+      "countryCode": "MW",
+      "admin1": "Lilongwe",
+      "admin1Code": "MW-C",
+      "nearestCity": "Lilongwe",
+      "nearestCityCoordinates": {
+        "longitude": 33.7703,
+        "latitude": -13.9626
+      }
+    },
+    {
+      "sourceId": "kualalumpur",
+      "canonicalPlaceId": "kualalumpur-my",
+      "name": "Kuala Lumpur",
+      "country": "Malaysia",
+      "countryCode": "MY",
+      "admin1": "Federal Territory",
+      "admin1Code": "MY-14",
+      "nearestCity": "Kuala Lumpur",
+      "nearestCityCoordinates": {
+        "longitude": 101.6869,
+        "latitude": 3.139
+      }
+    },
+    {
+      "sourceId": "male",
+      "canonicalPlaceId": "male-mv",
+      "name": "Malé",
+      "country": "Maldives",
+      "countryCode": "MV",
+      "admin1": "Kaafu",
+      "admin1Code": "MV-K",
+      "nearestCity": "Malé",
+      "nearestCityCoordinates": {
+        "longitude": 73.5093,
+        "latitude": 4.1755
+      }
+    },
+    {
+      "sourceId": "bamako",
+      "canonicalPlaceId": "bamako-ml",
+      "name": "Bamako",
+      "country": "Mali",
+      "countryCode": "ML",
+      "admin1": "Bamako",
+      "admin1Code": "ML-BKO",
+      "nearestCity": "Bamako",
+      "nearestCityCoordinates": {
+        "longitude": -8.0029,
+        "latitude": 12.6392
+      }
+    },
+    {
+      "sourceId": "valletta",
+      "canonicalPlaceId": "valletta-mt",
+      "name": "Valletta",
+      "country": "Malta",
+      "countryCode": "MT",
+      "admin1": "Valletta",
+      "admin1Code": "MT-60",
+      "nearestCity": "Valletta",
+      "nearestCityCoordinates": {
+        "longitude": 14.5141,
+        "latitude": 35.8989
+      }
+    },
+    {
+      "sourceId": "majuro",
+      "canonicalPlaceId": "majuro-mh",
+      "name": "Majuro",
+      "country": "Marshall Islands",
+      "countryCode": "MH",
+      "admin1": "Majuro",
+      "admin1Code": "MH-MAJ",
+      "nearestCity": "Majuro",
+      "nearestCityCoordinates": {
+        "longitude": 171.1804,
+        "latitude": 7.1164
+      }
+    },
+    {
+      "sourceId": "nouakchott",
+      "canonicalPlaceId": "nouakchott-mr",
+      "name": "Nouakchott",
+      "country": "Mauritania",
+      "countryCode": "MR",
+      "admin1": "Nouakchott",
+      "admin1Code": "MR-NKC",
+      "nearestCity": "Nouakchott",
+      "nearestCityCoordinates": {
+        "longitude": -15.9785,
+        "latitude": 18.0735
+      }
+    },
+    {
+      "sourceId": "portlouis",
+      "canonicalPlaceId": "portlouis-mu",
+      "name": "Port Louis",
+      "country": "Mauritius",
+      "countryCode": "MU",
+      "admin1": "Port Louis",
+      "admin1Code": "MU-PL",
+      "nearestCity": "Port Louis",
+      "nearestCityCoordinates": {
+        "longitude": 57.5012,
+        "latitude": -20.1654
+      }
+    },
+    {
+      "sourceId": "palikir",
+      "canonicalPlaceId": "palikir-fm",
+      "name": "Palikir",
+      "country": "Micronesia",
+      "countryCode": "FM",
+      "admin1": "Pohnpei",
+      "admin1Code": "FM-PNI",
+      "nearestCity": "Palikir",
+      "nearestCityCoordinates": {
+        "longitude": 158.185,
+        "latitude": 6.9177
+      }
+    },
+    {
+      "sourceId": "chisinau",
+      "canonicalPlaceId": "chisinau-md",
+      "name": "Chișinău",
+      "country": "Moldova",
+      "countryCode": "MD",
+      "admin1": "Chișinău",
+      "admin1Code": "MD-C",
+      "nearestCity": "Chișinău",
+      "nearestCityCoordinates": {
+        "longitude": 28.8575,
+        "latitude": 47.0105
+      }
+    },
+    {
+      "sourceId": "monaco",
+      "canonicalPlaceId": "monaco-mc",
+      "name": "Monaco",
+      "country": "Monaco",
+      "countryCode": "MC",
+      "admin1": "Monaco",
+      "admin1Code": "MC-MO",
+      "nearestCity": "Monaco",
+      "nearestCityCoordinates": {
+        "longitude": 7.4246,
+        "latitude": 43.7384
+      }
+    },
+    {
+      "sourceId": "ulaanbaatar",
+      "canonicalPlaceId": "ulaanbaatar-mn",
+      "name": "Ulaanbaatar",
+      "country": "Mongolia",
+      "countryCode": "MN",
+      "admin1": "Ulaanbaatar",
+      "admin1Code": "MN-1",
+      "nearestCity": "Ulaanbaatar",
+      "nearestCityCoordinates": {
+        "longitude": 106.9057,
+        "latitude": 47.8864
+      }
+    },
+    {
+      "sourceId": "podgorica",
+      "canonicalPlaceId": "podgorica-me",
+      "name": "Podgorica",
+      "country": "Montenegro",
+      "countryCode": "ME",
+      "admin1": "Podgorica",
+      "admin1Code": "ME-16",
+      "nearestCity": "Podgorica",
+      "nearestCityCoordinates": {
+        "longitude": 19.2622,
+        "latitude": 42.4304
+      }
+    },
+    {
+      "sourceId": "rabat",
+      "canonicalPlaceId": "rabat-ma",
+      "name": "Rabat",
+      "country": "Morocco",
+      "countryCode": "MA",
+      "admin1": "Rabat-Salé-Kénitra",
+      "admin1Code": "MA-04",
+      "nearestCity": "Rabat",
+      "nearestCityCoordinates": {
+        "longitude": -6.832,
+        "latitude": 34.0209
+      }
+    },
+    {
+      "sourceId": "maputo",
+      "canonicalPlaceId": "maputo-mz",
+      "name": "Maputo",
+      "country": "Mozambique",
+      "countryCode": "MZ",
+      "admin1": "Maputo City",
+      "admin1Code": "MZ-MPM",
+      "nearestCity": "Maputo",
+      "nearestCityCoordinates": {
+        "longitude": 32.5712,
+        "latitude": -25.9692
+      }
+    },
+    {
+      "sourceId": "naypyidaw",
+      "canonicalPlaceId": "naypyidaw-mm",
+      "name": "Naypyidaw",
+      "country": "Myanmar",
+      "countryCode": "MM",
+      "admin1": "Naypyidaw Union Territory",
+      "admin1Code": "MM-18",
+      "nearestCity": "Naypyidaw",
+      "nearestCityCoordinates": {
+        "longitude": 96.1606,
+        "latitude": 19.7633
+      }
+    },
+    {
+      "sourceId": "windhoek",
+      "canonicalPlaceId": "windhoek-na",
+      "name": "Windhoek",
+      "country": "Namibia",
+      "countryCode": "NA",
+      "admin1": "Khomas",
+      "admin1Code": "NA-KH",
+      "nearestCity": "Windhoek",
+      "nearestCityCoordinates": {
+        "longitude": 17.0658,
+        "latitude": -22.5609
+      }
+    },
+    {
+      "sourceId": "yrennocity",
+      "canonicalPlaceId": "yrennocity-nr",
+      "name": "Yaren",
+      "country": "Nauru",
+      "countryCode": "NR",
+      "admin1": "Yaren",
+      "admin1Code": "NR-14",
+      "nearestCity": "Yaren",
+      "nearestCityCoordinates": {
+        "longitude": 166.921,
+        "latitude": -0.5477
+      }
+    },
+    {
+      "sourceId": "kathmandu",
+      "canonicalPlaceId": "kathmandu-np",
+      "name": "Kathmandu",
+      "country": "Nepal",
+      "countryCode": "NP",
+      "admin1": "Bagmati",
+      "admin1Code": "NP-3",
+      "nearestCity": "Kathmandu",
+      "nearestCityCoordinates": {
+        "longitude": 85.324,
+        "latitude": 27.7172
+      }
+    },
+    {
+      "sourceId": "wellington",
+      "canonicalPlaceId": "wellington-nz",
+      "name": "Wellington",
+      "country": "New Zealand",
+      "countryCode": "NZ",
+      "admin1": "Wellington Region",
+      "admin1Code": "NZ-WGN",
+      "nearestCity": "Wellington",
+      "nearestCityCoordinates": {
+        "longitude": 174.7762,
+        "latitude": -41.2865
+      }
+    },
+    {
+      "sourceId": "managua",
+      "canonicalPlaceId": "managua-ni",
+      "name": "Managua",
+      "country": "Nicaragua",
+      "countryCode": "NI",
+      "admin1": "Managua",
+      "admin1Code": "NI-MN",
+      "nearestCity": "Managua",
+      "nearestCityCoordinates": {
+        "longitude": -86.2714,
+        "latitude": 12.1364
+      }
+    },
+    {
+      "sourceId": "niamey",
+      "canonicalPlaceId": "niamey-ne",
+      "name": "Niamey",
+      "country": "Niger",
+      "countryCode": "NE",
+      "admin1": "Niamey",
+      "admin1Code": "NE-8",
+      "nearestCity": "Niamey",
+      "nearestCityCoordinates": {
+        "longitude": 2.1098,
+        "latitude": 13.5117
+      }
+    },
+    {
+      "sourceId": "abuja",
+      "canonicalPlaceId": "abuja-ng",
+      "name": "Abuja",
+      "country": "Nigeria",
+      "countryCode": "NG",
+      "admin1": "Federal Capital Territory",
+      "admin1Code": "NG-FC",
+      "nearestCity": "Abuja",
+      "nearestCityCoordinates": {
+        "longitude": 7.4914,
+        "latitude": 9.0765
+      }
+    },
+    {
+      "sourceId": "skopje",
+      "canonicalPlaceId": "skopje-mk",
+      "name": "Skopje",
+      "country": "North Macedonia",
+      "countryCode": "MK",
+      "admin1": "Skopje",
+      "admin1Code": "MK-SK",
+      "nearestCity": "Skopje",
+      "nearestCityCoordinates": {
+        "longitude": 21.4314,
+        "latitude": 41.9981
+      }
+    },
+    {
+      "sourceId": "oslo",
+      "canonicalPlaceId": "oslo-no",
+      "name": "Oslo",
+      "country": "Norway",
+      "countryCode": "NO",
+      "admin1": "Oslo",
+      "admin1Code": "NO-03",
+      "nearestCity": "Oslo",
+      "nearestCityCoordinates": {
+        "longitude": 10.7522,
+        "latitude": 59.9139
+      }
+    },
+    {
+      "sourceId": "muscat",
+      "canonicalPlaceId": "muscat-om",
+      "name": "Muscat",
+      "country": "Oman",
+      "countryCode": "OM",
+      "admin1": "Muscat",
+      "admin1Code": "OM-MA",
+      "nearestCity": "Muscat",
+      "nearestCityCoordinates": {
+        "longitude": 58.4059,
+        "latitude": 23.5859
+      }
+    },
+    {
+      "sourceId": "islamabad",
+      "canonicalPlaceId": "islamabad-pk",
+      "name": "Islamabad",
+      "country": "Pakistan",
+      "countryCode": "PK",
+      "admin1": "Islamabad Capital Territory",
+      "admin1Code": "PK-IS",
+      "nearestCity": "Islamabad",
+      "nearestCityCoordinates": {
+        "longitude": 73.0479,
+        "latitude": 33.6844
+      }
+    },
+    {
+      "sourceId": "ngerulmud",
+      "canonicalPlaceId": "ngerulmud-pw",
+      "name": "Ngerulmud",
+      "country": "Palau",
+      "countryCode": "PW",
+      "admin1": "Melekeok",
+      "admin1Code": "PW-07",
+      "nearestCity": "Ngerulmud",
+      "nearestCityCoordinates": {
+        "longitude": 134.6242,
+        "latitude": 7.5006
+      }
+    },
+    {
+      "sourceId": "ramallah",
+      "canonicalPlaceId": "ramallah-ps",
+      "name": "Ramallah",
+      "country": "Palestine",
+      "countryCode": "PS",
+      "admin1": "Ramallah and al-Bireh",
+      "admin1Code": "PS-RBH",
+      "nearestCity": "Ramallah",
+      "nearestCityCoordinates": {
+        "longitude": 35.1939,
+        "latitude": 31.9038
+      }
+    },
+    {
+      "sourceId": "panamacity",
+      "canonicalPlaceId": "panamacity-pa",
+      "name": "Panama City",
+      "country": "Panama",
+      "countryCode": "PA",
+      "admin1": "Panama",
+      "admin1Code": "PA-8",
+      "nearestCity": "Panama City",
+      "nearestCityCoordinates": {
+        "longitude": -79.5193,
+        "latitude": 8.9824
+      }
+    },
+    {
+      "sourceId": "portmoresby",
+      "canonicalPlaceId": "portmoresby-pg",
+      "name": "Port Moresby",
+      "country": "Papua New Guinea",
+      "countryCode": "PG",
+      "admin1": "National Capital",
+      "admin1Code": "PG-NCD",
+      "nearestCity": "Port Moresby",
+      "nearestCityCoordinates": {
+        "longitude": 147.1804,
+        "latitude": -9.4438
+      }
+    },
+    {
+      "sourceId": "asuncion",
+      "canonicalPlaceId": "asuncion-py",
+      "name": "Asunción",
+      "country": "Paraguay",
+      "countryCode": "PY",
+      "admin1": "Asunción",
+      "admin1Code": "PY-ASU",
+      "nearestCity": "Asunción",
+      "nearestCityCoordinates": {
+        "longitude": -57.5759,
+        "latitude": -25.2637
+      }
+    },
+    {
+      "sourceId": "lima",
+      "canonicalPlaceId": "lima-pe",
+      "name": "Lima",
+      "country": "Peru",
+      "countryCode": "PE",
+      "admin1": "Lima",
+      "admin1Code": "PE-LIM",
+      "nearestCity": "Lima",
+      "nearestCityCoordinates": {
+        "longitude": -77.0428,
+        "latitude": -12.0464
+      }
+    },
+    {
+      "sourceId": "manila",
+      "canonicalPlaceId": "manila-ph",
+      "name": "Manila",
+      "country": "Philippines",
+      "countryCode": "PH",
+      "admin1": "Metro Manila",
+      "admin1Code": "PH-00",
+      "nearestCity": "Manila",
+      "nearestCityCoordinates": {
+        "longitude": 120.9842,
+        "latitude": 14.5995
+      }
+    },
+    {
+      "sourceId": "warsaw",
+      "canonicalPlaceId": "warsaw-pl",
+      "name": "Warsaw",
+      "country": "Poland",
+      "countryCode": "PL",
+      "admin1": "Masovian",
+      "admin1Code": "PL-MZ",
+      "nearestCity": "Warsaw",
+      "nearestCityCoordinates": {
+        "longitude": 21.0122,
+        "latitude": 52.2297
+      }
+    },
+    {
+      "sourceId": "doha",
+      "canonicalPlaceId": "doha-qa",
+      "name": "Doha",
+      "country": "Qatar",
+      "countryCode": "QA",
+      "admin1": "Doha",
+      "admin1Code": "QA-DA",
+      "nearestCity": "Doha",
+      "nearestCityCoordinates": {
+        "longitude": 51.1839,
+        "latitude": 25.2854
+      }
+    },
+    {
+      "sourceId": "bucharest",
+      "canonicalPlaceId": "bucharest-ro",
+      "name": "Bucharest",
+      "country": "Romania",
+      "countryCode": "RO",
+      "admin1": "Bucharest",
+      "admin1Code": "RO-B",
+      "nearestCity": "Bucharest",
+      "nearestCityCoordinates": {
+        "longitude": 26.1025,
+        "latitude": 44.4268
+      }
+    },
+    {
+      "sourceId": "moscow",
+      "canonicalPlaceId": "moscow-ru",
+      "name": "Moscow",
+      "country": "Russia",
+      "countryCode": "RU",
+      "admin1": "Moscow",
+      "admin1Code": "RU-MOW",
+      "nearestCity": "Moscow",
+      "nearestCityCoordinates": {
+        "longitude": 37.6173,
+        "latitude": 55.7558
+      }
+    },
+    {
+      "sourceId": "kigali",
+      "canonicalPlaceId": "kigali-rw",
+      "name": "Kigali",
+      "country": "Rwanda",
+      "countryCode": "RW",
+      "admin1": "Kigali",
+      "admin1Code": "RW-01",
+      "nearestCity": "Kigali",
+      "nearestCityCoordinates": {
+        "longitude": 30.0619,
+        "latitude": -1.9441
+      }
+    },
+    {
+      "sourceId": "basseterre",
+      "canonicalPlaceId": "basseterre-kn",
+      "name": "Basseterre",
+      "country": "Saint Kitts and Nevis",
+      "countryCode": "KN",
+      "admin1": "Saint George Basseterre",
+      "admin1Code": "KN-03",
+      "nearestCity": "Basseterre",
+      "nearestCityCoordinates": {
+        "longitude": -62.7167,
+        "latitude": 17.3026
+      }
+    },
+    {
+      "sourceId": "castries",
+      "canonicalPlaceId": "castries-lc",
+      "name": "Castries",
+      "country": "Saint Lucia",
+      "countryCode": "LC",
+      "admin1": "Castries",
+      "admin1Code": "LC-02",
+      "nearestCity": "Castries",
+      "nearestCityCoordinates": {
+        "longitude": -60.9839,
+        "latitude": 14.0101
+      }
+    },
+    {
+      "sourceId": "kingstown",
+      "canonicalPlaceId": "kingstown-vc",
+      "name": "Kingstown",
+      "country": "Saint Vincent and the Grenadines",
+      "countryCode": "VC",
+      "admin1": "Saint George",
+      "admin1Code": "VC-04",
+      "nearestCity": "Kingstown",
+      "nearestCityCoordinates": {
+        "longitude": -61.2181,
+        "latitude": 13.1339
+      }
+    },
+    {
+      "sourceId": "apia",
+      "canonicalPlaceId": "apia-ws",
+      "name": "Apia",
+      "country": "Samoa",
+      "countryCode": "WS",
+      "admin1": "Tuamasaga",
+      "admin1Code": "WS-TU",
+      "nearestCity": "Apia",
+      "nearestCityCoordinates": {
+        "longitude": -171.7514,
+        "latitude": -13.8506
+      }
+    },
+    {
+      "sourceId": "sanmarino",
+      "canonicalPlaceId": "sanmarino-sm",
+      "name": "San Marino",
+      "country": "San Marino",
+      "countryCode": "SM",
+      "admin1": "San Marino",
+      "admin1Code": "SM-07",
+      "nearestCity": "San Marino",
+      "nearestCityCoordinates": {
+        "longitude": 12.4468,
+        "latitude": 43.9356
+      }
+    },
+    {
+      "sourceId": "saotome",
+      "canonicalPlaceId": "saotome-st",
+      "name": "São Tomé",
+      "country": "São Tomé and Príncipe",
+      "countryCode": "ST",
+      "admin1": "São Tomé",
+      "admin1Code": "ST-02",
+      "nearestCity": "São Tomé",
+      "nearestCityCoordinates": {
+        "longitude": 6.7333,
+        "latitude": 0.336
+      }
+    },
+    {
+      "sourceId": "riyadh",
+      "canonicalPlaceId": "riyadh-sa",
+      "name": "Riyadh",
+      "country": "Saudi Arabia",
+      "countryCode": "SA",
+      "admin1": "Riyadh Region",
+      "admin1Code": "SA-01",
+      "nearestCity": "Riyadh",
+      "nearestCityCoordinates": {
+        "longitude": 46.6753,
+        "latitude": 24.7136
+      }
+    },
+    {
+      "sourceId": "dakar",
+      "canonicalPlaceId": "dakar-sn",
+      "name": "Dakar",
+      "country": "Senegal",
+      "countryCode": "SN",
+      "admin1": "Dakar",
+      "admin1Code": "SN-DK",
+      "nearestCity": "Dakar",
+      "nearestCityCoordinates": {
+        "longitude": -17.4677,
+        "latitude": 14.7167
+      }
+    },
+    {
+      "sourceId": "belgrade",
+      "canonicalPlaceId": "belgrade-rs",
+      "name": "Belgrade",
+      "country": "Serbia",
+      "countryCode": "RS",
+      "admin1": "Belgrade",
+      "admin1Code": "RS-00",
+      "nearestCity": "Belgrade",
+      "nearestCityCoordinates": {
+        "longitude": 20.4489,
+        "latitude": 44.7866
+      }
+    },
+    {
+      "sourceId": "victoria",
+      "canonicalPlaceId": "victoria-sc",
+      "name": "Victoria",
+      "country": "Seychelles",
+      "countryCode": "SC",
+      "admin1": "Victoria",
+      "admin1Code": "SC-08",
+      "nearestCity": "Victoria",
+      "nearestCityCoordinates": {
+        "longitude": 55.4464,
+        "latitude": -4.6234
+      }
+    },
+    {
+      "sourceId": "freetown",
+      "canonicalPlaceId": "freetown-sl",
+      "name": "Freetown",
+      "country": "Sierra Leone",
+      "countryCode": "SL",
+      "admin1": "Western Area",
+      "admin1Code": "SL-W",
+      "nearestCity": "Freetown",
+      "nearestCityCoordinates": {
+        "longitude": -13.2317,
+        "latitude": 8.4657
+      }
+    },
+    {
+      "sourceId": "bratislava",
+      "canonicalPlaceId": "bratislava-sk",
+      "name": "Bratislava",
+      "country": "Slovakia",
+      "countryCode": "SK",
+      "admin1": "Bratislava",
+      "admin1Code": "SK-BL",
+      "nearestCity": "Bratislava",
+      "nearestCityCoordinates": {
+        "longitude": 17.1077,
+        "latitude": 48.1486
+      }
+    },
+    {
+      "sourceId": "ljubljana",
+      "canonicalPlaceId": "ljubljana-si",
+      "name": "Ljubljana",
+      "country": "Slovenia",
+      "countryCode": "SI",
+      "admin1": "Ljubljana",
+      "admin1Code": "SI-061",
+      "nearestCity": "Ljubljana",
+      "nearestCityCoordinates": {
+        "longitude": 14.5058,
+        "latitude": 46.0569
+      }
+    },
+    {
+      "sourceId": "honiara",
+      "canonicalPlaceId": "honiara-sb",
+      "name": "Honiara",
+      "country": "Solomon Islands",
+      "countryCode": "SB",
+      "admin1": "Honiara",
+      "admin1Code": "SB-CT",
+      "nearestCity": "Honiara",
+      "nearestCityCoordinates": {
+        "longitude": 159.9495,
+        "latitude": -9.4438
+      }
+    },
+    {
+      "sourceId": "mogadishu",
+      "canonicalPlaceId": "mogadishu-so",
+      "name": "Mogadishu",
+      "country": "Somalia",
+      "countryCode": "SO",
+      "admin1": "Banaadir",
+      "admin1Code": "SO-BN",
+      "nearestCity": "Mogadishu",
+      "nearestCityCoordinates": {
+        "longitude": 45.3182,
+        "latitude": 2.0469
+      }
+    },
+    {
+      "sourceId": "pretoria",
+      "canonicalPlaceId": "pretoria-za",
+      "name": "Pretoria",
+      "country": "South Africa",
+      "countryCode": "ZA",
+      "admin1": "Gauteng",
+      "admin1Code": "ZA-GT",
+      "nearestCity": "Pretoria",
+      "nearestCityCoordinates": {
+        "longitude": 28.1881,
+        "latitude": -25.7479
+      }
+    },
+    {
+      "sourceId": "juba",
+      "canonicalPlaceId": "juba-ss",
+      "name": "Juba",
+      "country": "South Sudan",
+      "countryCode": "SS",
+      "admin1": "Central Equatoria",
+      "admin1Code": "SS-EC",
+      "nearestCity": "Juba",
+      "nearestCityCoordinates": {
+        "longitude": 31.5825,
+        "latitude": 4.8594
+      }
+    },
+    {
+      "sourceId": "colombo",
+      "canonicalPlaceId": "colombo-lk",
+      "name": "Colombo",
+      "country": "Sri Lanka",
+      "countryCode": "LK",
+      "admin1": "Western",
+      "admin1Code": "LK-1",
+      "nearestCity": "Colombo",
+      "nearestCityCoordinates": {
+        "longitude": 79.8612,
+        "latitude": 6.9271
+      }
+    },
+    {
+      "sourceId": "khartoum",
+      "canonicalPlaceId": "khartoum-sd",
+      "name": "Khartoum",
+      "country": "Sudan",
+      "countryCode": "SD",
+      "admin1": "Khartoum",
+      "admin1Code": "SD-KH",
+      "nearestCity": "Khartoum",
+      "nearestCityCoordinates": {
+        "longitude": 32.5599,
+        "latitude": 15.5007
+      }
+    },
+    {
+      "sourceId": "paramaribo",
+      "canonicalPlaceId": "paramaribo-sr",
+      "name": "Paramaribo",
+      "country": "Suriname",
+      "countryCode": "SR",
+      "admin1": "Paramaribo",
+      "admin1Code": "SR-PM",
+      "nearestCity": "Paramaribo",
+      "nearestCityCoordinates": {
+        "longitude": -55.2039,
+        "latitude": 5.852
+      }
+    },
+    {
+      "sourceId": "stockholm",
+      "canonicalPlaceId": "stockholm-se",
+      "name": "Stockholm",
+      "country": "Sweden",
+      "countryCode": "SE",
+      "admin1": "Stockholm",
+      "admin1Code": "SE-AB",
+      "nearestCity": "Stockholm",
+      "nearestCityCoordinates": {
+        "longitude": 18.0686,
+        "latitude": 59.3293
+      }
+    },
+    {
+      "sourceId": "bern",
+      "canonicalPlaceId": "bern-ch",
+      "name": "Bern",
+      "country": "Switzerland",
+      "countryCode": "CH",
+      "admin1": "Bern",
+      "admin1Code": "CH-BE",
+      "nearestCity": "Bern",
+      "nearestCityCoordinates": {
+        "longitude": 7.4474,
+        "latitude": 46.948
+      }
+    },
+    {
+      "sourceId": "damascus",
+      "canonicalPlaceId": "damascus-sy",
+      "name": "Damascus",
+      "country": "Syria",
+      "countryCode": "SY",
+      "admin1": "Damascus",
+      "admin1Code": "SY-DI",
+      "nearestCity": "Damascus",
+      "nearestCityCoordinates": {
+        "longitude": 36.2023,
+        "latitude": 33.5138
+      }
+    },
+    {
+      "sourceId": "dushanbe",
+      "canonicalPlaceId": "dushanbe-tj",
+      "name": "Dushanbe",
+      "country": "Tajikistan",
+      "countryCode": "TJ",
+      "admin1": "Dushanbe",
+      "admin1Code": "TJ-DU",
+      "nearestCity": "Dushanbe",
+      "nearestCityCoordinates": {
+        "longitude": 68.787,
+        "latitude": 38.5598
+      }
+    },
+    {
+      "sourceId": "dodoma",
+      "canonicalPlaceId": "dodoma-tz",
+      "name": "Dodoma",
+      "country": "Tanzania",
+      "countryCode": "TZ",
+      "admin1": "Dodoma",
+      "admin1Code": "TZ-03",
+      "nearestCity": "Dodoma",
+      "nearestCityCoordinates": {
+        "longitude": 35.7381,
+        "latitude": -6.1731
+      }
+    },
+    {
+      "sourceId": "bangkok",
+      "canonicalPlaceId": "bangkok-th",
+      "name": "Bangkok",
+      "country": "Thailand",
+      "countryCode": "TH",
+      "admin1": "Bangkok",
+      "admin1Code": "TH-10",
+      "nearestCity": "Bangkok",
+      "nearestCityCoordinates": {
+        "longitude": 100.5018,
+        "latitude": 13.7563
+      }
+    },
+    {
+      "sourceId": "lome",
+      "canonicalPlaceId": "lome-tg",
+      "name": "Lomé",
+      "country": "Togo",
+      "countryCode": "TG",
+      "admin1": "Maritime",
+      "admin1Code": "TG-M",
+      "nearestCity": "Lomé",
+      "nearestCityCoordinates": {
+        "longitude": 1.2255,
+        "latitude": 6.1378
+      }
+    },
+    {
+      "sourceId": "nukualofa",
+      "canonicalPlaceId": "nukualofa-to",
+      "name": "Nuku'alofa",
+      "country": "Tonga",
+      "countryCode": "TO",
+      "admin1": "Tongatapu",
+      "admin1Code": "TO-04",
+      "nearestCity": "Nuku'alofa",
+      "nearestCityCoordinates": {
+        "longitude": -175.2043,
+        "latitude": -21.1394
+      }
+    },
+    {
+      "sourceId": "portofspain",
+      "canonicalPlaceId": "portofspain-tt",
+      "name": "Port of Spain",
+      "country": "Trinidad and Tobago",
+      "countryCode": "TT",
+      "admin1": "Port of Spain",
+      "admin1Code": "TT-POS",
+      "nearestCity": "Port of Spain",
+      "nearestCityCoordinates": {
+        "longitude": -61.5067,
+        "latitude": 10.6666
+      }
+    },
+    {
+      "sourceId": "tunis",
+      "canonicalPlaceId": "tunis-tn",
+      "name": "Tunis",
+      "country": "Tunisia",
+      "countryCode": "TN",
+      "admin1": "Tunis",
+      "admin1Code": "TN-11",
+      "nearestCity": "Tunis",
+      "nearestCityCoordinates": {
+        "longitude": 10.1815,
+        "latitude": 36.8065
+      }
+    },
+    {
+      "sourceId": "ankara",
+      "canonicalPlaceId": "ankara-tr",
+      "name": "Ankara",
+      "country": "Turkey",
+      "countryCode": "TR",
+      "admin1": "Ankara",
+      "admin1Code": "TR-06",
+      "nearestCity": "Ankara",
+      "nearestCityCoordinates": {
+        "longitude": 32.8597,
+        "latitude": 39.9334
+      }
+    },
+    {
+      "sourceId": "ashgabat",
+      "canonicalPlaceId": "ashgabat-tm",
+      "name": "Ashgabat",
+      "country": "Turkmenistan",
+      "countryCode": "TM",
+      "admin1": "Ashgabat",
+      "admin1Code": "TM-S",
+      "nearestCity": "Ashgabat",
+      "nearestCityCoordinates": {
+        "longitude": 58.3833,
+        "latitude": 37.9601
+      }
+    },
+    {
+      "sourceId": "funafuti",
+      "canonicalPlaceId": "funafuti-tv",
+      "name": "Funafuti",
+      "country": "Tuvalu",
+      "countryCode": "TV",
+      "admin1": "Funafuti",
+      "admin1Code": "TV-FUN",
+      "nearestCity": "Funafuti",
+      "nearestCityCoordinates": {
+        "longitude": 179.1962,
+        "latitude": -8.5211
+      }
+    },
+    {
+      "sourceId": "kampala",
+      "canonicalPlaceId": "kampala-ug",
+      "name": "Kampala",
+      "country": "Uganda",
+      "countryCode": "UG",
+      "admin1": "CentralK",
+      "admin1Code": "UG-C",
+      "nearestCity": "Kampala",
+      "nearestCityCoordinates": {
+        "longitude": 32.5825,
+        "latitude": 0.3476
+      }
+    },
+    {
+      "sourceId": "kyiv",
+      "canonicalPlaceId": "kyiv-ua",
+      "name": "Kyiv",
+      "country": "Ukraine",
+      "countryCode": "UA",
+      "admin1": "Kyiv City",
+      "admin1Code": "UA-30",
+      "nearestCity": "Kyiv",
+      "nearestCityCoordinates": {
+        "longitude": 30.5234,
+        "latitude": 50.4501
+      }
+    },
+    {
+      "sourceId": "abudhabi",
+      "canonicalPlaceId": "abudhabi-ae",
+      "name": "Abu Dhabi",
+      "country": "United Arab Emirates",
+      "countryCode": "AE",
+      "admin1": "Abu Dhabi",
+      "admin1Code": "AE-AZ",
+      "nearestCity": "Abu Dhabi",
+      "nearestCityCoordinates": {
+        "longitude": 54.3773,
+        "latitude": 24.4539
+      }
+    },
+    {
+      "sourceId": "washington",
+      "canonicalPlaceId": "washington-us",
+      "name": "Washington, D.C.",
+      "country": "United States",
+      "countryCode": "US",
+      "admin1": "District of Columbia",
+      "admin1Code": "US-DC",
+      "nearestCity": "Washington, D.C.",
+      "nearestCityCoordinates": {
+        "longitude": -77.0369,
+        "latitude": 38.9072
+      }
+    },
+    {
+      "sourceId": "montevideo",
+      "canonicalPlaceId": "montevideo-uy",
+      "name": "Montevideo",
+      "country": "Uruguay",
+      "countryCode": "UY",
+      "admin1": "Montevideo",
+      "admin1Code": "UY-MO",
+      "nearestCity": "Montevideo",
+      "nearestCityCoordinates": {
+        "longitude": -56.1645,
+        "latitude": -34.9011
+      }
+    },
+    {
+      "sourceId": "tashkent",
+      "canonicalPlaceId": "tashkent-uz",
+      "name": "Tashkent",
+      "country": "Uzbekistan",
+      "countryCode": "UZ",
+      "admin1": "Tashkent",
+      "admin1Code": "UZ-TK",
+      "nearestCity": "Tashkent",
+      "nearestCityCoordinates": {
+        "longitude": 69.2401,
+        "latitude": 41.2995
+      }
+    },
+    {
+      "sourceId": "portvila",
+      "canonicalPlaceId": "portvila-vu",
+      "name": "Port Vila",
+      "country": "Vanuatu",
+      "countryCode": "VU",
+      "admin1": "Shefa",
+      "admin1Code": "VU-SEE",
+      "nearestCity": "Port Vila",
+      "nearestCityCoordinates": {
+        "longitude": 168.327,
+        "latitude": -17.7334
+      }
+    },
+    {
+      "sourceId": "vatican",
+      "canonicalPlaceId": "vatican-va",
+      "name": "Vatican City",
+      "country": "Vatican City",
+      "countryCode": "VA",
+      "admin1": "Vatican City",
+      "admin1Code": "VA-VA",
+      "nearestCity": "Vatican City",
+      "nearestCityCoordinates": {
+        "longitude": 12.4534,
+        "latitude": 41.9029
+      }
+    },
+    {
+      "sourceId": "caracas",
+      "canonicalPlaceId": "caracas-ve",
+      "name": "Caracas",
+      "country": "Venezuela",
+      "countryCode": "VE",
+      "admin1": "Capital District",
+      "admin1Code": "VE-A",
+      "nearestCity": "Caracas",
+      "nearestCityCoordinates": {
+        "longitude": -66.9036,
+        "latitude": 10.4806
+      }
+    },
+    {
+      "sourceId": "hanoi",
+      "canonicalPlaceId": "hanoi-vn",
+      "name": "Hanoi",
+      "country": "Vietnam",
+      "countryCode": "VN",
+      "admin1": "Hanoi",
+      "admin1Code": "VN-HN",
+      "nearestCity": "Hanoi",
+      "nearestCityCoordinates": {
+        "longitude": 105.8342,
+        "latitude": 21.0285
+      }
+    },
+    {
+      "sourceId": "sanaa",
+      "canonicalPlaceId": "sanaa-ye",
+      "name": "Sana'a",
+      "country": "Yemen",
+      "countryCode": "YE",
+      "admin1": "Sana'a",
+      "admin1Code": "YE-SA",
+      "nearestCity": "Sana'a",
+      "nearestCityCoordinates": {
+        "longitude": 44.2067,
+        "latitude": 15.3694
+      }
+    },
+    {
+      "sourceId": "lusaka",
+      "canonicalPlaceId": "lusaka-zm",
+      "name": "Lusaka",
+      "country": "Zambia",
+      "countryCode": "ZM",
+      "admin1": "Lusaka",
+      "admin1Code": "ZM-09",
+      "nearestCity": "Lusaka",
+      "nearestCityCoordinates": {
+        "longitude": 28.3228,
+        "latitude": -15.3875
+      }
+    },
+    {
+      "sourceId": "harare",
+      "canonicalPlaceId": "harare-zw",
+      "name": "Harare",
+      "country": "Zimbabwe",
+      "countryCode": "ZW",
+      "admin1": "Harare",
+      "admin1Code": "ZW-HA",
+      "nearestCity": "Harare",
+      "nearestCityCoordinates": {
+        "longitude": 31.0335,
+        "latitude": -17.8252
       }
     },
     {
