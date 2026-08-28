@@ -22,25 +22,25 @@ export function AccountAuthControl() {
   }
 
   if (auth.status === "CHECKING") {
-    return <span role="status" aria-label={t("checking")} className="grid size-11 place-items-center rounded-full border-2 border-[#9ce0d4] bg-[#0b5264]"><LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /></span>;
+    return <span role="status" aria-label={t("checking")} className="grid size-10 place-items-center border-[1.5px] border-[var(--w-ink)] bg-[var(--w-fog)] text-[var(--w-ink)] wanderly-r-sm sm:size-11"><LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /></span>;
   }
 
   if (auth.status === "LOCAL_DEV") {
-    return <span role="status" aria-label={t("localDevelopment")} title={t("localDevelopment")} className="grid size-11 place-items-center rounded-full border-2 border-amber-300 bg-amber-100 text-amber-900"><FlaskConical aria-hidden="true" className="size-5" /></span>;
+    return <span role="status" aria-label={t("localDevelopment")} title={t("localDevelopment")} className="grid size-10 place-items-center border-[1.5px] border-[var(--w-ink)] bg-[var(--w-highlight)] text-[var(--w-ink)] wanderly-r-sm sm:size-11"><FlaskConical aria-hidden="true" className="size-5" /></span>;
   }
 
   if (auth.status === "LOCAL_DEV_INVALID") {
-    return <span role="status" aria-label={t("localDevelopmentInvalid")} title={t("localDevelopmentInvalid")} className="grid size-11 place-items-center rounded-full border-2 border-destructive/40 bg-destructive/10 text-destructive"><TriangleAlert aria-hidden="true" className="size-5" /></span>;
+    return <span role="status" aria-label={t("localDevelopmentInvalid")} title={t("localDevelopmentInvalid")} className="grid size-10 place-items-center border-[1.5px] border-destructive bg-destructive/10 text-destructive wanderly-r-sm sm:size-11"><TriangleAlert aria-hidden="true" className="size-5" /></span>;
   }
 
   if (auth.status === "SIGNED_IN") {
     return (
       <div className="relative">
-        <button type="button" onClick={() => setOpen((current) => !current)} title={t("signedInAs", { username: auth.user?.username ?? t("traveler") })} aria-label={t("accountMenu")} className="grid size-11 place-items-center rounded-full border-2 border-[#9ce0d4] bg-[#0b5264] text-sidebar-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar-ring/50">
+        <button type="button" onClick={() => setOpen((current) => !current)} title={t("signedInAs", { username: auth.user?.username ?? t("traveler") })} aria-label={t("accountMenu")} className="grid size-10 place-items-center border-[1.5px] border-[var(--w-ink)] bg-[var(--w-fog)] text-[var(--w-ink)] wanderly-r-sm wanderly-press hover:bg-[var(--w-highlight)] sm:size-11">
           <UserRound aria-hidden="true" className="size-5" />
         </button>
         {open ? (
-          <div className="absolute right-0 top-12 z-[120] w-64 rounded-2xl bg-white p-4 text-foreground shadow-xl landscape:bottom-0 landscape:left-14 landscape:right-auto landscape:top-auto">
+          <div className="absolute right-0 top-12 z-[120] w-64 bg-card p-4 text-foreground wanderly-edge wanderly-r-lg wanderly-shadow sm:bottom-0 sm:left-14 sm:right-auto sm:top-auto">
             <p className="truncate text-sm font-bold">{auth.user?.username}</p>
             <button type="button" disabled={auth.busy} onClick={() => void auth.signOut().then((signedOut) => { if (signedOut) setOpen(false); })} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sidebar px-3 text-sm font-bold text-white disabled:opacity-50">
               <LogOut aria-hidden="true" className="size-4" />{t("signOut")}

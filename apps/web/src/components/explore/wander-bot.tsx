@@ -20,6 +20,10 @@ const SETTLE_MS = 3000;
 /** How close the feet must land to the composer's top edge to count as sitting. */
 const PERCH_TOLERANCE = 26;
 const EDGE_MARGIN = 16;
+/** Clearance kept between the bot's body and any panel it is avoiding. */
+const AVOID_GAP = 2;
+/** Bounded so a crowded corner can never spin the resolver. */
+const AVOID_PASSES = 8;
 const LAUNCH_MS = 720;
 const LAUNCH_ARC = 140;
 
@@ -61,8 +65,69 @@ function clampToBounds(point: Point, width: number, height: number, bounds: Boun
   };
 }
 
+function intersects(a: Bounds, b: Bounds): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+/**
+ * Nudges the bot until its *body* clears every panel on the map.
+ *
+ * Only the body counts — the legs are allowed to dangle over a panel, which is
+ * what makes it read as sitting on the composer rather than hovering above it.
+ *
+ * Upward is tried first, so a bot dropped on a box ends up standing on top of
+ * it. Only when there is no room above does it look for the nearest escape in
+ * another direction.
+ */
+export function resolveAgainstObstacles(
+  desired: Point,
+  body: { dx: number; dy: number; width: number; height: number },
+  obstacles: Bounds[],
+  area: Bounds,
+): Point {
+  let point = clampToBounds(desired, body.width + body.dx, body.height + body.dy, area);
+
+  for (let pass = 0; pass < AVOID_PASSES; pass += 1) {
+    const rect: Bounds = {
+      left: point.x + body.dx,
+      top: point.y + body.dy,
+      right: point.x + body.dx + body.width,
+      bottom: point.y + body.dy + body.height,
+    };
+    const hit = obstacles.find((obstacle) => intersects(rect, obstacle));
+    if (!hit) return point;
+
+    const above = { x: point.x, y: hit.top - AVOID_GAP - body.height - body.dy };
+    if (above.y >= area.top + EDGE_MARGIN) {
+      point = above;
+      continue;
+    }
+
+    // No headroom: take whichever remaining side needs the least travel.
+    const candidates: Point[] = [
+      { x: point.x, y: hit.bottom + AVOID_GAP - body.dy },
+      { x: hit.left - AVOID_GAP - body.width - body.dx, y: point.y },
+      { x: hit.right + AVOID_GAP - body.dx, y: point.y },
+    ].filter((candidate) => (
+      candidate.x + body.dx >= area.left + EDGE_MARGIN
+      && candidate.x + body.dx + body.width <= area.right - EDGE_MARGIN
+      && candidate.y + body.dy >= area.top + EDGE_MARGIN
+      && candidate.y + body.dy + body.height <= area.bottom - EDGE_MARGIN
+    ));
+
+    if (candidates.length === 0) return point;
+    candidates.sort((a, b) => (
+      Math.hypot(a.x - point.x, a.y - point.y) - Math.hypot(b.x - point.x, b.y - point.y)
+    ));
+    point = candidates[0];
+  }
+
+  return point;
+}
+
 export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstructed = false, speechPlace = null }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const positionRef = useRef<Point | null>(null);
   const draggingRef = useRef(false);
   const launchFrameRef = useRef(0);
@@ -89,6 +154,41 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     return box.width > 0 ? box : viewportBounds();
   }, [boundsSelector]);
 
+  /** Body box relative to the root, plus its size. Legs are excluded. */
+  const bodyMetrics = useCallback(() => {
+    const root = rootRef.current;
+    const body = bodyRef.current;
+    if (!root || !body) return null;
+    const rootBox = root.getBoundingClientRect();
+    const bodyBox = body.getBoundingClientRect();
+    if (bodyBox.width === 0) return null;
+    return {
+      dx: bodyBox.left - rootBox.left,
+      dy: bodyBox.top - rootBox.top,
+      width: bodyBox.width,
+      height: bodyBox.height,
+    };
+  }, []);
+
+  const obstacleRects = useCallback((): Bounds[] => {
+    const root = rootRef.current;
+    return [...document.querySelectorAll("[data-wanderly-avoid]")]
+      .filter((element) => !root?.contains(element))
+      .map((element) => element.getBoundingClientRect())
+      .filter((box) => box.width > 0 && box.height > 0);
+  }, []);
+
+  /** Clamp to the play area, then lift the body clear of every panel. */
+  const settlePosition = useCallback((desired: Point) => {
+    const metrics = bodyMetrics();
+    const area = bounds();
+    if (!metrics) {
+      applyPosition(clampToBounds(desired, BODY_WIDTH, BODY_HEIGHT, area));
+      return;
+    }
+    applyPosition(resolveAgainstObstacles(desired, metrics, obstacleRects(), area));
+  }, [applyPosition, bodyMetrics, bounds, obstacleRects]);
+
   const perchRect = useCallback(() => {
     if (!perchSelector) return null;
     const element = document.querySelector(perchSelector);
@@ -103,11 +203,16 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       setPerched(false);
       return;
     }
+    const metrics = bodyMetrics();
     const box = node.getBoundingClientRect();
-    const overlapsHorizontally = box.right > perch.left && box.left < perch.right;
-    const feetNearTop = Math.abs(box.bottom - perch.top) < PERCH_TOLERANCE;
-    setPerched(overlapsHorizontally && feetNearTop);
-  }, [perchRect]);
+    const bodyBottom = metrics ? box.top + metrics.dy + metrics.height : box.bottom;
+    const bodyLeft = metrics ? box.left + metrics.dx : box.left;
+    const bodyRight = metrics ? bodyLeft + metrics.width : box.right;
+    const overlapsHorizontally = bodyRight > perch.left && bodyLeft < perch.right;
+    // Sitting means the body's bottom edge rests just above the bar's top edge.
+    const seatedOnTop = Math.abs(bodyBottom - perch.top) < PERCH_TOLERANCE;
+    setPerched(overlapsHorizontally && seatedOnTop);
+  }, [bodyMetrics, perchRect]);
 
   // Opening position: sitting at the composer's top-left corner, mirroring it
   // rather than landing on the status chips that sit directly above it.
@@ -118,15 +223,14 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     const place = () => {
       const box = node.getBoundingClientRect();
       const height = box.height || BODY_HEIGHT + LEG_LENGTH;
-      const width = box.width || BODY_WIDTH;
       const perch = perchRect();
       // Seated on the bar: the body rests on its top edge and the legs dangle
       // over the front, rather than the whole bot floating above it.
       const area = bounds();
       const target = perch
-        ? { x: perch.left, y: perch.top - BODY_HEIGHT }
+        ? { x: perch.left, y: perch.top - AVOID_GAP - BODY_HEIGHT }
         : { x: area.left + EDGE_MARGIN, y: area.bottom - height - 140 };
-      applyPosition(clampToBounds(target, width, height, area));
+      settlePosition(target);
       refreshPerched();
     };
 
@@ -135,7 +239,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     place();
     const retry = window.requestAnimationFrame(place);
     return () => window.cancelAnimationFrame(retry);
-  }, [applyPosition, bounds, perchRect, refreshPerched]);
+  }, [bounds, perchRect, refreshPerched, settlePosition]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSettled(true), SETTLE_MS);
@@ -206,12 +310,9 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
 
     const onMove = (moveEvent: PointerEvent) => {
       if (!draggingRef.current) return;
-      applyPosition(clampToBounds(
-        { x: moveEvent.clientX - grabOffset.x, y: moveEvent.clientY - grabOffset.y },
-        box.width,
-        box.height,
-        bounds(),
-      ));
+      // Resolved live, so dragging onto a panel slides the bot above it
+      // instead of letting it sink underneath.
+      settlePosition({ x: moveEvent.clientX - grabOffset.x, y: moveEvent.clientY - grabOffset.y });
     };
 
     const onUp = () => {
@@ -227,7 +328,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     node.addEventListener("pointermove", onMove);
     node.addEventListener("pointerup", onUp);
     node.addEventListener("pointercancel", onUp);
-  }, [applyPosition, bounds, refreshPerched]);
+  }, [refreshPerched, settlePosition]);
 
   /*
    * When the chat panel expands, a bot standing inside the region it covers is
@@ -274,7 +375,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
         return;
       }
       launchFrameRef.current = 0;
-      applyPosition(to);
+      settlePosition(to);
       refreshPerched();
     };
 
@@ -283,7 +384,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       if (launchFrameRef.current) window.cancelAnimationFrame(launchFrameRef.current);
       launchFrameRef.current = 0;
     };
-  }, [applyPosition, bounds, obstructed, refreshPerched]);
+  }, [applyPosition, bounds, obstructed, refreshPerched, settlePosition]);
 
   // Keep the bot on screen, and re-check its perch, when the window resizes.
   useEffect(() => {
@@ -291,13 +392,12 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       const node = rootRef.current;
       const point = positionRef.current;
       if (!node || !point) return;
-      const box = node.getBoundingClientRect();
-      applyPosition(clampToBounds(point, box.width, box.height, bounds()));
+      settlePosition(point);
       refreshPerched();
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [applyPosition, bounds, refreshPerched]);
+  }, [refreshPerched, settlePosition]);
 
   return (
     <div
@@ -321,7 +421,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
         </div>
       ) : null}
 
-      <div className="wanderly-bot-body">
+      <div ref={bodyRef} className="wanderly-bot-body">
         <span className="wanderly-bot-eye" />
         <span className="wanderly-bot-eye" />
       </div>
