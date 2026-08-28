@@ -3,7 +3,8 @@
 Base URL: `http://localhost:3000/api/v1`
 
 **Authentication**: All endpoints except `/health`, `/metrics`, `/docs`,
-`POST /api/v1/bookings/callback`, the anonymous location-reference endpoint,
+`POST /api/v1/bookings/callback`, the anonymous Explore location-reference and
+location-introduction endpoints,
 and `/auth/*` account bootstrap/recovery routes require an access token. The API verifies
 the JWT and derives the database identity from its `sub`; clients never submit a
 user ID to choose an identity. The callback uses the independent sandbox HMAC
@@ -70,8 +71,8 @@ No auth required.
 
 ### `POST /explore/location-reference`
 
-Resolve one user-explicit map click using versioned offline data. This endpoint requires
-the normal Cognito access token. It never stores the coordinate and the result is a
+Resolve one user-explicit map click using versioned offline data. This endpoint is anonymous,
+rate-limited, and never stores the coordinate; the result is a
 non-authoritative map reference, not an address, travel candidate, provider offer or
 booking/visa conclusion.
 
@@ -154,6 +155,28 @@ For ocean or unmatched data, the response has `outcome: "NO_REFERENCE"`. A missi
 or unreadable local dataset returns `503` and never guesses a result.
 `nearestCityCoordinates` is the indexed GeoNames city center used for map pin
 normalization; it is `null` whenever `nearestCity` is `null`.
+
+### `POST /explore/location-introductions`
+
+> Planned contract — implementation details and acceptance criteria are in
+> [location-introduction-cache-implementation.md](../docs/location-introduction-cache-implementation.md).
+
+Returns a short, non-personalized introduction for a user-explicit selection of a
+server-recognized stable map `sourceId`. This anonymous endpoint is independently
+rate-limited. It accepts neither coordinates nor user, Trip or conversation data.
+
+**Body**:
+```json
+{ "sourceId": "tokyo", "locale": "zh" }
+```
+
+**Responses**:
+
+- `200 OK`: `{ "status": "READY", "content": "...", "cacheStatus": "HIT" | "MISS", "expiresAt": "ISO-8601" }`
+- `202 Accepted`: `{ "status": "GENERATING", "retryAfterMs": 500 }`
+- `400 LOCATION_INTRODUCTION_UNSUPPORTED_PLACE`: source ID is not in the active server catalog.
+- `429 LOCATION_INTRODUCTION_RATE_LIMITED`: per-IP anonymous limit exceeded.
+- `503 LOCATION_INTRODUCTION_UNAVAILABLE`: model, policy, schema or cache generation failed; no content is cached.
 
 ---
 

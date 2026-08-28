@@ -20,6 +20,8 @@ import type {
   TripActivationResponse,
   UpdateTripTitleInput,
   UpdateTripTitleResponse,
+  UpdateDraftTripBriefInput,
+  UpdateDraftTripBriefResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -39,4 +41,5 @@ export interface TravelApi {
   startExploration(input: ExplorationStartRequest): Promise<ExplorationStartResponse>;
   activateTrip(tripId: string, input: TripActivationRequest): Promise<TripActivationResponse>;
   updateTripTitle(tripId: string, input: UpdateTripTitleInput): Promise<UpdateTripTitleResponse>;
+  updateDraftTripBrief?(tripId: string, input: UpdateDraftTripBriefInput): Promise<UpdateDraftTripBriefResponse>;
 }

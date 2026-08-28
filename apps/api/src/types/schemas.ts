@@ -396,6 +396,13 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     resultPlanId: uuidSchema.optional(),
   }).strict(),
   streamBaseSchema.extend({
+    event: z.literal("trip.brief_proposed"),
+    proposal: z.object({
+      destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+      travelDays: z.number().int().min(1).max(365).optional(),
+    }).strict(),
+  }).strict(),
+  streamBaseSchema.extend({
     event: z.literal("turn.cancelled"),
   }).strict(),
   streamBaseSchema.extend({
@@ -513,6 +520,19 @@ export const tripActivationRequestSchema = z.object({
   travelDateEnd: dateStr.nullable().optional(),
   titleLocale: z.enum(["en", "zh"]),
 }).strict();
+
+export const updateDraftTripBriefRequestSchema = z.object({
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+  travelDays: z.number().int().min(1).max(365).optional(),
+  titleLocale: z.enum(["en", "zh"]),
+}).strict().refine((value) => value.destinationCandidates !== undefined || value.travelDays !== undefined);
+
+export const updateDraftTripBriefResponseSchema = z.object({
+  trip: z.object({
+    id: uuidSchema, name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"),
+    destinationCandidates: z.array(z.string()), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime(),
+  }).strict(),
+});
 
 export const updateTripTitleRequestSchema = z.object({
   name: z.string().trim().min(1).max(256),

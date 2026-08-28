@@ -30,6 +30,8 @@
 7. Traveler can create, list, reopen and delete only their own private conversation threads, and every thread is bound to exactly one existing trip. `conversationId` is owned by exactly one `ownerUserId`, persists across sessions, and is not visible to fellow trip members or to the Shared Agent by virtue of the trip binding. Joining a trip provisions an empty default private thread; the member may create further private threads in that same trip. A Personal Agent turn receives only the server-built recent raw-message window from that same owner thread, bounded by fixed turn/character limits and a task acceptance sequence boundary; it never receives another thread, shared data, or browser-supplied history.
 8. Deleting a thread removes its message body and does not silently change separately confirmed Profile or trip-override facts; audit retains only `conversationId`, `ownerUserId`, `tripId?`, action, timestamp, and never the message body.
 9. A submitted Personal Agent question is persisted with a durable task before streaming begins. Browser close, refresh, network loss and SSE disconnect do not cancel it; only an explicit Stop requests cancellation. The task is lease-recoverable and an ASSISTANT message is persisted only after final safety validation succeeds.
+10. Repeated, non-sensitive behavior may create a user-visible, expiring Profile suggestion, but only a user confirmation may create or replace a stable preference fact. Suggestions never enter a snapshot or shared view.
+11. Nationality, travel documents, date of birth, health and accessibility data are form-only: no conversation or behavior extraction path may create a proposal for them.
 
 ### H1a — Start and resume an exploration-scoped private Trip
 
@@ -54,6 +56,7 @@
 3. Shared trip shows only approved fields with member and consent source; private chat/history is never displayed.
 4. Revoking a shared field immediately expires affected plan and visa outputs.
 5. A member without a Profile can join and enter only trip-specific data.
+6. Shared Agent receives current-Trip memory only through the consent-derived snapshot projection; it cannot query a member Profile, preference fact, private thread or a prior Trip's memory directly. A projected memory change invalidates the active plan and confirmations.
 
 ### H3 — Orchestrate a personalized multi-service trip
 
@@ -137,10 +140,23 @@
 
 **Acceptance criteria:**
 
-1. An unauthenticated explicit-click request returns only `REFERENCE`, `NO_REFERENCE`, `429` rate-limit, or controlled unavailable state from versioned local data; it remains the only anonymous API endpoint.
+1. An unauthenticated explicit-click request returns only `REFERENCE`, `NO_REFERENCE`, `429` rate-limit, or controlled unavailable state from versioned local data; it is one of the two anonymous Explore APIs.
 2. The result includes source, dataset version and checked time, and is labelled as a map reference rather than an address or candidate.
 3. Coordinates, place names and raw response bodies are absent from logs, trace attributes, metrics labels, audit and database state.
 4. Map movement, zoom, hover and prefetch never invoke the resolver; a failed or distant city match is not guessed.
+
+### S4 — Show a cached introduction for a stable map location
+
+**Story:** As a traveler, I want a short destination introduction in the map drawer without repeatedly waiting for the model, so that exploring a known place remains fast without turning it into a private conversation or travel fact.
+
+**Acceptance criteria:**
+
+1. Only a server-versioned, stable `sourceId` and `en`/`zh` locale can request an introduction. Arbitrary coordinates, names, map labels and `INSPIRATION` pins are rejected or skipped without an LLM call.
+2. The first valid request generates one non-personalized introduction and persists a 7-day PostgreSQL cache entry. A valid subsequent request for the same place, locale and content version returns the entry without calling the model.
+3. Concurrent misses have one generation lease. Non-owners receive `202 GENERATING` and poll; they never fan out duplicate model calls. Expired entries regenerate; model/policy/schema failures do not cache content.
+4. The map drawer loads the introduction automatically without opening chat or creating a Trip, thread, message, Agent task, consent, snapshot or audit event containing user data.
+5. The endpoint is anonymous and independently rate-limited. Logs, metrics labels, trace attributes and audit summaries never contain source ID, place name, coordinates, cache key, prompt or generated content.
+6. Redis is not introduced. PostgreSQL remains the shared cache and lease authority; TanStack Query is browser-only caching.
 
 ### P3 — Observe one owner request across API → DB → Worker → SSE
 

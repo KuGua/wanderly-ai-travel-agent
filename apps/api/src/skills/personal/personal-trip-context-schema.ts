@@ -13,7 +13,7 @@ import { z } from "zod";
 export const personalTripContextSchema = z.object({
   tripId: z.string().uuid(),
   tripName: z.string().min(1).max(256),
-  tripStatus: z.enum(["PLANNING", "STALE", "CONFIRMED", "BOOKED", "CANCELLED"]),
+  tripStatus: z.enum(["DRAFT", "PLANNING", "STALE", "CONFIRMED", "BOOKED", "CANCELLED"]),
   travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   destinationCandidates: z.array(z.string().min(1).max(128)).max(20),

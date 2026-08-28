@@ -4,6 +4,7 @@ export type TripTitleInput = {
   destinationCandidates: string[];
   travelDateStart?: string | null;
   travelDateEnd?: string | null;
+  travelDays?: number | null;
   locale: TripTitleLocale;
 };
 
@@ -16,7 +17,7 @@ export function buildTripTitle(input: TripTitleInput): string {
     .map((destination) => destination.trim())
     .filter(Boolean)
     .join(" · ");
-  const days = tripDays(input.travelDateStart, input.travelDateEnd);
+  const days = input.travelDays ?? tripDays(input.travelDateStart, input.travelDateEnd);
   const isChinese = input.locale === "zh";
   const planner = isChinese ? "行程规划" : "Trip Planner";
   const daySuffix = isChinese ? "天" : " Days";

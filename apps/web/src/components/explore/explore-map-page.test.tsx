@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentRun, ConversationTurnAcceptedResponse, OwnerConversationResponse, Thread } from "@/lib/api/contracts";
 import type { TravelApi } from "@/lib/api";
+import { AuthContext } from "@/lib/auth/auth-provider";
 import { configureMapAttribution, ExploreMapPage, toConversationPlace } from "./explore-map-page";
 import { renderWithIntl } from "@/test/render";
 
@@ -224,6 +225,25 @@ describe("ExploreMapPage private inspirations", () => {
     mockGlobeStyleFetch();
   });
 
+  it("hides the map login action while the user is signed in", () => {
+    renderWithIntl(
+      <AuthContext.Provider value={{
+        status: "SIGNED_IN",
+        user: { username: "alice" },
+        error: null,
+        busy: false,
+        sessionRevision: 1,
+        getAccessToken: vi.fn().mockResolvedValue("access-token"),
+        signIn: vi.fn().mockResolvedValue(true),
+        signOut: vi.fn().mockResolvedValue(true),
+      }}>
+        <ExploreMapPage />
+      </AuthContext.Provider>,
+    );
+
+    expect(screen.queryByRole("link", { name: "Sign in or register" })).not.toBeInTheDocument();
+  });
+
   it("keeps multiple pins and supports individual and batch deletion", async () => {
     renderWithIntl(<ExploreMapPage />);
 
@@ -243,7 +263,7 @@ describe("ExploreMapPage private inspirations", () => {
     expect(screen.queryByRole("list", { name: "Private inspiration list" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
-    expect(screen.getByRole("button", { name: "Current area" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Within 50 km" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "All pins (3)" }));
     const list = screen.getByRole("list", { name: "Private inspiration list" });
     expect(within(list).getByText("Pinned place 1")).toBeInTheDocument();

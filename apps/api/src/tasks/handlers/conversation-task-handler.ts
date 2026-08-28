@@ -8,6 +8,7 @@ import {
   containsUnsupportedOperationalClaim,
 } from "../../policy/conversation-safety.js";
 import { buildConversationContext } from "../../services/conversation-context-service.js";
+import { proposeTripBriefFromTurn } from "../../services/trip-brief-proposal-service.js";
 import {
   executeTravelConversation,
   travelConversationSkill,
@@ -90,7 +91,9 @@ export async function handleConversationTask(params: {
     throw new Error("Final conversation safety validation failed");
   }
   if (gate.rawText === parsed.content) await gate.flush();
-  return parsed;
+  if (parsed.responseMode !== "MODEL" || tripContext.tripStatus !== "DRAFT") return parsed;
+  const tripBriefProposal = proposeTripBriefFromTurn(turnInput.question, turnInput.place);
+  return travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
 }
 
 /**
@@ -118,7 +121,7 @@ async function loadPersonalTripContext(tripId: string): Promise<PersonalTripCont
   // personal-agent purposes; anything other than PLANNING/STALE is
   // surfaced as CONFIRMED so the agent has a stable, non-leaky label.
   const tripStatus: PersonalTripContext["tripStatus"] =
-    trip.status === "PLANNING" || trip.status === "STALE"
+    trip.status === "DRAFT" || trip.status === "PLANNING" || trip.status === "STALE"
       ? trip.status
       : "CONFIRMED";
   return personalTripContextSchema.parse({

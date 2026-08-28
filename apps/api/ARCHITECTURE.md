@@ -43,6 +43,9 @@ Application-layer interface for AI model interactions:
   answer with explicit `MODEL` provenance
 - `streamConversationReply()` — OpenAI-compatible async chunks for the Worker;
   chunks remain untrusted until the streaming safety gate approves them
+- `generateLocationIntroduction()` — generates a short public location introduction
+  from a server-catalogued place and locale only; it never receives user, Trip or
+  conversation context and is not an Agent task
 
 **Constraints**: Model cannot access database or execute irreversible operations.
 **Current**: `gateway-factory.ts` requires a configured real OpenAI, Gemini, or
@@ -102,6 +105,9 @@ Core business logic — NOT in LLM/Agent:
 - **TaskRepository / AgentTaskWorker** — short acceptance transaction, atomic
   `SKIP LOCKED` claims, renewable leases, recovery/retry, explicit cancellation,
   streaming policy enforcement, and conditional final persistence
+- **LocationIntroductionCatalog / LocationIntroductionCacheService** — validate
+  versioned public `sourceId`s, acquire PostgreSQL generation leases, and return
+  7-day shared content without creating user business state
 
 ### 4. Database Layer (`src/db/`)
 
@@ -110,6 +116,11 @@ Core business logic — NOT in LLM/Agent:
 - **Seed** (`seed.ts`) — Demo user/profile creation
 
 ## Domain Model
+
+`location_introduction_cache` is independent of `users`, Trips, chat, consent and
+plans. It contains only public canonical place identity, locale, content version,
+generated text, TTL and generation lease metadata. It is not an authorization or
+business-state table.
 
 ```
 users ──1:1── user_profiles (private)

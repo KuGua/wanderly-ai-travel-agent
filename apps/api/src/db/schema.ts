@@ -32,7 +32,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "CHAT_THREAD_CREATE", "CHAT_THREAD_DELETE", "CHAT_MESSAGE_APPEND",
   "TRIP_INVITATION_CREATE", "TRIP_INVITATION_ACCEPT",
   "TRIP_INVITATION_REVOKE", "TRIP_DEFAULT_THREAD_PROVISION",
-  "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE",
+  "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE", "TRIP_DRAFT_BRIEF_UPDATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
   "FLIGHT_SEARCH_REQUESTED", "FLIGHT_SEARCH_COMPLETED", "FLIGHT_SEARCH_UNAVAILABLE",
 ]);
@@ -104,6 +104,7 @@ export const sharedTrips = pgTable("shared_trips", {
   destinationCandidates: jsonb("destination_candidates").$type<string[]>().notNull(), // ["Tokyo","Bangkok","Seoul"]
   travelDateStart: varchar("travel_date_start", { length: 10 }),
   travelDateEnd: varchar("travel_date_end", { length: 10 }),
+  travelDays: integer("travel_days"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

@@ -146,6 +146,15 @@ export async function processNextAgentTask(): Promise<boolean> {
         content: output.content,
         responseMode: output.responseMode,
       });
+      if (output.tripBriefProposal) {
+        await publishAgentStreamEvent({
+          event: "trip.brief_proposed",
+          runId: run.id,
+          generationAttempt: run.generationAttempt,
+          proposal: output.tripBriefProposal,
+          traceparent,
+        });
+      }
       await publishAgentStreamEvent({
         event: "turn.completed",
         runId: run.id,

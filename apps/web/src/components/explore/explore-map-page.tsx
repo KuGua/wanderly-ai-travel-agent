@@ -14,6 +14,7 @@ import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { loadAdministrativeCenters, pinGranularityForZoom, pinSelectionForReference, type PinGranularity } from "./pin-selection";
 import { solidifyGlobeStyle } from "./map-surface-style";
 import { ExploreChatHost } from "./explore-chat-host";
+import { useOptionalAuth } from "@/lib/auth/auth-provider";
 import { useOptionalTravelApi } from "@/lib/query/provider";
 import { Link } from "@/i18n/navigation";
 import type { LocationReferenceResponse } from "@/lib/api/contracts";
@@ -55,6 +56,7 @@ async function loadGlobeStyle(): Promise<StyleSpecification> {
 }
 
 export function ExploreMapPage() {
+  const auth = useOptionalAuth();
   const travelApi = useOptionalTravelApi();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -755,12 +757,14 @@ export function ExploreMapPage() {
           <button type="button" onClick={() => setHelpOpen((open) => !open)} aria-label={t("helpAriaLabel")} aria-expanded={helpOpen} title={t("helpTitle")} className="grid size-12 place-items-center rounded-[16px] bg-sidebar/95 text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
             <HelpCircle aria-hidden="true" className="size-5" />
           </button>
-          <Link href="/login" aria-label={t("loginAriaLabel")} title={t("loginTitle")} className="grid h-12 w-24 place-items-center rounded-[16px] bg-sidebar/95 text-sm font-bold text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
-            <span className="flex items-center gap-1.5">
-              <LogIn aria-hidden="true" className="size-4" />
-              {t("loginButton")}
-            </span>
-          </Link>
+          {auth?.status !== "SIGNED_IN" ? (
+            <Link href="/login" aria-label={t("loginAriaLabel")} title={t("loginTitle")} className="grid h-12 w-24 place-items-center rounded-[16px] bg-sidebar/95 text-sm font-bold text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
+              <span className="flex items-center gap-1.5">
+                <LogIn aria-hidden="true" className="size-4" />
+                {t("loginButton")}
+              </span>
+            </Link>
+          ) : null}
         </div>
       </header>
 
@@ -802,7 +806,7 @@ export function ExploreMapPage() {
             <p className="mt-1 text-xs text-muted-foreground">{t("managePinsBody")}</p>
             <div className="mt-3 grid grid-cols-2 rounded-[12px] bg-muted p-1" aria-label={t("manageScopeLabel")}>
               <button type="button" aria-pressed={pinScope === "nearby"} onClick={() => setPinScope("nearby")} className="min-h-9 rounded-[9px] px-2 text-xs font-bold aria-pressed:bg-card aria-pressed:text-primary aria-pressed:shadow-sm">
-                {t("manageScopeNearby")}
+                {t("manageScopeNearby", { distance: nearbyDistance })}
               </button>
               <button type="button" aria-pressed={pinScope === "all"} onClick={() => setPinScope("all")} className="min-h-9 rounded-[9px] px-2 text-xs font-bold aria-pressed:bg-card aria-pressed:text-primary aria-pressed:shadow-sm">
                 {t("manageScopeAll", { count: inspirations.length })}

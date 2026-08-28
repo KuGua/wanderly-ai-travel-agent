@@ -216,6 +216,13 @@
       "messagePlaceholder": "Ask about your next trip…",
       "threadTitle": "Explore conversation",
       "threadTitleWithPlace": "Explore · {name}"
+      ,"briefProposalTitle": "Update trip brief?"
+      ,"briefProposalBody": "Destination: {destination} · Duration: {days}"
+      ,"briefProposalNoDestination": "not specified"
+      ,"briefProposalNoDays": "not specified"
+      ,"briefProposalConfirm": "Confirm update"
+      ,"briefProposalSaving": "Saving…"
+      ,"briefProposalIgnore": "Ignore"
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",
@@ -230,9 +237,9 @@
     "managePinsCloseAriaLabel": "Close pin manager",
     "managePinsBody": "Choose only the places you want to remove.",
     "manageScopeLabel": "Pin display scope",
-    "manageScopeNearby": "Current area",
+    "manageScopeNearby": "Within {distance}",
     "manageScopeAll": "All pins ({count})",
-    "manageScopeHint": "Current area shows pins within {distance} of this place.",
+    "manageScopeHint": "Measured from the selected pin, not a city boundary.",
     "pinListAriaLabel": "Private inspiration list",
     "pinCheckboxAriaLabel": "Select {name}",
     "deleteSelected": "Delete selected",

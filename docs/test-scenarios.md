@@ -135,6 +135,31 @@ memberships overlap only where explicitly configured.
 - Deleted field is absent from future Agent inputs.
 - No Profile field appears in a shared view before consent.
 
+### TS-H1e — Maintain structured long-term and current-Trip memory without widening consent
+
+**Stories:** H1, H2, H3, S1
+**Objective:** Verify stable facts, low-risk behavior suggestions and current-Trip memory use the controlled fact/snapshot path rather than private chat or direct Shared Agent reads.
+
+**Starting conditions:** Alice has a Profile and two active Trips. One Trip contains an active plan using Alice's authorized accommodation style; the other has no consent for that field. Bob is a member of the first Trip.
+
+**Steps:**
+
+1. Record enough allow-listed, non-sensitive behavior events to create a suggested accommodation-style update. Inspect the proposal and its audit/telemetry records.
+2. Confirm the proposal, then update and delete the resulting stable fact through the Profile memory API.
+3. Attempt to create behavior or conversation-derived proposals for nationality, passport, date of birth, health and accessibility fields.
+4. Save a `this trip` preference and a group decision in the first Trip; attempt to read them from the second Trip.
+5. Start planning, modify one authorized fact and revoke its consent before plan activation. Inspect snapshots, plans, confirmations, Worker inputs and Shared Agent skill inputs.
+6. Bob attempts to read Alice's private facts and to use a previous Trip's memory as planning input.
+
+**Expected outcomes:**
+
+- The automatic proposal contains only allow-listed field metadata, observation count, confidence and expiry; it contains no raw chat text or sensitive value. It is not a fact, snapshot input or shared data until Alice confirms it.
+- Only the owner can confirm, dismiss, edit or delete personal facts. Confirmation creates an active structured fact; deletion removes it from future projections and retains only a content-free audit event.
+- Sensitive-field proposal attempts fail closed; no model or behavior pipeline creates a row for them.
+- Trip memory is scoped by `tripId`; cross-Trip reads and projections are denied. Shared Agent reads only the server-built current snapshot projection, never the personal fact, proposal or chat tables.
+- A projected fact/consent change makes the first Trip's active plan and confirmations `STALE`; the old run cannot activate a plan. The unrelated Trip is unchanged.
+- Logs, metrics, traces, audit summaries, SSE and idempotency payloads do not contain memory values, conversation text or high-cardinality identifiers as metric labels.
+
 ### TS-H1b — Persist and delete a private conversation without widening its scope
 
 **Stories:** H1, S1
@@ -361,7 +386,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 1. 点击预置候选地点标记，并查看地点档案。
 2. 在国家、省/州、城市三个名称缩放层级分别点击地图；确认新图钉依次归类为对应国家、省/州和城市，同时始终停在用户实际点击的经纬度；随后缩放地图不会改变已有图钉的实体或位置。
 3. 在同一城市范围再次点击，然后在聊天框中输入一个主要城市/首都名称。
-4. 从地点详情打开私有灵感管理器，分别查看当前区域（当前点 50 km 内）与全部标记。
+4. 从地点详情打开私有灵感管理器，分别查看所选图钉周围 50 km 与全部标记。
 5. 手动勾选多个私有灵感并执行批量删除；从详情执行单点删除，然后刷新页面。
 6. 在全球、区域和本地缩放级别，确认国家、省/州和城市按层级显示；分别关闭三个图层。
 7. 打开一个地点抽屉后，确认三个图层开关仍可见并可操作。
@@ -386,7 +411,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - 点击时的 zoom band 决定新私有灵感的粒度：远景为国家，中景为省/州，近景为城市。手动图钉始终使用用户实际点击的经纬度；国家、省/州名称中心数据和服务端城市参考只负责识别、命名及去重，不得把手动图钉移动到首都或行政中心。图钉创建后粒度与实体不随之后的缩放升级、降级或聚合。相同层级、相同规范实体的第二次点击以最新点击坐标替换旧图钉，并通过 `role="status"` 提示已更新；不同层级允许共存，例如“中国”“浙江”“杭州”可以同时存在。区、县、街道和街区不得成为地图 pin。
 - 聊天中的明确城市名称使用版本化页面城市目录识别；命中后创建同样的会话内图钉，地球移动到该城市，且不得把文本命中提升为旅行事实。若聊天命中已有城市，必须保持聊天框打开并只把地球转到现有图钉，不重复显示手动地图点击使用的“已标记”提示。拉丁字母城市名必须保留专名大小写，避免把普通词误判成地点。
 - 多个私有灵感在缩放和移动地图时保持绑定各自归一后的经纬坐标；管理器默认不打开、不预选标记，单独删除只移除目标标记，批量删除只移除已勾选标记。
-- `Current area` 明确表示当前点 50 km 内，不得把距离范围伪装为城市边界。离线位置参考仅能来自版本化、来源化的专用 resolver；不得从地图 tile、地图标签、Natural Earth SVG overlay 或模型推断。
+- `Within 50 km` 明确表示以所选图钉为中心的 50 km 半径，不得把距离范围伪装为城市边界。离线位置参考仅能来自版本化、来源化的专用 resolver；不得从地图 tile、地图标签、Natural Earth SVG overlay 或模型推断。
 - 原型刷新后临时标记消失；生产实现必须将任何持久化操作交由服务端授权模型处理。
 - 国家、省/州、城市名称按与点击粒度相同的 zoom band 分层显示。点击名称或其周边地图区域都创建该层级的会话内私有灵感，不会创建共享约束、方案、价格、库存、签证或预订结论。
 - 如果配置的 style 缺少兼容的 OpenMapTiles source 或缺失任一必需图层，行政区/城市开关**保持可见但被禁用**，附 `role="status"` caption 说明缺失项（缺 source 或 `missing layers:` 列表）；地图保留原有候选入口和故障回退；不静默隐藏，不报错或伪造地图数据。开发者可在 dev 模式下通过 `window.__wanderlyMap.readiness` 观察 5 种 readiness（loading / ready-supported / ready-style-unsupported-source / ready-style-missing-layers / unavailable-network）。
@@ -395,6 +420,32 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - 国界构建必须仅在构建期读取 Natural Earth 10m，并从同一个 TopoJSON topology 输出三档共享 mesh；同一时刻前端只绘制当前 zoom 的一档，任意共享边界只出现一次。首屏只请求 LOD-0 与本地九段线，LOD-0 gzip 不得超过 200 KB；LOD-1/2 仅在进入对应 zoom 后请求。浏览器与 `build-geography-labels.mjs` 对 `geo.datav.aliyun.com` 的请求必须为 0。每一档必须在 MapLibre `render` 帧内同步更新、在半球边缘裁剪相交线段并随 resize 更新，旋转时不得落后 WebGL 地球或因顶点跨越背面而抖动。获取失败应保留既有地图和无障碍地点入口。
 - 地球表面必须保持实体不透明：默认首屏可渐进加载 GEBCO `GEBCO_LATEST` WMS 的陆地与海底地势，但在其返回前 Natural Earth 与实色水面必须持续可见，不得出现白色、透明或方块状缺失地表。GEBCO source 必须使用 1024 逻辑 tile size 与相应的低一级 source minzoom，以限制公共 WMS 的并发请求且不阻塞默认 globe。zoom 更高时继续保留最后可用层级而非淡出为蓝底。GEBCO 未返回或失败时，Natural Earth 必须持续可见（包括高 zoom 的 overzoom）且不阻塞缩放。道路、标签和行政边界仍需在 relief 之上可读。必须显示 GEBCO attribution 与”不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
 - 本地 SVG 国界、九段线与地名覆盖层必须按当前 MapLibre globe 的屏幕地平线轮廓裁剪，不能只按页面矩形裁剪。旋转、缩放、跨日期变更线或高纬度视图下，任何边界、九段线、文字或标记均不得显示在球体轮廓之外，或让背半球内容穿透到前景。地名必须在锚点接近地平线、或整个文字包围框不能留在球内时隐藏；若无法计算有效轮廓则 fail-closed 隐藏 SVG 覆盖层。裁剪路径与位置必须在 `render` 帧内更新，不能通过 React state 造成一帧滞后。
+
+### TS-P2-LIC — Serve a shared cached introduction for a stable map location
+
+**Stories:** S4, P1
+**Objective:** Verify that a stable map location receives one non-personalized, locale-scoped introduction without widening the Explore lifecycle, leaking private context, or duplicating concurrent LLM calls.
+
+**Starting conditions:** API and PostgreSQL are running; the server versioned location-introduction catalog contains `tokyo`; a fake ModelGateway is installed and records calls; no cache row exists for `tokyo` and `zh`.
+
+**Steps:**
+
+1. From an anonymous browser session, select the catalogued Tokyo location in Explore and call `POST /api/v1/explore/location-introductions` with `{ "sourceId": "tokyo", "locale": "zh" }`.
+2. Repeat the request from a different anonymous session before the 7-day expiry. Inspect the ModelGateway fake call count and both response bodies.
+3. Create 20 concurrent requests for the same missing key. Hold the fake model response until all requests have reached the service, then release it and poll all `202 GENERATING` responses.
+4. Advance time beyond `expires_at` and repeat the request. Then force the model to return timeout, schema-invalid and policy-disallowed content on separate expired keys.
+5. Request unsupported source IDs, arbitrary names/coordinates, and an `INSPIRATION` pin. Exceed the introduction endpoint's independent per-IP rate limit.
+6. In the browser, select a stable location, then close the drawer or select another location while the original request is generating. Inspect `shared_trips`, `chat_threads`, `chat_messages`, `agent_task_runs`, `audit_events`, traces, logs and metric labels.
+
+**Expected outcomes:**
+
+- Step 1 returns `200 READY` with `cacheStatus: "MISS"`; the map drawer renders the text directly and neither opens chat nor creates a Trip, thread, message, task, consent, snapshot or user audit event.
+- Step 2 returns `200 READY` with `cacheStatus: "HIT"`, identical content and expiry; the fake model was called exactly once. Cache entries are keyed by canonical source ID, locale and content version, so `en` is a separate entry.
+- Step 3 produces exactly one lease owner/model call. Other requests return `202 GENERATING` with bounded retry guidance and eventually receive the same `READY` content; no transaction remains open while the model is awaited.
+- Step 4 atomically regenerates once after expiry. Timeout, provider/network failure, schema failure or policy failure returns `503 LOCATION_INTRODUCTION_UNAVAILABLE`, releases the lease, and does not expose or cache partial/error content.
+- Step 5 returns `400 LOCATION_INTRODUCTION_UNSUPPORTED_PLACE` for unrecognised entries and `429 LOCATION_INTRODUCTION_RATE_LIMITED` after the configured limit. Unsupported and inspiration selections do not invoke the model.
+- Step 6 aborts only client observation. A valid server-side lease may finish and populate the public cache, but no user-specific business data is written. Logs, audit, metric labels and spans contain no source ID, name, coordinate, cache key, prompt, generated content, user, Trip or thread context.
+- Generated content contains no current prices, inventory, visa/entry decision, weather, operating hours, booking, legal or safety claim. The UI does not display an AI badge or generation timestamp.
 
 ### TS-P2-LR — Resolve coordinates through the three source modes
 
@@ -505,7 +556,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - 自定义账号模式的登录只接受用户名；勾选“30天内记住我”后 token 上限为 30 天并使用持久存储，未勾选时只使用 session storage。当前本地和线上 demo 均采用 `PASSWORD_RESET_MODE=direct`：输入邮箱后直接设置两次一致的新密码；该模式未验证邮箱所有权，是 demo 阶段明确接受的风险，接入真实用户前必须替换。切换为 `email-code` 后恢复六位验证码、60 秒重发、10 分钟过期和最多五次失败的流程。成功页面可立即返回登录，并在 5 秒后自动返回。生产邮件只经配置好的 AWS SES 发送，日志不得包含邮箱、验证码、reset token 或密码。
 - 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话，或仅在 loopback `custom-local` 模式来自 API 验证的本地用户名/密码会话。
 - fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
-- 所有受保护的 HTTP 请求在 Cognito 模式通过 AWS Amplify session 读取当前 access token；`custom-local` 仅在 loopback 开发环境从受控浏览器会话读取 API JWT。无 session 时不发送 Authorization，token 刷新后使用新 token；登录会话变化或退出时必须替换 TanStack Query client，使旧私有缓存不可见且活跃查询以新会话重新执行。`POST /api/v1/explore/location-reference` 是唯一匿名、无持久化且限流的例外。应用自身不得把 Cognito token 复制到 localStorage。
+- 所有受保护的 HTTP 请求在 Cognito 模式通过 AWS Amplify session 读取当前 access token；`custom-local` 仅在 loopback 开发环境从受控浏览器会话读取 API JWT。无 session 时不发送 Authorization，token 刷新后使用新 token；登录会话变化或退出时必须替换 TanStack Query client，使旧私有缓存不可见且活跃查询以新会话重新执行。`POST /api/v1/explore/location-reference` 与稳定地点专用的 `POST /api/v1/explore/location-introductions` 是仅有的匿名、限流 Explore 例外；后者只写非个性化共享缓存，不写用户业务状态。应用自身不得把 Cognito token 复制到 localStorage。
 - `AUTH_MODE` 默认必须为 `cognito`。显式 `local-dev`（固定单用户）和 `custom-local`（数据库用户名/密码、多用户）仅允许 `NODE_ENV=development|test`、loopback server 绑定、loopback socket 客户端和 `LOCAL_DEV_ALLOWED_ORIGINS` 中的精确 loopback HTTP Origin；`custom-local` 还必须有至少 32 字符的 API `JWT_SECRET`。production、staging、缺失环境或任一非 loopback 边界必须拒绝启动/请求。浏览器不能发送 fake token/user ID；`local-dev` 的固定身份和 `custom-local` 的已验证 JWT 身份都须通过原 owner-only thread 授权。非允许 Origin 不得获得 CORS 读权限，且对受保护写操作必须返回 `403` 并不创建业务状态。
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
@@ -653,3 +704,8 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Change event invalidates old plan and confirmations before replanning.
 - All three required members must confirm before sandbox orchestration; no money moves.
 - Missing consent, tool failure, visa uncertainty, member conflict, consent revocation and duplicate callback are tested.
+# Confirmed chat brief update
+
+- A DRAFT-trip private-chat turn may emit only an in-memory destination/days candidate; raw conversation content is never included in the event, audit summary, or client persistence.
+- The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write.
+- A non-creator and a trip no longer in `DRAFT` receive `403` and `409` respectively; a MANUAL title remains unchanged after confirmation.
