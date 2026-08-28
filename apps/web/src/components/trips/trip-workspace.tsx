@@ -402,7 +402,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               <ExternalLink aria-hidden="true" className="size-3.5" />
             </Link>
           </div>
-          <TripMiniGlobe places={globePlaces} fallbackLabel={destinationsLabel} />
+          <TripMiniGlobe places={globePlaces} fallbackLabel={destinationsLabel} tripId={tripId} />
         </section>
       </aside>
     </main>

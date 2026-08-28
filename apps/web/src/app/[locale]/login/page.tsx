@@ -47,9 +47,9 @@ export default function LoginPage() {
           {t("backToExplore")}
         </Link>
 
-        <div className="rounded-[20px] border border-border bg-card p-6 shadow-lg">
+        <div className="bg-card p-6 wanderly-edge wanderly-r-lg wanderly-shadow">
           <div className="mb-6 text-center">
-            <div className="mx-auto mb-3 grid size-12 place-items-center rounded-2xl bg-sidebar text-white">
+            <div className="mx-auto mb-3 grid size-12 place-items-center bg-[var(--w-info)] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-xs">
               <LogIn className="size-5" />
             </div>
             <h1 className="text-xl font-bold tracking-tight text-foreground">{t("heading")}</h1>
@@ -68,7 +68,7 @@ export default function LoginPage() {
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring/30"
+                className="h-11 w-full bg-card px-3 text-sm text-foreground outline-none wanderly-edge wanderly-r-sm"
                 placeholder={t("usernamePlaceholder")}
               />
             </div>
@@ -84,7 +84,7 @@ export default function LoginPage() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring/30"
+                className="h-11 w-full bg-card px-3 text-sm text-foreground outline-none wanderly-edge wanderly-r-sm"
               />
             </div>
 
@@ -94,7 +94,7 @@ export default function LoginPage() {
                 type="checkbox"
                 checked={remember}
                 onChange={(e) => setRemember(e.target.checked)}
-                className="size-4 rounded border-input accent-primary"
+                className="size-4 accent-[var(--w-highlight)] wanderly-edge-thin wanderly-r-xs"
               />
               {t("rememberMe")}
             </label>
@@ -106,7 +106,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-sidebar font-bold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 disabled:opacity-60"
+              className="flex h-11 w-full items-center justify-center gap-2 font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action"
             >
               {loading ? <LoaderCircle className="size-4 animate-spin" /> : null}
               {t("submit")}

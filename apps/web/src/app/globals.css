@@ -283,7 +283,7 @@
 }
 
 .wanderly-cosmos .maplibregl-canvas {
-  filter: brightness(0.58) saturate(0.76) contrast(1.16);
+  filter: brightness(0.88) saturate(1.12) contrast(1.1);
 }
 
 /* Star field. Decorative and inert so it never intercepts map gestures. */
@@ -345,6 +345,207 @@
 }
 
 /*
+ * Wander-bot. Outlined rounded rectangle with pixel eyes and thin legs; the
+ * component sets --bot-w / --bot-h / --bot-leg from the golden ratio, and
+ * --bot-eye-x / --bot-eye-y from pointer tracking.
+ *
+ * Decorative and inert: it floats over the map, so it must never intercept a
+ * gesture meant for the globe underneath.
+ */
+.wanderly-bot {
+  --bot-eye-x: 0px;
+  --bot-eye-y: 0px;
+  /* Outline and limbs share one blue-grey; the eyes are the only warm accent. */
+  --bot-line: #8fa0b7;
+  --bot-eye: #ffbf00;
+  position: fixed;
+  z-index: 35;
+  display: grid;
+  justify-items: center;
+  width: var(--bot-w);
+  cursor: grab;
+  touch-action: none;
+  /* Draggable, so it must receive pointer events; the cloud stays inert. */
+  pointer-events: auto;
+  user-select: none;
+}
+
+.wanderly-bot[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+.wanderly-bot-body {
+  display: flex;
+  width: var(--bot-w);
+  height: var(--bot-h);
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--bot-w) / 5);
+  border: 3px solid var(--bot-line);
+  border-radius: calc(var(--bot-h) / 3.2);
+  background: var(--w-white);
+}
+
+.wanderly-bot-eye {
+  width: 3px;
+  height: calc(var(--bot-h) / 4.4);
+  border-radius: 2px;
+  background: var(--bot-eye);
+  /* Eyes lead the body, so they read as looking before it turns. */
+  transform: translate(var(--bot-eye-x), var(--bot-eye-y));
+  transition: transform 260ms ease-out;
+}
+
+.wanderly-bot-legs {
+  display: flex;
+  width: calc(var(--bot-w) * 0.62);
+  height: var(--bot-leg);
+  justify-content: space-between;
+  transition: height 220ms ease;
+}
+
+.wanderly-bot-leg {
+  position: relative;
+  width: 3px;
+  height: 100%;
+  border-radius: 0 0 3px 3px;
+  background: var(--bot-line);
+  transform-origin: top center;
+  transition: height 220ms ease;
+}
+
+/* Foot pinned to the end of the leg, so it follows any swing or fold. */
+.wanderly-bot-leg::after {
+  position: absolute;
+  bottom: -3px;
+  left: 50%;
+  width: 11px;
+  height: 6px;
+  border: 3px solid var(--bot-line);
+  border-radius: 999px;
+  background: var(--w-white);
+  content: "";
+  opacity: 1;
+  transform: translateX(-50%);
+  transition: opacity 160ms ease;
+}
+
+/*
+ * Legs are tucked away unless the bot is sitting on the composer or being
+ * carried. Hovering also brings them out, so it reads as ready to move.
+ */
+.wanderly-bot[data-pose="idle"]:not(:hover):not([data-dragging="true"]) .wanderly-bot-legs {
+  height: 0;
+}
+
+.wanderly-bot[data-pose="idle"]:not(:hover):not([data-dragging="true"]) .wanderly-bot-leg::after {
+  opacity: 0;
+}
+
+/* Idle: a slow sway that only begins once the bot has settled. */
+.wanderly-bot[data-settled="true"]:not([data-dragging="true"]) .wanderly-bot-body {
+  animation: wanderly-bot-sway 4.2s ease-in-out infinite;
+}
+
+@keyframes wanderly-bot-sway {
+  0%, 100% { transform: translateX(-2px) rotate(-1.6deg); }
+  50% { transform: translateX(2px) rotate(1.6deg); }
+}
+
+/*
+ * Legs swing while the bot is carried, and while it is perched on the
+ * composer — folded at the knee, the way you would sit on a ledge.
+ */
+.wanderly-bot[data-pose="perched"] .wanderly-bot-legs,
+.wanderly-bot[data-dragging="true"] .wanderly-bot-legs {
+  height: calc(var(--bot-leg) * 0.72);
+}
+
+.wanderly-bot[data-pose="perched"] .wanderly-bot-leg,
+.wanderly-bot[data-dragging="true"] .wanderly-bot-leg {
+  animation: wanderly-bot-swing 2.4s ease-in-out infinite;
+}
+
+.wanderly-bot[data-dragging="true"] .wanderly-bot-leg {
+  /* Carried legs swing loosely and faster than a seated idle. */
+  animation-duration: 0.9s;
+}
+
+.wanderly-bot[data-pose="perched"] .wanderly-bot-leg:last-child,
+.wanderly-bot[data-dragging="true"] .wanderly-bot-leg:last-child {
+  /* Offset so the two legs never swing as one block. */
+  animation-delay: -0.45s;
+}
+
+@keyframes wanderly-bot-swing {
+  0%, 100% { transform: rotate(-22deg); }
+  50% { transform: rotate(14deg); }
+}
+
+/* Speech cloud: place name, ellipsis, question mark. */
+.wanderly-bot-cloud {
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 50%;
+  padding: 5px 9px;
+  border: 2px solid var(--bot-line);
+  border-radius: 14px 10px 15px 9px;
+  background: var(--w-white);
+  color: var(--w-ink);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: 3px 3px 0 var(--bot-line);
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: wanderly-bot-cloud-in 220ms ease-out;
+}
+
+/* The two trailing puffs that make it a cloud rather than a box. */
+.wanderly-bot-cloud::before,
+.wanderly-bot-cloud::after {
+  position: absolute;
+  left: 14px;
+  border: 2px solid var(--bot-line);
+  border-radius: 50%;
+  background: var(--w-white);
+  content: "";
+}
+
+.wanderly-bot-cloud::before {
+  bottom: -7px;
+  width: 8px;
+  height: 8px;
+}
+
+.wanderly-bot-cloud::after {
+  bottom: -13px;
+  left: 9px;
+  width: 5px;
+  height: 5px;
+}
+
+@keyframes wanderly-bot-cloud-in {
+  from { opacity: 0; transform: translate(-50%, 5px) scale(0.9); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wanderly-bot-body,
+  .wanderly-bot-leg,
+  .wanderly-bot-cloud {
+    animation: none;
+  }
+
+  .wanderly-bot-eye,
+  .wanderly-bot-legs,
+  .wanderly-bot-leg,
+  .wanderly-bot-leg::after {
+    transition: none;
+  }
+}
+
+/*
  * Country pin on the workspace mini globe. Cities inside one country are
  * merged upstream, so each pin carries a country name rather than a city.
  */
@@ -354,9 +555,17 @@
   height: 11px;
   border: 2px solid var(--w-ink);
   border-radius: 50% 50% 50% 0;
+  padding: 0;
   background: var(--w-highlight);
+  cursor: pointer;
   transform: rotate(-45deg);
-  pointer-events: none;
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+
+.wanderly-mini-pin:hover,
+.wanderly-mini-pin:focus-visible {
+  background: var(--w-info);
+  transform: rotate(-45deg) scale(1.25);
 }
 
 .wanderly-mini-pin > span {

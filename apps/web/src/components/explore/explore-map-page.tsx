@@ -1,8 +1,9 @@
 "use client";
 
-import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, LogIn, MapPin, RotateCw, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, LogIn, MapPin, RotateCw, Sparkles, Trash2, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
 import type { ConversationPlace } from "@/lib/api/contracts";
 import { applyGeographyContrast, inspectGeographyLayers, OPEN_MAP_TILES_SOURCE, setGeographyLayerVisibility, type GeographyInspection, type GeographyVisibility } from "./map-geography-layers";
@@ -13,6 +14,7 @@ import { cityKey, findMentionedCities, loadCityCatalog, type CatalogCity } from 
 import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { loadAdministrativeCenters, pinGranularityForZoom, pinSelectionForReference, type PinGranularity } from "./pin-selection";
 import { solidifyGlobeStyle } from "./map-surface-style";
+import { WanderBot } from "./wander-bot";
 import { LocationIntroductionPanel } from "./location-introduction-panel";
 import { ExploreChatHost } from "./explore-chat-host";
 import { useLocationIntroduction } from "@/lib/query/use-location-introduction";
@@ -62,9 +64,41 @@ async function loadGlobeStyle(): Promise<StyleSpecification> {
   return solidifyGlobeStyle({ ...style, projection: { type: "globe" } });
 }
 
+/**
+ * Camera hand-off from the trip workspace's mini globe. When present the map
+ * opens on that country instead of the default globe, and offers a way back
+ * to the trip the viewer came from.
+ */
+function readFocusHandoff(params: URLSearchParams) {
+  const latitude = Number(params.get("focusLat"));
+  const longitude = Number(params.get("focusLng"));
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+
+  const tripId = params.get("fromTrip");
+  const zoom = Number(params.get("focusZoom"));
+  return {
+    center: [longitude, latitude] as [number, number],
+    zoom: Number.isFinite(zoom) ? Math.min(6, Math.max(1, zoom)) : 3.4,
+    label: params.get("focusLabel"),
+    // Only a well-formed trip id earns a back link; the value lands in a
+    // route, so anything else is ignored rather than followed.
+    tripId: tripId && /^[0-9a-f-]{36}$/i.test(tripId) ? tripId : null,
+  };
+}
+
 export function ExploreMapPage() {
   const auth = useOptionalAuth();
   const travelApi = useOptionalTravelApi();
+  const searchParams = useSearchParams();
+  // Initial gaze target: the globe. Recomputed on resize so the bot keeps
+  // facing it rather than a stale coordinate.
+  const [globeCenterPoint, setGlobeCenterPoint] = useState<{ x: number; y: number } | null>(null);
+  const focusHandoff = useMemo(() => readFocusHandoff(new URLSearchParams(searchParams.toString())), [searchParams]);
+  // The handoff only chooses the opening camera. Reading it through a ref keeps
+  // it out of the map effect's deps, so a later URL change cannot tear the map
+  // down and rebuild it.
+  const focusHandoffRef = useRef(focusHandoff);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [mapForBoundaryOverlay, setMapForBoundaryOverlay] = useState<MapLibreMap | null>(null);
@@ -113,6 +147,19 @@ export function ExploreMapPage() {
   const [exploreState, setExploreState] = useState<ExploreState>("IDLE");
   const [helpOpen, setHelpOpen] = useState(false);
   const [mapNotice, setMapNotice] = useState<string | null>(null);
+
+  // The globe fills the map pane, so the pane's centre is where the bot looks
+  // while it is settling. Re-measured on resize to avoid a stale target.
+  useEffect(() => {
+    const measureGlobeCentre = () => {
+      const box = containerRef.current?.getBoundingClientRect();
+      if (!box || box.width === 0) return;
+      setGlobeCenterPoint({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
+    };
+    measureGlobeCentre();
+    window.addEventListener("resize", measureGlobeCentre);
+    return () => window.removeEventListener("resize", measureGlobeCentre);
+  }, []);
 
   useEffect(() => {
     inspirationMarkersRef.current.forEach((marker, id) => {
@@ -488,8 +535,8 @@ export function ExploreMapPage() {
         const map = new maplibregl.Map({
           container: containerRef.current,
           style: globeStyle,
-          center: SINGAPORE,
-          zoom: 2.25,
+          center: focusHandoffRef.current?.center ?? SINGAPORE,
+          zoom: focusHandoffRef.current?.zoom ?? 2.25,
           attributionControl: false,
         });
         mapRef.current = map;
@@ -511,7 +558,7 @@ export function ExploreMapPage() {
               customAttribution: '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a> · <a href="https://help.aliyun.com/zh/datav/datav-7-0/user-guide/china-state-border-4-0" target="_blank" rel="noopener noreferrer">China maritime line (local snapshot)</a>',
             }), "bottom-right");
             finalizeReadiness(map, inspectGeographyLayers(map, MAP_STYLE_URL));
-            if (!cancelled && !reducedMotion()) startGlobeSpin(map, spinAnimationRef);
+            if (!cancelled && !reducedMotion() && !focusHandoffRef.current) startGlobeSpin(map, spinAnimationRef);
             window.queueMicrotask(() => {
               if (!cancelled) configureMapAttribution(containerRef.current);
             });
@@ -758,10 +805,30 @@ export function ExploreMapPage() {
         </div>
       ) : null}
 
+      {/* Draggable companion. It positions itself, so no wrapper here. */}
+      <WanderBot
+        lookAt={globeCenterPoint}
+        perchSelector='[data-wanderly-perch="composer"]'
+        boundsSelector=".wanderly-explore-map"
+        obstructed={chatOpen}
+        speechPlace={selected?.name ?? null}
+      />
+
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 p-4 sm:p-6">
-        <div className="pointer-events-auto px-4 py-3 wanderly-cosmos-panel wanderly-r-lg">
+        <div className="pointer-events-auto flex flex-col items-start gap-2">
+          {focusHandoff?.tripId ? (
+            <Link
+              href={`/trips/${focusHandoff.tripId}` as "/trips/[tripId]"}
+              className="inline-flex min-h-10 items-center gap-1.5 px-3 text-xs font-extrabold wanderly-cosmos-control wanderly-r-sm wanderly-press"
+            >
+              <ArrowLeft aria-hidden="true" className="size-4" />
+              {t("backToTrip")}
+            </Link>
+          ) : null}
+          <div className="px-4 py-3 wanderly-cosmos-panel wanderly-r-lg">
           <p className="font-black tracking-[-0.035em]">{tCommon("brandTagline")}</p>
-          <p className="mt-0.5 text-xs opacity-85">{t("startingFrom")}</p>
+          <p className="mt-0.5 text-xs opacity-85">{focusHandoff?.label ?? t("startingFrom")}</p>
+          </div>
         </div>
         <div className="pointer-events-auto flex gap-2">
           <button type="button" onClick={recenter} aria-label={t("recenterAriaLabel")} title={t("recenterTitle")} className="grid size-12 place-items-center wanderly-cosmos-control wanderly-r-sm wanderly-press">

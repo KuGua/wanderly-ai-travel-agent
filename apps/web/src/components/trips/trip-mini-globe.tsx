@@ -1,11 +1,12 @@
 "use client";
 
 import type { Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { loadCityCatalog, type CatalogCity } from "@/components/explore/city-catalog";
 import { useOptionalTravelApi } from "@/lib/query/provider";
+import { useRouter } from "@/i18n/navigation";
 import { solidifyGlobeStyle } from "@/components/explore/map-surface-style";
 
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
@@ -147,8 +148,11 @@ async function loadGlobeStyle(): Promise<StyleSpecification> {
  * — no scroll, drag or keyboard camera — so it reads as a preview of the
  * selected plan rather than a second map to operate.
  */
-export function TripMiniGlobe({ places, fallbackLabel }: { places: string[]; fallbackLabel: string }) {
+export function TripMiniGlobe({ places, fallbackLabel, tripId }: { places: string[]; fallbackLabel: string; tripId: string }) {
   const locale = useLocale();
+  const router = useRouter();
+  const t = useTranslations("trips.workspace");
+  const openPinLabel = t("openPinAria", { name: "{name}" });
   const travelApi = useOptionalTravelApi();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -222,12 +226,27 @@ export function TripMiniGlobe({ places, fallbackLabel }: { places: string[]; fal
         mapRef.current = map;
 
         for (const pin of pins) {
-          const element = document.createElement("div");
-          element.className = "wanderly-mini-pin";
+          // The pin is the only interactive thing on this preview; the map
+          // itself stays inert. Clicking opens the full globe framed on that
+          // country, carrying the trip id so the viewer can come back.
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "wanderly-mini-pin";
+          button.setAttribute("aria-label", openPinLabel.replace("{name}", pin.name));
           const label = document.createElement("span");
           label.textContent = pin.name;
-          element.append(label);
-          markers.push(new maplibregl.Marker({ element, anchor: "bottom" })
+          button.append(label);
+          button.addEventListener("click", () => {
+            const params = new URLSearchParams({
+              focusLat: String(pin.coordinates[1]),
+              focusLng: String(pin.coordinates[0]),
+              focusZoom: "3.4",
+              focusLabel: pin.name,
+              fromTrip: tripId,
+            });
+            router.push(`/home?${params.toString()}` as Parameters<typeof router.push>[0]);
+          });
+          markers.push(new maplibregl.Marker({ element: button, anchor: "bottom" })
             .setLngLat(pin.coordinates)
             .addTo(map));
         }
@@ -242,7 +261,7 @@ export function TripMiniGlobe({ places, fallbackLabel }: { places: string[]; fal
       map?.remove();
       mapRef.current = null;
     };
-  }, [pins]);
+  }, [openPinLabel, pins, router, tripId]);
 
   return (
     <div className="relative h-[150px] overflow-hidden bg-[var(--w-space)]">
