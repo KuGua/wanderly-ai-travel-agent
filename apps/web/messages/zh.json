@@ -216,6 +216,13 @@
       "messagePlaceholder": "询问你的下一段旅程…",
       "threadTitle": "探索对话",
       "threadTitleWithPlace": "探索 · {name}"
+      ,"briefProposalTitle": "更新行程信息？"
+      ,"briefProposalBody": "目的地：{destination} · 天数：{days}"
+      ,"briefProposalNoDestination": "未提供"
+      ,"briefProposalNoDays": "未提供"
+      ,"briefProposalConfirm": "确认更新"
+      ,"briefProposalSaving": "正在保存…"
+      ,"briefProposalIgnore": "忽略"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",

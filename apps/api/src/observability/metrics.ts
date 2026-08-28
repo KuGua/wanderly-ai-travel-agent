@@ -217,6 +217,9 @@ metrics.registerCounter("exploration_start_total", "Exploration-start idempotenc
 metrics.registerCounter("trip_activation_total", "Draft Trip activation outcomes.", {
   result: ["success", "conflict", "forbidden", "invalid", "error"],
 });
+metrics.registerCounter("trip_draft_brief_update_total", "Creator-confirmed DRAFT brief updates.", {
+  result: ["success"],
+});
 metrics.registerCounter("draft_command_rejected_total", "Collaboration commands rejected because the Trip is still a Draft.", {
   operation: ["invitation", "consent", "planning", "confirmation", "booking", "change_event"],
 });

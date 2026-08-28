@@ -9,6 +9,8 @@ import {
   toJsonSchema,
   tripActivationRequestSchema,
   tripActivationResponseSchema,
+  updateDraftTripBriefRequestSchema,
+  updateDraftTripBriefResponseSchema,
   updateTripTitleRequestSchema,
   updateTripTitleResponseSchema,
   tripDetailsResponseSchema,
@@ -393,6 +395,43 @@ export async function tripRoutes(app: FastifyInstance) {
     return updateTripTitleResponseSchema.parse({
       trip: { id: tripId, name: body.name, nameSource: "MANUAL", titleLocale: null, updatedAt: updatedAt.toISOString() },
     });
+  });
+
+  app.patch("/trips/:tripId/draft-brief", {
+    schema: {
+      description: "Apply a creator-confirmed, structured chat brief update to a DRAFT trip.",
+      tags: ["trips"], params: toJsonSchema(tripIdParamSchema),
+      body: toJsonSchema(updateDraftTripBriefRequestSchema),
+      response: { 200: toJsonSchema(updateDraftTripBriefResponseSchema), 403: toJsonSchema(errorResponseSchema), 404: toJsonSchema(errorResponseSchema), 409: toJsonSchema(errorResponseSchema) },
+    },
+  }, async (request) => {
+    const { tripId } = tripIdParamSchema.parse(request.params);
+    const body = updateDraftTripBriefRequestSchema.parse(request.body);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
+    const result = await db.transaction(async (tx) => {
+      const [trip] = await tx.select().from(sharedTrips).where(eq(sharedTrips.id, tripId)).for("update").limit(1);
+      if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
+      if (trip.status !== "DRAFT") throw new ApiError(409, "Conflict", "TRIP_NOT_DRAFT: trip brief can no longer be updated from chat");
+      if (trip.createdBy !== request.user.id) throw new ApiError(403, "Forbidden", "Only the creator may confirm a draft brief update");
+
+      const added = body.destinationCandidates ?? [];
+      const nextDestinations = [...(trip.destinationCandidates as string[])];
+      for (const destination of added) {
+        if (!nextDestinations.some((current) => current.localeCompare(destination, undefined, { sensitivity: "accent" }) === 0)) nextDestinations.push(destination);
+      }
+      if (nextDestinations.length > 5) throw new ApiError(409, "Conflict", "TRIP_DESTINATION_LIMIT: draft already has five destinations");
+      const nextDays = body.travelDays ?? trip.travelDays;
+      const autoTitle = buildTripTitle({ destinationCandidates: nextDestinations, travelDateStart: trip.travelDateStart, travelDateEnd: trip.travelDateEnd, travelDays: nextDays, locale: body.titleLocale });
+      const now = new Date();
+      await tx.update(sharedTrips).set({
+        destinationCandidates: nextDestinations, travelDays: nextDays,
+        ...(trip.nameSource === "AUTO" ? { name: autoTitle, titleLocale: body.titleLocale } : {}), updatedAt: now,
+      }).where(eq(sharedTrips.id, tripId));
+      await recordAudit({ ctx, action: "TRIP_DRAFT_BRIEF_UPDATE", actorUserId: request.user.id, tripId, summary: { source: "conversation_confirmation", changedFields: [ ...(body.destinationCandidates ? ["destinationCandidates"] : []), ...(body.travelDays !== undefined ? ["travelDays"] : []) ] }, tx });
+      return { id: tripId, name: trip.nameSource === "AUTO" ? autoTitle : trip.name, nameSource: trip.nameSource, status: "DRAFT" as const, destinationCandidates: nextDestinations, travelDays: nextDays ?? null, updatedAt: now.toISOString() };
+    });
+    metrics.inc("trip_draft_brief_update_total", { result: "success" });
+    return updateDraftTripBriefResponseSchema.parse({ trip: result });
   });
 
   // Get trip details

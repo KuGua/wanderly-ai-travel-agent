@@ -13,6 +13,7 @@
 |---|---|---|---|
 | AI 探索首页 | [`assets/explore-map-prototype.html`](../assets/explore-map-prototype.html) | 从地图产生旅行灵感，再进入受控规划 | `/home` |
 | 我的项目 | [`assets/projects-prototype.html`](../assets/projects-prototype.html) | 继续待办规划、回看完成项目和历史版本 | `/projects` |
+| 项目继续编辑工作台 | [`assets/project-workspace-prototype.html`](../assets/project-workspace-prototype.html) | 在项目上下文中持续对话、查看 Agent 打开的资料，并保留地图空间参照 | `/trips/:tripId` |
 
 原型是视觉和交互参考，**不是 API 契约，也不是可直接复制进生产的实现**。生产页面必须使用 Fastify API 返回的服务端状态；不得以原型 fixture 或本地 UI state 伪造行程、授权、计划、价格、签证或预订事实。
 

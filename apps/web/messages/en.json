@@ -216,6 +216,13 @@
       "messagePlaceholder": "Ask about your next trip…",
       "threadTitle": "Explore conversation",
       "threadTitleWithPlace": "Explore · {name}"
+      ,"briefProposalTitle": "Update trip brief?"
+      ,"briefProposalBody": "Destination: {destination} · Duration: {days}"
+      ,"briefProposalNoDestination": "not specified"
+      ,"briefProposalNoDays": "not specified"
+      ,"briefProposalConfirm": "Confirm update"
+      ,"briefProposalSaving": "Saving…"
+      ,"briefProposalIgnore": "Ignore"
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",

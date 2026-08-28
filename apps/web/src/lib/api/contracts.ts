@@ -199,6 +199,13 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     assistantMessageId: z.string().uuid().optional(),
     resultPlanId: z.string().uuid().optional(),
   }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("trip.brief_proposed"),
+    proposal: z.object({
+      destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+      travelDays: z.number().int().min(1).max(365).optional(),
+    }).strict(),
+  }).strict(),
   streamBaseSchema.extend({ event: z.literal("turn.cancelled") }).strict(),
   streamBaseSchema.extend({ event: z.literal("turn.stale"), code: agentRunErrorCodeSchema }).strict(),
   streamBaseSchema.extend({
@@ -270,6 +277,14 @@ export const tripActivationResponseSchema = z.object({
 });
 
 export const updateTripTitleInputSchema = z.object({ name: z.string().trim().min(1).max(256) }).strict();
+export const updateDraftTripBriefInputSchema = z.object({
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+  travelDays: z.number().int().min(1).max(365).optional(),
+  titleLocale: z.enum(["en", "zh"]),
+}).strict().refine((value) => value.destinationCandidates !== undefined || value.travelDays !== undefined);
+export const updateDraftTripBriefResponseSchema = z.object({
+  trip: z.object({ id: z.string().uuid(), name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"), destinationCandidates: z.array(z.string()), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime() }).strict(),
+});
 export const updateTripTitleResponseSchema = z.object({
   trip: z.object({
     id: z.string().uuid(), name: z.string(), nameSource: z.literal("MANUAL"), titleLocale: z.null(), updatedAt: z.string().datetime(),
@@ -318,6 +333,8 @@ export type TripActivationRequest = z.infer<typeof tripActivationRequestSchema>;
 export type TripActivationResponse = z.infer<typeof tripActivationResponseSchema>;
 export type UpdateTripTitleInput = z.infer<typeof updateTripTitleInputSchema>;
 export type UpdateTripTitleResponse = z.infer<typeof updateTripTitleResponseSchema>;
+export type UpdateDraftTripBriefInput = z.infer<typeof updateDraftTripBriefInputSchema>;
+export type UpdateDraftTripBriefResponse = z.infer<typeof updateDraftTripBriefResponseSchema>;
 export type Thread = z.infer<typeof threadSchema>;
 export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
 export type CreateTripThreadInput = z.infer<typeof createTripThreadInputSchema>;

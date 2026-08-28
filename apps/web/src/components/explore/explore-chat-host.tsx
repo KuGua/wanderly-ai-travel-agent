@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
+import { useLocale } from "next-intl";
 
 import { TravelAgentChat, type ChatThreadStatus } from "./travel-agent-chat";
 import { useExplorationSession } from "@/lib/exploration/exploration-session-provider";
@@ -21,6 +22,7 @@ export function ExploreChatHost({
   onConversationText,
 }: ExploreChatHostProps) {
   const { session, startIfNeeded, reset } = useExplorationSession();
+  const locale = useLocale() === "zh" ? "zh" : "en";
 
   const effectiveThreadId = session.threadId;
   const threadStatus: ChatThreadStatus = useMemo(() => {
@@ -58,6 +60,8 @@ export function ExploreChatHost({
         onThreadInvalidated={handleInvalidated}
         onEnsureThreadForFirstSend={ensureThread}
         onStartNewExploration={reset}
+        tripId={session.tripId}
+        titleLocale={locale}
         {...(selectedPlace !== undefined ? { selectedPlace } : {})}
         {...(onConversationText ? { onConversationText } : {})}
       />

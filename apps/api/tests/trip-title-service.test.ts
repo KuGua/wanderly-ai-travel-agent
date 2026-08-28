@@ -22,6 +22,7 @@ describe("trip titles", () => {
     expect(buildTripTitle({ destinationCandidates: ["Tokyo"], locale: "en" })).toBe("Tokyo Trip Planner");
     expect(buildTripTitle({ destinationCandidates: [], travelDateStart: "2026-10-01", travelDateEnd: "2026-10-01", locale: "en" })).toBe("Trip Planner｜1 Days");
     expect(buildTripTitle({ destinationCandidates: [], locale: "zh" })).toBe("行程规划");
+    expect(buildTripTitle({ destinationCandidates: ["Tokyo"], travelDays: 7, locale: "en" })).toBe("Tokyo Trip Planner｜7 Days");
   });
 
   it("rejects impossible and reverse date ranges", () => {

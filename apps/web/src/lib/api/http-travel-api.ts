@@ -14,6 +14,8 @@ import {
   tripActivationResponseSchema,
   updateTripTitleInputSchema,
   updateTripTitleResponseSchema,
+  updateDraftTripBriefInputSchema,
+  updateDraftTripBriefResponseSchema,
   tripDetailResponseSchema,
   tripsResponseSchema,
   threadsResponseSchema,
@@ -27,6 +29,7 @@ import {
   type ExplorationStartRequest,
   type TripActivationRequest,
   type UpdateTripTitleInput,
+  type UpdateDraftTripBriefInput,
 } from "./contracts";
 import type { TravelApi } from "./travel-api";
 
@@ -152,6 +155,13 @@ export class HttpTravelApi implements TravelApi {
   updateTripTitle(tripId: string, input: UpdateTripTitleInput) {
     const body = updateTripTitleInputSchema.parse(input);
     return this.client.request("/trips/" + encodeURIComponent(tripId) + "/title", updateTripTitleResponseSchema, {
+      method: "PATCH", body: JSON.stringify(body),
+    });
+  }
+
+  updateDraftTripBrief(tripId: string, input: UpdateDraftTripBriefInput) {
+    const body = updateDraftTripBriefInputSchema.parse(input);
+    return this.client.request("/trips/" + encodeURIComponent(tripId) + "/draft-brief", updateDraftTripBriefResponseSchema, {
       method: "PATCH", body: JSON.stringify(body),
     });
   }

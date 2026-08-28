@@ -678,3 +678,8 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Change event invalidates old plan and confirmations before replanning.
 - All three required members must confirm before sandbox orchestration; no money moves.
 - Missing consent, tool failure, visa uncertainty, member conflict, consent revocation and duplicate callback are tested.
+# Confirmed chat brief update
+
+- A DRAFT-trip private-chat turn may emit only an in-memory destination/days candidate; raw conversation content is never included in the event, audit summary, or client persistence.
+- The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write.
+- A non-creator and a trip no longer in `DRAFT` receive `403` and `409` respectively; a MANUAL title remains unchanged after confirmation.

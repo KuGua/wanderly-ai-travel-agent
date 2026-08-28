@@ -54,6 +54,8 @@ type TravelAgentChatProps = {
   onStartNewExploration?: () => void;
   selectedPlace?: { place: ConversationPlace; context: string } | null;
   onConversationText?: (text: string) => void;
+  tripId?: string | null;
+  titleLocale?: "en" | "zh";
 };
 
 export function TravelAgentChat({
@@ -68,6 +70,8 @@ export function TravelAgentChat({
   onStartNewExploration,
   selectedPlace,
   onConversationText,
+  tripId = null,
+  titleLocale = "en",
 }: TravelAgentChatProps) {
   const t = useTranslations("explore.chat");
   const effectiveThreadId = controlledThreadId;
@@ -87,6 +91,8 @@ export function TravelAgentChat({
   const [requestError, setRequestError] = useState<unknown>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
+  const [briefProposal, setBriefProposal] = useState<Extract<AgentStreamEvent, { event: "trip.brief_proposed" }>["proposal"] | null>(null);
+  const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
   const panelInputRef = useRef<HTMLTextAreaElement>(null);
   const panelScrollRef = useRef<HTMLDivElement>(null);
   const pendingTurnAnchorRef = useRef<HTMLParagraphElement>(null);
@@ -109,6 +115,7 @@ export function TravelAgentChat({
     setActiveRunId(null);
     setStreamState(emptyStreamState());
     setRequestError(null);
+    setBriefProposal(null);
   }, []);
 
   useEffect(() => {
@@ -215,6 +222,7 @@ export function TravelAgentChat({
     if (!activeRunId) return;
     const controller = new AbortController();
     void api.subscribeAgentRun(activeRunId, controller.signal, (event) => {
+      if (event.event === "trip.brief_proposed") setBriefProposal(event.proposal);
       setStreamState((current) => applyStreamEvent(current, event));
       if (
         event.event === "turn.completed"
@@ -352,6 +360,24 @@ export function TravelAgentChat({
     onStartNewExploration();
   }
 
+  async function confirmBriefProposal() {
+    if (!tripId || !briefProposal || isConfirmingBrief) return;
+    if (!api.updateDraftTripBrief) {
+      setRequestError(new Error("Draft brief updates are unavailable"));
+      return;
+    }
+    setIsConfirmingBrief(true);
+    setRequestError(null);
+    try {
+      await api.updateDraftTripBrief(tripId, { ...briefProposal, titleLocale });
+      setBriefProposal(null);
+    } catch (error) {
+      setRequestError(error);
+    } finally {
+      setIsConfirmingBrief(false);
+    }
+  }
+
   const submitButton = (
     <button type="submit" aria-label={t("sendAria")} disabled={inputDisabled} className="grid size-11 shrink-0 place-items-center rounded-full bg-sidebar text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70">
       {isSending ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : <ArrowUp aria-hidden="true" className="size-5" />}
@@ -413,6 +439,16 @@ export function TravelAgentChat({
               <p className="font-bold">{errorMessage(visibleError, t)}</p>
               {pendingTurn && isRetryable(visibleError) ? <button type="button" onClick={retryPendingTurn} disabled={isSending} className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-destructive shadow-sm disabled:opacity-50"><RotateCw aria-hidden="true" className="size-3.5" />{t("retry")}</button> : null}
             </div>
+          ) : null}
+          {briefProposal && tripId ? (
+            <section aria-label={t("briefProposalTitle")} className="max-w-[86%] rounded-[18px] border border-primary/20 bg-white p-3 text-sm shadow-sm">
+              <p className="font-bold text-primary">{t("briefProposalTitle")}</p>
+              <p className="mt-1 text-muted-foreground">{t("briefProposalBody", { destination: briefProposal.destinationCandidates?.join(" · ") ?? t("briefProposalNoDestination"), days: briefProposal.travelDays ?? t("briefProposalNoDays") })}</p>
+              <div className="mt-3 flex gap-2">
+                <button type="button" onClick={() => void confirmBriefProposal()} disabled={isConfirmingBrief} className="min-h-11 rounded-full bg-primary px-3 text-xs font-bold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{isConfirmingBrief ? t("briefProposalSaving") : t("briefProposalConfirm")}</button>
+                <button type="button" onClick={() => setBriefProposal(null)} disabled={isConfirmingBrief} className="min-h-11 rounded-full border border-primary/20 px-3 text-xs font-bold text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{t("briefProposalIgnore")}</button>
+              </div>
+            </section>
           ) : null}
         </div>
       </div>

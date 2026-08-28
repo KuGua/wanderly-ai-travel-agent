@@ -59,6 +59,10 @@ export const travelConversationInputSchema = z.object({
 export const travelConversationOutputSchema = z.object({
   content: z.string().trim().min(1).max(8000),
   responseMode: conversationResponseModeSchema,
+  tripBriefProposal: z.object({
+    destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+    travelDays: z.number().int().min(1).max(365).optional(),
+  }).strict().optional(),
 }).strict();
 
 export type TravelConversationInput = z.infer<typeof travelConversationInputSchema>;
