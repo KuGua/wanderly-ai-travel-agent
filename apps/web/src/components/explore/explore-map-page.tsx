@@ -736,8 +736,8 @@ export function ExploreMapPage() {
   }, [locale]);
 
   return (
-    <main data-drawer-open={selected && !chatOpen ? "true" : "false"} className="wanderly-explore-map relative isolate h-[calc(100dvh-4rem)] min-h-[620px] overflow-hidden bg-[#bfe9f2] landscape:h-screen">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_58%_42%,#dff5ee_0_15%,#8bd2df_35%,#65b7ca_62%,#4b9eb5_100%)]" aria-hidden="true" />
+    <main data-drawer-open={selected && !chatOpen ? "true" : "false"} className="wanderly-explore-map wanderly-cosmos wanderly-starfield relative isolate h-[calc(100dvh-62px)] min-h-[620px] overflow-hidden sm:h-screen">
+      <div className="absolute inset-0 bg-[var(--w-space)]" aria-hidden="true" />
       <div className="absolute inset-0">
         <div ref={containerRef} className="size-full" aria-label={t("globeAriaLabel")} />
       </div>
@@ -746,32 +746,32 @@ export function ExploreMapPage() {
 
       {readiness.kind === "loading" ? (
         <div className="pointer-events-none absolute inset-0 z-[4] grid place-items-center" role="status">
-          <span className="inline-flex items-center gap-2 rounded-full bg-card/90 px-4 py-2 text-sm font-bold text-primary shadow-lg backdrop-blur">
+          <span className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold wanderly-cosmos-panel wanderly-r-sm">
             <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" /> {tCommon("loadingGlobe")}
           </span>
         </div>
       ) : null}
 
       {mapNotice ? (
-        <div role="status" aria-live="polite" className="pointer-events-none absolute left-1/2 top-20 z-[60] -translate-x-1/2 rounded-full bg-sidebar/95 px-4 py-2 text-center text-sm font-bold text-white shadow-xl backdrop-blur sm:top-24">
+        <div role="status" aria-live="polite" className="pointer-events-none absolute left-1/2 top-20 z-[60] -translate-x-1/2 px-4 py-2 text-center text-sm font-bold wanderly-cosmos-panel wanderly-r-sm sm:top-24">
           {mapNotice}
         </div>
       ) : null}
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 p-4 sm:p-6">
-        <div className="pointer-events-auto rounded-[20px] bg-sidebar/95 px-4 py-3 text-white shadow-[0_12px_32px_#0a2f3f33] backdrop-blur">
+        <div className="pointer-events-auto px-4 py-3 wanderly-cosmos-panel wanderly-r-lg">
           <p className="font-black tracking-[-0.035em]">{tCommon("brandTagline")}</p>
-          <p className="mt-0.5 text-xs text-[#bde1db]">{t("startingFrom")}</p>
+          <p className="mt-0.5 text-xs opacity-85">{t("startingFrom")}</p>
         </div>
         <div className="pointer-events-auto flex gap-2">
-          <button type="button" onClick={recenter} aria-label={t("recenterAriaLabel")} title={t("recenterTitle")} className="grid size-12 place-items-center rounded-[16px] bg-sidebar/95 text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
+          <button type="button" onClick={recenter} aria-label={t("recenterAriaLabel")} title={t("recenterTitle")} className="grid size-12 place-items-center wanderly-cosmos-control wanderly-r-sm wanderly-press">
             <LocateFixed aria-hidden="true" className="size-5" />
           </button>
           <button type="button" onClick={() => setHelpOpen((open) => !open)} aria-label={t("helpAriaLabel")} aria-expanded={helpOpen} title={t("helpTitle")} className="grid size-12 place-items-center rounded-[16px] bg-sidebar/95 text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
             <HelpCircle aria-hidden="true" className="size-5" />
           </button>
           {auth?.status !== "SIGNED_IN" ? (
-            <Link href="/login" aria-label={t("loginAriaLabel")} title={t("loginTitle")} className="grid h-12 w-24 place-items-center rounded-[16px] bg-sidebar/95 text-sm font-bold text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
+            <Link href="/login" aria-label={t("loginAriaLabel")} title={t("loginTitle")} className="grid h-12 w-24 place-items-center text-sm font-bold wanderly-cosmos-control wanderly-r-sm wanderly-press">
               <span className="flex items-center gap-1.5">
                 <LogIn aria-hidden="true" className="size-4" />
                 {t("loginButton")}
@@ -782,9 +782,9 @@ export function ExploreMapPage() {
       </header>
 
       {helpOpen ? (
-        <aside className="absolute right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] rounded-[20px] bg-card/95 p-4 text-sm leading-6 shadow-xl backdrop-blur sm:right-6 sm:top-24">
+        <aside className="absolute right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] p-4 text-sm leading-6 wanderly-cosmos-panel wanderly-r-lg sm:right-6 sm:top-24">
           <p className="font-bold">{t("helpHeading")}</p>
-          <p className="mt-1 text-muted-foreground">{t("helpBody")}</p>
+          <p className="mt-1 opacity-85">{t("helpBody")}</p>
         </aside>
       ) : null}
 
@@ -802,7 +802,7 @@ export function ExploreMapPage() {
       ) : null}
 
       {managePinsOpen ? (
-        <section className="absolute bottom-20 left-4 z-20 block w-[min(360px,calc(100%-2rem))] rounded-[24px] bg-card/95 p-4 shadow-[0_20px_60px_#082f3f40] backdrop-blur landscape:bottom-6 landscape:left-6">
+        <section className="absolute bottom-20 left-4 z-20 block w-[min(360px,calc(100%-2rem))] p-4 wanderly-cosmos-panel wanderly-r-lg landscape:bottom-6 landscape:left-6">
           <>
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1094,12 +1094,12 @@ function LayerToggleGroup({
   })();
   return (
     <section
-      className="absolute left-4 top-32 z-20 w-44 rounded-[18px] bg-card/95 p-2 shadow-lg backdrop-blur sm:left-6 sm:top-36"
+      className="absolute left-4 top-32 z-20 w-44 p-2 wanderly-cosmos-panel wanderly-r-lg sm:left-6 sm:top-36"
       role="group"
       aria-label={t("layerPanel.groupAriaLabel")}
       data-readiness={disabledReason ?? "supported"}
     >
-      <p className="px-2 pb-1 text-[10px] font-black uppercase tracking-[0.12em] text-muted-foreground">{t("layerPanel.kicker")}</p>
+      <p className="px-2 pb-1 text-[10px] font-black uppercase tracking-[0.12em] opacity-80">{t("layerPanel.kicker")}</p>
       {(["countries", "regions", "cities"] as const).map((layer) => (
         <button
           key={layer}
@@ -1107,13 +1107,13 @@ function LayerToggleGroup({
           aria-pressed={visibility[layer]}
           disabled={disabled}
           onClick={() => onToggle(layer)}
-          className="flex min-h-11 w-full items-center rounded-[12px] px-2 text-left text-xs font-bold aria-pressed:bg-secondary aria-pressed:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex min-h-11 w-full items-center px-2 text-left text-xs font-bold wanderly-r-sm wanderly-press aria-pressed:wanderly-edge-thin aria-pressed:bg-[var(--w-highlight)] aria-pressed:text-[var(--w-ink)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {labels[layer]}
         </button>
       ))}
       <p
-        className="px-2 pb-1 pt-1 text-[10px] leading-4 text-muted-foreground"
+        className="px-2 pb-1 pt-1 text-[10px] leading-4 opacity-80"
         role="status"
         aria-live="polite"
       >

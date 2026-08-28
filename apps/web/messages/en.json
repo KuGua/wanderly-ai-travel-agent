@@ -391,7 +391,8 @@
       "sectionLabel": "This trip",
       "archivedLabel": "Archived",
       "defaultSubtitle": "Default private thread for this trip",
-      "threadSubtitle": "Private thread, visible only to you"
+      "threadSubtitle": "Private thread, visible only to you",
+      "currentBadge": "Current"
     },
     "workspace": {
       "agentChip": "Collab agent",

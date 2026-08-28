@@ -391,7 +391,8 @@
       "sectionLabel": "本项目",
       "archivedLabel": "已归档",
       "defaultSubtitle": "本行程的默认私人对话",
-      "threadSubtitle": "仅你可见的私人对话"
+      "threadSubtitle": "仅你可见的私人对话",
+      "currentBadge": "当前"
     },
     "workspace": {
       "agentChip": "协作 Agent",
