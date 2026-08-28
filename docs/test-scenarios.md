@@ -421,6 +421,32 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - 地球表面必须保持实体不透明：默认首屏可渐进加载 GEBCO `GEBCO_LATEST` WMS 的陆地与海底地势，但在其返回前 Natural Earth 与实色水面必须持续可见，不得出现白色、透明或方块状缺失地表。GEBCO source 必须使用 1024 逻辑 tile size 与相应的低一级 source minzoom，以限制公共 WMS 的并发请求且不阻塞默认 globe。zoom 更高时继续保留最后可用层级而非淡出为蓝底。GEBCO 未返回或失败时，Natural Earth 必须持续可见（包括高 zoom 的 overzoom）且不阻塞缩放。道路、标签和行政边界仍需在 relief 之上可读。必须显示 GEBCO attribution 与”不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
 - 本地 SVG 国界、九段线与地名覆盖层必须按当前 MapLibre globe 的屏幕地平线轮廓裁剪，不能只按页面矩形裁剪。旋转、缩放、跨日期变更线或高纬度视图下，任何边界、九段线、文字或标记均不得显示在球体轮廓之外，或让背半球内容穿透到前景。地名必须在锚点接近地平线、或整个文字包围框不能留在球内时隐藏；若无法计算有效轮廓则 fail-closed 隐藏 SVG 覆盖层。裁剪路径与位置必须在 `render` 帧内更新，不能通过 React state 造成一帧滞后。
 
+### TS-P2-LIC — Serve a shared cached introduction for a stable map location
+
+**Stories:** S4, P1
+**Objective:** Verify that a stable map location receives one non-personalized, locale-scoped introduction without widening the Explore lifecycle, leaking private context, or duplicating concurrent LLM calls.
+
+**Starting conditions:** API and PostgreSQL are running; the server versioned location-introduction catalog contains `tokyo`; a fake ModelGateway is installed and records calls; no cache row exists for `tokyo` and `zh`.
+
+**Steps:**
+
+1. From an anonymous browser session, select the catalogued Tokyo location in Explore and call `POST /api/v1/explore/location-introductions` with `{ "sourceId": "tokyo", "locale": "zh" }`.
+2. Repeat the request from a different anonymous session before the 7-day expiry. Inspect the ModelGateway fake call count and both response bodies.
+3. Create 20 concurrent requests for the same missing key. Hold the fake model response until all requests have reached the service, then release it and poll all `202 GENERATING` responses.
+4. Advance time beyond `expires_at` and repeat the request. Then force the model to return timeout, schema-invalid and policy-disallowed content on separate expired keys.
+5. Request unsupported source IDs, arbitrary names/coordinates, and an `INSPIRATION` pin. Exceed the introduction endpoint's independent per-IP rate limit.
+6. In the browser, select a stable location, then close the drawer or select another location while the original request is generating. Inspect `shared_trips`, `chat_threads`, `chat_messages`, `agent_task_runs`, `audit_events`, traces, logs and metric labels.
+
+**Expected outcomes:**
+
+- Step 1 returns `200 READY` with `cacheStatus: "MISS"`; the map drawer renders the text directly and neither opens chat nor creates a Trip, thread, message, task, consent, snapshot or user audit event.
+- Step 2 returns `200 READY` with `cacheStatus: "HIT"`, identical content and expiry; the fake model was called exactly once. Cache entries are keyed by canonical source ID, locale and content version, so `en` is a separate entry.
+- Step 3 produces exactly one lease owner/model call. Other requests return `202 GENERATING` with bounded retry guidance and eventually receive the same `READY` content; no transaction remains open while the model is awaited.
+- Step 4 atomically regenerates once after expiry. Timeout, provider/network failure, schema failure or policy failure returns `503 LOCATION_INTRODUCTION_UNAVAILABLE`, releases the lease, and does not expose or cache partial/error content.
+- Step 5 returns `400 LOCATION_INTRODUCTION_UNSUPPORTED_PLACE` for unrecognised entries and `429 LOCATION_INTRODUCTION_RATE_LIMITED` after the configured limit. Unsupported and inspiration selections do not invoke the model.
+- Step 6 aborts only client observation. A valid server-side lease may finish and populate the public cache, but no user-specific business data is written. Logs, audit, metric labels and spans contain no source ID, name, coordinate, cache key, prompt, generated content, user, Trip or thread context.
+- Generated content contains no current prices, inventory, visa/entry decision, weather, operating hours, booking, legal or safety claim. The UI does not display an AI badge or generation timestamp.
+
 ### TS-P2-LR — Resolve coordinates through the three source modes
 
 **Stories:** P1
@@ -530,7 +556,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - 自定义账号模式的登录只接受用户名；勾选“30天内记住我”后 token 上限为 30 天并使用持久存储，未勾选时只使用 session storage。当前本地和线上 demo 均采用 `PASSWORD_RESET_MODE=direct`：输入邮箱后直接设置两次一致的新密码；该模式未验证邮箱所有权，是 demo 阶段明确接受的风险，接入真实用户前必须替换。切换为 `email-code` 后恢复六位验证码、60 秒重发、10 分钟过期和最多五次失败的流程。成功页面可立即返回登录，并在 5 秒后自动返回。生产邮件只经配置好的 AWS SES 发送，日志不得包含邮箱、验证码、reset token 或密码。
 - 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话，或仅在 loopback `custom-local` 模式来自 API 验证的本地用户名/密码会话。
 - fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
-- 所有受保护的 HTTP 请求在 Cognito 模式通过 AWS Amplify session 读取当前 access token；`custom-local` 仅在 loopback 开发环境从受控浏览器会话读取 API JWT。无 session 时不发送 Authorization，token 刷新后使用新 token；登录会话变化或退出时必须替换 TanStack Query client，使旧私有缓存不可见且活跃查询以新会话重新执行。`POST /api/v1/explore/location-reference` 是唯一匿名、无持久化且限流的例外。应用自身不得把 Cognito token 复制到 localStorage。
+- 所有受保护的 HTTP 请求在 Cognito 模式通过 AWS Amplify session 读取当前 access token；`custom-local` 仅在 loopback 开发环境从受控浏览器会话读取 API JWT。无 session 时不发送 Authorization，token 刷新后使用新 token；登录会话变化或退出时必须替换 TanStack Query client，使旧私有缓存不可见且活跃查询以新会话重新执行。`POST /api/v1/explore/location-reference` 与稳定地点专用的 `POST /api/v1/explore/location-introductions` 是仅有的匿名、限流 Explore 例外；后者只写非个性化共享缓存，不写用户业务状态。应用自身不得把 Cognito token 复制到 localStorage。
 - `AUTH_MODE` 默认必须为 `cognito`。显式 `local-dev`（固定单用户）和 `custom-local`（数据库用户名/密码、多用户）仅允许 `NODE_ENV=development|test`、loopback server 绑定、loopback socket 客户端和 `LOCAL_DEV_ALLOWED_ORIGINS` 中的精确 loopback HTTP Origin；`custom-local` 还必须有至少 32 字符的 API `JWT_SECRET`。production、staging、缺失环境或任一非 loopback 边界必须拒绝启动/请求。浏览器不能发送 fake token/user ID；`local-dev` 的固定身份和 `custom-local` 的已验证 JWT 身份都须通过原 owner-only thread 授权。非允许 Origin 不得获得 CORS 读权限，且对受保护写操作必须返回 `403` 并不创建业务状态。
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。

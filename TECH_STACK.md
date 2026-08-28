@@ -27,7 +27,7 @@ Amazon RDS for PostgreSQL
         └─ official visa/readiness verification sources
 ```
 
-所有用户、偏好和行程均来自已认证用户与数据库。唯一例外是匿名、无持久化、限流的离线地图位置参考：它不创建用户或业务状态。任何 provider 调用失败都必须显示不可用状态，不能伪装成实时库存、报价或签证结论。
+所有用户、偏好和行程均来自已认证用户与数据库。匿名例外仅限用户显式触发的离线地图位置参考，以及只读、共享的稳定地点介绍：两者不创建用户或业务状态；地点介绍仅持久化非个性化缓存条目。任何 provider 调用失败都必须显示不可用状态，不能伪装成实时库存、报价或签证结论。
 
 ## 2. 各层技术选择
 
@@ -40,12 +40,13 @@ Amazon RDS for PostgreSQL
 | 数据获取与状态刷新 | REST/JSON + OpenAPI；`POST` 创建持久 Agent task 并返回 `202`；鉴权 `fetch` SSE 仅订阅安全进度/文本 | API 与浏览器断开不会影响已接受任务；SSE 是可丢失显示通道，用户返回后以服务端 task 状态和最终结果恢复。对话文本仅在流式安全 gate 后增量显示；planning/replan 仅发送安全阶段和已持久化结果状态。 | 为 MVP 自建 WebSocket 事件总线、用原生 `EventSource` 承担 Bearer 鉴权、由连接生命周期控制任务取消。 |
 | API / Agent runner | **Node.js LTS + TypeScript + Fastify**（AWS App Runner）+ **ECS Fargate Agent Worker** | API 负责认证、命令与结果读取；独立 Worker 通过 PostgreSQL 租约执行任务，能跨 API 断连、滚动发布和实例替换恢复。Worker 可多副本并发，正确性不依赖 `desiredCount=1`。 | Lambda 链式编排、微服务网格、多个自由 Agent 服务。 |
 | 离线地图位置参考 | 进程内 `LocationReferenceResolver`（生产默认）/ `disabled` 模式（仅返回 `NO_REFERENCE`）/ 本地 dev 可选 `sidecar` 容器（`apps/api/src/location-reference/location-reference-source.ts`） | 生产保留单进程以降低 RPS 内存与跨实例限流复杂度；本地 dev 通过 `LOCATION_REFERENCE_MODE=sidecar` 把 ~70 MB GeoJSON 抽到独立容器，避免 API/Worker 重复加载；`disabled` 模式跳过数据加载直接返回 `NO_REFERENCE`，用于 16GB Mac 端到端 demo | 把位置参考改为共享 Redis 缓存、把 sidecar 推到生产、把 `disabled` 当作"零成本"代替 fixture。 |
+| 地点介绍共享缓存 | PostgreSQL `location_introduction_cache` + 服务端版本化地点目录 + `ModelGateway` 专用生成方法；浏览器用 TanStack Query 短缓存 | 对稳定 `sourceId` 与 `en`/`zh` 内容版本提供 7 天跨用户复用、数据库租约防击穿和可控失效；复用现有真实模型、trace、指标与安全输出边界，不写入私聊或 Trip 状态 | Redis/ElastiCache、客户端以任意坐标或名称为共享键、把介绍作为实时旅行/签证/价格事实。 |
 | 身份 | **Amazon Cognito User Pool**，邮箱或手机号登录，API 验证 access token | 身份来自已验证 JWT 的 `sub`，前端不能通过用户 ID 或 demo 角色选择身份。生产使用 Cognito；本地仅允许显式 `local-dev`（固定单一身份 smoke test）或 `custom-local`（数据库用户名/密码和 API JWT，用于多用户隔离测试）。两者均仅限 development/test 与 server/client loopback。 | 复杂 SSO、社交登录矩阵、组织管理。 |
 | 主数据库 | **Amazon RDS for PostgreSQL** + SQL migrations + Drizzle ORM | 需要事务、关系约束、审计和版本一致性：Profile、用户私有对话、字段级 consent、两个出发地、候选方案、三人确认和 callback 去重必须共享一个权威真相源。RDS PostgreSQL 支持 VPC、SSL、快照与时间点恢复。[AWS RDS PostgreSQL](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html) | SQLite 作为云端主库、NoSQL 作为业务真相。 |
 | Agent | **受限 Skill Registry + ModelGateway**，运行在 App Runner | 模型只能通过服务器暴露的、类型化 function-tool 契约请求能力；具体 LLM 为可配置的 OpenAI-compatible provider。SDK 不是授权、确认或持久状态机。 | 让模型直接读写数据库、付款或自由互聊的多 Agent 群。 |
 | 长期记忆 | **PostgreSQL 中结构化、版本化的个人事实 + 当前 Trip 记忆投影** | 复用 `user_profiles`、`preference_facts`、字段级 consent、不可变 `constraint_snapshot` 和 stale/replan 控制面。低风险行为只能形成待确认的建议；个人事实默认私有，Shared Agent 只消费当前 Trip 的最小授权投影。 | 向量库、embedding、RAG、独立 memory service、跨 Trip Team memory、从私聊或敏感字段自动写入长期记忆。 |
 | 工具与模型边界 | Zod schema、structured outputs、server-side policy gate、受限 thread context builder | 对话 archive 仅由所有者读取。Personal Agent 仅可由服务端从同一 owner 的同一私有 thread 构造最近、有预算的原文上下文；该上下文只发送给已配置模型 provider，不进入共享 snapshot、Profile、日志、trace、audit、metric 或客户端持久状态。原文窗口受 `CONVERSATION_CONTEXT_MAX_TURNS`（默认 8 完整轮次，上限 12）和 `CONVERSATION_CONTEXT_MAX_CHARS`（默认 12,000 UTF-16 字符，上限 20,000）双重预算限制，并以 task acceptance 时记录的 `agent_task_runs.context_max_message_sequence` 为不可回写上界。所有共享工具只获得当前 `constraint_snapshot` 的最小授权字段。模型输出不直接成为业务真相。 | 将整段私聊、其他 thread 或共享/未授权数据放进 prompt；由浏览器提交 history；向量库、Redis 或独立 memory service；自动摘要 worker；tokenizer/embedding；向遥测或前端暴露供应商 key。 |
-| 旅行与数据 API | Amadeus Self-Service Flight Offers Search、openrouteservice Routing、Frankfurter；通过 provider adapters；版本化离线地图位置参考数据 | Flight adapter 仅在服务端启用并以 `UNAVAILABLE` fail closed；Amadeus Test 仅用于开发集成验证，不向产品展示为实时结果。唯一匿名端点按每客户端每分钟 30 次限流，仅将用户显式点击的坐标映射为非权威国家/最近城市上下文，不成为旅行事实或持久化数据。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA；地图位置参考不得变成地址、POI 或旅行 provider。 |
+| 旅行与数据 API | Amadeus Self-Service Flight Offers Search、openrouteservice Routing、Frankfurter；通过 provider adapters；版本化离线地图位置参考数据 | Flight adapter 仅在服务端启用并以 `UNAVAILABLE` fail closed；Amadeus Test 仅用于开发集成验证，不向产品展示为实时结果。两个匿名 Explore 端点均只在用户显式触发时调用：位置参考按每客户端每分钟 30 次限流，地点介绍使用独立限流并只读/刷新公共缓存；两者均不成为旅行事实或用户业务状态。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA；地图位置参考不得变成地址、POI 或旅行 provider。 |
 | Visa / entry | 官方核验下一步；未来可接 Sherpa/IATA Timatic adapter | 未配置可靠数据源时只展示核验缺口与官方核验下一步。 | 以 LLM 或 Wikipedia 推断签证、代办、法律结论。 |
 | 异步与编排 | PostgreSQL 持久任务状态机、租约领取、idempotency key、transactional outbox、`agent_task_runs`；Fargate Worker；同步 booking sandbox | 对话、planning 与 replan 都以 `QUEUED → RUNNING → COMPLETED/FAILED/STALE/CANCELLED` 执行；显式 Stop 是唯一取消源。租约过期可恢复，最终提交按 lease token 和版本条件化；不把 partial 文本作为业务记录。 | Temporal Cloud、Step Functions、Redis 队列同时进入 MVP；把浏览器/SSE 断开视为取消。 |
 | 可观测性 | OpenTelemetry + CloudWatch；结构化日志和低基数业务指标 | 以 `trip_id`、`plan_version`、`run_id`、`orchestration_request_id` 关联结果；日志不含私聊、国籍明文、证件号、支付数据。 | 先建独立数据湖或全套企业 APM。 |
@@ -53,7 +54,7 @@ Amazon RDS for PostgreSQL
 
 ### 探索会话与 Draft Trip 生命周期
 
-`/home` 进入只创建浏览器内存中的探索会话，不立即写数据库；地图浏览、坐标点击和打开聊天均不持久化业务状态。用户提交第一条聊天消息时，Fastify 通过幂等、单事务的 `POST /explorations/start` 创建 `DRAFT` Trip、创建者 membership 与默认私有 thread，随后浏览器调用既有 thread turn endpoint。每次新标签页、整页刷新或重新打开开始新的内存会话；同一标签页内客户端路由切换保留该会话。不得使用 URL、`localStorage` 或 `sessionStorage` 恢复当前探索 Trip。
+`/home` 进入只创建浏览器内存中的探索会话，不立即写数据库；地图浏览、坐标点击和打开聊天均不持久化业务状态。稳定地点点击可读取或刷新全局、非个性化的地点介绍缓存，但不得创建任何用户、Trip、thread、message、授权或审计业务记录。用户提交第一条聊天消息时，Fastify 通过幂等、单事务的 `POST /explorations/start` 创建 `DRAFT` Trip、创建者 membership 与默认私有 thread，随后浏览器调用既有 thread turn endpoint。每次新标签页、整页刷新或重新打开开始新的内存会话；同一标签页内客户端路由切换保留该会话。不得使用 URL、`localStorage` 或 `sessionStorage` 恢复当前探索 Trip。地点介绍的完整实施契约见 [地点介绍共享缓存实施方案](docs/location-introduction-cache-implementation.md)。
 
 `DRAFT` 仅允许私有探索对话与编辑 brief，不能邀请、授权、创建 snapshot、planning/replan、确认或 booking。只有 creator 显式“开始规划/邀请同行者”且 brief 满足正式约束后，服务端才将其激活为 `PLANNING`。实现细节见 [探索会话与 Trip 生命周期实施方案](docs/exploration-trip-lifecycle-implementation.md)。
 
