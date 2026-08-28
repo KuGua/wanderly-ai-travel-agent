@@ -7,8 +7,10 @@ import {
   auditEvents,
   chatThreads,
   constraintSnapshots,
+  destinationCandidates,
   idempotencyRecords,
   itineraryPlans,
+  preferenceFacts,
   providerOffers,
   providerSearchRuns,
   sharedTrips,
@@ -17,6 +19,7 @@ import {
   agentTaskRuns,
   tripMembers,
   users,
+  visaReadinessChecks,
 } from "../src/db/schema.js";
 import { and, eq } from "drizzle-orm";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
@@ -28,12 +31,13 @@ beforeAll(async () => {
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
   await app.ready();
 
+  // Ensure both `alice` and `bob` users exist so `authHeaders("bob")`
+  // resolves a known identity in the non-creator rejection test.
   for (const subject of ["alice", "bob"] as const) {
     const [existing] = await db.select().from(users)
       .where(eq(users.externalId, subject)).limit(1);
     if (existing) {
       if (subject === "alice") aliceId = existing.id;
-      // Bob only needs to exist for authenticated request fixtures.
       continue;
     }
     const [created] = await db.insert(users).values({
@@ -41,7 +45,6 @@ beforeAll(async () => {
       displayName: subject.charAt(0).toUpperCase() + subject.slice(1),
     }).returning();
     if (subject === "alice") aliceId = created.id;
-    // Bob only needs to exist for authenticated request fixtures.
   }
 });
 
@@ -50,14 +53,23 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await db.delete(auditEvents);
-  await db.delete(idempotencyRecords);
-  await db.delete(sourceEvidence);
+  // Order matters: clear leaf tables before their parents so FK cascades
+  // from `shared_trips` (e.g. → `constraint_snapshots`) are not blocked by
+  // rows in `provider_offers` / `visa_readiness_checks` left over from
+  // sibling test files (the test DB is shared across files in one run).
   await db.delete(providerOffers);
-  await db.delete(providerSearchRuns);
+  await db.delete(sourceEvidence);
+  await db.delete(visaReadinessChecks);
+  // Audit events retain the plan reference, so they must be cleared before
+  // plans. Their deletion is scoped to the disposable test database.
+  await db.delete(auditEvents);
   await db.delete(itineraryPlans);
+  await db.delete(providerSearchRuns);
   await db.delete(agentTaskRuns);
+  await db.delete(destinationCandidates);
   await db.delete(constraintSnapshots);
+  await db.delete(preferenceFacts);
+  await db.delete(idempotencyRecords);
   await db.delete(tripSearchPreferences);
   await db.delete(chatThreads);
   await db.delete(tripMembers);

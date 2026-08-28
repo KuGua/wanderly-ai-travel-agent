@@ -4,12 +4,17 @@ interface AgentScopePolicy {
   readonly personal: readonly SkillScope[];
   readonly shared: readonly SkillScope[];
   readonly review: readonly SkillScope[];
+  readonly "public-content": readonly SkillScope[];
 }
 
 const DEFAULT_POLICY: AgentScopePolicy = {
   personal: ["profile:read", "profile:write:propose", "consent:read", "chat:read"],
   shared: ["snapshot:read", "plan:write:propose", "readiness:read", "flight:search"],
   review: ["snapshot:read", "plan:write:propose"],
+  // S4: public-content agents run the cached location-introduction skill
+  // and have no access to Profile/Trip/thread/snapshot data. Empty by
+  // design — they only call ModelGateway.generateLocationContent.
+  "public-content": [],
 };
 
 export class DefaultPolicyGate implements PolicyGate {

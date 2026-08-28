@@ -151,12 +151,13 @@
 
 **Acceptance criteria:**
 
-1. Only a server-versioned, stable `sourceId` and `en`/`zh` locale can request an introduction. Arbitrary coordinates, names, map labels and `INSPIRATION` pins are rejected or skipped without an LLM call.
+1. Only a server-versioned, stable `sourceId` and `en`/`zh` locale can request an introduction. `apps/api/data/location-introduction/catalog.json` is the sole active catalog; arbitrary coordinates, names, map labels and `INSPIRATION` pins are rejected or skipped without an LLM call.
 2. The first valid request generates one non-personalized introduction and persists a 7-day PostgreSQL cache entry. A valid subsequent request for the same place, locale and content version returns the entry without calling the model.
 3. Concurrent misses have one generation lease. Non-owners receive `202 GENERATING` and poll; they never fan out duplicate model calls. Expired entries regenerate; model/policy/schema failures do not cache content.
 4. The map drawer loads the introduction automatically without opening chat or creating a Trip, thread, message, Agent task, consent, snapshot or audit event containing user data.
 5. The endpoint is anonymous and independently rate-limited. Logs, metrics labels, trace attributes and audit summaries never contain source ID, place name, coordinates, cache key, prompt or generated content.
 6. Redis is not introduced. PostgreSQL remains the shared cache and lease authority; TanStack Query is browser-only caching.
+
 
 ### P3 — Observe one owner request across API → DB → Worker → SSE
 

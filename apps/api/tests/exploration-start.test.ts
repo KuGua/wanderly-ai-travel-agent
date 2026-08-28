@@ -6,8 +6,15 @@ import { db } from "../src/db/database.js";
 import {
   auditEvents,
   chatThreads,
+  constraintSnapshots,
   idempotencyRecords,
+  itineraryPlans,
+  providerOffers,
+  providerSearchRuns,
   sharedTrips,
+  sourceEvidence,
+  tripSearchPreferences,
+  agentTaskRuns,
   tripMembers,
   users,
 } from "../src/db/schema.js";
@@ -47,6 +54,13 @@ beforeEach(async () => {
   // Best-effort cleanup. Order matters because of FKs.
   await db.delete(auditEvents);
   await db.delete(idempotencyRecords);
+  await db.delete(sourceEvidence);
+  await db.delete(providerOffers);
+  await db.delete(itineraryPlans);
+  await db.delete(providerSearchRuns);
+  await db.delete(agentTaskRuns);
+  await db.delete(constraintSnapshots);
+  await db.delete(tripSearchPreferences);
   await db.delete(chatThreads);
   await db.delete(tripMembers);
   await db.delete(sharedTrips).where(eq(sharedTrips.createdBy, aliceId));

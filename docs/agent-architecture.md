@@ -245,7 +245,7 @@ Shared Trip Agent → shared Skills → typed provider adapters / ModelGateway
 1. 用户、provider 和未来外部文本都是数据，不是指令；
 2. 所有进入模型的内容先做 schema normalization；模型只可调用 allow-list Skills；
 3. 每个模型输出先经 Zod，再经 authorization/evidence/action policy 校验；
-4. 不将 passport/document number、raw transcript、unshared profile、credentials 或 raw headers 放入 prompt、日志、trace、metric labels 或客户端持久状态；
+4. 不将 passport/document number、unshared profile、credentials 或 raw headers 放入 prompt、日志、trace、metric labels 或客户端持久状态；私有 raw transcript 仅可按本文定义的同 owner、同 thread、有界窗口进入 Personal Agent prompt，绝不进入任何其他模型、共享边界或遥测；
 5. schema/policy failure fail closed：不能激活 plan，不能确认，不能 booking；
 6. bookings callback 已独立使用 provider HMAC signature/secret 验证：签名覆盖 timestamp 与精确 raw body，使用五分钟窗口和 timing-safe comparison，并在通过后校验预期 execution。
 

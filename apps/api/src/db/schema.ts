@@ -45,6 +45,14 @@ export const tripInvitationStatusEnum = pgEnum("trip_invitation_status", [
   "PENDING", "ACCEPTED", "REVOKED", "EXPIRED",
 ]);
 
+// S4 / docs/location-introduction-cache-implementation.md §4.  Shared,
+// non-personalized destination-introduction cache.  No user/Trip/thread
+// identifiers are stored here.
+export const locationIntroductionStatusEnum = pgEnum("location_introduction_status", [
+  "GENERATING",
+  "READY",
+]);
+
 // ─── Users ───────────────────────────────────────────────────────────────────
 
 export const users = pgTable("users", {
@@ -57,7 +65,6 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
-
 // ─── User Profiles (private by default) ─────────────────────────────────────
 
 export const userProfiles = pgTable("user_profiles", {
@@ -489,3 +496,23 @@ export const promptVersions = pgTable("prompt_versions", {
 }, (table) => ({
   nameVersionUnique: uniqueIndex("prompt_versions_name_version_unique").on(table.name, table.version),
 }));
+
+// ─── Location Introduction Cache (S4) ─────────────────────────────────────────────────────────────────────
+// Anonymous, shared cache for short destination intros. No user/Trip/thread
+// identifiers ever land in this row.
+export const locationIntroductionCache = pgTable("location_introduction_cache", {
+  cacheKey: varchar("cache_key", { length: 64 }).primaryKey(),
+  canonicalPlaceId: varchar("canonical_place_id", { length: 128 }).notNull(),
+  locale: varchar("locale", { length: 16 }).notNull(),
+  contentVersion: varchar("content_version", { length: 64 }).notNull(),
+  status: locationIntroductionStatusEnum("status").notNull(),
+  content: text("content"),
+  generatedAt: timestamp("generated_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  generationLeaseToken: uuid("generation_lease_token"),
+  generationLeaseExpiresAt: timestamp("generation_lease_expires_at", { withTimezone: true }),
+  modelName: varchar("model_name", { length: 128 }),
+  promptVersion: varchar("prompt_version", { length: 64 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});

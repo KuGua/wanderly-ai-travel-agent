@@ -9,10 +9,11 @@ status: implemented
 
 ## Purpose
 
-Generates one private travel answer from the current owner question, an
-optional minimal place context, and bounded safe output from `thread.recall`.
-It is registered by `personal-travel-agent.ts` and invoked only through the
-Skill Registry with expected version `1.0.0`.
+Generates one private travel answer from the current owner question, optional
+minimal place context, and a server-built bounded raw-message window from the
+same owner thread. `thread.recall` remains a separate redacted Skill and is
+not the runtime context source. It is registered by `personal-travel-agent.ts`
+and invoked only through the Skill Registry with expected version `1.0.0`.
 
 ## 注册元数据
 
@@ -28,8 +29,10 @@ Skill Registry with expected version `1.0.0`.
 ## Contract
 
 - Input: trimmed question (1–4000 chars), optional validated coordinates and
-  `REFERENCE | INSPIRATION` source type, and at most 20 safe history entries of
-  at most 1000 chars each.
+  `REFERENCE | INSPIRATION` source type, and a server-built `threadContext` of
+  at most 24 `USER | ASSISTANT` entries. Each entry is at most 8000 chars and
+  total context is at most 20,000 chars; the builder enforces the stricter
+  runtime turn/character budget.
 - Output: non-empty answer plus `MODEL | SAFE_REFUSAL`.
 - Allowed scope: `chat:read`; no profile writes, shared planning, bookings, or
   irreversible tools.
@@ -51,11 +54,12 @@ service persists no USER or ASSISTANT row for that failed turn.
 
 ## Privacy and observability
 
-The current question is processed only for the active Personal Agent request.
-Previous raw transcript is not supplied by `thread.recall`; only non-empty
-server-safe summaries are eligible. Audit and Agent run records contain IDs,
-version/status, timing, token counts, and output hashes—not question, answer,
-or transcript text.
+The current question and prior context are processed only for the active
+Personal Agent request. The Worker, never the browser, builds `threadContext`
+from the same owner thread and its acceptance-time message-sequence boundary;
+the raw window is sent only to the configured model provider. Audit and Agent
+run records contain IDs, version/status, timing, token counts, and output
+hashes—not question, answer, or transcript text.
 
 ## 失败模式
 

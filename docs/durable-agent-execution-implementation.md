@@ -254,7 +254,7 @@ SSE event 不保证跨连接 replay。重连时客户端先读取 `GET /agent-ru
 2. API 验证 thread ownership 与 input schema。
 3. 一个 transaction claim idempotency、插入 USER message、插入 `agent_task_runs(QUEUED)`、插入 outbox/audit record；对于 duplicate request 返回同一个 accepted result。
 4. Worker 原子 claim task，重新加载并验证 thread ownership，只读取被引用的 owner-only message 及 safe recall。
-5. Worker 通过 policy/Skill boundary 调用 `thread.recall → travel.conversation → ModelGateway`。
+5. Worker 在 owner/membership 重验后通过 `ConversationContextBuilder → travel.conversation → ModelGateway` 调用模型；builder 只读取 task acceptance sequence boundary 之前的同 thread 有界原文窗口。`thread.recall` 继续是独立的 redacted owner-only Skill，不参与该运行时路径。
 6. 模型 streaming 时，Worker 安全缓冲 UTF-8、应用 size limit 与 streaming safety validation，并发布 approved transient delta；没有 delta 是 durable 的。
 7. 完整 candidate 通过现有 final safety 与 schema validation。一个 conditional transaction 插入 ASSISTANT message 并将 task 转为 `COMPLETED`。
 8. API relay 发送 `run.completed`；任意客户端也可从持久 owner conversation 恢复。

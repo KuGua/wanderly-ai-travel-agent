@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { ApiError } from "../middleware/error-handler.js";
 import { metrics } from "../observability/metrics.js";
 import { getLocationReferenceSource, LocationReferenceSourceError } from "../location-reference/location-reference-source.js";
+import { resolveLocationIntroductionSourceIdForReference } from "../location-introduction/location-introduction-catalog.js";
 import { errorResponseSchema, locationReferenceRequestSchema, locationReferenceResponseSchema, toJsonSchema } from "../types/schemas.js";
 import { LocationReferenceRateLimiter } from "./location-reference-rate-limit.js";
 
@@ -27,7 +28,13 @@ export async function locationReferenceRoutes(app: FastifyInstance) {
     try {
       const reference = await source.resolve(latitude, longitude);
       metrics.inc("location_reference_requests_total", { outcome: reference.outcome === "REFERENCE" ? "reference" : "no_reference" });
-      return locationReferenceResponseSchema.parse(reference);
+      const response = reference.outcome === "REFERENCE"
+        ? {
+            ...reference,
+            introductionSourceId: resolveLocationIntroductionSourceIdForReference(reference),
+          }
+        : reference;
+      return locationReferenceResponseSchema.parse(response);
     } catch (error) {
       if (error instanceof LocationReferenceSourceError) {
         metrics.inc("location_reference_requests_total", { outcome: "unavailable" });

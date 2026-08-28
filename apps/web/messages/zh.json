@@ -49,10 +49,18 @@
     "kicker": "您的私人旅行空间",
     "title": "我的行程",
     "subtitle": "继续规划一段正在成形的旅行，或调整用于指导推荐的私人偏好。",
+    "newTrip": "新建规划",
     "summary": {
       "ariaLabel": "工作区概览",
       "ready": "您的旅行空间已就绪",
       "privacyHeadline": "偏好与行程保持私密",
+      "activeTripsHeadline": "{count, plural, other {# 个行程需要关注}}",
+      "activeLabel": "进行中",
+      "activeDetail": "规划中或需要复核",
+      "completedLabel": "已完成",
+      "completedDetail": "已确认或已预订的行程",
+      "archivedLabel": "已归档",
+      "archivedDetail": "已取消的行程",
       "tripsLabel": "行程",
       "tripsDetail": "工作区中可用",
       "profileLabel": "资料",
@@ -60,6 +68,25 @@
       "profileNotSet": "未设置",
       "profileDetail": "默认私密",
       "notSet": "未设置"
+    },
+    "filter": {
+      "ariaLabel": "按状态筛选行程",
+      "active": "进行中",
+      "all": "全部",
+      "completed": "已完成",
+      "archived": "已归档",
+      "searchPlaceholder": "搜索目的地或行程"
+    },
+    "hero": {
+      "ariaLabel": "需要关注的行程",
+      "heading": "继续规划",
+      "needsAction": "需要你处理",
+      "staleBadge": "方案已过期",
+      "planningBadge": "正在规划中",
+      "staleBody": "价格或约束变化导致当前方案过期。请查看更新后的对比方案。",
+      "planningBody": "行程正在规划中，查看最新进展并提供输入。",
+      "reviewCta": "复核方案",
+      "continueCta": "继续规划"
     },
     "errorStateProfileUnavailable": "资料加载失败",
     "errorStateTripsUnavailable": "行程加载失败",
@@ -262,6 +289,12 @@
     "locationReferenceNote": "这是离线地图参考，不是地址、旅行候选、价格、可用性、签证或预订事实。",
     "locationReferenceDataPrefix": "数据来源：",
     "markerOpenAria": "打开 {name}",
+    "locationIntroduction": {
+      "loading": "正在准备介绍……",
+      "generating": "正在撰写此介绍……",
+      "unavailable": "暂时无法加载，请稍后重试。",
+      "retry": "重试"
+    },
     "state": {
       "IDLE": "目的地预览",
       "TALKING": "正在规划路线",

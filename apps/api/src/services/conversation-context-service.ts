@@ -13,14 +13,14 @@
  * removing oldest whole turns. The current USER question is never
  * duplicated into history — it is passed separately as `question`.
  *
- * Telemetry (Phase 4) lives in `src/observability/metrics.ts`. This
- * file exposes a span and the `truncatedReason` field so a later phase
- * can wire counters without changing the return shape.
+ * Telemetry lives in `src/observability/metrics.ts`. This module records only
+ * content-free outcome, aggregate-size, and bounded truncation metrics.
  */
 import { and, desc, eq, lte } from "drizzle-orm";
 
 import { db } from "../db/database.js";
 import { chatMessages } from "../db/schema.js";
+import { ApiError } from "../middleware/error-handler.js";
 import { metrics } from "../observability/metrics.js";
 import {
   getTracer,
@@ -85,8 +85,9 @@ export async function buildConversationContext(run: AgentTaskRow): Promise<Conve
     }
     return result;
   } catch (err) {
-    safeSetAttribute(span, "app.result", "denied");
-    metrics.inc("conversation_context_build_total", { result: "denied" });
+    const result = contextBuildFailureResult(err);
+    safeSetAttribute(span, "app.result", result);
+    metrics.inc("conversation_context_build_total", { result });
     recordSpanError(err);
     throw err;
   } finally {
@@ -133,10 +134,10 @@ async function buildContext(
     throw new Error("Conversation context bound is not a positive integer");
   }
 
-  // Step 3: read at most 2*maxTurns+1 rows newest-first. The +1 accounts
-  // for the current unanswered USER (whose ASSISTANT, if any, would be
-  // one row later in DESC order). Reading slightly more than 2*maxTurns
-  // keeps complete-turn pairing deterministic across retry / re-entry.
+  // Step 3: read the window plus one additional complete turn, newest-first.
+  // The extra pair lets us distinguish "exactly at the turn budget" from
+  // "history was truncated by the turn budget" without reading the full
+  // archive. The final +1 accounts for the current unanswered USER row.
   const rows = await db.select({
     id: chatMessages.id,
     role: chatMessages.role,
@@ -145,7 +146,7 @@ async function buildContext(
     eq(chatMessages.threadId, run.threadId),
     lte(chatMessages.messageSequence, bound),
   )).orderBy(desc(chatMessages.messageSequence))
-    .limit(2 * maxTurns + 1);
+    .limit(2 * (maxTurns + 1) + 1);
 
   // Step 4: collect eligible candidates in DESC order, drop the current
   // USER by id (never by content), and filter to USER/ASSISTANT only.
@@ -204,4 +205,12 @@ async function buildContext(
     truncated: truncatedReason !== null,
     truncatedReason,
   };
+}
+
+function contextBuildFailureResult(error: unknown): "denied" | "error" {
+  // The normal owner/membership check happens before this builder runs, but
+  // retain a precise category if a future guarded read raises a real 403.
+  // Missing rows, invalid task references, database failures, and all other
+  // internal faults must not be mislabeled as authorization denials.
+  return error instanceof ApiError && error.statusCode === 403 ? "denied" : "error";
 }

@@ -51,6 +51,7 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     getTrips: vi.fn(),
     getTrip: vi.fn().mockResolvedValue(buildTripResponse()),
     getLocationReference: vi.fn(),
+    getLocationIntroduction: vi.fn(),
     getTripThreads: vi.fn().mockResolvedValue({ threads: [] }),
     createTripThread: vi.fn().mockResolvedValue(buildThread(SECOND_THREAD_ID, "New thread", false)),
     getOrCreateDefaultTripThread: vi.fn().mockResolvedValue(buildThread(DEFAULT_THREAD_ID, "Default", true)),

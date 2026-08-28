@@ -9,7 +9,7 @@ status: implemented
 
 读取 owner-only 私有对话线程中已**标记共享**的消息的脱敏摘要。仅读，不写库，**不调用 LLM**。
 
-> 实现细节与 PRD / agent-architecture 锁定语义：raw transcript 永远不出 owner 会话，默认 LLM 上下文仅含服务端派生的脱敏摘要 + owner 显式标记 `markedSharedByOwner=true` 的消息。
+> `thread.recall` 的输出仍永远不含 raw transcript。它不定义 Personal Agent 的运行时模型上下文：该上下文由独立的 `ConversationContextBuilder` 在同一 owner、同一 thread、固定 sequence boundary 与预算内构造，详见 [`docs/thread-context-memory-implementation.md`](../../../../docs/thread-context-memory-implementation.md)。
 
 ## 注册元数据
 

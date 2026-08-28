@@ -158,8 +158,10 @@ normalization; it is `null` whenever `nearestCity` is `null`.
 
 ### `POST /explore/location-introductions`
 
-> Planned contract — implementation details and acceptance criteria are in
-> [location-introduction-cache-implementation.md](../docs/location-introduction-cache-implementation.md).
+> Implementation contract — see
+> [location-introduction-cache-implementation.md](../docs/location-introduction-cache-implementation.md)
+> for the full design rationale, including the 7-step lease flow, the
+> cache key formula, the safety boundary, and the rollback steps.
 
 Returns a short, non-personalized introduction for a user-explicit selection of a
 server-recognized stable map `sourceId`. This anonymous endpoint is independently
@@ -177,8 +179,6 @@ rate-limited. It accepts neither coordinates nor user, Trip or conversation data
 - `400 LOCATION_INTRODUCTION_UNSUPPORTED_PLACE`: source ID is not in the active server catalog.
 - `429 LOCATION_INTRODUCTION_RATE_LIMITED`: per-IP anonymous limit exceeded.
 - `503 LOCATION_INTRODUCTION_UNAVAILABLE`: model, policy, schema or cache generation failed; no content is cached.
-
----
 
 ## Profiles
 

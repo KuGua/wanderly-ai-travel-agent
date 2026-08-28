@@ -6,6 +6,7 @@ import type {
   ThreadContextMessage,
   ConversationDeltaHandler,
   ConversationReply,
+  LocationIntroductionResult,
   ModelGateway,
   ModelToolDefinition,
   ModelToolDispatcher,
@@ -22,6 +23,14 @@ import {
   getTracer,
   safeSetAttribute,
 } from "../observability/tracing.js";
+import {
+  assertLocationIntroductionOutputSafe,
+  locationIntroductionOutputSchema,
+} from "./location-introduction-schema.js";
+import {
+  LOCATION_INTRODUCTION_SYSTEM_PROMPT,
+  buildLocationIntroductionUserPayload,
+} from "./location-introduction-prompts.js";
 
 export interface LLMGatewayOptions {
   apiKey: string;
@@ -777,6 +786,143 @@ export class LLMGateway implements ModelGateway {
       });
       throw new ModelGatewayError(errorCode, "conversation");
     }
+  }
+
+  async generateLocationIntroduction(params: {
+    locale: "en" | "zh";
+    place: {
+      sourceId: string;
+      canonicalPlaceId: string;
+      name: string;
+      country: string;
+      countryCode: string;
+      admin1: string;
+      admin1Code: string;
+      nearestCity: string;
+      datasetVersion: string;
+      contentVersion: string;
+    };
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<LocationIntroductionResult> {
+    const ctx = params.ctx ?? this.options.ctx;
+    const start = Date.now();
+    const span = getTracer().startSpan("llm.openai.parse", {
+      kind: SpanKind.CLIENT,
+      attributes: {
+        "llm.method": "location.introduction",
+        "llm.stream": false,
+      },
+    });
+    annotateLlmSpan(
+      span,
+      this.options.provider,
+      this.options.modelName,
+      this.options.promptVersion,
+      "location.introduction",
+    );
+
+    const recordFailure = async (errorCode: string, tokens?: AgentRunTokens): Promise<never> => {
+      await recordAgentRun({
+        ctx,
+        skillName: "location.introduction",
+        agentName: "public-content",
+        modelName: this.options.modelName,
+        promptVersion: this.options.promptVersion,
+        outputHash: hashOutput({ errorCode }),
+        latencyMs: Date.now() - start,
+        status: errorCode === "TIMEOUT" ? "TIMEOUT" : "ERROR",
+        errorCode,
+        tokens,
+      });
+      throw new ModelGatewayError(errorCode, "conversation");
+    };
+
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch (err) {
+      safeSetAttribute(span, "llm.outcome", classifyError(err));
+      safeSetAttribute(span, "llm.error_code", classifyError(err));
+      span.end();
+      return recordFailure(classifyError(err));
+    }
+
+    const maxRetries = this.options.maxRetries ?? 1;
+    let lastError = "SCHEMA_PARSE";
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        const response = await client.chat.completions.parse({
+          model: this.options.modelName,
+          messages: [
+            {
+              role: "system",
+              content: LOCATION_INTRODUCTION_SYSTEM_PROMPT,
+            },
+            {
+              role: "user",
+              content: buildLocationIntroductionUserPayload(params),
+            },
+          ],
+          response_format: { type: "json_object" },
+        }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+
+        const payload = completionPayload(response.choices[0]?.message);
+        const parsed = locationIntroductionOutputSchema.safeParse(payload);
+        if (!parsed.success) {
+          lastError = "SCHEMA_PARSE";
+          continue;
+        }
+        // Defense-in-depth: even if the model produced a schema-valid blob,
+        // reject real-time / operational claims. The route will surface
+        // this as `503 LOCATION_INTRODUCTION_UNAVAILABLE` and the cache row
+        // is never written.
+        try {
+          assertLocationIntroductionOutputSafe(parsed.data);
+        } catch {
+          lastError = "POLICY_DENIED";
+          safeSetAttribute(span, "llm.error_code", lastError);
+          continue;
+        }
+
+        const usage = response.usage;
+        if (usage) {
+          if (typeof usage.prompt === "number") safeSetAttribute(span, "llm.tokens.prompt", usage.prompt);
+          if (typeof usage.completion === "number") safeSetAttribute(span, "llm.tokens.completion", usage.completion);
+          if (typeof usage.total === "number") safeSetAttribute(span, "llm.tokens.total", usage.total);
+        }
+        safeSetAttribute(span, "llm.outcome", "success");
+        span.end();
+        await recordAgentRun({
+          ctx,
+          skillName: "location.introduction",
+          agentName: "public-content",
+          modelName: this.options.modelName,
+          promptVersion: this.options.promptVersion,
+          outputHash: hashOutput(parsed.data),
+          latencyMs: Date.now() - start,
+          status: "SUCCESS",
+          tokens: response.usage,
+        });
+        return {
+          content: parsed.data.content,
+          modelName: this.options.modelName,
+          promptVersion: this.options.promptVersion,
+        };
+      } catch (err) {
+        const code = classifyError(err);
+        if (code === "TIMEOUT") {
+          lastError = code;
+          break;
+        }
+        lastError = code;
+      }
+    }
+
+    safeSetAttribute(span, "llm.outcome", lastError);
+    safeSetAttribute(span, "llm.error_code", lastError);
+    span.end();
+    return recordFailure(lastError);
   }
 }
 

@@ -313,9 +313,38 @@ export const locationReferenceResponseSchema = z.discriminatedUnion("outcome", [
       latitude: z.number().finite().min(-90).max(90),
       longitude: z.number().finite().min(-180).max(180),
     }).strict().nullable(),
+    introductionSourceId: z.string().min(1).max(128).nullable().optional(),
     distanceKm: z.number().nonnegative().nullable(),
   }),
   locationReferenceBaseSchema.extend({ outcome: z.literal("NO_REFERENCE") }),
+]);
+
+// ─── Location Introduction (anonymous, shared cache) ─────────────────────────
+// Mirror of the api/src/types/schemas.ts contract. Keep these two copies in
+// lock-step — the web app does not import from the api package.
+
+export const locationIntroductionLocaleSchema = z.enum(["en", "zh"]);
+
+export const locationIntroductionInputSchema = z.object({
+  sourceId: z.string().min(1).max(128),
+  locale: locationIntroductionLocaleSchema,
+}).strict();
+
+export const locationIntroductionReadySchema = z.object({
+  status: z.literal("READY"),
+  content: z.string().min(1).max(720),
+  cacheStatus: z.enum(["HIT", "MISS"]),
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const locationIntroductionGeneratingSchema = z.object({
+  status: z.literal("GENERATING"),
+  retryAfterMs: z.number().int().positive().max(60_000),
+}).strict();
+
+export const locationIntroductionResponseSchema = z.union([
+  locationIntroductionReadySchema,
+  locationIntroductionGeneratingSchema,
 ]);
 
 export type Profile = z.infer<typeof profileSchema>;
@@ -327,6 +356,10 @@ export type TripsResponse = z.infer<typeof tripsResponseSchema>;
 export type ApiErrorResponse = z.infer<typeof apiErrorResponseSchema>;
 export type LocationReferenceInput = z.infer<typeof locationReferenceInputSchema>;
 export type LocationReferenceResponse = z.infer<typeof locationReferenceResponseSchema>;
+export type LocationIntroductionInput = z.infer<typeof locationIntroductionInputSchema>;
+export type LocationIntroductionReady = z.infer<typeof locationIntroductionReadySchema>;
+export type LocationIntroductionGenerating = z.infer<typeof locationIntroductionGeneratingSchema>;
+export type LocationIntroductionResponse = z.infer<typeof locationIntroductionResponseSchema>;
 export type ExplorationStartRequest = z.infer<typeof explorationStartRequestSchema>;
 export type ExplorationStartResponse = z.infer<typeof explorationStartResponseSchema>;
 export type TripActivationRequest = z.infer<typeof tripActivationRequestSchema>;

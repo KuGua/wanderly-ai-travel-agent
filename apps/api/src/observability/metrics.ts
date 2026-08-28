@@ -25,7 +25,14 @@ interface HistogramSeries {
   totals: Map<LabelKey, number>;
 }
 
-type Series = CounterSeries | HistogramSeries;
+interface GaugeSeries {
+  type: "gauge";
+  help: string;
+  allowedLabels: AllowedLabels;
+  values: Map<LabelKey, Sample>;
+}
+
+type Series = CounterSeries | HistogramSeries | GaugeSeries;
 
 const FORBIDDEN_LABEL_KEYS = new Set([
   "userId", "tripId", "planId", "bookingId", "correlationId", "requestId",
@@ -34,6 +41,11 @@ const FORBIDDEN_LABEL_KEYS = new Set([
   // Defense in depth: per PRD FR-7.3, conversationId (and its runtime
   // alias threadId) must never appear as a metric label.
   "conversationId", "threadId",
+  // S4 location-introduction cache: identifiers, generated content and
+  // coordinates must never appear as metric labels (PRD §5.11, AGENTS.md).
+  "sourceId", "placeName", "canonicalPlaceId", "cacheKey",
+  "content", "generatedContent",
+  "latitude", "longitude", "coordinates",
 ]);
 
 export type MetricProvider = "openai" | "gemini" | "openai-compatible";
@@ -84,6 +96,18 @@ export class MetricsRegistry {
     }
   }
 
+  /**
+   * Register a Prometheus-style gauge series. Used for sampled aggregate
+   * counts that can move in either direction (e.g. cache row counts).
+   * Allowed labels follow the same allow-list / forbidden-key rules as
+   * counters and histograms.
+   */
+  registerGauge(name: string, help: string, allowedLabels: AllowedLabels = {}): void {
+    if (!this.series.has(name)) {
+      this.series.set(name, { type: "gauge", help, allowedLabels, values: new Map() });
+    }
+  }
+
   private validatedLabelKey(name: string, series: Series, labels: Record<string, string> = {}): LabelKey {
     const suppliedKeys = Object.keys(labels).sort();
     const expectedKeys = Object.keys(series.allowedLabels).sort();
@@ -129,6 +153,24 @@ export class MetricsRegistry {
     series.totals.set(key, (series.totals.get(key) ?? 0) + 1);
   }
 
+  /**
+   * Replace the gauge sample for the given labels. Gauges are sampled at
+   * observation time and may move in either direction. Calling `setGauge`
+   * without a prior `registerGauge` throws — gauges are not implicitly
+   * auto-created so a typo cannot silently grow the registry.
+   */
+  setGauge(name: string, value: number, labels?: Record<string, string>): void {
+    const series = this.series.get(name);
+    if (!series || series.type !== "gauge") {
+      throw new Error(`Gauge metric is not registered: ${name}`);
+    }
+    if (!Number.isFinite(value)) {
+      throw new Error(`setGauge(${name}) received a non-finite value`);
+    }
+    const key = this.validatedLabelKey(name, series, labels);
+    series.values.set(key, value);
+  }
+
   render(): string {
     const lines: string[] = [];
     for (const [name, series] of this.series) {
@@ -140,6 +182,16 @@ export class MetricsRegistry {
           continue;
         }
         for (const [key, value] of series.samples) {
+          lines.push(key ? `${name}{${key}} ${value}` : `${name} ${value}`);
+        }
+        continue;
+      }
+      if (series.type === "gauge") {
+        if (series.values.size === 0) {
+          lines.push(`${name} 0`);
+          continue;
+        }
+        for (const [key, value] of series.values) {
           lines.push(key ? `${name}{${key}} ${value}` : `${name} ${value}`);
         }
         continue;
@@ -166,6 +218,7 @@ export class MetricsRegistry {
   reset(): void {
     for (const series of this.series.values()) {
       if (series.type === "counter") series.samples.clear();
+      else if (series.type === "gauge") series.values.clear();
       else {
         series.counts.clear();
         series.sums.clear();
@@ -197,6 +250,29 @@ metrics.registerCounter("booking_callback_outcomes_total", "Authenticated bookin
 });
 metrics.registerCounter("location_reference_requests_total", "Offline map location references by bounded outcome.", {
   outcome: ["reference", "no_reference", "unavailable", "rate_limited"],
+});
+
+// S4 / docs/location-introduction-cache-implementation.md §9. Anonymous
+// location-introduction requests by bounded outcome, generation latency,
+// and aggregate cache row counts. Identifiers (sourceId, canonicalPlaceId,
+// cacheKey, content, coordinates) are forbidden label keys and must never
+// appear here — see FORBIDDEN_LABEL_KEYS above.
+metrics.registerCounter("location_introduction_requests_total", "Anonymous location-introduction requests by bounded outcome.", {
+  outcome: ["hit", "miss", "generating", "unsupported", "rate_limited", "unavailable"],
+});
+metrics.registerHistogram(
+  "location_introduction_generation_duration_ms",
+  "Location-introduction generation latency in milliseconds.",
+  [50, 100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000],
+  {
+    outcome: ["success", "failure"],
+  },
+);
+metrics.registerGauge("location_introduction_cache_entries", "Aggregate location-introduction cache row counts.", {
+  status: ["ready", "generating"],
+});
+metrics.registerCounter("location_introduction_registry_total", "Operator registration outcomes for the location-introduction catalog.", {
+  outcome: ["registered", "duplicate", "error"],
 });
 metrics.registerHistogram(
   "llm_request_latency_ms",

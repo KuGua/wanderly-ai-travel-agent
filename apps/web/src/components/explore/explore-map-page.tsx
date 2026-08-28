@@ -13,7 +13,9 @@ import { cityKey, findMentionedCities, loadCityCatalog, type CatalogCity } from 
 import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { loadAdministrativeCenters, pinGranularityForZoom, pinSelectionForReference, type PinGranularity } from "./pin-selection";
 import { solidifyGlobeStyle } from "./map-surface-style";
+import { LocationIntroductionPanel } from "./location-introduction-panel";
 import { ExploreChatHost } from "./explore-chat-host";
+import { useLocationIntroduction } from "@/lib/query/use-location-introduction";
 import { useOptionalAuth } from "@/lib/auth/auth-provider";
 import { useOptionalTravelApi } from "@/lib/query/provider";
 import { Link } from "@/i18n/navigation";
@@ -34,6 +36,11 @@ export type ExploreDestination = {
   pinGranularity?: PinGranularity;
   pinKey?: string;
   manualPinSequence?: number;
+  /**
+   * Stable catalog `sourceId` returned by the server-side reference resolver.
+   * `LocationIntroductionPanel` renders only when this is set.
+   */
+  stableSourceId?: string;
 };
 type Destination = ExploreDestination;
 
@@ -81,6 +88,7 @@ export function ExploreMapPage() {
   const t = useTranslations("explore");
   const tCommon = useTranslations("common");
   const locale = useLocale();
+  const normalizedLocale: "en" | "zh" = locale === "zh" ? "zh" : "en";
 
   useEffect(() => {
     readinessRef.current = readiness;
@@ -96,6 +104,10 @@ export function ExploreMapPage() {
   const [checkedInspirationIds, setCheckedInspirationIds] = useState<Set<string>>(new Set());
   const [managePinsOpen, setManagePinsOpen] = useState(false);
   const [manageAnchorCoordinates, setManageAnchorCoordinates] = useState<[number, number] | null>(null);
+  const introduction = useLocationIntroduction({
+    sourceId: selected?.stableSourceId ?? null,
+    locale: normalizedLocale,
+  });
   const [pinScope, setPinScope] = useState<PinScope>("nearby");
   const [chatOpen, setChatOpen] = useState(false);
   const [exploreState, setExploreState] = useState<ExploreState>("IDLE");
@@ -185,6 +197,7 @@ export function ExploreMapPage() {
             cityName: selection.cityName,
             locationReference,
             locationReferenceStatus: undefined,
+            stableSourceId: locationReference.introductionSourceId ?? undefined,
           }
         : { ...inspiration, locationReference, locationReferenceStatus: undefined };
       inspirationsRef.current = inspirationsRef.current.map((item) => item.id === inspiration.id ? next : item);
@@ -869,6 +882,9 @@ export function ExploreMapPage() {
                 {t("locationReferenceDataPrefix")} <a className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a>{" · "}<a className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a>
               </p>
             </div>
+          ) : null}
+          {selected.stableSourceId ? (
+            <LocationIntroductionPanel state={introduction.state} onRetry={introduction.retry} />
           ) : null}
           {selected.locationReferenceStatus === "loading" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceLoading")}</p> : null}
           {selected.locationReferenceStatus === "unavailable" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceUnavailable")}</p> : null}

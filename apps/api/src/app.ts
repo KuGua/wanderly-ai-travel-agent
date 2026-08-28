@@ -18,6 +18,7 @@ import { tripInvitationRoutes } from "./routes/trip-invitations.js";
 import { tripThreadRoutes } from "./routes/trip-threads.js";
 import { explorationRoutes } from "./routes/explorations.js";
 import { locationReferenceRoutes } from "./routes/location-reference.js";
+import { locationIntroductionRoutes } from "./routes/location-introduction.js";
 import { agentRunRoutes } from "./routes/agent-runs.js";
 import { authRoutes } from "./routes/auth.js";
 import { searchPreferenceRoutes } from "./routes/search-preferences.js";
@@ -208,6 +209,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(tripThreadRoutes, { prefix: "/api/v1" });
   await app.register(explorationRoutes, { prefix: "/api/v1" });
   await app.register(locationReferenceRoutes, { prefix: "/api/v1" });
+  await app.register(locationIntroductionRoutes, { prefix: "/api/v1" });
   await app.register(agentRunRoutes, { prefix: "/api/v1", relay: agentStreamRelay });
   await app.register(authRoutes, { prefix: "/api/v1" });
   await app.register(searchPreferenceRoutes, { prefix: "/api/v1" });
@@ -227,6 +229,7 @@ function isAuthenticationExempt(method: string, url: string): boolean {
     || path.startsWith("/docs")
     || (method === "POST" && path === "/api/v1/bookings/callback")
     || (method === "POST" && path === "/api/v1/explore/location-reference")
+    || (method === "POST" && path === "/api/v1/explore/location-introductions")
     || path.startsWith("/api/v1/auth/");
 }
 

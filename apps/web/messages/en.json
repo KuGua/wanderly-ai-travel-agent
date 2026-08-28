@@ -49,10 +49,18 @@
     "kicker": "Your private travel space",
     "title": "My program",
     "subtitle": "Continue a trip that is taking shape, or tune the private preferences that guide your recommendations.",
+    "newTrip": "New trip",
     "summary": {
       "ariaLabel": "Workspace summary",
       "ready": "Your travel space is ready",
       "privacyHeadline": "Preferences and trips stay private",
+      "activeTripsHeadline": "{count, plural, one {# trip needs your attention} other {# trips need your attention}}",
+      "activeLabel": "Active",
+      "activeDetail": "Planning or needs review",
+      "completedLabel": "Completed",
+      "completedDetail": "Confirmed or booked",
+      "archivedLabel": "Archived",
+      "archivedDetail": "Cancelled trips",
       "tripsLabel": "Trips",
       "tripsDetail": "Available in your workspace",
       "profileLabel": "Profile",
@@ -60,6 +68,25 @@
       "profileNotSet": "Not set",
       "profileDetail": "Private by default",
       "notSet": "Not set"
+    },
+    "filter": {
+      "ariaLabel": "Filter trips by status",
+      "active": "Active",
+      "all": "All",
+      "completed": "Completed",
+      "archived": "Archived",
+      "searchPlaceholder": "Search destinations or trips"
+    },
+    "hero": {
+      "ariaLabel": "Trip needing attention",
+      "heading": "Continue planning",
+      "needsAction": "Needs your attention",
+      "staleBadge": "Plan expired",
+      "planningBadge": "Planning in progress",
+      "staleBody": "A price or constraint change has expired the current plan. Review the updated comparison.",
+      "planningBody": "Your trip is being planned. Review the latest progress and provide input.",
+      "reviewCta": "Review plan",
+      "continueCta": "Continue"
     },
     "errorStateProfileUnavailable": "Profile unavailable",
     "errorStateTripsUnavailable": "Trips unavailable",
@@ -262,6 +289,12 @@
     "locationReferenceNote": "This is an offline map reference, not an address, travel candidate, price, availability, visa or booking fact.",
     "locationReferenceDataPrefix": "Data:",
     "markerOpenAria": "Open {name}",
+    "locationIntroduction": {
+      "loading": "Gathering a short introduction…",
+      "generating": "Preparing this introduction…",
+      "unavailable": "Temporarily unavailable.",
+      "retry": "Retry"
+    },
     "state": {
       "IDLE": "Destination preview",
       "TALKING": "Preparing your route",
