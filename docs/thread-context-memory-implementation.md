@@ -67,7 +67,7 @@ flowchart LR
 
 算法：
 
-1. 查询 `chat_messages`，条件为 `thread_id = run.thread_id`、`message_sequence <= context_max_message_sequence`，按 sequence 倒序读取最多 `2 × MAX_TURNS` 条。
+1. 查询 `chat_messages`，条件为 `thread_id = run.thread_id`、`message_sequence <= context_max_message_sequence`，按 sequence 倒序读取最多 `2 × (MAX_TURNS + 1) + 1` 条：当前 USER、最多 `MAX_TURNS` 个候选历史轮次，以及一个仅用于识别 `turn_limit` 截断的额外完整轮次。
 2. 仅保留 `USER` 和 `ASSISTANT`；以最新 USER 消息为当前问题，不把它重复写入 history。
 3. 从最新向最早收集完整的 USER→ASSISTANT 轮次；若最新 USER 尚无 ASSISTANT（正常的已接受 turn），保留它作为当前问题并从其前一完整轮开始取历史。
 4. 对历史按 UTF-16 字符数累加；超过 `MAX_CHARS` 时删除最早完整轮次，不截断单条消息。按时间正序返回。
@@ -169,7 +169,7 @@ interface ConversationContextBuilder {
 | `conversation_context_build_total` | count | `result`：`success`、`empty`、`denied`、`error` |
 | `conversation_context_messages` | count | 无标签 |
 | `conversation_context_chars` | characters | 无标签 |
-| `conversation_context_truncated_total` | count | `reason`：`turn_limit`、`char_limit` |
+| `conversation_context_truncated_total` | count | `reason`：`turn_limit`（存在额外完整历史轮次）、`char_limit` |
 
 新增 span `conversation.context.build`，属性只允许 `app.operation=conversation.context.build`、`app.result`、`conversation.context.truncated`。`threadId`、`tripId`、`runId` 只能作为既有 trace/log correlation context，不可成为 span attribute 或 metric label。日志与 audit 仅记录 action、result、数量和截断布尔值，绝不记录消息、字符片段、hash 或 token 内容。
 

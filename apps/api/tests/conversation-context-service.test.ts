@@ -22,6 +22,7 @@ import {
   users,
   type AgentTaskRow,
 } from "../src/db/schema.js";
+import { metrics } from "../src/observability/metrics.js";
 import { buildConversationContext } from "../src/services/conversation-context-service.js";
 import { provisionTripAndMember } from "./helpers/trip.js";
 
@@ -50,6 +51,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  metrics.reset();
   await db.delete(chatMessages).where(inArray(chatMessages.senderUserId, [aliceId, bobId]));
   await db.delete(chatThreads).where(inArray(chatThreads.ownerUserId, [aliceId, bobId]));
   await db.delete(agentTaskRuns).where(inArray(agentTaskRuns.createdByUserId, [aliceId, bobId]));
@@ -245,12 +247,11 @@ describe("buildConversationContext", () => {
     expect(context.messages.at(-1)?.role).toBe("ASSISTANT");
   });
 
-  it("caps history to the newest N turns when more turns are present than fit the read window (§3.2.1)", async () => {
+  it("caps history to the newest N turns and records turn-limit truncation (§3.2.1)", async () => {
     const { threadId } = await createAliceThread();
-    // 12 complete turns + current unanswered USER = 25 messages.  The
-    // read window is 2*MAX_TURNS+1 = 17 rows DESC, so the oldest 4 turns
-    // (8 messages) are not in the window at all — there is no explicit
-    // turn_limit truncation step, the LIMIT bound it naturally.
+    // 12 complete turns + current unanswered USER. The query reads the
+    // newest 9 complete turns plus the current row, so it can prove the
+    // configured 8-turn window was truncated without reading the archive.
     for (let i = 0; i < 12; i += 1) {
       await insertUser(threadId, `q-${i}`);
       await insertAssistant(threadId, `a-${i}`);
@@ -265,6 +266,9 @@ describe("buildConversationContext", () => {
     // Oldest turns must NOT be present (e.g., q-0 / a-0).
     expect(context.messages.map((m) => m.content)).not.toContain("q-0");
     expect(context.messages.map((m) => m.content)).not.toContain("a-0");
+    expect(context.truncated).toBe(true);
+    expect(context.truncatedReason).toBe("turn_limit");
+    expect(metrics.render()).toContain('conversation_context_truncated_total{reason="turn_limit"} 1');
   });
 
   it("drops oldest whole turns when char budget overflows and never slices bodies (§3.2.4, §10.4)", async () => {
@@ -485,6 +489,7 @@ describe("buildConversationContext", () => {
     await db.delete(chatMessages).where(eq(chatMessages.id, userMessageId));
 
     await expect(buildConversationContext(run)).rejects.toThrow(/USER message is unavailable/);
+    expect(metrics.render()).toContain('conversation_context_build_total{result="error"} 1');
   });
 
   it("fails closed when userMessageId points at an ASSISTANT row (§10.6)", async () => {
