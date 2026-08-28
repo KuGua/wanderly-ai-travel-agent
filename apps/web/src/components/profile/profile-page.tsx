@@ -48,10 +48,10 @@ export function ProfilePageContent() {
           />
         ) : null}
         {profileQuery.data?.profile === null ? (
-          <section className="rounded-3xl border border-dashed bg-card p-8">
+          <section className="border-2 border-dashed border-[var(--w-ink)] bg-card p-8 wanderly-r-lg">
             <h2 className="text-xl font-semibold">{t("emptyTitle")}</h2>
             <p className="mt-3 max-w-xl text-muted-foreground">{t("emptyBody")}</p>
-            <Link href="/home" className="mt-6 inline-flex min-h-11 items-center rounded-xl font-semibold text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+            <Link href="/home" className="mt-6 inline-flex min-h-11 items-center font-extrabold text-[var(--w-ink)] wanderly-underline">
               {t("emptyAction")}
             </Link>
           </section>

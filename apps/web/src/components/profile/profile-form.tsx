@@ -151,13 +151,13 @@ export function ProfileForm({
   return (
     <form onSubmit={handleSubmit(submit, focusErrors)} noValidate className="space-y-8">
       {Object.keys(errors).length > 0 ? (
-        <div id="profile-error-summary" tabIndex={-1} role="alert" className="rounded-2xl border border-destructive/30 bg-destructive/5 p-4 outline-none focus-visible:ring-4 focus-visible:ring-destructive/20">
+        <div id="profile-error-summary" tabIndex={-1} role="alert" className="border-2 border-destructive bg-destructive/5 p-4 outline-none wanderly-r-md focus-visible:ring-4 focus-visible:ring-destructive/20">
           <p className="font-semibold">{t("errorSummaryTitle")}</p>
           <p className="mt-1 text-sm text-muted-foreground">{t("errorSummaryBody")}</p>
         </div>
       ) : null}
 
-      <section className="rounded-[22px] border bg-card p-5 shadow-[0_8px_24px_#102a4308] sm:p-7" aria-labelledby="travel-basics-heading">
+      <section className="bg-card p-5 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-7" aria-labelledby="travel-basics-heading">
         <SectionHeading id="travel-basics-heading" title={t("sectionBasicsTitle")} description={t("sectionBasicsDescription")} />
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
           <Field id="departure-city" label={t("fields.departureCity")} error={errors.departureCity?.message}>
@@ -175,7 +175,7 @@ export function ProfileForm({
         </div>
       </section>
 
-      <section className="rounded-[22px] border bg-card p-5 shadow-[0_8px_24px_#102a4308] sm:p-7" aria-labelledby="preferences-heading">
+      <section className="bg-card p-5 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-7" aria-labelledby="preferences-heading">
         <SectionHeading id="preferences-heading" title={t("sectionPrefsTitle")} description={t("sectionPrefsDescription")} />
         <div className="mt-6 grid gap-5 sm:grid-cols-2">
           <Field id="interests" label={t("fields.interests")} hint={t("fields.interestsHint")} error={errors.interests?.message}>
@@ -196,8 +196,8 @@ export function ProfileForm({
             <textarea id="mobility-notes" {...register("mobilityNotes")} className={cn(inputClass(Boolean(errors.mobilityNotes)), "min-h-28 py-3")} />
           </Field>
         </div>
-        <label className="mt-6 flex min-h-11 items-center gap-3 rounded-2xl border px-4 py-3">
-          <input type="checkbox" {...register("noRedEye")} className="size-5 accent-primary" />
+        <label className="mt-6 flex min-h-11 items-center gap-3 bg-card px-4 py-3 wanderly-edge wanderly-r-md wanderly-shadow-sm">
+          <input type="checkbox" {...register("noRedEye")} className="size-5 accent-[var(--w-highlight)] wanderly-edge-thin wanderly-r-xs" />
           <span>
             <span className="block font-medium">{t("fields.noRedEyeLabel")}</span>
             <span className="block text-sm text-muted-foreground">{t("fields.noRedEyeHint")}</span>
@@ -205,12 +205,12 @@ export function ProfileForm({
         </label>
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border bg-background/95 p-4 shadow-lg backdrop-blur sm:sticky sm:bottom-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 bg-card p-4 wanderly-edge wanderly-r-lg wanderly-shadow sm:sticky sm:bottom-4">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <ShieldCheck aria-hidden="true" className="size-4 text-primary" />
+          <ShieldCheck aria-hidden="true" className="size-4 text-[var(--w-ink)]" />
           {t("stickyNote")}
         </div>
-        <Button type="submit" size="lg" className="min-h-11 px-5" disabled={isSaving || !isDirty}>
+        <Button type="submit" size="lg" className="min-h-11 px-5 wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action" disabled={isSaving || !isDirty}>
           <Save aria-hidden="true" />
           {isSaving ? t("saving") : t("save")}
         </Button>
@@ -260,7 +260,7 @@ function Field({ id, label, hint, error, children }: { id: string; label: string
 
 function inputClass(invalid: boolean) {
   return cn(
-    "min-h-11 w-full rounded-xl border bg-background px-3 text-base outline-none transition focus-visible:ring-4 focus-visible:ring-ring/30 sm:text-sm motion-reduce:transition-none",
-    invalid && "border-destructive focus-visible:ring-destructive/20",
+    "min-h-11 w-full bg-card px-3 text-base outline-none wanderly-edge wanderly-r-sm sm:text-sm",
+    invalid && "border-destructive",
   );
 }

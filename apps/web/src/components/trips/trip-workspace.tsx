@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
+import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link, useRouter } from "@/i18n/navigation";
 import {
@@ -173,6 +174,8 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const departureLabel = trip.departureCities.length > 0
     ? trip.departureCities.join(" · ")
     : t("header.datesUnknown");
+  // Every place the selected plan touches; the globe merges these onto countries.
+  const globePlaces = [...trip.departureCities, ...trip.destinationCandidates];
 
   const renderThread = (thread: (typeof threads)[number]) => {
     const selected = thread.id === activeThread?.id;
@@ -187,24 +190,29 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
           }}
           aria-current={selected ? "page" : undefined}
-          className={`w-full rounded-[12px] px-2.5 py-[11px] text-left transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 ${selected ? "bg-[#e7f4f0] shadow-[inset_3px_0_var(--color-primary)]" : "hover:bg-[#f5f7f4]"}`}
+          className={`relative min-h-[82px] w-full bg-card px-3 py-[11px] text-left text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-press ${selected ? "bg-[var(--w-highlight)] wanderly-shadow" : "wanderly-shadow-sm hover:bg-[var(--w-mist)]"}`}
         >
-          <b className="block truncate text-[13px] font-bold">{thread.title}</b>
-          <span className="mt-[3px] block truncate text-xs text-muted-foreground">
+          <b className="block truncate pr-[42px] text-[13px] font-bold">{thread.title}</b>
+          <span className="mt-1 block truncate text-xs">
             {thread.isDefault ? t("threads.defaultSubtitle") : t("threads.threadSubtitle")}
           </span>
-          <time dateTime={thread.createdAt} className="mt-[5px] block text-[11px] text-[#8093a1]">
+          <time dateTime={thread.createdAt} className="mt-[7px] inline-block bg-[var(--w-fog)] px-1.5 py-0.5 text-[11px] font-extrabold wanderly-edge-thin wanderly-r-xs">
             {formatThreadTime(locale, thread.createdAt)}
           </time>
+          {selected ? (
+            <span className="absolute right-2 top-2.5 bg-card px-1.5 py-0.5 text-[10px] font-black wanderly-edge-thin wanderly-r-xs">
+              {t("threads.currentBadge")}
+            </span>
+          ) : null}
         </button>
       </li>
     );
   };
 
   return (
-    <main className="grid h-[calc(100dvh-4rem)] min-h-[620px] grid-cols-1 overflow-hidden bg-[#fffaf3] landscape:h-dvh md:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)] xl:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)_minmax(280px,0.9fr)]">
-      <aside className="hidden min-h-0 min-w-0 flex-col border-r border-[#e8e1d8] bg-[#fffdf9] md:flex" aria-label={t("threads.heading")}>
-        <header className="flex items-center justify-between gap-2 border-b border-[#e8e1d8] px-4 py-[18px]">
+    <main className="grid h-[calc(100dvh-62px)] min-h-[620px] grid-cols-1 overflow-hidden bg-background sm:h-dvh md:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)] xl:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)_minmax(280px,0.9fr)]">
+      <aside className="hidden min-h-0 min-w-0 flex-col border-r-2 border-[var(--w-ink)] bg-background md:flex" aria-label={t("threads.heading")}>
+        <header className="flex h-[66px] shrink-0 items-center justify-between gap-2 border-b-2 border-[var(--w-ink)] px-4">
           {editingTitle ? (
             <form
               className="flex min-w-0 flex-1 items-center gap-1.5"
@@ -228,7 +236,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                 <strong className="mt-0.5 block truncate text-[15px] tracking-[-0.02em]">{trip.name}</strong>
               </div>
               {callerRole === "CREATOR" ? (
-                <button type="button" aria-label={t("title.edit")} onClick={() => { setManualTitle(trip.name); setEditingTitle(true); }} className="grid size-[34px] shrink-0 place-items-center rounded-[10px] border border-[#d6e0df] bg-white text-sidebar transition hover:bg-[#effbf7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                <button type="button" aria-label={t("title.edit")} onClick={() => { setManualTitle(trip.name); setEditingTitle(true); }} className="grid size-[34px] shrink-0 place-items-center bg-card text-[var(--w-ink)] wanderly-edge wanderly-r-sm wanderly-shadow-sm wanderly-press">
                   <Pencil aria-hidden="true" className="size-4" />
                 </button>
               ) : null}
@@ -240,31 +248,31 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           type="button"
           onClick={handleCreateThread}
           disabled={createThread.isPending}
-          className="mx-3 mb-1.5 mt-3.5 inline-flex min-h-10 items-center gap-2 rounded-[12px] bg-[#ef7654] px-[11px] py-2 text-sm font-extrabold text-white shadow-[0_7px_15px_#ef765438] transition hover:bg-[#d95d41] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#f6bd60]"
+          className="mx-3 mb-1.5 mt-3.5 inline-flex min-h-10 items-center gap-2 px-[11px] py-2 text-sm font-extrabold disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action"
         >
           <Plus aria-hidden="true" className="size-5" />
           {createThread.isPending ? t("threads.newThread.submitting") : t("threads.newThread.label")}
         </button>
 
-        <p className="mx-4 mb-[7px] mt-4 text-[11px] font-extrabold uppercase tracking-[0.09em] text-muted-foreground">{t("threads.sectionLabel")}</p>
+        <p className="mx-4 mb-2 mt-[18px] text-[11px] font-black uppercase tracking-[0.09em] wanderly-underline">{t("threads.sectionLabel")}</p>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-[18px]">
+        <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-[18px]">
           {threadsQuery.isPending ? (
             <LoadingState label={t("threads.loading")} />
           ) : threadsQuery.isError ? (
             <ErrorState error={threadsQuery.error} title={t("threads.errorTitle")} />
           ) : threads.length === 0 ? (
-            <div className="mx-1 rounded-[14px] border border-dashed p-4 text-center text-sm text-muted-foreground">
+            <div className="mx-1 border-2 border-dashed border-[var(--w-ink)] p-4 text-center text-sm wanderly-r-md">
               <p className="font-bold text-foreground">{t("threads.emptyTitle")}</p>
               <p className="mt-1">{t("threads.emptyBody")}</p>
             </div>
           ) : (
             <>
-              <ul role="list">{liveThreads.map(renderThread)}</ul>
+              <ul role="list" className="grid gap-2.5">{liveThreads.map(renderThread)}</ul>
               {archivedThreads.length > 0 ? (
                 <>
-                  <p className="mx-2 mb-[7px] mt-4 text-[11px] font-extrabold uppercase tracking-[0.09em] text-muted-foreground">{t("threads.archivedLabel")}</p>
-                  <ul role="list">{archivedThreads.map(renderThread)}</ul>
+                  <p className="mx-2 mb-2 mt-[18px] text-[11px] font-black uppercase tracking-[0.09em] wanderly-underline">{t("threads.archivedLabel")}</p>
+                  <ul role="list" className="grid gap-2.5">{archivedThreads.map(renderThread)}</ul>
                 </>
               ) : null}
             </>
@@ -272,8 +280,8 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
         </div>
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-col bg-[#fffaf3]">
-        <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[#e8e1d8] bg-[#fffdf9] px-[18px] py-3.5">
+      <section className="flex min-h-0 min-w-0 flex-col bg-background">
+        <header className="flex h-[66px] shrink-0 items-center justify-between gap-2 border-b-2 border-[var(--w-ink)] px-[18px]">
           <div className="min-w-0">
             <strong className="block truncate text-[15px] tracking-[-0.02em]">{activeThread?.title ?? trip.name}</strong>
             <p className="truncate text-xs text-muted-foreground">
@@ -281,8 +289,8 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-[7px]">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#d6e0df] bg-white px-2 py-1.5 text-xs font-bold text-[#476274]">
-              <i aria-hidden="true" className="size-[7px] rounded-full bg-primary" />
+            <span className="inline-flex items-center gap-1.5 bg-card px-2 py-1.5 text-xs font-bold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
+              <i aria-hidden="true" className="size-[7px] rounded-full bg-[var(--w-highlight)]" />
               <span className="hidden sm:inline">{t("workspace.agentChip")}</span>
             </span>
             <button
@@ -290,7 +298,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               onClick={() => setInspectorOpen(true)}
               aria-controls="trip-inspector"
               aria-expanded={inspectorOpen}
-              className="grid size-[34px] place-items-center rounded-[10px] border border-[#d6e0df] bg-white text-sidebar transition hover:bg-[#effbf7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden"
+              className="grid size-[34px] place-items-center bg-card text-[var(--w-ink)] wanderly-edge wanderly-r-sm wanderly-shadow-sm wanderly-press xl:hidden"
             >
               <PanelRight aria-hidden="true" className="size-4" />
               <span className="sr-only">{t("workspace.openInspector")}</span>
@@ -312,48 +320,52 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       <aside
         id="trip-inspector"
         aria-label={t("workspace.inspectorTitle")}
-        className={`relative grid min-h-0 min-w-0 grid-rows-[1fr_auto] border-l border-[#e8e1d8] bg-[#f4f7f5] max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
+        className={`relative grid min-h-0 min-w-0 grid-rows-[66px_minmax(0,1fr)_auto] border-l-2 border-[var(--w-ink)] bg-[var(--w-mist)] max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
       >
-        <button
-          type="button"
-          onClick={() => setInspectorOpen(false)}
-          aria-label={t("workspace.closeInspector")}
-          className="absolute right-3 top-3 z-10 grid size-[30px] place-items-center rounded-full border border-[#d9e4e1] bg-white/90 text-sidebar shadow-sm backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden"
-        >
-          <X aria-hidden="true" className="size-4" />
-        </button>
+        {/* Deliberately untitled: the spec keeps a bar here purely so the
+            inspector's rule lines up with the history and chat headers. */}
+        <header className="flex h-[66px] items-center justify-end border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
+          <button
+            type="button"
+            onClick={() => setInspectorOpen(false)}
+            aria-label={t("workspace.closeInspector")}
+            className="grid size-[34px] place-items-center bg-card text-[var(--w-ink)] wanderly-edge wanderly-r-sm wanderly-shadow-sm wanderly-press xl:hidden"
+          >
+            <X aria-hidden="true" className="size-4" />
+          </button>
+        </header>
 
         <div className="min-h-0 overflow-y-auto p-3">
           <div className="grid gap-[11px]">
-            <section className="overflow-hidden rounded-[15px] border border-[#d9e4e1] bg-[#fffdf9] shadow-[0_8px_20px_#102a430b]">
-              <div className="flex items-center justify-between gap-[7px] border-b border-[#e7ece9] px-2.5 py-2.5">
+            <section className="overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow">
+              <div className="flex items-center justify-between gap-[7px] border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] px-2.5 py-2.5">
                 <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
-                  <span aria-hidden="true" className="grid size-[21px] place-items-center rounded-[7px] bg-[#e7f4f0] text-primary">◎</span>
+                  <span aria-hidden="true" className="grid size-[21px] place-items-center bg-[var(--w-highlight)] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">◎</span>
                   <span className="truncate">{t("workspace.overviewWindow")}</span>
                 </div>
               </div>
               <div className="p-3">
-                <span className={`inline-flex items-center gap-1.5 rounded-full px-[7px] py-1 text-[10px] font-extrabold ${STATUS_PILL[trip.status]}`}>
+                <span className={`inline-flex items-center gap-1.5 px-[7px] py-1 text-[10px] font-extrabold wanderly-edge-thin wanderly-r-xs ${STATUS_PILL[trip.status]}`}>
                   <i aria-hidden="true" className="size-1.5 rounded-full bg-current" />
                   {t(`header.statusValue.${trip.status}` as `header.statusValue.${typeof trip.status}`)}
                 </span>
                 <h2 className="mb-1 mt-2 truncate text-base tracking-[-0.025em]">{trip.name}</h2>
-                <p className="text-xs text-muted-foreground">{datesLabel}</p>
+                <p className="text-xs">{datesLabel}</p>
                 <div className="mt-3 grid grid-cols-2 gap-[7px]">
-                  <div className="rounded-[10px] bg-[#f0f5f4] p-2 text-[11px] text-[#456375]">
-                    <b className="block text-xs text-foreground">{t("header.departure")}</b>
+                  <div className="bg-[var(--w-mist)] p-2 text-[11px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
+                    <b className="block text-xs">{t("header.departure")}</b>
                     {departureLabel}
                   </div>
-                  <div className="rounded-[10px] bg-[#f0f5f4] p-2 text-[11px] text-[#456375]">
-                    <b className="block text-xs text-foreground">{t("header.destinations")}</b>
+                  <div className="bg-[var(--w-mist)] p-2 text-[11px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
+                    <b className="block text-xs">{t("header.destinations")}</b>
                     {destinationsLabel}
                   </div>
-                  <div className="rounded-[10px] bg-[#f0f5f4] p-2 text-[11px] text-[#456375]">
-                    <b className="block text-xs text-foreground">{t("workspace.membersWindow")}</b>
+                  <div className="bg-[var(--w-mist)] p-2 text-[11px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
+                    <b className="block text-xs">{t("workspace.membersWindow")}</b>
                     {t("header.members", { count: members.length })}
                   </div>
-                  <div className="rounded-[10px] bg-[#f0f5f4] p-2 text-[11px] text-[#456375]">
-                    <b className="block text-xs text-foreground">{t("header.status")}</b>
+                  <div className="bg-[var(--w-mist)] p-2 text-[11px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
+                    <b className="block text-xs">{t("header.status")}</b>
                     {trip.status}
                   </div>
                 </div>
@@ -369,9 +381,9 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               </div>
               <div className="px-3 py-[11px]">
                 {members.map((member) => (
-                  <div key={member.userId} className="flex items-center gap-2 border-b border-[#edf0ee] py-[7px] text-xs text-[#405a6d] last:border-0">
+                  <div key={member.userId} className="flex items-center gap-2 border-b border-[var(--w-line)] py-[7px] text-xs text-[var(--w-ink)] last:border-0">
                     <span className="min-w-0 truncate">{member.displayName}</span>
-                    <b className="ml-auto shrink-0 text-[10px] text-[#8aa099]">{t(`workspace.roleValue.${member.role}` as `workspace.roleValue.${typeof member.role}`)}</b>
+                    <b className="ml-auto shrink-0 text-[10px]">{t(`workspace.roleValue.${member.role}` as `workspace.roleValue.${typeof member.role}`)}</b>
                   </div>
                 ))}
               </div>
@@ -379,24 +391,18 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           </div>
         </div>
 
-        <section className="mx-3 mb-3 overflow-hidden rounded-[15px] border border-[#7bbeb5] bg-[#fffdf9] shadow-[0_15px_30px_#073d5030]" aria-label={t("workspace.mapWindow")}>
-          <div className="flex items-center justify-between gap-[7px] border-b border-[#e7ece9] px-2.5 py-2.5">
+        <section className="mx-3 mb-3 overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow" aria-label={t("workspace.mapWindow")}>
+          <div className="flex items-center justify-between gap-[7px] border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] px-2.5 py-2.5">
             <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
-              <span aria-hidden="true" className="grid size-[21px] place-items-center rounded-[7px] bg-[#e7f4f0] text-primary">◎</span>
+              <span aria-hidden="true" className="grid size-[21px] place-items-center bg-[var(--w-highlight)] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">◎</span>
               <span className="truncate">{t("workspace.mapWindow")}</span>
-              <span className="shrink-0 rounded-full bg-[#e7f4f0] px-[7px] py-1 text-[10px] font-extrabold text-[#08726e]">{t("workspace.mapPinned")}</span>
+              <span className="shrink-0 bg-[var(--w-fog)] px-[7px] py-1 text-[10px] font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">{t("workspace.mapPinned")}</span>
             </div>
-            <Link href="/home" aria-label={t("workspace.openFullMap")} className="grid size-[25px] shrink-0 place-items-center rounded-[7px] text-[#647e8e] transition hover:bg-[#edf2f0] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+            <Link href="/home" aria-label={t("workspace.openFullMap")} className="grid size-[25px] shrink-0 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press">
               <ExternalLink aria-hidden="true" className="size-3.5" />
             </Link>
           </div>
-          <div className="relative h-[150px] overflow-hidden bg-[radial-gradient(circle_at_65%_30%,#216e86_0_7%,transparent_8%),radial-gradient(circle_at_30%_50%,#0b6574_0_14%,transparent_15%),linear-gradient(130deg,#073d50,#0a5a6c)]">
-            <span aria-hidden="true" className="absolute left-1/2 top-1/2 size-[175px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#9ad4c7] bg-[radial-gradient(circle_at_30%_28%,#d6edc7_0_11%,transparent_12%),radial-gradient(ellipse_at_60%_57%,#bddf9c_0_18%,transparent_19%),radial-gradient(ellipse_at_24%_69%,#96c98b_0_10%,transparent_11%),radial-gradient(circle_at_50%_50%,#0d7280_0_54%,#075364_55%_100%)] shadow-[inset_-18px_-15px_27px_#00354588,0_0_42px_#8cd6cb55]" />
-            <span aria-hidden="true" className="absolute left-[calc(50%+24px)] top-[52px] size-2.5 rotate-[-45deg] rounded-[50%_50%_50%_0] border-[3px] border-white bg-[#ef7654] shadow-[0_5px_10px_#102a4377]" />
-            <span className="absolute bottom-3 left-[15px] z-[1] max-w-[calc(100%-30px)] truncate rounded-lg bg-white/85 px-[7px] py-[5px] text-[11px] font-extrabold text-sidebar">
-              {destinationsLabel}
-            </span>
-          </div>
+          <TripMiniGlobe places={globePlaces} fallbackLabel={destinationsLabel} tripId={tripId} />
         </section>
       </aside>
     </main>
@@ -404,12 +410,12 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
 }
 
 const STATUS_PILL: Record<string, string> = {
-  DRAFT: "bg-[#fff1ca] text-[#9c5400]",
-  PLANNING: "bg-[#e4f7f1] text-[#08726e]",
-  STALE: "bg-[#fff1ca] text-[#9c5400]",
-  CONFIRMED: "bg-[#e4f7f1] text-[#08726e]",
-  BOOKED: "bg-[#e4f7f1] text-[#08726e]",
-  CANCELLED: "bg-[#edf1f3] text-[#5f7484]",
+  DRAFT: "bg-[var(--w-fog)] text-[var(--w-ink)]",
+  PLANNING: "bg-[var(--w-highlight)] text-[var(--w-ink)]",
+  STALE: "bg-[var(--w-fog)] text-[var(--w-ink)]",
+  CONFIRMED: "bg-[var(--w-mist)] text-[var(--w-ink)]",
+  BOOKED: "bg-[var(--w-mist)] text-[var(--w-ink)]",
+  CANCELLED: "bg-[var(--w-white)] text-[var(--w-ink)]",
 };
 
 function formatThreadTime(locale: string, iso: string): string {

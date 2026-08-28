@@ -322,7 +322,8 @@
       "captionSupported": "Zoom in for capitals, cities and states / provinces.",
       "captionMissingSource": "Country/region labels are hidden — this map style does not expose the openmaptiles source.",
       "captionMissingLayers": "Country/region labels are hidden — missing layers: {layers}."
-    }
+    },
+    "backToTrip": "Back to trip"
   },
   "trips": {
     "kicker": "Trip workspace",
@@ -391,7 +392,8 @@
       "sectionLabel": "This trip",
       "archivedLabel": "Archived",
       "defaultSubtitle": "Default private thread for this trip",
-      "threadSubtitle": "Private thread, visible only to you"
+      "threadSubtitle": "Private thread, visible only to you",
+      "currentBadge": "Current"
     },
     "workspace": {
       "agentChip": "Collab agent",
@@ -406,7 +408,8 @@
       "roleValue": {
         "CREATOR": "Creator",
         "MEMBER": "Member"
-      }
+      },
+      "openPinAria": "View {name} on the full map"
     }
   },
   "login": {

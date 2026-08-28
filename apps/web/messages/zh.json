@@ -322,7 +322,8 @@
       "captionSupported": "放大以查看首都、城市和省 / 州。",
       "captionMissingSource": "国家/地区标签已隐藏——该地图样式未提供 openmaptiles 数据源。",
       "captionMissingLayers": "国家/地区标签已隐藏——缺失图层：{layers}。"
-    }
+    },
+    "backToTrip": "返回行程"
   },
   "trips": {
     "kicker": "行程工作区",
@@ -391,7 +392,8 @@
       "sectionLabel": "本项目",
       "archivedLabel": "已归档",
       "defaultSubtitle": "本行程的默认私人对话",
-      "threadSubtitle": "仅你可见的私人对话"
+      "threadSubtitle": "仅你可见的私人对话",
+      "currentBadge": "当前"
     },
     "workspace": {
       "agentChip": "协作 Agent",
@@ -406,7 +408,8 @@
       "roleValue": {
         "CREATOR": "创建者",
         "MEMBER": "成员"
-      }
+      },
+      "openPinAria": "在完整地图中查看 {name}"
     }
   },
   "login": {

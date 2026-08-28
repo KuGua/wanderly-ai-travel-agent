@@ -49,44 +49,68 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * Wanderly prototype design system — see docs/prototype-design-system.md.
+ * The `--w-*` tokens are the authority; the shadcn/Tailwind variables below
+ * are aliases onto them so existing utility classes inherit the language
+ * instead of every component hard-coding hex values.
+ */
 :root {
-  --background: oklch(0.985 0.012 85);
-  --foreground: oklch(0.24 0.035 230);
-  --card: oklch(0.997 0.006 85);
-  --card-foreground: oklch(0.24 0.035 230);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.43 0.09 205);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.92 0.04 165);
-  --secondary-foreground: oklch(0.28 0.05 205);
-  --muted: oklch(0.95 0.014 80);
-  --muted-foreground: oklch(0.48 0.035 230);
-  --accent: oklch(0.84 0.115 82);
-  --accent-foreground: oklch(0.28 0.055 45);
+  --w-moss: #67768f;
+  --w-primary: #404e5b;
+  --w-info: #599db5;
+  --w-highlight: #65bbb0;
+  --w-fog: #f1edea;
+  --w-white: #fff;
+  --w-ink: #1d1d1b;
+  --w-muted: #414141;
+  --w-page: color-mix(in srgb, var(--w-fog), var(--w-white) 74%);
+  --w-line: color-mix(in srgb, var(--w-fog), var(--w-white) 38%);
+  --w-mist: color-mix(in srgb, var(--w-fog), var(--w-white) 62%);
+
+  /* Deep-space variants; the cosmic map reassigns the same palette. */
+  --w-space: color-mix(in srgb, var(--w-primary), #000 72%);
+  --w-space-mid: color-mix(in srgb, var(--w-primary), #000 47%);
+  --w-space-panel: color-mix(in srgb, var(--w-primary), transparent 7%);
+  --w-space-line: color-mix(in srgb, var(--w-fog), transparent 35%);
+
+  --background: var(--w-page);
+  --foreground: var(--w-ink);
+  --card: var(--w-white);
+  --card-foreground: var(--w-ink);
+  --popover: var(--w-white);
+  --popover-foreground: var(--w-ink);
+  --primary: var(--w-highlight);
+  --primary-foreground: var(--w-ink);
+  --secondary: var(--w-mist);
+  --secondary-foreground: var(--w-ink);
+  --muted: var(--w-fog);
+  --muted-foreground: var(--w-muted);
+  --accent: var(--w-highlight);
+  --accent-foreground: var(--w-ink);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --border: var(--w-ink);
+  --input: var(--w-ink);
+  --ring: var(--w-ink);
+  --chart-1: var(--w-highlight);
+  --chart-2: var(--w-info);
+  --chart-3: var(--w-moss);
+  --chart-4: var(--w-primary);
+  --chart-5: var(--w-fog);
   --radius: 0.625rem;
-  --welcome-glow: oklch(0.87 0.09 170 / 0.38);
-  --sidebar: oklch(0.32 0.065 220);
-  --sidebar-foreground: oklch(0.94 0.025 175);
-  --sidebar-primary: oklch(0.84 0.115 82);
-  --sidebar-primary-foreground: oklch(0.28 0.055 45);
-  --sidebar-accent: oklch(0.41 0.07 215);
-  --sidebar-accent-foreground: oklch(0.98 0.01 175);
-  --sidebar-border: oklch(0.56 0.07 205);
-  --sidebar-ring: oklch(0.84 0.115 82);
+  --welcome-glow: color-mix(in srgb, var(--w-highlight), transparent 62%);
+  --sidebar: var(--w-primary);
+  --sidebar-foreground: var(--w-ink);
+  --sidebar-primary: var(--w-highlight);
+  --sidebar-primary-foreground: var(--w-ink);
+  --sidebar-accent: var(--w-fog);
+  --sidebar-accent-foreground: var(--w-ink);
+  --sidebar-border: var(--w-ink);
+  --sidebar-ring: var(--w-ink);
 }
 
 ::selection {
-  background: oklch(0.84 0.115 82 / 0.55);
+  background: color-mix(in srgb, var(--w-highlight), transparent 45%);
 }
 
 .dark {
@@ -129,10 +153,439 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Low-contrast paper grain; decorative only, never carries information. */
+    background-image: radial-gradient(color-mix(in srgb, var(--w-moss), transparent 88%) 1px, transparent 1px);
+    background-size: 8px 8px;
   }
   html {
     @apply font-sans;
   }
+  :focus-visible {
+    outline: 3px solid var(--w-ink);
+    outline-offset: 4px;
+  }
+}
+
+/*
+ * Hand-drawn comic primitives.
+ *
+ * The look is three things applied together — an ink outline, a slightly
+ * irregular radius, and a hard offset shadow. Applying only one of them
+ * reads as a plain flat card, so the helpers below always travel as a set.
+ */
+/* Declared as utilities so `sm:` / `hover:` variants compose with them. */
+@utility wanderly-edge {
+  border: 2px solid var(--w-ink);
+}
+
+@utility wanderly-edge-thin {
+  border: 1.5px solid var(--w-ink);
+}
+
+/* Irregular radii: same family, deliberately mismatched corners. */
+@utility wanderly-r-rail { border-radius: 24px 17px 26px 16px; }
+@utility wanderly-r-lg { border-radius: 19px 14px 20px 13px; }
+@utility wanderly-r-md { border-radius: 14px 9px 15px 8px; }
+@utility wanderly-r-sm { border-radius: 12px 8px 13px 9px; }
+@utility wanderly-r-xs { border-radius: 8px 6px 9px 5px; }
+
+@utility wanderly-shadow-lg { box-shadow: 5px 5px 0 var(--w-ink); }
+@utility wanderly-shadow { box-shadow: 4px 4px 0 var(--w-ink); }
+@utility wanderly-shadow-sm { box-shadow: 3px 3px 0 var(--w-ink); }
+@utility wanderly-shadow-xs { box-shadow: 2px 2px 0 var(--w-ink); }
+@utility wanderly-shadow-none { box-shadow: 0 0 0 var(--w-ink); }
+
+/*
+ * Press feedback. Hovering shortens the shadow and slides the element into
+ * it, so the control reads as pushed toward the page; the active state
+ * seats it fully. Colour, shadow and offset all transition together, which
+ * is what makes the hover feel like a gradual press rather than a snap.
+ */
+.wanderly-press {
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    background-color 220ms ease,
+    border-color 220ms ease,
+    color 220ms ease;
+}
+
+.wanderly-press:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--w-ink);
+}
+
+.wanderly-press:active {
+  transform: translate(4px, 4px);
+  box-shadow: 0 0 0 var(--w-ink);
+}
+
+/* Deeper travel for the large cards that carry a 4–5px resting shadow. */
+.wanderly-press-lg:hover {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--w-ink);
+}
+
+.wanderly-press-lg:active {
+  transform: translate(5px, 5px);
+  box-shadow: 0 0 0 var(--w-ink);
+}
+
+/*
+ * Primary action: highlight at rest, easing to the info blue on hover.
+ * Label stays ink in both states — the spec forbids brand-coloured text.
+ */
+.wanderly-action {
+  background-color: var(--w-highlight);
+  color: var(--w-ink);
+}
+
+.wanderly-action:hover {
+  background-color: var(--w-info);
+  color: var(--w-ink);
+}
+
+.wanderly-action:disabled {
+  transform: none;
+  box-shadow: 2px 2px 0 var(--w-ink);
+  opacity: 0.55;
+}
+
+/* Underline accent used for eyebrows and section labels. */
+.wanderly-underline {
+  text-decoration: underline 2px var(--w-highlight);
+  text-underline-offset: 4px;
+}
+
+/* Slight rotation so a grid of cards does not read as a perfect matrix. */
+.wanderly-tilt-a { transform: rotate(-0.35deg); }
+.wanderly-tilt-b { transform: rotate(0.35deg); }
+.wanderly-tilt-a:hover,
+.wanderly-tilt-b:hover { transform: translate(3px, 3px) rotate(0deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .wanderly-press,
+  .wanderly-press-lg {
+    transition-duration: 0.01ms;
+  }
+}
+
+/*
+ * Cosmic explore map.
+ *
+ * Deep space plus fixed star points — no beams, halos or radial glow, per
+ * the design spec. Every floating panel inside `.wanderly-cosmos` becomes a
+ * dark translucent surface; a white card here would break the scene.
+ */
+.wanderly-cosmos {
+  background: var(--w-space);
+  color: var(--w-fog);
+}
+
+.wanderly-cosmos .maplibregl-canvas {
+  filter: brightness(0.88) saturate(1.12) contrast(1.1);
+}
+
+/* Star field. Decorative and inert so it never intercepts map gestures. */
+.wanderly-starfield::after {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  opacity: 0.72;
+  background-image:
+    radial-gradient(circle at 9% 14%, var(--w-fog) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 72% 17%, var(--w-fog) 0 1px, transparent 1.6px),
+    radial-gradient(circle at 88% 72%, var(--w-highlight) 0 1.2px, transparent 2px),
+    radial-gradient(circle at 38% 82%, var(--w-fog) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 57% 43%, var(--w-info) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 17% 52%, var(--w-fog) 0 1px, transparent 1.7px);
+  background-size: 220px 180px, 310px 240px, 260px 210px, 340px 280px, 190px 160px, 290px 230px;
+  content: "";
+  pointer-events: none;
+}
+
+.wanderly-cosmos .maplibregl-control-container {
+  position: relative;
+  z-index: 3;
+}
+
+/* Dark translucent panel: the cosmic counterpart of a white comic card. */
+.wanderly-cosmos-panel {
+  border: 2px solid var(--w-space-line);
+  background: var(--w-space-panel);
+  color: var(--w-fog);
+  box-shadow:
+    4px 4px 0 var(--w-ink),
+    0 18px 40px color-mix(in srgb, var(--w-space), transparent 20%);
+}
+
+.wanderly-cosmos-control {
+  border: 2px solid var(--w-space-line);
+  background: color-mix(in srgb, var(--w-space-mid), transparent 4%);
+  color: var(--w-fog);
+  box-shadow: 3px 3px 0 var(--w-ink);
+}
+
+.wanderly-cosmos-control:hover {
+  border-color: var(--w-fog);
+  background: var(--w-highlight);
+  color: var(--w-ink);
+}
+
+.wanderly-cosmos .maplibregl-ctrl-group {
+  border: 2px solid var(--w-space-line);
+  border-radius: 12px 9px 13px 8px;
+  background: var(--w-space-panel);
+  box-shadow: 3px 3px 0 var(--w-ink);
+}
+
+.wanderly-cosmos .maplibregl-ctrl button {
+  background: var(--w-space-panel);
+  filter: invert(1);
+}
+
+/*
+ * Wander-bot. Outlined rounded rectangle with pixel eyes and thin legs; the
+ * component sets --bot-w / --bot-h / --bot-leg from the golden ratio, and
+ * --bot-eye-x / --bot-eye-y from pointer tracking.
+ *
+ * Decorative and inert: it floats over the map, so it must never intercept a
+ * gesture meant for the globe underneath.
+ */
+.wanderly-bot {
+  --bot-eye-x: 0px;
+  --bot-eye-y: 0px;
+  /* Outline and limbs share one blue-grey; the eyes are the only warm accent. */
+  --bot-line: #8fa0b7;
+  --bot-eye: #ffbf00;
+  position: fixed;
+  z-index: 35;
+  display: grid;
+  justify-items: center;
+  width: var(--bot-w);
+  cursor: grab;
+  touch-action: none;
+  /* Draggable, so it must receive pointer events; the cloud stays inert. */
+  pointer-events: auto;
+  user-select: none;
+}
+
+.wanderly-bot[data-dragging="true"] {
+  cursor: grabbing;
+}
+
+.wanderly-bot-body {
+  display: flex;
+  width: var(--bot-w);
+  height: var(--bot-h);
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--bot-w) / 5);
+  border: 3px solid var(--bot-line);
+  border-radius: calc(var(--bot-h) / 3.2);
+  background: var(--w-white);
+}
+
+.wanderly-bot-eye {
+  width: 3px;
+  height: calc(var(--bot-h) / 4.4);
+  border-radius: 2px;
+  background: var(--bot-eye);
+  /* Eyes lead the body, so they read as looking before it turns. */
+  transform: translate(var(--bot-eye-x), var(--bot-eye-y));
+  transition: transform 260ms ease-out;
+}
+
+.wanderly-bot-legs {
+  display: flex;
+  width: calc(var(--bot-w) * 0.62);
+  height: var(--bot-leg);
+  justify-content: space-between;
+  transition: height 220ms ease;
+}
+
+.wanderly-bot-leg {
+  position: relative;
+  width: 3px;
+  height: 100%;
+  border-radius: 0 0 3px 3px;
+  background: var(--bot-line);
+  transform-origin: top center;
+  transition: height 220ms ease;
+}
+
+/* Foot pinned to the end of the leg, so it follows any swing or fold. */
+.wanderly-bot-leg::after {
+  position: absolute;
+  bottom: -3px;
+  left: 50%;
+  width: 11px;
+  height: 6px;
+  border: 3px solid var(--bot-line);
+  border-radius: 999px;
+  background: var(--w-white);
+  content: "";
+  opacity: 1;
+  transform: translateX(-50%);
+  transition: opacity 160ms ease;
+}
+
+/*
+ * Legs are tucked away unless the bot is sitting on the composer or being
+ * carried. Hovering also brings them out, so it reads as ready to move.
+ */
+.wanderly-bot[data-pose="idle"]:not(:hover):not([data-dragging="true"]) .wanderly-bot-legs {
+  height: 0;
+}
+
+.wanderly-bot[data-pose="idle"]:not(:hover):not([data-dragging="true"]) .wanderly-bot-leg::after {
+  opacity: 0;
+}
+
+/* Idle: a slow sway that only begins once the bot has settled. */
+.wanderly-bot[data-settled="true"]:not([data-dragging="true"]) .wanderly-bot-body {
+  animation: wanderly-bot-sway 4.2s ease-in-out infinite;
+}
+
+@keyframes wanderly-bot-sway {
+  0%, 100% { transform: translateX(-2px) rotate(-1.6deg); }
+  50% { transform: translateX(2px) rotate(1.6deg); }
+}
+
+/*
+ * Legs swing while the bot is carried, and while it is perched on the
+ * composer — folded at the knee, the way you would sit on a ledge.
+ */
+.wanderly-bot[data-pose="perched"] .wanderly-bot-legs,
+.wanderly-bot[data-dragging="true"] .wanderly-bot-legs {
+  height: calc(var(--bot-leg) * 0.72);
+}
+
+.wanderly-bot[data-pose="perched"] .wanderly-bot-leg,
+.wanderly-bot[data-dragging="true"] .wanderly-bot-leg {
+  animation: wanderly-bot-swing 2.4s ease-in-out infinite;
+}
+
+.wanderly-bot[data-dragging="true"] .wanderly-bot-leg {
+  /* Carried legs swing loosely and faster than a seated idle. */
+  animation-duration: 0.9s;
+}
+
+.wanderly-bot[data-pose="perched"] .wanderly-bot-leg:last-child,
+.wanderly-bot[data-dragging="true"] .wanderly-bot-leg:last-child {
+  /* Offset so the two legs never swing as one block. */
+  animation-delay: -0.45s;
+}
+
+@keyframes wanderly-bot-swing {
+  0%, 100% { transform: rotate(-22deg); }
+  50% { transform: rotate(14deg); }
+}
+
+/* Speech cloud: place name, ellipsis, question mark. */
+.wanderly-bot-cloud {
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 50%;
+  padding: 5px 9px;
+  border: 2px solid var(--bot-line);
+  border-radius: 14px 10px 15px 9px;
+  background: var(--w-white);
+  color: var(--w-ink);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+  box-shadow: 3px 3px 0 var(--bot-line);
+  pointer-events: none;
+  transform: translateX(-50%);
+  animation: wanderly-bot-cloud-in 220ms ease-out;
+}
+
+/* The two trailing puffs that make it a cloud rather than a box. */
+.wanderly-bot-cloud::before,
+.wanderly-bot-cloud::after {
+  position: absolute;
+  left: 14px;
+  border: 2px solid var(--bot-line);
+  border-radius: 50%;
+  background: var(--w-white);
+  content: "";
+}
+
+.wanderly-bot-cloud::before {
+  bottom: -7px;
+  width: 8px;
+  height: 8px;
+}
+
+.wanderly-bot-cloud::after {
+  bottom: -13px;
+  left: 9px;
+  width: 5px;
+  height: 5px;
+}
+
+@keyframes wanderly-bot-cloud-in {
+  from { opacity: 0; transform: translate(-50%, 5px) scale(0.9); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wanderly-bot-body,
+  .wanderly-bot-leg,
+  .wanderly-bot-cloud {
+    animation: none;
+  }
+
+  .wanderly-bot-eye,
+  .wanderly-bot-legs,
+  .wanderly-bot-leg,
+  .wanderly-bot-leg::after {
+    transition: none;
+  }
+}
+
+/*
+ * Country pin on the workspace mini globe. Cities inside one country are
+ * merged upstream, so each pin carries a country name rather than a city.
+ */
+.wanderly-mini-pin {
+  position: relative;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--w-ink);
+  border-radius: 50% 50% 50% 0;
+  padding: 0;
+  background: var(--w-highlight);
+  cursor: pointer;
+  transform: rotate(-45deg);
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+
+.wanderly-mini-pin:hover,
+.wanderly-mini-pin:focus-visible {
+  background: var(--w-info);
+  transform: rotate(-45deg) scale(1.25);
+}
+
+.wanderly-mini-pin > span {
+  position: absolute;
+  bottom: 1px;
+  left: 15px;
+  max-width: 8rem;
+  overflow: hidden;
+  padding: 1px 4px;
+  border: 1.5px solid var(--w-ink);
+  border-radius: 8px 5px 9px 6px;
+  background: var(--w-white);
+  color: var(--w-ink);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transform: rotate(45deg);
+  transform-origin: left bottom;
 }
 
 .wanderly-map-marker-anchor {

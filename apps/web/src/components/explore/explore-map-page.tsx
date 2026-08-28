@@ -1,8 +1,9 @@
 "use client";
 
-import { CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, LogIn, MapPin, RotateCw, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, CheckSquare, Compass, HelpCircle, ListChecks, LoaderCircle, LocateFixed, LogIn, MapPin, RotateCw, Sparkles, Trash2, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
 import type { ConversationPlace } from "@/lib/api/contracts";
 import { applyGeographyContrast, inspectGeographyLayers, OPEN_MAP_TILES_SOURCE, setGeographyLayerVisibility, type GeographyInspection, type GeographyVisibility } from "./map-geography-layers";
@@ -13,6 +14,7 @@ import { cityKey, findMentionedCities, loadCityCatalog, type CatalogCity } from 
 import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { loadAdministrativeCenters, pinGranularityForZoom, pinSelectionForReference, type PinGranularity } from "./pin-selection";
 import { solidifyGlobeStyle } from "./map-surface-style";
+import { WanderBot } from "./wander-bot";
 import { LocationIntroductionPanel } from "./location-introduction-panel";
 import { ExploreChatHost } from "./explore-chat-host";
 import { useLocationIntroduction } from "@/lib/query/use-location-introduction";
@@ -62,9 +64,41 @@ async function loadGlobeStyle(): Promise<StyleSpecification> {
   return solidifyGlobeStyle({ ...style, projection: { type: "globe" } });
 }
 
+/**
+ * Camera hand-off from the trip workspace's mini globe. When present the map
+ * opens on that country instead of the default globe, and offers a way back
+ * to the trip the viewer came from.
+ */
+function readFocusHandoff(params: URLSearchParams) {
+  const latitude = Number(params.get("focusLat"));
+  const longitude = Number(params.get("focusLng"));
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+
+  const tripId = params.get("fromTrip");
+  const zoom = Number(params.get("focusZoom"));
+  return {
+    center: [longitude, latitude] as [number, number],
+    zoom: Number.isFinite(zoom) ? Math.min(6, Math.max(1, zoom)) : 3.4,
+    label: params.get("focusLabel"),
+    // Only a well-formed trip id earns a back link; the value lands in a
+    // route, so anything else is ignored rather than followed.
+    tripId: tripId && /^[0-9a-f-]{36}$/i.test(tripId) ? tripId : null,
+  };
+}
+
 export function ExploreMapPage() {
   const auth = useOptionalAuth();
   const travelApi = useOptionalTravelApi();
+  const searchParams = useSearchParams();
+  // Initial gaze target: the globe. Recomputed on resize so the bot keeps
+  // facing it rather than a stale coordinate.
+  const [globeCenterPoint, setGlobeCenterPoint] = useState<{ x: number; y: number } | null>(null);
+  const focusHandoff = useMemo(() => readFocusHandoff(new URLSearchParams(searchParams.toString())), [searchParams]);
+  // The handoff only chooses the opening camera. Reading it through a ref keeps
+  // it out of the map effect's deps, so a later URL change cannot tear the map
+  // down and rebuild it.
+  const focusHandoffRef = useRef(focusHandoff);
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [mapForBoundaryOverlay, setMapForBoundaryOverlay] = useState<MapLibreMap | null>(null);
@@ -113,6 +147,19 @@ export function ExploreMapPage() {
   const [exploreState, setExploreState] = useState<ExploreState>("IDLE");
   const [helpOpen, setHelpOpen] = useState(false);
   const [mapNotice, setMapNotice] = useState<string | null>(null);
+
+  // The globe fills the map pane, so the pane's centre is where the bot looks
+  // while it is settling. Re-measured on resize to avoid a stale target.
+  useEffect(() => {
+    const measureGlobeCentre = () => {
+      const box = containerRef.current?.getBoundingClientRect();
+      if (!box || box.width === 0) return;
+      setGlobeCenterPoint({ x: box.left + box.width / 2, y: box.top + box.height / 2 });
+    };
+    measureGlobeCentre();
+    window.addEventListener("resize", measureGlobeCentre);
+    return () => window.removeEventListener("resize", measureGlobeCentre);
+  }, []);
 
   useEffect(() => {
     inspirationMarkersRef.current.forEach((marker, id) => {
@@ -488,8 +535,8 @@ export function ExploreMapPage() {
         const map = new maplibregl.Map({
           container: containerRef.current,
           style: globeStyle,
-          center: SINGAPORE,
-          zoom: 2.25,
+          center: focusHandoffRef.current?.center ?? SINGAPORE,
+          zoom: focusHandoffRef.current?.zoom ?? 2.25,
           attributionControl: false,
         });
         mapRef.current = map;
@@ -511,7 +558,7 @@ export function ExploreMapPage() {
               customAttribution: '<a href="https://www.naturalearthdata.com/" target="_blank" rel="noopener noreferrer">Natural Earth</a> · <a href="https://help.aliyun.com/zh/datav/datav-7-0/user-guide/china-state-border-4-0" target="_blank" rel="noopener noreferrer">China maritime line (local snapshot)</a>',
             }), "bottom-right");
             finalizeReadiness(map, inspectGeographyLayers(map, MAP_STYLE_URL));
-            if (!cancelled && !reducedMotion()) startGlobeSpin(map, spinAnimationRef);
+            if (!cancelled && !reducedMotion() && !focusHandoffRef.current) startGlobeSpin(map, spinAnimationRef);
             window.queueMicrotask(() => {
               if (!cancelled) configureMapAttribution(containerRef.current);
             });
@@ -736,8 +783,8 @@ export function ExploreMapPage() {
   }, [locale]);
 
   return (
-    <main data-drawer-open={selected && !chatOpen ? "true" : "false"} className="wanderly-explore-map relative isolate h-[calc(100dvh-4rem)] min-h-[620px] overflow-hidden bg-[#bfe9f2] landscape:h-screen">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_58%_42%,#dff5ee_0_15%,#8bd2df_35%,#65b7ca_62%,#4b9eb5_100%)]" aria-hidden="true" />
+    <main data-drawer-open={selected && !chatOpen ? "true" : "false"} className="wanderly-explore-map wanderly-cosmos wanderly-starfield relative isolate h-[calc(100dvh-62px)] min-h-[620px] overflow-hidden sm:h-screen">
+      <div className="absolute inset-0 bg-[var(--w-space)]" aria-hidden="true" />
       <div className="absolute inset-0">
         <div ref={containerRef} className="size-full" aria-label={t("globeAriaLabel")} />
       </div>
@@ -746,32 +793,52 @@ export function ExploreMapPage() {
 
       {readiness.kind === "loading" ? (
         <div className="pointer-events-none absolute inset-0 z-[4] grid place-items-center" role="status">
-          <span className="inline-flex items-center gap-2 rounded-full bg-card/90 px-4 py-2 text-sm font-bold text-primary shadow-lg backdrop-blur">
+          <span className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold wanderly-cosmos-panel wanderly-r-sm">
             <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" /> {tCommon("loadingGlobe")}
           </span>
         </div>
       ) : null}
 
       {mapNotice ? (
-        <div role="status" aria-live="polite" className="pointer-events-none absolute left-1/2 top-20 z-[60] -translate-x-1/2 rounded-full bg-sidebar/95 px-4 py-2 text-center text-sm font-bold text-white shadow-xl backdrop-blur sm:top-24">
+        <div role="status" aria-live="polite" className="pointer-events-none absolute left-1/2 top-20 z-[60] -translate-x-1/2 px-4 py-2 text-center text-sm font-bold wanderly-cosmos-panel wanderly-r-sm sm:top-24">
           {mapNotice}
         </div>
       ) : null}
 
+      {/* Draggable companion. It positions itself, so no wrapper here. */}
+      <WanderBot
+        lookAt={globeCenterPoint}
+        perchSelector='[data-wanderly-perch="composer"]'
+        boundsSelector=".wanderly-explore-map"
+        obstructed={chatOpen}
+        speechPlace={selected?.name ?? null}
+      />
+
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 p-4 sm:p-6">
-        <div className="pointer-events-auto rounded-[20px] bg-sidebar/95 px-4 py-3 text-white shadow-[0_12px_32px_#0a2f3f33] backdrop-blur">
+        <div className="pointer-events-auto flex flex-col items-start gap-2">
+          {focusHandoff?.tripId ? (
+            <Link
+              href={`/trips/${focusHandoff.tripId}` as "/trips/[tripId]"}
+              className="inline-flex min-h-10 items-center gap-1.5 px-3 text-xs font-extrabold wanderly-cosmos-control wanderly-r-sm wanderly-press"
+            >
+              <ArrowLeft aria-hidden="true" className="size-4" />
+              {t("backToTrip")}
+            </Link>
+          ) : null}
+          <div className="px-4 py-3 wanderly-cosmos-panel wanderly-r-lg">
           <p className="font-black tracking-[-0.035em]">{tCommon("brandTagline")}</p>
-          <p className="mt-0.5 text-xs text-[#bde1db]">{t("startingFrom")}</p>
+          <p className="mt-0.5 text-xs opacity-85">{focusHandoff?.label ?? t("startingFrom")}</p>
+          </div>
         </div>
         <div className="pointer-events-auto flex gap-2">
-          <button type="button" onClick={recenter} aria-label={t("recenterAriaLabel")} title={t("recenterTitle")} className="grid size-12 place-items-center rounded-[16px] bg-sidebar/95 text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
+          <button type="button" onClick={recenter} aria-label={t("recenterAriaLabel")} title={t("recenterTitle")} className="grid size-12 place-items-center wanderly-cosmos-control wanderly-r-sm wanderly-press">
             <LocateFixed aria-hidden="true" className="size-5" />
           </button>
           <button type="button" onClick={() => setHelpOpen((open) => !open)} aria-label={t("helpAriaLabel")} aria-expanded={helpOpen} title={t("helpTitle")} className="grid size-12 place-items-center rounded-[16px] bg-sidebar/95 text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
             <HelpCircle aria-hidden="true" className="size-5" />
           </button>
           {auth?.status !== "SIGNED_IN" ? (
-            <Link href="/login" aria-label={t("loginAriaLabel")} title={t("loginTitle")} className="grid h-12 w-24 place-items-center rounded-[16px] bg-sidebar/95 text-sm font-bold text-white shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/50">
+            <Link href="/login" aria-label={t("loginAriaLabel")} title={t("loginTitle")} className="grid h-12 w-24 place-items-center text-sm font-bold wanderly-cosmos-control wanderly-r-sm wanderly-press">
               <span className="flex items-center gap-1.5">
                 <LogIn aria-hidden="true" className="size-4" />
                 {t("loginButton")}
@@ -782,9 +849,9 @@ export function ExploreMapPage() {
       </header>
 
       {helpOpen ? (
-        <aside className="absolute right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] rounded-[20px] bg-card/95 p-4 text-sm leading-6 shadow-xl backdrop-blur sm:right-6 sm:top-24">
+        <aside className="absolute right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] p-4 text-sm leading-6 wanderly-cosmos-panel wanderly-r-lg sm:right-6 sm:top-24">
           <p className="font-bold">{t("helpHeading")}</p>
-          <p className="mt-1 text-muted-foreground">{t("helpBody")}</p>
+          <p className="mt-1 opacity-85">{t("helpBody")}</p>
         </aside>
       ) : null}
 
@@ -802,7 +869,7 @@ export function ExploreMapPage() {
       ) : null}
 
       {managePinsOpen ? (
-        <section className="absolute bottom-20 left-4 z-20 block w-[min(360px,calc(100%-2rem))] rounded-[24px] bg-card/95 p-4 shadow-[0_20px_60px_#082f3f40] backdrop-blur landscape:bottom-6 landscape:left-6">
+        <section className="absolute bottom-20 left-4 z-20 block w-[min(360px,calc(100%-2rem))] p-4 wanderly-cosmos-panel wanderly-r-lg landscape:bottom-6 landscape:left-6">
           <>
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1094,12 +1161,12 @@ function LayerToggleGroup({
   })();
   return (
     <section
-      className="absolute left-4 top-32 z-20 w-44 rounded-[18px] bg-card/95 p-2 shadow-lg backdrop-blur sm:left-6 sm:top-36"
+      className="absolute left-4 top-32 z-20 w-44 p-2 wanderly-cosmos-panel wanderly-r-lg sm:left-6 sm:top-36"
       role="group"
       aria-label={t("layerPanel.groupAriaLabel")}
       data-readiness={disabledReason ?? "supported"}
     >
-      <p className="px-2 pb-1 text-[10px] font-black uppercase tracking-[0.12em] text-muted-foreground">{t("layerPanel.kicker")}</p>
+      <p className="px-2 pb-1 text-[10px] font-black uppercase tracking-[0.12em] opacity-80">{t("layerPanel.kicker")}</p>
       {(["countries", "regions", "cities"] as const).map((layer) => (
         <button
           key={layer}
@@ -1107,13 +1174,13 @@ function LayerToggleGroup({
           aria-pressed={visibility[layer]}
           disabled={disabled}
           onClick={() => onToggle(layer)}
-          className="flex min-h-11 w-full items-center rounded-[12px] px-2 text-left text-xs font-bold aria-pressed:bg-secondary aria-pressed:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-40"
+          className="flex min-h-11 w-full items-center px-2 text-left text-xs font-bold wanderly-r-sm wanderly-press aria-pressed:wanderly-edge-thin aria-pressed:bg-[var(--w-highlight)] aria-pressed:text-[var(--w-ink)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           {labels[layer]}
         </button>
       ))}
       <p
-        className="px-2 pb-1 pt-1 text-[10px] leading-4 text-muted-foreground"
+        className="px-2 pb-1 pt-1 text-[10px] leading-4 opacity-80"
         role="status"
         aria-live="polite"
       >
