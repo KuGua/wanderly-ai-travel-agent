@@ -108,7 +108,8 @@ Skill = 输入 Zod schema
 | ConsentExportSkill | 服务端协作边界 | trip + active grants → 最小化 snapshot。 | buildAuthorizedData、createConstraintSnapshot。 | 不由模型执行；禁止 passport number。 |
 | FlightSearchSkill | Shared | snapshot-bound origin + candidate → normalized Flight evidence 或 `UNAVAILABLE`。 | FlightProvider、Amadeus adapter。 | LLM 可请求 Tool；服务端校验参数并保证研究覆盖；不成功不生成替代 offer。 |
 | CandidateResearchSkill | Shared | snapshot + candidate → ResearchBundle。 | FlightProvider、StayProvider、GroundProvider。 | 只请求已配置候选；失败必须明确 `UNAVAILABLE`。 |
-| ReadinessSkill | Shared | 授权国籍 + 成员 + 路线 → readiness 或 verification gap。 | VisaProvider、checkVisaReadiness。 | 未授权不得推断；不得法律建议。 |
+| ActivitiesSearchSkill | Shared | snapshot-bound destination × traveler config → normalized Activities evidence 或 `UNAVAILABLE`；Personal 版只读 owner profile + this_trip override，结果进入 conversation context 并可被后续 Shared turn 引用。 | ActivitiesProvider、Amadeus Tours & Activities adapter、per-endpoint TPS limiter。 | LLM 可请求 Tool；服务端校验参数并保证研究覆盖；不成功不生成替代 offer；Personal 调用不写 snapshot，不触发 STALE。 |
+| ReadinessSkill | Shared | 授权国籍 + 成员 + 路线 → readiness 或 verification gap；允许引用 Activities evidence ID 但受 `isDeepStrictEqual` 校验。 | VisaProvider、checkVisaReadiness、ActivitiesEvidence。 | 未授权不得推断；不得法律建议；只引用当前 run 的 persisted evidence。 |
 | PlanComparisonSkill | Shared | candidate bundles + 约束摘要 → 带 evidence ID 的 PlanSynthesis。 | ModelGateway.generateStructuredPlan。 | 不生成新的 offer、价格或签证结论。 |
 | PlanDiffExplanationSkill | Shared | safe old/new plan → diff explanation。 | ModelGateway.explainPlanDiff。 | 只解释持久化差异，不改变状态。 |
 | PlanReviewSkill（可选） | Review | 已校验 plan/explanation → 可读性 review。 | 新增受限 gateway 调用。 | 仅软性审查；无 DB/tool write 权限。 |

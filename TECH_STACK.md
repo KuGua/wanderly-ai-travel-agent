@@ -46,7 +46,8 @@ Amazon RDS for PostgreSQL
 | Agent | **受限 Skill Registry + ModelGateway**，运行在 App Runner | 模型只能通过服务器暴露的、类型化 function-tool 契约请求能力；具体 LLM 为可配置的 OpenAI-compatible provider。SDK 不是授权、确认或持久状态机。 | 让模型直接读写数据库、付款或自由互聊的多 Agent 群。 |
 | 长期记忆 | **PostgreSQL 中结构化、版本化的个人事实 + 当前 Trip 记忆投影** | 复用 `user_profiles`、`preference_facts`、字段级 consent、不可变 `constraint_snapshot` 和 stale/replan 控制面。低风险行为只能形成待确认的建议；个人事实默认私有，Shared Agent 只消费当前 Trip 的最小授权投影。 | 向量库、embedding、RAG、独立 memory service、跨 Trip Team memory、从私聊或敏感字段自动写入长期记忆。 |
 | 工具与模型边界 | Zod schema、structured outputs、server-side policy gate、受限 thread context builder | 对话 archive 仅由所有者读取。Personal Agent 仅可由服务端从同一 owner 的同一私有 thread 构造最近、有预算的原文上下文；该上下文只发送给已配置模型 provider，不进入共享 snapshot、Profile、日志、trace、audit、metric 或客户端持久状态。原文窗口受 `CONVERSATION_CONTEXT_MAX_TURNS`（默认 8 完整轮次，上限 12）和 `CONVERSATION_CONTEXT_MAX_CHARS`（默认 12,000 UTF-16 字符，上限 20,000）双重预算限制，并以 task acceptance 时记录的 `agent_task_runs.context_max_message_sequence` 为不可回写上界。所有共享工具只获得当前 `constraint_snapshot` 的最小授权字段。模型输出不直接成为业务真相。 | 将整段私聊、其他 thread 或共享/未授权数据放进 prompt；由浏览器提交 history；向量库、Redis 或独立 memory service；自动摘要 worker；tokenizer/embedding；向遥测或前端暴露供应商 key。 |
-| 旅行与数据 API | Amadeus Self-Service Flight Offers Search、openrouteservice Routing、Frankfurter；通过 provider adapters；版本化离线地图位置参考数据 | Flight adapter 仅在服务端启用并以 `UNAVAILABLE` fail closed；Amadeus Test 仅用于开发集成验证，不向产品展示为实时结果。两个匿名 Explore 端点均只在用户显式触发时调用：位置参考按每客户端每分钟 30 次限流，地点介绍使用独立限流并只读/刷新公共缓存；两者均不成为旅行事实或用户业务状态。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA；地图位置参考不得变成地址、POI 或旅行 provider。 |
+| 客户端 | **Next.js + React + TypeScript**，部署到 **AWS Amplify Hosting** | 浏览器链接最适合三人邀请、独立授权、共同查看、投屏与移动端访问。Amplify 支持 Next.js SSR 部署。[AWS Amplify](https://docs.aws.amazon.com/amplify/latest/userguide/ssr-amplify-support.html) | 原生 iOS/Android App、应用商店发布、离线协作。 |
+| 旅行与数据 API | Amadeus Self-Service Flight Offers Search、**Amadeus Self-Service Tours & Activities**、openrouteservice Routing、Frankfurter；通过 provider adapters；版本化离线地图位置参考数据 | Flight 与 Activities 是两个独立的 typed port；各自有独立的 provider adapter、覆盖矩阵、stale 触发器、evidence 写入与不可用语义。两者共用 Amadeus OAuth client-credentials 与请求 deadline；服务端层 per-endpoint TPS 限流。Test 仅用于开发验证，Production 查询结果用于产品展示；失败则返回 `UNAVAILABLE`。 | 现在接 Activities 之外的更多品类、POI、Weather、Calendar、Nager.Holidays 或多个 OTA；地图位置参考不得变成地址、POI 或旅行 provider。 |
 | Visa / entry | 官方核验下一步；未来可接 Sherpa/IATA Timatic adapter | 未配置可靠数据源时只展示核验缺口与官方核验下一步。 | 以 LLM 或 Wikipedia 推断签证、代办、法律结论。 |
 | 异步与编排 | PostgreSQL 持久任务状态机、租约领取、idempotency key、transactional outbox、`agent_task_runs`；Fargate Worker；同步 booking sandbox | 对话、planning 与 replan 都以 `QUEUED → RUNNING → COMPLETED/FAILED/STALE/CANCELLED` 执行；显式 Stop 是唯一取消源。租约过期可恢复，最终提交按 lease token 和版本条件化；不把 partial 文本作为业务记录。 | Temporal Cloud、Step Functions、Redis 队列同时进入 MVP；把浏览器/SSE 断开视为取消。 |
 | 可观测性 | OpenTelemetry + CloudWatch；结构化日志和低基数业务指标 | 以 `trip_id`、`plan_version`、`run_id`、`orchestration_request_id` 关联结果；日志不含私聊、国籍明文、证件号、支付数据。 | 先建独立数据湖或全套企业 APM。 |
@@ -108,12 +109,13 @@ Agent 不能自行跨越以下边界：
 | 能力 | 选择 | MVP 行为 | 风险与缓解 |
 |---|---|---|---|
 | Flight | Amadeus Self-Service Flight Offers Search adapter | 每个目的地候选仅使用可验证的 provider 查询结果；Test 环境只用于开发验证，生产展示仅使用 Production 查询结果；失败则返回 `UNAVAILABLE` | 供应商覆盖、商业条款、报价过期和模型 Tool-calling 兼容性必须在启用前验证。 |
+| Activities | Amadeus Self-Service Tours & Activities adapter | 与 Flight 同一 OAuth client；服务端层 per-endpoint TPS 限流按各自 quota 共享；每个候选目的地的活动作为事实工具，由 Shared Agent 在 PLAN/REPLAN durable task 内调用；Personal Agent 也可调，但查询结果仅作为当前 conversation 上下文，不直接进 plan；replan 与 stale 触发同 Flight。失败、超时、限流、空数据统一返回 `UNAVAILABLE` | vendor 字段集合随产品变化时收紧 schema；TPS 配额与 Flight 共享，可能成为不可用原因之一。 |
 | Ground | 配置后的路由 adapter | 仅在完整端点和来源可验证时生成路线 | 公共服务有使用上限和 attribution 要求。 |
 | Budget | Frankfurter adapter | 归一化候选总预算；显示汇率日期与“参考汇率” | 不能被当作支付或结算汇率；API 不可用时显示不可用。 |
 | Visa readiness | 官方核验下一步 | 对每名授权成员、每个展示候选给出待办/核验缺口 | 没有可靠数据源前不得宣称实时正确或给法律建议。 |
 | Map relief | [GEBCO WMS](https://www.gebco.net/data-products/gebco-web-services/web-map-service) | `GEBCO_LATEST` shaded relief 作为不透明全球海陆纹理；OpenFreeMap 矢量细节覆盖其上 | 公共服务无 SLA；失败时回退 Liberty Natural Earth；保留 attribution，并显示/记录“不用于航海”边界。 |
 
-**明确延期：** Amadeus Activities、Open-Meteo、openrouteservice POI/Overpass、Wikimedia、Nager.Holidays、Google Calendar。它们不能帮助完成当前的授权、候选比较、replan 与三人确认闭环。Google Calendar 尤其会增加 OAuth 和隐私风险；以后如做，仅从最小 `freebusy` 权限开始。[Google Calendar scopes](https://developers.google.com/workspace/calendar/api/auth)
+**明确延期：** Open-Meteo、openrouteservice POI/Overpass、Wikimedia、Nager.Holidays、第二个 Amadeus Activities 之外的 POI/活动供应商、Google Calendar。它们不能帮助完成当前的授权、候选比较、replan 与三人确认闭环。Google Calendar 尤其会增加 OAuth 和隐私风险；以后如做，仅从最小 `freebusy` 权限开始。[Google Calendar scopes](https://developers.google.com/workspace/calendar/api/auth)
 
 ## 6. AWS 与 OpenAI 的关系
 

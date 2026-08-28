@@ -61,7 +61,7 @@ flowchart LR
 |---|---|---|
 | H1 | 可编辑的 Personal Travel Profile 与可持久化私有 Agent 对话 | “Agent 了解我”，消除每次重填，并让用户可回看和纠正本次沟通。 |
 | H2 | Shared Trip Workspace、三人邀请和按字段授权 | 多人协调，不要求复制群聊，也不暴露隐私。 |
-| H3 | 两出发地、两到三个目的地候选的 Flight/Stay/Ground 比较 | 用工具编排降低跨平台协调与目的地选择成本。 |
+| H3 | 两出发地、两到三个目的地候选的 Flight/Stay/Ground/Activities 比较 | 用工具编排降低跨平台协调与目的地选择成本。 |
 | H4 | 按成员国籍、目的地和路线的 visa/entry readiness checklist | 减少跨国同行的准备遗漏。 |
 | H5 | 变化检测、重新编排和影响说明 | 自我修正的 Agentic wow。 |
 | H6 | 每成员确认后的 booking orchestration sandbox | 证明从规划到行动，不做自动付款。 |
@@ -115,11 +115,12 @@ flowchart LR
 
 ### FR-3 端到端行程编排
 
-1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay 和 Ground 工具，并将三位成员映射到两个出发地。模型可在 Shared PLAN/REPLAN 中真实请求 `flight.search`；Personal Agent 私有聊天不得调用该 Tool。服务端必须校验参数，并在最终方案生成前保证已查询所有必需的候选目的地与出发地组合。
-2. 系统必须比较两到三个预设目的地候选；每个候选包含至少一个航班、酒店和地面交通项目，或明确显示缺失项目与原因。
+1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay、Ground 和 Activities 工具，并将三位成员映射到两个出发地。模型可在 Shared PLAN/REPLAN 中真实请求 `flight.search` 和 `activities.search`；Personal Agent 私有聊天可调用 `flight.search` / `activities.search`，但查询结果仅作为当前 conversation 的输入上下文，不直接生成或修改 plan、不触发 STALE/replan，但允许进入 Shared 视图作为后续 Shared turn 的参考资料。服务端必须校验参数，并在最终方案生成前保证已查询所有必需的候选目的地与出发地组合。
+2. 系统必须比较两到三个预设目的地候选；每个候选包含至少一个航班、酒店、地面交通和活动项目，或明确显示缺失项目与原因。
 3. 每个项目必须显示总价/币种（如适用）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。
 4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
 5. Planning/replan 运行期间可实时显示安全阶段状态（例如 snapshot、research、validation、persistence），但不得向客户端发送内部推理、原始 prompt、未验证模型输出、未持久化 provider 结果或未授权 snapshot 数据；最终 plan 仅在验证并持久化后展示。
+6. Activities 工具与 Flight 工具相互独立：拥有独立的 typed port、覆盖矩阵、stale 触发器和 evidence 写入；同一 PLAN/REPLAN durable task 内作为并列子阶段，各自拥有独立的并发与失败语义。
 
 ### FR-4 签证/入境准备
 

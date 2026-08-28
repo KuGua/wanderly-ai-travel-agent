@@ -729,3 +729,68 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - A DRAFT-trip private-chat turn may emit only an in-memory destination/days candidate; raw conversation content is never included in the event, audit summary, or client persistence.
 - The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write.
 - A non-creator and a trip no longer in `DRAFT` receive `403` and `409` respectively; a MANUAL title remains unchanged after confirmation.
+
+### TS-ACTIVITIES-TOOL-1 — Durable Shared activities research and guarded plan finalization
+
+**Stories:** H3, H5, S1
+**Objective:** Verify that only the Shared PLAN/REPLAN Worker can ground a plan with live, task-bound activities evidence, and that flight + activities stages are independently schedulable.
+
+**Steps:**
+
+1. Confirm activity search preferences, create a trip snapshot with two controlled origins and two destination candidates, then accept a `PLAN` command.
+2. Configure the task scheduler to enable both flight and activities sub-stages; drive the Worker with a deterministic model double that requests `activities.search` for every destination candidate independently of any flight call.
+3. Verify each Tool request against the task snapshot, controlled destination list and accepted preference version; inspect only normalized `provider_search_runs` rows with `category='activity_shared'` and `requester_kind='shared'`.
+4. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, a lost lease, and a 429 from the shared Amadeus quota.
+5. Disable the activities sub-stage via configuration while keeping the flight sub-stage enabled; verify that the plan is finalized with a flight-complete matrix and an explicit `activities: UNAVAILABLE` empty-service marker.
+6. Disable the flight sub-stage while keeping activities enabled; verify the symmetric case.
+
+**Expected outcomes:**
+
+- The HTTP command returns `202` with a run ID; browser disconnect does not cancel it.
+- Only same-task, same-snapshot `LIVE` activities evidence fills a matrix cell. Wrong-task/wrong-snapshot evidence and `UNAVAILABLE` never satisfy coverage.
+- The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, destinations, dates or categories; raw Amadeus payloads, OAuth values and private snapshot data never leave the server boundary.
+- A 429 response on activities does not consume flight quota; a 429 on flight does not impact activities. The per-endpoint limiter enforces independent buckets and the run continues with whichever cells remain `LIVE`.
+- Final plan synthesis and atomic plan/task completion transaction are rejected unless the full matrix is live (when the sub-stage is enabled), the task is still `RUNNING` with its lease, and the accepted preference version is still current.
+- The activities and flight evidence tables reference distinct `provider_search_runs` rows; staleness triggers and offer expiry are evaluated independently per category.
+- Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, matrix and bounded-tool-loop failures are terminal and create no active plan.
+- An activities offer whose `expires_at` has passed causes the dependent plan to enter `STALE` independent of any flight offer expiry.
+
+### TS-ACTIVITIES-TOOL-2 — Personal Agent activities search with owner-scoped evidence
+
+**Stories:** H1, H3
+**Objective:** Verify that a Personal Agent can request `activities.search` against its own profile/override context, that results stay owner-scoped, and that subsequent Shared turns may reference them as conversation-derived inputs.
+
+**Steps:**
+
+1. As a single authenticated user, save a profile with budget, pace and interests; then save a trip-scoped override for `this trip`.
+2. Open a private conversation bound to a trip; submit a question that prompts the model to call `activities.search`.
+3. Verify the request carries a `PersonalActivitiesSearchContext` (not a snapshot) built from the owner profile + override.
+4. Inspect `provider_search_runs` rows: must include `requester_kind='personal'`, `category='activity_personal'`, `owner_user_id` set, and no `snapshot_id`.
+5. Submit a Shared PLAN/REPLAN command and inspect that the conversation message text may be referenced as trip memory input by Shared turns (no plan field directly references the personal run, but the conversation context is available upstream).
+6. Submit a wrinkle: revoked override, deleted profile field, malformed request, unknown destination, `UNAVAILABLE` provider result, repeated request.
+
+**Expected outcomes:**
+
+- The Personal Agent calls the same Amadeus endpoint with the same OAuth client as Shared, but the request context does not include a snapshot.
+- `provider_search_runs` records the run with `requester_kind='personal'`; the Shared `flight-research-matrix-service` and `activities-research-matrix-service` never read these rows.
+- The Personal Agent's evidence does not directly modify `itinerary_plans`, `constraint_snapshots`, or trigger any `STALE` transition on existing plans.
+- A subsequent Shared turn may reference the conversation text (which mentions the personal results) as trip memory input; the Shared plan field does not deep-equal a personal run row.
+- Revoked override, deleted profile field, malformed request and unknown destination each fail closed with a stable error code; `UNAVAILABLE` runs are recorded with `requester_kind='personal'` and the standard 8 unavailable reasons.
+- Logs, trace attributes, metric labels and audit summaries never contain the personal conversation text, the owner profile field values or the activity names.
+
+### TS-ACTIVITIES-TOOL-3 — Readiness text may reference activities evidence under strict equality
+
+**Stories:** H4, S1
+**Objective:** Verify the readiness Skill can reference activities evidence in its output, but only when the reference is a deep-strict-equal match against an `activities` `provider_search_runs` row from the same planning run.
+
+**Steps:**
+
+1. Build a planning run with persisted activities evidence for two destinations and an `ACTIVE` plan.
+2. Have the readiness Skill produce an explanation referencing one activities evidence row by ID.
+3. Repeat with a fabricated reference, an evidence ID from a different planning run, an evidence ID whose `expires_at` has passed, and an evidence ID whose `requester_kind='personal'`.
+
+**Expected outcomes:**
+
+- A reference matching the same run's persisted evidence by `isDeepStrictEqual` passes the `plan-output-validator` extended check.
+- A fabricated reference, a cross-run reference, an expired reference and a personal-run reference all fail with stable violation codes; the plan is not finalized; the readiness text is not persisted as authoritative.
+- `requester_kind='personal'` runs are never eligible as authoritative readiness evidence even when other fields match.
