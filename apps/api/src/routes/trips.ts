@@ -435,6 +435,7 @@ export async function tripRoutes(app: FastifyInstance) {
         createdAt: trip.createdAt.toISOString(),
         updatedAt: trip.updatedAt.toISOString(),
       },
+      callerRole: membership[0].role,
       members: members.map(member => ({
         ...member,
         joinedAt: member.joinedAt.toISOString(),

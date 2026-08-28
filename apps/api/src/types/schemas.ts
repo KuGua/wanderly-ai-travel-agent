@@ -166,6 +166,7 @@ export const tripDetailsResponseSchema = z.object({
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   }),
+  callerRole: tripRoleSchema,
   members: z.array(tripMemberSchema),
 });
 
