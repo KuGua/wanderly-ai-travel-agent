@@ -32,7 +32,7 @@ export interface TravelApi {
   getTrips(): Promise<TripsResponse>;
   getTrip(tripId: string): Promise<TripDetailResponse>;
   getLocationReference(input: LocationReferenceInput): Promise<LocationReferenceResponse>;
-  getLocationIntroduction(input: LocationIntroductionInput): Promise<LocationIntroductionResponse>;
+  getLocationIntroduction(input: LocationIntroductionInput, options?: { signal?: AbortSignal }): Promise<LocationIntroductionResponse>;
   getTripThreads(tripId: string): Promise<ThreadsResponse>;
   createTripThread(tripId: string, input: CreateTripThreadInput): Promise<CreateThreadResponse>;
   getOrCreateDefaultTripThread(tripId: string): Promise<CreateThreadResponse>;

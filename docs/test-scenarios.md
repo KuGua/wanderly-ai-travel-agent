@@ -447,32 +447,6 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - Step 6 aborts only client observation. A valid server-side lease may finish and populate the public cache, but no user-specific business data is written. Logs, audit, metric labels and spans contain no source ID, name, coordinate, cache key, prompt, generated content, user, Trip or thread context.
 - Generated content contains no current prices, inventory, visa/entry decision, weather, operating hours, booking, legal or safety claim. The UI does not display an AI badge or generation timestamp.
 
-### TS-P2-LIC-ADMIN — Operator registers a new stable place at runtime
-
-**Stories:** S4 (operational extension)
-**Objective:** Verify the operator-only registration path adds a `sourceId` to the merged catalog without a redeploy, with audit and metric coverage, while every non-operator request is rejected.
-
-**Starting conditions:** API is running; PostgreSQL is up; the test operator's `users.id` is set in `LOCATION_INTRODUCTION_ADMIN_USER_IDS`; `catalog.json` is writable.
-
-**Steps:**
-
-1. With the operator bearer token, POST a new entry to `/api/v1/admin/location-introduction/entries` (e.g. `sourceId="vienna-test"`). Expect `201 Created` with the persisted summary.
-2. POST a duplicate `sourceId="vienna-test"` with the same payload. Expect `409 LOCATION_INTRODUCTION_DUPLICATE`.
-4. POST a payload with `sourceId="../etc/passwd"`. Expect `400`.
-5. POST without a bearer token. Expect `401`.
-6. POST with a non-operator bearer token (`alice` removed from the env allow-list). Expect `403`.
-7. POST `sourceId="vienna-test"` again to the public `/api/v1/explore/location-introductions`. Expect `200 READY` with `cacheStatus: "MISS"` and the registry-set ` `contentVersion``.
-8. Without restarting the API, POST `sourceId="vienna-test"` to the public route a second time. Expect `200 READY` with `cacheStatus: "HIT"`.
-9. Inspect `audit_events` for an `action = 'LOCATION_INTRODUCTION_REGISTER'` row containing only `operation`, `sourceId`, `canonicalPlaceId`, `datasetVersion` (no PII, no coordinates).
-10. Inspect `location_introduction_registry_total`{outcome=registered|duplicate|error} metric and `catalog.register` trace span.
-
-**Expected outcomes:**
-
-- Steps 1 and 7 produce `201` / `200 READY` and write a single new row to `location_introduction_catalog_overrides`. The atomic file rewrite lands a matching entry in `apps/api/data/location-introduction/catalog.json`.
-- Steps 2, 4, 5, 6 return the documented error codes; no `cache` table row is ever created from these failure paths.
-- Step 8 confirms the merged-catalog TTL or override-cache invalidation makes the new `sourceId` immediately usable without a restart.
-- Step 9 audit row never carries user identifiers, prompt text, coordinates or generated content.
-
 ### TS-P2-LR — Resolve coordinates through the three source modes
 
 **Stories:** P1

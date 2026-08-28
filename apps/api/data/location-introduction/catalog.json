@@ -2913,8 +2913,7 @@
         "longitude": 16.3738,
         "latitude": 48.2082
       },
-      "datasetVersion": "location-introduction-v1",
-      "origin": "override"
+      "datasetVersion": "location-introduction-v1"
     }
   ]
 }

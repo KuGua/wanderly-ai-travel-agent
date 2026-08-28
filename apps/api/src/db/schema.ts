@@ -34,7 +34,6 @@ export const auditActionEnum = pgEnum("audit_action", [
   "TRIP_INVITATION_REVOKE", "TRIP_DEFAULT_THREAD_PROVISION",
   "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE", "TRIP_DRAFT_BRIEF_UPDATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
-  "LOCATION_INTRODUCTION_REGISTER",
 ]);
 
 // Chat thread scope — MVP allows only TRIP-scoped threads; adding new
@@ -65,7 +64,6 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
-
 // ─── User Profiles (private by default) ─────────────────────────────────────
 
 export const userProfiles = pgTable("user_profiles", {
@@ -473,28 +471,6 @@ export const locationIntroductionCache = pgTable("location_introduction_cache", 
   generationLeaseExpiresAt: timestamp("generation_lease_expires_at", { withTimezone: true }),
   modelName: varchar("model_name", { length: 128 }),
   promptVersion: varchar("prompt_version", { length: 64 }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
-
-// ─── Location Introduction Catalog Overrides (S4 admin registration) ───────────
-// Runtime-registered entries added by an authenticated admin via
-// `POST /api/v1/admin/location-introduction/entries`. The DB row is
-// authoritative for the live process; `data/location-introduction/catalog.json`
-// is rewritten in lockstep so cold-start deploys see the same set.
-export const locationIntroductionCatalogOverrides = pgTable("location_introduction_catalog_overrides", {
-  sourceId: varchar("source_id", { length: 128 }).primaryKey(),
-  canonicalPlaceId: varchar("canonical_place_id", { length: 128 }).notNull(),
-  name: varchar("name", { length: 256 }).notNull(),
-  country: varchar("country", { length: 128 }).notNull(),
-  countryCode: varchar("country_code", { length: 8 }).notNull(),
-  admin1: varchar("admin1", { length: 128 }).notNull(),
-  admin1Code: varchar("admin1_code", { length: 64 }).notNull(),
-  nearestCity: varchar("nearest_city", { length: 128 }).notNull(),
-  nearestCityLongitude: doublePrecision("nearest_city_longitude").notNull(),
-  nearestCityLatitude: doublePrecision("nearest_city_latitude").notNull(),
-  datasetVersion: varchar("dataset_version", { length: 64 }).notNull(),
-  createdByUserId: uuid("created_by_user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

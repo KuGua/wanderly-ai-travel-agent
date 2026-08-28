@@ -313,6 +313,7 @@ export const locationReferenceResponseSchema = z.discriminatedUnion("outcome", [
       latitude: z.number().finite().min(-90).max(90),
       longitude: z.number().finite().min(-180).max(180),
     }).strict().nullable(),
+    introductionSourceId: z.string().min(1).max(128).nullable().optional(),
     distanceKm: z.number().nonnegative().nullable(),
   }),
   locationReferenceBaseSchema.extend({ outcome: z.literal("NO_REFERENCE") }),

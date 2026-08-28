@@ -68,8 +68,8 @@ export class HttpTravelApi implements TravelApi {
     });
   }
 
-  getLocationIntroduction(input: import("./contracts").LocationIntroductionInput) {
-    return fetchLocationIntroduction(this.client, input);
+  getLocationIntroduction(input: import("./contracts").LocationIntroductionInput, options?: { signal?: AbortSignal }) {
+    return fetchLocationIntroduction(this.client, input, options);
   }
 
   getTripThreads(tripId: string) {

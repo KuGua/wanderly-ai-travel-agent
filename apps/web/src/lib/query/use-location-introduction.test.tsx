@@ -23,7 +23,7 @@ function makeWrapper(api: TravelApi) {
 }
 
 function Probe({ sourceId, locale }: { sourceId: string | null; locale: "en" | "zh" }) {
-  const state = useLocationIntroduction({ sourceId, locale });
+  const { state } = useLocationIntroduction({ sourceId, locale });
   return (
     <div data-state={state.status} data-content={state.status === "ready" ? state.content : ""} data-cache={state.status === "ready" ? state.cacheStatus : ""}>
       {state.status}
@@ -98,6 +98,7 @@ describe("useLocationIntroduction", () => {
     await waitFor(() => expect(screen.getByText("ready")).toBeInTheDocument());
     expect(api.getLocationIntroduction).toHaveBeenCalledWith(
       expect.objectContaining({ sourceId: "tokyo", locale: "zh" }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 });

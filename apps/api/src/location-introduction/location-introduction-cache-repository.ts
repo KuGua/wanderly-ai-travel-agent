@@ -311,3 +311,23 @@ export async function findCurrentLocationIntroductionCache(
     .limit(1);
   return rows[0] ?? null;
 }
+
+/** Renew a still-valid lease. A lease that has already expired is deliberately
+ * not revived: another request may have taken ownership after expiry. */
+export async function renewLocationIntroductionLease(input: {
+  cacheKey: string;
+  leaseToken: string;
+  leaseSeconds: number;
+  now: Date;
+}): Promise<boolean> {
+  const expiresAt = new Date(input.now.getTime() + input.leaseSeconds * 1000);
+  const updated = await db
+    .update(locationIntroductionCache)
+    .set({ generationLeaseExpiresAt: expiresAt, updatedAt: input.now })
+    .where(sql`cache_key = ${input.cacheKey}
+      AND generation_lease_token = ${input.leaseToken}
+      AND status = 'GENERATING'
+      AND generation_lease_expires_at > ${input.now.toISOString()}`)
+    .returning({ cacheKey: locationIntroductionCache.cacheKey });
+  return updated.length === 1;
+}

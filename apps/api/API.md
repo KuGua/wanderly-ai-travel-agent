@@ -180,36 +180,6 @@ rate-limited. It accepts neither coordinates nor user, Trip or conversation data
 - `429 LOCATION_INTRODUCTION_RATE_LIMITED`: per-IP anonymous limit exceeded.
 - `503 LOCATION_INTRODUCTION_UNAVAILABLE`: model, policy, schema or cache generation failed; no content is cached.
 
-### `POST /admin/location-introduction/entries` (operator-only)
-
-Registers a new stable map place for the location-introduction feature. Requires a valid bearer token whose subject (or `users.id`, depending on env) is in the operator allow-list — see `.env.example` for `LOCATION_INTRODUCTION_ADMIN_USER_IDS` / `LOCATION_INTRODUCTION_ADMIN_SUBJECTS`. Writes the DB override row and atomically rewrites `data/location-introduction/catalog.json`.
-
-**Body**:
-```json
-{
-  "sourceId": "vienna",
-  "canonicalPlaceId": "vienna-at",
-  "name": "Vienna",
-  "country": "Austria",
-  "countryCode": "AT",
-  "admin1": "Vienna",
-  "admin1Code": "AT-9",
-  "nearestCity": "Vienna",
-  "nearestCityLongitude": 16.3738,
-  "nearestCityLatitude": 48.2082
-}
-```
-
-**Responses**:
-
-- `201 Created`: `{ "sourceId": "...", "canonicalPlaceId": "...", "name": "...", "datasetVersion": "...", "createdAt": "ISO-8601", "createdByUserId": "uuid" }`
-- `400`: schema or field bounds violation.
-- `401`: missing or invalid bearer token.
-- `403`: caller is not in the operator allow-list.
-- `409 LOCATION_INTRODUCTION_DUPLICATE`: a row already exists for this `sourceId`.
-
----
-
 ## Profiles
 
 ### `POST /profiles`

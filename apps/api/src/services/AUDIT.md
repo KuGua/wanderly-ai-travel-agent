@@ -28,9 +28,6 @@ runs **before** any insert. Rejection propagates as
 - Planning: `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`, `CONFIRMATION_SET`.
 - Booking and changes: `BOOKING_SUBMIT`, `BOOKING_RESULT`, `CHANGE_EVENT`, `VISA_CHECK`.
 - Chat: `CHAT_THREAD_CREATE`, `CHAT_THREAD_DELETE`, `CHAT_MESSAGE_APPEND`.
-- Location introduction: `LOCATION_INTRODUCTION_REGISTER` (operator-registered
-  catalog entry; safe-id, in-range coordinates, and file rewrite are validated
-  before this action is written).
 - Agent runtime: `SKILL_INVOKE`, `AGENT_RUN`, `AGENT_TASK`. Task summaries
   contain only safe run/operation/status identifiers and never question or
   streamed/final message text.
@@ -88,7 +85,6 @@ The supported `AuditAction` values are:
 - `BOOKING_SUBMIT`, `BOOKING_RESULT`
 - `CHANGE_EVENT`, `VISA_CHECK`
 - `CHAT_THREAD_CREATE`, `CHAT_THREAD_DELETE`, `CHAT_MESSAGE_APPEND`
-- `LOCATION_INTRODUCTION_REGISTER`
 - `SKILL_INVOKE`, `AGENT_RUN`, `AGENT_TASK`
 
 ## Failure modes

@@ -1,20 +1,20 @@
 # 地图地点介绍共享缓存实施方案
 
-**状态：** 已确认，待实施  
+**状态：** 已实施（待合并）
 **范围：** Explore Map 中具有服务端认可稳定 `sourceId` 的地点介绍。  
 **关联事实来源：** [技术栈](../TECH_STACK.md) · [PRD](PRD.md) · [Backlog](backlog.md) · [测试场景](test-scenarios.md) · [API](../apps/api/API.md)
 
 ## 1. 目标与固定边界
 
-用户点击具有稳定 `sourceId` 的地图地点时，抽屉自动加载并展示该地点的短介绍。服务端在 7 天有效期内向所有用户复用同一语言版本的介绍；缓存缺失或过期时才调用 LLM。地点目录支持**启动时静态加载**（`apps/api/data/location-introduction/catalog.json`）和**运营按需注册**（`POST /api/v1/admin/location-introduction/entries`，写入 `location_introduction_catalog_overrides` 表并同步重写 JSON 文件）两条路径；任一路径下，每条 `sourceId` 都必须先被服务端认可。
+用户点击具有稳定 `sourceId` 的地图地点时，抽屉自动加载并展示该地点的短介绍。服务端在 7 天有效期内向所有用户复用同一语言版本的介绍；缓存缺失或过期时才调用 LLM。`apps/api/data/location-introduction/catalog.json` 是唯一的版本化目录事实来源，每条 `sourceId` 都必须先被服务端认可。
 
 本能力是公共、非个性化的地点编辑内容，不是旅行候选、价格、库存、签证、路线或预订事实。它不创建 `shared_trips`、`chat_threads`、`chat_messages`、`agent_task_runs`、授权、快照或审计中的用户内容。
 
-- `sourceId` 必须存在于合并后的目录中（启动 JSON + DB 覆盖表，DB 行优先）；未知或不合法的格式直接拒绝（`400 LOCATION_INTRODUCTION_UNSUPPORTED_PLACE`）。
+- `sourceId` 必须存在于版本化目录中；未知或不合法的格式直接拒绝（`400 LOCATION_INTRODUCTION_UNSUPPORTED_PLACE`）。
 - `INSPIRATION`、任意坐标、地图标签和客户端自行构造的地点均不生成或共享缓存。
 - 默认 TTL 为 7 天（`604800` 秒）。
 - 同一缓存键生成中时，后续请求不重复调用 LLM，而是得到 `202 GENERATING` 并短暂轮询。
-- 不引入 Redis。PostgreSQL 是跨实例缓存、租约、覆盖目录和失效的唯一服务端存储；TanStack Query 仅作浏览器短缓存。
+- 不引入 Redis。PostgreSQL 是跨实例缓存、租约和失效的唯一服务端存储；TanStack Query 仅作浏览器短缓存。
 - 抽屉不显示“AI 生成”徽章或生成时间。LLM prompt 必须禁止时效性和可操作旅行断言，避免内容被误认为实时事实。
 
 ## 2. 现有架构衔接
@@ -44,7 +44,7 @@ ExploreMapPage（稳定 sourceId）
   → 抽屉显示内容；202 时轮询同一请求
 ```
 
-浏览器只发送 `sourceId` 和 `locale`。服务端目录返回规范的名称、国家/地区、坐标和目录版本；这些字段不得由浏览器覆盖。模型只接收目录输出与语言，不接收用户、Trip、thread、Profile、私聊原文、原始坐标或当前时间。
+浏览器仅消费 location-reference 响应中的 `introductionSourceId`，不由地点名称、坐标或标签推断 ID；随后只发送该 `sourceId` 和 `locale`。模型只接收目录输出与语言，不接收用户、Trip、thread、Profile、私聊原文、原始坐标或当前时间。
 
 ## 4. 数据模型
 
@@ -75,9 +75,9 @@ ExploreMapPage（稳定 sourceId）
 2. 短事务查询该 key 的 `READY AND expires_at > NOW()` 行，命中立即返回 `HIT`。
 3. 未命中时，在短事务内 insert 或条件 update 为 `GENERATING`。条件为不存在、已过期，或现有 generation lease 已到期；成功者获得新的 lease token。
 4. lease owner 在事务外调用 `ModelGateway.generateLocationIntroduction`，并在短事务内以 `cache_key + generation_lease_token + status=GENERATING` 条件更新到 `READY`。
-5. 未取得 lease 的请求重新读取一次；仍为 `GENERATING` 则返回 `202` 与 `retryAfterMs: 500`。客户端最多轮询 8 次；随后显示可重试的不可用状态。
+5. 未取得 lease 的请求重新读取一次；仍为 `GENERATING` 则返回 `202` 与 `retryAfterMs: 500`。客户端最多接收 8 次 `GENERATING`；随后显示可重试的不可用状态。
 6. 上游超时、网络、5xx、schema 或政策失败时，lease owner 条件删除/释放 `GENERATING` 行；返回 `503 LOCATION_INTRODUCTION_UNAVAILABLE`。不得缓存错误、部分文本或安全拒答。
-7. 任何 lease owner 在写入前丢失 lease 都必须丢弃输出，不得覆盖新 owner 的结果。
+7. lease owner 每半个 lease 周期条件续租；任何 owner 在续租或写入前丢失 lease 都必须丢弃输出，不得覆盖新 owner 的结果。服务端生成使用独立 deadline，浏览器断连只取消观察请求，不取消有效 lease。
 
 默认配置：`LOCATION_INTRODUCTION_TTL_SECONDS=604800`、`LOCATION_INTRODUCTION_GENERATION_LEASE_SECONDS=20`、`LOCATION_INTRODUCTION_RATE_LIMIT=10`、`LOCATION_INTRODUCTION_RATE_WINDOW_MS=60000`。实现时必须同步更新 `apps/api/.env.example`。
 
@@ -109,49 +109,6 @@ ExploreMapPage（稳定 sourceId）
 `202`：`{ "status": "GENERATING", "retryAfterMs": 500 }`
 
 错误：`400 LOCATION_INTRODUCTION_UNSUPPORTED_PLACE`、`429 LOCATION_INTRODUCTION_RATE_LIMITED`、`503 LOCATION_INTRODUCTION_UNAVAILABLE`。错误体复用 `errorResponseSchema`；不得回显地点名称、坐标、缓存键、prompt 或 provider 错误正文。
-
-### `POST /admin/location-introduction/entries` (operator-only)
-
-该端点**不是匿名**：必须先经过 `authMiddleware` 并通过 [`apps/api/src/middleware/admin-guard.ts`](../apps/api/src/middleware/admin-guard.ts) 的 `requireAdmin` 校验。运营白名单通过 env 控制，优先级 `LOCATION_INTRODUCTION_ADMIN_USER_IDS` (按 `users.id` 匹配) > `LOCATION_INTRODUCTION_ADMIN_SUBJECTS` (按 `users.external_id` 匹配)。两个 env 都未设置时，所有注册请求返回 `403`。
-
-请求 schema 与公开端点不同 — **所有字段均为必填**：
-
-```json
-{
-  "sourceId": "vienna",
-  "canonicalPlaceId": "vienna-at",
-  "name": "Vienna",
-  "country": "Austria",
-  "countryCode": "AT",
-  "admin1": "Vienna",
-  "admin1Code": "AT-9",
-  "nearestCity": "Vienna",
-  "nearestCityLongitude": 16.3738,
-  "nearestCityLatitude": 48.2082
-}
-```
-
-响应 — `201 Created`：
-
-```json
-{
-  "sourceId": "vienna",
-  "canonicalPlaceId": "vienna-at",
-  "name": "Vienna",
-  "datasetVersion": "location-introduction-v1",
-  "createdAt": "2026-08-29T00:00:00.000Z",
-  "createdByUserId": "uuid"
-}
-```
-
-错误：`400` strict schema 或字段越界、`401` 无 bearer token、`403` 不在白名单、`409 LOCATION_INTRODUCTION_DUPLICATE`。
-
-注册成功后，[`LocationIntroductionCatalogRegistry`](../apps/api/src/location-introduction/location-introduction-registry.ts) 串行写入：
-1. `INSERT INTO location_introduction_catalog_overrides` (authoritative)。
-2. 原子重写 `data/location-introduction/catalog.json`（临时文件 + rename）。
-4. 失效 `cachedOverrides` 缓存，30 秒内最多查询一次。
-
-文件重写失败则回滚 DB 行；`audit_events.action = 'LOCATION_INTRODUCTION_REGISTER'`，summary 仅含 `operation`, `sourceId`, `canonicalPlaceId`, `datasetVersion`。
 
 ## 7. LLM、内容与安全约束
 

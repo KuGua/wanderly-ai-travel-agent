@@ -96,7 +96,6 @@ export async function locationIntroductionRoutes(app: FastifyInstance) {
         catalogEntry,
         locale: input.locale,
         contentVersion,
-        signal: request.signal ?? undefined,
         deps: { gateway: modelGateway() },
       });
 

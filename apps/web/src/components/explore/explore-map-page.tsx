@@ -13,7 +13,6 @@ import { cityKey, findMentionedCities, loadCityCatalog, type CatalogCity } from 
 import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { loadAdministrativeCenters, pinGranularityForZoom, pinSelectionForReference, type PinGranularity } from "./pin-selection";
 import { solidifyGlobeStyle } from "./map-surface-style";
-import { resolveStableSourceIdForName } from "./stable-source-ids";
 import { LocationIntroductionPanel } from "./location-introduction-panel";
 import { ExploreChatHost } from "./explore-chat-host";
 import { useLocationIntroduction } from "@/lib/query/use-location-introduction";
@@ -38,7 +37,7 @@ export type ExploreDestination = {
   pinKey?: string;
   manualPinSequence?: number;
   /**
-   * Stable catalog `sourceId` resolved from the catalogued name.
+   * Stable catalog `sourceId` returned by the server-side reference resolver.
    * `LocationIntroductionPanel` renders only when this is set.
    */
   stableSourceId?: string;
@@ -198,7 +197,7 @@ export function ExploreMapPage() {
             cityName: selection.cityName,
             locationReference,
             locationReferenceStatus: undefined,
-            stableSourceId: resolveStableSourceIdForName(selection.name) ?? undefined,
+            stableSourceId: locationReference.introductionSourceId ?? undefined,
           }
         : { ...inspiration, locationReference, locationReferenceStatus: undefined };
       inspirationsRef.current = inspirationsRef.current.map((item) => item.id === inspiration.id ? next : item);
@@ -885,7 +884,7 @@ export function ExploreMapPage() {
             </div>
           ) : null}
           {selected.stableSourceId ? (
-            <LocationIntroductionPanel state={introduction} />
+            <LocationIntroductionPanel state={introduction.state} onRetry={introduction.retry} />
           ) : null}
           {selected.locationReferenceStatus === "loading" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceLoading")}</p> : null}
           {selected.locationReferenceStatus === "unavailable" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceUnavailable")}</p> : null}

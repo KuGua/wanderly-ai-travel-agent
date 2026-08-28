@@ -24,6 +24,7 @@ import {
   findCurrentLocationIntroductionCache,
   findReadyLocationIntroductionCache,
   releaseLocationIntroductionLease,
+  renewLocationIntroductionLease,
 } from "./location-introduction-cache-repository.js";
 
 export type LocationIntroductionServiceOutcome =
@@ -33,14 +34,17 @@ export type LocationIntroductionServiceOutcome =
 export interface LocationIntroductionServiceConfig {
   ttlSeconds: number;
   leaseSeconds: number;
+  generationTimeoutMs: number;
 }
 
 function resolveConfig(): LocationIntroductionServiceConfig {
   const ttl = Number(process.env.LOCATION_INTRODUCTION_TTL_SECONDS ?? 604800);
   const lease = Number(process.env.LOCATION_INTRODUCTION_GENERATION_LEASE_SECONDS ?? 20);
+  const generationTimeoutMs = Number(process.env.LOCATION_INTRODUCTION_GENERATION_TIMEOUT_MS ?? 60_000);
   return {
     ttlSeconds: Number.isFinite(ttl) && ttl > 0 ? ttl : 604800,
     leaseSeconds: Number.isFinite(lease) && lease > 0 ? lease : 20,
+    generationTimeoutMs: Number.isFinite(generationTimeoutMs) && generationTimeoutMs >= 1_000 ? generationTimeoutMs : 60_000,
   };
 }
 
@@ -55,7 +59,6 @@ export async function getOrStartLocationIntroduction(input: {
   catalogEntry: LocationIntroductionCatalogEntry;
   locale: "en" | "zh";
   contentVersion: string;
-  signal?: AbortSignal;
   deps: LocationIntroductionServiceDeps;
 }): Promise<LocationIntroductionServiceOutcome> {
   const now = input.deps.now ?? (() => new Date());
@@ -113,7 +116,21 @@ export async function getOrStartLocationIntroduction(input: {
   safeSetAttribute(claimSpan, "cache.outcome", "acquired");
   claimSpan.end();
 
-  // Step 4 — model call (outside any DB transaction).
+  // Step 4 — model call (outside any DB transaction). It is deliberately
+  // decoupled from request.signal: closing a map drawer stops observation,
+  // not a valid shared-cache generation.
+  let leaseLost = false;
+  let renewal: Promise<void> | null = null;
+  const renewalTimer = setInterval(() => {
+    renewal = renewLocationIntroductionLease({
+      cacheKey,
+      leaseToken: claim.leaseToken,
+      leaseSeconds: config.leaseSeconds,
+      now: now(),
+    }).then((renewed) => { if (!renewed) leaseLost = true; }).catch(() => { leaseLost = true; });
+  }, Math.max(1_000, Math.floor((config.leaseSeconds * 1000) / 2)));
+  const generationController = new AbortController();
+  const generationTimeout = setTimeout(() => generationController.abort(), config.generationTimeoutMs);
   let generated;
   try {
     const llmSpan = tracer.startSpan("llm.location_introduction", {
@@ -130,7 +147,7 @@ export async function getOrStartLocationIntroduction(input: {
           ...input.catalogEntry,
           contentVersion: input.contentVersion,
         },
-        signal: input.signal,
+        signal: generationController.signal,
       });
       const ms = Date.now() - start;
       metrics.observe("location_introduction_generation_duration_ms", ms, { outcome: "success" });
@@ -150,6 +167,15 @@ export async function getOrStartLocationIntroduction(input: {
       leaseToken: claim.leaseToken,
       now: now(),
     });
+    metrics.inc("location_introduction_requests_total", { outcome: "unavailable" });
+    throw new LocationIntroductionUnavailableError();
+  } finally {
+    clearInterval(renewalTimer);
+    clearTimeout(generationTimeout);
+    await renewal;
+  }
+
+  if (leaseLost) {
     metrics.inc("location_introduction_requests_total", { outcome: "unavailable" });
     throw new LocationIntroductionUnavailableError();
   }
