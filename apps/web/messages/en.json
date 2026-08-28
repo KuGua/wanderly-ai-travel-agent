@@ -262,6 +262,12 @@
     "locationReferenceNote": "This is an offline map reference, not an address, travel candidate, price, availability, visa or booking fact.",
     "locationReferenceDataPrefix": "Data:",
     "markerOpenAria": "Open {name}",
+    "locationIntroduction": {
+      "loading": "Gathering a short introduction…",
+      "generating": "Preparing this introduction…",
+      "unavailable": "Temporarily unavailable.",
+      "retry": "Retry"
+    },
     "state": {
       "IDLE": "Destination preview",
       "TALKING": "Preparing your route",

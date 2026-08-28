@@ -15,3 +15,9 @@ export const threadKeys = {
   list: ["threads", "list"] as const,
   conversation: (threadId: string) => ["threads", threadId, "conversation"] as const,
 };
+
+export const locationIntroductionKeys = {
+  all: ["location-introductions"] as const,
+  detail: (input: { sourceId: string; locale: "en" | "zh" }) =>
+    ["location-introductions", input.sourceId, input.locale] as const,
+};

@@ -32,6 +32,7 @@ import {
   type UpdateDraftTripBriefInput,
 } from "./contracts";
 import type { TravelApi } from "./travel-api";
+import { fetchLocationIntroduction } from "./location-introduction-api";
 
 export class HttpTravelApi implements TravelApi {
   private readonly client: ApiClient;
@@ -65,6 +66,10 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request("/explore/location-reference", locationReferenceResponseSchema, {
       method: "POST", body: JSON.stringify(body),
     });
+  }
+
+  getLocationIntroduction(input: import("./contracts").LocationIntroductionInput) {
+    return fetchLocationIntroduction(this.client, input);
   }
 
   getTripThreads(tripId: string) {

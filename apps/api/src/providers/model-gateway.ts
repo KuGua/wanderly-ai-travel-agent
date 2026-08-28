@@ -25,6 +25,12 @@ export interface ConversationReply {
 
 export type ConversationDeltaHandler = (delta: string) => void | Promise<void>;
 
+export interface LocationIntroductionResult {
+  content: string;
+  modelName: string;
+  promptVersion: string;
+}
+
 /**
  * Application-layer interface for configured real-model interactions.
  * The model cannot access the database or execute irreversible operations.
@@ -78,4 +84,27 @@ export interface ModelGateway {
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<ConversationReply>;
+
+  /**
+   * S4: generate a single non-personalized short introduction for a
+   * server-versioned stable `sourceId`. Inputs come only from the
+   * catalog — never user, Trip, thread, coordinates, or current time.
+   */
+  generateLocationIntroduction(params: {
+    locale: "en" | "zh";
+    place: {
+      sourceId: string;
+      canonicalPlaceId: string;
+      name: string;
+      country: string;
+      countryCode: string;
+      admin1: string;
+      admin1Code: string;
+      nearestCity: string;
+      datasetVersion: string;
+      contentVersion: string;
+    };
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<LocationIntroductionResult>;
 }

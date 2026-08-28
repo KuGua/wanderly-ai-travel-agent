@@ -648,6 +648,7 @@ function createTravelApiForAutoAsk(): TravelApi & {
     }),
     getTrip: vi.fn(),
     getLocationReference: vi.fn().mockResolvedValue({ outcome: "NO_REFERENCE", source: "Natural Earth + GeoNames", datasetVersion: "test", checkedAt: CREATED_AT, isTravelFact: false }),
+    getLocationIntroduction: vi.fn().mockResolvedValue({ status: "READY", content: "Tokyo is a city of contrasts — glass towers over neon-lit backstreets, vending machines beside tiny shrines, and a rhythm that shifts from morning calm to midnight rush. Wander between neighborhoods rather than chase a checklist, and let the city reveal itself over coffee, ramen, and long subway rides.", cacheStatus: "MISS", expiresAt: "2026-09-04T12:00:00.000Z" }),
     getTripThreads: vi.fn().mockResolvedValue({ threads: [thread] }),
     createTripThread: vi.fn(),
     getOrCreateDefaultTripThread: vi.fn().mockResolvedValue({ id: THREAD_ID, message: "Thread created" }),

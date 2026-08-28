@@ -262,6 +262,12 @@
     "locationReferenceNote": "这是离线地图参考，不是地址、旅行候选、价格、可用性、签证或预订事实。",
     "locationReferenceDataPrefix": "数据来源：",
     "markerOpenAria": "打开 {name}",
+    "locationIntroduction": {
+      "loading": "正在准备介绍……",
+      "generating": "正在撰写此介绍……",
+      "unavailable": "暂时无法加载，请稍后重试。",
+      "retry": "重试"
+    },
     "state": {
       "IDLE": "目的地预览",
       "TALKING": "正在规划路线",

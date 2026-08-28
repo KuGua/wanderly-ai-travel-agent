@@ -34,6 +34,36 @@ export const locationReferenceResponseSchema = z.discriminatedUnion("outcome", [
   locationReferenceBaseSchema.extend({ outcome: z.literal("NO_REFERENCE") }),
 ]);
 
+// ─── Location Introduction (anonymous, shared cache) ─────────────────────────
+// S4 / docs/location-introduction-cache-implementation.md §6. Accepts only
+// `{ sourceId, locale }` — never coordinates, never user/Trip data. The
+// response is either READY (200) or GENERATING (202); failures surface as
+// `LOCATION_INTRODUCTION_*` codes via `errorResponseSchema`.
+
+export const locationIntroductionLocaleSchema = z.enum(["en", "zh"]);
+
+export const locationIntroductionRequestSchema = z.object({
+  sourceId: z.string().min(1).max(128),
+  locale: locationIntroductionLocaleSchema,
+}).strict();
+
+export const locationIntroductionReadySchema = z.object({
+  status: z.literal("READY"),
+  content: z.string().min(1).max(720),
+  cacheStatus: z.enum(["HIT", "MISS"]),
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const locationIntroductionGeneratingSchema = z.object({
+  status: z.literal("GENERATING"),
+  retryAfterMs: z.number().int().positive().max(60_000),
+}).strict();
+
+export const locationIntroductionResponseSchema = z.union([
+  locationIntroductionReadySchema,
+  locationIntroductionGeneratingSchema,
+]);
+
 // ─── Profile ────────────────────────────────────────────────────────────────
 
 export const createProfileSchema = z.object({
@@ -566,3 +596,7 @@ export type AgentTaskStatus = z.infer<typeof agentTaskStatusSchema>;
 export type AgentRunResponse = z.infer<typeof agentRunResponseSchema>;
 export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
 export type ApiErrorResponse = z.infer<typeof errorResponseSchema>;
+export type LocationIntroductionRequest = z.infer<typeof locationIntroductionRequestSchema>;
+export type LocationIntroductionReady = z.infer<typeof locationIntroductionReadySchema>;
+export type LocationIntroductionGenerating = z.infer<typeof locationIntroductionGeneratingSchema>;
+export type LocationIntroductionResponse = z.infer<typeof locationIntroductionResponseSchema>;

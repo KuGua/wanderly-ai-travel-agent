@@ -91,6 +91,17 @@ export const FORBIDDEN_SPAN_ATTRIBUTE_KEYS: ReadonlySet<string> = new Set([
   "requestId",
   "orchestrationRequestId",
   "payload",
+  // S4 location-introduction cache: identifiers, generated content and
+  // coordinates must never appear on a span (PRD §5.11, AGENTS.md).
+  "sourceId",
+  "placeName",
+  "canonicalPlaceId",
+  "cacheKey",
+  "content",
+  "generatedContent",
+  "latitude",
+  "longitude",
+  "coordinates",
 ]);
 
 /** Header name carrying the W3C trace context. */

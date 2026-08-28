@@ -158,8 +158,10 @@ normalization; it is `null` whenever `nearestCity` is `null`.
 
 ### `POST /explore/location-introductions`
 
-> Planned contract — implementation details and acceptance criteria are in
-> [location-introduction-cache-implementation.md](../docs/location-introduction-cache-implementation.md).
+> Implementation contract — see
+> [location-introduction-cache-implementation.md](../docs/location-introduction-cache-implementation.md)
+> for the full design rationale, including the 7-step lease flow, the
+> cache key formula, the safety boundary, and the rollback steps.
 
 Returns a short, non-personalized introduction for a user-explicit selection of a
 server-recognized stable map `sourceId`. This anonymous endpoint is independently

@@ -2,7 +2,7 @@ import type { z } from "zod";
 import type { RequestContext } from "../utils/context.js";
 import type { ConstraintSnapshotData } from "../types/domain.js";
 
-export type AgentKind = "personal" | "shared" | "review";
+export type AgentKind = "personal" | "shared" | "review" | "public-content";
 
 export type SkillScope =
   | "profile:read"
