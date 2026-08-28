@@ -923,21 +923,21 @@ export function ExploreMapPage() {
       ) : null}
 
       {selected && !managePinsOpen && !chatOpen ? (
-        <aside className="absolute inset-x-0 bottom-0 z-30 max-h-[70dvh] overflow-y-auto rounded-t-[24px] bg-card/95 p-5 pb-24 shadow-[0_20px_60px_#082f3f55] backdrop-blur landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(360px,calc(100%-2rem))] landscape:rounded-[24px] landscape:pb-5">
+        <aside data-wanderly-avoid className="absolute inset-x-0 bottom-0 z-30 max-h-[70dvh] overflow-y-auto rounded-t-[24px] bg-card p-5 pb-24 text-[var(--w-ink)] wanderly-edge wanderly-shadow landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(360px,calc(100%-2rem))] landscape:wanderly-r-lg landscape:pb-5">
           <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label={t("drawerCloseAriaLabel")} className="absolute right-4 top-4 grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
             <X aria-hidden="true" className="size-4" />
           </button>
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-primary">{stateLabel(exploreState, t)}</p>
-          <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em]" aria-live="polite">
+          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[var(--w-ink)] wanderly-underline">{stateLabel(exploreState, t)}</p>
+          <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em] text-[var(--w-primary)]" aria-live="polite">
             {selected.locationReferenceStatus === "loading" ? t("resolvingLocation") : selected.name}
           </h2>
-          <p className="font-semibold text-muted-foreground">{selected.country}</p>
+          <p className="font-semibold text-[var(--w-muted)]">{selected.country}</p>
           <p className="mt-3 inline-flex rounded-full bg-secondary px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-secondary-foreground">
             {selected.kind === "geography"
                 ? t("drawerKindGeography")
                 : t("drawerKindInspiration")}
           </p>
-          <p className="mt-4 text-sm leading-6 text-muted-foreground">{selected.note}</p>
+          <p className="mt-4 text-sm leading-6 text-[var(--w-muted)]">{selected.note}</p>
           {selected.locationReference?.outcome === "REFERENCE" ? (
             <div className="mt-3 text-xs leading-5 text-muted-foreground">
               <p>{t("locationReference", {

@@ -538,6 +538,32 @@
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
+/*
+ * Near the top of the map there is no headroom for the cloud, so it hangs
+ * below the bot instead. The puffs move to the top edge and shrink upward,
+ * keeping them pointed back at the head.
+ */
+.wanderly-bot[data-cloud="below"] .wanderly-bot-cloud {
+  top: calc(100% + 9px);
+  bottom: auto;
+  animation-name: wanderly-bot-cloud-in-below;
+}
+
+.wanderly-bot[data-cloud="below"] .wanderly-bot-cloud::before {
+  top: -7px;
+  bottom: auto;
+}
+
+.wanderly-bot[data-cloud="below"] .wanderly-bot-cloud::after {
+  top: -13px;
+  bottom: auto;
+}
+
+@keyframes wanderly-bot-cloud-in-below {
+  from { opacity: 0; transform: translate(-50%, -5px) scale(0.9); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wanderly-bot-body,
   .wanderly-bot-leg,

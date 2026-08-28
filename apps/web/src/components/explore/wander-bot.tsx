@@ -26,6 +26,8 @@ const AVOID_GAP = 2;
 const AVOID_PASSES = 8;
 /** Length of the ease into a clear spot after the bot is dropped. */
 const GLIDE_MS = 260;
+/** Headroom the speech cloud needs above the bot before it flips underneath. */
+const CLOUD_HEADROOM = 48;
 const LAUNCH_MS = 720;
 const LAUNCH_ARC = 140;
 
@@ -137,6 +139,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
   const [settled, setSettled] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [perched, setPerched] = useState(false);
+  const [cloudBelow, setCloudBelow] = useState(false);
 
   // Position is written straight to style; keeping it in state would re-render
   // the subtree on every pointer move during a drag.
@@ -191,6 +194,13 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     applyPosition(resolveAgainstObstacles(desired, metrics, obstacleRects(), area));
   }, [applyPosition, bodyMetrics, bounds, obstacleRects]);
 
+  const refreshCloudSide = useCallback(() => {
+    const node = rootRef.current;
+    if (!node) return;
+    const box = node.getBoundingClientRect();
+    setCloudBelow(box.top - bounds().top < CLOUD_HEADROOM);
+  }, [bounds]);
+
   const perchRect = useCallback(() => {
     if (!perchSelector) return null;
     const element = document.querySelector(perchSelector);
@@ -228,10 +238,12 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     settlePosition(desired);
     window.setTimeout(() => {
       if (rootRef.current) delete rootRef.current.dataset.settling;
-      // Perch state depends on where it came to rest, not where it was dropped.
+      // Perch and cloud side both depend on where it came to rest, not on
+      // where it was dropped.
       refreshPerched();
+      refreshCloudSide();
     }, GLIDE_MS);
-  }, [refreshPerched, settlePosition]);
+  }, [refreshCloudSide, refreshPerched, settlePosition]);
 
   // Opening position: sitting at the composer's top-left corner, mirroring it
   // rather than landing on the status chips that sit directly above it.
@@ -251,6 +263,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
         : { x: area.left + EDGE_MARGIN, y: area.bottom - height - 140 };
       settlePosition(target);
       refreshPerched();
+      refreshCloudSide();
     };
 
     // The composer mounts with the page, so retry once on the next frame if it
@@ -258,7 +271,11 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     place();
     const retry = window.requestAnimationFrame(place);
     return () => window.cancelAnimationFrame(retry);
-  }, [bounds, perchRect, refreshPerched, settlePosition]);
+  }, [bounds, perchRect, refreshCloudSide, refreshPerched, settlePosition]);
+
+  useEffect(() => {
+    if (speechPlace) refreshCloudSide();
+  }, [refreshCloudSide, speechPlace]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSettled(true), SETTLE_MS);
@@ -419,10 +436,11 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       if (!node || !point) return;
       settlePosition(point);
       refreshPerched();
+      refreshCloudSide();
     };
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [refreshPerched, settlePosition]);
+  }, [refreshCloudSide, refreshPerched, settlePosition]);
 
   return (
     <div
@@ -431,6 +449,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       data-pose={perched ? "perched" : "idle"}
       data-dragging={dragging ? "true" : "false"}
       data-settled={settled ? "true" : "false"}
+      data-cloud={cloudBelow ? "below" : "above"}
       onPointerDown={onPointerDown}
       role="presentation"
       style={{
