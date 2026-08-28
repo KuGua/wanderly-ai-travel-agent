@@ -242,7 +242,8 @@
       "messageInputAria": "向 Wanderly Agent 发送消息",
       "messagePlaceholder": "询问你的下一段旅程…",
       "threadTitle": "探索对话",
-      "threadTitleWithPlace": "探索 · {name}"
+      "threadTitleWithPlace": "探索 · {name}",
+      "composerNote": "Enter 发送 · Shift + Enter 换行 · 对话仅归属于本行程且仅你可见。"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",
@@ -312,14 +313,19 @@
   },
   "trips": {
     "kicker": "行程工作区",
-    "title": "与同行旅伴一起规划与对话",
+    "title": {
+      "edit": "重命名",
+      "editLabel": "行程标题",
+      "save": "保存",
+      "cancel": "取消"
+    },
     "body": "在此查看你针对本行程的私有对话。其他成员无法看到你的对话，且对话仅归属于此行程。",
     "backToHome": "返回主页",
     "notFound": "未找到该行程。",
     "errors": {
       "membershipRevoked": "你已无法访问此行程。"
     },
-      "header": {
+    "header": {
       "status": "状态",
       "statusValue": {
         "DRAFT": "草稿",
@@ -333,20 +339,15 @@
       "datesRange": "{start} – {end}",
       "datesUnknown": "尚未设置",
       "destinations": "候选目的地",
-        "members": "{count, plural, =0 {暂无成员} other {# 位成员}}"
-      },
-      "title": {
-        "edit": "重命名",
-        "editLabel": "行程标题",
-        "save": "保存",
-        "cancel": "取消"
-      },
-      "draft": {
+      "members": "{count, plural, =0 {暂无成员} other {# 位成员}}",
+      "departure": "出发城市"
+    },
+    "draft": {
       "kicker": "草稿探索",
       "body": "你的私有对话已保存。填写简报并激活后即可邀请同行者。",
       "formAriaLabel": "激活草稿行程",
-        "titlePreviewLabel": "行程标题预览",
-        "titlePreviewHint": "标题仅根据下方目的地和日期生成，绝不会使用聊天记录。",
+      "titlePreviewLabel": "行程标题预览",
+      "titlePreviewHint": "标题仅根据下方目的地和日期生成，绝不会使用聊天记录。",
       "departureLabel": "出发地 (1–3)",
       "departurePlaceholder": "输入出发地后回车",
       "candidatesLabel": "候选目的地 (2–5)",
@@ -372,6 +373,26 @@
         "submit": "创建",
         "submitting": "创建中…",
         "validation": "标题需为 1–256 字符。"
+      },
+      "sectionLabel": "本项目",
+      "archivedLabel": "已归档",
+      "defaultSubtitle": "本行程的默认私人对话",
+      "threadSubtitle": "仅你可见的私人对话"
+    },
+    "workspace": {
+      "agentChip": "协作 Agent",
+      "inspectorTitle": "工作区",
+      "inspectorSubtitle": "行程概览与成员",
+      "openInspector": "打开工作区内容面板",
+      "closeInspector": "关闭工作区内容面板",
+      "overviewWindow": "行程概览",
+      "membersWindow": "成员",
+      "mapWindow": "探索地图",
+      "mapPinned": "固定",
+      "openFullMap": "在完整地图中打开",
+      "roleValue": {
+        "CREATOR": "创建者",
+        "MEMBER": "成员"
       }
     }
   },

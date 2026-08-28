@@ -23,11 +23,19 @@ function buildTripResponse(): TripDetailResponse {
       destinationCandidates: ["Tokyo", "Kyoto"],
       travelDateStart: "2026-09-10",
       travelDateEnd: "2026-09-20",
-      memberCount: 3,
-      role: "CREATOR",
       createdAt: "2026-08-01T10:00:00.000Z",
       updatedAt: "2026-08-20T10:00:00.000Z",
     },
+    callerRole: "CREATOR",
+    members: [
+      {
+        userId: "owner-user-id",
+        displayName: "Alice",
+        role: "CREATOR",
+        isRequired: true,
+        joinedAt: "2026-08-01T10:00:00.000Z",
+      },
+    ],
   };
 }
 
@@ -133,6 +141,7 @@ describe("TripWorkspace", () => {
 
     expect(await screen.findByRole("button", { name: /Default/ })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "New thread" }));
     const input = await screen.findByPlaceholderText(/Visa prep/);
     fireEvent.change(input, { target: { value: "Hotel ideas" } });
     fireEvent.click(screen.getByRole("button", { name: /Create thread/ }));

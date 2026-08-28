@@ -242,7 +242,8 @@
       "messageInputAria": "Message Wanderly Agent",
       "messagePlaceholder": "Ask about your next trip…",
       "threadTitle": "Explore conversation",
-      "threadTitleWithPlace": "Explore · {name}"
+      "threadTitleWithPlace": "Explore · {name}",
+      "composerNote": "Enter to send · Shift + Enter for a new line · This thread is private to you and scoped to this trip."
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",
@@ -312,14 +313,19 @@
   },
   "trips": {
     "kicker": "Trip workspace",
-    "title": "Plan and chat with your co-travelers",
+    "title": {
+      "edit": "Rename",
+      "editLabel": "Trip title",
+      "save": "Save",
+      "cancel": "Cancel"
+    },
     "body": "Browse your private threads for this trip. Other members cannot see your threads, and your threads are bound to this trip only.",
     "backToHome": "Back to Home",
     "notFound": "Trip not found.",
     "errors": {
       "membershipRevoked": "You no longer have access to this trip."
     },
-      "header": {
+    "header": {
       "status": "Status",
       "statusValue": {
         "DRAFT": "Draft",
@@ -333,20 +339,15 @@
       "datesRange": "{start} – {end}",
       "datesUnknown": "Dates not set",
       "destinations": "Candidate destinations",
-        "members": "{count, plural, =0 {No members yet} =1 {1 member} other {# members}}"
-      },
-      "title": {
-        "edit": "Rename",
-        "editLabel": "Trip title",
-        "save": "Save",
-        "cancel": "Cancel"
-      },
-      "draft": {
+      "members": "{count, plural, =0 {No members yet} =1 {1 member} other {# members}}",
+      "departure": "Departure"
+    },
+    "draft": {
       "kicker": "Draft exploration",
       "body": "Your private conversation is saved. Add a brief, then activate the trip to invite co-travelers.",
       "formAriaLabel": "Activate draft trip",
-        "titlePreviewLabel": "Trip title preview",
-        "titlePreviewHint": "Generated only from the destinations and dates below; it never uses your chat history.",
+      "titlePreviewLabel": "Trip title preview",
+      "titlePreviewHint": "Generated only from the destinations and dates below; it never uses your chat history.",
       "departureLabel": "Departure cities (1–3)",
       "departurePlaceholder": "Add a departure city and press Enter",
       "candidatesLabel": "Candidate destinations (2–5)",
@@ -372,6 +373,26 @@
         "submit": "Create thread",
         "submitting": "Creating…",
         "validation": "Title must be 1–256 characters."
+      },
+      "sectionLabel": "This trip",
+      "archivedLabel": "Archived",
+      "defaultSubtitle": "Default private thread for this trip",
+      "threadSubtitle": "Private thread, visible only to you"
+    },
+    "workspace": {
+      "agentChip": "Collab agent",
+      "inspectorTitle": "Workspace",
+      "inspectorSubtitle": "Trip overview and members",
+      "openInspector": "Open workspace panel",
+      "closeInspector": "Close workspace panel",
+      "overviewWindow": "Trip overview",
+      "membersWindow": "Members",
+      "mapWindow": "Explore map",
+      "mapPinned": "Pinned",
+      "openFullMap": "Open in full map",
+      "roleValue": {
+        "CREATOR": "Creator",
+        "MEMBER": "Member"
       }
     }
   },
