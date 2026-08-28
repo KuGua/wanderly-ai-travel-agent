@@ -103,14 +103,22 @@ export const tripDetailSchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateSchema.nullable(),
   travelDateEnd: dateSchema.nullable(),
-  memberCount: z.number().int().nonnegative(),
-  role: tripRoleSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 
+export const tripMemberSchema = z.object({
+  userId: z.string().uuid(),
+  displayName: z.string(),
+  role: tripRoleSchema,
+  isRequired: z.boolean(),
+  joinedAt: z.string().datetime(),
+});
+
 export const tripDetailResponseSchema = z.object({
   trip: tripDetailSchema,
+  callerRole: tripRoleSchema,
+  members: z.array(tripMemberSchema),
 });
 
 export const conversationPlaceSchema = z.object({
@@ -373,6 +381,7 @@ export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
 export type CreateTripThreadInput = z.infer<typeof createTripThreadInputSchema>;
 export type CreateThreadResponse = z.infer<typeof createThreadResponseSchema>;
 export type TripDetail = z.infer<typeof tripDetailSchema>;
+export type TripMember = z.infer<typeof tripMemberSchema>;
 export type TripDetailResponse = z.infer<typeof tripDetailResponseSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;

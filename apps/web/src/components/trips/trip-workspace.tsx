@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, ListChecks, MapPinned, MessageSquarePlus, Pencil, Pin, Plus } from "lucide-react";
+import { ExternalLink, PanelRight, Pencil, Plus, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -42,6 +42,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const updateTitle = useUpdateTripTitle(tripId);
   const [editingTitle, setEditingTitle] = useState(false);
   const [manualTitle, setManualTitle] = useState("");
+  const [inspectorOpen, setInspectorOpen] = useState(false);
 
   const autoProvisionAttemptedRef = useRef(false);
 
@@ -62,6 +63,9 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     if (!queryThreadId) return null;
     return threads.find((thread) => thread.id === queryThreadId) ?? null;
   }, [queryThreadId, threads]);
+
+  const liveThreads = useMemo(() => threads.filter((thread) => !thread.archivedAt), [threads]);
+  const archivedThreads = useMemo(() => threads.filter((thread) => thread.archivedAt), [threads]);
 
   // Auto-provision: when the threads list is loaded and empty, get or
   // create the caller's default scratchpad in a single round trip.
@@ -102,21 +106,21 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     router.replace(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.replace>[0]);
   }, [threads, threadsQuery.data, queryThreadId, router, searchParams, tripId, membershipRevoked]);
 
-  const handleCreateThread = useCallback(async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    const title = String(formData.get("title") ?? "").trim();
-    if (title.length === 0 || title.length > 256) return;
+  // "New thread" opens a fresh session straight away — no title prompt.
+  // The server-side title is auto-numbered so the rail stays readable.
+  const handleCreateThread = useCallback(async () => {
+    if (createThread.isPending) return;
     try {
-      const created = await createThread.mutateAsync({ title });
+      const created = await createThread.mutateAsync({
+        title: t("threads.newThread.autoTitle", { index: threads.length + 1 }),
+      });
       const params = new URLSearchParams(searchParams.toString());
       params.set(DEFAULT_THREAD_QUERY, created.id);
-      event.currentTarget.reset();
       router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
     } catch {
       // surfaced through the threads query error state.
     }
-  }, [createThread, router, searchParams, tripId]);
+  }, [createThread, router, searchParams, t, threads.length, tripId]);
 
   if (membershipRevoked) {
     return (
@@ -146,6 +150,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   }
 
   const trip = tripQuery.data?.trip;
+  const callerRole = tripQuery.data?.callerRole ?? "MEMBER";
   if (!trip) {
     return (
       <main className="mx-auto w-full max-w-[1240px] px-5 py-8 sm:px-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
@@ -158,14 +163,51 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     return <DraftTripWorkspace tripId={tripId} />;
   }
 
+  const members = tripQuery.data?.members ?? [];
+  const datesLabel = trip.travelDateStart && trip.travelDateEnd
+    ? t("header.datesRange", { start: trip.travelDateStart, end: trip.travelDateEnd })
+    : t("header.datesUnknown");
+  const destinationsLabel = trip.destinationCandidates.length > 0
+    ? trip.destinationCandidates.join(" · ")
+    : t("header.datesUnknown");
+  const departureLabel = trip.departureCities.length > 0
+    ? trip.departureCities.join(" · ")
+    : t("header.datesUnknown");
+
+  const renderThread = (thread: (typeof threads)[number]) => {
+    const selected = thread.id === activeThread?.id;
+    return (
+      <li key={thread.id}>
+        <button
+          type="button"
+          onClick={() => {
+            const params = new URLSearchParams(searchParams.toString());
+            params.set(DEFAULT_THREAD_QUERY, thread.id);
+            setInspectorOpen(false);
+            router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
+          }}
+          aria-current={selected ? "page" : undefined}
+          className={`w-full rounded-[12px] px-2.5 py-[11px] text-left transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 ${selected ? "bg-[#e7f4f0] shadow-[inset_3px_0_var(--color-primary)]" : "hover:bg-[#f5f7f4]"}`}
+        >
+          <b className="block truncate text-[13px] font-bold">{thread.title}</b>
+          <span className="mt-[3px] block truncate text-xs text-muted-foreground">
+            {thread.isDefault ? t("threads.defaultSubtitle") : t("threads.threadSubtitle")}
+          </span>
+          <time dateTime={thread.createdAt} className="mt-[5px] block text-[11px] text-[#8093a1]">
+            {formatThreadTime(locale, thread.createdAt)}
+          </time>
+        </button>
+      </li>
+    );
+  };
+
   return (
-    <main className="mx-auto w-full max-w-[1240px] px-5 py-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
-      <header className="flex flex-wrap items-start justify-between gap-6">
-        <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.11em] text-primary">{t("kicker")}</p>
+    <main className="grid h-[calc(100dvh-4rem)] min-h-[620px] grid-cols-1 overflow-hidden bg-[#fffaf3] landscape:h-dvh md:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)] xl:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)_minmax(280px,0.9fr)]">
+      <aside className="hidden min-h-0 min-w-0 flex-col border-r border-[#e8e1d8] bg-[#fffdf9] md:flex" aria-label={t("threads.heading")}>
+        <header className="flex items-center justify-between gap-2 border-b border-[#e8e1d8] px-4 py-[18px]">
           {editingTitle ? (
             <form
-              className="mt-2 flex flex-wrap items-center gap-2"
+              className="flex min-w-0 flex-1 items-center gap-1.5"
               onSubmit={(event) => {
                 event.preventDefault();
                 const name = manualTitle.trim();
@@ -173,153 +215,210 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                 void updateTitle.mutateAsync({ name }).then(() => setEditingTitle(false));
               }}
             >
-              <input aria-label={t("title.editLabel")} autoFocus maxLength={256} value={manualTitle} onChange={(event) => setManualTitle(event.target.value)} className="min-w-[260px] rounded-[12px] border bg-background px-3 py-2 text-xl font-bold tracking-[-0.04em] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30" />
-              <button type="submit" disabled={updateTitle.isPending} className="rounded-[10px] bg-primary px-3 py-2 text-sm font-bold text-primary-foreground disabled:opacity-50">{t("title.save")}</button>
-              <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[10px] px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-secondary">{t("title.cancel")}</button>
+              <input aria-label={t("title.editLabel")} autoFocus maxLength={256} value={manualTitle} onChange={(event) => setManualTitle(event.target.value)} className="min-w-0 flex-1 rounded-[10px] border bg-background px-2 py-1.5 text-sm font-bold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30" />
+              <button type="submit" disabled={updateTitle.isPending} className="rounded-[9px] bg-primary px-2 py-1.5 text-xs font-bold text-primary-foreground disabled:opacity-50">{t("title.save")}</button>
+              <button type="button" onClick={() => setEditingTitle(false)} className="rounded-[9px] px-1.5 py-1.5 text-xs font-bold text-muted-foreground hover:bg-secondary">{t("title.cancel")}</button>
             </form>
           ) : (
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <h1 className="text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">{trip.name}</h1>
-              {trip.role === "CREATOR" ? (
-                <button type="button" onClick={() => { setManualTitle(trip.name); setEditingTitle(true); }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[10px] px-2 text-sm font-bold text-primary hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
-                  <Pencil aria-hidden="true" className="size-3.5" /> {t("title.edit")}
+            <>
+              <div className="min-w-0">
+                <Link href="/projects" className="block truncate text-[11px] font-bold text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                  ← {t("backToHome")}
+                </Link>
+                <strong className="mt-0.5 block truncate text-[15px] tracking-[-0.02em]">{trip.name}</strong>
+              </div>
+              {callerRole === "CREATOR" ? (
+                <button type="button" aria-label={t("title.edit")} onClick={() => { setManualTitle(trip.name); setEditingTitle(true); }} className="grid size-[34px] shrink-0 place-items-center rounded-[10px] border border-[#d6e0df] bg-white text-sidebar transition hover:bg-[#effbf7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                  <Pencil aria-hidden="true" className="size-4" />
                 </button>
               ) : null}
-            </div>
+            </>
           )}
-          <p className="mt-3 max-w-xl text-base text-muted-foreground">{t("body")}</p>
-        </div>
-        <Link href="/home" className="inline-flex min-h-11 items-center rounded-[14px] px-3 text-sm font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
-          {t("backToHome")}
-        </Link>
-      </header>
+        </header>
 
-      <section className="my-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-label={t("kicker")}>
-        <article className="rounded-[22px] border bg-card p-[18px] shadow-[0_8px_24px_#102a4308]">
-          <p className="text-[13px] text-muted-foreground">{t("header.status")}</p>
-          <strong className="mt-0.5 block text-lg tracking-[-0.04em]">
-            {t(`header.statusValue.${trip.status}` as `header.statusValue.${typeof trip.status}`)}
-          </strong>
-        </article>
-        <article className="rounded-[22px] border bg-card p-[18px] shadow-[0_8px_24px_#102a4308]">
-          <p className="text-[13px] text-muted-foreground">{t("header.dates")}</p>
-          <strong className="mt-0.5 block text-lg tracking-[-0.04em]">
-            {trip.travelDateStart && trip.travelDateEnd
-              ? t("header.datesRange", { start: trip.travelDateStart, end: trip.travelDateEnd })
-              : t("header.datesUnknown")}
-          </strong>
-        </article>
-        <article className="rounded-[22px] border bg-card p-[18px] shadow-[0_8px_24px_#102a4308]">
-          <p className="text-[13px] text-muted-foreground">{t("header.destinations")}</p>
-          <strong className="mt-0.5 block text-lg tracking-[-0.04em]">
-            {trip.destinationCandidates.length > 0
-              ? trip.destinationCandidates.join(" · ")
-              : t("header.datesUnknown")}
-          </strong>
-        </article>
-      </section>
+        <button
+          type="button"
+          onClick={handleCreateThread}
+          disabled={createThread.isPending}
+          className="mx-3 mb-1.5 mt-3.5 inline-flex min-h-10 items-center gap-2 rounded-[12px] bg-[#ef7654] px-[11px] py-2 text-sm font-extrabold text-white shadow-[0_7px_15px_#ef765438] transition hover:bg-[#d95d41] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#f6bd60]"
+        >
+          <Plus aria-hidden="true" className="size-5" />
+          {createThread.isPending ? t("threads.newThread.submitting") : t("threads.newThread.label")}
+        </button>
 
-      <section className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr]" aria-label={t("threads.heading")}>
-        <aside className="rounded-[22px] border bg-card p-4 shadow-[0_8px_24px_#102a4308]">
-          <header className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="inline-flex items-center gap-2 text-sm font-black tracking-[-0.025em] text-sidebar">
-              <ListChecks aria-hidden="true" className="size-4" /> {t("threads.heading")}
-            </h2>
-          </header>
+        <p className="mx-4 mb-[7px] mt-4 text-[11px] font-extrabold uppercase tracking-[0.09em] text-muted-foreground">{t("threads.sectionLabel")}</p>
 
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-[18px]">
           {threadsQuery.isPending ? (
             <LoadingState label={t("threads.loading")} />
           ) : threadsQuery.isError ? (
             <ErrorState error={threadsQuery.error} title={t("threads.errorTitle")} />
           ) : threads.length === 0 ? (
-            <div className="rounded-[14px] border border-dashed p-4 text-center text-sm text-muted-foreground">
+            <div className="mx-1 rounded-[14px] border border-dashed p-4 text-center text-sm text-muted-foreground">
               <p className="font-bold text-foreground">{t("threads.emptyTitle")}</p>
               <p className="mt-1">{t("threads.emptyBody")}</p>
             </div>
           ) : (
-            <ul className="space-y-1.5" role="list">
-              {threads.map((thread) => {
-                const selected = thread.id === activeThread?.id;
-                return (
-                  <li key={thread.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const params = new URLSearchParams(searchParams.toString());
-                        params.set(DEFAULT_THREAD_QUERY, thread.id);
-                        router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
-                      }}
-                      aria-pressed={selected}
-                      className={`flex w-full items-center gap-2 rounded-[12px] px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 ${selected ? "bg-secondary text-primary" : "hover:bg-secondary/60"}`}
-                    >
-                      <Pin aria-hidden="true" className="size-3.5 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate text-sm font-bold">{thread.title}</span>
-                      {thread.isDefault ? (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.1em] text-primary">{t("threads.defaultBadge")}</span>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            <>
+              <ul role="list">{liveThreads.map(renderThread)}</ul>
+              {archivedThreads.length > 0 ? (
+                <>
+                  <p className="mx-2 mb-[7px] mt-4 text-[11px] font-extrabold uppercase tracking-[0.09em] text-muted-foreground">{t("threads.archivedLabel")}</p>
+                  <ul role="list">{archivedThreads.map(renderThread)}</ul>
+                </>
+              ) : null}
+            </>
           )}
+        </div>
+      </aside>
 
-          <form onSubmit={handleCreateThread} className="mt-4 space-y-2" aria-label={t("threads.newThread.label")}>
-            <label className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.11em] text-muted-foreground" htmlFor="new-thread-title">
-              <MessageSquarePlus aria-hidden="true" className="size-3.5" /> {t("threads.newThread.label")}
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                id="new-thread-title"
-                name="title"
-                type="text"
-                required
-                minLength={1}
-                maxLength={256}
-                placeholder={t("threads.newThread.placeholder")}
-                disabled={createThread.isPending}
-                className="min-w-0 flex-1 rounded-[10px] border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
-              />
-              <button
-                type="submit"
-                disabled={createThread.isPending}
-                className="inline-flex min-h-10 items-center gap-1.5 rounded-[10px] bg-primary px-3 text-xs font-bold text-primary-foreground transition hover:brightness-110 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
-              >
-                <Plus aria-hidden="true" className="size-3.5" /> {createThread.isPending ? t("threads.newThread.submitting") : t("threads.newThread.submit")}
-              </button>
-            </div>
-          </form>
-        </aside>
+      <section className="flex min-h-0 min-w-0 flex-col bg-[#fffaf3]">
+        <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[#e8e1d8] bg-[#fffdf9] px-[18px] py-3.5">
+          <div className="min-w-0">
+            <strong className="block truncate text-[15px] tracking-[-0.02em]">{activeThread?.title ?? trip.name}</strong>
+            <p className="truncate text-xs text-muted-foreground">
+              {trip.name} · {t("header.members", { count: members.length })}
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-[7px]">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[#d6e0df] bg-white px-2 py-1.5 text-xs font-bold text-[#476274]">
+              <i aria-hidden="true" className="size-[7px] rounded-full bg-primary" />
+              <span className="hidden sm:inline">{t("workspace.agentChip")}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setInspectorOpen(true)}
+              aria-controls="trip-inspector"
+              aria-expanded={inspectorOpen}
+              className="grid size-[34px] place-items-center rounded-[10px] border border-[#d6e0df] bg-white text-sidebar transition hover:bg-[#effbf7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden"
+            >
+              <PanelRight aria-hidden="true" className="size-4" />
+              <span className="sr-only">{t("workspace.openInspector")}</span>
+            </button>
+          </div>
+        </header>
 
-        <section className="relative isolate min-h-[60dvh] overflow-hidden rounded-[22px] border bg-card shadow-[0_8px_24px_#102a4308]">
-          <header className="flex items-center gap-3 border-b border-[#dbe8e5] px-5 py-3">
-            <MapPinned aria-hidden="true" className="size-5 text-primary" />
-            <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-[0.11em] text-muted-foreground">{t("threads.heading")}</p>
-              <h3 className="min-w-0 truncate text-base font-bold tracking-[-0.025em]">
-                {activeThread?.title ?? trip.name}
-              </h3>
-            </div>
-            {activeThread?.createdAt ? (
-              <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-                <CalendarDays aria-hidden="true" className="size-3.5" />
-                <time dateTime={activeThread.createdAt}>{formatDate(locale, activeThread.createdAt)}</time>
-              </span>
-            ) : null}
-          </header>
-          <TravelAgentChat
-            threadId={activeThread?.id ?? null}
-            onThreadInvalidated={() => threadsQuery.refetch()}
-          />
-        </section>
+        <TravelAgentChat
+          variant="docked"
+          threadId={activeThread?.id ?? null}
+          onThreadInvalidated={() => threadsQuery.refetch()}
+        />
       </section>
+
+      {inspectorOpen ? (
+        <button type="button" aria-label={t("workspace.closeInspector")} onClick={() => setInspectorOpen(false)} className="fixed inset-0 z-20 bg-[#102a4320] xl:hidden" />
+      ) : null}
+
+      <aside
+        id="trip-inspector"
+        aria-label={t("workspace.inspectorTitle")}
+        className={`relative grid min-h-0 min-w-0 grid-rows-[1fr_auto] border-l border-[#e8e1d8] bg-[#f4f7f5] max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
+      >
+        <button
+          type="button"
+          onClick={() => setInspectorOpen(false)}
+          aria-label={t("workspace.closeInspector")}
+          className="absolute right-3 top-3 z-10 grid size-[30px] place-items-center rounded-full border border-[#d9e4e1] bg-white/90 text-sidebar shadow-sm backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden"
+        >
+          <X aria-hidden="true" className="size-4" />
+        </button>
+
+        <div className="min-h-0 overflow-y-auto p-3">
+          <div className="grid gap-[11px]">
+            <section className="overflow-hidden rounded-[15px] border border-[#d9e4e1] bg-[#fffdf9] shadow-[0_8px_20px_#102a430b]">
+              <div className="flex items-center justify-between gap-[7px] border-b border-[#e7ece9] px-2.5 py-2.5">
+                <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
+                  <span aria-hidden="true" className="grid size-[21px] place-items-center rounded-[7px] bg-[#e7f4f0] text-primary">◎</span>
+                  <span className="truncate">{t("workspace.overviewWindow")}</span>
+                </div>
+              </div>
+              <div className="p-3">
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-[7px] py-1 text-[10px] font-extrabold ${STATUS_PILL[trip.status]}`}>
+                  <i aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+                  {t(`header.statusValue.${trip.status}` as `header.statusValue.${typeof trip.status}`)}
+                </span>
+                <h2 className="mb-1 mt-2 truncate text-base tracking-[-0.025em]">{trip.name}</h2>
+                <p className="text-xs text-muted-foreground">{datesLabel}</p>
+                <div className="mt-3 grid grid-cols-2 gap-[7px]">
+                  <div className="rounded-[10px] bg-[#f0f5f4] p-2 text-[11px] text-[#456375]">
+                    <b className="block text-xs text-foreground">{t("header.departure")}</b>
+                    {departureLabel}
+                  </div>
+                  <div className="rounded-[10px] bg-[#f0f5f4] p-2 text-[11px] text-[#456375]">
+                    <b className="block text-xs text-foreground">{t("header.destinations")}</b>
+                    {destinationsLabel}
+                  </div>
+                  <div className="rounded-[10px] bg-[#f0f5f4] p-2 text-[11px] text-[#456375]">
+                    <b className="block text-xs text-foreground">{t("workspace.membersWindow")}</b>
+                    {t("header.members", { count: members.length })}
+                  </div>
+                  <div className="rounded-[10px] bg-[#f0f5f4] p-2 text-[11px] text-[#456375]">
+                    <b className="block text-xs text-foreground">{t("header.status")}</b>
+                    {trip.status}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-[15px] border border-[#d9e4e1] bg-[#fffdf9] shadow-[0_8px_20px_#102a430b]">
+              <div className="flex items-center justify-between gap-[7px] border-b border-[#e7ece9] px-2.5 py-2.5">
+                <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
+                  <span aria-hidden="true" className="grid size-[21px] place-items-center rounded-[7px] bg-[#e7f4f0] text-primary">⌁</span>
+                  <span className="truncate">{t("workspace.membersWindow")}</span>
+                </div>
+              </div>
+              <div className="px-3 py-[11px]">
+                {members.map((member) => (
+                  <div key={member.userId} className="flex items-center gap-2 border-b border-[#edf0ee] py-[7px] text-xs text-[#405a6d] last:border-0">
+                    <span className="min-w-0 truncate">{member.displayName}</span>
+                    <b className="ml-auto shrink-0 text-[10px] text-[#8aa099]">{t(`workspace.roleValue.${member.role}` as `workspace.roleValue.${typeof member.role}`)}</b>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <section className="mx-3 mb-3 overflow-hidden rounded-[15px] border border-[#7bbeb5] bg-[#fffdf9] shadow-[0_15px_30px_#073d5030]" aria-label={t("workspace.mapWindow")}>
+          <div className="flex items-center justify-between gap-[7px] border-b border-[#e7ece9] px-2.5 py-2.5">
+            <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
+              <span aria-hidden="true" className="grid size-[21px] place-items-center rounded-[7px] bg-[#e7f4f0] text-primary">◎</span>
+              <span className="truncate">{t("workspace.mapWindow")}</span>
+              <span className="shrink-0 rounded-full bg-[#e7f4f0] px-[7px] py-1 text-[10px] font-extrabold text-[#08726e]">{t("workspace.mapPinned")}</span>
+            </div>
+            <Link href="/home" aria-label={t("workspace.openFullMap")} className="grid size-[25px] shrink-0 place-items-center rounded-[7px] text-[#647e8e] transition hover:bg-[#edf2f0] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+              <ExternalLink aria-hidden="true" className="size-3.5" />
+            </Link>
+          </div>
+          <div className="relative h-[150px] overflow-hidden bg-[radial-gradient(circle_at_65%_30%,#216e86_0_7%,transparent_8%),radial-gradient(circle_at_30%_50%,#0b6574_0_14%,transparent_15%),linear-gradient(130deg,#073d50,#0a5a6c)]">
+            <span aria-hidden="true" className="absolute left-1/2 top-1/2 size-[175px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#9ad4c7] bg-[radial-gradient(circle_at_30%_28%,#d6edc7_0_11%,transparent_12%),radial-gradient(ellipse_at_60%_57%,#bddf9c_0_18%,transparent_19%),radial-gradient(ellipse_at_24%_69%,#96c98b_0_10%,transparent_11%),radial-gradient(circle_at_50%_50%,#0d7280_0_54%,#075364_55%_100%)] shadow-[inset_-18px_-15px_27px_#00354588,0_0_42px_#8cd6cb55]" />
+            <span aria-hidden="true" className="absolute left-[calc(50%+24px)] top-[52px] size-2.5 rotate-[-45deg] rounded-[50%_50%_50%_0] border-[3px] border-white bg-[#ef7654] shadow-[0_5px_10px_#102a4377]" />
+            <span className="absolute bottom-3 left-[15px] z-[1] max-w-[calc(100%-30px)] truncate rounded-lg bg-white/85 px-[7px] py-[5px] text-[11px] font-extrabold text-sidebar">
+              {destinationsLabel}
+            </span>
+          </div>
+        </section>
+      </aside>
     </main>
   );
 }
 
-function formatDate(locale: string, iso: string): string {
+const STATUS_PILL: Record<string, string> = {
+  DRAFT: "bg-[#fff1ca] text-[#9c5400]",
+  PLANNING: "bg-[#e4f7f1] text-[#08726e]",
+  STALE: "bg-[#fff1ca] text-[#9c5400]",
+  CONFIRMED: "bg-[#e4f7f1] text-[#08726e]",
+  BOOKED: "bg-[#e4f7f1] text-[#08726e]",
+  CANCELLED: "bg-[#edf1f3] text-[#5f7484]",
+};
+
+function formatThreadTime(locale: string, iso: string): string {
   try {
-    return new Intl.DateTimeFormat(locale || "en", { dateStyle: "medium" }).format(new Date(iso));
+    const date = new Date(iso);
+    const sameDay = new Date().toDateString() === date.toDateString();
+    return new Intl.DateTimeFormat(locale || "en", sameDay
+      ? { hour: "2-digit", minute: "2-digit" }
+      : { month: "short", day: "numeric" }).format(date);
   } catch {
     return iso;
   }

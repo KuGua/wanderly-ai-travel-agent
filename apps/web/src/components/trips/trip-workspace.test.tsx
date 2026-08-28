@@ -23,11 +23,19 @@ function buildTripResponse(): TripDetailResponse {
       destinationCandidates: ["Tokyo", "Kyoto"],
       travelDateStart: "2026-09-10",
       travelDateEnd: "2026-09-20",
-      memberCount: 3,
-      role: "CREATOR",
       createdAt: "2026-08-01T10:00:00.000Z",
       updatedAt: "2026-08-20T10:00:00.000Z",
     },
+    callerRole: "CREATOR",
+    members: [
+      {
+        userId: "owner-user-id",
+        displayName: "Alice",
+        role: "CREATOR",
+        isRequired: true,
+        joinedAt: "2026-08-01T10:00:00.000Z",
+      },
+    ],
   };
 }
 
@@ -126,7 +134,7 @@ describe("TripWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Bob/ })).not.toBeInTheDocument();
   });
 
-  it("creates an additional thread and switches the URL to it", async () => {
+  it("starts a new thread session in one click, without prompting for a title", async () => {
     const api = createApi({
       getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
     });
@@ -134,11 +142,11 @@ describe("TripWorkspace", () => {
 
     expect(await screen.findByRole("button", { name: /Default/ })).toBeInTheDocument();
 
-    const input = await screen.findByPlaceholderText(/Visa prep/);
-    fireEvent.change(input, { target: { value: "Hotel ideas" } });
-    fireEvent.click(screen.getByRole("button", { name: /Create thread/ }));
+    fireEvent.click(screen.getByRole("button", { name: "New thread" }));
 
-    await waitFor(() => expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { title: "Hotel ideas" }));
+    // The rail already holds one thread, so the new session is numbered 2.
+    await waitFor(() => expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { title: "New thread 2" }));
+    expect(screen.queryByPlaceholderText(/Visa prep/)).not.toBeInTheDocument();
   });
 
   it("lets the creator set a manual title", async () => {
