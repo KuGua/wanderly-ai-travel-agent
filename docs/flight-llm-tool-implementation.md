@@ -42,7 +42,7 @@ Authenticated user
   → safe SSE terminal event / GET task result
 ```
 
-模型调用 Tool 不等于模型拥有自由搜索权限。对于一次候选比较，服务端必须确保每个 `destinationCandidate × departureCity` 的 Flight 查询均已获得成功 evidence；任一必需查询为 `UNAVAILABLE` 时，该轮 planning 失败关闭，不生成部分 ACTIVE plan。
+模型调用 Tool 不等于模型拥有自由搜索权限。LLM 必须真实请求已注册的 `flight.search`，不能由服务端预取数据后伪造 Tool 调用。对于一次候选比较，服务端必须在**最终方案生成**前确保每个 `destinationCandidate × departureCity` 的 Flight 查询均已获得成功 evidence；任一必需查询为 `UNAVAILABLE` 时，该轮 planning 失败关闭，不生成部分 ACTIVE plan。
 
 ## 3. 技术栈与关键依赖
 
@@ -88,7 +88,7 @@ Authenticated user
 
 ### 5.1 `flight.search` Tool
 
-Tool 只由 `ModelGateway` 提供给 Shared planning/replan turn。请求执行时必须绑定 `SkillContext.snapshot` 和 authenticated request context。
+Tool 只由 `ModelGateway` 提供给 Shared PLAN/REPLAN turn。Personal Agent 私有聊天不得获得实时航班查询能力；文中“chat 的航班请求”仅指经授权的 Shared trip planning/replanning 体验。请求执行时必须绑定 `SkillContext.snapshot` 和 authenticated request context。
 
 ```ts
 type FlightSearchInput = {
@@ -118,7 +118,7 @@ type FlightSearchOutput =
 2. origin/destination 必须映射到受控 IATA reference，且 destination 位于 snapshot 候选集。
 3. 日期必须匹配用户确认后进入 snapshot 的行程日期；往返必须具备有效 `returnDate`。
 4. adults、cabin、currency 必须来自用户确认的 `SearchPreferences`，不是 LLM 从自然语言推断的未确认值。
-5. 每轮 planning 在模型生成前检查 research matrix。任何必需 `origin × candidate` 未成功时失败为 `UNAVAILABLE`。
+5. 初始模型回合可选择并调用 Tool；在最终 plan-generation 模型回合前检查 research matrix。任何必需 `origin × candidate` 未成功时失败为 `UNAVAILABLE`。
 6. Provider 返回的文本、航司名称、fare rules 等均是数据，不是模型指令。
 
 ### 5.3 API 变化

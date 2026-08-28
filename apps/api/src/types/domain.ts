@@ -30,15 +30,32 @@ export interface ConstraintSnapshotData {
 
 export interface FlightOffer {
   id: string;
+  providerOfferId: string;
+  providerName: string;
+  queryId: string;
   origin: string;
   destination: string;
-  departureTime: string;
-  arrivalTime: string;
-  priceUsd: number;
-  isRedEye: boolean;
-  airline: string;
+  segments: FlightSegment[];
+  totalDuration: string;
+  totalPrice: number;
+  currency: string;
+  cabin: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST";
+  adults: number;
+  baggageSummary: string | null;
+  changeSummary: string | null;
   source: string;
   capturedAt: string;
+  expiresAt: string;
+}
+
+export interface FlightSegment {
+  carrierCode: string;
+  flightNumber: string;
+  origin: string;
+  destination: string;
+  departureAt: string;
+  arrivalAt: string;
+  duration: string;
 }
 
 export interface StayOffer {

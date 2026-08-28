@@ -32,8 +32,8 @@
 
 ### Fixture-first 与事实边界
 
-- 版本化 fixture 是三人、两出发地、两到三个候选路线 Hero Demo 的可靠基线；live provider 仅用于增强演示，不得成为通过演示的前提。
-- live provider 超时、失败、缺少数据或结果不可信时，只能使用已版本化的 fallback fixture，并在 UI 和 API 输出中显式标记 `Demo data`。不得将 fixture 伪装为实时库存、报价、汇率、签证结论或真实预订结果。
+- 版本化 fixture 仅可用于测试和 adapter contract 验证，不得成为产品运行时或 Hero Demo 产品路径的数据源。
+- live provider 超时、失败、缺少数据或结果不可信时，必须 fail closed 为 `UNAVAILABLE`；不得使用 fallback fixture 或 `Demo data`，也不得将 fixture 伪装为实时库存、报价、汇率、签证结论或真实预订结果。
 - 每一项价格、路线、供应商 offer 与 visa/entry readiness 输出必须带来源及 `captured_at`/检查时间，或带 `Demo data` 标记。签证/入境能力只能输出面向个人的 readiness checklist、核验缺口和官方核验下一步；不得提供法律意见、声称获批或代办申请。
 
 ### 授权、状态与不可逆操作

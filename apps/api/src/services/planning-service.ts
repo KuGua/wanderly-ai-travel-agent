@@ -226,7 +226,7 @@ export async function generatePlan(params: {
     const normalizedOffers = [
       ...allFlights.map(offer => ({
         category: "flight",
-        providerName: offer.airline,
+        providerName: offer.providerName,
         offer,
       })),
       ...allStays.map(offer => ({

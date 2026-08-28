@@ -34,6 +34,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "TRIP_INVITATION_REVOKE", "TRIP_DEFAULT_THREAD_PROVISION",
   "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
+  "FLIGHT_SEARCH_REQUESTED", "FLIGHT_SEARCH_COMPLETED", "FLIGHT_SEARCH_UNAVAILABLE",
 ]);
 
 // Chat thread scope — MVP allows only TRIP-scoped threads; adding new
@@ -228,9 +229,46 @@ export const providerOffers = pgTable("provider_offers", {
   planId: uuid("plan_id").references(() => itineraryPlans.id, { onDelete: "cascade" }),
   category: varchar("category", { length: 32 }).notNull(),
   providerName: varchar("provider_name", { length: 128 }).notNull(),
+  searchRunId: uuid("search_run_id"),
+  providerOfferId: varchar("provider_offer_id", { length: 256 }),
+  currency: varchar("currency", { length: 3 }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
   offerData: jsonb("offer_data").$type<Record<string, unknown>>().notNull(),
   capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// Normalized provider-query evidence only. Raw requests/responses and OAuth
+// tokens are intentionally never stored here.
+export const providerSearchRuns = pgTable("provider_search_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  snapshotId: uuid("snapshot_id").references(() => constraintSnapshots.id).notNull(),
+  agentTaskRunId: uuid("agent_task_run_id").references(() => agentTaskRuns.id, { onDelete: "set null" }),
+  category: varchar("category", { length: 32 }).notNull().default("flight"),
+  providerName: varchar("provider_name", { length: 128 }).notNull(),
+  requestFingerprint: varchar("request_fingerprint", { length: 64 }).notNull(),
+  outcome: varchar("outcome", { length: 16 }).notNull(),
+  errorCode: varchar("error_code", { length: 64 }),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  snapshotIdx: index("provider_search_runs_snapshot_id_idx").on(table.snapshotId),
+  taskIdx: index("provider_search_runs_agent_task_run_id_idx").on(table.agentTaskRunId),
+}));
+
+export const tripSearchPreferences = pgTable("trip_search_preferences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  version: integer("version").notNull(),
+  tripType: varchar("trip_type", { length: 16 }).notNull(),
+  currency: varchar("currency", { length: 3 }).notNull(),
+  adults: integer("adults").notNull(),
+  cabin: varchar("cabin", { length: 32 }).notNull(),
+  offerFreshnessMinutes: integer("offer_freshness_minutes").notNull(),
+  confirmedBy: uuid("confirmed_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tripVersionUnique: uniqueIndex("trip_search_preferences_trip_version_unique").on(table.tripId, table.version),
+  tripIdx: index("trip_search_preferences_trip_id_idx").on(table.tripId),
+}));
 
 // ─── Booking Executions ─────────────────────────────────────────────────────
 

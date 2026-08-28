@@ -18,7 +18,8 @@ export type AuditAction =
   | "TRIP_INVITATION_CREATE" | "TRIP_INVITATION_ACCEPT"
   | "TRIP_INVITATION_REVOKE" | "TRIP_DEFAULT_THREAD_PROVISION"
   | "EXPLORATION_START" | "TRIP_ACTIVATE" | "TRIP_TITLE_UPDATE"
-  | "SKILL_INVOKE" | "AGENT_RUN" | "AGENT_TASK";
+  | "SKILL_INVOKE" | "AGENT_RUN" | "AGENT_TASK"
+  | "FLIGHT_SEARCH_REQUESTED" | "FLIGHT_SEARCH_COMPLETED" | "FLIGHT_SEARCH_UNAVAILABLE";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
   [key: string]: AuditSummaryValue;

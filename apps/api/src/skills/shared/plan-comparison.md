@@ -52,7 +52,7 @@ const planComparisonOutputSchema = z.object({
 }).strict();
 ```
 
-Skill 实际返回的是经过 validator 校验的 `planOutputSchema`（见 [../../policy/VALIDATOR.md](../../policy/VALIDATOR.md)）——逐字段 `.strict()` 的 Zod，含 `id / origin / destination / priceUsd / isRedEye` 等。
+Skill 实际返回的是经过 validator 校验的 `planOutputSchema`（见 [../../policy/VALIDATOR.md](../../policy/VALIDATOR.md)）——逐字段 `.strict()` 的 Zod，含 provider/query offer ID、route segments、price/currency、expiry 和 provenance。
 
 ## Handler 语义
 

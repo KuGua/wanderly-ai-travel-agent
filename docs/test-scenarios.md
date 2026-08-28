@@ -53,7 +53,7 @@ memberships overlap only where explicitly configured.
 **Stories:** H3, P1
 **Objective:** Verify `FlightProvider` validates and normalizes provider results without fabricating availability or using runtime fixture fallback.
 
-**Starting conditions:** A test-only FlightProvider double and an Amadeus adapter contract fixture cover configured Hero routes, dates and provider failures.
+**Starting conditions:** A test-only FlightProvider double and an Amadeus adapter contract fixture cover configured Hero routes, dates and provider failures. Runtime paths never import these fixtures.
 
 **Steps:**
 

@@ -3,13 +3,20 @@ import type { FlightOffer, StayOffer, GroundOffer, VisaReadinessResult } from ".
 // ─── Provider Interfaces ────────────────────────────────────────────────────
 
 export interface FlightProvider {
-  searchFlights(params: {
-    origin: string;
-    destination: string;
-    dateStart: string;
-    dateEnd: string;
-    snapshotId: string;
-  }): Promise<ProviderResult<FlightOffer[]>>;
+  searchFlights(params: FlightSearchParams): Promise<ProviderResult<FlightOffer[]>>;
+}
+
+export interface FlightSearchParams {
+  origin: string;
+  destination: string;
+  dateStart: string;
+  dateEnd: string;
+  snapshotId: string;
+  tripType?: "ONE_WAY" | "ROUND_TRIP";
+  adults?: number;
+  cabin?: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST";
+  currency?: string;
+  signal?: AbortSignal;
 }
 
 export interface StayProvider {
@@ -46,5 +53,13 @@ export type ProviderResult<T> =
     }
   | {
       outcome: "UNAVAILABLE";
-      reason: "NOT_CONFIGURED" | "PROVIDER_FAILED" | "NO_RESULTS";
+      reason:
+        | "NOT_CONFIGURED"
+        | "SEARCH_CONSTRAINTS_INCOMPLETE"
+        | "NO_RESULTS"
+        | "RATE_LIMITED"
+        | "UPSTREAM_TIMEOUT"
+        | "UPSTREAM_FAILURE"
+        | "INVALID_PROVIDER_RESPONSE"
+        | "PROVIDER_NOT_APPROVED";
     };

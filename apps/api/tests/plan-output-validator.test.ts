@@ -20,15 +20,25 @@ function goodPlanData() {
     destination: "Tokyo",
     flights: [{
       id: "flt-sfo-tyo-01",
+      providerOfferId: "flt-sfo-tyo-01",
+      providerName: "amadeus",
+      queryId: "00000000-0000-4000-8000-000000000001",
       origin: "San Francisco",
       destination: "Tokyo",
-      departureTime: "2025-08-01T11:00:00Z",
-      arrivalTime: "2025-08-02T15:00:00Z",
-      priceUsd: 850,
-      isRedEye: false,
-      airline: "Demo Air",
+      segments: [{
+        carrierCode: "DA", flightNumber: "101", origin: "SFO", destination: "NRT",
+        departureAt: "2025-08-01T11:00:00Z", arrivalAt: "2025-08-02T15:00:00Z", duration: "PT12H",
+      }],
+      totalDuration: "PT12H",
+      totalPrice: 850,
+      currency: "USD",
+      cabin: "ECONOMY" as const,
+      adults: 1,
+      baggageSummary: null,
+      changeSummary: null,
       source: "Provider API",
       capturedAt: "2026-08-23T00:00:00.000Z",
+      expiresAt: "2026-08-24T00:00:00.000Z",
     }],
     stays: [{
       id: "stay-tyo-01",
@@ -98,9 +108,9 @@ describe("plan-output-validator", () => {
     ]));
   });
 
-  it("rejects red-eye flight when it differs from authorized provider evidence", () => {
+  it("rejects a changed flight price when it differs from authorized provider evidence", () => {
     const data = goodPlanData();
-    data.flights[0].isRedEye = true;
+    data.flights[0].totalPrice = 900;
     const authorizedSnapshot = {
       ...snapshot,
       authorizedData: { alice: { noRedEye: true } },

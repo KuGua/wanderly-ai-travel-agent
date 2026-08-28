@@ -15,14 +15,29 @@ const provenanceFields = {
 
 const flightOfferSchema = z.object({
   id: z.string().min(1),
+  providerOfferId: z.string().min(1),
+  providerName: z.string().min(1),
+  queryId: z.string().uuid(),
   origin: z.string().min(1),
   destination: z.string().min(1),
-  departureTime: z.string().min(1),
-  arrivalTime: z.string().min(1),
-  priceUsd: z.number().nonnegative().finite(),
-  isRedEye: z.boolean(),
-  airline: z.string().min(1),
+  segments: z.array(z.object({
+    carrierCode: z.string().min(1),
+    flightNumber: z.string().min(1),
+    origin: z.string().min(1),
+    destination: z.string().min(1),
+    departureAt: z.string().min(1),
+    arrivalAt: z.string().min(1),
+    duration: z.string().min(1),
+  }).strict()).min(1),
+  totalDuration: z.string().min(1),
+  totalPrice: z.number().nonnegative().finite(),
+  currency: z.string().length(3),
+  cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
+  adults: z.number().int().min(1).max(9),
+  baggageSummary: z.string().nullable(),
+  changeSummary: z.string().nullable(),
   ...provenanceFields,
+  expiresAt: z.string().datetime(),
 }).strict();
 
 const stayOfferSchema = z.object({

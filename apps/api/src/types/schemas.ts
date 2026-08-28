@@ -201,6 +201,27 @@ export const planRequestSchema = z.object({
   tripId: uuidSchema,
 });
 
+export const flightCabinSchema = z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]);
+export const tripSearchPreferencesRequestSchema = z.object({
+  tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  adults: z.number().int().min(1).max(9),
+  cabin: flightCabinSchema,
+  offerFreshnessMinutes: z.number().int().min(1).max(1_440),
+}).strict();
+
+export const tripSearchPreferencesResponseSchema = z.object({
+  tripId: uuidSchema,
+  version: z.number().int().positive(),
+  tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  adults: z.number().int().min(1).max(9),
+  cabin: flightCabinSchema,
+  offerFreshnessMinutes: z.number().int().min(1).max(1_440),
+  confirmedBy: uuidSchema,
+  createdAt: z.string().datetime(),
+});
+
 export const changeEventSchema = z.object({
   tripId: uuidSchema,
   eventId: uuidSchema,
@@ -541,6 +562,7 @@ export type ConversationIntent = z.infer<typeof conversationIntentSchema>;
 export type OwnerConversationMessage = z.infer<typeof ownerConversationMessageSchema>;
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;
 export type ConversationTurnAcceptedResponse = z.infer<typeof conversationTurnAcceptedResponseSchema>;
+export type TripSearchPreferencesRequest = z.infer<typeof tripSearchPreferencesRequestSchema>;
 export type AgentTaskOperation = z.infer<typeof agentTaskOperationSchema>;
 export type AgentTaskStatus = z.infer<typeof agentTaskStatusSchema>;
 export type AgentRunResponse = z.infer<typeof agentRunResponseSchema>;
