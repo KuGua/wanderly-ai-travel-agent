@@ -24,6 +24,8 @@ const EDGE_MARGIN = 16;
 const AVOID_GAP = 2;
 /** Bounded so a crowded corner can never spin the resolver. */
 const AVOID_PASSES = 8;
+/** Length of the ease into a clear spot after the bot is dropped. */
+const GLIDE_MS = 260;
 const LAUNCH_MS = 720;
 const LAUNCH_ARC = 140;
 
@@ -214,6 +216,23 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     setPerched(overlapsHorizontally && seatedOnTop);
   }, [bodyMetrics, perchRect]);
 
+  /**
+   * Moves to the resolved position with a short eased slide. The flag scopes
+   * the CSS transition to this moment, so per-frame updates during a drag or
+   * the launch arc still land immediately.
+   */
+  const settleWithGlide = useCallback((desired: Point) => {
+    const node = rootRef.current;
+    if (!node) return;
+    node.dataset.settling = "true";
+    settlePosition(desired);
+    window.setTimeout(() => {
+      if (rootRef.current) delete rootRef.current.dataset.settling;
+      // Perch state depends on where it came to rest, not where it was dropped.
+      refreshPerched();
+    }, GLIDE_MS);
+  }, [refreshPerched, settlePosition]);
+
   // Opening position: sitting at the composer's top-left corner, mirroring it
   // rather than landing on the status chips that sit directly above it.
   useEffect(() => {
@@ -310,15 +329,21 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
 
     const onMove = (moveEvent: PointerEvent) => {
       if (!draggingRef.current) return;
-      // Resolved live, so dragging onto a panel slides the bot above it
-      // instead of letting it sink underneath.
-      settlePosition({ x: moveEvent.clientX - grabOffset.x, y: moveEvent.clientY - grabOffset.y });
+      // Follows the cursor exactly. Avoidance waits for the drop, so the bot
+      // never flinches out from under the pointer mid-drag.
+      applyPosition(clampToBounds(
+        { x: moveEvent.clientX - grabOffset.x, y: moveEvent.clientY - grabOffset.y },
+        box.width,
+        box.height,
+        bounds(),
+      ));
     };
 
     const onUp = () => {
       draggingRef.current = false;
       setDragging(false);
-      refreshPerched();
+      const dropped = positionRef.current;
+      if (dropped) settleWithGlide(dropped);
       node.releasePointerCapture?.(event.pointerId);
       node.removeEventListener("pointermove", onMove);
       node.removeEventListener("pointerup", onUp);
@@ -328,7 +353,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     node.addEventListener("pointermove", onMove);
     node.addEventListener("pointerup", onUp);
     node.addEventListener("pointercancel", onUp);
-  }, [refreshPerched, settlePosition]);
+  }, [applyPosition, bounds, settleWithGlide]);
 
   /*
    * When the chat panel expands, a bot standing inside the region it covers is

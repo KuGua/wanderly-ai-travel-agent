@@ -374,6 +374,14 @@
   cursor: grabbing;
 }
 
+/*
+ * Only the post-drop settle is animated. Drag frames and the launch arc write
+ * position every frame, so a transition there would smear them.
+ */
+.wanderly-bot[data-settling="true"] {
+  transition: left 260ms cubic-bezier(0.22, 0.61, 0.36, 1), top 260ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
 .wanderly-bot-body {
   display: flex;
   width: var(--bot-w);
@@ -537,6 +545,7 @@
     animation: none;
   }
 
+  .wanderly-bot,
   .wanderly-bot-eye,
   .wanderly-bot-legs,
   .wanderly-bot-leg,
