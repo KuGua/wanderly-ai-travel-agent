@@ -57,11 +57,13 @@ beforeEach(async () => {
   await db.delete(providerOffers);
   await db.delete(sourceEvidence);
   await db.delete(visaReadinessChecks);
+  // Audit events retain the plan reference, so they must be cleared before
+  // plans. Their deletion is scoped to the disposable test database.
+  await db.delete(auditEvents);
   await db.delete(itineraryPlans);
   await db.delete(destinationCandidates);
   await db.delete(constraintSnapshots);
   await db.delete(preferenceFacts);
-  await db.delete(auditEvents);
   await db.delete(idempotencyRecords);
   await db.delete(chatThreads);
   await db.delete(tripMembers);
