@@ -413,11 +413,11 @@ export function TravelAgentChat({
   if (!open) {
     return (
       <>
-        <button type="button" onClick={onOpen} className="absolute bottom-20 right-4 z-40 px-3 py-1.5 text-[11px] font-bold wanderly-cosmos-control wanderly-r-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
+        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-20 right-4 z-40 px-3 py-1.5 text-[11px] font-bold wanderly-cosmos-control wanderly-r-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
         {resolvedThreadStatus !== "ready" ? (
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
         ) : null}
-        <form data-wanderly-perch="composer" onSubmit={submitMessage} className="absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 p-1.5 pl-4 wanderly-cosmos-panel wanderly-r-lg landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)] landscape:translate-x-0" aria-label={t("startAria")}>
+        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 p-1.5 pl-4 wanderly-cosmos-panel wanderly-r-lg landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)] landscape:translate-x-0" aria-label={t("startAria")}>
           <Sparkles aria-hidden="true" className="size-4 shrink-0 text-primary" />
           <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--w-fog)] placeholder:text-[var(--w-fog)] placeholder:opacity-70 focus:outline-none disabled:opacity-60" />
           {submitButton}
@@ -427,7 +427,7 @@ export function TravelAgentChat({
   }
 
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} aria-label={t("dialogAria")} data-expanded={expanded ? "true" : "false"} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-white" : `flex flex-col overflow-hidden bg-white shadow-[0_28px_90px_rgb(8_47_63/28%)] transition-[inset,height,width,border-radius] duration-300 ${expanded ? "fixed inset-0 z-[100] h-dvh rounded-none" : "absolute inset-x-3 bottom-3 z-50 h-[60dvh] min-h-[300px] rounded-[28px] landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}`}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} data-expanded={expanded ? "true" : "false"} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-white" : `flex flex-col overflow-hidden bg-white shadow-[0_28px_90px_rgb(8_47_63/28%)] transition-[inset,height,width,border-radius] duration-300 ${expanded ? "fixed inset-0 z-[100] h-dvh rounded-none" : "absolute inset-x-3 bottom-3 z-50 h-[60dvh] min-h-[300px] rounded-[28px] landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}`}>
       <div className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-white" : `flex min-h-0 flex-1 flex-col overflow-hidden border-x border-t border-white/80 bg-white landscape:border ${expanded ? "rounded-none" : "rounded-t-[28px]"}`}>
         {docked ? null : (
         <header className="relative flex items-center gap-2.5 border-b border-[#dbe8e5] px-3 pb-1 pt-2.5">
@@ -532,7 +532,7 @@ function ThreadStatus({ status, onRetry, compact = false }: { status: ChatThread
   const t = useTranslations("explore.chat");
   const message = status === "preparing" ? t("preparingPrivateChat") : t("privateChatUnavailable");
   return (
-    <div role="status" className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 rounded-full bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-muted-foreground shadow-md backdrop-blur landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "rounded-[16px] border border-border bg-card p-3 text-sm text-muted-foreground"}>
+    <div role="status" data-wanderly-avoid={compact ? "" : undefined} className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold wanderly-cosmos-panel wanderly-r-xs landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "rounded-[16px] border border-border bg-card p-3 text-sm text-muted-foreground"}>
       <span>{message}</span>
       {status === "error" && onRetry ? <button type="button" onClick={onRetry} className="font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30">{t("retryPrivateChat")}</button> : null}
     </div>

@@ -21,19 +21,25 @@ export function LocaleSwitcher() {
     });
   }
 
+  // The rail is only 64px wide, so this is a square tile matching the nav
+  // buttons rather than a pill. The native select stays — it is the whole
+  // control's keyboard and screen-reader behaviour — but sits invisibly on
+  // top, leaving the glyph and locale code as the visible face.
   return (
-    <label className="pointer-events-auto inline-flex items-center gap-2 rounded-full bg-sidebar/95 px-3 py-2 text-xs font-bold text-white shadow-lg focus-within:ring-2 focus-within:ring-white/50">
+    <label className="relative grid size-10 cursor-pointer place-items-center border-[1.5px] border-[var(--w-ink)] bg-[var(--w-fog)] text-[var(--w-ink)] wanderly-r-sm wanderly-press hover:bg-[var(--w-highlight)] sm:size-11">
       <Globe aria-hidden="true" className="size-4" />
-      <span className="sr-only">{t("langEnglish")} / {t("langChinese")}</span>
+      <span aria-hidden="true" className="mt-px text-[9px] font-black leading-none">
+        {currentLocale === "en" ? "EN" : "中"}
+      </span>
       <select
         value={currentLocale}
         onChange={onChange}
         disabled={isPending}
         aria-label={t("langEnglish") + " / " + t("langChinese")}
-        className="bg-transparent text-white outline-none"
+        className="absolute inset-0 cursor-pointer opacity-0"
       >
         {routing.locales.map((locale) => (
-          <option key={locale} value={locale} className="text-black">
+          <option key={locale} value={locale}>
             {locale === "en" ? t("langEnglish") : t("langChinese")}
           </option>
         ))}

@@ -793,14 +793,14 @@ export function ExploreMapPage() {
 
       {readiness.kind === "loading" ? (
         <div className="pointer-events-none absolute inset-0 z-[4] grid place-items-center" role="status">
-          <span className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold wanderly-cosmos-panel wanderly-r-sm">
+          <span data-wanderly-avoid className="inline-flex items-center gap-2 px-4 py-2 text-sm font-bold wanderly-cosmos-panel wanderly-r-sm">
             <LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" /> {tCommon("loadingGlobe")}
           </span>
         </div>
       ) : null}
 
       {mapNotice ? (
-        <div role="status" aria-live="polite" className="pointer-events-none absolute left-1/2 top-20 z-[60] -translate-x-1/2 px-4 py-2 text-center text-sm font-bold wanderly-cosmos-panel wanderly-r-sm sm:top-24">
+        <div role="status" aria-live="polite" data-wanderly-avoid className="pointer-events-none absolute left-1/2 top-20 z-[60] -translate-x-1/2 px-4 py-2 text-center text-sm font-bold wanderly-cosmos-panel wanderly-r-sm sm:top-24">
           {mapNotice}
         </div>
       ) : null}
@@ -815,7 +815,7 @@ export function ExploreMapPage() {
       />
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 p-4 sm:p-6">
-        <div className="pointer-events-auto flex flex-col items-start gap-2">
+        <div data-wanderly-avoid className="pointer-events-auto flex flex-col items-start gap-2">
           {focusHandoff?.tripId ? (
             <Link
               href={`/trips/${focusHandoff.tripId}` as "/trips/[tripId]"}
@@ -830,7 +830,7 @@ export function ExploreMapPage() {
           <p className="mt-0.5 text-xs opacity-85">{focusHandoff?.label ?? t("startingFrom")}</p>
           </div>
         </div>
-        <div className="pointer-events-auto flex gap-2">
+        <div data-wanderly-avoid className="pointer-events-auto flex gap-2">
           <button type="button" onClick={recenter} aria-label={t("recenterAriaLabel")} title={t("recenterTitle")} className="grid size-12 place-items-center wanderly-cosmos-control wanderly-r-sm wanderly-press">
             <LocateFixed aria-hidden="true" className="size-5" />
           </button>
@@ -849,7 +849,7 @@ export function ExploreMapPage() {
       </header>
 
       {helpOpen ? (
-        <aside className="absolute right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] p-4 text-sm leading-6 wanderly-cosmos-panel wanderly-r-lg sm:right-6 sm:top-24">
+        <aside data-wanderly-avoid className="absolute right-4 top-20 z-30 w-[min(320px,calc(100%-2rem))] p-4 text-sm leading-6 wanderly-cosmos-panel wanderly-r-lg sm:right-6 sm:top-24">
           <p className="font-bold">{t("helpHeading")}</p>
           <p className="mt-1 opacity-85">{t("helpBody")}</p>
         </aside>
@@ -869,7 +869,7 @@ export function ExploreMapPage() {
       ) : null}
 
       {managePinsOpen ? (
-        <section className="absolute bottom-20 left-4 z-20 block w-[min(360px,calc(100%-2rem))] p-4 wanderly-cosmos-panel wanderly-r-lg landscape:bottom-6 landscape:left-6">
+        <section data-wanderly-avoid className="absolute bottom-20 left-4 z-20 block w-[min(360px,calc(100%-2rem))] p-4 wanderly-cosmos-panel wanderly-r-lg landscape:bottom-6 landscape:left-6">
           <>
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1161,6 +1161,7 @@ function LayerToggleGroup({
   })();
   return (
     <section
+      data-wanderly-avoid
       className="absolute left-4 top-32 z-20 w-44 p-2 wanderly-cosmos-panel wanderly-r-lg sm:left-6 sm:top-36"
       role="group"
       aria-label={t("layerPanel.groupAriaLabel")}
