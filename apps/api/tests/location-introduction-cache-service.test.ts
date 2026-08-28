@@ -3,7 +3,7 @@ import { db } from "../src/db/database.js";
 import { locationIntroductionCache } from "../src/db/schema.js";
 import { sql } from "drizzle-orm";
 import {
-  resolveLocationIntroductionCatalogEntry,
+  resolveLocationIntroductionCatalogEntrySync as resolveLocationIntroductionCatalogEntry,
   LocationIntroductionUnsupportedPlaceError,
 } from "../src/location-introduction/location-introduction-catalog.js";
 import {

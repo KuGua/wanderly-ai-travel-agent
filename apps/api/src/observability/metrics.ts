@@ -271,6 +271,9 @@ metrics.registerHistogram(
 metrics.registerGauge("location_introduction_cache_entries", "Aggregate location-introduction cache row counts.", {
   status: ["ready", "generating"],
 });
+metrics.registerCounter("location_introduction_registry_total", "Operator registration outcomes for the location-introduction catalog.", {
+  outcome: ["registered", "duplicate", "error"],
+});
 metrics.registerHistogram(
   "llm_request_latency_ms",
   "Latency of successful LLM requests in milliseconds.",

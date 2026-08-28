@@ -2,35 +2,441 @@
   "$schemaVersion": "1.0.0",
   "datasetVersion": "location-introduction-v1",
   "entries": [
-    { "sourceId": "tokyo", "canonicalPlaceId": "tokyo-jp", "name": "Tokyo", "country": "Japan", "countryCode": "JP", "admin1": "Tokyo", "admin1Code": "JP-13", "nearestCity": "Tokyo", "nearestCityCoordinates": { "longitude": 139.6917, "latitude": 35.6895 } },
-    { "sourceId": "kyoto", "canonicalPlaceId": "kyoto-jp", "name": "Kyoto", "country": "Japan", "countryCode": "JP", "admin1": "Kyoto", "admin1Code": "JP-26", "nearestCity": "Kyoto", "nearestCityCoordinates": { "longitude": 135.7681, "latitude": 35.0116 } },
-    { "sourceId": "osaka", "canonicalPlaceId": "osaka-jp", "name": "Osaka", "country": "Japan", "countryCode": "JP", "admin1": "Osaka", "admin1Code": "JP-27", "nearestCity": "Osaka", "nearestCityCoordinates": { "longitude": 135.5022, "latitude": 34.6937 } },
-    { "sourceId": "paris", "canonicalPlaceId": "paris-fr", "name": "Paris", "country": "France", "countryCode": "FR", "admin1": "Île-de-France", "admin1Code": "FR-IDF", "nearestCity": "Paris", "nearestCityCoordinates": { "longitude": 2.3522, "latitude": 48.8566 } },
-    { "sourceId": "lyon", "canonicalPlaceId": "lyon-fr", "name": "Lyon", "country": "France", "countryCode": "FR", "admin1": "Auvergne-Rhône-Alpes", "admin1Code": "FR-ARA", "nearestCity": "Lyon", "nearestCityCoordinates": { "longitude": 4.8357, "latitude": 45.7640 } },
-    { "sourceId": "lisbon", "canonicalPlaceId": "lisbon-pt", "name": "Lisbon", "country": "Portugal", "countryCode": "PT", "admin1": "Lisbon", "admin1Code": "PT-11", "nearestCity": "Lisbon", "nearestCityCoordinates": { "longitude": -9.1393, "latitude": 38.7223 } },
-    { "sourceId": "barcelona", "canonicalPlaceId": "barcelona-es", "name": "Barcelona", "country": "Spain", "countryCode": "ES", "admin1": "Catalonia", "admin1Code": "ES-CT", "nearestCity": "Barcelona", "nearestCityCoordinates": { "longitude": 2.1734, "latitude": 41.3851 } },
-    { "sourceId": "madrid", "canonicalPlaceId": "madrid-es", "name": "Madrid", "country": "Spain", "countryCode": "ES", "admin1": "Community of Madrid", "admin1Code": "ES-MD", "nearestCity": "Madrid", "nearestCityCoordinates": { "longitude": -3.7038, "latitude": 40.4168 } },
-    { "sourceId": "rome", "canonicalPlaceId": "rome-it", "name": "Rome", "country": "Italy", "countryCode": "IT", "admin1": "Lazio", "admin1Code": "IT-62", "nearestCity": "Rome", "nearestCityCoordinates": { "longitude": 12.4964, "latitude": 41.9028 } },
-    { "sourceId": "florence", "canonicalPlaceId": "florence-it", "name": "Florence", "country": "Italy", "countryCode": "IT", "admin1": "Tuscany", "admin1Code": "IT-52", "nearestCity": "Florence", "nearestCityCoordinates": { "longitude": 11.2558, "latitude": 43.7696 } },
-    { "sourceId": "amsterdam", "canonicalPlaceId": "amsterdam-nl", "name": "Amsterdam", "country": "Netherlands", "countryCode": "NL", "admin1": "North Holland", "admin1Code": "NL-NH", "nearestCity": "Amsterdam", "nearestCityCoordinates": { "longitude": 4.9041, "latitude": 52.3676 } },
-    { "sourceId": "berlin", "canonicalPlaceId": "berlin-de", "name": "Berlin", "country": "Germany", "countryCode": "DE", "admin1": "Berlin", "admin1Code": "DE-BE", "nearestCity": "Berlin", "nearestCityCoordinates": { "longitude": 13.4050, "latitude": 52.5200 } },
-    { "sourceId": "vienna", "canonicalPlaceId": "vienna-at", "name": "Vienna", "country": "Austria", "countryCode": "AT", "admin1": "Vienna", "admin1Code": "AT-9", "nearestCity": "Vienna", "nearestCityCoordinates": { "longitude": 16.3738, "latitude": 48.2082 } },
-    { "sourceId": "prague", "canonicalPlaceId": "prague-cz", "name": "Prague", "country": "Czechia", "countryCode": "CZ", "admin1": "Prague", "admin1Code": "CZ-10", "nearestCity": "Prague", "nearestCityCoordinates": { "longitude": 14.4378, "latitude": 50.0755 } },
-    { "sourceId": "reykjavik", "canonicalPlaceId": "reykjavik-is", "name": "Reykjavík", "country": "Iceland", "countryCode": "IS", "admin1": "Capital Region", "admin1Code": "IS-1", "nearestCity": "Reykjavík", "nearestCityCoordinates": { "longitude": -21.9426, "latitude": 64.1466 } },
-    { "sourceId": "london", "canonicalPlaceId": "london-gb", "name": "London", "country": "United Kingdom", "countryCode": "GB", "admin1": "England", "admin1Code": "GB-ENG", "nearestCity": "London", "nearestCityCoordinates": { "longitude": -0.1276, "latitude": 51.5072 } },
-    { "sourceId": "edinburgh", "canonicalPlaceId": "edinburgh-gb", "name": "Edinburgh", "country": "United Kingdom", "countryCode": "GB", "admin1": "Scotland", "admin1Code": "GB-SCT", "nearestCity": "Edinburgh", "nearestCityCoordinates": { "longitude": -3.1883, "latitude": 55.9533 } },
-    { "sourceId": "newyork", "canonicalPlaceId": "newyork-us", "name": "New York", "country": "United States", "countryCode": "US", "admin1": "New York", "admin1Code": "US-NY", "nearestCity": "New York", "nearestCityCoordinates": { "longitude": -74.0060, "latitude": 40.7128 } },
-    { "sourceId": "sanfrancisco", "canonicalPlaceId": "sanfrancisco-us", "name": "San Francisco", "country": "United States", "countryCode": "US", "admin1": "California", "admin1Code": "US-CA", "nearestCity": "San Francisco", "nearestCityCoordinates": { "longitude": -122.4194, "latitude": 37.7749 } },
-    { "sourceId": "mexicocity", "canonicalPlaceId": "mexicocity-mx", "name": "Mexico City", "country": "Mexico", "countryCode": "MX", "admin1": "Mexico City", "admin1Code": "MX-CMX", "nearestCity": "Mexico City", "nearestCityCoordinates": { "longitude": -99.1332, "latitude": 19.4326 } },
-    { "sourceId": "capetown", "canonicalPlaceId": "capetown-za", "name": "Cape Town", "country": "South Africa", "countryCode": "ZA", "admin1": "Western Cape", "admin1Code": "ZA-WC", "nearestCity": "Cape Town", "nearestCityCoordinates": { "longitude": 18.4241, "latitude": -33.9249 } },
-    { "sourceId": "johannesburg", "canonicalPlaceId": "johannesburg-za", "name": "Johannesburg", "country": "South Africa", "countryCode": "ZA", "admin1": "Gauteng", "admin1Code": "ZA-GT", "nearestCity": "Johannesburg", "nearestCityCoordinates": { "longitude": 28.0473, "latitude": -26.2041 } },
-    { "sourceId": "bali", "canonicalPlaceId": "denpasar-id", "name": "Bali (Denpasar)", "country": "Indonesia", "countryCode": "ID", "admin1": "Bali", "admin1Code": "ID-BA", "nearestCity": "Denpasar", "nearestCityCoordinates": { "longitude": 115.2167, "latitude": -8.6500 } },
-    { "sourceId": "singapore", "canonicalPlaceId": "singapore-sg", "name": "Singapore", "country": "Singapore", "countryCode": "SG", "admin1": "Central", "admin1Code": "SG-01", "nearestCity": "Singapore", "nearestCityCoordinates": { "longitude": 103.8198, "latitude": 1.3521 } },
-    { "sourceId": "seoul", "canonicalPlaceId": "seoul-kr", "name": "Seoul", "country": "South Korea", "countryCode": "KR", "admin1": "Seoul", "admin1Code": "KR-11", "nearestCity": "Seoul", "nearestCityCoordinates": { "longitude": 126.9780, "latitude": 37.5665 } },
-    { "sourceId": "taipei", "canonicalPlaceId": "taipei-tw", "name": "Taipei", "country": "Taiwan", "countryCode": "TW", "admin1": "Taipei City", "admin1Code": "TW-TPE", "nearestCity": "Taipei", "nearestCityCoordinates": { "longitude": 121.5654, "latitude": 25.0330 } },
-    { "sourceId": "shanghai", "canonicalPlaceId": "shanghai-cn", "name": "Shanghai", "country": "China", "countryCode": "CN", "admin1": "Shanghai", "admin1Code": "CN-31", "nearestCity": "Shanghai", "nearestCityCoordinates": { "longitude": 121.4737, "latitude": 31.2304 } },
-    { "sourceId": "hongkong", "canonicalPlaceId": "hongkong-hk", "name": "Hong Kong", "country": "Hong Kong SAR", "countryCode": "HK", "admin1": "Hong Kong Island", "admin1Code": "HK-HKI", "nearestCity": "Hong Kong", "nearestCityCoordinates": { "longitude": 114.1694, "latitude": 22.3193 } },
-    { "sourceId": "sydney", "canonicalPlaceId": "sydney-au", "name": "Sydney", "country": "Australia", "countryCode": "AU", "admin1": "New South Wales", "admin1Code": "AU-NSW", "nearestCity": "Sydney", "nearestCityCoordinates": { "longitude": 151.2093, "latitude": -33.8688 } },
-    { "sourceId": "melbourne", "canonicalPlaceId": "melbourne-au", "name": "Melbourne", "country": "Australia", "countryCode": "AU", "admin1": "Victoria", "admin1Code": "AU-VIC", "nearestCity": "Melbourne", "nearestCityCoordinates": { "longitude": 144.9631, "latitude": -37.8136 } }
+    {
+      "sourceId": "tokyo",
+      "canonicalPlaceId": "tokyo-jp",
+      "name": "Tokyo",
+      "country": "Japan",
+      "countryCode": "JP",
+      "admin1": "Tokyo",
+      "admin1Code": "JP-13",
+      "nearestCity": "Tokyo",
+      "nearestCityCoordinates": {
+        "longitude": 139.6917,
+        "latitude": 35.6895
+      }
+    },
+    {
+      "sourceId": "kyoto",
+      "canonicalPlaceId": "kyoto-jp",
+      "name": "Kyoto",
+      "country": "Japan",
+      "countryCode": "JP",
+      "admin1": "Kyoto",
+      "admin1Code": "JP-26",
+      "nearestCity": "Kyoto",
+      "nearestCityCoordinates": {
+        "longitude": 135.7681,
+        "latitude": 35.0116
+      }
+    },
+    {
+      "sourceId": "osaka",
+      "canonicalPlaceId": "osaka-jp",
+      "name": "Osaka",
+      "country": "Japan",
+      "countryCode": "JP",
+      "admin1": "Osaka",
+      "admin1Code": "JP-27",
+      "nearestCity": "Osaka",
+      "nearestCityCoordinates": {
+        "longitude": 135.5022,
+        "latitude": 34.6937
+      }
+    },
+    {
+      "sourceId": "paris",
+      "canonicalPlaceId": "paris-fr",
+      "name": "Paris",
+      "country": "France",
+      "countryCode": "FR",
+      "admin1": "Île-de-France",
+      "admin1Code": "FR-IDF",
+      "nearestCity": "Paris",
+      "nearestCityCoordinates": {
+        "longitude": 2.3522,
+        "latitude": 48.8566
+      }
+    },
+    {
+      "sourceId": "lyon",
+      "canonicalPlaceId": "lyon-fr",
+      "name": "Lyon",
+      "country": "France",
+      "countryCode": "FR",
+      "admin1": "Auvergne-Rhône-Alpes",
+      "admin1Code": "FR-ARA",
+      "nearestCity": "Lyon",
+      "nearestCityCoordinates": {
+        "longitude": 4.8357,
+        "latitude": 45.764
+      }
+    },
+    {
+      "sourceId": "lisbon",
+      "canonicalPlaceId": "lisbon-pt",
+      "name": "Lisbon",
+      "country": "Portugal",
+      "countryCode": "PT",
+      "admin1": "Lisbon",
+      "admin1Code": "PT-11",
+      "nearestCity": "Lisbon",
+      "nearestCityCoordinates": {
+        "longitude": -9.1393,
+        "latitude": 38.7223
+      }
+    },
+    {
+      "sourceId": "barcelona",
+      "canonicalPlaceId": "barcelona-es",
+      "name": "Barcelona",
+      "country": "Spain",
+      "countryCode": "ES",
+      "admin1": "Catalonia",
+      "admin1Code": "ES-CT",
+      "nearestCity": "Barcelona",
+      "nearestCityCoordinates": {
+        "longitude": 2.1734,
+        "latitude": 41.3851
+      }
+    },
+    {
+      "sourceId": "madrid",
+      "canonicalPlaceId": "madrid-es",
+      "name": "Madrid",
+      "country": "Spain",
+      "countryCode": "ES",
+      "admin1": "Community of Madrid",
+      "admin1Code": "ES-MD",
+      "nearestCity": "Madrid",
+      "nearestCityCoordinates": {
+        "longitude": -3.7038,
+        "latitude": 40.4168
+      }
+    },
+    {
+      "sourceId": "rome",
+      "canonicalPlaceId": "rome-it",
+      "name": "Rome",
+      "country": "Italy",
+      "countryCode": "IT",
+      "admin1": "Lazio",
+      "admin1Code": "IT-62",
+      "nearestCity": "Rome",
+      "nearestCityCoordinates": {
+        "longitude": 12.4964,
+        "latitude": 41.9028
+      }
+    },
+    {
+      "sourceId": "florence",
+      "canonicalPlaceId": "florence-it",
+      "name": "Florence",
+      "country": "Italy",
+      "countryCode": "IT",
+      "admin1": "Tuscany",
+      "admin1Code": "IT-52",
+      "nearestCity": "Florence",
+      "nearestCityCoordinates": {
+        "longitude": 11.2558,
+        "latitude": 43.7696
+      }
+    },
+    {
+      "sourceId": "amsterdam",
+      "canonicalPlaceId": "amsterdam-nl",
+      "name": "Amsterdam",
+      "country": "Netherlands",
+      "countryCode": "NL",
+      "admin1": "North Holland",
+      "admin1Code": "NL-NH",
+      "nearestCity": "Amsterdam",
+      "nearestCityCoordinates": {
+        "longitude": 4.9041,
+        "latitude": 52.3676
+      }
+    },
+    {
+      "sourceId": "berlin",
+      "canonicalPlaceId": "berlin-de",
+      "name": "Berlin",
+      "country": "Germany",
+      "countryCode": "DE",
+      "admin1": "Berlin",
+      "admin1Code": "DE-BE",
+      "nearestCity": "Berlin",
+      "nearestCityCoordinates": {
+        "longitude": 13.405,
+        "latitude": 52.52
+      }
+    },
+    {
+      "sourceId": "vienna",
+      "canonicalPlaceId": "vienna-at",
+      "name": "Vienna",
+      "country": "Austria",
+      "countryCode": "AT",
+      "admin1": "Vienna",
+      "admin1Code": "AT-9",
+      "nearestCity": "Vienna",
+      "nearestCityCoordinates": {
+        "longitude": 16.3738,
+        "latitude": 48.2082
+      }
+    },
+    {
+      "sourceId": "prague",
+      "canonicalPlaceId": "prague-cz",
+      "name": "Prague",
+      "country": "Czechia",
+      "countryCode": "CZ",
+      "admin1": "Prague",
+      "admin1Code": "CZ-10",
+      "nearestCity": "Prague",
+      "nearestCityCoordinates": {
+        "longitude": 14.4378,
+        "latitude": 50.0755
+      }
+    },
+    {
+      "sourceId": "reykjavik",
+      "canonicalPlaceId": "reykjavik-is",
+      "name": "Reykjavík",
+      "country": "Iceland",
+      "countryCode": "IS",
+      "admin1": "Capital Region",
+      "admin1Code": "IS-1",
+      "nearestCity": "Reykjavík",
+      "nearestCityCoordinates": {
+        "longitude": -21.9426,
+        "latitude": 64.1466
+      }
+    },
+    {
+      "sourceId": "london",
+      "canonicalPlaceId": "london-gb",
+      "name": "London",
+      "country": "United Kingdom",
+      "countryCode": "GB",
+      "admin1": "England",
+      "admin1Code": "GB-ENG",
+      "nearestCity": "London",
+      "nearestCityCoordinates": {
+        "longitude": -0.1276,
+        "latitude": 51.5072
+      }
+    },
+    {
+      "sourceId": "edinburgh",
+      "canonicalPlaceId": "edinburgh-gb",
+      "name": "Edinburgh",
+      "country": "United Kingdom",
+      "countryCode": "GB",
+      "admin1": "Scotland",
+      "admin1Code": "GB-SCT",
+      "nearestCity": "Edinburgh",
+      "nearestCityCoordinates": {
+        "longitude": -3.1883,
+        "latitude": 55.9533
+      }
+    },
+    {
+      "sourceId": "newyork",
+      "canonicalPlaceId": "newyork-us",
+      "name": "New York",
+      "country": "United States",
+      "countryCode": "US",
+      "admin1": "New York",
+      "admin1Code": "US-NY",
+      "nearestCity": "New York",
+      "nearestCityCoordinates": {
+        "longitude": -74.006,
+        "latitude": 40.7128
+      }
+    },
+    {
+      "sourceId": "sanfrancisco",
+      "canonicalPlaceId": "sanfrancisco-us",
+      "name": "San Francisco",
+      "country": "United States",
+      "countryCode": "US",
+      "admin1": "California",
+      "admin1Code": "US-CA",
+      "nearestCity": "San Francisco",
+      "nearestCityCoordinates": {
+        "longitude": -122.4194,
+        "latitude": 37.7749
+      }
+    },
+    {
+      "sourceId": "mexicocity",
+      "canonicalPlaceId": "mexicocity-mx",
+      "name": "Mexico City",
+      "country": "Mexico",
+      "countryCode": "MX",
+      "admin1": "Mexico City",
+      "admin1Code": "MX-CMX",
+      "nearestCity": "Mexico City",
+      "nearestCityCoordinates": {
+        "longitude": -99.1332,
+        "latitude": 19.4326
+      }
+    },
+    {
+      "sourceId": "capetown",
+      "canonicalPlaceId": "capetown-za",
+      "name": "Cape Town",
+      "country": "South Africa",
+      "countryCode": "ZA",
+      "admin1": "Western Cape",
+      "admin1Code": "ZA-WC",
+      "nearestCity": "Cape Town",
+      "nearestCityCoordinates": {
+        "longitude": 18.4241,
+        "latitude": -33.9249
+      }
+    },
+    {
+      "sourceId": "johannesburg",
+      "canonicalPlaceId": "johannesburg-za",
+      "name": "Johannesburg",
+      "country": "South Africa",
+      "countryCode": "ZA",
+      "admin1": "Gauteng",
+      "admin1Code": "ZA-GT",
+      "nearestCity": "Johannesburg",
+      "nearestCityCoordinates": {
+        "longitude": 28.0473,
+        "latitude": -26.2041
+      }
+    },
+    {
+      "sourceId": "bali",
+      "canonicalPlaceId": "denpasar-id",
+      "name": "Bali (Denpasar)",
+      "country": "Indonesia",
+      "countryCode": "ID",
+      "admin1": "Bali",
+      "admin1Code": "ID-BA",
+      "nearestCity": "Denpasar",
+      "nearestCityCoordinates": {
+        "longitude": 115.2167,
+        "latitude": -8.65
+      }
+    },
+    {
+      "sourceId": "singapore",
+      "canonicalPlaceId": "singapore-sg",
+      "name": "Singapore",
+      "country": "Singapore",
+      "countryCode": "SG",
+      "admin1": "Central",
+      "admin1Code": "SG-01",
+      "nearestCity": "Singapore",
+      "nearestCityCoordinates": {
+        "longitude": 103.8198,
+        "latitude": 1.3521
+      }
+    },
+    {
+      "sourceId": "seoul",
+      "canonicalPlaceId": "seoul-kr",
+      "name": "Seoul",
+      "country": "South Korea",
+      "countryCode": "KR",
+      "admin1": "Seoul",
+      "admin1Code": "KR-11",
+      "nearestCity": "Seoul",
+      "nearestCityCoordinates": {
+        "longitude": 126.978,
+        "latitude": 37.5665
+      }
+    },
+    {
+      "sourceId": "taipei",
+      "canonicalPlaceId": "taipei-tw",
+      "name": "Taipei",
+      "country": "Taiwan",
+      "countryCode": "TW",
+      "admin1": "Taipei City",
+      "admin1Code": "TW-TPE",
+      "nearestCity": "Taipei",
+      "nearestCityCoordinates": {
+        "longitude": 121.5654,
+        "latitude": 25.033
+      }
+    },
+    {
+      "sourceId": "shanghai",
+      "canonicalPlaceId": "shanghai-cn",
+      "name": "Shanghai",
+      "country": "China",
+      "countryCode": "CN",
+      "admin1": "Shanghai",
+      "admin1Code": "CN-31",
+      "nearestCity": "Shanghai",
+      "nearestCityCoordinates": {
+        "longitude": 121.4737,
+        "latitude": 31.2304
+      }
+    },
+    {
+      "sourceId": "hongkong",
+      "canonicalPlaceId": "hongkong-hk",
+      "name": "Hong Kong",
+      "country": "Hong Kong SAR",
+      "countryCode": "HK",
+      "admin1": "Hong Kong Island",
+      "admin1Code": "HK-HKI",
+      "nearestCity": "Hong Kong",
+      "nearestCityCoordinates": {
+        "longitude": 114.1694,
+        "latitude": 22.3193
+      }
+    },
+    {
+      "sourceId": "sydney",
+      "canonicalPlaceId": "sydney-au",
+      "name": "Sydney",
+      "country": "Australia",
+      "countryCode": "AU",
+      "admin1": "New South Wales",
+      "admin1Code": "AU-NSW",
+      "nearestCity": "Sydney",
+      "nearestCityCoordinates": {
+        "longitude": 151.2093,
+        "latitude": -33.8688
+      }
+    },
+    {
+      "sourceId": "melbourne",
+      "canonicalPlaceId": "melbourne-au",
+      "name": "Melbourne",
+      "country": "Australia",
+      "countryCode": "AU",
+      "admin1": "Victoria",
+      "admin1Code": "AU-VIC",
+      "nearestCity": "Melbourne",
+      "nearestCityCoordinates": {
+        "longitude": 144.9631,
+        "latitude": -37.8136
+      }
+    },
+    {
+      "sourceId": "vienna-2",
+      "canonicalPlaceId": "vienna-2-at",
+      "name": "Vienna 2",
+      "country": "Austria",
+      "countryCode": "AT",
+      "admin1": "Vienna",
+      "admin1Code": "AT-9",
+      "nearestCity": "Vienna",
+      "nearestCityCoordinates": {
+        "longitude": 16.3738,
+        "latitude": 48.2082
+      },
+      "datasetVersion": "location-introduction-v1",
+      "origin": "override"
+    }
   ]
 }

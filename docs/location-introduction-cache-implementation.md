@@ -6,14 +6,15 @@
 
 ## 1. 目标与固定边界
 
-用户点击具有稳定 `sourceId` 的地图地点时，抽屉自动加载并展示该地点的短介绍。服务端在 7 天有效期内向所有用户复用同一语言版本的介绍；缓存缺失或过期时才调用 LLM。
+用户点击具有稳定 `sourceId` 的地图地点时，抽屉自动加载并展示该地点的短介绍。服务端在 7 天有效期内向所有用户复用同一语言版本的介绍；缓存缺失或过期时才调用 LLM。地点目录支持**启动时静态加载**（`apps/api/data/location-introduction/catalog.json`）和**运营按需注册**（`POST /api/v1/admin/location-introduction/entries`，写入 `location_introduction_catalog_overrides` 表并同步重写 JSON 文件）两条路径；任一路径下，每条 `sourceId` 都必须先被服务端认可。
 
 本能力是公共、非个性化的地点编辑内容，不是旅行候选、价格、库存、签证、路线或预订事实。它不创建 `shared_trips`、`chat_threads`、`chat_messages`、`agent_task_runs`、授权、快照或审计中的用户内容。
 
-- 仅接受服务端版本化地点目录中的稳定 `sourceId`；`INSPIRATION`、任意坐标、地图标签和客户端自行构造的地点均不生成或共享缓存。
+- `sourceId` 必须存在于合并后的目录中（启动 JSON + DB 覆盖表，DB 行优先）；未知或不合法的格式直接拒绝（`400 LOCATION_INTRODUCTION_UNSUPPORTED_PLACE`）。
+- `INSPIRATION`、任意坐标、地图标签和客户端自行构造的地点均不生成或共享缓存。
 - 默认 TTL 为 7 天（`604800` 秒）。
 - 同一缓存键生成中时，后续请求不重复调用 LLM，而是得到 `202 GENERATING` 并短暂轮询。
-- 不引入 Redis。PostgreSQL 是跨实例缓存、租约和失效的唯一服务端存储；TanStack Query 仅作浏览器短缓存。
+- 不引入 Redis。PostgreSQL 是跨实例缓存、租约、覆盖目录和失效的唯一服务端存储；TanStack Query 仅作浏览器短缓存。
 - 抽屉不显示“AI 生成”徽章或生成时间。LLM prompt 必须禁止时效性和可操作旅行断言，避免内容被误认为实时事实。
 
 ## 2. 现有架构衔接
@@ -108,6 +109,49 @@ ExploreMapPage（稳定 sourceId）
 `202`：`{ "status": "GENERATING", "retryAfterMs": 500 }`
 
 错误：`400 LOCATION_INTRODUCTION_UNSUPPORTED_PLACE`、`429 LOCATION_INTRODUCTION_RATE_LIMITED`、`503 LOCATION_INTRODUCTION_UNAVAILABLE`。错误体复用 `errorResponseSchema`；不得回显地点名称、坐标、缓存键、prompt 或 provider 错误正文。
+
+### `POST /admin/location-introduction/entries` (operator-only)
+
+该端点**不是匿名**：必须先经过 `authMiddleware` 并通过 [`apps/api/src/middleware/admin-guard.ts`](../apps/api/src/middleware/admin-guard.ts) 的 `requireAdmin` 校验。运营白名单通过 env 控制，优先级 `LOCATION_INTRODUCTION_ADMIN_USER_IDS` (按 `users.id` 匹配) > `LOCATION_INTRODUCTION_ADMIN_SUBJECTS` (按 `users.external_id` 匹配)。两个 env 都未设置时，所有注册请求返回 `403`。
+
+请求 schema 与公开端点不同 — **所有字段均为必填**：
+
+```json
+{
+  "sourceId": "vienna",
+  "canonicalPlaceId": "vienna-at",
+  "name": "Vienna",
+  "country": "Austria",
+  "countryCode": "AT",
+  "admin1": "Vienna",
+  "admin1Code": "AT-9",
+  "nearestCity": "Vienna",
+  "nearestCityLongitude": 16.3738,
+  "nearestCityLatitude": 48.2082
+}
+```
+
+响应 — `201 Created`：
+
+```json
+{
+  "sourceId": "vienna",
+  "canonicalPlaceId": "vienna-at",
+  "name": "Vienna",
+  "datasetVersion": "location-introduction-v1",
+  "createdAt": "2026-08-29T00:00:00.000Z",
+  "createdByUserId": "uuid"
+}
+```
+
+错误：`400` strict schema 或字段越界、`401` 无 bearer token、`403` 不在白名单、`409 LOCATION_INTRODUCTION_DUPLICATE`。
+
+注册成功后，[`LocationIntroductionCatalogRegistry`](../apps/api/src/location-introduction/location-introduction-registry.ts) 串行写入：
+1. `INSERT INTO location_introduction_catalog_overrides` (authoritative)。
+2. 原子重写 `data/location-introduction/catalog.json`（临时文件 + rename）。
+4. 失效 `cachedOverrides` 缓存，30 秒内最多查询一次。
+
+文件重写失败则回滚 DB 行；`audit_events.action = 'LOCATION_INTRODUCTION_REGISTER'`，summary 仅含 `operation`, `sourceId`, `canonicalPlaceId`, `datasetVersion`。
 
 ## 7. LLM、内容与安全约束
 

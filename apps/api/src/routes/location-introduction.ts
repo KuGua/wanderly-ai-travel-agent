@@ -67,7 +67,7 @@ export async function locationIntroductionRoutes(app: FastifyInstance) {
 
     let catalogEntry;
     try {
-      catalogEntry = resolveLocationIntroductionCatalogEntry(input.sourceId);
+      catalogEntry = await resolveLocationIntroductionCatalogEntry(input.sourceId);
     } catch (err) {
       if (err instanceof LocationIntroductionUnsupportedPlaceError) {
         metrics.inc("location_introduction_requests_total", { outcome: "unsupported" });

@@ -64,6 +64,33 @@ export const locationIntroductionResponseSchema = z.union([
   locationIntroductionGeneratingSchema,
 ]);
 
+// ─── Admin: location-introduction registration (operator-only) ────────────────
+// `POST /api/v1/admin/location-introduction/entries`. All fields are
+// strictly required and bounded. Length caps mirror the table-level
+// constraints in migration 0018.
+
+export const adminLocationIntroductionEntryInputSchema = z.object({
+  sourceId: z.string().min(1).max(128),
+  canonicalPlaceId: z.string().min(1).max(128),
+  name: z.string().trim().min(1).max(256),
+  country: z.string().trim().min(1).max(128),
+  countryCode: z.string().trim().min(1).max(8),
+  admin1: z.string().trim().min(1).max(128),
+  admin1Code: z.string().trim().min(1).max(64),
+  nearestCity: z.string().trim().min(1).max(128),
+  nearestCityLongitude: z.number().finite().min(-180).max(180),
+  nearestCityLatitude: z.number().finite().min(-90).max(90),
+}).strict();
+
+export const adminLocationIntroductionEntryResultSchema = z.object({
+  sourceId: z.string(),
+  canonicalPlaceId: z.string(),
+  name: z.string(),
+  datasetVersion: z.string(),
+  createdAt: z.string().datetime(),
+  createdByUserId: z.string().uuid(),
+}).strict();
+
 // ─── Profile ────────────────────────────────────────────────────────────────
 
 export const createProfileSchema = z.object({
@@ -600,3 +627,5 @@ export type LocationIntroductionRequest = z.infer<typeof locationIntroductionReq
 export type LocationIntroductionReady = z.infer<typeof locationIntroductionReadySchema>;
 export type LocationIntroductionGenerating = z.infer<typeof locationIntroductionGeneratingSchema>;
 export type LocationIntroductionResponse = z.infer<typeof locationIntroductionResponseSchema>;
+export type AdminLocationIntroductionEntryInput = z.infer<typeof adminLocationIntroductionEntryInputSchema>;
+export type AdminLocationIntroductionEntryResult = z.infer<typeof adminLocationIntroductionEntryResultSchema>;

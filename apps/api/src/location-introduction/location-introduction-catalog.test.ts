@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   getLocationIntroductionDatasetVersion,
-  resolveLocationIntroductionCatalogEntry,
+  resolveLocationIntroductionCatalogEntrySync as resolveLocationIntroductionCatalogEntry,
   __resetLocationIntroductionCatalogForTests,
   LocationIntroductionUnsupportedPlaceError,
 } from "./location-introduction-catalog.js";
