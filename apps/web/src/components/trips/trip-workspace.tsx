@@ -42,7 +42,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const updateTitle = useUpdateTripTitle(tripId);
   const [editingTitle, setEditingTitle] = useState(false);
   const [manualTitle, setManualTitle] = useState("");
-  const [composingThread, setComposingThread] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
 
   const autoProvisionAttemptedRef = useRef(false);
@@ -107,23 +106,21 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     router.replace(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.replace>[0]);
   }, [threads, threadsQuery.data, queryThreadId, router, searchParams, tripId, membershipRevoked]);
 
-  const handleCreateThread = useCallback(async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    // `currentTarget` is nulled once the handler yields, so hold the form.
-    const form = event.currentTarget;
-    const title = String(new FormData(form).get("title") ?? "").trim();
-    if (title.length === 0 || title.length > 256) return;
+  // "New thread" opens a fresh session straight away — no title prompt.
+  // The server-side title is auto-numbered so the rail stays readable.
+  const handleCreateThread = useCallback(async () => {
+    if (createThread.isPending) return;
     try {
-      const created = await createThread.mutateAsync({ title });
+      const created = await createThread.mutateAsync({
+        title: t("threads.newThread.autoTitle", { index: threads.length + 1 }),
+      });
       const params = new URLSearchParams(searchParams.toString());
       params.set(DEFAULT_THREAD_QUERY, created.id);
-      form.reset();
-      setComposingThread(false);
       router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
     } catch {
       // surfaced through the threads query error state.
     }
-  }, [createThread, router, searchParams, tripId]);
+  }, [createThread, router, searchParams, t, threads.length, tripId]);
 
   if (membershipRevoked) {
     return (
@@ -206,7 +203,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
 
   return (
     <main className="grid h-[calc(100dvh-4rem)] min-h-[620px] grid-cols-1 overflow-hidden bg-[#fffaf3] landscape:h-dvh md:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)] xl:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)_minmax(280px,0.9fr)]">
-      <aside className="hidden min-w-0 flex-col border-r border-[#e8e1d8] bg-[#fffdf9] md:flex" aria-label={t("threads.heading")}>
+      <aside className="hidden min-h-0 min-w-0 flex-col border-r border-[#e8e1d8] bg-[#fffdf9] md:flex" aria-label={t("threads.heading")}>
         <header className="flex items-center justify-between gap-2 border-b border-[#e8e1d8] px-4 py-[18px]">
           {editingTitle ? (
             <form
@@ -241,36 +238,13 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
 
         <button
           type="button"
-          onClick={() => setComposingThread((current) => !current)}
-          aria-expanded={composingThread}
-          className="mx-3 mb-1.5 mt-3.5 inline-flex min-h-10 items-center gap-2 rounded-[12px] bg-[#ef7654] px-[11px] py-2 text-sm font-extrabold text-white shadow-[0_7px_15px_#ef765438] transition hover:bg-[#d95d41] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#f6bd60]"
+          onClick={handleCreateThread}
+          disabled={createThread.isPending}
+          className="mx-3 mb-1.5 mt-3.5 inline-flex min-h-10 items-center gap-2 rounded-[12px] bg-[#ef7654] px-[11px] py-2 text-sm font-extrabold text-white shadow-[0_7px_15px_#ef765438] transition hover:bg-[#d95d41] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#f6bd60]"
         >
-          <Plus aria-hidden="true" className="size-5" /> {t("threads.newThread.label")}
+          <Plus aria-hidden="true" className="size-5" />
+          {createThread.isPending ? t("threads.newThread.submitting") : t("threads.newThread.label")}
         </button>
-
-        {composingThread ? (
-          <form onSubmit={handleCreateThread} className="mx-3 mt-1 space-y-2" aria-label={t("threads.newThread.label")}>
-            <input
-              name="title"
-              type="text"
-              required
-              autoFocus
-              minLength={1}
-              maxLength={256}
-              placeholder={t("threads.newThread.placeholder")}
-              disabled={createThread.isPending}
-              className="w-full rounded-[10px] border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring/30"
-            />
-            <div className="flex items-center gap-2">
-              <button type="submit" disabled={createThread.isPending} className="inline-flex min-h-9 flex-1 items-center justify-center rounded-[10px] bg-primary px-3 text-xs font-bold text-primary-foreground transition hover:brightness-110 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
-                {createThread.isPending ? t("threads.newThread.submitting") : t("threads.newThread.submit")}
-              </button>
-              <button type="button" onClick={() => setComposingThread(false)} className="inline-flex min-h-9 items-center rounded-[10px] px-3 text-xs font-bold text-muted-foreground hover:bg-secondary">
-                {t("title.cancel")}
-              </button>
-            </div>
-          </form>
-        ) : null}
 
         <p className="mx-4 mb-[7px] mt-4 text-[11px] font-extrabold uppercase tracking-[0.09em] text-muted-foreground">{t("threads.sectionLabel")}</p>
 
@@ -298,7 +272,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-col bg-[#fffaf3]">
+      <section className="flex min-h-0 min-w-0 flex-col bg-[#fffaf3]">
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[#e8e1d8] bg-[#fffdf9] px-[18px] py-3.5">
           <div className="min-w-0">
             <strong className="block truncate text-[15px] tracking-[-0.02em]">{activeThread?.title ?? trip.name}</strong>
@@ -338,17 +312,16 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       <aside
         id="trip-inspector"
         aria-label={t("workspace.inspectorTitle")}
-        className={`grid min-w-0 grid-rows-[auto_1fr_auto] border-l border-[#e8e1d8] bg-[#f4f7f5] max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
+        className={`relative grid min-h-0 min-w-0 grid-rows-[1fr_auto] border-l border-[#e8e1d8] bg-[#f4f7f5] max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
       >
-        <header className="flex items-center justify-between gap-2 border-b border-[#e8e1d8] bg-[#fffdf9] px-3.5 py-3.5">
-          <div className="min-w-0">
-            <strong className="block text-[15px] tracking-[-0.02em]">{t("workspace.inspectorTitle")}</strong>
-            <p className="truncate text-xs text-muted-foreground">{t("workspace.inspectorSubtitle")}</p>
-          </div>
-          <button type="button" onClick={() => setInspectorOpen(false)} aria-label={t("workspace.closeInspector")} className="grid size-[34px] shrink-0 place-items-center rounded-[10px] border border-[#d6e0df] bg-white text-sidebar transition hover:bg-[#effbf7] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden">
-            <X aria-hidden="true" className="size-4" />
-          </button>
-        </header>
+        <button
+          type="button"
+          onClick={() => setInspectorOpen(false)}
+          aria-label={t("workspace.closeInspector")}
+          className="absolute right-3 top-3 z-10 grid size-[30px] place-items-center rounded-full border border-[#d9e4e1] bg-white/90 text-sidebar shadow-sm backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden"
+        >
+          <X aria-hidden="true" className="size-4" />
+        </button>
 
         <div className="min-h-0 overflow-y-auto p-3">
           <div className="grid gap-[11px]">

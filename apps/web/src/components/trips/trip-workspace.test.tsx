@@ -133,7 +133,7 @@ describe("TripWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Bob/ })).not.toBeInTheDocument();
   });
 
-  it("creates an additional thread and switches the URL to it", async () => {
+  it("starts a new thread session in one click, without prompting for a title", async () => {
     const api = createApi({
       getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
     });
@@ -142,11 +142,10 @@ describe("TripWorkspace", () => {
     expect(await screen.findByRole("button", { name: /Default/ })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "New thread" }));
-    const input = await screen.findByPlaceholderText(/Visa prep/);
-    fireEvent.change(input, { target: { value: "Hotel ideas" } });
-    fireEvent.click(screen.getByRole("button", { name: /Create thread/ }));
 
-    await waitFor(() => expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { title: "Hotel ideas" }));
+    // The rail already holds one thread, so the new session is numbered 2.
+    await waitFor(() => expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { title: "New thread 2" }));
+    expect(screen.queryByPlaceholderText(/Visa prep/)).not.toBeInTheDocument();
   });
 
   it("lets the creator set a manual title", async () => {

@@ -372,7 +372,8 @@
         "placeholder": "例如：签证准备、预算、逐日行程",
         "submit": "创建",
         "submitting": "创建中…",
-        "validation": "标题需为 1–256 字符。"
+        "validation": "标题需为 1–256 字符。",
+        "autoTitle": "新对话 {index}"
       },
       "sectionLabel": "本项目",
       "archivedLabel": "已归档",
@@ -382,7 +383,6 @@
     "workspace": {
       "agentChip": "协作 Agent",
       "inspectorTitle": "工作区",
-      "inspectorSubtitle": "行程概览与成员",
       "openInspector": "打开工作区内容面板",
       "closeInspector": "关闭工作区内容面板",
       "overviewWindow": "行程概览",

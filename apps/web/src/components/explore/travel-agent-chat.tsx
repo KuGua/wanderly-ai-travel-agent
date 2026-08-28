@@ -378,7 +378,7 @@ export function TravelAgentChat({
 
   const submitButton = (
     <button type="submit" aria-label={t("sendAria")} disabled={inputDisabled} className={docked
-      ? "grid size-10 shrink-0 place-items-center rounded-[12px] bg-[#ef7654] text-white transition hover:bg-[#d95d41] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#f6bd60]"
+      ? "grid size-11 shrink-0 place-items-center rounded-full bg-[#ef7654] text-white shadow-md transition hover:bg-[#d95d41] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[#f6bd60]"
       : "grid size-11 shrink-0 place-items-center rounded-full bg-sidebar text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70"}>
       {isSending ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : <ArrowUp aria-hidden="true" className="size-5" />}
     </button>
@@ -480,8 +480,8 @@ export function TravelAgentChat({
 
       <form onSubmit={submitMessage} className={docked ? "border-t border-[#e8e1d8] bg-[#fffdf9] px-[clamp(16px,3vw,34px)] pb-[18px] pt-3" : "bg-white px-3 pb-3 pt-2"}>
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className="mb-1.5 flex h-5 max-w-full items-center rounded-full border border-white/80 bg-[#dff3ed]/90 px-2.5 text-[10px] font-bold text-primary shadow-sm backdrop-blur hover:bg-[#d2eee6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
-        <div className={docked ? "mx-auto flex max-w-[640px] items-end gap-2.5 rounded-[16px] border border-[#cedbd8] bg-white p-2 shadow-[0_8px_18px_#102a430d]" : "wanderly-liquid-glass flex min-h-14 items-end gap-2 rounded-[20px] p-1.5 pl-4"}>
-          <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-h-[42px] min-w-0 flex-1 resize-none bg-transparent p-2.5 text-sm leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
+        <div className={docked ? "mx-auto flex min-h-14 max-w-[640px] items-center gap-2 rounded-[20px] border border-[#cedbd8] bg-white p-1.5 pl-4 shadow-[0_8px_18px_#102a430d]" : "wanderly-liquid-glass flex min-h-14 items-end gap-2 rounded-[20px] p-1.5 pl-4"}>
+          <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
           {submitButton}
         </div>
         {docked ? <p className="mx-auto mt-[7px] max-w-[640px] text-[11px] text-[#788b98]">{t("composerNote")}</p> : null}

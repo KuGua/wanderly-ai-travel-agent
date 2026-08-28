@@ -372,7 +372,8 @@
         "placeholder": "e.g. Visa prep, Budget, Day-by-day plan",
         "submit": "Create thread",
         "submitting": "Creating…",
-        "validation": "Title must be 1–256 characters."
+        "validation": "Title must be 1–256 characters.",
+        "autoTitle": "New thread {index}"
       },
       "sectionLabel": "This trip",
       "archivedLabel": "Archived",
@@ -382,7 +383,6 @@
     "workspace": {
       "agentChip": "Collab agent",
       "inspectorTitle": "Workspace",
-      "inspectorSubtitle": "Trip overview and members",
       "openInspector": "Open workspace panel",
       "closeInspector": "Close workspace panel",
       "overviewWindow": "Trip overview",
