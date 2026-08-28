@@ -135,6 +135,31 @@ memberships overlap only where explicitly configured.
 - Deleted field is absent from future Agent inputs.
 - No Profile field appears in a shared view before consent.
 
+### TS-H1e — Maintain structured long-term and current-Trip memory without widening consent
+
+**Stories:** H1, H2, H3, S1
+**Objective:** Verify stable facts, low-risk behavior suggestions and current-Trip memory use the controlled fact/snapshot path rather than private chat or direct Shared Agent reads.
+
+**Starting conditions:** Alice has a Profile and two active Trips. One Trip contains an active plan using Alice's authorized accommodation style; the other has no consent for that field. Bob is a member of the first Trip.
+
+**Steps:**
+
+1. Record enough allow-listed, non-sensitive behavior events to create a suggested accommodation-style update. Inspect the proposal and its audit/telemetry records.
+2. Confirm the proposal, then update and delete the resulting stable fact through the Profile memory API.
+3. Attempt to create behavior or conversation-derived proposals for nationality, passport, date of birth, health and accessibility fields.
+4. Save a `this trip` preference and a group decision in the first Trip; attempt to read them from the second Trip.
+5. Start planning, modify one authorized fact and revoke its consent before plan activation. Inspect snapshots, plans, confirmations, Worker inputs and Shared Agent skill inputs.
+6. Bob attempts to read Alice's private facts and to use a previous Trip's memory as planning input.
+
+**Expected outcomes:**
+
+- The automatic proposal contains only allow-listed field metadata, observation count, confidence and expiry; it contains no raw chat text or sensitive value. It is not a fact, snapshot input or shared data until Alice confirms it.
+- Only the owner can confirm, dismiss, edit or delete personal facts. Confirmation creates an active structured fact; deletion removes it from future projections and retains only a content-free audit event.
+- Sensitive-field proposal attempts fail closed; no model or behavior pipeline creates a row for them.
+- Trip memory is scoped by `tripId`; cross-Trip reads and projections are denied. Shared Agent reads only the server-built current snapshot projection, never the personal fact, proposal or chat tables.
+- A projected fact/consent change makes the first Trip's active plan and confirmations `STALE`; the old run cannot activate a plan. The unrelated Trip is unchanged.
+- Logs, metrics, traces, audit summaries, SSE and idempotency payloads do not contain memory values, conversation text or high-cardinality identifiers as metric labels.
+
 ### TS-H1b — Persist and delete a private conversation without widening its scope
 
 **Stories:** H1, S1

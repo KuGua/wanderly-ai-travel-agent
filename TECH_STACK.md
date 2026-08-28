@@ -43,6 +43,7 @@ Amazon RDS for PostgreSQL
 | 身份 | **Amazon Cognito User Pool**，邮箱或手机号登录，API 验证 access token | 身份来自已验证 JWT 的 `sub`，前端不能通过用户 ID 或 demo 角色选择身份。生产使用 Cognito；本地仅允许显式 `local-dev`（固定单一身份 smoke test）或 `custom-local`（数据库用户名/密码和 API JWT，用于多用户隔离测试）。两者均仅限 development/test 与 server/client loopback。 | 复杂 SSO、社交登录矩阵、组织管理。 |
 | 主数据库 | **Amazon RDS for PostgreSQL** + SQL migrations + Drizzle ORM | 需要事务、关系约束、审计和版本一致性：Profile、用户私有对话、字段级 consent、两个出发地、候选方案、三人确认和 callback 去重必须共享一个权威真相源。RDS PostgreSQL 支持 VPC、SSL、快照与时间点恢复。[AWS RDS PostgreSQL](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_PostgreSQL.html) | SQLite 作为云端主库、NoSQL 作为业务真相。 |
 | Agent | **受限 Skill Registry + ModelGateway**，运行在 App Runner | 模型只能通过服务器暴露的、类型化 function-tool 契约请求能力；具体 LLM 为可配置的 OpenAI-compatible provider。SDK 不是授权、确认或持久状态机。 | 让模型直接读写数据库、付款或自由互聊的多 Agent 群。 |
+| 长期记忆 | **PostgreSQL 中结构化、版本化的个人事实 + 当前 Trip 记忆投影** | 复用 `user_profiles`、`preference_facts`、字段级 consent、不可变 `constraint_snapshot` 和 stale/replan 控制面。低风险行为只能形成待确认的建议；个人事实默认私有，Shared Agent 只消费当前 Trip 的最小授权投影。 | 向量库、embedding、RAG、独立 memory service、跨 Trip Team memory、从私聊或敏感字段自动写入长期记忆。 |
 | 工具与模型边界 | Zod schema、structured outputs、server-side policy gate、受限 thread context builder | 对话 archive 仅由所有者读取。Personal Agent 仅可由服务端从同一 owner 的同一私有 thread 构造最近、有预算的原文上下文；该上下文只发送给已配置模型 provider，不进入共享 snapshot、Profile、日志、trace、audit、metric 或客户端持久状态。原文窗口受 `CONVERSATION_CONTEXT_MAX_TURNS`（默认 8 完整轮次，上限 12）和 `CONVERSATION_CONTEXT_MAX_CHARS`（默认 12,000 UTF-16 字符，上限 20,000）双重预算限制，并以 task acceptance 时记录的 `agent_task_runs.context_max_message_sequence` 为不可回写上界。所有共享工具只获得当前 `constraint_snapshot` 的最小授权字段。模型输出不直接成为业务真相。 | 将整段私聊、其他 thread 或共享/未授权数据放进 prompt；由浏览器提交 history；向量库、Redis 或独立 memory service；自动摘要 worker；tokenizer/embedding；向遥测或前端暴露供应商 key。 |
 | 旅行与数据 API | Amadeus Self-Service Flight Offers Search、openrouteservice Routing、Frankfurter；通过 provider adapters；版本化离线地图位置参考数据 | Flight adapter 仅在服务端启用并以 `UNAVAILABLE` fail closed；Amadeus Test 仅用于开发集成验证，不向产品展示为实时结果。唯一匿名端点按每客户端每分钟 30 次限流，仅将用户显式点击的坐标映射为非权威国家/最近城市上下文，不成为旅行事实或持久化数据。 | 现在接 Activities、POI、Weather、Calendar、Nager.Holidays 或多个 OTA；地图位置参考不得变成地址、POI 或旅行 provider。 |
 | Visa / entry | 官方核验下一步；未来可接 Sherpa/IATA Timatic adapter | 未配置可靠数据源时只展示核验缺口与官方核验下一步。 | 以 LLM 或 Wikipedia 推断签证、代办、法律结论。 |
@@ -88,7 +89,7 @@ Agent 不能自行跨越以下边界：
 
 ### 必须存在的领域数据
 
-`user_profile`、`preference_fact`、`private_conversation`、`private_message`、`shared_trip`、`trip_member`、`consent_grant`、`constraint_snapshot`、`destination_candidate`、`itinerary_plan`、`plan_version`、`member_confirmation`、`visa_readiness_check`、`source_evidence`、`provider_offer`、`booking_execution`、`idempotency_record`、`audit_event`、`outbox_event`。
+`user_profile`、`preference_fact`、`memory_proposal`、`trip_memory_fact`、`private_conversation`、`private_message`、`shared_trip`、`trip_member`、`consent_grant`、`constraint_snapshot`、`destination_candidate`、`itinerary_plan`、`plan_version`、`member_confirmation`、`visa_readiness_check`、`source_evidence`、`provider_offer`、`booking_execution`、`idempotency_record`、`audit_event`、`outbox_event`。长期记忆实施细节见 [长期记忆实施方案](docs/long-term-memory-implementation.md)。
 
 必须由数据库或服务端规则保证：
 
@@ -98,6 +99,8 @@ Agent 不能自行跨越以下边界：
 4. `orchestration_request_id` 和 provider callback id 全局幂等。
 5. 每个价格、路线和 visa 输出有 `source` 与 `captured_at`；报价额外带 `expires_at`。无可验证数据只返回 `UNAVAILABLE`。
 6. 每个 `private_conversation` 仅属于一个用户，使用独立 `conversation_id`，可选关联一个 `trip_id`；消息正文不进入 snapshot、共享视图、日志、trace、metric 或 audit。仅在该 owner 对同一 thread 发起 Personal Agent turn 时，服务端可在固定轮次和上下文预算内将原文窗口发送给已配置的模型 provider；删除线程时删除正文。
+7. 个人长期事实只能由用户表单编辑或用户确认的提案写入；低风险行为聚合只可创建待确认提案。国籍、旅行证件、出生日期、健康或无障碍信息不得从对话或行为自动提取。
+8. Shared Agent 不得直读个人记忆表；它只能读取当前 Trip、当前授权、当前版本的 memory projection。个人事实、Trip memory 或授权变化必须使依赖 plan 和 confirmations 进入 `STALE`。
 
 ## 5. API 取舍与不可用语义
 

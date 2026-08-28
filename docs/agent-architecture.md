@@ -28,7 +28,7 @@
 
 自由 Agent-to-Agent 消息传递会导致未授权数据泄露、竞争写入、循环推理、成本不可控，以及无法说明某条结论是否仍有效。正式协作语言应是授权 snapshot，而不是 prompt。
 
-### 不做 RAG / 资料库
+### 结构化记忆，不做 RAG / 资料库
 
 当前 MVP 不建立 RAG、向量库、文档检索或 MCP knowledge server。事实源均为结构化数据：
 
@@ -38,6 +38,8 @@
 - provider_offers、source_evidence 与 visa_readiness_checks。
 
 三位用户、2–3 个固定候选目的地和结构化 provider 结果不构成非结构化知识检索问题。RAG 会增加索引更新、来源过期、误检索、prompt injection 与敏感数据暴露面，却不能解决本项目核心问题：授权边界和多成员方案一致性。
+
+长期记忆也采用结构化事实，而不是把私聊归档或模型摘要用作知识库。低风险行为只能生成待用户确认的提案；敏感资料（国籍、旅行证件、出生日期、健康和无障碍信息）只能通过 Profile 表单维护。Shared Agent 从不直读个人事实，而只消费当前 Trip 的 consent-derived memory projection；详细契约见 [长期记忆实施方案](long-term-memory-implementation.md)。
 
 ## 2. Agent 拓扑
 
@@ -74,6 +76,7 @@ Shared Trip Agent（仅共享 Skills）
 3. 在 constraint_snapshots 中持久化、版本化且不可变；
 4. 任一授权、约束、价格或库存变化都会使依赖它的 plan/confirmations 进入 STALE；
 5. Shared Agent 只能消费 snapshot，不能回读成员私有存储。
+6. memory projection 仅限当前 Trip；个人事实、Trip memory、授权或事实有效期变化均须在生成新 projection 前使依赖 plan/confirmations `STALE`。
 
 ## 3. Skill Architecture
 
