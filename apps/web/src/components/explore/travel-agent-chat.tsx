@@ -1,9 +1,11 @@
 "use client";
 
-import { ArrowUp, LoaderCircle, MessageCircle, RotateCw, Sparkles, X } from "lucide-react";
+import { ArrowUp, Check, Copy, LoaderCircle, MessageCircle, RotateCw, Sparkles, Square, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+
+import { ChatMarkdown } from "@/components/ui/chat-markdown";
 
 import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
@@ -395,17 +397,37 @@ export function TravelAgentChat({
             </div>
           ) : null}
           {messages.map((message) => (
-            <article key={message.id} data-role={message.role} className={message.role === "USER" ? "ml-auto max-w-[86%] rounded-[20px] rounded-tr-[6px] bg-sidebar px-4 py-3 text-sm leading-6 text-white shadow-sm" : "max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-sm leading-6 text-foreground"}>
-              <p>{message.content}</p>
+            <article key={message.id} data-role={message.role} className={message.role === "USER" ? "ml-auto max-w-[86%] rounded-[20px] rounded-tr-[6px] bg-sidebar px-4 py-3 text-sm leading-6 text-white shadow-sm" : "group/msg relative max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-foreground"}>
+              {message.role === "USER" ? (
+                <p>{message.content}</p>
+              ) : (
+                <>
+                  <ChatMarkdown content={message.content} />
+                  <CopyButton text={message.content} />
+                </>
+              )}
               {refusalMessageIds.has(message.id) ? <p className="mt-2 text-[10px] font-black uppercase tracking-[0.1em] text-primary">{t("verificationRequired")}</p> : null}
             </article>
           ))}
           {pendingTurn ? <p ref={pendingTurnAnchorRef} data-role="USER" data-pending="true" className="ml-auto max-w-[86%] rounded-[20px] rounded-tr-[6px] bg-sidebar px-4 py-3 text-sm leading-6 text-white shadow-sm opacity-80">{pendingTurn.question}</p> : null}
           {activeRunId ? (
-            <article data-role="ASSISTANT" data-streaming="true" className="max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-sm leading-6 text-foreground">
-              {streamState.text ? <p>{streamState.text}</p> : null}
-              <p role="status" className="mt-1 inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground"><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{t("sending")}</p>
-              <button type="button" onClick={stopActiveRun} disabled={cancelRun.isPending} className="mt-2 rounded-full border border-primary/20 bg-white px-3 py-1 text-xs font-bold text-primary disabled:opacity-50">{t("stop")}</button>
+            <article data-role="ASSISTANT" data-streaming="true" className="max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-foreground">
+              {streamState.text ? (
+                <ChatMarkdown content={streamState.text} />
+              ) : null}
+              <div className="mt-2 flex items-center gap-3">
+                <p role="status" className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+                  <span className="inline-flex gap-[3px]">
+                    <span className="size-[5px] animate-bounce rounded-full bg-primary/50 [animation-delay:0ms] motion-reduce:animate-none" />
+                    <span className="size-[5px] animate-bounce rounded-full bg-primary/50 [animation-delay:150ms] motion-reduce:animate-none" />
+                    <span className="size-[5px] animate-bounce rounded-full bg-primary/50 [animation-delay:300ms] motion-reduce:animate-none" />
+                  </span>
+                  {t("sending")}
+                </p>
+                <button type="button" onClick={stopActiveRun} disabled={cancelRun.isPending} className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-white px-3 py-1 text-xs font-bold text-primary disabled:opacity-50">
+                  <Square aria-hidden="true" className="size-3 fill-current" />{t("stop")}
+                </button>
+              </div>
             </article>
           ) : isSending ? <p role="status" className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground"><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{t("sending")}</p> : null}
           {visibleError ? (
@@ -438,6 +460,26 @@ function ThreadStatus({ status, onRetry, compact = false }: { status: ChatThread
       <span>{message}</span>
       {status === "error" && onRetry ? <button type="button" onClick={onRetry} className="font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30">{t("retryPrivateChat")}</button> : null}
     </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(() => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [text]);
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      aria-label="Copy"
+      className="absolute -bottom-1 right-2 grid size-7 place-items-center rounded-lg border border-transparent bg-transparent text-muted-foreground/0 transition group-hover/msg:border-border group-hover/msg:bg-white group-hover/msg:text-muted-foreground group-hover/msg:shadow-sm focus-visible:border-border focus-visible:bg-white focus-visible:text-muted-foreground focus-visible:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+    >
+      {copied ? <Check aria-hidden="true" className="size-3.5 text-primary" /> : <Copy aria-hidden="true" className="size-3.5" />}
+    </button>
   );
 }
 
