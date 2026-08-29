@@ -30,7 +30,6 @@ status: implemented
 
 ```ts
 const profileMemoryInputSchema = z.object({
-  userId: z.string().uuid(),
   tripId: z.string().uuid().optional(),
   fields: z.array(z.string()).default([]),
   includeSuggestions: z.boolean().default(false),
@@ -67,10 +66,11 @@ const profileMemoryOutputSchema = z.object({
 
 ## Handler 语义
 
-1. 调用 `listActiveFacts(input.userId)` 读取该 owner 的 active facts。
+0. owner 取自 `ctx.actorUserId`，**不是** input 字段。skill input 由模型填写，把 owner 放进 input 意味着模型可以写出"读另一个人的记忆"这个请求，「始终是已认证调用方」就只是约定而非规则。`actorUserId` 缺失时直接抛错，不退回任何默认值。
+1. 调用 `listActiveFacts(ownerUserId)` 读取该 owner 的 active facts。
 2. 按 `input.fields` 过滤（空数组则不过滤）。
 3. 丢弃未在 `MEMORY_FIELD_CATALOG` 注册的历史键——目录不再背书的字段不外发。
-4. `includeSuggestions` 为 `true` 时，追加 `listPendingProposals(input.userId)` 的候选。
+4. `includeSuggestions` 为 `true` 时，追加 `listSurfaceableProposals(ownerUserId)` 的候选。
 
 ## 强制约束
 
@@ -84,7 +84,7 @@ const profileMemoryOutputSchema = z.object({
 
 | code | 触发条件 | HTTP 状态 | 客户端可重试? |
 | --- | --- | --- | --- |
-| `INPUT_INVALID` | `input.fields` 不是字符串数组；`userId` 不是 UUID | 400 | 否（修正请求） |
+| `INPUT_INVALID` | `input.fields` 不是字符串数组；`tripId` 不是 UUID | 400 | 否（修正请求） |
 | `OUTPUT_INVALID` | 输出 schema 违规 | 422 | 否（修正 Skill 输出） |
 | `TIMEOUT` | handler 超过 2000ms | 504 | 是（同 payload） |
 | `TOOL_NOT_ALLOWED` | 仅注册期 — `allowedTools` 含非 `personal` scope | 403 | 否（修正 Skill 定义） |

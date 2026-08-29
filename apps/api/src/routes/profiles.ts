@@ -11,6 +11,10 @@ import {
   updateProfileSchema,
 } from "../types/schemas.js";
 import { createRequestContext } from "../utils/context.js";
+import {
+  deleteProfileFormMemory,
+  syncProfileFormToMemory,
+} from "../services/profile-form-memory.js";
 import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 
@@ -45,6 +49,13 @@ export async function profileRoutes(app: FastifyInstance) {
       userId: request.user.id,
       ...body,
     }).returning();
+
+    // The form is where a user states a preference outright, and a stated
+    // preference is what memory is built from — the columns alone are not
+    // projected anywhere.
+    await syncProfileFormToMemory({
+      ctx, userId: request.user.id, profileId: profile.id, body,
+    });
 
     await recordAudit({
       ctx,
@@ -111,6 +122,10 @@ export async function profileRoutes(app: FastifyInstance) {
       .where(eq(userProfiles.userId, request.user.id))
       .returning();
 
+    await syncProfileFormToMemory({
+      ctx, userId: request.user.id, profileId: updatedProfile.id, body,
+    });
+
     await recordAudit({
       ctx,
       action: "PROFILE_UPDATE",
@@ -128,6 +143,9 @@ export async function profileRoutes(app: FastifyInstance) {
   app.delete("/profiles/me", async (request) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
 
+    // Facts cannot outlive the profile they describe; left behind they would
+    // keep projecting into trips after the user asked for deletion.
+    await deleteProfileFormMemory({ userId: request.user.id });
     await db.delete(userProfiles).where(eq(userProfiles.userId, request.user.id));
 
     await recordAudit({

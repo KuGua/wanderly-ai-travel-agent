@@ -16,11 +16,15 @@ import { memoryFieldDefinition } from "../../memory/memory-field-catalog.js";
  * Pending proposals are returned as clearly-marked suggestions so the agent can
  * ask, but never as established facts. The behavioural evidence behind them —
  * counts aside — is not exposed.
+ *
+ * The owner comes from the authenticated context and is not an input. Skill
+ * input is model-supplied, so a `userId` field would be a request the model
+ * could write, and "always the authenticated caller" would be a convention
+ * rather than a rule. Long-term memory is the last place to leave that to
+ * convention.
  */
 
 export const profileMemoryInputSchema = z.object({
-  /** Owner whose memory is being read. Always the authenticated caller. */
-  userId: z.string().uuid(),
   /** Optional correlation only; it does not widen or narrow what is returned. */
   tripId: z.string().uuid().optional(),
   fields: z.array(z.string()).default([]),
@@ -57,11 +61,19 @@ export const profileMemorySkill: Skill<ProfileMemoryInput, ProfileMemoryOutput> 
   needsConfirm: false,
   input: profileMemoryInputSchema,
   output: profileMemoryOutputSchema,
-  async handler(_ctx, input) {
+  async handler({ ctx }, input) {
+    // The owner is whoever the task authenticated as, never anything the model
+    // asked for. Absent means the skill was invoked outside an authenticated
+    // task, which must fail rather than read a default.
+    const ownerUserId = ctx.actorUserId;
+    if (!ownerUserId) {
+      throw new Error("Skill invoked without an authenticated actor");
+    }
+
     const wanted = new Set(input.fields);
     const matches = (field: string) => wanted.size === 0 || wanted.has(field);
 
-    const facts = await listActiveFacts(input.userId);
+    const facts = await listActiveFacts(ownerUserId);
     const items = facts
       .filter((fact) => matches(fact.fieldKey))
       // Unregistered keys can exist from older rows; skip rather than emit a
@@ -78,7 +90,7 @@ export const profileMemorySkill: Skill<ProfileMemoryInput, ProfileMemoryOutput> 
     if (!input.includeSuggestions) return { items, suggestions: [] };
 
     // Only candidates that have cleared the full trigger rule are shown.
-    const proposals = await listSurfaceableProposals(input.userId);
+    const proposals = await listSurfaceableProposals(ownerUserId);
     const suggestions = proposals
       .filter((proposal) => matches(proposal.fieldKey))
       .map((proposal) => ({
