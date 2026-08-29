@@ -9,6 +9,8 @@ import { claimIdempotency } from "./idempotency-service.js";
 import { MemoryFieldRejectedError, replaceFact, type PreferenceFact } from "./preference-fact-service.js";
 import { validateMemoryFieldValue } from "../memory/memory-field-catalog.js";
 import { computeActivation } from "../memory/memory-activation.js";
+import { withMemorySpan } from "../memory/memory-spans.js";
+import { metrics } from "../observability/metrics.js";
 import {
   MEMORY_ACTIVATION_POLICY_V1,
   resolveMemoryActivationPolicy,
@@ -239,6 +241,34 @@ export type ObserveResult =
  * model output or an unconfirmed UI event (§3.2).
  */
 export async function observeBehavior(input: ObserveInput): Promise<ObserveResult> {
+  return withMemorySpan(
+    "memory.proposal.aggregate",
+    { operation: "observe", source: "behavior_aggregation" },
+    async () => {
+      const result = await aggregateObservation(input);
+      metrics.inc("memory_proposals_total", {
+        outcome: outcomeLabel(result),
+        source: "behavior_aggregation",
+      });
+      return {
+        result,
+        outcome: outcomeLabel(result),
+        // The observation window is capped, so a long-running habit drops its
+        // oldest dates rather than growing a timeline.
+        truncated: result.outcome === "AGGREGATED"
+          && result.proposal.observationCount > MEMORY_ACTIVATION_POLICY_V1.recentDepth,
+      };
+    },
+  );
+}
+
+/** Bounded label for a result; never the field, value or activation. */
+function outcomeLabel(result: ObserveResult): string {
+  if (result.outcome !== "AGGREGATED") return result.outcome.toLowerCase();
+  return result.proposal.observationCount === 1 ? "created" : "aggregated";
+}
+
+async function aggregateObservation(input: ObserveInput): Promise<ObserveResult> {
   const validation = validateMemoryFieldValue(input.fieldKey, input.value, "BEHAVIOR_AGGREGATION");
   if (!validation.ok) return { outcome: "REJECTED", reason: validation.reason };
 

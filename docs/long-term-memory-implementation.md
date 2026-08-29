@@ -321,6 +321,8 @@ Trip memory 端点已实现于 `src/routes/trip-memory.ts`。非成员一律 403
 
 标签只能使用上述有界枚举。新增 spans `memory.proposal.aggregate`、`memory.fact.mutate`、`memory.projection.build`，属性仅包含操作、结果、source、截断/失效布尔值；ID 仅作为 trace/log correlation context。
 
+**实现（`src/memory/memory-spans.ts`）：** 三个 span 统一走 `withMemorySpan`，属性集合由该 helper 的类型固定，而不是在各调用点自行 `startSpan`——trace 被长期保留且可读范围广，把属性选择集中到一处才谈得上审计。回调自行报告有界 outcome：这些操作会正常地停在 `duplicate_episode`、`rejected` 这类非错误状态上，只记 ok/error 会把它们抹平。异常只记 error class，因为 message 可能引用触发失败的值。
+
 Profile、trip memory 或 proposal 的用户删除必须删除存储值、任何未确认的 proposal，以及该字段的 candidate aggregates 与 `recent_observed_on` 观察窗口；proposal 进入 CONFIRMED/DISMISSED/EXPIRED 任一终态后也必须立即清空观察日期，不得长期保留行为轨迹。不从 immutable historical snapshot、plan 或已完成 booking 物理回写，但这些记录永不向新 Agent run 导出。删除后必须 stale 仍活跃的依赖 plan。日志、outbox、idempotency 与 audit 不得含可恢复 value，因此无需对其执行内容回填。
 
 ## 8. 开发阶段、顺序与交付物

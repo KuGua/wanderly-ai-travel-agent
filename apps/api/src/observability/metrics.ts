@@ -264,6 +264,9 @@ metrics.registerCounter("memory_fact_mutations_total", "Preference fact mutation
   operation: ["replace", "delete"],
   source: ["profile_form", "proposal_confirmation"],
 });
+metrics.registerCounter("memory_projection_build_total", "Memory namespace projections built for a snapshot.", {
+  result: ["built", "empty", "failed"],
+});
 metrics.registerCounter("memory_proposal_resolutions_total", "Proposal lifecycle transitions by bounded outcome.", {
   outcome: ["confirmed", "dismissed", "expired", "already_resolved", "not_found"],
 });

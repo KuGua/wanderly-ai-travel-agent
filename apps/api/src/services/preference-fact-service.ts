@@ -5,6 +5,8 @@ import { preferenceFacts } from "../db/schema.js";
 import type { RequestContext } from "../utils/context.js";
 import { recordAudit } from "./audit-service.js";
 import { invalidateForPersonalFact } from "./memory-invalidation-service.js";
+import { withMemorySpan } from "../memory/memory-spans.js";
+import { metrics } from "../observability/metrics.js";
 import {
   memoryFieldDefinition,
   validateMemoryFieldValue,
@@ -86,6 +88,23 @@ export type ReplaceFactInput = {
  * apart; callers already inside one pass `tx` to join it.
  */
 export async function replaceFact(input: ReplaceFactInput): Promise<PreferenceFact> {
+  return withMemorySpan(
+    "memory.fact.mutate",
+    { operation: "replace", source: input.path.toLowerCase() },
+    async () => {
+      const result = await replaceFactInner(input);
+      metrics.inc("memory_fact_mutations_total", {
+        operation: "replace",
+        source: input.path === "PROFILE_FORM" ? "profile_form" : "proposal_confirmation",
+      });
+      // A stated fact supersedes the previous version and stales the trips
+      // that were planned on it.
+      return { result, outcome: "replaced", invalidated: true };
+    },
+  );
+}
+
+async function replaceFactInner(input: ReplaceFactInput): Promise<PreferenceFact> {
   const validation = validateMemoryFieldValue(input.fieldKey, input.value, input.path);
   if (!validation.ok) throw new MemoryFieldRejectedError(input.fieldKey, validation.reason);
   const definition = validation.definition;
@@ -153,6 +172,31 @@ export async function replaceFact(input: ReplaceFactInput): Promise<PreferenceFa
  * rewritten; they simply stop being exported to new agent runs.
  */
 export async function deleteFact(input: {
+  ctx: RequestContext;
+  userId: string;
+  factId: string;
+  tx?: Tx;
+}): Promise<boolean> {
+  return withMemorySpan(
+    "memory.fact.mutate",
+    { operation: "delete", source: "profile_form" },
+    async () => {
+      const deleted = await deleteFactInner(input);
+      if (deleted) {
+        metrics.inc("memory_fact_mutations_total", {
+          operation: "delete", source: "profile_form",
+        });
+      }
+      return {
+        result: deleted,
+        outcome: deleted ? "deleted" : "not_found",
+        invalidated: deleted,
+      };
+    },
+  );
+}
+
+async function deleteFactInner(input: {
   ctx: RequestContext;
   userId: string;
   factId: string;

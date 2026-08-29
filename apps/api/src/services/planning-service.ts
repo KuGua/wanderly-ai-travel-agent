@@ -25,6 +25,8 @@ import {
   type MemoryProjectionInput,
 } from "./memory-projection-builder.js";
 import { safePublicExplanationTokensFor } from "../policy/constraint-field-catalog.js";
+import { withMemorySpan } from "../memory/memory-spans.js";
+import { metrics } from "../observability/metrics.js";
 import { createTravelProviders } from "../providers/live-provider-factory.js";
 import { modelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
@@ -342,17 +344,34 @@ export async function createConstraintSnapshot(params: {
       (consentedFieldsByUser[consent.userId] ??= []).push(consent.fieldKey);
     }
 
-    const memoryNamespace = buildMemoryNamespace({
-      aliases: projected.snapshot.memberAliases,
-      consentedFieldsByUser,
-      preferenceFacts: activeFacts,
-      tripFacts: factRows.map((f) => ({
-        ownerUserId: f.ownerUserId,
-        fieldKey: f.fieldKey,
-        kind: f.kind,
-        valueJson: f.valueJson,
-      })),
-    });
+    const memoryNamespace = await withMemorySpan(
+      "memory.projection.build",
+      { operation: "build", source: "snapshot" },
+      async () => {
+        try {
+          const built = buildMemoryNamespace({
+            aliases: projected.snapshot.memberAliases,
+            consentedFieldsByUser,
+            preferenceFacts: activeFacts,
+            tripFacts: factRows.map((f) => ({
+              ownerUserId: f.ownerUserId,
+              fieldKey: f.fieldKey,
+              kind: f.kind,
+              valueJson: f.valueJson,
+            })),
+          });
+          const empty = Object.keys(built.groupDecisions).length === 0
+            && Object.values(built.members).every((m) =>
+              Object.keys(m.profileFacts).length === 0
+              && Object.keys(m.tripOverrides).length === 0);
+          metrics.inc("memory_projection_build_total", { result: empty ? "empty" : "built" });
+          return { result: built, outcome: empty ? "empty" : "built" };
+        } catch (error) {
+          metrics.inc("memory_projection_build_total", { result: "failed" });
+          throw error;
+        }
+      },
+    );
 
     // v1 back-compat map: userId → consent-granted fields.
     const v1Shape: Record<string, unknown> = {};
