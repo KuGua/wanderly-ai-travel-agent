@@ -32,6 +32,8 @@ export interface ConstraintFieldDescriptor {
   residualInferenceWarningToken: string | null;
   safePublicExplanationTokens: readonly string[];
   proposalEligible: boolean;
+  /** HARD is only allowed when the server can prove it from selected evidence. */
+  hardVerification: "snapshot" | "flight_departure_time" | "unsupported";
 }
 
 const departureCitySchema = z.object({
@@ -96,6 +98,7 @@ export const CONSTRAINT_FIELD_CATALOG = {
     residualInferenceWarningToken: null,
     safePublicExplanationTokens: ["MATCHES_BRIEF_DEPARTURE"],
     proposalEligible: true,
+    hardVerification: "snapshot",
   },
   travel_date_window: {
     key: "travel_date_window",
@@ -106,12 +109,15 @@ export const CONSTRAINT_FIELD_CATALOG = {
     residualInferenceWarningToken: null,
     safePublicExplanationTokens: ["MATCHES_BRIEF_WINDOW"],
     proposalEligible: true,
+    hardVerification: "snapshot",
   },
   budget_max: {
     key: "budget_max",
     valueSchema: budgetMaxSchema,
     allowedVisibilities: ["TEAM_VISIBLE", "ORCHESTRATOR_CONFIDENTIAL"],
-    allowedStrengths: ["HARD", "SOFT"],
+    // A per-owner budget has no defined allocation or FX evidence in this MVP.
+    // Do not label it HARD until that contract exists; never silently waive it.
+    allowedStrengths: ["SOFT"],
     profileConsentRequired: true,
     residualInferenceWarningToken: "BUDGET_RESIDUAL_INFERENCE",
     safePublicExplanationTokens: [
@@ -119,12 +125,13 @@ export const CONSTRAINT_FIELD_CATALOG = {
       "SATISFIES_ALL_PRIVATE_CONSTRAINTS",
     ],
     proposalEligible: true,
+    hardVerification: "unsupported",
   },
   accessibility_need: {
     key: "accessibility_need",
     valueSchema: accessibilityNeedSchema,
     allowedVisibilities: ["TEAM_VISIBLE", "ORCHESTRATOR_CONFIDENTIAL"],
-    allowedStrengths: ["HARD", "SOFT"],
+    allowedStrengths: ["SOFT"],
     profileConsentRequired: true,
     residualInferenceWarningToken: "ACCESSIBILITY_RESIDUAL_INFERENCE",
     safePublicExplanationTokens: [
@@ -132,12 +139,13 @@ export const CONSTRAINT_FIELD_CATALOG = {
       "SATISFIES_ALL_PRIVATE_CONSTRAINTS",
     ],
     proposalEligible: true,
+    hardVerification: "unsupported",
   },
   special_schedule_limit: {
     key: "special_schedule_limit",
     valueSchema: specialScheduleLimitSchema,
     allowedVisibilities: ["TEAM_VISIBLE", "ORCHESTRATOR_CONFIDENTIAL"],
-    allowedStrengths: ["HARD", "SOFT"],
+    allowedStrengths: ["SOFT"],
     profileConsentRequired: false,
     residualInferenceWarningToken: "SCHEDULE_RESIDUAL_INFERENCE",
     safePublicExplanationTokens: [
@@ -145,6 +153,7 @@ export const CONSTRAINT_FIELD_CATALOG = {
       "SATISFIES_ALL_PRIVATE_CONSTRAINTS",
     ],
     proposalEligible: true,
+    hardVerification: "unsupported",
   },
   no_red_eye: {
     key: "no_red_eye",
@@ -155,6 +164,7 @@ export const CONSTRAINT_FIELD_CATALOG = {
     residualInferenceWarningToken: null,
     safePublicExplanationTokens: ["AVOIDS_RED_EYE"],
     proposalEligible: true,
+    hardVerification: "flight_departure_time",
   },
   accommodation_style: {
     key: "accommodation_style",
@@ -165,6 +175,7 @@ export const CONSTRAINT_FIELD_CATALOG = {
     residualInferenceWarningToken: "STYLE_RESIDUAL_INFERENCE",
     safePublicExplanationTokens: ["MATCHES_STYLE_PREFERENCE"],
     proposalEligible: true,
+    hardVerification: "unsupported",
   },
   travel_pace: {
     key: "travel_pace",
@@ -175,6 +186,7 @@ export const CONSTRAINT_FIELD_CATALOG = {
     residualInferenceWarningToken: "PACE_RESIDUAL_INFERENCE",
     safePublicExplanationTokens: ["MATCHES_PACE_PREFERENCE"],
     proposalEligible: true,
+    hardVerification: "unsupported",
   },
   interests: {
     key: "interests",
@@ -185,6 +197,7 @@ export const CONSTRAINT_FIELD_CATALOG = {
     residualInferenceWarningToken: null,
     safePublicExplanationTokens: ["MATCHES_INTERESTS"],
     proposalEligible: true,
+    hardVerification: "unsupported",
   },
 } as const satisfies Record<string, ConstraintFieldDescriptor>;
 

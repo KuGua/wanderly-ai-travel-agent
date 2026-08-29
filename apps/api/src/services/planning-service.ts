@@ -428,6 +428,22 @@ export function extractSnapshotV2Meta(authorizedData: unknown): SnapshotV2Meta |
 }
 
 /**
+ * The model/Shared Skills must never receive the legacy userId-keyed snapshot
+ * map or the server-only userId→alias lookup. Keep that compatibility shape
+ * available only to deterministic server readers.
+ */
+export function buildPlanningModelProjection(authorizedData: unknown): Record<string, unknown> {
+  const meta = extractSnapshotV2Meta(authorizedData);
+  if (!meta) return {};
+  return {
+    schemaVersion: 2,
+    teamVisible: meta.teamVisible,
+    orchestratorConfidential: meta.orchestratorConfidential,
+    projectionManifest: meta.projectionManifest,
+  };
+}
+
+/**
  * Generate a new plan based on the constraint snapshot.
  *
  * Phase 3 lifecycle:
@@ -527,7 +543,7 @@ export async function generatePlan(params: {
     allGround.push(...groundResult.data);
   }
 
-  const memberPreferences = snapshot.authorizedData;
+  const memberPreferences = buildPlanningModelProjection(snapshot.authorizedData);
   let candidatePlanData: Record<string, unknown>;
   if (params.agentTaskRunId && params.flightSearchPreferencesVersion) {
     const toolGateway = dependencies.modelGateway.generateStructuredPlanWithTools;
@@ -557,7 +573,7 @@ export async function generatePlan(params: {
         const modelArgs = flightSearchModelArgumentsSchema.parse(call.arguments);
         const result = await invokeSkill("flight.search", {
           ctx: params.ctx, snapshot: {
-            authorizedData: snapshot.authorizedData as Record<string, unknown>, departureCities: snapshot.departureCities as string[],
+            authorizedData: memberPreferences, departureCities: snapshot.departureCities as string[],
             destinationCandidates: snapshot.destinationCandidates as string[], travelDateStart: snapshot.travelDateStart ?? undefined, travelDateEnd: snapshot.travelDateEnd ?? undefined,
           },
           flightSearch: {

@@ -118,17 +118,19 @@ async function requireTripExists(tx: Tx, tripId: string): Promise<void> {
 
 async function requireFieldConsent(
   tx: Tx,
-  params: { tripId: string; userId: string; fieldKey: string },
+  params: { tripId: string; userId: string; fieldKey: string; sourceKind: TripConstraintProposalSourceKind },
 ): Promise<void> {
   const descriptor = CONSTRAINT_FIELD_CATALOG[params.fieldKey as keyof typeof CONSTRAINT_FIELD_CATALOG];
-  if (!descriptor?.profileConsentRequired) return;
+  // A form submission is a direct per-Trip owner command. Only a proposal
+  // derived by Personal Agent from a Profile field needs Profile consent.
+  if (params.sourceKind !== "PERSONAL_AGENT" || !descriptor?.profileConsentRequired) return;
 
-  const [grant] = await tx.select({ id: consentGrants.id }).from(consentGrants).where(and(
+  const grants = await tx.select({ fieldList: consentGrants.fieldList }).from(consentGrants).where(and(
     eq(consentGrants.tripId, params.tripId),
     eq(consentGrants.userId, params.userId),
     eq(consentGrants.granted, true),
-  )).limit(1);
-  if (!grant) {
+  ));
+  if (!grants.some((grant) => grant.fieldList?.includes(params.fieldKey))) {
     throw new ConstraintProposalServiceError(
       "FORBIDDEN",
       `An active consent grant is required for field "${params.fieldKey}"`,
@@ -463,7 +465,7 @@ export async function confirmConstraintProposal(params: {
       strength: params.strength,
     });
     await requireFieldConsent(tx, {
-      tripId: params.tripId, userId: params.ownerUserId, fieldKey: proposal.fieldKey,
+      tripId: params.tripId, userId: params.ownerUserId, fieldKey: proposal.fieldKey, sourceKind: proposal.sourceKind,
     });
 
     const [latestFact] = await tx.select({ revision: tripConstraintFacts.revision })
@@ -696,9 +698,6 @@ export async function upsertConstraintFactDirect(params: {
 
     await requireTripExists(tx, params.tripId);
     await requireOwnerMembership(tx, params.tripId, params.ownerUserId);
-    await requireFieldConsent(tx, {
-      tripId: params.tripId, userId: params.ownerUserId, fieldKey: params.fieldKey,
-    });
 
     const [latestFact] = await tx.select().from(tripConstraintFacts)
       .where(and(

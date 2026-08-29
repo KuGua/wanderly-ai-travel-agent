@@ -62,7 +62,7 @@ async function prepareReplanPrerequisites(tripId: string, userId: string): Promi
 }
 
 describe("constraint-proposal-service", () => {
-  it("proposes and confirms a budget fact with confidential visibility", async () => {
+  it("proposes and confirms a confidential SOFT budget fact", async () => {
     const owner = alice.id;
     const { tripId } = await provisionTripAndMember({ ownerUserId: owner });
     try {
@@ -73,7 +73,7 @@ describe("constraint-proposal-service", () => {
         envelope: {
           fieldKey: "budget_max",
           valueJson: { amountUsd: 2500 },
-          strength: "HARD",
+          strength: "SOFT",
           proposedVisibility: "ORCHESTRATOR_CONFIDENTIAL",
           sourceKind: "OWNER_FORM",
         },
@@ -84,7 +84,7 @@ describe("constraint-proposal-service", () => {
       const out = await confirmConstraintProposal({
         ctx, tripId, proposalId, ownerUserId: owner,
         visibility: "ORCHESTRATOR_CONFIDENTIAL",
-        strength: "HARD",
+        strength: "SOFT",
         idempotencyKey: `confirm-${tripId}-1`,
       });
       expect(out.factId).toBeTruthy();

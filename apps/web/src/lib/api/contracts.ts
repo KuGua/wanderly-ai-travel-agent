@@ -510,7 +510,10 @@ export const planAdoptionVoteSchema = z.object({
 
 export const adoptionVoteListResponseSchema = z.object({
   planId: z.string().uuid(),
-  votes: z.array(planAdoptionVoteSchema),
+  votesAccepted: z.number().int().nonnegative(),
+  votesRequired: z.number().int().nonnegative(),
+  hasBlocker: z.boolean(),
+  currentUserDecision: z.enum(["ACCEPT", "NEEDS_CHANGES"]).nullable(),
 }).strict();
 
 export const listedPlanSchema = z.object({

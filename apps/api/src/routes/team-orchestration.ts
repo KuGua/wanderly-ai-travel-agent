@@ -19,7 +19,7 @@ import {
 } from "../services/constraint-proposal-service.js";
 import {
   castVote,
-  listVotesForPlan,
+  getVoteSummary,
   PlanAdoptionServiceError,
 } from "../services/plan-adoption-service.js";
 import { listTripPlans } from "../services/plan-listing-service.js";
@@ -30,7 +30,6 @@ import {
   castAdoptionVoteRequestSchema,
   tripConstraintProposalSchema,
   tripConstraintFactSchema,
-  planAdoptionVoteSchema,
   uuidSchema,
 } from "../types/schemas.js";
 
@@ -65,7 +64,10 @@ const adoptionVoteResponseSchema = z.object({
 
 const adoptionVoteListResponseSchema = z.object({
   planId: uuidSchema,
-  votes: z.array(planAdoptionVoteSchema),
+  votesAccepted: z.number().int().nonnegative(),
+  votesRequired: z.number().int().nonnegative(),
+  hasBlocker: z.boolean(),
+  currentUserDecision: z.enum(["ACCEPT", "NEEDS_CHANGES"]).nullable(),
 }).strict();
 
 const listedPlanSchema = z.object({
@@ -126,7 +128,7 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
           valueJson: body.valueJson,
           strength: body.proposedStrength,
           proposedVisibility: body.proposedVisibility,
-          sourceKind: body.sourceKind,
+          sourceKind: "OWNER_FORM",
         },
         idempotencyKey,
       });
@@ -305,7 +307,7 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
   // ─── GET /plans/:planId/adoption-votes ────────────────────────────────────
   app.get("/plans/:planId/adoption-votes", async (request) => {
     const { planId } = planIdParamsSchema.parse(request.params);
-    const result = await listVotesForPlan({ planId });
+    const result = await getVoteSummary({ planId, userId: request.user.id });
     return adoptionVoteListResponseSchema.parse(result);
   });
 }

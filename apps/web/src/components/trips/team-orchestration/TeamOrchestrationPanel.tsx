@@ -205,8 +205,8 @@ function ProposalAdoptionCard({ planId, onCast, outcome }: ProposalAdoptionCardP
     ?? (votes.data
       ? {
         outcome: "CAST" as const,
-        votesAccepted: votes.data.votes.filter(v => v.decision === "ACCEPT").length,
-        votesRequired: 0,
+        votesAccepted: votes.data.votesAccepted,
+        votesRequired: votes.data.votesRequired,
       }
       : null);
 
