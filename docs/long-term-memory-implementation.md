@@ -228,6 +228,12 @@ type MemoryProjection = {
 };
 ```
 
+**实现：** namespace 落在 `authorized_data._meta.memory`（与 v2 的其他特权分区同处 `_meta`，与顶层 v1 兼容形状不冲突）。`members` 以 run-scoped alias 为键而非 userId——快照其余部分已对成员做别名化，唯独承载偏好的这一节若回填真实 id，等于把别名化撤销掉。
+
+profileFacts 来自 `preference_facts` 而非 profile 列：只有事实行带有版本链与目录注册信息，而这两者正是决定能否导出的依据。一条个人事实必须同时满足「字段已在 `MEMORY_FIELD_CATALOG` 注册」「`consentExportable: true`」「该成员对本 Trip 的有效 consent 覆盖该字段」三条才会出现，缺任一即不导出。敏感字段以 `consentExportable: false` 注册，因此是结构性排除，不依赖此处再维护一份名单。
+
+Shared Skill 一侧的唯一读取点是 `skills/shared/memory-projection-input.ts`：skill 嵌入 `sharedMemoryInputSchema`，调用 `readMemoryProjection` 取得已校验的 namespace，不得自行触碰 `authorized_data`。读取走 parse 而非 cast——快照是 JSONB，若不校验，任何进入 `_meta.memory` 的内容都会被原样交给模型。缺少 namespace 的旧快照返回空投影（照常规划，只是没有偏好），形状损坏则抛错。
+
 `authorized_data.memory` 只能由 `MemoryProjectionBuilder` 写入。任何 `field_key` 必须在服务端常量 `MEMORY_FIELD_CATALOG` 中注册其 value schema、敏感级别、允许 source、是否能自动建议、是否允许 consent export。未注册字段 fail closed。
 
 ## 5. 服务、Skill 与接口设计

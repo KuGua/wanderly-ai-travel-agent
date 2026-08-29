@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import { memoryFieldDefinition } from "../memory/memory-field-catalog.js";
+import { memoryProjectionSchema, type MemoryProjection } from "../types/schemas.js";
 import type {
   ConstraintSnapshotDataV2,
   ConstraintVisibility,
@@ -209,3 +211,95 @@ export function isManifestSupersession(params: {
 export type {
   ConstraintFieldKey,
 };
+
+// ─── Personal memory namespace (§4.4) ────────────────────────────────────────
+
+/**
+ * Builds `authorized_data._meta.memory`: the only route personal memory takes
+ * to the Shared Trip Agent.
+ *
+ * Everything here is deny-by-default. A profile fact appears only when its
+ * field is registered in the catalog, marked `consentExportable`, and covered
+ * by an active consent grant from that member for this trip. Missing any one of
+ * those leaves it out — a field the catalog does not know about cannot reach a
+ * shared plan by being added to a table.
+ *
+ * The sensitive set (nationality, date of birth, mobility notes) is registered
+ * with `consentExportable: false`, so it is excluded structurally rather than
+ * by a list that has to be kept in sync here.
+ */
+export interface MemoryNamespaceInput {
+  /** userId → run-scoped alias, from the same projection that built the snapshot. */
+  aliases: Readonly<Record<string, string>>;
+  /** Active grants; a member's consented field keys for this trip. */
+  consentedFieldsByUser: Readonly<Record<string, readonly string[]>>;
+  /** ACTIVE preference facts for the trip's members. */
+  preferenceFacts: readonly {
+    userId: string;
+    fieldKey: string;
+    value: unknown;
+  }[];
+  /** ACTIVE trip constraint facts, including the kind discriminator. */
+  tripFacts: readonly {
+    ownerUserId: string;
+    fieldKey: string;
+    kind: "MEMBER_CONSTRAINT" | "PERSONAL_OVERRIDE" | "GROUP_DECISION";
+    valueJson: unknown;
+  }[];
+}
+
+/**
+ * Trip memory values are stored wrapped as `{ value }` so the column can hold
+ * scalars and arrays alongside the orchestration constraints' object values.
+ */
+function unwrapTripValue(valueJson: unknown): unknown {
+  if (valueJson && typeof valueJson === "object" && !Array.isArray(valueJson)) {
+    const wrapper = valueJson as Record<string, unknown>;
+    if ("value" in wrapper) return wrapper.value;
+  }
+  return valueJson;
+}
+
+export function buildMemoryNamespace(input: MemoryNamespaceInput): MemoryProjection {
+  const members: MemoryProjection["members"] = {};
+  for (const alias of Object.values(input.aliases)) {
+    members[alias] = { profileFacts: {}, tripOverrides: {} };
+  }
+
+  for (const fact of input.preferenceFacts) {
+    const alias = input.aliases[fact.userId];
+    if (!alias) continue;
+
+    const definition = memoryFieldDefinition(fact.fieldKey);
+    if (!definition?.consentExportable) continue;
+
+    const consented = input.consentedFieldsByUser[fact.userId] ?? [];
+    if (!consented.includes(fact.fieldKey)) continue;
+
+    members[alias].profileFacts[fact.fieldKey] = fact.value;
+  }
+
+  const groupDecisions: Record<string, unknown> = {};
+  for (const fact of input.tripFacts) {
+    const definition = memoryFieldDefinition(fact.fieldKey);
+    if (!definition) continue;
+
+    if (fact.kind === "GROUP_DECISION") {
+      // A group decision belongs to the trip, so it is not filed under a member.
+      if (!definition.groupDecidable) continue;
+      groupDecisions[fact.fieldKey] = unwrapTripValue(fact.valueJson);
+      continue;
+    }
+
+    if (fact.kind !== "PERSONAL_OVERRIDE") continue; // orchestration constraints
+    if (!definition.tripOverridable) continue;
+
+    const alias = input.aliases[fact.ownerUserId];
+    if (!alias) continue;
+    members[alias].tripOverrides[fact.fieldKey] = unwrapTripValue(fact.valueJson);
+  }
+
+  // Parsed rather than cast: this is the boundary personal data crosses, so a
+  // shape that drifts must fail here instead of reaching a shared plan.
+  return memoryProjectionSchema.parse({ members, groupDecisions });
+}

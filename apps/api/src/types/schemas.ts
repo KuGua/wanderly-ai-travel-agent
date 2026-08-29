@@ -729,6 +729,28 @@ export const constraintSnapshotDataV2Schema = z.object({
   travelDateEnd: dateStr.optional(),
 }).strict();
 
+/**
+ * `authorized_data._meta.memory` — the only route personal memory takes to the
+ * Shared Trip Agent (docs/long-term-memory-implementation.md §4.4).
+ *
+ * Members are keyed by their run-scoped alias, never by user id: the rest of
+ * the v2 snapshot already aliases members, and projecting raw ids here would
+ * undo that for the one section that carries preferences.
+ *
+ * Values are whatever the field's catalog schema allows, so they stay
+ * `unknown` here; the catalog is what decides a field may appear at all.
+ */
+export const memoryProjectionSchema = z.object({
+  members: z.record(z.string().min(1), z.object({
+    /** Stable profile facts this member consented to export to this trip. */
+    profileFacts: z.record(z.string(), z.unknown()),
+    /** This-trip overrides, which apply to planning without touching profile. */
+    tripOverrides: z.record(z.string(), z.unknown()),
+  }).strict()),
+  /** Decisions belonging to the trip rather than to any one member. */
+  groupDecisions: z.record(z.string(), z.unknown()),
+}).strict();
+
 export const tripConstraintProposalsResponseSchema = z.object({
   proposals: z.array(tripConstraintProposalSchema),
 }).strict();
@@ -785,6 +807,7 @@ export type PlanAdoptionVotesResponse = z.infer<typeof planAdoptionVotesResponse
 export type ProjectedConstraint = z.infer<typeof projectedConstraintSchema>;
 export type ConstraintSnapshotProjectionManifestEntry = z.infer<typeof constraintSnapshotProjectionManifestEntrySchema>;
 export type ConstraintSnapshotDataV2 = z.infer<typeof constraintSnapshotDataV2Schema>;
+export type MemoryProjection = z.infer<typeof memoryProjectionSchema>;
 export type TripConstraintProposalsResponse = z.infer<typeof tripConstraintProposalsResponseSchema>;
 export type TripConstraintsResponse = z.infer<typeof tripConstraintsResponseSchema>;
 export type TripConstraintsOwnerResponse = z.infer<typeof tripConstraintsOwnerResponseSchema>;

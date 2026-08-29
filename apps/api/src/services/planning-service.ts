@@ -8,9 +8,10 @@ import {
   tripSearchPreferences,
   tripConstraintFacts,
   tripMembers,
+  preferenceFacts,
   providerSearchRuns,
 } from "../db/schema.js";
-import { eq, and, desc, gt } from "drizzle-orm";
+import { eq, and, desc, gt, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { buildAuthorizedData, getActiveConsents } from "./consent-service.js";
 import {
@@ -19,6 +20,7 @@ import {
   fingerprintFromSnapshot,
 } from "./memory-source-fingerprint.js";
 import {
+  buildMemoryNamespace,
   buildMemoryProjection,
   type MemoryProjectionInput,
 } from "./memory-projection-builder.js";
@@ -285,6 +287,7 @@ export async function createConstraintSnapshot(params: {
       strength: tripConstraintFacts.strength,
       visibility: tripConstraintFacts.visibility,
       revision: tripConstraintFacts.revision,
+      kind: tripConstraintFacts.kind,
     }).from(tripConstraintFacts).where(and(
       eq(tripConstraintFacts.tripId, params.tripId),
       eq(tripConstraintFacts.status, "ACTIVE"),
@@ -321,6 +324,35 @@ export async function createConstraintSnapshot(params: {
     };
 
     const projected = buildMemoryProjection(projectionInput);
+
+    // The personal memory namespace (§4.4). Built from preference facts rather
+    // than the profile columns the v1 shape reads, because a fact carries the
+    // version chain and the catalog registration that decide exportability.
+    const activeFacts = memberIdsResolved.length === 0 ? [] : await tx.select({
+      userId: preferenceFacts.userId,
+      fieldKey: preferenceFacts.fieldKey,
+      value: preferenceFacts.fieldValue,
+    }).from(preferenceFacts).where(and(
+      inArray(preferenceFacts.userId, memberIdsResolved),
+      eq(preferenceFacts.status, "ACTIVE"),
+    ));
+
+    const consentedFieldsByUser: Record<string, string[]> = {};
+    for (const consent of consents) {
+      (consentedFieldsByUser[consent.userId] ??= []).push(consent.fieldKey);
+    }
+
+    const memoryNamespace = buildMemoryNamespace({
+      aliases: projected.snapshot.memberAliases,
+      consentedFieldsByUser,
+      preferenceFacts: activeFacts,
+      tripFacts: factRows.map((f) => ({
+        ownerUserId: f.ownerUserId,
+        fieldKey: f.fieldKey,
+        kind: f.kind,
+        valueJson: f.valueJson,
+      })),
+    });
 
     // v1 back-compat map: userId → consent-granted fields.
     const v1Shape: Record<string, unknown> = {};
@@ -359,6 +391,7 @@ export async function createConstraintSnapshot(params: {
         teamVisible: projected.snapshot.teamVisible,
         orchestratorConfidential: projected.snapshot.orchestratorConfidential,
         projectionManifest: projected.snapshot.projectionManifest,
+        memory: memoryNamespace,
       },
     };
 
