@@ -108,10 +108,12 @@ flowchart LR
 ### FR-2 共享行程工作台与授权
 
 1. 创建者可创建一个共享行程并邀请另外两位测试用户加入。
-2. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
-3. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
-4. 成员更新授权或本次约束时，当前方案标记为过期并触发重算前确认。
-5. Team memory 仅属于当前 Trip。Personal Agent 只可生成待 owner 确认的结构化约束提案，不能自动共享。已确认约束可选择 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL`：后者只供服务端 Shared Agent 编排，不向同行展示具体值或归属，但用户须知方案结果可能间接反映该约束。Shared Agent 只能读取服务端按当前 consent 构建的最小化 memory projection，不能直接读取成员的 Profile、个人长期记忆或私有对话；任何投影来源变更均使依赖方案过期。
+2. 外部邀请入口必须使用不可猜测、一次性的 invitation token，不得以 URL 中的 Trip ID 授权或读取数据。登录且 token 与受邀账号绑定后，才可查看最小行程摘要、必需成员身份与有效期；无效、过期、撤回、已处理或错账号邀请返回同一最小不可用结果。
+3. 受邀人可显式接受或拒绝。接受只创建所需 membership 与私有默认 thread，且必须幂等；拒绝不得创建 membership/thread，并记录独立审计事件。接受后唯一主操作为设置本次共享范围，不得自动授予 consent 或写入 snapshot。
+4. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
+5. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
+6. 成员更新授权或本次约束时，当前方案标记为过期并触发重算前确认。
+7. Team memory 仅属于当前 Trip。Personal Agent 只可生成待 owner 确认的结构化约束提案，不能自动共享。已确认约束可选择 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL`：后者只供服务端 Shared Agent 编排，不向同行展示具体值或归属，但用户须知方案结果可能间接反映该约束。Shared Agent 只能读取服务端按当前 consent 构建的最小化 memory projection，不能直接读取成员的 Profile、个人长期记忆或私有对话；任何投影来源变更均使依赖方案过期。
 
 ### FR-3 端到端行程编排
 

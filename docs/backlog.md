@@ -52,11 +52,12 @@
 **Acceptance criteria:**
 
 1. Organizer can create one shared trip and invite two additional test travelers.
-2. Each traveler can separately approve or decline sharing each relevant profile field and their nationality/entry data.
-3. Shared trip shows only approved fields with member and consent source; private chat/history is never displayed.
-4. Revoking a shared field immediately expires affected plan and visa outputs.
-5. A member without a Profile can join and enter only trip-specific data.
-6. Shared Agent receives current-Trip memory only through the consent-derived snapshot projection; it cannot query a member Profile, preference fact, private thread or a prior Trip's memory directly. A projected memory change invalidates the active plan and confirmations.
+2. An invited traveler can open a token-bound invitation page, see only the authenticated decision summary, then explicitly accept or decline; accepting leads only to sharing-scope setup and does not grant consent.
+3. Each traveler can separately approve or decline sharing each relevant profile field and their nationality/entry data.
+4. Shared trip shows only approved fields with member and consent source; private chat/history is never displayed.
+5. Revoking a shared field immediately expires affected plan and visa outputs.
+6. A member without a Profile can join and enter only trip-specific data.
+7. Shared Agent receives current-Trip memory only through the consent-derived snapshot projection; it cannot query a member Profile, preference fact, private thread or a prior Trip's memory directly. A projected memory change invalidates the active plan and confirmations.
 
 ### H3 — Orchestrate a personalized multi-service trip
 

@@ -681,6 +681,22 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The removed owner cannot cause an assistant message to persist after task pickup.
 - The thread turn endpoint never accepts a client `tripId` or creates/replaces a Trip; Explore initialization is covered separately by TS-EXPLORE-TRIP-1.
 
+### TS-INVITATION-JOIN-1 — Token-bound invitation decision
+
+**Stories:** H2, S1
+
+**Steps:**
+
+1. Create an active Trip invitation and open `/trips/join/:inviteToken` while signed out, then while signed in as the invited user.
+2. Call invitation preview, accept and decline with a valid token; repeat with a Trip UUID substituted for the token, an expired/revoked/declined token, and a valid token while signed in as another user.
+3. Accept concurrently twice, then inspect memberships, default threads and audit events. Decline a separate invitation and inspect the same records.
+
+**Expected outcomes:**
+
+- No trip facts render before authentication. The preview exposes only decision-critical summary fields after token and account binding; all unavailable token states return the same minimal response and disclose no trip/member/inviter metadata.
+- Acceptance is idempotent and creates at most one required membership and one recipient-owned default thread. The post-success primary action is setting the sharing scope; acceptance itself grants no consent or snapshot fields.
+- Decline creates no membership or thread and records `TRIP_INVITATION_DECLINE`; creator revocation remains distinct. Audit summaries contain IDs/status only, never the raw token or private profile data.
+
 ### TS-EXPLORE-TRIP-1 — Create a Draft Trip only on first submitted exploration message
 
 **Stories:** H1a, H1, S1

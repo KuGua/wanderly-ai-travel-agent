@@ -53,6 +53,9 @@ import type {
   MobilitySearchResponse,
   MobilityOfferSelectionRequest,
   MobilityOfferSelectionResponse,
+  InvitationPreviewResponse,
+  AcceptInvitationResponse,
+  DeclineInvitationResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -60,6 +63,10 @@ export interface TravelApi {
   updateMyProfile(input: UpdateProfileInput): Promise<UpdateProfileResponse>;
   getTrips(): Promise<TripsResponse>;
   getTrip(tripId: string): Promise<TripDetailResponse>;
+  // Optional while older fixtures and API adapters adopt the invitation flow.
+  getInvitationPreview?(inviteToken: string): Promise<InvitationPreviewResponse>;
+  acceptInvitation?(inviteToken: string): Promise<AcceptInvitationResponse>;
+  declineInvitation?(inviteToken: string): Promise<DeclineInvitationResponse>;
   getLocationReference(input: LocationReferenceInput): Promise<LocationReferenceResponse>;
   getLocationIntroduction(input: LocationIntroductionInput, options?: { signal?: AbortSignal }): Promise<LocationIntroductionResponse>;
   getTripThreads(tripId: string): Promise<ThreadsResponse>;

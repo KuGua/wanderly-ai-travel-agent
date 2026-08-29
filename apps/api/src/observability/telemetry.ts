@@ -4,6 +4,8 @@ import type { RequestContext } from "../utils/context.js";
 import { getActiveSpan } from "./tracing.js";
 
 export const LOGGER_REDACT_PATHS = [
+  // Invitation tokens are part of an external URL and act as credentials.
+  "req.url",
   "req.headers.authorization",
   "req.headers.cookie",
   "req.headers['x-api-key']",

@@ -117,6 +117,35 @@ describe("HttpTravelApi private conversation", () => {
   });
 });
 
+describe("HttpTravelApi invitation join", () => {
+  it("uses an opaque token for preview, accept, and decline instead of a trip ID", async () => {
+    const token = "a".repeat(43);
+    const preview = {
+      trip: { name: "Kyoto together", destinationCandidates: ["Kyoto"], travelDateStart: null, travelDateEnd: null },
+      membership: "MEMBER" as const,
+      isRequired: true as const,
+      expiresAt: CREATED_AT,
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(preview))
+      .mockResolvedValueOnce(jsonResponse({ tripId: "99999999-9999-4999-8999-999999999999", membership: "MEMBER", defaultThread: { id: THREAD_ID, tripId: "99999999-9999-4999-8999-999999999999", isDefault: true } }))
+      .mockResolvedValueOnce(jsonResponse({ declined: true }));
+    const api = new HttpTravelApi("https://api.example.test", fetchMock);
+
+    await api.getInvitationPreview(token);
+    await api.acceptInvitation(token);
+    await api.declineInvitation(token);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `https://api.example.test/api/v1/trip-invitations/${token}`,
+      `https://api.example.test/api/v1/trip-invitations/${token}/accept`,
+      `https://api.example.test/api/v1/trip-invitations/${token}/decline`,
+    ]);
+    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("POST");
+    expect((fetchMock.mock.calls[2][1] as RequestInit).method).toBe("POST");
+  });
+});
+
 function thread() {
   return {
     id: THREAD_ID,
