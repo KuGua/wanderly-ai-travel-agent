@@ -14,6 +14,11 @@ import { eq, and, desc, gt } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { buildAuthorizedData, getActiveConsents } from "./consent-service.js";
 import {
+  MemorySourceChangedError,
+  computeMemorySourceFingerprint,
+  fingerprintFromSnapshot,
+} from "./memory-source-fingerprint.js";
+import {
   buildMemoryProjection,
   type MemoryProjectionInput,
 } from "./memory-projection-builder.js";
@@ -343,6 +348,13 @@ export async function createConstraintSnapshot(params: {
       ...v1Shape,
       _meta: {
         schemaVersion: 2,
+        // Identities and versions of the projection's sources, so the commit
+        // gate can tell whether memory moved during the run (§6).
+        memorySourceFingerprint: await computeMemorySourceFingerprint({
+          tripId: params.tripId,
+          memberUserIds: memberIdsResolved,
+          tx,
+        }),
         memberAliases: projected.snapshot.memberAliases,
         teamVisible: projected.snapshot.teamVisible,
         orchestratorConfidential: projected.snapshot.orchestratorConfidential,
@@ -590,6 +602,23 @@ export async function generatePlan(params: {
       });
       if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
     }
+
+    // Consent can be revoked, a preference edited or a trip override changed
+    // while the model was working. Re-derive the projection sources through
+    // this transaction; if they moved, the validated plan is discarded rather
+    // than made authoritative on memory that no longer exists (§6).
+    const recordedFingerprint = fingerprintFromSnapshot(snapshot.authorizedData);
+    if (recordedFingerprint !== null) {
+      const currentFingerprint = await computeMemorySourceFingerprint({
+        tripId: params.tripId,
+        memberUserIds: params.memberIds,
+        tx,
+      });
+      if (currentFingerprint !== recordedFingerprint) {
+        throw new MemorySourceChangedError(params.snapshotId);
+      }
+    }
+
     const outputMode = params.outputMode ?? "ACTIVATE";
     const insertStatus = outputMode === "ACTIVATE" ? "ACTIVE" : "PROPOSED";
     const [plan] = await tx.insert(itineraryPlans).values({

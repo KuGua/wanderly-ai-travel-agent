@@ -252,6 +252,22 @@ metrics.registerCounter("location_reference_requests_total", "Offline map locati
   outcome: ["reference", "no_reference", "unavailable", "rate_limited"],
 });
 
+// docs/long-term-memory-implementation.md section 7. Bounded enums only:
+// field keys, values, observation dates, trip ids and activation are all
+// forbidden as labels — they would be high-cardinality and, worse, would leak
+// what the product remembers about a person.
+metrics.registerCounter("memory_proposals_total", "Behaviour-derived memory proposals by bounded outcome.", {
+  outcome: ["created", "aggregated", "duplicate_episode", "in_cooldown", "rejected"],
+  source: ["behavior_aggregation"],
+});
+metrics.registerCounter("memory_fact_mutations_total", "Preference fact mutations by bounded operation.", {
+  operation: ["replace", "delete"],
+  source: ["profile_form", "proposal_confirmation"],
+});
+metrics.registerCounter("memory_proposal_resolutions_total", "Proposal lifecycle transitions by bounded outcome.", {
+  outcome: ["confirmed", "dismissed", "expired", "already_resolved", "not_found"],
+});
+
 // S4 / docs/location-introduction-cache-implementation.md §9. Anonymous
 // location-introduction requests by bounded outcome, generation latency,
 // and aggregate cache row counts. Identifiers (sourceId, canonicalPlaceId,

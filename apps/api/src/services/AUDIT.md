@@ -113,6 +113,26 @@ Exactly one: `audit-service.ts:78` inside `recordAudit`. There are no other
 callers; if you need to validate a value before calling `recordAudit`, you
 must call `whitelistSummary` directly.
 
+## Long-term memory actions
+
+长期记忆的每个写操作都记审计，summary **只允许** action、field category、source、
+status、count 与关联 ID，**禁止**出现 value、value hash、聊天正文、国籍、证件或行为时间线
+（见 [long-term-memory-implementation.md](../../../docs/long-term-memory-implementation.md) §7）。
+
+| Action | 触发点 | summary 允许字段 |
+| --- | --- | --- |
+| `MEMORY_PROPOSAL_CREATE` | `memory-proposal-service.ts:observeBehavior` | `fieldCategory`, `source`, `observationCount` |
+| `MEMORY_PROPOSAL_CONFIRM` | `memory-proposal-service.ts:confirmProposal` | `fieldCategory`, `observationCount` |
+| `MEMORY_PROPOSAL_DISMISS` | `memory-proposal-service.ts:dismissProposal` | `observationCount` |
+| `PREFERENCE_FACT_UPDATE` | `preference-fact-service.ts:replaceFact` | `fieldCategory`, `source`, `superseded` |
+| `PREFERENCE_FACT_DELETE` | `preference-fact-service.ts:deleteFact` | `fieldCategory` |
+| `TRIP_MEMORY_UPDATE` | `TripMemoryService`（待实现） | `fieldCategory`, `kind`, `source` |
+| `TRIP_MEMORY_DELETE` | `TripMemoryService`（待实现） | `fieldCategory`, `kind` |
+| `MEMORY_PROJECTION_CREATE` | `MemoryProjectionBuilder`（待实现） | `memberCount`, `fieldCount` |
+| `MEMORY_INVALIDATION` | `MemoryInvalidationService`（待实现） | `scope`, `count` |
+
+回归覆盖：`tests/memory-preference-facts.test.ts` 断言审计行中不含事实值。
+
 ## Consumers
 
 - Every service that calls `recordAudit`:

@@ -40,7 +40,12 @@ export type AuditAction =
   | "TRIP_PLACE_PROPOSED"
   | "TRIP_PLACE_ADOPTED"
   | "TRIP_PLACE_REVOKED"
-  | "RESEARCH_RESULT_RECORDED";
+  | "RESEARCH_RESULT_RECORDED"
+  // Long-term memory (docs/long-term-memory-implementation.md section 7):
+  | "MEMORY_PROPOSAL_CREATE" | "MEMORY_PROPOSAL_CONFIRM" | "MEMORY_PROPOSAL_DISMISS"
+  | "PREFERENCE_FACT_UPDATE" | "PREFERENCE_FACT_DELETE"
+  | "TRIP_MEMORY_UPDATE" | "TRIP_MEMORY_DELETE"
+  | "MEMORY_PROJECTION_CREATE" | "MEMORY_INVALIDATION";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
   [key: string]: AuditSummaryValue;
