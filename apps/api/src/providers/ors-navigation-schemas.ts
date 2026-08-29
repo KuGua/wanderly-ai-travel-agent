@@ -14,8 +14,6 @@ import { z } from "zod";
  * but only one is required.
  */
 
-const isoDateTime = z.string().datetime({ offset: true });
-
 export const orsRouteSummarySchema = z.object({
   distance: z.number().min(0),
   duration: z.number().min(0),

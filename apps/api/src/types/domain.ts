@@ -102,6 +102,33 @@ export interface GroundOffer {
   capturedAt: string;
 }
 
+/**
+ * Normalized, non-bookable activity evidence returned by the provider-neutral
+ * activities Tool. Viator click-off URLs and currency-less price amounts are
+ * deliberately excluded from this contract.
+ */
+export interface ActivityEvidence {
+  id: string;
+  providerOfferId: string;
+  providerName: "viator";
+  queryId: string;
+  destination: string;
+  title: string;
+  thumbnailUrl: string;
+  rating: number | null;
+  reviewCount: number;
+  freeCancellation: boolean;
+  durationMinutes: {
+    fixed: number | null;
+    from: number | null;
+    to: number | null;
+  };
+  category: string | null;
+  source: "Viator Experiences MCP";
+  capturedAt: string;
+  expiresAt: string;
+}
+
 export interface VisaChecklistItem {
   item: string;
   source: string;

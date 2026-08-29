@@ -808,20 +808,20 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 1. Confirm activity search preferences, create a trip snapshot with two controlled origins and two destination candidates, then accept a `PLAN` command.
 2. Configure the task scheduler to enable both flight and activities sub-stages; drive the Worker with a deterministic model double that requests `activities.search` for every destination candidate independently of any flight call.
-3. Verify each Tool request against the task snapshot, controlled destination list, server-owned `ActivityDestinationReference` and accepted preference version; reject browser/model coordinates, radius, free-text destination and a theme outside the fixed allow-list.
-4. Inspect only normalized Shared `provider_search_runs` rows with `category='activity'`; assert the normalized output and persistence never contain `bookingLink`.
-5. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, a lost lease, and a 429 from the shared Amadeus quota.
-6. Disable the activities sub-stage via configuration while keeping the flight sub-stage enabled; verify it does not schedule activities research. With the sub-stage enabled but unavailable, verify a safe `RESEARCH_UNAVAILABLE` result is displayed instead of an `ACTIVE` plan.
+3. Verify each Tool request against the task snapshot, controlled destination list and accepted preference version; reject browser/model coordinates, free-text query, provider URL/session ID and a theme outside the fixed allow-list.
+4. Inspect only normalized Shared `provider_search_runs` rows with `category='activity'`; assert Tool output and persistence contain neither raw MCP payload, `clickOffToLander`/booking link nor currency-less `fromPrice`.
+5. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, a lost lease, MCP schema drift and a Viator MCP 429.
+6. Disable the activities sub-stage via configuration while keeping the flight sub-stage enabled; verify it does not schedule activities research. With the sub-stage enabled but unavailable, verify a safe `COMPLETED_WITH_GAPS` research result is displayed without any activity evidence or booking authority.
 
 **Expected outcomes:**
 
 - The HTTP command returns `202` with a run ID; browser disconnect does not cancel it.
-- Only same-task, same-snapshot `LIVE` activities evidence fills a matrix cell. Wrong-task/wrong-snapshot evidence and `UNAVAILABLE` never satisfy coverage.
-- The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, destination coordinates/radius, dates or themes; raw Amadeus payloads, OAuth values, booking links and private snapshot data never leave the server boundary.
-- A 429 response on activities does not consume flight quota; a 429 on flight does not impact activities. The per-endpoint limiter enforces independent buckets and the run continues with whichever cells remain `LIVE`.
-- Final `ACTIVE` plan synthesis and atomic plan/task completion transaction are rejected unless every required service matrix is live, the task is still `RUNNING` with its lease, and the accepted preference version is still current. A gap persists only a safe, non-confirmable `RESEARCH_UNAVAILABLE` summary with service/candidate/reason codes.
-- Flight and activities evidence are distinct categories with independent staleness triggers and offer expiry; the unavailable summary is not evidence and cannot be selected by a plan.
-- Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, matrix and bounded-tool-loop failures are terminal and create no active plan.
+- Only same-task, same-snapshot `LIVE` activities data becomes evidence. A same-task `UNAVAILABLE` row satisfies the required-attempt matrix but becomes a bounded service gap; wrong-task/wrong-snapshot rows and `MISSING` never satisfy coverage.
+- The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, destination coordinates, free-text searches, dates or themes; raw MCP payloads, session IDs, currency-less prices, click-off links and private snapshot data never leave the server boundary.
+- A Viator MCP 429 returns bounded `RATE_LIMITED` immediately and does not retry without a provider reset window. Activities and Amadeus Flight have independent credentials/configuration and failure domains.
+- Final atomic plan/task completion is rejected when any activities cell is `MISSING`, the task has lost its `RUNNING` lease, or the accepted preference version changed. An `UNAVAILABLE` cell persists only a safe `COMPLETED_WITH_GAPS` summary with service/candidate/reason codes; it never creates an activity offer or source evidence.
+- Flight and activities evidence are distinct categories with independent staleness triggers and application-controlled freshness expiry; the unavailable summary is not evidence and cannot be selected by a plan.
+- Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, `MISSING` matrix and bounded-tool-loop failures are terminal; a bounded provider `UNAVAILABLE` result is a non-commercial gap, not invented evidence.
 - An activities offer whose `expires_at` has passed causes the dependent plan to enter `STALE` independent of any flight offer expiry.
 
 ### TS-ACTIVITIES-TOOL-2 — Personal Agent activities search with owner-scoped evidence
@@ -840,7 +840,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 **Expected outcomes:**
 
-- The Personal Agent calls the same Amadeus endpoint through the same injected OAuth token provider as Shared, but the request context does not include a snapshot.
+- This scenario remains disabled until the Personal streaming tool-loop and owner-scoped evidence store are implemented. Enabling Shared `activities.search` alone must not register the Tool for Personal Agent.
 - `personal_provider_search_runs` records the run separately; every Shared repository, context builder, matrix and validator rejects these rows and Personal conversation text.
 - The Personal Agent's evidence does not directly modify `itinerary_plans`, `constraint_snapshots`, or trigger any `STALE` transition on existing plans.
 - A subsequent Shared planning run cannot reference conversation text or a personal run row. Only an owner-confirmed, schema-valid Trip constraint may enter its server-built snapshot projection.

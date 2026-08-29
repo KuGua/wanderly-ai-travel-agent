@@ -49,11 +49,14 @@ export interface LLMGatewayOptions {
 const parsedCompletionSchema = z.object({
   plan: z.object({
     destination: z.string().min(1),
+    destinationCandidatesEvaluated: z.array(z.string().min(1)).min(1).optional(),
     flights: z.array(z.unknown()),
     stays: z.array(z.unknown()),
     ground: z.array(z.unknown()),
+    activities: z.array(z.unknown()).optional(),
     generatedAt: z.string().min(1),
     constraintReferences: z.array(z.string().min(1)).optional(),
+    publicExplanationTokens: z.array(z.string().min(1)).optional(),
   }).strict(),
 }).strict();
 
@@ -448,6 +451,7 @@ export class LLMGateway implements ModelGateway {
 
   async generateStructuredPlanWithTools(params: {
     destination: string;
+    destinationCandidates?: string[];
     stays: StayOffer[];
     ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;
@@ -469,14 +473,16 @@ export class LLMGateway implements ModelGateway {
     const messages: Array<Record<string, unknown>> = [
       {
         role: "system",
-        content: "You are the Shared Trip planning skill. Use flight.search when flight evidence is needed. "
+        content: "You are the Shared Trip planning skill. Use flight.search for every controlled origin/destination cell and activities.search for every controlled destination when those tools are available. "
           + "Tool arguments are ordinary search parameters only; never invent authority fields. "
+          + "Never invent, alter, or infer provider evidence, prices, currencies, links, or expiry. "
           + "After research, return exactly one JSON object with a top-level plan field.",
       },
       {
         role: "user",
         content: JSON.stringify({
           destination: params.destination,
+          destinationCandidates: params.destinationCandidates ?? [params.destination],
           stays: params.stays,
           ground: params.ground,
           memberPreferences: params.memberPreferences,

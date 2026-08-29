@@ -35,6 +35,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE", "TRIP_DRAFT_BRIEF_UPDATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
   "FLIGHT_SEARCH_REQUESTED", "FLIGHT_SEARCH_COMPLETED", "FLIGHT_SEARCH_UNAVAILABLE",
+  "ACTIVITIES_SEARCH_REQUESTED", "ACTIVITIES_SEARCH_COMPLETED", "ACTIVITIES_SEARCH_UNAVAILABLE",
   // Phase 2 / spec §8 audit surface (added via 0021_team_orchestration_enums.sql):
   "TRIP_CONSTRAINT_PROPOSED",
   "TRIP_CONSTRAINT_CONFIRMED",
@@ -296,7 +297,7 @@ export const providerSearchRuns = pgTable("provider_search_runs", {
   category: varchar("category", { length: 32 }).notNull().default("flight"),
   providerName: varchar("provider_name", { length: 128 }).notNull(),
   originId: varchar("origin_id", { length: 16 }),
-  destinationId: varchar("destination_id", { length: 16 }),
+  destinationId: varchar("destination_id", { length: 128 }),
   requestFingerprint: varchar("request_fingerprint", { length: 64 }).notNull(),
   outcome: varchar("outcome", { length: 16 }).notNull(),
   errorCode: varchar("error_code", { length: 64 }),

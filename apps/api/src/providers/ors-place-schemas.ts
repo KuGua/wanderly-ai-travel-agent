@@ -12,8 +12,6 @@ import { z } from "zod";
  * `place_provider_results_total`. The constant `ORS_ATTRIBUTION` lives in
  * `ors-place-provider.ts`; both adapters (place + directions) share it.
  */
-const isoDateTime = z.string().datetime({ offset: true });
-
 export const orsFeaturePropertiesSchema = z.object({
   // ORS Geocoding returns a varying feature shape; only the fields below
   // survive normalization. Unknown upstream fields are ignored here.

@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import type {
   ConstraintSnapshotData,
+  ActivityEvidence,
   FlightOffer,
   GroundOffer,
   StayOffer,
@@ -61,6 +62,28 @@ const groundOfferSchema = z.object({
   ...provenanceFields,
 }).strict();
 
+const activityEvidenceSchema = z.object({
+  id: z.string().uuid(),
+  providerOfferId: z.string().min(1),
+  providerName: z.literal("viator"),
+  queryId: z.string().uuid(),
+  destination: z.string().min(1),
+  title: z.string().min(1),
+  thumbnailUrl: z.string().url(),
+  rating: z.number().min(0).max(5).nullable(),
+  reviewCount: z.number().int().nonnegative(),
+  freeCancellation: z.boolean(),
+  durationMinutes: z.object({
+    fixed: z.number().int().nonnegative().nullable(),
+    from: z.number().int().nonnegative().nullable(),
+    to: z.number().int().nonnegative().nullable(),
+  }).strict(),
+  category: z.string().min(1).nullable(),
+  source: z.string().min(1),
+  capturedAt: z.string().datetime(),
+  expiresAt: z.string().datetime(),
+}).strict();
+
 export const planOutputSchema = z.object({
   destination: z.string().min(1),
   // Optional for legacy plans. New planners (Team Agent 协作编排 Phase 3) emit
@@ -70,6 +93,7 @@ export const planOutputSchema = z.object({
   flights: z.array(flightOfferSchema).min(1),
   stays: z.array(stayOfferSchema).min(1),
   ground: z.array(groundOfferSchema).min(1),
+  activities: z.array(activityEvidenceSchema).optional(),
   generatedAt: z.string().min(1),
   constraintReferences: z.array(z.string().min(1)).optional(),
   publicExplanationTokens: z.array(z.string().min(1)).optional(),
@@ -103,6 +127,7 @@ export interface PlanProviderEvidence {
   flights: FlightOffer[];
   stays: StayOffer[];
   ground: GroundOffer[];
+  activities?: ActivityEvidence[];
 }
 
 export class PlanValidationError extends Error {
@@ -129,7 +154,7 @@ function validateOfferEvidence<T extends {
   source: string;
   capturedAt: string;
 }>(params: {
-  category: "flights" | "stays" | "ground";
+  category: "flights" | "stays" | "ground" | "activities";
   offers: T[];
   evidence: T[];
   violations: PlanValidationViolation[];
@@ -164,6 +189,7 @@ export function validatePlanOutput(params: {
   planData: unknown;
   snapshot: ConstraintSnapshotData;
   evidence: PlanProviderEvidence;
+  requireActivities?: boolean;
 }): ValidatedPlanOutput {
   const parsed = planOutputSchema.safeParse(params.planData);
   if (!parsed.success) {
@@ -249,10 +275,22 @@ export function validatePlanOutput(params: {
       addViolation(violations, "DESTINATION_MISMATCH", `ground.${index}.destination`, "Offer destination does not match the plan");
     }
   });
+  (plan.activities ?? []).forEach((activity, index) => {
+    if (activity.destination !== plan.destination) {
+      addViolation(violations, "DESTINATION_MISMATCH", `activities.${index}.destination`, "Activity destination does not match the plan");
+    }
+    if (Date.parse(activity.expiresAt) <= Date.now()) {
+      addViolation(violations, "PROVENANCE_REQUIRED", `activities.${index}.expiresAt`, "Activity evidence has expired");
+    }
+  });
+  if (params.requireActivities && (plan.activities?.length ?? 0) === 0) {
+    addViolation(violations, "EVIDENCE_NOT_FOUND", "activities", "A provider-backed activity is required for the selected destination");
+  }
 
   validateOfferEvidence({ category: "flights", offers: plan.flights, evidence: params.evidence.flights, violations });
   validateOfferEvidence({ category: "stays", offers: plan.stays, evidence: params.evidence.stays, violations });
   validateOfferEvidence({ category: "ground", offers: plan.ground, evidence: params.evidence.ground, violations });
+  validateOfferEvidence({ category: "activities", offers: plan.activities ?? [], evidence: params.evidence.activities ?? [], violations });
 
   // Deterministic confidentiality check (spec §6.1):
   //   - confidential values from the snapshot must NEVER appear in the plan JSON;
@@ -264,7 +302,7 @@ export function validatePlanOutput(params: {
     violations,
   });
 
-  const expectedGeneratedAt = [...plan.flights, ...plan.stays, ...plan.ground]
+  const expectedGeneratedAt = [...plan.flights, ...plan.stays, ...plan.ground, ...(plan.activities ?? [])]
     .map(offer => offer.capturedAt)
     .sort()
     .at(-1);

@@ -73,7 +73,7 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
         const parsed = orsGeocodingResponseSchema.safeParse(await response.json());
         if (!parsed.success) return this.unavailable("INVALID_PROVIDER_RESPONSE", start);
         payload = parsed.data;
-      } catch (_e) {
+      } catch {
         return this.unavailable("INVALID_PROVIDER_RESPONSE", start);
       }
       const candidates: NormalizedPlaceCandidate[] = [];

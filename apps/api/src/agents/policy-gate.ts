@@ -14,6 +14,7 @@ const DEFAULT_POLICY: AgentScopePolicy = {
     "plan:write:propose",
     "readiness:read",
     "flight:search",
+    "activities:search",
     "places:search",
     "places:adopt",
     "navigation:route",

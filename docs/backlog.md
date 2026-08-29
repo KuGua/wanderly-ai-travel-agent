@@ -64,7 +64,7 @@
 
 **Acceptance criteria:**
 
-1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay, Activities and Ground typed tools and maps the three travelers to two origins. LLM may request `flight.search`、`activities.search`、`places.search` 与 `navigation.route`；服务端验证每个参数和 run binding。Ground Place/Navigation 只解析 server-owned destination reference、run-bound candidate 或已授权 TripPlace；拒绝浏览器/模型坐标、地址、provider、profile、URL 与跨 run candidate。Personal Activities remains owner-scoped; Personal Agent 不得调用 Ground navigation/mobility tool。
+1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay, Activities and Ground typed tools and maps the three travelers to two origins. LLM may request `flight.search`、`activities.search`、`places.search` 与 `navigation.route`；服务端验证每个参数和 run binding。Activities 只接受 snapshot destination、固定 theme 与 locale，丢弃 Viator MCP raw payload、click-off link 与无币种价格。Ground Place/Navigation 只解析 server-owned destination reference、run-bound candidate 或已授权 TripPlace；拒绝浏览器/模型坐标、地址、provider、profile、URL 与跨 run candidate。Personal Activities 在 owner-scoped streaming tool-loop 完成前保持禁用；Personal Agent 不得调用 Ground navigation/mobility tool。
 2. Result compares two to three configured destination candidates and supports any two authorized POIs under a candidate. Each item includes source/captured time and route distance/duration/steps or commercial price/currency as applicable; absent service explicitly appears in a non-confirmable `RESEARCH_UNAVAILABLE` summary.
 3. Each item shows source, captured time, offer expiry when applicable, price/currency when available, and linked authorized constraints.
 4. Comparison explains destination and service trade-offs without referencing a private or unapproved Profile field.

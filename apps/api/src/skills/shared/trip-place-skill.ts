@@ -64,7 +64,7 @@ export function createTripPlaceSkill(): Skill<TripPlaceSkillInput, TripPlaceSkil
     needsConfirm: false,
     input: tripPlaceSkillInputSchema,
     output: tripPlaceSkillOutputSchema,
-    async handler(ctx, input, _signal) {
+    async handler(ctx, input) {
       return executeTripPlaceSkill(ctx, input);
     },
   };

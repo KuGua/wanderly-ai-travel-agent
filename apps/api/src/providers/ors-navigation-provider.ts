@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   NavigationProvider,
   NormalizedRouteEvidence,
@@ -73,7 +72,7 @@ export class OrsNavigationProvider implements NavigationProvider {
         const parsed = orsDirectionsResponseSchema.safeParse(await response.json());
         if (!parsed.success) return this.unavailable("INVALID_PROVIDER_RESPONSE", start);
         payload = parsed.data;
-      } catch (_e) {
+      } catch {
         return this.unavailable("INVALID_PROVIDER_RESPONSE", start);
       }
       const feature = payload.features[0];

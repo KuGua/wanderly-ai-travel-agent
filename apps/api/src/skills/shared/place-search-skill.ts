@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { Skill, SkillContext } from "../../agents/contracts.js";
 import { SkillError } from "../../agents/errors.js";
 import { createTravelProviders } from "../../providers/live-provider-factory.js";
