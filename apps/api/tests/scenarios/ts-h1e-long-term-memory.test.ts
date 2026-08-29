@@ -231,7 +231,7 @@ describe("TS-H1e step 2 — confirmation, edit and deletion are the owner's", ()
     await recordQualifyingEvidence();
     const [proposal] = await listSurfaceableProposals(aliceId, { now: at(30) });
 
-    await confirmProposal({ ctx, userId: aliceId, proposalId: proposal.id });
+    await confirmProposal({ ctx, userId: aliceId, proposalId: proposal.id, now: at(30) });
     const facts = await listActiveFacts(aliceId);
     expect(facts).toHaveLength(1);
     expect(facts[0]).toMatchObject({ fieldKey: "accommodation_style", value: "budget" });
@@ -288,7 +288,7 @@ describe("TS-H1e step 2 — confirmation, edit and deletion are the owner's", ()
     const [proposal] = await listSurfaceableProposals(aliceId, { now: at(30) });
 
     // Scoped by owner, so Bob's attempt cannot even see the row to resolve.
-    expect(await confirmProposal({ ctx, userId: bobId, proposalId: proposal.id }))
+    expect(await confirmProposal({ ctx, userId: bobId, proposalId: proposal.id, now: at(30) }))
       .toEqual({ outcome: "NOT_FOUND" });
     expect(await listPendingProposals(aliceId)).toHaveLength(1);
   });

@@ -158,19 +158,34 @@ export function parseMemoryObservationPayload(raw: unknown): MemoryObservationPa
   };
 }
 
-/** Marks one outbox row terminal. */
+/** Marks one outbox row terminal. `lastError` records the class, never a value. */
 export async function settleMemoryObservation(
   eventId: string,
   status: "PROCESSED" | "FAILED",
+  lastError?: string,
 ): Promise<void> {
   await db.update(outboxEvents)
-    .set({ status, processedAt: new Date() })
+    .set({ status, processedAt: new Date(), lastError: lastError ?? null })
     .where(eq(outboxEvents.eventId, eventId));
 }
 
-/** Returns a claimed row to the queue after a transient failure. */
-export async function releaseMemoryObservation(eventId: string): Promise<void> {
+/**
+ * Returns a claimed row to the queue after a transient failure.
+ *
+ * `backoffSeconds` is what stops a failing event from being re-claimed on the
+ * next pass and starving everything queued behind it.
+ */
+export async function releaseMemoryObservation(
+  eventId: string,
+  backoffSeconds = 0,
+  lastError?: string,
+): Promise<void> {
   await db.update(outboxEvents)
-    .set({ status: "PENDING", processedAt: null })
+    .set({
+      status: "PENDING",
+      processedAt: null,
+      nextAttemptAt: new Date(Date.now() + backoffSeconds * 1000),
+      lastError: lastError ?? null,
+    })
     .where(eq(outboxEvents.eventId, eventId));
 }

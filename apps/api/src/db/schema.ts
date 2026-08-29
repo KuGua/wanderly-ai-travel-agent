@@ -441,6 +441,12 @@ export const outboxEvents = pgTable("outbox_events", {
   eventType: varchar("event_type", { length: 64 }).notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
   status: outboxStatusEnum("status").default("PENDING").notNull(),
+  // Retry budget and backoff (migration 0030). Without them one event that can
+  // never succeed is re-claimed on every pass and starves the rest of the queue.
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+  /** Error class only — a message can quote the payload. */
+  lastError: varchar("last_error", { length: 128 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   processedAt: timestamp("processed_at", { withTimezone: true }),
 });

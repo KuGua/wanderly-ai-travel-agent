@@ -6,6 +6,8 @@
  * what does *not* become evidence as much as what does.
  */
 
+import { randomUUID } from "node:crypto";
+
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
 
@@ -34,6 +36,7 @@ import { listPendingProposals } from "../src/services/memory-proposal-service.js
 import { MEMORY_OBSERVATION_EVENT_TYPE } from "../src/services/memory-observation-bridge.js";
 import {
   OBSERVATION_LEASE_SECONDS,
+  OBSERVATION_MAX_ATTEMPTS,
   processNextMemoryObservation,
 } from "../src/workers/memory-observation-worker.js";
 import { createRequestContext } from "../src/utils/context.js";
@@ -206,6 +209,86 @@ describe("confirmed constraint to memory evidence", () => {
     await proposeAndConfirm({ fieldKey: "travel_pace", valueJson: { pace: "relaxed" } });
     await drain();
     expect(await pendingCount()).toBe(0);
+  });
+});
+
+describe("failing events", () => {
+  const rowsFor = async () => db.select().from(outboxEvents)
+    .where(eq(outboxEvents.eventType, MEMORY_OBSERVATION_EVENT_TYPE));
+
+  /**
+   * An event that throws on every attempt. The user id is well-formed as a
+   * string but not as a UUID, so the profile lookup itself errors — unlike a
+   * merely-absent user, which settles normally as "nothing to attach to".
+   */
+  async function queuePoisonEvent() {
+    await db.insert(outboxEvents).values({
+      eventId: randomUUID(),
+      eventType: MEMORY_OBSERVATION_EVENT_TYPE,
+      payload: {
+        userId: "not-a-uuid",
+        tripId: "also-not-a-uuid",
+        fieldKey: "trip_pace",
+        value: "packed",
+        episodeId: `poison-${randomUUID()}`,
+        observedAt: new Date().toISOString(),
+      },
+    });
+  }
+
+  it("backs a failed event off instead of re-claiming it immediately", async () => {
+    await proposeAndConfirm({ fieldKey: "travel_pace", valueJson: { pace: "packed" } });
+
+    // Force a failure by pointing the row at a profile that cannot be resolved
+    // and a value the aggregator will throw on.
+    await db.update(outboxEvents)
+      .set({ payload: { userId: "not-a-uuid", tripId: "x", fieldKey: "trip_pace",
+        value: "packed", episodeId: "e", observedAt: new Date().toISOString() } })
+      .where(eq(outboxEvents.eventType, MEMORY_OBSERVATION_EVENT_TYPE));
+
+    expect(await processNextMemoryObservation()).toBe(true);
+
+    // Without the backoff the same oldest event is claimed again on the next
+    // pass, forever, blocking everything queued behind it.
+    const [row] = await rowsFor();
+    if (row.status === "PENDING") {
+      expect(row.nextAttemptAt.getTime()).toBeGreaterThan(Date.now());
+      expect(await processNextMemoryObservation()).toBe(false);
+    } else {
+      expect(row.status).toBe("FAILED");
+    }
+  });
+
+  it("parks an event that can never succeed rather than retrying forever", async () => {
+    await queuePoisonEvent();
+
+    // Exhaust the budget, ignoring the backoff the way elapsed time would.
+    for (let attempt = 0; attempt < OBSERVATION_MAX_ATTEMPTS + 1; attempt += 1) {
+      await db.update(outboxEvents)
+        .set({ nextAttemptAt: new Date(Date.now() - 1000) })
+        .where(eq(outboxEvents.eventType, MEMORY_OBSERVATION_EVENT_TYPE));
+      if (!await processNextMemoryObservation()) break;
+    }
+
+    const [row] = await rowsFor();
+    // Parked, not deleted: it stays readable as a dead letter.
+    expect(row.status).toBe("FAILED");
+    expect(row.lastError).toBeTruthy();
+  });
+
+  it("does not let a parked event block a later observation", async () => {
+    await queuePoisonEvent();
+    for (let attempt = 0; attempt < OBSERVATION_MAX_ATTEMPTS + 1; attempt += 1) {
+      await db.update(outboxEvents)
+        .set({ nextAttemptAt: new Date(Date.now() - 1000) })
+        .where(eq(outboxEvents.eventType, MEMORY_OBSERVATION_EVENT_TYPE));
+      if (!await processNextMemoryObservation()) break;
+    }
+
+    await proposeAndConfirm({ fieldKey: "travel_pace", valueJson: { pace: "packed" } });
+    await drain();
+
+    expect((await listPendingProposals(ownerId))[0].observationCount).toBe(1);
   });
 });
 

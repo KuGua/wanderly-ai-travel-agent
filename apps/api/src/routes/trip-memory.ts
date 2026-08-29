@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 import { ApiError } from "../middleware/error-handler.js";
+import { withMemoryIdempotency } from "./memory-idempotency.js";
 import { createRequestContext } from "../utils/context.js";
 import { MemoryFieldRejectedError } from "../services/preference-fact-service.js";
 import {
@@ -90,14 +91,19 @@ export async function tripMemoryRoutes(app: FastifyInstance) {
       const { value } = putValueSchema.parse(request.body);
 
       try {
-        const fact = await saveOverride({
+        return await withMemoryIdempotency({
+          request,
+          userId: request.user.id,
+          operation: "trip.override",
+          entityType: "trip_memory_fact",
+          entityId: (result) => result.id,
+        }, async () => serialize(await saveOverride({
           ctx,
           tripId: request.params.tripId,
           userId: request.user.id,
           fieldKey: request.params.fieldKey,
           value,
-        });
-        return serialize(fact);
+        })));
       } catch (error) {
         throw toApiError(error);
       }
@@ -115,14 +121,19 @@ export async function tripMemoryRoutes(app: FastifyInstance) {
       const { value } = putValueSchema.parse(request.body);
 
       try {
-        const fact = await saveGroupDecision({
+        return await withMemoryIdempotency({
+          request,
+          userId: request.user.id,
+          operation: "trip.group",
+          entityType: "trip_memory_fact",
+          entityId: (result) => result.id,
+        }, async () => serialize(await saveGroupDecision({
           ctx,
           tripId: request.params.tripId,
           userId: request.user.id,
           fieldKey: request.params.fieldKey,
           value,
-        });
-        return serialize(fact);
+        })));
       } catch (error) {
         throw toApiError(error);
       }

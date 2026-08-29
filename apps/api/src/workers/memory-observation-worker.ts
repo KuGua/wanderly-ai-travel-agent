@@ -30,6 +30,19 @@ import { logger } from "../utils/logger.js";
 export const OBSERVATION_LEASE_SECONDS = 300;
 
 /**
+ * How many times an event is retried before it is parked as FAILED.
+ *
+ * A memory observation is not worth an unbounded retry budget: the evidence it
+ * carries is redundant by design, while an event that can never succeed blocks
+ * every later observation behind it and starves the maintenance sweep, which
+ * only runs when the queue is empty.
+ */
+export const OBSERVATION_MAX_ATTEMPTS = 5;
+
+/** Backoff before a failed event becomes claimable again. */
+export const OBSERVATION_RETRY_BACKOFF_SECONDS = 60;
+
+/**
  * Claims one row by moving it to PROCESSING in the same statement that selects
  * it, so two workers cannot take the same observation.
  *
@@ -39,21 +52,22 @@ export const OBSERVATION_LEASE_SECONDS = 300;
  * landed comes back as DUPLICATE_EPISODE instead of counting twice.
  */
 const CLAIM_OBSERVATION_SQL = [
-  "UPDATE outbox_events SET status = 'PROCESSING', processed_at = NOW()",
+  "UPDATE outbox_events",
+  "SET status = 'PROCESSING', processed_at = NOW(), attempt_count = attempt_count + 1",
   "WHERE id = (",
   "  SELECT id FROM outbox_events",
   "  WHERE event_type = $1",
   "    AND (",
-  "      status = 'PENDING'",
+  "      (status = 'PENDING' AND next_attempt_at <= NOW())",
   "      OR (status = 'PROCESSING' AND processed_at < NOW() - ($2 * INTERVAL '1 second'))",
   "    )",
-  "  ORDER BY created_at ASC",
+  "  ORDER BY next_attempt_at ASC, created_at ASC",
   "  FOR UPDATE SKIP LOCKED LIMIT 1",
   ")",
-  "RETURNING event_id, payload",
+  "RETURNING event_id, payload, attempt_count",
 ].join("\n");
 
-type ClaimedRow = { event_id: string; payload: unknown };
+type ClaimedRow = { event_id: string; payload: unknown; attempt_count: number };
 
 /**
  * Processes at most one pending observation.
@@ -74,7 +88,7 @@ export async function processNextMemoryObservation(): Promise<boolean> {
     // A row this process cannot read will never become readable, so retrying
     // would only hide the fault.
     logger.error({ eventId: claimed.event_id }, "Memory observation payload is unreadable");
-    await settleMemoryObservation(claimed.event_id, "FAILED");
+    await settleMemoryObservation(claimed.event_id, "FAILED", "UnreadablePayload");
     return true;
   }
 
@@ -114,13 +128,33 @@ export async function processNextMemoryObservation(): Promise<boolean> {
     await settleMemoryObservation(claimed.event_id, "PROCESSED");
     return true;
   } catch (error) {
-    // Returned to PENDING so the next pass retries. Only the error class is
-    // logged; a message could carry the confirmed value.
+    const errorClass = (error as Error).name;
+
+    if (claimed.attempt_count >= OBSERVATION_MAX_ATTEMPTS) {
+      // Parked, not deleted: the row stays readable as a dead letter. Retrying
+      // it forever would block every observation queued behind it.
+      logger.error({
+        eventId: claimed.event_id,
+        attempts: claimed.attempt_count,
+        errorClass,
+      }, "Memory observation exhausted its retries; parking it as failed");
+      await settleMemoryObservation(claimed.event_id, "FAILED", errorClass);
+      return true;
+    }
+
+    // Backed off rather than requeued immediately, so a failing event cannot
+    // be re-claimed on the very next pass. Only the error class is recorded; a
+    // message could carry the confirmed value.
     logger.error({
       eventId: claimed.event_id,
-      errorClass: (error as Error).name,
-    }, "Memory observation failed, returning it to the queue");
-    await releaseMemoryObservation(claimed.event_id);
+      attempts: claimed.attempt_count,
+      errorClass,
+    }, "Memory observation failed, backing off before retry");
+    await releaseMemoryObservation(
+      claimed.event_id,
+      OBSERVATION_RETRY_BACKOFF_SECONDS,
+      errorClass,
+    );
     return true;
   }
 }

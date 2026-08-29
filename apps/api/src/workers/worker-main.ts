@@ -54,21 +54,22 @@ async function runMemoryObservationSlot() {
   const maintenance = createMemoryMaintenance();
   while (!stopping) {
     const processed = await processNextMemoryObservation();
-    if (!processed) {
-      // Only when the queue is empty: expiring proposals is upkeep and must
-      // never delay evidence a member just produced.
-      try {
-        await maintenance.runIfDue();
-      } catch (error) {
-        // Upkeep must not take the Worker down with it — these slots share a
-        // `Promise.all`, so an unhandled sweep failure would stop planning too.
-        logger.error({
-          component: "memory-maintenance",
-          errorClass: (error as Error).name,
-        }, "Memory maintenance sweep failed");
-      }
-      await delay(agentTaskConfig.pollIntervalMs);
+
+    // Run on its own hourly schedule rather than only when the queue drains: a
+    // steady stream of observations would otherwise mean expired suggestions
+    // are never swept. The gate makes this one query an hour.
+    try {
+      await maintenance.runIfDue();
+    } catch (error) {
+      // Upkeep must not take the Worker down with it — these slots share a
+      // `Promise.all`, so an unhandled sweep failure would stop planning too.
+      logger.error({
+        component: "memory-maintenance",
+        errorClass: (error as Error).name,
+      }, "Memory maintenance sweep failed");
     }
+
+    if (!processed) await delay(agentTaskConfig.pollIntervalMs);
   }
   logger.debug({ component: "memory-observation-worker" }, "Memory observation slot stopped");
 }

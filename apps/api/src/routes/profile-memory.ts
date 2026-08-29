@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { db } from "../db/database.js";
 import { preferenceFacts } from "../db/schema.js";
+import { withMemoryIdempotency } from "./memory-idempotency.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { createRequestContext } from "../utils/context.js";
 import { metrics } from "../observability/metrics.js";
@@ -104,6 +105,13 @@ export async function profileMemoryRoutes(app: FastifyInstance) {
     if (!existing) throw new ApiError(404, "Not Found", "Fact not found");
 
     try {
+      return await withMemoryIdempotency({
+        request,
+        userId: request.user.id,
+        operation: "fact.replace",
+        entityType: "memory_fact",
+        entityId: (result) => result.id,
+      }, async () => {
       const fact = await db.transaction(async (tx) => {
         const replaced = await replaceFact({
           ctx,
@@ -122,7 +130,6 @@ export async function profileMemoryRoutes(app: FastifyInstance) {
         return replaced;
       });
 
-      metrics.inc("memory_fact_mutations_total", { operation: "replace", source: "profile_form" });
       return {
         id: fact.id,
         fieldKey: fact.fieldKey,
@@ -132,6 +139,7 @@ export async function profileMemoryRoutes(app: FastifyInstance) {
         status: fact.status,
         updatedAt: fact.updatedAt.toISOString(),
       };
+      });
     } catch (error) {
       if (error instanceof MemoryFieldRejectedError) throw rejectionToApiError(error);
       throw error;
@@ -159,7 +167,6 @@ export async function profileMemoryRoutes(app: FastifyInstance) {
       await deleteProposalsForField({ userId: request.user.id, fieldKey: existing.fieldKey, tx });
     });
 
-    metrics.inc("memory_fact_mutations_total", { operation: "delete", source: "profile_form" });
     return reply.code(204).send();
   });
 
@@ -184,12 +191,15 @@ export async function profileMemoryRoutes(app: FastifyInstance) {
         metrics.inc("memory_proposal_resolutions_total", { outcome: "already_resolved" });
         return { status: result.proposal.status, factId: null };
       }
+      if (result.outcome === "EXPIRED") {
+        // Not an error the caller can fix by retrying: the suggestion lapsed
+        // before it was answered, and no fact is created.
+        metrics.inc("memory_proposal_resolutions_total", { outcome: "expired" });
+        return { status: result.proposal.status, factId: null };
+      }
       if (result.outcome !== "CONFIRMED") throw new ApiError(500, "Internal Server Error", "Unexpected outcome");
 
       metrics.inc("memory_proposal_resolutions_total", { outcome: "confirmed" });
-      metrics.inc("memory_fact_mutations_total", {
-        operation: "replace", source: "proposal_confirmation",
-      });
       return { status: result.proposal.status, factId: result.fact.id };
     },
   );

@@ -92,6 +92,10 @@ episode id 为 `tripId:fieldKey:ownerUserId:valueHash`，**不含时间戳**。�
 
 投递保证为 at-least-once，不丢事件。认领将行置为 `PROCESSING`（迁移 0029 新增），租约 300 秒；worker 中途崩溃后该行被下一轮回收重投。重投安全的前提正是 episode id 的幂等性——已落库的观察重放为 `DUPLICATE_EPISODE`，不会重复计数。
 
+失败事件有重试预算与退避（迁移 0030 的 `attempt_count` / `next_attempt_at` / `last_error`）。失败后立即放回 PENDING 会让 worker 下一轮再抢同一条最老事件：一条永远不可能成功的事件（值被目录永久拒绝、用户已删除）就此变成热循环，阻塞其后所有观察，并饿死只在队列空闲时运行的过期扫描。超过 5 次即标记 `FAILED` 停放为死信——保留可读而非删除，供排查。观察证据本就冗余，不值得无限重试预算。
+
+过期扫描改为按自身的每小时节奏运行，而非仅在队列排空时运行；否则持续的观察流会让过期建议永远扫不到。
+
 ### 3.3 当前 Trip memory 与 projection
 
 - `trip_constraint_proposals` 是 Personal Agent 或 owner form 生成的候选，必须由 owner 显式确认。确认后才写入版本化 `trip_constraint_facts`；模型不得直接写事实。
@@ -301,6 +305,8 @@ Trip memory 端点已实现于 `src/routes/trip-memory.ts`。非成员一律 403
 | proposal dismiss | proposal `DISMISSED` + 清空 observation dates + 180 天 cooldown + audit | 不影响 Trip 或 plan；cooldown 内不重建同 field/value 建议 |
 | proposal expire | 90 天后 `EXPIRED` + 清空 observation dates + 受控 cooldown + audit | 不影响 Trip 或 plan；防止立即重新弹出 |
 
+过期在**每个决策点**都要判定，不能只依赖扫描：`listSurfaceableProposals` 在查询条件里加 `expires_at > now`，`confirmProposal` 在确认前重查并返回 `EXPIRED`。扫描是周期性的，Worker 可能停止、也可能有死信事件排在前面，因此 `status = PENDING` 本身并不等于「仍在提供中」。确认时遇到过期会顺手把该行真正退休（写入 `EXPIRED` + cooldown + 清空证据），否则同一条已失效的建议会被反复提供、反复拒绝。
+
 过期由 Worker 的记忆 slot 在队列空闲时每小时扫一次（`memory-maintenance.ts`）。过期只取决于时间流逝，没有任何请求路径会触发它——不扫就意味着无人回应的建议永远挂着、证据永不清除。扫描是单条带条件的批量更新，多进程并发运行安全；失败被捕获而不会拖垮 Worker 的其他 slot。
 | form 直接改事实 | 新 ACTIVE fact + 旧 SUPERSEDED + 清除同字段全部冲突 pending proposals 与 evidence aggregates + audit | stale 受影响 Trips |
 | Trip override/group decision change | fact version + audit | stale 当前 Trip active plan/confirmations |
@@ -312,7 +318,9 @@ Trip memory 端点已实现于 `src/routes/trip-memory.ts`。非成员一律 403
 
 指纹只哈希**身份与版本**（consent grant id/scope/granted/fieldList、preference fact id/updatedAt、trip constraint fact id/kind/revision），**绝不包含值**——它落在 snapshot 里，任何能读 plan 的人都能读到，哈希值会泄露某成员的偏好是否变成了某个特定值。行在哈希前排序，结果不依赖数据库返回顺序。没有指纹的历史 snapshot 跳过该检查，而不是让所有旧 plan 失败。
 
-所有写 command 接收客户端 idempotency key，复用现有 `idempotency_records`。proposal confirmation、删除和 trip memory 替换必须在数据库 transaction 内锁定目标行及关联 Trip/plan 行，避免并发确认或 stale race。
+所有写 command 接收客户端 idempotency key，复用现有 `idempotency_records`。**实现（`routes/memory-idempotency.ts`）：** key 由客户端经 `Idempotency-Key` 头提供且为可选——强制要求会打断既有调用方；提供时重放已存结果，不重新执行。重复的记忆写入并非无害：第二次 PUT 会再次 supersede 事实，产生第二个版本、第二轮 plan stale 和第二条 audit，而用户只改了一次。key 被在途请求占用时返回 409 而非二次执行。格式非法直接 400，不静默忽略——静默会让调用方误以为自己受到了保护。
+
+指标只在 service 层计数。`memory_fact_mutations_total` 曾同时在 route 与 `PreferenceFactService` 递增，每次写入都被计两次；service 是唯一能看到全部写入路径（表单、提案确认、route）的位置。proposal confirmation、删除和 trip memory 替换必须在数据库 transaction 内锁定目标行及关联 Trip/plan 行，避免并发确认或 stale race。
 
 ## 7. 可观测性、安全与删除
 

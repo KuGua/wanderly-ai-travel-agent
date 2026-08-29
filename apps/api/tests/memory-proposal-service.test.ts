@@ -170,6 +170,49 @@ describe("evidence aggregation", () => {
   });
 });
 
+describe("expiry is enforced at every decision point", () => {
+  /** Ages a proposal past its life without running the sweep. */
+  async function lapse() {
+    await db.update(memoryProposals)
+      .set({ expiresAt: at(39) })
+      .where(eq(memoryProposals.userId, ownerId));
+  }
+
+  it("does not surface a lapsed proposal even before the sweep runs", async () => {
+    await buildQualifyingEvidence();
+    expect(await listSurfaceableProposals(ownerId, { now: at(40) })).toHaveLength(1);
+
+    // The sweep is periodic and the Worker may be stopped, so PENDING on its
+    // own does not mean the suggestion is still offered.
+    await lapse();
+    expect(await listSurfaceableProposals(ownerId, { now: at(40) })).toHaveLength(0);
+  });
+
+  it("refuses to confirm a lapsed proposal", async () => {
+    await buildQualifyingEvidence();
+    const [proposal] = await listPendingProposals(ownerId);
+    await lapse();
+
+    const result = await confirmProposal({ ctx, userId: ownerId, proposalId: proposal.id, now: at(40) });
+    expect(result.outcome).toBe("EXPIRED");
+    // No fact: confirming here would resurrect a suggestion policy retired.
+    expect(await listActiveFacts(ownerId)).toHaveLength(0);
+  });
+
+  it("retires the row rather than leaving it to be offered again", async () => {
+    await buildQualifyingEvidence();
+    const [proposal] = await listPendingProposals(ownerId);
+    await lapse();
+    await confirmProposal({ ctx, userId: ownerId, proposalId: proposal.id, now: at(40) });
+
+    const [row] = await db.select().from(memoryProposals)
+      .where(eq(memoryProposals.id, proposal.id));
+    expect(row.status).toBe("EXPIRED");
+    expect(row.recentObservedOn).toEqual([]);
+    expect(row.cooldownUntil).not.toBeNull();
+  });
+});
+
 describe("trigger rule", () => {
   it("surfaces a candidate once every gate is satisfied", async () => {
     const result = await buildQualifyingEvidence();
@@ -312,7 +355,7 @@ describe("facts never decay and are never rewritten by behaviour", () => {
     const [pending] = await listPendingProposals(ownerId);
 
     expect(await listActiveFacts(ownerId)).toHaveLength(0);
-    const confirmed = await confirmProposal({ ctx, userId: ownerId, proposalId: pending.id });
+    const confirmed = await confirmProposal({ ctx, userId: ownerId, proposalId: pending.id, now: at(40) });
 
     expect(confirmed.outcome).toBe("CONFIRMED");
     expect((await listActiveFacts(ownerId))[0]).toMatchObject({
@@ -327,8 +370,8 @@ describe("terminal states", () => {
     await buildQualifyingEvidence();
     const [pending] = await listPendingProposals(ownerId);
 
-    const first = await confirmProposal({ ctx, userId: ownerId, proposalId: pending.id });
-    const second = await confirmProposal({ ctx, userId: ownerId, proposalId: pending.id });
+    const first = await confirmProposal({ ctx, userId: ownerId, proposalId: pending.id, now: at(40) });
+    const second = await confirmProposal({ ctx, userId: ownerId, proposalId: pending.id, now: at(40) });
 
     expect(first.outcome).toBe("CONFIRMED");
     expect(second.outcome).toBe("ALREADY_RESOLVED");
@@ -340,7 +383,7 @@ describe("terminal states", () => {
     const [pending] = await listPendingProposals(ownerId);
 
     const [a, b] = await Promise.all([
-      confirmProposal({ ctx, userId: ownerId, proposalId: pending.id }),
+      confirmProposal({ ctx, userId: ownerId, proposalId: pending.id, now: at(40) }),
       dismissProposal({ ctx, userId: ownerId, proposalId: pending.id }),
     ]);
 
@@ -354,7 +397,7 @@ describe("terminal states", () => {
   it("clears the observation window when a proposal is confirmed", async () => {
     await buildQualifyingEvidence();
     const [pending] = await listPendingProposals(ownerId);
-    await confirmProposal({ ctx, userId: ownerId, proposalId: pending.id });
+    await confirmProposal({ ctx, userId: ownerId, proposalId: pending.id, now: at(40) });
 
     const [row] = await db.select().from(memoryProposals).where(eq(memoryProposals.id, pending.id));
     expect(row.recentObservedOn).toEqual([]);
@@ -400,7 +443,7 @@ describe("owner isolation and deletion", () => {
     await buildQualifyingEvidence();
     const [pending] = await listPendingProposals(ownerId);
 
-    expect(await confirmProposal({ ctx, userId: otherId, proposalId: pending.id }))
+    expect(await confirmProposal({ ctx, userId: otherId, proposalId: pending.id, now: at(40) }))
       .toEqual({ outcome: "NOT_FOUND" });
     expect(await dismissProposal({ ctx, userId: otherId, proposalId: pending.id }))
       .toEqual({ outcome: "NOT_FOUND" });
@@ -433,7 +476,7 @@ describe("telemetry redaction", () => {
   it("keeps values, dates and trip references out of the audit trail", async () => {
     await buildQualifyingEvidence("packed");
     const [pending] = await listPendingProposals(ownerId);
-    await confirmProposal({ ctx, userId: ownerId, proposalId: pending.id });
+    await confirmProposal({ ctx, userId: ownerId, proposalId: pending.id, now: at(40) });
 
     const events = await db.select().from(auditEvents).where(eq(auditEvents.actorUserId, ownerId));
     const serialized = JSON.stringify(events);

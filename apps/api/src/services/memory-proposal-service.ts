@@ -149,7 +149,13 @@ export async function listSurfaceableProposals(
   const target = options.tx ?? db;
 
   const rows = await target.select().from(memoryProposals)
-    .where(and(eq(memoryProposals.userId, userId), eq(memoryProposals.status, "PENDING")));
+    .where(and(
+      eq(memoryProposals.userId, userId),
+      eq(memoryProposals.status, "PENDING"),
+      // Filtered on read for the same reason confirmation re-checks it: the
+      // sweep is periodic, so PENDING alone does not mean "still offered".
+      gt(memoryProposals.expiresAt, now),
+    ));
 
   const byField = new Map<string, { row: typeof rows[number]; activation: number }[]>();
   for (const row of rows) {
@@ -375,6 +381,8 @@ async function aggregateObservation(input: ObserveInput): Promise<ObserveResult>
 export type ResolveResult =
   | { outcome: "NOT_FOUND" }
   | { outcome: "ALREADY_RESOLVED"; proposal: MemoryProposal }
+  /** Lapsed before it was answered. Distinct so the UI can say so. */
+  | { outcome: "EXPIRED"; proposal: MemoryProposal }
   | { outcome: "CONFIRMED"; proposal: MemoryProposal; fact: PreferenceFact }
   | { outcome: "DISMISSED"; proposal: MemoryProposal };
 
@@ -387,6 +395,8 @@ export async function confirmProposal(input: {
   ctx: RequestContext;
   userId: string;
   proposalId: string;
+  /** Injectable clock, matching the other lifecycle entry points. */
+  now?: Date;
 }): Promise<ResolveResult> {
   return db.transaction(async (tx): Promise<ResolveResult> => {
     const [row] = await tx.select().from(memoryProposals)
@@ -395,11 +405,34 @@ export async function confirmProposal(input: {
     if (!row) return { outcome: "NOT_FOUND" };
     if (row.status !== "PENDING") return { outcome: "ALREADY_RESOLVED", proposal: toProposal(row) };
 
+    // Expiry is a property of elapsed time, so a row can be past it while the
+    // sweep has not yet run — the Worker may be stopped, or an event may be
+    // parked ahead of it. Confirming here would resurrect a suggestion the
+    // policy already retired, so the check belongs at the decision, not only in
+    // the sweep.
+    const attemptedAt = input.now ?? new Date();
+    if (row.expiresAt <= attemptedAt) {
+      // Retire it here rather than only refusing: the row is already past its
+      // life, and leaving it PENDING lets the same lapsed suggestion be offered
+      // and refused again until the sweep happens to run.
+      const policy = resolveMemoryActivationPolicy();
+      const [retired] = await tx.update(memoryProposals).set({
+        status: "EXPIRED",
+        resolvedAt: attemptedAt,
+        updatedAt: attemptedAt,
+        cooldownUntil: new Date(
+          attemptedAt.getTime() + policy.dismissalCooldownDays * MS_PER_DAY,
+        ),
+        ...clearedEvidence(),
+      }).where(eq(memoryProposals.id, row.id)).returning();
+      return { outcome: "EXPIRED", proposal: toProposal(retired) };
+    }
+
     // Re-validate: the catalogue may have tightened since the proposal was raised.
     const validation = validateMemoryFieldValue(row.fieldKey, row.proposedValue, "PROPOSAL_CONFIRMATION");
     if (!validation.ok) throw new MemoryFieldRejectedError(row.fieldKey, validation.reason);
 
-    const now = new Date();
+    const now = attemptedAt;
     const fact = await replaceFact({
       ctx: input.ctx,
       userId: input.userId,
