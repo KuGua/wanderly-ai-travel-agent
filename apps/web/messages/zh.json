@@ -569,7 +569,7 @@
       "loading": "正在加载本次偏好…",
       "errorTitle": "本次偏好暂不可用",
       "overridesLabel": "仅本次",
-      "overridesHint": "只对本行程生效，不会改写你的长期偏好；未单独授权前其他成员看不到。",
+      "overridesHint": "只对本行程生效，不会改写你的长期偏好；规划会用到它，但其他成员看不到具体值。",
       "groupLabel": "团队决定",
       "groupHint": "全体成员可见，每个字段只保留一条。",
       "unset": "未设置",

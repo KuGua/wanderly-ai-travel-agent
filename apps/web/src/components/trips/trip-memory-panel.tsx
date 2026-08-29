@@ -20,8 +20,8 @@ import {
  * Two kinds, kept visually distinct because their audiences differ
  * (docs/long-term-memory-implementation.md §3.3):
  *
- * - "This trip" overrides are the caller's own and private to them until the
- *   trip's field-level consent exports them.
+ * - "This trip" overrides are saved ORCHESTRATOR_CONFIDENTIAL: planning uses
+ *   them, and the value is never shown to the rest of the team.
  * - Group decisions belong to the whole trip and every active member sees them.
  *
  * Neither touches the stable Profile. Saving here never rewrites what the user

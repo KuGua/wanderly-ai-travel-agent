@@ -276,6 +276,29 @@ export function validateProviderCoverage(params: {
  * Caller must already be inside a transaction if they need atomic snapshot + plan
  * writes. Outside callers use a default `db.transaction` wrapper.
  */
+/**
+ * The members a projection covers.
+ *
+ * An empty `memberIds` means "everyone on the trip" — callers that do not track
+ * membership themselves, such as the Worker, pass nothing. Both the snapshot
+ * and the commit-time fingerprint have to resolve it the same way: the snapshot
+ * hashed the real members while the guard hashed the empty list, so every
+ * Worker-generated plan failed its own guard with MemorySourceChangedError.
+ */
+type PlanningTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function resolveMemberIds(
+  tx: PlanningTx,
+  tripId: string,
+  memberIds: readonly string[],
+): Promise<string[]> {
+  if (memberIds.length > 0) return [...memberIds];
+  const rows = await tx.select({ userId: tripMembers.userId })
+    .from(tripMembers)
+    .where(eq(tripMembers.tripId, tripId));
+  return rows.map((row) => row.userId);
+}
+
 export async function createConstraintSnapshot(params: {
   tripId: string;
   memberIds: string[];
@@ -324,12 +347,7 @@ export async function createConstraintSnapshot(params: {
       eq(tripConstraintFacts.status, "ACTIVE"),
     ));
 
-    const memberIdsResolved = params.memberIds.length > 0
-      ? params.memberIds
-      : (await tx.select({ userId: tripMembers.userId })
-        .from(tripMembers)
-        .where(eq(tripMembers.tripId, params.tripId)))
-        .map((m) => m.userId);
+    const memberIdsResolved = await resolveMemberIds(tx, params.tripId, params.memberIds);
 
     const projectionInput: MemoryProjectionInput = {
       tripId: params.tripId,
@@ -386,6 +404,7 @@ export async function createConstraintSnapshot(params: {
               ownerUserId: f.ownerUserId,
               fieldKey: f.fieldKey,
               kind: f.kind,
+              visibility: f.visibility,
               valueJson: f.valueJson,
             })),
           });
@@ -711,7 +730,7 @@ export async function generatePlan(params: {
     if (recordedFingerprint !== null) {
       const currentFingerprint = await computeMemorySourceFingerprint({
         tripId: params.tripId,
-        memberUserIds: params.memberIds,
+        memberUserIds: await resolveMemberIds(tx, params.tripId, params.memberIds),
         tx,
       });
       if (currentFingerprint !== recordedFingerprint) {

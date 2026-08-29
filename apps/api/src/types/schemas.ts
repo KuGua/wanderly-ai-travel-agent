@@ -762,8 +762,17 @@ export const memoryProjectionSchema = z.object({
   members: z.record(z.string().min(1), z.object({
     /** Stable profile facts this member consented to export to this trip. */
     profileFacts: z.record(z.string(), z.unknown()),
-    /** This-trip overrides, which apply to planning without touching profile. */
+    /** Team-visible this-trip overrides; safe to reference in an explanation. */
     tripOverrides: z.record(z.string(), z.unknown()),
+    /**
+     * Overrides marked ORCHESTRATOR_CONFIDENTIAL: usable when planning, and
+     * barred from peer responses, plan explanations and telemetry (§3.3).
+     *
+     * Kept in its own key rather than mixed into `tripOverrides` because the
+     * separation has to survive the trip to the snapshot — a consumer reading a
+     * flat map cannot tell which values it is allowed to repeat.
+     */
+    confidentialOverrides: z.record(z.string(), z.unknown()),
   }).strict()),
   /** Decisions belonging to the trip rather than to any one member. */
   groupDecisions: z.record(z.string(), z.unknown()),

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildMemoryNamespace } from "../src/services/memory-projection-builder.js";
 import {
   MemoryProjectionUnavailableError,
+  memberPlanningPreferences,
   readMemoryProjection,
   tripWidePreferences,
 } from "../src/skills/shared/memory-projection-input.js";
@@ -27,8 +28,8 @@ describe("buildMemoryNamespace", () => {
     // does not exist.
     expect(build()).toEqual({
       members: {
-        "m-alice": { profileFacts: {}, tripOverrides: {} },
-        "m-bob": { profileFacts: {}, tripOverrides: {} },
+        "m-alice": { profileFacts: {}, tripOverrides: {}, confidentialOverrides: {} },
+        "m-bob": { profileFacts: {}, tripOverrides: {}, confidentialOverrides: {} },
       },
       groupDecisions: {},
     });
@@ -88,22 +89,39 @@ describe("buildMemoryNamespace", () => {
     expect(Object.keys(projection.members)).toEqual(["m-alice", "m-bob"]);
   });
 
-  it("files a personal override under its owner and unwraps the stored value", () => {
+  it("files a confidential override apart from the team-visible ones", () => {
+    // Trip overrides are saved ORCHESTRATOR_CONFIDENTIAL. Mixing them into
+    // `tripOverrides` would leave a consumer unable to tell which values it may
+    // repeat back to the team.
     const projection = build({
       tripFacts: [{
         ownerUserId: BOB, fieldKey: "trip_pace",
-        kind: "PERSONAL_OVERRIDE", valueJson: { value: "packed" },
+        kind: "PERSONAL_OVERRIDE", visibility: "ORCHESTRATOR_CONFIDENTIAL",
+        valueJson: { value: "packed" },
+      }],
+    });
+    expect(projection.members["m-bob"].confidentialOverrides).toEqual({ trip_pace: "packed" });
+    expect(projection.members["m-bob"].tripOverrides).toEqual({});
+    expect(projection.members["m-alice"].confidentialOverrides).toEqual({});
+  });
+
+  it("files a team-visible override where it can be referenced", () => {
+    const projection = build({
+      tripFacts: [{
+        ownerUserId: BOB, fieldKey: "trip_pace",
+        kind: "PERSONAL_OVERRIDE", visibility: "TEAM_VISIBLE",
+        valueJson: { value: "packed" },
       }],
     });
     expect(projection.members["m-bob"].tripOverrides).toEqual({ trip_pace: "packed" });
-    expect(projection.members["m-alice"].tripOverrides).toEqual({});
+    expect(projection.members["m-bob"].confidentialOverrides).toEqual({});
   });
 
   it("files a group decision against the trip, not a member", () => {
     const projection = build({
       tripFacts: [{
         ownerUserId: ALICE, fieldKey: "accommodation_style",
-        kind: "GROUP_DECISION", valueJson: { value: "budget" },
+        kind: "GROUP_DECISION", visibility: "TEAM_VISIBLE", valueJson: { value: "budget" },
       }],
     });
     expect(projection.groupDecisions).toEqual({ accommodation_style: "budget" });
@@ -114,10 +132,11 @@ describe("buildMemoryNamespace", () => {
     const projection = build({
       tripFacts: [{
         ownerUserId: ALICE, fieldKey: "trip_pace",
-        kind: "MEMBER_CONSTRAINT", valueJson: { pace: "packed" },
+        kind: "MEMBER_CONSTRAINT", visibility: "TEAM_VISIBLE", valueJson: { pace: "packed" },
       }],
     });
     expect(projection.members["m-alice"].tripOverrides).toEqual({});
+    expect(projection.members["m-alice"].confidentialOverrides).toEqual({});
     expect(projection.groupDecisions).toEqual({});
   });
 
@@ -191,7 +210,10 @@ describe("tripWidePreferences", () => {
     expect(tripWidePreferences(projection)).toEqual({});
   });
 
-  it("lets a this-trip override replace the member's standing preference", () => {
+  it("never derives a trip-wide value from a confidential override", () => {
+    // Bob's confidential override would complete a unanimous pace. Publishing
+    // that as a trip-wide value tells the team what he privately set, by
+    // inference — which is the thing ORCHESTRATOR_CONFIDENTIAL forbids.
     const projection = build({
       consentedFieldsByUser: { [ALICE]: ["trip_pace"], [BOB]: ["trip_pace"] },
       preferenceFacts: [
@@ -200,7 +222,27 @@ describe("tripWidePreferences", () => {
       ],
       tripFacts: [{
         ownerUserId: BOB, fieldKey: "trip_pace",
-        kind: "PERSONAL_OVERRIDE", valueJson: { value: "relaxed" },
+        kind: "PERSONAL_OVERRIDE", visibility: "ORCHESTRATOR_CONFIDENTIAL",
+        valueJson: { value: "relaxed" },
+      }],
+    });
+
+    expect(tripWidePreferences(projection)).toEqual({});
+    // Planning may still see it.
+    expect(memberPlanningPreferences(projection, "m-bob"))
+      .toEqual({ trip_pace: "relaxed" });
+  });
+
+  it("lets a team-visible this-trip override replace the member's standing preference", () => {
+    const projection = build({
+      consentedFieldsByUser: { [ALICE]: ["trip_pace"], [BOB]: ["trip_pace"] },
+      preferenceFacts: [
+        { userId: ALICE, fieldKey: "trip_pace", value: "relaxed" },
+        { userId: BOB, fieldKey: "trip_pace", value: "packed" },
+      ],
+      tripFacts: [{
+        ownerUserId: BOB, fieldKey: "trip_pace",
+        kind: "PERSONAL_OVERRIDE", visibility: "TEAM_VISIBLE", valueJson: { value: "relaxed" },
       }],
     });
     expect(tripWidePreferences(projection)).toEqual({ trip_pace: "relaxed" });
@@ -247,7 +289,7 @@ describe("tripWidePreferences", () => {
       ],
       tripFacts: [{
         ownerUserId: ALICE, fieldKey: "accommodation_style",
-        kind: "GROUP_DECISION", valueJson: { value: "budget" },
+        kind: "GROUP_DECISION", visibility: "TEAM_VISIBLE", valueJson: { value: "budget" },
       }],
     });
     // The trip decided; that is not something an inference should overturn.

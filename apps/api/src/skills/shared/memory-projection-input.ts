@@ -39,6 +39,23 @@ const EMPTY_PROJECTION: MemoryProjection = Object.freeze({
 });
 
 /**
+ * Everything a member's memory says for this trip, for building a planning
+ * prompt.
+ *
+ * Includes confidential overrides, which planning may use. Never use this to
+ * build anything a member reads — see `tripWidePreferences`, which is the one
+ * that is safe to repeat back.
+ */
+export function memberPlanningPreferences(
+  projection: MemoryProjection,
+  alias: string,
+): Record<string, unknown> {
+  const member = projection.members[alias];
+  if (!member) return {};
+  return { ...member.profileFacts, ...member.tripOverrides, ...member.confidentialOverrides };
+}
+
+/**
  * Extracts the memory namespace from a snapshot's `authorized_data`.
  *
  * Returns an empty projection for a snapshot taken before the namespace
@@ -98,6 +115,9 @@ export function tripWidePreferences(projection: MemoryProjection): Record<string
       const member = projection.members[alias];
       // A this-trip override is what the member wants for this trip, so it
       // takes precedence over their standing profile fact.
+      // Confidential overrides are deliberately absent: a trip-wide value can
+      // be shown to the team, and one derived from a confidential override
+      // would leak it by inference (§3.3).
       const effective = { ...member.profileFacts, ...member.tripOverrides };
       for (const [fieldKey, value] of Object.entries(effective)) {
         if (!memoryFieldDefinition(fieldKey)?.groupDecidable) continue;

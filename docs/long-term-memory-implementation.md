@@ -222,11 +222,16 @@ DB CHECK 与 service allow-list 必须双重拒绝敏感 field key。`CONFIRMED`
 type MemoryProjection = {
   members: Record<string, {
     profileFacts: Record<string, unknown>;
-    tripOverrides: Record<string, unknown>;
+    tripOverrides: Record<string, unknown>;         // TEAM_VISIBLE
+    confidentialOverrides: Record<string, unknown>; // ORCHESTRATOR_CONFIDENTIAL
   }>;
   groupDecisions: Record<string, unknown>;
 };
 ```
+
+**visibility 分离必须在 namespace 内部保留（实施修正）：** trip override 的门是 visibility 而非 consent——它由成员在本 Trip 内主动写下，写入本身即是把值放进本 Trip；再要一道 profile consent 会让用户在面板里设置的偏好被静默忽略。但 §3.3 规定 `ORCHESTRATOR_CONFIDENTIAL` 只供 Shared planning prompt，禁止出现在同行响应、plan explanation 与 telemetry，因此它不能与 consent 导出的 profile facts 混在同一个平坦映射里——那样下游无从判断哪些值可以复述。`trip-memory-service` 目前把 `PERSONAL_OVERRIDE` 一律存为 `ORCHESTRATOR_CONFIDENTIAL`。
+
+读取侧据此分成两个函数：`memberPlanningPreferences` 含机密覆盖，仅用于构造 planning prompt；`tripWidePreferences` 不含，因为全程值是要展示给团队的，由机密覆盖推导出的全程值会通过推断泄露它。
 
 **实现：** namespace 落在 `authorized_data._meta.memory`（与 v2 的其他特权分区同处 `_meta`，与顶层 v1 兼容形状不冲突）。`members` 以 run-scoped alias 为键而非 userId——快照其余部分已对成员做别名化，唯独承载偏好的这一节若回填真实 id，等于把别名化撤销掉。
 

@@ -169,6 +169,28 @@ describe("computeMemorySourceFingerprint", () => {
   });
 });
 
+describe("member resolution", () => {
+  it("differs between an empty member list and the trip's real members", async () => {
+    await replaceFact({
+      ctx, userId: ownerId, profileId,
+      fieldKey: "trip_pace", value: "relaxed", path: "PROFILE_FORM",
+    });
+
+    // The Worker passes no member ids, meaning "everyone on the trip". The
+    // snapshot resolves that to the real members; a caller that hashes the
+    // empty list instead gets a different value and fails its own guard. This
+    // is why resolution is shared rather than repeated — see
+    // `resolveMemberIds` in planning-service.
+    const overEveryone = await computeMemorySourceFingerprint({
+      tripId, memberUserIds: [ownerId],
+    });
+    const overNobody = await computeMemorySourceFingerprint({
+      tripId, memberUserIds: [],
+    });
+    expect(overNobody).not.toBe(overEveryone);
+  });
+});
+
 describe("fingerprintFromSnapshot", () => {
   it("reads the value recorded under _meta", () => {
     expect(fingerprintFromSnapshot({ _meta: { memorySourceFingerprint: "abc" } })).toBe("abc");

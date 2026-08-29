@@ -569,7 +569,7 @@
       "loading": "Loading this trip's preferences…",
       "errorTitle": "Trip preferences unavailable",
       "overridesLabel": "This trip only",
-      "overridesHint": "Applies to this trip only and never rewrites your long-term preferences. Other members cannot see it without separate consent.",
+      "overridesHint": "Applies to this trip only and never rewrites your long-term preferences. Planning uses it; other members never see the value.",
       "groupLabel": "Group decision",
       "groupHint": "Visible to every member; one per field for the whole trip.",
       "unset": "Not set",

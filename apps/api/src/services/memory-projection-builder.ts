@@ -239,11 +239,12 @@ export interface MemoryNamespaceInput {
     fieldKey: string;
     value: unknown;
   }[];
-  /** ACTIVE trip constraint facts, including the kind discriminator. */
+  /** ACTIVE trip constraint facts, including the kind and visibility. */
   tripFacts: readonly {
     ownerUserId: string;
     fieldKey: string;
     kind: "MEMBER_CONSTRAINT" | "PERSONAL_OVERRIDE" | "GROUP_DECISION";
+    visibility: ConstraintVisibility;
     valueJson: unknown;
   }[];
 }
@@ -263,7 +264,7 @@ function unwrapTripValue(valueJson: unknown): unknown {
 export function buildMemoryNamespace(input: MemoryNamespaceInput): MemoryProjection {
   const members: MemoryProjection["members"] = {};
   for (const alias of Object.values(input.aliases)) {
-    members[alias] = { profileFacts: {}, tripOverrides: {} };
+    members[alias] = { profileFacts: {}, tripOverrides: {}, confidentialOverrides: {} };
   }
 
   for (const fact of input.preferenceFacts) {
@@ -296,7 +297,14 @@ export function buildMemoryNamespace(input: MemoryNamespaceInput): MemoryProject
 
     const alias = input.aliases[fact.ownerUserId];
     if (!alias) continue;
-    members[alias].tripOverrides[fact.fieldKey] = unwrapTripValue(fact.valueJson);
+
+    // Visibility decides which bucket, and it is the only thing that decides:
+    // an override the owner marked confidential may inform planning but must
+    // never be repeated back to the team (§3.3).
+    const bucket = fact.visibility === "TEAM_VISIBLE"
+      ? members[alias].tripOverrides
+      : members[alias].confidentialOverrides;
+    bucket[fact.fieldKey] = unwrapTripValue(fact.valueJson);
   }
 
   // Parsed rather than cast: this is the boundary personal data crosses, so a
