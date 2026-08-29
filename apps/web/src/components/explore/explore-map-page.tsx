@@ -814,7 +814,7 @@ export function ExploreMapPage() {
         speechPlace={selected?.name ?? null}
       />
 
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 p-4 sm:p-6">
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 p-4 sm:pb-6 sm:pl-[104px] sm:pr-6 sm:pt-6">
         <div data-wanderly-avoid className="pointer-events-auto flex flex-col items-start gap-2">
           {focusHandoff?.tripId ? (
             <Link
@@ -869,7 +869,7 @@ export function ExploreMapPage() {
       ) : null}
 
       {managePinsOpen ? (
-        <section data-wanderly-avoid className="absolute bottom-20 left-4 z-20 block w-[min(360px,calc(100%-2rem))] p-4 wanderly-cosmos-panel wanderly-r-lg landscape:bottom-6 landscape:left-6">
+        <section data-wanderly-avoid className="absolute bottom-20 left-4 z-20 block w-[min(360px,calc(100%-2rem))] p-4 wanderly-cosmos-panel wanderly-r-lg landscape:bottom-6 landscape:left-6 sm:landscape:left-[104px]">
           <>
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1162,7 +1162,7 @@ function LayerToggleGroup({
   return (
     <section
       data-wanderly-avoid
-      className="absolute left-4 top-32 z-20 w-44 p-2 wanderly-cosmos-panel wanderly-r-lg sm:left-6 sm:top-36"
+      className="absolute left-4 top-32 z-20 w-44 p-2 wanderly-cosmos-panel wanderly-r-lg sm:left-[104px] sm:top-36"
       role="group"
       aria-label={t("layerPanel.groupAriaLabel")}
       data-readiness={disabledReason ?? "supported"}
