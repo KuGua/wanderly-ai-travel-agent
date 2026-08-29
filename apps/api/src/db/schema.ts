@@ -18,7 +18,7 @@ export const bookingStatusEnum = pgEnum("booking_status", ["PENDING", "SUBMITTED
 export const outboxStatusEnum = pgEnum("outbox_status", [
   "PENDING",
   // Claimed by a worker. Recoverable: a claim older than the lease is retried,
-  // so a crash mid-handler does not lose the event (migration 0027).
+  // so a crash mid-handler does not lose the event (migration 0029).
   "PROCESSING",
   "PROCESSED",
   "FAILED",
@@ -38,7 +38,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "VISA_CHECK",
   "CHAT_THREAD_CREATE", "CHAT_THREAD_DELETE", "CHAT_MESSAGE_APPEND",
   "TRIP_INVITATION_CREATE", "TRIP_INVITATION_ACCEPT",
-  "TRIP_INVITATION_REVOKE", "TRIP_DEFAULT_THREAD_PROVISION",
+  "TRIP_INVITATION_REVOKE", "TRIP_INVITATION_DECLINE", "TRIP_DEFAULT_THREAD_PROVISION",
   "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE", "TRIP_DRAFT_BRIEF_UPDATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
   "FLIGHT_SEARCH_REQUESTED", "FLIGHT_SEARCH_COMPLETED", "FLIGHT_SEARCH_UNAVAILABLE",
@@ -82,7 +82,7 @@ export const memoryProposalStatusEnum = pgEnum("memory_proposal_status", ["PENDI
 export const chatThreadScopeEnum = pgEnum("chat_thread_scope", ["TRIP"]);
 
 export const tripInvitationStatusEnum = pgEnum("trip_invitation_status", [
-  "PENDING", "ACCEPTED", "REVOKED", "EXPIRED",
+  "PENDING", "ACCEPTED", "DECLINED", "REVOKED", "EXPIRED",
 ]);
 
 // S4 / docs/location-introduction-cache-implementation.md §4.  Shared,
@@ -102,7 +102,7 @@ export const constraintVisibilityEnum = pgEnum("constraint_visibility", [
 /**
  * Distinguishes team-orchestration constraints from long-term-memory overrides
  * and group decisions, so each keeps its own active-uniqueness rule in one
- * table. See migration 0026.
+ * table. See migration 0028.
  */
 export const tripConstraintKindEnum = pgEnum("trip_constraint_kind", [
   "MEMBER_CONSTRAINT",
@@ -484,6 +484,7 @@ export const tripInvitations = pgTable("trip_invitations", {
   tokenHash: varchar("token_hash", { length: 128 }).notNull().unique(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  declinedAt: timestamp("declined_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
@@ -670,7 +671,7 @@ export const tripConstraintFacts = pgTable("trip_constraint_facts", {
   supersededAt: timestamp("superseded_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
 }, (table) => ({
-  // Active uniqueness is per kind — see migration 0026. A single index across
+  // Active uniqueness is per kind — see migration 0028. A single index across
   // every kind would stop a member holding both an orchestration constraint
   // and a personal override on one field.
   memberActiveUnique: uniqueIndex("trip_constraint_facts_member_active_unique")

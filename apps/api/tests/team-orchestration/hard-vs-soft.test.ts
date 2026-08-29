@@ -34,16 +34,13 @@ describe("HARD vs SOFT constraint semantics (spec §10.4)", () => {
     expect(accepted.strength).toBe("SOFT");
   });
 
-  it("treats HARD budget as a blocking value, never silently waives", () => {
-    const accepted = parseConstraintField({
+  it("rejects HARD budget until allocation and FX evidence are defined", () => {
+    expect(() => parseConstraintField({
       fieldKey: "budget_max",
       value: { amountUsd: 2500 },
       visibility: "ORCHESTRATOR_CONFIDENTIAL",
       strength: "HARD",
-    });
-    expect(accepted.strength).toBe("HARD");
-    // The validator (Phase 3) refuses any plan whose provider-evidence inference
-    // violates this HARD cap; we cover the upstream gate here.
+    })).toThrow(ConstraintFieldCatalogError);
     expect(CONSTRAINT_FIELD_CATALOG.budget_max.residualInferenceWarningToken).toBe("BUDGET_RESIDUAL_INFERENCE");
   });
 

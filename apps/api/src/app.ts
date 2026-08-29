@@ -128,7 +128,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
         kind: SpanKind.SERVER,
         attributes: {
           "http.method": request.method,
-          "http.target": request.url,
+          // Tokens are bearer-like invitation credentials. Keep the route
+          // shape useful for diagnostics without recording the raw token.
+          "http.target": safeHttpTarget(request.url),
           "net.peer.ip": request.ip,
           "app.correlation_id": request.correlationId,
         },
@@ -237,6 +239,15 @@ function isAuthenticationExempt(method: string, url: string): boolean {
     || (method === "POST" && path === "/api/v1/explore/location-reference")
     || (method === "POST" && path === "/api/v1/explore/location-introductions")
     || path.startsWith("/api/v1/auth/");
+}
+
+function safeHttpTarget(url: string): string {
+  const path = url.split("?", 1)[0] ?? "/";
+  const invitationMatch = path.match(/^\/api\/v1\/trip-invitations\/[^/]+(?:\/(accept|decline))?$/u);
+  if (!invitationMatch) return path;
+  return invitationMatch[1]
+    ? `/api/v1/trip-invitations/:inviteToken/${invitationMatch[1]}`
+    : "/api/v1/trip-invitations/:inviteToken";
 }
 
 function isUnsafeMethod(method: string): boolean {

@@ -356,6 +356,43 @@ metrics.registerCounter("trip_place_actions_total", "Server-authoritative TripPl
   action: ["proposed", "adopted", "revoked", "stale_invalidated"],
   visibility: ["owner_private", "team_visible", "orchestrator_confidential"],
 });
+
+// Global POI & ground mobility — navigation (docs/ground-mobility-implementation.md §7).
+metrics.registerCounter("navigation_provider_requests_total", "ORS navigation provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["openrouteservice"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+  transport_mode: ["walk", "drive", "cycle", "any"],
+});
+metrics.registerHistogram("navigation_provider_latency_ms", "ORS navigation provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
+  provider: ["openrouteservice"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("navigation_route_tool_invocations_total", "navigation.route skill execution outcomes.", {
+  outcome: ["live", "unavailable"],
+  provider: ["openrouteservice"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved", "policy_denied", "per_run_cap_exceeded"],
+  transport_mode: ["walk", "drive", "cycle"],
+});
+
+// Global POI & ground mobility — mobility (docs/ground-mobility-implementation.md §7).
+metrics.registerCounter("mobility_provider_requests_total", "Amadeus Transfer provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["amadeus-transfer"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerHistogram("mobility_provider_latency_ms", "Amadeus Transfer provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
+  provider: ["amadeus-transfer"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("mobility_search_tool_invocations_total", "mobility.search skill execution outcomes.", {
+  outcome: ["live", "unavailable"],
+  provider: ["amadeus-transfer"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved", "policy_denied"],
+});
+metrics.registerCounter("mobility_offer_selected_total", "Server-tracked mobility offer selection events.", {
+  service_type: ["taxi", "transfer", "charter", "rental"],
+});
 // Bounded same-thread LLM context builder metrics.  See
 // docs/thread-context-memory-implementation.md §8.  No labels carry
 // threadId/tripId/runId — those identifiers live in trace/log context,

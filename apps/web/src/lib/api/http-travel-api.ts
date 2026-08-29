@@ -26,6 +26,9 @@ import {
   updateDraftTripBriefInputSchema,
   updateDraftTripBriefResponseSchema,
   tripDetailResponseSchema,
+  invitationPreviewResponseSchema,
+  acceptInvitationResponseSchema,
+  declineInvitationResponseSchema,
   tripsResponseSchema,
   threadsResponseSchema,
   updateProfileInputSchema,
@@ -55,6 +58,15 @@ import {
   adoptTripPlaceRequestSchema,
   revokeTripPlaceRequestSchema,
   tripPlaceActionResponseSchema,
+  researchResultSchema,
+  routeEvidenceListSchema,
+  navigationRouteSearchRequestSchema,
+  navigationRouteSearchResponseSchema,
+  mobilityOfferListSchema,
+  mobilitySearchRequestSchema,
+  mobilitySearchResponseSchema,
+  mobilityOfferSelectionRequestSchema,
+  mobilityOfferSelectionResponseSchema,
   type UpdateProfileInput,
   type ConversationTurnRequest,
   type CreateTripThreadInput,
@@ -160,6 +172,18 @@ export class HttpTravelApi implements TravelApi {
 
   getTrip(tripId: string) {
     return this.client.request("/trips/" + encodeURIComponent(tripId), tripDetailResponseSchema);
+  }
+
+  getInvitationPreview(inviteToken: string) {
+    return this.client.request("/trip-invitations/" + encodeURIComponent(inviteToken), invitationPreviewResponseSchema);
+  }
+
+  acceptInvitation(inviteToken: string) {
+    return this.client.request("/trip-invitations/" + encodeURIComponent(inviteToken) + "/accept", acceptInvitationResponseSchema, { method: "POST" });
+  }
+
+  declineInvitation(inviteToken: string) {
+    return this.client.request("/trip-invitations/" + encodeURIComponent(inviteToken) + "/decline", declineInvitationResponseSchema, { method: "POST" });
   }
 
   getLocationReference(input: import("./contracts").LocationReferenceInput) {
@@ -458,6 +482,68 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request(
       `/trips/${encodeURIComponent(tripId)}/places:revoke`,
       tripPlaceActionResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  // ─── Phase 4 non-blocking research summary ─────────────────────────────────
+  getResearchResult(tripId: string, agentTaskRunId?: string) {
+    const params = agentTaskRunId ? `?agentTaskRunId=${encodeURIComponent(agentTaskRunId)}` : "";
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/research-results${params}`,
+      researchResultSchema,
+    );
+  }
+
+  // ─── Phase 3 navigation route evidence ──────────────────────────────────
+  listRouteEvidence(tripId: string, planId?: string) {
+    const query = planId ? `?planId=${encodeURIComponent(planId)}` : "";
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/route-evidence${query}`,
+      routeEvidenceListSchema,
+    );
+  }
+
+  searchRoute(tripId: string, planId: string, input: z.infer<typeof navigationRouteSearchRequestSchema>, options?: { idempotencyKey?: string }) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/plans/${encodeURIComponent(planId)}/routes`,
+      navigationRouteSearchResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  // ─── Phase 5 mobility offers ──────────────────────────────────────────
+  listMobilityOffers(tripId: string) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/mobility-offers`,
+      mobilityOfferListSchema,
+    );
+  }
+
+  searchMobilityOffers(tripId: string, input: z.infer<typeof mobilitySearchRequestSchema>, options?: { idempotencyKey?: string }) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/mobility-offers:search`,
+      mobilitySearchResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  selectMobilityOffer(tripId: string, input: z.infer<typeof mobilityOfferSelectionRequestSchema>, options?: { idempotencyKey?: string }) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/mobility-offers:select`,
+      mobilityOfferSelectionResponseSchema,
       {
         method: "POST",
         body: JSON.stringify(input),

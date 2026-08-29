@@ -118,7 +118,7 @@
       },
       "draft": {
         "short": "Untitled exploration · only you can see it",
-        "continueCta": "Continue"
+        "continueCta": "Continue planning"
       },
       "dates": {
         "notSet": "Dates not set",
@@ -353,6 +353,42 @@
     },
     "backToTrip": "Back to trip"
   },
+  "invitation": {
+    "kicker": "Private invitation",
+    "title": "Join a shared trip",
+    "subtitle": "Review the invitation before joining. Your profile and private conversations remain private until you choose a sharing scope.",
+    "checkingIdentity": "Checking your sign-in…",
+    "signInTitle": "Sign in to view this invitation",
+    "signInBody": "Invitations are bound to a specific account. Sign in with the account that received this link, then open the link again.",
+    "signInAction": "Sign in",
+    "loading": "Loading your invitation…",
+    "unavailableTitle": "This invitation is unavailable",
+    "unavailableBody": "It may have expired, been used, been withdrawn, or belong to a different account.",
+    "returnHome": "Return home",
+    "tripLabel": "Trip summary",
+    "destinations": "Destination options",
+    "destinationsUnknown": "Not set",
+    "dates": "Travel dates",
+    "datesUnknown": "Not set yet",
+    "membershipTitle": "Your membership",
+    "membershipBody": "You will join as a required trip member. Your confirmation is needed before any booking sandbox request can proceed.",
+    "privacyTitle": "You control what is shared",
+    "privacyBody": "Accepting does not share your profile, nationality, documents, or private chats. You will choose the minimum fields to share for this trip next.",
+    "expiry": "This invitation expires {date}.",
+    "actionError": "We could not update this invitation. Please try again.",
+    "accept": "Accept invitation",
+    "accepting": "Accepting…",
+    "decline": "Decline invitation",
+    "declineConfirmTitle": "Decline this invitation?",
+    "declineConfirmBody": "You will not be added to this trip. Ask the organizer for a new invitation if you change your mind.",
+    "declineConfirmAction": "Yes, decline",
+    "cancel": "Cancel",
+    "acceptedTitle": "You’re in",
+    "acceptedBody": "The trip is ready, but nothing from your private profile has been shared.",
+    "setSharingScope": "Set your sharing scope",
+    "declinedTitle": "Invitation declined",
+    "declinedBody": "You have not been added to this trip."
+  },
   "trips": {
     "kicker": "Trip workspace",
     "title": {
@@ -383,24 +419,6 @@
       "destinations": "Candidate destinations",
       "members": "{count, plural, =0 {No members yet} =1 {1 member} other {# members}}",
       "departure": "Departure"
-    },
-    "draft": {
-      "kicker": "Draft exploration",
-      "body": "Your private conversation is saved. Add a brief, then activate the trip to invite co-travelers.",
-      "formAriaLabel": "Activate draft trip",
-      "titlePreviewLabel": "Trip title preview",
-      "titlePreviewHint": "Generated only from the destinations and dates below; it never uses your chat history.",
-      "departureLabel": "Departure cities (1–3)",
-      "departurePlaceholder": "Add a departure city and press Enter",
-      "candidatesLabel": "Candidate destinations (2–5)",
-      "candidatesPlaceholder": "Add a candidate destination and press Enter",
-      "dateStartLabel": "Earliest travel date (optional)",
-      "dateEndLabel": "Latest travel date (optional)",
-      "addCity": "Add city",
-      "addCandidate": "Add candidate",
-      "removeChip": "Remove {value}",
-      "activateHint": "Activation moves this trip to Planning and unlocks invitations, consent, and the Shared Agent.",
-      "activateCta": "Start planning / Invite co-travelers"
     },
     "threads": {
       "heading": "Your threads",
@@ -433,11 +451,78 @@
       "mapWindow": "Explore map",
       "mapPinned": "Pinned",
       "openFullMap": "Open in full map",
+      "draftActivationHint": "Confirm your travel brief in the private conversation to start planning.",
+      "activateDraft": "Start planning",
+      "activateDraftError": "Could not start planning. Please try again.",
       "roleValue": {
         "CREATOR": "Creator",
         "MEMBER": "Member"
       },
       "openPinAria": "View {name} on the full map",
+      "mobility": {
+        "title": "Mobility offers",
+        "attribution": "Pricing via Amadeus Transfer",
+        "empty": "No mobility offers yet.",
+        "expired": "Expired",
+        "passengers": "{count, plural, one {# passenger} other {# passengers}}",
+        "select": "Select",
+        "dismiss": "Dismiss",
+        "filter": "Filter by service type",
+        "filter": {
+          "all": "All",
+          "taxi": "Taxi",
+          "transfer": "Transfer",
+          "charter": "Charter",
+          "rental": "Rental"
+        },
+        "serviceType": {
+          "taxi": "Taxi",
+          "transfer": "Private transfer",
+          "charter": "Charter",
+          "rental": "Car rental"
+        }
+      },
+      "route": {
+        "title": "{origin} → {destination}",
+        "originFallback": "Origin",
+        "destinationFallback": "Destination",
+        "distance": "Distance",
+        "duration": "Duration",
+        "attribution": "Routing by ORS",
+        "fresh": "Fresh",
+        "stale": "Needs refresh",
+        "refresh": "Refresh",
+        "stepsTruncated": "{count, plural, one {# more step} other {# more steps}}",
+        "mode": {
+          "WALK": "Walk",
+          "DRIVE": "Drive",
+          "CYCLE": "Cycle"
+        }
+      },
+      "gaps": {
+        "title": "Research summary",
+        "badge": "Gaps recorded",
+        "body": "Some research steps could not be confirmed in real time. The plan is still saved with the evidence we did collect; treat the missing items as decisions you may want to verify before booking.",
+        "codeList": "{codes}",
+        "capability": {
+          "flight": "Flights",
+          "stay": "Stays",
+          "activities": "Activities",
+          "navigation": "Walking / driving / cycling",
+          "mobility": "Taxis / transfers / rental",
+          "transit": "Public transit"
+        },
+        "code": {
+          "NOT_CONFIGURED": "Capability not configured",
+          "SEARCH_CONSTRAINTS_INCOMPLETE": "Search constraints incomplete",
+          "NO_RESULTS": "No matching results",
+          "RATE_LIMITED": "Provider rate-limited",
+          "UPSTREAM_TIMEOUT": "Provider timed out",
+          "UPSTREAM_FAILURE": "Provider failure",
+          "INVALID_PROVIDER_RESPONSE": "Provider returned an invalid response",
+          "PROVIDER_NOT_APPROVED": "Provider not approved"
+        }
+      },
       "poi": {
         "title": "Places",
         "attribution": "ORS",

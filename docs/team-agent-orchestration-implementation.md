@@ -1,6 +1,6 @@
 # Team Agent 协作编排实施规范
 
-**状态：** 已批准，待实施  
+**状态：** 实施中；核心约束 mutation、replan 与 adoption 状态机已落地。模型最小投影、成员安全 vote read 与首个 HARD evaluator 已进入实现；Personal Agent 候选生成、完整 Web 接入和 E2E 仍按第 9 节推进。
 **范围：** 多成员 Personal Agent 向 Shared Trip Agent 的结构化交接、私密约束、自动重规划和方案采用投票。  
 **事实来源：** `TECH_STACK.md`、`docs/PRD.md`、`docs/backlog.md`、`docs/test-scenarios.md`、`docs/agent-architecture.md` 与本文件。若本文件与旧的长期记忆实施细节冲突，以本文件为准。
 
@@ -100,7 +100,7 @@ The current Trip-scoped authoritative contribution. It replaces the general `PER
 | `status` | `ACTIVE`, `SUPERSEDED`, `REVOKED`; partial unique active index per owner/trip/field. |
 | `created_at`, `superseded_at`, `revoked_at` | auditable lifecycle timestamps. |
 
-Only `TEAM_VISIBLE` facts appear in member-facing workspace payloads. Both approved visibility modes may be included in the internal snapshot projection according to the active consent policy. For profile-derived values, existing field-level `consent_grants` remains mandatory; a Trip fact is an additional explicit owner command, not a consent bypass.
+Only `TEAM_VISIBLE` facts appear in member-facing workspace payloads. Both approved visibility modes may be included in the internal snapshot projection according to the active consent policy. For `PERSONAL_AGENT` profile-derived values, an active Trip-scoped grant whose `field_list` contains the exact catalog key remains mandatory. `OWNER_FORM` is an explicit direct Trip command and does not claim to read a Profile field.
 
 ### 3.4 Snapshot projection manifest
 
@@ -139,8 +139,8 @@ Initial catalog:
 | Field | Strength | Visibility | Notes |
 |---|---|---|---|
 | `departure_city`, `travel_date_window` | HARD | TEAM_VISIBLE | existing Trip brief fields remain server-authoritative. |
-| `budget_max`, `accessibility_need`, `special_schedule_limit` | HARD/SOFT by catalog | TEAM_VISIBLE or ORCHESTRATOR_CONFIDENTIAL | confirmation UI requires residual-inference warning. |
-| `no_red_eye`, `accommodation_style`, `travel_pace`, `interests` | SOFT; `no_red_eye` may be HARD | both modes if catalog permits | model may rank, not fabricate facts. |
+| `budget_max`, `accessibility_need`, `special_schedule_limit` | 当前仅 SOFT | TEAM_VISIBLE or ORCHESTRATOR_CONFIDENTIAL | 当前 evidence 无法确定性证明个人预算分摊、无障碍或自由文本日程；不得伪装为 HARD。 |
+| `no_red_eye`, `accommodation_style`, `travel_pace`, `interests` | `no_red_eye` 可 HARD；其余 SOFT | both modes if catalog permits | `no_red_eye` 由服务端按选中航段 ISO 出发本地时刻（22:00–05:59 为红眼）验证；模型不得自行豁免。 |
 | nationality/travel document | not proposal-eligible | existing dedicated consent only | form-only; no Personal Agent extraction. |
 
 `ConstraintProposalService` and `TripConstraintFactService` must parse catalog schemas server-side. The client and model may select a key/value only; they cannot create catalog entries, use arbitrary JSON, assign another owner, or bypass visibility rules.
@@ -164,7 +164,7 @@ The output is validated by catalog schema and stored only as `PENDING` proposal.
 
 ### 5.2 Commands and reads
 
-All commands require authenticated active membership, a UUID idempotency key and a transaction. Request/response schemas are strict Zod and must be added to OpenAPI.
+All commands require authenticated active membership, a required UUID idempotency key and a transaction. Request/response schemas are strict Zod and must be added to OpenAPI. The server derives snapshot IDs, preference versions and REPLAN request IDs; clients must never supply those internal authorities.
 
 | Endpoint | Behavior |
 |---|---|
@@ -190,6 +190,8 @@ For confirm, replace, revoke, consent mutation, profile projection-source mutati
 5. cancel/supersede any active planning task safely, create a new immutable snapshot and enqueue one `REPLAN` task with outbox event;
 6. write value-free audit event and return the durable run ID.
 
+The mutation must fail atomically when the Trip has no required member or no confirmed flight-search preference. It must not commit a new fact after staling a plan unless it can also create the immutable snapshot and accept the replacement `REPLAN` run.
+
 The new snapshot must be created inside the acceptance transaction after all fact writes. Its manifest is pinned to `agent_task_runs`; finalization checks that the task lease, snapshot ID, member set and projection manifest are still current. A changed source makes the task terminal `STALE` and prevents any plan write.
 
 ## 6. Shared planning, proposal, and adoption state
@@ -198,7 +200,7 @@ The new snapshot must be created inside the acceptance transaction after all fac
 
 The planning worker must build a research matrix for every `(origin, destinationCandidate, service)` combination before synthesis. `Promise.allSettled` is permitted only behind configured concurrency limits and per-provider deadlines. Missing data is represented as `UNAVAILABLE`, never fixture fallback.
 
-The Shared Agent receives `teamVisible` plus `orchestratorConfidential` snapshot sections, evidence IDs and opaque member aliases. It may use all constraints for optimization. The deterministic validator must enforce:
+The Shared Agent receives a model-only projection containing `teamVisible` plus `orchestratorConfidential` snapshot sections and evidence IDs. It never receives the legacy user-ID keyed `authorized_data` map or server-only userId-to-alias lookup. It may use all constraints for optimization. The deterministic validator must enforce:
 
 - all configured destination candidates are represented;
 - every selected provider item exactly matches current run evidence;

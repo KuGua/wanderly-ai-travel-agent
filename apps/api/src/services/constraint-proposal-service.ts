@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, desc } from "drizzle-orm";
 import { db } from "../db/database.js";
 import {
   tripConstraintProposals,
   tripConstraintFacts,
   tripMembers,
   sharedTrips,
+  tripSearchPreferences,
+  consentGrants,
 } from "../db/schema.js";
 import { enqueueMemoryObservation } from "./memory-observation-bridge.js";
 import { recordAudit } from "./audit-service.js";
@@ -16,7 +18,8 @@ import {
 } from "./idempotency-service.js";
 import { stalePlansAndConfirmationsForTrip } from "./consent-service.js";
 import { acceptPlanningTask } from "../tasks/task-repository.js";
-import { parseConstraintField, type ValidatedConstraintField } from "../policy/constraint-field-catalog.js";
+import { createConstraintSnapshot } from "./planning-service.js";
+import { CONSTRAINT_FIELD_CATALOG, parseConstraintField } from "../policy/constraint-field-catalog.js";
 import { metrics } from "../observability/metrics.js";
 import type { RequestContext } from "../utils/context.js";
 import type {
@@ -41,6 +44,11 @@ function hashValue(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value) ?? "null").digest("hex");
 }
 
+function stableUuidFromRequestKey(requestKey: string): string {
+  const digest = createHash("sha256").update(`constraint-replan:${requestKey}`).digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-8${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
+
 function idempotencyKeyFor(
   entity: string,
   tripId: string,
@@ -50,15 +58,14 @@ function idempotencyKeyFor(
   return `trip_constraint_proposal:${entity}:${tripId}:${userId}:${requestKey}`;
 }
 
-function ensureRequestKey(raw: string | undefined, fallback: string): string {
-  const candidate = raw ?? fallback;
-  if (!IDEMPOTENCY_KEY_PATTERN.test(candidate)) {
+function ensureRequestKey(raw: string | undefined): string {
+  if (!raw || !IDEMPOTENCY_KEY_PATTERN.test(raw)) {
     throw new ConstraintProposalServiceError(
       "INVALID_IDEMPOTENCY_KEY",
       "Idempotency key must match /^[A-Za-z0-9:_-]{1,256}$/",
     );
   }
-  return candidate;
+  return raw;
 }
 
 function visibilityLabel(visibility: ConstraintVisibility): "team_visible" | "orchestrator_confidential" {
@@ -110,6 +117,96 @@ async function requireTripExists(tx: Tx, tripId: string): Promise<void> {
   }
 }
 
+async function requireFieldConsent(
+  tx: Tx,
+  params: { tripId: string; userId: string; fieldKey: string; sourceKind: TripConstraintProposalSourceKind },
+): Promise<void> {
+  const descriptor = CONSTRAINT_FIELD_CATALOG[params.fieldKey as keyof typeof CONSTRAINT_FIELD_CATALOG];
+  // A form submission is a direct per-Trip owner command. Only a proposal
+  // derived by Personal Agent from a Profile field needs Profile consent.
+  if (params.sourceKind !== "PERSONAL_AGENT" || !descriptor?.profileConsentRequired) return;
+
+  const grants = await tx.select({ fieldList: consentGrants.fieldList }).from(consentGrants).where(and(
+    eq(consentGrants.tripId, params.tripId),
+    eq(consentGrants.userId, params.userId),
+    eq(consentGrants.granted, true),
+  ));
+  if (!grants.some((grant) => grant.fieldList?.includes(params.fieldKey))) {
+    throw new ConstraintProposalServiceError(
+      "FORBIDDEN",
+      `An active consent grant is required for field "${params.fieldKey}"`,
+    );
+  }
+}
+
+/**
+ * Build the next immutable snapshot and accept its durable REPLAN run in the
+ * same transaction as the fact mutation. This removes the old, unsafe route
+ * contract that asked callers to supply a snapshot id and preference version.
+ */
+async function enqueueReplanForConstraintMutation(params: {
+  tx: Tx;
+  ctx: RequestContext;
+  tripId: string;
+  userId: string;
+  requestId: string;
+  trigger: string;
+}): Promise<{ runId: string; queuedAt: Date }> {
+  const [trip] = await params.tx.select().from(sharedTrips)
+    .where(eq(sharedTrips.id, params.tripId))
+    .for("update")
+    .limit(1);
+  if (!trip) throw new ConstraintProposalServiceError("TRIP_NOT_FOUND", "Trip not found");
+
+  const requiredMembers = await params.tx.select({ userId: tripMembers.userId })
+    .from(tripMembers)
+    .where(and(eq(tripMembers.tripId, params.tripId), eq(tripMembers.isRequired, true)));
+  if (requiredMembers.length === 0) {
+    throw new ConstraintProposalServiceError("FORBIDDEN", "A replan requires at least one required trip member");
+  }
+
+  const [preference] = await params.tx.select({ version: tripSearchPreferences.version })
+    .from(tripSearchPreferences)
+    .where(eq(tripSearchPreferences.tripId, params.tripId))
+    .orderBy(desc(tripSearchPreferences.version))
+    .limit(1);
+  if (!preference) {
+    throw new ConstraintProposalServiceError(
+      "FORBIDDEN",
+      "Confirmed flight search preferences are required before changing shared constraints",
+    );
+  }
+
+  const snapshotId = await createConstraintSnapshot({
+    tripId: params.tripId,
+    memberIds: requiredMembers.map((member) => member.userId),
+    departureCities: trip.departureCities as string[],
+    destinationCandidates: trip.destinationCandidates as string[],
+    travelDateStart: trip.travelDateStart ?? undefined,
+    travelDateEnd: trip.travelDateEnd ?? undefined,
+    tx: params.tx,
+  });
+  const accepted = await acceptPlanningTask({
+    ctx: params.ctx,
+    tripId: params.tripId,
+    userId: params.userId,
+    snapshotId,
+    flightSearchPreferencesVersion: preference.version,
+    operation: "REPLAN",
+    requestId: stableUuidFromRequestKey(params.requestId),
+    tx: params.tx,
+  });
+  await recordAudit({
+    ctx: params.ctx,
+    action: "PLAN_REPLAN_ENQUEUED",
+    actorUserId: params.userId,
+    tripId: params.tripId,
+    summary: { trigger: params.trigger, runId: accepted.runId },
+    tx: params.tx,
+  });
+  return { runId: accepted.runId, queuedAt: new Date() };
+}
+
 interface ProposalEnvelope {
   fieldKey: string;
   valueJson: unknown;
@@ -128,11 +225,7 @@ export async function proposeConstraint(params: {
   envelope: ProposalEnvelope;
   idempotencyKey: string;
 }): Promise<{ proposalId: string }> {
-  const requestKey = ensureRequestKey(params.idempotencyKey, hashValue({
-    op: "propose", tripId: params.tripId, owner: params.ownerUserId,
-    field: params.envelope.fieldKey, value: params.envelope.valueJson,
-    visibility: params.envelope.proposedVisibility, strength: params.envelope.strength,
-  }));
+  const requestKey = ensureRequestKey(params.idempotencyKey);
 
   // Pre-validate catalog shape — keeps `proposal` rows guaranteed to be writable.
   try {
@@ -243,9 +336,7 @@ export async function dismissConstraintProposal(params: {
   ownerUserId: string;
   idempotencyKey: string;
 }): Promise<void> {
-  const requestKey = ensureRequestKey(params.idempotencyKey, hashValue({
-    op: "dismiss", tripId: params.tripId, proposal: params.proposalId,
-  }));
+  const requestKey = ensureRequestKey(params.idempotencyKey);
   const fullKey = idempotencyKeyFor("dismiss", params.tripId, params.ownerUserId, requestKey);
 
   await db.transaction(async (tx) => {
@@ -295,25 +386,19 @@ export async function confirmConstraintProposal(params: {
   ownerUserId: string;
   visibility: ConstraintVisibility;
   strength: ConstraintStrength;
-  flightSearchPreferencesVersion?: number;
-  snapshotId?: string;
   idempotencyKey: string;
 }): Promise<{
   factId: string;
   proposalId: string;
   replan: { runId: string; queuedAt: Date } | null;
 }> {
-  const requestKey = ensureRequestKey(params.idempotencyKey, hashValue({
-    op: "confirm", tripId: params.tripId, proposal: params.proposalId,
-    visibility: params.visibility, strength: params.strength,
-  }));
+  const requestKey = ensureRequestKey(params.idempotencyKey);
   // Note: catalog validation is re-applied inside the transaction after the
   // proposal row is locked, with the proposal's persisted `valueJson`. The
   // upfront catalog check here is intentionally skipped to avoid an early
   // throw on `_upfront` placeholder values.
   void params.visibility;
   void params.strength;
-  void ({} as ValidatedConstraintField);
 
   const fullKey = idempotencyKeyFor("confirm", params.tripId, params.ownerUserId, requestKey);
 
@@ -379,6 +464,9 @@ export async function confirmConstraintProposal(params: {
       value: proposal.valueJson,
       visibility: params.visibility,
       strength: params.strength,
+    });
+    await requireFieldConsent(tx, {
+      tripId: params.tripId, userId: params.ownerUserId, fieldKey: proposal.fieldKey, sourceKind: proposal.sourceKind,
     });
 
     const [latestFact] = await tx.select({ revision: tripConstraintFacts.revision })
@@ -459,28 +547,10 @@ export async function confirmConstraintProposal(params: {
       tx,
     });
 
-    let replan: { runId: string; queuedAt: Date } | null = null;
-    if (params.snapshotId && params.flightSearchPreferencesVersion !== undefined) {
-      const accepted = await acceptPlanningTask({
-        ctx: params.ctx,
-        tripId: params.tripId,
-        userId: params.ownerUserId,
-        snapshotId: params.snapshotId,
-        flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
-        operation: "REPLAN",
-        requestId: `constraint-${proposal.id}`,
-        tx,
-      });
-      replan = { runId: accepted.runId, queuedAt: new Date() };
-      await recordAudit({
-        ctx: params.ctx,
-        action: "PLAN_REPLAN_ENQUEUED",
-        actorUserId: params.ownerUserId,
-        tripId: params.tripId,
-        summary: { trigger: "trip_constraint_confirmed", runId: accepted.runId },
-        tx,
-      });
-    }
+    const replan = await enqueueReplanForConstraintMutation({
+      tx, ctx: params.ctx, tripId: params.tripId, userId: params.ownerUserId,
+      requestId: requestKey, trigger: "trip_constraint_confirmed",
+    });
 
     await completeIdempotency(tx, fullKey, "trip_constraint_proposal", proposal.id, {
       factId: fact.id,
@@ -495,7 +565,7 @@ export async function confirmConstraintProposal(params: {
     });
     metrics.inc("plan_replan_total", {
       trigger: "trip_constraint_confirmed",
-      result: replan ? "enqueued" : "missing_snapshot",
+      result: "enqueued",
     });
     return { factId: fact.id, proposalId: proposal.id, replan };
   });
@@ -510,12 +580,8 @@ export async function revokeConstraintFact(params: {
   factId: string;
   ownerUserId: string;
   idempotencyKey: string;
-  flightSearchPreferencesVersion?: number;
-  snapshotId?: string;
 }): Promise<{ replan: { runId: string; queuedAt: Date } | null }> {
-  const requestKey = ensureRequestKey(params.idempotencyKey, hashValue({
-    op: "revoke", tripId: params.tripId, fact: params.factId,
-  }));
+  const requestKey = ensureRequestKey(params.idempotencyKey);
   const fullKey = idempotencyKeyFor("revoke", params.tripId, params.ownerUserId, requestKey);
   const replay = await loadIdempotencyResult(fullKey);
   if (replay?.resultPayload) {
@@ -572,28 +638,10 @@ export async function revokeConstraintFact(params: {
       tx,
     });
 
-    let replan: { runId: string; queuedAt: Date } | null = null;
-    if (params.snapshotId && params.flightSearchPreferencesVersion !== undefined) {
-      const accepted = await acceptPlanningTask({
-        ctx: params.ctx,
-        tripId: params.tripId,
-        userId: params.ownerUserId,
-        snapshotId: params.snapshotId,
-        flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
-        operation: "REPLAN",
-        requestId: `revoke-${fact.id}`,
-        tx,
-      });
-      replan = { runId: accepted.runId, queuedAt: new Date() };
-      await recordAudit({
-        ctx: params.ctx,
-        action: "PLAN_REPLAN_ENQUEUED",
-        actorUserId: params.ownerUserId,
-        tripId: params.tripId,
-        summary: { trigger: "trip_constraint_revoked", runId: accepted.runId },
-        tx,
-      });
-    }
+    const replan = await enqueueReplanForConstraintMutation({
+      tx, ctx: params.ctx, tripId: params.tripId, userId: params.ownerUserId,
+      requestId: requestKey, trigger: "trip_constraint_revoked",
+    });
 
     await completeIdempotency(tx, fullKey, "trip_constraint_fact", fact.id, { replan });
     metrics.inc("trip_constraint_mutation_total", {
@@ -604,7 +652,7 @@ export async function revokeConstraintFact(params: {
     });
     metrics.inc("plan_replan_total", {
       trigger: "trip_constraint_revoked",
-      result: replan ? "enqueued" : "missing_snapshot",
+      result: "enqueued",
     });
     return { replan };
   });
@@ -617,6 +665,7 @@ export async function revokeConstraintFact(params: {
 export async function upsertConstraintFactDirect(params: {
   ctx: RequestContext;
   tripId: string;
+  factId: string;
   ownerUserId: string;
   fieldKey: string;
   valueJson: unknown;
@@ -624,8 +673,6 @@ export async function upsertConstraintFactDirect(params: {
   strength: ConstraintStrength;
   expectedRevision?: number;
   idempotencyKey: string;
-  flightSearchPreferencesVersion?: number;
-  snapshotId?: string;
 }): Promise<{ factId: string; replan: { runId: string; queuedAt: Date } | null }> {
   parseConstraintField({
     fieldKey: params.fieldKey,
@@ -634,12 +681,7 @@ export async function upsertConstraintFactDirect(params: {
     strength: params.strength,
   });
 
-  const requestKey = ensureRequestKey(params.idempotencyKey, hashValue({
-    op: "upsert", tripId: params.tripId, owner: params.ownerUserId,
-    field: params.fieldKey, value: params.valueJson,
-    visibility: params.visibility, strength: params.strength,
-    expectedRevision: params.expectedRevision ?? null,
-  }));
+  const requestKey = ensureRequestKey(params.idempotencyKey);
   const fullKey = idempotencyKeyFor("upsert", params.tripId, params.ownerUserId, requestKey);
   const replay = await loadIdempotencyResult(fullKey);
   if (replay?.resultPayload) {
@@ -672,15 +714,18 @@ export async function upsertConstraintFactDirect(params: {
 
     const [latestFact] = await tx.select().from(tripConstraintFacts)
       .where(and(
+        eq(tripConstraintFacts.id, params.factId),
         eq(tripConstraintFacts.tripId, params.tripId),
         eq(tripConstraintFacts.ownerUserId, params.ownerUserId),
-        eq(tripConstraintFacts.fieldKey, params.fieldKey),
         eq(tripConstraintFacts.status, "ACTIVE"),
       ))
       .for("update")
       .limit(1);
 
-    if (params.expectedRevision !== undefined && latestFact && latestFact.revision !== params.expectedRevision) {
+    if (!latestFact || latestFact.fieldKey !== params.fieldKey) {
+      throw new ConstraintProposalServiceError("PROPOSAL_NOT_FOUND", "Active fact does not match this update");
+    }
+    if (params.expectedRevision !== undefined && latestFact.revision !== params.expectedRevision) {
       throw new ConstraintProposalServiceError(
         "PROPOSAL_NOT_FOUND",
         `Expected revision ${params.expectedRevision} but found ${latestFact?.revision ?? "none"}; reload and retry`,
@@ -728,28 +773,10 @@ export async function upsertConstraintFactDirect(params: {
       tx,
     });
 
-    let replan: { runId: string; queuedAt: Date } | null = null;
-    if (params.snapshotId && params.flightSearchPreferencesVersion !== undefined) {
-      const accepted = await acceptPlanningTask({
-        ctx: params.ctx,
-        tripId: params.tripId,
-        userId: params.ownerUserId,
-        snapshotId: params.snapshotId,
-        flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
-        operation: "REPLAN",
-        requestId: `upsert-${fact.id}`,
-        tx,
-      });
-      replan = { runId: accepted.runId, queuedAt: new Date() };
-      await recordAudit({
-        ctx: params.ctx,
-        action: "PLAN_REPLAN_ENQUEUED",
-        actorUserId: params.ownerUserId,
-        tripId: params.tripId,
-        summary: { trigger: "trip_constraint_upsert", runId: accepted.runId },
-        tx,
-      });
-    }
+    const replan = await enqueueReplanForConstraintMutation({
+      tx, ctx: params.ctx, tripId: params.tripId, userId: params.ownerUserId,
+      requestId: requestKey, trigger: "trip_constraint_upsert",
+    });
 
     await completeIdempotency(tx, fullKey, "trip_constraint_fact", fact.id, { factId: fact.id, replan });
     metrics.inc("trip_constraint_mutation_total", {
@@ -760,7 +787,7 @@ export async function upsertConstraintFactDirect(params: {
     });
     metrics.inc("plan_replan_total", {
       trigger: "trip_constraint_upsert",
-      result: replan ? "enqueued" : "missing_snapshot",
+      result: "enqueued",
     });
     return { factId: fact.id, replan };
   });

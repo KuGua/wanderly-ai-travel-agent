@@ -120,8 +120,8 @@ describe("validateSnapshotBoundNavigationRoute", () => {
     })).not.toThrow();
   });
 
-  it("rejects mismatched snapshotId", () => {
-    expect(() => validateSnapshotBoundNavigationRoute({
+  it("rejects mismatched snapshotId", async () => {
+    await expect(validateSnapshotBoundNavigationRoute({
       input: {
         snapshotId: SNAPSHOT_ID,
         originPlaceId: ORIGIN_ID,
@@ -130,6 +130,6 @@ describe("validateSnapshotBoundNavigationRoute", () => {
       },
       snapshotId: OTHER_SNAPSHOT_ID,
       snapshot,
-    })).toThrow(/snapshot does not match task snapshot/);
+    })).rejects.toThrow(/snapshot does not match task snapshot/);
   });
 });

@@ -21,6 +21,12 @@ const navigation: readonly NavEntry[] = [
   { href: "/profile", labelKey: "navProfile", icon: Settings2 },
 ] as const;
 
+export function contentGridClass(pathname: string): string {
+  // The Explore map is an immersive surface. Let the fixed rail float above
+  // it instead of reserving a page-colour gutter behind the navigation.
+  return pathname === "/home" ? "sm:col-span-2 sm:col-start-1" : "sm:col-start-2";
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const t = useTranslations("common");
   const pathname = usePathname();
@@ -34,6 +40,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     // which would otherwise drop the page into the 88px rail gutter.
     <div className="min-h-screen bg-background sm:grid sm:grid-cols-[88px_minmax(0,1fr)]">
       <aside
+        data-wanderly-avoid
         className={cn(
           "relative z-50 flex h-[62px] items-center gap-2 border-b-2 border-[var(--w-ink)] bg-sidebar px-3.5 py-2 text-sidebar-foreground",
           // Long floating navigation card on desktop.
@@ -80,7 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <div className="min-w-0 sm:col-start-2">{children}</div>
+      <div className={cn("min-w-0", contentGridClass(strippedPath))}>{children}</div>
     </div>
   );
 }

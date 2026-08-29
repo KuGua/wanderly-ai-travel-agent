@@ -479,7 +479,7 @@ export const errorResponseSchema = z.object({
 // ─── Trip Invitations ──────────────────────────────────────────────────────
 
 export const tripInvitationStatusSchema = z.enum([
-  "PENDING", "ACCEPTED", "REVOKED", "EXPIRED",
+  "PENDING", "ACCEPTED", "DECLINED", "REVOKED", "EXPIRED",
 ]);
 
 export const createTripInvitationSchema = z.object({
@@ -514,6 +514,24 @@ export const acceptInvitationResponseSchema = z.object({
     isDefault: z.literal(true),
   }).strict(),
 });
+
+// This is deliberately not a Trip detail response. It is the smallest
+// authenticated, token-bound view required to make an invitation decision.
+export const tripInvitationPreviewResponseSchema = z.object({
+  trip: z.object({
+    name: z.string().min(1).max(256),
+    destinationCandidates: z.array(z.string().min(1)).max(5),
+    travelDateStart: dateStr.nullable(),
+    travelDateEnd: dateStr.nullable(),
+  }).strict(),
+  membership: z.literal("MEMBER"),
+  isRequired: z.literal(true),
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const declineInvitationResponseSchema = z.object({
+  declined: z.literal(true),
+}).strict();
 
 // ─── Exploration & Draft Trip ──────────────────────────────────────────────
 

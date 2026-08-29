@@ -51,6 +51,18 @@ import type {
   TripMemoryFact,
   TripMemoryGroupResponse,
   TripMemoryOverridesResponse,
+  ResearchResult,
+  RouteEvidenceList,
+  NavigationRouteSearchRequest,
+  NavigationRouteSearchResponse,
+  MobilityOfferList,
+  MobilitySearchRequest,
+  MobilitySearchResponse,
+  MobilityOfferSelectionRequest,
+  MobilityOfferSelectionResponse,
+  InvitationPreviewResponse,
+  AcceptInvitationResponse,
+  DeclineInvitationResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -68,6 +80,10 @@ export interface TravelApi {
   deleteTripMemory(tripId: string, factId: string): Promise<void>;
   getTrips(): Promise<TripsResponse>;
   getTrip(tripId: string): Promise<TripDetailResponse>;
+  // Optional while older fixtures and API adapters adopt the invitation flow.
+  getInvitationPreview?(inviteToken: string): Promise<InvitationPreviewResponse>;
+  acceptInvitation?(inviteToken: string): Promise<AcceptInvitationResponse>;
+  declineInvitation?(inviteToken: string): Promise<DeclineInvitationResponse>;
   getLocationReference(input: LocationReferenceInput): Promise<LocationReferenceResponse>;
   getLocationIntroduction(input: LocationIntroductionInput, options?: { signal?: AbortSignal }): Promise<LocationIntroductionResponse>;
   getTripThreads(tripId: string): Promise<ThreadsResponse>;
@@ -106,4 +122,16 @@ export interface TravelApi {
   proposeTripPlace?(tripId: string, input: ProposeTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
   adoptTripPlace?(tripId: string, input: AdoptTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
   revokeTripPlace?(tripId: string, input: RevokeTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
+
+  // ── Phase 4 non-blocking research summary ────────────────────────────────────
+  getResearchResult?(tripId: string, agentTaskRunId?: string): Promise<ResearchResult>;
+
+  // ── Phase 3 navigation route evidence ────────────────────────────────────────
+  listRouteEvidence?(tripId: string, planId?: string): Promise<RouteEvidenceList>;
+  searchRoute?(tripId: string, planId: string, input: NavigationRouteSearchRequest, options?: { idempotencyKey?: string }): Promise<NavigationRouteSearchResponse>;
+
+  // ── Phase 5 mobility offers (Amadeus Transfer Search) ────────────────────────
+  listMobilityOffers?(tripId: string): Promise<MobilityOfferList>;
+  searchMobilityOffers?(tripId: string, input: MobilitySearchRequest, options?: { idempotencyKey?: string }): Promise<MobilitySearchResponse>;
+  selectMobilityOffer?(tripId: string, input: MobilityOfferSelectionRequest, options?: { idempotencyKey?: string }): Promise<MobilityOfferSelectionResponse>;
 }

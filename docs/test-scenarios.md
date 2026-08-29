@@ -688,6 +688,22 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The removed owner cannot cause an assistant message to persist after task pickup.
 - The thread turn endpoint never accepts a client `tripId` or creates/replaces a Trip; Explore initialization is covered separately by TS-EXPLORE-TRIP-1.
 
+### TS-INVITATION-JOIN-1 — Token-bound invitation decision
+
+**Stories:** H2, S1
+
+**Steps:**
+
+1. Create an active Trip invitation and open `/trips/join/:inviteToken` while signed out, then while signed in as the invited user.
+2. Call invitation preview, accept and decline with a valid token; repeat with a Trip UUID substituted for the token, an expired/revoked/declined token, and a valid token while signed in as another user.
+3. Accept concurrently twice, then inspect memberships, default threads and audit events. Decline a separate invitation and inspect the same records.
+
+**Expected outcomes:**
+
+- No trip facts render before authentication. The preview exposes only decision-critical summary fields after token and account binding; all unavailable token states return the same minimal response and disclose no trip/member/inviter metadata.
+- Acceptance is idempotent and creates at most one required membership and one recipient-owned default thread. The post-success primary action is setting the sharing scope; acceptance itself grants no consent or snapshot fields.
+- Decline creates no membership or thread and records `TRIP_INVITATION_DECLINE`; creator revocation remains distinct. Audit summaries contain IDs/status only, never the raw token or private profile data.
+
 ### TS-EXPLORE-TRIP-1 — Create a Draft Trip only on first submitted exploration message
 
 **Stories:** H1a, H1, S1
@@ -701,8 +717,9 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 2. Submit the first message. Force a client retry, a double-click and two concurrent start requests with the same start request ID; then accept the first conversation turn.
 3. Simulate start success followed by turn rejection/network loss; retry the start and the conversation command.
 4. Navigate client-side `/home → /projects → /profile → /home`; submit another message. Then perform a full browser reload and open `/home` in a new tab before submitting messages there.
-5. Click “Start new exploration”, then activate the original Draft with a valid brief. Attempt invitation, consent, planning, confirmation and booking both before and after activation.
-6. Repeat with Alice logged out and Bob logged in before returning to `/home`.
+5. Open the Draft from `/projects`; verify it uses the same project workspace as a `PLANNING` trip, retains the private thread, and does not show a separate brief form. Confirm a complete brief in the private conversation, then use the workspace activation control.
+6. Attempt invitation, consent, planning, confirmation and booking both before and after activation.
+7. Repeat with Alice logged out and Bob logged in before returning to `/home`.
 
 **Expected outcomes:**
 
@@ -711,7 +728,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The first task derives the created thread's `trip_id`; start success plus turn failure/retry cannot create another Trip.
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
-- Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
+- Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control, which remains disabled until the persisted brief is complete. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
 
 ### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields only
 
@@ -804,6 +821,28 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - A DRAFT-trip private-chat turn may emit only an in-memory destination/days candidate; raw conversation content is never included in the event, audit summary, or client persistence.
 - The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write.
 - A non-creator and a trip no longer in `DRAFT` receive `403` and `409` respectively; a MANUAL title remains unchanged after confirmation.
+
+### TS-HOTEL-TOOL-1 — Snapshot-bound hotel search, comparison and safe gaps
+
+**Stories:** H3, H5, S1
+**Objective:** Verify that only the Shared PLAN/REPLAN Worker can obtain live hotel evidence and that the result is safe for comparison but never becomes a booking action.
+
+**Steps:**
+
+1. In a private conversation, let the model ask for missing room count, adults per room and currency. Confirm the resulting stay-search-preferences proposal as the trip owner; repeat without confirmation and with a non-member.
+2. Create a snapshot with two candidates and a confirmed preference version. Drive the Worker with a model double that calls `hotel.search` once for each `destinationId`.
+3. Attempt tool arguments containing dates, room count, adults, currency, price, provider, address, coordinate, URL, snapshot ID and a cross-run destination. Repeat with a stale preference version, lost lease and duplicate tool call.
+4. Return normalized LIVE offers carrying total/per-night prices and `INCLUDED`, `PARTIAL`, then `UNKNOWN` taxes/fees; inspect the plan DTO, `provider_search_runs`, `provider_offers`, source evidence and telemetry/audit output.
+5. Force `NOT_CONFIGURED`, `NO_RESULTS`, 429, timeout, 5xx, malformed supplier payload and expired offer outcomes. Change dates, occupancy, stay preference and consent after a live plan exists.
+
+**Expected outcomes:**
+
+- The model can ask only to create a user-confirmed structured preference; no private message directly writes preference, invokes supplier search or starts planning.
+- `hotel.search` accepts only a current task's allowed `destinationId`; all supplier parameters are server-derived. It is unavailable to Personal/Review agents and exposes no raw payload, URL, supplier credentials, rate ID, address or location coordinates.
+- LIVE rows are bound to the current snapshot/run and exact normalized evidence; the validator rejects fabricated, stale, expired or cross-run hotel offers. A duplicate call does not create a second supplier query/evidence row.
+- Every hotel card includes total price, per-night price, source, captured time and expiry. `PARTIAL` and `UNKNOWN` taxes/fees always display “可能另计”; only explicit `INCLUDED` is presented as included.
+- Failure or missing data creates only a `hotel` `RESEARCH_UNAVAILABLE`/`COMPLETED_WITH_GAPS` result. Sandbox fixtures are never used at runtime; no supplier order, payment, redirect or booking link is created or persisted.
+- Date, occupancy, preference, consent and offer-expiry changes stale dependent plan/confirmations and enqueue a new run. Audit, logs, metrics and traces contain no user input, price, property, supplier URL or high-cardinality identifiers.
 
 ### TS-ACTIVITIES-TOOL-1 — Durable Shared activities research and guarded plan finalization
 

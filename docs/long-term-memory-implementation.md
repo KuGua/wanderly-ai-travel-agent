@@ -90,7 +90,7 @@ episode id 为 `tripId:fieldKey:ownerUserId:valueHash`，**不含时间戳**。�
 
 写入走 outbox：确认事务内插入 `MEMORY_OBSERVATION` 行，由 Worker 独立 slot 消费。记忆聚合因此永远不会拖慢或失败用户正在等待的确认。
 
-投递保证为 at-least-once，不丢事件。认领将行置为 `PROCESSING`（迁移 0027 新增），租约 300 秒；worker 中途崩溃后该行被下一轮回收重投。重投安全的前提正是 episode id 的幂等性——已落库的观察重放为 `DUPLICATE_EPISODE`，不会重复计数。
+投递保证为 at-least-once，不丢事件。认领将行置为 `PROCESSING`（迁移 0029 新增），租约 300 秒；worker 中途崩溃后该行被下一轮回收重投。重投安全的前提正是 episode id 的幂等性——已落库的观察重放为 `DUPLICATE_EPISODE`，不会重复计数。
 
 ### 3.3 当前 Trip memory 与 projection
 
@@ -204,7 +204,7 @@ DB CHECK 与 service allow-list 必须双重拒绝敏感 field key。`CONFIRMED`
 | `source` | `OWNER_SAVE` 或 `GROUP_COMMAND` |
 | `supersedes_fact_id`, `created_at`, `updated_at` | 版本与时间 |
 
-**存储位置（实施决定，取代原先的独立表）：** trip 级记忆并入既有的 `trip_constraint_facts`，与 team orchestration 约束共用一张表和一套 snapshot projection（迁移 `0026`）。新增 `kind` 判别列区分 `MEMBER_CONSTRAINT`（编排约束）、`PERSONAL_OVERRIDE`、`GROUP_DECISION`，三者各自保留原有的 active 唯一规则：
+**存储位置（实施决定，取代原先的独立表）：** trip 级记忆并入既有的 `trip_constraint_facts`，与 team orchestration 约束共用一张表和一套 snapshot projection（迁移 `0028`）。新增 `kind` 判别列区分 `MEMBER_CONSTRAINT`（编排约束）、`PERSONAL_OVERRIDE`、`GROUP_DECISION`，三者各自保留原有的 active 唯一规则：
 
 - `MEMBER_CONSTRAINT`：`(trip_id, owner_user_id, field_key)`
 - `PERSONAL_OVERRIDE`：`(trip_id, owner_user_id, field_key)`

@@ -2,18 +2,13 @@
 -- Phase 1 / Team Agent 协作编排 (spec §3.2, §3.3, §3.5)。
 -- 三张新表，均带 partial unique index 守护活动状态唯一性。
 --
--- 先清理前次失败 install 残留：prior crashes may have left tables without
--- a matching schema_migrations row. The DROP ... IF EXISTS CASCADE is
--- idempotent and lets the re-run start from a clean slate.
-
-DROP TABLE IF EXISTS plan_adoption_votes CASCADE;
-DROP TABLE IF EXISTS trip_constraint_facts CASCADE;
-DROP TABLE IF EXISTS trip_constraint_proposals CASCADE;
+-- This is a forward-only migration. Do not drop existing fact or vote tables
+-- during an install/retry: they are authoritative state.
 
 -- ─── trip_constraint_proposals ──────────────────────────────────────────────
 -- Private, owner-reviewable candidate.
 
-CREATE TABLE trip_constraint_proposals (
+CREATE TABLE IF NOT EXISTS trip_constraint_proposals (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   trip_id               UUID NOT NULL REFERENCES shared_trips(id) ON DELETE CASCADE,
   owner_user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -31,18 +26,18 @@ CREATE TABLE trip_constraint_proposals (
 );
 
 -- 一位 owner 对同一字段同一 value 在 PENDING 状态下唯一（spec §3.2 唯一部分索引）
-CREATE UNIQUE INDEX trip_constraint_proposals_pending_unique
+CREATE UNIQUE INDEX IF NOT EXISTS trip_constraint_proposals_pending_unique
   ON trip_constraint_proposals (trip_id, owner_user_id, field_key, value_hash)
   WHERE status = 'PENDING';
 
-CREATE INDEX trip_constraint_proposals_trip_owner_idx
+CREATE INDEX IF NOT EXISTS trip_constraint_proposals_trip_owner_idx
   ON trip_constraint_proposals (trip_id, owner_user_id, status);
 
 -- ─── trip_constraint_facts ──────────────────────────────────────────────────
 -- Per-trip, per-owner, per-field authoritative current fact.
 -- monotonic revision；partial unique 守护仅一个 ACTIVE 行。
 
-CREATE TABLE trip_constraint_facts (
+CREATE TABLE IF NOT EXISTS trip_constraint_facts (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   trip_id             UUID NOT NULL REFERENCES shared_trips(id) ON DELETE CASCADE,
   owner_user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -60,21 +55,21 @@ CREATE TABLE trip_constraint_facts (
 );
 
 -- 每 (trip, owner, field) 最多一行 ACTIVE
-CREATE UNIQUE INDEX trip_constraint_facts_active_unique
+CREATE UNIQUE INDEX IF NOT EXISTS trip_constraint_facts_active_unique
   ON trip_constraint_facts (trip_id, owner_user_id, field_key)
   WHERE status = 'ACTIVE';
 
-CREATE INDEX trip_constraint_facts_trip_owner_field_idx
+CREATE INDEX IF NOT EXISTS trip_constraint_facts_trip_owner_field_idx
   ON trip_constraint_facts (trip_id, owner_user_id, field_key);
 
-CREATE INDEX trip_constraint_facts_trip_visibility_idx
+CREATE INDEX IF NOT EXISTS trip_constraint_facts_trip_visibility_idx
   ON trip_constraint_facts (trip_id, visibility);
 
 -- ─── plan_adoption_votes ────────────────────────────────────────────────────
 -- "全员 ACCEPT → ACTIVE" 采用投票。spec §3.5 强调与 member_confirmations 分离：
 -- votes 决定 PROPOSED 是否转 ACTIVE；confirmations 仅在 ACTIVE 后授权 booking。
 
-CREATE TABLE plan_adoption_votes (
+CREATE TABLE IF NOT EXISTS plan_adoption_votes (
   plan_id      UUID NOT NULL REFERENCES itinerary_plans(id) ON DELETE CASCADE,
   user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   decision     plan_adoption_decision NOT NULL,
@@ -83,4 +78,4 @@ CREATE TABLE plan_adoption_votes (
   PRIMARY KEY (plan_id, user_id)
 );
 
-CREATE INDEX plan_adoption_votes_plan_idx ON plan_adoption_votes (plan_id);
+CREATE INDEX IF NOT EXISTS plan_adoption_votes_plan_idx ON plan_adoption_votes (plan_id);

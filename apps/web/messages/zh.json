@@ -118,7 +118,7 @@
       },
       "draft": {
         "short": "未命名探索 · 仅你可见",
-        "continueCta": "继续编辑"
+        "continueCta": "继续规划"
       },
       "dates": {
         "notSet": "日期未设置",
@@ -353,6 +353,42 @@
     },
     "backToTrip": "返回行程"
   },
+  "invitation": {
+    "kicker": "私密邀请",
+    "title": "加入共享行程",
+    "subtitle": "请先查看邀请再加入。除非你之后选择共享范围，否则资料和私有对话仍保持私密。",
+    "checkingIdentity": "正在核验登录状态…",
+    "signInTitle": "登录后查看邀请",
+    "signInBody": "邀请绑定到特定账号。请使用收到链接的账号登录，然后再次打开此链接。",
+    "signInAction": "登录",
+    "loading": "正在加载邀请…",
+    "unavailableTitle": "此邀请不可用",
+    "unavailableBody": "它可能已过期、已使用、已撤回，或属于其他账号。",
+    "returnHome": "返回主页",
+    "tripLabel": "行程摘要",
+    "destinations": "目的地候选",
+    "destinationsUnknown": "尚未设置",
+    "dates": "出行日期",
+    "datesUnknown": "尚未设置",
+    "membershipTitle": "你的成员身份",
+    "membershipBody": "你将作为必需成员加入。任何 booking sandbox 请求都需要你的确认。",
+    "privacyTitle": "由你决定共享内容",
+    "privacyBody": "接受邀请不会共享你的资料、国籍、证件或私有对话。接下来你将仅为本次行程选择要共享的最小字段集。",
+    "expiry": "此邀请将于 {date} 失效。",
+    "actionError": "无法更新此邀请，请重试。",
+    "accept": "接受邀请",
+    "accepting": "正在接受…",
+    "decline": "拒绝邀请",
+    "declineConfirmTitle": "拒绝此邀请？",
+    "declineConfirmBody": "你不会加入该行程。如改变主意，请向组织者索取新的邀请。",
+    "declineConfirmAction": "确认拒绝",
+    "cancel": "取消",
+    "acceptedTitle": "已加入",
+    "acceptedBody": "行程已准备就绪，但你的私有资料尚未共享。",
+    "setSharingScope": "设置共享范围",
+    "declinedTitle": "已拒绝邀请",
+    "declinedBody": "你尚未被加入此行程。"
+  },
   "trips": {
     "kicker": "行程工作区",
     "title": {
@@ -383,24 +419,6 @@
       "destinations": "候选目的地",
       "members": "{count, plural, =0 {暂无成员} other {# 位成员}}",
       "departure": "出发城市"
-    },
-    "draft": {
-      "kicker": "草稿探索",
-      "body": "你的私有对话已保存。填写简报并激活后即可邀请同行者。",
-      "formAriaLabel": "激活草稿行程",
-      "titlePreviewLabel": "行程标题预览",
-      "titlePreviewHint": "标题仅根据下方目的地和日期生成，绝不会使用聊天记录。",
-      "departureLabel": "出发地 (1–3)",
-      "departurePlaceholder": "输入出发地后回车",
-      "candidatesLabel": "候选目的地 (2–5)",
-      "candidatesPlaceholder": "输入候选目的地后回车",
-      "dateStartLabel": "最早出发日期（可选）",
-      "dateEndLabel": "最晚出发日期（可选）",
-      "addCity": "添加",
-      "addCandidate": "添加",
-      "removeChip": "移除 {value}",
-      "activateHint": "激活后行程进入规划阶段，解锁邀请、授权与共享 Agent。",
-      "activateCta": "开始规划 / 邀请同行者"
     },
     "threads": {
       "heading": "你的对话",
@@ -433,11 +451,78 @@
       "mapWindow": "探索地图",
       "mapPinned": "固定",
       "openFullMap": "在完整地图中打开",
+      "draftActivationHint": "请先在私有对话中确认行程简报，再开始规划。",
+      "activateDraft": "开始规划",
+      "activateDraftError": "暂时无法开始规划，请重试。",
       "roleValue": {
         "CREATOR": "创建者",
         "MEMBER": "成员"
       },
       "openPinAria": "在完整地图中查看 {name}",
+      "mobility": {
+        "title": "出行报价",
+        "attribution": "由 Amadeus Transfer 提供报价",
+        "empty": "暂无出行报价。",
+        "expired": "已过期",
+        "passengers": "{count} 位乘客",
+        "select": "选择",
+        "dismiss": "忽略",
+        "filter": "按服务类型筛选",
+        "filter": {
+          "all": "全部",
+          "taxi": "Taxi",
+          "transfer": "Transfer",
+          "charter": "Charter",
+          "rental": "Rental"
+        },
+        "serviceType": {
+          "taxi": "出租车",
+          "transfer": "专车接送",
+          "charter": "包车",
+          "rental": "租车"
+        }
+      },
+      "route": {
+        "title": "{origin} → {destination}",
+        "originFallback": "起点",
+        "destinationFallback": "终点",
+        "distance": "距离",
+        "duration": "时长",
+        "attribution": "ORS 提供路线",
+        "fresh": "新鲜",
+        "stale": "需要刷新",
+        "refresh": "刷新",
+        "stepsTruncated": "还有 {count} 步",
+        "mode": {
+          "WALK": "步行",
+          "DRIVE": "驾车",
+          "CYCLE": "骑行"
+        }
+      },
+      "gaps": {
+        "title": "研究摘要",
+        "badge": "已记录缺口",
+        "body": "部分研究步骤未能实时确认；方案仍按已收集的证据保存。这些缺失项可视为预订前需要再确认的决策。",
+        "codeList": "{codes}",
+        "capability": {
+          "flight": "航班",
+          "stay": "住宿",
+          "activities": "活动",
+          "navigation": "步行 / 驾车 / 骑行",
+          "mobility": "打车 / 接送 / 包车",
+          "transit": "公共交通"
+        },
+        "code": {
+          "NOT_CONFIGURED": "能力未配置",
+          "SEARCH_CONSTRAINTS_INCOMPLETE": "搜索条件不完整",
+          "NO_RESULTS": "无匹配结果",
+          "RATE_LIMITED": "上游限流",
+          "UPSTREAM_TIMEOUT": "上游超时",
+          "UPSTREAM_FAILURE": "上游失败",
+          "INVALID_PROVIDER_RESPONSE": "上游返回无效响应",
+          "PROVIDER_NOT_APPROVED": "上游未获批准"
+        }
+      },
       "poi": {
         "title": "地点",
         "attribution": "ORS",

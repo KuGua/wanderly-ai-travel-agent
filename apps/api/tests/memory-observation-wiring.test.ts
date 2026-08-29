@@ -11,7 +11,11 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "../src/db/database.js";
 import {
+  agentTaskRuns,
   auditEvents,
+  constraintSnapshots,
+  consentGrants,
+  tripSearchPreferences,
   idempotencyRecords,
   itineraryPlans,
   memoryProposals,
@@ -68,9 +72,16 @@ afterEach(async () => {
   await db.delete(outboxEvents)
     .where(eq(outboxEvents.eventType, MEMORY_OBSERVATION_EVENT_TYPE));
   if (trips.length > 0) {
+    // Confirming a constraint now builds the next snapshot and accepts a
+    // REPLAN run in the same transaction, so both have to be cleaned up or the
+    // rows block other suites that truncate globally.
+    await db.delete(agentTaskRuns).where(inArray(agentTaskRuns.tripId, trips));
     await db.delete(itineraryPlans).where(inArray(itineraryPlans.tripId, trips));
+    await db.delete(constraintSnapshots).where(inArray(constraintSnapshots.tripId, trips));
     await db.delete(tripConstraintFacts).where(inArray(tripConstraintFacts.tripId, trips));
     await db.delete(tripConstraintProposals).where(inArray(tripConstraintProposals.tripId, trips));
+    await db.delete(consentGrants).where(inArray(consentGrants.tripId, trips));
+    await db.delete(tripSearchPreferences).where(inArray(tripSearchPreferences.tripId, trips));
     trips.length = 0;
   }
 });
@@ -86,6 +97,17 @@ async function proposeAndConfirm(input: {
   if (!tripId) {
     ({ tripId } = await provisionTripAndMember({ ownerUserId: ownerId }));
     trips.push(tripId);
+    // Confirming a shared constraint now requires confirmed flight search
+    // preferences and, for an agent-derived proposal, field-level consent.
+    await db.insert(tripSearchPreferences).values({
+      tripId, version: 1, tripType: "ROUND_TRIP", currency: "USD", adults: 1,
+      cabin: "ECONOMY", offerFreshnessMinutes: 30, confirmedBy: ownerId,
+    });
+    await db.insert(consentGrants).values({
+      tripId, userId: ownerId, scope: "PROFILE_PREFERENCES",
+      fieldList: ["travel_pace", "accommodation_style", "budget_max", "interests", "no_red_eye"],
+      granted: true,
+    });
   }
 
   const { proposalId } = await proposeConstraint({

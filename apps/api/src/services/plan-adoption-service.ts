@@ -243,21 +243,22 @@ export async function castVote(params: {
   });
 }
 
-/**
- * Read-side: list a plan's adoption votes.
- * Voter identity is included for the voting UI; routes remove it before serializing
- * to non-member endpoints (defense-in-depth).
- */
-export async function listVotesForPlan(params: {
+/** Member-safe read model: never disclose another voter's identity or choice. */
+export async function getVoteSummary(params: { planId: string; userId: string }): Promise<{
   planId: string;
-}): Promise<{
-  planId: string;
-  votes: { userId: string; decision: PlanAdoptionDecision; updatedAt: Date }[];
+  votesAccepted: number;
+  votesRequired: number;
+  hasBlocker: boolean;
+  currentUserDecision: PlanAdoptionDecision | null;
 }> {
-  const rows = await db.select({
-    userId: planAdoptionVotes.userId,
-    decision: planAdoptionVotes.decision,
-    updatedAt: planAdoptionVotes.updatedAt,
-  }).from(planAdoptionVotes).where(eq(planAdoptionVotes.planId, params.planId));
-  return { planId: params.planId, votes: rows };
+  return db.transaction(async (tx) => {
+    const plan = await lockPlan(tx, params.planId);
+    await requireMember(tx, plan.tripId, params.userId);
+    const tally = await countVotes(tx, plan.tripId, params.planId);
+    const [ownVote] = await tx.select({ decision: planAdoptionVotes.decision })
+      .from(planAdoptionVotes)
+      .where(and(eq(planAdoptionVotes.planId, params.planId), eq(planAdoptionVotes.userId, params.userId)))
+      .limit(1);
+    return { planId: params.planId, ...tally, currentUserDecision: ownVote?.decision ?? null };
+  });
 }
