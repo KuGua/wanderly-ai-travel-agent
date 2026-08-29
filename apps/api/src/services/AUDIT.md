@@ -34,6 +34,7 @@ runs **before** any insert. Rejection propagates as
   (catalog-derived label, never the value), visibility enum, strength enum, and
   revision; `valueJson` is intentionally excluded.
 - Flight search: `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`; summaries contain only provider, bounded outcome/error code, and safe correlation identifiers, never raw provider payloads.
+- Activities search: `ACTIVITIES_SEARCH_REQUESTED`, `ACTIVITIES_SEARCH_COMPLETED`, `ACTIVITIES_SEARCH_UNAVAILABLE`; summaries contain only the bounded provider/outcome/error category and never activity titles, MCP payloads, prices or links.
 - Place, navigation, and mobility providers: `PLACE_SEARCH_REQUESTED`,
   `PLACE_SEARCH_COMPLETED`, `PLACE_SEARCH_UNAVAILABLE`,
   `NAVIGATION_ROUTE_REQUESTED`, `NAVIGATION_ROUTE_COMPLETED`,
@@ -100,6 +101,7 @@ The supported `AuditAction` values are:
 - `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`,
   `PLAN_REPLAN_ENQUEUED`, `PLAN_ADOPTION_VOTED`, `PLAN_ADOPTED`
 - `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`
+- `ACTIVITIES_SEARCH_REQUESTED`, `ACTIVITIES_SEARCH_COMPLETED`, `ACTIVITIES_SEARCH_UNAVAILABLE`
 - `PLACE_SEARCH_REQUESTED`, `PLACE_SEARCH_COMPLETED`, `PLACE_SEARCH_UNAVAILABLE`
 - `NAVIGATION_ROUTE_REQUESTED`, `NAVIGATION_ROUTE_COMPLETED`, `NAVIGATION_ROUTE_UNAVAILABLE`
 - `MOBILITY_OFFER_REQUESTED`, `MOBILITY_OFFER_COMPLETED`, `MOBILITY_OFFER_UNAVAILABLE`

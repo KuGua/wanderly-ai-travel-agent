@@ -183,6 +183,36 @@ export interface NormalizedTransitJourney {
   capturedAt: string;
 }
 
+export interface ActivitiesProvider {
+  searchActivities(params: ActivitiesSearchParams): Promise<ProviderResult<ActivityProviderItem[]>>;
+}
+
+export interface ActivitiesSearchParams {
+  /** Snapshot-bound canonical destination; never free model text. */
+  destination: string;
+  dateStart: string;
+  dateEnd: string;
+  theme?: "CULTURE" | "FOOD" | "OUTDOOR" | "FAMILY";
+  locale: "en" | "zh";
+  limit: number;
+  signal?: AbortSignal;
+}
+
+export interface ActivityProviderItem {
+  providerOfferId: string;
+  title: string;
+  thumbnailUrl: string;
+  rating: number | null;
+  reviewCount: number;
+  freeCancellation: boolean;
+  durationMinutes: {
+    fixed: number | null;
+    from: number | null;
+    to: number | null;
+  };
+  category: string | null;
+}
+
 export type ProviderResult<T> =
   | {
       outcome: "LIVE";

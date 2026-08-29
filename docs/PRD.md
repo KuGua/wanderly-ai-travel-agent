@@ -117,9 +117,9 @@ flowchart LR
 
 ### FR-3 端到端行程编排
 
-1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay、Activities 与 Ground typed tools，并将三位成员映射到两个出发地。模型可在 Shared PLAN/REPLAN 中请求 `flight.search`、`hotel.search`、`activities.search`、`places.search` 与 `navigation.route`；`hotel.search` 仅接收 snapshot 候选中的 `destinationId`，日期、住客/房间数、币种和住宿偏好必须由服务端从已确认偏好推导。地面工具只接受 server-owned destination reference、run-bound place candidate 或当前 Trip 已授权 `placeId`，不得接收模型/浏览器坐标、地址、provider、profile 或 URL。关键词 POI 候选在当前 run 外无效；低置信度或目的地外结果必须标注待确认。Personal Agent 私有聊天不得调用地面 navigation/mobility tool；只有 owner 确认后的结构化 Trip constraint 或显式共享 TripPlace 才能进入后续 Shared snapshot。
+1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay、Activities 与 Ground typed tools，并将三位成员映射到两个出发地。模型可在 Shared PLAN/REPLAN 中请求 `flight.search`、`hotel.search`、`activities.search`、`places.search` 与 `navigation.route`；`hotel.search` 仅接收 snapshot 候选中的 `destinationId`，日期、住客/房间数、币种和住宿偏好必须由服务端从已确认偏好推导；`activities.search` 只接受 snapshot destination、固定 theme 与 locale，日期和 run authority 由服务端注入。地面工具只接受 server-owned destination reference、run-bound place candidate 或当前 Trip 已授权 `placeId`，不得接收模型/浏览器坐标、地址、provider、profile 或 URL。关键词 POI 候选在当前 run 外无效；低置信度或目的地外结果必须标注待确认。Personal Agent 私有聊天不得调用地面 navigation/mobility tool；Personal activities tool-loop 在 owner-scoped streaming boundary 实施前同样不得启用。只有 owner 确认后的结构化 Trip constraint 或显式共享 TripPlace 才能进入后续 Shared snapshot。
 2. 系统必须比较两到三个预设目的地候选，并支持候选目的地下任意两个已授权 POI 的步行、驾车或骑行路线。每项结果显示来源、时间、距离/时长/步骤或价格/币种（适用时）。任一 provider 缺失均不得中止 Agent research：系统返回 `COMPLETED_WITH_GAPS` 与安全 `RESEARCH_UNAVAILABLE` 摘要；只有用户选择的 live commercial offer 才可成为对应确认/booking 的硬门禁。路线不是商业 offer，不能伪造票价或库存。
-3. 每个项目必须显示总价/币种（如适用）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。
+3. 每个项目必须显示总价/币种（仅在 provider 同时提供二者时）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。Activities 不得展示或持久化无币种价格、raw provider payload 或 click-off/booking link。
 4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
 5. Planning/replan 运行期间可实时显示安全阶段状态（例如 snapshot、research、validation、persistence），但不得向客户端发送内部推理、原始 prompt、未验证模型输出、未持久化 provider 结果或未授权 snapshot 数据；最终 plan 仅在验证并持久化后展示。
 6. Activities 工具与 Flight 工具相互独立：拥有独立的 typed port、覆盖矩阵、stale 触发器和 evidence 写入；同一 PLAN/REPLAN durable task 内作为并列子阶段，各自拥有独立的并发与失败语义。失败不取消其他 research，但只能形成安全的 `RESEARCH_UNAVAILABLE` 摘要；活动 provider 的 booking link 不得在 MVP 中展示、持久化或透传。

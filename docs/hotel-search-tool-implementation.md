@@ -1,7 +1,7 @@
 # 酒店实时搜索与方案比较实施方案
 
-**状态：** 已确认，待实施  
-**范围：** 在现有 Shared PLAN/REPLAN durable task 中接入实时酒店搜索，将受控的 `hotel.search` 作为 Shared Agent 的 LLM tool，用于两至三个目的地候选的住宿比较。  
+**状态：** 已确认，待实施
+**范围：** 在现有 Shared PLAN/REPLAN durable task 中接入实时酒店搜索，将受控的 `hotel.search` 作为 Shared Agent 的 LLM tool，用于两至三个目的地候选的住宿比较。
 **不在范围：** 真实预订、支付、供应商订单创建、供应商 booking/deep link 对 LLM 的透传、浏览器直连供应商、使用 fixture 或 sandbox 库存作为产品运行时数据。
 
 ## 1. 实施边界与完成标准

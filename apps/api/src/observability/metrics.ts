@@ -374,6 +374,20 @@ metrics.registerCounter("mobility_search_tool_invocations_total", "mobility.sear
 metrics.registerCounter("mobility_offer_selected_total", "Server-tracked mobility offer selection events.", {
   service_type: ["taxi", "transfer", "charter", "rental"],
 });
+metrics.registerCounter("activities_provider_requests_total", "Viator MCP activity provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["viator_mcp"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerHistogram("activities_provider_latency_ms", "Viator MCP activity provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000, 30_000], {
+  provider: ["viator_mcp"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("activities_tool_invocations_total", "Activities tool execution outcomes.", {
+  outcome: ["live", "unavailable"],
+  provider: ["viator_mcp"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
 // Bounded same-thread LLM context builder metrics.  See
 // docs/thread-context-memory-implementation.md §8.  No labels carry
 // threadId/tripId/runId — those identifiers live in trace/log context,

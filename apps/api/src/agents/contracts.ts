@@ -14,6 +14,7 @@ export type SkillScope =
   | "snapshot:read"
   | "chat:read"
   | "flight:search"
+  | "activities:search"
   | "places:search"
   | "places:adopt"
   | "navigation:route"
@@ -61,6 +62,16 @@ export interface MobilitySearchExecutionContext {
 }
 
 /**
+ * Server-derived authorization data for a Shared `activities.search`
+ * invocation. The browser and model cannot provide these bindings.
+ */
+export interface ActivitySearchExecutionContext {
+  tripId: string;
+  snapshotId: string;
+  agentTaskRunId?: string;
+}
+
+/**
  * Policy gate consulted by the registry before invoking a skill. Implementations
  * are responsible for enforcing per-agent tool/scope rules.
  */
@@ -75,6 +86,7 @@ export interface SkillContext {
   placeSearch?: PlaceSearchExecutionContext;
   navigation?: NavigationRouteExecutionContext;
   mobility?: MobilitySearchExecutionContext;
+  activitiesSearch?: ActivitySearchExecutionContext;
   policyGate: PolicyGate;
 }
 

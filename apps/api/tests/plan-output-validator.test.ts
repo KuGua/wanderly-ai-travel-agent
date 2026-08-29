@@ -71,6 +71,26 @@ function goodEvidence(): PlanProviderEvidence {
   return { flights: data.flights, stays: data.stays, ground: data.ground };
 }
 
+function goodActivity() {
+  return {
+    id: "00000000-0000-4000-8000-000000000020",
+    providerOfferId: "394285P13",
+    providerName: "viator" as const,
+    queryId: "00000000-0000-4000-8000-000000000021",
+    destination: "Tokyo",
+    title: "Tokyo food walking tour",
+    thumbnailUrl: "https://example.com/tokyo-tour.jpg",
+    rating: 4.8,
+    reviewCount: 120,
+    freeCancellation: true,
+    durationMinutes: { fixed: 120, from: null, to: null },
+    category: "Food Tours",
+    source: "Viator Experiences MCP" as const,
+    capturedAt: "2026-08-23T00:00:00.000Z",
+    expiresAt: "2099-08-23T00:15:00.000Z",
+  };
+}
+
 function violationsFor(planData: unknown, testSnapshot: ConstraintSnapshotData = snapshot) {
   try {
     validatePlanOutput({ planData, snapshot: testSnapshot, evidence: goodEvidence() });
@@ -155,6 +175,29 @@ describe("plan-output-validator", () => {
     expect(violationsFor(data)).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "STRUCTURE_INVALID", fieldPath: "flights.0.source" }),
     ]));
+  });
+
+  it("accepts only unexpired activity evidence that exactly matches the provider result", () => {
+    const activity = goodActivity();
+    const planData = { ...goodPlanData(), activities: [activity] };
+    const evidence = { ...goodEvidence(), activities: [activity] };
+
+    expect(() => validatePlanOutput({
+      planData,
+      snapshot,
+      evidence,
+      requireActivities: true,
+    })).not.toThrow();
+
+    expect(() => validatePlanOutput({
+      planData: {
+        ...planData,
+        activities: [{ ...activity, title: "Invented replacement title" }],
+      },
+      snapshot,
+      evidence,
+      requireActivities: true,
+    })).toThrow(PlanValidationError);
   });
 
   it("schema parses a clean plan", () => {

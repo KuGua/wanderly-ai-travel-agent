@@ -1,7 +1,7 @@
 # 共享行程闭环页面规划
 
-**状态：** 规划稿（未实施）  
-**基线：** 2026-08-29 前端现状；与 `docs/frontend-ui-plan.md`、`docs/PRD.md`、`docs/backlog.md` 一致。  
+**状态：** 规划稿（未实施）
+**基线：** 2026-08-29 前端现状；与 `docs/frontend-ui-plan.md`、`docs/PRD.md`、`docs/backlog.md` 一致。
 **目标：** 补齐三位旅行者从创建到 booking sandbox 的可验证闭环，同时不把敏感资料、服务端状态或 provider 事实复制到浏览器状态。
 
 ## 1. 现状盘点

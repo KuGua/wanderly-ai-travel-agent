@@ -22,6 +22,7 @@ Node.js API + Agent runner (AWS App Runner)
 Amazon RDS for PostgreSQL
         │
         ├─ Amadeus Self-Service Flight Offers Search (adapter; server-side only)
+        ├─ Viator Experiences MCP (Activities adapter; server-side only)
         ├─ openrouteservice (Ground routing; optional live enhancement)
         ├─ Frankfurter (budget normalization; optional live enhancement)
         └─ Sherpa Requirements API adapter（签约/验证后）→ official verification CTA
@@ -47,7 +48,7 @@ Amazon RDS for PostgreSQL
 | 长期记忆 | **PostgreSQL 中结构化、版本化的个人事实 + 当前 Trip 记忆投影** | 复用 `user_profiles`、`preference_facts`、字段级 consent、不可变 `constraint_snapshot` 和 stale/replan 控制面。低风险行为只能形成待确认的建议；个人事实默认私有，Shared Agent 只消费当前 Trip 的最小授权投影。 | 向量库、embedding、RAG、独立 memory service、跨 Trip Team memory、从私聊或敏感字段自动写入长期记忆。 |
 | 工具与模型边界 | Zod schema、structured outputs、server-side policy gate、受限 thread context builder | 对话 archive 仅由所有者读取。Personal Agent 仅可由服务端从同一 owner 的同一私有 thread 构造最近、有预算的原文上下文；该上下文只发送给已配置模型 provider，不进入共享 snapshot、Profile、日志、trace、audit、metric 或客户端持久状态。原文窗口受 `CONVERSATION_CONTEXT_MAX_TURNS`（默认 8 完整轮次，上限 12）和 `CONVERSATION_CONTEXT_MAX_CHARS`（默认 12,000 UTF-16 字符，上限 20,000）双重预算限制，并以 task acceptance 时记录的 `agent_task_runs.context_max_message_sequence` 为不可回写上界。所有共享工具只获得当前 `constraint_snapshot` 的最小授权字段。模型输出不直接成为业务真相。 | 将整段私聊、其他 thread 或共享/未授权数据放进 prompt；由浏览器提交 history；向量库、Redis 或独立 memory service；自动摘要 worker；tokenizer/embedding；向遥测或前端暴露供应商 key。 |
 | 客户端 | **Next.js + React + TypeScript**，部署到 **AWS Amplify Hosting** | 浏览器链接最适合三人邀请、独立授权、共同查看、投屏与移动端访问。Amplify 支持 Next.js SSR 部署。[AWS Amplify](https://docs.aws.amazon.com/amplify/latest/userguide/ssr-amplify-support.html) | 原生 iOS/Android App、应用商店发布、离线协作。 |
-| 旅行与数据 API | Amadeus Self-Service Flight Offers Search、Tours & Activities、Transfer Search；Booking.com Demand Accommodation Search/Look（取得 production 准入后）；openrouteservice Place/POI 与 Directions；Frankfurter；通过 typed provider adapters | Flight、Activities、Hotel 保持独立 port。Hotel 首期仅在 Shared PLAN/REPLAN 中以 snapshot/run-bound `hotel.search` 进行实时搜索和方案比较；模型只可传 `destinationId`，日期、房间/住客数、币种和偏好由服务端推导。Hotel provider 未配置或不可信时为 `UNAVAILABLE`，task 安全完成为 `COMPLETED_WITH_GAPS`；sandbox/fixture 只用于测试。 | 浏览器直连 provider、将 sandbox 当实时库存、供应商 deep link/订单/支付、自动 booking；公共交通实时和租车在 provider/商业条款 spike 前不承诺覆盖。 |
+| 旅行与数据 API | Amadeus Self-Service Flight Offers Search、Viator Experiences MCP、Amadeus Transfer Search；Booking.com Demand Accommodation Search/Look（取得 production 准入后）；openrouteservice Place/POI 与 Directions；Frankfurter；通过 typed provider adapters | Flight、Activities、Hotel 保持独立 port。Activities 通过公开 MCP 做只读发现，无 API key，且不展示无币种价格或 click-off link；Hotel 首期仅在 Shared PLAN/REPLAN 中以 snapshot/run-bound `hotel.search` 进行实时搜索和方案比较，模型只可传 `destinationId`，日期、房间/住客数、币种和偏好由服务端推导。Ground 分为 `PlaceResolver`、`NavigationProvider`、`TransitJourneyProvider`、`MobilityOfferProvider`，关键词 POI 候选和路线均由 server-owned TripPlace/run context 解析。任何缺失或不可信 provider 都返回 `UNAVAILABLE`，task 安全完成为 `COMPLETED_WITH_GAPS`，不伪造数据；sandbox/fixture 只用于测试。 | 浏览器直连 provider、将 sandbox 当实时库存、供应商 deep link/订单/支付、自动 booking；Viator MCP 没有公布配额/SLA，不应被宣传为稳定库存或预订能力；公共交通实时和租车在 provider/商业条款 spike 前不承诺覆盖。 |
 | Visa / entry | `VisaProvider` typed adapter；首选 Sherpa Requirements API（签约/验证后） | 全球覆盖采用两阶段：候选阶段仅核验目的地；选定具体航班后按完整中转航段核验。未配置、过期或失败时只显示 `UNAVAILABLE`/官方核验下一步。国籍只从当前授权 snapshot 在服务端使用；详情仅本人可见。 | RAG、规则网页抓取、浏览器直连 widget/API、LLM/Wikipedia 推断签证、代办、法律结论。 |
 | 异步与编排 | PostgreSQL 持久任务状态机、租约领取、idempotency key、transactional outbox、`agent_task_runs`；Fargate Worker；同步 booking sandbox | 对话、planning 与 replan 都以 `QUEUED → RUNNING → COMPLETED/FAILED/STALE/CANCELLED` 执行；显式 Stop 是唯一取消源。租约过期可恢复，最终提交按 lease token 和版本条件化；不把 partial 文本作为业务记录。 | Temporal Cloud、Step Functions、Redis 队列同时进入 MVP；把浏览器/SSE 断开视为取消。 |
 | 可观测性 | OpenTelemetry + CloudWatch；结构化日志和低基数业务指标 | 以 `trip_id`、`plan_version`、`run_id`、`orchestration_request_id` 关联结果；日志不含私聊、国籍明文、证件号、支付数据。 | 先建独立数据湖或全套企业 APM。 |
@@ -119,7 +120,7 @@ Personal Agent 只能把私有输入转化为 owner 确认的、字段目录允�
 | 能力 | 选择 | MVP 行为 | 风险与缓解 |
 |---|---|---|---|
 | Flight | Amadeus Self-Service Flight Offers Search adapter | 每个目的地候选仅使用可验证的 provider 查询结果；Test 环境只用于开发验证，生产展示仅使用 Production 查询结果；失败则返回 `UNAVAILABLE` | 供应商覆盖、商业条款、报价过期和模型 Tool-calling 兼容性必须在启用前验证。 |
-| Activities | Amadeus Self-Service Tours & Activities adapter | 与 Flight 复用注入式 OAuth token provider；每个候选目的地由 Shared Agent 在 PLAN/REPLAN durable task 内调用。Personal Tool 在独立 feature flag 后可用，结果仅留在 owner conversation 与独立 Personal evidence 表，不能进入 Shared context 或 plan。失败、超时、限流、空数据返回 `UNAVAILABLE`；UI 仅显示不可确认的 `RESEARCH_UNAVAILABLE` 缺失摘要。活动 provider 的 booking link 不进入产品。 | vendor 字段集合随产品变化时收紧 schema；跨实例限流与实际账号配额需先通过 spike 验证。 |
+| Activities | Viator 官方 Experiences MCP adapter | Shared Agent 可在 PLAN/REPLAN durable task 内为 snapshot 中每个候选目的地调用 provider-neutral `activities.search`。服务端注入 snapshot/run/date authority，adapter 严格验证 MCP 响应并丢弃 click-off link 与无币种 `fromPrice`。失败、超时、限流、空数据或 schema drift 返回 `UNAVAILABLE`，不以 fixture 或模型内容替代。Personal Tool-loop 暂缓，直到 owner-scoped streaming tool boundary 单独实施。 | 公开 MCP 当前无需 key，但未公布固定配额或 SLA；默认 feature flag 关闭。协议/字段漂移必须 fail closed，并以 adapter contract test 监控。 |
 | Ground place/navigation | openrouteservice Geocoding/POI + Directions；`TripPlace` server-owned reference | Shared Agent 可受限关键词搜索并在两个已授权 POI 之间生成步行/驾车/骑行路线；显示 geometry、距离、时长、步骤、source/captured_at 与归因。缺失仅形成 gap，不阻断其他 research。 | 全球查询不等于全球覆盖或实时交通；关键词、名称、地址、坐标和 geometry 是受保护 Trip 数据，不进 telemetry。 |
 | Ground commercial mobility | Amadeus Transfer Search adapter（可选启用） | 可显示 taxi、接送、包车等真实报价或估价及其来源/有效期；不下单、不透传 booking link。 | 租车、公共交通实时和全球商业覆盖必须由独立 port/provider 验证；不能从 ORS 路线推导价格或班次。 |
 | Budget | Frankfurter adapter | 归一化候选总预算；显示汇率日期与“参考汇率” | 不能被当作支付或结算汇率；API 不可用时显示不可用。 |
@@ -145,7 +146,7 @@ AWS AgentCore 的确支持多种框架，但这只能说明它是将来的可选
 
 ### 防止 provider lock-in
 
-`ModelGateway` 对上提供结构化生成和受限 Tool-calling 能力，对下隐藏 OpenAI-compatible LLM 的差异。provider 层按语义提供 `FlightProvider`、`PlaceResolver`、`NavigationProvider`、`TransitJourneyProvider`、`MobilityOfferProvider` 与 readiness port；`GroundCapabilityRouter` 在服务端固定选择 provider，隐藏 Amadeus/openrouteservice 的返回格式。
+`ModelGateway` 对上提供结构化生成和受限 Tool-calling 能力，对下隐藏 OpenAI-compatible LLM 的差异。provider 层按语义提供 `FlightProvider`、`ActivitiesProvider`、`PlaceResolver`、`NavigationProvider`、`TransitJourneyProvider`、`MobilityOfferProvider` 与 readiness port；`GroundCapabilityRouter` 在服务端固定选择 provider，adapter 隐藏 Amadeus、Viator MCP 与 openrouteservice 的返回格式。
 
 这不是为多云做抽象秀：它保护两个已知的真实变化点——hackathon live API 可能失效，后续模型/赛事限制可能变化。
 

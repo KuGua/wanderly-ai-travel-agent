@@ -36,7 +36,7 @@ and which default policy applies at invocation time.
 
 ### `SkillScope` (`contracts.ts:7-18`)
 
-The 13-element union every Skill's `allowedTools` is constrained to:
+The 14-element union every Skill's `allowedTools` is constrained to:
 
 ```ts
 type SkillScope =
@@ -49,6 +49,7 @@ type SkillScope =
   | "snapshot:read"
   | "chat:read"
   | "flight:search"
+  | "activities:search"
   | "places:search"
   | "places:adopt"
   | "navigation:route"
@@ -76,6 +77,10 @@ interface SkillContext {
   ctx: RequestContext;
   snapshot?: ConstraintSnapshotData;
   flightSearch?: FlightSearchExecutionContext;
+  activitiesSearch?: ActivitySearchExecutionContext;
+  placeSearch?: PlaceSearchExecutionContext;
+  navigation?: NavigationRouteExecutionContext;
+  mobility?: MobilitySearchExecutionContext;
   policyGate: PolicyGate;
 }
 ```
@@ -111,9 +116,9 @@ Defined in `policy-gate.ts:9-13`:
 | AgentKind | Allowed `SkillScope` values |
 | --- | --- |
 | `personal` | `profile:read`, `profile:write:propose`, `consent:read`, `chat:read` |
-| `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read`, `flight:search`, `places:search`, `places:adopt`, `navigation:route`, `mobility:search` |
+| `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read`, `flight:search`, `activities:search`, `places:search`, `places:adopt`, `navigation:route`, `mobility:search` |
 | `review` | `snapshot:read`, `plan:write:propose` |
-| `public-content` | None |
+| `public-content` | none |
 
 Any Skill whose `allowedTools` contains a value not in its agent kind's list
 is rejected at **registration** with `SkillError('TOOL_NOT_ALLOWED')`

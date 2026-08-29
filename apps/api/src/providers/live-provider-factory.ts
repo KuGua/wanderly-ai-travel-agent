@@ -1,4 +1,5 @@
 import type {
+  ActivitiesProvider,
   FlightProvider,
   GroundProvider,
   MobilityOfferProvider,
@@ -20,6 +21,7 @@ import { AmadeusTransferProvider, readAmadeusTransferConfiguration } from "./ama
 import { createGroundCapabilityRouter, type GroundCapabilityRouter } from "./ground-capability-router.js";
 import { OrsPlaceProvider, readOrsPlaceConfiguration } from "./ors-place-provider.js";
 import { OrsNavigationProvider, readOrsNavigationConfiguration } from "./ors-navigation-provider.js";
+import { ViatorMcpActivitiesProvider, readViatorMcpConfiguration } from "./viator-mcp-activities-provider.js";
 
 class UnavailableFlightProvider implements FlightProvider {
   async searchFlights(): Promise<ProviderResult<FlightOffer[]>> {
@@ -63,6 +65,12 @@ class UnavailableTransitJourneyProvider implements TransitJourneyProvider {
   }
 }
 
+class UnavailableActivitiesProvider implements ActivitiesProvider {
+  async searchActivities() {
+    return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" } as const;
+  }
+}
+
 /**
  * The product never substitutes invented offers. Concrete supplier adapters are
  * registered here only after their credentials and commercial terms are
@@ -81,6 +89,7 @@ export function createTravelProviders(): {
   mobilityOfferProvider: MobilityOfferProvider;
   transitJourneyProvider: TransitJourneyProvider;
   capabilityRouter: GroundCapabilityRouter;
+  activitiesProvider: ActivitiesProvider;
 } {
   const placeProvider = createOrsPlace();
   const navigationProvider = createOrsNavigation();
@@ -98,7 +107,15 @@ export function createTravelProviders(): {
       mobilityOfferProvider: createAmadeusTransfer(),
       transitJourneyProvider: new UnavailableTransitJourneyProvider(),
     }),
+    activitiesProvider: createActivitiesProvider(),
   };
+}
+
+function createActivitiesProvider(): ActivitiesProvider {
+  const configuration = readViatorMcpConfiguration();
+  return configuration
+    ? new ViatorMcpActivitiesProvider(configuration)
+    : new UnavailableActivitiesProvider();
 }
 
 function createFlightProvider(): FlightProvider {
