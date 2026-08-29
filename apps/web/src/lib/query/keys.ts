@@ -1,6 +1,7 @@
 export const profileKeys = {
   all: ["profile"] as const,
   me: ["profile", "me"] as const,
+  memory: ["profile", "me", "memory"] as const,
 };
 
 export const tripKeys = {
@@ -8,6 +9,8 @@ export const tripKeys = {
   list: ["trips", "list"] as const,
   detail: (tripId: string) => ["trips", tripId, "detail"] as const,
   threads: (tripId: string) => ["trips", tripId, "my-threads"] as const,
+  memoryOverrides: (tripId: string) => ["trips", tripId, "memory", "me"] as const,
+  memoryGroup: (tripId: string) => ["trips", tripId, "memory", "group"] as const,
   places: (tripId: string) => ["trips", tripId, "places"] as const,
   routeEvidence: (tripId: string, planId: string) =>
     ["trips", tripId, "plans", planId, "route-evidence"] as const,

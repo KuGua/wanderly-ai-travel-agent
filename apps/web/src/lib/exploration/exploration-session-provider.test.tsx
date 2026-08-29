@@ -57,6 +57,16 @@ function makeApi(overrides: Partial<TravelApi> = {}): TravelApi {
     startExploration: vi.fn().mockResolvedValue(makeStartResponse()),
     activateTrip: vi.fn(),
     updateTripTitle: vi.fn(),
+    getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),
+    updateMemoryFact: vi.fn(),
+    deleteMemoryFact: vi.fn(),
+    confirmMemoryProposal: vi.fn(),
+    dismissMemoryProposal: vi.fn(),
+    getTripMemoryOverrides: vi.fn().mockResolvedValue({ overrides: [] }),
+    getTripMemoryGroupDecisions: vi.fn().mockResolvedValue({ groupDecisions: [] }),
+    saveTripMemoryOverride: vi.fn(),
+    saveTripMemoryGroupDecision: vi.fn(),
+    deleteTripMemory: vi.fn(),
     ...overrides,
   };
 }
