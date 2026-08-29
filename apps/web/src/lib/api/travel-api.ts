@@ -37,6 +37,13 @@ import type {
   AdoptionVoteResponse,
   AdoptionVoteListResponse,
   TripPlansListResponse,
+  TripPlacesResponse,
+  PlaceCandidateSearchRequest,
+  PlaceCandidateSearchResponse,
+  ProposeTripPlaceRequest,
+  AdoptTripPlaceRequest,
+  RevokeTripPlaceRequest,
+  TripPlaceActionResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -73,4 +80,13 @@ export interface TravelApi {
   castAdoptionVote?(planId: string, input: CastAdoptionVoteRequest, options?: { idempotencyKey?: string }): Promise<AdoptionVoteResponse>;
   listAdoptionVotes?(planId: string): Promise<AdoptionVoteListResponse>;
   listTripPlans?(tripId: string): Promise<TripPlansListResponse>;
+
+  // ── Global POI & ground mobility (Phase 2) ──────────────────────────────────
+  // Optional methods to preserve Phase-5 style incremental adoption. The web
+  // calls each behind `enabled: !!api.<method>` to avoid breaking older mocks.
+  listTripPlaces?(tripId: string): Promise<TripPlacesResponse>;
+  searchPlaceCandidates?(tripId: string, input: PlaceCandidateSearchRequest, options?: { idempotencyKey?: string }): Promise<PlaceCandidateSearchResponse>;
+  proposeTripPlace?(tripId: string, input: ProposeTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
+  adoptTripPlace?(tripId: string, input: AdoptTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
+  revokeTripPlace?(tripId: string, input: RevokeTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
 }

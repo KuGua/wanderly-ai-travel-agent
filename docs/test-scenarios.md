@@ -324,24 +324,28 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 ### TS-H4 — Create individualized visa readiness safely
 
 **Stories:** H4, P1  
-**Objective:** Verify nationality-specific readiness without legal claims or unauthorized inference.
+**Objective:** Verify global, provider-backed two-stage nationality-specific readiness without legal claims or unauthorized inference.
 
-**Starting conditions:** Alice authorizes nationality; Bob initially does not; Chen has separate consent; two to three candidate routes and official-source fixtures exist.
+**Starting conditions:** Alice authorizes nationality; Bob initially does not; Chen has separate consent; two to three destination candidates, two normalized flight offers to the same destination with different transit airports, an approved provider double and official-source fixtures exist.
 
 **Steps:**
 
-1. Generate candidate comparison and readiness checklists.
-2. Inspect Alice’s checklist source, checked time, applicable traveler, candidate route and next actions.
-3. Inspect Bob’s result without nationality consent.
-4. Bob grants nationality consent, then revoke it after list creation.
-5. Load uncertain/expired visa-source fixture.
+1. Generate candidate comparison and destination-level readiness checks before any flight offer is selected.
+2. Inspect Alice’s candidate checklist source, checked time, applicable traveler, destination stage and the explicit route/transit-pending marker.
+3. Select the first current, unexpired flight offer; inspect the durable route-readiness task and its destination/transit nodes derived only from normalized server-side segments.
+4. Switch to the second offer with a different transit airport; inspect that the first route-level result is `STALE` and the new route fingerprint is checked independently.
+5. Inspect Bob’s result without nationality consent; assert no provider request is made for Bob.
+6. Bob grants nationality consent, then revoke it after list creation.
+7. Load provider `NO_INFORMATION`, 429, timeout, malformed response, uncertain/expired source and airport-country-resolution-failure fixtures.
+8. Attempt cross-member detail reads and inspect team summary, plan explanation, SSE, audit, logs, traces and metric labels.
 
 **Expected outcomes:**
 
-- Each authorized traveler has a personal, sourced readiness checklist or explicit verification gap for every displayed candidate, not a visa approval statement.
-- Bob sees a request to self-check until he authorizes data; system does not infer nationality.
-- Grant/revoke creates/invalidates Bob’s checklist and expires affected plan.
-- Uncertain source directs official verification and does not state a certain conclusion.
+- Each authorized traveler has a personal, sourced destination-level checklist or explicit verification gap for every displayed candidate. Before flight selection it never claims transit coverage; it explicitly marks the route check pending.
+- Route-level results are produced only for a user-selected current offer, use its actual ordered segments, and become `STALE` on offer switch/expiry, route/snapshot change or consent withdrawal.
+- Bob sees a request to self-check until he authorizes data; the system makes no provider call and infers no nationality.
+- Team summary and every non-owner surface contain only aggregate counts; nationality, passport data, raw provider payloads, URL query data, application links and another member’s checklist never appear.
+- Provider/data/airport-resolution failures create `UNAVAILABLE` or official-verification gaps, not a certain conclusion, fabricated checklist, active evidence or booking authority.
 
 ### TS-H5 — Re-plan after a flight shock
 

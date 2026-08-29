@@ -14,6 +14,10 @@ import type {
   ConfirmTripConstraintProposalRequest,
   CreateTripConstraintProposalRequest,
   UpsertTripConstraintFactRequest,
+  AdoptTripPlaceRequest,
+  PlaceCandidateSearchRequest,
+  ProposeTripPlaceRequest,
+  RevokeTripPlaceRequest,
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
 import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys } from "./keys";
@@ -313,6 +317,62 @@ export function useCastAdoptionVote(tripId: string) {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: teamOrchestrationKeys.votes(vars.planId) });
       qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+    },
+  });
+}
+
+// ─── Global POI & ground mobility (Phase 2) ────────────────────────────────────
+// All hooks follow the `enabled: !!api.<method>` pattern so partial mocks
+// from earlier phases don't break the new UI.
+export function useTripPlaces(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.places(tripId),
+    queryFn: () => api.listTripPlaces!(tripId),
+    enabled: !!api.listTripPlaces,
+  });
+}
+
+export function useSearchPlaceCandidates(tripId: string) {
+  const api = useTravelApi();
+  return useMutation({
+    mutationFn: (params: { input: PlaceCandidateSearchRequest; idempotencyKey?: string }) =>
+      api.searchPlaceCandidates!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+  });
+}
+
+export function useProposeTripPlace(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { input: ProposeTripPlaceRequest; idempotencyKey?: string }) =>
+      api.proposeTripPlace!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tripKeys.places(tripId) });
+    },
+  });
+}
+
+export function useAdoptTripPlace(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { input: AdoptTripPlaceRequest; idempotencyKey?: string }) =>
+      api.adoptTripPlace!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tripKeys.places(tripId) });
+    },
+  });
+}
+
+export function useRevokeTripPlace(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { input: RevokeTripPlaceRequest; idempotencyKey?: string }) =>
+      api.revokeTripPlace!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tripKeys.places(tripId) });
     },
   });
 }

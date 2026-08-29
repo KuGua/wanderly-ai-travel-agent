@@ -10,4 +10,6 @@ Amadeus Tours & Activities 与 Amadeus Flight Offers Search 通过注入式 OAut
 
 旅行 provider 或模型不可用、超时、限流、返回空数据或输出无法验证时，服务必须记录安全的失败遥测并返回 `UNAVAILABLE`；不得创建 plan、offer、source evidence、预订参考号或签证资格结论，也不得以 fixture、Demo data 或模型编造的内容替代。
 
+全球 visa/entry readiness 只能通过服务端受审查的 typed `VisaProvider` 使用当前 `constraint_snapshot` 中已授权的最小国籍字段。候选阶段仅检查目的地，未选择具体 flight offer 时必须显示 route/transit check pending；路线阶段只由服务端从当前、未过期的 normalized flight segments 构造目的地和中转节点。国籍、证件、原始 provider response、URL query 与申请/购买链接不得进入浏览器 provider 调用、团队 DTO、共享 plan explanation、客户端持久状态、日志、trace、metric label 或 audit summary。未配置 provider、合同/DPA 未验证、provider 失败、机场映射失败或证据过期均为 `UNAVAILABLE`/`STALE`，并仅向成员显示官方核验下一步；不得用 RAG、网页抓取或静态规则库替代。
+
 测试可在 test-only 路径使用依赖注入的 fake provider 或 fake model。测试数据不得被产品源码导入、打包或由环境变量启用。

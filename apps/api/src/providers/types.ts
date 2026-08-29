@@ -29,6 +29,12 @@ export interface StayProvider {
   }): Promise<ProviderResult<StayOffer[]>>;
 }
 
+/**
+ * @deprecated Aggregate port from the pre-mobility refactor. Preserved as a
+ * migration shim only. Spec §2 says Navigation/Mobility/Transit must live in
+ * three semantically independent ports. New code must not call this. Removal
+ * is scheduled after Phase 5 lands.
+ */
 export interface GroundProvider {
   searchGround(params: {
     destination: string;
@@ -42,6 +48,137 @@ export interface VisaProvider {
     destinationCountry: string;
     snapshotId: string;
   }): Promise<ProviderResult<VisaReadinessResult>>;
+}
+
+/**
+ * Spec §5.1. Restricted keyword POI search. The model never submits
+ * coordinates, provider name, or raw URLs; only `destinationId` (must match a
+ * snapshot candidate), a keyword, and a category.
+ */
+export interface PlaceSearchProvider {
+  searchPlaces(params: {
+    destinationId: string;
+    keyword: string;
+    category: "ATTRACTION" | "HOTEL" | "RESTAURANT" | "TRANSPORT_HUB" | "OTHER";
+    snapshotId: string;
+    runId?: string;
+    signal?: AbortSignal;
+  }): Promise<ProviderResult<NormalizedPlaceCandidate[]>>;
+}
+
+/**
+ * Spec §5.2. Snapshot- and run-bound walking / driving / cycling route. The
+ * model only ever submits two authorized `placeId`s plus a mode; coordinates
+ * are derived server-side from the current-trip place table.
+ */
+export interface NavigationProvider {
+  searchRoute(params: {
+    originPlaceId: string;
+    destinationPlaceId: string;
+    mode: "WALK" | "DRIVE" | "CYCLE";
+    snapshotId: string;
+    runId?: string;
+    signal?: AbortSignal;
+  }): Promise<ProviderResult<NormalizedRouteEvidence>>}
+
+/**
+ * Spec §5.3. Taxi / transfer / charter / rental offer search. The adapter
+ * MUST drop any upstream booking link and only return offers carrying
+ * `source`, `capturedAt`, `currency`, `expiresAt`, and an `estimated` flag.
+ */
+export interface MobilityOfferProvider {
+  searchOffers(params: {
+    originPlaceId: string;
+    destinationPlaceId: string;
+    passengers: number;
+    departureAt: string;
+    serviceType: "TAXI" | "TRANSFER" | "CHARTER" | "RENTAL";
+    snapshotId: string;
+    runId?: string;
+    signal?: AbortSignal;
+  }): Promise<ProviderResult<NormalizedMobilityOffer[]>>;
+}
+
+/**
+ * Spec §5.3. Reserved port for spec Phase 6 (transit schedules / fares).
+ * Intentionally not implemented in this milestone; the factory returns
+ * `UNAVAILABLE/NOT_CONFIGURED` until an approved supplier is registered.
+ */
+export interface TransitJourneyProvider {
+  searchJourneys(params: {
+    originPlaceId: string;
+    destinationPlaceId: string;
+    departureAt: string;
+    snapshotId: string;
+    runId?: string;
+    signal?: AbortSignal;
+  }): Promise<ProviderResult<NormalizedTransitJourney[]>>;
+}
+
+/**
+ * Provider-neutral normalized shapes. Raw upstream payloads NEVER cross the
+ * adapter boundary — they are validated against an allow-list Zod schema,
+ * reshaped into these stable types, and persisted with `source`/`capturedAt`.
+ */
+export interface NormalizedPlaceCandidate {
+  candidateId: string;
+  displayName: string;
+  kind: "ATTRACTION" | "HOTEL" | "RESTAURANT" | "TRANSPORT_HUB" | "OTHER";
+  countryCode: string | null;
+  cityName: string | null;
+  longitude: number;
+  latitude: number;
+  confidence: number;
+  needsUserConfirmation: boolean;
+  source: string;
+  capturedAt: string;
+}
+
+export interface NormalizedRouteStep {
+  index: number;
+  instruction: string;
+  distanceMeters: number;
+  durationSeconds: number;
+}
+
+export interface NormalizedRouteEvidence {
+  originPlaceId: string;
+  destinationPlaceId: string;
+  mode: "WALK" | "DRIVE" | "CYCLE";
+  distanceMeters: number;
+  durationSeconds: number;
+  steps: NormalizedRouteStep[];
+  encodedGeometry: string;
+  source: string;
+  capturedAt: string;
+  refreshAfter: string;
+}
+
+export interface NormalizedMobilityOffer {
+  offerId: string;
+  serviceType: "TAXI" | "TRANSFER" | "CHARTER" | "RENTAL";
+  originPlaceId: string;
+  destinationPlaceId: string;
+  passengers: number;
+  departureAt: string;
+  estimatedPrice: number;
+  currency: string;
+  vehicleClass: string;
+  estimated: true;
+  expiresAt: string | null;
+  source: string;
+  capturedAt: string;
+}
+
+export interface NormalizedTransitJourney {
+  originPlaceId: string;
+  destinationPlaceId: string;
+  mode: string;
+  departureAt: string;
+  arrivalAt: string;
+  fare: { amount: number; currency: string } | null;
+  source: string;
+  capturedAt: string;
 }
 
 export type ProviderResult<T> =

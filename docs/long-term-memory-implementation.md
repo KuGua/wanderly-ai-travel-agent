@@ -167,7 +167,7 @@ type MemoryProjection = {
 - `skills/personal/profile-change-proposal-skill.ts`：只允许显式 save 意图创建用户确认 proposal；不允许敏感 key。
 - `policy/snapshot-policy.ts`、`policy/plan-output-validator.ts`、Shared Skills：接受已验证的 `authorized_data.memory` 结构，只允许引用投影路径。
 - `services/planning-service.ts` / task acceptance：在 snapshot 创建时调用 projection builder；commit guard 重验 projection source 未变化；REPLAN 生成 `PROPOSED` plan，不能绕过 adoption vote 激活。
-- `schema.ts`、migrations、API contracts、Web `TravelApi`：添加类型与 DTO，禁止 client-supplied owner/user IDs。
+  - `schema.ts`、migrations、API contracts、Web `TravelApi`：添加类型与 DTO，禁止 client-supplied owner/user IDs。
 
 ### 5.3 REST API
 

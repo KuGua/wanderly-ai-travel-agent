@@ -7,6 +7,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
 import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
+import { PlacesPanel } from "@/components/trips/places-panel";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link, useRouter } from "@/i18n/navigation";
 import {
@@ -388,6 +389,8 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                 ))}
               </div>
             </section>
+
+            <PlacesPanel tripId={trip.id} destinationCandidates={trip.destinationCandidates} />
           </div>
         </div>
 

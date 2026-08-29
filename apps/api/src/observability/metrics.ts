@@ -316,6 +316,27 @@ metrics.registerCounter("flight_tool_invocations_total", "Flight tool execution 
   provider: ["amadeus"],
   error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
 });
+// Global POI & ground mobility (docs/ground-mobility-implementation.md §7).
+// All label sets are bounded enums; identifiers (trip_id / run_id /
+// place_id / route_id) live only in trace/log correlation context.
+metrics.registerCounter("place_provider_requests_total", "ORS Place provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["openrouteservice"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerHistogram("place_provider_latency_ms", "ORS Place provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
+  provider: ["openrouteservice"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("place_search_tool_invocations_total", "places.search skill execution outcomes.", {
+  outcome: ["live", "unavailable"],
+  provider: ["openrouteservice"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved", "policy_denied", "per_run_cap_exceeded"],
+});
+metrics.registerCounter("trip_place_actions_total", "Server-authoritative TripPlace lifecycle actions.", {
+  action: ["proposed", "adopted", "revoked", "stale_invalidated"],
+  visibility: ["owner_private", "team_visible", "orchestrator_confidential"],
+});
 // Bounded same-thread LLM context builder metrics.  See
 // docs/thread-context-memory-implementation.md §8.  No labels carry
 // threadId/tripId/runId — those identifiers live in trace/log context,

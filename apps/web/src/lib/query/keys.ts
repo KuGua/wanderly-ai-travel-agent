@@ -8,6 +8,13 @@ export const tripKeys = {
   list: ["trips", "list"] as const,
   detail: (tripId: string) => ["trips", tripId, "detail"] as const,
   threads: (tripId: string) => ["trips", tripId, "my-threads"] as const,
+  places: (tripId: string) => ["trips", tripId, "places"] as const,
+  routeEvidence: (tripId: string, planId: string) =>
+    ["trips", tripId, "plans", planId, "route-evidence"] as const,
+  mobilityOffers: (tripId: string) =>
+    ["trips", tripId, "mobility-offers"] as const,
+  researchResults: (tripId: string) =>
+    ["trips", tripId, "research-results"] as const,
 };
 
 export const threadKeys = {

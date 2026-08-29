@@ -409,7 +409,47 @@
         "CREATOR": "创建者",
         "MEMBER": "成员"
       },
-      "openPinAria": "在完整地图中查看 {name}"
+      "openPinAria": "在完整地图中查看 {name}",
+      "poi": {
+        "title": "地点",
+        "attribution": "ORS",
+        "search": "搜索",
+        "savedTitle": "已保存地点",
+        "loading": "加载中…",
+        "empty": "尚无地点。",
+        "noResults": "没有匹配的地点。",
+        "adopt": "加入方案",
+        "dismiss": "忽略",
+        "revoke": "移除",
+        "needsConfirmation": "需要确认",
+        "errors": {
+          "search": "地点搜索失败，请重试。",
+          "adopt": "无法加入地点，请重试。"
+        },
+        "fields": {
+          "destination": "目的地",
+          "category": "类别",
+          "keyword": "关键词",
+          "keywordPlaceholder": "如：拉面、博物馆、车站"
+        },
+        "kind": {
+          "ATTRACTION": "景点",
+          "HOTEL": "酒店",
+          "RESTAURANT": "餐厅",
+          "TRANSPORT_HUB": "交通枢纽",
+          "OTHER": "其他"
+        },
+        "status": {
+          "proposed": "已提议",
+          "active": "已采纳",
+          "revoked": "已移除"
+        },
+        "visibility": {
+          "owner_private": "私有",
+          "team_visible": "团队可见",
+          "orchestrator_confidential": "仅编排 Agent"
+        }
+      }
     }
   },
   "teamOrchestration": {

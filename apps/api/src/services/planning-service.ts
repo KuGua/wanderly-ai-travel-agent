@@ -21,7 +21,16 @@ import { safePublicExplanationTokensFor } from "../policy/constraint-field-catal
 import { createTravelProviders } from "../providers/live-provider-factory.js";
 import { modelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
-import type { FlightProvider, GroundProvider, StayProvider } from "../providers/types.js";
+import type {
+  FlightProvider,
+  GroundProvider,
+  MobilityOfferProvider,
+  NavigationProvider,
+  PlaceSearchProvider,
+  StayProvider,
+  TransitJourneyProvider,
+} from "../providers/types.js";
+import type { GroundCapabilityRouter } from "../providers/ground-capability-router.js";
 import { validatePlanOutput } from "../policy/plan-output-validator.js";
 import { DefaultPolicyGate } from "../agents/policy-gate.js";
 import { invokeSkill } from "../agents/skill-registry.js";
@@ -36,6 +45,11 @@ export interface PlanningDependencies {
   flightProvider: FlightProvider;
   stayProvider: StayProvider;
   groundProvider: GroundProvider;
+  placeProvider: PlaceSearchProvider;
+  navigationProvider: NavigationProvider;
+  mobilityOfferProvider: MobilityOfferProvider;
+  transitJourneyProvider: TransitJourneyProvider;
+  capabilityRouter: GroundCapabilityRouter;
   modelGateway: ModelGateway;
 }
 
@@ -59,6 +73,11 @@ function resolvePlanningDependencies(): PlanningDependencies {
     flightProvider: configuredProviders.flightProvider,
     stayProvider: configuredProviders.stayProvider,
     groundProvider: configuredProviders.groundProvider,
+    placeProvider: configuredProviders.placeProvider,
+    navigationProvider: configuredProviders.navigationProvider,
+    mobilityOfferProvider: configuredProviders.mobilityOfferProvider,
+    transitJourneyProvider: configuredProviders.transitJourneyProvider,
+    capabilityRouter: configuredProviders.capabilityRouter,
     modelGateway: modelGateway(),
   };
 }

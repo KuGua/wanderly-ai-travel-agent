@@ -409,7 +409,47 @@
         "CREATOR": "Creator",
         "MEMBER": "Member"
       },
-      "openPinAria": "View {name} on the full map"
+      "openPinAria": "View {name} on the full map",
+      "poi": {
+        "title": "Places",
+        "attribution": "ORS",
+        "search": "Search",
+        "savedTitle": "Saved places",
+        "loading": "Loading…",
+        "empty": "No places yet.",
+        "noResults": "No places matched.",
+        "adopt": "Add to plan",
+        "dismiss": "Dismiss",
+        "revoke": "Remove",
+        "needsConfirmation": "Confirm name?",
+        "errors": {
+          "search": "Couldn't search places. Please retry.",
+          "adopt": "Couldn't add the place. Please retry."
+        },
+        "fields": {
+          "destination": "Destination",
+          "category": "Category",
+          "keyword": "Keyword",
+          "keywordPlaceholder": "e.g. ramen, museum, station"
+        },
+        "kind": {
+          "ATTRACTION": "Attraction",
+          "HOTEL": "Hotel",
+          "RESTAURANT": "Restaurant",
+          "TRANSPORT_HUB": "Transport",
+          "OTHER": "Other"
+        },
+        "status": {
+          "proposed": "Proposed",
+          "active": "Active",
+          "revoked": "Removed"
+        },
+        "visibility": {
+          "owner_private": "Private",
+          "team_visible": "Shared",
+          "orchestrator_confidential": "Confidential"
+        }
+      }
     }
   },
   "teamOrchestration": {

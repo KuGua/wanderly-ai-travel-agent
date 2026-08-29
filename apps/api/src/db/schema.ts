@@ -18,7 +18,7 @@ export const bookingStatusEnum = pgEnum("booking_status", ["PENDING", "SUBMITTED
 export const outboxStatusEnum = pgEnum("outbox_status", ["PENDING", "PROCESSED", "FAILED"]);
 export const agentTaskOperationEnum = pgEnum("agent_task_operation", ["CONVERSATION", "PLAN", "REPLAN"]);
 export const agentTaskStatusEnum = pgEnum("agent_task_status", [
-  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "FAILED", "CANCELLED", "STALE",
+  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELLED", "STALE",
 ]);
 export const auditActionEnum = pgEnum("audit_action", [
   "PROFILE_CREATE", "PROFILE_UPDATE", "PROFILE_DELETE",
@@ -42,6 +42,20 @@ export const auditActionEnum = pgEnum("audit_action", [
   "PLAN_REPLAN_ENQUEUED",
   "PLAN_ADOPTION_VOTED",
   "PLAN_ADOPTED",
+  // Global POI & ground mobility (added via 0023_poi_route_mobility.sql):
+  "PLACE_SEARCH_REQUESTED",
+  "PLACE_SEARCH_COMPLETED",
+  "PLACE_SEARCH_UNAVAILABLE",
+  "NAVIGATION_ROUTE_REQUESTED",
+  "NAVIGATION_ROUTE_COMPLETED",
+  "NAVIGATION_ROUTE_UNAVAILABLE",
+  "MOBILITY_OFFER_REQUESTED",
+  "MOBILITY_OFFER_COMPLETED",
+  "MOBILITY_OFFER_UNAVAILABLE",
+  "TRIP_PLACE_PROPOSED",
+  "TRIP_PLACE_ADOPTED",
+  "TRIP_PLACE_REVOKED",
+  "RESEARCH_RESULT_RECORDED",
 ]);
 
 // Chat thread scope — MVP allows only TRIP-scoped threads; adding new
@@ -603,4 +617,120 @@ export const planAdoptionVotes = pgTable("plan_adoption_votes", {
 }, (table) => ({
   pk: uniqueIndex("plan_adoption_votes_pkey").on(table.planId, table.userId),
   planIdx: index("plan_adoption_votes_plan_idx").on(table.planId),
+}));
+
+// ─── Global POI & ground mobility (spec docs/ground-mobility-implementation.md §4) ──
+// Drizzle 镜像；migration 0023_poi_route_mobility.sql 已定义 enum、表与索引。
+//
+// 不变量：
+//  * trip_places 坐标仅存 longitude/latitude，绝不进 telemetry/audit/log；
+//    OWNER_PRIVATE place 永不进入 Shared snapshot。
+//  * navigation_route_evidence 是受保护的 Trip 数据，encoded_geometry 默认不进
+//    LLM/日志/trace/metric/audit summary。
+//  * planning_research_results 不是 itinerary_plan，无 booking authority。
+
+export const tripPlaceVisibilityEnum = pgEnum("trip_place_visibility", [
+  "OWNER_PRIVATE",
+  "TEAM_VISIBLE",
+  "ORCHESTRATOR_CONFIDENTIAL",
+]);
+
+export const tripPlaceStatusEnum = pgEnum("trip_place_status", [
+  "PROPOSED",
+  "ACTIVE",
+  "REVOKED",
+]);
+
+export const tripPlaceKindEnum = pgEnum("trip_place_kind", [
+  "ATTRACTION",
+  "HOTEL",
+  "RESTAURANT",
+  "TRANSPORT_HUB",
+  "OTHER",
+]);
+
+export const navigationRouteModeEnum = pgEnum("navigation_route_mode", [
+  "WALK",
+  "DRIVE",
+  "CYCLE",
+]);
+
+export const researchResultStatusEnum = pgEnum("research_result_status", [
+  "COMPLETE",
+  "COMPLETED_WITH_GAPS",
+]);
+
+export const mobilityServiceTypeEnum = pgEnum("mobility_service_type", [
+  "TAXI",
+  "TRANSFER",
+  "CHARTER",
+  "RENTAL",
+]);
+
+export const tripPlaces = pgTable("trip_places", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  version: integer("version").notNull().default(1),
+  visibility: tripPlaceVisibilityEnum("visibility").notNull(),
+  status: tripPlaceStatusEnum("status").notNull().default("PROPOSED"),
+  kind: tripPlaceKindEnum("kind").notNull(),
+  displayName: varchar("display_name", { length: 256 }).notNull(),
+  countryCode: varchar("country_code", { length: 2 }),
+  cityName: varchar("city_name", { length: 128 }),
+  longitude: doublePrecision("longitude"),
+  latitude: doublePrecision("latitude"),
+  source: varchar("source", { length: 256 }).notNull(),
+  providerPlaceId: varchar("provider_place_id", { length: 256 }),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+  createdFromRunId: uuid("created_from_run_id").references(() => agentTaskRuns.id, { onDelete: "set null" }),
+  supersededById: uuid("superseded_by_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  activeUnique: uniqueIndex("trip_places_active_unique")
+    .on(table.tripId, table.displayName, table.kind, table.source)
+    .where(sql`status = 'ACTIVE'`),
+  tripStatusIdx: index("trip_places_trip_status_idx").on(table.tripId, table.status),
+  tripVisibilityIdx: index("trip_places_trip_visibility_idx").on(table.tripId, table.visibility),
+  runIdx: index("trip_places_run_idx").on(table.createdFromRunId)
+    .where(sql`created_from_run_id IS NOT NULL`),
+}));
+
+export const navigationRouteEvidence = pgTable("navigation_route_evidence", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  searchRunId: uuid("search_run_id").references(() => providerSearchRuns.id, { onDelete: "cascade" }).notNull(),
+  snapshotId: uuid("snapshot_id").references(() => constraintSnapshots.id, { onDelete: "cascade" }).notNull(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  originPlaceId: uuid("origin_place_id").references(() => tripPlaces.id, { onDelete: "restrict" }).notNull(),
+  destinationPlaceId: uuid("destination_place_id").references(() => tripPlaces.id, { onDelete: "restrict" }).notNull(),
+  mode: navigationRouteModeEnum("mode").notNull(),
+  distanceMeters: doublePrecision("distance_meters").notNull(),
+  durationSeconds: doublePrecision("duration_seconds").notNull(),
+  steps: jsonb("steps").$type<Array<Record<string, unknown>>>().notNull(),
+  encodedGeometry: text("encoded_geometry").notNull(),
+  source: varchar("source", { length: 256 }).notNull(),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+  refreshAfter: timestamp("refresh_after", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  snapshotIdx: index("navigation_route_evidence_snapshot_idx").on(table.snapshotId, table.tripId),
+  pairIdx: index("navigation_route_evidence_pair_idx").on(table.originPlaceId, table.destinationPlaceId, table.mode),
+  refreshIdx: index("navigation_route_evidence_refresh_idx").on(table.refreshAfter),
+}));
+
+export const planningResearchResults = pgTable("planning_research_results", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  snapshotId: uuid("snapshot_id").references(() => constraintSnapshots.id, { onDelete: "cascade" }).notNull(),
+  agentTaskRunId: uuid("agent_task_run_id").references(() => agentTaskRuns.id, { onDelete: "set null" }),
+  status: researchResultStatusEnum("status").notNull(),
+  serviceGaps: jsonb("service_gaps").$type<Array<Record<string, unknown>>>().notNull().default([]),
+  resultPlanId: uuid("result_plan_id").references(() => itineraryPlans.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  uniquePerTask: uniqueIndex("planning_research_results_unique_per_task").on(table.agentTaskRunId)
+    .where(sql`agent_task_run_id IS NOT NULL`),
+  tripSnapshotIdx: index("planning_research_results_trip_snapshot_idx").on(table.tripId, table.snapshotId),
+  statusIdx: index("planning_research_results_status_idx").on(table.tripId, table.status),
 }));

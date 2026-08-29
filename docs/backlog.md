@@ -78,11 +78,12 @@
 
 **Acceptance criteria:**
 
-1. For each traveler who authorizes nationality data, the system creates a separate checklist or explicit verification gap for each displayed destination and known route/transit.
-2. Every item names the traveler, source, check time, next action and confidence/uncertainty.
-3. Missing or uncertain data directs traveler to official verification; it never claims visa approval or legal advice.
-4. A traveler who does not authorize nationality data receives no inferred nationality conclusion.
-5. Consent withdrawal invalidates that traveler’s checklist and triggers plan review.
+1. Implement the approved global `VisaProvider` contract and `ReadinessOrchestrator`; production provider default is disabled until Sherpa contract, DPA, credential and sandbox contract verification pass.
+2. Candidate planning runs destination-level checks per authorized traveler × destination. Results explicitly state that transit readiness remains pending until a concrete flight offer is selected.
+3. Selecting an unexpired current-plan flight offer accepts a durable route-readiness task; it derives airport/transit nodes server-side and creates per-traveler route-level checks.
+4. Every owner-visible item contains source, check time, stage, next action and uncertainty. Team views expose only aggregate status; neither API/UI/telemetry leaks nationality or another member’s checklist.
+5. Missing/uncertain/expired data directs the owner to official verification; it never claims visa approval or legal advice, stores rule-page text, or forwards application/purchase links.
+6. Missing nationality consent, consent withdrawal, selected-offer change/expiry, route change and snapshot change invalidate affected checks and trigger the applicable replan/recheck.
 
 ### H5 — Self-correct the shared trip after change
 

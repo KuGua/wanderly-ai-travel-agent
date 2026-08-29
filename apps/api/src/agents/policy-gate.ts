@@ -9,7 +9,16 @@ interface AgentScopePolicy {
 
 const DEFAULT_POLICY: AgentScopePolicy = {
   personal: ["profile:read", "profile:write:propose", "consent:read", "chat:read"],
-  shared: ["snapshot:read", "plan:write:propose", "readiness:read", "flight:search"],
+  shared: [
+    "snapshot:read",
+    "plan:write:propose",
+    "readiness:read",
+    "flight:search",
+    "places:search",
+    "places:adopt",
+    "navigation:route",
+    "mobility:search",
+  ],
   review: ["snapshot:read", "plan:write:propose"],
   // S4: public-content agents run the cached location-introduction skill
   // and have no access to Profile/Trip/thread/snapshot data. Empty by

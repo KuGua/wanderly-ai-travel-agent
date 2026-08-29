@@ -26,7 +26,21 @@ export type AuditAction =
   | "TRIP_CONSTRAINT_REVOKED"
   | "PLAN_REPLAN_ENQUEUED"
   | "PLAN_ADOPTION_VOTED"
-  | "PLAN_ADOPTED";
+  | "PLAN_ADOPTED"
+  // Global POI & ground mobility (added via 0023_poi_route_mobility.sql):
+  | "PLACE_SEARCH_REQUESTED"
+  | "PLACE_SEARCH_COMPLETED"
+  | "PLACE_SEARCH_UNAVAILABLE"
+  | "NAVIGATION_ROUTE_REQUESTED"
+  | "NAVIGATION_ROUTE_COMPLETED"
+  | "NAVIGATION_ROUTE_UNAVAILABLE"
+  | "MOBILITY_OFFER_REQUESTED"
+  | "MOBILITY_OFFER_COMPLETED"
+  | "MOBILITY_OFFER_UNAVAILABLE"
+  | "TRIP_PLACE_PROPOSED"
+  | "TRIP_PLACE_ADOPTED"
+  | "TRIP_PLACE_REVOKED"
+  | "RESEARCH_RESULT_RECORDED";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
   [key: string]: AuditSummaryValue;

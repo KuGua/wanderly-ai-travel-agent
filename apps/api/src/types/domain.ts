@@ -150,3 +150,119 @@ export type ConfirmationStatus = "PENDING" | "CONFIRMED" | "NEEDS_CHANGES" | "ST
 export type TripStatus = "PLANNING" | "CONFIRMED" | "BOOKED" | "CANCELLED" | "STALE";
 export type ConstraintProposalStatus = "PENDING" | "CONFIRMED" | "DISMISSED" | "REVOKED";
 export type PlanAdoptionDecision = "ACCEPT" | "NEEDS_CHANGES";
+
+// ─── Trip place / navigation / mobility / research (spec §4) ───────────────
+// Mirrors the normalized provider shapes from `providers/types.ts` plus the
+// server-authoritative persisted rows. Coordinates are server-only — they
+// never appear in audit/log/telemetry and only reach DTOs that pass trip
+// membership enforcement.
+
+export type TripPlaceKind = "ATTRACTION" | "HOTEL" | "RESTAURANT" | "TRANSPORT_HUB" | "OTHER";
+export type TripPlaceStatus = "PROPOSED" | "ACTIVE" | "REVOKED";
+export type TripPlaceVisibility = "OWNER_PRIVATE" | "TEAM_VISIBLE" | "ORCHESTRATOR_CONFIDENTIAL";
+export type NavigationRouteMode = "WALK" | "DRIVE" | "CYCLE";
+export type MobilityServiceType = "TAXI" | "TRANSFER" | "CHARTER" | "RENTAL";
+export type ResearchResultStatus = "COMPLETE" | "COMPLETED_WITH_GAPS";
+
+export interface PlaceCandidate {
+  candidateId: string;
+  displayName: string;
+  kind: TripPlaceKind;
+  countryCode: string | null;
+  cityName: string | null;
+  longitude: number;
+  latitude: number;
+  confidence: number;
+  needsUserConfirmation: boolean;
+  source: string;
+  capturedAt: string;
+}
+
+export interface TripPlace {
+  id: string;
+  tripId: string;
+  ownerUserId: string;
+  version: number;
+  visibility: TripPlaceVisibility;
+  status: TripPlaceStatus;
+  kind: TripPlaceKind;
+  displayName: string;
+  countryCode: string | null;
+  cityName: string | null;
+  longitude: number | null;
+  latitude: number | null;
+  source: string;
+  providerPlaceId: string | null;
+  capturedAt: string;
+  createdFromRunId: string | null;
+}
+
+export interface NavigationRouteStep {
+  index: number;
+  instruction: string;
+  distanceMeters: number;
+  durationSeconds: number;
+}
+
+export interface NavigationRouteEvidence {
+  id: string;
+  searchRunId: string;
+  snapshotId: string;
+  tripId: string;
+  originPlaceId: string;
+  destinationPlaceId: string;
+  mode: NavigationRouteMode;
+  distanceMeters: number;
+  durationSeconds: number;
+  steps: NavigationRouteStep[];
+  // Server-internal only. The web client reads `summary` / bounds instead.
+  encodedGeometry: string;
+  source: string;
+  capturedAt: string;
+  refreshAfter: string;
+}
+
+export interface MobilityOffer {
+  offerId: string;
+  serviceType: MobilityServiceType;
+  originPlaceId: string;
+  destinationPlaceId: string;
+  passengers: number;
+  departureAt: string;
+  estimatedPrice: number;
+  currency: string;
+  vehicleClass: string;
+  estimated: true;
+  expiresAt: string | null;
+  source: string;
+  capturedAt: string;
+}
+
+export type ServiceCapability = "flight" | "stay" | "activities" | "navigation" | "transit" | "mobility";
+
+export type ProviderUnavailableCode =
+  | "NOT_CONFIGURED"
+  | "SEARCH_CONSTRAINTS_INCOMPLETE"
+  | "NO_RESULTS"
+  | "RATE_LIMITED"
+  | "UPSTREAM_TIMEOUT"
+  | "UPSTREAM_FAILURE"
+  | "INVALID_PROVIDER_RESPONSE"
+  | "PROVIDER_NOT_APPROVED";
+
+export interface ServiceGap {
+  capability: ServiceCapability;
+  code: ProviderUnavailableCode;
+  destinationId?: string;
+}
+
+export interface PlanningResearchResult {
+  id: string;
+  tripId: string;
+  snapshotId: string;
+  agentTaskRunId: string | null;
+  status: ResearchResultStatus;
+  serviceGaps: ServiceGap[];
+  resultPlanId: string | null;
+  createdAt: string;
+}

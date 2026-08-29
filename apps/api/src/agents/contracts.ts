@@ -13,7 +13,11 @@ export type SkillScope =
   | "bookings"
   | "snapshot:read"
   | "chat:read"
-  | "flight:search";
+  | "flight:search"
+  | "places:search"
+  | "places:adopt"
+  | "navigation:route"
+  | "mobility:search";
 
 /**
  * Server-derived authorization data for a Shared flight-search invocation.
@@ -34,6 +38,29 @@ export interface FlightSearchExecutionContext {
 }
 
 /**
+ * Server-derived authorization data for a Shared `places.search` invocation.
+ * The model is never asked to produce this; the planner service builds it
+ * from the run-bound task row.
+ */
+export interface PlaceSearchExecutionContext {
+  tripId: string;
+  snapshotId: string;
+  agentTaskRunId?: string;
+}
+
+export interface NavigationRouteExecutionContext {
+  tripId: string;
+  snapshotId: string;
+  agentTaskRunId?: string;
+}
+
+export interface MobilitySearchExecutionContext {
+  tripId: string;
+  snapshotId: string;
+  agentTaskRunId?: string;
+}
+
+/**
  * Policy gate consulted by the registry before invoking a skill. Implementations
  * are responsible for enforcing per-agent tool/scope rules.
  */
@@ -45,6 +72,9 @@ export interface SkillContext {
   ctx: RequestContext;
   snapshot?: ConstraintSnapshotData;
   flightSearch?: FlightSearchExecutionContext;
+  placeSearch?: PlaceSearchExecutionContext;
+  navigation?: NavigationRouteExecutionContext;
+  mobility?: MobilitySearchExecutionContext;
   policyGate: PolicyGate;
 }
 

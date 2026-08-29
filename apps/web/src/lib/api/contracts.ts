@@ -548,3 +548,95 @@ export type ListedPlan = z.infer<typeof listedPlanSchema>;
 export type TripPlansListResponse = z.infer<typeof tripPlansListResponseSchema>;
 export type ConfirmProposalResponse = z.infer<typeof confirmProposalResponseSchema>;
 export type UpsertFactResponse = z.infer<typeof upsertFactResponseSchema>;
+
+// ─── Global POI & ground mobility (spec docs/ground-mobility-implementation.md §4/§5) ───
+// Server-authoritative TripPlace + run-bound place candidate DTOs. The web
+// client never sees raw provider coordinates (they are part of TripPlace but
+// only reach this client after server-side membership enforcement), and it
+// never receives route geometry or booking links.
+
+export const tripPlaceKindSchema = z.enum(["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER"]);
+export const tripPlaceVisibilitySchema = z.enum(["OWNER_PRIVATE", "TEAM_VISIBLE", "ORCHESTRATOR_CONFIDENTIAL"]);
+export const tripPlaceStatusSchema = z.enum(["PROPOSED", "ACTIVE", "REVOKED"]);
+
+export const tripPlaceSchema = z.object({
+  id: z.string().uuid(),
+  tripId: z.string().uuid(),
+  ownerUserId: z.string().uuid(),
+  version: z.number().int().positive(),
+  visibility: tripPlaceVisibilitySchema,
+  status: tripPlaceStatusSchema,
+  kind: tripPlaceKindSchema,
+  displayName: z.string().min(1).max(256),
+  countryCode: z.string().length(2).nullable(),
+  cityName: z.string().min(1).max(128).nullable(),
+  longitude: z.number().finite().min(-180).max(180).nullable(),
+  latitude: z.number().finite().min(-90).max(90).nullable(),
+  source: z.string().min(1),
+  providerPlaceId: z.string().min(1).nullable(),
+  capturedAt: z.string().datetime(),
+  createdFromRunId: z.string().uuid().nullable(),
+}).strict();
+
+export const tripPlacesResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  places: z.array(tripPlaceSchema),
+}).strict();
+
+export const placeCandidateSchema = z.object({
+  candidateId: z.string().uuid(),
+  displayName: z.string().min(1).max(256),
+  kind: tripPlaceKindSchema,
+  countryCode: z.string().length(2).nullable(),
+  cityName: z.string().min(1).max(128).nullable(),
+  longitude: z.number().finite().min(-180).max(180),
+  latitude: z.number().finite().min(-90).max(90),
+  confidence: z.number().min(0).max(1),
+  needsUserConfirmation: z.boolean(),
+  source: z.string().min(1),
+  capturedAt: z.string().datetime(),
+}).strict();
+
+export const placeCandidateSearchRequestSchema = z.object({
+  destinationId: z.string().min(1).max(64),
+  keyword: z.string().min(1).max(160),
+  category: tripPlaceKindSchema,
+}).strict();
+
+export const placeCandidateSearchResponseSchema = z.object({
+  queryId: z.string().uuid(),
+  candidates: z.array(placeCandidateSchema),
+}).strict();
+
+export const proposeTripPlaceRequestSchema = z.object({
+  candidate: placeCandidateSchema,
+  visibility: tripPlaceVisibilitySchema,
+  kind: tripPlaceKindSchema,
+}).strict();
+
+export const adoptTripPlaceRequestSchema = z.object({
+  placeId: z.string().uuid(),
+}).strict();
+
+export const revokeTripPlaceRequestSchema = z.object({
+  placeId: z.string().uuid(),
+  reason: z.string().min(1).max(256),
+}).strict();
+
+export const tripPlaceActionResponseSchema = z.object({
+  placeId: z.string().uuid(),
+  status: tripPlaceStatusSchema,
+}).strict();
+
+export type TripPlaceKind = z.infer<typeof tripPlaceKindSchema>;
+export type TripPlaceVisibility = z.infer<typeof tripPlaceVisibilitySchema>;
+export type TripPlaceStatus = z.infer<typeof tripPlaceStatusSchema>;
+export type TripPlace = z.infer<typeof tripPlaceSchema>;
+export type TripPlacesResponse = z.infer<typeof tripPlacesResponseSchema>;
+export type PlaceCandidate = z.infer<typeof placeCandidateSchema>;
+export type PlaceCandidateSearchRequest = z.infer<typeof placeCandidateSearchRequestSchema>;
+export type PlaceCandidateSearchResponse = z.infer<typeof placeCandidateSearchResponseSchema>;
+export type ProposeTripPlaceRequest = z.infer<typeof proposeTripPlaceRequestSchema>;
+export type AdoptTripPlaceRequest = z.infer<typeof adoptTripPlaceRequestSchema>;
+export type RevokeTripPlaceRequest = z.infer<typeof revokeTripPlaceRequestSchema>;
+export type TripPlaceActionResponse = z.infer<typeof tripPlaceActionResponseSchema>;

@@ -38,6 +38,14 @@ import {
   adoptionVoteListResponseSchema,
   confirmProposalResponseSchema,
   upsertFactResponseSchema,
+  // ── Global POI & ground mobility (Phase 2) ──────────────────────────────────
+  tripPlacesResponseSchema,
+  placeCandidateSearchRequestSchema,
+  placeCandidateSearchResponseSchema,
+  proposeTripPlaceRequestSchema,
+  adoptTripPlaceRequestSchema,
+  revokeTripPlaceRequestSchema,
+  tripPlaceActionResponseSchema,
   type UpdateProfileInput,
   type ConversationTurnRequest,
   type CreateTripThreadInput,
@@ -325,6 +333,62 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request(
       `/trips/${encodeURIComponent(tripId)}/plans`,
       tripPlansListResponseSchema,
+    );
+  }
+
+  // ─── Global POI & ground mobility (Phase 2) ──────────────────────────────────
+  listTripPlaces(tripId: string) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/places`,
+      tripPlacesResponseSchema,
+    );
+  }
+
+  searchPlaceCandidates(tripId: string, input: z.infer<typeof placeCandidateSearchRequestSchema>, options?: { idempotencyKey?: string }) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/places:search`,
+      placeCandidateSearchResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  proposeTripPlace(tripId: string, input: z.infer<typeof proposeTripPlaceRequestSchema>, options?: { idempotencyKey?: string }) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/places:propose`,
+      tripPlaceActionResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  adoptTripPlace(tripId: string, input: z.infer<typeof adoptTripPlaceRequestSchema>, options?: { idempotencyKey?: string }) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/places:adopt`,
+      tripPlaceActionResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  revokeTripPlace(tripId: string, input: z.infer<typeof revokeTripPlaceRequestSchema>, options?: { idempotencyKey?: string }) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/places:revoke`,
+      tripPlaceActionResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
     );
   }
 }
