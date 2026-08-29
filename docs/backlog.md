@@ -64,13 +64,13 @@
 
 **Acceptance criteria:**
 
-1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay, Ground and Activities tools and maps the three travelers to two origins. `flight.search` and `activities.search` may be requested by the LLM, but the server validates every parameter and guarantees all required origin/candidate combinations are researched. Personal Agent may call `flight.search` / `activities.search` for the same conversation context; results stay owner-scoped, never silently modify the active plan, but may be referenced by subsequent Shared turns as inputs.
-2. Result compares two to three configured destination candidates; each candidate includes at least one flight, hotel, ground and activities option, or explicitly names a missing service and cause.
+1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay, Ground and Activities tools and maps the three travelers to two origins. `flight.search` and `activities.search` may be requested by the LLM, but the server validates every parameter and guarantees all required origin/candidate combinations are researched. Activities resolves destination coordinates/radius only from a server-owned reference and accepts only fixed theme values. Personal Activities results stay owner-scoped in dedicated Personal evidence storage and never enter Shared turns, snapshots or plans.
+2. Result compares two to three configured destination candidates; each candidate includes at least one flight, hotel, ground and activities option, or explicitly names a missing service and cause in a non-confirmable `RESEARCH_UNAVAILABLE` summary.
 3. Each item shows source, captured time, offer expiry when applicable, price/currency when available, and linked authorized constraints.
 4. Comparison explains destination and service trade-offs without referencing a private or unapproved Profile field.
 5. Tool failure yields a recoverable `UNAVAILABLE` missing-service state; it never fabricates or substitutes inventory or price.
 6. Planning may publish only safe progress events (`SNAPSHOT_CREATED`, `RESEARCHING`, `VALIDATING`, `PERSISTING`, `COMPLETED` or `FAILED`). It never streams chain-of-thought, raw tool payloads, unvalidated plan candidates, or private snapshot fields; the UI shows a plan only after authoritative validation and persistence.
-7. Flight and Activities are independent research sub-stages: each owns its typed port, coverage matrix, evidence persistence, staleness trigger and audit action. The planning task scheduler can enable or disable either sub-stage independently and runs them with independent concurrency and failure semantics.
+7. Flight and Activities are independent research sub-stages: each owns its typed port, coverage matrix, evidence persistence, staleness trigger and audit action. The planning task scheduler can enable or disable either sub-stage independently and runs them with independent concurrency and failure semantics; neither may expose a provider booking link in the MVP.
 
 ### H4 — Produce per-traveler visa and entry readiness
 

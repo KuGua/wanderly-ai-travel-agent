@@ -739,10 +739,10 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 1. Confirm activity search preferences, create a trip snapshot with two controlled origins and two destination candidates, then accept a `PLAN` command.
 2. Configure the task scheduler to enable both flight and activities sub-stages; drive the Worker with a deterministic model double that requests `activities.search` for every destination candidate independently of any flight call.
-3. Verify each Tool request against the task snapshot, controlled destination list and accepted preference version; inspect only normalized `provider_search_runs` rows with `category='activity_shared'` and `requester_kind='shared'`.
-4. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, a lost lease, and a 429 from the shared Amadeus quota.
-5. Disable the activities sub-stage via configuration while keeping the flight sub-stage enabled; verify that the plan is finalized with a flight-complete matrix and an explicit `activities: UNAVAILABLE` empty-service marker.
-6. Disable the flight sub-stage while keeping activities enabled; verify the symmetric case.
+3. Verify each Tool request against the task snapshot, controlled destination list, server-owned `ActivityDestinationReference` and accepted preference version; reject browser/model coordinates, radius, free-text destination and a theme outside the fixed allow-list.
+4. Inspect only normalized Shared `provider_search_runs` rows with `category='activity'`; assert the normalized output and persistence never contain `bookingLink`.
+5. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, a lost lease, and a 429 from the shared Amadeus quota.
+6. Disable the activities sub-stage via configuration while keeping the flight sub-stage enabled; verify it does not schedule activities research. With the sub-stage enabled but unavailable, verify a safe `RESEARCH_UNAVAILABLE` result is displayed instead of an `ACTIVE` plan.
 
 **Expected outcomes:**
 
@@ -764,9 +764,9 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 1. As a single authenticated user, save a profile with budget, pace and interests; then save a trip-scoped override for `this trip`.
 2. Open a private conversation bound to a trip; submit a question that prompts the model to call `activities.search`.
-3. Verify the request carries a `PersonalActivitiesSearchContext` (not a snapshot) built from the owner profile + override.
-4. Inspect `provider_search_runs` rows: must include `requester_kind='personal'`, `category='activity_personal'`, `owner_user_id` set, and no `snapshot_id`.
-5. Submit a Shared PLAN/REPLAN command and inspect that the conversation message text may be referenced as trip memory input by Shared turns (no plan field directly references the personal run, but the conversation context is available upstream).
+3. Verify the request carries a server-built `PersonalActivitiesSearchContext` (not a snapshot) from the authenticated owner, thread and bound trip; browser/model `ownerUserId`, trip ID, coordinates, radius and free-text destination are rejected.
+4. Inspect `personal_provider_search_runs` rows: owner and trip are set, no snapshot exists, and the output/persistence omit `bookingLink`.
+5. Submit a Shared PLAN/REPLAN command and verify neither Personal conversation text nor Personal evidence is present in its context, matrix or plan validation inputs.
 6. Submit a wrinkle: revoked override, deleted profile field, malformed request, unknown destination, `UNAVAILABLE` provider result, repeated request.
 
 **Expected outcomes:**
@@ -778,7 +778,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Revoked override, deleted profile field, malformed request and unknown destination each fail closed with a stable error code; `UNAVAILABLE` runs are recorded with `requester_kind='personal'` and the standard 8 unavailable reasons.
 - Logs, trace attributes, metric labels and audit summaries never contain the personal conversation text, the owner profile field values or the activity names.
 
-### TS-ACTIVITIES-TOOL-3 — Readiness text may reference activities evidence under strict equality
+### TS-ACTIVITIES-TOOL-3 — Activities evidence is excluded from readiness
 
 **Stories:** H4, S1
 **Objective:** Verify the readiness Skill can reference activities evidence in its output, but only when the reference is a deep-strict-equal match against an `activities` `provider_search_runs` row from the same planning run.
