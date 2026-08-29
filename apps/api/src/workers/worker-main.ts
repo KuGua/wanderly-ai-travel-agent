@@ -7,6 +7,7 @@ import { assertAuthModeEnvironment, resolveAuthMode } from "../middleware/auth-m
 import { agentTaskConfig } from "../tasks/config.js";
 import { logger } from "../utils/logger.js";
 import { processNextAgentTask } from "./agent-task-worker.js";
+import { processNextMemoryObservation } from "./memory-observation-worker.js";
 
 // Tracing MUST be initialized before any agent module is required, so the
 // SDK can patch the modules they import transitively. Service name is
@@ -35,11 +36,25 @@ async function main() {
     component: "agent-task-worker",
     concurrency: agentTaskConfig.workerConcurrency,
   }, "Agent task Worker started");
-  await Promise.all(Array.from(
-    { length: agentTaskConfig.workerConcurrency },
-    (_, slot) => runWorkerSlot(slot),
-  ));
+  await Promise.all([
+    ...Array.from(
+      { length: agentTaskConfig.workerConcurrency },
+      (_, slot) => runWorkerSlot(slot),
+    ),
+    // One slot is enough: an observation is a single short transaction, and
+    // keeping it off the agent slots means memory aggregation can never take
+    // capacity from planning.
+    runMemoryObservationSlot(),
+  ]);
   logger.info({ component: "agent-task-worker" }, "Agent task Worker stopped");
+}
+
+async function runMemoryObservationSlot() {
+  while (!stopping) {
+    const processed = await processNextMemoryObservation();
+    if (!processed) await delay(agentTaskConfig.pollIntervalMs);
+  }
+  logger.debug({ component: "memory-observation-worker" }, "Memory observation slot stopped");
 }
 
 async function runWorkerSlot(slot: number) {

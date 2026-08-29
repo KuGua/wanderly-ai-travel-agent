@@ -7,6 +7,7 @@ import {
   tripMembers,
   sharedTrips,
 } from "../db/schema.js";
+import { enqueueMemoryObservation } from "./memory-observation-bridge.js";
 import { recordAudit } from "./audit-service.js";
 import {
   claimIdempotency,
@@ -424,6 +425,18 @@ export async function confirmConstraintProposal(params: {
         eq(tripConstraintProposals.id, proposal.id),
         eq(tripConstraintProposals.status, "PENDING"),
       ));
+
+    // The one place long-term memory takes evidence from behaviour: the owner
+    // accepted a constraint the agent proposed for them
+    // (docs/long-term-memory-implementation.md §3.2). Queued rather than
+    // aggregated here so memory can never fail the confirmation, and skipped
+    // silently for fields memory does not model.
+    await enqueueMemoryObservation(tx, {
+      ownerUserId: params.ownerUserId,
+      tripId: params.tripId,
+      constraintFieldKey: proposal.fieldKey,
+      valueJson: proposal.valueJson,
+    });
 
     await stalePlansAndConfirmationsForTrip(tx, {
       tripId: params.tripId,
