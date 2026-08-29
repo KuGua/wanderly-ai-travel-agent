@@ -7,6 +7,7 @@ import { assertAuthModeEnvironment, resolveAuthMode } from "../middleware/auth-m
 import { agentTaskConfig } from "../tasks/config.js";
 import { logger } from "../utils/logger.js";
 import { processNextAgentTask } from "./agent-task-worker.js";
+import { createMemoryMaintenance } from "./memory-maintenance.js";
 import { processNextMemoryObservation } from "./memory-observation-worker.js";
 
 // Tracing MUST be initialized before any agent module is required, so the
@@ -50,9 +51,24 @@ async function main() {
 }
 
 async function runMemoryObservationSlot() {
+  const maintenance = createMemoryMaintenance();
   while (!stopping) {
     const processed = await processNextMemoryObservation();
-    if (!processed) await delay(agentTaskConfig.pollIntervalMs);
+    if (!processed) {
+      // Only when the queue is empty: expiring proposals is upkeep and must
+      // never delay evidence a member just produced.
+      try {
+        await maintenance.runIfDue();
+      } catch (error) {
+        // Upkeep must not take the Worker down with it — these slots share a
+        // `Promise.all`, so an unhandled sweep failure would stop planning too.
+        logger.error({
+          component: "memory-maintenance",
+          errorClass: (error as Error).name,
+        }, "Memory maintenance sweep failed");
+      }
+      await delay(agentTaskConfig.pollIntervalMs);
+    }
   }
   logger.debug({ component: "memory-observation-worker" }, "Memory observation slot stopped");
 }

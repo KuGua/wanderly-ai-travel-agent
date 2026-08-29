@@ -138,7 +138,7 @@ tail = (n - k) / ((1-d)·(T_first - T_k)) · ( T_first^(1-d) - T_k^(1-d) )
 
 **为何不用标准 optimized learning：** 该近似丢弃全部精确项，假设 n 次观察均匀铺满整个 lifetime。Fisher、Houpt 与 Gunzelmann (2018) 发现其 activation **对 d 非单调**，导致 d 不可辨识——这对我们是致命的，因为 d 需要后续调参；他们同时发现 hybrid 在相近计算效率下精度显著更好。
 
-**为何最小观察数是 4 而非 3：** 3 次与"跨度 ≥ 30 天 + τ = 0.50"在数学上不可同时满足。最近一次为今天时 S 已有 1，τ=0.50 要求 `S ≥ e^0.5 = 1.649`，即另外两次需贡献 ≥ 0.649；而两次各在 30 天前只贡献 `2 × 30^-0.35 = 0.608`。两道闸门直接冲突。第 4 次观察使跨度 30/60/90 天分别得到 B = 0.74/0.62/0.56，均有余量，同时仍然挡住"180 天里 4 次"（B = 0.46）这种不构成习惯的证据。
+**为何最小观察数是 3：** 在 §3.2 的 episode id 下三次观察即三段独立行程，这本身已是很高的门槛；取 4 会要求四段行程，绝大多数用户到不了，建议将永不出现。3 同时落在 τ = 0.50 的正确一侧：证据分布在窗口内（1/15/30 天）`S = 1.692`，B = 0.526 通过；证据挤在窗口末端（1/30/30 天）`S = 1.608`，B = 0.475 不通过。更长跨度上仍然挡住不构成习惯的证据——4 次摊在 180 天里 B = 0.46。
 
 **为何 k = 10 而非 Petrov 的 k = 1：** Petrov 解决的是"检索激活的瞬时提升"，k=1 对该问题通常已足够。我们的判定是"新习惯是否形成"，更依赖近期观察的**形状**。实测（d=0.35，一次 728 天前观察 + 1/2/3/5/7 天前五次突发）：精确值 3.64，k=1 得 1.76（低估 52%），k=5 得 3.69（误差 1.3%）。k=10 为典型突发留出余量。
 
@@ -287,6 +287,8 @@ Trip memory 端点已实现于 `src/routes/trip-memory.ts`。非成员一律 403
 | proposal confirm | proposal `CONFIRMED` + active fact version + audit | 同上；不可产生两条 active fact |
 | proposal dismiss | proposal `DISMISSED` + 清空 observation dates + 180 天 cooldown + audit | 不影响 Trip 或 plan；cooldown 内不重建同 field/value 建议 |
 | proposal expire | 90 天后 `EXPIRED` + 清空 observation dates + 受控 cooldown + audit | 不影响 Trip 或 plan；防止立即重新弹出 |
+
+过期由 Worker 的记忆 slot 在队列空闲时每小时扫一次（`memory-maintenance.ts`）。过期只取决于时间流逝，没有任何请求路径会触发它——不扫就意味着无人回应的建议永远挂着、证据永不清除。扫描是单条带条件的批量更新，多进程并发运行安全；失败被捕获而不会拖垮 Worker 的其他 slot。
 | form 直接改事实 | 新 ACTIVE fact + 旧 SUPERSEDED + 清除同字段全部冲突 pending proposals 与 evidence aggregates + audit | stale 受影响 Trips |
 | Trip override/group decision change | fact version + audit | stale 当前 Trip active plan/confirmations |
 | consent grant/revoke | consent state + audit | stale 当前 Trip；下一 snapshot 重新投影 |
