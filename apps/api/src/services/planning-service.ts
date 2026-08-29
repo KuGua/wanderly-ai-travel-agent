@@ -11,7 +11,7 @@ import {
   providerSearchRuns,
   planningResearchResults,
 } from "../db/schema.js";
-import { eq, and, desc, gt } from "drizzle-orm";
+import { eq, and, desc, gt, ne } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { buildAuthorizedData, getActiveConsents } from "./consent-service.js";
 import {
@@ -786,6 +786,7 @@ export async function activateProposedPlan(params: {
       .where(and(
         eq(itineraryPlans.tripId, plan.tripId),
         eq(itineraryPlans.status, "PROPOSED"),
+        ne(itineraryPlans.id, plan.id),
       ));
     const [updated] = await tx.update(itineraryPlans)
       .set({ status: "ACTIVE", supersededAt: null })

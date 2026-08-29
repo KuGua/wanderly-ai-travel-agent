@@ -1,6 +1,6 @@
 # Team Agent 协作编排实施规范
 
-**状态：** 已批准，待实施  
+**状态：** 部分实施；核心约束 mutation、replan 与 adoption 状态机已落地，余下 rollout/E2E 项目按第 9 节推进。
 **范围：** 多成员 Personal Agent 向 Shared Trip Agent 的结构化交接、私密约束、自动重规划和方案采用投票。  
 **事实来源：** `TECH_STACK.md`、`docs/PRD.md`、`docs/backlog.md`、`docs/test-scenarios.md`、`docs/agent-architecture.md` 与本文件。若本文件与旧的长期记忆实施细节冲突，以本文件为准。
 
@@ -164,7 +164,7 @@ The output is validated by catalog schema and stored only as `PENDING` proposal.
 
 ### 5.2 Commands and reads
 
-All commands require authenticated active membership, a UUID idempotency key and a transaction. Request/response schemas are strict Zod and must be added to OpenAPI.
+All commands require authenticated active membership, a required UUID idempotency key and a transaction. Request/response schemas are strict Zod and must be added to OpenAPI. The server derives snapshot IDs, preference versions and REPLAN request IDs; clients must never supply those internal authorities.
 
 | Endpoint | Behavior |
 |---|---|
@@ -189,6 +189,8 @@ For confirm, replace, revoke, consent mutation, profile projection-source mutati
 4. call the common stale function for all ACTIVE plans and booking confirmations;
 5. cancel/supersede any active planning task safely, create a new immutable snapshot and enqueue one `REPLAN` task with outbox event;
 6. write value-free audit event and return the durable run ID.
+
+The mutation must fail atomically when the Trip has no required member or no confirmed flight-search preference. It must not commit a new fact after staling a plan unless it can also create the immutable snapshot and accept the replacement `REPLAN` run.
 
 The new snapshot must be created inside the acceptance transaction after all fact writes. Its manifest is pinned to `agent_task_runs`; finalization checks that the task lease, snapshot ID, member set and projection manifest are still current. A changed source makes the task terminal `STALE` and prevents any plan write.
 
