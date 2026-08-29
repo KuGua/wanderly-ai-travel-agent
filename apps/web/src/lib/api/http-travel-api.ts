@@ -46,6 +46,7 @@ import {
   adoptTripPlaceRequestSchema,
   revokeTripPlaceRequestSchema,
   tripPlaceActionResponseSchema,
+  researchResultSchema,
   type UpdateProfileInput,
   type ConversationTurnRequest,
   type CreateTripThreadInput,
@@ -389,6 +390,15 @@ export class HttpTravelApi implements TravelApi {
         body: JSON.stringify(input),
         ...withIdempotencyKey(options?.idempotencyKey),
       },
+    );
+  }
+
+  // ─── Phase 4 non-blocking research summary ─────────────────────────────────
+  getResearchResult(tripId: string, agentTaskRunId?: string) {
+    const params = agentTaskRunId ? `?agentTaskRunId=${encodeURIComponent(agentTaskRunId)}` : "";
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/research-results${params}`,
+      researchResultSchema,
     );
   }
 }

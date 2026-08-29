@@ -333,6 +333,15 @@ export function useTripPlaces(tripId: string) {
   });
 }
 
+export function useResearchResult(tripId: string, agentTaskRunId?: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: [...tripKeys.researchResults(tripId), agentTaskRunId ?? "latest"],
+    queryFn: () => api.getResearchResult!(tripId, agentTaskRunId),
+    enabled: !!api.getResearchResult,
+  });
+}
+
 export function useSearchPlaceCandidates(tripId: string) {
   const api = useTravelApi();
   return useMutation({

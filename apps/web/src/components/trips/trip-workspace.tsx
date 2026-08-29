@@ -8,12 +8,14 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
 import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
 import { PlacesPanel } from "@/components/trips/places-panel";
+import { ResearchGapBanner } from "@/components/trips/research-gap-banner";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link, useRouter } from "@/i18n/navigation";
 import {
   useActivateTrip,
   useCreateTripThread,
   useGetOrCreateDefaultTripThread,
+  useResearchResult,
   useTrip,
   useTripThreads,
   useUpdateTripTitle,
@@ -391,6 +393,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             </section>
 
             <PlacesPanel tripId={trip.id} destinationCandidates={trip.destinationCandidates} />
+            <ResearchGapBannerWrapper tripId={trip.id} />
           </div>
         </div>
 
@@ -431,6 +434,12 @@ function formatThreadTime(locale: string, iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function ResearchGapBannerWrapper({ tripId }: { tripId: string }) {
+  const research = useResearchResult(tripId);
+  if (!research.data || research.isLoading) return null;
+  return <ResearchGapBanner result={research.data} />;
 }
 
 function DraftTripWorkspace({ tripId }: { tripId: string }) {

@@ -628,6 +628,43 @@ export const tripPlaceActionResponseSchema = z.object({
   status: tripPlaceStatusSchema,
 }).strict();
 
+export const serviceCapabilitySchema = z.enum(["flight", "stay", "activities", "navigation", "transit", "mobility"]);
+export const providerUnavailableCodeSchema = z.enum([
+  "NOT_CONFIGURED",
+  "SEARCH_CONSTRAINTS_INCOMPLETE",
+  "NO_RESULTS",
+  "RATE_LIMITED",
+  "UPSTREAM_TIMEOUT",
+  "UPSTREAM_FAILURE",
+  "INVALID_PROVIDER_RESPONSE",
+  "PROVIDER_NOT_APPROVED",
+]);
+
+export const serviceGapSchema = z.object({
+  capability: serviceCapabilitySchema,
+  code: providerUnavailableCodeSchema,
+  destinationId: z.string().optional(),
+}).strict();
+
+export const researchResultStatusSchema = z.enum(["COMPLETE", "COMPLETED_WITH_GAPS"]);
+
+export const researchResultSchema = z.object({
+  id: z.string().uuid(),
+  tripId: z.string().uuid(),
+  snapshotId: z.string().uuid(),
+  agentTaskRunId: z.string().uuid().nullable(),
+  status: researchResultStatusSchema,
+  serviceGaps: z.array(serviceGapSchema),
+  resultPlanId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+}).strict();
+
+export type ServiceCapability = z.infer<typeof serviceCapabilitySchema>;
+export type ProviderUnavailableCode = z.infer<typeof providerUnavailableCodeSchema>;
+export type ServiceGap = z.infer<typeof serviceGapSchema>;
+export type ResearchResultStatus = z.infer<typeof researchResultStatusSchema>;
+export type ResearchResult = z.infer<typeof researchResultSchema>;
+
 export type TripPlaceKind = z.infer<typeof tripPlaceKindSchema>;
 export type TripPlaceVisibility = z.infer<typeof tripPlaceVisibilitySchema>;
 export type TripPlaceStatus = z.infer<typeof tripPlaceStatusSchema>;

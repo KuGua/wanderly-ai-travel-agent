@@ -44,6 +44,7 @@ import type {
   AdoptTripPlaceRequest,
   RevokeTripPlaceRequest,
   TripPlaceActionResponse,
+  ResearchResult,
 } from "./contracts";
 
 export interface TravelApi {
@@ -89,4 +90,7 @@ export interface TravelApi {
   proposeTripPlace?(tripId: string, input: ProposeTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
   adoptTripPlace?(tripId: string, input: AdoptTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
   revokeTripPlace?(tripId: string, input: RevokeTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
+
+  // ── Phase 4 non-blocking research summary ────────────────────────────────────
+  getResearchResult?(tripId: string, agentTaskRunId?: string): Promise<ResearchResult>;
 }

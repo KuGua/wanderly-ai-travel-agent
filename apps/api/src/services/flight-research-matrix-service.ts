@@ -15,9 +15,15 @@ export type FlightResearchCell = {
   outcome: "LIVE" | "UNAVAILABLE" | "MISSING";
 };
 
-/** The required matrix is deliberately only origin × candidate destination.
- * A LIVE persisted search is the sole completion state; UNAVAILABLE is an
- * auditable attempted search but fails the planning round closed. */
+/**
+ * Spec §4.3 — Phase 4 outcome matrix.
+ *
+ * `complete` is now defined as "every required cell has an attempted search
+ * run" (LIVE *or* UNAVAILABLE), not "every cell returned LIVE". The
+ * distinction lets UNAVAILABLE be reported as a gap rather than a fatal
+ * condition. MISSING still indicates a planner that never even attempted the
+ * cell, which is the only remaining hard failure surfaced by this matrix.
+ */
 export async function evaluateFlightResearchCompleteness(params: {
   snapshotId: string;
   agentTaskRunId: string;
@@ -41,7 +47,27 @@ export async function evaluateFlightResearchCompleteness(params: {
       ? "LIVE" : matching.some((run) => run.outcome === "UNAVAILABLE") ? "UNAVAILABLE" : "MISSING";
     return { originId, destinationId, outcome };
   }));
-  return { complete: cells.every((cell) => cell.outcome === "LIVE"), cells };
+  return { complete: cells.every((cell) => cell.outcome !== "MISSING"), cells };
+}
+
+/**
+ * Phase 4 outcome matrix helper. Translates the cell matrix into a bounded
+ * `serviceGaps` array the planner persists on `planning_research_results`.
+ * MISSING cells are *not* surfaced here — the planner must already have
+ * failed earlier with `FlightResearchIncompleteError` if any cell is MISSING.
+ */
+export function flightMatrixToGaps(cells: ReadonlyArray<FlightResearchCell>): Array<{ capability: "flight"; code: "NO_RESULTS" | "UPSTREAM_FAILURE"; originId: string; destinationId: string }> {
+  const gaps: Array<{ capability: "flight"; code: "NO_RESULTS" | "UPSTREAM_FAILURE"; originId: string; destinationId: string }> = [];
+  for (const cell of cells) {
+    if (cell.outcome !== "UNAVAILABLE") continue;
+    gaps.push({
+      capability: "flight",
+      code: "UPSTREAM_FAILURE",
+      originId: cell.originId,
+      destinationId: cell.destinationId,
+    });
+  }
+  return gaps;
 }
 
 export class FlightResearchIncompleteError extends Error {

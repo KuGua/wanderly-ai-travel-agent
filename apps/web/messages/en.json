@@ -410,6 +410,30 @@
         "MEMBER": "Member"
       },
       "openPinAria": "View {name} on the full map",
+      "gaps": {
+        "title": "Research summary",
+        "badge": "Gaps recorded",
+        "body": "Some research steps could not be confirmed in real time. The plan is still saved with the evidence we did collect; treat the missing items as decisions you may want to verify before booking.",
+        "codeList": "{codes}",
+        "capability": {
+          "flight": "Flights",
+          "stay": "Stays",
+          "activities": "Activities",
+          "navigation": "Walking / driving / cycling",
+          "mobility": "Taxis / transfers / rental",
+          "transit": "Public transit"
+        },
+        "code": {
+          "NOT_CONFIGURED": "Capability not configured",
+          "SEARCH_CONSTRAINTS_INCOMPLETE": "Search constraints incomplete",
+          "NO_RESULTS": "No matching results",
+          "RATE_LIMITED": "Provider rate-limited",
+          "UPSTREAM_TIMEOUT": "Provider timed out",
+          "UPSTREAM_FAILURE": "Provider failure",
+          "INVALID_PROVIDER_RESPONSE": "Provider returned an invalid response",
+          "PROVIDER_NOT_APPROVED": "Provider not approved"
+        }
+      },
       "poi": {
         "title": "Places",
         "attribution": "ORS",

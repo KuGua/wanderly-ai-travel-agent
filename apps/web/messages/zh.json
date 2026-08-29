@@ -410,6 +410,30 @@
         "MEMBER": "成员"
       },
       "openPinAria": "在完整地图中查看 {name}",
+      "gaps": {
+        "title": "研究摘要",
+        "badge": "已记录缺口",
+        "body": "部分研究步骤未能实时确认；方案仍按已收集的证据保存。这些缺失项可视为预订前需要再确认的决策。",
+        "codeList": "{codes}",
+        "capability": {
+          "flight": "航班",
+          "stay": "住宿",
+          "activities": "活动",
+          "navigation": "步行 / 驾车 / 骑行",
+          "mobility": "打车 / 接送 / 包车",
+          "transit": "公共交通"
+        },
+        "code": {
+          "NOT_CONFIGURED": "能力未配置",
+          "SEARCH_CONSTRAINTS_INCOMPLETE": "搜索条件不完整",
+          "NO_RESULTS": "无匹配结果",
+          "RATE_LIMITED": "上游限流",
+          "UPSTREAM_TIMEOUT": "上游超时",
+          "UPSTREAM_FAILURE": "上游失败",
+          "INVALID_PROVIDER_RESPONSE": "上游返回无效响应",
+          "PROVIDER_NOT_APPROVED": "上游未获批准"
+        }
+      },
       "poi": {
         "title": "地点",
         "attribution": "ORS",

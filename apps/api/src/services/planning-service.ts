@@ -9,6 +9,7 @@ import {
   tripConstraintFacts,
   tripMembers,
   providerSearchRuns,
+  planningResearchResults,
 } from "../db/schema.js";
 import { eq, and, desc, gt } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -36,10 +37,10 @@ import { DefaultPolicyGate } from "../agents/policy-gate.js";
 import { invokeSkill } from "../agents/skill-registry.js";
 import { flightSearchModelArgumentsSchema } from "./flight-search-service.js";
 import { loadCurrentConfirmedSearchPreferences } from "./flight-search-preferences-service.js";
-import { evaluateFlightResearchCompleteness, FlightResearchIncompleteError } from "./flight-research-matrix-service.js";
+import { evaluateFlightResearchCompleteness, flightMatrixToGaps, FlightResearchIncompleteError } from "./flight-research-matrix-service.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
-import type { FlightOffer, StayOffer, GroundOffer } from "../types/domain.js";
+import type { FlightOffer, StayOffer, GroundOffer, ServiceGap } from "../types/domain.js";
 
 export interface PlanningDependencies {
   flightProvider: FlightProvider;
@@ -206,8 +207,42 @@ export async function researchCoverageForSnapshot(params: {
 }
 
 /**
- * Completeness gate for provider-backed planning.
- * An empty provider result is an explicit failure, never implicit inventory.
+ * Spec §4.3 — Service outcome matrix.
+ *
+ * Translates the post-research view into a bounded `ServiceGap[]` set the
+ * planner persists as `planning_research_results.service_gaps`. Only the
+ * `origin-missing` condition is structural and remains a hard gate;
+ * capability-level UNAVAILABLE is reported as a gap rather than a failure.
+ */
+export function summarizeProviderGaps(params: {
+  requiredOrigins: string[];
+  flights: FlightOffer[];
+  stays: StayOffer[];
+  ground: GroundOffer[];
+  // Optional signal flags so the matrix can express capabilities that are
+  // soft-disabled (e.g. `PLAN_ENABLE_MOBILITY=false`). Today these are
+  // computed by callers; the planner layer merely forwards them.
+  unavailableCapabilities?: ReadonlyArray<{ capability: "flight" | "stay" | "navigation" | "mobility" | "transit"; code: "NOT_CONFIGURED" | "PROVIDER_NOT_APPROVED" }>;
+}): { gaps: { capability: "flight" | "stay" | "navigation" | "mobility" | "transit"; code: "NOT_CONFIGURED" | "PROVIDER_NOT_APPROVED" | "NO_RESULTS" | "UPSTREAM_FAILURE"; }[]; missingOrigins: string[] } {
+  const missingOrigins = params.requiredOrigins
+    .filter(origin => !params.flights.some(flight => flight.origin === origin));
+  const gaps: { capability: "flight" | "stay" | "navigation" | "mobility" | "transit"; code: "NOT_CONFIGURED" | "PROVIDER_NOT_APPROVED" | "NO_RESULTS" | "UPSTREAM_FAILURE"; }[] = [];
+  // Zero-candidate soft gates from Phase 4 outcome matrix: a capability
+  // with zero results is reported as a `NO_RESULTS` gap, not a throw.
+  if (params.flights.length === 0) gaps.push({ capability: "flight", code: "NO_RESULTS" });
+  if (params.stays.length === 0) gaps.push({ capability: "stay", code: "NO_RESULTS" });
+  if (params.ground.length === 0) gaps.push({ capability: "navigation", code: "NO_RESULTS" });
+  for (const cap of params.unavailableCapabilities ?? []) {
+    gaps.push({ capability: cap.capability, code: cap.code });
+  }
+  return { gaps, missingOrigins };
+}
+
+/**
+ * Hard gate that ONLY fires on structural conditions (origin-missing,
+ * destination-candidates-empty). Capability-level UNAVAILABLE is no longer
+ * a throw; it is recorded via `summarizeProviderGaps` and surfaced through
+ * `planning_research_results`.
  */
 export function validateProviderCoverage(params: {
   requiredOrigins: string[];
@@ -215,15 +250,9 @@ export function validateProviderCoverage(params: {
   stays: StayOffer[];
   ground: GroundOffer[];
 }): void {
-  const missing = params.requiredOrigins
-    .filter(origin => !params.flights.some(flight => flight.origin === origin))
-    .map(origin => `flight:${origin}`);
-
-  if (params.stays.length === 0) missing.push("stay");
-  if (params.ground.length === 0) missing.push("ground");
-
-  if (missing.length > 0) {
-    throw new PlanningDataUnavailableError(missing);
+  const { missingOrigins } = summarizeProviderGaps(params);
+  if (missingOrigins.length > 0) {
+    throw new PlanningDataUnavailableError(missingOrigins.map((origin) => `flight:${origin}`));
   }
 }
 
@@ -588,6 +617,9 @@ export async function generatePlan(params: {
         destinationCandidates: snapshot.destinationCandidates as string[],
         client: tx,
       });
+      // Phase 4 outcome matrix: a cell that returned UNAVAILABLE is an
+      // auditable gap rather than a fatal condition. MISSING cells (the
+      // planner never even tried) still hard-fail the round.
       if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
     }
     const outputMode = params.outputMode ?? "ACTIVATE";
@@ -646,9 +678,71 @@ export async function generatePlan(params: {
       tx,
     });
 
+    // Phase 4 — record the service outcome matrix on the same transaction.
+    // UNAVAILABLE evidence becomes a `service_gaps` row; the task terminator
+    // becomes `COMPLETED_WITH_GAPS` rather than `COMPLETED`.
+    let flightMatrixGaps: ReturnType<typeof flightMatrixToGaps> = [];
     if (params.agentTaskRunId) {
+      const finalMatrix = await evaluateFlightResearchCompleteness({
+        snapshotId: params.snapshotId,
+        agentTaskRunId: params.agentTaskRunId,
+        departureCities: snapshot.departureCities as string[],
+        destinationCandidates: snapshot.destinationCandidates as string[],
+        client: tx,
+      });
+      flightMatrixGaps = flightMatrixToGaps(finalMatrix.cells);
+    }
+    const { gaps: capabilityGaps } = summarizeProviderGaps({
+      requiredOrigins: snapshot.departureCities as string[],
+      flights: allFlights,
+      stays: allStays,
+      ground: allGround,
+    });
+    const allServiceGaps: ServiceGap[] = [
+      ...flightMatrixGaps.map((g) => ({
+        capability: g.capability,
+        code: g.code,
+        destinationId: g.destinationId,
+      })),
+      ...capabilityGaps.map((g) => ({ capability: g.capability, code: g.code })),
+    ];
+    // For the Phase 4 MVP we keep the matrix surface small: any UNAVAILABLE
+    // cell flips the task status to `COMPLETED_WITH_GAPS`.
+    const researchStatus = allServiceGaps.length > 0 ? "COMPLETED_WITH_GAPS" : "COMPLETE";
+    const serviceGapsJson = allServiceGaps as unknown as Record<string, unknown>[];
+    if (params.agentTaskRunId) {
+      await tx.insert(planningResearchResults).values({
+        tripId: params.tripId,
+        snapshotId: params.snapshotId,
+        agentTaskRunId: params.agentTaskRunId,
+        status: researchStatus,
+        serviceGaps: serviceGapsJson,
+        resultPlanId: plan.id,
+      }).onConflictDoUpdate({
+        target: planningResearchResults.agentTaskRunId,
+        set: {
+          status: researchStatus,
+          serviceGaps: serviceGapsJson,
+          resultPlanId: plan.id,
+        },
+      });
+      await recordAudit({
+        ctx: params.ctx,
+        action: "RESEARCH_RESULT_RECORDED",
+        tripId: params.tripId,
+        summary: {
+          status: researchStatus,
+          gapCount: allServiceGaps.length,
+          capabilities: [...new Set(allServiceGaps.map((g) => g.capability))].sort(),
+        },
+        tx,
+      });
+    }
+
+    if (params.agentTaskRunId) {
+      const taskTerminalStatus = researchStatus === "COMPLETED_WITH_GAPS" ? "COMPLETED_WITH_GAPS" : "COMPLETED";
       const [completed] = await tx.update(agentTaskRuns).set({
-        status: "COMPLETED", resultPlanId: plan.id, leaseToken: null, leaseExpiresAt: null,
+        status: taskTerminalStatus, resultPlanId: plan.id, leaseToken: null, leaseExpiresAt: null,
         finishedAt: new Date(), updatedAt: new Date(), errorCode: null,
       }).where(and(
         eq(agentTaskRuns.id, params.agentTaskRunId), eq(agentTaskRuns.leaseToken, params.leaseToken!),
