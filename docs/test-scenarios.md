@@ -694,8 +694,9 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 2. Submit the first message. Force a client retry, a double-click and two concurrent start requests with the same start request ID; then accept the first conversation turn.
 3. Simulate start success followed by turn rejection/network loss; retry the start and the conversation command.
 4. Navigate client-side `/home → /projects → /profile → /home`; submit another message. Then perform a full browser reload and open `/home` in a new tab before submitting messages there.
-5. Click “Start new exploration”, then activate the original Draft with a valid brief. Attempt invitation, consent, planning, confirmation and booking both before and after activation.
-6. Repeat with Alice logged out and Bob logged in before returning to `/home`.
+5. Open the Draft from `/projects`; verify it uses the same project workspace as a `PLANNING` trip, retains the private thread, and does not show a separate brief form. Confirm a complete brief in the private conversation, then use the workspace activation control.
+6. Attempt invitation, consent, planning, confirmation and booking both before and after activation.
+7. Repeat with Alice logged out and Bob logged in before returning to `/home`.
 
 **Expected outcomes:**
 
@@ -704,7 +705,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The first task derives the created thread's `trip_id`; start success plus turn failure/retry cannot create another Trip.
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
-- Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
+- Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control, which remains disabled until the persisted brief is complete. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
 
 ### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields only
 

@@ -118,7 +118,7 @@
       },
       "draft": {
         "short": "Untitled exploration · only you can see it",
-        "continueCta": "Continue"
+        "continueCta": "Continue planning"
       },
       "dates": {
         "notSet": "Dates not set",
@@ -356,24 +356,6 @@
       "members": "{count, plural, =0 {No members yet} =1 {1 member} other {# members}}",
       "departure": "Departure"
     },
-    "draft": {
-      "kicker": "Draft exploration",
-      "body": "Your private conversation is saved. Add a brief, then activate the trip to invite co-travelers.",
-      "formAriaLabel": "Activate draft trip",
-      "titlePreviewLabel": "Trip title preview",
-      "titlePreviewHint": "Generated only from the destinations and dates below; it never uses your chat history.",
-      "departureLabel": "Departure cities (1–3)",
-      "departurePlaceholder": "Add a departure city and press Enter",
-      "candidatesLabel": "Candidate destinations (2–5)",
-      "candidatesPlaceholder": "Add a candidate destination and press Enter",
-      "dateStartLabel": "Earliest travel date (optional)",
-      "dateEndLabel": "Latest travel date (optional)",
-      "addCity": "Add city",
-      "addCandidate": "Add candidate",
-      "removeChip": "Remove {value}",
-      "activateHint": "Activation moves this trip to Planning and unlocks invitations, consent, and the Shared Agent.",
-      "activateCta": "Start planning / Invite co-travelers"
-    },
     "threads": {
       "heading": "Your threads",
       "loading": "Loading your threads…",
@@ -405,6 +387,9 @@
       "mapWindow": "Explore map",
       "mapPinned": "Pinned",
       "openFullMap": "Open in full map",
+      "draftActivationHint": "Confirm your travel brief in the private conversation to start planning.",
+      "activateDraft": "Start planning",
+      "activateDraftError": "Could not start planning. Please try again.",
       "roleValue": {
         "CREATOR": "Creator",
         "MEMBER": "Member"

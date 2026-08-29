@@ -118,7 +118,7 @@
       },
       "draft": {
         "short": "未命名探索 · 仅你可见",
-        "continueCta": "继续编辑"
+        "continueCta": "继续规划"
       },
       "dates": {
         "notSet": "日期未设置",
@@ -356,24 +356,6 @@
       "members": "{count, plural, =0 {暂无成员} other {# 位成员}}",
       "departure": "出发城市"
     },
-    "draft": {
-      "kicker": "草稿探索",
-      "body": "你的私有对话已保存。填写简报并激活后即可邀请同行者。",
-      "formAriaLabel": "激活草稿行程",
-      "titlePreviewLabel": "行程标题预览",
-      "titlePreviewHint": "标题仅根据下方目的地和日期生成，绝不会使用聊天记录。",
-      "departureLabel": "出发地 (1–3)",
-      "departurePlaceholder": "输入出发地后回车",
-      "candidatesLabel": "候选目的地 (2–5)",
-      "candidatesPlaceholder": "输入候选目的地后回车",
-      "dateStartLabel": "最早出发日期（可选）",
-      "dateEndLabel": "最晚出发日期（可选）",
-      "addCity": "添加",
-      "addCandidate": "添加",
-      "removeChip": "移除 {value}",
-      "activateHint": "激活后行程进入规划阶段，解锁邀请、授权与共享 Agent。",
-      "activateCta": "开始规划 / 邀请同行者"
-    },
     "threads": {
       "heading": "你的对话",
       "loading": "正在加载你的对话…",
@@ -405,6 +387,9 @@
       "mapWindow": "探索地图",
       "mapPinned": "固定",
       "openFullMap": "在完整地图中打开",
+      "draftActivationHint": "请先在私有对话中确认行程简报，再开始规划。",
+      "activateDraft": "开始规划",
+      "activateDraftError": "暂时无法开始规划，请重试。",
       "roleValue": {
         "CREATOR": "创建者",
         "MEMBER": "成员"
