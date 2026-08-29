@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { memoryFieldDefinition } from "../../memory/memory-field-catalog.js";
 import { memoryProjectionSchema, type MemoryProjection } from "../../types/schemas.js";
 
 /**
@@ -72,6 +73,20 @@ export function readMemoryProjection(authorizedData: unknown): MemoryProjection 
  * where one member stated nothing has no unanimous value — silence is not
  * assent. A group decision always wins over member preferences, because it is
  * the trip's own decision rather than an inference about it.
+ *
+ * Unanimity is only computed for fields the catalog marks `groupDecidable`,
+ * which answers the question "can this field meaningfully hold one value for
+ * the whole trip?". That restriction is what makes comparing values sound:
+ * every group-decidable field is a closed enum or a boolean, so two members
+ * expressing the same preference produce byte-identical values and equality is
+ * exact.
+ *
+ * `interests` is the field this excludes, and deliberately. It is free text, so
+ * "food" and "cuisine" — or the same list in a different order — are equal in
+ * meaning and unequal as data. Matching those would mean guessing at agreement,
+ * and inventing a consensus the members never reached is worse than reporting
+ * none. Per-member interests stay visible in the projection, so planning can
+ * take their union without anyone having to agree.
  */
 export function tripWidePreferences(projection: MemoryProjection): Record<string, unknown> {
   const aliases = Object.keys(projection.members);
@@ -85,10 +100,12 @@ export function tripWidePreferences(projection: MemoryProjection): Record<string
       // takes precedence over their standing profile fact.
       const effective = { ...member.profileFacts, ...member.tripOverrides };
       for (const [fieldKey, value] of Object.entries(effective)) {
+        if (!memoryFieldDefinition(fieldKey)?.groupDecidable) continue;
+
         const seen = counts.get(fieldKey);
         if (!seen) {
           counts.set(fieldKey, { value, agree: 1 });
-        } else if (JSON.stringify(seen.value) === JSON.stringify(value)) {
+        } else if (Object.is(seen.value, value)) {
           seen.agree += 1;
         } else {
           seen.agree = -1; // conflicting; can never be unanimous

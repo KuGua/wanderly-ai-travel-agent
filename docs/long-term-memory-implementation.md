@@ -232,6 +232,8 @@ type MemoryProjection = {
 
 profileFacts 来自 `preference_facts` 而非 profile 列：只有事实行带有版本链与目录注册信息，而这两者正是决定能否导出的依据。一条个人事实必须同时满足「字段已在 `MEMORY_FIELD_CATALOG` 注册」「`consentExportable: true`」「该成员对本 Trip 的有效 consent 覆盖该字段」三条才会出现，缺任一即不导出。敏感字段以 `consentExportable: false` 注册，因此是结构性排除，不依赖此处再维护一份名单。
 
+`tripWidePreferences` 的一致性判定只对目录标记 `groupDecidable` 的字段计算。该标记回答的正是「这个字段能不能对全团只有一个值」，而这恰好也让比较本身成立：所有 group-decidable 字段都是闭合枚举或布尔，两名成员表达同一偏好必然产生逐字节相同的值。被排除的是 `interests`——自由文本，「food」与「cuisine」、以及同一组词的不同顺序，在语义上相等而在数据上不等；去匹配它们就是在猜测一致性，而凭空造出成员从未达成的共识，比报告「没有共识」更糟。各成员的 interests 仍在投影中逐人可见，规划侧可自行取并集，不需要任何人达成一致。
+
 Shared Skill 一侧的唯一读取点是 `skills/shared/memory-projection-input.ts`：skill 嵌入 `sharedMemoryInputSchema`，调用 `readMemoryProjection` 取得已校验的 namespace，不得自行触碰 `authorized_data`。读取走 parse 而非 cast——快照是 JSONB，若不校验，任何进入 `_meta.memory` 的内容都会被原样交给模型。缺少 namespace 的旧快照返回空投影（照常规划，只是没有偏好），形状损坏则抛错。
 
 `authorized_data.memory` 只能由 `MemoryProjectionBuilder` 写入。任何 `field_key` 必须在服务端常量 `MEMORY_FIELD_CATALOG` 中注册其 value schema、敏感级别、允许 source、是否能自动建议、是否允许 consent export。未注册字段 fail closed。

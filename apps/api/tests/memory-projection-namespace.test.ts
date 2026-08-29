@@ -206,6 +206,38 @@ describe("tripWidePreferences", () => {
     expect(tripWidePreferences(projection)).toEqual({ trip_pace: "relaxed" });
   });
 
+  it("does not synthesise a trip-wide value for a field that stays individual", () => {
+    // `interests` is free text and marked not group-decidable. Two members
+    // naming the same things in a different order mean the same preference and
+    // are different data; matching them would be guessing at agreement, and a
+    // consensus nobody reached is worse than none.
+    const projection = build({
+      consentedFieldsByUser: { [ALICE]: ["interests"], [BOB]: ["interests"] },
+      preferenceFacts: [
+        { userId: ALICE, fieldKey: "interests", value: ["food", "art"] },
+        { userId: BOB, fieldKey: "interests", value: ["food", "art"] },
+      ],
+    });
+
+    // Still visible per member, so planning can take their union.
+    expect(projection.members["m-alice"].profileFacts).toEqual({ interests: ["food", "art"] });
+    expect(tripWidePreferences(projection)).toEqual({});
+  });
+
+  it("compares only closed-enum fields, where equality is exact", () => {
+    // Every group-decidable field is an enum or a boolean, so two members
+    // expressing the same preference produce identical values and the
+    // "different wording" problem cannot arise.
+    const projection = build({
+      consentedFieldsByUser: { [ALICE]: ["no_red_eye"], [BOB]: ["no_red_eye"] },
+      preferenceFacts: [
+        { userId: ALICE, fieldKey: "no_red_eye", value: true },
+        { userId: BOB, fieldKey: "no_red_eye", value: true },
+      ],
+    });
+    expect(tripWidePreferences(projection)).toEqual({ no_red_eye: true });
+  });
+
   it("lets a group decision win over what members individually prefer", () => {
     const projection = build({
       consentedFieldsByUser: { [ALICE]: ["accommodation_style"], [BOB]: ["accommodation_style"] },
