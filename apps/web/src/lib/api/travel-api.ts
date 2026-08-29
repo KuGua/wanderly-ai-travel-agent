@@ -45,6 +45,14 @@ import type {
   RevokeTripPlaceRequest,
   TripPlaceActionResponse,
   ResearchResult,
+  RouteEvidenceList,
+  NavigationRouteSearchRequest,
+  NavigationRouteSearchResponse,
+  MobilityOfferList,
+  MobilitySearchRequest,
+  MobilitySearchResponse,
+  MobilityOfferSelectionRequest,
+  MobilityOfferSelectionResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -93,4 +101,13 @@ export interface TravelApi {
 
   // ── Phase 4 non-blocking research summary ────────────────────────────────────
   getResearchResult?(tripId: string, agentTaskRunId?: string): Promise<ResearchResult>;
+
+  // ── Phase 3 navigation route evidence ────────────────────────────────────────
+  listRouteEvidence?(tripId: string, planId?: string): Promise<RouteEvidenceList>;
+  searchRoute?(tripId: string, planId: string, input: NavigationRouteSearchRequest, options?: { idempotencyKey?: string }): Promise<NavigationRouteSearchResponse>;
+
+  // ── Phase 5 mobility offers (Amadeus Transfer Search) ────────────────────────
+  listMobilityOffers?(tripId: string): Promise<MobilityOfferList>;
+  searchMobilityOffers?(tripId: string, input: MobilitySearchRequest, options?: { idempotencyKey?: string }): Promise<MobilitySearchResponse>;
+  selectMobilityOffer?(tripId: string, input: MobilityOfferSelectionRequest, options?: { idempotencyKey?: string }): Promise<MobilityOfferSelectionResponse>;
 }

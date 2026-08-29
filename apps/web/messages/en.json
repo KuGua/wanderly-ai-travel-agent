@@ -410,6 +410,46 @@
         "MEMBER": "Member"
       },
       "openPinAria": "View {name} on the full map",
+      "mobility": {
+        "title": "Mobility offers",
+        "attribution": "Pricing via Amadeus Transfer",
+        "empty": "No mobility offers yet.",
+        "expired": "Expired",
+        "passengers": "{count, plural, one {# passenger} other {# passengers}}",
+        "select": "Select",
+        "dismiss": "Dismiss",
+        "filter": "Filter by service type",
+        "filter": {
+          "all": "All",
+          "taxi": "Taxi",
+          "transfer": "Transfer",
+          "charter": "Charter",
+          "rental": "Rental"
+        },
+        "serviceType": {
+          "taxi": "Taxi",
+          "transfer": "Private transfer",
+          "charter": "Charter",
+          "rental": "Car rental"
+        }
+      },
+      "route": {
+        "title": "{origin} → {destination}",
+        "originFallback": "Origin",
+        "destinationFallback": "Destination",
+        "distance": "Distance",
+        "duration": "Duration",
+        "attribution": "Routing by ORS",
+        "fresh": "Fresh",
+        "stale": "Needs refresh",
+        "refresh": "Refresh",
+        "stepsTruncated": "{count, plural, one {# more step} other {# more steps}}",
+        "mode": {
+          "WALK": "Walk",
+          "DRIVE": "Drive",
+          "CYCLE": "Cycle"
+        }
+      },
       "gaps": {
         "title": "Research summary",
         "badge": "Gaps recorded",

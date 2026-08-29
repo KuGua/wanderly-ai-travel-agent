@@ -410,6 +410,46 @@
         "MEMBER": "成员"
       },
       "openPinAria": "在完整地图中查看 {name}",
+      "mobility": {
+        "title": "出行报价",
+        "attribution": "由 Amadeus Transfer 提供报价",
+        "empty": "暂无出行报价。",
+        "expired": "已过期",
+        "passengers": "{count} 位乘客",
+        "select": "选择",
+        "dismiss": "忽略",
+        "filter": "按服务类型筛选",
+        "filter": {
+          "all": "全部",
+          "taxi": "Taxi",
+          "transfer": "Transfer",
+          "charter": "Charter",
+          "rental": "Rental"
+        },
+        "serviceType": {
+          "taxi": "出租车",
+          "transfer": "专车接送",
+          "charter": "包车",
+          "rental": "租车"
+        }
+      },
+      "route": {
+        "title": "{origin} → {destination}",
+        "originFallback": "起点",
+        "destinationFallback": "终点",
+        "distance": "距离",
+        "duration": "时长",
+        "attribution": "ORS 提供路线",
+        "fresh": "新鲜",
+        "stale": "需要刷新",
+        "refresh": "刷新",
+        "stepsTruncated": "还有 {count} 步",
+        "mode": {
+          "WALK": "步行",
+          "DRIVE": "驾车",
+          "CYCLE": "骑行"
+        }
+      },
       "gaps": {
         "title": "研究摘要",
         "badge": "已记录缺口",

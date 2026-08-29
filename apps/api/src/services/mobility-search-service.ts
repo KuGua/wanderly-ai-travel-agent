@@ -1,21 +1,24 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { MobilityOfferProvider, ProviderResult } from "../providers/types.js";
+import { db } from "../db/database.js";
+import { providerOffers, providerSearchRuns } from "../db/schema.js";
+import type { MobilityOfferProvider, NormalizedMobilityOffer, ProviderResult } from "../providers/types.js";
 import type { ConstraintSnapshotData, MobilityOffer, MobilityServiceType } from "../types/domain.js";
+import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
+import { metrics } from "../observability/metrics.js";
 
 /**
- * Spec §5.3 — Shared `mobility.search` input/output schemas.
+ * Spec §5.3 — Shared `mobility.search` service.
  *
- * The schema exposed to a planning model deliberately excludes `snapshotId`:
- * a snapshot is execution authority, not a model-selectable search parameter.
- * The dispatcher adds the task-bound id immediately before registry dispatch.
+ * The adapter layer MUST strip any booking link. The service persists
+ * normalized offers on `provider_offers` (with `category = "mobility"`)
+ * alongside the `provider_search_runs` row and audit events. The service
+ * does NOT transmit `bookingUrl` to the model or the UI — that field is
+ * dropped at the adapter boundary and never reaches this layer.
  *
- * Invariants enforced here:
- *   * `passengers`, `departureAt`, and `serviceType` are accepted but
- *     server-derived (or strong-bounded) values. They never come from
- *     arbitrary user text.
- *   * The adapter layer MUST drop any `bookingUrl` field before persistence;
- *     this service returns normalized offers that do not carry it.
+ * The service is hard-gated by `PLAN_ENABLE_MOBILITY=false`: when the flag
+ * is off, the skill short-circuits with `UNAVAILABLE/NOT_CONFIGURED`.
  */
 export const mobilityServiceTypeSchema = z.enum(["TAXI", "TRANSFER", "CHARTER", "RENTAL"]);
 export type MobilityServiceTypeInput = z.infer<typeof mobilityServiceTypeSchema>;
@@ -34,9 +37,6 @@ export const mobilitySearchInputSchema = z.object({
 });
 export type MobilitySearchInput = z.infer<typeof mobilitySearchInputSchema>;
 
-// Model-facing schema mirrors the input minus the server-injected snapshotId.
-// Defined as a standalone schema (not `.omit(...)`) because Zod 4 forbids
-// `.omit()` on schemas that carry a `.superRefine`.
 export const mobilitySearchModelArgumentsSchema = z.object({
   originPlaceId: z.string().uuid(),
   destinationPlaceId: z.string().uuid(),
@@ -94,6 +94,10 @@ export interface MobilitySearchExecutionContext {
   agentTaskRunId?: string;
 }
 
+/**
+ * Snapshot-bound validation. The dispatcher has already enforced the
+ * trip membership of both `placeId`s; this service is the second line.
+ */
 export function validateSnapshotBoundMobilitySearch(params: {
   input: unknown;
   snapshotId: string;
@@ -114,11 +118,21 @@ export async function executeAndPersistMobilitySearch(params: {
   input: MobilitySearchInput;
   provider: MobilityOfferProvider;
   signal?: AbortSignal;
-}): Promise<ProviderResult<MobilityOffer[]>> {
-  void params.ctx;
-  void params.tripId;
-  void params.agentTaskRunId;
-  return params.provider.searchOffers({
+}): Promise<ProviderResult<MobilityOffer[]> & { queryId?: string }> {
+  const fingerprint = createHash("sha256").update(JSON.stringify({
+    originPlaceId: params.input.originPlaceId,
+    destinationPlaceId: params.input.destinationPlaceId,
+    passengers: params.input.passengers,
+    departureAt: params.input.departureAt,
+    serviceType: params.input.serviceType,
+  })).digest("hex");
+  await recordAudit({
+    ctx: params.ctx,
+    action: "MOBILITY_OFFER_REQUESTED",
+    tripId: params.tripId,
+    summary: { provider: "amadeus-transfer", operation: "mobility_search" },
+  });
+  const result = await params.provider.searchOffers({
     originPlaceId: params.input.originPlaceId,
     destinationPlaceId: params.input.destinationPlaceId,
     passengers: params.input.passengers,
@@ -128,4 +142,71 @@ export async function executeAndPersistMobilitySearch(params: {
     runId: params.agentTaskRunId,
     signal: params.signal,
   });
+  const [searchRun] = await db.transaction(async (tx) => {
+    const [run] = await tx.insert(providerSearchRuns).values({
+      snapshotId: params.snapshotId,
+      agentTaskRunId: params.agentTaskRunId ?? null,
+      category: "mobility",
+      providerName: result.outcome === "LIVE" ? "amadeus-transfer" : "amadeus-transfer",
+      originId: params.input.originPlaceId.slice(0, 16),
+      destinationId: params.input.destinationPlaceId.slice(0, 16),
+      requestFingerprint: fingerprint,
+      outcome: result.outcome,
+      errorCode: result.outcome === "UNAVAILABLE" ? result.reason : null,
+    }).returning();
+    if (result.outcome === "LIVE") {
+      // Persist offers WITHOUT bookingUrl. The Zod schemas guarantee no such
+      // field exists; this is the second-line defense.
+      await tx.insert(providerOffers).values(result.data.map((offer) => ({
+        snapshotId: params.snapshotId,
+        searchRunId: run.id,
+        category: "mobility",
+        providerName: "amadeus-transfer",
+        providerOfferId: offer.offerId,
+        currency: offer.currency,
+        expiresAt: offer.expiresAt ? new Date(offer.expiresAt) : null,
+        offerData: stripBookingFields(offer),
+        capturedAt: new Date(offer.capturedAt),
+      })));
+    }
+    await recordAudit({
+      ctx: params.ctx,
+      action: result.outcome === "LIVE" ? "MOBILITY_OFFER_COMPLETED" : "MOBILITY_OFFER_UNAVAILABLE",
+      tripId: params.tripId,
+      summary: {
+        provider: "amadeus-transfer",
+        outcome: result.outcome,
+        ...(result.outcome === "UNAVAILABLE" ? { errorCode: result.reason } : {}),
+      },
+      tx,
+    });
+    return [run];
+  });
+  metrics.inc("mobility_search_tool_invocations_total", {
+    outcome: result.outcome === "LIVE" ? "live" : "unavailable",
+    provider: "amadeus-transfer",
+    error_category: result.outcome === "LIVE" ? "none" : result.reason.toLowerCase(),
+  });
+  return result.outcome === "LIVE" ? { ...result, queryId: searchRun.id } : result;
+}
+
+function stripBookingFields(offer: NormalizedMobilityOffer): Record<string, unknown> {
+  // Defensive: if an upstream provider ever includes a `bookingUrl` or
+  // similar field (e.g. by relaxing the schema in the future), it MUST NOT
+  // be persisted. We serialize only the known fields.
+  return {
+    offerId: offer.offerId,
+    serviceType: offer.serviceType,
+    originPlaceId: offer.originPlaceId,
+    destinationPlaceId: offer.destinationPlaceId,
+    passengers: offer.passengers,
+    departureAt: offer.departureAt,
+    estimatedPrice: offer.estimatedPrice,
+    currency: offer.currency,
+    vehicleClass: offer.vehicleClass,
+    estimated: offer.estimated,
+    expiresAt: offer.expiresAt,
+    source: offer.source,
+    capturedAt: offer.capturedAt,
+  };
 }

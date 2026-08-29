@@ -16,8 +16,10 @@ import type {
 } from "./types.js";
 import type { FlightOffer, GroundOffer, StayOffer } from "../types/domain.js";
 import { AmadeusFlightProvider, readAmadeusConfiguration } from "./amadeus-flight-provider.js";
+import { AmadeusTransferProvider, readAmadeusTransferConfiguration } from "./amadeus-transfer-provider.js";
 import { createGroundCapabilityRouter, type GroundCapabilityRouter } from "./ground-capability-router.js";
 import { OrsPlaceProvider, readOrsPlaceConfiguration } from "./ors-place-provider.js";
+import { OrsNavigationProvider, readOrsNavigationConfiguration } from "./ors-navigation-provider.js";
 
 class UnavailableFlightProvider implements FlightProvider {
   async searchFlights(): Promise<ProviderResult<FlightOffer[]>> {
@@ -81,18 +83,19 @@ export function createTravelProviders(): {
   capabilityRouter: GroundCapabilityRouter;
 } {
   const placeProvider = createOrsPlace();
+  const navigationProvider = createOrsNavigation();
   return {
     flightProvider: createFlightProvider(),
     stayProvider: new UnavailableStayProvider(),
     groundProvider: new UnavailableGroundProvider(),
     placeProvider,
-    navigationProvider: new UnavailableNavigationProvider(),
-    mobilityOfferProvider: new UnavailableMobilityOfferProvider(),
+    navigationProvider,
+    mobilityOfferProvider: createAmadeusTransfer(),
     transitJourneyProvider: new UnavailableTransitJourneyProvider(),
     capabilityRouter: createGroundCapabilityRouter({
       placeProvider,
-      navigationProvider: new UnavailableNavigationProvider(),
-      mobilityOfferProvider: new UnavailableMobilityOfferProvider(),
+      navigationProvider,
+      mobilityOfferProvider: createAmadeusTransfer(),
       transitJourneyProvider: new UnavailableTransitJourneyProvider(),
     }),
   };
@@ -106,4 +109,17 @@ function createFlightProvider(): FlightProvider {
 function createOrsPlace(): PlaceSearchProvider {
   const configuration = readOrsPlaceConfiguration();
   return configuration ? new OrsPlaceProvider(configuration) : new UnavailablePlaceProvider();
+}
+
+function createOrsNavigation(): NavigationProvider {
+  const configuration = readOrsNavigationConfiguration();
+  return configuration ? new OrsNavigationProvider(configuration) : new UnavailableNavigationProvider();
+}
+
+function createAmadeusTransfer(): MobilityOfferProvider {
+  if (process.env.PLAN_ENABLE_MOBILITY === "false") {
+    return new UnavailableMobilityOfferProvider();
+  }
+  const configuration = readAmadeusTransferConfiguration();
+  return configuration ? new AmadeusTransferProvider(configuration) : new UnavailableMobilityOfferProvider();
 }

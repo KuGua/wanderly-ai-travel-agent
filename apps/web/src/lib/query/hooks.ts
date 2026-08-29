@@ -18,6 +18,9 @@ import type {
   PlaceCandidateSearchRequest,
   ProposeTripPlaceRequest,
   RevokeTripPlaceRequest,
+  NavigationRouteSearchRequest,
+  MobilitySearchRequest,
+  MobilityOfferSelectionRequest,
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
 import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys } from "./keys";
@@ -339,6 +342,56 @@ export function useResearchResult(tripId: string, agentTaskRunId?: string) {
     queryKey: [...tripKeys.researchResults(tripId), agentTaskRunId ?? "latest"],
     queryFn: () => api.getResearchResult!(tripId, agentTaskRunId),
     enabled: !!api.getResearchResult,
+  });
+}
+
+export function useRouteEvidence(tripId: string, planId?: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: [...tripKeys.routeEvidence(tripId, planId ?? "latest")],
+    queryFn: () => api.listRouteEvidence!(tripId, planId),
+    enabled: !!api.listRouteEvidence,
+  });
+}
+
+export function useSearchRoute(tripId: string) {
+  const api = useTravelApi();
+  return useMutation({
+    mutationFn: (params: { planId: string; input: NavigationRouteSearchRequest; idempotencyKey?: string }) =>
+      api.searchRoute!(tripId, params.planId, params.input, { idempotencyKey: params.idempotencyKey }),
+  });
+}
+
+export function useMobilityOffers(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.mobilityOffers(tripId),
+    queryFn: () => api.listMobilityOffers!(tripId),
+    enabled: !!api.listMobilityOffers,
+  });
+}
+
+export function useSearchMobilityOffers(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { input: MobilitySearchRequest; idempotencyKey?: string }) =>
+      api.searchMobilityOffers!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tripKeys.mobilityOffers(tripId) });
+    },
+  });
+}
+
+export function useSelectMobilityOffer(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { input: MobilityOfferSelectionRequest; idempotencyKey?: string }) =>
+      api.selectMobilityOffer!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tripKeys.mobilityOffers(tripId) });
+    },
   });
 }
 

@@ -99,6 +99,8 @@ export interface MobilityOfferProvider {
   }): Promise<ProviderResult<NormalizedMobilityOffer[]>>;
 }
 
+export type MobilityServiceType = "TAXI" | "TRANSFER" | "CHARTER" | "RENTAL";
+
 /**
  * Spec §5.3. Reserved port for spec Phase 6 (transit schedules / fares).
  * Intentionally not implemented in this milestone; the factory returns

@@ -1,14 +1,24 @@
+import { createHash } from "node:crypto";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { db } from "../db/database.js";
+import { navigationRouteEvidence, providerSearchRuns, tripPlaces } from "../db/schema.js";
 import type { NavigationProvider, NormalizedRouteEvidence, ProviderResult } from "../providers/types.js";
-import type { ConstraintSnapshotData, NavigationRouteEvidence } from "../types/domain.js";
+import type { ConstraintSnapshotData, NavigationRouteEvidence, NavigationRouteMode } from "../types/domain.js";
+import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 
 /**
- * Spec §5.2 — Shared `navigation.route` input/output schemas.
+ * Spec §5.2 — Shared `navigation.route` service.
  *
- * The schema exposed to a planning model deliberately excludes `snapshotId`:
- * a snapshot is execution authority, not a model-selectable search parameter.
- * The dispatcher adds the task-bound id immediately before registry dispatch.
+ * The model can only ever submit two authorized `placeId`s plus a mode.
+ * `snapshotId` is injected by the dispatcher. The service:
+ *   1. Validates that both places belong to the trip, are `ACTIVE`, and
+ *      have a non-private visibility.
+ *   2. Calls the configured `NavigationProvider` (ORS Directions by default).
+ *   3. Persists a `provider_search_runs` row (`category: "navigation"`) and a
+ *      `navigation_route_evidence` row inside one transaction.
+ *   4. Emits the audit row and returns the model-safe summary.
  */
 export const navigationRouteInputSchema = z.object({
   snapshotId: z.string().uuid(),
@@ -79,21 +89,41 @@ export const NAVIGATION_REFRESH_AFTER_HOURS = 24;
  * `placeId`s belong to the trip; this service is the single place that
  * enforces the visible-mode allow-list and the trip-wide `mode` allow-list.
  */
-export function validateSnapshotBoundNavigationRoute(params: {
+export async function validateSnapshotBoundNavigationRoute(params: {
   input: unknown;
   snapshotId: string;
   snapshot: ConstraintSnapshotData;
-}): NavigationRouteInput {
+}): Promise<NavigationRouteInput> {
   const input = navigationRouteInputSchema.parse(params.input);
   if (input.snapshotId !== params.snapshotId) {
     throw new Error("navigation.route snapshot does not match task snapshot");
   }
-  // Mode allow-list is fixed for now; expanding it (e.g. WHEELCHAIR, BUS)
-  // requires a model-gateway tool schema change.
   if (!["WALK", "DRIVE", "CYCLE"].includes(input.mode)) {
     throw new Error(`navigation.route mode ${input.mode} is not allowed`);
   }
   return input;
+}
+
+async function assertPlaceVisible(params: {
+  tripId: string;
+  placeId: string;
+}): Promise<{ longitude: number | null; latitude: number | null; status: "ACTIVE" | "PROPOSED" | "REVOKED" }> {
+  const rows = await db.select({
+    id: tripPlaces.id,
+    status: tripPlaces.status,
+    visibility: tripPlaces.visibility,
+    longitude: tripPlaces.longitude,
+    latitude: tripPlaces.latitude,
+  }).from(tripPlaces).where(eq(tripPlaces.id, params.placeId));
+  const row = rows[0];
+  if (!row) throw new Error(`navigation.route place ${params.placeId} not found`);
+  if (row.visibility === "OWNER_PRIVATE") {
+    throw new Error("navigation.route cannot reference OWNER_PRIVATE place");
+  }
+  if (row.status !== "ACTIVE") {
+    throw new Error(`navigation.route place ${params.placeId} must be ACTIVE (current: ${row.status})`);
+  }
+  return { longitude: row.longitude, latitude: row.latitude, status: row.status };
 }
 
 /**
@@ -118,11 +148,139 @@ export function summarizeRouteEvidence(evidence: NavigationRouteEvidence): Navig
 }
 
 /**
- * Execute a single route call against the configured provider. The skill
- * handler is responsible for snapshot/run binding, audit, metrics, and
- * persisting the resulting `provider_search_runs` + `navigation_route_evidence`
- * rows.
+ * Execute a single route call against the configured provider and persist
+ * `provider_search_runs` + `navigation_route_evidence` rows in one
+ * transaction. Returns the model-safe summary on `LIVE`, or the bounded
+ * `UNAVAILABLE` code on failure.
  */
+export async function executeAndPersistNavigationRoute(params: {
+  ctx: RequestContext;
+  tripId: string;
+  snapshotId: string;
+  agentTaskRunId?: string;
+  input: NavigationRouteInput;
+  provider: NavigationProvider;
+  signal?: AbortSignal;
+}): Promise<NavigationRouteOutput> {
+  // Defensive place visibility / ACTIVE checks. The skill layer is the
+  // public boundary; this is the second line.
+  await Promise.all([
+    assertPlaceVisible({ tripId: params.tripId, placeId: params.input.originPlaceId }),
+    assertPlaceVisible({ tripId: params.tripId, placeId: params.input.destinationPlaceId }),
+  ]);
+  const fingerprint = createHash("sha256").update(JSON.stringify({
+    originPlaceId: params.input.originPlaceId,
+    destinationPlaceId: params.input.destinationPlaceId,
+    mode: params.input.mode,
+  })).digest("hex");
+  await recordAudit({
+    ctx: params.ctx,
+    action: "NAVIGATION_ROUTE_REQUESTED",
+    tripId: params.tripId,
+    summary: {
+      provider: "openrouteservice",
+      operation: "navigation_route",
+      mode: params.input.mode,
+    },
+  });
+  const result = await params.provider.searchRoute({
+    originPlaceId: params.input.originPlaceId,
+    destinationPlaceId: params.input.destinationPlaceId,
+    mode: params.input.mode,
+    snapshotId: params.input.snapshotId,
+    runId: params.agentTaskRunId,
+    signal: params.signal,
+  });
+  if (result.outcome === "UNAVAILABLE") {
+    await db.transaction(async (tx) => {
+      await tx.insert(providerSearchRuns).values({
+        snapshotId: params.snapshotId,
+        agentTaskRunId: params.agentTaskRunId ?? null,
+        category: "navigation",
+        providerName: "openrouteservice",
+        originId: params.input.originPlaceId.slice(0, 16),
+        destinationId: params.input.destinationPlaceId.slice(0, 16),
+        requestFingerprint: fingerprint,
+        outcome: "UNAVAILABLE",
+        errorCode: result.reason,
+      });
+      await recordAudit({
+        ctx: params.ctx,
+        action: "NAVIGATION_ROUTE_UNAVAILABLE",
+        tripId: params.tripId,
+        summary: {
+          provider: "openrouteservice",
+          outcome: "UNAVAILABLE",
+          errorCode: result.reason,
+          mode: params.input.mode,
+        },
+        tx,
+      });
+    });
+    return { outcome: "UNAVAILABLE", code: result.reason };
+  }
+  const routeEvidence = result.data;
+  const routeId = await db.transaction(async (tx) => {
+    const [run] = await tx.insert(providerSearchRuns).values({
+      snapshotId: params.snapshotId,
+      agentTaskRunId: params.agentTaskRunId ?? null,
+      category: "navigation",
+      providerName: "openrouteservice",
+      originId: params.input.originPlaceId.slice(0, 16),
+      destinationId: params.input.destinationPlaceId.slice(0, 16),
+      requestFingerprint: fingerprint,
+      outcome: "LIVE",
+      errorCode: null,
+    }).returning();
+    const [evidence] = await tx.insert(navigationRouteEvidence).values({
+      searchRunId: run.id,
+      snapshotId: params.snapshotId,
+      tripId: params.tripId,
+      originPlaceId: params.input.originPlaceId,
+      destinationPlaceId: params.input.destinationPlaceId,
+      mode: params.input.mode as NavigationRouteMode,
+      distanceMeters: routeEvidence.distanceMeters,
+      durationSeconds: routeEvidence.durationSeconds,
+      steps: routeEvidence.steps as unknown as Array<Record<string, unknown>>,
+      encodedGeometry: routeEvidence.encodedGeometry,
+      source: routeEvidence.source,
+      capturedAt: new Date(routeEvidence.capturedAt),
+      refreshAfter: new Date(routeEvidence.refreshAfter),
+    }).returning();
+    await recordAudit({
+      ctx: params.ctx,
+      action: "NAVIGATION_ROUTE_COMPLETED",
+      tripId: params.tripId,
+      summary: {
+        provider: "openrouteservice",
+        outcome: "LIVE",
+        mode: params.input.mode,
+        distanceMeters: routeEvidence.distanceMeters,
+        durationSeconds: routeEvidence.durationSeconds,
+      },
+      tx,
+    });
+    return evidence.id;
+  });
+  const route = summarizeRouteEvidence({
+    id: routeId,
+    searchRunId: routeId,
+    snapshotId: params.snapshotId,
+    tripId: params.tripId,
+    originPlaceId: routeEvidence.originPlaceId,
+    destinationPlaceId: routeEvidence.destinationPlaceId,
+    mode: routeEvidence.mode,
+    distanceMeters: routeEvidence.distanceMeters,
+    durationSeconds: routeEvidence.durationSeconds,
+    steps: routeEvidence.steps,
+    encodedGeometry: routeEvidence.encodedGeometry,
+    source: routeEvidence.source,
+    capturedAt: routeEvidence.capturedAt,
+    refreshAfter: routeEvidence.refreshAfter ?? new Date(Date.now() + NAVIGATION_REFRESH_AFTER_HOURS * 60 * 60 * 1000).toISOString(),
+  });
+  return route;
+}
+
 export async function executeNavigationRoute(params: {
   ctx: RequestContext;
   tripId: string;
@@ -135,10 +293,7 @@ export async function executeNavigationRoute(params: {
   void params.ctx;
   void params.tripId;
   void params.agentTaskRunId;
-  // The provider emits a normalized evidence shape (with encoded geometry);
-  // the service layer returns it as-is and lets the skill decide whether to
-  // persist it. Geometry never enters the model boundary.
-  const result = await params.provider.searchRoute({
+  return params.provider.searchRoute({
     originPlaceId: params.input.originPlaceId,
     destinationPlaceId: params.input.destinationPlaceId,
     mode: params.input.mode,
@@ -146,5 +301,4 @@ export async function executeNavigationRoute(params: {
     runId: params.agentTaskRunId,
     signal: params.signal,
   });
-  return result;
 }

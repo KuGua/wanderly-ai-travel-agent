@@ -665,6 +665,114 @@ export type ServiceGap = z.infer<typeof serviceGapSchema>;
 export type ResearchResultStatus = z.infer<typeof researchResultStatusSchema>;
 export type ResearchResult = z.infer<typeof researchResultSchema>;
 
+// ─── Navigation route evidence (spec §5.2) ─────────────────────────────────
+// Server-authoritative route snapshot. The geometry is bound to the
+// `snapshotId` and only reaches the browser via the snapshot-bound DTO; the
+// raw polyline is never shipped to a third party.
+export const navigationRouteModeSchema = z.enum(["WALK", "DRIVE", "CYCLE"]);
+
+export const navigationRouteStepSchema = z.object({
+  index: z.number().int().nonnegative(),
+  instruction: z.string().min(1).max(512),
+  distanceMeters: z.number().nonnegative(),
+  durationSeconds: z.number().nonnegative(),
+}).strict();
+
+export const routeEvidenceSchema = z.object({
+  id: z.string().uuid(),
+  searchRunId: z.string().uuid(),
+  snapshotId: z.string().uuid(),
+  tripId: z.string().uuid(),
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  mode: navigationRouteModeSchema,
+  distanceMeters: z.number().nonnegative().finite(),
+  durationSeconds: z.number().nonnegative().finite(),
+  steps: z.array(navigationRouteStepSchema).max(64),
+  source: z.string().min(1),
+  capturedAt: z.string().datetime(),
+  refreshAfter: z.string().datetime(),
+}).strict();
+
+export const routeEvidenceListSchema = z.object({
+  tripId: z.string().uuid(),
+  routes: z.array(routeEvidenceSchema),
+}).strict();
+
+export const navigationRouteSearchRequestSchema = z.object({
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  mode: navigationRouteModeSchema,
+}).strict();
+
+export const navigationRouteSearchResponseSchema = z.object({
+  routeId: z.string().uuid(),
+  summary: routeEvidenceSchema.omit({ id: true, searchRunId: true, snapshotId: true, tripId: true, steps: true, refreshAfter: true }).extend({
+    stepCount: z.number().int().nonnegative(),
+  }),
+}).strict();
+
+export type NavigationRouteMode = z.infer<typeof navigationRouteModeSchema>;
+export type NavigationRouteStep = z.infer<typeof navigationRouteStepSchema>;
+export type RouteEvidence = z.infer<typeof routeEvidenceSchema>;
+export type RouteEvidenceList = z.infer<typeof routeEvidenceListSchema>;
+export type NavigationRouteSearchRequest = z.infer<typeof navigationRouteSearchRequestSchema>;
+export type NavigationRouteSearchResponse = z.infer<typeof navigationRouteSearchResponseSchema>;
+
+export const mobilityServiceTypeSchema = z.enum(["TAXI", "TRANSFER", "CHARTER", "RENTAL"]);
+
+export const mobilityOfferSchema = z.object({
+  offerId: z.string().min(1),
+  serviceType: mobilityServiceTypeSchema,
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  passengers: z.number().int().min(1).max(9),
+  departureAt: z.string().datetime({ offset: true }),
+  estimatedPrice: z.number().nonnegative().finite(),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  vehicleClass: z.string().min(1).max(64),
+  estimated: z.literal(true),
+  expiresAt: z.string().datetime({ offset: true }).nullable(),
+  source: z.string().min(1),
+  capturedAt: z.string().datetime({ offset: true }),
+}).strict();
+
+export const mobilityOfferListSchema = z.object({
+  tripId: z.string().uuid(),
+  offers: z.array(mobilityOfferSchema),
+}).strict();
+
+export const mobilitySearchRequestSchema = z.object({
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  passengers: z.number().int().min(1).max(9),
+  departureAt: z.string().datetime({ offset: true }),
+  serviceType: mobilityServiceTypeSchema,
+}).strict();
+
+export const mobilitySearchResponseSchema = z.object({
+  queryId: z.string().uuid(),
+  offers: z.array(mobilityOfferSchema).min(1).max(20),
+}).strict();
+
+export const mobilityOfferSelectionRequestSchema = z.object({
+  offerId: z.string().min(1),
+  queryId: z.string().uuid(),
+}).strict();
+
+export const mobilityOfferSelectionResponseSchema = z.object({
+  selectedOfferId: z.string().min(1),
+  bookingGate: z.enum(["OPEN", "CLOSED"]),
+}).strict();
+
+export type MobilityServiceType = z.infer<typeof mobilityServiceTypeSchema>;
+export type MobilityOffer = z.infer<typeof mobilityOfferSchema>;
+export type MobilityOfferList = z.infer<typeof mobilityOfferListSchema>;
+export type MobilitySearchRequest = z.infer<typeof mobilitySearchRequestSchema>;
+export type MobilitySearchResponse = z.infer<typeof mobilitySearchResponseSchema>;
+export type MobilityOfferSelectionRequest = z.infer<typeof mobilityOfferSelectionRequestSchema>;
+export type MobilityOfferSelectionResponse = z.infer<typeof mobilityOfferSelectionResponseSchema>;
+
 export type TripPlaceKind = z.infer<typeof tripPlaceKindSchema>;
 export type TripPlaceVisibility = z.infer<typeof tripPlaceVisibilitySchema>;
 export type TripPlaceStatus = z.infer<typeof tripPlaceStatusSchema>;
