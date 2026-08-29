@@ -11,7 +11,7 @@ import {
   providerSearchRuns,
   planningResearchResults,
 } from "../db/schema.js";
-import { eq, and, desc, gt } from "drizzle-orm";
+import { eq, and, desc, gt, ne } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { buildAuthorizedData, getActiveConsents } from "./consent-service.js";
 import {
@@ -440,6 +440,22 @@ export function extractSnapshotV2Meta(authorizedData: unknown): SnapshotV2Meta |
 }
 
 /**
+ * The model/Shared Skills must never receive the legacy userId-keyed snapshot
+ * map or the server-only userId→alias lookup. Keep that compatibility shape
+ * available only to deterministic server readers.
+ */
+export function buildPlanningModelProjection(authorizedData: unknown): Record<string, unknown> {
+  const meta = extractSnapshotV2Meta(authorizedData);
+  if (!meta) return {};
+  return {
+    schemaVersion: 2,
+    teamVisible: meta.teamVisible,
+    orchestratorConfidential: meta.orchestratorConfidential,
+    projectionManifest: meta.projectionManifest,
+  };
+}
+
+/**
  * Generate a new plan based on the constraint snapshot.
  *
  * Phase 3 lifecycle:
@@ -542,7 +558,7 @@ export async function generatePlan(params: {
     allGround.push(...groundResult.data);
   }
 
-  const memberPreferences = snapshot.authorizedData;
+  const memberPreferences = buildPlanningModelProjection(snapshot.authorizedData);
   let candidatePlanData: Record<string, unknown>;
   if (params.agentTaskRunId && params.flightSearchPreferencesVersion) {
     const toolGateway = dependencies.modelGateway.generateStructuredPlanWithTools;
@@ -594,7 +610,7 @@ export async function generatePlan(params: {
       ],
       dispatchTool: async (call) => {
         const snapshotContext = {
-          authorizedData: snapshot.authorizedData as Record<string, unknown>,
+          authorizedData: memberPreferences,
           departureCities: snapshot.departureCities as string[],
           destinationCandidates: snapshot.destinationCandidates as string[],
           travelDateStart: snapshot.travelDateStart ?? undefined,
@@ -874,6 +890,7 @@ export async function activateProposedPlan(params: {
       .where(and(
         eq(itineraryPlans.tripId, plan.tripId),
         eq(itineraryPlans.status, "PROPOSED"),
+        ne(itineraryPlans.id, plan.id),
       ));
     const [updated] = await tx.update(itineraryPlans)
       .set({ status: "ACTIVE", supersededAt: null })

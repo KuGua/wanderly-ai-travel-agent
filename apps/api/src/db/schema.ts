@@ -31,7 +31,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "VISA_CHECK",
   "CHAT_THREAD_CREATE", "CHAT_THREAD_DELETE", "CHAT_MESSAGE_APPEND",
   "TRIP_INVITATION_CREATE", "TRIP_INVITATION_ACCEPT",
-  "TRIP_INVITATION_REVOKE", "TRIP_DEFAULT_THREAD_PROVISION",
+  "TRIP_INVITATION_REVOKE", "TRIP_INVITATION_DECLINE", "TRIP_DEFAULT_THREAD_PROVISION",
   "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE", "TRIP_DRAFT_BRIEF_UPDATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
   "FLIGHT_SEARCH_REQUESTED", "FLIGHT_SEARCH_COMPLETED", "FLIGHT_SEARCH_UNAVAILABLE",
@@ -64,7 +64,7 @@ export const auditActionEnum = pgEnum("audit_action", [
 export const chatThreadScopeEnum = pgEnum("chat_thread_scope", ["TRIP"]);
 
 export const tripInvitationStatusEnum = pgEnum("trip_invitation_status", [
-  "PENDING", "ACCEPTED", "REVOKED", "EXPIRED",
+  "PENDING", "ACCEPTED", "DECLINED", "REVOKED", "EXPIRED",
 ]);
 
 // S4 / docs/location-introduction-cache-implementation.md §4.  Shared,
@@ -415,6 +415,7 @@ export const tripInvitations = pgTable("trip_invitations", {
   tokenHash: varchar("token_hash", { length: 128 }).notNull().unique(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  declinedAt: timestamp("declined_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({

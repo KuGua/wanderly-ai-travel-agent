@@ -108,20 +108,23 @@ flowchart LR
 ### FR-2 共享行程工作台与授权
 
 1. 创建者可创建一个共享行程并邀请另外两位测试用户加入。
-2. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
-3. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
-4. 成员更新授权或本次约束时，当前方案标记为过期并触发重算前确认。
-5. Team memory 仅属于当前 Trip。Personal Agent 只可生成待 owner 确认的结构化约束提案，不能自动共享。已确认约束可选择 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL`：后者只供服务端 Shared Agent 编排，不向同行展示具体值或归属，但用户须知方案结果可能间接反映该约束。Shared Agent 只能读取服务端按当前 consent 构建的最小化 memory projection，不能直接读取成员的 Profile、个人长期记忆或私有对话；任何投影来源变更均使依赖方案过期。
+2. 外部邀请入口必须使用不可猜测、一次性的 invitation token，不得以 URL 中的 Trip ID 授权或读取数据。登录且 token 与受邀账号绑定后，才可查看最小行程摘要、必需成员身份与有效期；无效、过期、撤回、已处理或错账号邀请返回同一最小不可用结果。
+3. 受邀人可显式接受或拒绝。接受只创建所需 membership 与私有默认 thread，且必须幂等；拒绝不得创建 membership/thread，并记录独立审计事件。接受后唯一主操作为设置本次共享范围，不得自动授予 consent 或写入 snapshot。
+4. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
+5. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
+6. 成员更新授权或本次约束时，当前方案标记为过期并触发重算前确认。
+7. Team memory 仅属于当前 Trip。Personal Agent 只可生成待 owner 确认的结构化约束提案，不能自动共享。已确认约束可选择 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL`：后者只供服务端 Shared Agent 编排，不向同行展示具体值或归属，但用户须知方案结果可能间接反映该约束。Shared Agent 只能读取服务端按当前 consent 构建的最小化 memory projection，不能直接读取成员的 Profile、个人长期记忆或私有对话；任何投影来源变更均使依赖方案过期。
 
 ### FR-3 端到端行程编排
 
-1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay、Activities 与 Ground typed tools，并将三位成员映射到两个出发地。模型可在 Shared PLAN/REPLAN 中请求 `flight.search`、`activities.search`、`places.search` 与 `navigation.route`；`activities.search` 只接受 snapshot destination、固定 theme 与 locale，日期和 run authority 由服务端注入。地面工具只接受 server-owned destination reference、run-bound place candidate 或当前 Trip 已授权 `placeId`，不得接收模型/浏览器坐标、地址、provider、profile 或 URL。关键词 POI 候选在当前 run 外无效；低置信度或目的地外结果必须标注待确认。Personal Agent 私有聊天不得调用地面 navigation/mobility tool；Personal activities tool-loop 在 owner-scoped streaming boundary 实施前同样不得启用。只有 owner 确认后的结构化 Trip constraint 或显式共享 TripPlace 才能进入后续 Shared snapshot。
+1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay、Activities 与 Ground typed tools，并将三位成员映射到两个出发地。模型可在 Shared PLAN/REPLAN 中请求 `flight.search`、`hotel.search`、`activities.search`、`places.search` 与 `navigation.route`；`hotel.search` 仅接收 snapshot 候选中的 `destinationId`，日期、住客/房间数、币种和住宿偏好必须由服务端从已确认偏好推导；`activities.search` 只接受 snapshot destination、固定 theme 与 locale，日期和 run authority 由服务端注入。地面工具只接受 server-owned destination reference、run-bound place candidate 或当前 Trip 已授权 `placeId`，不得接收模型/浏览器坐标、地址、provider、profile 或 URL。关键词 POI 候选在当前 run 外无效；低置信度或目的地外结果必须标注待确认。Personal Agent 私有聊天不得调用地面 navigation/mobility tool；Personal activities tool-loop 在 owner-scoped streaming boundary 实施前同样不得启用。只有 owner 确认后的结构化 Trip constraint 或显式共享 TripPlace 才能进入后续 Shared snapshot。
 2. 系统必须比较两到三个预设目的地候选，并支持候选目的地下任意两个已授权 POI 的步行、驾车或骑行路线。每项结果显示来源、时间、距离/时长/步骤或价格/币种（适用时）。任一 provider 缺失均不得中止 Agent research：系统返回 `COMPLETED_WITH_GAPS` 与安全 `RESEARCH_UNAVAILABLE` 摘要；只有用户选择的 live commercial offer 才可成为对应确认/booking 的硬门禁。路线不是商业 offer，不能伪造票价或库存。
 3. 每个项目必须显示总价/币种（仅在 provider 同时提供二者时）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。Activities 不得展示或持久化无币种价格、raw provider payload 或 click-off/booking link。
 4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
 5. Planning/replan 运行期间可实时显示安全阶段状态（例如 snapshot、research、validation、persistence），但不得向客户端发送内部推理、原始 prompt、未验证模型输出、未持久化 provider 结果或未授权 snapshot 数据；最终 plan 仅在验证并持久化后展示。
 6. Activities 工具与 Flight 工具相互独立：拥有独立的 typed port、覆盖矩阵、stale 触发器和 evidence 写入；同一 PLAN/REPLAN durable task 内作为并列子阶段，各自拥有独立的并发与失败语义。失败不取消其他 research，但只能形成安全的 `RESEARCH_UNAVAILABLE` 摘要；活动 provider 的 booking link 不得在 MVP 中展示、持久化或透传。
-7. Personal Agent 生成的约束提案必须由 owner 确认后才能进入本次 Shared snapshot；约束区分 HARD 与 SOFT，HARD 冲突必须返回阻塞/调整请求，SOFT 约束只能影响候选排序。
+7. Hotel 首期只提供实时搜索与方案比较，不创建订单、支付或供应商跳转。每个酒店 offer 显示总价、每晚价、来源、采集时间和有效期；税费或强制费用不完整时固定提示“可能另计”。模型可在私有对话询问缺失的房间/住客/币种信息，但仅能创建待用户确认的住宿搜索偏好提案。无 live supplier 数据时为 `RESEARCH_UNAVAILABLE`，不得使用 sandbox、fixture 或模型生成报价。
+8. Personal Agent 生成的约束提案必须由 owner 确认后才能进入本次 Shared snapshot；约束区分 HARD 与 SOFT，HARD 冲突必须返回阻塞/调整请求，SOFT 约束只能影响候选排序。
 
 ### FR-4 签证/入境准备
 

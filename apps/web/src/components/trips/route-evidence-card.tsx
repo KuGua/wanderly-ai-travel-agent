@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useTranslations } from "next-intl";
 import type { NavigationRouteMode, RouteEvidence } from "@/lib/api/contracts";
 
@@ -28,7 +29,8 @@ export function RouteEvidenceCard({ route, originLabel, destinationLabel, onRefr
   const duration = formatSeconds(route.durationSeconds);
   const visibleSteps = route.steps.slice(0, MAX_VISIBLE_STEPS);
   const truncated = route.steps.length - visibleSteps.length;
-  const isStale = new Date(route.refreshAfter).getTime() <= Date.now();
+  const [renderedAt] = useState(Date.now);
+  const isStale = new Date(route.refreshAfter).getTime() <= renderedAt;
   return (
     <article className="wanderly-edge wanderly-r-md wanderly-shadow bg-[var(--w-fog)] p-3 flex flex-col gap-2" aria-busy={busy}>
       <header className="flex items-center justify-between gap-2">

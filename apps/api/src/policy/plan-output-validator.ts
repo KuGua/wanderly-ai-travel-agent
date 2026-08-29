@@ -9,6 +9,7 @@ import type {
 } from "../types/domain.js";
 import { assertFieldAllowed, assertFieldAllowedV2, SnapshotFieldNotAllowedError } from "./snapshot-policy.js";
 import { CONSTRAINT_FIELD_CATALOG, type ConstraintFieldKey } from "./constraint-field-catalog.js";
+import { evaluateHardConstraints } from "./hard-constraint-evaluator.js";
 
 const provenanceFields = {
   source: z.string(),
@@ -115,7 +116,8 @@ export type PlanViolationCode =
   | "EVIDENCE_MISMATCH"
   | "GENERATED_AT_MISMATCH"
   | "CONFIDENTIAL_VALUE_LEAK"
-  | "EXPLANATION_TOKEN_NOT_ALLOWED";
+  | "EXPLANATION_TOKEN_NOT_ALLOWED"
+  | "HARD_CONSTRAINT_UNSATISFIED";
 
 export interface PlanValidationViolation {
   code: PlanViolationCode;
@@ -291,6 +293,10 @@ export function validatePlanOutput(params: {
   validateOfferEvidence({ category: "stays", offers: plan.stays, evidence: params.evidence.stays, violations });
   validateOfferEvidence({ category: "ground", offers: plan.ground, evidence: params.evidence.ground, violations });
   validateOfferEvidence({ category: "activities", offers: plan.activities ?? [], evidence: params.evidence.activities ?? [], violations });
+
+  for (const hardViolation of evaluateHardConstraints({ snapshot: params.snapshot, flights: plan.flights })) {
+    addViolation(violations, hardViolation.code, "constraints", hardViolation.publicReason);
+  }
 
   // Deterministic confidentiality check (spec §6.1):
   //   - confidential values from the snapshot must NEVER appear in the plan JSON;

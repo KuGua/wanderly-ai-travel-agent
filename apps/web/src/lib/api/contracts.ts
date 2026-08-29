@@ -121,6 +121,26 @@ export const tripDetailResponseSchema = z.object({
   members: z.array(tripMemberSchema),
 });
 
+export const invitationPreviewResponseSchema = z.object({
+  trip: z.object({
+    name: z.string().min(1).max(256),
+    destinationCandidates: z.array(z.string().min(1)).max(5),
+    travelDateStart: dateSchema.nullable(),
+    travelDateEnd: dateSchema.nullable(),
+  }).strict(),
+  membership: z.literal("MEMBER"),
+  isRequired: z.literal(true),
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const acceptInvitationResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  membership: z.literal("MEMBER"),
+  defaultThread: z.object({ id: z.string().uuid(), tripId: z.string().uuid(), isDefault: z.literal(true) }).strict(),
+}).strict();
+
+export const declineInvitationResponseSchema = z.object({ declined: z.literal(true) }).strict();
+
 export const conversationPlaceSchema = z.object({
   sourceId: z.string().min(1).max(128).optional(),
   name: z.string().trim().min(1).max(160),
@@ -383,6 +403,9 @@ export type CreateThreadResponse = z.infer<typeof createThreadResponseSchema>;
 export type TripDetail = z.infer<typeof tripDetailSchema>;
 export type TripMember = z.infer<typeof tripMemberSchema>;
 export type TripDetailResponse = z.infer<typeof tripDetailResponseSchema>;
+export type InvitationPreviewResponse = z.infer<typeof invitationPreviewResponseSchema>;
+export type AcceptInvitationResponse = z.infer<typeof acceptInvitationResponseSchema>;
+export type DeclineInvitationResponse = z.infer<typeof declineInvitationResponseSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;
@@ -487,7 +510,10 @@ export const planAdoptionVoteSchema = z.object({
 
 export const adoptionVoteListResponseSchema = z.object({
   planId: z.string().uuid(),
-  votes: z.array(planAdoptionVoteSchema),
+  votesAccepted: z.number().int().nonnegative(),
+  votesRequired: z.number().int().nonnegative(),
+  hasBlocker: z.boolean(),
+  currentUserDecision: z.enum(["ACCEPT", "NEEDS_CHANGES"]).nullable(),
 }).strict();
 
 export const listedPlanSchema = z.object({

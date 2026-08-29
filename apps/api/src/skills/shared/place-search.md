@@ -1,5 +1,5 @@
 ---
-name: shared.places.search
+name: places.search
 source-of-truth: ./place-search-skill.ts
 agent: shared
 status: stable
@@ -19,7 +19,7 @@ coordinates, provider name, or raw URLs.
 | `name` | `places.search` | constant |
 | `agent` | `shared` | constant |
 | `version` | `1.0.0` | constant |
-| `allowedTools` | `["snapshot:read", "places:search"]` | `skill.allowedTools` |
+| `allowedTools` | `"snapshot:read"`, `"places:search"` | `skill.allowedTools` |
 | `timeoutMs` | `8000` | per-call upstream deadline |
 | `needsConfirm` | `false` | no booking authority |
 

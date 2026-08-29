@@ -34,7 +34,7 @@ type AgentKind = "personal" | "shared" | "review" | "public-content";
 Determines which scopes a Skill may declare (see [§Allowed tools](#allowed-tools))
 and which default policy applies at invocation time.
 
-### `SkillScope` (`contracts.ts:7-14`)
+### `SkillScope` (`contracts.ts:7-18`)
 
 The 14-element union every Skill's `allowedTools` is constrained to:
 

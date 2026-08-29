@@ -1,5 +1,5 @@
 ---
-name: shared.navigation.route
+name: navigation.route
 source-of-truth: ./navigation-route-skill.ts
 agent: shared
 status: stable
@@ -20,7 +20,7 @@ current-trip place table.
 | `name` | `navigation.route` | constant |
 | `agent` | `shared` | constant |
 | `version` | `1.0.0` | constant |
-| `allowedTools` | `["snapshot:read", "navigation:route"]` | `skill.allowedTools` |
+| `allowedTools` | `"snapshot:read"`, `"navigation:route"` | `skill.allowedTools` |
 | `timeoutMs` | `10000` | per-call upstream deadline |
 | `needsConfirm` | `false` | route is informational, no booking authority |
 

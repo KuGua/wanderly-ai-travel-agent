@@ -1,5 +1,5 @@
 ---
-name: shared.mobility.search
+name: mobility.search
 source-of-truth: ./mobility-search-skill.ts
 agent: shared
 status: stable
@@ -21,7 +21,7 @@ carries booking authority.
 | `name` | `mobility.search` | constant |
 | `agent` | `shared` | constant |
 | `version` | `1.0.0` | constant |
-| `allowedTools` | `["snapshot:read", "mobility:search"]` | `skill.allowedTools` |
+| `allowedTools` | `"snapshot:read"`, `"mobility:search"` | `skill.allowedTools` |
 | `timeoutMs` | `10000` | per-call upstream deadline |
 | `needsConfirm` | `false` | selection is a downstream action |
 

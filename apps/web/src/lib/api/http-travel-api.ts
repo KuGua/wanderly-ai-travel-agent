@@ -18,6 +18,9 @@ import {
   updateDraftTripBriefInputSchema,
   updateDraftTripBriefResponseSchema,
   tripDetailResponseSchema,
+  invitationPreviewResponseSchema,
+  acceptInvitationResponseSchema,
+  declineInvitationResponseSchema,
   tripsResponseSchema,
   threadsResponseSchema,
   updateProfileInputSchema,
@@ -95,6 +98,18 @@ export class HttpTravelApi implements TravelApi {
 
   getTrip(tripId: string) {
     return this.client.request("/trips/" + encodeURIComponent(tripId), tripDetailResponseSchema);
+  }
+
+  getInvitationPreview(inviteToken: string) {
+    return this.client.request("/trip-invitations/" + encodeURIComponent(inviteToken), invitationPreviewResponseSchema);
+  }
+
+  acceptInvitation(inviteToken: string) {
+    return this.client.request("/trip-invitations/" + encodeURIComponent(inviteToken) + "/accept", acceptInvitationResponseSchema, { method: "POST" });
+  }
+
+  declineInvitation(inviteToken: string) {
+    return this.client.request("/trip-invitations/" + encodeURIComponent(inviteToken) + "/decline", declineInvitationResponseSchema, { method: "POST" });
   }
 
   getLocationReference(input: import("./contracts").LocationReferenceInput) {

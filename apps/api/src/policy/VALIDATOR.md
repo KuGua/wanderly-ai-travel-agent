@@ -88,6 +88,7 @@ interface PlanViolation {
 | `GENERATED_AT_MISMATCH` | `plan.generatedAt` does not equal the latest `capturedAt` across all selected offers. |
 | `DESTINATION_CANDIDATES_INCOMPLETE` | Spec §6.1 — `plan.destinationCandidatesEvaluated` does not cover every entry in `snapshot.destinationCandidates`, or names a destination not in the snapshot. |
 | `CONFIDENTIAL_VALUE_LEAK` | Spec §6.1 — `assertConfidentialFree` found a confidential value or field-key reference in the plan JSON. |
+| `HARD_CONSTRAINT_UNSATISFIED` | Deterministic evidence-backed evaluator rejected a selected offer; the message is a safe public token and never contains the protected value. |
 | `EXPLANATION_TOKEN_NOT_ALLOWED` | Spec §6.1 — `plan.publicExplanationTokens` contains a token not on the safe allow-list derived from the v2 snapshot projection. |
 
 ## `validatePlanOutput` signature and behaviour

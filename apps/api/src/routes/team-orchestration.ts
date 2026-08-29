@@ -19,7 +19,7 @@ import {
 } from "../services/constraint-proposal-service.js";
 import {
   castVote,
-  listVotesForPlan,
+  getVoteSummary,
   PlanAdoptionServiceError,
 } from "../services/plan-adoption-service.js";
 import { listTripPlans } from "../services/plan-listing-service.js";
@@ -30,7 +30,6 @@ import {
   castAdoptionVoteRequestSchema,
   tripConstraintProposalSchema,
   tripConstraintFactSchema,
-  planAdoptionVoteSchema,
   uuidSchema,
 } from "../types/schemas.js";
 
@@ -39,7 +38,7 @@ const proposalIdParamsSchema = z.object({ tripId: uuidSchema, proposalId: uuidSc
 const factIdParamsSchema = z.object({ tripId: uuidSchema, factId: uuidSchema }).strict();
 const planIdParamsSchema = z.object({ planId: uuidSchema }).strict();
 
-const idempotencyHeaderSchema = z.string().regex(/^[A-Za-z0-9:_-]{1,256}$/).optional();
+const idempotencyHeaderSchema = z.string().uuid();
 
 const tripConstraintProposalsListResponseSchema = z.object({
   tripId: uuidSchema,
@@ -65,7 +64,10 @@ const adoptionVoteResponseSchema = z.object({
 
 const adoptionVoteListResponseSchema = z.object({
   planId: uuidSchema,
-  votes: z.array(planAdoptionVoteSchema),
+  votesAccepted: z.number().int().nonnegative(),
+  votesRequired: z.number().int().nonnegative(),
+  hasBlocker: z.boolean(),
+  currentUserDecision: z.enum(["ACCEPT", "NEEDS_CHANGES"]).nullable(),
 }).strict();
 
 const listedPlanSchema = z.object({
@@ -126,9 +128,9 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
           valueJson: body.valueJson,
           strength: body.proposedStrength,
           proposedVisibility: body.proposedVisibility,
-          sourceKind: body.sourceKind,
+          sourceKind: "OWNER_FORM",
         },
-        idempotencyKey: idempotencyKey ?? `client-${Date.now()}`,
+        idempotencyKey,
       });
       return { proposalId };
     } catch (err) {
@@ -176,7 +178,7 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
       const out = await confirmConstraintProposal({
         ctx, tripId, proposalId, ownerUserId: request.user.id,
         visibility: body.visibility, strength: body.strength,
-        idempotencyKey: idempotencyKey ?? `client-${Date.now()}`,
+        idempotencyKey,
       });
       return out;
     } catch (err) {
@@ -196,7 +198,7 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
     try {
       await dismissConstraintProposal({
         ctx, tripId, proposalId, ownerUserId: request.user.id,
-        idempotencyKey: idempotencyKey ?? `client-${Date.now()}`,
+        idempotencyKey,
       });
       return { dismissed: true, proposalId };
     } catch (err) {
@@ -213,15 +215,14 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
     const ctx = buildCtx(request, request.user.id);
     const idempotencyKey = idempotencyHeaderSchema.parse(request.headers["idempotency-key"]);
     const body = upsertTripConstraintFactRequestSchema.parse(request.body);
-    void factId;
     await requireActiveTrip(tripId, "constraint_upsert");
     try {
       const out = await upsertConstraintFactDirect({
-        ctx, tripId, ownerUserId: request.user.id,
+        ctx, tripId, factId, ownerUserId: request.user.id,
         fieldKey: body.fieldKey, valueJson: body.valueJson,
         visibility: body.visibility, strength: body.strength,
         expectedRevision: body.expectedRevision,
-        idempotencyKey: idempotencyKey ?? `client-${Date.now()}`,
+        idempotencyKey,
       });
       return out;
     } catch (err) {
@@ -241,7 +242,7 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
     try {
       const out = await revokeConstraintFact({
         ctx, tripId, factId, ownerUserId: request.user.id,
-        idempotencyKey: idempotencyKey ?? `client-${Date.now()}`,
+        idempotencyKey,
       });
       return out;
     } catch (err) {
@@ -290,7 +291,7 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
       const out = await castVote({
         ctx, planId, userId: request.user.id,
         decision: body.decision,
-        idempotencyKey: idempotencyKey ?? `client-${Date.now()}`,
+        idempotencyKey,
       });
       return adoptionVoteResponseSchema.parse({
         planId, outcome: out.outcome, votesAccepted: out.votesAccepted, votesRequired: out.votesRequired,
@@ -306,7 +307,7 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
   // ─── GET /plans/:planId/adoption-votes ────────────────────────────────────
   app.get("/plans/:planId/adoption-votes", async (request) => {
     const { planId } = planIdParamsSchema.parse(request.params);
-    const result = await listVotesForPlan({ planId });
+    const result = await getVoteSummary({ planId, userId: request.user.id });
     return adoptionVoteListResponseSchema.parse(result);
   });
 }

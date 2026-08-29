@@ -33,7 +33,7 @@ export function MobilityPanel({ offers, onSelect, onDismiss, busy = false }: Mob
         <h3 className="text-sm font-semibold">{t("title")}</h3>
         <span className="text-[10px] text-[var(--w-muted)]">{t("attribution")}</span>
       </header>
-      <div className="flex flex-wrap gap-1" role="tablist" aria-label={t("filter")}>
+      <div className="flex flex-wrap gap-1" role="tablist" aria-label={t("title")}>
         {(["ALL", ...SERVICE_TYPES] as const).map((key) => (
           <button
             key={key}
@@ -74,7 +74,10 @@ function MobilityOfferRow({
   busy: boolean;
 }) {
   const t = useTranslations("trips.workspace.mobility");
-  const isExpired = offer.expiresAt ? new Date(offer.expiresAt).getTime() <= Date.now() : false;
+  const [renderedAt] = useState(Date.now);
+  const isExpired = offer.expiresAt
+    ? new Date(offer.expiresAt).getTime() <= renderedAt
+    : false;
   return (
     <article className="wanderly-edge wanderly-r-sm wanderly-shadow-sm bg-card p-2 flex flex-col gap-1">
       <header className="flex items-center justify-between gap-2">

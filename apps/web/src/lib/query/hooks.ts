@@ -23,7 +23,7 @@ import type {
   MobilityOfferSelectionRequest,
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
-import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys } from "./keys";
+import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys, invitationKeys } from "./keys";
 
 export function useMyProfile() {
   const api = useTravelApi();
@@ -49,6 +49,30 @@ export function useTrip(tripId: string | null) {
     enabled: Boolean(tripId),
     retry: false,
   });
+}
+
+export function useInvitationPreview(inviteToken: string | null) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: invitationKeys.preview(inviteToken ?? "none"),
+    queryFn: () => api.getInvitationPreview!(inviteToken as string),
+    enabled: Boolean(inviteToken) && !!api.getInvitationPreview,
+    retry: false,
+  });
+}
+
+export function useAcceptInvitation() {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (inviteToken: string) => api.acceptInvitation!(inviteToken),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: tripKeys.all }); },
+  });
+}
+
+export function useDeclineInvitation() {
+  const api = useTravelApi();
+  return useMutation({ mutationFn: (inviteToken: string) => api.declineInvitation!(inviteToken) });
 }
 
 export function useTripThreads(tripId: string | null) {

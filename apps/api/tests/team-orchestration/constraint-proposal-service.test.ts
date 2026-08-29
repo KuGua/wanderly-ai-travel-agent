@@ -17,6 +17,10 @@ import {
   itineraryPlans,
   tripConstraintProposals,
   tripConstraintFacts,
+  tripSearchPreferences,
+  consentGrants,
+  agentTaskRuns,
+  constraintSnapshots,
   users,
 } from "../../src/db/schema.js";
 import {
@@ -38,23 +42,38 @@ beforeAll(async () => {
 });
 
 async function cleanup(tripId: string): Promise<void> {
+  await db.delete(agentTaskRuns).where(eq(agentTaskRuns.tripId, tripId));
   await db.delete(itineraryPlans).where(eq(itineraryPlans.tripId, tripId));
+  await db.delete(constraintSnapshots).where(eq(constraintSnapshots.tripId, tripId));
+  await db.delete(tripSearchPreferences).where(eq(tripSearchPreferences.tripId, tripId));
+  await db.delete(consentGrants).where(eq(consentGrants.tripId, tripId));
   await db.delete(tripConstraintFacts).where(eq(tripConstraintFacts.tripId, tripId));
   await db.delete(tripConstraintProposals).where(eq(tripConstraintProposals.tripId, tripId));
 }
 
+async function prepareReplanPrerequisites(tripId: string, userId: string): Promise<void> {
+  await db.insert(tripSearchPreferences).values({
+    tripId, version: 1, tripType: "ROUND_TRIP", currency: "USD", adults: 1,
+    cabin: "ECONOMY", offerFreshnessMinutes: 30, confirmedBy: userId,
+  });
+  await db.insert(consentGrants).values({
+    tripId, userId, scope: "PROFILE_BUDGET", fieldList: ["budget_max"], granted: true,
+  });
+}
+
 describe("constraint-proposal-service", () => {
-  it("proposes and confirms a budget fact with confidential visibility", async () => {
+  it("proposes and confirms a confidential SOFT budget fact", async () => {
     const owner = alice.id;
     const { tripId } = await provisionTripAndMember({ ownerUserId: owner });
     try {
+      await prepareReplanPrerequisites(tripId, owner);
       const ctx = createRequestContext(owner);
       const { proposalId } = await proposeConstraint({
         ctx, tripId, ownerUserId: owner,
         envelope: {
           fieldKey: "budget_max",
           valueJson: { amountUsd: 2500 },
-          strength: "HARD",
+          strength: "SOFT",
           proposedVisibility: "ORCHESTRATOR_CONFIDENTIAL",
           sourceKind: "OWNER_FORM",
         },
@@ -65,11 +84,15 @@ describe("constraint-proposal-service", () => {
       const out = await confirmConstraintProposal({
         ctx, tripId, proposalId, ownerUserId: owner,
         visibility: "ORCHESTRATOR_CONFIDENTIAL",
-        strength: "HARD",
+        strength: "SOFT",
         idempotencyKey: `confirm-${tripId}-1`,
       });
       expect(out.factId).toBeTruthy();
       expect(out.proposalId).toBe(proposalId);
+      expect(out.replan?.runId).toBeTruthy();
+      const [run] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, out.replan!.runId));
+      expect(run?.status).toBe("QUEUED");
+      expect(run?.snapshotId).toBeTruthy();
 
       const ownerFacts = await listFactsForOwner({ tripId, ownerUserId: owner });
       expect(ownerFacts.find(f => f.fieldKey === "budget_max" && f.visibility === "ORCHESTRATOR_CONFIDENTIAL")).toBeTruthy();
@@ -85,6 +108,7 @@ describe("constraint-proposal-service", () => {
     const owner = alice.id;
     const { tripId } = await provisionTripAndMember({ ownerUserId: owner });
     try {
+      await prepareReplanPrerequisites(tripId, owner);
       const ctx = createRequestContext(owner);
       const { proposalId } = await proposeConstraint({
         ctx, tripId, ownerUserId: owner,
@@ -124,6 +148,7 @@ describe("constraint-proposal-service", () => {
     const owner = alice.id;
     const { tripId } = await provisionTripAndMember({ ownerUserId: owner });
     try {
+      await prepareReplanPrerequisites(tripId, owner);
       const ctx = createRequestContext(owner);
       const seed = await proposeConstraint({
         ctx, tripId, ownerUserId: owner,
