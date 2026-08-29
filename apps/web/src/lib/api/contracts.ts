@@ -391,3 +391,160 @@ export type ConversationTurnAcceptedResponse = z.infer<typeof conversationTurnAc
 export type OwnerConversationResponse = z.infer<typeof ownerConversationResponseSchema>;
 export type AgentRun = z.infer<typeof agentRunResponseSchema>;
 export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
+
+// ─── Team Agent 协作编排 Phase 5 Zod schemas ────────────────────────────────
+
+export const constraintVisibilitySchema = z.enum(["TEAM_VISIBLE", "ORCHESTRATOR_CONFIDENTIAL"]);
+export const constraintStrengthSchema = z.enum(["HARD", "SOFT"]);
+export const constraintProposalStatusSchema = z.enum(["PENDING", "CONFIRMED", "DISMISSED", "REVOKED"]);
+export const planAdoptionDecisionSchema = z.enum(["ACCEPT", "NEEDS_CHANGES"]);
+export const constraintProposalSourceKindSchema = z.enum(["PERSONAL_AGENT", "OWNER_FORM"]);
+
+export const tripConstraintProposalSchema = z.object({
+  id: z.string().uuid(),
+  tripId: z.string().uuid(),
+  ownerUserId: z.string().uuid(),
+  fieldKey: z.string().min(1),
+  valueJson: z.unknown(),
+  strength: constraintStrengthSchema,
+  proposedVisibility: constraintVisibilitySchema,
+  sourceKind: constraintProposalSourceKindSchema,
+  status: constraintProposalStatusSchema,
+  createdAt: z.string().datetime(),
+  resolvedAt: z.string().datetime().nullable(),
+}).strict();
+
+export const tripConstraintFactSchema = z.object({
+  id: z.string().uuid(),
+  tripId: z.string().uuid(),
+  ownerUserId: z.string().uuid(),
+  fieldKey: z.string().min(1),
+  valueJson: z.unknown(),
+  strength: constraintStrengthSchema,
+  visibility: constraintVisibilitySchema,
+  revision: z.number().int().positive(),
+  sourceProposalId: z.string().uuid().nullable(),
+  status: z.enum(["ACTIVE", "SUPERSEDED", "REVOKED"]),
+  createdAt: z.string().datetime(),
+  supersededAt: z.string().datetime().nullable(),
+  revokedAt: z.string().datetime().nullable(),
+}).strict();
+
+export const tripConstraintsResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  teamVisibleFacts: z.array(tripConstraintFactSchema),
+}).strict();
+
+export const tripConstraintsOwnerResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  allFacts: z.array(tripConstraintFactSchema),
+}).strict();
+
+export const tripConstraintProposalsResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  proposals: z.array(tripConstraintProposalSchema),
+}).strict();
+
+export const createTripConstraintProposalRequestSchema = z.object({
+  fieldKey: z.string().min(1).max(64),
+  valueJson: z.unknown(),
+  proposedVisibility: constraintVisibilitySchema,
+  proposedStrength: constraintStrengthSchema,
+  sourceKind: constraintProposalSourceKindSchema.optional(),
+}).strict();
+
+export const confirmTripConstraintProposalRequestSchema = z.object({
+  visibility: constraintVisibilitySchema,
+  strength: constraintStrengthSchema,
+}).strict();
+
+export const upsertTripConstraintFactRequestSchema = z.object({
+  fieldKey: z.string().min(1).max(64),
+  valueJson: z.unknown(),
+  visibility: constraintVisibilitySchema,
+  strength: constraintStrengthSchema,
+  expectedRevision: z.number().int().positive().optional(),
+}).strict();
+
+export const castAdoptionVoteRequestSchema = z.object({
+  decision: planAdoptionDecisionSchema,
+}).strict();
+
+export const adoptionVoteResponseSchema = z.object({
+  planId: z.string().uuid(),
+  outcome: z.enum(["CAST", "ADOPTED", "BLOCKED"]),
+  votesAccepted: z.number().int().nonnegative(),
+  votesRequired: z.number().int().nonnegative(),
+}).strict();
+
+export const planAdoptionVoteSchema = z.object({
+  planId: z.string().uuid(),
+  userId: z.string().uuid(),
+  decision: planAdoptionDecisionSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+
+export const adoptionVoteListResponseSchema = z.object({
+  planId: z.string().uuid(),
+  votes: z.array(planAdoptionVoteSchema),
+}).strict();
+
+export const listedPlanSchema = z.object({
+  id: z.string().uuid(),
+  version: z.number().int().nonnegative(),
+  status: z.enum(["DRAFT", "ACTIVE", "PROPOSED", "STALE", "SUPERSEDED"]),
+  snapshotId: z.string().uuid(),
+  generatedAt: z.string().datetime(),
+  destination: z.string(),
+  destinationCandidatesEvaluated: z.array(z.string()),
+  replacedByPlanId: z.string().uuid().nullable(),
+  staleReason: z.string().nullable(),
+  planData: z.record(z.string(), z.unknown()),
+}).strict();
+
+export const tripPlansListResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  proposed: z.array(listedPlanSchema),
+  active: z.array(listedPlanSchema),
+  stale: z.array(listedPlanSchema),
+}).strict();
+
+export const confirmProposalResponseSchema = z.object({
+  factId: z.string().uuid(),
+  proposalId: z.string().uuid(),
+  replan: z.object({
+    runId: z.string().uuid(),
+    queuedAt: z.string().datetime(),
+  }).nullable(),
+}).strict();
+
+export const upsertFactResponseSchema = z.object({
+  factId: z.string().uuid(),
+  replan: z.object({
+    runId: z.string().uuid(),
+    queuedAt: z.string().datetime(),
+  }).nullable(),
+}).strict();
+
+export type ConstraintVisibility = z.infer<typeof constraintVisibilitySchema>;
+export type ConstraintStrength = z.infer<typeof constraintStrengthSchema>;
+export type ConstraintProposalStatus = z.infer<typeof constraintProposalStatusSchema>;
+export type PlanAdoptionDecision = z.infer<typeof planAdoptionDecisionSchema>;
+export type ConstraintProposalSourceKind = z.infer<typeof constraintProposalSourceKindSchema>;
+export type TripConstraintProposal = z.infer<typeof tripConstraintProposalSchema>;
+export type TripConstraintFact = z.infer<typeof tripConstraintFactSchema>;
+export type TripConstraintsResponse = z.infer<typeof tripConstraintsResponseSchema>;
+export type TripConstraintsOwnerResponse = z.infer<typeof tripConstraintsOwnerResponseSchema>;
+export type TripConstraintProposalsResponse = z.infer<typeof tripConstraintProposalsResponseSchema>;
+export type CreateTripConstraintProposalRequest = z.infer<typeof createTripConstraintProposalRequestSchema>;
+export type ConfirmTripConstraintProposalRequest = z.infer<typeof confirmTripConstraintProposalRequestSchema>;
+export type UpsertTripConstraintFactRequest = z.infer<typeof upsertTripConstraintFactRequestSchema>;
+export type CastAdoptionVoteRequest = z.infer<typeof castAdoptionVoteRequestSchema>;
+export type AdoptionVoteResponse = z.infer<typeof adoptionVoteResponseSchema>;
+export type PlanAdoptionVote = z.infer<typeof planAdoptionVoteSchema>;
+export type AdoptionVoteListResponse = z.infer<typeof adoptionVoteListResponseSchema>;
+export type ListedPlan = z.infer<typeof listedPlanSchema>;
+export type TripPlansListResponse = z.infer<typeof tripPlansListResponseSchema>;
+export type ConfirmProposalResponse = z.infer<typeof confirmProposalResponseSchema>;
+export type UpsertFactResponse = z.infer<typeof upsertFactResponseSchema>;

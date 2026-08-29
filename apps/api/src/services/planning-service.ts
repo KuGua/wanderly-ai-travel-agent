@@ -1,7 +1,23 @@
 import { db } from "../db/database.js";
-import { constraintSnapshots, itineraryPlans, sourceEvidence, providerOffers, agentTaskRuns, tripSearchPreferences } from "../db/schema.js";
+import {
+  constraintSnapshots,
+  itineraryPlans,
+  sourceEvidence,
+  providerOffers,
+  agentTaskRuns,
+  tripSearchPreferences,
+  tripConstraintFacts,
+  tripMembers,
+  providerSearchRuns,
+} from "../db/schema.js";
 import { eq, and, desc, gt } from "drizzle-orm";
-import { buildAuthorizedData } from "./consent-service.js";
+import { randomUUID } from "node:crypto";
+import { buildAuthorizedData, getActiveConsents } from "./consent-service.js";
+import {
+  buildMemoryProjection,
+  type MemoryProjectionInput,
+} from "./memory-projection-builder.js";
+import { safePublicExplanationTokensFor } from "../policy/constraint-field-catalog.js";
 import { createTravelProviders } from "../providers/live-provider-factory.js";
 import { modelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
@@ -58,6 +74,119 @@ export class PlanningDataUnavailableError extends Error {
 }
 
 /**
+ * Per-destination coverage bundle returned by `researchCoverageForSnapshot`.
+ * `missingDestinations` is the canonical allow-list surface to detect gaps
+ * (spec §6.1, §10.6); an empty array means full coverage.
+ */
+export interface CoverageResearchResult {
+  allFlights: FlightOffer[];
+  allStays: StayOffer[];
+  allGround: GroundOffer[];
+  evaluatedDestinations: string[];
+  missingDestinations: string[];
+}
+
+/**
+ * Spec §6.1 / §10.6 — research coverage matrix.
+ *
+ * Iterates the full cartesian of `{origin ∈ departureCities} × {destination ∈ destinationCandidates}`,
+ * plus one stay/ground query per destination. UNAVAILABLE outcomes are persisted
+ * as `provider_search_runs` rows and contribute to `missingDestinations`. The
+ * handler uses the result to gate `generatePlan` — never running the model until
+ * every configured candidate has either LIVE or UNAVAILABLE coverage.
+ *
+ * Concurrency: `Promise.allSettled` here is safe; providers are isolated and
+ * per-cell deadlines are not enforced at this layer. Production deployment
+ * should wrap with a bounded concurrency pool (Phase 6 hardening).
+ */
+export async function researchCoverageForSnapshot(params: {
+  snapshotId: string;
+  agentTaskRunId?: string;
+  departureCities: string[];
+  destinationCandidates: string[];
+  travelDateStart: string;
+  travelDateEnd: string;
+  signal?: AbortSignal;
+  providerOverride?: PlanningDependencies;
+}): Promise<CoverageResearchResult> {
+  if (params.destinationCandidates.length === 0) {
+    throw new PlanningDataUnavailableError(["destination_candidates_empty"]);
+  }
+  const deps = params.providerOverride ?? resolvePlanningDependencies();
+  const allFlights: FlightOffer[] = [];
+  const allStays: StayOffer[] = [];
+  const allGround: GroundOffer[] = [];
+  const evaluatedDestinations = new Set<string>();
+  const missingDestinations = new Set<string>();
+
+  // Decoupled origin × destination fan-out for flights.
+  const flightSettlements = await Promise.allSettled(
+    params.departureCities.flatMap((origin) =>
+      params.destinationCandidates.map((destination) => (async () => {
+        const result = await deps.flightProvider.searchFlights({
+          origin,
+          destination,
+          dateStart: params.travelDateStart,
+          dateEnd: params.travelDateEnd,
+          snapshotId: params.snapshotId,
+        });
+        if (result.outcome === "UNAVAILABLE") {
+          if (params.agentTaskRunId) {
+            await db.insert(providerSearchRuns).values({
+              snapshotId: params.snapshotId,
+              agentTaskRunId: params.agentTaskRunId,
+              category: "flight",
+              providerName: (result as { source?: string }).source ?? "flight",
+              originId: origin.slice(0, 16),
+              destinationId: destination.slice(0, 16),
+              requestFingerprint: randomUUID(),
+              outcome: "UNAVAILABLE",
+              errorCode: null,
+            });
+          }
+          return; // UNAVAILABLE → not added to flights, recorded as missing
+        }
+        evaluatedDestinations.add(destination);
+        allFlights.push(...result.data);
+      })()),
+    ),
+  );
+  if (params.signal?.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
+  void flightSettlements;
+
+  // Destination-scoped stay + ground queries.
+  const stayGroundSettlements = await Promise.allSettled(
+    params.destinationCandidates.map(async (destination) => {
+      const stayResult = await deps.stayProvider.searchStays({
+        destination,
+        checkIn: params.travelDateStart,
+        checkOut: params.travelDateEnd,
+        snapshotId: params.snapshotId,
+      });
+      const groundResult = await deps.groundProvider.searchGround({
+        destination,
+        snapshotId: params.snapshotId,
+      });
+      const stayLive = stayResult.outcome === "LIVE";
+      const groundLive = groundResult.outcome === "LIVE";
+      if (stayLive) allStays.push(...stayResult.data);
+      if (groundLive) allGround.push(...groundResult.data);
+      if (!stayLive || !groundLive) missingDestinations.add(destination);
+      else evaluatedDestinations.add(destination);
+    }),
+  );
+  void stayGroundSettlements;
+
+  return {
+    allFlights,
+    allStays,
+    allGround,
+    evaluatedDestinations: [...evaluatedDestinations],
+    missingDestinations: [...missingDestinations],
+  };
+}
+
+/**
  * Completeness gate for provider-backed planning.
  * An empty provider result is an explicit failure, never implicit inventory.
  */
@@ -81,7 +210,14 @@ export function validateProviderCoverage(params: {
 
 /**
  * Create a new constraint snapshot for a planning round.
- * Captures authorized data for all members at this point in time.
+ *
+ * Phase 3+ writes the v2 projection produced by `MemoryProjectionBuilder`:
+ *  - `authorized_data` carries `{ schemaVersion: 2, teamVisible, orchestratorConfidential, projectionManifest }`
+ *  - the v1 reader remains valid for legacy snapshots (compat shim in
+ *    `snapshot-policy.ts#assertFieldAllowed`).
+ *
+ * Caller must already be inside a transaction if they need atomic snapshot + plan
+ * writes. Outside callers use a default `db.transaction` wrapper.
  */
 export async function createConstraintSnapshot(params: {
   tripId: string;
@@ -90,36 +226,173 @@ export async function createConstraintSnapshot(params: {
   destinationCandidates: string[];
   travelDateStart?: string;
   travelDateEnd?: string;
+  /** Override salt for run-scoped aliases (used only by tests). */
+  aliasSalt?: string;
+  tx?: Parameters<Parameters<typeof db.transaction>[0]>[0];
 }): Promise<string> {
-  // Get current version for this trip
-  const existing = await db.select().from(constraintSnapshots)
-    .where(eq(constraintSnapshots.tripId, params.tripId))
-    .orderBy(constraintSnapshots.version);
-  
-  const nextVersion = existing.length > 0 ? Math.max(...existing.map(s => s.version)) + 1 : 1;
+  const run = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
+    const existing = await tx.select({ version: constraintSnapshots.version })
+      .from(constraintSnapshots)
+      .where(eq(constraintSnapshots.tripId, params.tripId))
+      .orderBy(desc(constraintSnapshots.version));
+    const nextVersion = existing.length > 0 ? existing[0].version + 1 : 1;
 
-  // Build authorized data for each member
-  const authorizedData: Record<string, unknown> = {};
-  for (const memberId of params.memberIds) {
-    authorizedData[memberId] = await buildAuthorizedData({ tripId: params.tripId, userId: memberId });
+    // Pull active consents per member.
+    const consentRows = await Promise.all(params.memberIds.map(async (memberId) => ({
+      memberId,
+      consents: await getActiveConsents({ tripId: params.tripId, userId: memberId }),
+    })));
+    const consents = consentRows.flatMap(({ memberId, consents: memberConsents }) =>
+      memberConsents.flatMap((scope) => scope.fieldList.map((fieldKey) => ({
+        userId: memberId,
+        scope: scope.scope as
+          | "PROFILE_BASIC" | "PROFILE_PREFERENCES" | "PROFILE_NATIONALITY"
+          | "PROFILE_DOCUMENTS" | "PROFILE_BUDGET" | "PROFILE_RESTRICTIONS",
+        fieldKey,
+      }))),
+    );
+
+    // Pull active trip facts for the trip (any owner).
+    const factRows = await tx.select({
+      id: tripConstraintFacts.id,
+      ownerUserId: tripConstraintFacts.ownerUserId,
+      fieldKey: tripConstraintFacts.fieldKey,
+      valueJson: tripConstraintFacts.valueJson,
+      strength: tripConstraintFacts.strength,
+      visibility: tripConstraintFacts.visibility,
+      revision: tripConstraintFacts.revision,
+    }).from(tripConstraintFacts).where(and(
+      eq(tripConstraintFacts.tripId, params.tripId),
+      eq(tripConstraintFacts.status, "ACTIVE"),
+    ));
+
+    const memberIdsResolved = params.memberIds.length > 0
+      ? params.memberIds
+      : (await tx.select({ userId: tripMembers.userId })
+        .from(tripMembers)
+        .where(eq(tripMembers.tripId, params.tripId)))
+        .map((m) => m.userId);
+
+    const projectionInput: MemoryProjectionInput = {
+      tripId: params.tripId,
+      memberUserIds: memberIdsResolved,
+      consents: consents.map((c) => ({
+        userId: c.userId,
+        scope: c.scope,
+        fieldList: [c.fieldKey],
+      })),
+      tripConstraintFacts: factRows.map((f) => ({
+        ownerUserId: f.ownerUserId,
+        fieldKey: f.fieldKey,
+        valueJson: f.valueJson,
+        strength: f.strength,
+        visibility: f.visibility,
+        revision: f.revision,
+        id: f.id,
+      })),
+      departureCities: params.departureCities,
+      destinationCandidates: params.destinationCandidates,
+      travelDateStart: params.travelDateStart,
+      travelDateEnd: params.travelDateEnd,
+    };
+
+    const projected = buildMemoryProjection(projectionInput);
+
+    // v1 back-compat map: userId → consent-granted fields.
+    const v1Shape: Record<string, unknown> = {};
+    for (const memberId of memberIdsResolved) {
+      v1Shape[memberId] = await buildAuthorizedData({ tripId: params.tripId, userId: memberId });
+    }
+
+    // Build a server-internal safePublicExplanationTokens union across all
+    // fields referenced by active facts (so the validator allow-list is
+    // exactly what was in-scope for this round).
+    const referencedFieldKeys = new Set<string>();
+    for (const fact of factRows) referencedFieldKeys.add(fact.fieldKey);
+    const allowedExplanation = new Set<string>();
+    for (const fieldKey of referencedFieldKeys) {
+      for (const token of safePublicExplanationTokensFor(fieldKey as never)) {
+        allowedExplanation.add(token);
+      }
+    }
+    void allowedExplanation;
+
+    // Single JSONB blob keeps v1 shape at top-level (for legacy readers) and
+    // v2 privileged sections under `_meta`. The reserved key `_meta` never
+    // collides with userId UUIDs.
+    const authorizedData: Record<string, unknown> = {
+      ...v1Shape,
+      _meta: {
+        schemaVersion: 2,
+        memberAliases: projected.snapshot.memberAliases,
+        teamVisible: projected.snapshot.teamVisible,
+        orchestratorConfidential: projected.snapshot.orchestratorConfidential,
+        projectionManifest: projected.snapshot.projectionManifest,
+      },
+    };
+
+    const [snapshot] = await tx.insert(constraintSnapshots).values({
+      tripId: params.tripId,
+      version: nextVersion,
+      authorizedData,
+      departureCities: params.departureCities,
+      destinationCandidates: params.destinationCandidates,
+      travelDateStart: params.travelDateStart,
+      travelDateEnd: params.travelDateEnd,
+    }).returning();
+
+    return snapshot.id;
+  };
+
+  if (params.tx) {
+    return run(params.tx);
   }
+  return db.transaction(run);
+}
 
-  const [snapshot] = await db.insert(constraintSnapshots).values({
-    tripId: params.tripId,
-    version: nextVersion,
-    authorizedData,
-    departureCities: params.departureCities,
-    destinationCandidates: params.destinationCandidates,
-    travelDateStart: params.travelDateStart,
-    travelDateEnd: params.travelDateEnd,
-  }).returning();
+/**
+ * Read the `_meta` envelope of a freshly loaded v2 snapshot. Returns null when
+ * the snapshot is v1 or has no privileged sections.
+ */
+export interface SnapshotV2Meta {
+  schemaVersion: 2;
+  memberAliases: Record<string, string>;
+  teamVisible: Record<string, Array<Record<string, unknown>>>;
+  orchestratorConfidential: Record<string, Array<{
+    fieldKey: string;
+    valueJson: unknown;
+    strength: "HARD" | "SOFT";
+    visibility: "ORCHESTRATOR_CONFIDENTIAL";
+    sourceType: "TRIP_FACT";
+    sourceId: string;
+  }>>;
+  projectionManifest: Array<Record<string, unknown>>;
+}
 
-  return snapshot.id;
+export function extractSnapshotV2Meta(authorizedData: unknown): SnapshotV2Meta | null {
+  if (typeof authorizedData !== "object" || authorizedData === null) return null;
+  const root = authorizedData as Record<string, unknown>;
+  const meta = root._meta;
+  if (!meta || typeof meta !== "object") return null;
+  const schemaVersion = (meta as Record<string, unknown>).schemaVersion;
+  if (schemaVersion !== 2) return null;
+  return meta as unknown as SnapshotV2Meta;
 }
 
 /**
  * Generate a new plan based on the constraint snapshot.
- * All provider calls reference the same snapshot ID.
+ *
+ * Phase 3 lifecycle:
+ *  - `outputMode: "PROPOSED"` (default) writes the plan as `PROPOSED`; activation
+ *    requires unanimous adoption vote (Phase 4 wires this in via
+ *    `activateProposedPlan`).
+ *  - `outputMode: "ACTIVATE"` is reserved for the unanimous-vote path; the plan
+ *    is emitted as `ACTIVE` and writes `replacedByPlanId` to form the chain.
+ *
+ * Provider evidence is bound to the snapshot id so the validator's deterministic
+ * `EVIDENCE_*` checks remain meaningful across runs. The optional `coverage`
+ * parameter lets the handler pre-populate evidence via `researchCoverageForSnapshot`
+ * so spec §6.1's "all configured candidates must be researched" invariant holds.
  */
 export async function generatePlan(params: {
   ctx: RequestContext;
@@ -131,6 +404,15 @@ export async function generatePlan(params: {
   flightSearchPreferencesVersion?: number;
   signal?: AbortSignal;
   leaseToken?: string;
+  /**
+   * Defaults to "ACTIVATE" to preserve the legacy flow: the planner emits an
+   * `ACTIVE` plan that then funnels through `member_confirmations`. Team
+   * Agent 协作编排 (Phase 3+) explicitly passes "PROPOSED" so the plan
+   * routes through the adoption-vote lifecycle (spec §1.8). Booking-sandbox
+   * integrations must consult plan status separately (Phase 4).
+   */
+  outputMode?: "PROPOSED" | "ACTIVATE";
+  coverage?: CoverageResearchResult;
 }, dependencies: PlanningDependencies = resolvePlanningDependencies()): Promise<string> {
   // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
@@ -157,19 +439,29 @@ export async function generatePlan(params: {
     );
   }
 
-  if (!params.agentTaskRunId || !params.flightSearchPreferencesVersion) {
+  // Phase 3: when the handler pre-collected research via `researchCoverageForSnapshot`,
+  // honor it as the canonical evidence; otherwise fall back to in-line per-origin
+  // research. The validator's `EVIDENCE_*` checks operate identically on either source.
+  if (params.coverage) {
+    allFlights.push(...params.coverage.allFlights);
+    allStays.push(...params.coverage.allStays);
+    allGround.push(...params.coverage.allGround);
+  } else if (!params.agentTaskRunId || !params.flightSearchPreferencesVersion) {
     for (const departureCity of snapshot.departureCities) {
       const result = await dependencies.flightProvider.searchFlights({
-      origin: departureCity,
-      destination: params.destination,
-      dateStart: snapshot.travelDateStart,
-      dateEnd: snapshot.travelDateEnd,
-      snapshotId: params.snapshotId,
-    });
+        origin: departureCity,
+        destination: params.destination,
+        dateStart: snapshot.travelDateStart,
+        dateEnd: snapshot.travelDateEnd,
+        snapshotId: params.snapshotId,
+      });
       if (result.outcome !== "UNAVAILABLE") allFlights.push(...result.data);
     }
   }
 
+  // Stay + ground provider calls run for every planning branch (legacy and
+  // tool-calling); both paths rely on `allStays`/`allGround` being populated
+  // for the deterministic provider-coverage gate.
   const stayResult = await dependencies.stayProvider.searchStays({
     destination: params.destination,
     checkIn: snapshot.travelDateStart,
@@ -179,7 +471,6 @@ export async function generatePlan(params: {
   if (stayResult.outcome !== "UNAVAILABLE") {
     allStays.push(...stayResult.data);
   }
-
   const groundResult = await dependencies.groundProvider.searchGround({
     destination: params.destination,
     snapshotId: params.snapshotId,
@@ -280,12 +571,15 @@ export async function generatePlan(params: {
       });
       if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
     }
+    const outputMode = params.outputMode ?? "ACTIVATE";
+    const insertStatus = outputMode === "ACTIVATE" ? "ACTIVE" : "PROPOSED";
     const [plan] = await tx.insert(itineraryPlans).values({
       tripId: params.tripId,
       snapshotId: params.snapshotId,
       version: nextVersion,
-      status: "ACTIVE",
+      status: insertStatus,
       planData,
+      replacedByPlanId: null,
     }).returning();
 
     const normalizedOffers = [
@@ -348,6 +642,54 @@ export async function generatePlan(params: {
   });
 
   return planId;
+}
+
+/**
+ * Activate a PROPOSED plan after unanimous adoption vote (Phase 4 wiring).
+ *
+ * Atomicity: idempotent on `(planId, status)`. If the plan was super-SUPERSEDED
+ * by a newer REPLAN while voting was in flight (spec §6.2), this returns null
+ * instead of mutating; the caller's vote tally handler maps that to a
+ * structured no-op rather than an exception.
+ */
+export async function activateProposedPlan(params: {
+  ctx: RequestContext;
+  planId: string;
+  tx?: Parameters<Parameters<typeof db.transaction>[0]>[0];
+}): Promise<string | null> {
+  const run = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
+    const [plan] = await tx.select().from(itineraryPlans)
+      .where(eq(itineraryPlans.id, params.planId))
+      .for("update")
+      .limit(1);
+    if (!plan) return null;
+    if (plan.status !== "PROPOSED") {
+      if (plan.status === "ACTIVE") return plan.id;
+      return null;
+    }
+    // Find the previous ACTIVE (or PROPOSED) head to wire replacedByPlanId.
+    await tx.update(itineraryPlans)
+      .set({ status: "SUPERSEDED", supersededAt: new Date() })
+      .where(and(
+        eq(itineraryPlans.tripId, plan.tripId),
+        eq(itineraryPlans.status, "PROPOSED"),
+      ));
+    const [updated] = await tx.update(itineraryPlans)
+      .set({ status: "ACTIVE", supersededAt: null })
+      .where(and(eq(itineraryPlans.id, plan.id), eq(itineraryPlans.status, "PROPOSED")))
+      .returning({ id: itineraryPlans.id });
+    if (!updated) return null;
+    await recordAudit({
+      ctx: params.ctx,
+      action: "PLAN_ADOPTED",
+      tripId: plan.tripId,
+      planId: plan.id,
+      summary: { activatedAt: new Date().toISOString() },
+      tx,
+    });
+    return updated.id;
+  };
+  return params.tx ? run(params.tx) : db.transaction(run);
 }
 
 /**

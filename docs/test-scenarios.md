@@ -279,6 +279,48 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - Each fact has a source/time and, for flight offers, an expiry.
 - Tool failure is explicit `UNAVAILABLE`; no inventory or price is fabricated or substituted.
 
+### TS-H3-GROUND-1 — Shared keyword POI search and arbitrary-place navigation
+
+**Stories:** H3, P1, S1
+**Objective:** Verify that only a Shared PLAN/REPLAN Worker can resolve keyword POI candidates and route between two authorized Trip places without accepting client/model coordinates or provider parameters.
+
+**Starting conditions:** An authenticated three-member planning Trip has one immutable snapshot containing Tokyo as a candidate; deterministic ORS Place and Directions doubles are configured; Alice has one private hotel place and two team-visible attractions.
+
+**Steps:**
+
+1. Drive a durable planning run whose model requests `places.search` with `destinationId=Tokyo`, keyword `Senso-ji` and `ATTRACTION`, then uses one returned current-run candidate to propose a team-visible `TripPlace`.
+2. Request `navigation.route` between that adopted place and the team-visible hotel using `WALK`; retrieve the authorized route DTO used by the map.
+3. Repeat with a browser/model supplied longitude/latitude, address, URL, provider/profile, a place candidate from another run, a private place owned by Bob, a revoked place and origin equal to destination.
+4. Force Place and Directions `NO_RESULTS`, 429, timeout and malformed payload outcomes independently while Flight/Stay/Activities research continues.
+5. Change or revoke an active team-visible place after a route is persisted; then attempt to display, adopt, confirm and book the old plan.
+
+**Expected outcomes:**
+
+- The provider receives only server-resolved destination bias or authorized coordinates; no raw browser/model coordinate or provider option crosses the boundary.
+- At most the configured candidate/result/tool-loop limits execute. Candidate IDs are valid only for their task/run and cannot become Trip facts without proposal/adoption authority.
+- The returned route has source, captured time, distance, duration, mode, steps and geometry; geometry is sent only to authorized Trip UI consumers and never to the model, logs, traces, metrics or audit summaries. ORS attribution is visible with the route.
+- All rejected inputs fail closed with stable policy/schema codes and create no place, route evidence, plan, confirmation or booking authority.
+- A navigation/POI provider gap produces a safe `COMPLETED_WITH_GAPS` research summary, does not cancel other service research and does not fabricate a route, price or schedule.
+- Changing/revoking an adopted shared place atomically makes dependent route evidence, active plan and confirmations `STALE`; a late/duplicate worker cannot reactivate them.
+
+### TS-H3-GROUND-2 — Mobility offers are distinct from navigation routes
+
+**Stories:** H3, H6, S1
+**Objective:** Verify that transfer/taxi/charter evidence can be shown as live pricing or an explicit estimate but cannot be substituted for a route, automatically booked, or used after expiry.
+
+**Steps:**
+
+1. Use two authorized Trip places and request a configured Amadeus Transfer Search double that returns one price, one estimated taxi price and a booking link.
+2. Inspect normalized mobility evidence, `provider_offers`, source evidence, plan DTO and model tool output.
+3. Attempt to use navigation evidence as a mobility price, use an expired offer, invoke booking without a user-selected live offer, and pass a provider booking link through the API/UI.
+4. Disable Mobility while retaining navigation and repeat the planning run.
+
+**Expected outcomes:**
+
+- Routes are persisted only as navigation evidence; only commercial mobility results may enter `provider_offers`, and estimated prices are visibly marked as estimates.
+- Booking links and raw provider payloads never enter model context, persistence, SSE, audit or UI. No search automatically creates booking authority.
+- An unavailable/expired Mobility capability appears as a safe gap while the task completes; the selected service cannot reach confirmation/sandbox without fresh live evidence and explicit user selection.
+
 ### TS-H4 — Create individualized visa readiness safely
 
 **Stories:** H4, P1  
@@ -322,6 +364,28 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - UI identifies preserved and affected constraints for all three travelers and the changed candidate ranking.
 - No automatic charge, booking or silent replacement occurs.
 - No-feasible state names blocking constraints and returns members to editing/consent.
+
+### TS-H5a — Confirm a private orchestration constraint and adopt an automatic replan
+
+**Stories:** H2, H3, H5, S1
+**Objective:** Verify a Personal Agent proposal can become a confidential Shared planning constraint only after owner confirmation, and that automatic replan remains vote-gated.
+
+**Steps:**
+
+1. Alice asks her Personal Agent to avoid plans over a budget; inspect that it creates only a `PENDING` structured proposal.
+2. Alice confirms the proposal as `ORCHESTRATOR_CONFIDENTIAL` and `HARD`; inspect the stale transaction and automatic REPLAN task.
+3. Capture Bob and Chen's constraints/plan/read APIs, SSE, logs, traces, metrics and audit summaries while Shared planning runs.
+4. Inspect the Shared Agent test gateway input and the final public plan explanation.
+5. Have Alice and Bob vote `ACCEPT` on the generated `PROPOSED` plan and Chen vote `NEEDS_CHANGES`; then replace Chen's vote with `ACCEPT`.
+6. Attempt booking before and after activation; revoke Alice's fact during a later adoption vote.
+
+**Expected outcomes:**
+
+- No proposal enters a snapshot or affects a plan before Alice confirms it.
+- The confidential value is available only in the server-side Shared planning projection; it is absent from fellow-member responses, plan JSON/explanation, SSE, audit, logs, traces and metric labels. The UI presents the residual indirect-inference warning.
+- The old plan and confirmations become `STALE`; the automatic task creates one `PROPOSED` plan. The old plan is comparison-only and never reactivates.
+- A single `NEEDS_CHANGES` blocks activation; exactly one current `ACTIVE` plan is created only after all required members accept. Existing booking confirmation is still required after activation.
+- Revocation stales the proposal/votes/run and cannot leave a confidential value in a future snapshot or activate a plan.
 
 ### TS-H6 — Confirm and run booking orchestration sandbox
 
@@ -518,7 +582,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 **Expected outcomes:**
 
 - The client receives only documented safe phases and an identifier/version-safe terminal result; it never receives model reasoning, prompt, raw provider payload or unvalidated plan content.
-- A final `COMPLETED` event refers only to an already validated and persisted plan version.
+- A final `COMPLETED` event refers only to an already validated and persisted plan version; a final `COMPLETED_WITH_GAPS` event refers only to an already persisted safe research summary and carries no commercial authority.
 - Consent revocation or a newer run makes the old stream terminal/stale; it cannot activate, display or overwrite a plan after invalidation.
 - Stream identifiers remain out of metric labels, and no event widens membership or snapshot authorization.
 
@@ -748,17 +812,17 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 - The HTTP command returns `202` with a run ID; browser disconnect does not cancel it.
 - Only same-task, same-snapshot `LIVE` activities evidence fills a matrix cell. Wrong-task/wrong-snapshot evidence and `UNAVAILABLE` never satisfy coverage.
-- The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, destinations, dates or categories; raw Amadeus payloads, OAuth values and private snapshot data never leave the server boundary.
+- The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, destination coordinates/radius, dates or themes; raw Amadeus payloads, OAuth values, booking links and private snapshot data never leave the server boundary.
 - A 429 response on activities does not consume flight quota; a 429 on flight does not impact activities. The per-endpoint limiter enforces independent buckets and the run continues with whichever cells remain `LIVE`.
-- Final plan synthesis and atomic plan/task completion transaction are rejected unless the full matrix is live (when the sub-stage is enabled), the task is still `RUNNING` with its lease, and the accepted preference version is still current.
-- The activities and flight evidence tables reference distinct `provider_search_runs` rows; staleness triggers and offer expiry are evaluated independently per category.
+- Final `ACTIVE` plan synthesis and atomic plan/task completion transaction are rejected unless every required service matrix is live, the task is still `RUNNING` with its lease, and the accepted preference version is still current. A gap persists only a safe, non-confirmable `RESEARCH_UNAVAILABLE` summary with service/candidate/reason codes.
+- Flight and activities evidence are distinct categories with independent staleness triggers and offer expiry; the unavailable summary is not evidence and cannot be selected by a plan.
 - Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, matrix and bounded-tool-loop failures are terminal and create no active plan.
 - An activities offer whose `expires_at` has passed causes the dependent plan to enter `STALE` independent of any flight offer expiry.
 
 ### TS-ACTIVITIES-TOOL-2 — Personal Agent activities search with owner-scoped evidence
 
 **Stories:** H1, H3
-**Objective:** Verify that a Personal Agent can request `activities.search` against its own profile/override context, that results stay owner-scoped, and that subsequent Shared turns may reference them as conversation-derived inputs.
+**Objective:** Verify that a Personal Agent can request `activities.search` only after the Personal feature flag and tool-loop boundary are enabled, and that results stay owner-scoped and invisible to Shared execution.
 
 **Steps:**
 
@@ -771,26 +835,26 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 **Expected outcomes:**
 
-- The Personal Agent calls the same Amadeus endpoint with the same OAuth client as Shared, but the request context does not include a snapshot.
-- `provider_search_runs` records the run with `requester_kind='personal'`; the Shared `flight-research-matrix-service` and `activities-research-matrix-service` never read these rows.
+- The Personal Agent calls the same Amadeus endpoint through the same injected OAuth token provider as Shared, but the request context does not include a snapshot.
+- `personal_provider_search_runs` records the run separately; every Shared repository, context builder, matrix and validator rejects these rows and Personal conversation text.
 - The Personal Agent's evidence does not directly modify `itinerary_plans`, `constraint_snapshots`, or trigger any `STALE` transition on existing plans.
-- A subsequent Shared turn may reference the conversation text (which mentions the personal results) as trip memory input; the Shared plan field does not deep-equal a personal run row.
-- Revoked override, deleted profile field, malformed request and unknown destination each fail closed with a stable error code; `UNAVAILABLE` runs are recorded with `requester_kind='personal'` and the standard 8 unavailable reasons.
+- A subsequent Shared planning run cannot reference conversation text or a personal run row. Only an owner-confirmed, schema-valid Trip constraint may enter its server-built snapshot projection.
+- Revoked override, deleted profile field, malformed request, unknown destination, disabled feature flag and unknown theme each fail closed with a stable error code; `UNAVAILABLE` runs are recorded only in Personal storage with the standard 8 unavailable reasons.
 - Logs, trace attributes, metric labels and audit summaries never contain the personal conversation text, the owner profile field values or the activity names.
 
 ### TS-ACTIVITIES-TOOL-3 — Activities evidence is excluded from readiness
 
 **Stories:** H4, S1
-**Objective:** Verify the readiness Skill can reference activities evidence in its output, but only when the reference is a deep-strict-equal match against an `activities` `provider_search_runs` row from the same planning run.
+**Objective:** Verify that visa/entry readiness remains grounded only in authorized nationality, route and official verification sources, never in activity search evidence.
 
 **Steps:**
 
-1. Build a planning run with persisted activities evidence for two destinations and an `ACTIVE` plan.
-2. Have the readiness Skill produce an explanation referencing one activities evidence row by ID.
-3. Repeat with a fabricated reference, an evidence ID from a different planning run, an evidence ID whose `expires_at` has passed, and an evidence ID whose `requester_kind='personal'`.
+1. Build a planning run with persisted Shared activities evidence for two destinations and an `ACTIVE` plan.
+2. Attempt to include an activities evidence ID, name, price or provider link in readiness input/output.
+3. Repeat with a Personal activity result and a route/nationality record that requires an official verification gap.
 
 **Expected outcomes:**
 
-- A reference matching the same run's persisted evidence by `isDeepStrictEqual` passes the `plan-output-validator` extended check.
-- A fabricated reference, a cross-run reference, an expired reference and a personal-run reference all fail with stable violation codes; the plan is not finalized; the readiness text is not persisted as authoritative.
-- `requester_kind='personal'` runs are never eligible as authoritative readiness evidence even when other fields match.
+- Any activities evidence or booking link reference is rejected by the readiness and plan validators; it is not persisted as authoritative readiness text.
+- Missing authoritative visa/entry data yields the existing official verification gap, not a conclusion inferred from activities.
+- Personal activity results are never eligible as Shared or readiness evidence.

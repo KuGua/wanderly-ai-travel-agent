@@ -302,17 +302,17 @@ export function initTracing(
       diagConfigured = true;
     }
 
-    // Propagator is set unconditionally so that even when SDK is disabled,
-    // `propagation.extract` still parses inbound `traceparent` correctly.
-    // Guard against the duplicate-registration error that fires when the
-    // module is reset and re-initialized inside test forks.
-    if (!propagatorRegistered) {
-      propagation.setGlobalPropagator(new W3CTraceContextPropagator());
-      propagatorRegistered = true;
-    }
-
     const mode = resolveExporterMode();
     if (mode === "none") {
+      // Propagator must be set unconditionally so that even when the SDK is
+      // disabled, `propagation.extract` still parses inbound `traceparent`
+      // correctly. When the SDK is enabled, `provider.register()` (called
+      // below) sets the propagator itself — doing both throws a
+      // "duplicate registration of API: propagation" error from the OTel API.
+      if (!propagatorRegistered) {
+        propagation.setGlobalPropagator(new W3CTraceContextPropagator());
+        propagatorRegistered = true;
+      }
       diag.info(
         `tracing: SDK disabled (exporter=none, OTEL_SDK_DISABLED=${process.env.OTEL_SDK_DISABLED ?? "unset"})`,
       );

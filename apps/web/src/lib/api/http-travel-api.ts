@@ -1,4 +1,5 @@
 import { ApiClient, type GetAccessToken } from "./client";
+import { z } from "zod";
 import {
   conversationTurnRequestSchema,
   conversationTurnAcceptedResponseSchema,
@@ -23,6 +24,20 @@ import {
   updateProfileResponseSchema,
   locationReferenceInputSchema,
   locationReferenceResponseSchema,
+  // ── Team Agent 协作编排 (Phase 5) ─────────────────────────────────────────
+  tripConstraintProposalSchema,
+  tripConstraintProposalsResponseSchema,
+  tripConstraintsResponseSchema,
+  tripConstraintsOwnerResponseSchema,
+  tripPlansListResponseSchema,
+  createTripConstraintProposalRequestSchema,
+  confirmTripConstraintProposalRequestSchema,
+  upsertTripConstraintFactRequestSchema,
+  castAdoptionVoteRequestSchema,
+  adoptionVoteResponseSchema,
+  adoptionVoteListResponseSchema,
+  confirmProposalResponseSchema,
+  upsertFactResponseSchema,
   type UpdateProfileInput,
   type ConversationTurnRequest,
   type CreateTripThreadInput,
@@ -30,6 +45,10 @@ import {
   type TripActivationRequest,
   type UpdateTripTitleInput,
   type UpdateDraftTripBriefInput,
+  type CreateTripConstraintProposalRequest,
+  type ConfirmTripConstraintProposalRequest,
+  type UpsertTripConstraintFactRequest,
+  type CastAdoptionVoteRequest,
 } from "./contracts";
 import type { TravelApi } from "./travel-api";
 import { fetchLocationIntroduction } from "./location-introduction-api";
@@ -170,7 +189,155 @@ export class HttpTravelApi implements TravelApi {
       method: "PATCH", body: JSON.stringify(body),
     });
   }
+
+  // ── Team Agent 协作编排 (Phase 5) ─────────────────────────────────────────
+
+  createConstraintProposal(
+    tripId: string,
+    input: CreateTripConstraintProposalRequest,
+    options?: { idempotencyKey?: string },
+  ) {
+    const body = createTripConstraintProposalRequestSchema.parse(input);
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/constraint-proposals`,
+      tripConstraintProposalSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  listMyConstraintProposals(tripId: string) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/constraint-proposals/me`,
+      tripConstraintProposalsResponseSchema,
+    );
+  }
+
+  confirmConstraintProposal(
+    tripId: string,
+    proposalId: string,
+    input: ConfirmTripConstraintProposalRequest,
+    options?: { idempotencyKey?: string },
+  ) {
+    const body = confirmTripConstraintProposalRequestSchema.parse(input);
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/constraint-proposals/${encodeURIComponent(proposalId)}/confirm`,
+      confirmProposalResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  dismissConstraintProposal(
+    tripId: string,
+    proposalId: string,
+    options?: { idempotencyKey?: string },
+  ) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/constraint-proposals/${encodeURIComponent(proposalId)}/dismiss`,
+      dismissConstraintProposalResponseSchema,
+      {
+        method: "POST",
+        body: "{}",
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  upsertConstraintFact(
+    tripId: string,
+    factId: string,
+    input: UpsertTripConstraintFactRequest,
+    options?: { idempotencyKey?: string },
+  ) {
+    const body = upsertTripConstraintFactRequestSchema.parse(input);
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/constraints/${encodeURIComponent(factId)}`,
+      upsertFactResponseSchema,
+      {
+        method: "PUT",
+        body: JSON.stringify(body),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  revokeConstraintFact(
+    tripId: string,
+    factId: string,
+    options?: { idempotencyKey?: string },
+  ) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/constraints/${encodeURIComponent(factId)}`,
+      upsertFactResponseSchema,
+      {
+        method: "DELETE",
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  listConstraintsForMembers(tripId: string) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/constraints`,
+      tripConstraintsResponseSchema,
+    );
+  }
+
+  listConstraintsForOwner(tripId: string) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/constraints/me`,
+      tripConstraintsOwnerResponseSchema,
+    );
+  }
+
+  castAdoptionVote(
+    planId: string,
+    input: CastAdoptionVoteRequest,
+    options?: { idempotencyKey?: string },
+  ) {
+    const body = castAdoptionVoteRequestSchema.parse(input);
+    return this.client.request(
+      `/plans/${encodeURIComponent(planId)}/adoption-votes`,
+      adoptionVoteResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  listAdoptionVotes(planId: string) {
+    return this.client.request(
+      `/plans/${encodeURIComponent(planId)}/adoption-votes`,
+      adoptionVoteListResponseSchema,
+    );
+  }
+
+  listTripPlans(tripId: string) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/plans`,
+      tripPlansListResponseSchema,
+    );
+  }
 }
+
+function withIdempotencyKey(key: string | undefined): { headers: Record<string, string> } {
+  if (!key) return { headers: {} };
+  return { headers: { "idempotency-key": key } };
+}
+
+const dismissConstraintProposalResponseSchema = z.object({
+  dismissed: z.literal(true),
+  proposalId: z.string().uuid(),
+}).strict();
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)

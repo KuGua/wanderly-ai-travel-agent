@@ -4,7 +4,7 @@ import { pgTable, uuid, varchar, text, timestamp, jsonb, boolean, integer, bigin
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
 export const tripStatusEnum = pgEnum("trip_status", ["DRAFT", "PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
-export const planStatusEnum = pgEnum("plan_status", ["DRAFT", "ACTIVE", "STALE", "SUPERSEDED"]);
+export const planStatusEnum = pgEnum("plan_status", ["DRAFT", "ACTIVE", "PROPOSED", "STALE", "SUPERSEDED"]);
 export const confirmationStatusEnum = pgEnum("confirmation_status", ["PENDING", "CONFIRMED", "NEEDS_CHANGES", "STALE"]);
 export const consentScopeEnum = pgEnum("consent_scope", [
   "PROFILE_BASIC",        // name, avatar
@@ -35,6 +35,13 @@ export const auditActionEnum = pgEnum("audit_action", [
   "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE", "TRIP_DRAFT_BRIEF_UPDATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
   "FLIGHT_SEARCH_REQUESTED", "FLIGHT_SEARCH_COMPLETED", "FLIGHT_SEARCH_UNAVAILABLE",
+  // Phase 2 / spec §8 audit surface (added via 0021_team_orchestration_enums.sql):
+  "TRIP_CONSTRAINT_PROPOSED",
+  "TRIP_CONSTRAINT_CONFIRMED",
+  "TRIP_CONSTRAINT_REVOKED",
+  "PLAN_REPLAN_ENQUEUED",
+  "PLAN_ADOPTION_VOTED",
+  "PLAN_ADOPTED",
 ]);
 
 // Chat thread scope — MVP allows only TRIP-scoped threads; adding new
@@ -51,6 +58,27 @@ export const tripInvitationStatusEnum = pgEnum("trip_invitation_status", [
 export const locationIntroductionStatusEnum = pgEnum("location_introduction_status", [
   "GENERATING",
   "READY",
+]);
+
+// ─── Team Agent 协作编排 (Phase 1+2, doc: docs/team-agent-orchestration-implementation.md) ──
+// Value list mirrored to `apps/api/src/types/domain.ts` and `types/schemas.ts`.
+export const constraintVisibilityEnum = pgEnum("constraint_visibility", [
+  "TEAM_VISIBLE",
+  "ORCHESTRATOR_CONFIDENTIAL",
+]);
+export const constraintStrengthEnum = pgEnum("constraint_strength", [
+  "HARD",
+  "SOFT",
+]);
+export const constraintProposalStatusEnum = pgEnum("constraint_proposal_status", [
+  "PENDING",
+  "CONFIRMED",
+  "DISMISSED",
+  "REVOKED",
+]);
+export const planAdoptionDecisionEnum = pgEnum("plan_adoption_decision", [
+  "ACCEPT",
+  "NEEDS_CHANGES",
 ]);
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -516,3 +544,63 @@ export const locationIntroductionCache = pgTable("location_introduction_cache", 
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ─── Team Agent 协作编排 Phase 1+2 (doc: docs/team-agent-orchestration-implementation.md) ──
+// Drizzle 镜像；migration 文件 0021/0022 已定义结构与索引。
+
+export const tripConstraintProposals = pgTable("trip_constraint_proposals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  fieldKey: varchar("field_key", { length: 64 }).notNull(),
+  valueJson: jsonb("value_json").notNull().$type<Record<string, unknown>>(),
+  valueHash: varchar("value_hash", { length: 64 }).notNull(),
+  strength: constraintStrengthEnum("strength").notNull(),
+  proposedVisibility: constraintVisibilityEnum("proposed_visibility").notNull(),
+  sourceKind: varchar("source_kind", { length: 16 }).notNull().$type<"PERSONAL_AGENT" | "OWNER_FORM">(),
+  status: constraintProposalStatusEnum("status").notNull().default("PENDING"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+}, (table) => ({
+  tripOwnerFieldHashPendingUnique: uniqueIndex("trip_constraint_proposals_pending_unique")
+    .on(table.tripId, table.ownerUserId, table.fieldKey, table.valueHash)
+    .where(sql`status = 'PENDING'`),
+  tripOwnerStatusIdx: index("trip_constraint_proposals_trip_owner_idx")
+    .on(table.tripId, table.ownerUserId, table.status),
+}));
+
+export const tripConstraintFacts = pgTable("trip_constraint_facts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  fieldKey: varchar("field_key", { length: 64 }).notNull(),
+  valueJson: jsonb("value_json").notNull().$type<Record<string, unknown>>(),
+  valueHash: varchar("value_hash", { length: 64 }).notNull(),
+  strength: constraintStrengthEnum("strength").notNull(),
+  visibility: constraintVisibilityEnum("visibility").notNull(),
+  revision: integer("revision").notNull(),
+  sourceProposalId: uuid("source_proposal_id").references(() => tripConstraintProposals.id, { onDelete: "set null" }),
+  status: varchar("status", { length: 16 }).notNull().$type<"ACTIVE" | "SUPERSEDED" | "REVOKED">(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  supersededAt: timestamp("superseded_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (table) => ({
+  activeUnique: uniqueIndex("trip_constraint_facts_active_unique")
+    .on(table.tripId, table.ownerUserId, table.fieldKey)
+    .where(sql`status = 'ACTIVE'`),
+  tripOwnerFieldIdx: index("trip_constraint_facts_trip_owner_field_idx")
+    .on(table.tripId, table.ownerUserId, table.fieldKey),
+  tripVisibilityIdx: index("trip_constraint_facts_trip_visibility_idx")
+    .on(table.tripId, table.visibility),
+}));
+
+export const planAdoptionVotes = pgTable("plan_adoption_votes", {
+  planId: uuid("plan_id").references(() => itineraryPlans.id, { onDelete: "cascade" }).notNull(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  decision: planAdoptionDecisionEnum("decision").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pk: uniqueIndex("plan_adoption_votes_pkey").on(table.planId, table.userId),
+  planIdx: index("plan_adoption_votes_plan_idx").on(table.planId),
+}));

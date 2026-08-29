@@ -18,6 +18,8 @@ const snapshot: ConstraintSnapshotData = {
 function goodPlanData() {
   return {
     destination: "Tokyo",
+    // Phase 3 — Team Agent 协作编排: every configured candidate must appear.
+    destinationCandidatesEvaluated: ["Tokyo", "Bangkok", "Seoul"],
     flights: [{
       id: "flt-sfo-tyo-01",
       providerOfferId: "flt-sfo-tyo-01",

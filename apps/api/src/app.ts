@@ -22,6 +22,7 @@ import { locationIntroductionRoutes } from "./routes/location-introduction.js";
 import { agentRunRoutes } from "./routes/agent-runs.js";
 import { authRoutes } from "./routes/auth.js";
 import { searchPreferenceRoutes } from "./routes/search-preferences.js";
+import { teamOrchestrationRoutes } from "./routes/team-orchestration.js";
 import { AgentStreamRelay } from "./tasks/agent-stream-relay.js";
 import { pinoInstance, correlationChild } from "./observability/telemetry.js";
 import { metrics } from "./observability/metrics.js";
@@ -213,6 +214,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(agentRunRoutes, { prefix: "/api/v1", relay: agentStreamRelay });
   await app.register(authRoutes, { prefix: "/api/v1" });
   await app.register(searchPreferenceRoutes, { prefix: "/api/v1" });
+  await app.register(teamOrchestrationRoutes, { prefix: "/api/v1" });
 
   // Register agents (Skills) — must happen before the server accepts traffic so
   // handlers can call skill-registry.invokeSkill without races.

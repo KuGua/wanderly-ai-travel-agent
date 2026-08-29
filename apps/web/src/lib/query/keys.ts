@@ -21,3 +21,17 @@ export const locationIntroductionKeys = {
   detail: (input: { sourceId: string; locale: "en" | "zh" }) =>
     ["location-introductions", input.sourceId, input.locale] as const,
 };
+
+export const teamOrchestrationKeys = {
+  all: ["team-orchestration"] as const,
+  proposals: (tripId: string) =>
+    ["team-orchestration", tripId, "proposals"] as const,
+  constraintsMembers: (tripId: string) =>
+    ["team-orchestration", tripId, "constraints", "members"] as const,
+  constraintsOwner: (tripId: string) =>
+    ["team-orchestration", tripId, "constraints", "owner"] as const,
+  plans: (tripId: string) =>
+    ["team-orchestration", tripId, "plans"] as const,
+  votes: (planId: string) =>
+    ["team-orchestration", "votes", planId] as const,
+};

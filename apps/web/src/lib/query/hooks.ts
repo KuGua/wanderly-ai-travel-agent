@@ -10,9 +10,13 @@ import type {
   ThreadsResponse,
   TripActivationRequest,
   UpdateProfileInput,
+  CastAdoptionVoteRequest,
+  ConfirmTripConstraintProposalRequest,
+  CreateTripConstraintProposalRequest,
+  UpsertTripConstraintFactRequest,
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
-import { profileKeys, threadKeys, tripKeys } from "./keys";
+import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys } from "./keys";
 
 export function useMyProfile() {
   const api = useTravelApi();
@@ -179,4 +183,136 @@ function mergeThreads(
   const threads = new Map(current.map((thread) => [thread.id, thread]));
   incoming.forEach((thread) => threads.set(thread.id, thread));
   return [...threads.values()];
+}
+
+// ── Team Agent 协作编排 (Phase 5) ──────────────────────────────────────────
+
+export function useMyConstraintProposals(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.proposals(tripId),
+    queryFn: () => api.listMyConstraintProposals!(tripId),
+    enabled: !!api.listMyConstraintProposals,
+  });
+}
+
+export function useCreateConstraintProposal(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateTripConstraintProposalRequest) =>
+      api.createConstraintProposal!(tripId, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.proposals(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsOwner(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsMembers(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+    },
+  });
+}
+
+export function useConfirmConstraintProposal(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { proposalId: string; input: ConfirmTripConstraintProposalRequest }) =>
+      api.confirmConstraintProposal!(tripId, params.proposalId, params.input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.proposals(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsOwner(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsMembers(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
+export function useDismissConstraintProposal(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (proposalId: string) =>
+      api.dismissConstraintProposal!(tripId, proposalId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.proposals(tripId) });
+    },
+  });
+}
+
+export function useUpsertConstraintFact(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { factId: string; input: UpsertTripConstraintFactRequest }) =>
+      api.upsertConstraintFact!(tripId, params.factId, params.input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsOwner(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsMembers(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
+export function useRevokeConstraintFact(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (factId: string) => api.revokeConstraintFact!(tripId, factId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsOwner(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsMembers(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
+export function useTripConstraintsForMembers(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.constraintsMembers(tripId),
+    queryFn: () => api.listConstraintsForMembers!(tripId),
+    enabled: !!api.listConstraintsForMembers,
+  });
+}
+
+export function useTripConstraintsForOwner(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.constraintsOwner(tripId),
+    queryFn: () => api.listConstraintsForOwner!(tripId),
+    enabled: !!api.listConstraintsForOwner,
+  });
+}
+
+export function useTripPlans(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.plans(tripId),
+    queryFn: () => api.listTripPlans!(tripId),
+    enabled: !!api.listTripPlans,
+  });
+}
+
+export function usePlanAdoptionVotes(planId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.votes(planId),
+    queryFn: () => api.listAdoptionVotes!(planId),
+    enabled: !!api.listAdoptionVotes,
+  });
+}
+
+export function useCastAdoptionVote(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { planId: string; input: CastAdoptionVoteRequest }) =>
+      api.castAdoptionVote!(params.planId, params.input),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.votes(vars.planId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+    },
+  });
 }

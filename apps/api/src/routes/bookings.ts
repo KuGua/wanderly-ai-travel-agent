@@ -3,7 +3,7 @@ import { db } from "../db/database.js";
 import { tripMembers } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
 import { bookingRequestSchema, sandboxCallbackSchema } from "../types/schemas.js";
-import { submitBooking, handleSandboxCallback } from "../services/booking-service.js";
+import { submitBooking, handleSandboxCallback, BookingGateError } from "../services/booking-service.js";
 import { requireActiveTrip } from "../services/trip-status-guard.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
@@ -52,6 +52,15 @@ export async function bookingRoutes(app: FastifyInstance) {
         ...result,
       };
     } catch (error: unknown) {
+      if (error instanceof BookingGateError) {
+        metrics.inc("booking_gate_denials_total", { errorCategory: error.category });
+        throw new ApiError(
+          error.statusCode,
+          error.name,
+          error.message,
+          `BOOKING_GATE_${error.category.toUpperCase()}`,
+        );
+      }
       throw new ApiError(
         400,
         "Bad Request",

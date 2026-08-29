@@ -64,13 +64,13 @@
 
 **Acceptance criteria:**
 
-1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay, Ground and Activities tools and maps the three travelers to two origins. `flight.search` and `activities.search` may be requested by the LLM, but the server validates every parameter and guarantees all required origin/candidate combinations are researched. Activities resolves destination coordinates/radius only from a server-owned reference and accepts only fixed theme values. Personal Activities results stay owner-scoped in dedicated Personal evidence storage and never enter Shared turns, snapshots or plans.
-2. Result compares two to three configured destination candidates; each candidate includes at least one flight, hotel, ground and activities option, or explicitly names a missing service and cause in a non-confirmable `RESEARCH_UNAVAILABLE` summary.
+1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay, Activities and Ground typed tools and maps the three travelers to two origins. LLM may request `flight.search`、`activities.search`、`places.search` 与 `navigation.route`；服务端验证每个参数和 run binding。Ground Place/Navigation 只解析 server-owned destination reference、run-bound candidate 或已授权 TripPlace；拒绝浏览器/模型坐标、地址、provider、profile、URL 与跨 run candidate。Personal Activities remains owner-scoped; Personal Agent 不得调用 Ground navigation/mobility tool。
+2. Result compares two to three configured destination candidates and supports any two authorized POIs under a candidate. Each item includes source/captured time and route distance/duration/steps or commercial price/currency as applicable; absent service explicitly appears in a non-confirmable `RESEARCH_UNAVAILABLE` summary.
 3. Each item shows source, captured time, offer expiry when applicable, price/currency when available, and linked authorized constraints.
 4. Comparison explains destination and service trade-offs without referencing a private or unapproved Profile field.
-5. Tool failure yields a recoverable `UNAVAILABLE` missing-service state; it never fabricates or substitutes inventory or price.
+5. Tool failure yields a recoverable `UNAVAILABLE` missing-service state; it never fabricates or substitutes inventory, route, schedule or price. Provider gaps complete the task as `COMPLETED_WITH_GAPS` and persist only a safe research summary. Only a user-selected live commercial offer blocks its corresponding confirmation/booking action; route evidence never creates commercial authority.
 6. Planning may publish only safe progress events (`SNAPSHOT_CREATED`, `RESEARCHING`, `VALIDATING`, `PERSISTING`, `COMPLETED` or `FAILED`). It never streams chain-of-thought, raw tool payloads, unvalidated plan candidates, or private snapshot fields; the UI shows a plan only after authoritative validation and persistence.
-7. Flight and Activities are independent research sub-stages: each owns its typed port, coverage matrix, evidence persistence, staleness trigger and audit action. The planning task scheduler can enable or disable either sub-stage independently and runs them with independent concurrency and failure semantics; neither may expose a provider booking link in the MVP.
+7. Flight, Activities, Place/Navigation and Mobility are independently schedulable typed capabilities with distinct provider evidence, staleness trigger and audit action. The planning scheduler enforces bounded tool loops and independent concurrency/failure semantics; no provider booking link may enter the MVP.
 
 ### H4 — Produce per-traveler visa and entry readiness
 
@@ -96,6 +96,8 @@
 4. If no feasible alternative exists, it identifies blocking constraints and asks the appropriate member to adjust.
 5. Same event ID is idempotent and cannot cause duplicate plans/actions.
 6. Replan progress events are scoped to the active `tripId`, `runId`, snapshot and plan version. A stale run is terminal and cannot publish a plan or overwrite a newer run.
+7. A change automatically produces a `PROPOSED` replan. The previous plan remains `STALE` and comparison-only; it cannot return to an actionable state.
+8. All required members must vote `ACCEPT` before a proposed plan becomes `ACTIVE`; any `NEEDS_CHANGES` blocks adoption and creates no booking authority.
 
 ### H6 — Explicitly confirm and invoke booking orchestration sandbox
 
@@ -108,6 +110,7 @@
 3. Confirmation page displays all services, total price/currency where available, sources, approvals and `No automatic charge`.
 4. Sandbox call returns a reference per service or a clear error; success never states that payment was taken.
 5. Duplicate/late callbacks are idempotent by orchestration request ID; stale/declined plans cannot invoke a call.
+6. Adoption voting is separate from booking confirmation. The sandbox accepts only the latest `ACTIVE` plan after the existing unanimous confirmation gate.
 
 ## 3. PROOF
 

@@ -2,6 +2,14 @@ import type { consentScopeValues } from "./schemas.js";
 
 export type ConsentScope = (typeof consentScopeValues)[number];
 
+// ─── Constraint Visibility / Strength (mirror of policy/constraint-field-catalog.ts) ────
+// Re-export the source-of-truth types from the catalog so callers can use either module.
+// The catalog remains the single writable source; domain.ts is the type-level mirror.
+export type {
+  ConstraintVisibility,
+  ConstraintStrength,
+} from "../policy/constraint-field-catalog.js";
+
 export interface UserProfileData {
   nationality?: string;
   dateOfBirth?: string;
@@ -26,6 +34,20 @@ export interface ConstraintSnapshotData {
   destinationCandidates: string[];
   travelDateStart?: string;
   travelDateEnd?: string;
+  /**
+   * v2 extensions (added via Team Agent 协作编排 Phase 3). Both are optional
+   * because the v1 path remains valid; the validator only consults them when
+   * present.
+   */
+  orchestratorConfidential?: Record<string, Array<{
+    fieldKey: string;
+    valueJson: unknown;
+    strength: "HARD" | "SOFT";
+    visibility: "TEAM_VISIBLE" | "ORCHESTRATOR_CONFIDENTIAL";
+    sourceType: "PROFILE_CONSENT" | "TRIP_FACT";
+    sourceId: string;
+  }>>;
+  safePublicExplanationTokens?: ReadonlySet<string>;
 }
 
 export interface FlightOffer {
@@ -123,6 +145,8 @@ export interface BookingExecutionResult {
   isStale?: boolean;
 }
 
-export type PlanStatus = "DRAFT" | "ACTIVE" | "STALE" | "SUPERSEDED";
+export type PlanStatus = "DRAFT" | "ACTIVE" | "PROPOSED" | "STALE" | "SUPERSEDED";
 export type ConfirmationStatus = "PENDING" | "CONFIRMED" | "NEEDS_CHANGES" | "STALE";
 export type TripStatus = "PLANNING" | "CONFIRMED" | "BOOKED" | "CANCELLED" | "STALE";
+export type ConstraintProposalStatus = "PENDING" | "CONFIRMED" | "DISMISSED" | "REVOKED";
+export type PlanAdoptionDecision = "ACCEPT" | "NEEDS_CHANGES";

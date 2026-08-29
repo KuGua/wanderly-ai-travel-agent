@@ -24,6 +24,19 @@ import type {
   UpdateTripTitleResponse,
   UpdateDraftTripBriefInput,
   UpdateDraftTripBriefResponse,
+  TripConstraintProposal,
+  TripConstraintsResponse,
+  TripConstraintsOwnerResponse,
+  TripConstraintProposalsResponse,
+  CreateTripConstraintProposalRequest,
+  ConfirmTripConstraintProposalRequest,
+  UpsertTripConstraintFactRequest,
+  ConfirmProposalResponse,
+  UpsertFactResponse,
+  CastAdoptionVoteRequest,
+  AdoptionVoteResponse,
+  AdoptionVoteListResponse,
+  TripPlansListResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -45,4 +58,19 @@ export interface TravelApi {
   activateTrip(tripId: string, input: TripActivationRequest): Promise<TripActivationResponse>;
   updateTripTitle(tripId: string, input: UpdateTripTitleInput): Promise<UpdateTripTitleResponse>;
   updateDraftTripBrief?(tripId: string, input: UpdateDraftTripBriefInput): Promise<UpdateDraftTripBriefResponse>;
+
+  // ── Team Agent 协作编排 (Phase 5) ────────────────────────────────────────────
+  // These are intentionally optional so existing partial mocks and consumers
+  // can adopt them incrementally without touching the entire test suite.
+  createConstraintProposal?(tripId: string, input: CreateTripConstraintProposalRequest, options?: { idempotencyKey?: string }): Promise<TripConstraintProposal>;
+  listMyConstraintProposals?(tripId: string): Promise<TripConstraintProposalsResponse>;
+  confirmConstraintProposal?(tripId: string, proposalId: string, input: ConfirmTripConstraintProposalRequest, options?: { idempotencyKey?: string }): Promise<ConfirmProposalResponse>;
+  dismissConstraintProposal?(tripId: string, proposalId: string, options?: { idempotencyKey?: string }): Promise<{ dismissed: true; proposalId: string }>;
+  upsertConstraintFact?(tripId: string, factId: string, input: UpsertTripConstraintFactRequest, options?: { idempotencyKey?: string }): Promise<UpsertFactResponse>;
+  revokeConstraintFact?(tripId: string, factId: string, options?: { idempotencyKey?: string }): Promise<UpsertFactResponse>;
+  listConstraintsForMembers?(tripId: string): Promise<TripConstraintsResponse>;
+  listConstraintsForOwner?(tripId: string): Promise<TripConstraintsOwnerResponse>;
+  castAdoptionVote?(planId: string, input: CastAdoptionVoteRequest, options?: { idempotencyKey?: string }): Promise<AdoptionVoteResponse>;
+  listAdoptionVotes?(planId: string): Promise<AdoptionVoteListResponse>;
+  listTripPlans?(tripId: string): Promise<TripPlansListResponse>;
 }

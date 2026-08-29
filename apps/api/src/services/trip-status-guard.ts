@@ -22,7 +22,12 @@ type ActiveTripStatus = Exclude<
  */
 export async function requireActiveTrip(
   tripId: string,
-  operation: "invitation" | "consent" | "planning" | "confirmation" | "booking" | "change_event" = "planning",
+  operation:
+    | "invitation" | "consent" | "planning" | "confirmation" | "booking" | "change_event"
+    | "constraint_propose" | "constraint_confirm" | "constraint_dismiss"
+    | "constraint_upsert" | "constraint_revoke" | "constraint_read"
+    | "adoption_vote"
+    = "planning",
 ): Promise<ActiveTripStatus> {
   const [trip] = await db.select({ status: sharedTrips.status })
     .from(sharedTrips)

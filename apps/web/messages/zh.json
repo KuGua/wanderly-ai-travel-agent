@@ -412,6 +412,31 @@
       "openPinAria": "在完整地图中查看 {name}"
     }
   },
+  "teamOrchestration": {
+    "title": "团队约束与方案",
+    "ownerPanel": "你的私有约束",
+    "memberPanel": "Trip 共享约束（仅 TEAM_VISIBLE）",
+    "plansProposedHeading": "待采纳方案",
+    "plansActiveHeading": "当前生效方案",
+    "plansStaleHeading": "历史方案（仅作参考）",
+    "residualInferenceWarning": "即使选择 confidential 可见性，规划结果仍可能间接反映该约束。我们显式提示「残余推断风险」；最终预订仍需全员一致采纳。",
+    "constraintsLoading": "正在加载约束…",
+    "plansLoading": "正在加载方案…",
+    "votesEmpty": "尚无投票",
+    "votesYou": "你已投：{decision}",
+    "voteAccept": "Accept",
+    "voteNeedsChanges": "需修改",
+    "voteOutcomeAccepted": "已采纳",
+    "voteOutcomeBlocked": "已阻止——至少一位成员请求修改",
+    "voteOutcomeCast": "投票已记录，还需 {remaining} 票",
+    "noProposal": "尚无提案，可在私聊中发起。",
+    "noConstraints": "尚无约束。",
+    "confirmProposal": "确认",
+    "dismissProposal": "忽略",
+    "saveFact": "保存",
+    "revokeFact": "撤销",
+    "residualInferenceAck": "我了解残余推断风险"
+  },
   "login": {
     "heading": "登录",
     "body": "登录您的 Wanderly 账号。",

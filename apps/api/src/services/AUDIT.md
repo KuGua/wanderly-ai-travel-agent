@@ -25,7 +25,13 @@ runs **before** any insert. Rejection propagates as
   `TRIP_TITLE_UPDATE`, `TRIP_DRAFT_BRIEF_UPDATE`, `TRIP_ACTIVATE`,
   `EXPLORATION_START`, `TRIP_DEFAULT_THREAD_PROVISION`,
   `CONSENT_GRANT`, `CONSENT_REVOKE`.
-- Planning: `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`, `CONFIRMATION_SET`.
+- Planning: `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`, `CONFIRMATION_SET`,
+  `PLAN_REPLAN_ENQUEUED`, `PLAN_ADOPTION_VOTED`, `PLAN_ADOPTED`.
+- Team constraint orchestration (Phase 2 / `docs/team-agent-orchestration-implementation.md` §8):
+  `TRIP_CONSTRAINT_PROPOSED`, `TRIP_CONSTRAINT_CONFIRMED`, `TRIP_CONSTRAINT_REVOKED`.
+  These summaries include only `proposalId`/`factId` opaque ids, field category
+  (catalog-derived label, never the value), visibility enum, strength enum, and
+  revision; `valueJson` is intentionally excluded.
 - Flight search: `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`; summaries contain only provider, bounded outcome/error code, and safe correlation identifiers, never raw provider payloads.
 - Booking and changes: `BOOKING_SUBMIT`, `BOOKING_RESULT`, `CHANGE_EVENT`, `VISA_CHECK`.
 - Chat: `CHAT_THREAD_CREATE`, `CHAT_THREAD_DELETE`, `CHAT_MESSAGE_APPEND`.
@@ -81,7 +87,8 @@ The supported `AuditAction` values are:
 - `TRIP_TITLE_UPDATE`, `TRIP_DRAFT_BRIEF_UPDATE`, `TRIP_ACTIVATE`
 - `EXPLORATION_START`, `TRIP_DEFAULT_THREAD_PROVISION`
 - `CONSENT_GRANT`, `CONSENT_REVOKE`
-- `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`
+- `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`,
+  `PLAN_REPLAN_ENQUEUED`, `PLAN_ADOPTION_VOTED`, `PLAN_ADOPTED`
 - `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`
 - `CONFIRMATION_SET`
 - `BOOKING_SUBMIT`, `BOOKING_RESULT`

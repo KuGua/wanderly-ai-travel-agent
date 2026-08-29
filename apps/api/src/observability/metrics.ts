@@ -339,4 +339,40 @@ metrics.registerHistogram(
   },
 );
 
+// ─── Team Agent 协作编排 (Phase 6) ─────────────────────────────────────────
+//
+// Labels are deliberately low-cardinality enums per spec §8. The forbidden-key
+// list already excludes user/trip/plan/value/identifiers, so the only way to
+// correlate back to a specific decision is via `app.correlation_id` on the
+// related HTTP/DB span.
+
+metrics.registerCounter(
+  "trip_constraint_mutation_total",
+  "Trip constraint proposal/fact mutations by operation, visibility, strength, and outcome.",
+  {
+    operation: ["propose", "confirm", "dismiss", "upsert", "revoke"],
+    visibility: ["team_visible", "orchestrator_confidential", "n_a"],
+    strength: ["hard", "soft", "n_a"],
+    result: ["success", "replay", "conflict", "catalog_invalid"],
+  },
+);
+
+metrics.registerCounter(
+  "plan_adoption_vote_total",
+  "Plan adoption votes by decision and outcome.",
+  {
+    decision: ["accept", "needs_changes"],
+    result: ["cast", "adopted", "blocked", "stale_plan"],
+  },
+);
+
+metrics.registerCounter(
+  "plan_replan_total",
+  "Auto REPLAN enqueues by trigger and outcome.",
+  {
+    trigger: ["trip_constraint_confirmed", "trip_constraint_revoked", "trip_constraint_upsert", "consent", "change_event"],
+    result: ["enqueued", "superseded", "missing_snapshot"],
+  },
+);
+
 export type Metrics = typeof metrics;

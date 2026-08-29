@@ -412,6 +412,31 @@
       "openPinAria": "View {name} on the full map"
     }
   },
+  "teamOrchestration": {
+    "title": "Team constraints & plans",
+    "ownerPanel": "Your private constraints",
+    "memberPanel": "Trip-wide constraints (team-visible only)",
+    "plansProposedHeading": "Pending proposal",
+    "plansActiveHeading": "Active plan",
+    "plansStaleHeading": "Reference (older proposals)",
+    "residualInferenceWarning": "Even with confidential visibility, the planner's choice may indirectly reveal something about this constraint. We surface residual inference risk explicitly; the final booking still goes through the unanimous adoption vote.",
+    "constraintsLoading": "Loading constraints…",
+    "plansLoading": "Loading plans…",
+    "votesEmpty": "No votes yet",
+    "votesYou": "You voted {decision}",
+    "voteAccept": "Accept",
+    "voteNeedsChanges": "Need changes",
+    "voteOutcomeAccepted": "Adopted",
+    "voteOutcomeBlocked": "Blocked — at least one member requested changes",
+    "voteOutcomeCast": "Vote recorded — waiting on {remaining} more",
+    "noProposal": "No proposals yet. Use the private chat to draft one.",
+    "noConstraints": "No constraints yet.",
+    "confirmProposal": "Confirm",
+    "dismissProposal": "Dismiss",
+    "saveFact": "Save",
+    "revokeFact": "Revoke",
+    "residualInferenceAck": "I understand the residual inference risk"
+  },
   "login": {
     "heading": "Sign in",
     "body": "Sign in to your Wanderly account.",

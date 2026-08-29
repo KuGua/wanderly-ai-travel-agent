@@ -6,7 +6,8 @@ import type {
   GroundOffer,
   StayOffer,
 } from "../types/domain.js";
-import { assertFieldAllowed, SnapshotFieldNotAllowedError } from "./snapshot-policy.js";
+import { assertFieldAllowed, assertFieldAllowedV2, SnapshotFieldNotAllowedError } from "./snapshot-policy.js";
+import { CONSTRAINT_FIELD_CATALOG, type ConstraintFieldKey } from "./constraint-field-catalog.js";
 
 const provenanceFields = {
   source: z.string(),
@@ -62,11 +63,16 @@ const groundOfferSchema = z.object({
 
 export const planOutputSchema = z.object({
   destination: z.string().min(1),
+  // Optional for legacy plans. New planners (Team Agent 协作编排 Phase 3) emit
+  // the full candidate set explicitly. When absent, the validator derives a
+  // single-element set from `destination` so pre-Phase 3 plans still pass.
+  destinationCandidatesEvaluated: z.array(z.string().min(1)).min(1).optional(),
   flights: z.array(flightOfferSchema).min(1),
   stays: z.array(stayOfferSchema).min(1),
   ground: z.array(groundOfferSchema).min(1),
   generatedAt: z.string().min(1),
   constraintReferences: z.array(z.string().min(1)).optional(),
+  publicExplanationTokens: z.array(z.string().min(1)).optional(),
 }).strict();
 
 export type ValidatedPlanOutput = z.infer<typeof planOutputSchema>;
@@ -78,11 +84,14 @@ export type PlanViolationCode =
   | "ORIGIN_MISSING"
   | "DESTINATION_NOT_ALLOWED"
   | "DESTINATION_MISMATCH"
+  | "DESTINATION_CANDIDATES_INCOMPLETE"
   | "SOURCE_REQUIRED"
   | "PROVENANCE_REQUIRED"
   | "EVIDENCE_NOT_FOUND"
   | "EVIDENCE_MISMATCH"
-  | "GENERATED_AT_MISMATCH";
+  | "GENERATED_AT_MISMATCH"
+  | "CONFIDENTIAL_VALUE_LEAK"
+  | "EXPLANATION_TOKEN_NOT_ALLOWED";
 
 export interface PlanValidationViolation {
   code: PlanViolationCode;
@@ -170,7 +179,11 @@ export function validatePlanOutput(params: {
 
   (plan.constraintReferences ?? []).forEach((fieldPath, index) => {
     try {
-      assertFieldAllowed(params.snapshot, fieldPath);
+      if (fieldPath.startsWith("teamVisible.") || fieldPath.startsWith("orchestratorConfidential.")) {
+        assertFieldAllowedV2(params.snapshot, fieldPath);
+      } else {
+        assertFieldAllowed(params.snapshot, fieldPath);
+      }
     } catch (error) {
       if (error instanceof SnapshotFieldNotAllowedError) {
         addViolation(violations, "FIELD_NOT_AUTHORIZED", `constraintReferences.${index}`, "Snapshot field is not authorized");
@@ -182,6 +195,33 @@ export function validatePlanOutput(params: {
 
   if (!params.snapshot.destinationCandidates.includes(plan.destination)) {
     addViolation(violations, "DESTINATION_NOT_ALLOWED", "destination", "Destination is not allowed by the snapshot");
+  }
+
+  // Spec §6.1: every configured destination candidate must be represented.
+  // When `destinationCandidatesEvaluated` is absent (legacy plans), the
+  // validator synthesizes a single-entry set from `destination` and lets
+  // the destination-set assertion pass. New planners must supply the full
+  // set explicitly.
+  const evaluatedSet = plan.destinationCandidatesEvaluated ?? [plan.destination];
+  const expectedCandidates = new Set(params.snapshot.destinationCandidates);
+  const evaluated = new Set(evaluatedSet);
+  const missingCandidates = params.snapshot.destinationCandidates.filter(c => !evaluated.has(c));
+  if (missingCandidates.length > 0) {
+    addViolation(
+      violations,
+      "DESTINATION_CANDIDATES_INCOMPLETE",
+      "destinationCandidatesEvaluated",
+      `Missing destination candidates in research coverage: ${missingCandidates.join(", ")}`,
+    );
+  }
+  const extraCandidates = evaluatedSet.filter(c => !expectedCandidates.has(c));
+  if (extraCandidates.length > 0) {
+    addViolation(
+      violations,
+      "DESTINATION_CANDIDATES_INCOMPLETE",
+      "destinationCandidatesEvaluated",
+      `Plan lists destinations not in snapshot: ${extraCandidates.join(", ")}`,
+    );
   }
 
   plan.flights.forEach((flight, index) => {
@@ -214,6 +254,16 @@ export function validatePlanOutput(params: {
   validateOfferEvidence({ category: "stays", offers: plan.stays, evidence: params.evidence.stays, violations });
   validateOfferEvidence({ category: "ground", offers: plan.ground, evidence: params.evidence.ground, violations });
 
+  // Deterministic confidentiality check (spec §6.1):
+  //   - confidential values from the snapshot must NEVER appear in the plan JSON;
+  //   - publicExplanationTokens, when supplied, must come from the snapshot's
+  //     allow-list of safe tokens; free-form explanations are blocked.
+  assertConfidentialFree({
+    plan,
+    snapshot: params.snapshot,
+    violations,
+  });
+
   const expectedGeneratedAt = [...plan.flights, ...plan.stays, ...plan.ground]
     .map(offer => offer.capturedAt)
     .sort()
@@ -227,4 +277,141 @@ export function validatePlanOutput(params: {
   }
 
   return plan;
+}
+
+/**
+ * Spec §6.1 deterministic check.
+ *
+ * Walks the plan JSON for any byte-substring match against confidential values
+ * from `snapshot.orchestratorConfidential` (v2). Also enforces that every
+ * `publicExplanationToken` is on the allow-list derived from the field catalog
+ * (defaulting to `SATISFIES_ALL_PRIVATE_CONSTRAINTS` / `OPTIMIZED_FOR_BUDGET` /
+ * etc. white-listed by spec).
+ *
+ * Conservative by design — false positives are preferable to confidential leaks.
+ */
+export function assertConfidentialFree(params: {
+  plan: ValidatedPlanOutput;
+  snapshot: ConstraintSnapshotData;
+  violations: PlanValidationViolation[];
+}): void {
+  const confidentialValues: string[] = [];
+  const confidentialFieldKeys: string[] = [];
+  const meta = readSnapshotV2MetaAuthorized(params.snapshot.authorizedData);
+  if (meta) {
+    for (const list of Object.values(meta.orchestratorConfidential ?? {})) {
+      for (const item of list) {
+        confidentialFieldKeys.push(item.fieldKey ?? "");
+        const serialized = serializeForLeakCheck((item as { valueJson?: unknown }).valueJson);
+        if (serialized) confidentialValues.push(serialized);
+      }
+    }
+  }
+  if (params.snapshot.orchestratorConfidential) {
+    for (const list of Object.values(params.snapshot.orchestratorConfidential)) {
+      for (const item of list) {
+        if (item.visibility !== "ORCHESTRATOR_CONFIDENTIAL") continue;
+        confidentialFieldKeys.push(item.fieldKey);
+        const serialized = serializeForLeakCheck(item.valueJson);
+        if (serialized) confidentialValues.push(serialized);
+      }
+    }
+  }
+
+  const planString = serializeForLeakCheck(params.plan);
+  if (!planString) return;
+
+  for (const value of confidentialValues) {
+    if (value.length >= 3 && planString.includes(value)) {
+      addViolation(
+        params.violations,
+        "CONFIDENTIAL_VALUE_LEAK",
+        "planData",
+        `Plan output contains confidential value from a snapshot projection`,
+      );
+      return;
+    }
+  }
+  for (const fieldKey of confidentialFieldKeys) {
+    if (planString.includes(fieldKey)) {
+      addViolation(
+        params.violations,
+        "CONFIDENTIAL_VALUE_LEAK",
+        "planData",
+        `Plan output references confidential field key "${fieldKey}"`,
+      );
+      return;
+    }
+  }
+
+  if (params.plan.publicExplanationTokens && params.plan.publicExplanationTokens.length > 0) {
+    const meta = readSnapshotV2MetaAuthorized(params.snapshot.authorizedData);
+    const allowed = new Set<string>();
+    if (meta) {
+      for (const list of Object.values(meta.orchestratorConfidential ?? {})) {
+        for (const item of list) {
+          const descriptor = CONSTRAINT_FIELD_CATALOG[item.fieldKey as ConstraintFieldKey];
+          if (descriptor) {
+            for (const token of descriptor.safePublicExplanationTokens) allowed.add(token);
+          }
+        }
+      }
+      for (const list of Object.values(meta.teamVisible ?? {})) {
+        for (const item of list) {
+          const descriptor = CONSTRAINT_FIELD_CATALOG[(item as { fieldKey?: string }).fieldKey as ConstraintFieldKey];
+          if (descriptor) {
+            for (const token of descriptor.safePublicExplanationTokens) allowed.add(token);
+          }
+        }
+      }
+    }
+    const fallback = params.snapshot.safePublicExplanationTokens;
+    if (fallback) {
+      for (const token of fallback) allowed.add(token);
+    }
+    if (allowed.size === 0) {
+      addViolation(
+        params.violations,
+        "EXPLANATION_TOKEN_NOT_ALLOWED",
+        "publicExplanationTokens",
+        "Snapshot does not expose an explanation token allow-list",
+      );
+      return;
+    }
+    for (const token of params.plan.publicExplanationTokens) {
+      if (!allowed.has(token)) {
+        addViolation(
+          params.violations,
+          "EXPLANATION_TOKEN_NOT_ALLOWED",
+          "publicExplanationTokens",
+          `Token "${token}" is not on the safe allow-list`,
+        );
+        return;
+      }
+    }
+  }
+}
+
+function readSnapshotV2MetaAuthorized(authorizedData: unknown): {
+  schemaVersion: 2;
+  teamVisible: Record<string, Array<{ fieldKey?: string }>>;
+  orchestratorConfidential: Record<string, Array<{ fieldKey?: string }>>;
+} | null {
+  if (typeof authorizedData !== "object" || authorizedData === null) return null;
+  const root = authorizedData as Record<string, unknown>;
+  const meta = root._meta;
+  if (!meta || typeof meta !== "object") return null;
+  if ((meta as Record<string, unknown>).schemaVersion !== 2) return null;
+  return meta as never;
+}
+
+function serializeForLeakCheck(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return null;
+  }
 }

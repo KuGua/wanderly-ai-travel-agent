@@ -8,10 +8,39 @@ import type { RequestContext } from "../utils/context.js";
 import type { BookingExecutionResult, SandboxResult } from "../types/domain.js";
 
 /**
- * Submit a booking request to the sandbox. Only allowed when all required
- * members have confirmed the latest ACTIVE plan. Atomic via a single
- * transaction so idempotency claim, booking row, audit, and result
- * update commit together.
+ * Spec §10.8 — booking sandbox must refuse PROPOSED / STALE / SUPERSEDED /
+ * non-unanimous-vote plans. The gate error carries a stable category so the
+ * route layer can map it to a metric label without leaking the underlying
+ * status value.
+ */
+export type BookingGateCategory =
+  | "plan_state"
+  | "plan_unavailable"
+  | "quorum"
+  | "non_unanimous"
+  | "snapshot_stale";
+
+export class BookingGateError extends Error {
+  readonly statusCode: 409 | 422 = 422;
+  readonly code = "BOOKING_GATE_DENIED";
+  readonly category: BookingGateCategory;
+
+  constructor(category: BookingGateCategory, message: string) {
+    super(message);
+    this.name = "BookingGateError";
+    this.category = category;
+  }
+}
+
+/**
+ * Submit a booking request to the sandbox. Only allowed when:
+ *  - the plan is `ACTIVE` (post-adoption-vote ACTIVATE — spec §1.8, §6.2);
+ *  - all required members' `member_confirmations` are `CONFIRMED`;
+ *  - the underlying snapshot is not STALE (defense-in-depth for late mutations
+ *    that haven't yet hit the staleness cascade).
+ *
+ * Atomic via a single transaction so idempotency claim, plan-gate check,
+ * booking row, audit, and result update commit together.
  */
 export async function submitBooking(params: {
   ctx: RequestContext;
@@ -45,9 +74,23 @@ export async function submitBooking(params: {
       .where(eq(itineraryPlans.id, params.planId))
       .limit(1);
 
-    if (!plan) throw new Error("Plan not found");
+    if (!plan) {
+      throw new BookingGateError("plan_unavailable", "Plan not found");
+    }
+    // Spec §10.8 — reject anything but ACTIVE; the only path to ACTIVE is the
+    // unanimous adoption vote (Phase 4's `activateProposedPlan`), so this
+    // implicitly guarantees unanimity.
     if (plan.status !== "ACTIVE") {
-      throw new Error(`Cannot book plan with status ${plan.status}`);
+      throw new BookingGateError(
+        "plan_state",
+        `Cannot book plan with status ${plan.status}; only ACTIVE plans are eligible`,
+      );
+    }
+    if (plan.status === "ACTIVE" && plan.staleReason === "snapshot_manifest_superseded") {
+      throw new BookingGateError(
+        "snapshot_stale",
+        "Plan was approved but its source snapshot has since been superseded",
+      );
     }
 
     const { allConfirmed } = await checkAllConfirmed({
@@ -55,7 +98,10 @@ export async function submitBooking(params: {
       tripId: params.tripId,
     });
     if (!allConfirmed) {
-      throw new Error("Not all required members have confirmed this plan");
+      throw new BookingGateError(
+        "quorum",
+        "Not all required members have confirmed this plan",
+      );
     }
 
     await tx.insert(bookingExecutions).values({

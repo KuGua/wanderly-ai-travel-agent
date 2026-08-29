@@ -19,14 +19,21 @@ export type AuditAction =
   | "TRIP_INVITATION_REVOKE" | "TRIP_DEFAULT_THREAD_PROVISION"
   | "EXPLORATION_START" | "TRIP_ACTIVATE" | "TRIP_TITLE_UPDATE" | "TRIP_DRAFT_BRIEF_UPDATE"
   | "SKILL_INVOKE" | "AGENT_RUN" | "AGENT_TASK"
-  | "FLIGHT_SEARCH_REQUESTED" | "FLIGHT_SEARCH_COMPLETED" | "FLIGHT_SEARCH_UNAVAILABLE";
+  | "FLIGHT_SEARCH_REQUESTED" | "FLIGHT_SEARCH_COMPLETED" | "FLIGHT_SEARCH_UNAVAILABLE"
+  // Phase 2 / Team Agent 协作编排 (added via 0021_team_orchestration_enums.sql):
+  | "TRIP_CONSTRAINT_PROPOSED"
+  | "TRIP_CONSTRAINT_CONFIRMED"
+  | "TRIP_CONSTRAINT_REVOKED"
+  | "PLAN_REPLAN_ENQUEUED"
+  | "PLAN_ADOPTION_VOTED"
+  | "PLAN_ADOPTED";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
   [key: string]: AuditSummaryValue;
 };
 
 const MAX_SUMMARY_DEPTH = 3;
-const UNSAFE_SUMMARY_KEY = /(?:password|secret|token|credential|authorization|cookie|passport|documentNumber|dateOfBirth|nationality|rawBody|requestBody|prompt|conversation|privateMessage|payload)/i;
+const UNSAFE_SUMMARY_KEY = /(?:password|secret|token|credential|authorization|cookie|passport|documentNumber|dateOfBirth|nationality|rawBody|requestBody|prompt|conversation|privateMessage|payload|valueJson|orchestratorConfidential|projectionManifest)/i;
 
 export class AuditSummaryValidationError extends Error {
   constructor(message: string) {
