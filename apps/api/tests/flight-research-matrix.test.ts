@@ -6,11 +6,7 @@ import { agentTaskRuns, auditEvents, constraintSnapshots, itineraryPlans, planni
 import { evaluateFlightResearchCompleteness, flightMatrixToGaps } from "../src/services/flight-research-matrix-service.js";
 import { acceptPlanningTask } from "../src/tasks/task-repository.js";
 import { createRequestContext } from "../src/utils/context.js";
-import { generatePlan, type PlanningDependencies } from "../src/services/planning-service.js";
-import { __resetRegistryForTests, registerSkill } from "../src/agents/skill-registry.js";
-import { createFlightSearchSkill } from "../src/skills/shared/flight-search-skill.js";
-import { saveConfirmedSearchPreferences } from "../src/services/flight-search-preferences-service.js";
-import { testPlanningDependencies } from "./helpers/planning.js";
+import { __resetRegistryForTests } from "../src/agents/skill-registry.js";
 
 describe("flight research matrix", () => {
   let userId: string; let tripId: string; let snapshotId: string; let taskId: string; let otherTaskId: string; let planningSnapshotId: string | null;

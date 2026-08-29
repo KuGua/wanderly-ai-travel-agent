@@ -101,7 +101,7 @@ export class AmadeusTransferProvider implements MobilityOfferProvider {
         const parsed = amadeusTransferResponseSchema.safeParse(await response.json());
         if (!parsed.success) return this.unavailable("INVALID_PROVIDER_RESPONSE", start);
         payload = parsed.data;
-      } catch (_e) {
+      } catch {
         return this.unavailable("INVALID_PROVIDER_RESPONSE", start);
       }
       const offers: NormalizedMobilityOffer[] = payload.data.map((offer) => normalizeOffer({

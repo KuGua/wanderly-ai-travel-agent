@@ -22,6 +22,7 @@ runs **before** any insert. Rejection propagates as
 - Profile: `PROFILE_CREATE`, `PROFILE_UPDATE`, `PROFILE_DELETE`.
 - Trip and consent: `TRIP_CREATE`, `TRIP_JOIN`, `TRIP_INVITATION_CREATE`,
   `TRIP_INVITATION_ACCEPT`, `TRIP_INVITATION_REVOKE`,
+  `TRIP_INVITATION_DECLINE`,
   `TRIP_TITLE_UPDATE`, `TRIP_DRAFT_BRIEF_UPDATE`, `TRIP_ACTIVATE`,
   `EXPLORATION_START`, `TRIP_DEFAULT_THREAD_PROVISION`,
   `CONSENT_GRANT`, `CONSENT_REVOKE`.
@@ -33,6 +34,14 @@ runs **before** any insert. Rejection propagates as
   (catalog-derived label, never the value), visibility enum, strength enum, and
   revision; `valueJson` is intentionally excluded.
 - Flight search: `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`; summaries contain only provider, bounded outcome/error code, and safe correlation identifiers, never raw provider payloads.
+- Place, navigation, and mobility providers: `PLACE_SEARCH_REQUESTED`,
+  `PLACE_SEARCH_COMPLETED`, `PLACE_SEARCH_UNAVAILABLE`,
+  `NAVIGATION_ROUTE_REQUESTED`, `NAVIGATION_ROUTE_COMPLETED`,
+  `NAVIGATION_ROUTE_UNAVAILABLE`, `MOBILITY_OFFER_REQUESTED`,
+  `MOBILITY_OFFER_COMPLETED`, `MOBILITY_OFFER_UNAVAILABLE`. Summaries contain
+  provider and bounded operation/outcome metadata only; never raw provider payloads.
+- Trip places and research: `TRIP_PLACE_PROPOSED`, `TRIP_PLACE_ADOPTED`,
+  `TRIP_PLACE_REVOKED`, `RESEARCH_RESULT_RECORDED`.
 - Booking and changes: `BOOKING_SUBMIT`, `BOOKING_RESULT`, `CHANGE_EVENT`, `VISA_CHECK`.
 - Chat: `CHAT_THREAD_CREATE`, `CHAT_THREAD_DELETE`, `CHAT_MESSAGE_APPEND`.
 - Agent runtime: `SKILL_INVOKE`, `AGENT_RUN`, `AGENT_TASK`. Task summaries
@@ -59,7 +68,7 @@ runs **before** any insert. Rejection propagates as
 
 ```ts
 const UNSAFE_SUMMARY_KEY =
-  /(?:password|secret|token|credential|authorization|cookie|passport|documentNumber|dateOfBirth|nationality|rawBody|requestBody|prompt|conversation|privateMessage|payload)/i;
+  /(?:password|secret|token|credential|authorization|cookie|passport|documentNumber|dateOfBirth|nationality|rawBody|requestBody|prompt|conversation|privateMessage|payload|valueJson|orchestratorConfidential|projectionManifest)/i;
 ```
 
 Any key matching this regex triggers `AuditSummaryValidationError("Unsafe
@@ -83,13 +92,19 @@ The supported `AuditAction` values are:
 
 - `PROFILE_CREATE`, `PROFILE_UPDATE`, `PROFILE_DELETE`
 - `TRIP_CREATE`, `TRIP_JOIN`
-- `TRIP_INVITATION_CREATE`, `TRIP_INVITATION_ACCEPT`, `TRIP_INVITATION_REVOKE`
+- `TRIP_INVITATION_CREATE`, `TRIP_INVITATION_ACCEPT`, `TRIP_INVITATION_REVOKE`,
+  `TRIP_INVITATION_DECLINE`
 - `TRIP_TITLE_UPDATE`, `TRIP_DRAFT_BRIEF_UPDATE`, `TRIP_ACTIVATE`
 - `EXPLORATION_START`, `TRIP_DEFAULT_THREAD_PROVISION`
 - `CONSENT_GRANT`, `CONSENT_REVOKE`
 - `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`,
   `PLAN_REPLAN_ENQUEUED`, `PLAN_ADOPTION_VOTED`, `PLAN_ADOPTED`
 - `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`
+- `PLACE_SEARCH_REQUESTED`, `PLACE_SEARCH_COMPLETED`, `PLACE_SEARCH_UNAVAILABLE`
+- `NAVIGATION_ROUTE_REQUESTED`, `NAVIGATION_ROUTE_COMPLETED`, `NAVIGATION_ROUTE_UNAVAILABLE`
+- `MOBILITY_OFFER_REQUESTED`, `MOBILITY_OFFER_COMPLETED`, `MOBILITY_OFFER_UNAVAILABLE`
+- `TRIP_PLACE_PROPOSED`, `TRIP_PLACE_ADOPTED`, `TRIP_PLACE_REVOKED`
+- `RESEARCH_RESULT_RECORDED`
 - `CONFIRMATION_SET`
 - `BOOKING_SUBMIT`, `BOOKING_RESULT`
 - `CHANGE_EVENT`, `VISA_CHECK`

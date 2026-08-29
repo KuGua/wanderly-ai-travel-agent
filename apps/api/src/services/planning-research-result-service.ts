@@ -2,7 +2,7 @@ import { z } from "zod";
 import { db } from "../db/database.js";
 import { planningResearchResults, researchResultStatusEnum } from "../db/schema.js";
 import type { RequestContext } from "../utils/context.js";
-import type { PlanningResearchResult, ServiceCapability, ServiceGap, ProviderUnavailableCode, ResearchResultStatus } from "../types/domain.js";
+import type { PlanningResearchResult, ServiceCapability, ProviderUnavailableCode, ResearchResultStatus } from "../types/domain.js";
 import { recordAudit } from "./audit-service.js";
 
 /**

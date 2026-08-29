@@ -1,5 +1,5 @@
 ---
-name: places-adopt
+name: places.adopt
 source-of-truth: ./trip-place-skill.ts
 agent: shared
 status: stable
@@ -21,8 +21,8 @@ evidence can never outlive its referenced place.
 | `name` | `places.adopt` | constant |
 | `agent` | `shared` | constant |
 | `version` | `1.0.0` | constant |
-| `allowedTools` | `snapshot:read`, `places:search`, `places:adopt`, `plan:write:propose` | `skill.allowedTools` |
-| `timeoutMs` | `8_000` | per-call DB transaction deadline |
+| `allowedTools` | `"snapshot:read"`, `"places:search"`, `"places:adopt"`, `"plan:write:propose"` | `skill.allowedTools` |
+| `timeoutMs` | `8000` | per-call DB transaction deadline |
 | `needsConfirm` | `false` | adoption is the user-confirming UI step |
 
 ## Contract and authorization

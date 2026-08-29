@@ -28,15 +28,15 @@ audit emission all assume these fields are present.
 ### `AgentKind` (`contracts.ts:5`)
 
 ```ts
-type AgentKind = "personal" | "shared" | "review";
+type AgentKind = "personal" | "shared" | "review" | "public-content";
 ```
 
 Determines which scopes a Skill may declare (see [§Allowed tools](#allowed-tools))
 and which default policy applies at invocation time.
 
-### `SkillScope` (`contracts.ts:7-14`)
+### `SkillScope` (`contracts.ts:7-18`)
 
-The 9-element union every Skill's `allowedTools` is constrained to:
+The 13-element union every Skill's `allowedTools` is constrained to:
 
 ```ts
 type SkillScope =
@@ -48,7 +48,11 @@ type SkillScope =
   | "bookings"
   | "snapshot:read"
   | "chat:read"
-  | "flight:search";
+  | "flight:search"
+  | "places:search"
+  | "places:adopt"
+  | "navigation:route"
+  | "mobility:search";
 ```
 
 ### `PolicyGate` (`contracts.ts:20-22`)
@@ -107,8 +111,9 @@ Defined in `policy-gate.ts:9-13`:
 | AgentKind | Allowed `SkillScope` values |
 | --- | --- |
 | `personal` | `profile:read`, `profile:write:propose`, `consent:read`, `chat:read` |
-| `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read`, `flight:search` |
+| `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read`, `flight:search`, `places:search`, `places:adopt`, `navigation:route`, `mobility:search` |
 | `review` | `snapshot:read`, `plan:write:propose` |
+| `public-content` | None |
 
 Any Skill whose `allowedTools` contains a value not in its agent kind's list
 is rejected at **registration** with `SkillError('TOOL_NOT_ALLOWED')`
