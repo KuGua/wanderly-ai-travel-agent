@@ -713,7 +713,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 **Starting conditions:** An active Trip has a creator and at least one existing member.
 
-1. As creator, open `/trips/:tripId/invite`, enter a valid email and create an invitation. Verify the page returns a one-time link with a seven-day expiry and explicitly says email delivery is not configured.
+1. As creator, open `/trips/:tripId/invite`. At 375px, 768px, 1024px and 1440px widths, verify the invite form and current-member list remain within one responsive workspace, use the standard Wanderly card colors, show translated member roles, and have no horizontal overflow. Enter a valid email and create an invitation. Verify the page returns a one-time link with a seven-day expiry and explicitly says email delivery is not configured.
 2. Verify no API searches users and neither request/response, audit event nor telemetry contains the raw recipient email; storage contains only HMAC and masked display data.
 3. Repeat as a non-creator and for a Draft Trip; expect no usable control and API `403`/`409` respectively.
 4. Open the link signed out, then sign in or register with the invited email and return to the link. Verify that only the matching email can preview, accept or decline; a different email gets the same unavailable result.

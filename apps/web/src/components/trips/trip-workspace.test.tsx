@@ -220,6 +220,9 @@ describe("TripWorkspace", () => {
     });
     renderWithIntl(<TripInvitationPage tripId={TRIP_ID} />, { api });
 
+    expect(await screen.findByRole("heading", { name: "Current members" })).toBeInTheDocument();
+    expect(screen.getByText("Creator")).toBeInTheDocument();
+    expect(screen.queryByText(/trips\.workspace\.invitation\.roleValue/)).not.toBeInTheDocument();
     fireEvent.change(await screen.findByRole("textbox", { name: "Teammate email" }), { target: { value: "bob@example.test" } });
     fireEvent.click(screen.getByRole("button", { name: "Create invite link" }));
 
