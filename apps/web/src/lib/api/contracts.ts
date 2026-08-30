@@ -50,6 +50,7 @@ export const tripStatusSchema = z.enum([
   "CANCELLED",
   "STALE",
 ]);
+export const tripArchiveReasonSchema = z.enum(["USER_ARCHIVED", "DATE_ELAPSED"]);
 
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
@@ -61,6 +62,8 @@ export const tripSummarySchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateSchema.nullable(),
   travelDateEnd: dateSchema.nullable(),
+  archivedAt: z.string().datetime().nullable().optional(),
+  archiveReason: tripArchiveReasonSchema.nullable().optional(),
   memberCount: z.number().int().nonnegative(),
   role: tripRoleSchema,
   createdAt: z.string().datetime(),
@@ -103,6 +106,8 @@ export const tripDetailSchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateSchema.nullable(),
   travelDateEnd: dateSchema.nullable(),
+  archivedAt: z.string().datetime().nullable().optional(),
+  archiveReason: tripArchiveReasonSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -120,6 +125,26 @@ export const tripDetailResponseSchema = z.object({
   callerRole: tripRoleSchema,
   members: z.array(tripMemberSchema),
 });
+
+export const tripInviteeSchema = z.object({
+  id: z.string().uuid(),
+  displayName: z.string().min(1).max(128),
+}).strict();
+
+export const searchTripInviteesResponseSchema = z.object({
+  candidates: z.array(tripInviteeSchema).max(10),
+}).strict();
+
+export const createTripInvitationInputSchema = z.object({
+  invitedUserId: z.string().uuid(),
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const tripInvitationCreateResponseSchema = z.object({
+  invitationId: z.string().uuid(),
+  inviteToken: z.string().min(32).max(256),
+  expiresAt: z.string().datetime(),
+}).strict();
 
 export const invitationPreviewResponseSchema = z.object({
   trip: z.object({
@@ -303,7 +328,7 @@ export const explorationStartRequestSchema = z.object({
 export const explorationDraftTripSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-  status: z.literal("DRAFT"),
+    status: z.literal("PLANNING"),
   departureCities: z.array(z.string()).length(0),
   destinationCandidates: z.array(z.string()).length(0),
   travelDateStart: z.null(),
@@ -418,6 +443,75 @@ export const locationIntroductionResponseSchema = z.union([
   locationIntroductionGeneratingSchema,
 ]);
 
+// ─── Personal long-term memory ───────────────────────────────────────────────
+// Mirrors src/routes/profile-memory.ts. Deliberately narrow: no profileId, no
+// observation dates, no trip references, no activation score — see
+// docs/long-term-memory-implementation.md section 5.4.
+
+export const memoryFactSchema = z.object({
+  id: z.string().uuid(),
+  fieldKey: z.string().min(1),
+  value: z.unknown(),
+  category: z.enum(["PREFERENCE", "CONSTRAINT"]),
+  source: z.enum(["PROFILE_FORM", "PROPOSAL_CONFIRMATION"]),
+  status: z.enum(["ACTIVE", "SUPERSEDED"]),
+  updatedAt: z.string().datetime(),
+});
+
+/** An unconfirmed candidate. Never render this as an established fact. */
+export const memorySuggestionSchema = z.object({
+  id: z.string().uuid(),
+  fieldKey: z.string().min(1),
+  value: z.unknown(),
+  observationCount: z.number().int().nonnegative(),
+  distinctTripCount: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime(),
+});
+
+export const profileMemoryResponseSchema = z.object({
+  facts: z.array(memoryFactSchema),
+  suggestions: z.array(memorySuggestionSchema),
+});
+
+export const updateMemoryFactInputSchema = z.object({ value: z.unknown() }).strict();
+
+export const resolveProposalResponseSchema = z.object({
+  status: z.enum(["PENDING", "CONFIRMED", "DISMISSED", "EXPIRED"]),
+  factId: z.string().uuid().nullable().optional(),
+});
+
+export type MemoryFact = z.infer<typeof memoryFactSchema>;
+export type MemorySuggestion = z.infer<typeof memorySuggestionSchema>;
+export type ProfileMemoryResponse = z.infer<typeof profileMemoryResponseSchema>;
+export type UpdateMemoryFactInput = z.infer<typeof updateMemoryFactInputSchema>;
+export type ResolveProposalResponse = z.infer<typeof resolveProposalResponseSchema>;
+
+// ─── Trip-scoped memory ──────────────────────────────────────────────────────
+// Mirrors src/routes/trip-memory.ts. A personal override is visible only to its
+// owner; a group decision is visible to every active member.
+
+export const tripMemoryFactSchema = z.object({
+  id: z.string().uuid(),
+  fieldKey: z.string().min(1),
+  value: z.unknown(),
+  kind: z.enum(["PERSONAL_OVERRIDE", "GROUP_DECISION"]),
+  source: z.enum(["OWNER_SAVE", "GROUP_COMMAND"]),
+  status: z.enum(["ACTIVE", "SUPERSEDED"]),
+  updatedAt: z.string().datetime(),
+});
+
+export const tripMemoryOverridesResponseSchema = z.object({
+  overrides: z.array(tripMemoryFactSchema),
+});
+
+export const tripMemoryGroupResponseSchema = z.object({
+  groupDecisions: z.array(tripMemoryFactSchema),
+});
+
+export type TripMemoryFact = z.infer<typeof tripMemoryFactSchema>;
+export type TripMemoryOverridesResponse = z.infer<typeof tripMemoryOverridesResponseSchema>;
+export type TripMemoryGroupResponse = z.infer<typeof tripMemoryGroupResponseSchema>;
+
 export type Profile = z.infer<typeof profileSchema>;
 export type ProfileResponse = z.infer<typeof profileResponseSchema>;
 export type UpdateProfileInput = z.infer<typeof updateProfileInputSchema>;
@@ -454,6 +548,10 @@ export type TripDetailResponse = z.infer<typeof tripDetailResponseSchema>;
 export type InvitationPreviewResponse = z.infer<typeof invitationPreviewResponseSchema>;
 export type AcceptInvitationResponse = z.infer<typeof acceptInvitationResponseSchema>;
 export type DeclineInvitationResponse = z.infer<typeof declineInvitationResponseSchema>;
+export type TripInvitee = z.infer<typeof tripInviteeSchema>;
+export type SearchTripInviteesResponse = z.infer<typeof searchTripInviteesResponseSchema>;
+export type CreateTripInvitationInput = z.infer<typeof createTripInvitationInputSchema>;
+export type TripInvitationCreateResponse = z.infer<typeof tripInvitationCreateResponseSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;

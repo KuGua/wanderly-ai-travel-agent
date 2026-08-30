@@ -7,6 +7,7 @@ import type { TravelApi } from "@/lib/api";
 import { renderWithIntl } from "@/test/render";
 
 import { TripWorkspace } from "./trip-workspace";
+import { TripInvitationPage } from "./trip-invitation-page";
 
 const TRIP_ID = "11111111-1111-4111-8111-111111111111";
 const DEFAULT_THREAD_ID = "22222222-2222-4222-8222-222222222222";
@@ -19,8 +20,8 @@ function buildTripResponse(status: TripDetailResponse["trip"]["status"] = "PLANN
       name: "Tokyo & Kyoto",
       createdBy: "owner-user-id",
       status,
-      departureCities: ["SIN"],
-      destinationCandidates: ["NRT", "LIS"],
+      departureCities: ["San Francisco"],
+      destinationCandidates: ["Tokyo", "Kyoto"],
       travelDateStart: "2026-09-10",
       travelDateEnd: "2026-09-20",
       createdAt: "2026-08-01T10:00:00.000Z",
@@ -91,8 +92,20 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     updateTripTitle: vi.fn(),
     saveTripSearchPreferences: vi.fn(),
     startPlanning: vi.fn(),
-    getLatestPlanningRun: vi.fn().mockResolvedValue({ run: null }),
+    getLatestPlanningRun: vi.fn(),
     getLatestPlan: vi.fn(),
+    searchTripInvitees: vi.fn().mockResolvedValue({ candidates: [] }),
+    createTripInvitation: vi.fn(),
+    getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),
+    updateMemoryFact: vi.fn(),
+    deleteMemoryFact: vi.fn(),
+    confirmMemoryProposal: vi.fn(),
+    dismissMemoryProposal: vi.fn(),
+    getTripMemoryOverrides: vi.fn().mockResolvedValue({ overrides: [] }),
+    getTripMemoryGroupDecisions: vi.fn().mockResolvedValue({ groupDecisions: [] }),
+    saveTripMemoryOverride: vi.fn(),
+    saveTripMemoryGroupDecision: vi.fn(),
+    deleteTripMemory: vi.fn(),
     ...overrides,
   };
 }
@@ -104,32 +117,6 @@ afterEach(() => {
 });
 
 describe("TripWorkspace", () => {
-  it("lets a desktop user resize the middle planning panel without changing trip state", async () => {
-    const api = createApi({
-      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Draft notes", true)] }),
-    });
-    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
-
-    const separator = await screen.findByRole("separator", { name: "Resize planning panel" });
-    fireEvent.keyDown(separator, { key: "ArrowRight" });
-
-    expect(separator.closest("main")).toHaveStyle({ "--trip-planning-width": "524px" });
-    expect(api.startPlanning).not.toHaveBeenCalled();
-  });
-
-  it("lets a desktop user narrow the thread list without changing planning state", async () => {
-    const api = createApi({
-      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Draft notes", true)] }),
-    });
-    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
-
-    const separator = await screen.findByRole("separator", { name: "Resize thread list" });
-    fireEvent.keyDown(separator, { key: "ArrowLeft" });
-
-    expect(separator.closest("main")).toHaveStyle({ "--trip-thread-rail-width": "236px" });
-    expect(api.startPlanning).not.toHaveBeenCalled();
-  });
-
   it("opens a draft in the same workspace used for active planning", async () => {
     const api = createApi({
       getTrip: vi.fn().mockResolvedValue(buildTripResponse("DRAFT")),
@@ -139,13 +126,12 @@ describe("TripWorkspace", () => {
 
     expect(await screen.findByRole("button", { name: /Draft notes/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New thread" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm and start" })).toBeDisabled();
-    expect(screen.getByText("Confirm the trip brief first. Shared planning becomes available after the draft is activated.")).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Activate draft trip" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Invite teammates" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Start planning" }));
     await waitFor(() => expect(api.activateTrip).toHaveBeenCalledWith(TRIP_ID, {
-      departureCities: ["SIN"],
-      destinationCandidates: ["NRT", "LIS"],
+      departureCities: ["San Francisco"],
+      destinationCandidates: ["Tokyo", "Kyoto"],
       travelDateStart: "2026-09-10",
       travelDateEnd: "2026-09-20",
       titleLocale: "en",
@@ -215,51 +201,38 @@ describe("TripWorkspace", () => {
     await waitFor(() => expect(updateTripTitle).toHaveBeenCalledWith(TRIP_ID, { name: "Autumn escape" }));
   });
 
-  it("confirms bounded flight preferences and starts a server-owned Shared planning task", async () => {
-    const saveTripSearchPreferences = vi.fn().mockResolvedValue({
-      tripId: TRIP_ID, version: 1, tripType: "ROUND_TRIP", currency: "USD", adults: 1, cabin: "ECONOMY",
-      offerFreshnessMinutes: 15, confirmedBy: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", createdAt: "2026-08-22T10:00:00.000Z",
-    });
-    const startPlanning = vi.fn().mockResolvedValue({
-      runId: "99999999-9999-4999-8999-999999999999", operation: "PLAN", status: "QUEUED", generationAttempt: 0,
-      snapshotId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    });
+  it("places the creator-only invitation control above the trip overview", async () => {
     const api = createApi({
       getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
-      getLatestPlanningRun: vi.fn().mockResolvedValue({ run: null }), saveTripSearchPreferences, startPlanning,
     });
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
 
-    fireEvent.click(await screen.findByRole("button", { name: /Confirm and start/ }));
-
-    await waitFor(() => expect(saveTripSearchPreferences).toHaveBeenCalledWith(TRIP_ID, {
-      tripType: "ROUND_TRIP", adults: 1, cabin: "ECONOMY", currency: "USD", offerFreshnessMinutes: 15,
-    }));
-    expect(startPlanning).toHaveBeenCalledWith(TRIP_ID);
+    const invite = await screen.findByRole("link", { name: "Invite teammates" });
+    const overview = screen.getByText("Trip overview");
+    expect(invite.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(invite).toHaveAttribute("href", `/trips/${TRIP_ID}/invite`);
   });
 
-  it("shows only the server-activated plan and its grounded flight provenance", async () => {
-    const run = {
-      runId: "99999999-9999-4999-8999-999999999999", operation: "PLAN" as const, status: "COMPLETED" as const,
-      generationAttempt: 1, attemptCount: 1, createdAt: "2026-08-22T10:00:00.000Z", updatedAt: "2026-08-22T10:00:00.000Z",
-      finishedAt: "2026-08-22T10:01:00.000Z", errorCode: null, assistantMessageId: null, resultPlanId: "88888888-8888-4888-8888-888888888888",
-    };
+  it("lets a creator search accounts and creates an invite link for the selected account", async () => {
+    const createTripInvitation = vi.fn().mockResolvedValue({
+      invitationId: "55555555-5555-4555-8555-555555555555",
+      inviteToken: "a".repeat(43),
+      expiresAt: "2026-09-06T00:00:00.000Z",
+    });
     const api = createApi({
       getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
-      getLatestPlanningRun: vi.fn().mockResolvedValue({ run }),
-      getLatestPlan: vi.fn().mockResolvedValue({ plan: {
-        id: run.resultPlanId, version: 1, planData: {
-          destination: "Tokyo", generatedAt: "2026-08-22T10:00:00.000Z", flights: [{
-            id: "flight-1", providerOfferId: "offer-1", providerName: "flightapi", queryId: "77777777-7777-4777-8777-777777777777",
-            origin: "SFO", destination: "NRT", segments: [{ carrierCode: "NH", flightNumber: "7", origin: "SFO", destination: "NRT", departureAt: "2026-09-10T10:00:00", arrivalAt: "2026-09-11T14:00:00", duration: "PT660M" }], totalDuration: "PT660M", totalPrice: 900, currency: "USD", cabin: "ECONOMY", adults: 1, baggageSummary: null, changeSummary: null, source: "FlightAPI Flight Price API", capturedAt: "2026-08-22T10:00:00.000Z", expiresAt: "2026-08-22T10:15:00.000Z",
-          }], stays: [{}], ground: [{}],
-        },
-      } }),
+      searchTripInvitees: vi.fn().mockResolvedValue({ candidates: [{ id: SECOND_THREAD_ID, displayName: "Bob" }] }),
+      createTripInvitation,
     });
-    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+    renderWithIntl(<TripInvitationPage tripId={TRIP_ID} />, { api });
 
-    expect(await screen.findByText(/Active plan v1/)).toBeInTheDocument();
-    expect(screen.getByText(/FlightAPI Flight Price API/)).toBeInTheDocument();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Find a registered account" }), { target: { value: "Bo" } });
+    expect(await screen.findByRole("button", { name: /Bob/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Bob/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Create invite link" }));
+
+    await waitFor(() => expect(createTripInvitation).toHaveBeenCalledWith(TRIP_ID, expect.objectContaining({ invitedUserId: SECOND_THREAD_ID })));
+    expect(await screen.findByLabelText("One-time invite link")).toHaveValue(`http://localhost:3000/en/trips/join/${"a".repeat(43)}`);
   });
 
   it("shows a generic membership-revoked error on 403/410 from the trip detail", async () => {

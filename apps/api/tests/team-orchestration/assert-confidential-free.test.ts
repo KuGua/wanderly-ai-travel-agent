@@ -55,15 +55,6 @@ function buildPlan(overrides: Partial<ValidatedPlanOutput> = {}): ValidatedPlanO
       source: "test",
       capturedAt: "2026-08-29T00:00:00Z",
     }],
-    ground: [{
-      id: "g1",
-      destination: "Tokyo",
-      type: "airport_transfer",
-      priceUsd: 50,
-      provider: "test",
-      source: "test",
-      capturedAt: "2026-08-29T00:00:00Z",
-    }],
     generatedAt: "2026-08-29T00:00:00Z",
     ...overrides,
   };

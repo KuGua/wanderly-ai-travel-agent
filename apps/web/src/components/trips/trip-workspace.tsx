@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, PanelRight, Pencil, Plus, X } from "lucide-react";
+import { ExternalLink, PanelRight, Pencil, Plus, UserPlus, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
 import { SharedPlanningPanel } from "@/components/trips/shared-planning-panel";
 import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
+import { TripMemoryPanel } from "@/components/trips/trip-memory-panel";
 import { PlacesPanel } from "@/components/trips/places-panel";
 import { ResearchGapBanner } from "@/components/trips/research-gap-banner";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
@@ -44,12 +45,12 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const createThread = useCreateTripThread(tripId);
   const ensureDefault = useGetOrCreateDefaultTripThread(tripId);
   const updateTitle = useUpdateTripTitle(tripId);
+  const activate = useActivateTrip(tripId);
   const [editingTitle, setEditingTitle] = useState(false);
   const [manualTitle, setManualTitle] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  // The inspector is deliberately a local visual preference: the server-side
-  // Trip remains the business authority, and dragging a divider must not write
-  // browser storage or change any planning state.
+  const [activationError, setActivationError] = useState(false);
+  // Local layout preference only: dragging never changes trip or planning state.
   const [threadRailWidth, setThreadRailWidth] = useState(260);
   const [planningWidth, setPlanningWidth] = useState(500);
   const workspaceRef = useRef<HTMLElement>(null);
@@ -227,6 +228,27 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const departureLabel = trip.departureCities.length > 0
     ? trip.departureCities.join(" · ")
     : t("header.datesUnknown");
+  const canActivateDraft = trip.status === "DRAFT"
+    && trip.departureCities.length >= 1
+    && trip.destinationCandidates.length >= 2
+    && trip.destinationCandidates.length <= 5;
+
+  async function activateDraft() {
+    if (!canActivateDraft || activate.isPending) return;
+    setActivationError(false);
+    try {
+      await activate.mutateAsync({
+        departureCities: trip.departureCities,
+        destinationCandidates: trip.destinationCandidates,
+        travelDateStart: trip.travelDateStart,
+        travelDateEnd: trip.travelDateEnd,
+        titleLocale: locale === "zh" ? "zh" : "en",
+      });
+    } catch {
+      setActivationError(true);
+    }
+  }
+
   // Every place the selected plan touches; the globe merges these onto countries.
   const globePlaces = [...trip.departureCities, ...trip.destinationCandidates];
 
@@ -269,18 +291,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       style={{ "--trip-thread-rail-width": `${threadRailWidth}px`, "--trip-planning-width": `${planningWidth}px` } as CSSProperties}
     >
       <aside className="relative hidden min-h-0 min-w-0 flex-col border-r-2 border-[var(--w-ink)] bg-background md:flex xl:order-1" aria-label={t("threads.heading")}>
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={t("workspace.resizeThreads")}
-          tabIndex={0}
-          onPointerDown={beginThreadRailResize}
-          onPointerMove={(event) => {
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) setThreadRailWidthFromPointer(event.clientX);
-          }}
-          onKeyDown={resizeThreadRailWithKeyboard}
-          className="absolute inset-y-0 right-0 z-40 hidden w-2 translate-x-1/2 cursor-col-resize bg-transparent outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-[var(--w-ink)]/30 hover:after:bg-primary focus-visible:after:bg-primary focus-visible:ring-2 focus-visible:ring-primary xl:block"
-        />
         <header className="flex h-[66px] shrink-0 items-center justify-between gap-2 border-b-2 border-[var(--w-ink)] px-4">
           {editingTitle ? (
             <form
@@ -347,6 +357,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             </>
           )}
         </div>
+        <div role="separator" tabIndex={0} aria-orientation="vertical" aria-label={t("workspace.resizeThreads")} onPointerDown={beginThreadRailResize} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setThreadRailWidthFromPointer(event.clientX); }} onKeyDown={resizeThreadRailWithKeyboard} className="absolute right-[-7px] top-0 z-10 hidden h-full w-3 cursor-col-resize xl:block" />
       </aside>
 
       <section className="flex min-h-0 min-w-0 flex-col bg-background xl:order-3">
@@ -362,6 +373,19 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               <i aria-hidden="true" className="size-[7px] rounded-full bg-[var(--w-highlight)]" />
               <span className="hidden sm:inline">{t("workspace.agentChip")}</span>
             </span>
+            {callerRole === "CREATOR" ? (
+              trip.status === "DRAFT" ? (
+                <button type="button" disabled aria-label={t("workspace.invitation.compactTrigger")} title={t("workspace.invitation.draftHint")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm disabled:cursor-not-allowed disabled:opacity-50 xl:hidden">
+                  <UserPlus aria-hidden="true" className="size-4" />
+                  <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
+                </button>
+              ) : (
+                <Link href={`/trips/${tripId}/invite`} aria-label={t("workspace.invitation.compactTrigger")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden">
+                  <UserPlus aria-hidden="true" className="size-4" />
+                  <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
+                </Link>
+              )
+            ) : null}
             <button
               type="button"
               onClick={() => setInspectorOpen(true)}
@@ -389,23 +413,24 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       <aside
         id="trip-inspector"
         aria-label={t("workspace.inspectorTitle")}
-        className={`relative grid min-h-0 min-w-0 grid-rows-[66px_minmax(0,1fr)_auto] border-l-2 border-[var(--w-ink)] bg-[var(--w-mist)] max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform xl:order-2 ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
+        className={`relative grid min-h-0 min-w-0 grid-rows-[66px_minmax(0,1fr)_auto] border-l-2 border-[var(--w-ink)] bg-[var(--w-mist)] xl:order-2 max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
       >
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label={t("workspace.resizeInspector")}
-          tabIndex={0}
-          onPointerDown={beginPlanningResize}
-          onPointerMove={(event) => {
-            if (event.currentTarget.hasPointerCapture(event.pointerId)) setPlanningWidthFromPointer(event.clientX);
-          }}
-          onKeyDown={resizePlanningWithKeyboard}
-          className="absolute inset-y-0 right-0 z-40 hidden w-2 translate-x-1/2 cursor-col-resize bg-transparent outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-[var(--w-ink)]/30 hover:after:bg-primary focus-visible:after:bg-primary focus-visible:ring-2 focus-visible:ring-primary xl:block"
-        />
         {/* Deliberately untitled: the spec keeps a bar here purely so the
             inspector's rule lines up with the history and chat headers. */}
-        <header className="flex h-[66px] items-center justify-end border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
+        <header className="flex h-[66px] items-center justify-end gap-2 border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
+          {callerRole === "CREATOR" ? (
+            trip.status === "DRAFT" ? (
+              <button type="button" disabled title={t("workspace.invitation.draftHint")} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+                <UserPlus aria-hidden="true" className="size-4" />
+                {t("workspace.invitation.trigger")}
+              </button>
+            ) : (
+              <Link href={`/trips/${tripId}/invite`} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                <UserPlus aria-hidden="true" className="size-4" />
+                {t("workspace.invitation.trigger")}
+              </Link>
+            )
+          ) : null}
           <button
             type="button"
             onClick={() => setInspectorOpen(false)}
@@ -451,13 +476,18 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                   </div>
                 </div>
                 {trip.status === "DRAFT" && callerRole === "CREATOR" ? (
-                  <DraftTripSetup
-                    tripId={tripId}
-                    departureCities={trip.departureCities}
-                    destinationCandidates={trip.destinationCandidates}
-                    travelDateStart={trip.travelDateStart}
-                    travelDateEnd={trip.travelDateEnd}
-                  />
+                  <div className="mt-3">
+                    <p className="text-[11px] leading-4 text-muted-foreground">{t("workspace.draftActivationHint")}</p>
+                    <button
+                      type="button"
+                      disabled={!canActivateDraft || activate.isPending}
+                      onClick={() => void activateDraft()}
+                      className="mt-2 inline-flex min-h-10 w-full items-center justify-center bg-[var(--w-highlight)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-sm wanderly-press disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {activate.isPending ? tCommon("loadingTrips") : t("workspace.activateDraft")}
+                    </button>
+                    {activationError ? <p role="alert" className="mt-2 text-[11px] text-destructive">{t("workspace.activateDraftError")}</p> : null}
+                  </div>
                 ) : null}
               </div>
             </section>
@@ -479,6 +509,18 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               </div>
             </section>
 
+            {/* Preferences scoped to this trip only; the stable Profile is
+                edited on the profile page and is never rewritten from here. */}
+            <section className="overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow">
+              <div className="flex items-center justify-between gap-[7px] border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] px-2.5 py-2.5">
+                <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
+                  <span aria-hidden="true" className="grid size-[21px] place-items-center bg-[var(--w-highlight)] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">☰</span>
+                  <span className="truncate">{t("memory.windowTitle")}</span>
+                </div>
+              </div>
+              <TripMemoryPanel tripId={trip.id} />
+            </section>
+
             <SharedPlanningPanel tripId={tripId} tripStatus={trip.status} />
             <PlacesPanel tripId={trip.id} destinationCandidates={trip.destinationCandidates} />
             <ResearchGapBannerWrapper tripId={trip.id} />
@@ -498,6 +540,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           </div>
           <TripMiniGlobe places={globePlaces} fallbackLabel={destinationsLabel} tripId={tripId} />
         </section>
+        <div role="separator" tabIndex={0} aria-orientation="vertical" aria-label={t("workspace.resizeInspector")} onPointerDown={beginPlanningResize} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setPlanningWidthFromPointer(event.clientX); }} onKeyDown={resizePlanningWithKeyboard} className="absolute right-[-7px] top-0 z-40 hidden h-full w-3 cursor-col-resize xl:block" />
       </aside>
     </main>
   );
@@ -528,80 +571,4 @@ function ResearchGapBannerWrapper({ tripId }: { tripId: string }) {
   const research = useResearchResult(tripId);
   if (!research.data || research.isLoading) return null;
   return <ResearchGapBanner result={research.data} />;
-}
-
-function DraftTripSetup({
-  tripId,
-  departureCities: initialDepartureCities,
-  destinationCandidates: initialDestinationCandidates,
-  travelDateStart: initialTravelDateStart,
-  travelDateEnd: initialTravelDateEnd,
-}: {
-  tripId: string;
-  departureCities: string[];
-  destinationCandidates: string[];
-  travelDateStart: string | null;
-  travelDateEnd: string | null;
-}) {
-  const t = useTranslations("trips.workspace");
-  const tCommon = useTranslations("common");
-  const locale = useLocale();
-  const activate = useActivateTrip(tripId);
-  const [departureCities, setDepartureCities] = useState(initialDepartureCities.join(", "));
-  const [destinationCandidates, setDestinationCandidates] = useState(initialDestinationCandidates.join(", "));
-  const [travelDateStart, setTravelDateStart] = useState(initialTravelDateStart ?? "");
-  const [travelDateEnd, setTravelDateEnd] = useState(initialTravelDateEnd ?? "");
-  const [activationError, setActivationError] = useState(false);
-
-  const splitValues = (value: string) => [...new Set(value.split(",").map((item) => item.trim().toUpperCase()).filter(Boolean))];
-  const parsedDepartureCities = splitValues(departureCities);
-  const parsedDestinationCandidates = splitValues(destinationCandidates);
-  const isIataCode = (value: string) => /^[A-Z]{3}$/.test(value);
-  const canActivate = parsedDepartureCities.length >= 1 && parsedDepartureCities.length <= 3
-    && parsedDestinationCandidates.length >= 2 && parsedDestinationCandidates.length <= 5
-    && parsedDepartureCities.every(isIataCode) && parsedDestinationCandidates.every(isIataCode)
-    && Boolean(travelDateStart) && Boolean(travelDateEnd) && travelDateStart <= travelDateEnd;
-
-  return (
-    <form
-      className="mt-3 grid gap-2"
-      aria-label={t("draftSetup.formLabel")}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!canActivate || activate.isPending) return;
-        setActivationError(false);
-        void activate.mutateAsync({
-          departureCities: parsedDepartureCities,
-          destinationCandidates: parsedDestinationCandidates,
-          travelDateStart: travelDateStart || null,
-          travelDateEnd: travelDateEnd || null,
-          titleLocale: locale === "zh" ? "zh" : "en",
-        }).catch(() => setActivationError(true));
-      }}
-    >
-      <p className="text-[11px] leading-4 text-muted-foreground">{t("draftSetup.hint")}</p>
-      <label className="grid gap-1 text-[11px] font-bold">
-        {t("draftSetup.departures")}
-        <input value={departureCities} onChange={(event) => setDepartureCities(event.target.value)} placeholder={t("draftSetup.departuresPlaceholder")} className="min-h-9 border bg-background px-2 text-xs uppercase wanderly-r-xs" />
-      </label>
-      <label className="grid gap-1 text-[11px] font-bold">
-        {t("draftSetup.destinations")}
-        <input value={destinationCandidates} onChange={(event) => setDestinationCandidates(event.target.value)} placeholder={t("draftSetup.destinationsPlaceholder")} className="min-h-9 border bg-background px-2 text-xs uppercase wanderly-r-xs" />
-      </label>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="grid gap-1 text-[11px] font-bold">
-          {t("draftSetup.startDate")}
-          <input type="date" value={travelDateStart} onChange={(event) => setTravelDateStart(event.target.value)} className="min-h-9 border bg-background px-2 text-xs wanderly-r-xs" />
-        </label>
-        <label className="grid gap-1 text-[11px] font-bold">
-          {t("draftSetup.endDate")}
-          <input type="date" value={travelDateEnd} onChange={(event) => setTravelDateEnd(event.target.value)} className="min-h-9 border bg-background px-2 text-xs wanderly-r-xs" />
-        </label>
-      </div>
-      <button type="submit" disabled={!canActivate || activate.isPending} className="inline-flex min-h-10 w-full items-center justify-center bg-[var(--w-highlight)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-sm wanderly-press disabled:cursor-not-allowed disabled:opacity-50">
-        {activate.isPending ? tCommon("loadingTrips") : t("activateDraft")}
-      </button>
-      {activationError ? <p role="alert" className="text-[11px] text-destructive">{t("activateDraftError")}</p> : null}
-    </form>
-  );
 }

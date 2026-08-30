@@ -1,6 +1,7 @@
 export const profileKeys = {
   all: ["profile"] as const,
   me: ["profile", "me"] as const,
+  memory: ["profile", "me", "memory"] as const,
 };
 
 export const tripKeys = {
@@ -10,6 +11,8 @@ export const tripKeys = {
   threads: (tripId: string) => ["trips", tripId, "my-threads"] as const,
   planningRun: (tripId: string) => ["trips", tripId, "planning-run"] as const,
   latestPlan: (tripId: string) => ["trips", tripId, "latest-plan"] as const,
+  memoryOverrides: (tripId: string) => ["trips", tripId, "memory", "me"] as const,
+  memoryGroup: (tripId: string) => ["trips", tripId, "memory", "group"] as const,
   places: (tripId: string) => ["trips", tripId, "places"] as const,
   routeEvidence: (tripId: string, planId: string) =>
     ["trips", tripId, "plans", planId, "route-evidence"] as const,
@@ -21,6 +24,7 @@ export const tripKeys = {
 
 export const invitationKeys = {
   preview: (inviteToken: string) => ["trip-invitations", inviteToken, "preview"] as const,
+  invitees: (tripId: string, query: string) => ["trips", tripId, "invitees", query] as const,
 };
 
 export const threadKeys = {

@@ -17,7 +17,7 @@ export async function explorationRoutes(app: FastifyInstance) {
   // returns 201, same `requestId` replays return 200 with the same body.
   app.post("/explorations/start", {
     schema: {
-      description: "Start a new Draft Trip exploration for the authenticated user. Idempotent on `requestId`.",
+      description: "Start a new active Trip workspace for the authenticated user. Idempotent on `requestId`.",
       tags: ["explorations"],
       body: toJsonSchema(explorationStartRequestSchema),
       response: {
@@ -72,7 +72,7 @@ export async function explorationRoutes(app: FastifyInstance) {
       trip: {
         id: trip.id,
         name: trip.name,
-        status: "DRAFT",
+        status: "PLANNING",
         departureCities: [],
         destinationCandidates: [],
         travelDateStart: null,

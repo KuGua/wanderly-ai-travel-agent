@@ -39,6 +39,8 @@ type TripListRow = {
   destinationCandidates: string[];
   travelDateStart: string | null;
   travelDateEnd: string | null;
+  archivedAt: Date | null;
+  archiveReason: "USER_ARCHIVED" | "DATE_ELAPSED" | null;
   role: "CREATOR" | "MEMBER";
   createdAt: Date;
   updatedAt: Date;
@@ -82,6 +84,8 @@ export async function tripRoutes(app: FastifyInstance) {
       destinationCandidates: sharedTrips.destinationCandidates,
       travelDateStart: sharedTrips.travelDateStart,
       travelDateEnd: sharedTrips.travelDateEnd,
+      archivedAt: sharedTrips.archivedAt,
+      archiveReason: sharedTrips.archiveReason,
       role: tripMembers.role,
       createdAt: sharedTrips.createdAt,
       updatedAt: sharedTrips.updatedAt,
@@ -133,6 +137,7 @@ export async function tripRoutes(app: FastifyInstance) {
       const confirmations = latestPlan ? confirmationsByPlan.get(latestPlan.id) ?? [] : [];
       const displayState = deriveDisplayState({
         tripStatus: r.status,
+        archived: Boolean(r.archivedAt) || isPastTrip(r.travelDateEnd),
         latestPlan,
         confirmations,
         hasAnyConsent: consent.hasAny,
@@ -172,6 +177,10 @@ export async function tripRoutes(app: FastifyInstance) {
         destinationCandidates: summary.destinationCandidates,
         travelDateStart: summary.travelDateStart,
         travelDateEnd: summary.travelDateEnd,
+        archivedAt: summary.archivedAt?.toISOString() ?? null,
+        archiveReason: summary.archivedAt
+          ? summary.archiveReason
+          : isPastTrip(summary.travelDateEnd) ? "DATE_ELAPSED" : null,
         memberCount: summary.memberCount,
         role: summary.role,
         createdAt: summary.createdAt.toISOString(),
@@ -584,11 +593,13 @@ async function loadConfirmationsByPlan(
 
 function deriveDisplayState(params: {
   tripStatus: TripListRow["status"];
+  archived: boolean;
   latestPlan: { status: string } | null;
   confirmations: Array<{ userId: string; status: string }>;
   hasAnyConsent: boolean;
 }): ProjectDisplayState {
-  if (params.tripStatus === "DRAFT") return "DRAFT";
+  if (params.archived) return "ARCHIVED";
+  if (params.tripStatus === "DRAFT") return "ACTION_REQUIRED";
   if (params.tripStatus === "CANCELLED") return "CANCELLED";
   if (params.tripStatus === "STALE" || params.tripStatus === "BOOKED") {
     return params.tripStatus === "BOOKED" ? "COMPLETED" : "ARCHIVED";
@@ -602,6 +613,11 @@ function deriveDisplayState(params: {
   const allConfirmed = params.confirmations.length > 0
     && params.confirmations.every(c => c.status === "CONFIRMED");
   return allConfirmed ? "COMPLETED" : "IN_PROGRESS";
+}
+
+function isPastTrip(travelDateEnd: string | null): boolean {
+  if (!travelDateEnd) return false;
+  return travelDateEnd < new Date().toLocaleDateString("en-CA", { timeZone: "UTC" });
 }
 
 function deriveNextAction(params: {

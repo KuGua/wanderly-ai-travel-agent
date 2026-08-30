@@ -47,6 +47,14 @@ const tripPlaceSkillInputSchema = z.discriminatedUnion("action", [
 ]);
 export type TripPlaceSkillInput = z.infer<typeof tripPlaceSkillInputSchema>;
 
+/**
+ * LLM-facing tool-arguments schema for `places.adopt`. Mirrors the skill input
+ * verbatim (snapshotId is server-injected by the dispatcher through ctx). The
+ * `places.search` candidate envelope is preserved so the model can echo back
+ * the full POI shape it received earlier in the same tool loop.
+ */
+export const tripPlaceModelArgumentsSchema: z.ZodType<TripPlaceSkillInput> = tripPlaceSkillInputSchema;
+
 export const tripPlaceSkillOutputSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("ACCEPTED"), placeId: z.string().uuid() }).strict(),
   z.object({ outcome: z.literal("REVOKED"), placeId: z.string().uuid() }).strict(),

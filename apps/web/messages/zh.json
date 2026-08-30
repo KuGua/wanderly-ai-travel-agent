@@ -191,6 +191,34 @@
     },
     "fixtures": {
       "displayName": "旅行者"
+    },
+    "memory": {
+      "kicker": "长期记忆",
+      "heading": "助手记住的偏好",
+      "body": "这些是你确认过的稳定偏好，不会随时间失效。只有你能修改或删除；行为不会自动改写它们。",
+      "loading": "正在加载你的长期记忆…",
+      "errorTitle": "长期记忆暂不可用",
+      "emptyTitle": "还没有记住任何偏好",
+      "emptyBody": "在上方保存出行偏好后，它们会出现在这里。",
+      "factsAriaLabel": "已记住的偏好",
+      "suggestionsAriaLabel": "待确认的偏好建议",
+      "suggestionKicker": "待你确认",
+      "suggestionBody": "要把「{field}」记为 {candidate} 吗？",
+      "suggestionBodyWithCurrent": "你把「{field}」设为 {current}，但最近多次选择了 {candidate}。要更新吗？",
+      "evidence": "基于 {count} 次独立选择",
+      "confirm": "确认更新",
+      "notNow": "暂不",
+      "sourceStated": "由你填写",
+      "sourceConfirmed": "经你确认",
+      "deleteAria": "删除这条记忆",
+      "fields": {
+        "trip_pace": "行程节奏",
+        "accommodation_style": "住宿风格",
+        "no_red_eye": "避免红眼航班",
+        "interests": "兴趣",
+        "budget_max_usd": "预算上限",
+        "departure_city": "出发城市"
+      }
     }
   },
   "explore": {
@@ -439,6 +467,39 @@
         "startDate": "开始日期",
         "endDate": "结束日期"
       },
+      "invitation": {
+        "trigger": "邀请同行者",
+        "compactTrigger": "邀请同行者（紧凑版）",
+        "draftHint": "请先开始规划，再邀请同行者。",
+        "eyebrow": "行程成员",
+        "title": "邀请同行者",
+        "back": "返回行程",
+        "pageBody": "选择一个已注册账号，邀请其加入「{trip}」。对方可决定是否加入，并在接受后选择共享范围。",
+        "creatorOnlyTitle": "仅行程创建者可以管理邀请",
+        "creatorOnlyBody": "请联系行程创建者邀请其他同行者。",
+        "currentMembers": "当前成员",
+        "memberCount": "{count} 位成员",
+        "memberNotice": "已在行程内的成员不会出现在搜索结果中。加入不会自动共享个人旅行资料。",
+        "close": "关闭邀请窗口",
+        "body": "搜索已注册账号。对方可自行决定是否加入，并在加入后选择共享范围。",
+        "searchLabel": "查找已注册账号",
+        "searchPlaceholder": "按显示名称搜索",
+        "searchHint": "输入至少 2 个字符开始搜索。",
+        "searching": "正在搜索账号…",
+        "searchError": "暂时无法获取账号，请重试。",
+        "noResults": "没有符合条件的已注册账号。",
+        "selected": "已选择",
+        "cancel": "取消",
+        "create": "创建邀请链接",
+        "creating": "正在创建邀请…",
+        "createError": "无法创建邀请；该账号可能已被邀请或已是成员。",
+        "createdTitle": "已为 {name} 创建邀请",
+        "createdBody": "仅与所选人员分享此链接；链接将在 7 天后失效。",
+        "linkLabel": "一次性邀请链接",
+        "copy": "复制邀请链接",
+        "copied": "已复制",
+        "oneTimeNotice": "出于隐私与安全考虑，链接只显示一次。接受邀请不会授予个人旅行资料的访问权限。"
+      },
       "roleValue": {
         "CREATOR": "创建者",
         "MEMBER": "成员"
@@ -547,6 +608,31 @@
           "team_visible": "团队可见",
           "orchestrator_confidential": "仅编排 Agent"
         }
+      }
+    },
+    "memory": {
+      "windowTitle": "本次偏好",
+      "loading": "正在加载本次偏好…",
+      "errorTitle": "本次偏好暂不可用",
+      "overridesLabel": "仅本次",
+      "overridesHint": "只对本行程生效，不会改写你的长期偏好；规划会用到它，但其他成员看不到具体值。",
+      "groupLabel": "团队决定",
+      "groupHint": "全体成员可见，每个字段只保留一条。",
+      "unset": "未设置",
+      "scopeThisTrip": "仅本次",
+      "scopeGroup": "团队决定",
+      "clearAria": "清除{field}",
+      "fields": {
+        "trip_pace": "行程节奏",
+        "accommodation_style": "住宿风格"
+      },
+      "values": {
+        "relaxed": "轻松",
+        "balanced": "均衡",
+        "packed": "紧凑",
+        "city_center": "市中心",
+        "budget": "经济型",
+        "luxury": "豪华型"
       }
     },
     "planning": {

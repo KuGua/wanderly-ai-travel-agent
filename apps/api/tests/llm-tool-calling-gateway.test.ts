@@ -10,11 +10,11 @@ describe("LLMGateway planning tools", () => {
     process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = "true";
     const create = vi.fn()
       .mockResolvedValueOnce({ choices: [{ message: { tool_calls: [{ id: "call-1", function: { name: "flight.search", arguments: JSON.stringify({ originId: "SFO", destinationId: "NRT", tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD" }) } }] } }] })
-      .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({ plan: { destination: "NRT", flights: [], stays: [], ground: [], generatedAt: "2026-01-01T00:00:00Z" } }) } }] });
+      .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({ plan: { destination: "NRT", flights: [], stays: [], generatedAt: "2026-01-01T00:00:00Z" } }) } }] });
     const gateway = new LLMGateway({ apiKey: "test", provider: "openai", modelName: "test", promptVersion: "test", ctx: createRequestContext(), client: { chat: { completions: { create, parse: vi.fn() } } } });
     const dispatchTool = vi.fn().mockResolvedValue({ outcome: "LIVE", queryId: "11111111-1111-4111-8111-111111111111", offers: [] });
     const result = await gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", stays: [], ground: [], memberPreferences: {}, maxTurns: 2,
+      destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 2,
       flightSearchConstraints: { originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD" },
       tools: [{ name: "flight.search", description: "test", parameters: {} }], dispatchTool,
     });
@@ -32,7 +32,7 @@ describe("LLMGateway planning tools", () => {
     const create = vi.fn().mockResolvedValue({ choices: [{ message: { tool_calls: [{ id: "call-1", function: { name: "flight.search", arguments: "{}" } }] } }] });
     const gateway = new LLMGateway({ apiKey: "test", provider: "openai", modelName: "test", promptVersion: "test", ctx: createRequestContext(), client: { chat: { completions: { create, parse: vi.fn() } } } });
     const dispatchTool = vi.fn().mockResolvedValue({ outcome: "UNAVAILABLE", code: "NO_RESULTS" });
-    await expect(gateway.generateStructuredPlanWithTools!({ destination: "NRT", stays: [], ground: [], memberPreferences: {}, maxTurns: 1, flightSearchConstraints: { originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD" }, tools: [{ name: "flight.search", description: "test", parameters: {} }], dispatchTool })).rejects.toMatchObject<ModelGatewayError>({ code: "TOOL_CALL_MAX_TURNS" });
+    await expect(gateway.generateStructuredPlanWithTools!({ destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 1, flightSearchConstraints: { originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD" }, tools: [{ name: "flight.search", description: "test", parameters: {} }], dispatchTool })).rejects.toMatchObject<ModelGatewayError>({ code: "TOOL_CALL_MAX_TURNS" });
     expect(dispatchTool).toHaveBeenCalledOnce();
   });
 });

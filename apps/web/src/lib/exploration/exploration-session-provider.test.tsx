@@ -21,7 +21,7 @@ function makeStartResponse(): ExplorationStartResponse {
     trip: {
       id: TRIP_ID,
       name: "Untitled exploration",
-      status: "DRAFT",
+      status: "PLANNING",
       departureCities: [],
       destinationCandidates: [],
       travelDateStart: null,
@@ -59,8 +59,18 @@ function makeApi(overrides: Partial<TravelApi> = {}): TravelApi {
     updateTripTitle: vi.fn(),
     saveTripSearchPreferences: vi.fn(),
     startPlanning: vi.fn(),
-    getLatestPlanningRun: vi.fn().mockResolvedValue({ run: null }),
+    getLatestPlanningRun: vi.fn(),
     getLatestPlan: vi.fn(),
+    getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),
+    updateMemoryFact: vi.fn(),
+    deleteMemoryFact: vi.fn(),
+    confirmMemoryProposal: vi.fn(),
+    dismissMemoryProposal: vi.fn(),
+    getTripMemoryOverrides: vi.fn().mockResolvedValue({ overrides: [] }),
+    getTripMemoryGroupDecisions: vi.fn().mockResolvedValue({ groupDecisions: [] }),
+    saveTripMemoryOverride: vi.fn(),
+    saveTripMemoryGroupDecision: vi.fn(),
+    deleteTripMemory: vi.fn(),
     ...overrides,
   };
 }

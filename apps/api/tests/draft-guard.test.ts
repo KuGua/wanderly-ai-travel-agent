@@ -83,7 +83,11 @@ async function createDraftFor(externalId: "alice" | "bob"): Promise<string> {
     payload: { requestId: randomUUID() },
   });
   expect(start.statusCode).toBe(201);
-  return start.json().trip.id;
+  const tripId = start.json().trip.id;
+  // New workspaces start in PLANNING; retain explicit coverage for legacy
+  // DRAFT rows while the transition guard remains in the database.
+  await db.update(sharedTrips).set({ status: "DRAFT" }).where(eq(sharedTrips.id, tripId));
+  return tripId;
 }
 
 describe("Draft trip command guards", () => {

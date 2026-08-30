@@ -145,7 +145,9 @@ memberships overlap only where explicitly configured.
 
 **Steps:**
 
-1. Record enough allow-listed, non-sensitive behavior events to create a suggested accommodation-style update. Inspect the proposal and its audit/telemetry records.
+1. Record enough allow-listed, non-sensitive behavior events to create a suggested accommodation-style update: at least three independent server-confirmed episodes across at least two Trips, spanning at least 30 days. Inspect the proposal and its audit/telemetry records.
+1a. Record evidence that satisfies only part of the trigger rule — three episodes inside a single Trip; three episodes inside a 30-day window; a candidate whose activation stays below the threshold; and two competing candidates for one field separated by less than ln(2).
+1b. Replay an already-counted action/event id, and record two distinct episodes that land on the same UTC day.
 2. Confirm the proposal, then update and delete the resulting stable fact through the Profile memory API.
 3. Attempt to create behavior or conversation-derived proposals for nationality, passport, date of birth, health and accessibility fields.
 4. Save a `this trip` preference and a group decision in the first Trip; attempt to read them from the second Trip.
@@ -154,12 +156,17 @@ memberships overlap only where explicitly configured.
 
 **Expected outcomes:**
 
-- The automatic proposal contains only allow-listed field metadata, observation count, confidence and expiry; it contains no raw chat text or sensitive value. It is not a fact, snapshot input or shared data until Alice confirms it.
+- The automatic proposal contains only allow-listed field metadata, observation count, expiry, scoring version and a bounded UTC-day observation window (at most 10 dates); it contains no raw chat text, action type, page path, event reference or sensitive value. It is not a fact, snapshot input or shared data until Alice confirms it.
+- Partial evidence never surfaces a suggestion: a single Trip, a span under 30 days, activation below the threshold, or two candidates within ln(2) of each other all leave the proposal unshown while evidence keeps aggregating.
+- A replayed action/event id does not increment the observation count; two distinct episodes on the same UTC day both count. Independence comes from existing idempotency, never from elapsed time.
+- Confirmed facts never decay and are never rewritten by behavior. Repeated contradiction can only raise a suggestion; ignoring it lets the proposal expire after 90 days, and dismissing it suppresses the same field/value for 180 days.
+- Editing the fact directly through the Profile form clears conflicting pending proposals and their evidence aggregates for that field.
+- Reaching any terminal proposal state clears the stored observation dates; deleting a field's memory removes its facts, pending proposals, candidate aggregates and observation window.
 - Only the owner can confirm, dismiss, edit or delete personal facts. Confirmation creates an active structured fact; deletion removes it from future projections and retains only a content-free audit event.
 - Sensitive-field proposal attempts fail closed; no model or behavior pipeline creates a row for them.
 - Trip memory is scoped by `tripId`; cross-Trip reads and projections are denied. Shared Agent reads only the server-built current snapshot projection, never the personal fact, proposal or chat tables.
 - A projected fact/consent change makes the first Trip's active plan and confirmations `STALE`; the old run cannot activate a plan. The unrelated Trip is unchanged.
-- Logs, metrics, traces, audit summaries, SSE and idempotency payloads do not contain memory values, conversation text or high-cardinality identifiers as metric labels.
+- Logs, metrics, traces, audit summaries, SSE and idempotency payloads do not contain memory values, observation dates, event references, conversation text or high-cardinality identifiers as metric labels.
 
 ### TS-H1b — Persist and delete a private conversation without widening its scope
 
@@ -626,7 +633,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - 前端不提供 Demo 身份选择，也不允许客户端提交用户 ID；身份只能来自正常 Cognito 登录会话，或仅在 loopback `custom-local` 模式来自 API 验证的本地用户名/密码会话。
 - fixture 与 HTTP 模式使用同一组 Zod 合同；不符合合同的 Profile、Trip 或 error 响应必须进入显式错误状态。
 - 所有受保护的 HTTP 请求在 Cognito 模式通过 AWS Amplify session 读取当前 access token；`custom-local` 仅在 loopback 开发环境从受控浏览器会话读取 API JWT。无 session 时不发送 Authorization，token 刷新后使用新 token；登录会话变化或退出时必须替换 TanStack Query client，使旧私有缓存不可见且活跃查询以新会话重新执行。`POST /api/v1/explore/location-reference` 与稳定地点专用的 `POST /api/v1/explore/location-introductions` 是仅有的匿名、限流 Explore 例外；后者只写非个性化共享缓存，不写用户业务状态。应用自身不得把 Cognito token 复制到 localStorage。
-- `AUTH_MODE` 默认必须为 `cognito`。显式 `local-dev`（固定单用户）和 `custom-local`（数据库用户名/密码、多用户）仅允许 `NODE_ENV=development|test`、loopback server 绑定、loopback socket 客户端和 `LOCAL_DEV_ALLOWED_ORIGINS` 中的精确 loopback HTTP Origin；`custom-local` 还必须有至少 32 字符的 API `JWT_SECRET`。production、staging、缺失环境或任一非 loopback 边界必须拒绝启动/请求。浏览器不能发送 fake token/user ID；`local-dev` 的固定身份和 `custom-local` 的已验证 JWT 身份都须通过原 owner-only thread 授权。非允许 Origin 不得获得 CORS 读权限，且对受保护写操作必须返回 `403` 并不创建业务状态。
+- `AUTH_MODE` 默认必须为 `cognito`。显式 `local-dev`（固定单用户）和 `custom-local`（数据库用户名/密码、多用户）仅允许 `NODE_ENV=development|test`、loopback server 绑定、loopback socket 客户端和 `LOCAL_DEV_ALLOWED_ORIGINS` 中的精确 loopback HTTP Origin；`custom-local` 还必须有至少 32 字符的 API `JWT_SECRET`。production、staging、缺失环境或任一非 loopback 边界必须拒绝启动/请求。浏览器不能发送 fake token/user ID；`local-dev` 的固定身份和 `custom-local` 的已验证 JWT 身份都须通过原 owner-only thread 授权。非允许 Origin 不得获得 CORS 读权限，且对受保护写操作必须返回 `403` 并不创建业务状态；允许 Origin 的 `OPTIONS` 预检必须返回 `204`、正确的 CORS header、包含目标写方法（包括 `PATCH`）的 allow-methods 和可解析的 `traceparent`，且不触发认证。
 - Home 覆盖 Profile/Trip 的 loading、empty、error、unauthorized 与 `Demo data` 状态，不混入其他用户数据或未确认的 plan/action 字段。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
 - Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。
@@ -659,6 +666,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 3. Capture the in-memory exporter span list — must include one `http.*` span whose `http.route` is the thread path, one `db.agent_task_runs.INSERT` span, one `llm.openai.stream` span (or `llm.openai.parse` if not streamed). All three must carry the same `trace_id`; the LLM and DB spans must have `parent_span_id` matching the HTTP span's `span_id`.
 4. Capture the Pino log lines for the request — every line must include both `trace_id=aaaa…aaaa` and `span_id=<matching http span id>` bindings.
 5. Repeat the call without an inbound `traceparent` and confirm the server mints a fresh 32-hex trace id; the response `traceparent` echoes that id; no span in the exporter shares its `trace_id` with any prior call.
+6. Send an allowed-origin `OPTIONS` CORS preflight for `PATCH /trips/:tripId/draft-brief` and confirm it returns `204` with an allow-origin header, an allow-methods header containing `PATCH`, and a parseable, freshly minted `traceparent`; it must not emit a tracing error or enter authentication.
 
 ### TS-THREAD-TRIP-1 — Trip-scoped private thread lifecycle
 
@@ -697,6 +705,19 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - No trip facts render before authentication. The preview exposes only decision-critical summary fields after token and account binding; all unavailable token states return the same minimal response and disclose no trip/member/inviter metadata.
 - Acceptance is idempotent and creates at most one required membership and one recipient-owned default thread. The post-success primary action is setting the sharing scope; acceptance itself grants no consent or snapshot fields.
 - Decline creates no membership or thread and records `TRIP_INVITATION_DECLINE`; creator revocation remains distinct. Audit summaries contain IDs/status only, never the raw token or private profile data.
+
+### TS-INVITATION-SEARCH-1 — Creator-only account search
+
+**Objective:** Verify that the workspace invite control searches only the minimum data needed to select an eligible registered account.
+
+**Starting conditions:** An active Trip has a creator, at least one existing member, and several registered accounts.
+
+1. As creator, open `/trips/:tripId/invite` from the right workspace header and verify the current-member list before searching with fewer than two characters, then a matching display-name substring.
+2. Verify each result exposes only display name and opaque ID; it never exposes email, username, profile, nationality, passport data, or invitation tokens.
+3. Verify the creator and existing Trip members are absent. Repeat as a non-creator and for a Draft Trip; expect no usable control and API `403`/`409` respectively.
+4. Select an account, create an invitation, and verify the one-time token link is shown once, has a seven-day expiry, and the creation audit data contains IDs/expiry only.
+
+**Expected:** The creator can create an account-bound invitation without account enumeration beyond the narrow search result. The selected recipient must still authenticate and explicitly accept; no consent is created by search, creation, or acceptance.
 
 ### TS-EXPLORE-TRIP-1 — Create a Draft Trip only on first submitted exploration message
 
@@ -801,6 +822,24 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 1. Capture a `correlationChild` log line that includes `req.body.passportNumber`, `req.body.nationality`, `req.body.prompt`.
 2. Assert `trace_id` and `span_id` are present and match the active span.
 3. Assert `req.body.passportNumber === "[REDACTED]"`, `req.body.nationality === "[REDACTED]"`, `req.body.prompt === "[REDACTED]"`.
+
+### TS-UI-OBS-1 — Safe frontend action correlation
+
+**Objective:** Verify a failed authenticated browser action can be correlated to API/Agent telemetry without collecting browser content.
+
+**Steps:**
+
+1. As an authenticated user, force `POST /api/v1/threads/:threadId/turns` to return 500 from the Explore screen.
+2. Inspect the resulting `POST /api/v1/diagnostics/ui-events` record, local NDJSON output and Tempo trace.
+3. Repeat with an offline network failure, a route render error and an unhandled rejected Promise.
+4. Attempt to submit diagnostic fields named `message`, `stack`, `url`, `prompt`, `question`, a form value or an unknown key.
+
+**Expected outcomes:**
+
+- The diagnostic event contains only the fixed `conversation.submit` action, `explore` screen, bounded outcome/error category, bounded status/latency and validated request/correlation UUIDs.
+- The log has `runtime_event.component="ui"`; the endpoint's Tempo HTTP span has safe `ui.*` enum attributes. Correlation IDs are not metric labels.
+- Raw chat text, form values, URLs, error messages/stacks, profile/passport data and credentials are absent from browser payloads, logs, traces and metrics. Unknown fields return 400 before a runtime event is emitted.
+- Diagnostics are authenticated, rate-limited and best-effort: an unavailable diagnostic endpoint never blocks the original action or retry. An unauthenticated sign-in failure is not sent to this endpoint.
 
 - Profile memory is explicit, editable, deletable and private by default.
 - Shared workspace never shows unapproved Profile/private-chat fields.
@@ -922,3 +961,72 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Any activities evidence or booking link reference is rejected by the readiness and plan validators; it is not persisted as authoritative readiness text.
 - Missing authoritative visa/entry data yields the existing official verification gap, not a conclusion inferred from activities.
 - Personal activity results are never eligible as Shared or readiness evidence.
+
+### TS-ORS-TOOL-1 — LLM tool whitelist exposes ORS skills when enabled
+
+**Stories:** H3
+**Objective:** Verify that `places.search`, `places.adopt`, and `navigation.route` appear in the LLM tool list when `PLAN_ENABLE_PLACES=true` and `PLAN_ENABLE_NAVIGATION=true`, and disappear when those flags are false. The provider layer still works server-side regardless of the flag.
+
+**Steps:**
+
+1. Run `generatePlan` with `PLAN_ENABLE_PLACES=false`, `PLAN_ENABLE_NAVIGATION=false`; capture the `tools` argument passed to `modelGateway.generateStructuredPlanWithTools`.
+2. Repeat with `PLAN_ENABLE_PLACES=true`, `PLAN_ENABLE_NAVIGATION=true`.
+3. Inspect the captured tool list.
+
+**Expected outcomes:**
+
+- Step 1: the tool list contains `flight.search` and (when `PLAN_ENABLE_ACTIVITIES=true`) `activities.search`; it does NOT contain `places.search`, `places.adopt`, or `navigation.route`.
+- Step 2: the tool list additionally contains `places.search`, `places.adopt`, and `navigation.route`. Each tool's JSON Schema parameter list is exactly the versioned spec in `apps/api/src/services/{place-search,navigation-route,trip-place}-service.ts`.
+- Flipping `PLAN_ENABLE_PLACES=false` and `PLAN_ENABLE_NAVIGATION=true` (or vice versa) hides only the tools gated by the disabled flag; the other set remains visible.
+
+### TS-ORS-TOOL-2 — ORS tools are gated by the configured model's tool-calling capability
+
+**Stories:** H3
+**Objective:** Verify that `places.search`, `places.adopt`, and `navigation.route` are not advertised unless the configured OpenAI-compatible model has been validated against the function-tool-calling compatibility spike (`MODEL_GATEWAY_TOOL_CALLING_ENABLED=true`).
+
+**Steps:**
+
+1. Set `MODEL_GATEWAY_TOOL_CALLING_ENABLED=false`; set `PLAN_ENABLE_PLACES=true`, `PLAN_ENABLE_NAVIGATION=true`.
+2. Run a Shared planning task that takes the durable planning path.
+3. Repeat with `MODEL_GATEWAY_TOOL_CALLING_ENABLED=true`.
+
+**Expected outcomes:**
+
+- Step 1: the durable planning service raises `PlanningDataUnavailableError(["tool_calling_not_supported"])`. The legacy `generateStructuredPlan` (no tools) path is selected.
+- Step 2: the durable planning service takes the tool loop path and the ORS tools are visible to the model as expected.
+
+### TS-ORS-TOOL-3 — LLM cannot pass raw coordinates to `places.search` / `navigation.route`
+
+**Stories:** H3, S1
+**Objective:** Verify that the dispatcher refuses model-supplied raw coordinates, provider names, URLs, or private profile data, and surfaces a deterministic `POLICY_DENIED` error.
+
+**Steps:**
+
+1. Trigger `places.search` with `keyword` containing raw coordinates (`"35.6762, 139.6503"`) or provider name (`"amadeus"`).
+2. Trigger `places.adopt` with `action: "propose"` and `candidate` missing required `displayName` / `latitude` / `longitude`.
+3. Trigger `navigation.route` with an `originPlaceId` that is not in the trip's `trip_places` table.
+4. Trigger `navigation.route` with `originPlaceId === destinationPlaceId`.
+
+**Expected outcomes:**
+
+- All four attempts return `UNAVAILABLE/POLICY_DENIED` or are wrapped by the skill registry as `INPUT_INVALID`; the request never reaches ORS.
+- The dispatcher never logs the rejected payload content; the audit row records only `POLICY_DENIED` with the offending skill name and `redactedReason` (no raw coordinates).
+- Provider metrics (`place_search_tool_invocations_total`, `navigation_route_tool_invocations_total`) increment `outcome="unavailable", error_category="policy_denied"`.
+
+### TS-ORS-TOOL-4 — ORS UNAVAILABLE flows back through the model as a tool result
+
+**Stories:** H3, S4
+**Objective:** Verify that when ORS is not configured (`ORS_API_KEY` unset) and the model calls `places.search` / `navigation.route`, the tool returns `UNAVAILABLE/NOT_CONFIGURED` and the LLM loop completes with `COMPLETED_WITH_GAPS` rather than failing hard.
+
+**Steps:**
+
+1. Unset `ORS_API_KEY`. Set `PLAN_ENABLE_PLACES=true`, `PLAN_ENABLE_NAVIGATION=true`, `MODEL_GATEWAY_TOOL_CALLING_ENABLED=true`.
+2. Trigger a Shared planning task that calls `places.search` from the model.
+3. Repeat with `navigation.route`.
+
+**Expected outcomes:**
+
+- Tool result is `{ outcome: "UNAVAILABLE", code: "NOT_CONFIGURED" }`.
+- Planning completes; `summarizeProviderGaps` records `navigation: NOT_CONFIGURED` only when the LLM actually called `navigation.route` (the post-deprecation gate no longer emits a `navigation: NO_RESULTS` gap from an empty `ground[]`).
+- No `provider_offers` row is written with `category="ground"`.
+- `itinerary_plans.planData` JSON does NOT contain a top-level `ground` key.

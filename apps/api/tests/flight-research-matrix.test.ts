@@ -129,7 +129,7 @@ describe("flight research matrix", () => {
           await params.beforeFinal?.();
           beforeFinalPassed = true;
           await db.update(providerSearchRuns).set({ outcome: "UNAVAILABLE", errorCode: "UPSTREAM_FAILURE" }).where(and(eq(providerSearchRuns.snapshotId, planningSnapshot.id), eq(providerSearchRuns.agentTaskRunId, durableTaskId), eq(providerSearchRuns.originId, "SFO"), eq(providerSearchRuns.destinationId, "NRT")));
-          return { destination: "NRT", flights, stays: params.stays, ground: params.ground, generatedAt: "2026-08-25T00:00:00.000Z" };
+          return { destination: "NRT", destinationCandidatesEvaluated: ["NRT"], flights, stays: params.stays, generatedAt: "2026-08-25T00:00:00.000Z" };
         },
       },
     };

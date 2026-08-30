@@ -191,6 +191,34 @@
     },
     "fixtures": {
       "displayName": "Traveler"
+    },
+    "memory": {
+      "kicker": "Long-term memory",
+      "heading": "What the assistant remembers",
+      "body": "Preferences you have confirmed. They do not fade over time, and only you can change or remove them — behaviour never rewrites them on its own.",
+      "loading": "Loading your long-term memory…",
+      "errorTitle": "Long-term memory unavailable",
+      "emptyTitle": "Nothing remembered yet",
+      "emptyBody": "Preferences you save above will appear here.",
+      "factsAriaLabel": "Remembered preferences",
+      "suggestionsAriaLabel": "Preference suggestions awaiting your decision",
+      "suggestionKicker": "Needs your decision",
+      "suggestionBody": "Remember {field} as {candidate}?",
+      "suggestionBodyWithCurrent": "You set {field} to {current}, but you have been choosing {candidate}. Update it?",
+      "evidence": "Based on {count} independent choices",
+      "confirm": "Confirm update",
+      "notNow": "Not now",
+      "sourceStated": "You set this",
+      "sourceConfirmed": "You confirmed this",
+      "deleteAria": "Delete this memory",
+      "fields": {
+        "trip_pace": "Trip pace",
+        "accommodation_style": "Accommodation style",
+        "no_red_eye": "Avoid red-eye flights",
+        "interests": "Interests",
+        "budget_max_usd": "Maximum budget",
+        "departure_city": "Departure city"
+      }
     }
   },
   "explore": {
@@ -439,6 +467,39 @@
         "startDate": "Start date",
         "endDate": "End date"
       },
+      "invitation": {
+        "trigger": "Invite teammates",
+        "compactTrigger": "Invite teammates (compact)",
+        "draftHint": "Start planning before inviting teammates.",
+        "eyebrow": "Trip members",
+        "title": "Invite a teammate",
+        "back": "Back to trip",
+        "pageBody": "Choose a registered account to invite to {trip}. They decide whether to join and what to share after accepting.",
+        "creatorOnlyTitle": "Only the trip creator can manage invitations",
+        "creatorOnlyBody": "Ask the trip creator to invite another teammate.",
+        "currentMembers": "Current members",
+        "memberCount": "{count, plural, one {# member} other {# members}}",
+        "memberNotice": "Existing members are excluded from search. Joining never shares personal travel details automatically.",
+        "close": "Close invite dialog",
+        "body": "Search for a registered account. They will decide whether to join and choose what to share afterward.",
+        "searchLabel": "Find a registered account",
+        "searchPlaceholder": "Search by display name",
+        "searchHint": "Enter at least 2 characters to search.",
+        "searching": "Searching accounts…",
+        "searchError": "Accounts are unavailable right now. Try again.",
+        "noResults": "No eligible accounts match this search.",
+        "selected": "Selected",
+        "cancel": "Cancel",
+        "create": "Create invite link",
+        "creating": "Creating invite…",
+        "createError": "Could not create this invite. The account may already be invited or a member.",
+        "createdTitle": "Invite ready for {name}",
+        "createdBody": "Share this link only with the selected person. It expires in 7 days.",
+        "linkLabel": "One-time invite link",
+        "copy": "Copy invite link",
+        "copied": "Copied",
+        "oneTimeNotice": "For privacy and security, the link is shown only once. Joining does not grant access to personal travel details."
+      },
       "roleValue": {
         "CREATOR": "Creator",
         "MEMBER": "Member"
@@ -547,6 +608,31 @@
           "team_visible": "Shared",
           "orchestrator_confidential": "Confidential"
         }
+      }
+    },
+    "memory": {
+      "windowTitle": "This trip",
+      "loading": "Loading this trip's preferences…",
+      "errorTitle": "Trip preferences unavailable",
+      "overridesLabel": "This trip only",
+      "overridesHint": "Applies to this trip only and never rewrites your long-term preferences. Planning uses it; other members never see the value.",
+      "groupLabel": "Group decision",
+      "groupHint": "Visible to every member; one per field for the whole trip.",
+      "unset": "Not set",
+      "scopeThisTrip": "This trip only",
+      "scopeGroup": "Group decision",
+      "clearAria": "Clear {field}",
+      "fields": {
+        "trip_pace": "Trip pace",
+        "accommodation_style": "Accommodation style"
+      },
+      "values": {
+        "relaxed": "Relaxed",
+        "balanced": "Balanced",
+        "packed": "Packed",
+        "city_center": "City center",
+        "budget": "Budget",
+        "luxury": "Luxury"
       }
     },
     "planning": {

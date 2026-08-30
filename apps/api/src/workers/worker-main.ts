@@ -7,6 +7,8 @@ import { assertAuthModeEnvironment, resolveAuthMode } from "../middleware/auth-m
 import { agentTaskConfig } from "../tasks/config.js";
 import { logger } from "../utils/logger.js";
 import { processNextAgentTask } from "./agent-task-worker.js";
+import { createMemoryMaintenance } from "./memory-maintenance.js";
+import { processNextMemoryObservation } from "./memory-observation-worker.js";
 
 // Tracing MUST be initialized before any agent module is required, so the
 // SDK can patch the modules they import transitively. Service name is
@@ -35,11 +37,41 @@ async function main() {
     component: "agent-task-worker",
     concurrency: agentTaskConfig.workerConcurrency,
   }, "Agent task Worker started");
-  await Promise.all(Array.from(
-    { length: agentTaskConfig.workerConcurrency },
-    (_, slot) => runWorkerSlot(slot),
-  ));
+  await Promise.all([
+    ...Array.from(
+      { length: agentTaskConfig.workerConcurrency },
+      (_, slot) => runWorkerSlot(slot),
+    ),
+    // One slot is enough: an observation is a single short transaction, and
+    // keeping it off the agent slots means memory aggregation can never take
+    // capacity from planning.
+    runMemoryObservationSlot(),
+  ]);
   logger.info({ component: "agent-task-worker" }, "Agent task Worker stopped");
+}
+
+async function runMemoryObservationSlot() {
+  const maintenance = createMemoryMaintenance();
+  while (!stopping) {
+    const processed = await processNextMemoryObservation();
+
+    // Run on its own hourly schedule rather than only when the queue drains: a
+    // steady stream of observations would otherwise mean expired suggestions
+    // are never swept. The gate makes this one query an hour.
+    try {
+      await maintenance.runIfDue();
+    } catch (error) {
+      // Upkeep must not take the Worker down with it — these slots share a
+      // `Promise.all`, so an unhandled sweep failure would stop planning too.
+      logger.error({
+        component: "memory-maintenance",
+        errorClass: (error as Error).name,
+      }, "Memory maintenance sweep failed");
+    }
+
+    if (!processed) await delay(agentTaskConfig.pollIntervalMs);
+  }
+  logger.debug({ component: "memory-observation-worker" }, "Memory observation slot stopped");
 }
 
 async function runWorkerSlot(slot: number) {

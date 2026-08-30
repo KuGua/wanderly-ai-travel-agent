@@ -1,4 +1,4 @@
-import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/domain.js";
+import type { FlightOffer, StayOffer, PlanDiff } from "../types/domain.js";
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace, ConversationResponseMode } from "../types/schemas.js";
 import type { PersonalTripContext } from "../skills/personal/personal-trip-context-schema.js";
@@ -55,7 +55,6 @@ export interface ModelGateway {
     destination: string;
     flights: FlightOffer[];
     stays: StayOffer[];
-    ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;
     signal?: AbortSignal;
     ctx?: { correlationId: string };
@@ -85,7 +84,6 @@ export interface ModelGateway {
       currency: string;
     };
     stays: StayOffer[];
-    ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;
     tools: ModelToolDefinition[];
     dispatchTool: ModelToolDispatcher;

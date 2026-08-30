@@ -11,7 +11,7 @@ vi.mock("openai", () => ({
     chat = {
       completions: {
         parse: async () => ({
-          choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+          choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
         }),
       },
     };
@@ -36,7 +36,7 @@ function buildClient(behavior: "ok" | "bad" | "abort" | "slow"): FakeClient {
         parse: async () => {
           if (behavior === "ok") {
             return {
-              choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+              choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
               usage: { prompt: 12, completion: 5, total: 17 },
             };
           }
@@ -80,7 +80,6 @@ describe("LLM gateway", () => {
       destination: "Tokyo",
       flights: [],
       stays: [],
-      ground: [],
       memberPreferences: {},
     });
 
@@ -105,7 +104,6 @@ describe("LLM gateway", () => {
       destination: "Tokyo",
       flights: [],
       stays: [],
-      ground: [],
       memberPreferences: {},
     });
 
@@ -129,7 +127,6 @@ describe("LLM gateway", () => {
       destination: "Tokyo",
       flights: [],
       stays: [],
-      ground: [],
       memberPreferences: {},
     })).rejects.toMatchObject({ code: "SCHEMA_PARSE" });
 
@@ -153,7 +150,6 @@ describe("LLM gateway", () => {
       destination: "Tokyo",
       flights: [],
       stays: [],
-      ground: [],
       memberPreferences: {},
     })).rejects.toBeInstanceOf(ModelGatewayError);
 

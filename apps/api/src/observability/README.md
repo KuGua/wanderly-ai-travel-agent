@@ -120,7 +120,7 @@ first import in both `apps/api/src/server.ts` and
 | --- | --- | --- |
 | `OTEL_SDK_DISABLED` | unset | `true` → skip the provider entirely; the API still installs the W3C propagator so inbound trace context remains readable |
 | `OTEL_TRACES_EXPORTER` | env-driven | `console` / `otlp` / `none` override the default; `in-memory` only meaningful in tests |
-| `NODE_ENV` | `development` | `test` → in-memory exporter; `production` → OTLP when endpoint set, else no-op |
+| `NODE_ENV` | `development` | `test` → in-memory exporter; any non-test environment exports to OTLP when an endpoint is set, otherwise development uses console and production is no-op |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | when present, OTLP exporter is wired (`http/protobuf` default, `grpc` falls back to `http/protobuf`) |
 | `OTEL_TRACES_SAMPLER_ARG` | `0.05` (prod only) | sample ratio for `ParentBased(TraceIdRatioBased)` in production; dev/test always on |
 | `OTEL_LOG_LEVEL` | `warn` | internal SDK logger verbosity |
@@ -135,7 +135,8 @@ implement the W3C trace-context spec verbatim — version `00`, all-zero
 `traceId` / `spanId` are rejected. `newTraceId()` / `newSpanId()` mint fresh
 32-hex / 16-hex ids via `crypto.randomFillSync`.
 
-The API's `onRequest` hook:
+The API's `onRequest` hook (registered before the CORS plugin so preflight
+requests cannot bypass it):
 
 1. parses inbound `traceparent` if present, otherwise mints a fresh trace id;
 2. mints a fresh span id;
@@ -143,7 +144,8 @@ The API's `onRequest` hook:
    resolved in `preHandler` via `request.routeOptions.url`);
 4. sets `http.method`, `http.target`, `net.peer.ip`, `http.route`,
    `http.status_code`, and `app.correlation_id` on the span;
-5. ends the span in `onResponse` and echoes the response header `traceparent`.
+5. writes the response `traceparent` before later `onRequest` hooks can
+   short-circuit a response, then ends the span in `onResponse`.
 
 CORS preflight requests may be completed by the CORS plugin before the API's
 `onRequest` hook creates a trace context. Those successful `OPTIONS` responses

@@ -118,6 +118,7 @@ export const createTripSchema = z.object({
 }).strict();
 
 export const tripStatusSchema = z.enum(["DRAFT", "PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
+export const tripArchiveReasonSchema = z.enum(["USER_ARCHIVED", "DATE_ELAPSED"]);
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
 export const projectDisplayStateSchema = z.enum([
@@ -162,6 +163,8 @@ export const tripSummarySchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateStr.nullable(),
   travelDateEnd: dateStr.nullable(),
+  archivedAt: z.string().datetime().nullable(),
+  archiveReason: tripArchiveReasonSchema.nullable(),
   memberCount: z.number().int().nonnegative(),
   role: tripRoleSchema,
   createdAt: z.string().datetime(),
@@ -194,6 +197,8 @@ export const tripDetailsResponseSchema = z.object({
     destinationCandidates: z.array(z.string()),
     travelDateStart: dateStr.nullable(),
     travelDateEnd: dateStr.nullable(),
+    archivedAt: z.string().datetime().nullable(),
+    archiveReason: tripArchiveReasonSchema.nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   }),
@@ -493,6 +498,20 @@ export const tripInvitationCreateResponseSchema = z.object({
   expiresAt: z.string().datetime(),
 });
 
+/** A privacy-minimized account record used only while choosing a trip invitee. */
+export const tripInviteeSchema = z.object({
+  id: uuidSchema,
+  displayName: z.string().min(1).max(128),
+}).strict();
+
+export const searchTripInviteesQuerySchema = z.object({
+  q: z.string().trim().min(2).max(64),
+}).strict();
+
+export const searchTripInviteesResponseSchema = z.object({
+  candidates: z.array(tripInviteeSchema).max(10),
+}).strict();
+
 export const tripInvitationSummarySchema = z.object({
   id: uuidSchema,
   tripId: uuidSchema,
@@ -533,7 +552,7 @@ export const declineInvitationResponseSchema = z.object({
   declined: z.literal(true),
 }).strict();
 
-// ─── Exploration & Draft Trip ──────────────────────────────────────────────
+// ─── Exploration & Active Trip ─────────────────────────────────────────────
 
 // Exploration start carries only the client's idempotency key.  No message
 // body, place, profile, or nationality data crosses this boundary, so audit
@@ -546,7 +565,7 @@ export const explorationStartResponseSchema = z.object({
   trip: z.object({
     id: uuidSchema,
     name: z.string(),
-    status: z.literal("DRAFT"),
+    status: z.literal("PLANNING"),
     departureCities: z.array(z.string()).length(0),
     destinationCandidates: z.array(z.string()).length(0),
     travelDateStart: z.null(),
@@ -747,6 +766,37 @@ export const constraintSnapshotDataV2Schema = z.object({
   travelDateEnd: dateStr.optional(),
 }).strict();
 
+/**
+ * `authorized_data._meta.memory` — the only route personal memory takes to the
+ * Shared Trip Agent (docs/long-term-memory-implementation.md §4.4).
+ *
+ * Members are keyed by their run-scoped alias, never by user id: the rest of
+ * the v2 snapshot already aliases members, and projecting raw ids here would
+ * undo that for the one section that carries preferences.
+ *
+ * Values are whatever the field's catalog schema allows, so they stay
+ * `unknown` here; the catalog is what decides a field may appear at all.
+ */
+export const memoryProjectionSchema = z.object({
+  members: z.record(z.string().min(1), z.object({
+    /** Stable profile facts this member consented to export to this trip. */
+    profileFacts: z.record(z.string(), z.unknown()),
+    /** Team-visible this-trip overrides; safe to reference in an explanation. */
+    tripOverrides: z.record(z.string(), z.unknown()),
+    /**
+     * Overrides marked ORCHESTRATOR_CONFIDENTIAL: usable when planning, and
+     * barred from peer responses, plan explanations and telemetry (§3.3).
+     *
+     * Kept in its own key rather than mixed into `tripOverrides` because the
+     * separation has to survive the trip to the snapshot — a consumer reading a
+     * flat map cannot tell which values it is allowed to repeat.
+     */
+    confidentialOverrides: z.record(z.string(), z.unknown()),
+  }).strict()),
+  /** Decisions belonging to the trip rather than to any one member. */
+  groupDecisions: z.record(z.string(), z.unknown()),
+}).strict();
+
 export const tripConstraintProposalsResponseSchema = z.object({
   proposals: z.array(tripConstraintProposalSchema),
 }).strict();
@@ -803,6 +853,7 @@ export type PlanAdoptionVotesResponse = z.infer<typeof planAdoptionVotesResponse
 export type ProjectedConstraint = z.infer<typeof projectedConstraintSchema>;
 export type ConstraintSnapshotProjectionManifestEntry = z.infer<typeof constraintSnapshotProjectionManifestEntrySchema>;
 export type ConstraintSnapshotDataV2 = z.infer<typeof constraintSnapshotDataV2Schema>;
+export type MemoryProjection = z.infer<typeof memoryProjectionSchema>;
 export type TripConstraintProposalsResponse = z.infer<typeof tripConstraintProposalsResponseSchema>;
 export type TripConstraintsResponse = z.infer<typeof tripConstraintsResponseSchema>;
 export type TripConstraintsOwnerResponse = z.infer<typeof tripConstraintsOwnerResponseSchema>;

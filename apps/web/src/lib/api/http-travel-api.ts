@@ -1,5 +1,6 @@
-import { ApiClient, type GetAccessToken } from "./client";
 import { z } from "zod";
+
+import { ApiClient, type GetAccessToken } from "./client";
 import {
   conversationTurnRequestSchema,
   conversationTurnAcceptedResponseSchema,
@@ -10,7 +11,14 @@ import {
   explorationStartRequestSchema,
   explorationStartResponseSchema,
   ownerConversationResponseSchema,
+  memoryFactSchema,
+  profileMemoryResponseSchema,
+  tripMemoryFactSchema,
+  tripMemoryGroupResponseSchema,
+  tripMemoryOverridesResponseSchema,
   profileResponseSchema,
+  resolveProposalResponseSchema,
+  updateMemoryFactInputSchema,
   tripActivationRequestSchema,
   tripActivationResponseSchema,
   updateTripTitleInputSchema,
@@ -26,10 +34,14 @@ import {
   invitationPreviewResponseSchema,
   acceptInvitationResponseSchema,
   declineInvitationResponseSchema,
+  createTripInvitationInputSchema,
+  searchTripInviteesResponseSchema,
+  tripInvitationCreateResponseSchema,
   tripsResponseSchema,
   threadsResponseSchema,
   updateProfileInputSchema,
   updateProfileResponseSchema,
+  type UpdateMemoryFactInput,
   locationReferenceInputSchema,
   locationReferenceResponseSchema,
   // ── Team Agent 协作编排 (Phase 5) ─────────────────────────────────────────
@@ -98,6 +110,71 @@ export class HttpTravelApi implements TravelApi {
     });
   }
 
+  getProfileMemory() {
+    return this.client.request("/profiles/me/memory", profileMemoryResponseSchema);
+  }
+
+  updateMemoryFact(factId: string, input: UpdateMemoryFactInput) {
+    const body = updateMemoryFactInputSchema.parse(input);
+    return this.client.request(`/profiles/me/memory/facts/${factId}`, memoryFactSchema, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async deleteMemoryFact(factId: string) {
+    // 204 No Content: nothing to parse, so the schema is a passthrough.
+    await this.client.request(`/profiles/me/memory/facts/${factId}`, z.unknown(), {
+      method: "DELETE",
+    });
+  }
+
+  confirmMemoryProposal(proposalId: string) {
+    return this.client.request(
+      `/profiles/me/memory/proposals/${proposalId}/confirm`,
+      resolveProposalResponseSchema,
+      { method: "POST" },
+    );
+  }
+
+  dismissMemoryProposal(proposalId: string) {
+    return this.client.request(
+      `/profiles/me/memory/proposals/${proposalId}/dismiss`,
+      resolveProposalResponseSchema,
+      { method: "POST" },
+    );
+  }
+
+  getTripMemoryOverrides(tripId: string) {
+    return this.client.request(`/trips/${tripId}/memory/me`, tripMemoryOverridesResponseSchema);
+  }
+
+  getTripMemoryGroupDecisions(tripId: string) {
+    return this.client.request(`/trips/${tripId}/memory`, tripMemoryGroupResponseSchema);
+  }
+
+  saveTripMemoryOverride(tripId: string, fieldKey: string, value: unknown) {
+    return this.client.request(
+      `/trips/${tripId}/memory/me/overrides/${encodeURIComponent(fieldKey)}`,
+      tripMemoryFactSchema,
+      { method: "PUT", body: JSON.stringify({ value }) },
+    );
+  }
+
+  saveTripMemoryGroupDecision(tripId: string, fieldKey: string, value: unknown) {
+    return this.client.request(
+      `/trips/${tripId}/memory/group-decisions/${encodeURIComponent(fieldKey)}`,
+      tripMemoryFactSchema,
+      { method: "PUT", body: JSON.stringify({ value }) },
+    );
+  }
+
+  async deleteTripMemory(tripId: string, factId: string) {
+    await this.client.request(`/trips/${tripId}/memory/${factId}`, z.unknown(), {
+      method: "DELETE",
+    });
+  }
+
   getTrips() {
     return this.client.request("/trips", tripsResponseSchema);
   }
@@ -116,6 +193,22 @@ export class HttpTravelApi implements TravelApi {
 
   declineInvitation(inviteToken: string) {
     return this.client.request("/trip-invitations/" + encodeURIComponent(inviteToken) + "/decline", declineInvitationResponseSchema, { method: "POST" });
+  }
+
+  searchTripInvitees(tripId: string, query: string) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/invitees?q=${encodeURIComponent(query)}`,
+      searchTripInviteesResponseSchema,
+    );
+  }
+
+  createTripInvitation(tripId: string, input: import("./contracts").CreateTripInvitationInput) {
+    const body = createTripInvitationInputSchema.parse(input);
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/invitations`,
+      tripInvitationCreateResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
   }
 
   getLocationReference(input: import("./contracts").LocationReferenceInput) {

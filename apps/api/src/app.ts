@@ -7,6 +7,8 @@ import { context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 import { createAuthMiddleware, type VerifyAccessToken } from "./middleware/auth.js";
 import { errorHandler, ApiError } from "./middleware/error-handler.js";
 import { profileRoutes } from "./routes/profiles.js";
+import { profileMemoryRoutes } from "./routes/profile-memory.js";
+import { tripMemoryRoutes } from "./routes/trip-memory.js";
 import { tripRoutes } from "./routes/trips.js";
 import { consentRoutes } from "./routes/consent.js";
 import { planningRoutes } from "./routes/planning.js";
@@ -23,6 +25,7 @@ import { agentRunRoutes } from "./routes/agent-runs.js";
 import { authRoutes } from "./routes/auth.js";
 import { searchPreferenceRoutes } from "./routes/search-preferences.js";
 import { teamOrchestrationRoutes } from "./routes/team-orchestration.js";
+import { uiDiagnosticsRoutes } from "./routes/ui-diagnostics.js";
 import { AgentStreamRelay } from "./tasks/agent-stream-relay.js";
 import { pinoInstance, correlationChild } from "./observability/telemetry.js";
 import { metrics } from "./observability/metrics.js";
@@ -62,12 +65,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
       await agentStreamRelay.stop();
     });
   }
-
-  await app.register(fastifyCors, {
-    origin: authMode === "local-dev" || authMode === "custom-local"
-      ? (origin, callback) => callback(null, isAllowedLocalDevOrigin(origin, localDevAllowedOrigins))
-      : true,
-  });
 
   await app.register(fastifySwagger, {
     openapi: {
@@ -116,6 +113,12 @@ export async function buildApp(options: BuildAppOptions = {}) {
     );
     request.traceId = inbound?.traceId ?? newTraceId();
     request.spanId = newSpanId();
+    // This must be set before the CORS hook runs: a successful preflight is
+    // short-circuited there and does not reach the regular route lifecycle.
+    reply.header(
+      TRACEPARENT_HEADER,
+      formatTraceparent(request.traceId, request.spanId, "01"),
+    );
 
     // Open the server span. The route pattern is not yet known in onRequest
     // for Fastify 5, so we set the bare minimum attributes here and enrich
@@ -166,6 +169,18 @@ export async function buildApp(options: BuildAppOptions = {}) {
     await authMiddleware(request);
   });
 
+  // Register CORS after request tracing. @fastify/cors completes successful
+  // preflight requests from its onRequest hook, so it must observe the trace
+  // context already initialized above.
+  await app.register(fastifyCors, {
+    origin: authMode === "local-dev" || authMode === "custom-local"
+      ? (origin, callback) => callback(null, isAllowedLocalDevOrigin(origin, localDevAllowedOrigins))
+      : true,
+    // Keep this allow-list aligned with the API's browser-facing routes.
+    // In particular, creator-confirmed draft brief updates use PATCH.
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  });
+
   app.addHook("preHandler", async (request) => {
     // Route matching has happened by preHandler; promote the bare URL to the
     // stable route pattern and expose it on the span. This attribute is what
@@ -187,18 +202,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
       }
       span.end();
     }
-    // Echo the trace context so clients and downstream services can continue
-    // the trace. The response header mirrors the canonical `traceparent`
-    // value built from `request.traceId`/`request.spanId`.
-    // The CORS plugin can short-circuit an OPTIONS preflight before this
-    // app's onRequest hook creates trace identifiers. Do not turn an
-    // otherwise successful preflight into an onResponse error in that case.
-    if (request.traceId && request.spanId) {
-      reply.header(
-        TRACEPARENT_HEADER,
-        formatTraceparent(request.traceId, request.spanId, "01"),
-      );
-    }
   });
 
   app.setNotFoundHandler(async () => {
@@ -206,6 +209,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
 
   await app.register(profileRoutes, { prefix: "/api/v1" });
+  await app.register(profileMemoryRoutes, { prefix: "/api/v1" });
+  await app.register(tripMemoryRoutes, { prefix: "/api/v1" });
   await app.register(tripRoutes, { prefix: "/api/v1" });
   await app.register(consentRoutes, { prefix: "/api/v1" });
   await app.register(planningRoutes, { prefix: "/api/v1" });
@@ -222,6 +227,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(authRoutes, { prefix: "/api/v1" });
   await app.register(searchPreferenceRoutes, { prefix: "/api/v1" });
   await app.register(teamOrchestrationRoutes, { prefix: "/api/v1" });
+  await app.register(uiDiagnosticsRoutes, { prefix: "/api/v1" });
 
   // Register agents (Skills) — must happen before the server accepts traffic so
   // handlers can call skill-registry.invokeSkill without races.
@@ -233,7 +239,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
 function isAuthenticationExempt(method: string, url: string): boolean {
   const path = url.split("?", 1)[0];
-  return path === "/health"
+  return method === "OPTIONS"
+    || path === "/health"
     || path === "/metrics"
     || path.startsWith("/docs")
     || (method === "POST" && path === "/api/v1/bookings/callback")

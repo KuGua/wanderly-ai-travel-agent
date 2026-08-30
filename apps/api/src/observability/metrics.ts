@@ -251,6 +251,30 @@ metrics.registerCounter("booking_callback_outcomes_total", "Authenticated bookin
 metrics.registerCounter("location_reference_requests_total", "Offline map location references by bounded outcome.", {
   outcome: ["reference", "no_reference", "unavailable", "rate_limited"],
 });
+metrics.registerCounter("ui_diagnostic_events_total", "Authenticated, content-free browser diagnostic events.", {
+  action: ["frontend.runtime", "profile.save", "trip.activate", "trip.thread_create", "conversation.submit", "agent.run_cancel", "invitation.accept", "invitation.decline", "plan.confirm", "booking.confirm"],
+  outcome: ["success", "failure"],
+  error_category: ["none", "validation", "network", "http_4xx", "http_5xx", "timeout", "aborted", "invalid_response", "render", "unhandled"],
+});
+
+// docs/long-term-memory-implementation.md section 7. Bounded enums only:
+// field keys, values, observation dates, trip ids and activation are all
+// forbidden as labels — they would be high-cardinality and, worse, would leak
+// what the product remembers about a person.
+metrics.registerCounter("memory_proposals_total", "Behaviour-derived memory proposals by bounded outcome.", {
+  outcome: ["created", "aggregated", "duplicate_episode", "in_cooldown", "rejected"],
+  source: ["behavior_aggregation"],
+});
+metrics.registerCounter("memory_fact_mutations_total", "Preference fact mutations by bounded operation.", {
+  operation: ["replace", "delete"],
+  source: ["profile_form", "proposal_confirmation"],
+});
+metrics.registerCounter("memory_projection_build_total", "Memory namespace projections built for a snapshot.", {
+  result: ["built", "empty", "failed"],
+});
+metrics.registerCounter("memory_proposal_resolutions_total", "Proposal lifecycle transitions by bounded outcome.", {
+  outcome: ["confirmed", "dismissed", "expired", "already_resolved", "not_found"],
+});
 
 // S4 / docs/location-introduction-cache-implementation.md §9. Anonymous
 // location-introduction requests by bounded outcome, generation latency,
