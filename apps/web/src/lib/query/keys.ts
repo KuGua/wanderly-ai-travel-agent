@@ -49,3 +49,11 @@ export const teamOrchestrationKeys = {
   votes: (planId: string) =>
     ["team-orchestration", "votes", planId] as const,
 };
+
+// ── Phase 6 / Personal Trip Orchestrator ────────────────────────────────────
+export const personalOrchestrationKeys = {
+  all: ["personal-orchestration"] as const,
+  researchRun: (runId: string) => ["personal-orchestration", "runs", runId] as const,
+  researchLatest: (tripId: string) => ["personal-orchestration", tripId, "research-latest"] as const,
+  proposedPlans: (tripId: string) => ["personal-orchestration", tripId, "proposed-plans"] as const,
+};

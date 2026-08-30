@@ -778,6 +778,79 @@ export type ServiceGap = z.infer<typeof serviceGapSchema>;
 export type ResearchResultStatus = z.infer<typeof researchResultStatusSchema>;
 export type ResearchResult = z.infer<typeof researchResultSchema>;
 
+// ─── Personal Trip Research command (Phase 6 / docs §4) ───────────────────
+export const personalResearchCapabilitySchema = z.enum([
+  "flight", "accommodation", "hotel", "activities", "places", "navigation", "mobility", "readiness",
+]);
+export type PersonalResearchCapability = z.infer<typeof personalResearchCapabilitySchema>;
+
+export const personalResearchKindSchema = z.enum(["RESEARCH_ONLY", "PROPOSE_PLAN"]);
+export type PersonalResearchKind = z.infer<typeof personalResearchKindSchema>;
+
+export const personalResearchIntentSchema = z.object({
+  kind: personalResearchKindSchema,
+  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+  destinationCandidates: z.array(z.string().min(1).max(64)).min(1).max(5).optional(),
+}).strict();
+export type PersonalResearchIntent = z.infer<typeof personalResearchIntentSchema>;
+
+export const researchCommandRequestSchema = z.object({
+  requestId: z.string().uuid(),
+  outputMode: personalResearchKindSchema,
+  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+}).strict();
+export type ResearchCommandRequest = z.infer<typeof researchCommandRequestSchema>;
+
+export const researchCommandAcceptedResponseSchema = z.object({
+  runId: z.string().uuid(),
+  operation: z.enum(["RESEARCH", "PLAN"]),
+  snapshotId: z.string().uuid(),
+  status: z.literal("QUEUED"),
+}).strict();
+export type ResearchCommandAcceptedResponse = z.infer<typeof researchCommandAcceptedResponseSchema>;
+
+export const latestResearchResultResponseSchema = z.object({
+  result: researchResultSchema.nullable(),
+}).strict();
+export type LatestResearchResultResponse = z.infer<typeof latestResearchResultResponseSchema>;
+
+export const soloAdoptPlanResponseSchema = z.object({
+  planId: z.string().uuid(),
+  status: z.literal("ACTIVE"),
+}).strict();
+export type SoloAdoptPlanResponse = z.infer<typeof soloAdoptPlanResponseSchema>;
+
+export const researchStageSchema = z.enum([
+  "SNAPSHOT_CREATED",
+  "RESEARCHING",
+  "VALIDATING",
+  "PERSISTING",
+  "COMPLETED",
+  "COMPLETED_WITH_GAPS",
+  "FAILED",
+  "STALE",
+]);
+export type ResearchStage = z.infer<typeof researchStageSchema>;
+
+const streamBaseShape = {
+  runId: z.string().uuid(),
+  generationAttempt: z.number().int().nonnegative(),
+  traceparent: z.string().optional(),
+};
+export const researchStageEventSchema = z.object({
+  ...streamBaseShape,
+  event: z.literal("research.stage"),
+  stage: researchStageSchema,
+}).strict();
+export type ResearchStageEvent = z.infer<typeof researchStageEventSchema>;
+
+export const researchIntentExtractedEventSchema = z.object({
+  ...streamBaseShape,
+  event: z.literal("research.intent_extracted"),
+  intent: personalResearchIntentSchema,
+}).strict();
+export type ResearchIntentExtractedEvent = z.infer<typeof researchIntentExtractedEventSchema>;
+
 // ─── Navigation route evidence (spec §5.2) ─────────────────────────────────
 // Server-authoritative route snapshot. The geometry is bound to the
 // `snapshotId` and only reaches the browser via the snapshot-bound DTO; the
