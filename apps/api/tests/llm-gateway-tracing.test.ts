@@ -28,7 +28,7 @@ function buildCapturingClient(behavior: "ok" | "schema-bad" = "ok"): {
   const respond = async (): Promise<unknown> => ({
     choices: [{
       message: behavior === "ok"
-        ? { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], ground: [], generatedAt: "2026-08-23T00:00:00.000Z" } } }
+        ? { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], generatedAt: "2026-08-23T00:00:00.000Z" } } }
         : { content: "{\"reply\":{\"content\":\"hi\"}}" },
     }],
     usage: { prompt: 12, completion: 5, total: 17 },
@@ -82,7 +82,6 @@ describe("LLM gateway tracing", () => {
       destination: "Tokyo",
       flights: [],
       stays: [],
-      ground: [],
       memberPreferences: {},
     });
 
@@ -111,7 +110,6 @@ describe("LLM gateway tracing", () => {
         destination: "Tokyo",
         flights: [],
         stays: [],
-        ground: [],
         memberPreferences: {},
       });
     });
@@ -142,7 +140,6 @@ describe("LLM gateway tracing", () => {
       destination: "Tokyo",
       flights: [],
       stays: [],
-      ground: [],
       memberPreferences: {},
     });
 
@@ -174,7 +171,6 @@ describe("LLM gateway tracing", () => {
       destination: "Tokyo",
       flights: [],
       stays: [],
-      ground: [],
       memberPreferences: { sensitiveKey: "value" },
     });
 
@@ -236,7 +232,6 @@ describe("LLM gateway outbound headers when no span is active", () => {
       destination: "Tokyo",
       flights: [],
       stays: [],
-      ground: [],
       memberPreferences: {},
     });
 

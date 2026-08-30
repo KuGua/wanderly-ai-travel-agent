@@ -940,3 +940,72 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Any activities evidence or booking link reference is rejected by the readiness and plan validators; it is not persisted as authoritative readiness text.
 - Missing authoritative visa/entry data yields the existing official verification gap, not a conclusion inferred from activities.
 - Personal activity results are never eligible as Shared or readiness evidence.
+
+### TS-ORS-TOOL-1 — LLM tool whitelist exposes ORS skills when enabled
+
+**Stories:** H3
+**Objective:** Verify that `places.search`, `places.adopt`, and `navigation.route` appear in the LLM tool list when `PLAN_ENABLE_PLACES=true` and `PLAN_ENABLE_NAVIGATION=true`, and disappear when those flags are false. The provider layer still works server-side regardless of the flag.
+
+**Steps:**
+
+1. Run `generatePlan` with `PLAN_ENABLE_PLACES=false`, `PLAN_ENABLE_NAVIGATION=false`; capture the `tools` argument passed to `modelGateway.generateStructuredPlanWithTools`.
+2. Repeat with `PLAN_ENABLE_PLACES=true`, `PLAN_ENABLE_NAVIGATION=true`.
+3. Inspect the captured tool list.
+
+**Expected outcomes:**
+
+- Step 1: the tool list contains `flight.search` and (when `PLAN_ENABLE_ACTIVITIES=true`) `activities.search`; it does NOT contain `places.search`, `places.adopt`, or `navigation.route`.
+- Step 2: the tool list additionally contains `places.search`, `places.adopt`, and `navigation.route`. Each tool's JSON Schema parameter list is exactly the versioned spec in `apps/api/src/services/{place-search,navigation-route,trip-place}-service.ts`.
+- Flipping `PLAN_ENABLE_PLACES=false` and `PLAN_ENABLE_NAVIGATION=true` (or vice versa) hides only the tools gated by the disabled flag; the other set remains visible.
+
+### TS-ORS-TOOL-2 — ORS tools are gated by the configured model's tool-calling capability
+
+**Stories:** H3
+**Objective:** Verify that `places.search`, `places.adopt`, and `navigation.route` are not advertised unless the configured OpenAI-compatible model has been validated against the function-tool-calling compatibility spike (`MODEL_GATEWAY_TOOL_CALLING_ENABLED=true`).
+
+**Steps:**
+
+1. Set `MODEL_GATEWAY_TOOL_CALLING_ENABLED=false`; set `PLAN_ENABLE_PLACES=true`, `PLAN_ENABLE_NAVIGATION=true`.
+2. Run a Shared planning task that takes the durable planning path.
+3. Repeat with `MODEL_GATEWAY_TOOL_CALLING_ENABLED=true`.
+
+**Expected outcomes:**
+
+- Step 1: the durable planning service raises `PlanningDataUnavailableError(["tool_calling_not_supported"])`. The legacy `generateStructuredPlan` (no tools) path is selected.
+- Step 2: the durable planning service takes the tool loop path and the ORS tools are visible to the model as expected.
+
+### TS-ORS-TOOL-3 — LLM cannot pass raw coordinates to `places.search` / `navigation.route`
+
+**Stories:** H3, S1
+**Objective:** Verify that the dispatcher refuses model-supplied raw coordinates, provider names, URLs, or private profile data, and surfaces a deterministic `POLICY_DENIED` error.
+
+**Steps:**
+
+1. Trigger `places.search` with `keyword` containing raw coordinates (`"35.6762, 139.6503"`) or provider name (`"amadeus"`).
+2. Trigger `places.adopt` with `action: "propose"` and `candidate` missing required `displayName` / `latitude` / `longitude`.
+3. Trigger `navigation.route` with an `originPlaceId` that is not in the trip's `trip_places` table.
+4. Trigger `navigation.route` with `originPlaceId === destinationPlaceId`.
+
+**Expected outcomes:**
+
+- All four attempts return `UNAVAILABLE/POLICY_DENIED` or are wrapped by the skill registry as `INPUT_INVALID`; the request never reaches ORS.
+- The dispatcher never logs the rejected payload content; the audit row records only `POLICY_DENIED` with the offending skill name and `redactedReason` (no raw coordinates).
+- Provider metrics (`place_search_tool_invocations_total`, `navigation_route_tool_invocations_total`) increment `outcome="unavailable", error_category="policy_denied"`.
+
+### TS-ORS-TOOL-4 — ORS UNAVAILABLE flows back through the model as a tool result
+
+**Stories:** H3, S4
+**Objective:** Verify that when ORS is not configured (`ORS_API_KEY` unset) and the model calls `places.search` / `navigation.route`, the tool returns `UNAVAILABLE/NOT_CONFIGURED` and the LLM loop completes with `COMPLETED_WITH_GAPS` rather than failing hard.
+
+**Steps:**
+
+1. Unset `ORS_API_KEY`. Set `PLAN_ENABLE_PLACES=true`, `PLAN_ENABLE_NAVIGATION=true`, `MODEL_GATEWAY_TOOL_CALLING_ENABLED=true`.
+2. Trigger a Shared planning task that calls `places.search` from the model.
+3. Repeat with `navigation.route`.
+
+**Expected outcomes:**
+
+- Tool result is `{ outcome: "UNAVAILABLE", code: "NOT_CONFIGURED" }`.
+- Planning completes; `summarizeProviderGaps` records `navigation: NOT_CONFIGURED` only when the LLM actually called `navigation.route` (the post-deprecation gate no longer emits a `navigation: NO_RESULTS` gap from an empty `ground[]`).
+- No `provider_offers` row is written with `category="ground"`.
+- `itinerary_plans.planData` JSON does NOT contain a top-level `ground` key.

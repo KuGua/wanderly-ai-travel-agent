@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { SpanKind, trace as otelTrace } from "@opentelemetry/api";
 import { z } from "zod";
-import type { FlightOffer, StayOffer, GroundOffer, PlanDiff } from "../types/domain.js";
+import type { FlightOffer, StayOffer, PlanDiff } from "../types/domain.js";
 import type {
   ThreadContextMessage,
   ConversationDeltaHandler,
@@ -53,7 +53,6 @@ const parsedCompletionSchema = z.object({
     destinationCandidatesEvaluated: z.array(z.string().min(1)).min(1).optional(),
     flights: z.array(z.unknown()),
     stays: z.array(z.unknown()),
-    ground: z.array(z.unknown()),
     activities: z.array(z.unknown()).optional(),
     generatedAt: z.string().min(1),
     constraintReferences: z.array(z.string().min(1)).optional(),
@@ -328,7 +327,6 @@ export class LLMGateway implements ModelGateway {
     destination: string;
     flights: FlightOffer[];
     stays: StayOffer[];
-    ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;
     signal?: AbortSignal;
     ctx?: { correlationId: string };
@@ -396,7 +394,7 @@ export class LLMGateway implements ModelGateway {
               role: "system",
               content:
                 "You are the Shared Trip planning skill. Return one JSON object with exactly one top-level plan field. " +
-                "The plan must contain destination, flights, stays, ground, and generatedAt. " +
+                "The plan must contain destination, flights, stays, and generatedAt. " +
                 "Never include PII, passport numbers, or fields outside the supplied snapshot.",
             },
             {
@@ -405,7 +403,6 @@ export class LLMGateway implements ModelGateway {
                 destination: params.destination,
                 flights: params.flights,
                 stays: params.stays,
-                ground: params.ground,
                 memberPreferences: params.memberPreferences,
               }),
             },
@@ -467,7 +464,6 @@ export class LLMGateway implements ModelGateway {
     destination: string;
     destinationCandidates?: string[];
     stays: StayOffer[];
-    ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;
     tools: ModelToolDefinition[];
     dispatchTool: ModelToolDispatcher;
@@ -503,7 +499,6 @@ export class LLMGateway implements ModelGateway {
           destination: params.destination,
           destinationCandidates: params.destinationCandidates ?? [params.destination],
           stays: params.stays,
-          ground: params.ground,
           memberPreferences: params.memberPreferences,
         }),
       },

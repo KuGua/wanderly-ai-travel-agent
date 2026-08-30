@@ -59,7 +59,10 @@ Conversation policy may return `SAFE_REFUSAL` without calling the gateway.
 Unified interfaces for travel data:
 - `FlightProvider` — search flights
 - `StayProvider` — search accommodations
-- `GroundProvider` — search ground transport
+- `PlaceSearchProvider` (ORS Geocoding) — POI candidates
+- `NavigationProvider` (ORS Directions) — walking / driving / cycling routes
+- `MobilityOfferProvider` (Amadeus Transfer Search) — taxi / transfer / charter / rental offers
+- `TransitJourneyProvider` — reserved for Phase 6 (transit schedules / fares)
 - `VisaProvider` — check visa readiness
 
 **Current**: the provider factory returns `UNAVAILABLE` until an approved,

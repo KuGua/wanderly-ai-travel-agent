@@ -16,7 +16,6 @@ describe("visibility bleed — plan listing redaction (spec §10.2)", () => {
       destinationCandidatesEvaluated: ["Tokyo", "Bangkok"],
       flights: [],
       stays: [],
-      ground: [],
       generatedAt: "2026-08-29T00:00:00Z",
       _meta: { foo: "secret-must-not-leak" },
       orchestratorConfidential: { m_alias: [{ fieldKey: "budget_max", valueJson: { amountUsd: 2500 } }] },
@@ -33,7 +32,6 @@ describe("visibility bleed — plan listing redaction (spec §10.2)", () => {
       destinationCandidatesEvaluated: ["Tokyo"],
       flights: [],
       stays: [],
-      ground: [],
       generatedAt: "2026-08-29T00:00:00Z",
       constraintReferences: [
         "teamVisible.m_alias[0].fieldKey",
@@ -50,7 +48,6 @@ describe("visibility bleed — plan listing redaction (spec §10.2)", () => {
       destinationCandidatesEvaluated: ["Tokyo"],
       flights: [],
       stays: [],
-      ground: [],
       generatedAt: "2026-08-29T00:00:00Z",
       publicExplanationTokens: [
         "SATISFIES_ALL_PRIVATE_CONSTRAINTS",
