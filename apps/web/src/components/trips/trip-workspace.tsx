@@ -8,7 +8,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
 import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
 import { TripMemoryPanel } from "@/components/trips/trip-memory-panel";
-import { TripInvitationDialog } from "@/components/trips/trip-invitation-dialog";
 import { PlacesPanel } from "@/components/trips/places-panel";
 import { ResearchGapBanner } from "@/components/trips/research-gap-banner";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
@@ -50,7 +49,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const [manualTitle, setManualTitle] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [activationError, setActivationError] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
 
   const autoProvisionAttemptedRef = useRef(false);
 
@@ -317,6 +315,19 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               <i aria-hidden="true" className="size-[7px] rounded-full bg-[var(--w-highlight)]" />
               <span className="hidden sm:inline">{t("workspace.agentChip")}</span>
             </span>
+            {callerRole === "CREATOR" ? (
+              trip.status === "DRAFT" ? (
+                <button type="button" disabled aria-label={t("workspace.invitation.compactTrigger")} title={t("workspace.invitation.draftHint")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm disabled:cursor-not-allowed disabled:opacity-50 xl:hidden">
+                  <UserPlus aria-hidden="true" className="size-4" />
+                  <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
+                </button>
+              ) : (
+                <Link href={`/trips/${tripId}/invite`} aria-label={t("workspace.invitation.compactTrigger")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden">
+                  <UserPlus aria-hidden="true" className="size-4" />
+                  <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
+                </Link>
+              )
+            ) : null}
             <button
               type="button"
               onClick={() => setInspectorOpen(true)}
@@ -350,15 +361,17 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             inspector's rule lines up with the history and chat headers. */}
         <header className="flex h-[66px] items-center justify-end gap-2 border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
           {callerRole === "CREATOR" ? (
-            <button
-              type="button"
-              onClick={() => setInviteOpen(true)}
-              disabled={trip.status === "DRAFT"}
-              className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <UserPlus aria-hidden="true" className="size-4" />
-              {t("workspace.invitation.trigger")}
-            </button>
+            trip.status === "DRAFT" ? (
+              <button type="button" disabled title={t("workspace.invitation.draftHint")} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+                <UserPlus aria-hidden="true" className="size-4" />
+                {t("workspace.invitation.trigger")}
+              </button>
+            ) : (
+              <Link href={`/trips/${tripId}/invite`} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                <UserPlus aria-hidden="true" className="size-4" />
+                {t("workspace.invitation.trigger")}
+              </Link>
+            )
           ) : null}
           <button
             type="button"
@@ -469,7 +482,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           <TripMiniGlobe places={globePlaces} fallbackLabel={destinationsLabel} tripId={tripId} />
         </section>
       </aside>
-      {inviteOpen ? <TripInvitationDialog tripId={tripId} locale={locale} onClose={() => setInviteOpen(false)} /> : null}
     </main>
   );
 }

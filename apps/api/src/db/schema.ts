@@ -225,6 +225,8 @@ export const sharedTrips = pgTable("shared_trips", {
   travelDateStart: varchar("travel_date_start", { length: 10 }),
   travelDateEnd: varchar("travel_date_end", { length: 10 }),
   travelDays: integer("travel_days"),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  archiveReason: varchar("archive_reason", { length: 16 }).$type<"USER_ARCHIVED" | "DATE_ELAPSED" | null>(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

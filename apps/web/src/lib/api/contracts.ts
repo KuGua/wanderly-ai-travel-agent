@@ -50,6 +50,7 @@ export const tripStatusSchema = z.enum([
   "CANCELLED",
   "STALE",
 ]);
+export const tripArchiveReasonSchema = z.enum(["USER_ARCHIVED", "DATE_ELAPSED"]);
 
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
@@ -61,6 +62,8 @@ export const tripSummarySchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateSchema.nullable(),
   travelDateEnd: dateSchema.nullable(),
+  archivedAt: z.string().datetime().nullable().optional(),
+  archiveReason: tripArchiveReasonSchema.nullable().optional(),
   memberCount: z.number().int().nonnegative(),
   role: tripRoleSchema,
   createdAt: z.string().datetime(),
@@ -103,6 +106,8 @@ export const tripDetailSchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateSchema.nullable(),
   travelDateEnd: dateSchema.nullable(),
+  archivedAt: z.string().datetime().nullable().optional(),
+  archiveReason: tripArchiveReasonSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -280,7 +285,7 @@ export const explorationStartRequestSchema = z.object({
 export const explorationDraftTripSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-  status: z.literal("DRAFT"),
+    status: z.literal("PLANNING"),
   departureCities: z.array(z.string()).length(0),
   destinationCandidates: z.array(z.string()).length(0),
   travelDateStart: z.null(),

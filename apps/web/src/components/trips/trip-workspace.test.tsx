@@ -7,6 +7,7 @@ import type { TravelApi } from "@/lib/api";
 import { renderWithIntl } from "@/test/render";
 
 import { TripWorkspace } from "./trip-workspace";
+import { TripInvitationPage } from "./trip-invitation-page";
 
 const TRIP_ID = "11111111-1111-4111-8111-111111111111";
 const DEFAULT_THREAD_ID = "22222222-2222-4222-8222-222222222222";
@@ -122,6 +123,7 @@ describe("TripWorkspace", () => {
     expect(await screen.findByRole("button", { name: /Draft notes/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New thread" })).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Activate draft trip" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Invite teammates" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Start planning" }));
     await waitFor(() => expect(api.activateTrip).toHaveBeenCalledWith(TRIP_ID, {
       departureCities: ["San Francisco"],
@@ -201,9 +203,10 @@ describe("TripWorkspace", () => {
     });
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
 
-    const invite = await screen.findByRole("button", { name: "Invite teammates" });
+    const invite = await screen.findByRole("link", { name: "Invite teammates" });
     const overview = screen.getByText("Trip overview");
     expect(invite.compareDocumentPosition(overview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(invite).toHaveAttribute("href", `/trips/${TRIP_ID}/invite`);
   });
 
   it("lets a creator search accounts and creates an invite link for the selected account", async () => {
@@ -217,10 +220,9 @@ describe("TripWorkspace", () => {
       searchTripInvitees: vi.fn().mockResolvedValue({ candidates: [{ id: SECOND_THREAD_ID, displayName: "Bob" }] }),
       createTripInvitation,
     });
-    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+    renderWithIntl(<TripInvitationPage tripId={TRIP_ID} />, { api });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Invite teammates" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Find a registered account" }), { target: { value: "Bo" } });
+    fireEvent.change(await screen.findByRole("textbox", { name: "Find a registered account" }), { target: { value: "Bo" } });
     expect(await screen.findByRole("button", { name: /Bob/ })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Bob/ }));
     fireEvent.click(screen.getByRole("button", { name: "Create invite link" }));

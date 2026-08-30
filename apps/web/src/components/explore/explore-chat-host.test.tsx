@@ -14,7 +14,7 @@ const DRAFT_RESPONSE: ExplorationStartResponse = {
   trip: {
     id: TRIP_ID,
     name: "Untitled exploration",
-    status: "DRAFT",
+    status: "PLANNING",
     departureCities: [],
     destinationCandidates: [],
     travelDateStart: null,

@@ -118,6 +118,7 @@ export const createTripSchema = z.object({
 }).strict();
 
 export const tripStatusSchema = z.enum(["DRAFT", "PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
+export const tripArchiveReasonSchema = z.enum(["USER_ARCHIVED", "DATE_ELAPSED"]);
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
 export const projectDisplayStateSchema = z.enum([
@@ -162,6 +163,8 @@ export const tripSummarySchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateStr.nullable(),
   travelDateEnd: dateStr.nullable(),
+  archivedAt: z.string().datetime().nullable(),
+  archiveReason: tripArchiveReasonSchema.nullable(),
   memberCount: z.number().int().nonnegative(),
   role: tripRoleSchema,
   createdAt: z.string().datetime(),
@@ -194,6 +197,8 @@ export const tripDetailsResponseSchema = z.object({
     destinationCandidates: z.array(z.string()),
     travelDateStart: dateStr.nullable(),
     travelDateEnd: dateStr.nullable(),
+    archivedAt: z.string().datetime().nullable(),
+    archiveReason: tripArchiveReasonSchema.nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   }),
@@ -547,7 +552,7 @@ export const declineInvitationResponseSchema = z.object({
   declined: z.literal(true),
 }).strict();
 
-// ─── Exploration & Draft Trip ──────────────────────────────────────────────
+// ─── Exploration & Active Trip ─────────────────────────────────────────────
 
 // Exploration start carries only the client's idempotency key.  No message
 // body, place, profile, or nationality data crosses this boundary, so audit
@@ -560,7 +565,7 @@ export const explorationStartResponseSchema = z.object({
   trip: z.object({
     id: uuidSchema,
     name: z.string(),
-    status: z.literal("DRAFT"),
+    status: z.literal("PLANNING"),
     departureCities: z.array(z.string()).length(0),
     destinationCandidates: z.array(z.string()).length(0),
     travelDateStart: z.null(),

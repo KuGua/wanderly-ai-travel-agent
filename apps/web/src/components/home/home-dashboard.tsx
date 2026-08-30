@@ -14,7 +14,7 @@ import { TripList } from "./trip-list";
 type StatusFilter = "active" | "all" | "completed" | "archived";
 
 const STATUS_GROUPS: Record<StatusFilter, TripSummary["status"][]> = {
-  active: ["DRAFT", "PLANNING", "STALE"],
+  active: ["PLANNING", "STALE", "CONFIRMED", "BOOKED"],
   completed: ["CONFIRMED", "BOOKED"],
   archived: ["CANCELLED"],
   all: ["DRAFT", "PLANNING", "STALE", "CONFIRMED", "BOOKED", "CANCELLED"],
@@ -28,6 +28,12 @@ function matchesSearch(trip: TripSummary, query: string): boolean {
     trip.destinationCandidates.some((d) => d.toLowerCase().includes(lower)) ||
     trip.departureCities.some((d) => d.toLowerCase().includes(lower))
   );
+}
+
+function isArchivedTrip(trip: TripSummary): boolean {
+  if (trip.archivedAt) return true;
+  if (!trip.travelDateEnd) return false;
+  return trip.travelDateEnd < new Date().toISOString().slice(0, 10);
 }
 
 export function HomeDashboard() {
@@ -45,9 +51,9 @@ export function HomeDashboard() {
   const statusCounts = useMemo(() => {
     const counts = { active: 0, completed: 0, archived: 0 };
     for (const trip of trips) {
-      if (STATUS_GROUPS.active.includes(trip.status)) counts.active++;
+      if (isArchivedTrip(trip) || STATUS_GROUPS.archived.includes(trip.status)) counts.archived++;
       else if (STATUS_GROUPS.completed.includes(trip.status)) counts.completed++;
-      else if (STATUS_GROUPS.archived.includes(trip.status)) counts.archived++;
+      else if (STATUS_GROUPS.active.includes(trip.status)) counts.active++;
     }
     return counts;
   }, [trips]);
@@ -55,13 +61,15 @@ export function HomeDashboard() {
   const filteredTrips = useMemo(() => {
     const allowed = STATUS_GROUPS[filter];
     return trips
-      .filter((trip) => allowed.includes(trip.status))
+      .filter((trip) => filter === "archived"
+        ? isArchivedTrip(trip) || allowed.includes(trip.status)
+        : !isArchivedTrip(trip) && allowed.includes(trip.status))
       .filter((trip) => matchesSearch(trip, searchQuery));
   }, [trips, filter, searchQuery]);
 
   const heroTrip = useMemo(() => {
     return trips.find(
-      (trip) => trip.status === "STALE" || trip.status === "PLANNING",
+      (trip) => !isArchivedTrip(trip) && (trip.status === "STALE" || trip.status === "PLANNING"),
     ) ?? null;
   }, [trips]);
 

@@ -711,7 +711,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 **Starting conditions:** An active Trip has a creator, at least one existing member, and several registered accounts.
 
-1. As creator, open the invite dialog above “Trip overview” and search with fewer than two characters, then a matching display-name substring.
+1. As creator, open `/trips/:tripId/invite` from the right workspace header and verify the current-member list before searching with fewer than two characters, then a matching display-name substring.
 2. Verify each result exposes only display name and opaque ID; it never exposes email, username, profile, nationality, passport data, or invitation tokens.
 3. Verify the creator and existing Trip members are absent. Repeat as a non-creator and for a Draft Trip; expect no usable control and API `403`/`409` respectively.
 4. Select an account, create an invitation, and verify the one-time token link is shown once, has a seven-day expiry, and the creation audit data contains IDs/expiry only.
