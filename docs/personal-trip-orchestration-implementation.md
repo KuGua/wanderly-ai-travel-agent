@@ -1,6 +1,6 @@
 # 单人行程编排实施规范
 
-**状态：** 已确认，待实施（Phase 0 已起，契约骨架落地）  
+**状态：** 已确认；研究命令的事务、快照与运行状态契约已落地，剩余对话确认卡与完整 Shared tool 编排按阶段实施。
 **范围：** 让 Personal Agent 在单成员 Trip 中发起完整、证据化的个人旅行研究与规划；复用现有 Shared planning 能力和所有 Shared tools。  
 **事实来源：** [TECH_STACK.md](../TECH_STACK.md)、[PRD.md](PRD.md)、[backlog.md](backlog.md)、[test-scenarios.md](test-scenarios.md)。
 **实施计划：** [plans/linear-hugging-simon.md](../plans/linear-hugging-simon.md)（按 0–6 阶段推进）。  
@@ -105,6 +105,8 @@ type PersonalResearchIntent = {
 4. 返回 `202 { runId, operation: 'RESEARCH' | 'PLAN', snapshotId, status: 'QUEUED' }`；相同 `requestId` 返回同一结果；
 5. 禁止客户端传入 snapshot、工具参数、provider 字段、模型结果或 owner ID。
 
+当前实现补充：命令处理会锁定 Trip 行，并在创建 snapshot 前查询 `(trip_id, request_id)` 的既有任务；重试直接返回既有资源。新的 snapshot、RESEARCH task、outbox 和审计事件在同一事务中写入。快照的出发地、目的地与日期只取自 Trip；缺少任一必填 brief 字段时返回 `422`，不创建持久资源。
+
 `POST /planning/generate` 保留为兼容入口，但内部委托同一 command service，默认 `PROPOSE_PLAN` 和全 capability 集。新 Web 客户端只调用 `/trips/:tripId/research`。
 
 ### 4.3 Task 与 SSE
@@ -202,6 +204,7 @@ Solo 不能绕过 profile consent：需要 profile 数据的 Shared Skill 只能
 
 1. Draft 用户请求“查东京活动”只得到激活引导；不产生 snapshot、provider request 或 task。
 2. Solo owner 激活一个候选的完整 brief 后，对相同 `requestId` 并发提交 research，只创建一个 snapshot/task/outbox event。
+3. 任何 active Trip 缺少出发地、日期或该 capability 所需的已确认 preference 时，research 返回 `422` 且不创建 snapshot/task/outbox。`COMPLETED_WITH_GAPS` 必须可通过 run 查询接口返回。
 3. 非 member、非 owner、非 required member、Team 少于两个候选以及客户端传 snapshot/provider/coordinates 均被拒绝。
 4. 对每个启用 capability 验证 Shared Skill 收到的是当前 Solo snapshot/run context；它无法读取聊天原文、其他 Trip、其他用户或 raw profile。
 5. `PROPOSE_PLAN` 自动创建 `PROPOSED`；owner accept 仅激活该 version。`RESEARCH_ONLY` 绝不产生 plan/booking authority。

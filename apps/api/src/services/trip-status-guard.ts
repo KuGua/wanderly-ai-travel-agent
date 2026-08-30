@@ -59,7 +59,7 @@ export async function requireActiveTrip(
  * Rejects with the same `TRIP_NOT_ACTIVE` semantics as `requireActiveTrip`
  * for DRAFT trips, then verifies the caller is a required member of the
  * trip and that the supplied candidate list matches the derived trip mode
- * (SOLO 1..5 / TEAM 2..5). Capability-dependency checks (e.g. confirmed
+ * (SOLO 1..5 / TEAM 2..3). Capability-dependency checks (e.g. confirmed
  * search preferences) live in the Phase 2 research command route, where the
  * requested capability list is known.
  *
@@ -70,8 +70,9 @@ export async function requireResearchEligible(
   tripId: string,
   userId: string,
   candidates: readonly string[],
+  handle: typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0] = db,
 ): Promise<TripMode> {
-  const [trip] = await db.select({ status: sharedTrips.status })
+  const [trip] = await handle.select({ status: sharedTrips.status })
     .from(sharedTrips)
     .where(eq(sharedTrips.id, tripId))
     .limit(1);
@@ -88,7 +89,7 @@ export async function requireResearchEligible(
     );
   }
 
-  const [membership] = await db.select({ isRequired: tripMembers.isRequired })
+  const [membership] = await handle.select({ isRequired: tripMembers.isRequired })
     .from(tripMembers)
     .where(and(eq(tripMembers.tripId, tripId), eq(tripMembers.userId, userId)))
     .limit(1);
@@ -101,5 +102,5 @@ export async function requireResearchEligible(
     );
   }
 
-  return await loadAndAssertTripModeForBrief(db, tripId, candidates);
+  return await loadAndAssertTripModeForBrief(handle, tripId, candidates);
 }

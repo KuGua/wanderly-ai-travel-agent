@@ -7,6 +7,7 @@ import { runMigrations } from "../../src/db/migrate.js";
 import { db } from "../../src/db/database.js";
 import {
   agentTaskRuns,
+  constraintSnapshots,
   sharedTrips,
   tripMembers,
   tripSearchPreferences,
@@ -95,6 +96,8 @@ describe("POST /api/v1/trips/:tripId/research — Phase 2", () => {
       status: params.status ?? "DRAFT",
       departureCities: ["San Francisco"],
       destinationCandidates: Array.from({ length: params.destinationCount }, (_, i) => `City ${i + 1}`),
+      travelDateStart: "2027-06-01",
+      travelDateEnd: "2027-06-07",
     });
     for (const memberId of memberIds) {
       await db.insert(tripMembers).values({
@@ -235,6 +238,30 @@ describe("POST /api/v1/trips/:tripId/research — Phase 2", () => {
       eq(agentTaskRuns.requestId, requestId),
     ));
     expect(runs).toHaveLength(1);
+    const snapshots = await db.select().from(constraintSnapshots).where(eq(constraintSnapshots.tripId, tripId));
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.departureCities).toEqual(["San Francisco"]);
+  });
+
+  it("rejects an incomplete active brief before creating a snapshot or run", async () => {
+    const { tripId, ownerId } = await makeTripAndAddMember({
+      ownerExternalId: "missing-brief-facts",
+      destinationCount: 1,
+      status: "PLANNING",
+    });
+    await seedFlightPreference(tripId, ownerId);
+    await db.update(sharedTrips).set({ departureCities: [], travelDateStart: null, travelDateEnd: null })
+      .where(eq(sharedTrips.id, tripId));
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripId}/research`,
+      headers: authHeaders("missing-brief-facts"),
+      payload: { requestId: randomUUID(), outputMode: "RESEARCH_ONLY", requestedCapabilities: ["activities"] },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.tripId, tripId))).toEqual([]);
+    expect(await db.select().from(constraintSnapshots).where(eq(constraintSnapshots.tripId, tripId))).toEqual([]);
   });
 
   it("happy path: solo owner accepts 1-candidate brief and gets 202", async () => {

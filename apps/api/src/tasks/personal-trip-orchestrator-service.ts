@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ne } from "drizzle-orm";
 
 import { db } from "../db/database.js";
 import {
@@ -7,6 +7,7 @@ import {
   tripMembers,
   tripSearchPreferences,
   tripStaySearchPreferences,
+  tripPlaces,
 } from "../db/schema.js";
 import { DefaultPolicyGate } from "../agents/policy-gate.js";
 import {
@@ -359,7 +360,7 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
           { expectedVersion: "1.0.0", signal },
         ) as { outcome: "LIVE" | "UNAVAILABLE"; code?: ServiceGap["code"] };
         if (result.outcome === "UNAVAILABLE" && result.code) {
-          gaps.push({ capability: "hotel", code: result.code, destinationId: dest });
+          gaps.push({ capability: "places", code: result.code, destinationId: dest });
         }
       }
       return;
@@ -413,22 +414,52 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
     }
 
     case "navigation": {
-      // Requires two distinct active trip places — skip with a soft gap if
-      // none are available. Phase 4 may wire this against trip-place rows
-      // populated by `places.adopt` UI flow.
-      gaps.push({ capability: "navigation", code: "SEARCH_CONSTRAINTS_INCOMPLETE" });
+      const places = await loadRoutablePlaces(tripId);
+      if (places.length < 2) {
+        gaps.push({ capability: "navigation", code: "SEARCH_CONSTRAINTS_INCOMPLETE" });
+        return;
+      }
+      const result = await invokeSkill(
+        "navigation.route",
+        { ...baseCtx, navigation: { tripId, snapshotId, agentTaskRunId: run.id } },
+        { snapshotId, originPlaceId: places[0]!.id, destinationPlaceId: places[1]!.id, mode: "WALK" },
+        { expectedVersion: "1.0.0", signal },
+      ) as { outcome: "LIVE" | "UNAVAILABLE"; code?: ServiceGap["code"] };
+      if (result.outcome === "UNAVAILABLE" && result.code) {
+        gaps.push({ capability: "navigation", code: result.code });
+      }
       return;
     }
 
     case "mobility": {
-      gaps.push({ capability: "mobility", code: "SEARCH_CONSTRAINTS_INCOMPLETE" });
+      const places = await loadRoutablePlaces(tripId);
+      if (places.length < 2 || !latestFlightPref) {
+        gaps.push({ capability: "mobility", code: "SEARCH_CONSTRAINTS_INCOMPLETE" });
+        return;
+      }
+      const result = await invokeSkill(
+        "mobility.search",
+        { ...baseCtx, mobility: { tripId, snapshotId, agentTaskRunId: run.id } },
+        {
+          snapshotId,
+          originPlaceId: places[0]!.id,
+          destinationPlaceId: places[1]!.id,
+          passengers: latestFlightPref.adults,
+          departureAt: new Date(`${snapshotData.travelDateStart}T09:00:00.000Z`).toISOString(),
+          serviceType: "TAXI",
+        },
+        { expectedVersion: "1.0.0", signal },
+      ) as { outcome: "LIVE" | "UNAVAILABLE"; code?: ServiceGap["code"] };
+      if (result.outcome === "UNAVAILABLE" && result.code) {
+        gaps.push({ capability: "mobility", code: result.code });
+      }
       return;
     }
 
     case "readiness": {
       for (const dest of destinationCandidates) {
         if (memberIds.length === 0) {
-          gaps.push({ capability: "activities", code: "SEARCH_CONSTRAINTS_INCOMPLETE", destinationId: dest });
+          gaps.push({ capability: "readiness", code: "SEARCH_CONSTRAINTS_INCOMPLETE", destinationId: dest });
           continue;
         }
         // readiness.check is a stub today (no provider integration). Any
@@ -451,11 +482,18 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
   void traceparent; // Reserved for future SSE enrichment.
 }
 
+async function loadRoutablePlaces(tripId: string): Promise<Array<{ id: string }>> {
+  return db.select({ id: tripPlaces.id }).from(tripPlaces).where(and(
+    eq(tripPlaces.tripId, tripId),
+    eq(tripPlaces.status, "ACTIVE"),
+    ne(tripPlaces.visibility, "OWNER_PRIVATE"),
+  )).orderBy(tripPlaces.createdAt).limit(2);
+}
+
 /**
  * Map a request-level capability to the `service_gaps.capability` enum
- * (`flight | stay | hotel | accommodation | activities | navigation |
- * transit | mobility`). `places` and `readiness` fold into `activities`
- * since the schema does not have a direct match.
+ * (`flight | stay | hotel | accommodation | activities | places | navigation |
+ * transit | mobility | readiness`).
  */
 function capabilityToService(cap: string): ServiceGap["capability"] {
   switch (cap) {
@@ -463,10 +501,10 @@ function capabilityToService(cap: string): ServiceGap["capability"] {
     case "hotel": return "hotel";
     case "accommodation": return "accommodation";
     case "activities": return "activities";
-    case "places": return "activities";
+    case "places": return "places";
     case "navigation": return "navigation";
     case "mobility": return "mobility";
-    case "readiness": return "activities";
+    case "readiness": return "readiness";
     default: return "activities";
   }
 }

@@ -314,7 +314,7 @@ export async function acceptResearchTask(params: {
   tripId: string;
   userId: string;
   snapshotId: string;
-  flightSearchPreferencesVersion: number;
+  flightSearchPreferencesVersion?: number;
   staySearchPreferencesVersion?: number;
   outputMode: "RESEARCH_ONLY" | "PROPOSE_PLAN";
   requestedCapabilities: readonly string[];
@@ -400,6 +400,36 @@ export async function acceptResearchTask(params: {
     };
   };
   return params.tx ? accept(params.tx) : db.transaction(accept);
+}
+
+/**
+ * Read the existing durable RESEARCH command while the caller holds the Trip
+ * row lock.  Keeping this probe separate from snapshot creation prevents an
+ * idempotent retry from allocating a snapshot that no task can reference.
+ */
+export async function findResearchTaskByRequestId(params: {
+  tripId: string;
+  requestId: string;
+  tx: Tx;
+}): Promise<{
+  runId: string;
+  operation: "RESEARCH";
+  status: "QUEUED";
+  generationAttempt: 0;
+  snapshotId: string;
+} | null> {
+  const [existing] = await params.tx.select().from(agentTaskRuns).where(and(
+    eq(agentTaskRuns.tripId, params.tripId),
+    eq(agentTaskRuns.requestId, params.requestId),
+  )).limit(1);
+  if (!existing || existing.operation !== "RESEARCH" || !existing.snapshotId) return null;
+  return {
+    runId: existing.id,
+    operation: "RESEARCH",
+    status: "QUEUED",
+    generationAttempt: 0,
+    snapshotId: existing.snapshotId,
+  };
 }
 
 export async function getAuthorizedAgentRun(runId: string, userId: string): Promise<AgentRunResponse> {

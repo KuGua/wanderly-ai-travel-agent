@@ -14,7 +14,7 @@ export type TripMode = "SOLO" | "TEAM";
 export const SOLO_DESTINATION_MIN = 1;
 export const SOLO_DESTINATION_MAX = 5;
 export const TEAM_DESTINATION_MIN = 2;
-export const TEAM_DESTINATION_MAX = 5;
+export const TEAM_DESTINATION_MAX = 3;
 
 /**
  * Shared `Tx` type matching the rest of `apps/api/src/services/*`. Lets
@@ -40,8 +40,8 @@ export async function getTripMode(handle: DbHandle, tripId: string): Promise<Tri
 
 /**
  * Throws a stable `ApiError` when the destination-candidate list violates
- * the derived mode's allowed range. SOLO accepts 1..5 candidates; TEAM keeps
- * the pre-existing 2..5 bound. The error code `RESEARCH_BRIEF_INVALID` is
+ * the derived mode's allowed range. SOLO accepts 1..5 candidates; TEAM accepts
+ * 2..3 candidates. The error code `RESEARCH_BRIEF_INVALID` is
  * used by both the activation route and the Phase 2 research command route.
  */
 export function assertTripModeForBrief(

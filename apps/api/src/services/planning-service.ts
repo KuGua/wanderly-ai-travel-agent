@@ -333,8 +333,13 @@ export async function createConstraintSnapshot(params: {
       .orderBy(desc(constraintSnapshots.version));
     const nextVersion = existing.length > 0 ? existing[0].version + 1 : 1;
 
+    // Resolve the full required projection before loading consents. An empty
+    // caller list means every trip member; using the unresolved empty list
+    // here would silently omit all authorized fields from the snapshot.
+    const memberIdsResolved = await resolveMemberIds(tx, params.tripId, params.memberIds);
+
     // Pull active consents per member.
-    const consentRows = await Promise.all(params.memberIds.map(async (memberId) => ({
+    const consentRows = await Promise.all(memberIdsResolved.map(async (memberId) => ({
       memberId,
       consents: await getActiveConsents({ tripId: params.tripId, userId: memberId }),
     })));
@@ -362,8 +367,6 @@ export async function createConstraintSnapshot(params: {
       eq(tripConstraintFacts.tripId, params.tripId),
       eq(tripConstraintFacts.status, "ACTIVE"),
     ));
-
-    const memberIdsResolved = await resolveMemberIds(tx, params.tripId, params.memberIds);
 
     const projectionInput: MemoryProjectionInput = {
       tripId: params.tripId,
