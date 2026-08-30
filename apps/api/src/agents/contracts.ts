@@ -68,6 +68,12 @@ export interface MobilitySearchExecutionContext {
 export interface ActivitySearchExecutionContext {
   tripId: string;
   snapshotId: string;
+  /**
+   * Currency the provider must price in, from the trip's confirmed search
+   * preferences. Server-owned: the model never chooses it, and without it a
+   * returned amount has no known denomination.
+   */
+  currency: string;
   agentTaskRunId?: string;
 }
 

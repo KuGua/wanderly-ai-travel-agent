@@ -106,6 +106,10 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
               startDate: params.dateStart,
               endDate: params.dateEnd,
               limit: params.limit,
+              // Without this the response's `fromPrice` has no stated
+              // denomination and the amount is unusable — which is why prices
+              // were previously discarded outright.
+              currency: params.currency,
               sessionId: randomUUID(),
             },
           },
@@ -146,7 +150,9 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
         outcome: "LIVE",
         source: SOURCE,
         capturedAt: this.now().toISOString(),
-        data: structured.data.experiences.map((experience) => ({
+        data: structured.data.experiences
+          .filter((experience) => matchesDestination(experience.clickOffToLander, params.destination))
+          .map((experience) => ({
           providerOfferId: experience.code,
           title: experience.title,
           thumbnailUrl: experience.thumbnail,
@@ -159,6 +165,9 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
             to: experience.duration?.variableDurationToMinutes ?? null,
           },
           category: experience.keyAttributes?.mainCategory ?? null,
+          fromPrice: experience.fromPrice,
+          currency: params.currency,
+          providerLocality: localityFromLander(experience.clickOffToLander),
         })),
       };
     } finally {
@@ -193,6 +202,42 @@ function controlledSearchTerm(params: ActivitiesSearchParams): string {
   // Destination is already snapshot-bound by the service. Keeping the query
   // construction here prevents models and browsers from supplying free text.
   return `${theme} in ${params.destination}`;
+}
+
+/**
+ * Recovers the destination the provider filed a product under, from its product
+ * URL (`.../tours/<Locality>/<slug>`).
+ *
+ * This is the only geographic signal in the response: there is no country,
+ * coordinate or destination field. The URL itself is discarded before anything
+ * leaves this adapter — it is a booking link — but it is read first, because
+ * otherwise nothing can tell whether a result belongs to the trip at all.
+ */
+export function localityFromLander(lander: string): string | null {
+  const match = /\/tours\/([^/]+)\//.exec(lander);
+  if (!match) return null;
+  return decodeURIComponent(match[1]).replace(/-/g, " ").trim() || null;
+}
+
+/**
+ * Whether a product belongs to the requested destination.
+ *
+ * A search for Tokyo returns products in Rio de Janeiro and Anaheim: the
+ * provider matches on text, and adding a country to the query does not change
+ * that. Comparison is by name only, so it cannot separate two places that share
+ * one (Cambridge UK from Cambridge MA) — it removes results from an entirely
+ * different destination, which is the common case.
+ *
+ * A product whose URL carries no locality is kept: the check exists to remove
+ * results that are demonstrably elsewhere, not to require proof of belonging.
+ */
+export function matchesDestination(lander: string, destination: string): boolean {
+  const locality = localityFromLander(lander);
+  if (!locality) return true;
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const a = normalize(locality);
+  const b = normalize(destination);
+  return a.includes(b) || b.includes(a);
 }
 
 function parseMcpPayload(body: string, contentType: string | null): unknown {

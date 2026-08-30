@@ -194,6 +194,12 @@ export interface ActivitiesSearchParams {
   dateEnd: string;
   theme?: "CULTURE" | "FOOD" | "OUTDOOR" | "FAMILY";
   locale: "en" | "zh";
+  /**
+   * ISO-4217 code the provider must price in. Required, not optional: an amount
+   * whose denomination is unknown cannot be shown to anyone, and making this
+   * optional is how it came to be missing in the first place.
+   */
+  currency: string;
   limit: number;
   signal?: AbortSignal;
 }
@@ -211,6 +217,19 @@ export interface ActivityProviderItem {
     to: number | null;
   };
   category: string | null;
+  /**
+   * Lowest per-person price in the requested currency, as the provider stated
+   * it. Never converted locally — a second conversion would add error on top of
+   * the provider's own rounding.
+   */
+  fromPrice: number;
+  currency: string;
+  /**
+   * Destination the provider filed this product under, recovered from its
+   * product URL before that URL is discarded. The only geographic signal the
+   * response carries; used to drop results from another destination entirely.
+   */
+  providerLocality: string | null;
 }
 
 export type ProviderResult<T> =

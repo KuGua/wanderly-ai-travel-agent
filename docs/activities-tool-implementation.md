@@ -3,7 +3,7 @@
 **状态：** Shared `activities.search` Phase 1 已实施；Personal conversation tool-loop 待实施
 **Provider：** Viator 官方 Experiences MCP
 **范围：** provider-neutral `activities.search`、Shared PLAN/REPLAN function tool、严格 `UNAVAILABLE`、normalized evidence、审计/指标、run/snapshot 覆盖门禁。
-**不在范围：** Affiliate/REST API、身份证验证、API key、真实预订/支付、click-off 跳转、无币种价格展示、fixture 运行时回退、Personal streaming tool-loop。
+**不在范围：** Affiliate/REST API、身份证验证、API key、真实预订/支付、click-off 跳转、服务端二次汇率换算、fixture 运行时回退、Personal streaming tool-loop。
 
 关联事实来源：[TECH_STACK.md](../TECH_STACK.md) · [PRD.md](PRD.md) · [backlog.md](backlog.md) · [test-scenarios.md](test-scenarios.md) · [runtime-data-policy.md](runtime-data-policy.md)
 
@@ -34,11 +34,19 @@ https://exp-app-mcp.prod.ep.viator.com/mcp
 
 1. 模型只可提交 snapshot 中已有的 `destinationId`、固定 `theme` 与 `locale`。`snapshotId`、日期、trip/run authority 均由服务端注入。
 2. Adapter 根据受控 destination/theme 构造 `searchTerm`；模型和浏览器不得提交自由查询、provider URL、坐标、价格、session ID 或 MCP 参数。
-3. Viator MCP 当前返回 `fromPrice` 但没有显式 currency。为避免错误价格事实，adapter 验证该字段存在且类型正确，然后丢弃，不进入 Tool output、数据库、plan、SSE 或日志。
-4. `clickOffToLander` 同样只用于验证 provider schema，随后丢弃。MVP 不展示或持久化 booking/affiliate link。
-5. provider 文本和 raw JSON-RPC payload 都是不可信数据；模型只接收严格 Zod 归一化结果。
-6. 失败、超时、限流、空结果、协议错误或 schema drift 统一 fail closed 为 bounded `UNAVAILABLE`；不得使用 fixture、Demo data 或模型编造活动。
-7. LIVE evidence 绑定同一 `snapshotId`、`agentTaskRunId` 与 destination；跨 snapshot/run、Personal evidence 或过期 evidence 不得生成可确认 plan。
+3. **价格（2026-08-30 修正）：** `search_experiences` 接受 `currency` 参数（官方 tool schema），adapter 按 trip 已确认偏好的币种请求，返回的 `fromPrice` 因此有确定计价单位，随证据一并保留。
+
+   此前的实现未传该参数，于是把「响应没有币种」当成 provider 的固有限制并丢弃价格，PRD FR-3.3 也被相应下调。这是接线缺陷而非供应商能力缺失。实测同一商品 `currency=USD` 得 16.22、`currency=JPY` 得 2539，参数确实生效。
+
+   价格永不在服务端二次换算：provider 已按请求币种计价，再换一次只会在它自己的取整之上叠加第二重误差。`fromPrice` 是「最小成团人数下的人均起价」，属指示性价格，不得表述为单张票面价。
+
+4. **目的地校验：** 响应体不含国家、坐标或目的地字段，唯一的地理信号是 `clickOffToLander` 的路径段。adapter 先据此判定商品是否属于本次目的地，再丢弃该 URL。实测搜索 Tokyo 会返回 Rio de Janeiro 与 Anaheim 的商品，且在查询词中加国家名无效——返回结果完全相同，因此输入侧无法约束，只能在输出侧过滤。
+
+   **已知缺口：** 该判定只比较地名，无法区分同名地点（英国 Cambridge 与美国 Cambridge）。它移除的是明显不属于本次目的地的结果，不覆盖同名歧义；PRD FR-3 第 1 条「目的地外结果必须标注待确认」在同名情形下当前不可满足。路径段缺失时保留该商品——此校验用于剔除确凿在别处的结果，而非要求每条结果自证归属。
+5. `clickOffToLander` 除用于上述目的地校验外不作他用，读取后即丢弃。MVP 不展示或持久化 booking/affiliate link。
+6. provider 文本和 raw JSON-RPC payload 都是不可信数据；模型只接收严格 Zod 归一化结果。
+7. 失败、超时、限流、空结果、协议错误或 schema drift 统一 fail closed 为 bounded `UNAVAILABLE`；不得使用 fixture、Demo data 或模型编造活动。
+8. LIVE evidence 绑定同一 `snapshotId`、`agentTaskRunId` 与 destination；跨 snapshot/run、Personal evidence 或过期 evidence 不得生成可确认 plan。
 
 ---
 
@@ -100,7 +108,7 @@ authenticated PLAN / REPLAN Worker
   → DefaultPolicyGate(shared) requires snapshot:read + activities:search
   → ViatorMcpActivitiesProvider
   → strict JSON-RPC + structuredContent validation
-  → normalize and discard price/link/raw payload
+  → filter by destination, keep priced evidence, discard link/raw payload
   → persist provider_search_runs(category=activity)
   → LIVE only: persist normalized provider_offers
   → activity research matrix checks every destination in same run/snapshot
@@ -123,7 +131,7 @@ authenticated PLAN / REPLAN Worker
 - caller cancellation 立即向上传播，不伪装成 provider timeout。
 - 401/403 → `PROVIDER_NOT_APPROVED`；429 → `RATE_LIMITED`；空数组 → `NO_RESULTS`；schema drift → `INVALID_PROVIDER_RESPONSE`。
 
-MCP 的 currency-less `fromPrice` 和 click-off URL 不会出现在 normalized contract。若未来 Viator contract 增加明确 currency，需要另行更新 schema、测试、UI 文案和 plan evidence contract，不能静默开始展示。
+click-off URL 不会出现在 normalized contract。`fromPrice` 与其 `currency` 成对进入契约；若 provider 未来改变计价语义（例如从人均起价改为总价），需要同步更新 schema、测试、UI 文案与 plan evidence contract，不得静默改变含义。
 
 ---
 
@@ -189,7 +197,7 @@ Live spike 只允许合成 destination/date，不包含用户、Trip 或聊天�
 ## 10. 已知限制与回滚
 
 - Viator MCP 没有公开固定 quota/SLA，可能随时 rate limit 或改变 schema；严格 fail closed 与 adapter contract tests 是必要门禁。
-- 当前没有可信 currency，因此不显示价格。
+- 价格按 trip 已确认偏好的币种由 provider 计价并展示，标注为「起价 / 人均」；不做服务端换算。
 - 当前没有 booking、availability confirmation 或支付能力。
 - 当前 theme 只影响服务端构造的受控查询，不是 coverage 维度。
 - 当前只实现 Shared Tool；Personal 支持按第 8 节单独交付。

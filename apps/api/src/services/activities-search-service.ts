@@ -48,6 +48,8 @@ export async function executeAndPersistActivitiesSearch(params: {
   agentTaskRunId?: string;
   snapshot: ConstraintSnapshotData;
   input: ActivitiesSearchInput;
+  /** ISO-4217 from the trip's confirmed preferences; never model-supplied. */
+  currency: string;
   provider: ActivitiesProvider;
   signal?: AbortSignal;
 }): Promise<ProviderResult<ActivityEvidence[]> & { queryId?: string }> {
@@ -57,6 +59,10 @@ export async function executeAndPersistActivitiesSearch(params: {
     dateEnd: params.snapshot.travelDateEnd,
     theme: params.input.theme ?? null,
     locale: params.input.locale,
+    // Part of the fingerprint: the same search priced in another currency is a
+    // different result, and reusing a cached one would restate the amount in
+    // the wrong denomination.
+    currency: params.currency,
   })).digest("hex");
   await recordAudit({
     ctx: params.ctx,
@@ -71,6 +77,7 @@ export async function executeAndPersistActivitiesSearch(params: {
     dateEnd: params.snapshot.travelDateEnd!,
     theme: params.input.theme,
     locale: params.input.locale,
+    currency: params.currency,
     limit: 5,
     signal: params.signal,
   });
@@ -101,6 +108,8 @@ export async function executeAndPersistActivitiesSearch(params: {
           freeCancellation: item.freeCancellation,
           durationMinutes: item.durationMinutes,
           category: item.category,
+          fromPrice: item.fromPrice,
+          currency: item.currency,
           source: "Viator Experiences MCP",
           capturedAt: result.capturedAt,
           expiresAt: new Date(Date.parse(result.capturedAt) + 15 * 60_000).toISOString(),
@@ -114,7 +123,7 @@ export async function executeAndPersistActivitiesSearch(params: {
         category: "activity",
         providerName: "viator_mcp",
         providerOfferId: offer.providerOfferId,
-        currency: null,
+        currency: offer.currency,
         expiresAt: new Date(offer.expiresAt),
         offerData: offer as unknown as Record<string, unknown>,
         capturedAt: new Date(offer.capturedAt),

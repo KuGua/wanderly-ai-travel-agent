@@ -124,6 +124,18 @@ export interface ActivityEvidence {
     to: number | null;
   };
   category: string | null;
+  /**
+   * Lowest per-person price, in `currency`, exactly as the provider stated it.
+   *
+   * The provider computes this as an average over the smallest bookable group,
+   * so it is an indicative price rather than a single ticket face value, and it
+   * is displayed as such. Never converted locally: the provider already priced
+   * in the requested currency, and converting again would stack a second
+   * rounding error on its own.
+   */
+  fromPrice: number;
+  /** ISO-4217 the amount is denominated in. Always present alongside a price. */
+  currency: string;
   source: "Viator Experiences MCP";
   capturedAt: string;
   expiresAt: string;

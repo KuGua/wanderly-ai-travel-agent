@@ -719,7 +719,11 @@ export async function generatePlan(params: {
           const result = await invokeSkill("activities.search", {
             ctx: params.ctx,
             snapshot: snapshotContext,
-            activitiesSearch: { tripId: params.tripId, snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId },
+            activitiesSearch: {
+              tripId: params.tripId, snapshotId: params.snapshotId,
+              currency: preferences.currency,
+              agentTaskRunId: params.agentTaskRunId,
+            },
             policyGate: new DefaultPolicyGate("shared"),
           }, { ...modelArgs, snapshotId: params.snapshotId }, { signal: params.signal });
           if ((result as { outcome: string }).outcome === "LIVE") {

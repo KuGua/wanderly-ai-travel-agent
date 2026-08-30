@@ -28,6 +28,10 @@ const activityEvidenceSchema = z.object({
     to: z.number().int().nonnegative().nullable(),
   }).strict(),
   category: z.string().min(1).nullable(),
+  // Price and currency travel together or not at all: an amount without a
+  // stated denomination is what made this field unusable before.
+  fromPrice: z.number().nonnegative(),
+  currency: z.string().regex(/^[A-Z]{3}$/),
   source: z.literal("Viator Experiences MCP"),
   capturedAt: z.string().datetime({ offset: true }),
   expiresAt: z.string().datetime({ offset: true }),
@@ -91,6 +95,7 @@ async function executeActivitiesSearchSkill(
     throw new SkillError("POLICY_DENIED", `activities.search constraints rejected: ${(error as Error).message}`);
   }
   const result = await executeAndPersistActivitiesSearch({
+    currency: ctx.activitiesSearch.currency,
     ctx: ctx.ctx,
     tripId: ctx.activitiesSearch.tripId,
     snapshotId: ctx.activitiesSearch.snapshotId,

@@ -80,6 +80,8 @@ const activityEvidenceSchema = z.object({
     to: z.number().int().nonnegative().nullable(),
   }).strict(),
   category: z.string().min(1).nullable(),
+  fromPrice: z.number().nonnegative(),
+  currency: z.string().regex(/^[A-Z]{3}$/),
   source: z.string().min(1),
   capturedAt: z.string().datetime(),
   expiresAt: z.string().datetime(),
