@@ -126,17 +126,8 @@ export const tripDetailResponseSchema = z.object({
   members: z.array(tripMemberSchema),
 });
 
-export const tripInviteeSchema = z.object({
-  id: z.string().uuid(),
-  displayName: z.string().min(1).max(128),
-}).strict();
-
-export const searchTripInviteesResponseSchema = z.object({
-  candidates: z.array(tripInviteeSchema).max(10),
-}).strict();
-
 export const createTripInvitationInputSchema = z.object({
-  invitedUserId: z.string().uuid(),
+  recipientEmail: z.string().trim().email().max(256),
   expiresAt: z.string().datetime(),
 }).strict();
 
@@ -149,6 +140,7 @@ export const tripInvitationCreateResponseSchema = z.object({
 export const invitationPreviewResponseSchema = z.object({
   trip: z.object({
     name: z.string().min(1).max(256),
+    status: tripStatusSchema,
     destinationCandidates: z.array(z.string().min(1)).max(5),
     travelDateStart: dateSchema.nullable(),
     travelDateEnd: dateSchema.nullable(),
@@ -315,7 +307,44 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     code: agentRunErrorCodeSchema,
     retryable: z.boolean(),
   }).strict(),
+  // Phase 6 / Personal Trip Orchestrator — research-specific SSE events.
+  // Personal research schemas are defined below the discriminated union, so
+  // we re-declare lightweight inline shapes for these two SSE members
+  // (kept in sync with the canonical schemas in §6 of this file).
+  streamBaseSchema.extend({
+    event: z.literal("research.intent_extracted"),
+    intent: z.object({
+      kind: z.enum(["RESEARCH_ONLY", "PROPOSE_PLAN"]),
+      requestedCapabilities: z.array(z.enum([
+        "flight", "accommodation", "hotel", "activities", "places", "navigation", "mobility", "readiness",
+      ])).min(1),
+      destinationCandidates: z.array(z.string().min(1).max(64)).min(1).max(5).optional(),
+    }).strict(),
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("research.stage"),
+    stage: z.enum([
+      "SNAPSHOT_CREATED", "RESEARCHING", "VALIDATING", "PERSISTING",
+      "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "STALE",
+    ]),
+  }).strict(),
 ]);
+
+// ─── Personal Trip Research command (Phase 6 / docs §4) ───────────────────
+export const personalResearchCapabilitySchema = z.enum([
+  "flight", "accommodation", "hotel", "activities", "places", "navigation", "mobility", "readiness",
+]);
+export type PersonalResearchCapability = z.infer<typeof personalResearchCapabilitySchema>;
+
+export const personalResearchKindSchema = z.enum(["RESEARCH_ONLY", "PROPOSE_PLAN"]);
+export type PersonalResearchKind = z.infer<typeof personalResearchKindSchema>;
+
+export const personalResearchIntentSchema = z.object({
+  kind: personalResearchKindSchema,
+  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+  destinationCandidates: z.array(z.string().min(1).max(64)).min(1).max(5).optional(),
+}).strict();
+export type PersonalResearchIntent = z.infer<typeof personalResearchIntentSchema>;
 
 export const apiErrorResponseSchema = z.object({
   statusCode: z.number(),
@@ -334,7 +363,7 @@ export const explorationStartRequestSchema = z.object({
 export const explorationDraftTripSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-    status: z.literal("PLANNING"),
+  status: z.literal("DRAFT"),
   departureCities: z.array(z.string()).length(0),
   destinationCandidates: z.array(z.string()).length(0),
   travelDateStart: z.null(),
@@ -380,12 +409,16 @@ export const tripActivationResponseSchema = z.object({
 
 export const updateTripTitleInputSchema = z.object({ name: z.string().trim().min(1).max(256) }).strict();
 export const updateDraftTripBriefInputSchema = z.object({
-  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+  departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
+  replaceDestinationCandidates: z.boolean().optional(),
+  travelDateStart: dateSchema.nullable().optional(),
+  travelDateEnd: dateSchema.nullable().optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
-}).strict().refine((value) => value.destinationCandidates !== undefined || value.travelDays !== undefined);
+}).strict().refine((value) => value.departureCities !== undefined || value.destinationCandidates !== undefined || value.travelDateStart !== undefined || value.travelDateEnd !== undefined || value.travelDays !== undefined);
 export const updateDraftTripBriefResponseSchema = z.object({
-  trip: z.object({ id: z.string().uuid(), name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"), destinationCandidates: z.array(z.string()), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime() }).strict(),
+  trip: z.object({ id: z.string().uuid(), name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"), departureCities: z.array(z.string()), destinationCandidates: z.array(z.string()), travelDateStart: dateSchema.nullable(), travelDateEnd: dateSchema.nullable(), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime() }).strict(),
 });
 export const updateTripTitleResponseSchema = z.object({
   trip: z.object({
@@ -554,8 +587,6 @@ export type TripDetailResponse = z.infer<typeof tripDetailResponseSchema>;
 export type InvitationPreviewResponse = z.infer<typeof invitationPreviewResponseSchema>;
 export type AcceptInvitationResponse = z.infer<typeof acceptInvitationResponseSchema>;
 export type DeclineInvitationResponse = z.infer<typeof declineInvitationResponseSchema>;
-export type TripInvitee = z.infer<typeof tripInviteeSchema>;
-export type SearchTripInviteesResponse = z.infer<typeof searchTripInviteesResponseSchema>;
 export type CreateTripInvitationInput = z.infer<typeof createTripInvitationInputSchema>;
 export type TripInvitationCreateResponse = z.infer<typeof tripInvitationCreateResponseSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
@@ -806,7 +837,7 @@ export const tripPlaceActionResponseSchema = z.object({
   status: tripPlaceStatusSchema,
 }).strict();
 
-export const serviceCapabilitySchema = z.enum(["flight", "stay", "activities", "navigation", "transit", "mobility"]);
+export const serviceCapabilitySchema = z.enum(["flight", "stay", "hotel", "accommodation", "activities", "navigation", "transit", "mobility"]);
 export const providerUnavailableCodeSchema = z.enum([
   "NOT_CONFIGURED",
   "SEARCH_CONSTRAINTS_INCOMPLETE",
@@ -842,6 +873,68 @@ export type ProviderUnavailableCode = z.infer<typeof providerUnavailableCodeSche
 export type ServiceGap = z.infer<typeof serviceGapSchema>;
 export type ResearchResultStatus = z.infer<typeof researchResultStatusSchema>;
 export type ResearchResult = z.infer<typeof researchResultSchema>;
+
+// Note: `personalResearchCapabilitySchema` / `personalResearchKindSchema` /
+// `personalResearchIntentSchema` are declared above the `agentStreamEventSchema`
+// discriminated union (so the SSE member can reference them). The remaining
+// Phase 6 request/response schemas follow below.
+
+export const researchCommandRequestSchema = z.object({
+  requestId: z.string().uuid(),
+  outputMode: personalResearchKindSchema,
+  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+}).strict();
+export type ResearchCommandRequest = z.infer<typeof researchCommandRequestSchema>;
+
+export const researchCommandAcceptedResponseSchema = z.object({
+  runId: z.string().uuid(),
+  operation: z.enum(["RESEARCH", "PLAN"]),
+  snapshotId: z.string().uuid(),
+  status: z.literal("QUEUED"),
+}).strict();
+export type ResearchCommandAcceptedResponse = z.infer<typeof researchCommandAcceptedResponseSchema>;
+
+export const latestResearchResultResponseSchema = z.object({
+  result: researchResultSchema.nullable(),
+}).strict();
+export type LatestResearchResultResponse = z.infer<typeof latestResearchResultResponseSchema>;
+
+export const soloAdoptPlanResponseSchema = z.object({
+  planId: z.string().uuid(),
+  status: z.literal("ACTIVE"),
+}).strict();
+export type SoloAdoptPlanResponse = z.infer<typeof soloAdoptPlanResponseSchema>;
+
+export const researchStageSchema = z.enum([
+  "SNAPSHOT_CREATED",
+  "RESEARCHING",
+  "VALIDATING",
+  "PERSISTING",
+  "COMPLETED",
+  "COMPLETED_WITH_GAPS",
+  "FAILED",
+  "STALE",
+]);
+export type ResearchStage = z.infer<typeof researchStageSchema>;
+
+const streamBaseShape = {
+  runId: z.string().uuid(),
+  generationAttempt: z.number().int().nonnegative(),
+  traceparent: z.string().optional(),
+};
+export const researchStageEventSchema = z.object({
+  ...streamBaseShape,
+  event: z.literal("research.stage"),
+  stage: researchStageSchema,
+}).strict();
+export type ResearchStageEvent = z.infer<typeof researchStageEventSchema>;
+
+export const researchIntentExtractedEventSchema = z.object({
+  ...streamBaseShape,
+  event: z.literal("research.intent_extracted"),
+  intent: personalResearchIntentSchema,
+}).strict();
+export type ResearchIntentExtractedEvent = z.infer<typeof researchIntentExtractedEventSchema>;
 
 // ─── Navigation route evidence (spec §5.2) ─────────────────────────────────
 // Server-authoritative route snapshot. The geometry is bound to the

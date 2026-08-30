@@ -36,7 +36,7 @@ and which default policy applies at invocation time.
 
 ### `SkillScope` (`contracts.ts:7-18`)
 
-The 14-element union every Skill's `allowedTools` is constrained to:
+The 15-element union every Skill's `allowedTools` is constrained to:
 
 ```ts
 type SkillScope =
@@ -49,6 +49,8 @@ type SkillScope =
   | "snapshot:read"
   | "chat:read"
   | "flight:search"
+  | "hotel:search"
+  | "accommodation:discover"
   | "activities:search"
   | "places:search"
   | "places:adopt"
@@ -116,7 +118,7 @@ Defined in `policy-gate.ts:9-13`:
 | AgentKind | Allowed `SkillScope` values |
 | --- | --- |
 | `personal` | `profile:read`, `profile:write:propose`, `consent:read`, `chat:read` |
-| `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read`, `flight:search`, `activities:search`, `places:search`, `places:adopt`, `navigation:route`, `mobility:search` |
+| `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read`, `flight:search`, `hotel:search`, `accommodation:discover`, `activities:search`, `places:search`, `places:adopt`, `navigation:route`, `mobility:search` |
 | `review` | `snapshot:read`, `plan:write:propose` |
 | `public-content` | none |
 

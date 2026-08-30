@@ -22,7 +22,7 @@ import { recordAudit } from "./audit-service.js";
  *     which already exist in the audit schema.
  */
 
-export const serviceCapabilitySchema = z.enum(["flight", "stay", "activities", "navigation", "transit", "mobility"]);
+export const serviceCapabilitySchema = z.enum(["flight", "stay", "hotel", "accommodation", "activities", "places", "navigation", "transit", "mobility", "readiness"]);
 export const providerUnavailableCodeSchema = z.enum([
   "NOT_CONFIGURED",
   "SEARCH_CONSTRAINTS_INCOMPLETE",

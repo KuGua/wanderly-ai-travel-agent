@@ -106,7 +106,7 @@ const CLAIM_CONVERSATION_SQL = [
 ].join("\n");
 
 const CLAIM_PLANNING_SQL = CLAIM_CONVERSATION_SQL
-  .replace("operation = 'CONVERSATION'", "operation IN ('PLAN', 'REPLAN')");
+  .replace("operation = 'CONVERSATION'", "operation IN ('PLAN', 'REPLAN', 'RESEARCH')");
 
 export class LostTaskLeaseError extends Error {
   constructor() {
@@ -250,6 +250,7 @@ export async function acceptPlanningTask(params: {
   userId: string;
   snapshotId: string;
   flightSearchPreferencesVersion: number;
+  staySearchPreferencesVersion?: number;
   operation: "PLAN" | "REPLAN";
   requestId: string;
   tx?: Tx;
@@ -288,6 +289,7 @@ export async function acceptPlanningTask(params: {
       tripId: params.tripId,
       snapshotId: params.snapshotId,
       flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
+      staySearchPreferencesVersion: params.staySearchPreferencesVersion ?? null,
       requestId: params.requestId,
       expiresAt,
       traceContext: buildTraceContextForTask(params.ctx),
@@ -303,6 +305,153 @@ export async function acceptPlanningTask(params: {
     return { runId: run.id, operation: params.operation, status: "QUEUED" as const, generationAttempt: 0 as const };
   };
   return params.tx ? accept(params.tx) : db.transaction(accept);
+}
+
+/**
+ * Phase 2 — accept a Personal Trip Orchestrator RESEARCH command.
+ *
+ * Mirrors `acceptPlanningTask` for the trip-scoped RESEARCH operation. The
+ * caller (the research route) is the only authority; chat content and
+ * `requestedCapabilities` are written verbatim so the Worker can read
+ * `run.requestedCapabilities` later without re-querying the chat. The
+ * idempotency contract is `agent_task_runs_trip_request_unique` — if the
+ * same `(tripId, requestId)` already exists, the existing 202 envelope is
+ * returned unchanged so the route can satisfy spec §4.2's "same requestId
+ * returns the same result" invariant.
+ */
+export async function acceptResearchTask(params: {
+  ctx: RequestContext;
+  tripId: string;
+  userId: string;
+  snapshotId: string;
+  flightSearchPreferencesVersion?: number;
+  staySearchPreferencesVersion?: number;
+  outputMode: "RESEARCH_ONLY" | "PROPOSE_PLAN";
+  requestedCapabilities: readonly string[];
+  requestId: string;
+  tx?: Tx;
+}): Promise<{
+  runId: string;
+  operation: "RESEARCH";
+  status: "QUEUED";
+  generationAttempt: 0;
+  snapshotId: string;
+}> {
+  const runId = randomUUID();
+  const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
+  const accept = async (tx: Tx) => {
+    // Idempotency: the partial unique index `(tripId, requestId)` makes a
+    // second insert a hard error. Catch the constraint violation and return
+    // the existing envelope so the route stays a pure 202 responder.
+    const [existing] = await tx.select().from(agentTaskRuns).where(and(
+      eq(agentTaskRuns.tripId, params.tripId),
+      eq(agentTaskRuns.requestId, params.requestId),
+    )).limit(1);
+    if (existing) {
+      return {
+        runId: existing.id,
+        operation: "RESEARCH" as const,
+        status: "QUEUED" as const,
+        generationAttempt: 0 as const,
+        snapshotId: existing.snapshotId ?? params.snapshotId,
+      };
+    }
+
+    // Mirrors acceptPlanningTask: PLAN/REPLAN/RESEARCH share one active slot
+    // per trip (the `agent_task_runs_one_active_planning` partial unique
+    // index), so a second concurrent request must fail closed with 409
+    // rather than surface the raw constraint violation as a 500.
+    const [active] = await tx.select({ id: agentTaskRuns.id }).from(agentTaskRuns).where(and(
+      eq(agentTaskRuns.tripId, params.tripId),
+      inArray(agentTaskRuns.status, ["QUEUED", "RUNNING", "CANCEL_REQUESTED"]),
+    )).limit(1);
+    if (active) {
+      throw new ApiError(409, "Conflict", "This trip already has an active planning run");
+    }
+
+    const [run] = await tx.insert(agentTaskRuns).values({
+      id: runId,
+      operation: "RESEARCH",
+      status: "QUEUED",
+      createdByUserId: params.userId,
+      tripId: params.tripId,
+      snapshotId: params.snapshotId,
+      flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
+      staySearchPreferencesVersion: params.staySearchPreferencesVersion ?? null,
+      requestId: params.requestId,
+      researchMode: params.outputMode,
+      requestedCapabilities: params.requestedCapabilities as string[],
+      expiresAt,
+      traceContext: buildTraceContextForTask(params.ctx),
+    }).returning();
+
+    await tx.insert(outboxEvents).values({
+      eventId: randomUUID(),
+      eventType: "AGENT_TASK_QUEUED",
+      payload: { taskId: run.id, operation: run.operation },
+    });
+
+    await recordAudit({
+      ctx: params.ctx,
+      action: "RESEARCH_COMMAND_ACCEPTED",
+      actorUserId: params.userId,
+      tripId: params.tripId,
+      summary: {
+        taskId: run.id,
+        operation: run.operation,
+        outputMode: params.outputMode,
+        capabilities: params.requestedCapabilities.length,
+      },
+      tx,
+    });
+    await recordAudit({
+      ctx: params.ctx,
+      action: "AGENT_TASK",
+      actorUserId: params.userId,
+      tripId: params.tripId,
+      summary: { taskId: run.id, operation: run.operation, status: run.status },
+      tx,
+    });
+
+    return {
+      runId: run.id,
+      operation: "RESEARCH" as const,
+      status: "QUEUED" as const,
+      generationAttempt: 0 as const,
+      snapshotId: run.snapshotId ?? params.snapshotId,
+    };
+  };
+  return params.tx ? accept(params.tx) : db.transaction(accept);
+}
+
+/**
+ * Read the existing durable RESEARCH command while the caller holds the Trip
+ * row lock.  Keeping this probe separate from snapshot creation prevents an
+ * idempotent retry from allocating a snapshot that no task can reference.
+ */
+export async function findResearchTaskByRequestId(params: {
+  tripId: string;
+  requestId: string;
+  tx: Tx;
+}): Promise<{
+  runId: string;
+  operation: "RESEARCH";
+  status: "QUEUED";
+  generationAttempt: 0;
+  snapshotId: string;
+} | null> {
+  const [existing] = await params.tx.select().from(agentTaskRuns).where(and(
+    eq(agentTaskRuns.tripId, params.tripId),
+    eq(agentTaskRuns.requestId, params.requestId),
+  )).limit(1);
+  if (!existing || existing.operation !== "RESEARCH" || !existing.snapshotId) return null;
+  return {
+    runId: existing.id,
+    operation: "RESEARCH",
+    status: "QUEUED",
+    generationAttempt: 0,
+    snapshotId: existing.snapshotId,
+  };
 }
 
 export async function getAuthorizedAgentRun(runId: string, userId: string): Promise<AgentRunResponse> {
@@ -521,7 +670,7 @@ export async function completeConversationTask(params: {
   run: AgentTaskRow;
   leaseToken: string;
   content: string;
-  responseMode: "MODEL" | "SAFE_REFUSAL";
+  responseMode: "MODEL" | "SAFE_REFUSAL" | "FALLBACK";
 }): Promise<OwnerConversationMessage> {
   if (!params.run.threadId) throw new Error("Conversation task has no thread");
   const span = getTracer().startSpan("db.agent_task_runs.UPDATE", {
@@ -596,6 +745,99 @@ export async function completeConversationTask(params: {
     });
     safeSetAttribute(span, "db.outcome", "success");
     return result;
+  } catch (err) {
+    safeSetAttribute(span, "db.outcome", "failure");
+    recordSpanError(err);
+    throw err;
+  } finally {
+    span.end();
+  }
+}
+
+/**
+ * Phase 2 — complete a Personal Trip Orchestrator RESEARCH run under lease.
+ *
+ * Lease-guarded write of `agent_task_runs.status = COMPLETED | COMPLETED_WITH_GAPS`,
+ * clears the lease, fills the outbox + idempotency result, and writes the
+ * `RESEARCH_COMPLETED` audit. The `researchResultId` is optional — Phase 3's
+ * `personal-trip-orchestrator-service.runResearch` decides whether to persist a
+ * `planning_research_results` row (RESEARCH_ONLY → yes, PROPOSE_PLAN → no
+ * because the planner writes the plan first). When `outcome` is
+ * `COMPLETED_WITH_GAPS` the run may also carry a `result_plan_id` (set by the
+ * planner) — this function preserves it on the row.
+ */
+export async function completeResearchTask(params: {
+  ctx: RequestContext;
+  run: AgentTaskRow;
+  leaseToken: string;
+  outcome: "COMPLETED" | "COMPLETED_WITH_GAPS";
+  researchResultId?: string;
+  resultPlanId?: string;
+}): Promise<{ runId: string; status: typeof params.outcome; researchResultId: string | null }> {
+  const span = getTracer().startSpan("db.agent_task_runs.UPDATE", {
+    kind: SpanKind.CLIENT,
+    attributes: {
+      "db.system": "postgresql",
+      "db.operation": "UPDATE",
+      "db.sql.table": "agent_task_runs",
+    },
+  });
+  try {
+    return await db.transaction(async (tx) => {
+      const [completed] = await tx.update(agentTaskRuns).set({
+        status: params.outcome,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+        errorCode: null,
+        researchResultId: params.researchResultId ?? null,
+        resultPlanId: params.resultPlanId ?? null,
+      }).where(and(
+        eq(agentTaskRuns.id, params.run.id),
+        eq(agentTaskRuns.leaseToken, params.leaseToken),
+        eq(agentTaskRuns.status, "RUNNING"),
+      )).returning();
+      if (!completed) throw new LostTaskLeaseError();
+
+      await tx.insert(outboxEvents).values({
+        eventId: randomUUID(),
+        eventType: "AGENT_TASK_COMPLETED",
+        payload: {
+          taskId: params.run.id,
+          operation: params.run.operation,
+          outcome: params.outcome,
+        },
+      });
+
+      await recordAudit({
+        ctx: params.ctx,
+        action: "RESEARCH_COMPLETED",
+        actorUserId: params.run.createdByUserId,
+        tripId: params.run.tripId ?? undefined,
+        summary: {
+          taskId: params.run.id,
+          outcome: params.outcome,
+          planCreated: Boolean(params.resultPlanId),
+        },
+        tx,
+      });
+      await recordAudit({
+        ctx: params.ctx,
+        action: "AGENT_TASK",
+        actorUserId: params.run.createdByUserId,
+        tripId: params.run.tripId ?? undefined,
+        summary: { taskId: params.run.id, operation: params.run.operation, status: params.outcome },
+        tx,
+      });
+
+      safeSetAttribute(span, "db.outcome", "success");
+      return {
+        runId: params.run.id,
+        status: params.outcome,
+        researchResultId: params.researchResultId ?? null,
+      };
+    });
   } catch (err) {
     safeSetAttribute(span, "db.outcome", "failure");
     recordSpanError(err);

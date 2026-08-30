@@ -5,7 +5,7 @@
 
 ## 1. 概述
 
-本 MVP 让每位旅行者拥有一个可控的 Personal Travel Agent：用户通过私有对话维护自己的旅行偏好和资料。创建共享行程后，成员明确授权本次相关信息进入 Shared Trip Workspace；Shared Trip Agent 协调航班、酒店、地面交通，以及按成员国籍区分的 visa/entry readiness 待办。
+本 MVP 让每位旅行者拥有一个可控的 Personal Travel Agent：用户通过私有对话维护自己的旅行偏好和资料，并可在显式激活的单人 Trip 中发起个人旅行研究与规划。多人行程由同一受控编排核心在成员明确授权本次信息后协调航班、酒店、地面交通，以及按成员国籍区分的 visa/entry readiness 待办。
 
 系统在价格或计划变化后重新编排，并在每位成员明确确认后调用 sandbox/已批准的 booking orchestration 工具。系统不自动扣款、不承诺真实全球预订、不提供法律意见或签证代办。
 
@@ -17,7 +17,7 @@
 
 ### 目标用户 — 假设
 
-两到四位共同计划国际休闲旅行的朋友/伴侣；首个 Hero Demo 使用三位测试旅行者、两个出发地、两到三个目的地候选与至少两种国籍。单人旅行使用同一 Personal Agent，但不是单独 MVP 流程。
+两到四位共同计划国际休闲旅行的朋友/伴侣，以及独自规划国际休闲旅行的用户；首个多人 Hero Demo 使用三位测试旅行者、两个出发地、两到三个目的地候选与至少两种国籍。单人用户使用相同的 Trip、snapshot、工具与状态机，允许一个目的地候选。
 
 ### 目标
 
@@ -25,7 +25,7 @@
 2. 三位成员在私有 Agent 中补充要求，并只把明确授权的本次信息共享到共同旅程。
 3. Shared Agent 比较两到三个目的地候选，并为每个候选输出按两个出发地协调的机票、酒店、地面交通组合和每人的 visa readiness 状态。
 4. 变化发生时，系统重新编排并解释每个人及候选方案的影响。
-5. 三位成员明确确认同一最新版本后调用受控 booking orchestration；不得自动付款或无确认预订。
+5. 所有 required members（单人时为 owner）明确确认同一最新版本后调用受控 booking orchestration；不得自动付款或无确认预订。
 
 ### 非目标
 
@@ -33,7 +33,7 @@
 - 未经明确同意推断人格、分享私聊内容或共享所有 Profile；
 - 全球实时库存、价格保证、签证法律结论、自动签证申请；
 - 真实支付、支付分摊、退款、改签或全天候客服；
-- 完整单人专属 UX、社交网络或通用旅行内容社区。
+- 脱离 Trip/snapshot/Worker 边界的自由 Personal tool 调用、社交网络或通用旅行内容社区。
 
 ## 3. Hero 用户旅程
 
@@ -100,15 +100,16 @@ flowchart LR
 5. 系统不得把任何 Profile 或私有对话字段默认共享给同行者。对同一 owner 的同一私有 thread，Personal Agent 可使用服务端构造的最近、有预算的原文对话窗口作为 LLM 上下文，以便用户重新进入该 thread 后延续对话；窗口外的内容不送入模型，模型应在需要时坦诚说明未保留早期上下文。原文窗口只能发送给已配置模型 provider，绝不进入长期 Profile memory、共享 snapshot、Shared Agent、日志、trace、audit、metric 或客户端持久状态；浏览器不得提交或拼接 history。
 6. 删除对话线程须删除其消息正文；仅保留最小、无敏感的审计摘要（线程 id、操作者、时间）。删除 Profile/override 后，未来 Agent run 不得使用对应数据。
 7. Personal Agent 对话、planning 与 replan 均须作为服务端持久任务执行，并支持鉴权流式状态事件。每条已接受的 Personal Agent 对话必须绑定一个既有 Trip、归属于唯一 owner；加入 Trip 的成员自动获得空白默认私有线程，并可在该 Trip 下创建更多私有线程。浏览器关闭、刷新、网络断开或 SSE 断开不得取消已接受任务；只有用户显式 Stop 可以请求取消。私有对话文本仅在通过流式安全 gate 后增量显示，且只有最终完整校验成功的 ASSISTANT 内容可持久化。
-8. 探索首页进入、新地图浏览、坐标点击和打开聊天不得创建 Trip。用户首次提交聊天消息时，系统必须以幂等单事务创建其 `PLANNING` Trip、默认私有 thread 与初始 membership，再在该 thread 接受 turn。站内路由返回探索页继续当前浏览器内存会话；新标签页、整页刷新或重新打开探索页开始新会话。未发送消息的探索不得持久化为项目。
+8. 探索首页进入、新地图浏览、坐标点击和打开聊天不得创建 Trip。用户首次提交聊天消息时，系统必须以幂等单事务创建其 `DRAFT` Trip、默认私有 thread 与初始 membership，再在该 thread 接受 turn。只有 owner 显式激活完整 brief 后才可调用 provider/tool；站内路由返回探索页继续当前浏览器内存会话；新标签页、整页刷新或重新打开探索页开始新会话。未发送消息的探索不得持久化为项目。
 9. 未被用户归档、且 `travelDateEnd` 未早于当前 UTC 日期的 Trip 属于活跃行程；首页以“规划中”呈现。归档是独立于 `PLANNING`/`CONFIRMED`/`BOOKED` 等业务状态的可见性属性：用户主动归档或行程结束日期过去后进入归档列表。缺失规划所需字段时，服务端只拒绝相应的 provider/planning 操作并说明缺口，不把行程降为草稿或阻止成员邀请。
 10. 系统可从重复、非敏感旅行行为生成长期偏好**提案**，但提案在用户确认前不是 Profile 事实、不得进入共享 snapshot 或计划输入。已确认的事实不随时间衰减，在用户主动修改或删除前一直有效；行为长期与已确认事实冲突时，系统只能提出"是否更新偏好"的非阻塞建议，并受最少独立观察次数、跨 Trip 数、证据跨度和记忆强度阈值共同约束（见 [长期记忆实施方案](long-term-memory-implementation.md) §3.6）。国籍、旅行证件、出生日期、健康和无障碍信息只能由用户通过 Profile 表单维护，禁止从私有对话或行为自动提取。
 11. 用户点击服务端认可的稳定地图地点时，系统可在地点抽屉自动展示按语言共享的短介绍；有效期内不得重复调用 LLM。该内容不得使用任何用户、Profile、Trip、thread 或私聊输入，也不得创建 Draft Trip 或聊天消息。无稳定 `sourceId` 的灵感点不提供该能力。
+12. Personal Agent 可将“查找/规划”理解为不可执行的个人 research intent，并展示 owner 确认卡。确认后，服务端在该 owner 的单人 Trip snapshot 下接受 durable `RESEARCH` 或 `PROPOSE_PLAN` task；Personal Agent 不直接调用 provider、MCP、数据库或 Shared Skill。`PROPOSE_PLAN` 自动生成首版 `PROPOSED` plan，owner adoption 后才激活。
 
 ### FR-2 共享行程工作台与授权
 
 1. 创建者可创建一个共享行程并邀请另外两位测试用户加入。
-2. 外部邀请入口必须使用不可猜测、一次性的 invitation token，不得以 URL 中的 Trip ID 授权或读取数据。登录且 token 与受邀账号绑定后，才可查看最小行程摘要、必需成员身份与有效期；无效、过期、撤回、已处理或错账号邀请返回同一最小不可用结果。
+2. 外部邀请入口必须使用不可猜测、一次性的 invitation token，不得以 URL 中的 Trip ID 授权或读取数据。创建者输入邮箱后，系统仅持久化规范化邮箱的 HMAC 和掩码，不搜索或暴露账号是否存在；登录或注册同一邮箱后，受邀者才可查看最小行程摘要、必需成员身份与有效期。当前 MVP 返回可复制链接，不自动发送邮件；无效、过期、撤回、已处理或错邮箱邀请返回同一最小不可用结果。`DRAFT` 与 `PLANNING` 行程都允许创建邀请：`DRAFT` 邀请可由创建者创建、由受邀者接受，但受邀者接受前仅看到最小可用摘要（行程名、`DRAFT` 状态、有效期与“加入后仅获得空白私有线程”）而非创建者未确认的探索内容；创建者的私有对话、Profile 与未授权字段仍仅对其本人可见。已取消或归档的行程不可再新增或接受邀请。
 3. 受邀人可显式接受或拒绝。接受只创建所需 membership 与私有默认 thread，且必须幂等；拒绝不得创建 membership/thread，并记录独立审计事件。接受后唯一主操作为设置本次共享范围，不得自动授予 consent 或写入 snapshot。
 4. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
 5. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
@@ -117,13 +118,13 @@ flowchart LR
 
 ### FR-3 端到端行程编排
 
-1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay、Activities 与 Ground typed tools，并将三位成员映射到两个出发地。模型可在 Shared PLAN/REPLAN 中请求 `flight.search`、`hotel.search`、`activities.search`、`places.search` 与 `navigation.route`；`hotel.search` 仅接收 snapshot 候选中的 `destinationId`，日期、住客/房间数、币种和住宿偏好必须由服务端从已确认偏好推导；`activities.search` 只接受 snapshot destination、固定 theme 与 locale，日期和 run authority 由服务端注入。地面工具只接受 server-owned destination reference、run-bound place candidate 或当前 Trip 已授权 `placeId`，不得接收模型/浏览器坐标、地址、provider、profile 或 URL。关键词 POI 候选在当前 run 外无效；低置信度或目的地外结果必须标注待确认。Personal Agent 私有聊天不得调用地面 navigation/mobility tool；Personal activities tool-loop 在 owner-scoped streaming boundary 实施前同样不得启用。只有 owner 确认后的结构化 Trip constraint 或显式共享 TripPlace 才能进入后续 Shared snapshot。
-2. 系统必须比较两到三个预设目的地候选，并支持候选目的地下任意两个已授权 POI 的步行、驾车或骑行路线。每项结果显示来源、时间、距离/时长/步骤或价格/币种（适用时）。任一 provider 缺失均不得中止 Agent research：系统返回 `COMPLETED_WITH_GAPS` 与安全 `RESEARCH_UNAVAILABLE` 摘要；只有用户选择的 live commercial offer 才可成为对应确认/booking 的硬门禁。路线不是商业 offer，不能伪造票价或库存。
-3. 每个项目必须显示总价/币种（仅在 provider 同时提供二者时）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。Activities 不得展示或持久化无币种价格、raw provider payload 或 click-off/booking link。
+1. 受控 Trip Orchestrator 必须用同一 immutable snapshot 请求 Flight、`accommodation.discover`、`hotel.search`、Activities、Places、Navigation、Mobility 与 Readiness typed tools；多人将成员映射到多个出发地，单人只使用 owner 的授权字段与出发地。Personal Agent 只能发起 owner 确认后的 research command，所有工具调用仍由 Worker 以 Shared Skill policy、snapshot/run binding 执行。`accommodation.discover` 只返回无价格住宿骨架；`hotel.search` 仅在已有确认入住日期、单房住客数和币种时返回实时价格。两者只接收 snapshot 候选中的 `destinationId`，服务端必须先解析包含规范城市名、ISO 国家码和中心坐标的 `DestinationReference`；解析失败或歧义时禁止降级为自由文本。模型不得提供 provider、坐标、地址、日期、旅客数、币种、身份、URL 或 tool authority；服务端推导并校验参数。关键词 POI 候选在当前 run 外无效；低置信度或目的地外结果必须标注待确认。只有 owner 确认后的结构化 Trip constraint 或显式 TripPlace 才能进入 snapshot。
+2. 多人系统必须比较两到三个预设目的地候选；单人允许一到五个候选，并支持候选目的地下任意两个已授权 POI 的步行、驾车或骑行路线。每项结果显示来源、时间、距离/时长/步骤或价格/币种（适用时）。任一 provider 缺失均不得中止 Agent research：系统返回 `COMPLETED_WITH_GAPS` 与安全 `RESEARCH_UNAVAILABLE` 摘要；只有用户选择的 live commercial offer 才可成为对应确认/booking 的硬门禁。路线不是商业 offer，不能伪造票价或库存。
+3. 每个项目必须显示总价/币种、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。价格与币种必须成对出现——不得展示或持久化无币种的金额，也不得在服务端自行做二次汇率换算。Activities 的价格由服务端按已确认偏好的币种向 provider 请求；活动价为「最小成团人数下的人均起价」，属指示性价格而非单张票面价，展示时必须如实标注。Activities 仍不得展示或持久化 raw provider payload 或 click-off/booking link。
 4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
 5. Planning/replan 运行期间可实时显示安全阶段状态（例如 snapshot、research、validation、persistence），但不得向客户端发送内部推理、原始 prompt、未验证模型输出、未持久化 provider 结果或未授权 snapshot 数据；最终 plan 仅在验证并持久化后展示。
 6. Activities 工具与 Flight 工具相互独立：拥有独立的 typed port、覆盖矩阵、stale 触发器和 evidence 写入；同一 PLAN/REPLAN durable task 内作为并列子阶段，各自拥有独立的并发与失败语义。失败不取消其他 research，但只能形成安全的 `RESEARCH_UNAVAILABLE` 摘要；活动 provider 的 booking link 不得在 MVP 中展示、持久化或透传。
-7. Hotel 首期只提供实时搜索与方案比较，不创建订单、支付或供应商跳转。每个酒店 offer 显示总价、每晚价、来源、采集时间和有效期；税费或强制费用不完整时固定提示“可能另计”。模型可在私有对话询问缺失的房间/住客/币种信息，但仅能创建待用户确认的住宿搜索偏好提案。无 live supplier 数据时为 `RESEARCH_UNAVAILABLE`，不得使用 sandbox、fixture 或模型生成报价。
+7. 住宿能力分两层：OpenTripMap discovery 只显示名称、类别、位置、距离、来源和 `© OpenStreetMap contributors` 归因，不代表实时价格、库存或可预订性；SerpApi hotel quote 只在确认入住条件后提供实时搜索与方案比较。每个价格 offer 显示总价、每晚价、来源、采集时间和有效期；税费或强制费用不完整时固定提示“可能另计”。模型可在私有对话询问缺失的房间/住客/币种信息，但仅能创建待用户确认的住宿搜索偏好提案。无 live supplier 数据时为 `RESEARCH_UNAVAILABLE`，不得使用 sandbox、fixture 或模型生成报价。
 8. Personal Agent 生成的约束提案必须由 owner 确认后才能进入本次 Shared snapshot；约束区分 HARD 与 SOFT，HARD 冲突必须返回阻塞/调整请求，SOFT 约束只能影响候选排序。
 
 ### FR-4 签证/入境准备
@@ -146,8 +147,8 @@ flowchart LR
 
 ### FR-6 确认与预订编排
 
-1. 三位 required members 必须对当前方案版本显式选择 `Confirm` 或 `Needs changes`。
-2. 只有三位 required members 全部确认、方案未过期且数据快照一致时，才可调用 sandbox/已批准 booking orchestration 工具。
+1. 所有 required members 必须对当前方案版本显式选择 `Confirm` 或 `Needs changes`；单人 Trip 只有 owner 一人。
+2. 只有所有 required members 全部确认、方案未过期且数据快照一致时，才可调用 sandbox/已批准 booking orchestration 工具。
 3. 调用前 UI 必须显示项目、总价/币种、谁确认了、来源和 `No automatic charge` 提示。
 4. 工具结果必须返回每个项目的确认参考号或失败原因；成功不表示系统已扣款。
 5. 成员拒绝、数据变化、重复请求或工具失败不得产生重复编排或不可逆预订。

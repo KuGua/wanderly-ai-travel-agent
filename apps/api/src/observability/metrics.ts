@@ -300,11 +300,20 @@ metrics.registerCounter("location_introduction_registry_total", "Operator regist
 });
 metrics.registerHistogram(
   "llm_request_latency_ms",
-  "Latency of successful LLM requests in milliseconds.",
+  "Latency of LLM request attempts in milliseconds, including failures.",
   [50, 100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000],
   {
     provider: ["openai", "gemini", "openai-compatible"],
-    outcome: ["success"],
+    outcome: ["success", "failure"],
+  },
+);
+metrics.registerCounter(
+  "llm_request_errors_total",
+  "LLM request attempt outcomes, by provider, error category and retryability.",
+  {
+    provider: ["openai", "gemini", "openai-compatible"],
+    error_category: ["upstream_5xx", "upstream_failure", "network", "timeout", "schema_parse", "unknown"],
+    retryable: ["true", "false"],
   },
 );
 metrics.registerCounter("agent_task_outcomes_total", "Durable Agent task outcomes by bounded operation and result.", {
@@ -321,7 +330,10 @@ metrics.registerCounter("trip_draft_brief_update_total", "Creator-confirmed DRAF
   result: ["success"],
 });
 metrics.registerCounter("draft_command_rejected_total", "Collaboration commands rejected because the Trip is still a Draft.", {
-  operation: ["invitation", "consent", "planning", "confirmation", "booking", "change_event"],
+  operation: ["invitation", "consent", "planning", "confirmation", "booking", "change_event", "research"],
+});
+metrics.registerCounter("trip_invitation_rejected_total", "Trip invitation attempts rejected because the Trip is archived or cancelled.", {
+  reason: ["terminal_trip"],
 });
 metrics.registerCounter("agent_task_recoveries_total", "Expired Agent task leases and queue entries recovered.", {
   outcome: ["retrying", "failed", "cancelled"],
@@ -407,6 +419,39 @@ metrics.registerHistogram("activities_provider_latency_ms", "Viator MCP activity
   provider: ["viator_mcp"],
   outcome: ["live", "unavailable"],
 });
+
+metrics.registerCounter("hotel_provider_requests_total", "Hotel provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["serpapi_google_hotels"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerHistogram("hotel_provider_latency_ms", "Hotel provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000], {
+  provider: ["serpapi_google_hotels"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("accommodation_provider_requests_total", "Accommodation discovery provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["opentripmap"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerHistogram("accommodation_provider_latency_ms", "Accommodation discovery provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000], {
+  provider: ["opentripmap"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("accommodation_tool_invocations_total", "accommodation.discover Tool invocations by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["opentripmap"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerCounter("hotel_tool_invocations_total", "hotel.search Tool invocations by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["serpapi_google_hotels"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerCounter("provider_search_cache_total", "Provider search read-through cache outcomes.", {
+  category: ["hotel", "activity", "accommodation"],
+  outcome: ["hit_live", "hit_unavailable", "miss", "wait_timeout"],
+});
 metrics.registerCounter("activities_tool_invocations_total", "Activities tool execution outcomes.", {
   outcome: ["live", "unavailable"],
   provider: ["viator_mcp"],
@@ -459,6 +504,32 @@ metrics.registerCounter(
   {
     decision: ["accept", "needs_changes"],
     result: ["cast", "adopted", "blocked", "stale_plan"],
+  },
+);
+
+// Phase 3 — Personal Trip Orchestrator.
+metrics.registerCounter(
+  "research_stage_total",
+  "Personal Trip Orchestrator SSE stage transitions by bounded outcome.",
+  {
+    stage: [
+      "snapshot_created",
+      "researching",
+      "validating",
+      "persisting",
+      "completed",
+      "completed_with_gaps",
+      "failed",
+      "stale",
+    ],
+    outcome: ["success", "failure"],
+  },
+);
+metrics.registerCounter(
+  "solo_plan_adoption_total",
+  "Solo plan adoption outcomes — owner ACCEPT flips PROPOSED to ACTIVE in one round trip.",
+  {
+    outcome: ["adopted", "stale_plan", "not_solo", "forbidden", "plan_not_proposed", "error"],
   },
 );
 

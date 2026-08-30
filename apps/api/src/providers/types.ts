@@ -1,4 +1,11 @@
-import type { FlightOffer, StayOffer, VisaReadinessResult } from "../types/domain.js";
+import type {
+  DestinationReference,
+  FlightOffer,
+  GroundOffer,
+  HotelOffer,
+  StayOffer,
+  VisaReadinessResult,
+} from "../types/domain.js";
 
 // ─── Provider Interfaces ────────────────────────────────────────────────────
 
@@ -31,6 +38,37 @@ export interface StayProvider {
   }): Promise<ProviderResult<StayOffer[]>>;
 }
 
+export interface HotelProvider {
+  searchHotels(params: HotelSearchParams): Promise<ProviderResult<HotelProviderItem[]>>;
+}
+
+export type HotelProviderItem = Omit<HotelOffer, "id" | "queryId">;
+
+export interface HotelSearchParams {
+  /** Server-owned destination; adapters cannot accept ambiguous free text. */
+  destination: DestinationReference;
+  checkIn: string;
+  checkOut: string;
+  roomCount: number;
+  adultsPerRoom: number[];
+  currency: string;
+  locale: "en" | "zh";
+  signal?: AbortSignal;
+}
+
+/**
+ * @deprecated Aggregate port from the pre-mobility refactor. Preserved as a
+ * migration shim only. Spec §2 says Navigation/Mobility/Transit must live in
+ * three semantically independent ports. New code must not call this. Removal
+ * is scheduled after Phase 5 lands.
+ */
+export interface GroundProvider {
+  searchGround(params: {
+    destination: string;
+    snapshotId: string;
+  }): Promise<ProviderResult<GroundOffer[]>>;
+}
+
 export interface VisaProvider {
   checkReadiness(params: {
     nationality: string;
@@ -46,13 +84,34 @@ export interface VisaProvider {
  */
 export interface PlaceSearchProvider {
   searchPlaces(params: {
-    destinationId: string;
+    destination: DestinationReference;
     keyword: string;
     category: "ATTRACTION" | "HOTEL" | "RESTAURANT" | "TRANSPORT_HUB" | "OTHER";
     snapshotId: string;
     runId?: string;
     signal?: AbortSignal;
   }): Promise<ProviderResult<NormalizedPlaceCandidate[]>>;
+}
+
+export interface AccommodationDiscoveryProvider {
+  discoverAccommodations(params: {
+    destination: DestinationReference;
+    limit: number;
+    signal?: AbortSignal;
+  }): Promise<ProviderResult<AccommodationProviderItem[]>>;
+}
+
+export interface AccommodationProviderItem {
+  providerPlaceId: string;
+  name: string;
+  kind: string;
+  longitude: number;
+  latitude: number;
+  distanceMeters: number | null;
+  popularityTier: number | null;
+  source: "OpenTripMap";
+  attribution: "© OpenStreetMap contributors";
+  capturedAt: string;
 }
 
 /**
@@ -183,6 +242,12 @@ export interface ActivitiesSearchParams {
   dateEnd: string;
   theme?: "CULTURE" | "FOOD" | "OUTDOOR" | "FAMILY";
   locale: "en" | "zh";
+  /**
+   * ISO-4217 code the provider must price in. Required, not optional: an amount
+   * whose denomination is unknown cannot be shown to anyone, and making this
+   * optional is how it came to be missing in the first place.
+   */
+  currency: string;
   limit: number;
   signal?: AbortSignal;
 }
@@ -200,6 +265,19 @@ export interface ActivityProviderItem {
     to: number | null;
   };
   category: string | null;
+  /**
+   * Lowest per-person price in the requested currency, as the provider stated
+   * it. Never converted locally — a second conversion would add error on top of
+   * the provider's own rounding.
+   */
+  fromPrice: number;
+  currency: string;
+  /**
+   * Destination the provider filed this product under, recovered from its
+   * product URL before that URL is discarded. The only geographic signal the
+   * response carries; used to drop results from another destination entirely.
+   */
+  providerLocality: string | null;
 }
 
 export type ProviderResult<T> =

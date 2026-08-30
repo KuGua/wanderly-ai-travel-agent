@@ -23,6 +23,7 @@ import { buildTripTitle, isValidTripDate } from "../services/trip-title-service.
 import { createRequestContext } from "../utils/context.js";
 import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
+import { loadAndAssertTripModeForBrief } from "../services/trip-mode-service.js";
 import { getOrCreateDefaultThread } from "../services/trip-invitation-service.js";
 import { metrics } from "../observability/metrics.js";
 
@@ -306,6 +307,11 @@ export async function tripRoutes(app: FastifyInstance) {
         throw new ApiError(403, "Forbidden", "Only the creator may activate the trip");
       }
 
+      // Phase 1 — per-mode candidate validation. SOLO trips (1 required
+      // member) may activate with 1..5 candidates; TEAM trips allow 2..3.
+      // Throws RESEARCH_BRIEF_INVALID on violation.
+      await loadAndAssertTripModeForBrief(tx, tripId, body.destinationCandidates);
+
       await tx.update(sharedTrips).set({
         name: generatedTitle,
         nameSource: "AUTO",
@@ -408,7 +414,7 @@ export async function tripRoutes(app: FastifyInstance) {
 
   app.patch("/trips/:tripId/draft-brief", {
     schema: {
-      description: "Apply a creator-confirmed, structured chat brief update to a DRAFT trip.",
+      description: "Apply a creator-confirmed private-chat update or creator-authored brief edit to a DRAFT trip.",
       tags: ["trips"], params: toJsonSchema(tripIdParamSchema),
       body: toJsonSchema(updateDraftTripBriefRequestSchema),
       response: { 200: toJsonSchema(updateDraftTripBriefResponseSchema), 403: toJsonSchema(errorResponseSchema), 404: toJsonSchema(errorResponseSchema), 409: toJsonSchema(errorResponseSchema) },
@@ -424,20 +430,33 @@ export async function tripRoutes(app: FastifyInstance) {
       if (trip.createdBy !== request.user.id) throw new ApiError(403, "Forbidden", "Only the creator may confirm a draft brief update");
 
       const added = body.destinationCandidates ?? [];
-      const nextDestinations = [...(trip.destinationCandidates as string[])];
-      for (const destination of added) {
-        if (!nextDestinations.some((current) => current.localeCompare(destination, undefined, { sensitivity: "accent" }) === 0)) nextDestinations.push(destination);
+      const nextDestinations = body.replaceDestinationCandidates
+        ? [...added]
+        : [...(trip.destinationCandidates as string[])];
+      if (!body.replaceDestinationCandidates) {
+        for (const destination of added) {
+          if (!nextDestinations.some((current) => current.localeCompare(destination, undefined, { sensitivity: "accent" }) === 0)) nextDestinations.push(destination);
+        }
       }
       if (nextDestinations.length > 5) throw new ApiError(409, "Conflict", "TRIP_DESTINATION_LIMIT: draft already has five destinations");
+      const nextDepartures = body.departureCities ?? (trip.departureCities as string[]);
+      const nextTravelDateStart = body.travelDateStart === undefined ? trip.travelDateStart : body.travelDateStart;
+      const nextTravelDateEnd = body.travelDateEnd === undefined ? trip.travelDateEnd : body.travelDateEnd;
+      if ((nextTravelDateStart && !isValidTripDate(nextTravelDateStart))
+        || (nextTravelDateEnd && !isValidTripDate(nextTravelDateEnd))
+        || (nextTravelDateStart && nextTravelDateEnd && nextTravelDateEnd < nextTravelDateStart)) {
+        throw new ApiError(400, "Bad Request", "Travel dates must be valid calendar dates with an end date on or after the start date");
+      }
       const nextDays = body.travelDays ?? trip.travelDays;
-      const autoTitle = buildTripTitle({ destinationCandidates: nextDestinations, travelDateStart: trip.travelDateStart, travelDateEnd: trip.travelDateEnd, travelDays: nextDays, locale: body.titleLocale });
+      const autoTitle = buildTripTitle({ destinationCandidates: nextDestinations, travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays, locale: body.titleLocale });
       const now = new Date();
       await tx.update(sharedTrips).set({
-        destinationCandidates: nextDestinations, travelDays: nextDays,
+        departureCities: nextDepartures, destinationCandidates: nextDestinations,
+        travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays,
         ...(trip.nameSource === "AUTO" ? { name: autoTitle, titleLocale: body.titleLocale } : {}), updatedAt: now,
       }).where(eq(sharedTrips.id, tripId));
-      await recordAudit({ ctx, action: "TRIP_DRAFT_BRIEF_UPDATE", actorUserId: request.user.id, tripId, summary: { source: "conversation_confirmation", changedFields: [ ...(body.destinationCandidates ? ["destinationCandidates"] : []), ...(body.travelDays !== undefined ? ["travelDays"] : []) ] }, tx });
-      return { id: tripId, name: trip.nameSource === "AUTO" ? autoTitle : trip.name, nameSource: trip.nameSource, status: "DRAFT" as const, destinationCandidates: nextDestinations, travelDays: nextDays ?? null, updatedAt: now.toISOString() };
+      await recordAudit({ ctx, action: "TRIP_DRAFT_BRIEF_UPDATE", actorUserId: request.user.id, tripId, summary: { source: body.replaceDestinationCandidates ? "creator_brief_editor" : "conversation_confirmation", changedFields: [ ...(body.departureCities ? ["departureCities"] : []), ...(body.destinationCandidates ? ["destinationCandidates"] : []), ...(body.travelDateStart !== undefined ? ["travelDateStart"] : []), ...(body.travelDateEnd !== undefined ? ["travelDateEnd"] : []), ...(body.travelDays !== undefined ? ["travelDays"] : []) ] }, tx });
+      return { id: tripId, name: trip.nameSource === "AUTO" ? autoTitle : trip.name, nameSource: trip.nameSource, status: "DRAFT" as const, departureCities: nextDepartures, destinationCandidates: nextDestinations, travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays ?? null, updatedAt: now.toISOString() };
     });
     metrics.inc("trip_draft_brief_update_total", { result: "success" });
     return updateDraftTripBriefResponseSchema.parse({ trip: result });

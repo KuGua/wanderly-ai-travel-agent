@@ -109,6 +109,7 @@ async function resolveCustomLocalUser(userId: string) {
     id: user.id,
     externalId: user.externalId,
     displayName: user.displayName,
+    email: user.email,
   };
 }
 
@@ -133,6 +134,7 @@ async function provisionAuthenticatedUser(identity: AuthenticatedIdentity) {
     id: user.id,
     externalId: user.externalId,
     displayName: user.displayName,
+    email: user.email,
   };
 }
 
@@ -142,6 +144,7 @@ declare module "fastify" {
       id: string;
       externalId: string;
       displayName: string;
+      email: string | null;
     };
   }
 }

@@ -23,7 +23,7 @@ export const outboxStatusEnum = pgEnum("outbox_status", [
   "PROCESSED",
   "FAILED",
 ]);
-export const agentTaskOperationEnum = pgEnum("agent_task_operation", ["CONVERSATION", "PLAN", "REPLAN"]);
+export const agentTaskOperationEnum = pgEnum("agent_task_operation", ["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]);
 export const agentTaskStatusEnum = pgEnum("agent_task_status", [
   "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELLED", "STALE",
 ]);
@@ -43,6 +43,9 @@ export const auditActionEnum = pgEnum("audit_action", [
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
   "FLIGHT_SEARCH_REQUESTED", "FLIGHT_SEARCH_COMPLETED", "FLIGHT_SEARCH_UNAVAILABLE",
   "ACTIVITIES_SEARCH_REQUESTED", "ACTIVITIES_SEARCH_COMPLETED", "ACTIVITIES_SEARCH_UNAVAILABLE",
+  "ACCOMMODATION_DISCOVERY_REQUESTED", "ACCOMMODATION_DISCOVERY_COMPLETED", "ACCOMMODATION_DISCOVERY_UNAVAILABLE",
+  "HOTEL_SEARCH_REQUESTED", "HOTEL_SEARCH_COMPLETED", "HOTEL_SEARCH_UNAVAILABLE",
+  "STAY_SEARCH_PREFERENCES_CONFIRMED",
   // Phase 2 / spec §8 audit surface (added via 0021_team_orchestration_enums.sql):
   "TRIP_CONSTRAINT_PROPOSED",
   "TRIP_CONSTRAINT_CONFIRMED",
@@ -64,6 +67,10 @@ export const auditActionEnum = pgEnum("audit_action", [
   "TRIP_PLACE_ADOPTED",
   "TRIP_PLACE_REVOKED",
   "RESEARCH_RESULT_RECORDED",
+  // Phase 2 / Personal Trip Orchestrator (added via 0035_personal_research_audit_actions.sql):
+  "RESEARCH_COMMAND_ACCEPTED",
+  "RESEARCH_COMMAND_REJECTED",
+  "RESEARCH_COMPLETED",
   // Long-term memory (docs/long-term-memory-implementation.md section 7):
   "MEMORY_PROPOSAL_CREATE", "MEMORY_PROPOSAL_CONFIRM", "MEMORY_PROPOSAL_DISMISS",
   "PREFERENCE_FACT_UPDATE", "PREFERENCE_FACT_DELETE",
@@ -377,6 +384,31 @@ export const providerSearchRuns = pgTable("provider_search_runs", {
 }, (table) => ({
   snapshotIdx: index("provider_search_runs_snapshot_id_idx").on(table.snapshotId),
   taskIdx: index("provider_search_runs_agent_task_run_id_idx").on(table.agentTaskRunId),
+  hotelTaskDestinationUnique: uniqueIndex("provider_search_runs_hotel_task_destination_unique")
+    .on(table.agentTaskRunId, table.snapshotId, table.destinationId)
+    .where(sql`${table.agentTaskRunId} IS NOT NULL AND ${table.destinationId} IS NOT NULL AND ${table.category} = 'hotel'`),
+}));
+
+/**
+ * Provider-neutral, bounded search cache shared by hotel quotes, activities,
+ * and accommodation discovery. It stores only a SHA-256 fingerprint and a
+ * pointer to normalized evidence; supplier payloads, request URLs and user
+ * identifiers never enter this table.
+ */
+export const providerSearchCache = pgTable("provider_search_cache", {
+  requestFingerprint: varchar("request_fingerprint", { length: 64 }).primaryKey(),
+  providerName: varchar("provider_name", { length: 128 }).notNull(),
+  category: varchar("category", { length: 32 }).notNull(),
+  state: varchar("state", { length: 16 }).notNull(),
+  sourceSearchRunId: uuid("source_search_run_id").references(() => providerSearchRuns.id, { onDelete: "cascade" }),
+  errorCode: varchar("error_code", { length: 64 }),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  expiresIdx: index("provider_search_cache_expires_at_idx").on(table.expiresAt),
+  providerCategoryIdx: index("provider_search_cache_provider_category_idx").on(table.providerName, table.category),
 }));
 
 export const tripSearchPreferences = pgTable("trip_search_preferences", {
@@ -393,6 +425,22 @@ export const tripSearchPreferences = pgTable("trip_search_preferences", {
 }, (table) => ({
   tripVersionUnique: uniqueIndex("trip_search_preferences_trip_version_unique").on(table.tripId, table.version),
   tripIdx: index("trip_search_preferences_trip_id_idx").on(table.tripId),
+}));
+
+export const tripStaySearchPreferences = pgTable("trip_stay_search_preferences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  version: integer("version").notNull(),
+  roomCount: integer("room_count").notNull(),
+  adultsPerRoom: jsonb("adults_per_room").$type<number[]>().notNull(),
+  currency: varchar("currency", { length: 3 }).notNull(),
+  priceDisplayMode: varchar("price_display_mode", { length: 32 }).default("TOTAL_AND_PER_NIGHT").notNull(),
+  taxFeeDisclosure: varchar("tax_fee_disclosure", { length: 48 }).default("SHOW_POSSIBLY_EXTRA_WHEN_UNKNOWN").notNull(),
+  confirmedBy: uuid("confirmed_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tripVersionUnique: uniqueIndex("trip_stay_search_preferences_trip_version_unique").on(table.tripId, table.version),
+  tripIdx: index("trip_stay_search_preferences_trip_id_idx").on(table.tripId),
 }));
 
 // ─── Booking Executions ─────────────────────────────────────────────────────
@@ -485,7 +533,11 @@ export const chatThreads = pgTable("chat_threads", {
 export const tripInvitations = pgTable("trip_invitations", {
   id: uuid("id").primaryKey().defaultRandom(),
   tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
-  invitedUserId: uuid("invited_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // Legacy account-bound invitations retain their recipient ID. New
+  // invitations are email-bound, so an account need not exist at creation.
+  invitedUserId: uuid("invited_user_id").references(() => users.id, { onDelete: "cascade" }),
+  recipientEmailHash: varchar("recipient_email_hash", { length: 64 }),
+  recipientEmailMasked: varchar("recipient_email_masked", { length: 256 }),
   invitedByUserId: uuid("invited_by_user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
   status: tripInvitationStatusEnum("status").notNull().default("PENDING"),
   // SHA-256 of the raw invite token; raw token is returned once at
@@ -499,7 +551,10 @@ export const tripInvitations = pgTable("trip_invitations", {
 }, (table) => ({
   onePendingInvitee: uniqueIndex("trip_invitations_one_pending_invitee")
     .on(table.tripId, table.invitedUserId)
-    .where(sql`${table.status} = 'PENDING'`),
+    .where(sql`${table.status} = 'PENDING' AND ${table.invitedUserId} IS NOT NULL`),
+  onePendingRecipientEmail: uniqueIndex("trip_invitations_one_pending_recipient_email")
+    .on(table.tripId, table.recipientEmailHash)
+    .where(sql`${table.status} = 'PENDING' AND ${table.recipientEmailHash} IS NOT NULL`),
   acceptLookupIdx: index("trip_invitations_accept_lookup_idx")
     .on(table.tokenHash, table.status, table.expiresAt),
 }));
@@ -533,10 +588,28 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   snapshotId: uuid("snapshot_id").references(() => constraintSnapshots.id),
   /** Immutable confirmed-search-preference version bound at PLAN/REPLAN acceptance. */
   flightSearchPreferencesVersion: integer("flight_search_preferences_version"),
+  /** Immutable confirmed stay-search-preference version bound at acceptance. */
+  staySearchPreferencesVersion: integer("stay_search_preferences_version"),
   requestId: uuid("request_id").notNull(),
   userMessageId: uuid("user_message_id").references(() => chatMessages.id, { onDelete: "cascade" }),
   assistantMessageId: uuid("assistant_message_id").references(() => chatMessages.id, { onDelete: "set null" }),
   resultPlanId: uuid("result_plan_id").references(() => itineraryPlans.id, { onDelete: "set null" }),
+  // ─── Phase 1 — Personal Trip Orchestrator ───────────────────────────────
+  // `RESEARCH` (and the columns below) live only on rows with
+  // operation === 'RESEARCH'. Other operations keep all three columns NULL.
+  // The `research_mode` CHECK is enforced server-side via the Zod
+  // `personalResearchKindSchema`; the SQL CHECK is defined in
+  // migrations/0033b_personal_research_columns_and_checks.sql so this table
+  // shape stays Drizzle-only.
+  //
+  // `researchResultId` is intentionally declared without an in-Drizzle
+  // `.references()` callback: `planningResearchResults` references
+  // `agentTaskRuns` (via its own `agentTaskRunId` column), so a mutual
+  // reference would form a circular type that Drizzle's inference cannot
+  // resolve. The FK is added at the DB layer by migration 0033b.
+  researchMode: varchar("research_mode", { length: 16 }),
+  requestedCapabilities: jsonb("requested_capabilities").$type<string[]>(),
+  researchResultId: uuid("research_result_id"),
   placeSourceId: varchar("place_source_id", { length: 128 }),
   placeName: varchar("place_name", { length: 160 }),
   placeLatitude: doublePrecision("place_latitude"),
@@ -585,7 +658,7 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   activeConversationUnique: uniqueIndex("agent_task_runs_one_active_conversation")
     .on(table.threadId).where(sql`${table.threadId} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED')`),
   activePlanningUnique: uniqueIndex("agent_task_runs_one_active_planning")
-    .on(table.tripId).where(sql`${table.tripId} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED')`),
+    .on(table.tripId).where(sql`${table.tripId} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED') AND operation IN ('PLAN', 'REPLAN', 'RESEARCH')`),
   createdByIdx: index("agent_task_runs_created_by_idx").on(table.createdByUserId),
   claimIdx: index("agent_task_runs_claim_idx").on(table.status, table.nextAttemptAt, table.leaseExpiresAt, table.createdAt),
 }));

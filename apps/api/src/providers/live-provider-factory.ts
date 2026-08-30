@@ -1,6 +1,8 @@
 import type {
+  AccommodationDiscoveryProvider,
   ActivitiesProvider,
   FlightProvider,
+  HotelProvider,
   MobilityOfferProvider,
   NavigationProvider,
   PlaceSearchProvider,
@@ -22,6 +24,11 @@ import { AmadeusTransferProvider, readAmadeusTransferConfiguration } from "./ama
 import { OrsPlaceProvider, readOrsPlaceConfiguration } from "./ors-place-provider.js";
 import { OrsNavigationProvider, readOrsNavigationConfiguration } from "./ors-navigation-provider.js";
 import { ViatorMcpActivitiesProvider, readViatorMcpConfiguration } from "./viator-mcp-activities-provider.js";
+import { SerpApiHotelProvider, readSerpApiHotelConfiguration } from "./serpapi-hotel-provider.js";
+import {
+  OpenTripMapAccommodationProvider,
+  readOpenTripMapAccommodationConfiguration,
+} from "./opentripmap-accommodation-provider.js";
 
 class UnavailableFlightProvider implements FlightProvider {
   readonly providerName = "unconfigured" as const;
@@ -66,6 +73,18 @@ class UnavailableActivitiesProvider implements ActivitiesProvider {
   }
 }
 
+class UnavailableHotelProvider implements HotelProvider {
+  async searchHotels() {
+    return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" } as const;
+  }
+}
+
+class UnavailableAccommodationDiscoveryProvider implements AccommodationDiscoveryProvider {
+  async discoverAccommodations() {
+    return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" } as const;
+  }
+}
+
 /**
  * The product never substitutes invented offers. Concrete supplier adapters are
  * registered here only after their credentials and commercial terms are
@@ -83,6 +102,8 @@ export function createTravelProviders(): {
   mobilityOfferProvider: MobilityOfferProvider;
   transitJourneyProvider: TransitJourneyProvider;
   activitiesProvider: ActivitiesProvider;
+  hotelProvider: HotelProvider;
+  accommodationDiscoveryProvider: AccommodationDiscoveryProvider;
 } {
   return {
     flightProvider: createFlightProvider(),
@@ -92,6 +113,8 @@ export function createTravelProviders(): {
     mobilityOfferProvider: createAmadeusTransfer(),
     transitJourneyProvider: new UnavailableTransitJourneyProvider(),
     activitiesProvider: createActivitiesProvider(),
+    hotelProvider: createHotelProvider(),
+    accommodationDiscoveryProvider: createAccommodationDiscoveryProvider(),
   };
 }
 
@@ -110,6 +133,18 @@ export function createFlightProvider(env: NodeJS.ProcessEnv = process.env): Flig
     return new SerpApiFlightProvider(readSerpApiConfiguration(env));
   }
   throw new Error("FLIGHT_PROVIDER must be disabled, amadeus, flightapi, or serpapi");
+}
+
+function createAccommodationDiscoveryProvider(): AccommodationDiscoveryProvider {
+  const configuration = readOpenTripMapAccommodationConfiguration();
+  return configuration
+    ? new OpenTripMapAccommodationProvider(configuration)
+    : new UnavailableAccommodationDiscoveryProvider();
+}
+
+function createHotelProvider(): HotelProvider {
+  const configuration = readSerpApiHotelConfiguration();
+  return configuration ? new SerpApiHotelProvider(configuration) : new UnavailableHotelProvider();
 }
 
 function createActivitiesProvider(): ActivitiesProvider {

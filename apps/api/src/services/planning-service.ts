@@ -1,15 +1,18 @@
+import { randomUUID } from "node:crypto";
 import { db } from "../db/database.js";
 import {
   constraintSnapshots,
   itineraryPlans,
   sourceEvidence,
   providerOffers,
+  providerSearchRuns,
   agentTaskRuns,
   tripSearchPreferences,
   tripConstraintFacts,
   tripMembers,
   preferenceFacts,
   planningResearchResults,
+  tripStaySearchPreferences,
 } from "../db/schema.js";
 import { eq, and, desc, gt, inArray, ne } from "drizzle-orm";
 import { buildAuthorizedData, getActiveConsents } from "./consent-service.js";
@@ -30,7 +33,9 @@ import { createTravelProviders } from "../providers/live-provider-factory.js";
 import { modelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
 import type {
+  AccommodationDiscoveryProvider,
   ActivitiesProvider,
+  HotelProvider,
   FlightProvider,
   MobilityOfferProvider,
   NavigationProvider,
@@ -47,16 +52,25 @@ import { activitiesSearchModelArgumentsSchema } from "./activities-search-servic
 import { placeSearchModelArgumentsSchema } from "./place-search-service.js";
 import { navigationRouteModelArgumentsSchema } from "./navigation-route-service.js";
 import { tripPlaceModelArgumentsSchema } from "../skills/shared/trip-place-skill.js";
+import { hotelSearchModelArgumentsSchema } from "./hotel-search-service.js";
+import { accommodationDiscoveryModelArgumentsSchema } from "./accommodation-discovery-service.js";
 import { loadCurrentConfirmedSearchPreferences } from "./flight-search-preferences-service.js";
+import { loadCurrentStaySearchPreferences } from "./stay-search-preferences-service.js";
 import { evaluateFlightResearchCompleteness, flightMatrixToGaps, FlightResearchIncompleteError } from "./flight-research-matrix-service.js";
 import {
   activitiesMatrixToGaps,
   evaluateActivitiesResearchCompleteness,
   ActivitiesResearchIncompleteError,
 } from "./activities-research-matrix-service.js";
+import { evaluateHotelResearchCompleteness, hotelMatrixToGaps, HotelResearchIncompleteError } from "./hotel-research-matrix-service.js";
+import {
+  accommodationMatrixToGaps,
+  evaluateAccommodationResearchCompleteness,
+  AccommodationResearchIncompleteError,
+} from "./accommodation-research-matrix-service.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
-import type { ActivityEvidence, FlightOffer, StayOffer, ServiceGap } from "../types/domain.js";
+import type { AccommodationEvidence, ActivityEvidence, FlightOffer, StayOffer, HotelOffer, ServiceGap } from "../types/domain.js";
 import { bindPlanSelectionsToEvidence } from "./plan-evidence-binding.js";
 
 export interface PlanningDependencies {
@@ -67,6 +81,8 @@ export interface PlanningDependencies {
   mobilityOfferProvider: MobilityOfferProvider;
   transitJourneyProvider: TransitJourneyProvider;
   activitiesProvider?: ActivitiesProvider;
+  hotelProvider?: HotelProvider;
+  accommodationDiscoveryProvider?: AccommodationDiscoveryProvider;
   modelGateway: ModelGateway;
 }
 
@@ -94,6 +110,8 @@ function resolvePlanningDependencies(): PlanningDependencies {
     mobilityOfferProvider: configuredProviders.mobilityOfferProvider,
     transitJourneyProvider: configuredProviders.transitJourneyProvider,
     activitiesProvider: configuredProviders.activitiesProvider,
+    hotelProvider: configuredProviders.hotelProvider,
+    accommodationDiscoveryProvider: configuredProviders.accommodationDiscoveryProvider,
     modelGateway: modelGateway(),
   };
 }
@@ -106,6 +124,116 @@ export class PlanningDataUnavailableError extends Error {
     super(`Planning data unavailable: ${missing.join(", ")}`);
     this.name = "PlanningDataUnavailableError";
   }
+}
+
+/**
+ * Per-destination coverage bundle returned by `researchCoverageForSnapshot`.
+ * `missingDestinations` is the canonical allow-list surface to detect gaps
+ * (spec §6.1, §10.6); an empty array means full coverage.
+ */
+export interface CoverageResearchResult {
+  allFlights: FlightOffer[];
+  allStays: StayOffer[];
+  allActivities: ActivityEvidence[];
+  evaluatedDestinations: string[];
+  missingDestinations: string[];
+}
+
+/**
+ * Spec §6.1 / §10.6 — research coverage matrix.
+ *
+ * Iterates the full cartesian of `{origin ∈ departureCities} × {destination ∈ destinationCandidates}`,
+ * plus one stay/ground query per destination. UNAVAILABLE outcomes are persisted
+ * as `provider_search_runs` rows and contribute to `missingDestinations`. The
+ * handler uses the result to gate `generatePlan` — never running the model until
+ * every configured candidate has either LIVE or UNAVAILABLE coverage.
+ *
+ * Concurrency: `Promise.allSettled` here is safe; providers are isolated and
+ * per-cell deadlines are not enforced at this layer. Production deployment
+ * should wrap with a bounded concurrency pool (Phase 6 hardening).
+ */
+export async function researchCoverageForSnapshot(params: {
+  snapshotId: string;
+  agentTaskRunId?: string;
+  departureCities: string[];
+  destinationCandidates: string[];
+  travelDateStart: string;
+  travelDateEnd: string;
+  signal?: AbortSignal;
+  providerOverride?: PlanningDependencies;
+}): Promise<CoverageResearchResult> {
+  if (params.destinationCandidates.length === 0) {
+    throw new PlanningDataUnavailableError(["destination_candidates_empty"]);
+  }
+  const deps = params.providerOverride ?? resolvePlanningDependencies();
+  const allFlights: FlightOffer[] = [];
+  const allStays: StayOffer[] = [];
+  const allActivities: ActivityEvidence[] = [];
+  const evaluatedDestinations = new Set<string>();
+  const missingDestinations = new Set<string>();
+
+  // Decoupled origin × destination fan-out for flights.
+  const flightSettlements = await Promise.allSettled(
+    params.departureCities.flatMap((origin) =>
+      params.destinationCandidates.map((destination) => (async () => {
+        const result = await deps.flightProvider.searchFlights({
+          origin,
+          destination,
+          dateStart: params.travelDateStart,
+          dateEnd: params.travelDateEnd,
+          snapshotId: params.snapshotId,
+        });
+        if (result.outcome === "UNAVAILABLE") {
+          if (params.agentTaskRunId) {
+            await db.insert(providerSearchRuns).values({
+              snapshotId: params.snapshotId,
+              agentTaskRunId: params.agentTaskRunId,
+              category: "flight",
+              providerName: (result as { source?: string }).source ?? "flight",
+              originId: origin.slice(0, 16),
+              destinationId: destination.slice(0, 128),
+              requestFingerprint: randomUUID(),
+              outcome: "UNAVAILABLE",
+              errorCode: null,
+            });
+          }
+          return; // UNAVAILABLE → not added to flights, recorded as missing
+        }
+        evaluatedDestinations.add(destination);
+        allFlights.push(...result.data);
+      })()),
+    ),
+  );
+  if (params.signal?.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
+  void flightSettlements;
+
+  // Destination-scoped stay queries. POI / route / mobility evidence is
+  // gathered through the LLM tool loop (`places.search` / `navigation.route`
+  // / `mobility.search`) — it no longer flows through this server-side
+  // pre-fetch.
+  const staySettlements = await Promise.allSettled(
+    params.destinationCandidates.map(async (destination) => {
+      const stayResult = await deps.stayProvider.searchStays({
+        destination,
+        checkIn: params.travelDateStart,
+        checkOut: params.travelDateEnd,
+        snapshotId: params.snapshotId,
+      });
+      const stayLive = stayResult.outcome === "LIVE";
+      if (stayLive) allStays.push(...stayResult.data);
+      if (!stayLive) missingDestinations.add(destination);
+      else evaluatedDestinations.add(destination);
+    }),
+  );
+  void staySettlements;
+
+  return {
+    allFlights,
+    allStays,
+    allActivities,
+    evaluatedDestinations: [...evaluatedDestinations],
+    missingDestinations: [...missingDestinations],
+  };
 }
 
 /**
@@ -207,8 +335,13 @@ export async function createConstraintSnapshot(params: {
       .orderBy(desc(constraintSnapshots.version));
     const nextVersion = existing.length > 0 ? existing[0].version + 1 : 1;
 
+    // Resolve the full required projection before loading consents. An empty
+    // caller list means every trip member; using the unresolved empty list
+    // here would silently omit all authorized fields from the snapshot.
+    const memberIdsResolved = await resolveMemberIds(tx, params.tripId, params.memberIds);
+
     // Pull active consents per member.
-    const consentRows = await Promise.all(params.memberIds.map(async (memberId) => ({
+    const consentRows = await Promise.all(memberIdsResolved.map(async (memberId) => ({
       memberId,
       consents: await getActiveConsents({ tripId: params.tripId, userId: memberId }),
     })));
@@ -236,8 +369,6 @@ export async function createConstraintSnapshot(params: {
       eq(tripConstraintFacts.tripId, params.tripId),
       eq(tripConstraintFacts.status, "ACTIVE"),
     ));
-
-    const memberIdsResolved = await resolveMemberIds(tx, params.tripId, params.memberIds);
 
     const projectionInput: MemoryProjectionInput = {
       tripId: params.tripId,
@@ -439,6 +570,7 @@ export async function generatePlan(params: {
   memberIds: string[];
   agentTaskRunId?: string;
   flightSearchPreferencesVersion?: number;
+  staySearchPreferencesVersion?: number;
   signal?: AbortSignal;
   leaseToken?: string;
   /**
@@ -449,6 +581,7 @@ export async function generatePlan(params: {
    * integrations must consult plan status separately (Phase 4).
    */
   outputMode?: "PROPOSED" | "ACTIVATE";
+  coverage?: CoverageResearchResult;
 }, dependencies: PlanningDependencies = resolvePlanningDependencies()): Promise<string> {
   // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
@@ -468,9 +601,13 @@ export async function generatePlan(params: {
   const allFlights: FlightOffer[] = [];
   const allStays: StayOffer[] = [];
   const allActivities: ActivityEvidence[] = [];
+  const allHotels: HotelOffer[] = [];
+  const allAccommodations: AccommodationEvidence[] = [];
   const activitiesEnabled = process.env.PLAN_ENABLE_ACTIVITIES === "true";
   const placesEnabled = process.env.PLAN_ENABLE_PLACES === "true";
   const navigationEnabled = process.env.PLAN_ENABLE_NAVIGATION === "true";
+  const hotelEnabled = process.env.PLAN_ENABLE_HOTEL === "true";
+  const accommodationDiscoveryEnabled = process.env.PLAN_ENABLE_ACCOMMODATION_DISCOVERY === "true";
 
   if (!snapshot.travelDateStart || !snapshot.travelDateEnd) {
     throw new PlanningDataUnavailableError(
@@ -478,7 +615,14 @@ export async function generatePlan(params: {
     );
   }
 
-  if (!params.agentTaskRunId || !params.flightSearchPreferencesVersion) {
+  // Phase 3: when the handler pre-collected research via `researchCoverageForSnapshot`,
+  // honor it as the canonical evidence; otherwise fall back to in-line per-origin
+  // research. The validator's `EVIDENCE_*` checks operate identically on either source.
+  if (params.coverage) {
+    allFlights.push(...params.coverage.allFlights);
+    allStays.push(...params.coverage.allStays);
+    allActivities.push(...params.coverage.allActivities);
+  } else if (!params.agentTaskRunId || !params.flightSearchPreferencesVersion) {
     for (const departureCity of snapshot.departureCities) {
       const result = await dependencies.flightProvider.searchFlights({
         origin: departureCity,
@@ -513,6 +657,9 @@ export async function generatePlan(params: {
     const preferences = await loadCurrentConfirmedSearchPreferences({
       tripId: params.tripId, version: params.flightSearchPreferencesVersion,
     });
+    const stayPreferences = hotelEnabled
+      ? await loadCurrentStaySearchPreferences({ tripId: params.tripId, version: params.staySearchPreferencesVersion! })
+      : null;
     candidatePlanData = await toolGateway.call(dependencies.modelGateway, {
       destination: params.destination,
       destinationCandidates: snapshot.destinationCandidates as string[],
@@ -552,6 +699,18 @@ export async function generatePlan(params: {
           if (!activitiesMatrix.complete) {
             throw new ActivitiesResearchIncompleteError(activitiesMatrix.cells);
           }
+        }
+        if (hotelEnabled) {
+          const hotelMatrix = await evaluateHotelResearchCompleteness({ snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId!, destinationCandidates: snapshot.destinationCandidates as string[] });
+          if (!hotelMatrix.complete) throw new HotelResearchIncompleteError(hotelMatrix.cells);
+        }
+        if (accommodationDiscoveryEnabled) {
+          const accommodationMatrix = await evaluateAccommodationResearchCompleteness({
+            snapshotId: params.snapshotId,
+            agentTaskRunId: params.agentTaskRunId!,
+            destinationCandidates: snapshot.destinationCandidates as string[],
+          });
+          if (!accommodationMatrix.complete) throw new AccommodationResearchIncompleteError(accommodationMatrix.cells);
         }
       },
       tools: [
@@ -596,6 +755,16 @@ export async function generatePlan(params: {
             mode: { type: "string", enum: ["WALK", "DRIVE", "CYCLE"] },
           } },
         }] : []),
+        ...(hotelEnabled ? [{
+          name: "hotel.search",
+          description: "Search live hotel evidence for one controlled destination. Dates, occupancy, and currency are server-derived.",
+          parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
+        }] : []),
+        ...(accommodationDiscoveryEnabled ? [{
+          name: "accommodation.discover",
+          description: "Discover non-price accommodation candidates near one controlled destination. This is not availability or a quote.",
+          parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
+        }] : []),
       ],
       dispatchTool: async (call) => {
         const snapshotContext = {
@@ -639,7 +808,11 @@ export async function generatePlan(params: {
           const result = await invokeSkill("activities.search", {
             ctx: params.ctx,
             snapshot: snapshotContext,
-            activitiesSearch: { tripId: params.tripId, snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId },
+            activitiesSearch: {
+              tripId: params.tripId, snapshotId: params.snapshotId,
+              currency: preferences.currency,
+              agentTaskRunId: params.agentTaskRunId,
+            },
             policyGate: new DefaultPolicyGate("shared"),
           }, { ...modelArgs, snapshotId: params.snapshotId }, { signal: params.signal });
           if ((result as { outcome: string }).outcome === "LIVE") {
@@ -674,6 +847,37 @@ export async function generatePlan(params: {
             policyGate: new DefaultPolicyGate("shared"),
           }, { ...modelArgs, snapshotId: params.snapshotId }, { signal: params.signal });
         }
+        if (call.name === "hotel.search" && hotelEnabled && stayPreferences) {
+          const modelArgs = hotelSearchModelArgumentsSchema.parse(call.arguments);
+          const result = await invokeSkill("hotel.search", {
+            ctx: params.ctx, snapshot: snapshotContext,
+            hotelSearch: {
+              tripId: params.tripId, snapshotId: params.snapshotId, searchPreferencesVersion: stayPreferences.version,
+              searchPreferences: { roomCount: stayPreferences.roomCount, adultsPerRoom: stayPreferences.adultsPerRoom, currency: stayPreferences.currency },
+              locale: "en", agentTaskRunId: params.agentTaskRunId,
+            },
+            policyGate: new DefaultPolicyGate("shared"),
+          }, { ...modelArgs, snapshotId: params.snapshotId }, { signal: params.signal });
+          if ((result as { outcome: string }).outcome === "LIVE") allHotels.push(...(result as { hotels: HotelOffer[] }).hotels);
+          return result;
+        }
+        if (call.name === "accommodation.discover" && accommodationDiscoveryEnabled) {
+          const modelArgs = accommodationDiscoveryModelArgumentsSchema.parse(call.arguments);
+          const result = await invokeSkill("accommodation.discover", {
+            ctx: params.ctx,
+            snapshot: snapshotContext,
+            accommodationDiscovery: {
+              tripId: params.tripId,
+              snapshotId: params.snapshotId,
+              agentTaskRunId: params.agentTaskRunId,
+            },
+            policyGate: new DefaultPolicyGate("shared"),
+          }, { ...modelArgs, snapshotId: params.snapshotId }, { signal: params.signal });
+          if ((result as { outcome: string }).outcome === "LIVE") {
+            allAccommodations.push(...(result as { accommodations: AccommodationEvidence[] }).accommodations);
+          }
+          return result;
+        }
         throw new Error("UNKNOWN_SKILL");
       },
     });
@@ -704,7 +908,8 @@ export async function generatePlan(params: {
       travelDateStart: snapshot.travelDateStart ?? undefined,
       travelDateEnd: snapshot.travelDateEnd ?? undefined,
     },
-    evidence: { flights: allFlights, stays: allStays, activities: allActivities },
+    evidence: { flights: allFlights, stays: allStays, activities: allActivities, hotels: allHotels },
+    requireHotels: hotelEnabled && allHotels.some((hotel) => hotel.destinationId === params.destination),
   });
 
   // Only validated output may cross the authoritative persistence boundary.
@@ -712,14 +917,18 @@ export async function generatePlan(params: {
   // any one fails the validated plan is discarded.
   const planId = await db.transaction(async (tx) => {
     if (params.agentTaskRunId) {
-      if (!params.leaseToken || !params.flightSearchPreferencesVersion) throw new Error("Planning task lease authority is incomplete");
+      if (!params.leaseToken || !params.flightSearchPreferencesVersion || (hotelEnabled && !params.staySearchPreferencesVersion)) throw new Error("Planning task lease authority is incomplete");
       const [currentTask] = await tx.select().from(agentTaskRuns).where(and(
         eq(agentTaskRuns.id, params.agentTaskRunId), eq(agentTaskRuns.leaseToken, params.leaseToken),
         eq(agentTaskRuns.status, "RUNNING"), eq(agentTaskRuns.snapshotId, params.snapshotId),
         gt(agentTaskRuns.leaseExpiresAt, new Date()),
       )).limit(1);
       const [latestPreference] = await tx.select().from(tripSearchPreferences).where(eq(tripSearchPreferences.tripId, params.tripId)).orderBy(desc(tripSearchPreferences.version)).limit(1);
-      if (!currentTask || latestPreference?.version !== params.flightSearchPreferencesVersion) {
+      const [latestStayPreference] = hotelEnabled
+        ? await tx.select().from(tripStaySearchPreferences).where(eq(tripStaySearchPreferences.tripId, params.tripId)).orderBy(desc(tripStaySearchPreferences.version)).limit(1)
+        : [];
+      if (!currentTask || latestPreference?.version !== params.flightSearchPreferencesVersion
+        || (hotelEnabled && latestStayPreference?.version !== params.staySearchPreferencesVersion)) {
         throw new Error("Planning task is stale or no longer owns finalization");
       }
       // This is the authoritative completion gate.  The earlier beforeFinal
@@ -737,6 +946,15 @@ export async function generatePlan(params: {
       // auditable gap rather than a fatal condition. MISSING cells (the
       // planner never even tried) still hard-fail the round.
       if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
+      if (hotelEnabled) {
+        const hotelMatrix = await evaluateHotelResearchCompleteness({
+          snapshotId: params.snapshotId,
+          agentTaskRunId: params.agentTaskRunId,
+          destinationCandidates: snapshot.destinationCandidates as string[],
+          client: tx,
+        });
+        if (!hotelMatrix.complete) throw new HotelResearchIncompleteError(hotelMatrix.cells);
+      }
       if (activitiesEnabled) {
         const activitiesMatrix = await evaluateActivitiesResearchCompleteness({
           snapshotId: params.snapshotId,
@@ -793,6 +1011,16 @@ export async function generatePlan(params: {
         providerName: "viator_mcp",
         offer,
       })),
+      ...allHotels.map(offer => ({
+        category: "hotel",
+        providerName: offer.providerName,
+        offer,
+      })),
+      ...allAccommodations.map(offer => ({
+        category: "accommodation",
+        providerName: "opentripmap",
+        offer,
+      })),
     ];
 
     await tx.insert(providerOffers).values(normalizedOffers.map(({ category, providerName, offer }) => ({
@@ -827,6 +1055,8 @@ export async function generatePlan(params: {
     // becomes `COMPLETED_WITH_GAPS` rather than `COMPLETED`.
     let flightMatrixGaps: ReturnType<typeof flightMatrixToGaps> = [];
     let activityMatrixGaps: ReturnType<typeof activitiesMatrixToGaps> = [];
+    let hotelMatrixGaps: ReturnType<typeof hotelMatrixToGaps> = [];
+    let accommodationMatrixGaps: ReturnType<typeof accommodationMatrixToGaps> = [];
     if (params.agentTaskRunId) {
       const finalMatrix = await evaluateFlightResearchCompleteness({
         snapshotId: params.snapshotId,
@@ -845,6 +1075,19 @@ export async function generatePlan(params: {
         });
         activityMatrixGaps = activitiesMatrixToGaps(finalActivitiesMatrix.cells);
       }
+      if (hotelEnabled) {
+        const finalHotelMatrix = await evaluateHotelResearchCompleteness({ snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId, destinationCandidates: snapshot.destinationCandidates as string[], client: tx });
+        hotelMatrixGaps = hotelMatrixToGaps(finalHotelMatrix.cells);
+      }
+      if (accommodationDiscoveryEnabled) {
+        const finalAccommodationMatrix = await evaluateAccommodationResearchCompleteness({
+          snapshotId: params.snapshotId,
+          agentTaskRunId: params.agentTaskRunId,
+          destinationCandidates: snapshot.destinationCandidates as string[],
+          client: tx,
+        });
+        accommodationMatrixGaps = accommodationMatrixToGaps(finalAccommodationMatrix.cells);
+      }
     }
     const { gaps: capabilityGaps } = summarizeProviderGaps({
       requiredOrigins: snapshot.departureCities as string[],
@@ -858,6 +1101,8 @@ export async function generatePlan(params: {
         destinationId: g.destinationId,
       })),
       ...activityMatrixGaps,
+      ...hotelMatrixGaps,
+      ...accommodationMatrixGaps,
       ...capabilityGaps.map((g) => ({ capability: g.capability, code: g.code })),
     ];
     // For the Phase 4 MVP we keep the matrix surface small: any UNAVAILABLE

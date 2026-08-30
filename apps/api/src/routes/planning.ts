@@ -2,18 +2,30 @@ import { eq, and, desc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
-import { sharedTrips, tripMembers, tripSearchPreferences } from "../db/schema.js";
+import { sharedTrips, tripMembers, tripSearchPreferences, tripStaySearchPreferences } from "../db/schema.js";
 import { planRequestSchema } from "../types/schemas.js";
 import { createConstraintSnapshot, getLatestActivePlan } from "../services/planning-service.js";
-import { acceptPlanningTask, getLatestAuthorizedPlanningRun } from "../tasks/task-repository.js";
+import { acceptResearchTask, getLatestAuthorizedPlanningRun } from "../tasks/task-repository.js";
 import { requireActiveTrip } from "../services/trip-status-guard.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
+import { personalResearchCapabilitySchema } from "../types/schemas.js";
+import {
+  PlanAdoptionServiceError,
+  planAdoptionErrorToApiError,
+  soloAdoptProposedPlan,
+} from "../services/plan-adoption-service.js";
+
+const FULL_CAPABILITY_SET: readonly string[] = personalResearchCapabilitySchema.options;
 
 export async function planningRoutes(app: FastifyInstance) {
-  // Generate plans for a trip — produces one plan per destination candidate
-  // (so two to three destinations all get their own flights/stay/ground and
-  // visa checks, each anchored to the same shared snapshot).
+  // Phase 2 — Legacy `POST /planning/generate` is now a thin wrapper around
+  // the Personal Trip Orchestrator research command. It builds the same
+  // immutable snapshot, calls `acceptResearchTask` with
+  // `outputMode: "PROPOSE_PLAN"` and the full capability set, and rewrites
+  // the response's `operation` to `"PLAN"` so the public contract stays
+  // backward-compatible (existing tests assert `operation: "PLAN"`).
+  // New clients should call `POST /api/v1/trips/:tripId/research` directly.
   app.post("/planning/generate", async (request, reply) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
     const body = planRequestSchema.parse(request.body);
@@ -60,12 +72,56 @@ export async function planningRoutes(app: FastifyInstance) {
       .where(eq(tripSearchPreferences.tripId, body.tripId))
       .orderBy(desc(tripSearchPreferences.version)).limit(1);
     if (!latestPreference[0]) throw new ApiError(422, "Unprocessable Entity", "Confirmed flight search preferences are required");
-    const accepted = await acceptPlanningTask({
+    const latestStayPreference = process.env.PLAN_ENABLE_HOTEL === "true"
+      ? await db.select().from(tripStaySearchPreferences).where(eq(tripStaySearchPreferences.tripId, body.tripId)).orderBy(desc(tripStaySearchPreferences.version)).limit(1)
+      : [];
+    if (process.env.PLAN_ENABLE_HOTEL === "true" && !latestStayPreference[0]) {
+      throw new ApiError(422, "Unprocessable Entity", "Confirmed stay search preferences are required");
+    }
+
+    const accepted = await acceptResearchTask({
       ctx, tripId: body.tripId, userId: request.user.id, snapshotId,
       flightSearchPreferencesVersion: latestPreference[0].version,
-      operation: "PLAN", requestId: request.clientRequestId ?? randomUUID(),
+      staySearchPreferencesVersion: latestStayPreference[0]?.version ?? undefined,
+      outputMode: "PROPOSE_PLAN",
+      requestedCapabilities: FULL_CAPABILITY_SET,
+      requestId: request.clientRequestId ?? randomUUID(),
     });
-    return reply.code(202).send({ ...accepted, snapshotId });
+    // Rewrite operation label for the legacy public contract.
+    return reply.code(202).send({
+      runId: accepted.runId,
+      operation: "PLAN" as const,
+      status: accepted.status,
+      generationAttempt: accepted.generationAttempt,
+      snapshotId: accepted.snapshotId,
+    });
+  });
+
+  /**
+   * Phase 3 — Solo plan adoption. Owner `ACCEPT` flips the `PROPOSED` plan
+   * to `ACTIVE` in a single round trip. Rejects TEAM trips with 403 NOT_SOLO
+   * (the team flow is `POST /plans/:planId/adoption-votes`).
+   */
+  app.post("/plans/:planId/accept-solo", async (request, reply) => {
+    const ctx = createRequestContext(
+      request.user.id, request.correlationId, request.traceId,
+      request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
+    );
+    const { planId } = request.params as { planId: string };
+
+    try {
+      const result = await soloAdoptProposedPlan({
+        ctx,
+        planId,
+        userId: request.user.id,
+      });
+      return reply.code(200).send(result);
+    } catch (err) {
+      if (err instanceof PlanAdoptionServiceError) {
+        throw planAdoptionErrorToApiError(err);
+      }
+      throw err;
+    }
   });
 
   app.get("/planning/:tripId/latest", async (request) => {

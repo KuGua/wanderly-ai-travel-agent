@@ -7,6 +7,7 @@ import type { ConstraintSnapshotData, PlaceCandidate } from "../types/domain.js"
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 import { metrics } from "../observability/metrics.js";
+import { resolveTripDestinationReference } from "./destination-reference-service.js";
 
 /**
  * Spec §5.1 — Shared `places.search` input/output schemas.
@@ -117,6 +118,7 @@ export async function executeAndPersistPlaceSearch(params: {
   agentTaskRunId?: string;
   input: PlaceSearchInput;
   provider: PlaceSearchProvider;
+  resolveDestinationReference?: typeof resolveTripDestinationReference;
   signal?: AbortSignal;
 }): Promise<ProviderResult<PlaceCandidate[]> & { queryId?: string }> {
   const fingerprint = createHash("sha256").update(JSON.stringify({
@@ -130,14 +132,18 @@ export async function executeAndPersistPlaceSearch(params: {
     tripId: params.tripId,
     summary: { provider: "openrouteservice", operation: "place_search" },
   });
-  const result = await params.provider.searchPlaces({
+  const destination = await (params.resolveDestinationReference ?? resolveTripDestinationReference)({
+    tripId: params.tripId,
     destinationId: params.input.destinationId,
+  });
+  const result = destination ? await params.provider.searchPlaces({
+    destination,
     keyword: params.input.keyword,
     category: params.input.category,
     snapshotId: params.input.snapshotId,
     runId: params.agentTaskRunId,
     signal: params.signal,
-  });
+  }) : { outcome: "UNAVAILABLE" as const, reason: "SEARCH_CONSTRAINTS_INCOMPLETE" as const };
   const [searchRun] = await db.transaction(async (tx) => {
     const [run] = await tx.insert(providerSearchRuns).values({
       snapshotId: params.snapshotId,

@@ -3,7 +3,7 @@
 import { ExternalLink, PanelRight, Pencil, Plus, UserPlus, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
 import { SharedPlanningPanel } from "@/components/trips/shared-planning-panel";
@@ -20,9 +20,11 @@ import {
   useResearchResult,
   useTrip,
   useTripThreads,
+  useUpdateDraftTripBrief,
   useUpdateTripTitle,
 } from "@/lib/query/hooks";
 import { TravelApiError } from "@/lib/api/errors";
+import type { TripDetail } from "@/lib/api/contracts";
 
 const DEFAULT_THREAD_QUERY = "thread";
 
@@ -374,17 +376,10 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               <span className="hidden sm:inline">{t("workspace.agentChip")}</span>
             </span>
             {callerRole === "CREATOR" ? (
-              trip.status === "DRAFT" ? (
-                <button type="button" disabled aria-label={t("workspace.invitation.compactTrigger")} title={t("workspace.invitation.draftHint")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm disabled:cursor-not-allowed disabled:opacity-50 xl:hidden">
-                  <UserPlus aria-hidden="true" className="size-4" />
-                  <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
-                </button>
-              ) : (
-                <Link href={`/trips/${tripId}/invite`} aria-label={t("workspace.invitation.compactTrigger")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden">
-                  <UserPlus aria-hidden="true" className="size-4" />
-                  <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
-                </Link>
-              )
+              <Link href={`/trips/${tripId}/invite`} aria-label={t("workspace.invitation.compactTrigger")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden">
+                <UserPlus aria-hidden="true" className="size-4" />
+                <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
+              </Link>
             ) : null}
             <button
               type="button"
@@ -419,17 +414,10 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             inspector's rule lines up with the history and chat headers. */}
         <header className="flex h-[66px] items-center justify-end gap-2 border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
           {callerRole === "CREATOR" ? (
-            trip.status === "DRAFT" ? (
-              <button type="button" disabled title={t("workspace.invitation.draftHint")} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
-                <UserPlus aria-hidden="true" className="size-4" />
-                {t("workspace.invitation.trigger")}
-              </button>
-            ) : (
-              <Link href={`/trips/${tripId}/invite`} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
-                <UserPlus aria-hidden="true" className="size-4" />
-                {t("workspace.invitation.trigger")}
-              </Link>
-            )
+            <Link href={`/trips/${tripId}/invite`} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+              <UserPlus aria-hidden="true" className="size-4" />
+              {t("workspace.invitation.trigger")}
+            </Link>
           ) : null}
           <button
             type="button"
@@ -477,6 +465,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                 </div>
                 {trip.status === "DRAFT" && callerRole === "CREATOR" ? (
                   <div className="mt-3">
+                    <DraftBriefEditor trip={trip} />
                     <p className="text-[11px] leading-4 text-muted-foreground">{t("workspace.draftActivationHint")}</p>
                     <button
                       type="button"
@@ -571,4 +560,51 @@ function ResearchGapBannerWrapper({ tripId }: { tripId: string }) {
   const research = useResearchResult(tripId);
   if (!research.data || research.isLoading) return null;
   return <ResearchGapBanner result={research.data} />;
+}
+
+function DraftBriefEditor({ trip }: { trip: TripDetail }) {
+  const t = useTranslations("trips.workspace.draftBrief");
+  const locale = useLocale();
+  const update = useUpdateDraftTripBrief(trip.id);
+  const [departureCities, setDepartureCities] = useState(trip.departureCities.join(", "));
+  const [destinations, setDestinations] = useState(trip.destinationCandidates.join(", "));
+  const [travelDateStart, setTravelDateStart] = useState(trip.travelDateStart ?? "");
+  const [travelDateEnd, setTravelDateEnd] = useState(trip.travelDateEnd ?? "");
+
+  function splitValues(value: string): string[] {
+    return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (update.isPending) return;
+    await update.mutateAsync({
+      departureCities: splitValues(departureCities),
+      destinationCandidates: splitValues(destinations),
+      replaceDestinationCandidates: true,
+      travelDateStart: travelDateStart || null,
+      travelDateEnd: travelDateEnd || null,
+      titleLocale: locale === "zh" ? "zh" : "en",
+    });
+  }
+
+  return (
+    <form onSubmit={(event) => void save(event)} className="mb-3 grid gap-2 border-b border-dashed border-[var(--w-ink)] pb-3">
+      <p className="text-xs font-bold">{t("title")}</p>
+      <label className="grid gap-1 text-[11px] font-bold">
+        {t("departure")}
+        <input value={departureCities} onChange={(event) => setDepartureCities(event.target.value)} placeholder={t("departurePlaceholder")} className="min-h-9 border bg-background px-2 text-xs" />
+      </label>
+      <label className="grid gap-1 text-[11px] font-bold">
+        {t("destinations")}
+        <input value={destinations} onChange={(event) => setDestinations(event.target.value)} placeholder={t("destinationsPlaceholder")} className="min-h-9 border bg-background px-2 text-xs" />
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="grid gap-1 text-[11px] font-bold">{t("startDate")}<input type="date" value={travelDateStart} onChange={(event) => setTravelDateStart(event.target.value)} className="min-h-9 border bg-background px-2 text-xs" /></label>
+        <label className="grid gap-1 text-[11px] font-bold">{t("endDate")}<input type="date" value={travelDateEnd} onChange={(event) => setTravelDateEnd(event.target.value)} className="min-h-9 border bg-background px-2 text-xs" /></label>
+      </div>
+      <button type="submit" disabled={update.isPending} className="min-h-9 bg-card px-2 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs disabled:opacity-50">{update.isPending ? t("saving") : t("save")}</button>
+      {update.isError ? <p role="alert" className="text-[11px] text-destructive">{t("saveError")}</p> : null}
+    </form>
+  );
 }

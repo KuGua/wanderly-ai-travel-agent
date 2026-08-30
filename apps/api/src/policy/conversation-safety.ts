@@ -117,6 +117,21 @@ export function safeConversationRefusal(): ConversationReply {
   };
 }
 
+/**
+ * Returned when the LLM gateway exhausted its retry budget on transient
+ * upstream errors. Distinct from `SAFE_REFUSAL` (which is policy-driven):
+ * `FALLBACK` means "the model never produced a usable answer" and the UI is
+ * expected to surface this as a system-degradation notice rather than treat
+ * it as a model response. Content respects the same safety boundary as the
+ * system prompt (no price / inventory / visa / booking / flight-status claims).
+ */
+export function safeConversationFallback(): ConversationReply {
+  return {
+    content: "I can't reach the conversation model right now — please try again in a moment.",
+    responseMode: "FALLBACK",
+  };
+}
+
 function normalizePolicyText(value: string): string {
   return value.normalize("NFKC")
     .toLowerCase()

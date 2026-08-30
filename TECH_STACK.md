@@ -58,7 +58,7 @@ Amazon RDS for PostgreSQL
 
 `/home` 进入只创建浏览器内存中的探索会话，不立即写数据库；地图浏览、坐标点击和打开聊天均不持久化业务状态。稳定地点点击可读取或刷新全局、非个性化的地点介绍缓存，但不得创建任何用户、Trip、thread、message、授权或审计业务记录。用户提交第一条聊天消息时，Fastify 通过幂等、单事务的 `POST /explorations/start` 创建 `DRAFT` Trip、创建者 membership 与默认私有 thread，随后浏览器调用既有 thread turn endpoint。每次新标签页、整页刷新或重新打开开始新的内存会话；同一标签页内客户端路由切换保留该会话。不得使用 URL、`localStorage` 或 `sessionStorage` 恢复当前探索 Trip。地点介绍的完整实施契约见 [地点介绍共享缓存实施方案](docs/location-introduction-cache-implementation.md)。
 
-`DRAFT` 仅允许私有探索对话与编辑 brief，不能邀请、授权、创建 snapshot、planning/replan、确认或 booking。只有 creator 显式“开始规划/邀请同行者”且 brief 满足正式约束后，服务端才将其激活为 `PLANNING`。实现细节见 [探索会话与 Trip 生命周期实施方案](docs/exploration-trip-lifecycle-implementation.md)。
+`DRAFT` 仅允许私有探索对话、creator 编辑 brief、创建者向受邀者发送邀请（受邀者只能看到最小行程名与 `DRAFT` 状态，不可读取创建者私有对话或未确认的探索内容），但禁止授权、创建 snapshot、planning/replan、确认或 booking。只有 creator 显式“开始规划/邀请同行者”且 brief 满足正式约束后，服务端才将其激活为 `PLANNING`。实现细节见 [探索会话与 Trip 生命周期实施方案](docs/exploration-trip-lifecycle-implementation.md)。
 
 ## 3. 为什么不用 SQLite 作主数据库
 
@@ -89,6 +89,12 @@ Agent 不能自行跨越以下边界：
 - 不能推断未授权国籍；
 - 不能把 provider 返回值当作永久真相；
 - 不能自动扣款、自动预订或绕过任一成员确认。
+
+### 单人 Trip 编排模式
+
+同一受控 `TripOrchestrator` 同时服务单人和多人 Trip；`Personal Agent` 是 owner 私聊入口、补问与受控命令发起者，而不是 provider/tool 的直接调用者。单人 Trip 只有一位 required member，使用该 owner 明确授权的最小 snapshot；多人 Trip 使用全体成员授权汇总的 snapshot。两种模式均通过 PostgreSQL durable Worker、Shared Skill registry、typed provider adapter、evidence validator 和 plan 状态机执行，绝不新建 Personal 专属 provider、evidence store 或自由 Agent-to-Agent 通道。
+
+单人用户必须先显式激活完整 Trip 才能发起外部 research；单人允许 1–5 个目的地候选，多人保持 2–3 个。owner 确认 research command 后，Worker 可按 feature flag 和 provider 准入调用全部 Shared tools：Flight、Accommodation discovery、Hotel、Activities、Places、Navigation、Mobility 与 Readiness。`PROPOSE_PLAN` 自动生成第一版 `PROPOSED` plan 供 owner 查看；owner 的显式 adoption 才能将其变为 `ACTIVE`，booking 仍须经过既有显式确认 gate。详细合同见 [单人行程编排实施规范](docs/personal-trip-orchestration-implementation.md)。
 
 酒店住宿的确认实施契约见 [酒店实时搜索与方案比较实施方案](docs/hotel-search-tool-implementation.md)：首期仅搜索与比较，不能创建供应商订单、支付或跳转预订；税费不完整时必须展示“可能另计”。
 
@@ -121,13 +127,14 @@ Personal Agent 只能把私有输入转化为 owner 确认的、字段目录允�
 |---|---|---|---|
 | Flight | Amadeus Self-Service、FlightAPI.io 或 SerpAPI Google Flights adapter | 每个目的地候选仅使用由 `FLIGHT_PROVIDER` 显式选择的可验证 provider 查询结果；自动化测试只用 mock HTTP，失败则返回 `UNAVAILABLE` | 供应商覆盖、商业条款、报价过期和模型 Tool-calling 兼容性必须在启用前验证；供应商 key/完整 URL 不进入遥测或持久化。 |
 | Activities | Viator 官方 Experiences MCP adapter | Shared Agent 可在 PLAN/REPLAN durable task 内为 snapshot 中每个候选目的地调用 provider-neutral `activities.search`。服务端注入 snapshot/run/date authority，adapter 严格验证 MCP 响应并丢弃 click-off link 与无币种 `fromPrice`。失败、超时、限流、空数据或 schema drift 返回 `UNAVAILABLE`，不以 fixture 或模型内容替代。Personal Tool-loop 暂缓，直到 owner-scoped streaming tool boundary 单独实施。 | 公开 MCP 当前无需 key，但未公布固定配额或 SLA；默认 feature flag 关闭。协议/字段漂移必须 fail closed，并以 adapter contract test 监控。 |
+| Accommodation / hotel | OpenTripMap accommodation discovery + SerpApi Google Hotels quote adapter | `accommodation.discover` 以 server-owned 城市中心坐标返回无价格住宿骨架；只有确认日期、单房住客数和币种后才开放 `hotel.search` 实时报价。两者均先解析完整 `DestinationReference`，歧义时 fail closed；SerpApi 返回项还必须通过坐标半径校验。 | OpenTripMap 免费计划仅适合非商业 Hackathon（5,000 次/日、10 次/秒、无 SLA），必须显示 OSM attribution；SerpApi 免费额度有限且首期只支持单房。商业发布前重新审核许可/额度，不得将 discovery 当作价格、库存或可预订性。 |
 | Ground place/navigation | openrouteservice Geocoding/POI + Directions；`TripPlace` server-owned reference | Shared Agent 可受限关键词搜索并在两个已授权 POI 之间生成步行/驾车/骑行路线；显示 geometry、距离、时长、步骤、source/captured_at 与归因。缺失仅形成 gap，不阻断其他 research。 | 全球查询不等于全球覆盖或实时交通；关键词、名称、地址、坐标和 geometry 是受保护 Trip 数据，不进 telemetry。 |
 | Ground commercial mobility | Amadeus Transfer Search adapter（可选启用） | 可显示 taxi、接送、包车等真实报价或估价及其来源/有效期；不下单、不透传 booking link。 | 租车、公共交通实时和全球商业覆盖必须由独立 port/provider 验证；不能从 ORS 路线推导价格或班次。 |
 | Budget | Frankfurter adapter | 归一化候选总预算；显示汇率日期与“参考汇率” | 不能被当作支付或结算汇率；API 不可用时显示不可用。 |
 | Visa readiness | `VisaProvider`；Sherpa Requirements API 为首选接入目标 | 候选比较对每名授权成员/目的地运行 destination-level readiness，并明确“选定航班后再完成过境核验”；用户选择有效 flight offer 后，按实际 destination/transit airport route 运行 route-level readiness。 | provider 合同、覆盖、DPA、生产凭据与 SLA 未验证前保持 `disabled`/`UNAVAILABLE`；不得声称实时正确、可入境或给法律建议。 |
 | Map relief | [GEBCO WMS](https://www.gebco.net/data-products/gebco-web-services/web-map-service) | `GEBCO_LATEST` shaded relief 作为不透明全球海陆纹理；OpenFreeMap 矢量细节覆盖其上 | 公共服务无 SLA；失败时回退 Liberty Natural Earth；保留 attribution，并显示/记录“不用于航海”边界。 |
 
-**明确延期：** Open-Meteo、Overpass/Wikimedia、Nager.Holidays、第二个 POI/路线 provider、公共交通实时 provider、租车 provider、Google Calendar。ORS Place/POI、Directions 与 Amadeus Transfer Search 由本规范定义为受控首期能力；其他 provider 必须单独验证覆盖、许可、归因、限流与隐私边界后接入。Google Calendar 尤其会增加 OAuth 和隐私风险；以后如做，仅从最小 `freebusy` 权限开始。[Google Calendar scopes](https://developers.google.com/workspace/calendar/api/auth)
+**明确延期：** Open-Meteo、Overpass/Wikimedia、Nager.Holidays、OpenTripMap 以外的第二个 POI/路线 provider、公共交通实时 provider、租车 provider、Google Calendar。ORS Place/POI、Directions、OpenTripMap accommodation discovery 与 Amadeus Transfer Search 由本规范定义为受控首期能力；其他 provider 必须单独验证覆盖、许可、归因、限流与隐私边界后接入。Google Calendar 尤其会增加 OAuth 和隐私风险；以后如做，仅从最小 `freebusy` 权限开始。[Google Calendar scopes](https://developers.google.com/workspace/calendar/api/auth)
 
 地面出行的模块、数据、状态与测试级实施契约见 [全球 POI 与地面出行实施规范](docs/ground-mobility-implementation.md)。
 

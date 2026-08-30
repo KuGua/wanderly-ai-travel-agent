@@ -21,7 +21,7 @@ function makeStartResponse(): ExplorationStartResponse {
     trip: {
       id: TRIP_ID,
       name: "Untitled exploration",
-      status: "PLANNING",
+      status: "DRAFT",
       departureCities: [],
       destinationCandidates: [],
       travelDateStart: null,

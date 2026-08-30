@@ -105,6 +105,36 @@ export const testPlanningDependencies: PlanningDependencies = {
         generatedAt: CAPTURED_AT,
       };
     },
+    async generateStructuredPlanWithTools(params) {
+      // Tool-loop path used by `generatePlan` when agentTaskRunId is set.
+      // `params.stays` is supplied; `params.flights` may be absent because the
+      // planner re-validates flights via `evaluateFlightResearchCompleteness`
+      // (DB read). The stub returns a fully-formed plan so the deterministic
+      // validator accepts it; for tests where a flight exists upstream the
+      // caller may pass `{ flights }` to inject one.
+      const flights = params.flights ?? [];
+      const stays = params.stays ?? [];
+      const firstStay = stays[0];
+      if (!firstStay) {
+        throw new Error(
+          `testPlanningDependencies requires at least one stay (got stays=${stays.length})`,
+        );
+      }
+      const fallbackCapturedAt = firstStay.capturedAt ?? "2026-08-25T00:00:00.000Z";
+      return {
+        destination: params.destination,
+        destinationCandidatesEvaluated: [params.destination],
+        flights, // pass through — validatePlanOutput compares against provider_offers
+        stays: [firstStay],
+        activities: [],
+        hotels: [],
+        generatedAt: fallbackCapturedAt,
+        checkIn: firstStay.checkIn,
+        checkOut: firstStay.checkOut,
+        constraintReferences: [],
+        publicExplanationTokens: ["baseline"],
+      };
+    },
     async explainPlanDiff() {
       return { added: [], removed: [], changed: [] };
     },

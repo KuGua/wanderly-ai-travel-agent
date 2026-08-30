@@ -33,6 +33,34 @@ describe("LocationReferenceResolver", () => {
     });
   });
 
+  it("resolves a city label into a provider-safe destination reference", () => {
+    expect(resolver.resolveDestinationReference({
+      destinationId: "candidate-1",
+      cityName: "Example City",
+      countryHint: "TL",
+    })).toEqual({
+      destinationId: "candidate-1",
+      cityName: "Example City",
+      countryCode: "TL",
+      latitude: 5,
+      longitude: 5,
+    });
+  });
+
+  it("fails closed when a city label is ambiguous across countries", () => {
+    const ambiguous = new LocationReferenceResolver([
+      { properties: { ADMIN: "One", ISO_A2: "AA" }, geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } },
+      { properties: { ADMIN: "Two", ISO_A2: "BB" }, geometry: { type: "Polygon", coordinates: [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] } },
+    ], [
+      { name: "Springfield", countryCode: "AA", latitude: 0.5, longitude: 0.5 },
+      { name: "Springfield", countryCode: "BB", latitude: 0.5, longitude: 2.5 },
+    ], [], { version: "test.1", checkedAt: "2026-08-25T00:00:00.000Z" });
+    expect(ambiguous.resolveDestinationReference({ destinationId: "springfield", cityName: "Springfield" })).toBeNull();
+    expect(ambiguous.resolveDestinationReference({
+      destinationId: "springfield-aa", cityName: "Springfield", countryHint: "AA",
+    })).toMatchObject({ countryCode: "AA", longitude: 0.5 });
+  });
+
   it("does not fabricate a city when the closest indexed city is too distant", () => {
     const reference = resolver.resolve(0.1, 0.1);
     expect(reference).toMatchObject({

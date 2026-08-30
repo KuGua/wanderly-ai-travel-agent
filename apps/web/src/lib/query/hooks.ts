@@ -24,7 +24,7 @@ import type {
   MobilityOfferSelectionRequest,
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
-import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys, invitationKeys } from "./keys";
+import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys, invitationKeys, personalOrchestrationKeys } from "./keys";
 
 export function useMyProfile() {
   const api = useTravelApi();
@@ -175,16 +175,6 @@ export function useAcceptInvitation() {
 export function useDeclineInvitation() {
   const api = useTravelApi();
   return useMutation({ mutationFn: (inviteToken: string) => api.declineInvitation!(inviteToken) });
-}
-
-export function useSearchTripInvitees(tripId: string, query: string, enabled: boolean) {
-  const api = useTravelApi();
-  return useQuery({
-    queryKey: invitationKeys.invitees(tripId, query),
-    queryFn: () => api.searchTripInvitees!(tripId, query),
-    enabled: enabled && query.trim().length >= 2 && !!api.searchTripInvitees,
-    retry: false,
-  });
 }
 
 export function useCreateTripInvitation(tripId: string) {
@@ -351,6 +341,22 @@ export function useStartPlanning(tripId: string) {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: tripKeys.planningRun(tripId) });
+    },
+  });
+}
+
+/** Creator-only edits to the private Draft brief, before activation. */
+export function useUpdateDraftTripBrief(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: import("../api/contracts").UpdateDraftTripBriefInput) => {
+      if (!api.updateDraftTripBrief) throw new Error("Draft brief updates are unavailable");
+      return api.updateDraftTripBrief(tripId, input);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.all });
+      void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
     },
   });
 }
@@ -523,6 +529,43 @@ export function useResearchResult(tripId: string, agentTaskRunId?: string) {
     queryKey: [...tripKeys.researchResults(tripId), agentTaskRunId ?? "latest"],
     queryFn: () => api.getResearchResult!(tripId, agentTaskRunId),
     enabled: !!api.getResearchResult,
+  });
+}
+
+// ── Phase 6 / Personal Trip Orchestrator ────────────────────────────────────
+export function useLatestResearchResult(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: personalOrchestrationKeys.researchLatest(tripId),
+    queryFn: () => api.getLatestResearchResult!(tripId),
+    enabled: !!api.getLatestResearchResult,
+  });
+}
+
+export function useConfirmResearchCommand(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: import("../api/contracts").ResearchCommandRequest) =>
+      api.postResearchCommand!(tripId, input, { idempotencyKey: input.requestId }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: personalOrchestrationKeys.researchLatest(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.researchResults(tripId) });
+      void vars; // keep TS happy
+    },
+  });
+}
+
+export function useSoloAdoptPlan(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (planId: string) => api.acceptSoloPlan!(planId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: personalOrchestrationKeys.proposedPlans(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
   });
 }
 

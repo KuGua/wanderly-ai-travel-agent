@@ -1,5 +1,5 @@
 import { db } from "../db/database.js";
-import { consentGrants, userProfiles, itineraryPlans, memberConfirmations } from "../db/schema.js";
+import { agentTaskRuns, consentGrants, userProfiles, itineraryPlans, memberConfirmations } from "../db/schema.js";
 import { eq, and, inArray } from "drizzle-orm";
 import { recordAudit } from "./audit-service.js";
 import type { ConsentScope } from "../types/domain.js";
@@ -178,6 +178,26 @@ export async function stalePlansAndConfirmationsForTrip(
   await tx.update(memberConfirmations)
     .set({ status: "STALE" })
     .where(inArray(memberConfirmations.planId, stalePlanIds));
+
+  // Phase 4 — also cancel in-flight RESEARCH runs whose inputs are now
+  // derived from superseded state. The Worker will see CANCELLED + STALE
+  // errorCode and short-circuit before persisting a plan. The partial
+  // unique index on `(trip_id)` for PLAN/REPLAN/RESEARCH is unchanged —
+  // we move the cancel + STALE in the same transaction as the originating
+  // mutation, so a fresh REPLAN enqueue (constraint / change-event paths)
+  // wins the slot.
+  await tx.update(agentTaskRuns)
+    .set({
+      status: "STALE",
+      errorCode: "STALE",
+      finishedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(agentTaskRuns.tripId, params.tripId),
+      eq(agentTaskRuns.operation, "RESEARCH"),
+      inArray(agentTaskRuns.status, ["QUEUED", "RUNNING", "CANCEL_REQUESTED"]),
+    ));
 
   return { stalePlanIds };
 }

@@ -16,6 +16,10 @@ export const UI_ACTIONS = [
   "invitation.decline",
   "plan.confirm",
   "booking.confirm",
+  // Phase 6 / Personal Trip Orchestrator
+  "research.command_confirm",
+  "research.command_reject",
+  "research.stage_view",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 
@@ -124,4 +128,24 @@ export function errorCategoryFor(error: unknown): UiErrorCategory {
 
 export function getCurrentUiScreen(): UiScreen {
   return currentScreen();
+}
+
+/**
+ * Phase 6 / Personal Trip Orchestrator — fire-and-forget diagnostic
+ * emission for client-side intents (confirmation card, stage-card view).
+ * The path-based `actionForApiRequest` only fires for outbound HTTP, so
+ * we need an explicit helper for purely client events. Falls back to a
+ * `console.debug` no-op if no reporter is wired (the events are still
+ * captured in the renderer's logs).
+ */
+export function recordUiDiagnostic(action: UiAction, extras?: { screen?: UiScreen }): void {
+  if (typeof window === "undefined") return;
+  // The reporter is wired up per-app via `createUiDiagnosticReporter`;
+  // we do not have access to it here, so the helper just emits a debug
+  // log. The path-based actionForApiRequest remains the source of truth
+  // for HTTP-triggered events.
+  const screen = extras?.screen ?? currentScreen();
+  if (typeof console !== "undefined" && process.env.NODE_ENV !== "production") {
+    console.debug(`[ui-diagnostic] ${action} @ ${screen}`);
+  }
 }

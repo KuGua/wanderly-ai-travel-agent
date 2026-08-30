@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import type { DestinationReference } from "../types/domain.js";
 
 export type LocationReference =
   | {
@@ -26,7 +27,13 @@ export type LocationReference =
 
 type Position = [number, number];
 type CountryFeature = {
-  properties: { ADMIN?: string; ISO_A2?: string };
+  properties: {
+    ADMIN?: string;
+    ISO_A2?: string;
+    ADM0_A3?: string;
+    NAME_EN?: string;
+    NAME_ZH?: string;
+  };
   bbox?: [number, number, number, number];
   geometry: { type: "Polygon" | "MultiPolygon"; coordinates: Position[][] | Position[][][] };
 };
@@ -37,9 +44,11 @@ type Admin1Feature = {
 };
 type City = {
   name: string;
+  alternateNames?: string[];
   countryCode: string;
   latitude: number;
   longitude: number;
+  population?: number;
   featureCode?: string;
   admin1Code?: string;
   admin2Code?: string;
@@ -61,6 +70,8 @@ const AUTHORITY_FEATURE_CODES = new Set(["PPLA", "PPLA2", "PPLC"]);
 export class LocationReferenceResolver {
   private readonly countries: CountryFeature[];
   private readonly citiesByCountry: Map<string, City[]>;
+  private readonly citiesByName: Map<string, City[]>;
+  private readonly countryCodesByName: Map<string, string>;
   private readonly admin1ByCountry: Map<string, Admin1Feature[]>;
   private readonly manifest: Manifest;
 
@@ -73,11 +84,33 @@ export class LocationReferenceResolver {
     this.countries = countries;
     this.manifest = manifest;
     this.citiesByCountry = new Map();
+    this.citiesByName = new Map();
+    this.countryCodesByName = new Map();
     this.admin1ByCountry = new Map();
+    for (const country of countries) {
+      const countryCode = normalizedCountryCode(country.properties.ISO_A2);
+      if (!countryCode) continue;
+      for (const alias of [
+        country.properties.ADMIN,
+        country.properties.ISO_A2,
+        country.properties.ADM0_A3,
+        country.properties.NAME_EN,
+        country.properties.NAME_ZH,
+      ]) {
+        if (alias) this.countryCodesByName.set(normalizedName(alias), countryCode);
+      }
+    }
     for (const city of cityLevelProjection(cities)) {
       const grouped = this.citiesByCountry.get(city.countryCode) ?? [];
       grouped.push(city);
       this.citiesByCountry.set(city.countryCode, grouped);
+      for (const alias of [city.name, ...(city.alternateNames ?? [])]) {
+        const key = normalizedName(alias);
+        if (!key) continue;
+        const named = this.citiesByName.get(key) ?? [];
+        named.push(city);
+        this.citiesByName.set(key, named);
+      }
     }
     for (const region of admin1) {
       const countryCode = normalizedCountryCode(region.properties.iso_a2);
@@ -114,6 +147,32 @@ export class LocationReferenceResolver {
       datasetVersion: this.manifest.version,
       checkedAt: this.manifest.checkedAt,
       isTravelFact: false,
+    };
+  }
+
+  /** Resolve a planner-owned city label into a provider-safe reference. */
+  resolveDestinationReference(params: {
+    destinationId: string;
+    cityName: string;
+    countryHint?: string | null;
+  }): DestinationReference | null {
+    const matches = this.citiesByName.get(normalizedName(params.cityName)) ?? [];
+    const hintedCountryCode = params.countryHint
+      ? this.countryCodesByName.get(normalizedName(params.countryHint)) ?? null
+      : null;
+    const narrowed = hintedCountryCode
+      ? matches.filter((city) => city.countryCode === hintedCountryCode)
+      : matches;
+    if (narrowed.length === 0 || new Set(narrowed.map((city) => city.countryCode)).size !== 1) {
+      return null;
+    }
+    const city = [...narrowed].sort((left, right) => (right.population ?? 0) - (left.population ?? 0))[0];
+    return {
+      destinationId: params.destinationId,
+      cityName: city.name,
+      countryCode: city.countryCode,
+      latitude: city.latitude,
+      longitude: city.longitude,
     };
   }
 
@@ -167,14 +226,20 @@ function parseGeoNamesCities(text: string): City[] {
       || (!isAdministrativeSeat && population < MIN_MAJOR_CITY_POPULATION)) return [];
     return [{
       name: fields[1],
+      alternateNames: [fields[2], ...(fields[3]?.split(",") ?? [])].filter(Boolean),
       countryCode,
       latitude,
       longitude,
+      population: Number.isFinite(population) ? population : 0,
       featureCode,
       admin1Code: fields[10] || undefined,
       admin2Code: fields[11] || undefined,
     }];
   });
+}
+
+function normalizedName(value: string): string {
+  return value.normalize("NFKD").replace(/\p{Diacritic}/gu, "").trim().toLocaleLowerCase("en");
 }
 
 function cityLevelProjection(cities: City[]): City[] {

@@ -69,8 +69,11 @@ import type {
   AcceptInvitationResponse,
   DeclineInvitationResponse,
   CreateTripInvitationInput,
-  SearchTripInviteesResponse,
   TripInvitationCreateResponse,
+  ResearchCommandRequest,
+  ResearchCommandAcceptedResponse,
+  LatestResearchResultResponse,
+  SoloAdoptPlanResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -92,7 +95,6 @@ export interface TravelApi {
   getInvitationPreview?(inviteToken: string): Promise<InvitationPreviewResponse>;
   acceptInvitation?(inviteToken: string): Promise<AcceptInvitationResponse>;
   declineInvitation?(inviteToken: string): Promise<DeclineInvitationResponse>;
-  searchTripInvitees?(tripId: string, query: string): Promise<SearchTripInviteesResponse>;
   createTripInvitation?(tripId: string, input: CreateTripInvitationInput): Promise<TripInvitationCreateResponse>;
   getLocationReference(input: LocationReferenceInput): Promise<LocationReferenceResponse>;
   getLocationIntroduction(input: LocationIntroductionInput, options?: { signal?: AbortSignal }): Promise<LocationIntroductionResponse>;
@@ -148,4 +150,9 @@ export interface TravelApi {
   listMobilityOffers?(tripId: string): Promise<MobilityOfferList>;
   searchMobilityOffers?(tripId: string, input: MobilitySearchRequest, options?: { idempotencyKey?: string }): Promise<MobilitySearchResponse>;
   selectMobilityOffer?(tripId: string, input: MobilityOfferSelectionRequest, options?: { idempotencyKey?: string }): Promise<MobilityOfferSelectionResponse>;
+
+  // ── Phase 6 / Personal Trip Orchestrator ────────────────────────────────────
+  postResearchCommand?(tripId: string, input: ResearchCommandRequest, options?: { idempotencyKey?: string }): Promise<ResearchCommandAcceptedResponse>;
+  getLatestResearchResult?(tripId: string): Promise<LatestResearchResultResponse>;
+  acceptSoloPlan?(planId: string, options?: { idempotencyKey?: string }): Promise<SoloAdoptPlanResponse>;
 }

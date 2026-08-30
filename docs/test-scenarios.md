@@ -1,7 +1,7 @@
 # AI Travel Agent — Personal Agents + Shared Trips 测试场景
 
 **对应：** [Backlog](backlog.md) · [PRD](PRD.md)  
-**范围：** 三个虚构用户、两个出发地、两到三个固定目的地候选、至少两种国籍、带来源的航班/酒店/地面交通工具、booking sandbox；不使用真实护照、支付资料或真实签证申请。产品运行时 live API 失败必须返回 `UNAVAILABLE`，不得使用 fixture fallback。
+**范围：** 三个虚构用户的多人场景，以及一位 owner、一个出发地和一个至五个候选目的地的 Solo 场景；带来源的航班/酒店/地面交通工具、booking sandbox；不使用真实护照、支付资料或真实签证申请。产品运行时 live API 失败必须返回 `UNAVAILABLE`，不得使用 fixture fallback。
 
 ## Fixture
 
@@ -654,6 +654,8 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - `audit_events.correlation_id` 上存在索引；按 correlation id 查询审计链的 EXPLAIN 不应触发顺序扫描。
 - **TS-MIG-0005-replay**：连续跑两次 `npm run db:migrate` 后，`enum_range(NULL::audit_action)` 必须包含 `apps/api/src/db/schema.ts:18-28` 列出的所有值，包括 `VISA_CHECK` 与 `PLAN_RESTART`；断言方式为尝试 `recordAudit({ action: "VISA_CHECK", ctx, summary: {} })` 不抛 `invalid input value for enum`。
 - **TS-MIG-0008-legacy-system**：在 develop 的 `0007_remove_demo_provider_state.sql` 之后，从允许浏览器以认证用户身份写入 `USER | SYSTEM` 的 pre-0008 状态开始，迁移必须原地将 `SYSTEM` 规范化为 `USER`，保留消息 ID、thread、sender、正文、脱敏摘要、分享标记和时间戳；随后强制 `USER/non-null sender` 与 `ASSISTANT/null sender`，且再次运行迁移无新增变更。
+- **TS-MIG-0032-email-invitation-replay**：当目标 schema 已具备 `trip_invitations.recipient_email_hash` 与 `recipient_email_masked`，但迁移追踪记录需要重建时，重放 `0032_email_bound_trip_invitations.sql` 必须成功，并重建两条 pending invitation 唯一索引。
+- **TS-MIG-0036-trip-scoped-conversation-task**：在已执行 `0034_personal_research_columns_and_checks.sql` 的升级库上执行 `0036_restore_trip_scoped_conversation_task_constraint.sql` 后，`CONVERSATION` task 必须接受同一可信 Trip 的 `thread_id`、`user_message_id` 与非空 `trip_id`，并拒绝缺少 `trip_id` 的写入；`PLAN`、`REPLAN`、`RESEARCH` 仍必须具备 `trip_id` 与 `snapshot_id`。随后对 `POST /api/v1/threads/:threadId/turns` 发送有效请求必须返回 `202`，而不是约束错误 `500`。
 
 ### TS-OTEL-1 — Inbound `traceparent` propagation through the request lifecycle
 
@@ -709,18 +711,40 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Acceptance is idempotent and creates at most one required membership and one recipient-owned default thread. The post-success primary action is setting the sharing scope; acceptance itself grants no consent or snapshot fields.
 - Decline creates no membership or thread and records `TRIP_INVITATION_DECLINE`; creator revocation remains distinct. Audit summaries contain IDs/status only, never the raw token or private profile data.
 
-### TS-INVITATION-SEARCH-1 — Creator-only account search
+### TS-INVITATION-EMAIL-1 — Email-bound invitation without account enumeration
 
-**Objective:** Verify that the workspace invite control searches only the minimum data needed to select an eligible registered account.
+**Objective:** Verify that the workspace invite control creates an invitation for an email without disclosing whether an account exists.
 
-**Starting conditions:** An active Trip has a creator, at least one existing member, and several registered accounts.
+**Starting conditions:** An active Trip has a creator and at least one existing member.
 
-1. As creator, open `/trips/:tripId/invite` from the right workspace header and verify the current-member list before searching with fewer than two characters, then a matching display-name substring.
-2. Verify each result exposes only display name and opaque ID; it never exposes email, username, profile, nationality, passport data, or invitation tokens.
-3. Verify the creator and existing Trip members are absent. Repeat as a non-creator and for a Draft Trip; expect no usable control and API `403`/`409` respectively.
-4. Select an account, create an invitation, and verify the one-time token link is shown once, has a seven-day expiry, and the creation audit data contains IDs/expiry only.
+1. As creator, open `/trips/:tripId/invite`. At 375px, 768px, 1024px and 1440px widths, verify the invite form and current-member list remain within one responsive workspace, use the standard Wanderly card colors, show translated member roles, and have no horizontal overflow. Enter a valid email and create an invitation. Verify the page returns a one-time link with a seven-day expiry and explicitly says email delivery is not configured.
+2. Verify no API searches users and neither request/response, audit event nor telemetry contains the raw recipient email; storage contains only HMAC and masked display data.
+3. Repeat as a non-creator (expect `403`) and against an archived or cancelled Trip (expect `409 TRIP_NOT_INVITABLE`); a Draft Trip invitation must succeed and the creator control must not be disabled.
+4. Open the link signed out, then sign in or register with the invited email and return to the link. Verify that only the matching email can preview, accept or decline; a different email gets the same unavailable result.
 
-**Expected:** The creator can create an account-bound invitation without account enumeration beyond the narrow search result. The selected recipient must still authenticate and explicitly accept; no consent is created by search, creation, or acceptance.
+**Expected:** The creator can create an email-bound invitation without account enumeration. The recipient must still authenticate (or register) with the invited email and explicitly accept; no consent is created by creation or acceptance.
+
+### TS-INVITATION-DRAFT-1 — Inviting into a Draft keeps the creator's private conversation private
+
+**Stories:** H1, H2, S1
+**Objective:** Verify that a `DRAFT` trip may form a team before activation, while the creator's private conversation, profile and unconfirmed exploration stay hidden from invitees; only the normal collaboration gates (`DRAFT` → `PLANNING`) still block shared planning actions.
+
+**Starting conditions:** Alice owns a Draft Trip in `DRAFT` status; Bob has registered with `bob@example.com`; the system has configured the email-bound invitation HMAC secret.
+
+**Steps:**
+
+1. As Alice, open the workspace invite control. Confirm the control is enabled (not disabled) and links to `/trips/:tripId/invite` with no `DRAFT` restriction copy.
+2. Submit Bob's email and create an email-bound invitation. Confirm a one-time `inviteToken` is returned with a seven-day expiry.
+3. As Bob, open `/trips/join/:inviteToken`. Confirm the preview shows `{ trip.name, status: "DRAFT", destinationCandidates: [], travelDateStart: null, travelDateEnd: null, expiresAt }` and explicitly states that joining grants only a blank private thread.
+4. Accept the invitation as Bob. Confirm Bob is added as a required `MEMBER`, his own blank default `TRIP` thread is provisioned, and Bob's `GET /threads/:creatorThreadId/conversation` returns `403`.
+5. As Alice, complete the Draft brief via `PATCH /trips/:tripId/draft-brief` (departures, destinations, dates) and then `POST /trips/:tripId/activate` to transition to `PLANNING`.
+6. As a separate flow, create a Draft Trip, cancel it, then attempt to create another invitation; expect `409 TRIP_NOT_INVITABLE`. Bob's pending token against a cancelled trip must return `409 TRIP_NOT_INVITABLE` on accept.
+
+**Expected outcomes:**
+
+- Draft invitations create exactly one membership row and one recipient-owned default thread; the creator's existing thread remains invisible to the invitee (`403`).
+- Cancelled or archived trips reject both `POST /trips/:tripId/invitations` and `POST /trip-invitations/:inviteToken/accept` with `409 TRIP_NOT_INVITABLE`. Audit events continue to record only IDs and status, never raw emails or token text.
+- After the creator activates the brief, the team enters the existing PLANNING collaboration flow without re-issuing invitations; Bob's previously accepted membership continues to count as a required member for activation rules.
 
 ### TS-EXPLORE-TRIP-1 — Create a Draft Trip only on first submitted exploration message
 
@@ -742,11 +766,12 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 **Expected outcomes:**
 
 - Before the first submitted message, no Trip, thread, idempotency or audit row is created; map input is not persisted as a business fact.
-- One start request ID yields exactly one `DRAFT` Trip, one creator membership and one owner-only default `TRIP` thread, even under concurrent retry. Audit summaries contain IDs/status only, never the question or map data.
+- One start request ID yields exactly one `DRAFT` Trip, one creator membership and one owner-only default `TRIP` thread, even under concurrent retry. The browser must accept the `201`/`200` response with `trip.status = DRAFT`, then submit the first turn to `POST /api/v1/threads/:threadId/turns` and receive `202`. Audit summaries contain IDs/status only, never the question or map data.
 - The first task derives the created thread's `trip_id`; start success plus turn failure/retry cannot create another Trip.
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
+- An unarchived, non-expired `DRAFT` owned by the authenticated member appears in the default `/projects` active list immediately after its creation, contributes to the active count, and is labelled as a draft needing completion. A Draft explicitly archived by the user, or one whose end date has elapsed, is excluded from that default list.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
-- Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control, which remains disabled until the persisted brief is complete. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
+- Draft commands for consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. Draft invitation creation and acceptance are explicitly allowed: the creator can copy an email-bound invitation link, the invitee sees a minimal summary (trip name, `DRAFT` status, expiry and "joining grants only a blank private thread"), and accepting adds the invitee as a member while still hiding the creator's private conversation. Cancelled or archived trips reject both new invitations and acceptance with `409 TRIP_NOT_INVITABLE`. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control and the creator-authored draft brief editor, both of which are required to reach `PLANNING`. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
 
 ### TS-EXPLORE-TRIP-1a — Create a Draft directly from My program and resize the planning workspace
 
@@ -897,18 +922,39 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 1. In a private conversation, let the model ask for missing room count, adults per room and currency. Confirm the resulting stay-search-preferences proposal as the trip owner; repeat without confirmation and with a non-member.
 2. Create a snapshot with two candidates and a confirmed preference version. Drive the Worker with a model double that calls `hotel.search` once for each `destinationId`.
-3. Attempt tool arguments containing dates, room count, adults, currency, price, provider, address, coordinate, URL, snapshot ID and a cross-run destination. Repeat with a stale preference version, lost lease and duplicate tool call.
+3. Attempt tool arguments containing dates, room count, adults, currency, price, provider, address, coordinate, URL, snapshot ID and a cross-run destination. Repeat with a missing/ambiguous `DestinationReference`, stale preference version, lost lease and duplicate tool call.
 4. Return normalized LIVE offers carrying total/per-night prices and `INCLUDED`, `PARTIAL`, then `UNKNOWN` taxes/fees; inspect the plan DTO, `provider_search_runs`, `provider_offers`, source evidence and telemetry/audit output.
-5. Force `NOT_CONFIGURED`, `NO_RESULTS`, 429, timeout, 5xx, malformed supplier payload and expired offer outcomes. Change dates, occupancy, stay preference and consent after a live plan exists.
+5. Repeat the exact query in a second run before expiry, concurrently repeat it in the same run, and repeat a transient `UNAVAILABLE` within and after the 30-second negative-cache window. Force `NOT_CONFIGURED`, `NO_RESULTS`, 429, timeout, 5xx, malformed supplier payload and expired offer outcomes. Change dates, occupancy, stay preference and consent after a live plan exists.
 
 **Expected outcomes:**
 
 - The model can ask only to create a user-confirmed structured preference; no private message directly writes preference, invokes supplier search or starts planning.
-- `hotel.search` accepts only a current task's allowed `destinationId`; all supplier parameters are server-derived. It is unavailable to Personal/Review agents and exposes no raw payload, URL, supplier credentials, rate ID, address or location coordinates.
-- LIVE rows are bound to the current snapshot/run and exact normalized evidence; the validator rejects fabricated, stale, expired or cross-run hotel offers. A duplicate call does not create a second supplier query/evidence row.
+- `hotel.search` accepts only a current task's allowed `destinationId`; all supplier parameters are server-derived. The provider receives a complete canonical city/ISO country/coordinate reference and there is no free-text overload. SerpApi properties without coordinates or beyond the configured city radius are discarded before the 10-result cap; if nothing remains the outcome is explicit `NO_RESULTS`, never a wrong-city offer. The Tool is unavailable to Personal/Review agents and exposes no raw payload, URL, supplier credentials, rate ID, address or location coordinates.
+- LIVE rows are bound to the current snapshot/run and exact normalized evidence; the validator rejects fabricated, stale, expired or cross-run hotel offers. A same-run duplicate cannot pass the database uniqueness guard. A cross-run cache hit performs no supplier request but creates a fresh current-run query/evidence ID; expired or less-than-60-second evidence is not reused.
+- Exact-query LIVE results are cached for at most 15 minutes and never beyond supplier expiry. `UNAVAILABLE` is cached for 30 seconds only. Concurrent misses share a bounded database lease; a waiter that times out fails closed without issuing a duplicate supplier request. Rows expired for more than 24 hours are opportunistically removed through the expiry index. Cache rows contain only a hash, bounded state/timestamps/error code and normalized-evidence pointer—never user IDs, raw payload, URL or key.
 - Every hotel card includes total price, per-night price, source, captured time and expiry. `PARTIAL` and `UNKNOWN` taxes/fees always display “可能另计”; only explicit `INCLUDED` is presented as included.
 - Failure or missing data creates only a `hotel` `RESEARCH_UNAVAILABLE`/`COMPLETED_WITH_GAPS` result. Sandbox fixtures are never used at runtime; no supplier order, payment, redirect or booking link is created or persisted.
 - Date, occupancy, preference, consent and offer-expiry changes stale dependent plan/confirmations and enqueue a new run. Audit, logs, metrics and traces contain no user input, price, property, supplier URL or high-cardinality identifiers.
+
+### TS-HOTEL-TOOL-2 — Non-price accommodation discovery and destination integrity
+
+**Stories:** H3, H5, S1
+**Objective:** Verify that OpenTripMap can provide a low-cost accommodation planning skeleton without being mistaken for live hotel pricing, and that every location provider is structurally protected from silent wrong-city results.
+
+**Steps:**
+
+1. Create a snapshot containing a uniquely resolvable Tokyo candidate, then call `accommodation.discover({ destinationId })` from the Shared planning Worker without confirming stay-search preferences.
+2. Inspect the OpenTripMap request, normalized output, current-run evidence, cache row, research matrix, public DTO and UI attribution.
+3. Repeat the exact request in a second run, concurrently repeat it in the same run, then test a 30-second negative cache, expired lease, 429, timeout, malformed payload, unnamed POI and POI beyond the configured radius.
+4. Repeat with a missing destination, an ambiguous same-name destination without country disambiguation, and a destination reference missing ISO country code or coordinates. Exercise ORS place search with the resolved reference and inspect `boundary.country`.
+
+**Expected outcomes:**
+
+- `accommodation.discover` accepts only the snapshot `destinationId`; the server resolves a complete `DestinationReference` or returns `SEARCH_CONSTRAINTS_INCOMPLETE` without calling any provider. No fallback passes a city string into a country boundary.
+- OpenTripMap is called by latitude/longitude with its documented `accomodations` taxonomy. Results include name/type/location/distance/source/captured/expiry and `© OpenStreetMap contributors`; they contain no price, availability, booking link, key, raw OSM payload or claim of bookability.
+- ORS receives a real ISO-3166 country code and only a valid geocoder layer. The removed `accommodation` layer and permissive destination-ID-as-country behavior cannot recur.
+- Same-task duplicates are rejected atomically. Cross-run cache hits copy evidence to a fresh `queryId` without a provider call; LIVE discovery is cached at most 24 hours and `UNAVAILABLE` for 30 seconds. A cache wait timeout fails closed rather than issuing another request.
+- Missing, ambiguous, out-of-radius, quota-limited, timed-out or malformed data produces only a bounded accommodation gap and never a fabricated candidate or hotel quote.
 
 ### TS-ACTIVITIES-TOOL-1 — Durable Shared activities research and guarded plan finalization
 
@@ -921,7 +967,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 2. Configure the task scheduler to enable both flight and activities sub-stages; drive the Worker with a deterministic model double that requests `activities.search` for every destination candidate independently of any flight call.
 3. Verify each Tool request against the task snapshot, controlled destination list and accepted preference version; reject browser/model coordinates, free-text query, provider URL/session ID and a theme outside the fixed allow-list.
 4. Inspect only normalized Shared `provider_search_runs` rows with `category='activity'`; assert Tool output and persistence contain neither raw MCP payload, `clickOffToLander`/booking link nor currency-less `fromPrice`.
-5. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, a lost lease, MCP schema drift and a Viator MCP 429.
+5. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, a lost lease, MCP schema drift and Viator MCP 429 responses with no reset window, a <=5-second `Retry-After`, and a longer reset window. Repeat the exact request concurrently and in a second run before expiry.
 6. Disable the activities sub-stage via configuration while keeping the flight sub-stage enabled; verify it does not schedule activities research. With the sub-stage enabled but unavailable, verify a safe `COMPLETED_WITH_GAPS` research result is displayed without any activity evidence or booking authority.
 
 **Expected outcomes:**
@@ -929,34 +975,35 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The HTTP command returns `202` with a run ID; browser disconnect does not cancel it.
 - Only same-task, same-snapshot `LIVE` activities data becomes evidence. A same-task `UNAVAILABLE` row satisfies the required-attempt matrix but becomes a bounded service gap; wrong-task/wrong-snapshot rows and `MISSING` never satisfy coverage.
 - The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, destination coordinates, free-text searches, dates or themes; raw MCP payloads, session IDs, currency-less prices, click-off links and private snapshot data never leave the server boundary.
-- A Viator MCP 429 returns bounded `RATE_LIMITED` immediately and does not retry without a provider reset window. Activities and Amadeus Flight have independent credentials/configuration and failure domains.
+- A Viator MCP 429 retries only when the provider supplies a reset window no longer than five seconds and retry budget remains; absent or longer windows return bounded `RATE_LIMITED`. Activities and Amadeus Flight have independent credentials/configuration and failure domains.
+- Same-task exact duplicates are rejected by the database guard. Cross-run LIVE and 30-second negative cache hits do not call Viator again and always create current-run `queryId`/evidence; expired/dangling cache rows miss safely, and a concurrent cache waiter never issues a duplicate provider request.
 - Final atomic plan/task completion is rejected when any activities cell is `MISSING`, the task has lost its `RUNNING` lease, or the accepted preference version changed. An `UNAVAILABLE` cell persists only a safe `COMPLETED_WITH_GAPS` summary with service/candidate/reason codes; it never creates an activity offer or source evidence.
 - Flight and activities evidence are distinct categories with independent staleness triggers and application-controlled freshness expiry; the unavailable summary is not evidence and cannot be selected by a plan.
 - Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, `MISSING` matrix and bounded-tool-loop failures are terminal; a bounded provider `UNAVAILABLE` result is a non-commercial gap, not invented evidence.
 - An activities offer whose `expires_at` has passed causes the dependent plan to enter `STALE` independent of any flight offer expiry.
 
-### TS-ACTIVITIES-TOOL-2 — Personal Agent activities search with owner-scoped evidence
+### TS-PERSONAL-TRIP-ORCHESTRATION-1 — Owner-confirmed Solo research reuses Shared activities evidence
 
 **Stories:** H1, H3
-**Objective:** Verify that a Personal Agent can request `activities.search` only after the Personal feature flag and tool-loop boundary are enabled, and that results stay owner-scoped and invisible to Shared execution.
+**Objective:** Verify that a Personal Agent can guide a Solo Trip into a durable, snapshot-bound activities research task without direct tool authority or a second Personal evidence store.
 
 **Steps:**
 
-1. As a single authenticated user, save a profile with budget, pace and interests; then save a trip-scoped override for `this trip`.
-2. Open a private conversation bound to a trip; submit a question that prompts the model to call `activities.search`.
-3. Verify the request carries a server-built `PersonalActivitiesSearchContext` (not a snapshot) from the authenticated owner, thread and bound trip; browser/model `ownerUserId`, trip ID, coordinates, radius and free-text destination are rejected.
-4. Inspect `personal_provider_search_runs` rows: owner and trip are set, no snapshot exists, and the output/persistence omit `bookingLink`.
-5. Submit a Shared PLAN/REPLAN command and verify neither Personal conversation text nor Personal evidence is present in its context, matrix or plan validation inputs.
-6. Submit a wrinkle: revoked override, deleted profile field, malformed request, unknown destination, `UNAVAILABLE` provider result, repeated request.
+1. As one authenticated owner, create a Draft through Explore. Ask “查东京活动”, then inspect tasks, snapshots, provider search rows and audit events before activation.
+2. Confirm a complete Solo brief with one Tokyo candidate, activate the Trip, save required owner consent/preferences, and submit the research confirmation command twice concurrently with the same request ID.
+3. Verify the accepted task is `RESEARCH`, has server-written trip/snapshot/run authority and uses the existing `activities.search` registry entry with the Shared policy gate. Attempt browser/model supplied snapshot ID, owner ID, coordinates, radius, free-text provider query, theme outside allow-list and MCP URL.
+4. Inspect provider search/evidence rows and the owner result DTO. Then request `PROPOSE_PLAN`, accept the resulting plan as owner, and inspect status transitions.
+5. Force revoked consent, preference change, `UNAVAILABLE`, expired activity evidence, feature-disabled adapter and a lost Worker lease while a run is active.
 
 **Expected outcomes:**
 
-- This scenario remains disabled until the Personal streaming tool-loop and owner-scoped evidence store are implemented. Enabling Shared `activities.search` alone must not register the Tool for Personal Agent.
-- `personal_provider_search_runs` records the run separately; every Shared repository, context builder, matrix and validator rejects these rows and Personal conversation text.
-- The Personal Agent's evidence does not directly modify `itinerary_plans`, `constraint_snapshots`, or trigger any `STALE` transition on existing plans.
-- A subsequent Shared planning run cannot reference conversation text or a personal run row. Only an owner-confirmed, schema-valid Trip constraint may enter its server-built snapshot projection.
-- Revoked override, deleted profile field, malformed request, unknown destination, disabled feature flag and unknown theme each fail closed with a stable error code; `UNAVAILABLE` runs are recorded only in Personal storage with the standard 8 unavailable reasons.
-- Logs, trace attributes, metric labels and audit summaries never contain the personal conversation text, the owner profile field values or the activity names.
+- Draft creates no snapshot, provider request or research task; it only returns an activation/required-input prompt.
+- The confirmed command creates exactly one immutable Solo snapshot, one durable task and one outbox event. It reuses `provider_search_runs` / evidence binding; `personal_provider_search_runs` and a duplicate Personal Skill are not created.
+- Repeating the same request ID returns the original run and snapshot without allocating another snapshot. Missing departure city, travel dates, or a capability-required confirmed preference returns `422` before any snapshot, task or outbox write. A safe partial result is exposed as `COMPLETED_WITH_GAPS` through the run-read API.
+- The model receives only normalized tool output. It cannot read chat text, raw profile, another Trip/user, MCP payload, click-off link or currency-less price, and it cannot choose provider authority.
+- `RESEARCH_ONLY` writes no plan or booking authority. `PROPOSE_PLAN` creates a validated `PROPOSED` plan; the owner’s `ACCEPT` is required before `ACTIVE`.
+- Consent/preference/evidence changes stale current results atomically. `UNAVAILABLE` is a safe gap, while policy/schema/lease errors produce no plan; no fixture or Demo fallback appears.
+- Logs, trace attributes, metric labels, audit summaries and non-owner responses contain no conversation text, owner profile values, activity names or private snapshot fields.
 
 ### TS-ACTIVITIES-TOOL-3 — Activities evidence is excluded from readiness
 

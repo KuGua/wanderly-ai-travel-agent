@@ -19,6 +19,8 @@ export interface ResearchGapBannerProps {
 const CAPABILITY_PRIORITY: ServiceCapability[] = [
   "flight",
   "stay",
+  "hotel",
+  "accommodation",
   "activities",
   "navigation",
   "mobility",

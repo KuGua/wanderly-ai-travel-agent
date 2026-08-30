@@ -14,6 +14,8 @@ export type SkillScope =
   | "snapshot:read"
   | "chat:read"
   | "flight:search"
+  | "hotel:search"
+  | "accommodation:discover"
   | "activities:search"
   | "places:search"
   | "places:adopt"
@@ -68,6 +70,31 @@ export interface MobilitySearchExecutionContext {
 export interface ActivitySearchExecutionContext {
   tripId: string;
   snapshotId: string;
+  /**
+   * Currency the provider must price in, from the trip's confirmed search
+   * preferences. Server-owned: the model never chooses it, and without it a
+   * returned amount has no known denomination.
+   */
+  currency: string;
+  agentTaskRunId?: string;
+}
+
+export interface HotelSearchExecutionContext {
+  tripId: string;
+  snapshotId: string;
+  searchPreferencesVersion: number;
+  searchPreferences: {
+    roomCount: number;
+    adultsPerRoom: number[];
+    currency: string;
+  };
+  locale: "en" | "zh";
+  agentTaskRunId?: string;
+}
+
+export interface AccommodationDiscoveryExecutionContext {
+  tripId: string;
+  snapshotId: string;
   agentTaskRunId?: string;
 }
 
@@ -87,6 +114,8 @@ export interface SkillContext {
   navigation?: NavigationRouteExecutionContext;
   mobility?: MobilitySearchExecutionContext;
   activitiesSearch?: ActivitySearchExecutionContext;
+  hotelSearch?: HotelSearchExecutionContext;
+  accommodationDiscovery?: AccommodationDiscoveryExecutionContext;
   policyGate: PolicyGate;
 }
 

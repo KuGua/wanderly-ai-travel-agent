@@ -76,6 +76,8 @@ function goodActivity() {
     freeCancellation: true,
     durationMinutes: { fixed: 120, from: null, to: null },
     category: "Food Tours",
+    fromPrice: 42.5,
+    currency: "USD",
     source: "Viator Experiences MCP" as const,
     capturedAt: "2026-08-23T00:00:00.000Z",
     expiresAt: "2099-08-23T00:15:00.000Z",

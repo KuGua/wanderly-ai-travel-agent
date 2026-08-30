@@ -1,5 +1,4 @@
 import { and, eq } from "drizzle-orm";
-import { createHash } from "node:crypto";
 
 import { db } from "../../db/database.js";
 import {
@@ -8,13 +7,12 @@ import {
   tripConstraintFacts,
   tripMembers,
 } from "../../db/schema.js";
-import {
-  generatePlan,
-  extractSnapshotV2Meta,
-} from "../../services/planning-service.js";
+import { generatePlan } from "../../services/planning-service.js";
+import { assertSnapshotManifestStable, hashProjectionManifest } from "../../services/snapshot-manifest-guard.js";
 import type { RequestContext } from "../../utils/context.js";
 import { logSafeRuntimeEvent } from "../../observability/telemetry.js";
 import type { AgentTaskRow } from "../task-repository.js";
+import { handleResearchTask } from "./research-task-handler.js";
 
 /** Runs only from the durable Worker.  All authority comes from the accepted
  * task row and immutable snapshot; no browser/model fields are consulted. */
@@ -25,6 +23,16 @@ export async function handlePlanningTask(params: {
   leaseToken: string;
 }): Promise<string> {
   const { run } = params;
+
+  // Phase 2 — Personal Trip Orchestrator. RESEARCH is dispatched through the
+  // same Worker lease / cancellation / SSE plumbing as PLAN/REPLAN, but it
+  // has its own handler that does NOT call generatePlan in Phase 2 (Phase 4
+  // wires PROPOSE_PLAN into the planner). Returning early here keeps the
+  // legacy planner logic untouched.
+  if (run.operation === "RESEARCH") {
+    return (await handleResearchTask(params)) ?? "";
+  }
+
   const startedAt = Date.now();
   logSafeRuntimeEvent(params.ctx, {
     component: "planner", event: "task", operation: run.operation.toLowerCase(), outcome: "started",
@@ -35,6 +43,9 @@ export async function handlePlanningTask(params: {
     || !run.tripId || !run.snapshotId || !run.flightSearchPreferencesVersion
   ) {
     throw new Error("Planning task authority is incomplete");
+  }
+  if (process.env.PLAN_ENABLE_HOTEL === "true" && !run.staySearchPreferencesVersion) {
+    throw new Error("Planning task stay-search authority is incomplete");
   }
   const [member] = await db.select({ userId: tripMembers.userId }).from(tripMembers).where(and(
     eq(tripMembers.tripId, run.tripId), eq(tripMembers.userId, run.createdByUserId),
@@ -76,6 +87,7 @@ export async function handlePlanningTask(params: {
     memberIds: [],
     agentTaskRunId: run.id,
     flightSearchPreferencesVersion: run.flightSearchPreferencesVersion,
+    staySearchPreferencesVersion: run.staySearchPreferencesVersion ?? undefined,
     signal: params.signal,
     leaseToken: params.leaseToken,
     outputMode: "PROPOSED",
@@ -83,21 +95,22 @@ export async function handlePlanningTask(params: {
 
   // Final stale-snapshot guard. Re-reading the projection manifest guarantees
   // a confirmation/revoke that landed between snapshot build and finalization
-  // invalidates the proposal (spec §1.7, §5.3).
-  const [finalSnapshot] = await db.select().from(constraintSnapshots).where(eq(constraintSnapshots.id, run.snapshotId)).limit(1);
-  if (finalSnapshot && hashProjectionManifest(finalSnapshot.authorizedData) !== initialManifestHash) {
+  // invalidates the proposal (spec §1.7, §5.3). Shared helper from
+  // `services/snapshot-manifest-guard.ts` so RESEARCH and PLAN/REPLAN stay in lockstep.
+  await assertSnapshotManifestStable(run.snapshotId, initialManifestHash).catch(async (err) => {
+    if ((err as { code?: string }).code !== "STALE_SNAPSHOT_GUARD") throw err;
     // Supersede this run as STALE; the latest REPLAN from the mutation wins.
     await db.update(itineraryPlans)
       .set({ status: "STALE", staleReason: "snapshot_manifest_superseded", supersededAt: new Date() })
       .where(and(eq(itineraryPlans.id, resultPlanId), eq(itineraryPlans.status, "PROPOSED")));
     await db.update(tripConstraintFacts)
       .set({})
-      .where(eq(tripConstraintFacts.tripId, run.tripId));
+      .where(eq(tripConstraintFacts.tripId, run.tripId!));
     throw Object.assign(
       new Error("Snapshot projection manifest changed during planning; result plan marked STALE"),
       { code: "STALE_SNAPSHOT_GUARD" },
     );
-  }
+  });
   logSafeRuntimeEvent(params.ctx, {
     component: "planner", event: "task", operation: run.operation.toLowerCase(), outcome: "success",
     attempt: run.generationAttempt, latencyMs: Date.now() - startedAt,
@@ -106,17 +119,6 @@ export async function handlePlanningTask(params: {
   return resultPlanId;
 }
 
-/**
- * Stable manifest hash — set of `(sourceId|revision|visibility)` tuples sorted
- * lexicographically. A change in this hash means a fact mutation occurred while
- * the worker was running its long-tail (spec §1.7).
- */
-export function hashProjectionManifest(authorizedData: unknown): string {
-  const meta = extractSnapshotV2Meta(authorizedData);
-  const tuples: string[] = [];
-  for (const entry of meta?.projectionManifest ?? []) {
-    tuples.push(`${entry.sourceId}|${entry.revision}|${entry.visibility}`);
-  }
-  tuples.sort();
-  return createHash("sha256").update(tuples.join("\n")).digest("hex");
-}
+// `hashProjectionManifest` and `assertSnapshotManifestStable` now live in
+// `services/snapshot-manifest-guard.ts` so the Personal Trip Orchestrator can
+// reuse them for the PROPOSE_PLAN path.

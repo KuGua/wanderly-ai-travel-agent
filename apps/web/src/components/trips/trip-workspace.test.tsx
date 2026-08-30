@@ -94,7 +94,6 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     startPlanning: vi.fn(),
     getLatestPlanningRun: vi.fn(),
     getLatestPlan: vi.fn(),
-    searchTripInvitees: vi.fn().mockResolvedValue({ candidates: [] }),
     createTripInvitation: vi.fn(),
     getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),
     updateMemoryFact: vi.fn(),
@@ -127,7 +126,8 @@ describe("TripWorkspace", () => {
     expect(await screen.findByRole("button", { name: /Draft notes/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New thread" })).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Activate draft trip" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Invite teammates" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Invite teammates" })).toHaveAttribute("href", `/trips/${TRIP_ID}/invite`);
+    expect(screen.getByRole("button", { name: "Save brief" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start planning" }));
     await waitFor(() => expect(api.activateTrip).toHaveBeenCalledWith(TRIP_ID, {
       departureCities: ["San Francisco"],
@@ -213,7 +213,7 @@ describe("TripWorkspace", () => {
     expect(invite).toHaveAttribute("href", `/trips/${TRIP_ID}/invite`);
   });
 
-  it("lets a creator search accounts and creates an invite link for the selected account", async () => {
+  it("lets a creator create an email-bound invite link", async () => {
     const createTripInvitation = vi.fn().mockResolvedValue({
       invitationId: "55555555-5555-4555-8555-555555555555",
       inviteToken: "a".repeat(43),
@@ -221,17 +221,17 @@ describe("TripWorkspace", () => {
     });
     const api = createApi({
       getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
-      searchTripInvitees: vi.fn().mockResolvedValue({ candidates: [{ id: SECOND_THREAD_ID, displayName: "Bob" }] }),
       createTripInvitation,
     });
     renderWithIntl(<TripInvitationPage tripId={TRIP_ID} />, { api });
 
-    fireEvent.change(await screen.findByRole("textbox", { name: "Find a registered account" }), { target: { value: "Bo" } });
-    expect(await screen.findByRole("button", { name: /Bob/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Bob/ }));
+    expect(await screen.findByRole("heading", { name: "Current members" })).toBeInTheDocument();
+    expect(screen.getByText("Creator")).toBeInTheDocument();
+    expect(screen.queryByText(/trips\.workspace\.invitation\.roleValue/)).not.toBeInTheDocument();
+    fireEvent.change(await screen.findByRole("textbox", { name: "Teammate email" }), { target: { value: "bob@example.test" } });
     fireEvent.click(screen.getByRole("button", { name: "Create invite link" }));
 
-    await waitFor(() => expect(createTripInvitation).toHaveBeenCalledWith(TRIP_ID, expect.objectContaining({ invitedUserId: SECOND_THREAD_ID })));
+    await waitFor(() => expect(createTripInvitation).toHaveBeenCalledWith(TRIP_ID, expect.objectContaining({ recipientEmail: "bob@example.test" })));
     expect(await screen.findByLabelText("One-time invite link")).toHaveValue(`http://localhost:3000/en/trips/join/${"a".repeat(43)}`);
   });
 

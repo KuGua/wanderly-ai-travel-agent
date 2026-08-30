@@ -1,9 +1,9 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-import { and, eq, ilike, lt, notInArray, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 
 import { db } from "../db/database.js";
-import { chatThreads, sharedTrips, tripInvitations, tripMembers, users } from "../db/schema.js";
+import { chatThreads, sharedTrips, tripInvitations, tripMembers } from "../db/schema.js";
 import { recordAudit } from "./audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { metrics } from "../observability/metrics.js";
@@ -12,22 +12,21 @@ import type { RequestContext } from "../utils/context.js";
 const TOKEN_BYTES = 32;
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-// Reject any invitation flow while the Trip is still a Draft. The Trip
-// status guard throws ApiError(409, ...) which the route maps to a clean
-// rejection without partial state. Used by both `createInvitation` and
-// `acceptInvitation`.
-async function assertTripActive(tripId: string): Promise<void> {
-  const [trip] = await db.select({ status: sharedTrips.status })
+// Draft teams may form before the creator finalizes the brief. Invitations
+// never grant access to another member's private thread or profile, and all
+// shared planning commands remain guarded independently.
+async function assertTripInvitable(tripId: string): Promise<void> {
+  const [trip] = await db.select({ status: sharedTrips.status, archivedAt: sharedTrips.archivedAt })
     .from(sharedTrips)
     .where(eq(sharedTrips.id, tripId))
     .limit(1);
   if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
-  if (trip.status === "DRAFT") {
-    metrics.inc("draft_command_rejected_total", { operation: "invitation" });
+  if (trip.status === "CANCELLED" || trip.archivedAt) {
+    metrics.inc("trip_invitation_rejected_total", { reason: "terminal_trip" });
     throw new ApiError(
       409,
       "Conflict",
-      "TRIP_NOT_ACTIVE: activate the trip before running collaboration commands",
+      "TRIP_NOT_INVITABLE: archived or cancelled trips cannot accept new members",
     );
   }
 }
@@ -46,6 +45,7 @@ export type InvitationAcceptResult = {
 export type InvitationPreviewResult = {
   trip: {
     name: string;
+    status: "DRAFT" | "PLANNING" | "CONFIRMED" | "BOOKED" | "CANCELLED" | "STALE";
     destinationCandidates: string[];
     travelDateStart: string | null;
     travelDateEnd: string | null;
@@ -53,45 +53,10 @@ export type InvitationPreviewResult = {
   expiresAt: Date;
 };
 
-/**
- * Returns only display names and opaque IDs for a creator choosing an invitee.
- * It deliberately excludes email, username and any profile data, and it never
- * returns the creator or people who already belong to this trip.
- */
-export async function searchInvitees(params: {
-  tripId: string;
-  actorUserId: string;
-  query: string;
-}): Promise<Array<{ id: string; displayName: string }>> {
-  const [membership] = await db.select({ role: tripMembers.role })
-    .from(tripMembers)
-    .where(and(eq(tripMembers.tripId, params.tripId), eq(tripMembers.userId, params.actorUserId)))
-    .limit(1);
-  if (!membership || membership.role !== "CREATOR") {
-    throw new ApiError(403, "Forbidden", "Only the trip creator may search invitees");
-  }
-
-  await assertTripActive(params.tripId);
-  const memberRows = await db.select({ userId: tripMembers.userId })
-    .from(tripMembers)
-    .where(eq(tripMembers.tripId, params.tripId));
-  const excludedIds = [...new Set([params.actorUserId, ...memberRows.map((member) => member.userId)])];
-  const escapedQuery = params.query.replace(/[\\%_]/g, "\\$&");
-
-  return await db.select({ id: users.id, displayName: users.displayName })
-    .from(users)
-    .where(and(
-      ilike(users.displayName, `%${escapedQuery}%`),
-      notInArray(users.id, excludedIds),
-    ))
-    .orderBy(users.displayName, users.id)
-    .limit(10);
-}
-
 export async function createInvitation(params: {
   ctx: RequestContext;
   tripId: string;
-  invitedUserId: string;
+  recipientEmail: string;
   expiresAt: Date;
   actorUserId: string;
 }): Promise<InvitationCreateResult> {
@@ -104,7 +69,7 @@ export async function createInvitation(params: {
   }
 
   return await db.transaction(async (tx) => {
-    await assertTripActive(params.tripId);
+    await assertTripInvitable(params.tripId);
 
     const [trip] = await tx.select({ id: sharedTrips.id })
       .from(sharedTrips)
@@ -120,29 +85,12 @@ export async function createInvitation(params: {
       throw new ApiError(403, "Forbidden", "Only the trip creator may invite members");
     }
 
-    if (params.invitedUserId === params.actorUserId) {
-      throw new ApiError(409, "Conflict", "Cannot invite yourself");
-    }
-
-    const [invitedUser] = await tx.select({ id: users.id })
-      .from(users)
-      .where(eq(users.id, params.invitedUserId))
-      .limit(1);
-    if (!invitedUser) {
-      throw new ApiError(404, "Not Found", "Invited user is not a registered account");
-    }
-
-    const [existingMember] = await tx.select({ id: tripMembers.id })
-      .from(tripMembers)
-      .where(and(eq(tripMembers.tripId, params.tripId), eq(tripMembers.userId, params.invitedUserId)))
-      .limit(1);
-    if (existingMember) {
-      throw new ApiError(409, "Conflict", "User is already a member of this trip");
-    }
+    const recipientEmail = normalizeEmail(params.recipientEmail);
+    const recipientEmailHash = hashEmail(recipientEmail);
 
     await tx.update(tripInvitations).set({ status: "EXPIRED" }).where(and(
       eq(tripInvitations.tripId, params.tripId),
-      eq(tripInvitations.invitedUserId, params.invitedUserId),
+      eq(tripInvitations.recipientEmailHash, recipientEmailHash),
       eq(tripInvitations.status, "PENDING"),
       lt(tripInvitations.expiresAt, new Date()),
     ));
@@ -151,13 +99,13 @@ export async function createInvitation(params: {
       .from(tripInvitations)
       .where(and(
         eq(tripInvitations.tripId, params.tripId),
-        eq(tripInvitations.invitedUserId, params.invitedUserId),
+        eq(tripInvitations.recipientEmailHash, recipientEmailHash),
         eq(tripInvitations.status, "PENDING"),
       ))
       .limit(1)
       .for("update");
     if (existingPending) {
-      throw new ApiError(409, "Conflict", "A pending invitation already exists for this user");
+      throw new ApiError(409, "Conflict", "A pending invitation already exists for this email address");
     }
 
     const rawToken = randomBytes(TOKEN_BYTES).toString("base64url");
@@ -165,7 +113,8 @@ export async function createInvitation(params: {
 
     const [created] = await tx.insert(tripInvitations).values({
       tripId: params.tripId,
-      invitedUserId: params.invitedUserId,
+      recipientEmailHash,
+      recipientEmailMasked: maskEmail(recipientEmail),
       invitedByUserId: params.actorUserId,
       status: "PENDING",
       tokenHash,
@@ -196,6 +145,7 @@ export async function acceptInvitation(params: {
   ctx: RequestContext;
   token: string;
   actorUserId: string;
+  actorEmail: string | null;
 }): Promise<InvitationAcceptResult> {
   if (typeof params.token !== "string" || params.token.length < 32) {
     throw new ApiError(400, "Bad Request", "Invalid invitation token");
@@ -211,7 +161,7 @@ export async function acceptInvitation(params: {
       throw new ApiError(404, "Not Found", "Invitation not found");
     }
 
-    await assertTripActive(invitation.tripId);
+    await assertTripInvitable(invitation.tripId);
 
     // Reject when caller is not the invited user; never 404 in place of
     // 403 to avoid enumeration.
@@ -219,7 +169,7 @@ export async function acceptInvitation(params: {
       throw new ApiError(404, "Not Found", "Invitation not found");
     }
 
-    if (invitation.invitedUserId !== params.actorUserId) {
+    if (!matchesRecipient(invitation, params.actorUserId, params.actorEmail)) {
       throw new ApiError(403, "Forbidden", "This invitation is for a different account");
     }
 
@@ -312,6 +262,7 @@ export async function acceptInvitation(params: {
 export async function getInvitationPreview(params: {
   token: string;
   actorUserId: string;
+  actorEmail: string | null;
 }): Promise<InvitationPreviewResult> {
   const invitation = await getPendingInvitationForActor(params);
   const [trip] = await db.select({
@@ -321,13 +272,16 @@ export async function getInvitationPreview(params: {
     travelDateStart: sharedTrips.travelDateStart,
     travelDateEnd: sharedTrips.travelDateEnd,
   }).from(sharedTrips).where(eq(sharedTrips.id, invitation.tripId)).limit(1);
-  if (!trip || trip.status === "DRAFT") throw invitationUnavailable();
+  if (!trip || trip.status === "CANCELLED") throw invitationUnavailable();
   return {
     trip: {
       name: trip.name,
-      destinationCandidates: trip.destinationCandidates,
-      travelDateStart: trip.travelDateStart,
-      travelDateEnd: trip.travelDateEnd,
+      status: trip.status,
+      // An invitee can decide whether to join a Draft, but must not see its
+      // creator's unconfirmed exploration details before accepting.
+      destinationCandidates: trip.status === "DRAFT" ? [] : trip.destinationCandidates,
+      travelDateStart: trip.status === "DRAFT" ? null : trip.travelDateStart,
+      travelDateEnd: trip.status === "DRAFT" ? null : trip.travelDateEnd,
     },
     expiresAt: invitation.expiresAt,
   };
@@ -337,6 +291,7 @@ export async function declineInvitation(params: {
   ctx: RequestContext;
   token: string;
   actorUserId: string;
+  actorEmail: string | null;
 }): Promise<void> {
   await db.transaction(async (tx) => {
     const invitation = await getPendingInvitationForActor(params, tx);
@@ -441,14 +396,14 @@ function hashToken(raw: string): string {
 type InvitationReader = Pick<typeof db, "select">;
 
 async function getPendingInvitationForActor(
-  params: { token: string; actorUserId: string },
+  params: { token: string; actorUserId: string; actorEmail: string | null },
   reader: InvitationReader = db,
 ) {
   if (typeof params.token !== "string" || params.token.length < 32) throw invitationUnavailable();
   const tokenHash = hashToken(params.token);
   const [invitation] = await reader.select().from(tripInvitations)
     .where(eq(tripInvitations.tokenHash, tokenHash)).limit(1);
-  if (!invitation || invitation.invitedUserId !== params.actorUserId) throw invitationUnavailable();
+  if (!invitation || !matchesRecipient(invitation, params.actorUserId, params.actorEmail)) throw invitationUnavailable();
   if (invitation.status !== "PENDING" || invitation.expiresAt.getTime() <= Date.now()) {
     throw invitationUnavailable();
   }
@@ -462,4 +417,33 @@ function invitationUnavailable(): ApiError {
 function constantTimeEquals(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   return timingSafeEqual(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
+}
+
+function normalizeEmail(email: string): string {
+  const normalized = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalized)) {
+    throw new ApiError(400, "Bad Request", "recipientEmail must be a valid email address");
+  }
+  return normalized;
+}
+
+function hashEmail(email: string): string {
+  const secret = process.env.INVITATION_EMAIL_HMAC_SECRET?.trim();
+  if (!secret || secret.length < 32) {
+    throw new ApiError(503, "Service Unavailable", "Invitation email protection is not configured");
+  }
+  return createHmac("sha256", secret).update(email).digest("hex");
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  return `${local.slice(0, 1)}${"•".repeat(Math.max(2, local.length - 1))}@${domain}`;
+}
+
+function matchesRecipient(invitation: typeof tripInvitations.$inferSelect, actorUserId: string, actorEmail: string | null): boolean {
+  if (invitation.recipientEmailHash) {
+    if (!actorEmail) return false;
+    return constantTimeEquals(invitation.recipientEmailHash, hashEmail(normalizeEmail(actorEmail)));
+  }
+  return invitation.invitedUserId === actorUserId;
 }

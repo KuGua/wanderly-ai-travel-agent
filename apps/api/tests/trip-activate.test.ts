@@ -84,11 +84,7 @@ async function createDraftFor(userId: string, externalId: "alice" | "bob"): Prom
     payload: { requestId: randomUUID() },
   });
   expect(start.statusCode).toBe(201);
-  const tripId = start.json().trip.id;
-  // New workspaces now start in PLANNING. This suite deliberately exercises
-  // the still-supported legacy DRAFT activation path.
-  await db.update(sharedTrips).set({ status: "DRAFT" }).where(eq(sharedTrips.id, tripId));
-  return tripId;
+  return start.json().trip.id;
 }
 
 const validBrief = {
@@ -267,7 +263,7 @@ describe("Trip activation", () => {
     expect(after?.id).toBe(before?.id);
   });
 
-  it("lets only the creator search privacy-minimized eligible invitees", async () => {
+  it("does not expose the removed registered-account invitation search endpoint", async () => {
     const draftId = await createDraftFor(aliceId, "alice");
     await app.inject({
       method: "POST", url: `/api/v1/trips/${draftId}/activate`, headers: authHeaders("alice"), payload: validBrief,
@@ -276,14 +272,11 @@ describe("Trip activation", () => {
     const creatorSearch = await app.inject({
       method: "GET", url: `/api/v1/trips/${draftId}/invitees?q=bo`, headers: authHeaders("alice"),
     });
-    expect(creatorSearch.statusCode).toBe(200);
-    expect(creatorSearch.json().candidates).toContainEqual({ id: expect.any(String), displayName: "Bob" });
-    expect(creatorSearch.json().candidates.every((candidate: Record<string, unknown>) => !("email" in candidate))).toBe(true);
-    expect(creatorSearch.json().candidates.every((candidate: Record<string, unknown>) => !("username" in candidate))).toBe(true);
+    expect(creatorSearch.statusCode).toBe(404);
 
     const nonCreatorSearch = await app.inject({
       method: "GET", url: `/api/v1/trips/${draftId}/invitees?q=bo`, headers: authHeaders("bob"),
     });
-    expect(nonCreatorSearch.statusCode).toBe(403);
+    expect(nonCreatorSearch.statusCode).toBe(404);
   });
 });

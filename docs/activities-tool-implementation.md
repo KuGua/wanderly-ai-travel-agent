@@ -1,9 +1,9 @@
 # Activities LLM Tool 实施方案
 
-**状态：** Shared `activities.search` Phase 1 已实施；Personal conversation tool-loop 待实施
+**状态：** Shared `activities.search` Phase 1 已实施；单人 Trip 通过统一 Trip Orchestrator 接入，见 [单人行程编排实施规范](personal-trip-orchestration-implementation.md)
 **Provider：** Viator 官方 Experiences MCP
 **范围：** provider-neutral `activities.search`、Shared PLAN/REPLAN function tool、严格 `UNAVAILABLE`、normalized evidence、审计/指标、run/snapshot 覆盖门禁。
-**不在范围：** Affiliate/REST API、身份证验证、API key、真实预订/支付、click-off 跳转、无币种价格展示、fixture 运行时回退、Personal streaming tool-loop。
+**不在范围：** Affiliate/REST API、身份证验证、API key、真实预订/支付、click-off 跳转、服务端二次汇率换算、无币种价格展示、fixture 运行时回退、Personal Agent 直接调用 provider/MCP。
 
 关联事实来源：[TECH_STACK.md](../TECH_STACK.md) · [PRD.md](PRD.md) · [backlog.md](backlog.md) · [test-scenarios.md](test-scenarios.md) · [runtime-data-policy.md](runtime-data-policy.md)
 
@@ -34,11 +34,19 @@ https://exp-app-mcp.prod.ep.viator.com/mcp
 
 1. 模型只可提交 snapshot 中已有的 `destinationId`、固定 `theme` 与 `locale`。`snapshotId`、日期、trip/run authority 均由服务端注入。
 2. Adapter 根据受控 destination/theme 构造 `searchTerm`；模型和浏览器不得提交自由查询、provider URL、坐标、价格、session ID 或 MCP 参数。
-3. Viator MCP 当前返回 `fromPrice` 但没有显式 currency。为避免错误价格事实，adapter 验证该字段存在且类型正确，然后丢弃，不进入 Tool output、数据库、plan、SSE 或日志。
-4. `clickOffToLander` 同样只用于验证 provider schema，随后丢弃。MVP 不展示或持久化 booking/affiliate link。
-5. provider 文本和 raw JSON-RPC payload 都是不可信数据；模型只接收严格 Zod 归一化结果。
-6. 失败、超时、限流、空结果、协议错误或 schema drift 统一 fail closed 为 bounded `UNAVAILABLE`；不得使用 fixture、Demo data 或模型编造活动。
-7. LIVE evidence 绑定同一 `snapshotId`、`agentTaskRunId` 与 destination；跨 snapshot/run、Personal evidence 或过期 evidence 不得生成可确认 plan。
+3. **价格（2026-08-30 修正）：** `search_experiences` 接受 `currency` 参数（官方 tool schema），adapter 按 trip 已确认偏好的币种请求，返回的 `fromPrice` 因此有确定计价单位，随证据一并保留。
+
+   此前的实现未传该参数，于是把「响应没有币种」当成 provider 的固有限制并丢弃价格，PRD FR-3.3 也被相应下调。这是接线缺陷而非供应商能力缺失。实测同一商品 `currency=USD` 得 16.22、`currency=JPY` 得 2539，参数确实生效。
+
+   价格永不在服务端二次换算：provider 已按请求币种计价，再换一次只会在它自己的取整之上叠加第二重误差。`fromPrice` 是「最小成团人数下的人均起价」，属指示性价格，不得表述为单张票面价。
+
+4. **目的地校验：** 响应体不含国家、坐标或目的地字段，唯一的地理信号是 `clickOffToLander` 的路径段。adapter 先据此判定商品是否属于本次目的地，再丢弃该 URL。实测搜索 Tokyo 会返回 Rio de Janeiro 与 Anaheim 的商品，且在查询词中加国家名无效——返回结果完全相同，因此输入侧无法约束，只能在输出侧过滤。
+
+   **已知缺口：** 该判定只比较地名，无法区分同名地点（英国 Cambridge 与美国 Cambridge）。它移除的是明显不属于本次目的地的结果，不覆盖同名歧义；PRD FR-3 第 1 条「目的地外结果必须标注待确认」在同名情形下当前不可满足。路径段缺失时保留该商品——此校验用于剔除确凿在别处的结果，而非要求每条结果自证归属。
+5. `clickOffToLander` 除用于上述目的地校验外不作他用，读取后即丢弃。MVP 不展示或持久化 booking/affiliate link。
+6. provider 文本和 raw JSON-RPC payload 都是不可信数据；模型只接收严格 Zod 归一化结果。
+7. 失败、超时、限流、空结果、协议错误或 schema drift 统一 fail closed 为 bounded `UNAVAILABLE`；不得使用 fixture、Demo data 或模型编造活动。
+8. LIVE evidence 绑定同一 `snapshotId`、`agentTaskRunId` 与 destination；跨 snapshot/run、Personal evidence 或过期 evidence 不得生成可确认 plan。
 
 ---
 
@@ -100,7 +108,7 @@ authenticated PLAN / REPLAN Worker
   → DefaultPolicyGate(shared) requires snapshot:read + activities:search
   → ViatorMcpActivitiesProvider
   → strict JSON-RPC + structuredContent validation
-  → normalize and discard price/link/raw payload
+  → filter by destination, keep priced evidence, discard link/raw payload
   → persist provider_search_runs(category=activity)
   → LIVE only: persist normalized provider_offers
   → activity research matrix checks every destination in same run/snapshot
@@ -119,11 +127,11 @@ authenticated PLAN / REPLAN Worker
 - 每次请求生成不含用户信息的随机 MCP `sessionId`。
 - 默认每次最多返回 5 个结果。
 - response body 上限 1 MB；超过即 `INVALID_PROVIDER_RESPONSE`。
-- transient retry 只适用于 timeout 与 5xx/network；默认最多重试 1 次，可配置为 0..2。429 立即返回 `RATE_LIMITED`，避免在 provider 未给出 reset window 时放大公共 MCP 压力。
+- transient retry 适用于 timeout 与 5xx/network；默认最多重试 1 次，可配置为 0..2。429 只有在 HTTP `Retry-After` 或 MCP 错误文本明确给出不超过 5 秒的等待窗口时才在同一 retry budget 内重试；缺少窗口或等待超过 5 秒立即返回 `RATE_LIMITED`，避免放大公共 MCP 压力。
 - caller cancellation 立即向上传播，不伪装成 provider timeout。
 - 401/403 → `PROVIDER_NOT_APPROVED`；429 → `RATE_LIMITED`；空数组 → `NO_RESULTS`；schema drift → `INVALID_PROVIDER_RESPONSE`。
 
-MCP 的 currency-less `fromPrice` 和 click-off URL 不会出现在 normalized contract。若未来 Viator contract 增加明确 currency，需要另行更新 schema、测试、UI 文案和 plan evidence contract，不能静默开始展示。
+click-off URL 不会出现在 normalized contract。`fromPrice` 与其 `currency` 成对进入契约；若 provider 未来改变计价语义（例如从人均起价改为总价），需要同步更新 schema、测试、UI 文案与 plan evidence contract，不得静默改变含义。
 
 ---
 
@@ -155,6 +163,8 @@ Migration `0025_viator_mcp_activities_tool.sql` 新增 activities search audit e
 - LIVE 时 `provider_offers.category='activity'` 只保存 normalized evidence；
 - 不保存 raw JSON-RPC、MCP text、click-off URL、无币种价格、cookie、API credential 或对话正文。
 
+跨 run 调用使用通用 PostgreSQL `provider_search_cache`：fingerprint 包含 provider、`activity` category、destination、日期、theme 与 locale；LIVE 最长复用 15 分钟且必须保留至少 60 秒有效期，`UNAVAILABLE` 只缓存 30 秒。并发 miss 通过 35 秒 lease 合并，等待者最多等待 1.5 秒；命中时复制为当前 run 的新 `queryId` 和 evidence，绝不跨 run 引用旧记录。每个 task 的相同 fingerprint 仍由数据库唯一索引保证只尝试一次。
+
 Audit：`ACTIVITIES_SEARCH_REQUESTED`、`ACTIVITIES_SEARCH_COMPLETED`、`ACTIVITIES_SEARCH_UNAVAILABLE`。
 
 Metrics：
@@ -162,25 +172,23 @@ Metrics：
 - `activities_provider_requests_total{outcome,provider,error_category}`
 - `activities_provider_latency_ms{provider,outcome}`
 - `activities_tool_invocations_total{outcome,provider,error_category}`
+- `provider_search_cache_total{category="activity",outcome}`，其中 outcome 仅为 `hit_live`、`hit_unavailable`、`miss`、`wait_timeout`
 
 所有 labels 使用固定低基数 allow-list；destination/trip/snapshot/run/user 不进入指标标签。
 
 ---
 
-## 8. Personal Agent 边界
+## 8. 单人 Trip 边界
 
-本阶段没有把 activities Tool 接入 Personal streaming conversation。原因不是 provider 限制，而是当前架构的两个控制边界尚未完成：
+单人成员 Trip 不注册第二个 Personal `activities.search`，也不建立独立 evidence store。Personal conversation 只能生成不可执行的 research intent；owner 确认后，统一 Trip Orchestrator 创建 immutable Solo snapshot 与 durable task，并以现有 Shared registry key、`DefaultPolicyGate('shared')` 和 server-derived run context 调用本 Skill。这样保留全局唯一的 Skill 名称、现有 evidence validator 和 privacy boundary。
 
-1. Registry 当前按 `skill.name` 全局唯一，不能同时安全注册 Shared 与 Personal 两个同名 `activities.search`；
-2. Personal conversation 当前使用安全 delta gate，尚无能在 tool call 后再安全流式输出最终文本的 owner-bound dispatcher。
-
-不得以复用 Shared snapshot、关闭安全 delta gate或让模型直连 MCP 的方式绕过。后续 Personal phase 必须提供 agent-qualified registry key、owner/thread/trip context、独立 Personal evidence persistence 与 streaming tool-loop 测试后才能启用。
+Draft、未确认 command、无有效 snapshot/run、客户端/模型提供 owner ID、坐标、自由查询、provider 或 MCP 参数的请求一律拒绝。最终对话文本只在工具完成、结果经过安全 gate 后生成；raw MCP payload、click-off link、无币种价格及私聊正文都不得进入 evidence、plan、SSE、日志或遥测。
 
 ---
 
 ## 9. 测试与验证
 
-自动化覆盖：live structured content normalization；click-off URL 与 currency-less price 丢弃；429、timeout、malformed response → bounded `UNAVAILABLE`；config opt-in、HTTPS 与数值范围；snapshot/destination/date authority；existing plan validator 与 LLM tool loop regression；typecheck、lint、build、docs verify。
+自动化覆盖：live structured content normalization；click-off URL 与 currency-less price 丢弃；带短 `Retry-After` 的 429 有界重试、无窗口/长窗口 429、timeout、malformed response → bounded `UNAVAILABLE`；同 task 原子去重、跨 run LIVE/negative cache、过期或悬空 cache miss、`queryId` 重写；config opt-in、HTTPS 与数值范围；snapshot/destination/date authority；existing plan validator 与 LLM tool loop regression；typecheck、lint、build、docs verify。
 
 Live spike 只允许合成 destination/date，不包含用户、Trip 或聊天数据。CI 不依赖 live MCP；fixture 只用于 adapter contract tests，不进入产品运行路径。
 
@@ -189,9 +197,9 @@ Live spike 只允许合成 destination/date，不包含用户、Trip 或聊天�
 ## 10. 已知限制与回滚
 
 - Viator MCP 没有公开固定 quota/SLA，可能随时 rate limit 或改变 schema；严格 fail closed 与 adapter contract tests 是必要门禁。
-- 当前没有可信 currency，因此不显示价格。
+- 价格按 trip 已确认偏好的币种由 provider 计价并展示，标注为「起价 / 人均」；不做服务端换算。
 - 当前没有 booking、availability confirmation 或支付能力。
 - 当前 theme 只影响服务端构造的受控查询，不是 coverage 维度。
-- 当前只实现 Shared Tool；Personal 支持按第 8 节单独交付。
+- 当前单人编排依赖统一 research command、`RESEARCH` Worker operation 和 owner-confirmed tool-loop；这些控制面未交付前，不能通过私聊直接启用活动查询。
 
 回滚只需设置 `PLAN_ENABLE_ACTIVITIES=false` 与 `VIATOR_MCP_ENABLED=false`。已持久化 evidence 保持只读并按 expiry 失效；不得把历史 evidence 当作 fallback。

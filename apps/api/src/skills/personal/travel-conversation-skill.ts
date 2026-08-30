@@ -105,11 +105,12 @@ export async function executeTravelConversation(
         });
     if (onDelta && !gateway.streamConversationReply) await onDelta(reply.content);
   } catch (error) {
-    if (error instanceof ModelGatewayError) {
-      const code = modelErrorCode(error.code);
-      throw new SkillError(code, "The conversation model is temporarily unavailable. Please retry.");
-    }
-    throw error;
+    // ModelGatewayError now only fires when the streaming connection aborts
+    // mid-flight (partial chunks already delivered to the UI). The
+    // retry-exhausted path returns a `responseMode: "FALLBACK"` reply that
+    // we deliberately want to surface, so we let it pass through.
+    if (!(error instanceof ModelGatewayError)) throw error;
+    throw new SkillError(modelErrorCode(error.code), "The conversation stream was interrupted mid-flight.");
   }
   if (reply.responseMode === "MODEL" && containsUnsupportedOperationalClaim(reply.content)) {
     return safeConversationRefusal();

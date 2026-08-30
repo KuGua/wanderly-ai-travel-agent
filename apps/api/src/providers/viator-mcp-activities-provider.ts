@@ -24,6 +24,7 @@ export interface ViatorMcpActivitiesProviderOptions {
 }
 
 type UnavailableReason = Extract<ProviderResult<never>, { outcome: "UNAVAILABLE" }>["reason"];
+type ProviderAttempt = ProviderResult<ActivityProviderItem[]> & { retryAfterMs?: number };
 
 export function readViatorMcpConfiguration(
   env: NodeJS.ProcessEnv = process.env,
@@ -62,9 +63,15 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
           return this.record(response, startedAt);
         }
         lastReason = response.reason;
-        if (!isRetryable(response.reason) || attempt === this.options.maxRetries) {
-          return this.record(response, startedAt);
+        if (response.reason === "RATE_LIMITED" && response.retryAfterMs !== undefined
+          && response.retryAfterMs <= 5_000 && attempt < this.options.maxRetries) {
+          await delay(response.retryAfterMs, params.signal);
+          continue;
         }
+        if (!isRetryable(response.reason) || attempt === this.options.maxRetries) {
+          return this.record({ outcome: "UNAVAILABLE", reason: response.reason }, startedAt);
+        }
+        await delay(250 * 2 ** attempt, params.signal);
       } catch (error) {
         if (params.signal?.aborted) {
           throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
@@ -82,7 +89,7 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
 
   private async callSearch(
     params: ActivitiesSearchParams,
-  ): Promise<ProviderResult<ActivityProviderItem[]>> {
+  ): Promise<ProviderAttempt> {
     const controller = new AbortController();
     const abortFromCaller = () => controller.abort(params.signal?.reason);
     if (params.signal?.aborted) abortFromCaller();
@@ -106,13 +113,23 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
               startDate: params.dateStart,
               endDate: params.dateEnd,
               limit: params.limit,
+              // Without this the response's `fromPrice` has no stated
+              // denomination and the amount is unusable — which is why prices
+              // were previously discarded outright.
+              currency: params.currency,
               sessionId: randomUUID(),
             },
           },
         }),
         signal: controller.signal,
       });
-      if (response.status === 429) return { outcome: "UNAVAILABLE", reason: "RATE_LIMITED" };
+      if (response.status === 429) return {
+        outcome: "UNAVAILABLE",
+        reason: "RATE_LIMITED",
+        ...(retryAfterMs(response.headers.get("retry-after")) !== null
+          ? { retryAfterMs: retryAfterMs(response.headers.get("retry-after"))! }
+          : {}),
+      };
       if (response.status === 401 || response.status === 403) {
         return { outcome: "UNAVAILABLE", reason: "PROVIDER_NOT_APPROVED" };
       }
@@ -127,14 +144,21 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
       const envelope = viatorMcpResponseSchema.safeParse(protocolPayload);
       if (!envelope.success) return { outcome: "UNAVAILABLE", reason: "INVALID_PROVIDER_RESPONSE" };
       if (envelope.data.error) {
+        const resetMs = retryAfterFromMessage(envelope.data.error.message);
         return {
           outcome: "UNAVAILABLE",
           reason: /rate limit/i.test(envelope.data.error.message) ? "RATE_LIMITED" : "UPSTREAM_FAILURE",
+          ...(resetMs === null ? {} : { retryAfterMs: resetMs }),
         };
       }
       if (envelope.data.result?.isError) {
         const text = envelope.data.result.content?.map((part) => part.text ?? "").join(" ") ?? "";
-        return { outcome: "UNAVAILABLE", reason: /rate limit/i.test(text) ? "RATE_LIMITED" : "UPSTREAM_FAILURE" };
+        const resetMs = retryAfterFromMessage(text);
+        return {
+          outcome: "UNAVAILABLE",
+          reason: /rate limit/i.test(text) ? "RATE_LIMITED" : "UPSTREAM_FAILURE",
+          ...(resetMs === null ? {} : { retryAfterMs: resetMs }),
+        };
       }
       const structured = viatorSearchStructuredContentSchema.safeParse(
         envelope.data.result?.structuredContent,
@@ -146,7 +170,9 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
         outcome: "LIVE",
         source: SOURCE,
         capturedAt: this.now().toISOString(),
-        data: structured.data.experiences.map((experience) => ({
+        data: structured.data.experiences
+          .filter((experience) => matchesDestination(experience.clickOffToLander, params.destination))
+          .map((experience) => ({
           providerOfferId: experience.code,
           title: experience.title,
           thumbnailUrl: experience.thumbnail,
@@ -159,6 +185,9 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
             to: experience.duration?.variableDurationToMinutes ?? null,
           },
           category: experience.keyAttributes?.mainCategory ?? null,
+          fromPrice: experience.fromPrice,
+          currency: params.currency,
+          providerLocality: localityFromLander(experience.clickOffToLander),
         })),
       };
     } finally {
@@ -195,6 +224,42 @@ function controlledSearchTerm(params: ActivitiesSearchParams): string {
   return `${theme} in ${params.destination}`;
 }
 
+/**
+ * Recovers the destination the provider filed a product under, from its product
+ * URL (`.../tours/<Locality>/<slug>`).
+ *
+ * This is the only geographic signal in the response: there is no country,
+ * coordinate or destination field. The URL itself is discarded before anything
+ * leaves this adapter — it is a booking link — but it is read first, because
+ * otherwise nothing can tell whether a result belongs to the trip at all.
+ */
+export function localityFromLander(lander: string): string | null {
+  const match = /\/tours\/([^/]+)\//.exec(lander);
+  if (!match) return null;
+  return decodeURIComponent(match[1]).replace(/-/g, " ").trim() || null;
+}
+
+/**
+ * Whether a product belongs to the requested destination.
+ *
+ * A search for Tokyo returns products in Rio de Janeiro and Anaheim: the
+ * provider matches on text, and adding a country to the query does not change
+ * that. Comparison is by name only, so it cannot separate two places that share
+ * one (Cambridge UK from Cambridge MA) — it removes results from an entirely
+ * different destination, which is the common case.
+ *
+ * A product whose URL carries no locality is kept: the check exists to remove
+ * results that are demonstrably elsewhere, not to require proof of belonging.
+ */
+export function matchesDestination(lander: string, destination: string): boolean {
+  const locality = localityFromLander(lander);
+  if (!locality) return true;
+  const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const a = normalize(locality);
+  const b = normalize(destination);
+  return a.includes(b) || b.includes(a);
+}
+
 function parseMcpPayload(body: string, contentType: string | null): unknown {
   if (contentType?.includes("text/event-stream")) {
     const data = body.split(/\r?\n/)
@@ -211,6 +276,32 @@ function isRetryable(reason: UnavailableReason): boolean {
   // A 429 is surfaced immediately instead of retrying without a provider-
   // supplied reset window. This avoids amplifying pressure on a public MCP.
   return reason === "UPSTREAM_TIMEOUT" || reason === "UPSTREAM_FAILURE";
+}
+
+function retryAfterMs(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds * 1_000) : null;
+}
+
+function retryAfterFromMessage(message: string): number | null {
+  const match = message.match(/retry after\s+(\d+(?:\.\d+)?)\s+seconds?/i);
+  return match ? Math.ceil(Number(match[1]) * 1_000) : null;
+}
+
+async function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function parseBoundedInteger(

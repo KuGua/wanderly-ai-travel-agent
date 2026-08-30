@@ -112,7 +112,9 @@ export const updateProfileResponseSchema = z.object({
 export const createTripSchema = z.object({
   name: z.string().min(1).max(256),
   departureCities: z.array(z.string().min(1)).min(1),
-  destinationCandidates: z.array(z.string().min(1)).min(2).max(5),
+  // A newly created Draft has one required member, so it may start with a
+  // single SOLO candidate. TEAM bounds are enforced at activation.
+  destinationCandidates: z.array(z.string().min(1)).min(1).max(5),
   travelDateStart: dateStr.optional(),
   travelDateEnd: dateStr.optional(),
 }).strict();
@@ -259,6 +261,28 @@ export const tripSearchPreferencesResponseSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+export const tripStaySearchPreferencesRequestSchema = z.object({
+  roomCount: z.number().int().min(1).max(8),
+  adultsPerRoom: z.array(z.number().int().min(1).max(8)).min(1).max(8),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+}).strict().superRefine((value, ctx) => {
+  if (value.adultsPerRoom.length !== value.roomCount) {
+    ctx.addIssue({ code: "custom", message: "adultsPerRoom must contain one entry per room", path: ["adultsPerRoom"] });
+  }
+});
+
+export const tripStaySearchPreferencesResponseSchema = z.object({
+  tripId: uuidSchema,
+  version: z.number().int().positive(),
+  roomCount: z.number().int().min(1).max(8),
+  adultsPerRoom: z.array(z.number().int().min(1).max(8)).min(1).max(8),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  priceDisplayMode: z.literal("TOTAL_AND_PER_NIGHT"),
+  taxFeeDisclosure: z.literal("SHOW_POSSIBLY_EXTRA_WHEN_UNKNOWN"),
+  confirmedBy: uuidSchema,
+  createdAt: z.string().datetime(),
+});
+
 export const changeEventSchema = z.object({
   tripId: uuidSchema,
   eventId: uuidSchema,
@@ -356,12 +380,11 @@ export const ownerConversationMessageSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
-export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL"]);
+export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL", "FALLBACK"]);
 
-export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN"]);
+export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]);
 export const agentTaskStatusSchema = z.enum([
-  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS",
-  "FAILED", "CANCELLED", "STALE",
+  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELLED", "STALE",
 ]);
 export const agentRunPhaseSchema = z.enum([
   "ACCEPTED", "RESEARCHING", "GENERATING", "VALIDATING", "PERSISTING",
@@ -416,6 +439,108 @@ const streamBaseSchema = z.object({
     .optional(),
 });
 
+// ─── Personal Trip Research ─────────────────────────────────────────────────
+// Phase 1 — Personal Trip Orchestrator. Zod schemas for the
+// `personalResearchIntent`, the closed-shape research command request/response,
+// the dedicated 8-stage research SSE channel, and the
+// `research.intent_extracted` SSE event. `.strict()` rejects every extra
+// field at the API boundary; the server derives every authority field from
+// the active Trip / required-member state.
+// Source of truth: docs/personal-trip-orchestration-implementation.md §4,
+// docs/contracts/research-command.md.
+
+export const personalResearchCapabilitySchema = z.enum([
+  "flight",
+  "accommodation",
+  "hotel",
+  "activities",
+  "places",
+  "navigation",
+  "mobility",
+  "readiness",
+]);
+
+export const personalResearchKindSchema = z.enum([
+  "RESEARCH_ONLY",
+  "PROPOSE_PLAN",
+]);
+
+export const personalResearchIntentSchema = z.object({
+  kind: personalResearchKindSchema,
+  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
+}).strict();
+
+/**
+ * Closed-shape request for `POST /api/v1/trips/:tripId/research`.
+ * `.strict()` rejects any extra field — including `snapshotId`, `provider`,
+ * `latitude`, `longitude`, `placeId`, `dates`, `currency`, `toolCallId`,
+ * `identity`, or chat content. The server derives every authority field
+ * from the active Trip / required-member state.
+ */
+export const researchCommandRequestSchema = z.object({
+  requestId: uuidSchema,
+  outputMode: personalResearchKindSchema,
+  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+}).strict();
+
+/** 202 envelope for an accepted research command. */
+export const researchCommandAcceptedResponseSchema = z.object({
+  runId: uuidSchema,
+  operation: z.enum(["RESEARCH", "PLAN"]),
+  snapshotId: uuidSchema,
+  status: z.literal("QUEUED"),
+}).strict();
+
+/**
+ * Safe research-stage enum used by the dedicated `research.stage` SSE
+ * channel. Kept separate from `agentRunPhaseSchema` so cross-cutting phases
+ * (ACCEPTED / GENERATING / RETRYING / etc.) stay orthogonal to the
+ * research lifecycle.
+ */
+export const researchStageSchema = z.enum([
+  "SNAPSHOT_CREATED",
+  "RESEARCHING",
+  "VALIDATING",
+  "PERSISTING",
+  "COMPLETED",
+  "COMPLETED_WITH_GAPS",
+  "FAILED",
+  "STALE",
+]);
+
+/** `research.stage` SSE event. */
+export const researchStageEventSchema = streamBaseSchema.extend({
+  event: z.literal("research.stage"),
+  stage: researchStageSchema,
+}).strict();
+
+/** `research.intent_extracted` SSE event — carries the model-extracted research draft. */
+export const researchIntentExtractedEventSchema = streamBaseSchema.extend({
+  event: z.literal("research.intent_extracted"),
+  intent: personalResearchIntentSchema,
+}).strict();
+
+/**
+ * Safe DTO returned by `GET /api/v1/trips/:tripId/research/latest`. Carries
+ * only the persisted `planning_research_results` row + service-gap summary —
+ * never raw provider payloads, snapshot values, or chat content.
+ */
+export const researchResultResponseSchema = z.object({
+  id: uuidSchema,
+  tripId: uuidSchema,
+  snapshotId: uuidSchema,
+  agentTaskRunId: uuidSchema.nullable(),
+  status: z.enum(["COMPLETE", "COMPLETED_WITH_GAPS"]),
+  serviceGaps: z.array(z.record(z.string(), z.unknown())).max(64),
+  resultPlanId: uuidSchema.nullable(),
+  createdAt: z.string().datetime(),
+}).strict();
+
+export const latestResearchResultResponseSchema = z.object({
+  result: researchResultResponseSchema.nullable(),
+}).strict();
+
 export const agentStreamEventSchema = z.discriminatedUnion("event", [
   streamBaseSchema.extend({
     event: z.literal("turn.started"),
@@ -453,6 +578,8 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     code: agentRunErrorCodeSchema,
     retryable: z.boolean(),
   }).strict(),
+  researchStageEventSchema,
+  researchIntentExtractedEventSchema,
 ]);
 
 // ─── Booking ────────────────────────────────────────────────────────────────
@@ -489,7 +616,7 @@ export const tripInvitationStatusSchema = z.enum([
 ]);
 
 export const createTripInvitationSchema = z.object({
-  invitedUserId: uuidSchema,
+  recipientEmail: z.string().trim().email().max(256),
   expiresAt: z.string().datetime(),
 }).strict();
 
@@ -499,24 +626,10 @@ export const tripInvitationCreateResponseSchema = z.object({
   expiresAt: z.string().datetime(),
 });
 
-/** A privacy-minimized account record used only while choosing a trip invitee. */
-export const tripInviteeSchema = z.object({
-  id: uuidSchema,
-  displayName: z.string().min(1).max(128),
-}).strict();
-
-export const searchTripInviteesQuerySchema = z.object({
-  q: z.string().trim().min(2).max(64),
-}).strict();
-
-export const searchTripInviteesResponseSchema = z.object({
-  candidates: z.array(tripInviteeSchema).max(10),
-}).strict();
-
 export const tripInvitationSummarySchema = z.object({
   id: uuidSchema,
   tripId: uuidSchema,
-  invitedUserId: uuidSchema,
+  invitedUserId: uuidSchema.nullable(),
   invitedByUserId: uuidSchema,
   status: tripInvitationStatusSchema,
   expiresAt: z.string().datetime(),
@@ -540,6 +653,7 @@ export const acceptInvitationResponseSchema = z.object({
 export const tripInvitationPreviewResponseSchema = z.object({
   trip: z.object({
     name: z.string().min(1).max(256),
+    status: tripStatusSchema,
     destinationCandidates: z.array(z.string().min(1)).max(5),
     travelDateStart: dateStr.nullable(),
     travelDateEnd: dateStr.nullable(),
@@ -566,7 +680,7 @@ export const explorationStartResponseSchema = z.object({
   trip: z.object({
     id: uuidSchema,
     name: z.string(),
-    status: z.literal("PLANNING"),
+    status: z.literal("DRAFT"),
     departureCities: z.array(z.string()).length(0),
     destinationCandidates: z.array(z.string()).length(0),
     travelDateStart: z.null(),
@@ -584,24 +698,33 @@ export const explorationStartResponseSchema = z.object({
 
 // Activate mirrors `createTripSchema` (the full brief validation) so the only
 // way out of DRAFT is a structurally complete brief.
+// Phase 1 — solo trips may activate with a single destination candidate
+// (validated per-mode by `assertTripModeForBrief` in
+// `services/trip-mode-service.ts`).
 export const tripActivationRequestSchema = z.object({
   departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3),
-  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(2).max(5),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5),
   travelDateStart: dateStr.nullable().optional(),
   travelDateEnd: dateStr.nullable().optional(),
   titleLocale: z.enum(["en", "zh"]),
 }).strict();
 
 export const updateDraftTripBriefRequestSchema = z.object({
-  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+  departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
+  replaceDestinationCandidates: z.boolean().optional(),
+  travelDateStart: dateStr.nullable().optional(),
+  travelDateEnd: dateStr.nullable().optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
-}).strict().refine((value) => value.destinationCandidates !== undefined || value.travelDays !== undefined);
+}).strict().refine((value) => value.departureCities !== undefined || value.destinationCandidates !== undefined || value.travelDateStart !== undefined || value.travelDateEnd !== undefined || value.travelDays !== undefined);
 
 export const updateDraftTripBriefResponseSchema = z.object({
   trip: z.object({
     id: uuidSchema, name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"),
-    destinationCandidates: z.array(z.string()), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime(),
+    departureCities: z.array(z.string()), destinationCandidates: z.array(z.string()),
+    travelDateStart: dateStr.nullable(), travelDateEnd: dateStr.nullable(),
+    travelDays: z.number().int().nullable(), updatedAt: z.string().datetime(),
   }).strict(),
 });
 
@@ -654,6 +777,7 @@ export type OwnerConversationMessage = z.infer<typeof ownerConversationMessageSc
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;
 export type ConversationTurnAcceptedResponse = z.infer<typeof conversationTurnAcceptedResponseSchema>;
 export type TripSearchPreferencesRequest = z.infer<typeof tripSearchPreferencesRequestSchema>;
+export type TripStaySearchPreferencesRequest = z.infer<typeof tripStaySearchPreferencesRequestSchema>;
 export type AgentTaskOperation = z.infer<typeof agentTaskOperationSchema>;
 export type AgentTaskStatus = z.infer<typeof agentTaskStatusSchema>;
 export type AgentRunResponse = z.infer<typeof agentRunResponseSchema>;
