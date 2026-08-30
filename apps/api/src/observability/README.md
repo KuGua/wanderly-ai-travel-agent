@@ -135,7 +135,8 @@ implement the W3C trace-context spec verbatim — version `00`, all-zero
 `traceId` / `spanId` are rejected. `newTraceId()` / `newSpanId()` mint fresh
 32-hex / 16-hex ids via `crypto.randomFillSync`.
 
-The API's `onRequest` hook:
+The API's `onRequest` hook (registered before the CORS plugin so preflight
+requests cannot bypass it):
 
 1. parses inbound `traceparent` if present, otherwise mints a fresh trace id;
 2. mints a fresh span id;
@@ -143,7 +144,8 @@ The API's `onRequest` hook:
    resolved in `preHandler` via `request.routeOptions.url`);
 4. sets `http.method`, `http.target`, `net.peer.ip`, `http.route`,
    `http.status_code`, and `app.correlation_id` on the span;
-5. ends the span in `onResponse` and echoes the response header `traceparent`.
+5. writes the response `traceparent` before later `onRequest` hooks can
+   short-circuit a response, then ends the span in `onResponse`.
 
 ### Span attribute policy
 

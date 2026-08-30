@@ -65,12 +65,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
     });
   }
 
-  await app.register(fastifyCors, {
-    origin: authMode === "local-dev" || authMode === "custom-local"
-      ? (origin, callback) => callback(null, isAllowedLocalDevOrigin(origin, localDevAllowedOrigins))
-      : true,
-  });
-
   await app.register(fastifySwagger, {
     openapi: {
       info: {
@@ -118,6 +112,12 @@ export async function buildApp(options: BuildAppOptions = {}) {
     );
     request.traceId = inbound?.traceId ?? newTraceId();
     request.spanId = newSpanId();
+    // This must be set before the CORS hook runs: a successful preflight is
+    // short-circuited there and does not reach the regular route lifecycle.
+    reply.header(
+      TRACEPARENT_HEADER,
+      formatTraceparent(request.traceId, request.spanId, "01"),
+    );
 
     // Open the server span. The route pattern is not yet known in onRequest
     // for Fastify 5, so we set the bare minimum attributes here and enrich
@@ -168,6 +168,15 @@ export async function buildApp(options: BuildAppOptions = {}) {
     await authMiddleware(request);
   });
 
+  // Register CORS after request tracing. @fastify/cors completes successful
+  // preflight requests from its onRequest hook, so it must observe the trace
+  // context already initialized above.
+  await app.register(fastifyCors, {
+    origin: authMode === "local-dev" || authMode === "custom-local"
+      ? (origin, callback) => callback(null, isAllowedLocalDevOrigin(origin, localDevAllowedOrigins))
+      : true,
+  });
+
   app.addHook("preHandler", async (request) => {
     // Route matching has happened by preHandler; promote the bare URL to the
     // stable route pattern and expose it on the span. This attribute is what
@@ -189,13 +198,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
       }
       span.end();
     }
-    // Echo the trace context so clients and downstream services can continue
-    // the trace. The response header mirrors the canonical `traceparent`
-    // value built from `request.traceId`/`request.spanId`.
-    reply.header(
-      TRACEPARENT_HEADER,
-      formatTraceparent(request.traceId, request.spanId, "01"),
-    );
   });
 
   app.setNotFoundHandler(async () => {
@@ -232,7 +234,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
 function isAuthenticationExempt(method: string, url: string): boolean {
   const path = url.split("?", 1)[0];
-  return path === "/health"
+  return method === "OPTIONS"
+    || path === "/health"
     || path === "/metrics"
     || path.startsWith("/docs")
     || (method === "POST" && path === "/api/v1/bookings/callback")

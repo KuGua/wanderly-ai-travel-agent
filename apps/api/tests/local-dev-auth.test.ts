@@ -7,6 +7,7 @@ import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
 import { chatMessages, chatThreads, users } from "../src/db/schema.js";
 import { LOCAL_DEV_EXTERNAL_ID } from "../src/middleware/auth-mode.js";
+import { parseTraceparent } from "../src/observability/tracing.js";
 import { provisionTripAndMember } from "./helpers/trip.js";
 
 const originalAuthMode = process.env.AUTH_MODE;
@@ -128,6 +129,23 @@ describe("strict local development authentication", () => {
 
     expect(response.statusCode).toBe(403);
     expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+
+  it("returns trace context for an allowed CORS preflight", async () => {
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/v1/threads",
+      headers: {
+        origin: "http://localhost:3001",
+        "access-control-request-method": "POST",
+      },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe("http://localhost:3001");
+    const traceparent = response.headers.traceparent;
+    expect(typeof traceparent).toBe("string");
+    expect(parseTraceparent(traceparent as string)).not.toBeNull();
   });
 
   it("keeps owner-only thread authorization active", async () => {
