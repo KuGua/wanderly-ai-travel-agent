@@ -1,7 +1,7 @@
 # AI Travel Agent — Personal Agents + Shared Trips 测试场景
 
 **对应：** [Backlog](backlog.md) · [PRD](PRD.md)  
-**范围：** 三个虚构用户、两个出发地、两到三个固定目的地候选、至少两种国籍、带来源的航班/酒店/地面交通工具、booking sandbox；不使用真实护照、支付资料或真实签证申请。产品运行时 live API 失败必须返回 `UNAVAILABLE`，不得使用 fixture fallback。
+**范围：** 三个虚构用户的多人场景，以及一位 owner、一个出发地和一个至五个候选目的地的 Solo 场景；带来源的航班/酒店/地面交通工具、booking sandbox；不使用真实护照、支付资料或真实签证申请。产品运行时 live API 失败必须返回 `UNAVAILABLE`，不得使用 fixture fallback。
 
 ## Fixture
 
@@ -923,28 +923,27 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, `MISSING` matrix and bounded-tool-loop failures are terminal; a bounded provider `UNAVAILABLE` result is a non-commercial gap, not invented evidence.
 - An activities offer whose `expires_at` has passed causes the dependent plan to enter `STALE` independent of any flight offer expiry.
 
-### TS-ACTIVITIES-TOOL-2 — Personal Agent activities search with owner-scoped evidence
+### TS-PERSONAL-TRIP-ORCHESTRATION-1 — Owner-confirmed Solo research reuses Shared activities evidence
 
 **Stories:** H1, H3
-**Objective:** Verify that a Personal Agent can request `activities.search` only after the Personal feature flag and tool-loop boundary are enabled, and that results stay owner-scoped and invisible to Shared execution.
+**Objective:** Verify that a Personal Agent can guide a Solo Trip into a durable, snapshot-bound activities research task without direct tool authority or a second Personal evidence store.
 
 **Steps:**
 
-1. As a single authenticated user, save a profile with budget, pace and interests; then save a trip-scoped override for `this trip`.
-2. Open a private conversation bound to a trip; submit a question that prompts the model to call `activities.search`.
-3. Verify the request carries a server-built `PersonalActivitiesSearchContext` (not a snapshot) from the authenticated owner, thread and bound trip; browser/model `ownerUserId`, trip ID, coordinates, radius and free-text destination are rejected.
-4. Inspect `personal_provider_search_runs` rows: owner and trip are set, no snapshot exists, and the output/persistence omit `bookingLink`.
-5. Submit a Shared PLAN/REPLAN command and verify neither Personal conversation text nor Personal evidence is present in its context, matrix or plan validation inputs.
-6. Submit a wrinkle: revoked override, deleted profile field, malformed request, unknown destination, `UNAVAILABLE` provider result, repeated request.
+1. As one authenticated owner, create a Draft through Explore. Ask “查东京活动”, then inspect tasks, snapshots, provider search rows and audit events before activation.
+2. Confirm a complete Solo brief with one Tokyo candidate, activate the Trip, save required owner consent/preferences, and submit the research confirmation command twice concurrently with the same request ID.
+3. Verify the accepted task is `RESEARCH`, has server-written trip/snapshot/run authority and uses the existing `activities.search` registry entry with the Shared policy gate. Attempt browser/model supplied snapshot ID, owner ID, coordinates, radius, free-text provider query, theme outside allow-list and MCP URL.
+4. Inspect provider search/evidence rows and the owner result DTO. Then request `PROPOSE_PLAN`, accept the resulting plan as owner, and inspect status transitions.
+5. Force revoked consent, preference change, `UNAVAILABLE`, expired activity evidence, feature-disabled adapter and a lost Worker lease while a run is active.
 
 **Expected outcomes:**
 
-- This scenario remains disabled until the Personal streaming tool-loop and owner-scoped evidence store are implemented. Enabling Shared `activities.search` alone must not register the Tool for Personal Agent.
-- `personal_provider_search_runs` records the run separately; every Shared repository, context builder, matrix and validator rejects these rows and Personal conversation text.
-- The Personal Agent's evidence does not directly modify `itinerary_plans`, `constraint_snapshots`, or trigger any `STALE` transition on existing plans.
-- A subsequent Shared planning run cannot reference conversation text or a personal run row. Only an owner-confirmed, schema-valid Trip constraint may enter its server-built snapshot projection.
-- Revoked override, deleted profile field, malformed request, unknown destination, disabled feature flag and unknown theme each fail closed with a stable error code; `UNAVAILABLE` runs are recorded only in Personal storage with the standard 8 unavailable reasons.
-- Logs, trace attributes, metric labels and audit summaries never contain the personal conversation text, the owner profile field values or the activity names.
+- Draft creates no snapshot, provider request or research task; it only returns an activation/required-input prompt.
+- The confirmed command creates exactly one immutable Solo snapshot, one durable task and one outbox event. It reuses `provider_search_runs` / evidence binding; `personal_provider_search_runs` and a duplicate Personal Skill are not created.
+- The model receives only normalized tool output. It cannot read chat text, raw profile, another Trip/user, MCP payload, click-off link or currency-less price, and it cannot choose provider authority.
+- `RESEARCH_ONLY` writes no plan or booking authority. `PROPOSE_PLAN` creates a validated `PROPOSED` plan; the owner’s `ACCEPT` is required before `ACTIVE`.
+- Consent/preference/evidence changes stale current results atomically. `UNAVAILABLE` is a safe gap, while policy/schema/lease errors produce no plan; no fixture or Demo fallback appears.
+- Logs, trace attributes, metric labels, audit summaries and non-owner responses contain no conversation text, owner profile values, activity names or private snapshot fields.
 
 ### TS-ACTIVITIES-TOOL-3 — Activities evidence is excluded from readiness
 

@@ -1,9 +1,9 @@
 # Activities LLM Tool 实施方案
 
-**状态：** Shared `activities.search` Phase 1 已实施；Personal conversation tool-loop 待实施
+**状态：** Shared `activities.search` Phase 1 已实施；单人 Trip 通过统一 Trip Orchestrator 接入，见 [单人行程编排实施规范](personal-trip-orchestration-implementation.md)
 **Provider：** Viator 官方 Experiences MCP
 **范围：** provider-neutral `activities.search`、Shared PLAN/REPLAN function tool、严格 `UNAVAILABLE`、normalized evidence、审计/指标、run/snapshot 覆盖门禁。
-**不在范围：** Affiliate/REST API、身份证验证、API key、真实预订/支付、click-off 跳转、服务端二次汇率换算、fixture 运行时回退、Personal streaming tool-loop。
+**不在范围：** Affiliate/REST API、身份证验证、API key、真实预订/支付、click-off 跳转、服务端二次汇率换算、无币种价格展示、fixture 运行时回退、Personal Agent 直接调用 provider/MCP。
 
 关联事实来源：[TECH_STACK.md](../TECH_STACK.md) · [PRD.md](PRD.md) · [backlog.md](backlog.md) · [test-scenarios.md](test-scenarios.md) · [runtime-data-policy.md](runtime-data-policy.md)
 
@@ -178,14 +178,11 @@ Metrics：
 
 ---
 
-## 8. Personal Agent 边界
+## 8. 单人 Trip 边界
 
-本阶段没有把 activities Tool 接入 Personal streaming conversation。原因不是 provider 限制，而是当前架构的两个控制边界尚未完成：
+单人成员 Trip 不注册第二个 Personal `activities.search`，也不建立独立 evidence store。Personal conversation 只能生成不可执行的 research intent；owner 确认后，统一 Trip Orchestrator 创建 immutable Solo snapshot 与 durable task，并以现有 Shared registry key、`DefaultPolicyGate('shared')` 和 server-derived run context 调用本 Skill。这样保留全局唯一的 Skill 名称、现有 evidence validator 和 privacy boundary。
 
-1. Registry 当前按 `skill.name` 全局唯一，不能同时安全注册 Shared 与 Personal 两个同名 `activities.search`；
-2. Personal conversation 当前使用安全 delta gate，尚无能在 tool call 后再安全流式输出最终文本的 owner-bound dispatcher。
-
-不得以复用 Shared snapshot、关闭安全 delta gate或让模型直连 MCP 的方式绕过。后续 Personal phase 必须提供 agent-qualified registry key、owner/thread/trip context、独立 Personal evidence persistence 与 streaming tool-loop 测试后才能启用。
+Draft、未确认 command、无有效 snapshot/run、客户端/模型提供 owner ID、坐标、自由查询、provider 或 MCP 参数的请求一律拒绝。最终对话文本只在工具完成、结果经过安全 gate 后生成；raw MCP payload、click-off link、无币种价格及私聊正文都不得进入 evidence、plan、SSE、日志或遥测。
 
 ---
 
@@ -203,6 +200,6 @@ Live spike 只允许合成 destination/date，不包含用户、Trip 或聊天�
 - 价格按 trip 已确认偏好的币种由 provider 计价并展示，标注为「起价 / 人均」；不做服务端换算。
 - 当前没有 booking、availability confirmation 或支付能力。
 - 当前 theme 只影响服务端构造的受控查询，不是 coverage 维度。
-- 当前只实现 Shared Tool；Personal 支持按第 8 节单独交付。
+- 当前单人编排依赖统一 research command、`RESEARCH` Worker operation 和 owner-confirmed tool-loop；这些控制面未交付前，不能通过私聊直接启用活动查询。
 
 回滚只需设置 `PLAN_ENABLE_ACTIVITIES=false` 与 `VIATOR_MCP_ENABLED=false`。已持久化 evidence 保持只读并按 expiry 失效；不得把历史 evidence 当作 fallback。

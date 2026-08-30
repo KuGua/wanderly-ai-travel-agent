@@ -90,6 +90,12 @@ Agent 不能自行跨越以下边界：
 - 不能把 provider 返回值当作永久真相；
 - 不能自动扣款、自动预订或绕过任一成员确认。
 
+### 单人 Trip 编排模式
+
+同一受控 `TripOrchestrator` 同时服务单人和多人 Trip；`Personal Agent` 是 owner 私聊入口、补问与受控命令发起者，而不是 provider/tool 的直接调用者。单人 Trip 只有一位 required member，使用该 owner 明确授权的最小 snapshot；多人 Trip 使用全体成员授权汇总的 snapshot。两种模式均通过 PostgreSQL durable Worker、Shared Skill registry、typed provider adapter、evidence validator 和 plan 状态机执行，绝不新建 Personal 专属 provider、evidence store 或自由 Agent-to-Agent 通道。
+
+单人用户必须先显式激活完整 Trip 才能发起外部 research；单人允许 1–5 个目的地候选，多人保持 2–3 个。owner 确认 research command 后，Worker 可按 feature flag 和 provider 准入调用全部 Shared tools：Flight、Accommodation discovery、Hotel、Activities、Places、Navigation、Mobility 与 Readiness。`PROPOSE_PLAN` 自动生成第一版 `PROPOSED` plan 供 owner 查看；owner 的显式 adoption 才能将其变为 `ACTIVE`，booking 仍须经过既有显式确认 gate。详细合同见 [单人行程编排实施规范](docs/personal-trip-orchestration-implementation.md)。
+
 酒店住宿的确认实施契约见 [酒店实时搜索与方案比较实施方案](docs/hotel-search-tool-implementation.md)：首期仅搜索与比较，不能创建供应商订单、支付或跳转预订；税费不完整时必须展示“可能另计”。
 
 ### Team Agent 结构化交接与方案采用
