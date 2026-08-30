@@ -37,6 +37,8 @@ describe("authentication mode safety", () => {
 
   it("requires a loopback server binding and loopback request source", async () => {
     expect(() => assertLocalDevServerHost("local-dev", "0.0.0.0")).toThrow(/loopback/);
+    expect(() => assertLocalDevServerHost("local-dev", "0.0.0.0", true)).not.toThrow();
+    expect(() => assertLocalDevServerHost("local-dev", "192.168.1.10", true)).toThrow(/loopback/);
     expect(() => assertLocalDevServerHost("local-dev", "192.168.1.10")).toThrow(/loopback/);
     expect(() => assertLocalDevServerHost("local-dev", "127.0.0.1")).not.toThrow();
     expect(isLoopbackAddress("::1")).toBe(true);

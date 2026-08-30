@@ -242,8 +242,13 @@ function resolveExporterMode(): ExporterMode {
     diag.warn(`tracing: unknown OTEL_TRACES_EXPORTER="${explicit}", defaulting to env-driven choice`);
   }
   if (process.env.NODE_ENV === "test") return "in-memory";
+  // A configured collector is an explicit request to export traces in every
+  // non-test environment. This keeps local Docker development observable
+  // without setting OTEL_TRACES_EXPORTER, which third-party SDKs may also
+  // consume with a different accepted-value set.
+  if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT) return resolveOtlpVariant();
   if (process.env.NODE_ENV !== "production") return "console";
-  return resolveOtlpVariant();
+  return "none";
 }
 
 /**

@@ -120,7 +120,7 @@ first import in both `apps/api/src/server.ts` and
 | --- | --- | --- |
 | `OTEL_SDK_DISABLED` | unset | `true` → skip the provider entirely (no spans, no propagator registration is also skipped, so `parseTraceparent` is still safe) |
 | `OTEL_TRACES_EXPORTER` | env-driven | `console` / `otlp` / `none` override the default; `in-memory` only meaningful in tests |
-| `NODE_ENV` | `development` | `test` → in-memory exporter; `production` → OTLP when endpoint set, else no-op |
+| `NODE_ENV` | `development` | `test` → in-memory exporter; any non-test environment exports to OTLP when an endpoint is set, otherwise development uses console and production is no-op |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | when present, OTLP exporter is wired (`http/protobuf` default, `grpc` falls back to `http/protobuf`) |
 | `OTEL_TRACES_SAMPLER_ARG` | `0.05` (prod only) | sample ratio for `ParentBased(TraceIdRatioBased)` in production; dev/test always on |
 | `OTEL_LOG_LEVEL` | `warn` | internal SDK logger verbosity |

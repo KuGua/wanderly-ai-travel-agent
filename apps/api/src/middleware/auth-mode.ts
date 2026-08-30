@@ -16,8 +16,18 @@ export function assertAuthModeEnvironment(mode: AuthMode, nodeEnv: string | unde
   }
 }
 
-export function assertLocalDevServerHost(mode: AuthMode, host: string) {
-  if ((mode === "local-dev" || mode === "custom-local") && !isLoopbackHost(host)) {
+export function assertLocalDevServerHost(
+  mode: AuthMode,
+  host: string,
+  allowContainerHost: boolean = process.env.LOCAL_DEV_CONTAINER === "true",
+) {
+  const isLocalMode = mode === "local-dev" || mode === "custom-local";
+  // A Docker container must listen on all of its own interfaces for a
+  // loopback-only host port mapping to reach it. This is safe only when the
+  // Compose configuration binds the published port to 127.0.0.1; the explicit
+  // flag keeps the exception unavailable to ordinary local processes.
+  const isAllowedContainerHost = allowContainerHost && host === "0.0.0.0";
+  if (isLocalMode && !isLoopbackHost(host) && !isAllowedContainerHost) {
     throw new Error(`AUTH_MODE=${mode} requires HOST to be a loopback address`);
   }
 }
