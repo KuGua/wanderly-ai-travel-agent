@@ -63,6 +63,27 @@ describe("HttpTravelApi private conversation", () => {
     expect(body).not.toHaveProperty("senderUserId");
   });
 
+  it("uses strict Shared planning contracts without exposing provider configuration", async () => {
+    const tripId = "99999999-9999-4999-8999-999999999999";
+    const snapshotId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ tripId, version: 1, tripType: "ROUND_TRIP", currency: "USD", adults: 1, cabin: "ECONOMY", offerFreshnessMinutes: 15, confirmedBy: OWNER_ID, createdAt: CREATED_AT }, 201))
+      .mockResolvedValueOnce(jsonResponse({ runId: RUN_ID, operation: "PLAN", status: "QUEUED", generationAttempt: 0, snapshotId }, 202))
+      .mockResolvedValueOnce(jsonResponse({ run: null }));
+    const api = new HttpTravelApi("https://api.example.test", fetchMock);
+
+    await api.saveTripSearchPreferences(tripId, { tripType: "ROUND_TRIP", currency: "USD", adults: 1, cabin: "ECONOMY", offerFreshnessMinutes: 15 });
+    await api.startPlanning(tripId);
+    await api.getLatestPlanningRun(tripId);
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      `https://api.example.test/api/v1/trips/${tripId}/search-preferences`,
+      "https://api.example.test/api/v1/planning/generate",
+      `https://api.example.test/api/v1/planning/${tripId}/run/latest`,
+    ]);
+    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({ tripId });
+  });
+
   it("reads, cancels, and subscribes to an authenticated durable run", async () => {
     const run = {
       runId: RUN_ID,

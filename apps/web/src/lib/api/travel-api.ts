@@ -24,6 +24,11 @@ import type {
   UpdateTripTitleResponse,
   UpdateDraftTripBriefInput,
   UpdateDraftTripBriefResponse,
+  TripSearchPreferencesInput,
+  TripSearchPreferencesResponse,
+  PlanningTaskAcceptedResponse,
+  LatestPlanResponse,
+  LatestPlanningRunResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -45,4 +50,8 @@ export interface TravelApi {
   activateTrip(tripId: string, input: TripActivationRequest): Promise<TripActivationResponse>;
   updateTripTitle(tripId: string, input: UpdateTripTitleInput): Promise<UpdateTripTitleResponse>;
   updateDraftTripBrief?(tripId: string, input: UpdateDraftTripBriefInput): Promise<UpdateDraftTripBriefResponse>;
+  saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput): Promise<TripSearchPreferencesResponse>;
+  startPlanning(tripId: string): Promise<PlanningTaskAcceptedResponse>;
+  getLatestPlanningRun(tripId: string): Promise<LatestPlanningRunResponse>;
+  getLatestPlan(tripId: string): Promise<LatestPlanResponse>;
 }

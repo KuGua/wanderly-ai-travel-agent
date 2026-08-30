@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { SpanKind } from "@opentelemetry/api";
 
 import { db, rawDb } from "../db/database.js";
@@ -300,6 +300,23 @@ export async function getAuthorizedAgentRun(runId: string, userId: string): Prom
   if (!run) throw new ApiError(404, "Not Found", "Agent run not found");
   await requireRunAccess(run, userId);
   return toRunResponse(run);
+}
+
+/**
+ * Returns the most recent Shared planning task visible to a current trip
+ * member. This is a recovery read for the Web workspace: the durable task
+ * remains authoritative across refreshes and is never reconstructed from
+ * browser state.
+ */
+export async function getLatestAuthorizedPlanningRun(tripId: string, userId: string): Promise<AgentRunResponse | null> {
+  const [member] = await db.select({ userId: tripMembers.userId }).from(tripMembers).where(and(
+    eq(tripMembers.tripId, tripId), eq(tripMembers.userId, userId),
+  )).limit(1);
+  if (!member) throw new ApiError(403, "Forbidden", "Not authorized for this planning run");
+  const [run] = await db.select().from(agentTaskRuns).where(and(
+    eq(agentTaskRuns.tripId, tripId), inArray(agentTaskRuns.operation, ["PLAN", "REPLAN"]),
+  )).orderBy(desc(agentTaskRuns.createdAt)).limit(1);
+  return run ? toRunResponse(run) : null;
 }
 
 export async function requestAgentTaskCancellation(params: {

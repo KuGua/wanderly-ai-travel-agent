@@ -92,6 +92,10 @@ export async function executeAndPersistFlightSearch(params: {
   provider: FlightProvider;
   signal?: AbortSignal;
 }): Promise<ProviderResult<FlightOffer[]> & { queryId?: string }> {
+  // Test-only legacy doubles may predate the provider identity field. Runtime
+  // adapters always declare it; the fallback remains fail-closed and never
+  // guesses another live provider.
+  const providerName = params.provider.providerName ?? "unconfigured";
   const fingerprint = createHash("sha256").update(JSON.stringify({
     originId: params.input.originId,
     destinationId: params.input.destinationId,
@@ -104,7 +108,7 @@ export async function executeAndPersistFlightSearch(params: {
   })).digest("hex");
   await recordAudit({
     ctx: params.ctx, action: "FLIGHT_SEARCH_REQUESTED", tripId: params.tripId,
-    summary: { provider: "amadeus", operation: "flight_search" },
+    summary: { provider: providerName, operation: "flight_search" },
   });
   const origin = resolveAirportReference(params.input.originId)!;
   const destination = resolveAirportReference(params.input.destinationId)!;
@@ -125,7 +129,7 @@ export async function executeAndPersistFlightSearch(params: {
       snapshotId: params.snapshotId,
       agentTaskRunId: params.agentTaskRunId ?? null,
       category: "flight",
-      providerName: result.outcome === "LIVE" ? "amadeus" : "amadeus",
+      providerName,
       originId: params.input.originId,
       destinationId: params.input.destinationId,
       requestFingerprint: fingerprint,
@@ -149,14 +153,14 @@ export async function executeAndPersistFlightSearch(params: {
       ctx: params.ctx,
       action: result.outcome === "LIVE" ? "FLIGHT_SEARCH_COMPLETED" : "FLIGHT_SEARCH_UNAVAILABLE",
       tripId: params.tripId,
-      summary: { provider: "amadeus", outcome: result.outcome, ...(result.outcome === "UNAVAILABLE" ? { errorCode: result.reason } : {}) },
+      summary: { provider: providerName, outcome: result.outcome, ...(result.outcome === "UNAVAILABLE" ? { errorCode: result.reason } : {}) },
       tx,
     });
     return [run];
   });
   metrics.inc("flight_tool_invocations_total", {
     outcome: result.outcome === "LIVE" ? "live" : "unavailable",
-    provider: "amadeus",
+    provider: providerName,
     error_category: result.outcome === "LIVE" ? "none" : result.reason.toLowerCase(),
   });
   return result.outcome === "LIVE" ? { ...result, queryId: searchRun.id } : result;

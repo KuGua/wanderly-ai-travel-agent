@@ -89,6 +89,10 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     startExploration: vi.fn(),
     activateTrip: vi.fn(),
     updateTripTitle: vi.fn(),
+    saveTripSearchPreferences: vi.fn(),
+    startPlanning: vi.fn(),
+    getLatestPlanningRun: vi.fn().mockResolvedValue({ run: null }),
+    getLatestPlan: vi.fn(),
     ...overrides,
   };
 }

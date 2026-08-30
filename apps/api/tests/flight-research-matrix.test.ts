@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/database.js";
-import { agentTaskRuns, auditEvents, constraintSnapshots, itineraryPlans, providerOffers, providerSearchRuns, sharedTrips, tripSearchPreferences, users } from "../src/db/schema.js";
+import { agentTaskRuns, auditEvents, constraintSnapshots, itineraryPlans, providerOffers, providerSearchRuns, sharedTrips, tripMembers, tripSearchPreferences, users } from "../src/db/schema.js";
 import { evaluateFlightResearchCompleteness, FlightResearchIncompleteError } from "../src/services/flight-research-matrix-service.js";
-import { acceptPlanningTask } from "../src/tasks/task-repository.js";
+import { acceptPlanningTask, getLatestAuthorizedPlanningRun } from "../src/tasks/task-repository.js";
 import { createRequestContext } from "../src/utils/context.js";
 import { generatePlan, type PlanningDependencies } from "../src/services/planning-service.js";
 import { __resetRegistryForTests, registerSkill } from "../src/agents/skill-registry.js";
@@ -17,13 +17,14 @@ describe("flight research matrix", () => {
   beforeEach(async () => {
     const [user] = await db.insert(users).values({ externalId: `matrix-${randomUUID()}`, displayName: "Matrix" }).returning(); userId = user.id;
     const [trip] = await db.insert(sharedTrips).values({ name: "Matrix", createdBy: userId, authorizedData: {}, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] }).returning(); tripId = trip.id;
+    await db.insert(tripMembers).values({ tripId, userId, role: "CREATOR", isRequired: true });
     const [snapshot] = await db.insert(constraintSnapshots).values({ tripId, version: 1, authorizedData: {}, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] }).returning(); snapshotId = snapshot.id;
     planningSnapshotId = null; taskId = randomUUID();
     await db.insert(agentTaskRuns).values({ id: taskId, operation: "PLAN", status: "QUEUED", createdByUserId: userId, tripId, snapshotId, flightSearchPreferencesVersion: 1, requestId: randomUUID(), expiresAt: new Date(Date.now() + 60_000) });
     otherTaskId = randomUUID();
     await db.insert(agentTaskRuns).values({ id: otherTaskId, operation: "REPLAN", status: "COMPLETED", createdByUserId: userId, tripId, snapshotId, flightSearchPreferencesVersion: 1, requestId: randomUUID(), expiresAt: new Date(Date.now() + 60_000), finishedAt: new Date() });
   });
-  afterEach(async () => { __resetRegistryForTests(); if (planningSnapshotId) { await db.delete(providerOffers).where(eq(providerOffers.snapshotId, planningSnapshotId)); await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, planningSnapshotId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.snapshotId, planningSnapshotId)); await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, planningSnapshotId)); } await db.delete(providerOffers).where(eq(providerOffers.snapshotId, snapshotId)); await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, snapshotId)); await db.delete(itineraryPlans).where(eq(itineraryPlans.tripId, tripId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, taskId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, otherTaskId)); await db.delete(auditEvents).where(eq(auditEvents.tripId, tripId)); await db.delete(auditEvents).where(eq(auditEvents.actorUserId, userId)); await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, snapshotId)); await db.delete(tripSearchPreferences).where(eq(tripSearchPreferences.tripId, tripId)); await db.delete(sharedTrips).where(eq(sharedTrips.id, tripId)); await db.delete(users).where(eq(users.id, userId)); });
+  afterEach(async () => { __resetRegistryForTests(); if (planningSnapshotId) { await db.delete(providerOffers).where(eq(providerOffers.snapshotId, planningSnapshotId)); await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, planningSnapshotId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.snapshotId, planningSnapshotId)); await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, planningSnapshotId)); } await db.delete(providerOffers).where(eq(providerOffers.snapshotId, snapshotId)); await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, snapshotId)); await db.delete(itineraryPlans).where(eq(itineraryPlans.tripId, tripId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, taskId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, otherTaskId)); await db.delete(auditEvents).where(eq(auditEvents.tripId, tripId)); await db.delete(auditEvents).where(eq(auditEvents.actorUserId, userId)); await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, snapshotId)); await db.delete(tripSearchPreferences).where(eq(tripSearchPreferences.tripId, tripId)); await db.delete(tripMembers).where(eq(tripMembers.tripId, tripId)); await db.delete(sharedTrips).where(eq(sharedTrips.id, tripId)); await db.delete(users).where(eq(users.id, userId)); });
   async function evidence(originId: string, destinationId: string, outcome: "LIVE" | "UNAVAILABLE" = "LIVE", runId = taskId, sid = snapshotId) {
     await db.insert(providerSearchRuns).values({ snapshotId: sid, agentTaskRunId: runId, category: "flight", providerName: "amadeus", requestFingerprint: randomUUID().replaceAll("-", ""), outcome, errorCode: outcome === "UNAVAILABLE" ? "NO_RESULTS" : null, originId, destinationId });
   }
@@ -72,6 +73,11 @@ describe("flight research matrix", () => {
     expect(oldRun.status).toBe("CANCELLED");
     expect(newRun).toMatchObject({ operation: "REPLAN", status: "QUEUED", snapshotId });
     await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, accepted.runId));
+  });
+
+  it("recovers the latest Shared planning run from server state for a current member", async () => {
+    const recovered = await getLatestAuthorizedPlanningRun(tripId, userId);
+    expect(recovered).toMatchObject({ runId: otherTaskId, operation: "REPLAN", status: "COMPLETED" });
   });
 
   it("re-checks research in the final transaction when evidence changes after beforeFinal", async () => {

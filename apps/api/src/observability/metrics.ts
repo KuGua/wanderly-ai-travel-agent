@@ -302,18 +302,18 @@ metrics.registerCounter("draft_command_rejected_total", "Collaboration commands 
 metrics.registerCounter("agent_task_recoveries_total", "Expired Agent task leases and queue entries recovered.", {
   outcome: ["retrying", "failed", "cancelled"],
 });
-metrics.registerCounter("flight_provider_requests_total", "Amadeus flight provider requests by bounded outcome.", {
+metrics.registerCounter("flight_provider_requests_total", "Flight provider requests by bounded outcome.", {
   outcome: ["live", "unavailable"],
-  provider: ["amadeus"],
+  provider: ["amadeus", "flightapi"],
   error_category: ["none", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "no_results"],
 });
-metrics.registerHistogram("flight_provider_latency_ms", "Amadeus flight provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
-  provider: ["amadeus"],
+metrics.registerHistogram("flight_provider_latency_ms", "Flight provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
+  provider: ["amadeus", "flightapi"],
   outcome: ["live", "unavailable"],
 });
 metrics.registerCounter("flight_tool_invocations_total", "Flight tool execution outcomes.", {
   outcome: ["live", "unavailable"],
-  provider: ["amadeus"],
+  provider: ["amadeus", "flightapi", "unconfigured"],
   error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
 });
 // Bounded same-thread LLM context builder metrics.  See

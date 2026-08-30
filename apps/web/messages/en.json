@@ -386,6 +386,31 @@
         "submitting": "Creating…",
         "validation": "Title must be 1–256 characters."
       }
+    },
+    "planning": {
+      "kicker": "Shared Agent",
+      "heading": "Generate a grounded shared plan",
+      "body": "Confirm the flight search preferences, then start a durable Shared planning task. Only a validated, activated plan is shown below.",
+      "tripType": "Trip type",
+      "roundTrip": "Round trip",
+      "oneWay": "One way",
+      "adults": "Adults",
+      "cabin": "Cabin",
+      "cabinEconomy": "Economy",
+      "cabinPremium": "Premium economy",
+      "cabinBusiness": "Business",
+      "cabinFirst": "First",
+      "currency": "Currency",
+      "start": "Confirm and start",
+      "startFailed": "The planning task could not be started. Review the trip brief and try again.",
+      "statusUnavailable": "Planning status unavailable",
+      "status": "Task: {status}",
+      "failure": "Safe failure: {code}",
+      "noRun": "No Shared planning task has been started for this trip.",
+      "loadingPlan": "Loading the activated plan…",
+      "activePlan": "Active plan v{version} · {destination}",
+      "flightResults": "Grounded flight results",
+      "captured": "Checked {capturedAt}"
     }
   },
   "login": {

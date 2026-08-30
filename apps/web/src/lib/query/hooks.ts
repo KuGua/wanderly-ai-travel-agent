@@ -9,6 +9,7 @@ import type {
   OwnerConversationResponse,
   ThreadsResponse,
   TripActivationRequest,
+  TripSearchPreferencesInput,
   UpdateProfileInput,
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
@@ -159,6 +160,43 @@ export function useUpdateTripTitle(tripId: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: tripKeys.all });
       void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
+export function useLatestPlanningRun(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.planningRun(tripId),
+    queryFn: () => api.getLatestPlanningRun(tripId),
+    retry: false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.run?.status;
+      return status === "QUEUED" || status === "RUNNING" || status === "CANCEL_REQUESTED" ? 1_500 : false;
+    },
+  });
+}
+
+export function useLatestPlan(tripId: string, enabled: boolean) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.latestPlan(tripId),
+    queryFn: () => api.getLatestPlan(tripId),
+    enabled,
+    retry: false,
+  });
+}
+
+export function useStartPlanning(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (preferences: TripSearchPreferencesInput) => {
+      await api.saveTripSearchPreferences(tripId, preferences);
+      return api.startPlanning(tripId);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.planningRun(tripId) });
     },
   });
 }

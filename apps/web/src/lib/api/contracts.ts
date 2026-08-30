@@ -150,7 +150,8 @@ export const agentRunPhaseSchema = z.enum([
 ]);
 export const agentRunErrorCodeSchema = z.enum([
   "NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "SCHEMA_PARSE",
-  "POLICY_DENIED", "CANCELLED", "EXPIRED", "RETRY_EXHAUSTED", "INTERNAL",
+  "POLICY_DENIED", "SEARCH_PREFERENCES_STALE", "PLANNING_DATA_UNAVAILABLE", "UNKNOWN_SKILL", "TOOL_CALL_MAX_TURNS",
+  "CANCELLED", "EXPIRED", "RETRY_EXHAUSTED", "INTERNAL",
 ]);
 
 export const conversationTurnAcceptedResponseSchema = z.object({
@@ -180,6 +181,48 @@ export const agentRunResponseSchema = z.object({
   assistantMessageId: z.string().uuid().nullable(),
   resultPlanId: z.string().uuid().nullable(),
 });
+
+export const tripSearchPreferencesInputSchema = z.object({
+  tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  adults: z.number().int().min(1).max(9),
+  cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
+  offerFreshnessMinutes: z.number().int().min(1).max(1_440),
+}).strict();
+
+export const tripSearchPreferencesResponseSchema = tripSearchPreferencesInputSchema.extend({
+  tripId: z.string().uuid(),
+  version: z.number().int().positive(),
+  confirmedBy: z.string().uuid(),
+  createdAt: z.string().datetime(),
+}).strict();
+
+export const planningTaskAcceptedResponseSchema = z.object({
+  runId: z.string().uuid(),
+  operation: z.literal("PLAN"),
+  status: z.literal("QUEUED"),
+  generationAttempt: z.literal(0),
+  snapshotId: z.string().uuid(),
+}).strict();
+
+const latestPlanFlightSchema = z.object({
+  id: z.string().min(1), providerOfferId: z.string().min(1), providerName: z.string().min(1), queryId: z.string().uuid(),
+  origin: z.string().min(1), destination: z.string().min(1),
+  segments: z.array(z.object({ carrierCode: z.string().min(1), flightNumber: z.string().min(1), origin: z.string().min(1), destination: z.string().min(1), departureAt: z.string().min(1), arrivalAt: z.string().min(1), duration: z.string().min(1) }).strict()).min(1),
+  totalDuration: z.string().min(1), totalPrice: z.number().nonnegative(), currency: z.string().length(3),
+  cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]), adults: z.number().int().min(1).max(9),
+  baggageSummary: z.string().nullable(), changeSummary: z.string().nullable(), source: z.string().min(1), capturedAt: z.string().datetime(), expiresAt: z.string().datetime(),
+}).strict();
+
+const latestPlanDataSchema = z.object({
+  destination: z.string().min(1), flights: z.array(latestPlanFlightSchema).min(1),
+  stays: z.array(z.unknown()).min(1), ground: z.array(z.unknown()).min(1), generatedAt: z.string().min(1), constraintReferences: z.array(z.string()).optional(),
+}).strict();
+
+export const latestPlanResponseSchema = z.object({
+  plan: z.object({ id: z.string().uuid(), version: z.number().int().positive(), planData: latestPlanDataSchema }).strict(),
+}).strict();
+export const latestPlanningRunResponseSchema = z.object({ run: agentRunResponseSchema.nullable() }).strict();
 
 const streamBaseSchema = z.object({
   runId: z.string().uuid(),
@@ -358,6 +401,11 @@ export type LocationReferenceInput = z.infer<typeof locationReferenceInputSchema
 export type LocationReferenceResponse = z.infer<typeof locationReferenceResponseSchema>;
 export type LocationIntroductionInput = z.infer<typeof locationIntroductionInputSchema>;
 export type LocationIntroductionReady = z.infer<typeof locationIntroductionReadySchema>;
+export type TripSearchPreferencesInput = z.infer<typeof tripSearchPreferencesInputSchema>;
+export type TripSearchPreferencesResponse = z.infer<typeof tripSearchPreferencesResponseSchema>;
+export type PlanningTaskAcceptedResponse = z.infer<typeof planningTaskAcceptedResponseSchema>;
+export type LatestPlanResponse = z.infer<typeof latestPlanResponseSchema>;
+export type LatestPlanningRunResponse = z.infer<typeof latestPlanningRunResponseSchema>;
 export type LocationIntroductionGenerating = z.infer<typeof locationIntroductionGeneratingSchema>;
 export type LocationIntroductionResponse = z.infer<typeof locationIntroductionResponseSchema>;
 export type ExplorationStartRequest = z.infer<typeof explorationStartRequestSchema>;

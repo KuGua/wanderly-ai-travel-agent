@@ -107,7 +107,7 @@ first import in both `apps/api/src/server.ts` and
 
 | Env var | Default | Effect |
 | --- | --- | --- |
-| `OTEL_SDK_DISABLED` | unset | `true` → skip the provider entirely (no spans, no propagator registration is also skipped, so `parseTraceparent` is still safe) |
+| `OTEL_SDK_DISABLED` | unset | `true` → skip the provider entirely; the API still installs the W3C propagator so inbound trace context remains readable |
 | `OTEL_TRACES_EXPORTER` | env-driven | `console` / `otlp` / `none` override the default; `in-memory` only meaningful in tests |
 | `NODE_ENV` | `development` | `test` → in-memory exporter; `production` → OTLP when endpoint set, else no-op |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | when present, OTLP exporter is wired (`http/protobuf` default, `grpc` falls back to `http/protobuf`) |
@@ -133,6 +133,10 @@ The API's `onRequest` hook:
 4. sets `http.method`, `http.target`, `net.peer.ip`, `http.route`,
    `http.status_code`, and `app.correlation_id` on the span;
 5. ends the span in `onResponse` and echoes the response header `traceparent`.
+
+CORS preflight requests may be completed by the CORS plugin before the API's
+`onRequest` hook creates a trace context. Those successful `OPTIONS` responses
+intentionally omit `traceparent` rather than attempting to format missing IDs.
 
 ### Span attribute policy
 

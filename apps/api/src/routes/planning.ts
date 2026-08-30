@@ -5,7 +5,7 @@ import { db } from "../db/database.js";
 import { sharedTrips, tripMembers, tripSearchPreferences } from "../db/schema.js";
 import { planRequestSchema } from "../types/schemas.js";
 import { createConstraintSnapshot, getLatestActivePlan } from "../services/planning-service.js";
-import { acceptPlanningTask } from "../tasks/task-repository.js";
+import { acceptPlanningTask, getLatestAuthorizedPlanningRun } from "../tasks/task-repository.js";
 import { requireActiveTrip } from "../services/trip-status-guard.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
@@ -85,5 +85,10 @@ export async function planningRoutes(app: FastifyInstance) {
     }
 
     return { plan };
+  });
+
+  app.get("/planning/:tripId/run/latest", async (request) => {
+    const { tripId } = request.params as { tripId: string };
+    return { run: await getLatestAuthorizedPlanningRun(tripId, request.user.id) };
   });
 }

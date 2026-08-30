@@ -187,10 +187,15 @@ export async function buildApp(options: BuildAppOptions = {}) {
     // Echo the trace context so clients and downstream services can continue
     // the trace. The response header mirrors the canonical `traceparent`
     // value built from `request.traceId`/`request.spanId`.
-    reply.header(
-      TRACEPARENT_HEADER,
-      formatTraceparent(request.traceId, request.spanId, "01"),
-    );
+    // The CORS plugin can short-circuit an OPTIONS preflight before this
+    // app's onRequest hook creates trace identifiers. Do not turn an
+    // otherwise successful preflight into an onResponse error in that case.
+    if (request.traceId && request.spanId) {
+      reply.header(
+        TRACEPARENT_HEADER,
+        formatTraceparent(request.traceId, request.spanId, "01"),
+      );
+    }
   });
 
   app.setNotFoundHandler(async () => {

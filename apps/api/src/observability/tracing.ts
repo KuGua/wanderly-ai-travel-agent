@@ -302,22 +302,28 @@ export function initTracing(
       diagConfigured = true;
     }
 
-    // Propagator is set unconditionally so that even when SDK is disabled,
-    // `propagation.extract` still parses inbound `traceparent` correctly.
-    // Guard against the duplicate-registration error that fires when the
-    // module is reset and re-initialized inside test forks.
-    if (!propagatorRegistered) {
-      propagation.setGlobalPropagator(new W3CTraceContextPropagator());
-      propagatorRegistered = true;
-    }
-
     const mode = resolveExporterMode();
     if (mode === "none") {
+      // With no SDK provider, install the propagator ourselves so inbound
+      // traceparent headers remain readable. When an SDK provider is active,
+      // NodeTracerProvider.register() owns this global registration; doing it
+      // here first causes OpenTelemetry to reject the second registration.
+      if (!propagatorRegistered) {
+        propagation.setGlobalPropagator(new W3CTraceContextPropagator());
+        propagatorRegistered = true;
+      }
       diag.info(
         `tracing: SDK disabled (exporter=none, OTEL_SDK_DISABLED=${process.env.OTEL_SDK_DISABLED ?? "unset"})`,
       );
       return;
     }
+
+    // This process owns its OpenTelemetry SDK. A dev runner or a prior test
+    // module can leave a global propagator behind; clear it before the SDK
+    // installs its own so provider registration cannot be rejected as a
+    // duplicate global registration.
+    propagation.disable();
+    propagatorRegistered = false;
 
     const resource = new Resource({
       [ATTR_SERVICE_NAME]: serviceName,
@@ -348,6 +354,7 @@ export function initTracing(
     }
 
     provider.register();
+    propagatorRegistered = true;
     registeredProvider = provider;
     diag.info(`tracing: initialized (exporter=${mode}, service=${serviceName})`);
   })();
@@ -396,6 +403,7 @@ export function _resetTracingForTests(): void {
   try {
     trace.disable();
     context.disable();
+    propagation.disable();
   } catch {
     // best-effort; tests will surface real failures separately
   }

@@ -1,13 +1,13 @@
 # Flight LLM Tool 实施方案
 
-**状态：** 已确认，待实施  
-**范围：** Amadeus Self-Service Flight Offers Search 接入，并以受限的 `flight.search` Tool 提供给配置的 OpenAI-compatible LLM 调用。  
+**状态：** Shared durable planning、`flight.search` 和最小 Web task/plan surface 已实施；FlightAPI live contract 仍需完成受控 E2E 验证。
+**范围：** 通过 provider abstraction 接入 Amadeus Self-Service Flight Offers Search 或 FlightAPI.io Flight Price API，并以受限的 `flight.search` Tool 提供给配置的 OpenAI-compatible LLM 调用。
 **不在范围：** 真实订票、支付、机票锁价、外部通用 MCP server、多供应商路由、fixture/Demo data 产品回退。
 
 ## 1. 实施约束
 
 1. 运行时只有已配置、可验证的 provider 数据可成为报价事实；provider 无数据、超时、限流、认证失败、字段不完整或结果过期时，统一返回 `UNAVAILABLE`。不得创建替代 offer、plan、source evidence 或 booking reference。
-2. Amadeus Test 用于本地和 CI 的 adapter 集成验证；它的有限数据不得作为产品运行路径的实时结果。产品环境只在 Amadeus Production 已配置且启动校验通过后启用机票查询。
+2. Amadeus Test 仅用于本地和 CI 的 adapter 集成验证；它的有限数据不得作为产品运行路径的实时结果。FlightAPI.io 是当前 local/hackathon E2E 的显式 live provider，使用真实免费 credits；自动化测试必须 mock HTTP。产品环境只在被 `FLIGHT_PROVIDER` 显式选择、其凭据已配置且启动校验通过的 provider 上启用机票查询。
 3. LLM 可以请求 `flight.search`，但不拥有 HTTP、数据库、密钥、授权或持久化权限。服务端负责参数校验、候选覆盖、provider 调用、数据归一化、证据持久化和 stale 判断。
 4. 模型从当前会话中提炼的航班偏好只产生 `SearchPreferencesProposal`；用户必须确认或编辑后，才可以写入 trip override 并进入新的 `constraint_snapshot`。
 5. 不依赖 OpenAI 或 OpenAI Agents SDK。通过现有 `ModelGateway` 支持具备 function-calling 能力的 OpenAI-compatible LLM；每种新模型必须先完成兼容性验证。
@@ -50,7 +50,7 @@ Authenticated user
 |---|---|---|
 | API / Worker | Node.js LTS、TypeScript、Fastify、PostgreSQL durable task worker | 使用现有 API/Worker 双入口；不引入新服务、Redis、Temporal 或 Step Functions。 |
 | LLM | 当前 `ModelGateway` + OpenAI-compatible Chat Completions/function-calling 协议 | 加入 provider capability probe；禁止把某一厂商 SDK 作为业务控制平面。 |
-| Flight provider | Amadeus Self-Service Flight Offers Search | OAuth client-credentials、请求 deadline、有限 transient retry、请求/响应 schema validation。 |
+| Flight provider | Amadeus Self-Service 或 FlightAPI.io | 由 `FLIGHT_PROVIDER` 显式选择；请求 deadline、严格请求/响应 schema validation、失败关闭。FlightAPI Key 位于 URL path，完整 URL 不得进入 logs、trace、error、持久化或 Tool 输出。FlightAPI 的航班时间可为无 offset 的机场当地 ISO-8601 wall-clock 值；系统保留其当地时间语义，不得擅自补成 UTC。 |
 | 数据 | PostgreSQL + Drizzle + SQL migration | snapshot、query evidence、offer、plan 与 audit 均可关联。 |
 | 安全 | Zod、Skill policy gate、snapshot policy、plan output validator | Tool 输入、Tool 输出、模型最终输出均需独立校验。 |
 | 可观测性 | OpenTelemetry、Pino、现有 metrics/audit | 低基数 provider/outcome/errorCategory 指标；关联 ID 仅 trace/log。 |
@@ -128,6 +128,10 @@ type FlightSearchOutput =
 | `POST /api/v1/planning/generate` | 改为创建 `PLAN` task 并返回 `202 { runId, status: "QUEUED" }`；不在 HTTP request 内完成 provider/LLM 调用。 |
 | `POST /api/v1/change-events` | 生成 `REPLAN` task；沿用 stale-first 语义。 |
 | `GET /api/v1/agent-runs/:runId` | 返回 planning run 的状态、最终 plan ID 或稳定错误码；不返回原始 Tool payload。 |
+| `GET /api/v1/planning/:tripId/run/latest` | 当前 trip member 恢复最近一次 Shared PLAN/REPLAN 的 durable 状态；不读取浏览器本地状态。 |
+| `GET /api/v1/planning/:tripId/latest` | 仅返回已经激活的 plan；Web 只展示其中已校验的归一化 offer 和 provenance。 |
+
+Web 工作台必须先确认 bounded flight search preferences，再发起 `POST /planning/generate`。它只显示服务端的 task status 和 ACTIVE plan；不显示 Tool 参数、snapshot、provider 原始 payload、完整 URL 或 credential。
 | `GET /api/v1/agent-runs/:runId/events` | planning 仅发布安全 phase 与 terminal event；不得流式发送 Tool 参数、raw provider response、模型推理或未持久化 offer。 |
 | `POST /api/v1/trips/:tripId/search-preferences`（新增） | 保存经用户确认的本次搜索偏好；写入后使依赖旧 snapshot 的 plan/confirmation `STALE`。 |
 

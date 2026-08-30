@@ -8,6 +8,8 @@ export const tripKeys = {
   list: ["trips", "list"] as const,
   detail: (tripId: string) => ["trips", tripId, "detail"] as const,
   threads: (tripId: string) => ["trips", tripId, "my-threads"] as const,
+  planningRun: (tripId: string) => ["trips", tripId, "planning-run"] as const,
+  latestPlan: (tripId: string) => ["trips", tripId, "latest-plan"] as const,
 };
 
 export const threadKeys = {

@@ -16,6 +16,11 @@ import {
   updateTripTitleResponseSchema,
   updateDraftTripBriefInputSchema,
   updateDraftTripBriefResponseSchema,
+  tripSearchPreferencesInputSchema,
+  tripSearchPreferencesResponseSchema,
+  planningTaskAcceptedResponseSchema,
+  latestPlanningRunResponseSchema,
+  latestPlanResponseSchema,
   tripDetailResponseSchema,
   tripsResponseSchema,
   threadsResponseSchema,
@@ -30,6 +35,7 @@ import {
   type TripActivationRequest,
   type UpdateTripTitleInput,
   type UpdateDraftTripBriefInput,
+  type TripSearchPreferencesInput,
 } from "./contracts";
 import type { TravelApi } from "./travel-api";
 import { fetchLocationIntroduction } from "./location-introduction-api";
@@ -169,6 +175,29 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request("/trips/" + encodeURIComponent(tripId) + "/draft-brief", updateDraftTripBriefResponseSchema, {
       method: "PATCH", body: JSON.stringify(body),
     });
+  }
+
+  saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput) {
+    const body = tripSearchPreferencesInputSchema.parse(input);
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/search-preferences`,
+      tripSearchPreferencesResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  }
+
+  startPlanning(tripId: string) {
+    return this.client.request("/planning/generate", planningTaskAcceptedResponseSchema, {
+      method: "POST", body: JSON.stringify({ tripId }),
+    });
+  }
+
+  getLatestPlanningRun(tripId: string) {
+    return this.client.request(`/planning/${encodeURIComponent(tripId)}/run/latest`, latestPlanningRunResponseSchema);
+  }
+
+  getLatestPlan(tripId: string) {
+    return this.client.request(`/planning/${encodeURIComponent(tripId)}/latest`, latestPlanResponseSchema);
   }
 }
 

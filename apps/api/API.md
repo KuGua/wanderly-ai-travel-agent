@@ -471,7 +471,7 @@ by `runId` or subscribe to its SSE stream for safe progress and terminal state.
 The task is bound to the immutable snapshot and the accepted confirmed-flight
 preference version. During execution the Shared model may request only the
 registered `flight.search` Skill. The server validates every request against
-that task authority and persists normalized Amadeus evidence. Every required
+that task authority and persists normalized configured-provider evidence. Every required
 origin × destination-candidate cell must have same-task, same-snapshot `LIVE`
 evidence before final model synthesis and guarded atomic plan finalization.
 `UNAVAILABLE` is persisted safely but never creates or activates a plan.

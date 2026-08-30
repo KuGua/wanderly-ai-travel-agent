@@ -3,6 +3,8 @@ import type { FlightOffer, StayOffer, GroundOffer, VisaReadinessResult } from ".
 // ─── Provider Interfaces ────────────────────────────────────────────────────
 
 export interface FlightProvider {
+  /** Stable, non-secret provider identity persisted with normalized evidence. */
+  readonly providerName: "amadeus" | "flightapi" | "unconfigured";
   searchFlights(params: FlightSearchParams): Promise<ProviderResult<FlightOffer[]>>;
 }
 

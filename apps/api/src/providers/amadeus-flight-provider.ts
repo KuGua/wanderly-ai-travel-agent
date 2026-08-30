@@ -40,6 +40,7 @@ export function readAmadeusConfiguration(env: NodeJS.ProcessEnv = process.env): 
 }
 
 export class AmadeusFlightProvider implements FlightProvider {
+  readonly providerName = "amadeus" as const;
   private token: AccessToken | null = null;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;

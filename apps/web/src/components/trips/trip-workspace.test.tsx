@@ -81,6 +81,10 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     startExploration: vi.fn(),
     activateTrip: vi.fn(),
     updateTripTitle: vi.fn(),
+    saveTripSearchPreferences: vi.fn(),
+    startPlanning: vi.fn(),
+    getLatestPlanningRun: vi.fn().mockResolvedValue({ run: null }),
+    getLatestPlan: vi.fn(),
     ...overrides,
   };
 }
@@ -153,6 +157,53 @@ describe("TripWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(updateTripTitle).toHaveBeenCalledWith(TRIP_ID, { name: "Autumn escape" }));
+  });
+
+  it("confirms bounded flight preferences and starts a server-owned Shared planning task", async () => {
+    const saveTripSearchPreferences = vi.fn().mockResolvedValue({
+      tripId: TRIP_ID, version: 1, tripType: "ROUND_TRIP", currency: "USD", adults: 1, cabin: "ECONOMY",
+      offerFreshnessMinutes: 15, confirmedBy: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", createdAt: "2026-08-22T10:00:00.000Z",
+    });
+    const startPlanning = vi.fn().mockResolvedValue({
+      runId: "99999999-9999-4999-8999-999999999999", operation: "PLAN", status: "QUEUED", generationAttempt: 0,
+      snapshotId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    });
+    const api = createApi({
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+      getLatestPlanningRun: vi.fn().mockResolvedValue({ run: null }), saveTripSearchPreferences, startPlanning,
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    fireEvent.click(await screen.findByRole("button", { name: /Confirm and start/ }));
+
+    await waitFor(() => expect(saveTripSearchPreferences).toHaveBeenCalledWith(TRIP_ID, {
+      tripType: "ROUND_TRIP", adults: 1, cabin: "ECONOMY", currency: "USD", offerFreshnessMinutes: 15,
+    }));
+    expect(startPlanning).toHaveBeenCalledWith(TRIP_ID);
+  });
+
+  it("shows only the server-activated plan and its grounded flight provenance", async () => {
+    const run = {
+      runId: "99999999-9999-4999-8999-999999999999", operation: "PLAN" as const, status: "COMPLETED" as const,
+      generationAttempt: 1, attemptCount: 1, createdAt: "2026-08-22T10:00:00.000Z", updatedAt: "2026-08-22T10:00:00.000Z",
+      finishedAt: "2026-08-22T10:01:00.000Z", errorCode: null, assistantMessageId: null, resultPlanId: "88888888-8888-4888-8888-888888888888",
+    };
+    const api = createApi({
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+      getLatestPlanningRun: vi.fn().mockResolvedValue({ run }),
+      getLatestPlan: vi.fn().mockResolvedValue({ plan: {
+        id: run.resultPlanId, version: 1, planData: {
+          destination: "Tokyo", generatedAt: "2026-08-22T10:00:00.000Z", flights: [{
+            id: "flight-1", providerOfferId: "offer-1", providerName: "flightapi", queryId: "77777777-7777-4777-8777-777777777777",
+            origin: "SFO", destination: "NRT", segments: [{ carrierCode: "NH", flightNumber: "7", origin: "SFO", destination: "NRT", departureAt: "2026-09-10T10:00:00", arrivalAt: "2026-09-11T14:00:00", duration: "PT660M" }], totalDuration: "PT660M", totalPrice: 900, currency: "USD", cabin: "ECONOMY", adults: 1, baggageSummary: null, changeSummary: null, source: "FlightAPI Flight Price API", capturedAt: "2026-08-22T10:00:00.000Z", expiresAt: "2026-08-22T10:15:00.000Z",
+          }], stays: [{}], ground: [{}],
+        },
+      } }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    expect(await screen.findByText(/Active plan v1/)).toBeInTheDocument();
+    expect(screen.getByText(/FlightAPI Flight Price API/)).toBeInTheDocument();
   });
 
   it("shows a generic membership-revoked error on 403/410 from the trip detail", async () => {

@@ -717,6 +717,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 2. Drive the Worker with a deterministic model double that requests `flight.search` for every origin × destination cell and then requests final synthesis.
 3. Verify each Tool request against the task snapshot, controlled airport reference and accepted preference version; inspect only normalized `provider_search_runs` and offers.
 4. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, and a lost lease.
+5. In the Shared Trip workspace, confirm bounded preferences and start planning. Refresh the page while the task is active, then verify that the latest server-owned planning run is recovered. Confirm that only an ACTIVE plan displays flight source and captured time; a failed run displays only its stable safe code.
 
 **Expected outcomes:**
 
@@ -725,6 +726,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, airports, dates, passengers, cabin or currency; raw Amadeus payloads, OAuth values and private snapshot data never leave the server boundary.
 - Final model synthesis and the atomic plan/task completion transaction are rejected unless the full matrix is live, the task is still `RUNNING` with its lease, and the accepted preference version is still current. Repeated or late finalization cannot activate a second plan.
 - Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, matrix and bounded-tool-loop failures are terminal and create no active plan.
+- The browser never treats submitted preferences, a run ID, Tool result or plan as authoritative local state. It reloads the durable planning run and, only after completion, the server-activated plan.
 
 - A DRAFT-trip private-chat turn may emit only an in-memory destination/days candidate; raw conversation content is never included in the event, audit summary, or client persistence.
 - The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write.

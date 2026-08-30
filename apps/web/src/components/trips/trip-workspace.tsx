@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
+import { SharedPlanningPanel } from "@/components/trips/shared-planning-panel";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link, useRouter } from "@/i18n/navigation";
 import {
@@ -218,6 +219,8 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           </strong>
         </article>
       </section>
+
+      <SharedPlanningPanel tripId={tripId} />
 
       <section className="grid gap-6 lg:grid-cols-[minmax(280px,360px)_1fr]" aria-label={t("threads.heading")}>
         <aside className="rounded-[22px] border bg-card p-4 shadow-[0_8px_24px_#102a4308]">

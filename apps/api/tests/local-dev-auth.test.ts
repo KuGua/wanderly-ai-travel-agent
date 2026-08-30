@@ -130,6 +130,21 @@ describe("strict local development authentication", () => {
     expect(response.headers["access-control-allow-origin"]).toBeUndefined();
   });
 
+  it("allows an approved CORS preflight without requiring an application trace context", async () => {
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/api/v1/explorations/start",
+      headers: {
+        origin: "http://localhost:3001",
+        "access-control-request-method": "POST",
+      },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers["access-control-allow-origin"]).toBe("http://localhost:3001");
+    expect(response.headers.traceparent).toBeUndefined();
+  });
+
   it("keeps owner-only thread authorization active", async () => {
     const externalId = `foreign-${randomUUID()}`;
     const [foreignOwner] = await db.insert(users).values({ externalId, displayName: "Foreign Owner" }).returning();
