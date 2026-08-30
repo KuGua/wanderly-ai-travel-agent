@@ -38,6 +38,12 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- New audit actions. ALTER TYPE ... ADD VALUE cannot run inside a transaction
 -- block in older servers, so each is issued separately and guarded.
+--
+-- The guard is scoped to the schema being migrated. `pg_type` spans the whole
+-- database, so an unqualified `typname = 'audit_action'` matched the identically
+-- named type in any other schema — with a test schema alongside `public` in one
+-- database, migrating `public` found the label already present elsewhere and
+-- skipped the ALTER, leaving the enum short and every audit write failing.
 DO $$
 DECLARE action TEXT;
 BEGIN
@@ -51,7 +57,9 @@ BEGIN
     IF NOT EXISTS (
       SELECT 1 FROM pg_enum e
       JOIN pg_type t ON t.oid = e.enumtypid
-      WHERE t.typname = 'audit_action' AND e.enumlabel = action
+      WHERE t.typname = 'audit_action'
+        AND t.typnamespace = current_schema()::regnamespace
+        AND e.enumlabel = action
     ) THEN
       EXECUTE format('ALTER TYPE audit_action ADD VALUE %L', action);
     END IF;
