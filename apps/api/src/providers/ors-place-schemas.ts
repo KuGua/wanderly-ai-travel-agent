@@ -17,7 +17,13 @@ export const orsFeaturePropertiesSchema = z.object({
   // survive normalization. Unknown upstream fields are ignored here.
   layer: z.string().optional(),
   name: z.string().optional(),
-  country_a: z.string().length(2).optional(),
+  // ORS returns ISO-3166 alpha-3 here ("JPN"), not alpha-2. Requiring two
+  // characters rejected every real response, and because the parse is
+  // all-or-nothing that turned each place search into
+  // INVALID_PROVIDER_RESPONSE — a provider that looks unavailable rather than
+  // an error anyone can see. Kept as a shape check only; which country a
+  // candidate belongs to is decided by the request, not by this field.
+  country_a: z.string().min(2).max(3).optional(),
   region_a: z.string().optional(),
   locality: z.string().optional(),
   confidence: z.number().min(0).max(1).optional(),

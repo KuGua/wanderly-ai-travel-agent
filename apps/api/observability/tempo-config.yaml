@@ -20,7 +20,8 @@ ingester:
 
 compactor:
   compaction:
-    block_retention: 48h
+    # Local debugging only: keep one day to bound disk use.
+    block_retention: 24h
 
 storage:
   trace:
@@ -40,3 +41,6 @@ metrics_generator:
 querier:
   frontend_worker:
     frontend_address: ""  # disables query frontend for dev
+
+usage_report:
+  reporting_enabled: false

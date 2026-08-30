@@ -9,7 +9,8 @@ describe("local Tempo configuration", () => {
       "utf8",
     );
 
-    expect(config).toContain("block_retention: 48h");
+    expect(config).toContain("block_retention: 24h");
+    expect(config).toContain("reporting_enabled: false");
     expect(config).not.toMatch(/^search_overrides:/m);
   });
 });

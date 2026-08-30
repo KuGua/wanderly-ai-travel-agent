@@ -41,17 +41,14 @@ services:
       NODE_ENV: development
       HOST: 0.0.0.0
       LOCAL_DEV_CONTAINER: "true"
-      # OpenTelemetry — local dev points at the tempo service defined in
-      # docker-compose.observability.yml. Override per environment.
-      # The OTLP/HTTP exporter appends /v1/traces itself. Keep this as the
-      # collector base URL; adding the path here produces a 404.
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      # Lightweight default: safe local NDJSON logs are on; trace export is
+      # off. docker-compose.observability.yml overrides these only when that
+      # optional file is included explicitly.
       OTEL_SERVICE_NAME: ai-travel-agent-api
-      OTEL_SDK_DISABLED: "false"
+      OTEL_SDK_DISABLED: "true"
+      OTEL_TRACES_EXPORTER: none
       OTEL_TRACES_SAMPLER_ARG: "1.0"
-      # Optional safe local NDJSON fallback. Set API_LOCAL_DEBUG_LOG_FILE to a
-      # simple filename (for example api-runtime.ndjson) in the compose .env.
-      LOCAL_DEBUG_LOG_FILE: ${API_LOCAL_DEBUG_LOG_FILE:-}
+      LOCAL_DEBUG_LOG_FILE: ${API_LOCAL_DEBUG_LOG_FILE:-api-runtime.ndjson}
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,13 +73,13 @@ services:
       DB_PASSWORD: travelagent
       DB_NAME: travelagent
       NODE_ENV: development
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
       OTEL_SERVICE_NAME: ai-travel-agent-worker
-      OTEL_SDK_DISABLED: "false"
+      OTEL_SDK_DISABLED: "true"
+      OTEL_TRACES_EXPORTER: none
       OTEL_TRACES_SAMPLER_ARG: "1.0"
       # Use a distinct filename from the API process: two processes must not
       # concurrently append to the same NDJSON diagnostic file.
-      LOCAL_DEBUG_LOG_FILE: ${WORKER_LOCAL_DEBUG_LOG_FILE:-}
+      LOCAL_DEBUG_LOG_FILE: ${WORKER_LOCAL_DEBUG_LOG_FILE:-worker-runtime.ndjson}
       # The worker never calls the resolver. Force `disabled` mode so even
       # if the in-process fallback path is reached, no 70 MB GeoJSON gets
       # loaded into this container.
