@@ -300,11 +300,20 @@ metrics.registerCounter("location_introduction_registry_total", "Operator regist
 });
 metrics.registerHistogram(
   "llm_request_latency_ms",
-  "Latency of successful LLM requests in milliseconds.",
+  "Latency of LLM request attempts in milliseconds, including failures.",
   [50, 100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000],
   {
     provider: ["openai", "gemini", "openai-compatible"],
-    outcome: ["success"],
+    outcome: ["success", "failure"],
+  },
+);
+metrics.registerCounter(
+  "llm_request_errors_total",
+  "LLM request attempt outcomes, by provider, error category and retryability.",
+  {
+    provider: ["openai", "gemini", "openai-compatible"],
+    error_category: ["upstream_5xx", "upstream_failure", "network", "timeout", "schema_parse", "unknown"],
+    retryable: ["true", "false"],
   },
 );
 metrics.registerCounter("agent_task_outcomes_total", "Durable Agent task outcomes by bounded operation and result.", {

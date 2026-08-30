@@ -32,6 +32,7 @@ import {
   LOCATION_INTRODUCTION_SYSTEM_PROMPT,
   buildLocationIntroductionUserPayload,
 } from "./location-introduction-prompts.js";
+import { safeConversationFallback } from "../policy/conversation-safety.js";
 
 export interface LLMGatewayOptions {
   apiKey: string;
@@ -97,6 +98,35 @@ function classifyError(err: unknown): string {
   if (/5\d{2}/.test(message)) return "UPSTREAM_5XX";
   return "UPSTREAM_FAILURE";
 }
+
+/**
+ * Whether `classifyError(err)` is a transient upstream failure worth retrying
+ * with exponential backoff. `SCHEMA_PARSE` is the model misreading the schema,
+ * so retrying would burn quota without changing the answer. `UNKNOWN` is
+ * conservatively not retried either — operators should classify it before
+ * flipping the flag.
+ */
+function isRetryableUpstreamError(code: string): boolean {
+  return code === "UPSTREAM_5XX" || code === "UPSTREAM_FAILURE" || code === "NETWORK" || code === "TIMEOUT";
+}
+
+function computeBackoffMs(attempt: number): number {
+  // `attempt` is 0-indexed on the *next* retry: attempt 0 → base*1, attempt 1 → base*2, etc.
+  const base = Number(process.env.MODEL_GATEWAY_BASE_BACKOFF_MS ?? 250);
+  const cap = Number(process.env.MODEL_GATEWAY_MAX_BACKOFF_MS ?? 2000);
+  const exp = Math.min(cap, base * 2 ** attempt);
+  return exp + Math.floor(Math.random() * Math.min(200, exp));
+}
+
+function recordRetryableError(provider: MetricProvider, code: string): void {
+  metrics.inc("llm_request_errors_total", {
+    provider,
+    error_category: code.toLowerCase(),
+    retryable: String(isRetryableUpstreamError(code)),
+  });
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 interface OpenAIClientLike {
   chat: {
@@ -415,8 +445,11 @@ export class LLMGateway implements ModelGateway {
           completionPayload(response.choices[0]?.message),
         );
         if (!completion.success) {
+          // SCHEMA_PARSE is the model misreading the schema. Retrying won't help
+          // — fail fast so we don't burn quota on the same broken response.
           lastError = "SCHEMA_PARSE";
-          continue;
+          recordRetryableError(this.options.provider, lastError);
+          break;
         }
         const parsed = completion.data;
 
@@ -451,13 +484,19 @@ export class LLMGateway implements ModelGateway {
         return parsed.plan;
       } catch (err) {
         lastError = classifyError(err);
-        if (lastError === "TIMEOUT") break;
+        recordRetryableError(this.options.provider, lastError);
+        if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
+        await sleep(computeBackoffMs(attempt));
       }
     }
 
     safeSetAttribute(span, "llm.outcome", lastError || "SCHEMA_PARSE");
     safeSetAttribute(span, "llm.error_code", lastError || "SCHEMA_PARSE");
     span.end();
+    metrics.observe("llm_request_latency_ms", Date.now() - start, {
+      provider: this.options.provider,
+      outcome: "failure",
+    });
     return recordFailure(lastError || "SCHEMA_PARSE");
   }
 
@@ -670,22 +709,22 @@ export class LLMGateway implements ModelGateway {
           model: this.options.modelName,
           messages: [
             {
-              role: "system",
-              content: STRUCTURED_CONVERSATION_SYSTEM_PROMPT,
-            },
-            {
-              role: "user",
-              content: JSON.stringify({
-                question: params.question,
-                place: params.place ?? null,
-                intent: params.intent ?? null,
-                threadContext: params.threadContext,
-                tripContext: params.tripContext ?? null,
-              }),
-            },
-          ],
-          response_format: { type: "json_object" },
-        }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+                  role: "system",
+                  content: STRUCTURED_CONVERSATION_SYSTEM_PROMPT,
+                },
+                {
+                  role: "user",
+                  content: JSON.stringify({
+                    question: params.question,
+                    place: params.place ?? null,
+                    intent: params.intent ?? null,
+                    threadContext: params.threadContext,
+                    tripContext: params.tripContext ?? null,
+                  }),
+                },
+              ],
+              response_format: { type: "json_object" },
+            }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
 
         const payload = completionPayload(response.choices[0]?.message);
         const parsed = parsedConversationCompletionSchema.safeParse(payload);
@@ -695,8 +734,12 @@ export class LLMGateway implements ModelGateway {
             ? geminiConversationCompletionSchema.safeParse(payload)
             : parsed;
         if (!normalized.success) {
+          // Schema-shape mismatch — retrying burns quota without changing
+          // the answer. Bail out and surface a FALLBACK so the UI keeps
+          // rendering instead of dropping the SSE channel.
           lastError = "SCHEMA_PARSE";
-          continue;
+          recordRetryableError(this.options.provider, lastError);
+          break;
         }
 
         const reply: ConversationReply = {
@@ -734,14 +777,38 @@ export class LLMGateway implements ModelGateway {
         return reply;
       } catch (err) {
         lastError = classifyError(err);
-        if (lastError === "TIMEOUT") break;
+        recordRetryableError(this.options.provider, lastError);
+        if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
+        await sleep(computeBackoffMs(attempt));
       }
     }
 
     safeSetAttribute(span, "llm.outcome", lastError);
     safeSetAttribute(span, "llm.error_code", lastError);
     span.end();
-    return recordFailure(lastError);
+    metrics.observe("llm_request_latency_ms", Date.now() - start, {
+      provider: this.options.provider,
+      outcome: "failure",
+    });
+    // Retries exhausted (or non-retryable failure). Record the failure for
+    // observability / agent_runs, but surface a FALLBACK reply so the
+    // SSE channel closes cleanly instead of timing out at the caller.
+    logSafeRuntimeEvent(ctx, {
+      component: "llm", event: "request", operation: "travel.conversation", outcome: "failure",
+      errorCode: lastError, latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,
+    });
+    await recordAgentRun({
+      ctx,
+      skillName: "travel.conversation",
+      agentName: "personal",
+      modelName: this.options.modelName,
+      promptVersion: this.options.promptVersion,
+      outputHash: hashOutput({ errorCode: lastError }),
+      latencyMs: Date.now() - start,
+      status: lastError === "TIMEOUT" ? "TIMEOUT" : "ERROR",
+      errorCode: lastError,
+    });
+    return safeConversationFallback();
   }
 
   async streamConversationReply(params: {
@@ -778,82 +845,12 @@ export class LLMGateway implements ModelGateway {
       safeSetAttribute(span, "llm.outcome", errorCode);
       safeSetAttribute(span, "llm.error_code", errorCode);
       span.end();
-      throw new ModelGatewayError(errorCode, "conversation");
-    }
-
-    let content = "";
-    let usage: AgentRunTokens | undefined;
-    try {
-      const stream = await client.chat.completions.create({
-        model: this.options.modelName,
-        messages: [
-          {
-            role: "system",
-            content: STREAMED_CONVERSATION_SYSTEM_PROMPT,
-          },
-          {
-            role: "user",
-            content: JSON.stringify({
-              question: params.question,
-              place: params.place ?? null,
-              intent: params.intent ?? null,
-              threadContext: params.threadContext,
-              tripContext: params.tripContext ?? null,
-            }),
-          },
-        ],
-        stream: true,
-        stream_options: { include_usage: true },
-      }, { signal: params.signal, headers: outboundTraceHeaders(ctx) }) as AsyncIterable<{
-        choices: Array<{ delta: { content?: string | null } }>;
-        usage?: AgentRunTokens;
-      }>;
-
-      for await (const chunk of stream) {
-        if (params.signal?.aborted) {
-          const abortError = new Error("Conversation stream aborted");
-          abortError.name = "AbortError";
-          throw abortError;
-        }
-        usage = chunk.usage ?? usage;
-        const delta = chunk.choices[0]?.delta.content;
-        if (!delta) continue;
-        content += delta;
-        if (content.length > 8000) throw new Error("Conversation stream exceeds schema limit");
-        await params.onDelta(delta);
-      }
-      const parsed = z.string().trim().min(1).max(8000).safeParse(content);
-      if (!parsed.success) throw new Error("Conversation stream schema validation failed");
-
-      const reply: ConversationReply = { content: parsed.data, responseMode: "MODEL" };
-      metrics.observe("llm_request_latency_ms", Date.now() - start, {
-        provider: this.options.provider,
-        outcome: "success",
+      // SDK init failure is non-retryable — surface as FALLBACK so the
+      // SSE channel still closes cleanly.
+      logSafeRuntimeEvent(ctx, {
+        component: "llm", event: "request", operation: "travel.conversation", outcome: "failure",
+        errorCode, latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,
       });
-      if (usage) {
-        if (typeof usage.prompt === "number") safeSetAttribute(span, "llm.tokens.prompt", usage.prompt);
-        if (typeof usage.completion === "number") safeSetAttribute(span, "llm.tokens.completion", usage.completion);
-        if (typeof usage.total === "number") safeSetAttribute(span, "llm.tokens.total", usage.total);
-      }
-      safeSetAttribute(span, "llm.outcome", "success");
-      span.end();
-      await recordAgentRun({
-        ctx,
-        skillName: "travel.conversation",
-        agentName: "personal",
-        modelName: this.options.modelName,
-        promptVersion: this.options.promptVersion,
-        outputHash: hashOutput(reply),
-        latencyMs: Date.now() - start,
-        status: "SUCCESS",
-        tokens: usage,
-      });
-      return reply;
-    } catch (error) {
-      const errorCode = classifyError(error);
-      safeSetAttribute(span, "llm.outcome", errorCode);
-      safeSetAttribute(span, "llm.error_code", errorCode);
-      span.end();
       await recordAgentRun({
         ctx,
         skillName: "travel.conversation",
@@ -862,12 +859,158 @@ export class LLMGateway implements ModelGateway {
         promptVersion: this.options.promptVersion,
         outputHash: hashOutput({ errorCode }),
         latencyMs: Date.now() - start,
-        status: errorCode === "TIMEOUT" ? "TIMEOUT" : "ERROR",
+        status: "ERROR",
         errorCode,
-        tokens: usage,
       });
-      throw new ModelGatewayError(errorCode, "conversation");
+      return safeConversationFallback();
     }
+
+    // The retry budget covers the "haven't started streaming yet" window
+    // only. Once a delta is flushed to the UI we cannot retry — doing so
+    // would concatenate attempt-1 chunks with attempt-2 chunks into a
+    // single broken message. Mid-stream failure rethrows so the worker
+    // restarts the task with a fresh SSE channel.
+    let sentAnyDelta = false;
+    let lastError = "UPSTREAM_FAILURE";
+    const maxRetries = this.options.maxRetries ?? 1;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        return await this.streamConversationReplyOnce({
+          client,
+          params,
+          ctx,
+          start,
+          span,
+          markSent: () => { sentAnyDelta = true; },
+        });
+      } catch (error) {
+        lastError = classifyError(error);
+        recordRetryableError(this.options.provider, lastError);
+        if (sentAnyDelta) break; // mid-stream abort — let worker retry
+        if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
+        await sleep(computeBackoffMs(attempt));
+      }
+    }
+
+    metrics.observe("llm_request_latency_ms", Date.now() - start, {
+      provider: this.options.provider,
+      outcome: "failure",
+    });
+    safeSetAttribute(span, "llm.outcome", lastError);
+    safeSetAttribute(span, "llm.error_code", lastError);
+    span.end();
+    logSafeRuntimeEvent(ctx, {
+      component: "llm", event: "request", operation: "travel.conversation", outcome: "failure",
+      errorCode: lastError, latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,
+    });
+    await recordAgentRun({
+      ctx,
+      skillName: "travel.conversation",
+      agentName: "personal",
+      modelName: this.options.modelName,
+      promptVersion: this.options.promptVersion,
+      outputHash: hashOutput({ errorCode: lastError }),
+      latencyMs: Date.now() - start,
+      status: lastError === "TIMEOUT" ? "TIMEOUT" : "ERROR",
+      errorCode: lastError,
+    });
+    if (sentAnyDelta) {
+      // Mid-stream failure: the partial text already reached the client;
+      // throw so the worker restarts the task and closes the SSE channel.
+      throw new ModelGatewayError(lastError, "conversation");
+    }
+    // Pre-stream failure: surface a FALLBACK reply so the UI keeps
+    // rendering and SSE closes cleanly.
+    return safeConversationFallback();
+  }
+
+  private async streamConversationReplyOnce(args: {
+    client: OpenAIClientLike;
+    params: {
+      question: string;
+      place?: ConversationPlace;
+      threadContext: ThreadContextMessage[];
+      intent?: "auto_intro" | "user_typed";
+      tripContext?: PersonalTripContext;
+      onDelta: ConversationDeltaHandler;
+      signal?: AbortSignal;
+      ctx?: RequestContext;
+    };
+    ctx: RequestContext;
+    start: number;
+    span: ReturnType<ReturnType<typeof getTracer>["startSpan"]>;
+    markSent: () => void;
+  }): Promise<ConversationReply> {
+    const { client, params, ctx, start, span, markSent } = args;
+    let content = "";
+    let usage: AgentRunTokens | undefined;
+    const stream = await client.chat.completions.create({
+      model: this.options.modelName,
+      messages: [
+        {
+          role: "system",
+          content: STREAMED_CONVERSATION_SYSTEM_PROMPT,
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            question: params.question,
+            place: params.place ?? null,
+            intent: params.intent ?? null,
+            threadContext: params.threadContext,
+            tripContext: params.tripContext ?? null,
+          }),
+        },
+      ],
+      stream: true,
+      stream_options: { include_usage: true },
+    }, { signal: params.signal, headers: outboundTraceHeaders(ctx) }) as AsyncIterable<{
+      choices: Array<{ delta: { content?: string | null } }>;
+      usage?: AgentRunTokens;
+    }>;
+
+    for await (const chunk of stream) {
+      if (params.signal?.aborted) {
+        const abortError = new Error("Conversation stream aborted");
+        abortError.name = "AbortError";
+        throw abortError;
+      }
+      usage = chunk.usage ?? usage;
+      const delta = chunk.choices[0]?.delta.content;
+      if (!delta) continue;
+      content += delta;
+      if (content.length > 8000) throw new Error("Conversation stream exceeds schema limit");
+      markSent();
+      await params.onDelta(delta);
+    }
+    const parsed = z.string().trim().min(1).max(8000).safeParse(content);
+    if (!parsed.success) throw new Error("Conversation stream schema validation failed");
+
+    const reply: ConversationReply = { content: parsed.data, responseMode: "MODEL" };
+    metrics.observe("llm_request_latency_ms", Date.now() - start, {
+      provider: this.options.provider,
+      outcome: "success",
+    });
+    if (usage) {
+      if (typeof usage.prompt === "number") safeSetAttribute(span, "llm.tokens.prompt", usage.prompt);
+      if (typeof usage.completion === "number") safeSetAttribute(span, "llm.tokens.completion", usage.completion);
+      if (typeof usage.total === "number") safeSetAttribute(span, "llm.tokens.total", usage.total);
+    }
+    safeSetAttribute(span, "llm.outcome", "success");
+    span.end();
+    await recordAgentRun({
+      ctx,
+      skillName: "travel.conversation",
+      agentName: "personal",
+      modelName: this.options.modelName,
+      promptVersion: this.options.promptVersion,
+      outputHash: hashOutput(reply),
+      latencyMs: Date.now() - start,
+      status: "SUCCESS",
+      tokens: usage,
+    });
+    return reply;
   }
 
   async generateLocationIntroduction(params: {

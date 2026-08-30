@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const recordAgentRun = vi.hoisted(() => vi.fn());
 vi.mock("../src/observability/agent-runs.js", () => ({ recordAgentRun }));
 
-import { LLMGateway, ModelGatewayError } from "../src/providers/llm-gateway.js";
+import { LLMGateway } from "../src/providers/llm-gateway.js";
 import { createRequestContext } from "../src/utils/context.js";
 
 beforeEach(() => {
@@ -101,7 +101,7 @@ describe("conversational ModelGateway", () => {
     });
   });
 
-  it("throws a controlled error instead of synthesizing a reply for malformed output", async () => {
+  it("returns a FALLBACK reply when the model produces malformed output instead of synthesizing one", async () => {
     const client = {
       chat: { completions: { parse: vi.fn().mockResolvedValue({
         choices: [{ message: { parsed: { unexpected: true } } }],
@@ -112,9 +112,8 @@ describe("conversational ModelGateway", () => {
     await expect(gateway.generateConversationReply({
       question: "Tell me about Tokyo",
       threadContext: [],
-    })).rejects.toMatchObject({
-      name: "ModelGatewayError",
-      code: "SCHEMA_PARSE",
+    })).resolves.toMatchObject({
+      responseMode: "FALLBACK",
     });
     expect(recordAgentRun).toHaveBeenCalledWith(expect.objectContaining({
       skillName: "travel.conversation",
@@ -123,7 +122,7 @@ describe("conversational ModelGateway", () => {
     }));
   });
 
-  it("throws a controlled timeout without returning local fallback content", async () => {
+  it("returns a FALLBACK reply on timeout without throwing — the SSE channel closes cleanly", async () => {
     const aborted = new Error("request aborted");
     aborted.name = "AbortError";
     const client = {
@@ -134,7 +133,9 @@ describe("conversational ModelGateway", () => {
     await expect(gateway.generateConversationReply({
       question: "Tell me about Tokyo",
       threadContext: [],
-    })).rejects.toBeInstanceOf(ModelGatewayError);
+    })).resolves.toMatchObject({
+      responseMode: "FALLBACK",
+    });
     expect(recordAgentRun).toHaveBeenCalledWith(expect.objectContaining({
       status: "TIMEOUT",
       errorCode: "TIMEOUT",

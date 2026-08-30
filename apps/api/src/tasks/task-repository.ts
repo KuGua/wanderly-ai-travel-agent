@@ -496,7 +496,7 @@ export async function completeConversationTask(params: {
   run: AgentTaskRow;
   leaseToken: string;
   content: string;
-  responseMode: "MODEL" | "SAFE_REFUSAL";
+  responseMode: "MODEL" | "SAFE_REFUSAL" | "FALLBACK";
 }): Promise<OwnerConversationMessage> {
   if (!params.run.threadId) throw new Error("Conversation task has no thread");
   const span = getTracer().startSpan("db.agent_task_runs.UPDATE", {

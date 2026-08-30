@@ -378,7 +378,7 @@ export const ownerConversationMessageSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
-export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL"]);
+export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL", "FALLBACK"]);
 
 export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN"]);
 export const agentTaskStatusSchema = z.enum([
