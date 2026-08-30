@@ -126,7 +126,7 @@ export async function processNextAgentTask(): Promise<boolean> {
     try {
       logSafeRuntimeEvent(ctx, {
         component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "started",
-        attempt: run.generationAttempt,
+        attempt: run.generationAttempt, relatedRunId: run.id,
       });
       await publishAgentStreamEvent({
         event: "turn.started",
@@ -142,7 +142,7 @@ export async function processNextAgentTask(): Promise<boolean> {
         metrics.inc("agent_task_outcomes_total", { operation: run.operation.toLowerCase(), outcome: "completed" });
         logSafeRuntimeEvent(ctx, {
           component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "success",
-          attempt: run.generationAttempt,
+          attempt: run.generationAttempt, relatedRunId: run.id,
         });
         return true;
       }
@@ -184,7 +184,7 @@ export async function processNextAgentTask(): Promise<boolean> {
       });
       logSafeRuntimeEvent(ctx, {
         component: "worker", event: "task", operation: "conversation", outcome: "success",
-        attempt: run.generationAttempt,
+        attempt: run.generationAttempt, relatedRunId: run.id,
       });
       return true;
     } catch (error) {
@@ -210,6 +210,7 @@ export async function processNextAgentTask(): Promise<boolean> {
       logSafeRuntimeEvent(ctx, {
         component: "worker", event: "task", operation: run.operation.toLowerCase(),
         outcome: "failure", attempt: run.generationAttempt, errorCode: classified.code,
+        relatedRunId: run.id,
       });
       const outcome = await failOrRetryTask({
         run,

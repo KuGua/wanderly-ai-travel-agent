@@ -360,7 +360,8 @@ export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL"]);
 
 export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN"]);
 export const agentTaskStatusSchema = z.enum([
-  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "FAILED", "CANCELLED", "STALE",
+  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS",
+  "FAILED", "CANCELLED", "STALE",
 ]);
 export const agentRunPhaseSchema = z.enum([
   "ACCEPTED", "RESEARCHING", "GENERATING", "VALIDATING", "PERSISTING",

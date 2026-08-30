@@ -16,7 +16,8 @@ export function SharedPlanningPanel({ tripId, tripStatus }: { tripId: string; tr
   const startPlanning = useStartPlanning(tripId);
   const runQuery = useLatestPlanningRun(tripId);
   const run = runQuery.data?.run ?? null;
-  const planQuery = useLatestPlan(tripId, run?.status === "COMPLETED" || Boolean(run?.resultPlanId));
+  const runHasPersistedPlan = run?.status === "COMPLETED" || run?.status === "COMPLETED_WITH_GAPS";
+  const planQuery = useLatestPlan(tripId, runHasPersistedPlan || Boolean(run?.resultPlanId));
   const plan = planQuery.data?.plan ?? null;
   const tripIsActive = tripStatus !== "DRAFT";
 

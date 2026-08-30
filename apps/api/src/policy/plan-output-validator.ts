@@ -82,7 +82,9 @@ export const planOutputSchema = z.object({
   // single-element set from `destination` so pre-Phase 3 plans still pass.
   destinationCandidatesEvaluated: z.array(z.string().min(1)).min(1).optional(),
   flights: z.array(flightOfferSchema).min(1),
-  stays: z.array(stayOfferSchema).min(1),
+  // A missing stay provider/result is persisted as a Phase 4 service gap; it
+  // must not force the LLM to invent a hotel offer.
+  stays: z.array(stayOfferSchema),
   activities: z.array(activityEvidenceSchema).optional(),
   generatedAt: z.string().min(1),
   constraintReferences: z.array(z.string().min(1)).optional(),

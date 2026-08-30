@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SerpApiFlightProvider, readSerpApiConfiguration } from "../src/providers/serpapi-flight-provider.js";
 import { createFlightProvider } from "../src/providers/live-provider-factory.js";
+import { flightSearchOutputSchema } from "../src/skills/shared/flight-search-skill.js";
 
 const request = {
   origin: "SIN", destination: "NRT", dateStart: "2026-10-01", dateEnd: "2026-10-10",
@@ -51,7 +52,34 @@ describe("SerpApiFlightProvider", () => {
         providerName: "serpapi", origin: "SIN", destination: "NRT", totalPrice: 321,
         totalDuration: "PT6H30M", cabin: "PREMIUM_ECONOMY", baggageSummary: "Carry-on bag included",
       });
-      expect(result.data[0]?.segments[0]).toMatchObject({ carrierCode: "EX", flightNumber: "123", departureAt: "2026-10-01T08:00" });
+      expect(result.data[0]?.segments[0]).toMatchObject({
+        carrierCode: "EX",
+        flightNumber: "123",
+        departureAt: "2026-10-01T08:00:00",
+        arrivalAt: "2026-10-01T16:30:00",
+      });
+      expect(() => flightSearchOutputSchema.parse({
+        outcome: "LIVE",
+        queryId: result.data[0]!.queryId,
+        offers: result.data,
+      })).not.toThrow();
+    }
+  });
+
+  it("preserves provider seconds while normalizing minute-precision local times", async () => {
+    const payloadWithSeconds = structuredClone(validPayload);
+    payloadWithSeconds.best_flights[0].flights[0].departure_airport.time = "2026-10-01 08:00:45";
+    payloadWithSeconds.best_flights[0].flights[0].arrival_airport.time = "2026-10-01 16:30:15";
+
+    const result = await provider(async () => new Response(JSON.stringify(payloadWithSeconds), { status: 200 }))
+      .searchFlights(request);
+
+    expect(result).toMatchObject({ outcome: "LIVE" });
+    if (result.outcome === "LIVE") {
+      expect(result.data[0]?.segments[0]).toMatchObject({
+        departureAt: "2026-10-01T08:00:45",
+        arrivalAt: "2026-10-01T16:30:15",
+      });
     }
   });
 

@@ -28,7 +28,7 @@ export async function handlePlanningTask(params: {
   const startedAt = Date.now();
   logSafeRuntimeEvent(params.ctx, {
     component: "planner", event: "task", operation: run.operation.toLowerCase(), outcome: "started",
-    attempt: run.generationAttempt,
+    attempt: run.generationAttempt, relatedRunId: run.id, relatedSnapshotId: run.snapshotId ?? undefined,
   });
   if (
     (run.operation !== "PLAN" && run.operation !== "REPLAN")
@@ -101,6 +101,7 @@ export async function handlePlanningTask(params: {
   logSafeRuntimeEvent(params.ctx, {
     component: "planner", event: "task", operation: run.operation.toLowerCase(), outcome: "success",
     attempt: run.generationAttempt, latencyMs: Date.now() - startedAt,
+    relatedRunId: run.id, relatedSnapshotId: run.snapshotId ?? undefined,
   });
   return resultPlanId;
 }

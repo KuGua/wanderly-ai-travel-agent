@@ -5,7 +5,13 @@ import { z } from "zod";
 const serpApiDateTime = z.string().regex(
   /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?$/,
   "Expected a Google Flights local date-time",
-).transform((value) => value.replace(" ", "T"));
+).transform((value) => {
+  const normalized = value.replace(" ", "T");
+  // Google Flights commonly returns airport-local wall-clock values at
+  // minute precision.  The shared normalized FlightOffer contract requires
+  // seconds, so add only the missing precision; do not invent a UTC offset.
+  return normalized.length === 16 ? `${normalized}:00` : normalized;
+});
 
 const airportSchema = z.object({
   id: z.string().regex(/^[A-Z]{3}$/),

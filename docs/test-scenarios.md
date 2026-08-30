@@ -67,7 +67,8 @@ memberships overlap only where explicitly configured.
 - Test-only supported searches return deterministic normalized offers; production adapter responses carry their real source, capture time and expiry.
 - Results outside the requested date range are excluded.
 - Unsupported searches return no offers and never fabricate inventory or price.
-- A SerpAPI response may only contribute normalized flight fields after its Google Flights response schema validates. Its query-parameter API key, supplier links, raw payload, booking/departure tokens and provider error text never enter evidence, Tool output, logs or traces.
+- A SerpAPI response may only contribute normalized flight fields after its Google Flights response schema validates. Airport-local wall-clock values returned at minute precision are normalized to the shared seconds-precision contract without inventing a timezone; existing provider seconds are preserved. Its query-parameter API key, supplier links, raw payload, booking/departure tokens and provider error text never enter evidence, Tool output, logs or traces.
+- For a multi-destination Shared PLAN, an early model final answer is rejected while any authoritative `origin × destination` cell remains `MISSING`. The server returns only the controlled coverage status to the bounded model loop and requires another genuine `flight.search` call. Repeated calls for an identical controlled cell reuse that loop's normalized result and do not issue another provider request or consume another live credit.
 
 ### TS-H3b — Reject unauthorized or fabricated plan output before persistence
 
@@ -595,6 +596,8 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 
 - The client receives only documented safe phases and an identifier/version-safe terminal result; it never receives model reasoning, prompt, raw provider payload or unvalidated plan content.
 - A final `COMPLETED` event refers only to an already validated and persisted plan version; a final `COMPLETED_WITH_GAPS` event refers only to an already persisted safe research summary and carries no commercial authority.
+- The API and Web task-status contracts accept `COMPLETED_WITH_GAPS`; a durable planning run in that state remains readable and the Web fetches its persisted plan instead of presenting a response-schema error.
+- After the proposal is adopted, the Web accepts and renders a grounded flight plan even when optional stay or ground evidence is absent; the missing capabilities remain explicit gaps and are never populated with fixtures.
 - Consent revocation or a newer run makes the old stream terminal/stale; it cannot activate, display or overwrite a plan after invalidation.
 - Stream identifiers remain out of metric labels, and no event widens membership or snapshot authorization.
 
@@ -869,6 +872,16 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, airports, dates, passengers, cabin or currency; raw Amadeus payloads, OAuth values and private snapshot data never leave the server boundary.
 - Final model synthesis and the atomic plan/task completion transaction are rejected unless the full matrix is live, the task is still `RUNNING` with its lease, and the accepted preference version is still current. Repeated or late finalization cannot activate a second plan.
 - Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, matrix and bounded-tool-loop failures are terminal and create no active plan.
+- A forced missing-flight Tool turn omits the final-answer JSON response format because Gemini's OpenAI-compatible endpoint rejects forced function calling combined with a JSON response MIME type; auto/final turns continue to require strict JSON output.
+- Stateless multi-turn Tool history returns the complete in-memory assistant message to the model so Gemini thought-signature metadata is preserved; opaque signatures are never logged, persisted or exposed in Tool results.
+- SerpAPI LIVE and UNAVAILABLE outcomes are accepted by the bounded `flight_tool_invocations_total` metric; observability validation must never turn a normalized provider outcome into an `INTERNAL` task failure.
+- When `flight.search` is the only registered planning Tool, completing every authoritative flight cell switches the next model turn to `tool_choice: none` so Gemini must synthesize the final strict JSON instead of repeating cached Tool calls until the turn limit.
+- The completed research message uses an explicit final-plan schema instruction rather than the intermediate `serverFlightResearchProgress` JSON envelope, preventing Gemini from echoing progress as the final response; missing stay evidence still fails closed later as planning-data unavailable.
+- OpenAI-compatible model responses that materialize optional plan arrays as `null` are normalized to omission at the provider boundary; required fields and supplied non-null values remain strictly validated.
+- A structurally invalid final model response receives a content-free schema-path correction and is retried inside the existing bounded loop; exhaustion fails closed as `SCHEMA_PARSE`.
+- Final Shared-plan evidence selections are treated as ids, rebound to complete server-owned normalized evidence, and assigned a server-derived `generatedAt`; unknown ids remain unbound and fail deterministic validation.
+- The final model contract returns compact `{id}` references rather than copying full provider evidence, keeping multi-offer responses bounded while the server remains authoritative for all normalized fields.
+- After the flight matrix is complete, missing required flight-origin coverage fails as `PLANNING_DATA_UNAVAILABLE`; unavailable stay evidence is normalized to `stays: []` and persisted as the Phase 4 `stay:NO_RESULTS` service gap, with no runtime fixture substitution.
 - The browser never treats submitted preferences, a run ID, Tool result or plan as authoritative local state. It reloads the durable planning run and, only after completion, the server-activated plan.
 
 - A DRAFT-trip private-chat turn may emit only an in-memory destination/days candidate; raw conversation content is never included in the event, audit summary, or client persistence.

@@ -108,6 +108,32 @@ span is active, the W3C `trace_id` / `span_id` pair. `app.ts` wires this on
 `apps/api/src/observability/tracing.ts#getActiveSpan`; when the SDK is
 disabled or no span is active, the trace/span bindings are silently omitted.
 
+### API → Worker log join
+
+`ctxFromRun` (`tasks/task-repository.ts`) rehydrates `correlationId` **and**
+`traceId` from the persisted `agent_task_runs.trace_context`, so the API line
+that accepted `POST /planning/generate` and every Worker line for the same
+durable task share both ids. `spanId` is deliberately left unset there:
+`correlationChild` then binds the Worker's *own* active span, so `span_id`
+identifies the Worker unit of work while `trace_id` still joins back to the
+originating request. A task row with no `trace_context` (recovery, replay,
+pre-PR-3 rows) keeps a fresh `correlationId` and omits the trace bindings.
+
+### `runtime_event` correlation and provider fields
+
+`SafeRuntimeEvent` carries, in addition to the lifecycle fields,
+`relatedRunId` / `relatedSnapshotId` (validated UUIDs — the durable
+`agent_task_runs.id` and the immutable constraint snapshot; log/trace
+correlation only, **never** metric labels) and, for external searches,
+`provider` ∈ `["amadeus","flightapi","serpapi","unconfigured"]`,
+`providerStatus` ∈ `["LIVE","UNAVAILABLE"]`, plus the controlled
+`originId` / `destinationId` catalogue ids. `executeAndPersistFlightSearch`
+emits a `started` record and one terminal record carrying `providerStatus`,
+`latencyMs`, and either `itemCount` (normalized offer count) or `errorCode`
+(the bounded `UNAVAILABLE` reason). The supplier URL, API key, raw payload
+and raw provider error never reach this layer — they stay inside the
+provider adapter.
+
 ## Distributed tracing
 
 ### Bootstrap (`tracing.ts`)
@@ -144,6 +170,12 @@ requests cannot bypass it):
    resolved in `preHandler` via `request.routeOptions.url`);
 4. sets `http.method`, `http.target`, `net.peer.ip`, `http.route`,
    `http.status_code`, and `app.correlation_id` on the span;
+4b. stores the serialized `traceparent` (and the inbound `tracestate`, when
+   present) on the request. Routes forward these into `createRequestContext`,
+   and `tasks/task-repository.ts#buildTraceContextForTask` persists them into
+   `agent_task_runs.trace_context`. This is the only way trace context
+   survives the durable boundary — without it the column is `NULL` for every
+   task and the Worker cannot rejoin the originating request's log thread;
 5. writes the response `traceparent` before later `onRequest` hooks can
    short-circuit a response, then ends the span in `onResponse`.
 

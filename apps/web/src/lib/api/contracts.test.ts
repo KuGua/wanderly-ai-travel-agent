@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  agentRunResponseSchema,
   agentStreamEventSchema,
   conversationTurnAcceptedResponseSchema,
   locationReferenceResponseSchema,
+  latestPlanResponseSchema,
   ownerConversationResponseSchema,
   profileResponseSchema,
   tripsResponseSchema,
@@ -14,6 +16,68 @@ describe("API contracts", () => {
   it("accepts the canonical nullable Profile and Trip fixture shapes", () => {
     expect(profileResponseSchema.parse(testProfileResponse)).toEqual(testProfileResponse);
     expect(tripsResponseSchema.parse(testTripsResponse)).toEqual(testTripsResponse);
+  });
+
+  it("accepts a durable planning run completed with non-authoritative provider gaps", () => {
+    const run = agentRunResponseSchema.parse({
+      runId: "55555555-5555-4555-8555-555555555555",
+      operation: "PLAN",
+      status: "COMPLETED_WITH_GAPS",
+      generationAttempt: 1,
+      attemptCount: 1,
+      createdAt: "2026-08-31T10:00:00.000Z",
+      updatedAt: "2026-08-31T10:00:10.000Z",
+      finishedAt: "2026-08-31T10:00:10.000Z",
+      errorCode: null,
+      assistantMessageId: null,
+      resultPlanId: "66666666-6666-4666-8666-666666666666",
+    });
+
+    expect(run.status).toBe("COMPLETED_WITH_GAPS");
+  });
+
+  it("accepts a grounded flight plan when optional stay and ground evidence are unavailable", () => {
+    const response = latestPlanResponseSchema.parse({
+      plan: {
+        id: "66666666-6666-4666-8666-666666666666",
+        version: 1,
+        planData: {
+          destination: "LIS",
+          destinationCandidatesEvaluated: ["NRT", "LIS"],
+          flights: [{
+            id: "offer-1",
+            providerOfferId: "provider-offer-1",
+            providerName: "serpapi",
+            queryId: "77777777-7777-4777-8777-777777777777",
+            origin: "SIN",
+            destination: "LIS",
+            segments: [{
+              carrierCode: "SQ",
+              flightNumber: "SQ000",
+              origin: "SIN",
+              destination: "LIS",
+              departureAt: "2026-10-10T10:00:00+08:00",
+              arrivalAt: "2026-10-10T18:00:00+01:00",
+              duration: "PT15H",
+            }],
+            totalDuration: "PT15H",
+            totalPrice: 1200,
+            currency: "USD",
+            cabin: "ECONOMY",
+            adults: 1,
+            baggageSummary: null,
+            changeSummary: null,
+            source: "serpapi",
+            capturedAt: "2026-08-31T10:00:00.000Z",
+            expiresAt: "2026-08-31T10:15:00.000Z",
+          }],
+          generatedAt: "2026-08-31T10:00:00.000Z",
+        },
+      },
+    });
+
+    expect(response.plan.planData.stays).toEqual([]);
+    expect(response.plan.planData.ground).toEqual([]);
   });
 
   it("rejects a Profile missing canonical fields", () => {

@@ -9,6 +9,7 @@ import type { ConstraintSnapshotData } from "../types/domain.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 import { metrics } from "../observability/metrics.js";
+import { logSafeRuntimeEvent, type SafeRuntimeEvent } from "../observability/telemetry.js";
 
 export const flightSearchInputSchema = z.object({
   snapshotId: z.string().uuid(),
@@ -104,6 +105,22 @@ export async function executeAndPersistFlightSearch(params: {
   });
   const origin = resolveAirportReference(params.input.originId)!;
   const destination = resolveAirportReference(params.input.destinationId)!;
+  // Local-debug lifecycle records. Bounded fields only: provider identity,
+  // controlled route ids, normalized outcome, offer count and duration. The
+  // supplier URL, key, raw payload and raw error never reach this layer.
+  const providerLogFields = {
+    component: "tool",
+    event: "provider_search",
+    operation: "flight.search",
+    toolName: "flight.search",
+    provider: providerName,
+    originId: params.input.originId,
+    destinationId: params.input.destinationId,
+    relatedRunId: params.agentTaskRunId,
+    relatedSnapshotId: params.snapshotId,
+  } satisfies Partial<SafeRuntimeEvent>;
+  logSafeRuntimeEvent(params.ctx, { ...providerLogFields, outcome: "started" });
+  const startedAt = Date.now();
   const result = await params.provider.searchFlights({
     origin: origin.iataCode,
     destination: destination.iataCode,
@@ -154,6 +171,15 @@ export async function executeAndPersistFlightSearch(params: {
     outcome: result.outcome === "LIVE" ? "live" : "unavailable",
     provider: providerName,
     error_category: result.outcome === "LIVE" ? "none" : result.reason.toLowerCase(),
+  });
+  logSafeRuntimeEvent(params.ctx, {
+    ...providerLogFields,
+    outcome: result.outcome === "LIVE" ? "success" : "failure",
+    providerStatus: result.outcome,
+    latencyMs: Date.now() - startedAt,
+    ...(result.outcome === "LIVE"
+      ? { itemCount: result.data.length }
+      : { errorCode: result.reason }),
   });
   return result.outcome === "LIVE" ? { ...result, queryId: searchRun.id } : result;
 }

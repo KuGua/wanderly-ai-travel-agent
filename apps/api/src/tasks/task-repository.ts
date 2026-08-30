@@ -25,9 +25,9 @@ import {
   type OwnerConversationMessage,
 } from "../types/schemas.js";
 import type { RequestContext } from "../utils/context.js";
-import { createRequestContext } from "../utils/context.js";
 import {
   getTracer,
+  parseTraceparent,
   recordSpanError,
   safeSetAttribute,
 } from "../observability/tracing.js";
@@ -61,20 +61,30 @@ function buildTraceContextForTask(ctx: RequestContext): {
 /**
  * Inverse of `buildTraceContextForTask`. Reads the persisted
  * `trace_context` column and rehydrates a `RequestContext` suitable for the
- * Worker. When the column is `null` (old rows, recovery, or background
- * replay), returns a context with a freshly-minted UUID so downstream
- * consumers never see `undefined` ids.
+ * Worker. `correlationId` and `traceId` are carried over verbatim so Worker
+ * log lines join the API log lines for the same PLAN. When the column is
+ * `null` (old rows, recovery, or background replay), `correlationId` falls
+ * back to a freshly-minted UUID and the trace fields stay unset, so
+ * `correlationChild` binds the Worker's own active span instead.
  */
 export function ctxFromRun(run: AgentTaskRow): RequestContext {
   const tc = run.traceContext ?? null;
-  return createRequestContext(
-    run.createdByUserId,
-    tc?.correlationId ?? randomUUID(),
-    randomUUID(),
-    undefined,
-    tc?.traceparent,
-    tc?.tracestate,
-  );
+  const parsed = tc?.traceparent ? parseTraceparent(tc.traceparent) : null;
+  // The W3C trace id of the originating HTTP request is what makes
+  // `jq 'select(.trace_id == "<id>")'` return API *and* Worker lines for one
+  // PLAN. Minting a fresh UUID here would put an id in `trace_id` that
+  // matches neither the API log thread nor any span, so we reuse the
+  // persisted one. `spanId` is deliberately left unset: `correlationChild`
+  // then reads the *active* Worker span, so `span_id` always identifies the
+  // Worker's own unit of work rather than the already-ended HTTP span.
+  const ctx: RequestContext = {
+    correlationId: tc?.correlationId ?? randomUUID(),
+    actorUserId: run.createdByUserId,
+  };
+  if (parsed) ctx.traceId = parsed.traceId;
+  if (tc?.traceparent) ctx.traceparent = tc.traceparent;
+  if (tc?.tracestate) ctx.tracestate = tc.tracestate;
+  return ctx;
 }
 
 const CLAIM_CONVERSATION_SQL = [

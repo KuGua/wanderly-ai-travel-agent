@@ -57,6 +57,7 @@ import {
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 import type { ActivityEvidence, FlightOffer, StayOffer, ServiceGap } from "../types/domain.js";
+import { bindPlanSelectionsToEvidence } from "./plan-evidence-binding.js";
 
 export interface PlanningDependencies {
   flightProvider: FlightProvider;
@@ -534,6 +535,14 @@ export async function generatePlan(params: {
           departureCities: snapshot.departureCities as string[], destinationCandidates: snapshot.destinationCandidates as string[],
         });
         if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
+        // Re-check usable flight coverage before accepting final synthesis.
+        // Stay unavailability is intentionally a Phase 4 service gap and is
+        // represented as an empty selection, never a runtime fixture.
+        validateProviderCoverage({
+          requiredOrigins: snapshot.departureCities,
+          flights: allFlights,
+          stays: allStays,
+        });
         if (activitiesEnabled) {
           const activitiesMatrix = await evaluateActivitiesResearchCompleteness({
             snapshotId: params.snapshotId,
@@ -671,6 +680,15 @@ export async function generatePlan(params: {
   } else {
     validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights, stays: allStays });
     candidatePlanData = await dependencies.modelGateway.generateStructuredPlan({ destination: params.destination, flights: allFlights, stays: allStays, memberPreferences, ctx: params.ctx, signal: params.signal });
+  }
+
+  if (params.agentTaskRunId) {
+    candidatePlanData = bindPlanSelectionsToEvidence({
+      candidate: candidatePlanData,
+      flights: allFlights,
+      stays: allStays,
+      activities: allActivities,
+    });
   }
 
   validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights, stays: allStays });

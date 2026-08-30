@@ -67,6 +67,22 @@ describe("bounded metrics", () => {
     expect(rendered).toContain('outcome="success"');
   });
 
+  it("accepts the configured SerpAPI provider for live and unavailable flight Tool outcomes", () => {
+    expect(() => metrics.inc("flight_tool_invocations_total", {
+      outcome: "live",
+      provider: "serpapi",
+      error_category: "none",
+    })).not.toThrow();
+    expect(() => metrics.inc("flight_tool_invocations_total", {
+      outcome: "unavailable",
+      provider: "serpapi",
+      error_category: "upstream_failure",
+    })).not.toThrow();
+
+    const rendered = metrics.render();
+    expect(rendered).toContain('provider="serpapi"');
+  });
+
   it("rejects high-cardinality keys and free-form values before emission", () => {
     const identifier = "trip-7ce24d3b-7b99-41e9-a350-8a1d5e6de555";
 

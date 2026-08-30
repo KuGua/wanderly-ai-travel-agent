@@ -337,7 +337,7 @@ metrics.registerHistogram("flight_provider_latency_ms", "Flight provider latency
 });
 metrics.registerCounter("flight_tool_invocations_total", "Flight tool execution outcomes.", {
   outcome: ["live", "unavailable"],
-  provider: ["amadeus", "flightapi", "unconfigured"],
+  provider: ["amadeus", "flightapi", "serpapi", "unconfigured"],
   error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
 });
 // Global POI & ground mobility (docs/ground-mobility-implementation.md §7).

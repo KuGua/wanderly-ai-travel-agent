@@ -195,7 +195,8 @@ export const conversationTurnRequestSchema = z.object({
 
 export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN"]);
 export const agentTaskStatusSchema = z.enum([
-  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "FAILED", "CANCELLED", "STALE",
+  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS",
+  "FAILED", "CANCELLED", "STALE",
 ]);
 export const agentRunPhaseSchema = z.enum([
   "ACCEPTED", "RESEARCHING", "GENERATING", "VALIDATING", "PERSISTING",
@@ -268,8 +269,13 @@ const latestPlanFlightSchema = z.object({
 }).strict();
 
 const latestPlanDataSchema = z.object({
-  destination: z.string().min(1), flights: z.array(latestPlanFlightSchema).min(1),
-  stays: z.array(z.unknown()).min(1), ground: z.array(z.unknown()).min(1), generatedAt: z.string().min(1), constraintReferences: z.array(z.string()).optional(),
+  destination: z.string().min(1),
+  destinationCandidatesEvaluated: z.array(z.string().min(1)).optional(),
+  flights: z.array(latestPlanFlightSchema).min(1),
+  stays: z.array(z.unknown()).default([]),
+  ground: z.array(z.unknown()).default([]),
+  generatedAt: z.string().datetime(),
+  constraintReferences: z.array(z.string()).optional(),
 }).strict();
 
 export const latestPlanResponseSchema = z.object({

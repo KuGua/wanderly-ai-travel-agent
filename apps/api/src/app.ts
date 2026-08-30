@@ -113,12 +113,18 @@ export async function buildApp(options: BuildAppOptions = {}) {
     );
     request.traceId = inbound?.traceId ?? newTraceId();
     request.spanId = newSpanId();
+    // The serialized form is what crosses the durable boundary: routes pass
+    // `request.traceparent` into `createRequestContext`, and
+    // `tasks/task-repository.ts#buildTraceContextForTask` persists it into
+    // `agent_task_runs.trace_context`. Without it that column is always NULL
+    // and the Worker cannot rejoin the originating request's log thread.
+    request.traceparent = formatTraceparent(request.traceId, request.spanId, "01");
+    const rawTracestate = request.headers["tracestate"];
+    const tracestate = Array.isArray(rawTracestate) ? rawTracestate[0] : rawTracestate;
+    if (tracestate) request.tracestate = tracestate;
     // This must be set before the CORS hook runs: a successful preflight is
     // short-circuited there and does not reach the regular route lifecycle.
-    reply.header(
-      TRACEPARENT_HEADER,
-      formatTraceparent(request.traceId, request.spanId, "01"),
-    );
+    reply.header(TRACEPARENT_HEADER, request.traceparent);
 
     // Open the server span. The route pattern is not yet known in onRequest
     // for Fastify 5, so we set the bare minimum attributes here and enrich
