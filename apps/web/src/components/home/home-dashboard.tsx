@@ -14,7 +14,9 @@ import { TripList } from "./trip-list";
 type StatusFilter = "active" | "all" | "completed" | "archived";
 
 const STATUS_GROUPS: Record<StatusFilter, TripSummary["status"][]> = {
-  active: ["PLANNING", "STALE", "CONFIRMED", "BOOKED"],
+  // A DRAFT is a private, unfinished trip, not an archived one. It must be
+  // discoverable from the default list after the first Explore message.
+  active: ["DRAFT", "PLANNING", "STALE", "CONFIRMED", "BOOKED"],
   completed: ["CONFIRMED", "BOOKED"],
   archived: ["CANCELLED"],
   all: ["DRAFT", "PLANNING", "STALE", "CONFIRMED", "BOOKED", "CANCELLED"],
@@ -68,9 +70,12 @@ export function HomeDashboard() {
   }, [trips, filter, searchQuery]);
 
   const heroTrip = useMemo(() => {
-    return trips.find(
-      (trip) => !isArchivedTrip(trip) && (trip.status === "STALE" || trip.status === "PLANNING"),
-    ) ?? null;
+    const visibleTrips = trips.filter((trip) => !isArchivedTrip(trip));
+    // Returning to an unfinished private exploration is the most immediate
+    // action, so surface a Draft before an in-progress or stale plan.
+    return visibleTrips.find((trip) => trip.status === "DRAFT")
+      ?? visibleTrips.find((trip) => trip.status === "STALE" || trip.status === "PLANNING")
+      ?? null;
   }, [trips]);
 
   const filters: { key: StatusFilter; count: number }[] = [
@@ -260,13 +265,19 @@ export function HomeDashboard() {
               <div className="p-5 sm:p-6">
                 <span className="inline-flex items-center gap-1.5 bg-[var(--w-fog)] px-2.5 py-1 text-xs font-black text-[var(--w-ink)] wanderly-edge wanderly-r-xs">
                   <span className="size-[7px] rounded-full bg-current" />
-                  {heroTrip.status === "STALE" ? tHome("hero.staleBadge") : tHome("hero.planningBadge")}
+                  {heroTrip.status === "DRAFT"
+                    ? tHome("hero.draftBadge")
+                    : heroTrip.status === "STALE"
+                      ? tHome("hero.staleBadge")
+                      : tHome("hero.planningBadge")}
                 </span>
                 <h3 className="mt-2 text-2xl font-bold tracking-[-0.045em]">{heroTrip.name}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {heroTrip.status === "STALE"
-                    ? tHome("hero.staleBody")
-                    : tHome("hero.planningBody")}
+                  {heroTrip.status === "DRAFT"
+                    ? tHome("hero.draftBody")
+                    : heroTrip.status === "STALE"
+                      ? tHome("hero.staleBody")
+                      : tHome("hero.planningBody")}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {heroTrip.departureCities.length > 0 || heroTrip.memberCount > 0 ? (
@@ -293,9 +304,11 @@ export function HomeDashboard() {
                   href={`/trips/${heroTrip.id}` as "/trips/[tripId]"}
                   className="inline-flex min-h-[45px] items-center gap-2 px-4 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action"
                 >
-                  {heroTrip.status === "STALE"
-                    ? tHome("hero.reviewCta")
-                    : tHome("hero.continueCta")}
+                  {heroTrip.status === "DRAFT"
+                    ? tHome("hero.draftCta")
+                    : heroTrip.status === "STALE"
+                      ? tHome("hero.reviewCta")
+                      : tHome("hero.continueCta")}
                   <ArrowRight aria-hidden="true" className="size-4" />
                 </Link>
               </div>
