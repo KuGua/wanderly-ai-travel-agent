@@ -11,6 +11,10 @@ import {
   updateProfileSchema,
 } from "../types/schemas.js";
 import { createRequestContext } from "../utils/context.js";
+import {
+  deleteProfileFormMemory,
+  syncProfileFormToMemory,
+} from "../services/profile-form-memory.js";
 import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 
@@ -41,10 +45,22 @@ export async function profileRoutes(app: FastifyInstance) {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
     const body = createProfileSchema.parse(request.body);
 
-    const [profile] = await db.insert(userProfiles).values({
-      userId: request.user.id,
-      ...body,
-    }).returning();
+    // One transaction: a profile row without the facts it implies is a profile
+    // whose stated preferences reach no trip, and the two are the same act.
+    const profile = await db.transaction(async (tx) => {
+      const [created] = await tx.insert(userProfiles).values({
+        userId: request.user.id,
+        ...body,
+      }).returning();
+
+      // The form is where a user states a preference outright, and a stated
+      // preference is what memory is built from — the columns alone are not
+      // projected anywhere.
+      await syncProfileFormToMemory({
+        ctx, userId: request.user.id, profileId: created.id, body, tx,
+      });
+      return created;
+    });
 
     await recordAudit({
       ctx,
@@ -106,10 +122,16 @@ export async function profileRoutes(app: FastifyInstance) {
       throw new ApiError(404, "Not Found", "Profile not found");
     }
 
-    const [updatedProfile] = await db.update(userProfiles)
-      .set({ ...body, updatedAt: new Date() })
-      .where(eq(userProfiles.userId, request.user.id))
-      .returning();
+    const updatedProfile = await db.transaction(async (tx) => {
+      const [updated] = await tx.update(userProfiles)
+        .set({ ...body, updatedAt: new Date() })
+        .where(eq(userProfiles.userId, request.user.id))
+        .returning();
+      await syncProfileFormToMemory({
+        ctx, userId: request.user.id, profileId: updated.id, body, tx,
+      });
+      return updated;
+    });
 
     await recordAudit({
       ctx,
@@ -128,7 +150,12 @@ export async function profileRoutes(app: FastifyInstance) {
   app.delete("/profiles/me", async (request) => {
     const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
 
-    await db.delete(userProfiles).where(eq(userProfiles.userId, request.user.id));
+    // Facts cannot outlive the profile they describe; left behind they would
+    // keep projecting into trips after the user asked for deletion.
+    await db.transaction(async (tx) => {
+      await deleteProfileFormMemory({ userId: request.user.id, tx });
+      await tx.delete(userProfiles).where(eq(userProfiles.userId, request.user.id));
+    });
 
     await recordAudit({
       ctx,

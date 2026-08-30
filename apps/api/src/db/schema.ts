@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, varchar, text, timestamp, jsonb, boolean, integer, bigint, doublePrecision, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, text, timestamp, date, jsonb, boolean, integer, bigint, doublePrecision, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
@@ -15,7 +15,14 @@ export const consentScopeEnum = pgEnum("consent_scope", [
   "PROFILE_RESTRICTIONS", // red-eye refusal, mobility, etc.
 ]);
 export const bookingStatusEnum = pgEnum("booking_status", ["PENDING", "SUBMITTED", "SUCCESS", "FAILED", "DUPLICATE"]);
-export const outboxStatusEnum = pgEnum("outbox_status", ["PENDING", "PROCESSED", "FAILED"]);
+export const outboxStatusEnum = pgEnum("outbox_status", [
+  "PENDING",
+  // Claimed by a worker. Recoverable: a claim older than the lease is retried,
+  // so a crash mid-handler does not lose the event (migration 0029).
+  "PROCESSING",
+  "PROCESSED",
+  "FAILED",
+]);
 export const agentTaskOperationEnum = pgEnum("agent_task_operation", ["CONVERSATION", "PLAN", "REPLAN"]);
 export const agentTaskStatusEnum = pgEnum("agent_task_status", [
   "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELLED", "STALE",
@@ -57,7 +64,19 @@ export const auditActionEnum = pgEnum("audit_action", [
   "TRIP_PLACE_ADOPTED",
   "TRIP_PLACE_REVOKED",
   "RESEARCH_RESULT_RECORDED",
+  // Long-term memory (docs/long-term-memory-implementation.md section 7):
+  "MEMORY_PROPOSAL_CREATE", "MEMORY_PROPOSAL_CONFIRM", "MEMORY_PROPOSAL_DISMISS",
+  "PREFERENCE_FACT_UPDATE", "PREFERENCE_FACT_DELETE",
+  "TRIP_MEMORY_UPDATE", "TRIP_MEMORY_DELETE",
+  "MEMORY_PROJECTION_CREATE", "MEMORY_INVALIDATION",
 ]);
+
+// ─── Long-term memory (docs/long-term-memory-implementation.md) ─────────────
+export const memoryFieldCategoryEnum = pgEnum("memory_field_category", ["PREFERENCE", "CONSTRAINT"]);
+export const preferenceFactSourceEnum = pgEnum("preference_fact_source", ["PROFILE_FORM", "PROPOSAL_CONFIRMATION"]);
+export const preferenceFactStatusEnum = pgEnum("preference_fact_status", ["ACTIVE", "SUPERSEDED"]);
+export const memoryProposalSourceEnum = pgEnum("memory_proposal_source", ["BEHAVIOR_AGGREGATION"]);
+export const memoryProposalStatusEnum = pgEnum("memory_proposal_status", ["PENDING", "CONFIRMED", "DISMISSED", "EXPIRED"]);
 
 // Chat thread scope — MVP allows only TRIP-scoped threads; adding new
 // scopes later requires explicit schema + migration work.
@@ -80,6 +99,16 @@ export const locationIntroductionStatusEnum = pgEnum("location_introduction_stat
 export const constraintVisibilityEnum = pgEnum("constraint_visibility", [
   "TEAM_VISIBLE",
   "ORCHESTRATOR_CONFIDENTIAL",
+]);
+/**
+ * Distinguishes team-orchestration constraints from long-term-memory overrides
+ * and group decisions, so each keeps its own active-uniqueness rule in one
+ * table. See migration 0028.
+ */
+export const tripConstraintKindEnum = pgEnum("trip_constraint_kind", [
+  "MEMBER_CONSTRAINT",
+  "PERSONAL_OVERRIDE",
+  "GROUP_DECISION",
 ]);
 export const constraintStrengthEnum = pgEnum("constraint_strength", [
   "HARD",
@@ -137,9 +166,50 @@ export const preferenceFacts = pgTable("preference_facts", {
   profileId: uuid("profile_id").references(() => userProfiles.id, { onDelete: "cascade" }).notNull(),
   fieldKey: varchar("field_key", { length: 64 }).notNull(),     // "interests", "budget_max_usd", etc.
   fieldValue: jsonb("field_value"),
+  category: memoryFieldCategoryEnum("category").default("PREFERENCE").notNull(),
+  source: preferenceFactSourceEnum("source").default("PROFILE_FORM").notNull(),
+  status: preferenceFactStatusEnum("status").default("ACTIVE").notNull(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  supersedesFactId: uuid("supersedes_fact_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+/**
+ * Behaviour-derived candidates awaiting the owner's decision. A proposal is
+ * never an authoritative fact: confirming one is what creates the fact.
+ *
+ * `observationCount` / `lastObservedAt` are aggregate counters only. No
+ * behavioural timeline is stored (§3.2).
+ */
+export const memoryProposals = pgTable("memory_proposals", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  profileId: uuid("profile_id").references(() => userProfiles.id, { onDelete: "cascade" }).notNull(),
+  fieldKey: varchar("field_key", { length: 64 }).notNull(),
+  proposedValue: jsonb("proposed_value").notNull(),
+  proposedValueHash: text("proposed_value_hash").notNull(),
+  source: memoryProposalSourceEnum("source").default("BEHAVIOR_AGGREGATION").notNull(),
+  observationCount: integer("observation_count").default(1).notNull(),
+  firstObservedOn: date("first_observed_on").notNull(),
+  lastObservedOn: date("last_observed_on").notNull(),
+  /** Bounded UTC-day window; DB CHECK caps it at 10. Duplicates allowed. */
+  recentObservedOn: date("recent_observed_on").array().default([]).notNull(),
+  distinctEpisodeCount: integer("distinct_episode_count").default(0).notNull(),
+  distinctTripCount: integer("distinct_trip_count").default(0).notNull(),
+  /** Internal only — never returned, logged, traced or audited. */
+  contributingTripIds: uuid("contributing_trip_ids").array().default([]).notNull(),
+  scoringVersion: varchar("scoring_version", { length: 32 }).default("petrov-hybrid-v1").notNull(),
+  status: memoryProposalStatusEnum("status").default("PENDING").notNull(),
+  cooldownUntil: timestamp("cooldown_until", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  resolvedFactId: uuid("resolved_fact_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  index("memory_proposals_user_status_idx").on(table.userId, table.status),
+]);
 
 // ─── Shared Trips ───────────────────────────────────────────────────────────
 
@@ -372,6 +442,12 @@ export const outboxEvents = pgTable("outbox_events", {
   eventType: varchar("event_type", { length: 64 }).notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
   status: outboxStatusEnum("status").default("PENDING").notNull(),
+  // Retry budget and backoff (migration 0030). Without them one event that can
+  // never succeed is re-claimed on every pass and starves the rest of the queue.
+  attemptCount: integer("attempt_count").default(0).notNull(),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).defaultNow().notNull(),
+  /** Error class only — a message can quote the payload. */
+  lastError: varchar("last_error", { length: 128 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   processedAt: timestamp("processed_at", { withTimezone: true }),
 });
@@ -594,6 +670,7 @@ export const tripConstraintFacts = pgTable("trip_constraint_facts", {
   valueHash: varchar("value_hash", { length: 64 }).notNull(),
   strength: constraintStrengthEnum("strength").notNull(),
   visibility: constraintVisibilityEnum("visibility").notNull(),
+  kind: tripConstraintKindEnum("kind").default("MEMBER_CONSTRAINT").notNull(),
   revision: integer("revision").notNull(),
   sourceProposalId: uuid("source_proposal_id").references(() => tripConstraintProposals.id, { onDelete: "set null" }),
   status: varchar("status", { length: 16 }).notNull().$type<"ACTIVE" | "SUPERSEDED" | "REVOKED">(),
@@ -601,9 +678,18 @@ export const tripConstraintFacts = pgTable("trip_constraint_facts", {
   supersededAt: timestamp("superseded_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
 }, (table) => ({
-  activeUnique: uniqueIndex("trip_constraint_facts_active_unique")
+  // Active uniqueness is per kind — see migration 0028. A single index across
+  // every kind would stop a member holding both an orchestration constraint
+  // and a personal override on one field.
+  memberActiveUnique: uniqueIndex("trip_constraint_facts_member_active_unique")
     .on(table.tripId, table.ownerUserId, table.fieldKey)
-    .where(sql`status = 'ACTIVE'`),
+    .where(sql`status = 'ACTIVE' AND kind = 'MEMBER_CONSTRAINT'`),
+  overrideActiveUnique: uniqueIndex("trip_constraint_facts_override_active_unique")
+    .on(table.tripId, table.ownerUserId, table.fieldKey)
+    .where(sql`status = 'ACTIVE' AND kind = 'PERSONAL_OVERRIDE'`),
+  groupDecisionActiveUnique: uniqueIndex("trip_constraint_facts_group_decision_unique")
+    .on(table.tripId, table.fieldKey)
+    .where(sql`status = 'ACTIVE' AND kind = 'GROUP_DECISION'`),
   tripOwnerFieldIdx: index("trip_constraint_facts_trip_owner_field_idx")
     .on(table.tripId, table.ownerUserId, table.fieldKey),
   tripVisibilityIdx: index("trip_constraint_facts_trip_visibility_idx")

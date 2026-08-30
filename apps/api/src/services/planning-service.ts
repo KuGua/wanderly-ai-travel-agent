@@ -8,17 +8,26 @@ import {
   tripSearchPreferences,
   tripConstraintFacts,
   tripMembers,
+  preferenceFacts,
   providerSearchRuns,
   planningResearchResults,
 } from "../db/schema.js";
-import { eq, and, desc, gt, ne } from "drizzle-orm";
+import { eq, and, desc, gt, inArray, ne } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { buildAuthorizedData, getActiveConsents } from "./consent-service.js";
 import {
+  MemorySourceChangedError,
+  computeMemorySourceFingerprint,
+  fingerprintFromSnapshot,
+} from "./memory-source-fingerprint.js";
+import {
+  buildMemoryNamespace,
   buildMemoryProjection,
   type MemoryProjectionInput,
 } from "./memory-projection-builder.js";
 import { safePublicExplanationTokensFor } from "../policy/constraint-field-catalog.js";
+import { withMemorySpan } from "../memory/memory-spans.js";
+import { metrics } from "../observability/metrics.js";
 import { createTravelProviders } from "../providers/live-provider-factory.js";
 import { modelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
@@ -279,6 +288,29 @@ export function validateProviderCoverage(params: {
  * Caller must already be inside a transaction if they need atomic snapshot + plan
  * writes. Outside callers use a default `db.transaction` wrapper.
  */
+/**
+ * The members a projection covers.
+ *
+ * An empty `memberIds` means "everyone on the trip" — callers that do not track
+ * membership themselves, such as the Worker, pass nothing. Both the snapshot
+ * and the commit-time fingerprint have to resolve it the same way: the snapshot
+ * hashed the real members while the guard hashed the empty list, so every
+ * Worker-generated plan failed its own guard with MemorySourceChangedError.
+ */
+type PlanningTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function resolveMemberIds(
+  tx: PlanningTx,
+  tripId: string,
+  memberIds: readonly string[],
+): Promise<string[]> {
+  if (memberIds.length > 0) return [...memberIds];
+  const rows = await tx.select({ userId: tripMembers.userId })
+    .from(tripMembers)
+    .where(eq(tripMembers.tripId, tripId));
+  return rows.map((row) => row.userId);
+}
+
 export async function createConstraintSnapshot(params: {
   tripId: string;
   memberIds: string[];
@@ -321,17 +353,13 @@ export async function createConstraintSnapshot(params: {
       strength: tripConstraintFacts.strength,
       visibility: tripConstraintFacts.visibility,
       revision: tripConstraintFacts.revision,
+      kind: tripConstraintFacts.kind,
     }).from(tripConstraintFacts).where(and(
       eq(tripConstraintFacts.tripId, params.tripId),
       eq(tripConstraintFacts.status, "ACTIVE"),
     ));
 
-    const memberIdsResolved = params.memberIds.length > 0
-      ? params.memberIds
-      : (await tx.select({ userId: tripMembers.userId })
-        .from(tripMembers)
-        .where(eq(tripMembers.tripId, params.tripId)))
-        .map((m) => m.userId);
+    const memberIdsResolved = await resolveMemberIds(tx, params.tripId, params.memberIds);
 
     const projectionInput: MemoryProjectionInput = {
       tripId: params.tripId,
@@ -357,6 +385,53 @@ export async function createConstraintSnapshot(params: {
     };
 
     const projected = buildMemoryProjection(projectionInput);
+
+    // The personal memory namespace (§4.4). Built from preference facts rather
+    // than the profile columns the v1 shape reads, because a fact carries the
+    // version chain and the catalog registration that decide exportability.
+    const activeFacts = memberIdsResolved.length === 0 ? [] : await tx.select({
+      userId: preferenceFacts.userId,
+      fieldKey: preferenceFacts.fieldKey,
+      value: preferenceFacts.fieldValue,
+    }).from(preferenceFacts).where(and(
+      inArray(preferenceFacts.userId, memberIdsResolved),
+      eq(preferenceFacts.status, "ACTIVE"),
+    ));
+
+    const consentedFieldsByUser: Record<string, string[]> = {};
+    for (const consent of consents) {
+      (consentedFieldsByUser[consent.userId] ??= []).push(consent.fieldKey);
+    }
+
+    const memoryNamespace = await withMemorySpan(
+      "memory.projection.build",
+      { operation: "build", source: "snapshot" },
+      async () => {
+        try {
+          const built = buildMemoryNamespace({
+            aliases: projected.snapshot.memberAliases,
+            consentedFieldsByUser,
+            preferenceFacts: activeFacts,
+            tripFacts: factRows.map((f) => ({
+              ownerUserId: f.ownerUserId,
+              fieldKey: f.fieldKey,
+              kind: f.kind,
+              visibility: f.visibility,
+              valueJson: f.valueJson,
+            })),
+          });
+          const empty = Object.keys(built.groupDecisions).length === 0
+            && Object.values(built.members).every((m) =>
+              Object.keys(m.profileFacts).length === 0
+              && Object.keys(m.tripOverrides).length === 0);
+          metrics.inc("memory_projection_build_total", { result: empty ? "empty" : "built" });
+          return { result: built, outcome: empty ? "empty" : "built" };
+        } catch (error) {
+          metrics.inc("memory_projection_build_total", { result: "failed" });
+          throw error;
+        }
+      },
+    );
 
     // v1 back-compat map: userId → consent-granted fields.
     const v1Shape: Record<string, unknown> = {};
@@ -384,10 +459,18 @@ export async function createConstraintSnapshot(params: {
       ...v1Shape,
       _meta: {
         schemaVersion: 2,
+        // Identities and versions of the projection's sources, so the commit
+        // gate can tell whether memory moved during the run (§6).
+        memorySourceFingerprint: await computeMemorySourceFingerprint({
+          tripId: params.tripId,
+          memberUserIds: memberIdsResolved,
+          tx,
+        }),
         memberAliases: projected.snapshot.memberAliases,
         teamVisible: projected.snapshot.teamVisible,
         orchestratorConfidential: projected.snapshot.orchestratorConfidential,
         projectionManifest: projected.snapshot.projectionManifest,
+        memory: memoryNamespace,
       },
     };
 
@@ -710,6 +793,23 @@ export async function generatePlan(params: {
         }
       }
     }
+
+    // Consent can be revoked, a preference edited or a trip override changed
+    // while the model was working. Re-derive the projection sources through
+    // this transaction; if they moved, the validated plan is discarded rather
+    // than made authoritative on memory that no longer exists (§6).
+    const recordedFingerprint = fingerprintFromSnapshot(snapshot.authorizedData);
+    if (recordedFingerprint !== null) {
+      const currentFingerprint = await computeMemorySourceFingerprint({
+        tripId: params.tripId,
+        memberUserIds: await resolveMemberIds(tx, params.tripId, params.memberIds),
+        tx,
+      });
+      if (currentFingerprint !== recordedFingerprint) {
+        throw new MemorySourceChangedError(params.snapshotId);
+      }
+    }
+
     const outputMode = params.outputMode ?? "ACTIVATE";
     const insertStatus = outputMode === "ACTIVATE" ? "ACTIVE" : "PROPOSED";
     const [plan] = await tx.insert(itineraryPlans).values({

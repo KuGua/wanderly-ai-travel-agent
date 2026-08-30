@@ -144,7 +144,9 @@ memberships overlap only where explicitly configured.
 
 **Steps:**
 
-1. Record enough allow-listed, non-sensitive behavior events to create a suggested accommodation-style update. Inspect the proposal and its audit/telemetry records.
+1. Record enough allow-listed, non-sensitive behavior events to create a suggested accommodation-style update: at least three independent server-confirmed episodes across at least two Trips, spanning at least 30 days. Inspect the proposal and its audit/telemetry records.
+1a. Record evidence that satisfies only part of the trigger rule — three episodes inside a single Trip; three episodes inside a 30-day window; a candidate whose activation stays below the threshold; and two competing candidates for one field separated by less than ln(2).
+1b. Replay an already-counted action/event id, and record two distinct episodes that land on the same UTC day.
 2. Confirm the proposal, then update and delete the resulting stable fact through the Profile memory API.
 3. Attempt to create behavior or conversation-derived proposals for nationality, passport, date of birth, health and accessibility fields.
 4. Save a `this trip` preference and a group decision in the first Trip; attempt to read them from the second Trip.
@@ -153,12 +155,17 @@ memberships overlap only where explicitly configured.
 
 **Expected outcomes:**
 
-- The automatic proposal contains only allow-listed field metadata, observation count, confidence and expiry; it contains no raw chat text or sensitive value. It is not a fact, snapshot input or shared data until Alice confirms it.
+- The automatic proposal contains only allow-listed field metadata, observation count, expiry, scoring version and a bounded UTC-day observation window (at most 10 dates); it contains no raw chat text, action type, page path, event reference or sensitive value. It is not a fact, snapshot input or shared data until Alice confirms it.
+- Partial evidence never surfaces a suggestion: a single Trip, a span under 30 days, activation below the threshold, or two candidates within ln(2) of each other all leave the proposal unshown while evidence keeps aggregating.
+- A replayed action/event id does not increment the observation count; two distinct episodes on the same UTC day both count. Independence comes from existing idempotency, never from elapsed time.
+- Confirmed facts never decay and are never rewritten by behavior. Repeated contradiction can only raise a suggestion; ignoring it lets the proposal expire after 90 days, and dismissing it suppresses the same field/value for 180 days.
+- Editing the fact directly through the Profile form clears conflicting pending proposals and their evidence aggregates for that field.
+- Reaching any terminal proposal state clears the stored observation dates; deleting a field's memory removes its facts, pending proposals, candidate aggregates and observation window.
 - Only the owner can confirm, dismiss, edit or delete personal facts. Confirmation creates an active structured fact; deletion removes it from future projections and retains only a content-free audit event.
 - Sensitive-field proposal attempts fail closed; no model or behavior pipeline creates a row for them.
 - Trip memory is scoped by `tripId`; cross-Trip reads and projections are denied. Shared Agent reads only the server-built current snapshot projection, never the personal fact, proposal or chat tables.
 - A projected fact/consent change makes the first Trip's active plan and confirmations `STALE`; the old run cannot activate a plan. The unrelated Trip is unchanged.
-- Logs, metrics, traces, audit summaries, SSE and idempotency payloads do not contain memory values, conversation text or high-cardinality identifiers as metric labels.
+- Logs, metrics, traces, audit summaries, SSE and idempotency payloads do not contain memory values, observation dates, event references, conversation text or high-cardinality identifiers as metric labels.
 
 ### TS-H1b — Persist and delete a private conversation without widening its scope
 

@@ -9,6 +9,7 @@ import { Link } from "@/i18n/navigation";
 import type { UpdateProfileInput } from "@/lib/api/contracts";
 import { useMyProfile, useUpdateMyProfile } from "@/lib/query/hooks";
 import { ProfileForm } from "./profile-form";
+import { ProfileMemory } from "./profile-memory";
 
 export function ProfilePageContent() {
   const t = useTranslations("profile");
@@ -57,6 +58,11 @@ export function ProfilePageContent() {
           </section>
         ) : null}
       </div>
+
+      {/* Long-term memory sits below the form: the form is where facts are
+          stated, this is what the assistant has retained and what it wants to
+          ask about. */}
+      <ProfileMemory />
     </main>
   );
 }

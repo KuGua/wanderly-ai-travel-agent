@@ -190,6 +190,34 @@
     },
     "fixtures": {
       "displayName": "旅行者"
+    },
+    "memory": {
+      "kicker": "长期记忆",
+      "heading": "助手记住的偏好",
+      "body": "这些是你确认过的稳定偏好，不会随时间失效。只有你能修改或删除；行为不会自动改写它们。",
+      "loading": "正在加载你的长期记忆…",
+      "errorTitle": "长期记忆暂不可用",
+      "emptyTitle": "还没有记住任何偏好",
+      "emptyBody": "在上方保存出行偏好后，它们会出现在这里。",
+      "factsAriaLabel": "已记住的偏好",
+      "suggestionsAriaLabel": "待确认的偏好建议",
+      "suggestionKicker": "待你确认",
+      "suggestionBody": "要把「{field}」记为 {candidate} 吗？",
+      "suggestionBodyWithCurrent": "你把「{field}」设为 {current}，但最近多次选择了 {candidate}。要更新吗？",
+      "evidence": "基于 {count} 次独立选择",
+      "confirm": "确认更新",
+      "notNow": "暂不",
+      "sourceStated": "由你填写",
+      "sourceConfirmed": "经你确认",
+      "deleteAria": "删除这条记忆",
+      "fields": {
+        "trip_pace": "行程节奏",
+        "accommodation_style": "住宿风格",
+        "no_red_eye": "避免红眼航班",
+        "interests": "兴趣",
+        "budget_max_usd": "预算上限",
+        "departure_city": "出发城市"
+      }
     }
   },
   "explore": {
@@ -534,6 +562,31 @@
           "team_visible": "团队可见",
           "orchestrator_confidential": "仅编排 Agent"
         }
+      }
+    },
+    "memory": {
+      "windowTitle": "本次偏好",
+      "loading": "正在加载本次偏好…",
+      "errorTitle": "本次偏好暂不可用",
+      "overridesLabel": "仅本次",
+      "overridesHint": "只对本行程生效，不会改写你的长期偏好；规划会用到它，但其他成员看不到具体值。",
+      "groupLabel": "团队决定",
+      "groupHint": "全体成员可见，每个字段只保留一条。",
+      "unset": "未设置",
+      "scopeThisTrip": "仅本次",
+      "scopeGroup": "团队决定",
+      "clearAria": "清除{field}",
+      "fields": {
+        "trip_pace": "行程节奏",
+        "accommodation_style": "住宿风格"
+      },
+      "values": {
+        "relaxed": "轻松",
+        "balanced": "均衡",
+        "packed": "紧凑",
+        "city_center": "市中心",
+        "budget": "经济型",
+        "luxury": "豪华型"
       }
     }
   },

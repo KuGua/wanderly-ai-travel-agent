@@ -7,6 +7,8 @@ import { context, SpanKind, SpanStatusCode, trace } from "@opentelemetry/api";
 import { createAuthMiddleware, type VerifyAccessToken } from "./middleware/auth.js";
 import { errorHandler, ApiError } from "./middleware/error-handler.js";
 import { profileRoutes } from "./routes/profiles.js";
+import { profileMemoryRoutes } from "./routes/profile-memory.js";
+import { tripMemoryRoutes } from "./routes/trip-memory.js";
 import { tripRoutes } from "./routes/trips.js";
 import { consentRoutes } from "./routes/consent.js";
 import { planningRoutes } from "./routes/planning.js";
@@ -201,6 +203,8 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
 
   await app.register(profileRoutes, { prefix: "/api/v1" });
+  await app.register(profileMemoryRoutes, { prefix: "/api/v1" });
+  await app.register(tripMemoryRoutes, { prefix: "/api/v1" });
   await app.register(tripRoutes, { prefix: "/api/v1" });
   await app.register(consentRoutes, { prefix: "/api/v1" });
   await app.register(planningRoutes, { prefix: "/api/v1" });
