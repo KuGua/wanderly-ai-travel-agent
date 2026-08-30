@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, PanelRight, Pencil, Plus, X } from "lucide-react";
+import { ExternalLink, PanelRight, Pencil, Plus, UserPlus, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
 import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
 import { TripMemoryPanel } from "@/components/trips/trip-memory-panel";
+import { TripInvitationDialog } from "@/components/trips/trip-invitation-dialog";
 import { PlacesPanel } from "@/components/trips/places-panel";
 import { ResearchGapBanner } from "@/components/trips/research-gap-banner";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
@@ -49,6 +50,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const [manualTitle, setManualTitle] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [activationError, setActivationError] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const autoProvisionAttemptedRef = useRef(false);
 
@@ -346,7 +348,18 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       >
         {/* Deliberately untitled: the spec keeps a bar here purely so the
             inspector's rule lines up with the history and chat headers. */}
-        <header className="flex h-[66px] items-center justify-end border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
+        <header className="flex h-[66px] items-center justify-end gap-2 border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
+          {callerRole === "CREATOR" ? (
+            <button
+              type="button"
+              onClick={() => setInviteOpen(true)}
+              disabled={trip.status === "DRAFT"}
+              className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <UserPlus aria-hidden="true" className="size-4" />
+              {t("workspace.invitation.trigger")}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => setInspectorOpen(false)}
@@ -456,6 +469,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           <TripMiniGlobe places={globePlaces} fallbackLabel={destinationsLabel} tripId={tripId} />
         </section>
       </aside>
+      {inviteOpen ? <TripInvitationDialog tripId={tripId} locale={locale} onClose={() => setInviteOpen(false)} /> : null}
     </main>
   );
 }

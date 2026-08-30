@@ -262,4 +262,24 @@ describe("Trip activation", () => {
       .limit(1);
     expect(after?.id).toBe(before?.id);
   });
+
+  it("lets only the creator search privacy-minimized eligible invitees", async () => {
+    const draftId = await createDraftFor(aliceId, "alice");
+    await app.inject({
+      method: "POST", url: `/api/v1/trips/${draftId}/activate`, headers: authHeaders("alice"), payload: validBrief,
+    });
+
+    const creatorSearch = await app.inject({
+      method: "GET", url: `/api/v1/trips/${draftId}/invitees?q=bo`, headers: authHeaders("alice"),
+    });
+    expect(creatorSearch.statusCode).toBe(200);
+    expect(creatorSearch.json().candidates).toContainEqual({ id: expect.any(String), displayName: "Bob" });
+    expect(creatorSearch.json().candidates.every((candidate: Record<string, unknown>) => !("email" in candidate))).toBe(true);
+    expect(creatorSearch.json().candidates.every((candidate: Record<string, unknown>) => !("username" in candidate))).toBe(true);
+
+    const nonCreatorSearch = await app.inject({
+      method: "GET", url: `/api/v1/trips/${draftId}/invitees?q=bo`, headers: authHeaders("bob"),
+    });
+    expect(nonCreatorSearch.statusCode).toBe(403);
+  });
 });
