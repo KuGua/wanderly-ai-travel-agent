@@ -69,7 +69,7 @@ import {
 } from "./accommodation-research-matrix-service.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
-import type { AccommodationEvidence, ActivityEvidence, FlightOffer, StayOffer, GroundOffer, HotelOffer, ServiceGap } from "../types/domain.js";
+import type { AccommodationEvidence, ActivityEvidence, FlightOffer, StayOffer, HotelOffer, ServiceGap } from "../types/domain.js";
 
 export interface PlanningDependencies {
   flightProvider: FlightProvider;

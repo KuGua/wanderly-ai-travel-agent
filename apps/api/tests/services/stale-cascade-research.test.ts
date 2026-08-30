@@ -159,9 +159,3 @@ describe("stale cascade — Phase 4 RESEARCH cancellation", () => {
     expect(run?.errorCode).toBe("STALE");
   });
 });
-
-// Lazy helper so the inline TRUNCATE doesn't fail on missing-table errors
-// when the migration hasn't applied the table to a fresh schema yet.
-async function constraintSnapshotsViaSql() {
-  return (await import("../../src/db/schema.js")).constraintSnapshots;
-}

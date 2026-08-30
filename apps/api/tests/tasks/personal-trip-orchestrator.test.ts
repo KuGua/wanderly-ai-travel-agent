@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { and, eq } from "drizzle-orm";
 
@@ -26,7 +25,6 @@ import { testPlanningDependencies } from "../helpers/planning.js";
 import {
   __setPlanningDependenciesForTests,
 } from "../../src/services/planning-service.js";
-import { SkillError } from "../../src/agents/errors.js";
 import type { Skill } from "../../src/agents/contracts.js";
 
 const passthroughSchema = z.unknown();

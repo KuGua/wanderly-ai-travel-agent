@@ -2,7 +2,6 @@ import type {
   AccommodationDiscoveryProvider,
   ActivitiesProvider,
   FlightProvider,
-  GroundProvider,
   HotelProvider,
   MobilityOfferProvider,
   NavigationProvider,

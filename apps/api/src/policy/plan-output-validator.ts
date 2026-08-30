@@ -4,7 +4,6 @@ import type {
   ConstraintSnapshotData,
   ActivityEvidence,
   FlightOffer,
-  GroundOffer,
   HotelOffer,
   StayOffer,
 } from "../types/domain.js";

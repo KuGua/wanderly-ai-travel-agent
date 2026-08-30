@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { eq } from "drizzle-orm";
 
@@ -19,7 +18,6 @@ import {
 } from "../../src/db/schema.js";
 import { runResearch } from "../../src/tasks/personal-trip-orchestrator-service.js";
 import { createRequestContext } from "../../src/utils/context.js";
-import { SkillError } from "../../src/agents/errors.js";
 import type { Skill } from "../../src/agents/contracts.js";
 import { z } from "zod";
 
@@ -135,7 +133,7 @@ describe("Phase 5 — Hotel capability", () => {
       needsConfirm: false,
       input: passthroughSchema,
       output: passthroughSchema,
-      async handler(_ctx, input) {
+      async handler() {
         if (outcome.outcome === "LIVE") {
           return { outcome: "LIVE", queryId: randomUUID(), hotels: [] };
         }
@@ -172,7 +170,7 @@ describe("Phase 5 — Hotel capability", () => {
       needsConfirm: false,
       input: passthroughSchema,
       output: passthroughSchema,
-      async handler(ctx, _input) {
+      async handler(ctx) {
         hotelInvocations.push({ locale: (ctx as { hotelSearch?: { locale?: string } }).hotelSearch?.locale });
         return { outcome: "LIVE", queryId: randomUUID(), hotels: [] };
       },
@@ -207,7 +205,7 @@ describe("Phase 5 — Hotel capability", () => {
       needsConfirm: false,
       input: passthroughSchema,
       output: passthroughSchema,
-      async handler(ctx, _input) {
+      async handler(ctx) {
         hotelInvocations.push({ locale: (ctx as { hotelSearch?: { locale?: string } }).hotelSearch?.locale });
         return { outcome: "LIVE", queryId: randomUUID(), hotels: [] };
       },
@@ -245,5 +243,3 @@ describe("Phase 5 — Hotel capability", () => {
     delete process.env.PLAN_ENABLE_HOTEL;
   });
 });
-
-void drizzle; // keep tree-shaker quiet

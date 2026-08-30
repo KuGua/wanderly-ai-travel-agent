@@ -19,7 +19,6 @@ import {
   latestResearchResultResponseSchema,
   researchCommandAcceptedResponseSchema,
   researchCommandRequestSchema,
-  researchResultResponseSchema,
   toJsonSchema,
 } from "../types/schemas.js";
 import { createRequestContext } from "../utils/context.js";

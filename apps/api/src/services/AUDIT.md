@@ -45,7 +45,11 @@ runs **before** any insert. Rejection propagates as
   `MOBILITY_OFFER_COMPLETED`, `MOBILITY_OFFER_UNAVAILABLE`. Summaries contain
   provider and bounded operation/outcome metadata only; never raw provider payloads.
 - Trip places and research: `TRIP_PLACE_PROPOSED`, `TRIP_PLACE_ADOPTED`,
-  `TRIP_PLACE_REVOKED`, `RESEARCH_RESULT_RECORDED`.
+  `TRIP_PLACE_REVOKED`, `RESEARCH_RESULT_RECORDED`,
+  `RESEARCH_COMMAND_ACCEPTED`, `RESEARCH_COMMAND_REJECTED`,
+  `RESEARCH_COMPLETED`. Research-command summaries retain only safe task,
+  operation, outcome, and status metadata; never user prompt or research
+  content.
 - Booking and changes: `BOOKING_SUBMIT`, `BOOKING_RESULT`, `CHANGE_EVENT`, `VISA_CHECK`.
 - Chat: `CHAT_THREAD_CREATE`, `CHAT_THREAD_DELETE`, `CHAT_MESSAGE_APPEND`.
 - Agent runtime: `SKILL_INVOKE`, `AGENT_RUN`, `AGENT_TASK`. Task summaries
@@ -113,6 +117,7 @@ The supported `AuditAction` values are:
 - `MOBILITY_OFFER_REQUESTED`, `MOBILITY_OFFER_COMPLETED`, `MOBILITY_OFFER_UNAVAILABLE`
 - `TRIP_PLACE_PROPOSED`, `TRIP_PLACE_ADOPTED`, `TRIP_PLACE_REVOKED`
 - `RESEARCH_RESULT_RECORDED`
+- `RESEARCH_COMMAND_ACCEPTED`, `RESEARCH_COMMAND_REJECTED`, `RESEARCH_COMPLETED`
 - `CONFIRMATION_SET`
 - `BOOKING_SUBMIT`, `BOOKING_RESULT`
 - `CHANGE_EVENT`, `VISA_CHECK`

@@ -25,7 +25,6 @@ import { eq } from "drizzle-orm";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 
 let app: FastifyInstance;
-let bobId: string;
 
 beforeAll(async () => {
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
@@ -38,14 +37,12 @@ beforeAll(async () => {
     const [existing] = await db.select().from(users)
       .where(eq(users.externalId, subject)).limit(1);
     if (existing) {
-      if (subject === "bob") bobId = existing.id;
       continue;
     }
-    const [created] = await db.insert(users).values({
+    await db.insert(users).values({
       externalId: subject,
       displayName: subject.charAt(0).toUpperCase() + subject.slice(1),
-    }).returning();
-    if (subject === "bob") bobId = created.id;
+    });
   }
 });
 

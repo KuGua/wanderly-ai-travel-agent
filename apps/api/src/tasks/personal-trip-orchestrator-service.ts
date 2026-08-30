@@ -159,7 +159,6 @@ export async function runResearch(params: {
     try {
       await invokeCapability(cap, {
         run,
-        snapshot,
         snapshotData,
         baseCtx,
         latestFlightPref: latestFlightPref ?? null,
@@ -276,7 +275,6 @@ export async function runResearch(params: {
 
 interface InvokeCapabilityArgs {
   run: AgentTaskRow;
-  snapshot: typeof constraintSnapshots.$inferSelect;
   snapshotData: ConstraintSnapshotData;
   baseCtx: {
     ctx: RequestContext;
@@ -291,12 +289,10 @@ interface InvokeCapabilityArgs {
 }
 
 async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promise<void> {
-  const { run, snapshot, snapshotData, baseCtx, latestFlightPref, latestStayPref, memberIds, gaps, signal } = args;
+  const { run, snapshotData, baseCtx, latestFlightPref, latestStayPref, memberIds, gaps, signal } = args;
   const snapshotId = run.snapshotId!;
   const tripId = run.tripId!;
   const destinationCandidates = snapshotData.destinationCandidates;
-  const travelStart = snapshotData.travelDateStart!;
-  const travelEnd = snapshotData.travelDateEnd!;
   const traceparent = run.traceContext?.traceparent;
 
   switch (cap) {
