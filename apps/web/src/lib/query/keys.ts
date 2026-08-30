@@ -10,6 +10,17 @@ export const tripKeys = {
   threads: (tripId: string) => ["trips", tripId, "my-threads"] as const,
   planningRun: (tripId: string) => ["trips", tripId, "planning-run"] as const,
   latestPlan: (tripId: string) => ["trips", tripId, "latest-plan"] as const,
+  places: (tripId: string) => ["trips", tripId, "places"] as const,
+  routeEvidence: (tripId: string, planId: string) =>
+    ["trips", tripId, "plans", planId, "route-evidence"] as const,
+  mobilityOffers: (tripId: string) =>
+    ["trips", tripId, "mobility-offers"] as const,
+  researchResults: (tripId: string) =>
+    ["trips", tripId, "research-results"] as const,
+};
+
+export const invitationKeys = {
+  preview: (inviteToken: string) => ["trip-invitations", inviteToken, "preview"] as const,
 };
 
 export const threadKeys = {
@@ -22,4 +33,18 @@ export const locationIntroductionKeys = {
   all: ["location-introductions"] as const,
   detail: (input: { sourceId: string; locale: "en" | "zh" }) =>
     ["location-introductions", input.sourceId, input.locale] as const,
+};
+
+export const teamOrchestrationKeys = {
+  all: ["team-orchestration"] as const,
+  proposals: (tripId: string) =>
+    ["team-orchestration", tripId, "proposals"] as const,
+  constraintsMembers: (tripId: string) =>
+    ["team-orchestration", tripId, "constraints", "members"] as const,
+  constraintsOwner: (tripId: string) =>
+    ["team-orchestration", tripId, "constraints", "owner"] as const,
+  plans: (tripId: string) =>
+    ["team-orchestration", tripId, "plans"] as const,
+  votes: (planId: string) =>
+    ["team-orchestration", "votes", planId] as const,
 };

@@ -316,6 +316,78 @@ metrics.registerCounter("flight_tool_invocations_total", "Flight tool execution 
   provider: ["amadeus", "flightapi", "unconfigured"],
   error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
 });
+// Global POI & ground mobility (docs/ground-mobility-implementation.md §7).
+// All label sets are bounded enums; identifiers (trip_id / run_id /
+// place_id / route_id) live only in trace/log correlation context.
+metrics.registerCounter("place_provider_requests_total", "ORS Place provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["openrouteservice"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerHistogram("place_provider_latency_ms", "ORS Place provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
+  provider: ["openrouteservice"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("place_search_tool_invocations_total", "places.search skill execution outcomes.", {
+  outcome: ["live", "unavailable"],
+  provider: ["openrouteservice"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved", "policy_denied", "per_run_cap_exceeded"],
+});
+metrics.registerCounter("trip_place_actions_total", "Server-authoritative TripPlace lifecycle actions.", {
+  action: ["proposed", "adopted", "revoked", "stale_invalidated"],
+  visibility: ["owner_private", "team_visible", "orchestrator_confidential"],
+});
+
+// Global POI & ground mobility — navigation (docs/ground-mobility-implementation.md §7).
+metrics.registerCounter("navigation_provider_requests_total", "ORS navigation provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["openrouteservice"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+  transport_mode: ["walk", "drive", "cycle", "any"],
+});
+metrics.registerHistogram("navigation_provider_latency_ms", "ORS navigation provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
+  provider: ["openrouteservice"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("navigation_route_tool_invocations_total", "navigation.route skill execution outcomes.", {
+  outcome: ["live", "unavailable"],
+  provider: ["openrouteservice"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved", "policy_denied", "per_run_cap_exceeded"],
+  transport_mode: ["walk", "drive", "cycle"],
+});
+
+// Global POI & ground mobility — mobility (docs/ground-mobility-implementation.md §7).
+metrics.registerCounter("mobility_provider_requests_total", "Amadeus Transfer provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["amadeus-transfer"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerHistogram("mobility_provider_latency_ms", "Amadeus Transfer provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
+  provider: ["amadeus-transfer"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("mobility_search_tool_invocations_total", "mobility.search skill execution outcomes.", {
+  outcome: ["live", "unavailable"],
+  provider: ["amadeus-transfer"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved", "policy_denied"],
+});
+metrics.registerCounter("mobility_offer_selected_total", "Server-tracked mobility offer selection events.", {
+  service_type: ["taxi", "transfer", "charter", "rental"],
+});
+metrics.registerCounter("activities_provider_requests_total", "Viator MCP activity provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["viator_mcp"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerHistogram("activities_provider_latency_ms", "Viator MCP activity provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000, 30_000], {
+  provider: ["viator_mcp"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("activities_tool_invocations_total", "Activities tool execution outcomes.", {
+  outcome: ["live", "unavailable"],
+  provider: ["viator_mcp"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
 // Bounded same-thread LLM context builder metrics.  See
 // docs/thread-context-memory-implementation.md §8.  No labels carry
 // threadId/tripId/runId — those identifiers live in trace/log context,
@@ -336,6 +408,42 @@ metrics.registerHistogram(
   {
     operation: ["conversation", "plan", "replan"],
     outcome: ["completed", "failed", "cancelled"],
+  },
+);
+
+// ─── Team Agent 协作编排 (Phase 6) ─────────────────────────────────────────
+//
+// Labels are deliberately low-cardinality enums per spec §8. The forbidden-key
+// list already excludes user/trip/plan/value/identifiers, so the only way to
+// correlate back to a specific decision is via `app.correlation_id` on the
+// related HTTP/DB span.
+
+metrics.registerCounter(
+  "trip_constraint_mutation_total",
+  "Trip constraint proposal/fact mutations by operation, visibility, strength, and outcome.",
+  {
+    operation: ["propose", "confirm", "dismiss", "upsert", "revoke"],
+    visibility: ["team_visible", "orchestrator_confidential", "n_a"],
+    strength: ["hard", "soft", "n_a"],
+    result: ["success", "replay", "conflict", "catalog_invalid"],
+  },
+);
+
+metrics.registerCounter(
+  "plan_adoption_vote_total",
+  "Plan adoption votes by decision and outcome.",
+  {
+    decision: ["accept", "needs_changes"],
+    result: ["cast", "adopted", "blocked", "stale_plan"],
+  },
+);
+
+metrics.registerCounter(
+  "plan_replan_total",
+  "Auto REPLAN enqueues by trigger and outcome.",
+  {
+    trigger: ["trip_constraint_confirmed", "trip_constraint_revoked", "trip_constraint_upsert", "consent", "change_event"],
+    result: ["enqueued", "superseded", "missing_snapshot"],
   },
 );
 

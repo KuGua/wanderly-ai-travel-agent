@@ -52,24 +52,27 @@
 **Acceptance criteria:**
 
 1. Organizer can create one shared trip and invite two additional test travelers.
-2. Each traveler can separately approve or decline sharing each relevant profile field and their nationality/entry data.
-3. Shared trip shows only approved fields with member and consent source; private chat/history is never displayed.
-4. Revoking a shared field immediately expires affected plan and visa outputs.
-5. A member without a Profile can join and enter only trip-specific data.
-6. Shared Agent receives current-Trip memory only through the consent-derived snapshot projection; it cannot query a member Profile, preference fact, private thread or a prior Trip's memory directly. A projected memory change invalidates the active plan and confirmations.
+2. An invited traveler can open a token-bound invitation page, see only the authenticated decision summary, then explicitly accept or decline; accepting leads only to sharing-scope setup and does not grant consent.
+3. Each traveler can separately approve or decline sharing each relevant profile field and their nationality/entry data.
+4. Shared trip shows only approved fields with member and consent source; private chat/history is never displayed.
+5. Revoking a shared field immediately expires affected plan and visa outputs.
+6. A member without a Profile can join and enter only trip-specific data.
+7. Shared Agent receives current-Trip memory only through the consent-derived snapshot projection; it cannot query a member Profile, preference fact, private thread or a prior Trip's memory directly. A projected memory change invalidates the active plan and confirmations.
 
 ### H3 — Orchestrate a personalized multi-service trip
 
-**Story:** As a group departing from two places, I want the Shared Trip Agent to compare two to three destination options with flights, stay and local transport using our authorized preferences, so that we can make one transparent choice instead of coordinating separate tools ourselves.
+**Story:** As a group departing from two places, I want the Shared Trip Agent to compare two to three destination options with flights, stay, local transport and activities using our authorized preferences, so that we can make one transparent choice instead of coordinating separate tools ourselves.
 
 **Acceptance criteria:**
 
-1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay and Ground tools and maps the three travelers to two origins. `flight.search` may be requested by the LLM, but the server validates every parameter and guarantees all required origin/candidate combinations are researched.
-2. Result compares two to three configured destination candidates; each candidate includes at least one flight, hotel and ground option, or explicitly names a missing service and cause.
+1. Shared Agent sends one versioned shared-constraint snapshot to Flight, Stay, Activities and Ground typed tools and maps the three travelers to two origins. LLM may request `flight.search`、`hotel.search`、`activities.search`、`places.search` 与 `navigation.route`；`hotel.search` 只接受 `destinationId`，服务端从 task/snapshot/confirmed stay search preferences 推导日期、房间/住客数和币种；Activities 只接受 snapshot destination、固定 theme 与 locale，丢弃 Viator MCP raw payload、click-off link 与无币种价格。服务端验证每个参数和 run binding。Ground Place/Navigation 只解析 server-owned destination reference、run-bound candidate 或已授权 TripPlace；拒绝浏览器/模型坐标、地址、provider、profile、URL 与跨 run candidate。Personal Activities 在 owner-scoped streaming tool-loop 完成前保持禁用；Personal Agent 不得调用 Ground navigation/mobility tool。
+2. Result compares two to three configured destination candidates and supports any two authorized POIs under a candidate. Each item includes source/captured time and route distance/duration/steps or commercial price/currency as applicable; absent service explicitly appears in a non-confirmable `RESEARCH_UNAVAILABLE` summary.
 3. Each item shows source, captured time, offer expiry when applicable, price/currency when available, and linked authorized constraints.
 4. Comparison explains destination and service trade-offs without referencing a private or unapproved Profile field.
-5. Tool failure yields a recoverable `UNAVAILABLE` missing-service state; it never fabricates or substitutes inventory or price.
+5. Tool failure yields a recoverable `UNAVAILABLE` missing-service state; it never fabricates or substitutes inventory, route, schedule or price. Provider gaps complete the task as `COMPLETED_WITH_GAPS` and persist only a safe research summary. Only a user-selected live commercial offer blocks its corresponding confirmation/booking action; route evidence never creates commercial authority.
 6. Planning may publish only safe progress events (`SNAPSHOT_CREATED`, `RESEARCHING`, `VALIDATING`, `PERSISTING`, `COMPLETED` or `FAILED`). It never streams chain-of-thought, raw tool payloads, unvalidated plan candidates, or private snapshot fields; the UI shows a plan only after authoritative validation and persistence.
+7. Flight, Activities, Place/Navigation and Mobility are independently schedulable typed capabilities with distinct provider evidence, staleness trigger and audit action. The planning scheduler enforces bounded tool loops and independent concurrency/failure semantics; no provider booking link may enter the MVP.
+8. Hotel is independently schedulable and is limited to live search/comparison. It shows total and per-night price plus `source`/`captured_at`/`expires_at`; partial or unknown taxes/mandatory fees display “可能另计”. It never creates a provider order, payment, redirect or booking link; unavailable supplier data only produces `RESEARCH_UNAVAILABLE`.
 
 ### H4 — Produce per-traveler visa and entry readiness
 
@@ -77,11 +80,12 @@
 
 **Acceptance criteria:**
 
-1. For each traveler who authorizes nationality data, the system creates a separate checklist or explicit verification gap for each displayed destination and known route/transit.
-2. Every item names the traveler, source, check time, next action and confidence/uncertainty.
-3. Missing or uncertain data directs traveler to official verification; it never claims visa approval or legal advice.
-4. A traveler who does not authorize nationality data receives no inferred nationality conclusion.
-5. Consent withdrawal invalidates that traveler’s checklist and triggers plan review.
+1. Implement the approved global `VisaProvider` contract and `ReadinessOrchestrator`; production provider default is disabled until Sherpa contract, DPA, credential and sandbox contract verification pass.
+2. Candidate planning runs destination-level checks per authorized traveler × destination. Results explicitly state that transit readiness remains pending until a concrete flight offer is selected.
+3. Selecting an unexpired current-plan flight offer accepts a durable route-readiness task; it derives airport/transit nodes server-side and creates per-traveler route-level checks.
+4. Every owner-visible item contains source, check time, stage, next action and uncertainty. Team views expose only aggregate status; neither API/UI/telemetry leaks nationality or another member’s checklist.
+5. Missing/uncertain/expired data directs the owner to official verification; it never claims visa approval or legal advice, stores rule-page text, or forwards application/purchase links.
+6. Missing nationality consent, consent withdrawal, selected-offer change/expiry, route change and snapshot change invalidate affected checks and trigger the applicable replan/recheck.
 
 ### H5 — Self-correct the shared trip after change
 
@@ -95,6 +99,8 @@
 4. If no feasible alternative exists, it identifies blocking constraints and asks the appropriate member to adjust.
 5. Same event ID is idempotent and cannot cause duplicate plans/actions.
 6. Replan progress events are scoped to the active `tripId`, `runId`, snapshot and plan version. A stale run is terminal and cannot publish a plan or overwrite a newer run.
+7. A change automatically produces a `PROPOSED` replan. The previous plan remains `STALE` and comparison-only; it cannot return to an actionable state.
+8. All required members must vote `ACCEPT` before a proposed plan becomes `ACTIVE`; any `NEEDS_CHANGES` blocks adoption and creates no booking authority.
 
 ### H6 — Explicitly confirm and invoke booking orchestration sandbox
 
@@ -107,6 +113,7 @@
 3. Confirmation page displays all services, total price/currency where available, sources, approvals and `No automatic charge`.
 4. Sandbox call returns a reference per service or a clear error; success never states that payment was taken.
 5. Duplicate/late callbacks are idempotent by orchestration request ID; stale/declined plans cannot invoke a call.
+6. Adoption voting is separate from booking confirmation. The sandbox accepts only the latest `ACTIVE` plan after the existing unanimous confirmation gate.
 
 ## 3. PROOF
 

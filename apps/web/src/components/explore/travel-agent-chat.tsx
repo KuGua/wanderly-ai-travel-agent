@@ -29,6 +29,12 @@ type TravelAgentChatProps = {
   onOpen?: () => void;
   onDismiss?: () => void;
   /**
+   * "floating" overlays the map as a dismissible dialog. "docked" fills
+   * the host column and drops the dialog chrome, letting the trip
+   * workspace own the header and sizing.
+   */
+  variant?: "floating" | "docked";
+  /**
    * Controlled threadId. Required: callers must always provision the
    * thread via a Trip-scoped endpoint (e.g. `POST /trips/:tripId/threads/default`)
    * so the server-derived trip binding is honored across refreshes.
@@ -64,6 +70,7 @@ export function TravelAgentChat({
   open = true,
   onOpen = () => {},
   onDismiss = () => {},
+  variant = "floating",
   threadId: controlledThreadId,
   threadStatus,
   onRetryThread,
@@ -76,6 +83,7 @@ export function TravelAgentChat({
   titleLocale = "en",
 }: TravelAgentChatProps) {
   const t = useTranslations("explore.chat");
+  const docked = variant === "docked";
   const effectiveThreadId = controlledThreadId;
   const resolvedThreadStatus = threadStatus ?? (effectiveThreadId ? "ready" : "preparing");
   // Send is allowed when we already have a thread, or when the parent
@@ -380,8 +388,24 @@ export function TravelAgentChat({
     }
   }
 
+  const rowClass = docked ? "mx-auto mb-[18px] max-w-[640px]" : "";
+  const userBubbleClass = docked
+    ? "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
+    : "ml-auto max-w-[86%] rounded-[20px] rounded-tr-[6px] bg-sidebar px-4 py-3 text-sm leading-6 text-white shadow-sm";
+  const agentBubbleClass = docked
+    ? "group/msg relative max-w-[86%] bg-card px-3.5 py-3 text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
+    : "group/msg relative max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-foreground";
+  const agentLabel = docked ? (
+    <div className="mb-1.5 flex items-center gap-2.5 text-xs font-black text-[var(--w-ink)]">
+      <span aria-hidden="true" className="grid size-[23px] place-items-center bg-[var(--w-highlight)] text-[10px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">W</span>
+      {t("agentName")}
+    </div>
+  ) : null;
+
   const submitButton = (
-    <button type="submit" aria-label={t("sendAria")} disabled={inputDisabled} className="grid size-11 shrink-0 place-items-center rounded-full bg-sidebar text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70">
+    <button type="submit" aria-label={t("sendAria")} disabled={inputDisabled} className={docked
+      ? "grid size-11 shrink-0 place-items-center disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action"
+      : "grid size-11 shrink-0 place-items-center disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action"}>
       {isSending ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : <ArrowUp aria-hidden="true" className="size-5" />}
     </button>
   );
@@ -389,13 +413,13 @@ export function TravelAgentChat({
   if (!open) {
     return (
       <>
-        <button type="button" onClick={onOpen} className="absolute bottom-20 right-4 z-40 rounded-full border border-white/80 bg-white/85 px-3 py-1.5 text-[11px] font-bold text-primary shadow-md backdrop-blur transition hover:bg-white focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/60 landscape:bottom-24 landscape:right-6">{t("history")}</button>
+        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-20 right-4 z-40 px-3 py-1.5 text-[11px] font-bold wanderly-cosmos-control wanderly-r-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
         {resolvedThreadStatus !== "ready" ? (
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
         ) : null}
-        <form onSubmit={submitMessage} className="wanderly-liquid-glass absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 rounded-full p-1.5 pl-4 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)] landscape:translate-x-0" aria-label={t("startAria")}>
+        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 p-1.5 pl-4 wanderly-cosmos-panel wanderly-r-lg landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)] landscape:translate-x-0" aria-label={t("startAria")}>
           <Sparkles aria-hidden="true" className="size-4 shrink-0 text-primary" />
-          <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" />
+          <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--w-fog)] placeholder:text-[var(--w-fog)] placeholder:opacity-70 focus:outline-none disabled:opacity-60" />
           {submitButton}
         </form>
       </>
@@ -403,8 +427,9 @@ export function TravelAgentChat({
   }
 
   const conversationPanel = (
-    <aside role="dialog" aria-label={t("dialogAria")} data-expanded={expanded ? "true" : "false"} className={`flex flex-col overflow-hidden bg-white shadow-[0_28px_90px_rgb(8_47_63/28%)] transition-[inset,height,width,border-radius] duration-300 ${expanded ? "fixed inset-0 z-[100] h-dvh rounded-none" : "absolute inset-x-3 bottom-3 z-50 h-[60dvh] min-h-[300px] rounded-[28px] landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}`}>
-      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden border-x border-t border-white/80 bg-white landscape:border ${expanded ? "rounded-none" : "rounded-t-[28px]"}`}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} data-expanded={expanded ? "true" : "false"} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-white" : `flex flex-col overflow-hidden bg-white shadow-[0_28px_90px_rgb(8_47_63/28%)] transition-[inset,height,width,border-radius] duration-300 ${expanded ? "fixed inset-0 z-[100] h-dvh rounded-none" : "absolute inset-x-3 bottom-3 z-50 h-[60dvh] min-h-[300px] rounded-[28px] landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}`}>
+      <div className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-white" : `flex min-h-0 flex-1 flex-col overflow-hidden border-x border-t border-white/80 bg-white landscape:border ${expanded ? "rounded-none" : "rounded-t-[28px]"}`}>
+        {docked ? null : (
         <header className="relative flex items-center gap-2.5 border-b border-[#dbe8e5] px-3 pb-1 pt-2.5">
           <button type="button" onClick={() => setExpanded((current) => !current)} aria-label={expanded ? t("collapse") : t("expand")} className="absolute left-1/2 top-1 -translate-x-1/2 rounded-full bg-muted/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">{expanded ? t("collapse") : t("expand")}</button>
           <span className="grid size-7 place-items-center rounded-[10px] bg-sidebar text-white shadow-sm"><MessageCircle aria-hidden="true" className="size-4" /></span>
@@ -412,32 +437,45 @@ export function TravelAgentChat({
           {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} className="rounded-full border border-primary/20 bg-white px-2.5 py-1 text-[10px] font-bold text-primary hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">{t("startNewExploration")}</button> : null}
           <button type="button" onClick={closeConversation} aria-label={t("close")} className="grid size-7 place-items-center rounded-full bg-sidebar text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar/25"><X aria-hidden="true" className="size-3.5" /></button>
         </header>
+        )}
 
-        <div ref={panelScrollRef} className="flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#f6fbf9_100%)] px-5 py-5" aria-live="polite">
+        <div ref={panelScrollRef} className={docked
+          ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-4 pt-6"
+          : "flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#f6fbf9_100%)] px-5 py-5"} aria-live="polite">
           {resolvedThreadStatus !== "ready" ? <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} /> : null}
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
-            <div className="max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-sm leading-6 text-foreground">
-              <p className="font-bold text-primary">{t("introTitle")}</p>
-              <p className="mt-1 text-muted-foreground">{t("introBody")}</p>
+            <div className={rowClass}>
+              {agentLabel}
+              <div className={docked ? "max-w-[86%] bg-card px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm" : "max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-sm leading-6 text-foreground"}>
+                <p className="font-bold text-primary">{t("introTitle")}</p>
+                <p className="mt-1 text-muted-foreground">{t("introBody")}</p>
+              </div>
             </div>
           ) : null}
           {messages.map((message) => (
-            <article key={message.id} data-role={message.role} className={message.role === "USER" ? "ml-auto max-w-[86%] rounded-[20px] rounded-tr-[6px] bg-sidebar px-4 py-3 text-sm leading-6 text-white shadow-sm" : "group/msg relative max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-foreground"}>
+            <article key={message.id} data-role={message.role} className={rowClass}>
               {message.role === "USER" ? (
-                <p>{message.content}</p>
+                <div className={userBubbleClass}>
+                  <p>{message.content}</p>
+                </div>
               ) : (
                 <>
-                  <ChatMarkdown content={message.content} />
-                  <CopyButton text={message.content} />
+                  {agentLabel}
+                  <div className={agentBubbleClass}>
+                    <ChatMarkdown content={message.content} />
+                    <CopyButton text={message.content} />
+                  </div>
                 </>
               )}
               {refusalMessageIds.has(message.id) ? <p className="mt-2 text-[10px] font-black uppercase tracking-[0.1em] text-primary">{t("verificationRequired")}</p> : null}
             </article>
           ))}
-          {pendingTurn ? <p ref={pendingTurnAnchorRef} data-role="USER" data-pending="true" className="ml-auto max-w-[86%] rounded-[20px] rounded-tr-[6px] bg-sidebar px-4 py-3 text-sm leading-6 text-white shadow-sm opacity-80">{pendingTurn.question}</p> : null}
+          {pendingTurn ? <p ref={pendingTurnAnchorRef} data-role="USER" data-pending="true" className={`${rowClass} ${userBubbleClass} opacity-80`}>{pendingTurn.question}</p> : null}
           {activeRunId ? (
-            <article data-role="ASSISTANT" data-streaming="true" className="max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-foreground">
+            <article data-role="ASSISTANT" data-streaming="true" className={rowClass}>
+              {agentLabel}
+              <div className={docked ? "max-w-[86%] bg-card px-3.5 py-3 text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm" : "max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-foreground"}>
               {streamState.text ? (
                 <ChatMarkdown content={streamState.text} />
               ) : null}
@@ -454,16 +492,17 @@ export function TravelAgentChat({
                   <Square aria-hidden="true" className="size-3 fill-current" />{t("stop")}
                 </button>
               </div>
+              </div>
             </article>
-          ) : isSending ? <p role="status" className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground"><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{t("sending")}</p> : null}
+          ) : isSending ? <p role="status" className={`${rowClass} inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground`}><LoaderCircle aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />{t("sending")}</p> : null}
           {visibleError ? (
-            <div role="alert" className="rounded-[16px] border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+            <div role="alert" className={`${rowClass} rounded-[16px] border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive`}>
               <p className="font-bold">{errorMessage(visibleError, t)}</p>
               {pendingTurn && isRetryable(visibleError) ? <button type="button" onClick={retryPendingTurn} disabled={isSending} className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-destructive shadow-sm disabled:opacity-50"><RotateCw aria-hidden="true" className="size-3.5" />{t("retry")}</button> : null}
             </div>
           ) : null}
           {briefProposal && tripId ? (
-            <section aria-label={t("briefProposalTitle")} className="max-w-[86%] rounded-[18px] border border-primary/20 bg-white p-3 text-sm shadow-sm">
+            <section aria-label={t("briefProposalTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} rounded-[18px] border border-primary/20 bg-white p-3 text-sm shadow-sm`}>
               <p className="font-bold text-primary">{t("briefProposalTitle")}</p>
               <p className="mt-1 text-muted-foreground">{t("briefProposalBody", { destination: briefProposal.destinationCandidates?.join(" · ") ?? t("briefProposalNoDestination"), days: briefProposal.travelDays ?? t("briefProposalNoDays") })}</p>
               <div className="mt-3 flex gap-2">
@@ -475,24 +514,25 @@ export function TravelAgentChat({
         </div>
       </div>
 
-      <form onSubmit={submitMessage} className="bg-white px-3 pb-3 pt-2">
+      <form onSubmit={submitMessage} className={docked ? "border-t-2 border-[var(--w-ink)] bg-background px-[clamp(16px,3vw,34px)] pb-[18px] pt-3" : "bg-white px-3 pb-3 pt-2"}>
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className="mb-1.5 flex h-5 max-w-full items-center rounded-full border border-white/80 bg-[#dff3ed]/90 px-2.5 text-[10px] font-bold text-primary shadow-sm backdrop-blur hover:bg-[#d2eee6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
-        <div className="wanderly-liquid-glass flex min-h-14 items-end gap-2 rounded-[20px] p-1.5 pl-4">
-          <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className="min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" />
+        <div className={docked ? "mx-auto flex min-h-14 max-w-[640px] items-center gap-2 bg-card p-1.5 pl-4 wanderly-edge wanderly-r-md wanderly-shadow-sm" : "wanderly-liquid-glass flex min-h-14 items-end gap-2 rounded-[20px] p-1.5 pl-4"}>
+          <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
           {submitButton}
         </div>
+        {docked ? <p className="mx-auto mt-[7px] max-w-[640px] text-[11px] text-[var(--w-ink)] opacity-75">{t("composerNote")}</p> : null}
       </form>
     </aside>
   );
 
-  return expanded && typeof document !== "undefined" ? createPortal(conversationPanel, document.body) : conversationPanel;
+  return expanded && !docked && typeof document !== "undefined" ? createPortal(conversationPanel, document.body) : conversationPanel;
 }
 
 function ThreadStatus({ status, onRetry, compact = false }: { status: ChatThreadStatus; onRetry?: () => void; compact?: boolean }) {
   const t = useTranslations("explore.chat");
   const message = status === "preparing" ? t("preparingPrivateChat") : t("privateChatUnavailable");
   return (
-    <div role="status" className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 rounded-full bg-white/85 px-3 py-1.5 text-[11px] font-semibold text-muted-foreground shadow-md backdrop-blur landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "rounded-[16px] border border-border bg-card p-3 text-sm text-muted-foreground"}>
+    <div role="status" data-wanderly-avoid={compact ? "" : undefined} className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold wanderly-cosmos-panel wanderly-r-xs landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "rounded-[16px] border border-border bg-card p-3 text-sm text-muted-foreground"}>
       <span>{message}</span>
       {status === "error" && onRetry ? <button type="button" onClick={onRetry} className="font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30">{t("retryPrivateChat")}</button> : null}
     </div>

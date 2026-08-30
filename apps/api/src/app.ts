@@ -22,6 +22,7 @@ import { locationIntroductionRoutes } from "./routes/location-introduction.js";
 import { agentRunRoutes } from "./routes/agent-runs.js";
 import { authRoutes } from "./routes/auth.js";
 import { searchPreferenceRoutes } from "./routes/search-preferences.js";
+import { teamOrchestrationRoutes } from "./routes/team-orchestration.js";
 import { AgentStreamRelay } from "./tasks/agent-stream-relay.js";
 import { pinoInstance, correlationChild } from "./observability/telemetry.js";
 import { metrics } from "./observability/metrics.js";
@@ -125,7 +126,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
         kind: SpanKind.SERVER,
         attributes: {
           "http.method": request.method,
-          "http.target": request.url,
+          // Tokens are bearer-like invitation credentials. Keep the route
+          // shape useful for diagnostics without recording the raw token.
+          "http.target": safeHttpTarget(request.url),
           "net.peer.ip": request.ip,
           "app.correlation_id": request.correlationId,
         },
@@ -218,6 +221,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(agentRunRoutes, { prefix: "/api/v1", relay: agentStreamRelay });
   await app.register(authRoutes, { prefix: "/api/v1" });
   await app.register(searchPreferenceRoutes, { prefix: "/api/v1" });
+  await app.register(teamOrchestrationRoutes, { prefix: "/api/v1" });
 
   // Register agents (Skills) — must happen before the server accepts traffic so
   // handlers can call skill-registry.invokeSkill without races.
@@ -236,6 +240,15 @@ function isAuthenticationExempt(method: string, url: string): boolean {
     || (method === "POST" && path === "/api/v1/explore/location-reference")
     || (method === "POST" && path === "/api/v1/explore/location-introductions")
     || path.startsWith("/api/v1/auth/");
+}
+
+function safeHttpTarget(url: string): string {
+  const path = url.split("?", 1)[0] ?? "/";
+  const invitationMatch = path.match(/^\/api\/v1\/trip-invitations\/[^/]+(?:\/(accept|decline))?$/u);
+  if (!invitationMatch) return path;
+  return invitationMatch[1]
+    ? `/api/v1/trip-invitations/:inviteToken/${invitationMatch[1]}`
+    : "/api/v1/trip-invitations/:inviteToken";
 }
 
 function isUnsafeMethod(method: string): boolean {

@@ -103,15 +103,43 @@ export const tripDetailSchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateSchema.nullable(),
   travelDateEnd: dateSchema.nullable(),
-  memberCount: z.number().int().nonnegative(),
-  role: tripRoleSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
 
+export const tripMemberSchema = z.object({
+  userId: z.string().uuid(),
+  displayName: z.string(),
+  role: tripRoleSchema,
+  isRequired: z.boolean(),
+  joinedAt: z.string().datetime(),
+});
+
 export const tripDetailResponseSchema = z.object({
   trip: tripDetailSchema,
+  callerRole: tripRoleSchema,
+  members: z.array(tripMemberSchema),
 });
+
+export const invitationPreviewResponseSchema = z.object({
+  trip: z.object({
+    name: z.string().min(1).max(256),
+    destinationCandidates: z.array(z.string().min(1)).max(5),
+    travelDateStart: dateSchema.nullable(),
+    travelDateEnd: dateSchema.nullable(),
+  }).strict(),
+  membership: z.literal("MEMBER"),
+  isRequired: z.literal(true),
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const acceptInvitationResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  membership: z.literal("MEMBER"),
+  defaultThread: z.object({ id: z.string().uuid(), tripId: z.string().uuid(), isDefault: z.literal(true) }).strict(),
+}).strict();
+
+export const declineInvitationResponseSchema = z.object({ declined: z.literal(true) }).strict();
 
 export const conversationPlaceSchema = z.object({
   sourceId: z.string().min(1).max(128).optional(),
@@ -421,7 +449,11 @@ export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
 export type CreateTripThreadInput = z.infer<typeof createTripThreadInputSchema>;
 export type CreateThreadResponse = z.infer<typeof createThreadResponseSchema>;
 export type TripDetail = z.infer<typeof tripDetailSchema>;
+export type TripMember = z.infer<typeof tripMemberSchema>;
 export type TripDetailResponse = z.infer<typeof tripDetailResponseSchema>;
+export type InvitationPreviewResponse = z.infer<typeof invitationPreviewResponseSchema>;
+export type AcceptInvitationResponse = z.infer<typeof acceptInvitationResponseSchema>;
+export type DeclineInvitationResponse = z.infer<typeof declineInvitationResponseSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;
@@ -430,3 +462,400 @@ export type ConversationTurnAcceptedResponse = z.infer<typeof conversationTurnAc
 export type OwnerConversationResponse = z.infer<typeof ownerConversationResponseSchema>;
 export type AgentRun = z.infer<typeof agentRunResponseSchema>;
 export type AgentStreamEvent = z.infer<typeof agentStreamEventSchema>;
+
+// ─── Team Agent 协作编排 Phase 5 Zod schemas ────────────────────────────────
+
+export const constraintVisibilitySchema = z.enum(["TEAM_VISIBLE", "ORCHESTRATOR_CONFIDENTIAL"]);
+export const constraintStrengthSchema = z.enum(["HARD", "SOFT"]);
+export const constraintProposalStatusSchema = z.enum(["PENDING", "CONFIRMED", "DISMISSED", "REVOKED"]);
+export const planAdoptionDecisionSchema = z.enum(["ACCEPT", "NEEDS_CHANGES"]);
+export const constraintProposalSourceKindSchema = z.enum(["PERSONAL_AGENT", "OWNER_FORM"]);
+
+export const tripConstraintProposalSchema = z.object({
+  id: z.string().uuid(),
+  tripId: z.string().uuid(),
+  ownerUserId: z.string().uuid(),
+  fieldKey: z.string().min(1),
+  valueJson: z.unknown(),
+  strength: constraintStrengthSchema,
+  proposedVisibility: constraintVisibilitySchema,
+  sourceKind: constraintProposalSourceKindSchema,
+  status: constraintProposalStatusSchema,
+  createdAt: z.string().datetime(),
+  resolvedAt: z.string().datetime().nullable(),
+}).strict();
+
+export const tripConstraintFactSchema = z.object({
+  id: z.string().uuid(),
+  tripId: z.string().uuid(),
+  ownerUserId: z.string().uuid(),
+  fieldKey: z.string().min(1),
+  valueJson: z.unknown(),
+  strength: constraintStrengthSchema,
+  visibility: constraintVisibilitySchema,
+  revision: z.number().int().positive(),
+  sourceProposalId: z.string().uuid().nullable(),
+  status: z.enum(["ACTIVE", "SUPERSEDED", "REVOKED"]),
+  createdAt: z.string().datetime(),
+  supersededAt: z.string().datetime().nullable(),
+  revokedAt: z.string().datetime().nullable(),
+}).strict();
+
+export const tripConstraintsResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  teamVisibleFacts: z.array(tripConstraintFactSchema),
+}).strict();
+
+export const tripConstraintsOwnerResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  allFacts: z.array(tripConstraintFactSchema),
+}).strict();
+
+export const tripConstraintProposalsResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  proposals: z.array(tripConstraintProposalSchema),
+}).strict();
+
+export const createTripConstraintProposalRequestSchema = z.object({
+  fieldKey: z.string().min(1).max(64),
+  valueJson: z.unknown(),
+  proposedVisibility: constraintVisibilitySchema,
+  proposedStrength: constraintStrengthSchema,
+  sourceKind: constraintProposalSourceKindSchema.optional(),
+}).strict();
+
+export const confirmTripConstraintProposalRequestSchema = z.object({
+  visibility: constraintVisibilitySchema,
+  strength: constraintStrengthSchema,
+}).strict();
+
+export const upsertTripConstraintFactRequestSchema = z.object({
+  fieldKey: z.string().min(1).max(64),
+  valueJson: z.unknown(),
+  visibility: constraintVisibilitySchema,
+  strength: constraintStrengthSchema,
+  expectedRevision: z.number().int().positive().optional(),
+}).strict();
+
+export const castAdoptionVoteRequestSchema = z.object({
+  decision: planAdoptionDecisionSchema,
+}).strict();
+
+export const adoptionVoteResponseSchema = z.object({
+  planId: z.string().uuid(),
+  outcome: z.enum(["CAST", "ADOPTED", "BLOCKED"]),
+  votesAccepted: z.number().int().nonnegative(),
+  votesRequired: z.number().int().nonnegative(),
+}).strict();
+
+export const planAdoptionVoteSchema = z.object({
+  planId: z.string().uuid(),
+  userId: z.string().uuid(),
+  decision: planAdoptionDecisionSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+
+export const adoptionVoteListResponseSchema = z.object({
+  planId: z.string().uuid(),
+  votesAccepted: z.number().int().nonnegative(),
+  votesRequired: z.number().int().nonnegative(),
+  hasBlocker: z.boolean(),
+  currentUserDecision: z.enum(["ACCEPT", "NEEDS_CHANGES"]).nullable(),
+}).strict();
+
+export const listedPlanSchema = z.object({
+  id: z.string().uuid(),
+  version: z.number().int().nonnegative(),
+  status: z.enum(["DRAFT", "ACTIVE", "PROPOSED", "STALE", "SUPERSEDED"]),
+  snapshotId: z.string().uuid(),
+  generatedAt: z.string().datetime(),
+  destination: z.string(),
+  destinationCandidatesEvaluated: z.array(z.string()),
+  replacedByPlanId: z.string().uuid().nullable(),
+  staleReason: z.string().nullable(),
+  planData: z.record(z.string(), z.unknown()),
+}).strict();
+
+export const tripPlansListResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  proposed: z.array(listedPlanSchema),
+  active: z.array(listedPlanSchema),
+  stale: z.array(listedPlanSchema),
+}).strict();
+
+export const confirmProposalResponseSchema = z.object({
+  factId: z.string().uuid(),
+  proposalId: z.string().uuid(),
+  replan: z.object({
+    runId: z.string().uuid(),
+    queuedAt: z.string().datetime(),
+  }).nullable(),
+}).strict();
+
+export const upsertFactResponseSchema = z.object({
+  factId: z.string().uuid(),
+  replan: z.object({
+    runId: z.string().uuid(),
+    queuedAt: z.string().datetime(),
+  }).nullable(),
+}).strict();
+
+export type ConstraintVisibility = z.infer<typeof constraintVisibilitySchema>;
+export type ConstraintStrength = z.infer<typeof constraintStrengthSchema>;
+export type ConstraintProposalStatus = z.infer<typeof constraintProposalStatusSchema>;
+export type PlanAdoptionDecision = z.infer<typeof planAdoptionDecisionSchema>;
+export type ConstraintProposalSourceKind = z.infer<typeof constraintProposalSourceKindSchema>;
+export type TripConstraintProposal = z.infer<typeof tripConstraintProposalSchema>;
+export type TripConstraintFact = z.infer<typeof tripConstraintFactSchema>;
+export type TripConstraintsResponse = z.infer<typeof tripConstraintsResponseSchema>;
+export type TripConstraintsOwnerResponse = z.infer<typeof tripConstraintsOwnerResponseSchema>;
+export type TripConstraintProposalsResponse = z.infer<typeof tripConstraintProposalsResponseSchema>;
+export type CreateTripConstraintProposalRequest = z.infer<typeof createTripConstraintProposalRequestSchema>;
+export type ConfirmTripConstraintProposalRequest = z.infer<typeof confirmTripConstraintProposalRequestSchema>;
+export type UpsertTripConstraintFactRequest = z.infer<typeof upsertTripConstraintFactRequestSchema>;
+export type CastAdoptionVoteRequest = z.infer<typeof castAdoptionVoteRequestSchema>;
+export type AdoptionVoteResponse = z.infer<typeof adoptionVoteResponseSchema>;
+export type PlanAdoptionVote = z.infer<typeof planAdoptionVoteSchema>;
+export type AdoptionVoteListResponse = z.infer<typeof adoptionVoteListResponseSchema>;
+export type ListedPlan = z.infer<typeof listedPlanSchema>;
+export type TripPlansListResponse = z.infer<typeof tripPlansListResponseSchema>;
+export type ConfirmProposalResponse = z.infer<typeof confirmProposalResponseSchema>;
+export type UpsertFactResponse = z.infer<typeof upsertFactResponseSchema>;
+
+// ─── Global POI & ground mobility (spec docs/ground-mobility-implementation.md §4/§5) ───
+// Server-authoritative TripPlace + run-bound place candidate DTOs. The web
+// client never sees raw provider coordinates (they are part of TripPlace but
+// only reach this client after server-side membership enforcement), and it
+// never receives route geometry or booking links.
+
+export const tripPlaceKindSchema = z.enum(["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER"]);
+export const tripPlaceVisibilitySchema = z.enum(["OWNER_PRIVATE", "TEAM_VISIBLE", "ORCHESTRATOR_CONFIDENTIAL"]);
+export const tripPlaceStatusSchema = z.enum(["PROPOSED", "ACTIVE", "REVOKED"]);
+
+export const tripPlaceSchema = z.object({
+  id: z.string().uuid(),
+  tripId: z.string().uuid(),
+  ownerUserId: z.string().uuid(),
+  version: z.number().int().positive(),
+  visibility: tripPlaceVisibilitySchema,
+  status: tripPlaceStatusSchema,
+  kind: tripPlaceKindSchema,
+  displayName: z.string().min(1).max(256),
+  countryCode: z.string().length(2).nullable(),
+  cityName: z.string().min(1).max(128).nullable(),
+  longitude: z.number().finite().min(-180).max(180).nullable(),
+  latitude: z.number().finite().min(-90).max(90).nullable(),
+  source: z.string().min(1),
+  providerPlaceId: z.string().min(1).nullable(),
+  capturedAt: z.string().datetime(),
+  createdFromRunId: z.string().uuid().nullable(),
+}).strict();
+
+export const tripPlacesResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  places: z.array(tripPlaceSchema),
+}).strict();
+
+export const placeCandidateSchema = z.object({
+  candidateId: z.string().uuid(),
+  displayName: z.string().min(1).max(256),
+  kind: tripPlaceKindSchema,
+  countryCode: z.string().length(2).nullable(),
+  cityName: z.string().min(1).max(128).nullable(),
+  longitude: z.number().finite().min(-180).max(180),
+  latitude: z.number().finite().min(-90).max(90),
+  confidence: z.number().min(0).max(1),
+  needsUserConfirmation: z.boolean(),
+  source: z.string().min(1),
+  capturedAt: z.string().datetime(),
+}).strict();
+
+export const placeCandidateSearchRequestSchema = z.object({
+  destinationId: z.string().min(1).max(64),
+  keyword: z.string().min(1).max(160),
+  category: tripPlaceKindSchema,
+}).strict();
+
+export const placeCandidateSearchResponseSchema = z.object({
+  queryId: z.string().uuid(),
+  candidates: z.array(placeCandidateSchema),
+}).strict();
+
+export const proposeTripPlaceRequestSchema = z.object({
+  candidate: placeCandidateSchema,
+  visibility: tripPlaceVisibilitySchema,
+  kind: tripPlaceKindSchema,
+}).strict();
+
+export const adoptTripPlaceRequestSchema = z.object({
+  placeId: z.string().uuid(),
+}).strict();
+
+export const revokeTripPlaceRequestSchema = z.object({
+  placeId: z.string().uuid(),
+  reason: z.string().min(1).max(256),
+}).strict();
+
+export const tripPlaceActionResponseSchema = z.object({
+  placeId: z.string().uuid(),
+  status: tripPlaceStatusSchema,
+}).strict();
+
+export const serviceCapabilitySchema = z.enum(["flight", "stay", "activities", "navigation", "transit", "mobility"]);
+export const providerUnavailableCodeSchema = z.enum([
+  "NOT_CONFIGURED",
+  "SEARCH_CONSTRAINTS_INCOMPLETE",
+  "NO_RESULTS",
+  "RATE_LIMITED",
+  "UPSTREAM_TIMEOUT",
+  "UPSTREAM_FAILURE",
+  "INVALID_PROVIDER_RESPONSE",
+  "PROVIDER_NOT_APPROVED",
+]);
+
+export const serviceGapSchema = z.object({
+  capability: serviceCapabilitySchema,
+  code: providerUnavailableCodeSchema,
+  destinationId: z.string().optional(),
+}).strict();
+
+export const researchResultStatusSchema = z.enum(["COMPLETE", "COMPLETED_WITH_GAPS"]);
+
+export const researchResultSchema = z.object({
+  id: z.string().uuid(),
+  tripId: z.string().uuid(),
+  snapshotId: z.string().uuid(),
+  agentTaskRunId: z.string().uuid().nullable(),
+  status: researchResultStatusSchema,
+  serviceGaps: z.array(serviceGapSchema),
+  resultPlanId: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
+}).strict();
+
+export type ServiceCapability = z.infer<typeof serviceCapabilitySchema>;
+export type ProviderUnavailableCode = z.infer<typeof providerUnavailableCodeSchema>;
+export type ServiceGap = z.infer<typeof serviceGapSchema>;
+export type ResearchResultStatus = z.infer<typeof researchResultStatusSchema>;
+export type ResearchResult = z.infer<typeof researchResultSchema>;
+
+// ─── Navigation route evidence (spec §5.2) ─────────────────────────────────
+// Server-authoritative route snapshot. The geometry is bound to the
+// `snapshotId` and only reaches the browser via the snapshot-bound DTO; the
+// raw polyline is never shipped to a third party.
+export const navigationRouteModeSchema = z.enum(["WALK", "DRIVE", "CYCLE"]);
+
+export const navigationRouteStepSchema = z.object({
+  index: z.number().int().nonnegative(),
+  instruction: z.string().min(1).max(512),
+  distanceMeters: z.number().nonnegative(),
+  durationSeconds: z.number().nonnegative(),
+}).strict();
+
+export const routeEvidenceSchema = z.object({
+  id: z.string().uuid(),
+  searchRunId: z.string().uuid(),
+  snapshotId: z.string().uuid(),
+  tripId: z.string().uuid(),
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  mode: navigationRouteModeSchema,
+  distanceMeters: z.number().nonnegative().finite(),
+  durationSeconds: z.number().nonnegative().finite(),
+  steps: z.array(navigationRouteStepSchema).max(64),
+  source: z.string().min(1),
+  capturedAt: z.string().datetime(),
+  refreshAfter: z.string().datetime(),
+}).strict();
+
+export const routeEvidenceListSchema = z.object({
+  tripId: z.string().uuid(),
+  routes: z.array(routeEvidenceSchema),
+}).strict();
+
+export const navigationRouteSearchRequestSchema = z.object({
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  mode: navigationRouteModeSchema,
+}).strict();
+
+export const navigationRouteSearchResponseSchema = z.object({
+  routeId: z.string().uuid(),
+  summary: routeEvidenceSchema.omit({ id: true, searchRunId: true, snapshotId: true, tripId: true, steps: true, refreshAfter: true }).extend({
+    stepCount: z.number().int().nonnegative(),
+  }),
+}).strict();
+
+export type NavigationRouteMode = z.infer<typeof navigationRouteModeSchema>;
+export type NavigationRouteStep = z.infer<typeof navigationRouteStepSchema>;
+export type RouteEvidence = z.infer<typeof routeEvidenceSchema>;
+export type RouteEvidenceList = z.infer<typeof routeEvidenceListSchema>;
+export type NavigationRouteSearchRequest = z.infer<typeof navigationRouteSearchRequestSchema>;
+export type NavigationRouteSearchResponse = z.infer<typeof navigationRouteSearchResponseSchema>;
+
+export const mobilityServiceTypeSchema = z.enum(["TAXI", "TRANSFER", "CHARTER", "RENTAL"]);
+
+export const mobilityOfferSchema = z.object({
+  offerId: z.string().min(1),
+  serviceType: mobilityServiceTypeSchema,
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  passengers: z.number().int().min(1).max(9),
+  departureAt: z.string().datetime({ offset: true }),
+  estimatedPrice: z.number().nonnegative().finite(),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  vehicleClass: z.string().min(1).max(64),
+  estimated: z.literal(true),
+  expiresAt: z.string().datetime({ offset: true }).nullable(),
+  source: z.string().min(1),
+  capturedAt: z.string().datetime({ offset: true }),
+}).strict();
+
+export const mobilityOfferListSchema = z.object({
+  tripId: z.string().uuid(),
+  offers: z.array(mobilityOfferSchema),
+}).strict();
+
+export const mobilitySearchRequestSchema = z.object({
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  passengers: z.number().int().min(1).max(9),
+  departureAt: z.string().datetime({ offset: true }),
+  serviceType: mobilityServiceTypeSchema,
+}).strict();
+
+export const mobilitySearchResponseSchema = z.object({
+  queryId: z.string().uuid(),
+  offers: z.array(mobilityOfferSchema).min(1).max(20),
+}).strict();
+
+export const mobilityOfferSelectionRequestSchema = z.object({
+  offerId: z.string().min(1),
+  queryId: z.string().uuid(),
+}).strict();
+
+export const mobilityOfferSelectionResponseSchema = z.object({
+  selectedOfferId: z.string().min(1),
+  bookingGate: z.enum(["OPEN", "CLOSED"]),
+}).strict();
+
+export type MobilityServiceType = z.infer<typeof mobilityServiceTypeSchema>;
+export type MobilityOffer = z.infer<typeof mobilityOfferSchema>;
+export type MobilityOfferList = z.infer<typeof mobilityOfferListSchema>;
+export type MobilitySearchRequest = z.infer<typeof mobilitySearchRequestSchema>;
+export type MobilitySearchResponse = z.infer<typeof mobilitySearchResponseSchema>;
+export type MobilityOfferSelectionRequest = z.infer<typeof mobilityOfferSelectionRequestSchema>;
+export type MobilityOfferSelectionResponse = z.infer<typeof mobilityOfferSelectionResponseSchema>;
+
+export type TripPlaceKind = z.infer<typeof tripPlaceKindSchema>;
+export type TripPlaceVisibility = z.infer<typeof tripPlaceVisibilitySchema>;
+export type TripPlaceStatus = z.infer<typeof tripPlaceStatusSchema>;
+export type TripPlace = z.infer<typeof tripPlaceSchema>;
+export type TripPlacesResponse = z.infer<typeof tripPlacesResponseSchema>;
+export type PlaceCandidate = z.infer<typeof placeCandidateSchema>;
+export type PlaceCandidateSearchRequest = z.infer<typeof placeCandidateSearchRequestSchema>;
+export type PlaceCandidateSearchResponse = z.infer<typeof placeCandidateSearchResponseSchema>;
+export type ProposeTripPlaceRequest = z.infer<typeof proposeTripPlaceRequestSchema>;
+export type AdoptTripPlaceRequest = z.infer<typeof adoptTripPlaceRequestSchema>;
+export type RevokeTripPlaceRequest = z.infer<typeof revokeTripPlaceRequestSchema>;
+export type TripPlaceActionResponse = z.infer<typeof tripPlaceActionResponseSchema>;

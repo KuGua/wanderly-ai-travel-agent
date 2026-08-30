@@ -139,9 +139,13 @@ export async function buildAuthorizedData(params: {
 }
 
 /**
- * Mark every ACTIVE plan for a trip as STALE (and SUPERSEDED so the next
- * generation starts a fresh version) along with every dependent member
- * confirmation. Used both by consent grant/revoke and by change events.
+ * Mark every ACTIVE or PROPOSED plan for a trip as STALE (and SUPERSEDED so the
+ * next generation starts a fresh version) along with every dependent member
+ * confirmation. Used both by consent grant/revoke, by change events, and now
+ * by Team Agent 协作编排 confirm/revoke (spec §1.7, §5.3).
+ *
+ * PROPOSED plans become STALE together with their adoption_votes intact;
+ * the UI gates adoption voting behind plan status != STALE.
  *
  * Must be invoked inside a `db.transaction` so the cascade commits
  * atomically with the originating change.
@@ -150,18 +154,18 @@ export async function stalePlansAndConfirmationsForTrip(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   params: { tripId: string; reason: string },
 ): Promise<{ stalePlanIds: string[] }> {
-  const activePlans = await tx.select({ id: itineraryPlans.id })
+  const targetPlans = await tx.select({ id: itineraryPlans.id })
     .from(itineraryPlans)
     .where(and(
       eq(itineraryPlans.tripId, params.tripId),
-      eq(itineraryPlans.status, "ACTIVE"),
+      inArray(itineraryPlans.status, ["ACTIVE", "PROPOSED"]),
     ));
 
-  if (activePlans.length === 0) {
+  if (targetPlans.length === 0) {
     return { stalePlanIds: [] };
   }
 
-  const stalePlanIds = activePlans.map(p => p.id);
+  const stalePlanIds = targetPlans.map(p => p.id);
 
   await tx.update(itineraryPlans)
     .set({

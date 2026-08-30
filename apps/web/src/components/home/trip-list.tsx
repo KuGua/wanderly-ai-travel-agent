@@ -7,22 +7,22 @@ import { Link } from "@/i18n/navigation";
 import type { TripSummary } from "@/lib/api/contracts";
 
 const artStyles = [
-  "from-[#e8795a] to-[#f6bd60]",
-  "from-[#5d9a95] to-[#0b6574]",
-  "from-[#7667a7] to-[#a088c8]",
-  "from-[#92a6b7] to-[#627d98]",
-  "from-[#d47e5c] to-[#efb784]",
+  "from-[var(--w-info)] to-[var(--w-highlight)]",
+  "from-[var(--w-moss)] to-[var(--w-info)]",
+  "from-[var(--w-fog)] to-[var(--w-moss)]",
+  "from-[var(--w-highlight)] to-[var(--w-fog)]",
+  "from-[var(--w-primary)] to-[var(--w-moss)]",
 ] as const;
 
 type StatusStyle = { bg: string; text: string };
 
 const STATUS_STYLES: Record<TripSummary["status"], StatusStyle> = {
-  DRAFT: { bg: "bg-[#fff1ca]", text: "text-[#9c5400]" },
-  PLANNING: { bg: "bg-[#e4f7f1]", text: "text-[#08726e]" },
-  STALE: { bg: "bg-[#fff1ca]", text: "text-[#9c5400]" },
-  CONFIRMED: { bg: "bg-[#e4f7f1]", text: "text-[#08726e]" },
-  BOOKED: { bg: "bg-[#e4f7f1]", text: "text-[#08726e]" },
-  CANCELLED: { bg: "bg-[#edf1f3]", text: "text-[#5f7484]" },
+  DRAFT: { bg: "bg-[var(--w-fog)]", text: "text-[var(--w-ink)]" },
+  PLANNING: { bg: "bg-[var(--w-highlight)]", text: "text-[var(--w-ink)]" },
+  STALE: { bg: "bg-[var(--w-fog)]", text: "text-[var(--w-ink)]" },
+  CONFIRMED: { bg: "bg-[var(--w-mist)]", text: "text-[var(--w-ink)]" },
+  BOOKED: { bg: "bg-[var(--w-mist)]", text: "text-[var(--w-ink)]" },
+  CANCELLED: { bg: "bg-[var(--w-white)]", text: "text-[var(--w-ink)]" },
 };
 
 type Translator = ReturnType<typeof useTranslations>;
@@ -34,8 +34,8 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
 
   if (trips.length === 0) {
     return (
-      <div className="rounded-[22px] border border-dashed border-[#bfcfc9] bg-card/60 p-10 text-center">
-        <MapPin aria-hidden="true" className="mx-auto size-8 text-muted-foreground" />
+      <div className="border-2 border-dashed border-[var(--w-ink)] bg-card p-10 text-center wanderly-r-lg">
+        <MapPin aria-hidden="true" className="mx-auto size-8 text-[var(--w-ink)]" />
         <h3 className="mt-4 font-bold">{t("trips.emptyTitle")}</h3>
         <p className="mt-2 text-sm text-muted-foreground">{t("trips.emptyBody")}</p>
       </div>
@@ -49,25 +49,27 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
         return (
           <article
             key={trip.id}
-            className="group flex min-h-[245px] flex-col overflow-hidden rounded-[22px] border bg-card shadow-[0_8px_24px_#102a4308] transition hover:-translate-y-0.5 hover:border-[#a4ddd2] hover:shadow-[0_16px_32px_#102a4318] motion-reduce:transform-none motion-reduce:transition-none"
+            className={`group flex min-h-[245px] flex-col overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow wanderly-press wanderly-press-lg ${
+              index % 3 === 1 ? "wanderly-tilt-a" : index % 3 === 2 ? "wanderly-tilt-b" : ""
+            }`}
           >
             <div
-              className={`relative h-[87px] shrink-0 overflow-hidden bg-gradient-to-br ${artStyles[index % artStyles.length]}`}
+              className={`relative h-[87px] shrink-0 overflow-hidden border-b-2 border-[var(--w-ink)] bg-gradient-to-br ${artStyles[index % artStyles.length]}`}
               aria-hidden="true"
             >
-              <span className="absolute -right-8 -top-[68px] size-[125px] rounded-full border-2 border-white/55" />
-              <span className="absolute bottom-[-23px] left-[6%] h-[35px] w-[90%] -rotate-[5deg] rounded-[50%] border border-dashed border-white/60" />
+              <span className="absolute -right-8 -top-[68px] size-[125px] rounded-full border-2 border-[var(--w-ink)]/65" />
+              <span className="absolute bottom-[-23px] left-[6%] h-[35px] w-[90%] -rotate-[5deg] rounded-[50%] border border-dashed border-[var(--w-ink)]/70" />
             </div>
             <div className="flex flex-1 flex-col p-4">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="text-[19px] font-bold tracking-[-0.035em]">{trip.name}</h3>
                 <span
-                  className={`shrink-0 rounded-lg px-2 py-1 text-[11px] font-black whitespace-nowrap ${style.bg} ${style.text}`}
+                  className={`shrink-0 px-2 py-1 text-[11px] font-black whitespace-nowrap wanderly-edge-thin wanderly-r-xs ${style.bg} ${style.text}`}
                 >
                   {formatStatus(trip.status, t)}
                 </span>
               </div>
-              <div className="mt-2 space-y-2 text-[13px] text-muted-foreground">
+              <div className="mt-2 space-y-2 text-[13px] text-[var(--w-ink)]">
                 {trip.status === "DRAFT" ? (
                   <p className="flex gap-2">
                     <MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
@@ -89,7 +91,7 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
                   </>
                 )}
               </div>
-              <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs text-muted-foreground">
+              <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs text-[var(--w-ink)]">
                 <span className="flex items-center gap-1.5">
                   <UsersRound aria-hidden="true" className="size-3.5" />
                   {t("trip.members", { count: trip.memberCount })} ·{" "}
@@ -99,7 +101,7 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
                 </span>
                 <Link
                   href={`/trips/${trip.id}` as "/trips/[tripId]"}
-                  className="inline-flex min-h-11 items-center gap-1 font-black text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+                  className="inline-flex min-h-11 items-center gap-1 font-black text-[var(--w-ink)] wanderly-underline hover:decoration-[var(--w-ink)]"
                 >
                   {trip.status === "DRAFT" ? t("trip.draft.continueCta") : t("trip.open")}
                   <ArrowRight aria-hidden="true" className="size-3.5" />

@@ -118,7 +118,7 @@
       },
       "draft": {
         "short": "未命名探索 · 仅你可见",
-        "continueCta": "继续编辑"
+        "continueCta": "继续规划"
       },
       "dates": {
         "notSet": "日期未设置",
@@ -242,14 +242,15 @@
       "messageInputAria": "向 Wanderly Agent 发送消息",
       "messagePlaceholder": "询问你的下一段旅程…",
       "threadTitle": "探索对话",
-      "threadTitleWithPlace": "探索 · {name}"
-      ,"briefProposalTitle": "更新行程信息？"
-      ,"briefProposalBody": "目的地：{destination} · 天数：{days}"
-      ,"briefProposalNoDestination": "未提供"
-      ,"briefProposalNoDays": "未提供"
-      ,"briefProposalConfirm": "确认更新"
-      ,"briefProposalSaving": "正在保存…"
-      ,"briefProposalIgnore": "忽略"
+      "threadTitleWithPlace": "探索 · {name}",
+      "composerNote": "Enter 发送 · Shift + Enter 换行 · 对话仅归属于本行程且仅你可见。",
+      "briefProposalTitle": "更新行程信息？",
+      "briefProposalBody": "目的地：{destination} · 天数：{days}",
+      "briefProposalNoDestination": "未提供",
+      "briefProposalNoDays": "未提供",
+      "briefProposalConfirm": "确认更新",
+      "briefProposalSaving": "正在保存…",
+      "briefProposalIgnore": "忽略"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",
@@ -321,18 +322,60 @@
       "captionSupported": "放大以查看首都、城市和省 / 州。",
       "captionMissingSource": "国家/地区标签已隐藏——该地图样式未提供 openmaptiles 数据源。",
       "captionMissingLayers": "国家/地区标签已隐藏——缺失图层：{layers}。"
-    }
+    },
+    "backToTrip": "返回行程"
+  },
+  "invitation": {
+    "kicker": "私密邀请",
+    "title": "加入共享行程",
+    "subtitle": "请先查看邀请再加入。除非你之后选择共享范围，否则资料和私有对话仍保持私密。",
+    "checkingIdentity": "正在核验登录状态…",
+    "signInTitle": "登录后查看邀请",
+    "signInBody": "邀请绑定到特定账号。请使用收到链接的账号登录，然后再次打开此链接。",
+    "signInAction": "登录",
+    "loading": "正在加载邀请…",
+    "unavailableTitle": "此邀请不可用",
+    "unavailableBody": "它可能已过期、已使用、已撤回，或属于其他账号。",
+    "returnHome": "返回主页",
+    "tripLabel": "行程摘要",
+    "destinations": "目的地候选",
+    "destinationsUnknown": "尚未设置",
+    "dates": "出行日期",
+    "datesUnknown": "尚未设置",
+    "membershipTitle": "你的成员身份",
+    "membershipBody": "你将作为必需成员加入。任何 booking sandbox 请求都需要你的确认。",
+    "privacyTitle": "由你决定共享内容",
+    "privacyBody": "接受邀请不会共享你的资料、国籍、证件或私有对话。接下来你将仅为本次行程选择要共享的最小字段集。",
+    "expiry": "此邀请将于 {date} 失效。",
+    "actionError": "无法更新此邀请，请重试。",
+    "accept": "接受邀请",
+    "accepting": "正在接受…",
+    "decline": "拒绝邀请",
+    "declineConfirmTitle": "拒绝此邀请？",
+    "declineConfirmBody": "你不会加入该行程。如改变主意，请向组织者索取新的邀请。",
+    "declineConfirmAction": "确认拒绝",
+    "cancel": "取消",
+    "acceptedTitle": "已加入",
+    "acceptedBody": "行程已准备就绪，但你的私有资料尚未共享。",
+    "setSharingScope": "设置共享范围",
+    "declinedTitle": "已拒绝邀请",
+    "declinedBody": "你尚未被加入此行程。"
   },
   "trips": {
     "kicker": "行程工作区",
-    "title": "与同行旅伴一起规划与对话",
+    "title": {
+      "edit": "重命名",
+      "editLabel": "行程标题",
+      "save": "保存",
+      "cancel": "取消"
+    },
     "body": "在此查看你针对本行程的私有对话。其他成员无法看到你的对话，且对话仅归属于此行程。",
     "backToHome": "返回主页",
     "notFound": "未找到该行程。",
     "errors": {
       "membershipRevoked": "你已无法访问此行程。"
     },
-      "header": {
+    "header": {
       "status": "状态",
       "statusValue": {
         "DRAFT": "草稿",
@@ -346,31 +389,8 @@
       "datesRange": "{start} – {end}",
       "datesUnknown": "尚未设置",
       "destinations": "候选目的地",
-        "members": "{count, plural, =0 {暂无成员} other {# 位成员}}"
-      },
-      "title": {
-        "edit": "重命名",
-        "editLabel": "行程标题",
-        "save": "保存",
-        "cancel": "取消"
-      },
-      "draft": {
-      "kicker": "草稿探索",
-      "body": "你的私有对话已保存。填写简报并激活后即可邀请同行者。",
-      "formAriaLabel": "激活草稿行程",
-        "titlePreviewLabel": "行程标题预览",
-        "titlePreviewHint": "标题仅根据下方目的地和日期生成，绝不会使用聊天记录。",
-      "departureLabel": "出发地 (1–3)",
-      "departurePlaceholder": "输入出发地后回车",
-      "candidatesLabel": "候选目的地 (2–5)",
-      "candidatesPlaceholder": "输入候选目的地后回车",
-      "dateStartLabel": "最早出发日期（可选）",
-      "dateEndLabel": "最晚出发日期（可选）",
-      "addCity": "添加",
-      "addCandidate": "添加",
-      "removeChip": "移除 {value}",
-      "activateHint": "激活后行程进入规划阶段，解锁邀请、授权与共享 Agent。",
-      "activateCta": "开始规划 / 邀请同行者"
+      "members": "{count, plural, =0 {暂无成员} other {# 位成员}}",
+      "departure": "出发城市"
     },
     "threads": {
       "heading": "你的对话",
@@ -384,7 +404,136 @@
         "placeholder": "例如：签证准备、预算、逐日行程",
         "submit": "创建",
         "submitting": "创建中…",
-        "validation": "标题需为 1–256 字符。"
+        "validation": "标题需为 1–256 字符。",
+        "autoTitle": "新对话 {index}"
+      },
+      "sectionLabel": "本项目",
+      "archivedLabel": "已归档",
+      "defaultSubtitle": "本行程的默认私人对话",
+      "threadSubtitle": "仅你可见的私人对话",
+      "currentBadge": "当前"
+    },
+    "workspace": {
+      "agentChip": "协作 Agent",
+      "inspectorTitle": "工作区",
+      "openInspector": "打开工作区内容面板",
+      "closeInspector": "关闭工作区内容面板",
+      "overviewWindow": "行程概览",
+      "membersWindow": "成员",
+      "mapWindow": "探索地图",
+      "mapPinned": "固定",
+      "openFullMap": "在完整地图中打开",
+      "draftActivationHint": "请先在私有对话中确认行程简报，再开始规划。",
+      "activateDraft": "开始规划",
+      "activateDraftError": "暂时无法开始规划，请重试。",
+      "roleValue": {
+        "CREATOR": "创建者",
+        "MEMBER": "成员"
+      },
+      "openPinAria": "在完整地图中查看 {name}",
+      "mobility": {
+        "title": "出行报价",
+        "attribution": "由 Amadeus Transfer 提供报价",
+        "empty": "暂无出行报价。",
+        "expired": "已过期",
+        "passengers": "{count} 位乘客",
+        "select": "选择",
+        "dismiss": "忽略",
+        "filter": "按服务类型筛选",
+        "filter": {
+          "all": "全部",
+          "taxi": "Taxi",
+          "transfer": "Transfer",
+          "charter": "Charter",
+          "rental": "Rental"
+        },
+        "serviceType": {
+          "taxi": "出租车",
+          "transfer": "专车接送",
+          "charter": "包车",
+          "rental": "租车"
+        }
+      },
+      "route": {
+        "title": "{origin} → {destination}",
+        "originFallback": "起点",
+        "destinationFallback": "终点",
+        "distance": "距离",
+        "duration": "时长",
+        "attribution": "ORS 提供路线",
+        "fresh": "新鲜",
+        "stale": "需要刷新",
+        "refresh": "刷新",
+        "stepsTruncated": "还有 {count} 步",
+        "mode": {
+          "WALK": "步行",
+          "DRIVE": "驾车",
+          "CYCLE": "骑行"
+        }
+      },
+      "gaps": {
+        "title": "研究摘要",
+        "badge": "已记录缺口",
+        "body": "部分研究步骤未能实时确认；方案仍按已收集的证据保存。这些缺失项可视为预订前需要再确认的决策。",
+        "codeList": "{codes}",
+        "capability": {
+          "flight": "航班",
+          "stay": "住宿",
+          "activities": "活动",
+          "navigation": "步行 / 驾车 / 骑行",
+          "mobility": "打车 / 接送 / 包车",
+          "transit": "公共交通"
+        },
+        "code": {
+          "NOT_CONFIGURED": "能力未配置",
+          "SEARCH_CONSTRAINTS_INCOMPLETE": "搜索条件不完整",
+          "NO_RESULTS": "无匹配结果",
+          "RATE_LIMITED": "上游限流",
+          "UPSTREAM_TIMEOUT": "上游超时",
+          "UPSTREAM_FAILURE": "上游失败",
+          "INVALID_PROVIDER_RESPONSE": "上游返回无效响应",
+          "PROVIDER_NOT_APPROVED": "上游未获批准"
+        }
+      },
+      "poi": {
+        "title": "地点",
+        "attribution": "ORS",
+        "search": "搜索",
+        "savedTitle": "已保存地点",
+        "loading": "加载中…",
+        "empty": "尚无地点。",
+        "noResults": "没有匹配的地点。",
+        "adopt": "加入方案",
+        "dismiss": "忽略",
+        "revoke": "移除",
+        "needsConfirmation": "需要确认",
+        "errors": {
+          "search": "地点搜索失败，请重试。",
+          "adopt": "无法加入地点，请重试。"
+        },
+        "fields": {
+          "destination": "目的地",
+          "category": "类别",
+          "keyword": "关键词",
+          "keywordPlaceholder": "如：拉面、博物馆、车站"
+        },
+        "kind": {
+          "ATTRACTION": "景点",
+          "HOTEL": "酒店",
+          "RESTAURANT": "餐厅",
+          "TRANSPORT_HUB": "交通枢纽",
+          "OTHER": "其他"
+        },
+        "status": {
+          "proposed": "已提议",
+          "active": "已采纳",
+          "revoked": "已移除"
+        },
+        "visibility": {
+          "owner_private": "私有",
+          "team_visible": "团队可见",
+          "orchestrator_confidential": "仅编排 Agent"
+        }
       }
     },
     "planning": {
@@ -412,6 +561,31 @@
       "flightResults": "有依据的航班结果",
       "captured": "查询时间 {capturedAt}"
     }
+  },
+  "teamOrchestration": {
+    "title": "团队约束与方案",
+    "ownerPanel": "你的私有约束",
+    "memberPanel": "Trip 共享约束（仅 TEAM_VISIBLE）",
+    "plansProposedHeading": "待采纳方案",
+    "plansActiveHeading": "当前生效方案",
+    "plansStaleHeading": "历史方案（仅作参考）",
+    "residualInferenceWarning": "即使选择 confidential 可见性，规划结果仍可能间接反映该约束。我们显式提示「残余推断风险」；最终预订仍需全员一致采纳。",
+    "constraintsLoading": "正在加载约束…",
+    "plansLoading": "正在加载方案…",
+    "votesEmpty": "尚无投票",
+    "votesYou": "你已投：{decision}",
+    "voteAccept": "Accept",
+    "voteNeedsChanges": "需修改",
+    "voteOutcomeAccepted": "已采纳",
+    "voteOutcomeBlocked": "已阻止——至少一位成员请求修改",
+    "voteOutcomeCast": "投票已记录，还需 {remaining} 票",
+    "noProposal": "尚无提案，可在私聊中发起。",
+    "noConstraints": "尚无约束。",
+    "confirmProposal": "确认",
+    "dismissProposal": "忽略",
+    "saveFact": "保存",
+    "revokeFact": "撤销",
+    "residualInferenceAck": "我了解残余推断风险"
   },
   "login": {
     "heading": "登录",

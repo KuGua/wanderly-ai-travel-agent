@@ -22,7 +22,7 @@
 |---|---|---|---|---|
 | 个人稳定事实 | `user_profiles` + `preference_facts` | owner 表单；owner 确认提案 | 仅当前 Trip consent projection | 跨 Trip，owner 可编辑/删除 |
 | 行为建议 | `memory_proposals` | 服务端聚合器；owner 可确认/忽略 | 永不直接输入 | 到期、确认或忽略即终态 |
-| 本次个人偏好 | `trip_memory_facts`，`kind=PERSONAL_OVERRIDE` | 当前 Trip member | 仅在该成员授权后进入 projection | 仅当前 Trip |
+| 本次个人约束 | `trip_constraint_facts` | owner 确认 proposal 或 owner Trip command | `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL` projection；后者仅供 Shared planning | 仅当前 Trip |
 | 本次团队决策 | `trip_memory_facts`，`kind=GROUP_DECISION` | 已授权 Trip command | 当前 Trip snapshot 的 group section | 仅当前 Trip |
 | 临时会话上下文 | `chat_messages`，Worker 内存 | 既有 conversation 流程 | 永不输入 Shared Agent | thread 删除或窗口裁剪 |
 
@@ -76,9 +76,10 @@ flowchart LR
 
 ### 3.3 当前 Trip memory 与 projection
 
-- `PERSONAL_OVERRIDE` 是成员在当前 Trip 保存的本次偏好。它默认仅 owner 可见，必须通过该 Trip 的 field-level consent 才能进入 Shared Agent projection。
+- `trip_constraint_proposals` 是 Personal Agent 或 owner form 生成的候选，必须由 owner 显式确认。确认后才写入版本化 `trip_constraint_facts`；模型不得直接写事实。
+- 每个 Trip fact 都有 `HARD`/`SOFT` strength 和 `TEAM_VISIBLE`/`ORCHESTRATOR_CONFIDENTIAL` visibility。后者只供 Shared planning prompt，禁止出现在同行响应、plan explanation 或 telemetry；确认 UI 必须提示结果可能被间接推断。
 - `GROUP_DECISION` 是成员通过显式 Trip command 保存的无敏感协作决定（例如候选优先级或已解决的约束冲突）。它对当前 active members 可见，但仍只可写入当前 Trip。
-- `MemoryProjectionBuilder` 是唯一把 active personal fact、active trip override 和 group decision 组合到 snapshot 的模块。它先调用/扩展 `buildAuthorizedData`，再应用固定 field allow-list 和 value schema。
+- `MemoryProjectionBuilder` 是唯一把 active personal fact、owner-confirmed trip constraint 和 group decision 组合到 snapshot 的模块。它先调用/扩展 `buildAuthorizedData`，再应用固定 field allow-list、visibility separation 和 value schema。
 - projection 写入新的 immutable `constraint_snapshots.authorized_data.memory` namespace；Shared Skill 和 plan validator 只能引用该 namespace 中的字段。禁止对 memory table 的直接 SQL/Skill 访问。
 
 ### 3.4 临时会话信息
@@ -153,7 +154,8 @@ type MemoryProjection = {
 | `PreferenceFactService` | `listActive`, `replace`, `delete` | owner-only 个人稳定事实、版本转换、受影响 Trip stale |
 | `MemoryProposalService` | `list`, `confirm`, `dismiss`, `expire` | proposal 生命周期与 confirmation transaction |
 | `BehaviorAggregationService` | `recordEligibleEvent`, `evaluateOwner` | 仅 allow-listed action 的确定性聚合；不读聊天表 |
-| `TripMemoryService` | `listForOwner`, `saveOverride`, `saveGroupDecision`, `delete` | 当前 Trip memory 与 member authorization |
+| `TripConstraintProposalService` | `create`, `listForOwner`, `confirm`, `dismiss` | owner-only proposal 生命周期；确认触发事实 mutation。 |
+| `TripConstraintFactService` | `listForOwner`, `listTeamVisible`, `replace`, `revoke` | 当前 Trip 约束、revision、visibility/strength 与 member authorization。 |
 | `MemoryProjectionBuilder` | `buildForSnapshot` | consent-aware projection；唯一共享导出点 |
 | `MemoryInvalidationService` | `staleTripsForPersonalFact`, `staleTripForTripFact` | 复用现有 stale transaction，避免遗漏依赖 |
 
@@ -164,8 +166,8 @@ type MemoryProjection = {
 - `skills/personal/profile-memory-skill.ts`：改为 owner-only active fact read，不再以 Trip consent 为读取个人长期记忆的前置条件。
 - `skills/personal/profile-change-proposal-skill.ts`：只允许显式 save 意图创建用户确认 proposal；不允许敏感 key。
 - `policy/snapshot-policy.ts`、`policy/plan-output-validator.ts`、Shared Skills：接受已验证的 `authorized_data.memory` 结构，只允许引用投影路径。
-- `services/planning-service.ts` / task acceptance：在 snapshot 创建时调用 projection builder；commit guard 重验 projection source 未变化。
-- `schema.ts`、migrations、API contracts、Web `TravelApi`：添加类型与 DTO，禁止 client-supplied owner/user IDs。
+- `services/planning-service.ts` / task acceptance：在 snapshot 创建时调用 projection builder；commit guard 重验 projection source 未变化；REPLAN 生成 `PROPOSED` plan，不能绕过 adoption vote 激活。
+  - `schema.ts`、migrations、API contracts、Web `TravelApi`：添加类型与 DTO，禁止 client-supplied owner/user IDs。
 
 ### 5.3 REST API
 

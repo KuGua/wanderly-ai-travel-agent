@@ -43,6 +43,16 @@ export type InvitationAcceptResult = {
   defaultThreadId: string;
 };
 
+export type InvitationPreviewResult = {
+  trip: {
+    name: string;
+    destinationCandidates: string[];
+    travelDateStart: string | null;
+    travelDateEnd: string | null;
+  };
+  expiresAt: Date;
+};
+
 export async function createInvitation(params: {
   ctx: RequestContext;
   tripId: string;
@@ -181,6 +191,9 @@ export async function acceptInvitation(params: {
     if (invitation.status === "REVOKED") {
       throw new ApiError(410, "Gone", "Invitation has been revoked");
     }
+    if (invitation.status === "DECLINED") {
+      throw new ApiError(410, "Gone", "Invitation has been declined");
+    }
     if (invitation.status === "ACCEPTED") {
       // Idempotent: already accepted → return the existing default
       // thread for this (owner, trip) without writing a new audit row.
@@ -253,6 +266,56 @@ export async function acceptInvitation(params: {
     });
 
     return { tripId: invitation.tripId, defaultThreadId };
+  });
+}
+
+/**
+ * Reads only decision-critical invitation data after both token and account
+ * binding have been verified. Invalid, expired, and wrong-account tokens all
+ * produce the same unavailable response to avoid leaking trip metadata.
+ */
+export async function getInvitationPreview(params: {
+  token: string;
+  actorUserId: string;
+}): Promise<InvitationPreviewResult> {
+  const invitation = await getPendingInvitationForActor(params);
+  const [trip] = await db.select({
+    name: sharedTrips.name,
+    status: sharedTrips.status,
+    destinationCandidates: sharedTrips.destinationCandidates,
+    travelDateStart: sharedTrips.travelDateStart,
+    travelDateEnd: sharedTrips.travelDateEnd,
+  }).from(sharedTrips).where(eq(sharedTrips.id, invitation.tripId)).limit(1);
+  if (!trip || trip.status === "DRAFT") throw invitationUnavailable();
+  return {
+    trip: {
+      name: trip.name,
+      destinationCandidates: trip.destinationCandidates,
+      travelDateStart: trip.travelDateStart,
+      travelDateEnd: trip.travelDateEnd,
+    },
+    expiresAt: invitation.expiresAt,
+  };
+}
+
+export async function declineInvitation(params: {
+  ctx: RequestContext;
+  token: string;
+  actorUserId: string;
+}): Promise<void> {
+  await db.transaction(async (tx) => {
+    const invitation = await getPendingInvitationForActor(params, tx);
+    await tx.update(tripInvitations)
+      .set({ status: "DECLINED", declinedAt: new Date() })
+      .where(eq(tripInvitations.id, invitation.id));
+    await recordAudit({
+      ctx: params.ctx,
+      action: "TRIP_INVITATION_DECLINE",
+      actorUserId: params.actorUserId,
+      tripId: invitation.tripId,
+      summary: { invitationId: invitation.id },
+      tx,
+    });
   });
 }
 
@@ -338,6 +401,27 @@ export async function getOrCreateDefaultThread(
 
 function hashToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
+}
+
+type InvitationReader = Pick<typeof db, "select">;
+
+async function getPendingInvitationForActor(
+  params: { token: string; actorUserId: string },
+  reader: InvitationReader = db,
+) {
+  if (typeof params.token !== "string" || params.token.length < 32) throw invitationUnavailable();
+  const tokenHash = hashToken(params.token);
+  const [invitation] = await reader.select().from(tripInvitations)
+    .where(eq(tripInvitations.tokenHash, tokenHash)).limit(1);
+  if (!invitation || invitation.invitedUserId !== params.actorUserId) throw invitationUnavailable();
+  if (invitation.status !== "PENDING" || invitation.expiresAt.getTime() <= Date.now()) {
+    throw invitationUnavailable();
+  }
+  return invitation;
+}
+
+function invitationUnavailable(): ApiError {
+  return new ApiError(404, "Not Found", "Invitation is unavailable");
 }
 
 function constantTimeEquals(a: string, b: string): boolean {

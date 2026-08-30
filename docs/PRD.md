@@ -61,7 +61,7 @@ flowchart LR
 |---|---|---|
 | H1 | 可编辑的 Personal Travel Profile 与可持久化私有 Agent 对话 | “Agent 了解我”，消除每次重填，并让用户可回看和纠正本次沟通。 |
 | H2 | Shared Trip Workspace、三人邀请和按字段授权 | 多人协调，不要求复制群聊，也不暴露隐私。 |
-| H3 | 两出发地、两到三个目的地候选的 Flight/Stay/Ground 比较 | 用工具编排降低跨平台协调与目的地选择成本。 |
+| H3 | 两出发地、两到三个目的地候选的 Flight/Stay/Ground/Activities 比较 | 用工具编排降低跨平台协调与目的地选择成本。 |
 | H4 | 按成员国籍、目的地和路线的 visa/entry readiness checklist | 减少跨国同行的准备遗漏。 |
 | H5 | 变化检测、重新编排和影响说明 | 自我修正的 Agentic wow。 |
 | H6 | 每成员确认后的 booking orchestration sandbox | 证明从规划到行动，不做自动付款。 |
@@ -108,25 +108,32 @@ flowchart LR
 ### FR-2 共享行程工作台与授权
 
 1. 创建者可创建一个共享行程并邀请另外两位测试用户加入。
-2. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
-3. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
-4. 成员更新授权或本次约束时，当前方案标记为过期并触发重算前确认。
-5. Team memory 仅属于当前 Trip。Shared Agent 只能读取服务端按当前 consent 构建的最小化 memory projection，不能直接读取成员的 Profile、个人长期记忆或私有对话；任何投影来源变更均使依赖方案过期。
+2. 外部邀请入口必须使用不可猜测、一次性的 invitation token，不得以 URL 中的 Trip ID 授权或读取数据。登录且 token 与受邀账号绑定后，才可查看最小行程摘要、必需成员身份与有效期；无效、过期、撤回、已处理或错账号邀请返回同一最小不可用结果。
+3. 受邀人可显式接受或拒绝。接受只创建所需 membership 与私有默认 thread，且必须幂等；拒绝不得创建 membership/thread，并记录独立审计事件。接受后唯一主操作为设置本次共享范围，不得自动授予 consent 或写入 snapshot。
+4. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
+5. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
+6. 成员更新授权或本次约束时，当前方案标记为过期并触发重算前确认。
+7. Team memory 仅属于当前 Trip。Personal Agent 只可生成待 owner 确认的结构化约束提案，不能自动共享。已确认约束可选择 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL`：后者只供服务端 Shared Agent 编排，不向同行展示具体值或归属，但用户须知方案结果可能间接反映该约束。Shared Agent 只能读取服务端按当前 consent 构建的最小化 memory projection，不能直接读取成员的 Profile、个人长期记忆或私有对话；任何投影来源变更均使依赖方案过期。
 
 ### FR-3 端到端行程编排
 
-1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay 和 Ground 工具，并将三位成员映射到两个出发地。模型可在 Shared PLAN/REPLAN 中真实请求 `flight.search`；Personal Agent 私有聊天不得调用该 Tool。服务端必须校验参数，并在最终方案生成前保证已查询所有必需的候选目的地与出发地组合。
-2. 系统必须比较两到三个预设目的地候选；每个候选包含至少一个航班、酒店和地面交通项目，或明确显示缺失项目与原因。
-3. 每个项目必须显示总价/币种（如适用）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。
+1. Shared Agent 必须用同一共享约束快照请求 Flight、Stay、Activities 与 Ground typed tools，并将三位成员映射到两个出发地。模型可在 Shared PLAN/REPLAN 中请求 `flight.search`、`hotel.search`、`activities.search`、`places.search` 与 `navigation.route`；`hotel.search` 仅接收 snapshot 候选中的 `destinationId`，日期、住客/房间数、币种和住宿偏好必须由服务端从已确认偏好推导；`activities.search` 只接受 snapshot destination、固定 theme 与 locale，日期和 run authority 由服务端注入。地面工具只接受 server-owned destination reference、run-bound place candidate 或当前 Trip 已授权 `placeId`，不得接收模型/浏览器坐标、地址、provider、profile 或 URL。关键词 POI 候选在当前 run 外无效；低置信度或目的地外结果必须标注待确认。Personal Agent 私有聊天不得调用地面 navigation/mobility tool；Personal activities tool-loop 在 owner-scoped streaming boundary 实施前同样不得启用。只有 owner 确认后的结构化 Trip constraint 或显式共享 TripPlace 才能进入后续 Shared snapshot。
+2. 系统必须比较两到三个预设目的地候选，并支持候选目的地下任意两个已授权 POI 的步行、驾车或骑行路线。每项结果显示来源、时间、距离/时长/步骤或价格/币种（适用时）。任一 provider 缺失均不得中止 Agent research：系统返回 `COMPLETED_WITH_GAPS` 与安全 `RESEARCH_UNAVAILABLE` 摘要；只有用户选择的 live commercial offer 才可成为对应确认/booking 的硬门禁。路线不是商业 offer，不能伪造票价或库存。
+3. 每个项目必须显示总价/币种（仅在 provider 同时提供二者时）、来源、时间、取消/变化状态（如数据可得）和它满足的共享约束。Activities 不得展示或持久化无币种价格、raw provider payload 或 click-off/booking link。
 4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
 5. Planning/replan 运行期间可实时显示安全阶段状态（例如 snapshot、research、validation、persistence），但不得向客户端发送内部推理、原始 prompt、未验证模型输出、未持久化 provider 结果或未授权 snapshot 数据；最终 plan 仅在验证并持久化后展示。
+6. Activities 工具与 Flight 工具相互独立：拥有独立的 typed port、覆盖矩阵、stale 触发器和 evidence 写入；同一 PLAN/REPLAN durable task 内作为并列子阶段，各自拥有独立的并发与失败语义。失败不取消其他 research，但只能形成安全的 `RESEARCH_UNAVAILABLE` 摘要；活动 provider 的 booking link 不得在 MVP 中展示、持久化或透传。
+7. Hotel 首期只提供实时搜索与方案比较，不创建订单、支付或供应商跳转。每个酒店 offer 显示总价、每晚价、来源、采集时间和有效期；税费或强制费用不完整时固定提示“可能另计”。模型可在私有对话询问缺失的房间/住客/币种信息，但仅能创建待用户确认的住宿搜索偏好提案。无 live supplier 数据时为 `RESEARCH_UNAVAILABLE`，不得使用 sandbox、fixture 或模型生成报价。
+8. Personal Agent 生成的约束提案必须由 owner 确认后才能进入本次 Shared snapshot；约束区分 HARD 与 SOFT，HARD 冲突必须返回阻塞/调整请求，SOFT 约束只能影响候选排序。
 
 ### FR-4 签证/入境准备
 
-1. 对每位授权共享国籍资料的成员，系统必须基于每个显示的目的地候选及已知转机/路线数据生成独立的 readiness checklist 或明确缺口。
-2. 每项待办必须显示来源、检查时间、适用对象和下一步；无法确认时显示“请向官方来源核验”。
-3. 系统不得声称签证资格已获批准、提供法律意见或代替用户申请。
-4. 未授权国籍资料时，系统只显示“需要该成员自行完成入境准备检查”，不能推断国籍。
+1. 系统使用经审查的全球 structured `VisaProvider`；首选接入目标为 Sherpa Requirements API。provider 未配置、合同/许可未验证、超时、过期或结果不可信时必须 fail closed 为 `UNAVAILABLE` 与官方核验下一步，不能以 RAG、抓取、fixture 或模型替代。
+2. 对每位授权共享国籍资料的成员，候选比较阶段必须按每个显示目的地生成独立的 destination-level readiness。此阶段尚未选择具体 flight offer 时，必须明确标示“过境核验待选定航班后完成”，不得猜测中转国家。
+3. 用户选择具体且未过期的 flight offer 后，系统必须按该 offer 的完整目的地/中转航段生成 route-level readiness checklist 或明确缺口；航班、授权、snapshot 或证据过期时使其 `STALE` 并重新核验。
+4. 每项待办必须显示来源、检查时间、适用对象和下一步；无法确认时显示“请向官方来源核验”。成员仅能读取自己的详情；团队仅可读取不含国籍或成员归属的汇总状态。
+5. 系统不得声称签证资格已获批准、提供法律意见或代替用户申请；provider 的申请/购买链接不得进入产品路径。
+6. 未授权国籍资料时，系统只向该成员显示“需要自行完成入境准备检查”，不能推断国籍或调用 provider。
 
 ### FR-5 变化处理与自我修正
 
@@ -135,6 +142,7 @@ flowchart LR
 3. 重新编排必须显示旧/新项目、保留/受影响的成员约束、个人待办影响和原因。
 4. 没有可行替代时，系统必须说明阻塞约束并请求成员调整，而不是静默放弃约束。
 5. Replan 的流式阶段事件必须绑定当前 `tripId`、`runId` 与 plan/snapshot version；撤回授权、约束变更或 run 过期后，旧 run 不得继续发布可操作结果。
+6. 约束、授权、成员资格或 provider 事实变化后，系统必须立即使旧 ACTIVE plan 与 confirmations 过期并自动创建 replan。replan 先生成 `PROPOSED` plan；所有 required members 投票接受后才成为 ACTIVE，任一成员要求修改则不得采用。旧 plan 仅用于比较，不能恢复为可预订方案。
 
 ### FR-6 确认与预订编排
 
@@ -157,12 +165,16 @@ flowchart LR
 | 场景 | 必需行为 |
 |---|---|
 | 成员没有 Profile 或不愿共享任何偏好 | 允许加入；Shared Agent 只使用其本次明确输入，提示资料不足。 |
-| 成员撤回国籍授权 | 失效相关 visa checklist 和当前方案；要求重新计算。 |
+| 成员撤回国籍授权 | 失效该成员相关 visa checklist 和当前方案；要求重新计算；团队不暴露其国籍或待办详情。 |
+| 尚未选择具体航班 | 候选卡仅显示目的地初步 readiness，并明确过境核验待选定航班后完成；不得猜测中转国家。 |
+| 选定航班的中转/航段变化或过期 | 使对应 route-level readiness `STALE` 并基于新的完整航段重新核验。 |
 | 三名成员预算、出发地或时间冲突 | 显示冲突及受影响成员；不静默偏向创建者。 |
 | 航班、酒店或地面交通工具无数据 | 显示 `UNAVAILABLE`、缺口和来源失败；不得使用替代报价或 demo fixture。 |
 | visa 规则来源不确定或过期 | 显示官方核验链接/提示；不得给出确定结论。 |
 | 航班价格上涨 | 原方案与确认失效；展示重新组合的影响。 |
 | 成员在重算期间更改私有 Profile | 旧 run 过期；仅使用新的授权/版本快照。 |
+| 成员确认私密编排约束 | 约束可进入 Shared Agent 的 confidential projection，但具体值、成员归属和自由文本理由不向同行输出；提示方案结果存在间接推断风险。 |
+| 自动 replan 已生成新方案 | 旧方案保持 STALE 供比较；所有 required members 对 PROPOSED plan 投票接受后才激活，不能恢复旧方案。 |
 | 成员拒绝确认 | 不调用 orchestration；显示谁需要调整和可编辑入口。 |
 | orchestration 回调重复或乱序 | 用请求 ID 幂等处理；最多生成一组参考号。 |
 | 用户删除私有对话线程 | 本人后续不能读取正文；删除不改变已确认的 Profile/override、共享 snapshot 或既有方案，除非用户另行删除这些结构化数据。 |

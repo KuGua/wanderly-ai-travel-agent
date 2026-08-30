@@ -54,13 +54,14 @@ Plan Review Agent 是可选的短生命周期反思能力，不是能自行循�
 ### 协作与交接
 
 ~~~text
-个人私有 Profile / trip override
+个人私有 Profile / bounded thread context
         ↓
 Personal Agent（仅私有 Skills）
-        ↓ 用户显式保存 / 授权
-ConsentExportSkill（服务端）
+        ↓ 结构化候选 proposal
+        ↓ owner 显式确认 + visibility / strength
+ConstraintProposal / TripFact 服务（服务端）
         ↓
-不可变 constraint snapshot
+按 consent 构建的不可变 constraint snapshot
         ↓
 Shared Trip Agent（仅共享 Skills）
         ↓
@@ -71,14 +72,17 @@ Shared Trip Agent（仅共享 Skills）
 
 交接数据必须：
 
-1. 由 ConsentService.buildAuthorizedData 从生效 consent 构建，不能由 Agent 自行挑选；
+1. 由服务端 projection builder 从生效 consent 与 owner-confirmed Trip fact 构建，不能由 Agent 自行挑选；
 2. 只含本次规划必要且已授权的字段；永不含 passport number、私有对话或未授权国籍；
-3. 在 constraint_snapshots 中持久化、版本化且不可变；
-4. 任一授权、约束、价格或库存变化都会使依赖它的 plan/confirmations 进入 STALE；
-5. Shared Agent 只能消费 snapshot，不能回读成员私有存储。
-6. memory projection 仅限当前 Trip；个人事实、Trip memory、授权或事实有效期变化均须在生成新 projection 前使依赖 plan/confirmations `STALE`。
+3. 可见性必须是 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL`。后者只进入 Shared planning prompt，不进入同行 API/UI、plan explanation 或遥测，且确认时提示其可能从方案结果被间接推断；
+4. 在 constraint_snapshots 中持久化、版本化且不可变；
+5. 任一授权、约束、价格、库存或成员资格变化都会使依赖它的 plan/confirmations 进入 STALE，并自动 enqueue REPLAN；
+6. Shared Agent 只能消费 snapshot，不能回读成员私有存储；
+7. memory projection 仅限当前 Trip；个人事实、Trip memory、授权或事实有效期变化均须在生成新 projection 前使依赖 plan/confirmations `STALE`。
 
 ## 3. Skill Architecture
+
+地面 POI、导航与 mobility 的实现级契约以 [全球 POI 与地面出行实施规范](ground-mobility-implementation.md) 为准；本节仅描述它们在现有 Agent 边界中的位置。
 
 ### Skill 契约
 
@@ -107,8 +111,12 @@ Skill = 输入 Zod schema
 | TravelConversationSkill | Personal | 当前问题 + 可选最小 place context + 安全 recall → 私有回答。 | ModelGateway.generateConversationReply。 | 不接受客户端角色；不声称 live price、库存、visa 或 booking；fallback 显式标记。 |
 | ConsentExportSkill | 服务端协作边界 | trip + active grants → 最小化 snapshot。 | buildAuthorizedData、createConstraintSnapshot。 | 不由模型执行；禁止 passport number。 |
 | FlightSearchSkill | Shared | snapshot-bound origin + candidate → normalized Flight evidence 或 `UNAVAILABLE`。 | FlightProvider、Amadeus adapter。 | LLM 可请求 Tool；服务端校验参数并保证研究覆盖；不成功不生成替代 offer。 |
+| PlaceSearchSkill | Shared | snapshot-bound destination + bounded keyword/category → run-bound normalized POI candidates 或 `UNAVAILABLE`。 | PlaceResolver、TripPlaceService、ORS Place adapter。 | 模型和浏览器不得传坐标、地址、provider 或 URL；候选仅当前 run 有效，低置信度结果需确认。 |
+| NavigationRouteSkill | Shared | 两个已授权 `placeId` + mode → route evidence 或 `UNAVAILABLE`。 | NavigationProvider、GroundCapabilityRouter、ORS Directions adapter。 | 仅当前 snapshot/run 的 TripPlace；模型只见 summary，不见坐标/geometry/raw payload；路线不产生价格或 booking authority。 |
+| MobilitySearchSkill | Shared（feature flag） | 已授权 places + server-derived trip parameters → transfer/taxi/charter offer 或 `UNAVAILABLE`。 | MobilityOfferProvider、Amadeus Transfer adapter。 | 仅搜索/估价；明确 price estimate；不得透传 booking link 或调用 booking。 |
 | CandidateResearchSkill | Shared | snapshot + candidate → ResearchBundle。 | FlightProvider、StayProvider、GroundProvider。 | 只请求已配置候选；失败必须明确 `UNAVAILABLE`。 |
-| ReadinessSkill | Shared | 授权国籍 + 成员 + 路线 → readiness 或 verification gap。 | VisaProvider、checkVisaReadiness。 | 未授权不得推断；不得法律建议。 |
+| ActivitiesSearchSkill | Shared（feature flag；Personal 待实施） | snapshot-bound destination + server-owned travel dates → normalized Activities evidence 或 `UNAVAILABLE`。 | ActivitiesProvider、Viator Experiences MCP adapter、activities research matrix。 | 模型仅可选 snapshot destination、locale 与固定 theme；不得传坐标、自由查询、provider 参数或 session ID；无币种价格、raw payload 与 click-off link 被 adapter 丢弃；不成功不生成替代 offer。Personal streaming tool-loop 在独立 owner-scoped boundary 完成前不注册该 Tool。 |
+| ReadinessSkill | Shared | 授权国籍 + 成员 + 路线 → readiness 或 verification gap。 | VisaProvider、checkVisaReadiness。 | 未授权不得推断；不得法律建议；不得将 Activities evidence 作为 readiness 事实。 |
 | PlanComparisonSkill | Shared | candidate bundles + 约束摘要 → 带 evidence ID 的 PlanSynthesis。 | ModelGateway.generateStructuredPlan。 | 不生成新的 offer、价格或签证结论。 |
 | PlanDiffExplanationSkill | Shared | safe old/new plan → diff explanation。 | ModelGateway.explainPlanDiff。 | 只解释持久化差异，不改变状态。 |
 | PlanReviewSkill（可选） | Review | 已校验 plan/explanation → 可读性 review。 | 新增受限 gateway 调用。 | 仅软性审查；无 DB/tool write 权限。 |
@@ -158,12 +166,12 @@ Plan-and-Execute 必须有最大步数、总 deadline、每步 schema 校验和�
 
 1. 服务端校验成员、trip 与 consent；
 2. ConsentExportSkill 生成不可变 snapshot；
-3. Shared Agent 为全部配置候选调用 CandidateResearchSkill 和 ReadinessSkill；
+3. Shared Agent 为全部配置候选调用 CandidateResearchSkill、PlaceSearchSkill、NavigationRouteSkill（以及启用时的 MobilitySearchSkill）和 ReadinessSkill；
 4. 收集并 normalize 每个 provider outcome、offer、source 与 demo 标记，作为当前 run 的 evidence；
 5. PlanComparisonSkill 只根据安全 snapshot projection 和已验证 research bundles 生成结构化比较；
 6. 确定性 policy/evidence validator 校验输出；
 7. 可选 PlanReviewSkill 审查取舍、缺口和恢复路径是否表达清楚；
-8. 校验成功后，服务端持久化 plan、provider offers、source evidence 与 audit，并激活/替代版本；确认和 booking 始终在 Agent 之外执行。校验失败时不写入任何 authoritative plan/evidence state。
+8. 校验成功后，服务端持久化 `PROPOSED` plan、provider offers、source evidence 与 audit；全体 required members adoption vote 后才激活。若任一软依赖 provider 缺失，服务端持久化不带商业 authority 的 `RESEARCH_SUMMARY` 并以 `COMPLETED_WITH_GAPS` 完成 task；确认和 booking 始终在 Agent 之外执行。
 
 ### Reflective Agent 的正确位置
 

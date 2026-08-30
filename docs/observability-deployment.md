@@ -31,11 +31,37 @@ Only the destination differs.
 
 ## Local dev (5 containers, ~15s cold start)
 
+### Local diagnostic fallback
+
+Set `LOCAL_DEBUG_LOG_FILE=agent-runtime.ndjson` for a locally started process
+to keep a second, local NDJSON copy at `apps/api/runtime/agent-runtime.ndjson`.
+For Docker Compose, use distinct `API_LOCAL_DEBUG_LOG_FILE=api-runtime.ndjson`
+and `WORKER_LOCAL_DEBUG_LOG_FILE=worker-runtime.ndjson` values in
+`apps/api/.env`; the runtime directory is mounted into both containers. It is
+written by Pino and does not depend on Tempo or an OTLP endpoint, so it remains
+available while trace export is disabled or the collector is down. Do not point
+two processes at the same file. The directory is Git-ignored and must be
+treated as local diagnostic data; delete it after a debugging session.
+
+Each `runtime_event` is a deliberately content-free lifecycle record for LLM
+calls, tool dispatches, planner research and Worker tasks. It includes outcome,
+duration, controlled operation/tool names, retry attempt, token total and a
+SHA-256 output fingerprint where relevant. It never includes prompts,
+completions, tool arguments/results, raw provider payloads, credentials,
+private conversation text, profile fields, nationality or document data.
+
+To inspect it in PowerShell:
+
+```powershell
+Get-Content .\runtime\agent-runtime.ndjson -Wait |
+  Select-String '"runtime_event"'
+```
+
 ### Bring up
 
 ```bash
 cd apps/api
-docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+docker compose --profile full -f docker-compose.yml -f docker-compose.observability.yml up -d --build
 ```
 
 This starts `postgres`, `app`, `worker`, `tempo`, and `grafana`. Ports:
@@ -174,7 +200,7 @@ Local invocation:
 
 ```bash
 cd apps/api
-docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+docker compose --profile full -f docker-compose.yml -f docker-compose.observability.yml up -d --build
 API_BASE_URL=http://127.0.0.1:3000 \
 GRAFANA_BASE_URL=http://127.0.0.1:3001 \
 OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318 \
@@ -203,7 +229,7 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318 \
 
 ```bash
 cd apps/api
-docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+docker compose --profile full -f docker-compose.yml -f docker-compose.observability.yml up -d --build
 sleep 15
 
 # 1. OTLP reachability

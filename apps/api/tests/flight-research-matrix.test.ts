@@ -102,16 +102,13 @@ describe("flight research matrix", () => {
     registerSkill(createFlightSearchSkill({
       async searchFlights(input) {
         const capturedAt = "2026-08-25T00:00:00.000Z";
-        return {
-          outcome: "LIVE" as const, source: "TOCTOU test provider", capturedAt,
-          data: [{
-            id: `toctou-${input.origin}-${input.destination}`, providerOfferId: `toctou-${input.origin}-${input.destination}`,
-            providerName: "toctou-test-provider", queryId: randomUUID(), origin: input.origin, destination: input.destination,
-            segments: [{ carrierCode: "TT", flightNumber: "1", origin: input.origin, destination: input.destination, departureAt: `${input.dateStart}T08:00:00.000Z`, arrivalAt: `${input.dateStart}T18:00:00.000Z`, duration: "PT10H" }],
-            totalDuration: "PT10H", totalPrice: 500, currency: input.currency!, cabin: input.cabin!, adults: input.adults!,
-            baggageSummary: null, changeSummary: null, source: "TOCTOU test provider", capturedAt, expiresAt: "2026-12-31T00:00:00.000Z",
-          }],
-        };
+        return { outcome: "LIVE" as const, source: "TOCTOU test provider", capturedAt, data: [{
+          id: `toctou-${input.origin}-${input.destination}`, providerOfferId: `toctou-${input.origin}-${input.destination}`,
+          providerName: "toctou-test-provider", queryId: randomUUID(), origin: input.origin, destination: input.destination,
+          segments: [{ carrierCode: "TT", flightNumber: "1", origin: input.origin, destination: input.destination, departureAt: `${input.dateStart}T08:00:00.000Z`, arrivalAt: `${input.dateStart}T18:00:00.000Z`, duration: "PT10H" }],
+          totalDuration: "PT10H", totalPrice: 500, currency: input.currency!, cabin: input.cabin!, adults: input.adults!,
+          baggageSummary: null, changeSummary: null, source: "TOCTOU test provider", capturedAt, expiresAt: "2026-12-31T00:00:00.000Z",
+        }] };
       },
     }));
     let beforeFinalPassed = false;
@@ -129,32 +126,21 @@ describe("flight research matrix", () => {
             } });
             if ((result as { outcome: string }).outcome === "LIVE") flights.push(...(result as { offers: never[] }).offers);
           }
-          matrixCompleteBeforeFinal = (await evaluateFlightResearchCompleteness({
-            snapshotId: planningSnapshot.id, agentTaskRunId: durableTaskId,
-            departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"],
-          })).complete;
+          matrixCompleteBeforeFinal = (await evaluateFlightResearchCompleteness({ snapshotId: planningSnapshot.id, agentTaskRunId: durableTaskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"] })).complete;
           await params.beforeFinal?.();
           beforeFinalPassed = true;
-          await db.update(providerSearchRuns).set({ outcome: "UNAVAILABLE", errorCode: "UPSTREAM_FAILURE" }).where(and(
-            eq(providerSearchRuns.snapshotId, planningSnapshot.id), eq(providerSearchRuns.agentTaskRunId, durableTaskId),
-            eq(providerSearchRuns.originId, "SFO"), eq(providerSearchRuns.destinationId, "NRT"),
-          ));
+          await db.update(providerSearchRuns).set({ outcome: "UNAVAILABLE", errorCode: "UPSTREAM_FAILURE" }).where(and(eq(providerSearchRuns.snapshotId, planningSnapshot.id), eq(providerSearchRuns.agentTaskRunId, durableTaskId), eq(providerSearchRuns.originId, "SFO"), eq(providerSearchRuns.destinationId, "NRT")));
           return { destination: "NRT", flights, stays: params.stays, ground: params.ground, generatedAt: "2026-08-25T00:00:00.000Z" };
         },
       },
     };
 
-    await expect(generatePlan({
-      ctx: createRequestContext(userId), tripId, snapshotId: planningSnapshot.id, destination: "NRT", memberIds: [],
-      agentTaskRunId: durableTaskId, flightSearchPreferencesVersion: preference.version, leaseToken,
-    }, dependencies)).rejects.toBeInstanceOf(FlightResearchIncompleteError);
-
+    await expect(generatePlan({ ctx: createRequestContext(userId), tripId, snapshotId: planningSnapshot.id, destination: "NRT", memberIds: [], agentTaskRunId: durableTaskId, flightSearchPreferencesVersion: preference.version, leaseToken }, dependencies)).rejects.toBeInstanceOf(FlightResearchIncompleteError);
     expect(matrixCompleteBeforeFinal).toBe(true);
     expect(beforeFinalPassed).toBe(true);
     expect((await db.select().from(itineraryPlans).where(eq(itineraryPlans.snapshotId, planningSnapshot.id))).length).toBe(0);
     const [task] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, durableTaskId));
     expect(task.status).toBe("RUNNING");
-
     await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, durableTaskId));
     await db.delete(providerOffers).where(eq(providerOffers.snapshotId, planningSnapshot.id));
     await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, planningSnapshot.id));

@@ -11,9 +11,20 @@ import type {
   TripActivationRequest,
   TripSearchPreferencesInput,
   UpdateProfileInput,
+  CastAdoptionVoteRequest,
+  ConfirmTripConstraintProposalRequest,
+  CreateTripConstraintProposalRequest,
+  UpsertTripConstraintFactRequest,
+  AdoptTripPlaceRequest,
+  PlaceCandidateSearchRequest,
+  ProposeTripPlaceRequest,
+  RevokeTripPlaceRequest,
+  NavigationRouteSearchRequest,
+  MobilitySearchRequest,
+  MobilityOfferSelectionRequest,
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
-import { profileKeys, threadKeys, tripKeys } from "./keys";
+import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys, invitationKeys } from "./keys";
 
 export function useMyProfile() {
   const api = useTravelApi();
@@ -39,6 +50,30 @@ export function useTrip(tripId: string | null) {
     enabled: Boolean(tripId),
     retry: false,
   });
+}
+
+export function useInvitationPreview(inviteToken: string | null) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: invitationKeys.preview(inviteToken ?? "none"),
+    queryFn: () => api.getInvitationPreview!(inviteToken as string),
+    enabled: Boolean(inviteToken) && !!api.getInvitationPreview,
+    retry: false,
+  });
+}
+
+export function useAcceptInvitation() {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (inviteToken: string) => api.acceptInvitation!(inviteToken),
+    onSuccess: () => { void queryClient.invalidateQueries({ queryKey: tripKeys.all }); },
+  });
+}
+
+export function useDeclineInvitation() {
+  const api = useTravelApi();
+  return useMutation({ mutationFn: (inviteToken: string) => api.declineInvitation!(inviteToken) });
 }
 
 export function useTripThreads(tripId: string | null) {
@@ -217,4 +252,251 @@ function mergeThreads(
   const threads = new Map(current.map((thread) => [thread.id, thread]));
   incoming.forEach((thread) => threads.set(thread.id, thread));
   return [...threads.values()];
+}
+
+// ── Team Agent 协作编排 (Phase 5) ──────────────────────────────────────────
+
+export function useMyConstraintProposals(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.proposals(tripId),
+    queryFn: () => api.listMyConstraintProposals!(tripId),
+    enabled: !!api.listMyConstraintProposals,
+  });
+}
+
+export function useCreateConstraintProposal(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateTripConstraintProposalRequest) =>
+      api.createConstraintProposal!(tripId, input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.proposals(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsOwner(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsMembers(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+    },
+  });
+}
+
+export function useConfirmConstraintProposal(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { proposalId: string; input: ConfirmTripConstraintProposalRequest }) =>
+      api.confirmConstraintProposal!(tripId, params.proposalId, params.input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.proposals(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsOwner(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsMembers(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
+export function useDismissConstraintProposal(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (proposalId: string) =>
+      api.dismissConstraintProposal!(tripId, proposalId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.proposals(tripId) });
+    },
+  });
+}
+
+export function useUpsertConstraintFact(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { factId: string; input: UpsertTripConstraintFactRequest }) =>
+      api.upsertConstraintFact!(tripId, params.factId, params.input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsOwner(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsMembers(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
+export function useRevokeConstraintFact(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (factId: string) => api.revokeConstraintFact!(tripId, factId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsOwner(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsMembers(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
+export function useTripConstraintsForMembers(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.constraintsMembers(tripId),
+    queryFn: () => api.listConstraintsForMembers!(tripId),
+    enabled: !!api.listConstraintsForMembers,
+  });
+}
+
+export function useTripConstraintsForOwner(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.constraintsOwner(tripId),
+    queryFn: () => api.listConstraintsForOwner!(tripId),
+    enabled: !!api.listConstraintsForOwner,
+  });
+}
+
+export function useTripPlans(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.plans(tripId),
+    queryFn: () => api.listTripPlans!(tripId),
+    enabled: !!api.listTripPlans,
+  });
+}
+
+export function usePlanAdoptionVotes(planId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.votes(planId),
+    queryFn: () => api.listAdoptionVotes!(planId),
+    enabled: !!api.listAdoptionVotes,
+  });
+}
+
+export function useCastAdoptionVote(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { planId: string; input: CastAdoptionVoteRequest }) =>
+      api.castAdoptionVote!(params.planId, params.input),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.votes(vars.planId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+    },
+  });
+}
+
+// ─── Global POI & ground mobility (Phase 2) ────────────────────────────────────
+// All hooks follow the `enabled: !!api.<method>` pattern so partial mocks
+// from earlier phases don't break the new UI.
+export function useTripPlaces(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.places(tripId),
+    queryFn: () => api.listTripPlaces!(tripId),
+    enabled: !!api.listTripPlaces,
+  });
+}
+
+export function useResearchResult(tripId: string, agentTaskRunId?: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: [...tripKeys.researchResults(tripId), agentTaskRunId ?? "latest"],
+    queryFn: () => api.getResearchResult!(tripId, agentTaskRunId),
+    enabled: !!api.getResearchResult,
+  });
+}
+
+export function useRouteEvidence(tripId: string, planId?: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: [...tripKeys.routeEvidence(tripId, planId ?? "latest")],
+    queryFn: () => api.listRouteEvidence!(tripId, planId),
+    enabled: !!api.listRouteEvidence,
+  });
+}
+
+export function useSearchRoute(tripId: string) {
+  const api = useTravelApi();
+  return useMutation({
+    mutationFn: (params: { planId: string; input: NavigationRouteSearchRequest; idempotencyKey?: string }) =>
+      api.searchRoute!(tripId, params.planId, params.input, { idempotencyKey: params.idempotencyKey }),
+  });
+}
+
+export function useMobilityOffers(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.mobilityOffers(tripId),
+    queryFn: () => api.listMobilityOffers!(tripId),
+    enabled: !!api.listMobilityOffers,
+  });
+}
+
+export function useSearchMobilityOffers(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { input: MobilitySearchRequest; idempotencyKey?: string }) =>
+      api.searchMobilityOffers!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tripKeys.mobilityOffers(tripId) });
+    },
+  });
+}
+
+export function useSelectMobilityOffer(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { input: MobilityOfferSelectionRequest; idempotencyKey?: string }) =>
+      api.selectMobilityOffer!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tripKeys.mobilityOffers(tripId) });
+    },
+  });
+}
+
+export function useSearchPlaceCandidates(tripId: string) {
+  const api = useTravelApi();
+  return useMutation({
+    mutationFn: (params: { input: PlaceCandidateSearchRequest; idempotencyKey?: string }) =>
+      api.searchPlaceCandidates!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+  });
+}
+
+export function useProposeTripPlace(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { input: ProposeTripPlaceRequest; idempotencyKey?: string }) =>
+      api.proposeTripPlace!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tripKeys.places(tripId) });
+    },
+  });
+}
+
+export function useAdoptTripPlace(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { input: AdoptTripPlaceRequest; idempotencyKey?: string }) =>
+      api.adoptTripPlace!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tripKeys.places(tripId) });
+    },
+  });
+}
+
+export function useRevokeTripPlace(tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { input: RevokeTripPlaceRequest; idempotencyKey?: string }) =>
+      api.revokeTripPlace!(tripId, params.input, { idempotencyKey: params.idempotencyKey }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tripKeys.places(tripId) });
+    },
+  });
 }

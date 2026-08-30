@@ -279,27 +279,73 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - Each fact has a source/time and, for flight offers, an expiry.
 - Tool failure is explicit `UNAVAILABLE`; no inventory or price is fabricated or substituted.
 
-### TS-H4 — Create individualized visa readiness safely
+### TS-H3-GROUND-1 — Shared keyword POI search and arbitrary-place navigation
 
-**Stories:** H4, P1  
-**Objective:** Verify nationality-specific readiness without legal claims or unauthorized inference.
+**Stories:** H3, P1, S1
+**Objective:** Verify that only a Shared PLAN/REPLAN Worker can resolve keyword POI candidates and route between two authorized Trip places without accepting client/model coordinates or provider parameters.
 
-**Starting conditions:** Alice authorizes nationality; Bob initially does not; Chen has separate consent; two to three candidate routes and official-source fixtures exist.
+**Starting conditions:** An authenticated three-member planning Trip has one immutable snapshot containing Tokyo as a candidate; deterministic ORS Place and Directions doubles are configured; Alice has one private hotel place and two team-visible attractions.
 
 **Steps:**
 
-1. Generate candidate comparison and readiness checklists.
-2. Inspect Alice’s checklist source, checked time, applicable traveler, candidate route and next actions.
-3. Inspect Bob’s result without nationality consent.
-4. Bob grants nationality consent, then revoke it after list creation.
-5. Load uncertain/expired visa-source fixture.
+1. Drive a durable planning run whose model requests `places.search` with `destinationId=Tokyo`, keyword `Senso-ji` and `ATTRACTION`, then uses one returned current-run candidate to propose a team-visible `TripPlace`.
+2. Request `navigation.route` between that adopted place and the team-visible hotel using `WALK`; retrieve the authorized route DTO used by the map.
+3. Repeat with a browser/model supplied longitude/latitude, address, URL, provider/profile, a place candidate from another run, a private place owned by Bob, a revoked place and origin equal to destination.
+4. Force Place and Directions `NO_RESULTS`, 429, timeout and malformed payload outcomes independently while Flight/Stay/Activities research continues.
+5. Change or revoke an active team-visible place after a route is persisted; then attempt to display, adopt, confirm and book the old plan.
 
 **Expected outcomes:**
 
-- Each authorized traveler has a personal, sourced readiness checklist or explicit verification gap for every displayed candidate, not a visa approval statement.
-- Bob sees a request to self-check until he authorizes data; system does not infer nationality.
-- Grant/revoke creates/invalidates Bob’s checklist and expires affected plan.
-- Uncertain source directs official verification and does not state a certain conclusion.
+- The provider receives only server-resolved destination bias or authorized coordinates; no raw browser/model coordinate or provider option crosses the boundary.
+- At most the configured candidate/result/tool-loop limits execute. Candidate IDs are valid only for their task/run and cannot become Trip facts without proposal/adoption authority.
+- The returned route has source, captured time, distance, duration, mode, steps and geometry; geometry is sent only to authorized Trip UI consumers and never to the model, logs, traces, metrics or audit summaries. ORS attribution is visible with the route.
+- All rejected inputs fail closed with stable policy/schema codes and create no place, route evidence, plan, confirmation or booking authority.
+- A navigation/POI provider gap produces a safe `COMPLETED_WITH_GAPS` research summary, does not cancel other service research and does not fabricate a route, price or schedule.
+- Changing/revoking an adopted shared place atomically makes dependent route evidence, active plan and confirmations `STALE`; a late/duplicate worker cannot reactivate them.
+
+### TS-H3-GROUND-2 — Mobility offers are distinct from navigation routes
+
+**Stories:** H3, H6, S1
+**Objective:** Verify that transfer/taxi/charter evidence can be shown as live pricing or an explicit estimate but cannot be substituted for a route, automatically booked, or used after expiry.
+
+**Steps:**
+
+1. Use two authorized Trip places and request a configured Amadeus Transfer Search double that returns one price, one estimated taxi price and a booking link.
+2. Inspect normalized mobility evidence, `provider_offers`, source evidence, plan DTO and model tool output.
+3. Attempt to use navigation evidence as a mobility price, use an expired offer, invoke booking without a user-selected live offer, and pass a provider booking link through the API/UI.
+4. Disable Mobility while retaining navigation and repeat the planning run.
+
+**Expected outcomes:**
+
+- Routes are persisted only as navigation evidence; only commercial mobility results may enter `provider_offers`, and estimated prices are visibly marked as estimates.
+- Booking links and raw provider payloads never enter model context, persistence, SSE, audit or UI. No search automatically creates booking authority.
+- An unavailable/expired Mobility capability appears as a safe gap while the task completes; the selected service cannot reach confirmation/sandbox without fresh live evidence and explicit user selection.
+
+### TS-H4 — Create individualized visa readiness safely
+
+**Stories:** H4, P1  
+**Objective:** Verify global, provider-backed two-stage nationality-specific readiness without legal claims or unauthorized inference.
+
+**Starting conditions:** Alice authorizes nationality; Bob initially does not; Chen has separate consent; two to three destination candidates, two normalized flight offers to the same destination with different transit airports, an approved provider double and official-source fixtures exist.
+
+**Steps:**
+
+1. Generate candidate comparison and destination-level readiness checks before any flight offer is selected.
+2. Inspect Alice’s candidate checklist source, checked time, applicable traveler, destination stage and the explicit route/transit-pending marker.
+3. Select the first current, unexpired flight offer; inspect the durable route-readiness task and its destination/transit nodes derived only from normalized server-side segments.
+4. Switch to the second offer with a different transit airport; inspect that the first route-level result is `STALE` and the new route fingerprint is checked independently.
+5. Inspect Bob’s result without nationality consent; assert no provider request is made for Bob.
+6. Bob grants nationality consent, then revoke it after list creation.
+7. Load provider `NO_INFORMATION`, 429, timeout, malformed response, uncertain/expired source and airport-country-resolution-failure fixtures.
+8. Attempt cross-member detail reads and inspect team summary, plan explanation, SSE, audit, logs, traces and metric labels.
+
+**Expected outcomes:**
+
+- Each authorized traveler has a personal, sourced destination-level checklist or explicit verification gap for every displayed candidate. Before flight selection it never claims transit coverage; it explicitly marks the route check pending.
+- Route-level results are produced only for a user-selected current offer, use its actual ordered segments, and become `STALE` on offer switch/expiry, route/snapshot change or consent withdrawal.
+- Bob sees a request to self-check until he authorizes data; the system makes no provider call and infers no nationality.
+- Team summary and every non-owner surface contain only aggregate counts; nationality, passport data, raw provider payloads, URL query data, application links and another member’s checklist never appear.
+- Provider/data/airport-resolution failures create `UNAVAILABLE` or official-verification gaps, not a certain conclusion, fabricated checklist, active evidence or booking authority.
 
 ### TS-H5 — Re-plan after a flight shock
 
@@ -322,6 +368,28 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - UI identifies preserved and affected constraints for all three travelers and the changed candidate ranking.
 - No automatic charge, booking or silent replacement occurs.
 - No-feasible state names blocking constraints and returns members to editing/consent.
+
+### TS-H5a — Confirm a private orchestration constraint and adopt an automatic replan
+
+**Stories:** H2, H3, H5, S1
+**Objective:** Verify a Personal Agent proposal can become a confidential Shared planning constraint only after owner confirmation, and that automatic replan remains vote-gated.
+
+**Steps:**
+
+1. Alice asks her Personal Agent to avoid plans over a budget; inspect that it creates only a `PENDING` structured proposal.
+2. Alice confirms the proposal as `ORCHESTRATOR_CONFIDENTIAL` and `HARD`; inspect the stale transaction and automatic REPLAN task.
+3. Capture Bob and Chen's constraints/plan/read APIs, SSE, logs, traces, metrics and audit summaries while Shared planning runs.
+4. Inspect the Shared Agent test gateway input and the final public plan explanation.
+5. Have Alice and Bob vote `ACCEPT` on the generated `PROPOSED` plan and Chen vote `NEEDS_CHANGES`; then replace Chen's vote with `ACCEPT`.
+6. Attempt booking before and after activation; revoke Alice's fact during a later adoption vote.
+
+**Expected outcomes:**
+
+- No proposal enters a snapshot or affects a plan before Alice confirms it.
+- The confidential value is available only in the server-side Shared planning projection; it is absent from fellow-member responses, plan JSON/explanation, SSE, audit, logs, traces and metric labels. The UI presents the residual indirect-inference warning.
+- The old plan and confirmations become `STALE`; the automatic task creates one `PROPOSED` plan. The old plan is comparison-only and never reactivates.
+- A single `NEEDS_CHANGES` blocks activation; exactly one current `ACTIVE` plan is created only after all required members accept. Existing booking confirmation is still required after activation.
+- Revocation stales the proposal/votes/run and cannot leave a confidential value in a future snapshot or activate a plan.
 
 ### TS-H6 — Confirm and run booking orchestration sandbox
 
@@ -518,7 +586,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 **Expected outcomes:**
 
 - The client receives only documented safe phases and an identifier/version-safe terminal result; it never receives model reasoning, prompt, raw provider payload or unvalidated plan content.
-- A final `COMPLETED` event refers only to an already validated and persisted plan version.
+- A final `COMPLETED` event refers only to an already validated and persisted plan version; a final `COMPLETED_WITH_GAPS` event refers only to an already persisted safe research summary and carries no commercial authority.
 - Consent revocation or a newer run makes the old stream terminal/stale; it cannot activate, display or overwrite a plan after invalidation.
 - Stream identifiers remain out of metric labels, and no event widens membership or snapshot authorization.
 
@@ -613,6 +681,22 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The removed owner cannot cause an assistant message to persist after task pickup.
 - The thread turn endpoint never accepts a client `tripId` or creates/replaces a Trip; Explore initialization is covered separately by TS-EXPLORE-TRIP-1.
 
+### TS-INVITATION-JOIN-1 — Token-bound invitation decision
+
+**Stories:** H2, S1
+
+**Steps:**
+
+1. Create an active Trip invitation and open `/trips/join/:inviteToken` while signed out, then while signed in as the invited user.
+2. Call invitation preview, accept and decline with a valid token; repeat with a Trip UUID substituted for the token, an expired/revoked/declined token, and a valid token while signed in as another user.
+3. Accept concurrently twice, then inspect memberships, default threads and audit events. Decline a separate invitation and inspect the same records.
+
+**Expected outcomes:**
+
+- No trip facts render before authentication. The preview exposes only decision-critical summary fields after token and account binding; all unavailable token states return the same minimal response and disclose no trip/member/inviter metadata.
+- Acceptance is idempotent and creates at most one required membership and one recipient-owned default thread. The post-success primary action is setting the sharing scope; acceptance itself grants no consent or snapshot fields.
+- Decline creates no membership or thread and records `TRIP_INVITATION_DECLINE`; creator revocation remains distinct. Audit summaries contain IDs/status only, never the raw token or private profile data.
+
 ### TS-EXPLORE-TRIP-1 — Create a Draft Trip only on first submitted exploration message
 
 **Stories:** H1a, H1, S1
@@ -626,8 +710,9 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 2. Submit the first message. Force a client retry, a double-click and two concurrent start requests with the same start request ID; then accept the first conversation turn.
 3. Simulate start success followed by turn rejection/network loss; retry the start and the conversation command.
 4. Navigate client-side `/home → /projects → /profile → /home`; submit another message. Then perform a full browser reload and open `/home` in a new tab before submitting messages there.
-5. Click “Start new exploration”, then activate the original Draft with a valid brief. Attempt invitation, consent, planning, confirmation and booking both before and after activation.
-6. Repeat with Alice logged out and Bob logged in before returning to `/home`.
+5. Open the Draft from `/projects`; verify it uses the same project workspace as a `PLANNING` trip, retains the private thread, and does not show a separate brief form. Confirm a complete brief in the private conversation, then use the workspace activation control.
+6. Attempt invitation, consent, planning, confirmation and booking both before and after activation.
+7. Repeat with Alice logged out and Bob logged in before returning to `/home`.
 
 **Expected outcomes:**
 
@@ -636,7 +721,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The first task derives the created thread's `trip_id`; start success plus turn failure/retry cannot create another Trip.
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
-- Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
+- Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control, which remains disabled until the persisted brief is complete. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
 
 ### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields only
 
@@ -731,3 +816,90 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - A DRAFT-trip private-chat turn may emit only an in-memory destination/days candidate; raw conversation content is never included in the event, audit summary, or client persistence.
 - The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write.
 - A non-creator and a trip no longer in `DRAFT` receive `403` and `409` respectively; a MANUAL title remains unchanged after confirmation.
+
+### TS-HOTEL-TOOL-1 — Snapshot-bound hotel search, comparison and safe gaps
+
+**Stories:** H3, H5, S1
+**Objective:** Verify that only the Shared PLAN/REPLAN Worker can obtain live hotel evidence and that the result is safe for comparison but never becomes a booking action.
+
+**Steps:**
+
+1. In a private conversation, let the model ask for missing room count, adults per room and currency. Confirm the resulting stay-search-preferences proposal as the trip owner; repeat without confirmation and with a non-member.
+2. Create a snapshot with two candidates and a confirmed preference version. Drive the Worker with a model double that calls `hotel.search` once for each `destinationId`.
+3. Attempt tool arguments containing dates, room count, adults, currency, price, provider, address, coordinate, URL, snapshot ID and a cross-run destination. Repeat with a stale preference version, lost lease and duplicate tool call.
+4. Return normalized LIVE offers carrying total/per-night prices and `INCLUDED`, `PARTIAL`, then `UNKNOWN` taxes/fees; inspect the plan DTO, `provider_search_runs`, `provider_offers`, source evidence and telemetry/audit output.
+5. Force `NOT_CONFIGURED`, `NO_RESULTS`, 429, timeout, 5xx, malformed supplier payload and expired offer outcomes. Change dates, occupancy, stay preference and consent after a live plan exists.
+
+**Expected outcomes:**
+
+- The model can ask only to create a user-confirmed structured preference; no private message directly writes preference, invokes supplier search or starts planning.
+- `hotel.search` accepts only a current task's allowed `destinationId`; all supplier parameters are server-derived. It is unavailable to Personal/Review agents and exposes no raw payload, URL, supplier credentials, rate ID, address or location coordinates.
+- LIVE rows are bound to the current snapshot/run and exact normalized evidence; the validator rejects fabricated, stale, expired or cross-run hotel offers. A duplicate call does not create a second supplier query/evidence row.
+- Every hotel card includes total price, per-night price, source, captured time and expiry. `PARTIAL` and `UNKNOWN` taxes/fees always display “可能另计”; only explicit `INCLUDED` is presented as included.
+- Failure or missing data creates only a `hotel` `RESEARCH_UNAVAILABLE`/`COMPLETED_WITH_GAPS` result. Sandbox fixtures are never used at runtime; no supplier order, payment, redirect or booking link is created or persisted.
+- Date, occupancy, preference, consent and offer-expiry changes stale dependent plan/confirmations and enqueue a new run. Audit, logs, metrics and traces contain no user input, price, property, supplier URL or high-cardinality identifiers.
+
+### TS-ACTIVITIES-TOOL-1 — Durable Shared activities research and guarded plan finalization
+
+**Stories:** H3, H5, S1
+**Objective:** Verify that only the Shared PLAN/REPLAN Worker can ground a plan with live, task-bound activities evidence, and that flight + activities stages are independently schedulable.
+
+**Steps:**
+
+1. Confirm activity search preferences, create a trip snapshot with two controlled origins and two destination candidates, then accept a `PLAN` command.
+2. Configure the task scheduler to enable both flight and activities sub-stages; drive the Worker with a deterministic model double that requests `activities.search` for every destination candidate independently of any flight call.
+3. Verify each Tool request against the task snapshot, controlled destination list and accepted preference version; reject browser/model coordinates, free-text query, provider URL/session ID and a theme outside the fixed allow-list.
+4. Inspect only normalized Shared `provider_search_runs` rows with `category='activity'`; assert Tool output and persistence contain neither raw MCP payload, `clickOffToLander`/booking link nor currency-less `fromPrice`.
+5. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, a lost lease, MCP schema drift and a Viator MCP 429.
+6. Disable the activities sub-stage via configuration while keeping the flight sub-stage enabled; verify it does not schedule activities research. With the sub-stage enabled but unavailable, verify a safe `COMPLETED_WITH_GAPS` research result is displayed without any activity evidence or booking authority.
+
+**Expected outcomes:**
+
+- The HTTP command returns `202` with a run ID; browser disconnect does not cancel it.
+- Only same-task, same-snapshot `LIVE` activities data becomes evidence. A same-task `UNAVAILABLE` row satisfies the required-attempt matrix but becomes a bounded service gap; wrong-task/wrong-snapshot rows and `MISSING` never satisfy coverage.
+- The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, destination coordinates, free-text searches, dates or themes; raw MCP payloads, session IDs, currency-less prices, click-off links and private snapshot data never leave the server boundary.
+- A Viator MCP 429 returns bounded `RATE_LIMITED` immediately and does not retry without a provider reset window. Activities and Amadeus Flight have independent credentials/configuration and failure domains.
+- Final atomic plan/task completion is rejected when any activities cell is `MISSING`, the task has lost its `RUNNING` lease, or the accepted preference version changed. An `UNAVAILABLE` cell persists only a safe `COMPLETED_WITH_GAPS` summary with service/candidate/reason codes; it never creates an activity offer or source evidence.
+- Flight and activities evidence are distinct categories with independent staleness triggers and application-controlled freshness expiry; the unavailable summary is not evidence and cannot be selected by a plan.
+- Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, `MISSING` matrix and bounded-tool-loop failures are terminal; a bounded provider `UNAVAILABLE` result is a non-commercial gap, not invented evidence.
+- An activities offer whose `expires_at` has passed causes the dependent plan to enter `STALE` independent of any flight offer expiry.
+
+### TS-ACTIVITIES-TOOL-2 — Personal Agent activities search with owner-scoped evidence
+
+**Stories:** H1, H3
+**Objective:** Verify that a Personal Agent can request `activities.search` only after the Personal feature flag and tool-loop boundary are enabled, and that results stay owner-scoped and invisible to Shared execution.
+
+**Steps:**
+
+1. As a single authenticated user, save a profile with budget, pace and interests; then save a trip-scoped override for `this trip`.
+2. Open a private conversation bound to a trip; submit a question that prompts the model to call `activities.search`.
+3. Verify the request carries a server-built `PersonalActivitiesSearchContext` (not a snapshot) from the authenticated owner, thread and bound trip; browser/model `ownerUserId`, trip ID, coordinates, radius and free-text destination are rejected.
+4. Inspect `personal_provider_search_runs` rows: owner and trip are set, no snapshot exists, and the output/persistence omit `bookingLink`.
+5. Submit a Shared PLAN/REPLAN command and verify neither Personal conversation text nor Personal evidence is present in its context, matrix or plan validation inputs.
+6. Submit a wrinkle: revoked override, deleted profile field, malformed request, unknown destination, `UNAVAILABLE` provider result, repeated request.
+
+**Expected outcomes:**
+
+- This scenario remains disabled until the Personal streaming tool-loop and owner-scoped evidence store are implemented. Enabling Shared `activities.search` alone must not register the Tool for Personal Agent.
+- `personal_provider_search_runs` records the run separately; every Shared repository, context builder, matrix and validator rejects these rows and Personal conversation text.
+- The Personal Agent's evidence does not directly modify `itinerary_plans`, `constraint_snapshots`, or trigger any `STALE` transition on existing plans.
+- A subsequent Shared planning run cannot reference conversation text or a personal run row. Only an owner-confirmed, schema-valid Trip constraint may enter its server-built snapshot projection.
+- Revoked override, deleted profile field, malformed request, unknown destination, disabled feature flag and unknown theme each fail closed with a stable error code; `UNAVAILABLE` runs are recorded only in Personal storage with the standard 8 unavailable reasons.
+- Logs, trace attributes, metric labels and audit summaries never contain the personal conversation text, the owner profile field values or the activity names.
+
+### TS-ACTIVITIES-TOOL-3 — Activities evidence is excluded from readiness
+
+**Stories:** H4, S1
+**Objective:** Verify that visa/entry readiness remains grounded only in authorized nationality, route and official verification sources, never in activity search evidence.
+
+**Steps:**
+
+1. Build a planning run with persisted Shared activities evidence for two destinations and an `ACTIVE` plan.
+2. Attempt to include an activities evidence ID, name, price or provider link in readiness input/output.
+3. Repeat with a Personal activity result and a route/nationality record that requires an official verification gap.
+
+**Expected outcomes:**
+
+- Any activities evidence or booking link reference is rejected by the readiness and plan validators; it is not persisted as authoritative readiness text.
+- Missing authoritative visa/entry data yields the existing official verification gap, not a conclusion inferred from activities.
+- Personal activity results are never eligible as Shared or readiness evidence.

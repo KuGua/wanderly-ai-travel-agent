@@ -305,9 +305,8 @@ export function initTracing(
     const mode = resolveExporterMode();
     if (mode === "none") {
       // With no SDK provider, install the propagator ourselves so inbound
-      // traceparent headers remain readable. When an SDK provider is active,
-      // NodeTracerProvider.register() owns this global registration; doing it
-      // here first causes OpenTelemetry to reject the second registration.
+      // traceparent headers remain readable. An SDK provider registers its own
+      // propagator; registering twice causes OpenTelemetry to reject it.
       if (!propagatorRegistered) {
         propagation.setGlobalPropagator(new W3CTraceContextPropagator());
         propagatorRegistered = true;

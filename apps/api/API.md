@@ -481,6 +481,33 @@ code; use `GET /planning/:tripId/latest` only after a successful completion.
 Raw provider payloads, tool arguments, OAuth material and snapshot-private
 data are never returned by this endpoint or the task stream.
 
+### `GET /trips/:tripId/readiness/me`
+Return the authenticated member's current destination-level and route-level
+visa/entry readiness checks for the trip. Each item carries stage, status,
+source, captured time and an official verification next action. The response
+never returns nationality, passport data, raw provider payloads or application
+links. Non-members receive `403`; a member cannot retrieve another member's
+details.
+
+### `GET /trips/:tripId/readiness/summary`
+Return a team-safe aggregate of readiness states by candidate/current plan.
+It contains counts only and never identifies a member, nationality, checklist
+item or source response.
+
+### `POST /plans/:planId/selected-flight`
+Select one normalized, unexpired flight offer from the current plan and accept
+a durable route-readiness task.
+
+**Body**:
+```json
+{ "offerId": "uuid", "requestId": "uuid" }
+```
+
+The API validates membership, plan state, offer ownership/snapshot and expiry.
+It derives destination and transit airports on the server; clients cannot
+submit a route, country, provider or nationality. The accepted task is
+idempotent by `requestId`; use the returned run ID to observe safe progress.
+
 ### `GET /planning/:tripId/latest`
 Get the latest active plan for a trip.
 

@@ -1,6 +1,7 @@
 import { SkillError } from "../agents/errors.js";
 import { context as otelContext, SpanKind, trace as otelTrace } from "@opentelemetry/api";
 import { metrics } from "../observability/metrics.js";
+import { logSafeRuntimeEvent } from "../observability/telemetry.js";
 import {
   getTracer,
   parseTraceparent,
@@ -123,6 +124,10 @@ export async function processNextAgentTask(): Promise<boolean> {
 
   return withWorkerSpan(run, async () => {
     try {
+      logSafeRuntimeEvent(ctx, {
+        component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "started",
+        attempt: run.generationAttempt,
+      });
       await publishAgentStreamEvent({
         event: "turn.started",
         runId: run.id,
@@ -135,6 +140,10 @@ export async function processNextAgentTask(): Promise<boolean> {
         await publishPhase(run, "PERSISTING", traceparent);
         await publishAgentStreamEvent({ event: "turn.completed", runId: run.id, generationAttempt: run.generationAttempt, resultPlanId: planId, traceparent });
         metrics.inc("agent_task_outcomes_total", { operation: run.operation.toLowerCase(), outcome: "completed" });
+        logSafeRuntimeEvent(ctx, {
+          component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "success",
+          attempt: run.generationAttempt,
+        });
         return true;
       }
       await publishPhase(run, "GENERATING", traceparent);
@@ -173,6 +182,10 @@ export async function processNextAgentTask(): Promise<boolean> {
         operation: "conversation",
         outcome: "completed",
       });
+      logSafeRuntimeEvent(ctx, {
+        component: "worker", event: "task", operation: "conversation", outcome: "success",
+        attempt: run.generationAttempt,
+      });
       return true;
     } catch (error) {
       if (leaseLost || error instanceof LostTaskLeaseError) return true;
@@ -194,6 +207,10 @@ export async function processNextAgentTask(): Promise<boolean> {
       }
 
       const classified = classifyTaskError(error);
+      logSafeRuntimeEvent(ctx, {
+        component: "worker", event: "task", operation: run.operation.toLowerCase(),
+        outcome: "failure", attempt: run.generationAttempt, errorCode: classified.code,
+      });
       const outcome = await failOrRetryTask({
         run,
         leaseToken,

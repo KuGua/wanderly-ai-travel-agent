@@ -39,7 +39,7 @@
 本评审列出的 8 条演示前必须修复项已通过硬化 PR 落地（详见 `apps/api/migrations/0005_hardening_constraints.sql` 与 `apps/api/src/services/*`、`apps/api/src/routes/*`）。**私有对话线程代码**已通过 `apps/api/migrations/0006_chat_threads.sql` + `thread-recall-skill.ts` + `routes/chat-threads.ts` 实现；但服务端生成 `redacted_summary` 的逻辑留到下个 PR。仍需后续单独立项的：
 
 1. **服务端聊天摘要生成**：当前 `chat_messages.redacted_summary` 列存在但服务端尚未填充。需新增 `summarize-chat-message` Skill（或后端 worker）从 raw body 生成脱敏摘要、写入列；然后 `thread.recall` 即可返回非空 `contentRedacted`。
-2. **Shared Agent 读取 consented chat context**：Shared Trip Agent 在做规划时应能读取 owner 标记 shared 的消息作为上下文输入。需新增 `chat:read` scope 给 shared agent 并在 default policy 中允许。
+2. **已替换的协作方向**：不再让 Shared Agent 读取任何 consented chat context，也不新增 Shared `chat:read`。Personal Agent 必须将私有输入转为 owner-confirmed 的结构化 Trip constraint proposal；最终交接通过 visibility-aware snapshot projection 完成，详见 [Team Agent 协作编排实施规范](team-agent-orchestration-implementation.md)。
 3. **OpenTelemetry `span_id` 全链路传播**：[docs/agent-architecture.md](docs/agent-architecture.md) §9 line 268 已声明 `span_id` 为必需字段，但仓库当前只产生 `correlationId` + `traceId`。需引入 OpenTelemetry SDK + exporter，并把 span 关联到 audit / log。
 4. **生产 metrics/trace exporter 与持久化遥测后端**：当前 `/metrics` 仅暴露进程内 Prometheus text，没有远程写入或 scraper 配置。
 5. **真实支付与商户结算**：MVP 沙箱返回 `DEMO-*` 参考号；任何扣款、退款、改签、PCI 责任、客服履约均不进入本仓库。

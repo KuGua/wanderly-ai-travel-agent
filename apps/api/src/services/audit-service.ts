@@ -16,17 +16,39 @@ export type AuditAction =
   | "VISA_CHECK"
   | "CHAT_THREAD_CREATE" | "CHAT_THREAD_DELETE" | "CHAT_MESSAGE_APPEND"
   | "TRIP_INVITATION_CREATE" | "TRIP_INVITATION_ACCEPT"
-  | "TRIP_INVITATION_REVOKE" | "TRIP_DEFAULT_THREAD_PROVISION"
+  | "TRIP_INVITATION_REVOKE" | "TRIP_INVITATION_DECLINE" | "TRIP_DEFAULT_THREAD_PROVISION"
   | "EXPLORATION_START" | "TRIP_ACTIVATE" | "TRIP_TITLE_UPDATE" | "TRIP_DRAFT_BRIEF_UPDATE"
   | "SKILL_INVOKE" | "AGENT_RUN" | "AGENT_TASK"
-  | "FLIGHT_SEARCH_REQUESTED" | "FLIGHT_SEARCH_COMPLETED" | "FLIGHT_SEARCH_UNAVAILABLE";
+  | "FLIGHT_SEARCH_REQUESTED" | "FLIGHT_SEARCH_COMPLETED" | "FLIGHT_SEARCH_UNAVAILABLE"
+  | "ACTIVITIES_SEARCH_REQUESTED" | "ACTIVITIES_SEARCH_COMPLETED" | "ACTIVITIES_SEARCH_UNAVAILABLE"
+  // Phase 2 / Team Agent 协作编排 (added via 0021_team_orchestration_enums.sql):
+  | "TRIP_CONSTRAINT_PROPOSED"
+  | "TRIP_CONSTRAINT_CONFIRMED"
+  | "TRIP_CONSTRAINT_REVOKED"
+  | "PLAN_REPLAN_ENQUEUED"
+  | "PLAN_ADOPTION_VOTED"
+  | "PLAN_ADOPTED"
+  // Global POI & ground mobility (added via 0023_poi_route_mobility.sql):
+  | "PLACE_SEARCH_REQUESTED"
+  | "PLACE_SEARCH_COMPLETED"
+  | "PLACE_SEARCH_UNAVAILABLE"
+  | "NAVIGATION_ROUTE_REQUESTED"
+  | "NAVIGATION_ROUTE_COMPLETED"
+  | "NAVIGATION_ROUTE_UNAVAILABLE"
+  | "MOBILITY_OFFER_REQUESTED"
+  | "MOBILITY_OFFER_COMPLETED"
+  | "MOBILITY_OFFER_UNAVAILABLE"
+  | "TRIP_PLACE_PROPOSED"
+  | "TRIP_PLACE_ADOPTED"
+  | "TRIP_PLACE_REVOKED"
+  | "RESEARCH_RESULT_RECORDED";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
   [key: string]: AuditSummaryValue;
 };
 
 const MAX_SUMMARY_DEPTH = 3;
-const UNSAFE_SUMMARY_KEY = /(?:password|secret|token|credential|authorization|cookie|passport|documentNumber|dateOfBirth|nationality|rawBody|requestBody|prompt|conversation|privateMessage|payload)/i;
+const UNSAFE_SUMMARY_KEY = /(?:password|secret|token|credential|authorization|cookie|passport|documentNumber|dateOfBirth|nationality|rawBody|requestBody|prompt|conversation|privateMessage|payload|valueJson|orchestratorConfidential|projectionManifest)/i;
 
 export class AuditSummaryValidationError extends Error {
   constructor(message: string) {

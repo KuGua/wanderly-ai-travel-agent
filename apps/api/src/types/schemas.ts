@@ -197,6 +197,7 @@ export const tripDetailsResponseSchema = z.object({
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   }),
+  callerRole: tripRoleSchema,
   members: z.array(tripMemberSchema),
 });
 
@@ -478,7 +479,7 @@ export const errorResponseSchema = z.object({
 // ─── Trip Invitations ──────────────────────────────────────────────────────
 
 export const tripInvitationStatusSchema = z.enum([
-  "PENDING", "ACCEPTED", "REVOKED", "EXPIRED",
+  "PENDING", "ACCEPTED", "DECLINED", "REVOKED", "EXPIRED",
 ]);
 
 export const createTripInvitationSchema = z.object({
@@ -513,6 +514,24 @@ export const acceptInvitationResponseSchema = z.object({
     isDefault: z.literal(true),
   }).strict(),
 });
+
+// This is deliberately not a Trip detail response. It is the smallest
+// authenticated, token-bound view required to make an invitation decision.
+export const tripInvitationPreviewResponseSchema = z.object({
+  trip: z.object({
+    name: z.string().min(1).max(256),
+    destinationCandidates: z.array(z.string().min(1)).max(5),
+    travelDateStart: dateStr.nullable(),
+    travelDateEnd: dateStr.nullable(),
+  }).strict(),
+  membership: z.literal("MEMBER"),
+  isRequired: z.literal(true),
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const declineInvitationResponseSchema = z.object({
+  declined: z.literal(true),
+}).strict();
 
 // ─── Exploration & Draft Trip ──────────────────────────────────────────────
 
@@ -624,3 +643,170 @@ export type LocationIntroductionRequest = z.infer<typeof locationIntroductionReq
 export type LocationIntroductionReady = z.infer<typeof locationIntroductionReadySchema>;
 export type LocationIntroductionGenerating = z.infer<typeof locationIntroductionGeneratingSchema>;
 export type LocationIntroductionResponse = z.infer<typeof locationIntroductionResponseSchema>;
+
+// ─── Team Agent 协作编排 Phase 0 — Trip constraint / adoption DTOs ──────────
+// 对应 `docs/team-agent-orchestration-implementation.md` §3 / §5。
+// 字段值(value_json)的最终 shape 由服务端经
+// `apps/api/src/policy/constraint-field-catalog.ts#parseConstraintField`
+// 用对应目录条目的 Zod schema 解析后才能落库；这里 schema 仅定义 envelope。
+
+export const constraintVisibilitySchema = z.enum([
+  "TEAM_VISIBLE",
+  "ORCHESTRATOR_CONFIDENTIAL",
+]);
+export const constraintStrengthSchema = z.enum(["HARD", "SOFT"]);
+export const constraintProposalStatusSchema = z.enum([
+  "PENDING",
+  "CONFIRMED",
+  "DISMISSED",
+  "REVOKED",
+]);
+export const planAdoptionDecisionSchema = z.enum(["ACCEPT", "NEEDS_CHANGES"]);
+
+export const tripConstraintProposalSourceKindSchema = z.enum([
+  "PERSONAL_AGENT",
+  "OWNER_FORM",
+]);
+
+export const tripConstraintProposalSchema = z.object({
+  id: uuidSchema,
+  tripId: uuidSchema,
+  ownerUserId: uuidSchema,
+  fieldKey: z.string().min(1).max(64),
+  valueJson: z.unknown(),
+  strength: constraintStrengthSchema,
+  proposedVisibility: constraintVisibilitySchema,
+  sourceKind: tripConstraintProposalSourceKindSchema,
+  status: constraintProposalStatusSchema,
+  createdAt: z.string().datetime(),
+  resolvedAt: z.string().datetime().nullable(),
+}).strict();
+
+export const tripConstraintFactSchema = z.object({
+  id: uuidSchema,
+  tripId: uuidSchema,
+  ownerUserId: uuidSchema,
+  fieldKey: z.string().min(1).max(64),
+  valueJson: z.unknown(),
+  strength: constraintStrengthSchema,
+  visibility: constraintVisibilitySchema,
+  revision: z.number().int().positive(),
+  sourceProposalId: uuidSchema.nullable(),
+  status: z.enum(["ACTIVE", "SUPERSEDED", "REVOKED"]),
+  createdAt: z.string().datetime(),
+  supersededAt: z.string().datetime().nullable(),
+  revokedAt: z.string().datetime().nullable(),
+}).strict();
+
+export const planAdoptionVoteSchema = z.object({
+  planId: uuidSchema,
+  userId: uuidSchema,
+  decision: planAdoptionDecisionSchema,
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+}).strict();
+
+export const planAdoptionVotesResponseSchema = z.object({
+  planId: uuidSchema,
+  requiredMemberIds: z.array(uuidSchema),
+  votes: z.array(planAdoptionVoteSchema),
+  result: z.enum(["PENDING", "ACCEPTED", "BLOCKED"]),
+}).strict();
+
+export const projectedConstraintSchema = z.object({
+  fieldKey: z.string().min(1).max(64),
+  valueJson: z.unknown(),
+  strength: constraintStrengthSchema,
+  visibility: constraintVisibilitySchema,
+  sourceType: z.enum(["PROFILE_CONSENT", "TRIP_FACT"]),
+  sourceId: z.string().min(1),
+  revision: z.number().int().positive().optional(),
+}).strict();
+
+export const constraintSnapshotProjectionManifestEntrySchema = z.object({
+  sourceType: z.enum(["PROFILE_CONSENT", "TRIP_FACT"]),
+  sourceId: uuidSchema,
+  revision: z.number().int().positive(),
+  visibility: constraintVisibilitySchema,
+}).strict();
+
+/**
+ * Schema for `constraint_snapshots.authorized_data` (v2). Phase 1 起 `MemoryProjectionBuilder`
+ * 写入此 shape；reader 端 `assertFieldAllowed` 与 `validatePlanOutput` 仍消费 v1 path，
+ * 通过 `schemaVersion` 做条件分流。`memberAliases` 是 run-scoped 临时键，model 不得回填 userId。
+ */
+export const constraintSnapshotDataV2Schema = z.object({
+  schemaVersion: z.literal(2),
+  memberAliases: z.record(z.string().uuid(), z.string().min(1).max(64)),
+  teamVisible: z.record(z.string(), z.array(projectedConstraintSchema)),
+  orchestratorConfidential: z.record(z.string(), z.array(projectedConstraintSchema)),
+  projectionManifest: z.array(constraintSnapshotProjectionManifestEntrySchema),
+  departureCities: z.array(z.string().min(1)),
+  destinationCandidates: z.array(z.string().min(1)).min(1),
+  travelDateStart: dateStr.optional(),
+  travelDateEnd: dateStr.optional(),
+}).strict();
+
+export const tripConstraintProposalsResponseSchema = z.object({
+  proposals: z.array(tripConstraintProposalSchema),
+}).strict();
+
+export const tripConstraintsResponseSchema = z.object({
+  tripId: uuidSchema,
+  teamVisibleFacts: z.array(tripConstraintFactSchema),
+  // 注：confidential facts 仅在 owner 调 `/constraints/me` 时返回，本 DTO 不含该字段。
+}).strict();
+
+export const tripConstraintsOwnerResponseSchema = z.object({
+  tripId: uuidSchema,
+  allFacts: z.array(tripConstraintFactSchema),
+}).strict();
+
+export const createTripConstraintProposalRequestSchema = z.object({
+  fieldKey: z.string().min(1).max(64),
+  valueJson: z.unknown(),
+  proposedVisibility: constraintVisibilitySchema,
+  proposedStrength: constraintStrengthSchema,
+  sourceKind: tripConstraintProposalSourceKindSchema.default("OWNER_FORM"),
+  idempotencyKey: uuidSchema.optional(),
+}).strict();
+
+export const confirmTripConstraintProposalRequestSchema = z.object({
+  visibility: constraintVisibilitySchema,
+  strength: constraintStrengthSchema,
+  idempotencyKey: uuidSchema.optional(),
+}).strict();
+
+export const upsertTripConstraintFactRequestSchema = z.object({
+  fieldKey: z.string().min(1).max(64),
+  valueJson: z.unknown(),
+  visibility: constraintVisibilitySchema,
+  strength: constraintStrengthSchema,
+  expectedRevision: z.number().int().positive().optional(),
+  idempotencyKey: uuidSchema.optional(),
+}).strict();
+
+export const castAdoptionVoteRequestSchema = z.object({
+  decision: planAdoptionDecisionSchema,
+  idempotencyKey: uuidSchema.optional(),
+}).strict();
+
+export type ConstraintVisibility = z.infer<typeof constraintVisibilitySchema>;
+export type ConstraintStrength = z.infer<typeof constraintStrengthSchema>;
+export type ConstraintProposalStatus = z.infer<typeof constraintProposalStatusSchema>;
+export type PlanAdoptionDecision = z.infer<typeof planAdoptionDecisionSchema>;
+export type TripConstraintProposalSourceKind = z.infer<typeof tripConstraintProposalSourceKindSchema>;
+export type TripConstraintProposal = z.infer<typeof tripConstraintProposalSchema>;
+export type TripConstraintFact = z.infer<typeof tripConstraintFactSchema>;
+export type PlanAdoptionVote = z.infer<typeof planAdoptionVoteSchema>;
+export type PlanAdoptionVotesResponse = z.infer<typeof planAdoptionVotesResponseSchema>;
+export type ProjectedConstraint = z.infer<typeof projectedConstraintSchema>;
+export type ConstraintSnapshotProjectionManifestEntry = z.infer<typeof constraintSnapshotProjectionManifestEntrySchema>;
+export type ConstraintSnapshotDataV2 = z.infer<typeof constraintSnapshotDataV2Schema>;
+export type TripConstraintProposalsResponse = z.infer<typeof tripConstraintProposalsResponseSchema>;
+export type TripConstraintsResponse = z.infer<typeof tripConstraintsResponseSchema>;
+export type TripConstraintsOwnerResponse = z.infer<typeof tripConstraintsOwnerResponseSchema>;
+export type CreateTripConstraintProposalRequest = z.infer<typeof createTripConstraintProposalRequestSchema>;
+export type ConfirmTripConstraintProposalRequest = z.infer<typeof confirmTripConstraintProposalRequestSchema>;
+export type UpsertTripConstraintFactRequest = z.infer<typeof upsertTripConstraintFactRequestSchema>;
+export type CastAdoptionVoteRequest = z.infer<typeof castAdoptionVoteRequestSchema>;

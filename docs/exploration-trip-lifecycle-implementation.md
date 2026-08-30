@@ -133,7 +133,7 @@ DRAFT | PLANNING | CONFIRMED | BOOKED | CANCELLED | STALE
 | 修改 | `apps/web/src/app/providers.tsx` | 在现有认证/Query 边界内挂载 Provider |
 | 修改 | `ExploreChatHost` | 移除 `useTrips()`/`trips[0]` 自动选取和 Trip picker；改为读取 Session |
 | 修改 | `TravelAgentChat` | 在首发前 await `onEnsureThreadForFirstSend`；地图选择只预填问题，不自动发送；提供禁用态的“开始新的探索”，其余 history、SSE、Stop 均复用 |
-| 修改 | projects/Trip workspace | 支持 `DRAFT` 展示、编辑和 activate 入口；旧项目仅显式打开 |
+| 修改 | projects/Trip workspace | `DRAFT` 与进行中项目共用工作台；creator 在私有对话确认完整 brief 后，可在同一工作台显式 activate；旧项目仅显式打开 |
 | 修改 | Drizzle schema/migration/types | `DRAFT` enum、创建/激活 DTO 与数据库 migration |
 | 新增 | exploration route/service/schema | start 的原子事务、idempotency、审计、OpenAPI |
 | 修改 | invitation/consent/planning/confirmation/booking | Draft 服务端状态 guard |

@@ -1,0 +1,229 @@
+import { randomUUID } from "node:crypto";
+
+import { metrics } from "../observability/metrics.js";
+import type {
+  ActivitiesProvider,
+  ActivitiesSearchParams,
+  ActivityProviderItem,
+  ProviderResult,
+} from "./types.js";
+import {
+  viatorMcpResponseSchema,
+  viatorSearchStructuredContentSchema,
+} from "./viator-mcp-activities-schemas.js";
+
+const DEFAULT_MCP_URL = "https://exp-app-mcp.prod.ep.viator.com/mcp";
+const SOURCE = "Viator Experiences MCP";
+
+export interface ViatorMcpActivitiesProviderOptions {
+  endpoint: string;
+  timeoutMs: number;
+  maxRetries: number;
+  fetchImpl?: typeof fetch;
+  now?: () => Date;
+}
+
+type UnavailableReason = Extract<ProviderResult<never>, { outcome: "UNAVAILABLE" }>["reason"];
+
+export function readViatorMcpConfiguration(
+  env: NodeJS.ProcessEnv = process.env,
+): ViatorMcpActivitiesProviderOptions | null {
+  if (env.VIATOR_MCP_ENABLED !== "true") return null;
+  const endpoint = env.VIATOR_MCP_URL?.trim() || DEFAULT_MCP_URL;
+  const parsed = new URL(endpoint);
+  if (parsed.protocol !== "https:") throw new Error("VIATOR_MCP_URL must use HTTPS");
+  const timeoutMs = parseBoundedInteger(env.VIATOR_MCP_TIMEOUT_MS, 8_000, 500, 30_000, "VIATOR_MCP_TIMEOUT_MS");
+  const maxRetries = parseBoundedInteger(env.VIATOR_MCP_MAX_RETRIES, 1, 0, 2, "VIATOR_MCP_MAX_RETRIES");
+  return { endpoint, timeoutMs, maxRetries };
+}
+
+export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
+  private readonly fetchImpl: typeof fetch;
+  private readonly now: () => Date;
+
+  constructor(private readonly options: ViatorMcpActivitiesProviderOptions) {
+    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async searchActivities(
+    params: ActivitiesSearchParams,
+  ): Promise<ProviderResult<ActivityProviderItem[]>> {
+    const startedAt = Date.now();
+    if (params.signal?.aborted) {
+      throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
+    }
+
+    let lastReason: UnavailableReason = "UPSTREAM_FAILURE";
+    for (let attempt = 0; attempt <= this.options.maxRetries; attempt += 1) {
+      try {
+        const response = await this.callSearch(params);
+        if (response.outcome === "LIVE") {
+          return this.record(response, startedAt);
+        }
+        lastReason = response.reason;
+        if (!isRetryable(response.reason) || attempt === this.options.maxRetries) {
+          return this.record(response, startedAt);
+        }
+      } catch (error) {
+        if (params.signal?.aborted) {
+          throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
+        }
+        lastReason = (error as { name?: string }).name === "AbortError"
+          ? "UPSTREAM_TIMEOUT"
+          : "UPSTREAM_FAILURE";
+        if (attempt === this.options.maxRetries) {
+          return this.record({ outcome: "UNAVAILABLE", reason: lastReason }, startedAt);
+        }
+      }
+    }
+    return this.record({ outcome: "UNAVAILABLE", reason: lastReason }, startedAt);
+  }
+
+  private async callSearch(
+    params: ActivitiesSearchParams,
+  ): Promise<ProviderResult<ActivityProviderItem[]>> {
+    const controller = new AbortController();
+    const abortFromCaller = () => controller.abort(params.signal?.reason);
+    if (params.signal?.aborted) abortFromCaller();
+    else params.signal?.addEventListener("abort", abortFromCaller, { once: true });
+    const timeout = setTimeout(() => controller.abort(new DOMException("Timed out", "AbortError")), this.options.timeoutMs);
+    try {
+      const response = await this.fetchImpl(this.options.endpoint, {
+        method: "POST",
+        headers: {
+          accept: "application/json, text/event-stream",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: randomUUID(),
+          method: "tools/call",
+          params: {
+            name: "search_experiences",
+            arguments: {
+              searchTerm: controlledSearchTerm(params),
+              startDate: params.dateStart,
+              endDate: params.dateEnd,
+              limit: params.limit,
+              sessionId: randomUUID(),
+            },
+          },
+        }),
+        signal: controller.signal,
+      });
+      if (response.status === 429) return { outcome: "UNAVAILABLE", reason: "RATE_LIMITED" };
+      if (response.status === 401 || response.status === 403) {
+        return { outcome: "UNAVAILABLE", reason: "PROVIDER_NOT_APPROVED" };
+      }
+      if (response.status >= 500) return { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };
+      if (!response.ok) return { outcome: "UNAVAILABLE", reason: "INVALID_PROVIDER_RESPONSE" };
+
+      const rawText = await response.text();
+      if (rawText.length > 1_000_000) {
+        return { outcome: "UNAVAILABLE", reason: "INVALID_PROVIDER_RESPONSE" };
+      }
+      const protocolPayload = parseMcpPayload(rawText, response.headers.get("content-type"));
+      const envelope = viatorMcpResponseSchema.safeParse(protocolPayload);
+      if (!envelope.success) return { outcome: "UNAVAILABLE", reason: "INVALID_PROVIDER_RESPONSE" };
+      if (envelope.data.error) {
+        return {
+          outcome: "UNAVAILABLE",
+          reason: /rate limit/i.test(envelope.data.error.message) ? "RATE_LIMITED" : "UPSTREAM_FAILURE",
+        };
+      }
+      if (envelope.data.result?.isError) {
+        const text = envelope.data.result.content?.map((part) => part.text ?? "").join(" ") ?? "";
+        return { outcome: "UNAVAILABLE", reason: /rate limit/i.test(text) ? "RATE_LIMITED" : "UPSTREAM_FAILURE" };
+      }
+      const structured = viatorSearchStructuredContentSchema.safeParse(
+        envelope.data.result?.structuredContent,
+      );
+      if (!structured.success) return { outcome: "UNAVAILABLE", reason: "INVALID_PROVIDER_RESPONSE" };
+      if (structured.data.experiences.length === 0) return { outcome: "UNAVAILABLE", reason: "NO_RESULTS" };
+
+      return {
+        outcome: "LIVE",
+        source: SOURCE,
+        capturedAt: this.now().toISOString(),
+        data: structured.data.experiences.map((experience) => ({
+          providerOfferId: experience.code,
+          title: experience.title,
+          thumbnailUrl: experience.thumbnail,
+          rating: experience.rating ?? null,
+          reviewCount: experience.reviewCount ?? 0,
+          freeCancellation: experience.freeCancellation,
+          durationMinutes: {
+            fixed: experience.duration?.fixedDurationInMinutes ?? null,
+            from: experience.duration?.variableDurationFromMinutes ?? null,
+            to: experience.duration?.variableDurationToMinutes ?? null,
+          },
+          category: experience.keyAttributes?.mainCategory ?? null,
+        })),
+      };
+    } finally {
+      clearTimeout(timeout);
+      params.signal?.removeEventListener("abort", abortFromCaller);
+    }
+  }
+
+  private record<T extends ProviderResult<ActivityProviderItem[]>>(result: T, startedAt: number): T {
+    const outcome = result.outcome === "LIVE" ? "live" : "unavailable";
+    const errorCategory = result.outcome === "LIVE" ? "none" : result.reason.toLowerCase();
+    metrics.inc("activities_provider_requests_total", {
+      outcome,
+      provider: "viator_mcp",
+      error_category: errorCategory,
+    });
+    metrics.observe("activities_provider_latency_ms", Date.now() - startedAt, {
+      provider: "viator_mcp",
+      outcome,
+    });
+    return result;
+  }
+}
+
+function controlledSearchTerm(params: ActivitiesSearchParams): string {
+  const theme = params.theme ? {
+    CULTURE: "cultural experiences",
+    FOOD: "food experiences",
+    OUTDOOR: "outdoor experiences",
+    FAMILY: "family-friendly experiences",
+  }[params.theme] : "things to do";
+  // Destination is already snapshot-bound by the service. Keeping the query
+  // construction here prevents models and browsers from supplying free text.
+  return `${theme} in ${params.destination}`;
+}
+
+function parseMcpPayload(body: string, contentType: string | null): unknown {
+  if (contentType?.includes("text/event-stream")) {
+    const data = body.split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trim())
+      .find((line) => line && line !== "[DONE]");
+    if (!data) throw new Error("MCP stream contained no data event");
+    return JSON.parse(data) as unknown;
+  }
+  return JSON.parse(body) as unknown;
+}
+
+function isRetryable(reason: UnavailableReason): boolean {
+  // A 429 is surfaced immediately instead of retrying without a provider-
+  // supplied reset window. This avoids amplifying pressure on a public MCP.
+  return reason === "UPSTREAM_TIMEOUT" || reason === "UPSTREAM_FAILURE";
+}
+
+function parseBoundedInteger(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number,
+  name: string,
+): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}`);
+  }
+  return parsed;
+}

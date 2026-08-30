@@ -43,6 +43,9 @@ unexpected set of keys, or a label value outside the allow-list throws
 | `booking_gate_denials_total` | counter | errorCategory | `["callback_auth","membership","quorum","plan_state","unknown"]` |
 | `callback_verifications_total` | counter | callbackResult | `["valid","missing_header","malformed_timestamp","expired","bad_signature","configuration_error"]` |
 | `booking_callback_outcomes_total` | counter | callbackResult | `["processed","duplicate","failed"]` |
+| `trip_constraint_mutation_total` | counter | operation, visibility, strength, result | operation ∈ `["propose","confirm","dismiss","upsert","revoke"]`; visibility ∈ `["team_visible","orchestrator_confidential","n_a"]`; strength ∈ `["hard","soft","n_a"]`; result ∈ `["success","replay","conflict","catalog_invalid"]` |
+| `plan_adoption_vote_total` | counter | decision, result | decision ∈ `["accept","needs_changes"]`; result ∈ `["cast","adopted","blocked","stale_plan"]` |
+| `plan_replan_total` | counter | trigger, result | trigger ∈ `["trip_constraint_confirmed","trip_constraint_revoked","trip_constraint_upsert","consent","change_event"]`; result ∈ `["enqueued","superseded","missing_snapshot"]` |
 | `llm_request_latency_ms` | histogram | provider, outcome | provider ∈ `["openai","gemini","openai-compatible","mock"]`; outcome ∈ `["success"]`; buckets = `[50, 100, 250, 500, 1000, 2000, 5000, 10000, 30000]` ms |
 
 `MetricProvider` is the type alias for the `provider` label:
@@ -58,6 +61,14 @@ samples and is used by tests.
 ## Log redaction
 
 ### Pino paths (`telemetry.ts:6-46`)
+
+### Local file fallback
+
+When `LOCAL_DEBUG_LOG_FILE` is set to a simple `.ndjson` filename, Pino writes
+the normal redacted stdout stream and a second NDJSON stream under
+`apps/api/runtime/`. This sink is independent of OTel and contains only safe
+`runtime_event` lifecycle metadata (no prompt, completion, tool payload or
+private data). See [the deployment runbook](../../../../docs/observability-deployment.md#local-diagnostic-fallback).
 
 `LOGGER_REDACT_PATHS` is a 39-entry string list array. Pino replaces every
 matched path with `"[REDACTED]"` at log time. Categories (verbatim):
@@ -169,6 +180,9 @@ allow-list and the `docs/agent-architecture.md` trace map.
 | `http.*` | `app.ts` `onRequest`/`preHandler`/`onResponse` | `http.method`, `http.route`, `http.status_code`, `http.target`, `net.peer.ip`, `app.correlation_id` |
 | `db.*` | `tasks/task-repository.ts` hot-spots | `db.system` (=`"postgresql"`), `db.operation` (`INSERT`/`SELECT`/`UPDATE`), `db.sql.table` (=`"agent_task_runs"`), `db.outcome` (`success`/`failure`/`duplicate`/`empty`) |
 | `llm.*` | `providers/llm-gateway.ts` (3 sites) | `llm.system` (=`"openai-compatible"`), `llm.provider` (∈ openai/gemini/openai-compatible), `llm.model.name`, `llm.model.prompt_version`, `llm.method` (plan.comparison / travel.conversation), `llm.stream` (bool), `llm.skill.name`, `llm.outcome` (`success`/error code), `llm.error_code`, `llm.tokens.{prompt,completion,total}` |
+| `trip.constraint.*` | (Phase 2+) `services/constraint-proposal-service.ts`, `services/constraint-fact-service.ts` mutation transactions | `trip.constraint.operation` ∈ `["propose","confirm","dismiss","replace","revoke"]`, `trip.constraint.visibility` ∈ `["TEAM_VISIBLE","ORCHESTRATOR_CONFIDENTIAL"]`, `trip.constraint.strength` ∈ `["HARD","SOFT"]`, `trip.constraint.field_category` (one of the catalog field groups, never the value), `trip.constraint.outcome` ∈ `["success","conflict","stale"]`. **Never** include `fieldKey` raw values — use the catalog-derived category label only. |
+| `snapshot.projection.*` | (Phase 1+) `services/memory-projection-builder.ts`, `services/planning-service.ts#createConstraintSnapshot` | `snapshot.projection.schema_version` (=`2`), `snapshot.projection.confidential_count` (low-cardinality bucket: `0`/`1-2`/`3+`), `snapshot.projection.team_visible_count` (same buckets), `snapshot.projection.outcome` ∈ `["built","superseded","projection_invalid"]`. **Never** include member userIds, aliases, fact values, or source IDs. |
+| `plan.adoption.*` | (Phase 4+) `services/plan-adoption-service.ts#castVote`, `#tallyVotes` | `plan.adoption.decision` ∈ `["ACCEPT","NEEDS_CHANGES"]`, `plan.adoption.required_count` (bucket `1`/`2`/`3`/`4+`), `plan.adoption.received_count` (same buckets), `plan.adoption.outcome` ∈ `["pending","accepted","blocked","invalid"]`. **Never** include vote owner ids, plan data, fact values. |
 
 The trace context itself (the W3C `traceparent` value and the active
 `trace_id`/`span_id` pair) is **not** duplicated as a span attribute — it

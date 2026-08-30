@@ -68,6 +68,7 @@ export interface ModelGateway {
    */
   generateStructuredPlanWithTools?(params: {
     destination: string;
+    destinationCandidates?: string[];
     stays: StayOffer[];
     ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;

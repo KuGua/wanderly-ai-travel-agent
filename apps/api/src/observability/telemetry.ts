@@ -1,9 +1,12 @@
+import path from "node:path";
 import pino from "pino";
 import type { Context, Span } from "@opentelemetry/api";
 import type { RequestContext } from "../utils/context.js";
 import { getActiveSpan } from "./tracing.js";
 
 export const LOGGER_REDACT_PATHS = [
+  // Invitation tokens are part of an external URL and act as credentials.
+  "req.url",
   "req.headers.authorization",
   "req.headers.cookie",
   "req.headers['x-api-key']",
@@ -50,14 +53,68 @@ export const LOGGER_REDACTION = {
   censor: "[REDACTED]",
 };
 
+/**
+ * Optional local NDJSON sink for safe runtime diagnostics. The file name is
+ * deliberately constrained to the local `runtime/` directory so an env typo
+ * cannot turn logging into an arbitrary filesystem write. It receives the
+ * same Pino-redacted records as stdout and is intentionally independent from
+ * OpenTelemetry export availability.
+ */
+export function resolveLocalDebugLogPath(value = process.env.LOCAL_DEBUG_LOG_FILE): string | null {
+  if (!value) return null;
+  if (path.isAbsolute(value) || value.includes("..") || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.ndjson$/.test(value)) {
+    throw new Error("LOCAL_DEBUG_LOG_FILE must be a simple .ndjson filename");
+  }
+  return path.join(process.cwd(), "runtime", value);
+}
+
+function createLogStream(): pino.DestinationStream | NodeJS.WritableStream {
+  const streams: pino.StreamEntry[] = [{
+    stream: process.env.NODE_ENV === "production"
+      ? pino.destination(1)
+      : pino.transport({ target: "pino-pretty", options: { colorize: true } }),
+  }];
+  const localPath = resolveLocalDebugLogPath();
+  if (localPath) {
+    streams.push({ stream: pino.destination({ dest: localPath, mkdir: true, sync: false }) });
+  }
+  return pino.multistream(streams);
+}
+
 export const pinoInstance: pino.Logger = pino({
   level: process.env.LOG_LEVEL ?? "info",
-  transport:
-    process.env.NODE_ENV !== "production"
-      ? { target: "pino-pretty", options: { colorize: true } }
-      : undefined,
   redact: LOGGER_REDACTION,
-});
+}, createLogStream());
+
+/**
+ * Content-free lifecycle record for LLM, tool, planner, and worker paths.
+ * Keep this closed schema: prompts, completions, tool arguments/results, and
+ * exception messages are never accepted here.
+ */
+export type SafeRuntimeEvent = {
+  component: "llm" | "tool" | "planner" | "worker";
+  event: string;
+  operation: string;
+  outcome?: "started" | "success" | "failure" | "retrying" | "cancelled";
+  errorCode?: string;
+  latencyMs?: number;
+  attempt?: number;
+  toolName?: string;
+  promptVersion?: string;
+  outputHash?: string;
+  tokenCount?: number;
+  itemCount?: number;
+};
+
+export function logSafeRuntimeEvent(ctx: RequestContext, event: SafeRuntimeEvent): void {
+  correlationChild(
+    pinoInstance,
+    ctx.correlationId,
+    ctx.clientRequestId,
+    ctx.traceId,
+    ctx.spanId,
+  ).info({ runtime_event: event }, "Safe runtime diagnostic");
+}
 
 export function correlationChild(
   base: pino.Logger,

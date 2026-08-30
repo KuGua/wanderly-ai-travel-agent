@@ -29,6 +29,38 @@ import type {
   PlanningTaskAcceptedResponse,
   LatestPlanResponse,
   LatestPlanningRunResponse,
+  TripConstraintProposal,
+  TripConstraintsResponse,
+  TripConstraintsOwnerResponse,
+  TripConstraintProposalsResponse,
+  CreateTripConstraintProposalRequest,
+  ConfirmTripConstraintProposalRequest,
+  UpsertTripConstraintFactRequest,
+  ConfirmProposalResponse,
+  UpsertFactResponse,
+  CastAdoptionVoteRequest,
+  AdoptionVoteResponse,
+  AdoptionVoteListResponse,
+  TripPlansListResponse,
+  TripPlacesResponse,
+  PlaceCandidateSearchRequest,
+  PlaceCandidateSearchResponse,
+  ProposeTripPlaceRequest,
+  AdoptTripPlaceRequest,
+  RevokeTripPlaceRequest,
+  TripPlaceActionResponse,
+  ResearchResult,
+  RouteEvidenceList,
+  NavigationRouteSearchRequest,
+  NavigationRouteSearchResponse,
+  MobilityOfferList,
+  MobilitySearchRequest,
+  MobilitySearchResponse,
+  MobilityOfferSelectionRequest,
+  MobilityOfferSelectionResponse,
+  InvitationPreviewResponse,
+  AcceptInvitationResponse,
+  DeclineInvitationResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -36,6 +68,10 @@ export interface TravelApi {
   updateMyProfile(input: UpdateProfileInput): Promise<UpdateProfileResponse>;
   getTrips(): Promise<TripsResponse>;
   getTrip(tripId: string): Promise<TripDetailResponse>;
+  // Optional while older fixtures and API adapters adopt the invitation flow.
+  getInvitationPreview?(inviteToken: string): Promise<InvitationPreviewResponse>;
+  acceptInvitation?(inviteToken: string): Promise<AcceptInvitationResponse>;
+  declineInvitation?(inviteToken: string): Promise<DeclineInvitationResponse>;
   getLocationReference(input: LocationReferenceInput): Promise<LocationReferenceResponse>;
   getLocationIntroduction(input: LocationIntroductionInput, options?: { signal?: AbortSignal }): Promise<LocationIntroductionResponse>;
   getTripThreads(tripId: string): Promise<ThreadsResponse>;
@@ -54,4 +90,40 @@ export interface TravelApi {
   startPlanning(tripId: string): Promise<PlanningTaskAcceptedResponse>;
   getLatestPlanningRun(tripId: string): Promise<LatestPlanningRunResponse>;
   getLatestPlan(tripId: string): Promise<LatestPlanResponse>;
+
+  // ── Team Agent 协作编排 (Phase 5) ────────────────────────────────────────────
+  // These are intentionally optional so existing partial mocks and consumers
+  // can adopt them incrementally without touching the entire test suite.
+  createConstraintProposal?(tripId: string, input: CreateTripConstraintProposalRequest, options?: { idempotencyKey?: string }): Promise<TripConstraintProposal>;
+  listMyConstraintProposals?(tripId: string): Promise<TripConstraintProposalsResponse>;
+  confirmConstraintProposal?(tripId: string, proposalId: string, input: ConfirmTripConstraintProposalRequest, options?: { idempotencyKey?: string }): Promise<ConfirmProposalResponse>;
+  dismissConstraintProposal?(tripId: string, proposalId: string, options?: { idempotencyKey?: string }): Promise<{ dismissed: true; proposalId: string }>;
+  upsertConstraintFact?(tripId: string, factId: string, input: UpsertTripConstraintFactRequest, options?: { idempotencyKey?: string }): Promise<UpsertFactResponse>;
+  revokeConstraintFact?(tripId: string, factId: string, options?: { idempotencyKey?: string }): Promise<UpsertFactResponse>;
+  listConstraintsForMembers?(tripId: string): Promise<TripConstraintsResponse>;
+  listConstraintsForOwner?(tripId: string): Promise<TripConstraintsOwnerResponse>;
+  castAdoptionVote?(planId: string, input: CastAdoptionVoteRequest, options?: { idempotencyKey?: string }): Promise<AdoptionVoteResponse>;
+  listAdoptionVotes?(planId: string): Promise<AdoptionVoteListResponse>;
+  listTripPlans?(tripId: string): Promise<TripPlansListResponse>;
+
+  // ── Global POI & ground mobility (Phase 2) ──────────────────────────────────
+  // Optional methods to preserve Phase-5 style incremental adoption. The web
+  // calls each behind `enabled: !!api.<method>` to avoid breaking older mocks.
+  listTripPlaces?(tripId: string): Promise<TripPlacesResponse>;
+  searchPlaceCandidates?(tripId: string, input: PlaceCandidateSearchRequest, options?: { idempotencyKey?: string }): Promise<PlaceCandidateSearchResponse>;
+  proposeTripPlace?(tripId: string, input: ProposeTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
+  adoptTripPlace?(tripId: string, input: AdoptTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
+  revokeTripPlace?(tripId: string, input: RevokeTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
+
+  // ── Phase 4 non-blocking research summary ────────────────────────────────────
+  getResearchResult?(tripId: string, agentTaskRunId?: string): Promise<ResearchResult>;
+
+  // ── Phase 3 navigation route evidence ────────────────────────────────────────
+  listRouteEvidence?(tripId: string, planId?: string): Promise<RouteEvidenceList>;
+  searchRoute?(tripId: string, planId: string, input: NavigationRouteSearchRequest, options?: { idempotencyKey?: string }): Promise<NavigationRouteSearchResponse>;
+
+  // ── Phase 5 mobility offers (Amadeus Transfer Search) ────────────────────────
+  listMobilityOffers?(tripId: string): Promise<MobilityOfferList>;
+  searchMobilityOffers?(tripId: string, input: MobilitySearchRequest, options?: { idempotencyKey?: string }): Promise<MobilitySearchResponse>;
+  selectMobilityOffer?(tripId: string, input: MobilityOfferSelectionRequest, options?: { idempotencyKey?: string }): Promise<MobilityOfferSelectionResponse>;
 }
