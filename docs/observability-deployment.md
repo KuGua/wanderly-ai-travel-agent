@@ -64,6 +64,16 @@ cd apps/api
 docker compose --profile full -f docker-compose.yml -f docker-compose.observability.yml up -d --build
 ```
 
+The local `app` and `worker` services load their non-versioned runtime values
+from `apps/api/.env`. Configure provider keys and local auth there; Compose
+overrides only its Docker-networking and observability values. The Compose
+stack explicitly uses `NODE_ENV=development` so the documented loopback-only
+`custom-local` auth mode can run. A configured OTLP endpoint automatically
+selects the OTLP exporter in non-test environments, so traces still go to
+Tempo in that mode. The API port is published only to `127.0.0.1`; the
+container-only `LOCAL_DEV_CONTAINER=true` exception permits its internal
+`0.0.0.0` listener without widening local-auth access beyond the host.
+
 This starts `postgres`, `app`, `worker`, `tempo`, and `grafana`. Ports:
 
 | Service | Host | Notes |
@@ -124,7 +134,7 @@ environment variables to switch destinations:
 
 | Env var | Dev (compose) | Prod (Grafana Cloud Free) |
 |---|---|---|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://tempo:4318/v1/traces` | `https://otlp-gateway-prod-<region>.grafana.net/otlp` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://tempo:4318` | `https://otlp-gateway-prod-<region>.grafana.net/otlp` |
 | `OTEL_EXPORTER_OTLP_HEADERS` | _unset_ | `authorization=Bearer <GRAFANA_CLOUD_API_TOKEN>` |
 | `OTEL_TRACES_SAMPLER_ARG` | `1.0` | `0.05` |
 | `OTEL_SERVICE_NAME` | `ai-travel-agent-api` (worker overrides) | same |

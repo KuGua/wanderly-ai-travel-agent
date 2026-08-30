@@ -1,6 +1,36 @@
 import type { PlanningDependencies } from "../../src/services/planning-service.js";
+import type {
+  MobilityOfferProvider,
+  NavigationProvider,
+  PlaceSearchProvider,
+  TransitJourneyProvider,
+} from "../../src/providers/types.js";
 
 const CAPTURED_AT = "2026-08-25T00:00:00.000Z";
+
+const unavailablePlaceProvider: PlaceSearchProvider = {
+  async searchPlaces() {
+    return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
+  },
+};
+
+const unavailableNavigationProvider: NavigationProvider = {
+  async searchRoute() {
+    return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
+  },
+};
+
+const unavailableMobilityProvider: MobilityOfferProvider = {
+  async searchOffers() {
+    return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
+  },
+};
+
+const unavailableTransitProvider: TransitJourneyProvider = {
+  async searchJourneys() {
+    return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
+  },
+};
 
 export const testPlanningDependencies: PlanningDependencies = {
   flightProvider: {
@@ -66,31 +96,12 @@ export const testPlanningDependencies: PlanningDependencies = {
       };
     },
   },
-  groundProvider: {
-    async searchGround(params) {
-      return {
-        outcome: "LIVE",
-        source: "Test ground provider",
-        capturedAt: CAPTURED_AT,
-        data: [{
-          id: `test-ground-${slug(params.destination)}`,
-          destination: params.destination,
-          type: "airport_transfer",
-          priceUsd: 40,
-          provider: "Test Transfer",
-          source: "Test ground provider",
-          capturedAt: CAPTURED_AT,
-        }],
-      };
-    },
-  },
   modelGateway: {
     async generateStructuredPlan(params) {
       return {
         destination: params.destination,
         flights: params.flights,
         stays: params.stays,
-        ground: params.ground,
         generatedAt: CAPTURED_AT,
       };
     },
@@ -104,6 +115,10 @@ export const testPlanningDependencies: PlanningDependencies = {
       };
     },
   },
+  placeProvider: unavailablePlaceProvider,
+  navigationProvider: unavailableNavigationProvider,
+  mobilityOfferProvider: unavailableMobilityProvider,
+  transitJourneyProvider: unavailableTransitProvider,
 };
 
 function slug(value: string) {

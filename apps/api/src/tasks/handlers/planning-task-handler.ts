@@ -83,8 +83,10 @@ export async function handlePlanningTask(params: {
     itemCount: coverage.allFlights.length,
   });
 
-  // If any candidate lacks both stay AND ground coverage, refuse to synthesize
-  // a plan: model would be flying blind on those branches (spec §10.6).
+  // If any candidate lacks stay coverage, refuse to synthesize a plan: the
+// model would be flying blind on those branches (spec §10.6). POI / route
+// evidence is gathered through the LLM tool loop when the corresponding
+// capability is enabled.
   if (coverage.missingDestinations.length > 0) {
     throw Object.assign(
       new Error(`Research uncovered all required candidates: ${coverage.missingDestinations.join(", ")}`),

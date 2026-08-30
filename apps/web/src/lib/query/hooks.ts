@@ -176,6 +176,24 @@ export function useDeclineInvitation() {
   return useMutation({ mutationFn: (inviteToken: string) => api.declineInvitation!(inviteToken) });
 }
 
+export function useSearchTripInvitees(tripId: string, query: string, enabled: boolean) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: invitationKeys.invitees(tripId, query),
+    queryFn: () => api.searchTripInvitees!(tripId, query),
+    enabled: enabled && query.trim().length >= 2 && !!api.searchTripInvitees,
+    retry: false,
+  });
+}
+
+export function useCreateTripInvitation(tripId: string) {
+  const api = useTravelApi();
+  return useMutation({
+    mutationFn: (input: import("../api/contracts").CreateTripInvitationInput) =>
+      api.createTripInvitation!(tripId, input),
+  });
+}
+
 export function useTripThreads(tripId: string | null) {
   const api = useTravelApi();
   return useQuery({

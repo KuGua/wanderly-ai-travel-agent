@@ -2,6 +2,13 @@ import type { ZodType } from "zod";
 
 import { apiErrorResponseSchema } from "./contracts";
 import { TravelApiError } from "./errors";
+import {
+  actionForApiRequest,
+  createUiDiagnosticReporter,
+  errorCategoryFor,
+  getCurrentUiScreen,
+  type UiDiagnosticEvent,
+} from "@/lib/observability/ui-diagnostics";
 
 type FetchImplementation = typeof fetch;
 export type GetAccessToken = () => string | null | Promise<string | null>;
@@ -41,6 +48,7 @@ export class ApiClient {
     schema: ZodType<T>,
     options: RequestInit = {},
   ): Promise<T> {
+    const startedAt = performance.now();
     const headers = new Headers(options.headers);
     const accessToken = await this.getAccessToken();
 
@@ -58,6 +66,22 @@ export class ApiClient {
     if (!headers.has("X-Correlation-Id")) {
       headers.set("X-Correlation-Id", this.lastCorrelationId ?? requestId);
     }
+    const diagnostic = createUiDiagnosticReporter({
+      apiBaseUrl: this.baseUrl,
+      getAccessToken: this.getAccessToken,
+    });
+    const report = (event: Omit<UiDiagnosticEvent, "eventType" | "action" | "screen" | "durationMs" | "relatedClientRequestId">) => {
+      const action = actionForApiRequest(path, options.method ?? "GET");
+      if (!action) return;
+      void diagnostic.send({
+        eventType: "ui_api_request",
+        action,
+        screen: getCurrentUiScreen(),
+        durationMs: Math.round(performance.now() - startedAt),
+        relatedClientRequestId: requestId,
+        ...event,
+      }, accessToken);
+    };
 
     let response: Response;
     try {
@@ -66,13 +90,15 @@ export class ApiClient {
         { ...options, headers },
       );
     } catch (cause) {
-      throw new TravelApiError(
+      const error = new TravelApiError(
         "The travel service is unreachable. Check the API and try again.",
         null,
         "Network Error",
         null,
         { cause },
       );
+      report({ outcome: "failure", errorCategory: errorCategoryFor(error) });
+      throw error;
     }
 
     // Remember the server-issued correlation id for the next request in
@@ -87,33 +113,52 @@ export class ApiClient {
     if (!response.ok) {
       const parsedError = apiErrorResponseSchema.safeParse(body);
       if (parsedError.success) {
-        throw new TravelApiError(
+        const error = new TravelApiError(
           parsedError.data.message,
           parsedError.data.statusCode,
           parsedError.data.error,
           parsedError.data.correlationId,
         );
+        report({
+          outcome: "failure", errorCategory: errorCategoryFor(error), httpStatus: response.status,
+          relatedCorrelationId: parsedError.data.correlationId,
+        });
+        throw error;
       }
 
-      throw new TravelApiError(
+      const error = new TravelApiError(
         response.statusText || `Request failed with status ${response.status}`,
         response.status,
         "Request Error",
         response.headers.get("x-correlation-id"),
       );
+      report({
+        outcome: "failure", errorCategory: errorCategoryFor(error), httpStatus: response.status,
+        relatedCorrelationId: error.correlationId ?? undefined,
+      });
+      throw error;
     }
 
     const parsedBody = schema.safeParse(body);
     if (!parsedBody.success) {
-      throw new TravelApiError(
+      const error = new TravelApiError(
         "The travel service returned an unexpected response.",
         response.status,
         "Invalid Response",
         response.headers.get("x-correlation-id"),
         { cause: parsedBody.error },
       );
+      report({
+        outcome: "failure", errorCategory: errorCategoryFor(error), httpStatus: response.status,
+        relatedCorrelationId: error.correlationId ?? undefined,
+      });
+      throw error;
     }
 
+    report({
+      outcome: "success", errorCategory: "none", httpStatus: response.status,
+      relatedCorrelationId: responseCorrelationId ?? undefined,
+    });
     return parsedBody.data;
   }
 

@@ -50,6 +50,7 @@ export const tripStatusSchema = z.enum([
   "CANCELLED",
   "STALE",
 ]);
+export const tripArchiveReasonSchema = z.enum(["USER_ARCHIVED", "DATE_ELAPSED"]);
 
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
@@ -61,6 +62,8 @@ export const tripSummarySchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateSchema.nullable(),
   travelDateEnd: dateSchema.nullable(),
+  archivedAt: z.string().datetime().nullable().optional(),
+  archiveReason: tripArchiveReasonSchema.nullable().optional(),
   memberCount: z.number().int().nonnegative(),
   role: tripRoleSchema,
   createdAt: z.string().datetime(),
@@ -103,6 +106,8 @@ export const tripDetailSchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateSchema.nullable(),
   travelDateEnd: dateSchema.nullable(),
+  archivedAt: z.string().datetime().nullable().optional(),
+  archiveReason: tripArchiveReasonSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -120,6 +125,26 @@ export const tripDetailResponseSchema = z.object({
   callerRole: tripRoleSchema,
   members: z.array(tripMemberSchema),
 });
+
+export const tripInviteeSchema = z.object({
+  id: z.string().uuid(),
+  displayName: z.string().min(1).max(128),
+}).strict();
+
+export const searchTripInviteesResponseSchema = z.object({
+  candidates: z.array(tripInviteeSchema).max(10),
+}).strict();
+
+export const createTripInvitationInputSchema = z.object({
+  invitedUserId: z.string().uuid(),
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const tripInvitationCreateResponseSchema = z.object({
+  invitationId: z.string().uuid(),
+  inviteToken: z.string().min(32).max(256),
+  expiresAt: z.string().datetime(),
+}).strict();
 
 export const invitationPreviewResponseSchema = z.object({
   trip: z.object({
@@ -260,7 +285,7 @@ export const explorationStartRequestSchema = z.object({
 export const explorationDraftTripSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-  status: z.literal("DRAFT"),
+    status: z.literal("PLANNING"),
   departureCities: z.array(z.string()).length(0),
   destinationCandidates: z.array(z.string()).length(0),
   travelDateStart: z.null(),
@@ -475,6 +500,10 @@ export type TripDetailResponse = z.infer<typeof tripDetailResponseSchema>;
 export type InvitationPreviewResponse = z.infer<typeof invitationPreviewResponseSchema>;
 export type AcceptInvitationResponse = z.infer<typeof acceptInvitationResponseSchema>;
 export type DeclineInvitationResponse = z.infer<typeof declineInvitationResponseSchema>;
+export type TripInvitee = z.infer<typeof tripInviteeSchema>;
+export type SearchTripInviteesResponse = z.infer<typeof searchTripInviteesResponseSchema>;
+export type CreateTripInvitationInput = z.infer<typeof createTripInvitationInputSchema>;
+export type TripInvitationCreateResponse = z.infer<typeof tripInvitationCreateResponseSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;
 export type ConversationMessage = z.infer<typeof conversationMessageSchema>;
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;

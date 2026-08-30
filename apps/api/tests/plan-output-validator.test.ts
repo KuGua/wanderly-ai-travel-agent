@@ -53,22 +53,13 @@ function goodPlanData() {
       source: "Provider API",
       capturedAt: "2026-08-23T00:00:00.000Z",
     }],
-    ground: [{
-      id: "gnd-tyo-01",
-      destination: "Tokyo",
-      type: "airport_transfer" as const,
-      priceUsd: 35,
-      provider: "Demo Transfer",
-      source: "Provider API",
-      capturedAt: "2026-08-23T00:00:00.000Z",
-    }],
     generatedAt: "2026-08-23T00:00:00.000Z",
   };
 }
 
 function goodEvidence(): PlanProviderEvidence {
   const data = goodPlanData();
-  return { flights: data.flights, stays: data.stays, ground: data.ground };
+  return { flights: data.flights, stays: data.stays };
 }
 
 function goodActivity() {
@@ -126,7 +117,6 @@ describe("plan-output-validator", () => {
     data.destination = "Atlantis";
     data.flights[0].destination = "Atlantis";
     data.stays[0].destination = "Atlantis";
-    data.ground[0].destination = "Atlantis";
     expect(violationsFor(data)).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "DESTINATION_NOT_ALLOWED", fieldPath: "destination" }),
     ]));

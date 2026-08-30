@@ -92,7 +92,7 @@ export const pinoInstance: pino.Logger = pino({
  * exception messages are never accepted here.
  */
 export type SafeRuntimeEvent = {
-  component: "llm" | "tool" | "planner" | "worker";
+  component: "llm" | "tool" | "planner" | "worker" | "ui";
   event: string;
   operation: string;
   outcome?: "started" | "success" | "failure" | "retrying" | "cancelled";
@@ -104,6 +104,12 @@ export type SafeRuntimeEvent = {
   outputHash?: string;
   tokenCount?: number;
   itemCount?: number;
+  /** Fixed browser screen name; never a URL or route parameter. */
+  screen?: "home" | "explore" | "projects" | "trip" | "profile" | "login" | "register" | "forgot_password" | "unknown";
+  httpStatus?: number;
+  /** Validated UUIDs only; log/trace correlation, never metric labels. */
+  relatedCorrelationId?: string;
+  relatedClientRequestId?: string;
 };
 
 export function logSafeRuntimeEvent(ctx: RequestContext, event: SafeRuntimeEvent): void {

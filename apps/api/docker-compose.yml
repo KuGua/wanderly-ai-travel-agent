@@ -23,18 +23,29 @@ services:
     # is gated by the `full` profile so dev can opt in to the full stack
     # with `docker compose --profile full up -d`.
     profiles: ["full"]
+    # Local-only runtime configuration. Secrets remain in the Git-ignored
+    # apps/api/.env file; explicit values below deliberately override Docker
+    # networking and observability settings.
+    env_file:
+      - .env
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: travelagent
       DB_PASSWORD: travelagent
       DB_NAME: travelagent
-      NODE_ENV: production
+      # This is the local development stack. It intentionally supports the
+      # loopback-only custom-local auth mode documented in .env.example.
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      LOCAL_DEV_CONTAINER: "true"
       # OpenTelemetry — local dev points at the tempo service defined in
       # docker-compose.observability.yml. Override per environment.
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318/v1/traces
+      # The OTLP/HTTP exporter appends /v1/traces itself. Keep this as the
+      # collector base URL; adding the path here produces a 404.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
       OTEL_SERVICE_NAME: ai-travel-agent-api
       OTEL_SDK_DISABLED: "false"
       OTEL_TRACES_SAMPLER_ARG: "1.0"
@@ -54,14 +65,18 @@ services:
     # The worker shares the `full` profile with the API.
     profiles: ["full"]
     command: ["node", "dist/workers/worker-main.js"]
+    # Keep the Worker on the same local configuration contract as the API so
+    # it can execute accepted Agent tasks with the configured model/provider.
+    env_file:
+      - .env
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USER: travelagent
       DB_PASSWORD: travelagent
       DB_NAME: travelagent
-      NODE_ENV: production
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318/v1/traces
+      NODE_ENV: development
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
       OTEL_SERVICE_NAME: ai-travel-agent-worker
       OTEL_SDK_DISABLED: "false"
       OTEL_TRACES_SAMPLER_ARG: "1.0"

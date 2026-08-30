@@ -29,16 +29,16 @@ describe("observability endpoint env wiring", () => {
 
   it("dev compose endpoint resolves to otlp-proto (default protocol)", async () => {
     process.env.NODE_ENV = "development";
-    process.env.OTEL_TRACES_EXPORTER = "otlp";
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "http://tempo:4318/v1/traces";
+    delete process.env.OTEL_TRACES_EXPORTER;
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "http://tempo:4318";
     await initTracing();
     expect(resolveExporterModeForTests()).toBe("otlp-proto");
   });
 
   it("dev compose with explicit grpc protocol falls back to otlp-http", async () => {
     process.env.NODE_ENV = "development";
-    process.env.OTEL_TRACES_EXPORTER = "otlp";
-    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "http://tempo:4318/v1/traces";
+    delete process.env.OTEL_TRACES_EXPORTER;
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "http://tempo:4318";
     process.env.OTEL_EXPORTER_OTLP_PROTOCOL = "grpc";
     await initTracing();
     expect(resolveExporterModeForTests()).toBe("otlp-http");

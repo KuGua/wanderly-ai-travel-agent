@@ -251,6 +251,11 @@ metrics.registerCounter("booking_callback_outcomes_total", "Authenticated bookin
 metrics.registerCounter("location_reference_requests_total", "Offline map location references by bounded outcome.", {
   outcome: ["reference", "no_reference", "unavailable", "rate_limited"],
 });
+metrics.registerCounter("ui_diagnostic_events_total", "Authenticated, content-free browser diagnostic events.", {
+  action: ["frontend.runtime", "profile.save", "trip.activate", "trip.thread_create", "conversation.submit", "agent.run_cancel", "invitation.accept", "invitation.decline", "plan.confirm", "booking.confirm"],
+  outcome: ["success", "failure"],
+  error_category: ["none", "validation", "network", "http_4xx", "http_5xx", "timeout", "aborted", "invalid_response", "render", "unhandled"],
+});
 
 // docs/long-term-memory-implementation.md section 7. Bounded enums only:
 // field keys, values, observation dates, trip ids and activation are all

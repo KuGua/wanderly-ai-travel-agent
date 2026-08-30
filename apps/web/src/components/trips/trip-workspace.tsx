@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, PanelRight, Pencil, Plus, X } from "lucide-react";
+import { ExternalLink, PanelRight, Pencil, Plus, UserPlus, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -315,6 +315,19 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               <i aria-hidden="true" className="size-[7px] rounded-full bg-[var(--w-highlight)]" />
               <span className="hidden sm:inline">{t("workspace.agentChip")}</span>
             </span>
+            {callerRole === "CREATOR" ? (
+              trip.status === "DRAFT" ? (
+                <button type="button" disabled aria-label={t("workspace.invitation.compactTrigger")} title={t("workspace.invitation.draftHint")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm disabled:cursor-not-allowed disabled:opacity-50 xl:hidden">
+                  <UserPlus aria-hidden="true" className="size-4" />
+                  <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
+                </button>
+              ) : (
+                <Link href={`/trips/${tripId}/invite`} aria-label={t("workspace.invitation.compactTrigger")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden">
+                  <UserPlus aria-hidden="true" className="size-4" />
+                  <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
+                </Link>
+              )
+            ) : null}
             <button
               type="button"
               onClick={() => setInspectorOpen(true)}
@@ -346,7 +359,20 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       >
         {/* Deliberately untitled: the spec keeps a bar here purely so the
             inspector's rule lines up with the history and chat headers. */}
-        <header className="flex h-[66px] items-center justify-end border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
+        <header className="flex h-[66px] items-center justify-end gap-2 border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
+          {callerRole === "CREATOR" ? (
+            trip.status === "DRAFT" ? (
+              <button type="button" disabled title={t("workspace.invitation.draftHint")} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
+                <UserPlus aria-hidden="true" className="size-4" />
+                {t("workspace.invitation.trigger")}
+              </button>
+            ) : (
+              <Link href={`/trips/${tripId}/invite`} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+                <UserPlus aria-hidden="true" className="size-4" />
+                {t("workspace.invitation.trigger")}
+              </Link>
+            )
+          ) : null}
           <button
             type="button"
             onClick={() => setInspectorOpen(false)}

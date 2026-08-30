@@ -1,4 +1,4 @@
-import type { FlightOffer, StayOffer, GroundOffer, VisaReadinessResult } from "../types/domain.js";
+import type { FlightOffer, StayOffer, VisaReadinessResult } from "../types/domain.js";
 
 // ─── Provider Interfaces ────────────────────────────────────────────────────
 
@@ -27,19 +27,6 @@ export interface StayProvider {
     style?: string;
     snapshotId: string;
   }): Promise<ProviderResult<StayOffer[]>>;
-}
-
-/**
- * @deprecated Aggregate port from the pre-mobility refactor. Preserved as a
- * migration shim only. Spec §2 says Navigation/Mobility/Transit must live in
- * three semantically independent ports. New code must not call this. Removal
- * is scheduled after Phase 5 lands.
- */
-export interface GroundProvider {
-  searchGround(params: {
-    destination: string;
-    snapshotId: string;
-  }): Promise<ProviderResult<GroundOffer[]>>;
 }
 
 export interface VisaProvider {

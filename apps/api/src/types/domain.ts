@@ -92,16 +92,6 @@ export interface StayOffer {
   capturedAt: string;
 }
 
-export interface GroundOffer {
-  id: string;
-  destination: string;
-  type: "airport_transfer" | "local_transport";
-  priceUsd: number;
-  provider: string;
-  source: string;
-  capturedAt: string;
-}
-
 /**
  * Normalized, non-bookable activity evidence returned by the provider-neutral
  * activities Tool. Viator click-off URLs and currency-less price amounts are

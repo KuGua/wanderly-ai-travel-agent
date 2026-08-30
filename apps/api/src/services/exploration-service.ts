@@ -32,7 +32,7 @@ function idempotencyKey(userId: string, requestId: string): string {
 }
 
 /**
- * Atomically provision a DRAFT Trip + creator membership + default private
+ * Atomically provision a PLANNING Trip + creator membership + default private
  * thread for an authenticated user. Idempotent on `(userId, requestId)`:
  *
  *   * First call → creates the Trip + member + thread, returns `wasCreated: true`.
@@ -85,7 +85,7 @@ export async function startExploration(params: {
       nameSource: "AUTO",
       titleLocale: "en",
       createdBy: params.userId,
-      status: "DRAFT",
+      status: "PLANNING",
       departureCities: [],
       destinationCandidates: [],
       travelDateStart: null,

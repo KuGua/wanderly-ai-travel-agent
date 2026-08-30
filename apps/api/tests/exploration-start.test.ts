@@ -77,13 +77,13 @@ async function startExploration(userKey: "alice" | "bob", requestId: string) {
 }
 
 describe("Exploration start", () => {
-  it("creates a DRAFT trip with creator member and default thread in one transaction", async () => {
+  it("creates a PLANNING trip with creator member and default thread in one transaction", async () => {
     const requestId = randomUUID();
     const res = await startExploration("alice", requestId);
 
     expect(res.statusCode).toBe(201);
     const body = res.json();
-    expect(body.trip.status).toBe("DRAFT");
+    expect(body.trip.status).toBe("PLANNING");
     expect(body.trip.departureCities).toEqual([]);
     expect(body.trip.destinationCandidates).toEqual([]);
     expect(body.trip.travelDateStart).toBeNull();
@@ -95,7 +95,7 @@ describe("Exploration start", () => {
     // All three resources exist and agree on the trip id.
     const [tripRows] = await db.select().from(sharedTrips)
       .where(eq(sharedTrips.id, body.trip.id)).limit(1);
-    expect(tripRows.status).toBe("DRAFT");
+    expect(tripRows.status).toBe("PLANNING");
     expect(tripRows.createdBy).toBe(aliceId);
 
     const memberRows = await db.select().from(tripMembers)
@@ -145,7 +145,7 @@ describe("Exploration start", () => {
     expect(auditCount).toHaveLength(2);
   });
 
-  it("lists a Draft with an editable-draft action rather than a collaboration action", async () => {
+  it("lists a new exploration as an active planning workspace", async () => {
     const started = await startExploration("alice", randomUUID());
     const tripId = started.json().trip.id;
     const listed = await app.inject({
@@ -156,12 +156,7 @@ describe("Exploration start", () => {
 
     expect(listed.statusCode).toBe(200);
     const trip = listed.json().trips.find((item: { id: string }) => item.id === tripId);
-    expect(trip.displayState).toBe("DRAFT");
-    expect(trip.nextAction).toEqual({
-      type: "EDIT_DRAFT",
-      label: "Continue exploration",
-      href: `/trips/${tripId}`,
-    });
+    expect(trip.displayState).toBe("ACTION_REQUIRED");
   });
 
   it("creates independent drafts per user even with the same requestId", async () => {

@@ -1,6 +1,6 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
-import { and, eq, lt, sql } from "drizzle-orm";
+import { and, eq, ilike, lt, notInArray, sql } from "drizzle-orm";
 
 import { db } from "../db/database.js";
 import { chatThreads, sharedTrips, tripInvitations, tripMembers, users } from "../db/schema.js";
@@ -52,6 +52,41 @@ export type InvitationPreviewResult = {
   };
   expiresAt: Date;
 };
+
+/**
+ * Returns only display names and opaque IDs for a creator choosing an invitee.
+ * It deliberately excludes email, username and any profile data, and it never
+ * returns the creator or people who already belong to this trip.
+ */
+export async function searchInvitees(params: {
+  tripId: string;
+  actorUserId: string;
+  query: string;
+}): Promise<Array<{ id: string; displayName: string }>> {
+  const [membership] = await db.select({ role: tripMembers.role })
+    .from(tripMembers)
+    .where(and(eq(tripMembers.tripId, params.tripId), eq(tripMembers.userId, params.actorUserId)))
+    .limit(1);
+  if (!membership || membership.role !== "CREATOR") {
+    throw new ApiError(403, "Forbidden", "Only the trip creator may search invitees");
+  }
+
+  await assertTripActive(params.tripId);
+  const memberRows = await db.select({ userId: tripMembers.userId })
+    .from(tripMembers)
+    .where(eq(tripMembers.tripId, params.tripId));
+  const excludedIds = [...new Set([params.actorUserId, ...memberRows.map((member) => member.userId)])];
+  const escapedQuery = params.query.replace(/[\\%_]/g, "\\$&");
+
+  return await db.select({ id: users.id, displayName: users.displayName })
+    .from(users)
+    .where(and(
+      ilike(users.displayName, `%${escapedQuery}%`),
+      notInArray(users.id, excludedIds),
+    ))
+    .orderBy(users.displayName, users.id)
+    .limit(10);
+}
 
 export async function createInvitation(params: {
   ctx: RequestContext;
