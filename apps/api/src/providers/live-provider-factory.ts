@@ -18,6 +18,7 @@ import type {
 import type { FlightOffer, GroundOffer, StayOffer } from "../types/domain.js";
 import { AmadeusFlightProvider, readAmadeusConfiguration } from "./amadeus-flight-provider.js";
 import { FlightApiProvider, readFlightApiConfiguration } from "./flightapi-flight-provider.js";
+import { SerpApiFlightProvider, readSerpApiConfiguration } from "./serpapi-flight-provider.js";
 import { AmadeusTransferProvider, readAmadeusTransferConfiguration } from "./amadeus-transfer-provider.js";
 import { createGroundCapabilityRouter, type GroundCapabilityRouter } from "./ground-capability-router.js";
 import { OrsPlaceProvider, readOrsPlaceConfiguration } from "./ors-place-provider.js";
@@ -124,7 +125,10 @@ export function createFlightProvider(env: NodeJS.ProcessEnv = process.env): Flig
   if (selected === "flightapi") {
     return new FlightApiProvider(readFlightApiConfiguration(env));
   }
-  throw new Error("FLIGHT_PROVIDER must be disabled, amadeus, or flightapi");
+  if (selected === "serpapi") {
+    return new SerpApiFlightProvider(readSerpApiConfiguration(env));
+  }
+  throw new Error("FLIGHT_PROVIDER must be disabled, amadeus, flightapi, or serpapi");
 }
 
 function createActivitiesProvider(): ActivitiesProvider {

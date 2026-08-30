@@ -19,8 +19,16 @@ const priceAmountSchema = z.union([
 
 const placeSchema = z.object({
   id: z.union([z.string(), z.number()]),
-  iata_code: z.string().regex(/^[A-Z]{3}$/),
-}).passthrough();
+  // The documented response uses `iata_code`; the current live feed uses
+  // `display_code`.  Accept either wire spelling, but never infer a code from
+  // a name or other provider field.
+  iata_code: z.string().regex(/^[A-Z]{3}$/).optional(),
+  display_code: z.string().regex(/^[A-Z]{3}$/).optional(),
+}).passthrough().superRefine((place, ctx) => {
+  if (!place.iata_code && !place.display_code) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["iata_code"], message: "Expected an IATA airport code" });
+  }
+}).transform((place) => ({ ...place, iata_code: place.iata_code ?? place.display_code! }));
 
 const legSchema = z.object({
   id: z.string().min(1),
@@ -41,10 +49,17 @@ const segmentSchema = z.object({
   duration: z.number().int().nonnegative(),
   marketing_flight_number: z.union([z.string(), z.number()]),
   marketing_carrier_id: z.union([z.string(), z.number()]),
-  // FlightAPI's live feed varies casing from its documentation. Normalize
-  // casing, but still reject any non-flight transport segment.
-  mode: z.string().transform((value) => value.toLowerCase()).pipe(z.literal("flight")),
-}).passthrough();
+  // The documented response uses `mode`; the current live feed uses
+  // `transport_mode`. Normalize spelling and casing, but still reject any
+  // non-flight transport segment.
+  mode: z.string().optional(),
+  transport_mode: z.string().optional(),
+}).passthrough().superRefine((segment, ctx) => {
+  const mode = segment.mode ?? segment.transport_mode;
+  if (!mode || mode.toLowerCase() !== "flight") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["mode"], message: "Expected flight transport mode" });
+  }
+}).transform((segment) => ({ ...segment, mode: (segment.mode ?? segment.transport_mode)!.toLowerCase() as "flight" }));
 
 const pricedOptionSchema = z.object({
   id: z.string().min(1),

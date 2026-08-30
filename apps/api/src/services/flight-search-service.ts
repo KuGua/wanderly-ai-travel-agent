@@ -34,24 +34,16 @@ export const flightSearchInputSchema = z.object({
 
 export type FlightSearchInput = z.infer<typeof flightSearchInputSchema>;
 /**
- * The schema exposed to a planning model deliberately excludes snapshotId.
- * A snapshot is execution authority, not a model-selectable search parameter.
- * The dispatcher adds the task-bound id immediately before registry dispatch.
+ * This is the *model-facing* contract, not the registered Skill contract.
+ * The model may select a controlled route, but it must never supply dates,
+ * passenger counts, cabin, currency, or a snapshot id.  Those values are
+ * bound from the immutable planning execution context immediately before the
+ * full `flight.search` Skill is invoked.
  */
 export const flightSearchModelArgumentsSchema = z.object({
   originId: z.string().min(1).max(16),
   destinationId: z.string().min(1).max(16),
-  tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
-  departureDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  adults: z.number().int().min(1).max(9),
-  cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
-  currency: z.string().regex(/^[A-Z]{3}$/),
-}).strict().superRefine((input, ctx) => {
-  if (input.tripType === "ROUND_TRIP" && !input.returnDate) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["returnDate"], message: "returnDate is required for ROUND_TRIP" });
-  if (input.tripType === "ONE_WAY" && input.returnDate) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["returnDate"], message: "returnDate is not allowed for ONE_WAY" });
-  if (input.returnDate && input.returnDate < input.departureDate) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["returnDate"], message: "returnDate must not precede departureDate" });
-});
+}).strict();
 export type FlightSearchModelArguments = z.infer<typeof flightSearchModelArgumentsSchema>;
 export type ConfirmedFlightSearchPreferences = Pick<FlightSearchInput, "tripType" | "adults" | "cabin" | "currency">;
 

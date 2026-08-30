@@ -35,6 +35,7 @@ import type {
 import type { GroundCapabilityRouter } from "../providers/ground-capability-router.js";
 import { validatePlanOutput } from "../policy/plan-output-validator.js";
 import { DefaultPolicyGate } from "../agents/policy-gate.js";
+import { SkillError } from "../agents/errors.js";
 import { invokeSkill } from "../agents/skill-registry.js";
 import { flightSearchModelArgumentsSchema } from "./flight-search-service.js";
 import { activitiesSearchModelArgumentsSchema } from "./activities-search-service.js";
@@ -569,6 +570,16 @@ export async function generatePlan(params: {
     candidatePlanData = await toolGateway.call(dependencies.modelGateway, {
       destination: params.destination,
       destinationCandidates: snapshot.destinationCandidates as string[],
+      flightSearchConstraints: {
+        originIds: snapshot.departureCities as string[],
+        destinationIds: snapshot.destinationCandidates as string[],
+        tripType: preferences.tripType as "ONE_WAY" | "ROUND_TRIP",
+        departureDate: snapshot.travelDateStart,
+        ...(preferences.tripType === "ROUND_TRIP" ? { returnDate: snapshot.travelDateEnd } : {}),
+        adults: preferences.adults,
+        cabin: preferences.cabin as "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST",
+        currency: preferences.currency,
+      },
       stays: allStays,
       ground: allGround,
       memberPreferences,
@@ -593,9 +604,8 @@ export async function generatePlan(params: {
       tools: [
         {
           name: "flight.search", description: "Search normalized flights for one controlled origin and destination.",
-          parameters: { type: "object", additionalProperties: false, required: ["originId", "destinationId", "tripType", "departureDate", "adults", "cabin", "currency"], properties: {
-            originId: { type: "string" }, destinationId: { type: "string" }, tripType: { type: "string", enum: ["ONE_WAY", "ROUND_TRIP"] },
-            departureDate: { type: "string" }, returnDate: { type: "string" }, adults: { type: "integer" }, cabin: { type: "string" }, currency: { type: "string" },
+          parameters: { type: "object", additionalProperties: false, required: ["originId", "destinationId"], properties: {
+            originId: { type: "string" }, destinationId: { type: "string" },
           } },
         },
         ...(activitiesEnabled ? [{
@@ -617,7 +627,11 @@ export async function generatePlan(params: {
           travelDateEnd: snapshot.travelDateEnd ?? undefined,
         };
         if (call.name === "flight.search") {
-          const modelArgs = flightSearchModelArgumentsSchema.parse(call.arguments);
+          const parsed = flightSearchModelArgumentsSchema.safeParse(call.arguments);
+          if (!parsed.success) {
+            throw new SkillError("INPUT_INVALID", "Model flight.search route arguments are invalid");
+          }
+          const modelArgs = parsed.data;
           const result = await invokeSkill("flight.search", {
             ctx: params.ctx,
             snapshot: snapshotContext,
@@ -627,7 +641,17 @@ export async function generatePlan(params: {
               agentTaskRunId: params.agentTaskRunId,
             },
             policyGate: new DefaultPolicyGate("shared"),
-          }, { ...modelArgs, snapshotId: params.snapshotId }, { signal: params.signal });
+          }, {
+            snapshotId: params.snapshotId,
+            originId: modelArgs.originId,
+            destinationId: modelArgs.destinationId,
+            tripType: preferences.tripType as "ONE_WAY" | "ROUND_TRIP",
+            departureDate: snapshot.travelDateStart,
+            ...(preferences.tripType === "ROUND_TRIP" ? { returnDate: snapshot.travelDateEnd } : {}),
+            adults: preferences.adults,
+            cabin: preferences.cabin as "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST",
+            currency: preferences.currency,
+          }, { signal: params.signal });
           if ((result as { outcome: string }).outcome === "LIVE") allFlights.push(...(result as { offers: FlightOffer[] }).offers);
           return result;
         }

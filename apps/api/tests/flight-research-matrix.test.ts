@@ -121,8 +121,7 @@ describe("flight research matrix", () => {
           const flights = [];
           for (const originId of ["SFO", "SIN"]) {
             const result = await params.dispatchTool({ id: randomUUID(), name: "flight.search", arguments: {
-              originId, destinationId: "NRT", tripType: "ROUND_TRIP", departureDate: "2026-10-10", returnDate: "2026-10-17",
-              adults: 1, cabin: "ECONOMY", currency: "USD",
+              originId, destinationId: "NRT",
             } });
             if ((result as { outcome: string }).outcome === "LIVE") flights.push(...(result as { offers: never[] }).offers);
           }

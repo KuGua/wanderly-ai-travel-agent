@@ -466,6 +466,16 @@ export class LLMGateway implements ModelGateway {
   async generateStructuredPlanWithTools(params: {
     destination: string;
     destinationCandidates?: string[];
+    flightSearchConstraints: {
+      originIds: string[];
+      destinationIds: string[];
+      tripType: "ONE_WAY" | "ROUND_TRIP";
+      departureDate: string;
+      returnDate?: string;
+      adults: number;
+      cabin: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST";
+      currency: string;
+    };
     stays: StayOffer[];
     ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;
@@ -492,8 +502,8 @@ export class LLMGateway implements ModelGateway {
     const messages: Array<Record<string, unknown>> = [
       {
         role: "system",
-        content: "You are the Shared Trip planning skill. Use flight.search for every controlled origin/destination cell and activities.search for every controlled destination when those tools are available. "
-          + "Tool arguments are ordinary search parameters only; never invent authority fields. "
+        content: "You are the Shared Trip planning skill. Use flight.search for every originId/destinationId combination in flightSearchConstraints and activities.search for every controlled destination when those tools are available. "
+          + "For each flight.search call, provide only originId and destinationId from flightSearchConstraints. The server binds dates, passengers, cabin, currency, and snapshot authority; never send or invent those fields. "
           + "Never invent, alter, or infer provider evidence, prices, currencies, links, or expiry. "
           + "After research, return exactly one JSON object with a top-level plan field.",
       },
@@ -502,6 +512,7 @@ export class LLMGateway implements ModelGateway {
         content: JSON.stringify({
           destination: params.destination,
           destinationCandidates: params.destinationCandidates ?? [params.destination],
+          flightSearchConstraints: params.flightSearchConstraints,
           stays: params.stays,
           ground: params.ground,
           memberPreferences: params.memberPreferences,

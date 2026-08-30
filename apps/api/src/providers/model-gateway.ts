@@ -69,6 +69,21 @@ export interface ModelGateway {
   generateStructuredPlanWithTools?(params: {
     destination: string;
     destinationCandidates?: string[];
+    /**
+     * Server-derived, non-private planning constraints. The model uses them
+     * only to select a controlled route; the dispatcher binds every other
+     * field before invoking the full Skill contract.
+     */
+    flightSearchConstraints: {
+      originIds: string[];
+      destinationIds: string[];
+      tripType: "ONE_WAY" | "ROUND_TRIP";
+      departureDate: string;
+      returnDate?: string;
+      adults: number;
+      cabin: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST";
+      currency: string;
+    };
     stays: StayOffer[];
     ground: GroundOffer[];
     memberPreferences: Record<string, unknown>;

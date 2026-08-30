@@ -19,8 +19,8 @@ function buildTripResponse(status: TripDetailResponse["trip"]["status"] = "PLANN
       name: "Tokyo & Kyoto",
       createdBy: "owner-user-id",
       status,
-      departureCities: ["San Francisco"],
-      destinationCandidates: ["Tokyo", "Kyoto"],
+      departureCities: ["SIN"],
+      destinationCandidates: ["NRT", "LIS"],
       travelDateStart: "2026-09-10",
       travelDateEnd: "2026-09-20",
       createdAt: "2026-08-01T10:00:00.000Z",
@@ -104,6 +104,32 @@ afterEach(() => {
 });
 
 describe("TripWorkspace", () => {
+  it("lets a desktop user resize the middle planning panel without changing trip state", async () => {
+    const api = createApi({
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Draft notes", true)] }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    const separator = await screen.findByRole("separator", { name: "Resize planning panel" });
+    fireEvent.keyDown(separator, { key: "ArrowRight" });
+
+    expect(separator.closest("main")).toHaveStyle({ "--trip-planning-width": "524px" });
+    expect(api.startPlanning).not.toHaveBeenCalled();
+  });
+
+  it("lets a desktop user narrow the thread list without changing planning state", async () => {
+    const api = createApi({
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Draft notes", true)] }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    const separator = await screen.findByRole("separator", { name: "Resize thread list" });
+    fireEvent.keyDown(separator, { key: "ArrowLeft" });
+
+    expect(separator.closest("main")).toHaveStyle({ "--trip-thread-rail-width": "236px" });
+    expect(api.startPlanning).not.toHaveBeenCalled();
+  });
+
   it("opens a draft in the same workspace used for active planning", async () => {
     const api = createApi({
       getTrip: vi.fn().mockResolvedValue(buildTripResponse("DRAFT")),
@@ -113,11 +139,13 @@ describe("TripWorkspace", () => {
 
     expect(await screen.findByRole("button", { name: /Draft notes/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New thread" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm and start" })).toBeDisabled();
+    expect(screen.getByText("Confirm the trip brief first. Shared planning becomes available after the draft is activated.")).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Activate draft trip" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start planning" }));
     await waitFor(() => expect(api.activateTrip).toHaveBeenCalledWith(TRIP_ID, {
-      departureCities: ["San Francisco"],
-      destinationCandidates: ["Tokyo", "Kyoto"],
+      departureCities: ["SIN"],
+      destinationCandidates: ["NRT", "LIS"],
       travelDateStart: "2026-09-10",
       travelDateEnd: "2026-09-20",
       titleLocale: "en",

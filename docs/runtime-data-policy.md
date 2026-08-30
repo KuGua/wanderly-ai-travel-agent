@@ -1,6 +1,6 @@
 # 运行时数据与模型策略
 
-生产与开发产品路径只使用已认证用户输入、数据库权威状态和已配置供应商的可验证结果。机票搜索通过 `FLIGHT_PROVIDER` 显式选择一个 live adapter：Amadeus 或 FlightAPI.io；缺少、未知或缺少所选 provider 凭据时 fail closed，绝不自动切换或回退。Amadeus Test 仅用于开发集成验证，不能作为产品运行路径的实时结果。FlightAPI.io 在本地/hackathon E2E 中使用真实免费 credits，自动化测试必须 mock HTTP。系统不提供 Demo 用户、本地行程、静态机酒交通价格、静态签证结论或本地模型回退。
+生产与开发产品路径只使用已认证用户输入、数据库权威状态和已配置供应商的可验证结果。机票搜索通过 `FLIGHT_PROVIDER` 显式选择一个 live adapter：Amadeus、FlightAPI.io 或 SerpAPI Google Flights；缺少、未知或缺少所选 provider 凭据时 fail closed，绝不自动切换或回退。Amadeus Test 仅用于开发集成验证，不能作为产品运行路径的实时结果。FlightAPI.io 与 SerpAPI 在本地/hackathon E2E 中都使用真实 credits，自动化测试必须 mock HTTP。两者的 key 分别出现在 URL path 或 query parameter，完整 request URL、原始 payload、supplier link/token 和 provider 错误文本不得被记录、持久化或返回给模型/浏览器。系统不提供 Demo 用户、本地行程、静态机酒交通价格、静态签证结论或本地模型回退。
 
 Activities 与 Flight 是相互独立的 typed port：Flight 使用 Amadeus OAuth adapter；Activities 使用当前无需凭据的 Viator 官方 Experiences MCP adapter，分别拥有独立的覆盖矩阵、stale 触发器、evidence 写入、不可用语义、audit action 与 provider 指标。Activities 只接受服务端 immutable snapshot 中的 destination/date authority 与固定 theme allow-list；不得接收浏览器或模型坐标、自由查询、provider URL 或 session ID。MCP 的 click-off link、raw payload 和没有明确币种的 `fromPrice` 必须在 adapter 边界丢弃。失败、超时、限流、空数据或 schema drift 统一返回 `UNAVAILABLE`，不创建 `ACTIVE` plan、虚构 offer、预订参考号或签证资格结论；可创建不含 offer/raw payload、不可确认且不可 booking 的 `RESEARCH_UNAVAILABLE` 缺失摘要，也不得以 fixture、Demo data 或模型编造的内容替代。公开 MCP 未公布固定配额或 SLA，因此默认关闭并严格 fail closed。
 

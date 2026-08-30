@@ -50,6 +50,7 @@
     "title": "我的行程",
     "subtitle": "继续规划一段正在成形的旅行，或调整用于指导推荐的私人偏好。",
     "newTrip": "新建规划",
+    "newTripError": "暂时无法新建行程，请重试。",
     "summary": {
       "ariaLabel": "工作区概览",
       "ready": "您的旅行空间已就绪",
@@ -417,6 +418,8 @@
       "agentChip": "协作 Agent",
       "inspectorTitle": "工作区",
       "openInspector": "打开工作区内容面板",
+      "resizeThreads": "调整对话列表宽度",
+      "resizeInspector": "调整规划面板宽度",
       "closeInspector": "关闭工作区内容面板",
       "overviewWindow": "行程概览",
       "membersWindow": "成员",
@@ -426,6 +429,16 @@
       "draftActivationHint": "请先在私有对话中确认行程简报，再开始规划。",
       "activateDraft": "开始规划",
       "activateDraftError": "暂时无法开始规划，请重试。",
+      "draftSetup": {
+        "formLabel": "完善行程简报",
+        "hint": "请使用受支持的 IATA 机场代码，填写 2–5 个候选目的地和出行日期；多个代码请用逗号分隔。",
+        "departures": "出发机场代码",
+        "departuresPlaceholder": "例如：SIN",
+        "destinations": "候选目的地",
+        "destinationsPlaceholder": "例如：NRT, LIS",
+        "startDate": "开始日期",
+        "endDate": "结束日期"
+      },
       "roleValue": {
         "CREATOR": "创建者",
         "MEMBER": "成员"
@@ -551,6 +564,7 @@
       "cabinFirst": "头等舱",
       "currency": "货币",
       "start": "确认并开始规划",
+      "draftBlocked": "请先确认行程简报。草稿激活后才能使用共享规划。",
       "startFailed": "无法启动规划任务。请检查行程简报后重试。",
       "statusUnavailable": "暂时无法读取规划状态",
       "status": "任务：{status}",

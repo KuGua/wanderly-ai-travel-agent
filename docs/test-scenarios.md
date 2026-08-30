@@ -53,7 +53,7 @@ memberships overlap only where explicitly configured.
 **Stories:** H3, P1
 **Objective:** Verify `FlightProvider` validates and normalizes provider results without fabricating availability or using runtime fixture fallback.
 
-**Starting conditions:** A test-only FlightProvider double and an Amadeus adapter contract fixture cover configured Hero routes, dates and provider failures. Runtime paths never import these fixtures.
+**Starting conditions:** Test-only FlightProvider doubles and adapter contract fixtures cover configured Hero routes, dates and provider failures for Amadeus, FlightAPI and SerpAPI. Runtime paths never import these fixtures; adapter tests mock all HTTP.
 
 **Steps:**
 
@@ -67,6 +67,7 @@ memberships overlap only where explicitly configured.
 - Test-only supported searches return deterministic normalized offers; production adapter responses carry their real source, capture time and expiry.
 - Results outside the requested date range are excluded.
 - Unsupported searches return no offers and never fabricate inventory or price.
+- A SerpAPI response may only contribute normalized flight fields after its Google Flights response schema validates. Its query-parameter API key, supplier links, raw payload, booking/departure tokens and provider error text never enter evidence, Tool output, logs or traces.
 
 ### TS-H3b — Reject unauthorized or fabricated plan output before persistence
 
@@ -722,6 +723,24 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
 - Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control, which remains disabled until the persisted brief is complete. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
+
+### TS-EXPLORE-TRIP-1a — Create a Draft directly from My program and resize the planning workspace
+
+**Objective:** Verify the My program entry point creates one idempotent Draft Trip and opens its workspace directly. On desktop, the workspace order is thread list → trip/planning panel → Agent, and users can resize both boundaries without changing Trip state.
+
+**Steps:**
+
+1. From `/projects`, select **New trip** once; simulate a delayed response and repeat only after an error.
+2. Verify the resulting route is `/trips/:tripId?thread=:threadId`, the Trip is `DRAFT`, and the creator sees the bounded brief/activation controls in the right inspector.
+3. On a desktop-width viewport, verify the thread list is on the left, trip overview/Shared planning is in the centre, and Agent conversation is on the right.
+4. Drag both vertical dividers and repeat with keyboard Left/Right arrows on each divider. Verify the thread rail can shrink to its bounded minimum and the planning panel can grow while keeping a usable Agent pane.
+5. Narrow the viewport below the desktop breakpoint and verify the existing inspector drawer remains usable.
+
+**Expected outcomes:**
+
+- New trip uses the existing idempotent exploration-start command; it never creates a second Trip after a response retry and never routes the user through the map merely to reach the Draft workspace.
+- Resizing changes only local layout. It neither writes browser-persisted business state nor changes the Trip, snapshot, preference, task or plan. The desktop bounds preserve a minimum usable width for all three panes.
+- Mobile/tablet keeps the existing explicit inspector open/close behavior.
 
 ### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields only
 

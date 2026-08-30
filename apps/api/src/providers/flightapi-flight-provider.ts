@@ -51,6 +51,7 @@ export class FlightApiProvider implements FlightProvider {
         : ["onewaytrip", this.options.apiKey, params.origin, params.destination, params.dateStart, String(params.adults ?? 1), "0", "0", cabin, params.currency ?? "USD"];
       const response = await this.request(path, params.signal);
       if (response.status === 429) return this.unavailable("RATE_LIMITED", start);
+      if (response.status === 401 || response.status === 403) return this.unavailable("PROVIDER_NOT_APPROVED", start);
       if (response.status >= 500) return this.unavailable("UPSTREAM_FAILURE", start);
       if (!response.ok) return this.unavailable("UPSTREAM_FAILURE", start);
       const parsed = flightApiFlightSearchResponseSchema.safeParse(await response.json());

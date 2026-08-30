@@ -62,6 +62,21 @@ describe("FlightApiProvider", () => {
     expect(rejected).toEqual({ outcome: "UNAVAILABLE", reason: "INVALID_PROVIDER_RESPONSE" });
   });
 
+  it("accepts FlightAPI's current live wire names without weakening transport or IATA validation", async () => {
+    const livePayload = structuredClone(validPayload);
+    delete (livePayload.segments[0] as { mode?: string }).mode;
+    (livePayload.segments[0] as { transport_mode?: string }).transport_mode = "flight";
+    delete (livePayload.places[0] as { iata_code?: string }).iata_code;
+    delete (livePayload.places[1] as { iata_code?: string }).iata_code;
+    (livePayload.places[0] as { display_code?: string }).display_code = "SFO";
+    (livePayload.places[1] as { display_code?: string }).display_code = "NRT";
+
+    const result = await provider(async () => new Response(JSON.stringify(livePayload), { status: 200 })).searchFlights(request);
+
+    expect(result).toMatchObject({ outcome: "LIVE" });
+    if (result.outcome === "LIVE") expect(result.data[0]).toMatchObject({ origin: "SFO", destination: "NRT" });
+  });
+
   it("keeps usable offers when FlightAPI includes an unpriced optional OTA option", async () => {
     const mixedPayload = structuredClone(validPayload);
     mixedPayload.itineraries[0].pricing_options = [
@@ -85,7 +100,8 @@ describe("FlightApiProvider", () => {
   it.each([
     [200, { ...validPayload, itineraries: [] }, "NO_RESULTS"],
     [200, { bad: true }, "INVALID_PROVIDER_RESPONSE"],
-    [401, {}, "UPSTREAM_FAILURE"],
+    [401, {}, "PROVIDER_NOT_APPROVED"],
+    [403, {}, "PROVIDER_NOT_APPROVED"],
     [429, {}, "RATE_LIMITED"],
     [503, {}, "UPSTREAM_FAILURE"],
   ])("fails closed for response %s", async (status, body, reason) => {

@@ -7,7 +7,7 @@ import { useState } from "react";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { useLatestPlan, useLatestPlanningRun, useStartPlanning } from "@/lib/query/hooks";
 
-export function SharedPlanningPanel({ tripId }: { tripId: string }) {
+export function SharedPlanningPanel({ tripId, tripStatus }: { tripId: string; tripStatus: string }) {
   const t = useTranslations("trips.planning");
   const [tripType, setTripType] = useState<"ONE_WAY" | "ROUND_TRIP">("ROUND_TRIP");
   const [adults, setAdults] = useState(1);
@@ -18,6 +18,7 @@ export function SharedPlanningPanel({ tripId }: { tripId: string }) {
   const run = runQuery.data?.run ?? null;
   const planQuery = useLatestPlan(tripId, run?.status === "COMPLETED" || Boolean(run?.resultPlanId));
   const plan = planQuery.data?.plan ?? null;
+  const tripIsActive = tripStatus !== "DRAFT";
 
   return (
     <section className="my-6 rounded-[22px] border bg-card p-5 shadow-[0_8px_24px_#102a4308]" aria-label={t("heading")}>
@@ -58,11 +59,12 @@ export function SharedPlanningPanel({ tripId }: { tripId: string }) {
           {t("currency")}
           <input value={currency} maxLength={3} onChange={(event) => setCurrency(event.target.value.toUpperCase())} className="min-h-10 rounded-[10px] border bg-background px-2 text-sm uppercase text-foreground" />
         </label>
-        <button type="submit" disabled={startPlanning.isPending || Boolean(run && ["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(run.status))} className="mt-auto inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50">
+        <button type="submit" disabled={!tripIsActive || startPlanning.isPending || Boolean(run && ["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(run.status))} className="mt-auto inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-primary px-4 text-sm font-bold text-primary-foreground disabled:opacity-50">
           <RefreshCw className={`size-3.5 ${startPlanning.isPending ? "animate-spin" : ""}`} aria-hidden="true" /> {t("start")}
         </button>
       </form>
 
+      {!tripIsActive ? <p className="mt-3 text-sm text-muted-foreground">{t("draftBlocked")}</p> : null}
       {startPlanning.isError ? <p className="mt-3 rounded-[10px] bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">{t("startFailed")}</p> : null}
       {runQuery.isError ? <ErrorState error={runQuery.error} title={t("statusUnavailable")} /> : null}
       {run ? <p className="mt-3 text-sm text-muted-foreground">{t("status", { status: run.status })}{run.errorCode ? ` · ${t("failure", { code: run.errorCode })}` : ""}</p> : <p className="mt-3 text-sm text-muted-foreground">{t("noRun")}</p>}

@@ -252,7 +252,7 @@ function classifyTaskError(error: unknown): {
   if (code === "NETWORK") return { code: "NETWORK", retryable: true };
   if (code === "UPSTREAM_5XX") return { code: "UPSTREAM_5XX", retryable: true };
   if (code === "UPSTREAM_FAILURE") return { code: "UPSTREAM_FAILURE", retryable: true };
-  if (code === "SCHEMA_PARSE" || code === "OUTPUT_INVALID") return { code: "SCHEMA_PARSE", retryable: false };
+  if (code === "SCHEMA_PARSE" || code === "OUTPUT_INVALID" || code === "INPUT_INVALID" || code === "PLAN_VALIDATION_FAILED") return { code: "SCHEMA_PARSE", retryable: false };
   if (code === "POLICY_DENIED") return { code: "POLICY_DENIED", retryable: false };
   if (code === "SEARCH_PREFERENCES_STALE") return { code: "SEARCH_PREFERENCES_STALE", retryable: false };
   if (code === "PLANNING_DATA_UNAVAILABLE") return { code: "PLANNING_DATA_UNAVAILABLE", retryable: false };

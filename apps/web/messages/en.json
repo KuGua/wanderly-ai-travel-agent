@@ -50,6 +50,7 @@
     "title": "My program",
     "subtitle": "Continue a trip that is taking shape, or tune the private preferences that guide your recommendations.",
     "newTrip": "New trip",
+    "newTripError": "We could not create a new trip. Please try again.",
     "summary": {
       "ariaLabel": "Workspace summary",
       "ready": "Your travel space is ready",
@@ -417,6 +418,8 @@
       "agentChip": "Collab agent",
       "inspectorTitle": "Workspace",
       "openInspector": "Open workspace panel",
+      "resizeThreads": "Resize thread list",
+      "resizeInspector": "Resize planning panel",
       "closeInspector": "Close workspace panel",
       "overviewWindow": "Trip overview",
       "membersWindow": "Members",
@@ -426,6 +429,16 @@
       "draftActivationHint": "Confirm your travel brief in the private conversation to start planning.",
       "activateDraft": "Start planning",
       "activateDraftError": "Could not start planning. Please try again.",
+      "draftSetup": {
+        "formLabel": "Complete trip brief",
+        "hint": "Use supported IATA airport codes, 2–5 candidate destinations, and travel dates. Separate multiple codes with commas.",
+        "departures": "Departure airport code",
+        "departuresPlaceholder": "e.g. SIN",
+        "destinations": "Candidate destinations",
+        "destinationsPlaceholder": "e.g. NRT, LIS",
+        "startDate": "Start date",
+        "endDate": "End date"
+      },
       "roleValue": {
         "CREATOR": "Creator",
         "MEMBER": "Member"
@@ -551,6 +564,7 @@
       "cabinFirst": "First",
       "currency": "Currency",
       "start": "Confirm and start",
+      "draftBlocked": "Confirm the trip brief first. Shared planning becomes available after the draft is activated.",
       "startFailed": "The planning task could not be started. Review the trip brief and try again.",
       "statusUnavailable": "Planning status unavailable",
       "status": "Task: {status}",

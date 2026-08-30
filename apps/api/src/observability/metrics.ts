@@ -304,11 +304,11 @@ metrics.registerCounter("agent_task_recoveries_total", "Expired Agent task lease
 });
 metrics.registerCounter("flight_provider_requests_total", "Flight provider requests by bounded outcome.", {
   outcome: ["live", "unavailable"],
-  provider: ["amadeus", "flightapi"],
-  error_category: ["none", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "no_results"],
+  provider: ["amadeus", "flightapi", "serpapi"],
+  error_category: ["none", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "no_results", "provider_not_approved", "search_constraints_incomplete"],
 });
 metrics.registerHistogram("flight_provider_latency_ms", "Flight provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
-  provider: ["amadeus", "flightapi"],
+  provider: ["amadeus", "flightapi", "serpapi"],
   outcome: ["live", "unavailable"],
 });
 metrics.registerCounter("flight_tool_invocations_total", "Flight tool execution outcomes.", {
