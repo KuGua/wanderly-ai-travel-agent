@@ -112,7 +112,9 @@ export const updateProfileResponseSchema = z.object({
 export const createTripSchema = z.object({
   name: z.string().min(1).max(256),
   departureCities: z.array(z.string().min(1)).min(1),
-  destinationCandidates: z.array(z.string().min(1)).min(2).max(5),
+  // A newly created Draft has one required member, so it may start with a
+  // single SOLO candidate. TEAM bounds are enforced at activation.
+  destinationCandidates: z.array(z.string().min(1)).min(1).max(5),
   travelDateStart: dateStr.optional(),
   travelDateEnd: dateStr.optional(),
 }).strict();
@@ -382,7 +384,7 @@ export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL", "
 
 export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]);
 export const agentTaskStatusSchema = z.enum([
-  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "FAILED", "CANCELLED", "STALE",
+  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELLED", "STALE",
 ]);
 export const agentRunPhaseSchema = z.enum([
   "ACCEPTED", "RESEARCHING", "GENERATING", "VALIDATING", "PERSISTING",

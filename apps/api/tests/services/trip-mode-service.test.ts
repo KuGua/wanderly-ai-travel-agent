@@ -118,13 +118,17 @@ describe("trip-mode-service", () => {
 
     it.each([
       [["A", "B"], 2],
-      [["A", "B", "C", "D", "E"], 5],
+      [["A", "B", "C"], 3],
     ] as const)("accepts TEAM with %d candidates", (candidates: string[]) => {
       expect(() => assertTripModeForBrief("TEAM", candidates)).not.toThrow();
     });
 
     it("rejects TEAM with 1 candidate (must be 2+)", () => {
       expect(() => assertTripModeForBrief("TEAM", ["Solo"])).toThrow(/RESEARCH_BRIEF_INVALID/);
+    });
+
+    it("rejects TEAM with more than 3 candidates", () => {
+      expect(() => assertTripModeForBrief("TEAM", ["A", "B", "C", "D"])).toThrow(/RESEARCH_BRIEF_INVALID/);
     });
 
     it("rejects TEAM with 0 candidates", () => {

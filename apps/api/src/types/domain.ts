@@ -339,7 +339,7 @@ export interface MobilityOffer {
   capturedAt: string;
 }
 
-export type ServiceCapability = "flight" | "stay" | "hotel" | "accommodation" | "activities" | "navigation" | "transit" | "mobility";
+export type ServiceCapability = "flight" | "stay" | "hotel" | "accommodation" | "activities" | "places" | "navigation" | "transit" | "mobility" | "readiness";
 
 export type ProviderUnavailableCode =
   | "NOT_CONFIGURED"

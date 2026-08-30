@@ -17,6 +17,7 @@ import {
   tripMembers,
   tripSearchPreferences,
   tripStaySearchPreferences,
+  tripPlaces,
   users,
 } from "../../src/db/schema.js";
 import { runResearch } from "../../src/tasks/personal-trip-orchestrator-service.js";
@@ -216,6 +217,25 @@ describe("personal-trip-orchestrator-service", () => {
     expect(row?.serviceGaps.length).toBeGreaterThan(0);
     const codes = row?.serviceGaps.map((g: { code: string }) => g.code);
     expect(codes).toEqual(expect.arrayContaining(["NOT_CONFIGURED", "SEARCH_CONSTRAINTS_INCOMPLETE"]));
+  });
+
+  it("invokes navigation and mobility Shared skills when two routable places exist", async () => {
+    registerStubSkill("navigation.route", { outcome: "LIVE" });
+    registerStubSkill("mobility.search", { outcome: "LIVE" });
+    await db.insert(tripPlaces).values([
+      { tripId, ownerUserId: ownerId, visibility: "TEAM_VISIBLE", status: "ACTIVE", kind: "ATTRACTION", displayName: "Tokyo Station", source: "test" },
+      { tripId, ownerUserId: ownerId, visibility: "TEAM_VISIBLE", status: "ACTIVE", kind: "ATTRACTION", displayName: "Senso-ji", source: "test" },
+    ]);
+    await db.update(agentTaskRuns).set({ requestedCapabilities: ["navigation", "mobility"] })
+      .where(eq(agentTaskRuns.id, runId));
+
+    const result = await runResearch({
+      ctx: makeRunArgs(), run: await makeRunRow(), signal: new AbortController().signal,
+    });
+    expect(result.outcome).toBe("COMPLETED");
+    expect(capturedInputs.map((entry) => entry.name)).toEqual(expect.arrayContaining([
+      "navigation.route", "mobility.search",
+    ]));
   });
 
   it("rejects a research run whose snapshot is missing travel dates", async () => {

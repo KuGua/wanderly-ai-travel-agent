@@ -942,6 +942,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 - Draft creates no snapshot, provider request or research task; it only returns an activation/required-input prompt.
 - The confirmed command creates exactly one immutable Solo snapshot, one durable task and one outbox event. It reuses `provider_search_runs` / evidence binding; `personal_provider_search_runs` and a duplicate Personal Skill are not created.
+- Repeating the same request ID returns the original run and snapshot without allocating another snapshot. Missing departure city, travel dates, or a capability-required confirmed preference returns `422` before any snapshot, task or outbox write. A safe partial result is exposed as `COMPLETED_WITH_GAPS` through the run-read API.
 - The model receives only normalized tool output. It cannot read chat text, raw profile, another Trip/user, MCP payload, click-off link or currency-less price, and it cannot choose provider authority.
 - `RESEARCH_ONLY` writes no plan or booking authority. `PROPOSE_PLAN` creates a validated `PROPOSED` plan; the owner’s `ACCEPT` is required before `ACTIVE`.
 - Consent/preference/evidence changes stale current results atomically. `UNAVAILABLE` is a safe gap, while policy/schema/lease errors produce no plan; no fixture or Demo fallback appears.

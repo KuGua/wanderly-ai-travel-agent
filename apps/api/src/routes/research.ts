@@ -5,6 +5,7 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
 import {
   planningResearchResults,
+  sharedTrips,
   tripMembers,
   tripSearchPreferences,
   tripStaySearchPreferences,
@@ -12,7 +13,7 @@ import {
 import { ApiError } from "../middleware/error-handler.js";
 import { createConstraintSnapshot } from "../services/planning-service.js";
 import { requireResearchEligible } from "../services/trip-status-guard.js";
-import { acceptResearchTask } from "../tasks/task-repository.js";
+import { acceptResearchTask, findResearchTaskByRequestId } from "../tasks/task-repository.js";
 import { publishAgentStreamEvent } from "../tasks/task-stream-publisher.js";
 import {
   errorResponseSchema,
@@ -63,87 +64,90 @@ export async function researchRoutes(app: FastifyInstance): Promise<void> {
     );
     const body = researchCommandRequestSchema.parse(request.body);
 
-    const [tripRow] = await db.select({
-      id: tripMembers.tripId,
-      destinationCandidates: tripMembers.tripId,
-    }).from(tripMembers)
-      .where(and(eq(tripMembers.tripId, tripId), eq(tripMembers.userId, request.user.id)))
-      .limit(1);
-    void tripRow; // Membership probe only — full trip row loaded below.
+    // The Trip row lock serializes retries of the same request ID. The durable
+    // task is checked before allocating a snapshot, preventing orphaned
+    // snapshots on idempotent retries.
+    const command = await db.transaction(async (tx) => {
+      const [trip] = await tx.select().from(sharedTrips)
+        .where(eq(sharedTrips.id, tripId)).for("update").limit(1);
+      if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
 
-    // We need the trip's destinationCandidates + travel dates for mode-aware
-    // validation + snapshot.
-    const fullTripRow = await db.query.sharedTrips.findFirst({
-      where: (t, { eq: e }) => e(t.id, tripId),
-    });
-    if (!fullTripRow) throw new ApiError(404, "Not Found", "Trip not found");
+      const existing = await findResearchTaskByRequestId({ tripId, requestId: body.requestId, tx });
+      if (existing) return { accepted: existing, created: false };
 
-    // 2) Mode-aware eligibility — Draft trips rejected, optional members
-    //    rejected, candidates must match SOLO 1..5 / TEAM 2..5.
-    await requireResearchEligible(tripId, request.user.id, fullTripRow.destinationCandidates);
+      await requireResearchEligible(tripId, request.user.id, trip.destinationCandidates, tx);
+      if (trip.departureCities.length === 0 || !trip.travelDateStart || !trip.travelDateEnd) {
+        throw new ApiError(422, "Unprocessable Entity", "RESEARCH_CAPABILITY_GAP: trip requires departure cities and travel dates");
+      }
 
-    // 3) Load the latest confirmed search-preference versions. Phase 3 may
-    //    split this into a capability-aware validator that 422s on missing
-    //    preferences; for Phase 2 we mirror `/planning/generate` and 422
-    //    when flight preferences are missing.
-    const [latestFlightPref] = await db.select().from(tripSearchPreferences)
-      .where(eq(tripSearchPreferences.tripId, tripId))
-      .orderBy(desc(tripSearchPreferences.version))
-      .limit(1);
-    if (!latestFlightPref) {
-      throw new ApiError(
-        422,
-        "Unprocessable Entity",
-        "RESEARCH_CAPABILITY_GAP: trip has no confirmed flight search preferences",
-      );
-    }
-    const [latestStayPref] = process.env.PLAN_ENABLE_HOTEL === "true"
-      ? await db.select().from(tripStaySearchPreferences)
-        .where(eq(tripStaySearchPreferences.tripId, tripId))
-        .orderBy(desc(tripStaySearchPreferences.version))
-        .limit(1)
-      : [null];
+      const requiresFlightPreferences = body.outputMode === "PROPOSE_PLAN"
+        || body.requestedCapabilities.includes("flight")
+        || body.requestedCapabilities.includes("activities")
+        || body.requestedCapabilities.includes("mobility");
+      if (body.outputMode === "PROPOSE_PLAN" && !body.requestedCapabilities.includes("flight")) {
+        throw new ApiError(422, "Unprocessable Entity", "RESEARCH_CAPABILITY_GAP: PROPOSE_PLAN requires flight capability");
+      }
+      const [latestFlightPref] = requiresFlightPreferences
+        ? await tx.select().from(tripSearchPreferences)
+          .where(eq(tripSearchPreferences.tripId, tripId))
+          .orderBy(desc(tripSearchPreferences.version)).limit(1)
+        : [undefined];
+      if (requiresFlightPreferences && !latestFlightPref) {
+        throw new ApiError(422, "Unprocessable Entity", "RESEARCH_CAPABILITY_GAP: trip has no confirmed flight search preferences");
+      }
+      const requiresStayPreferences = body.requestedCapabilities.includes("hotel")
+        && process.env.PLAN_ENABLE_HOTEL === "true";
+      const [latestStayPref] = requiresStayPreferences
+        ? await tx.select().from(tripStaySearchPreferences)
+          .where(eq(tripStaySearchPreferences.tripId, tripId))
+          .orderBy(desc(tripStaySearchPreferences.version)).limit(1)
+        : [undefined];
+      if (requiresStayPreferences && !latestStayPref) {
+        throw new ApiError(422, "Unprocessable Entity", "RESEARCH_CAPABILITY_GAP: trip has no confirmed stay search preferences");
+      }
 
-    // 4) Build an immutable constraint snapshot.
-    const snapshotId = await createConstraintSnapshot({
-      tripId,
-      memberIds: [],
-      departureCities: [],
-      destinationCandidates: fullTripRow.destinationCandidates,
-      travelDateStart: fullTripRow.travelDateStart ?? undefined,
-      travelDateEnd: fullTripRow.travelDateEnd ?? undefined,
-    });
-
-    // 5) Accept the durable task. Idempotent on (tripId, requestId) via the
-    //    partial unique index `agent_task_runs_trip_request_unique`.
-    const accepted = await acceptResearchTask({
-      ctx,
-      tripId,
-      userId: request.user.id,
-      snapshotId,
-      flightSearchPreferencesVersion: latestFlightPref.version,
-      staySearchPreferencesVersion: latestStayPref?.version ?? undefined,
-      outputMode: body.outputMode,
-      requestedCapabilities: body.requestedCapabilities,
-      requestId: body.requestId,
+      const snapshotId = await createConstraintSnapshot({
+        tripId,
+        memberIds: [],
+        departureCities: trip.departureCities,
+        destinationCandidates: trip.destinationCandidates,
+        travelDateStart: trip.travelDateStart,
+        travelDateEnd: trip.travelDateEnd,
+        tx,
+      });
+      const accepted = await acceptResearchTask({
+        ctx,
+        tripId,
+        userId: request.user.id,
+        snapshotId,
+        flightSearchPreferencesVersion: latestFlightPref?.version,
+        staySearchPreferencesVersion: latestStayPref?.version,
+        outputMode: body.outputMode,
+        requestedCapabilities: body.requestedCapabilities,
+        requestId: body.requestId,
+        tx,
+      });
+      return { accepted, created: true };
     });
 
     // 6) Publish SNAPSHOT_CREATED so the UI run card has a stage before the
     //    Worker picks up. The Worker emits RESEARCHING / VALIDATING /
     //    PERSISTING / COMPLETED.
-    await publishAgentStreamEvent({
-      event: "research.stage",
-      runId: accepted.runId,
-      generationAttempt: 0,
-      stage: "SNAPSHOT_CREATED",
-      traceparent: request.traceparent,
-    });
+    if (command.created) {
+      await publishAgentStreamEvent({
+        event: "research.stage",
+        runId: command.accepted.runId,
+        generationAttempt: 0,
+        stage: "SNAPSHOT_CREATED",
+        traceparent: request.traceparent,
+      });
+    }
 
     const response = researchCommandAcceptedResponseSchema.parse({
-      runId: accepted.runId,
-      operation: accepted.operation,
-      snapshotId: accepted.snapshotId,
-      status: accepted.status,
+      runId: command.accepted.runId,
+      operation: command.accepted.operation,
+      snapshotId: command.accepted.snapshotId,
+      status: command.accepted.status,
     });
     return reply.code(202).send(response);
   });

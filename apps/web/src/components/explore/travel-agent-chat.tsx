@@ -6,6 +6,8 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { createPortal } from "react-dom";
 
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
+import { ResearchConfirmationCard } from "@/components/trips/personal-research/research-confirmation-card";
+import { ResearchRunCard } from "@/components/trips/personal-research/research-run-card";
 
 import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
@@ -103,6 +105,16 @@ export function TravelAgentChat({
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
   const [briefProposal, setBriefProposal] = useState<Extract<AgentStreamEvent, { event: "trip.brief_proposed" }>["proposal"] | null>(null);
   const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
+  // Phase 6 / Personal Trip Orchestrator — LLM-extracted research draft +
+  // accumulated stage events for the in-flight run.
+  const [researchIntent, setResearchIntent] =
+    useState<Extract<AgentStreamEvent, { event: "research.intent_extracted" }>["intent"] | null>(null);
+  const [researchStages, setResearchStages] = useState<
+    Array<Extract<AgentStreamEvent, { event: "research.stage" }>>
+  >([]);
+  const [researchOutcome, setResearchOutcome] = useState<
+    "COMPLETED" | "COMPLETED_WITH_GAPS" | "FAILED" | "STALE" | null
+  >(null);
   const panelInputRef = useRef<HTMLTextAreaElement>(null);
   const panelScrollRef = useRef<HTMLDivElement>(null);
   const pendingTurnAnchorRef = useRef<HTMLParagraphElement>(null);
@@ -233,6 +245,16 @@ export function TravelAgentChat({
     const controller = new AbortController();
     void api.subscribeAgentRun(activeRunId, controller.signal, (event) => {
       if (event.event === "trip.brief_proposed") setBriefProposal(event.proposal);
+      if (event.event === "research.intent_extracted") setResearchIntent(event.intent);
+      if (event.event === "research.stage") {
+        setResearchStages((current) => [...current, event]);
+        if (event.stage === "COMPLETED"
+          || event.stage === "COMPLETED_WITH_GAPS"
+          || event.stage === "FAILED"
+          || event.stage === "STALE") {
+          setResearchOutcome(event.stage);
+        }
+      }
       setStreamState((current) => applyStreamEvent(current, event));
       if (
         event.event === "turn.completed"
@@ -510,6 +532,25 @@ export function TravelAgentChat({
                 <button type="button" onClick={() => setBriefProposal(null)} disabled={isConfirmingBrief} className="min-h-11 rounded-full border border-primary/20 px-3 text-xs font-bold text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{t("briefProposalIgnore")}</button>
               </div>
             </section>
+          ) : null}
+          {/* Phase 6 / Personal Trip Orchestrator — research intent + run card. */}
+          {researchIntent && tripId ? (
+            <div className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}>
+              <ResearchConfirmationCard
+                tripId={tripId}
+                intent={researchIntent}
+                onDismiss={() => setResearchIntent(null)}
+              />
+            </div>
+          ) : null}
+          {activeRunId ? (
+            <div className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}>
+              <ResearchRunCard
+                runId={activeRunId}
+                stages={researchStages}
+                outcome={researchOutcome}
+              />
+            </div>
           ) : null}
         </div>
       </div>

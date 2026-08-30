@@ -13,6 +13,11 @@ import {
   ownerConversationResponseSchema,
   memoryFactSchema,
   profileMemoryResponseSchema,
+  researchResultSchema,
+  researchCommandRequestSchema,
+  researchCommandAcceptedResponseSchema,
+  latestResearchResultResponseSchema,
+  soloAdoptPlanResponseSchema,
   tripMemoryFactSchema,
   tripMemoryGroupResponseSchema,
   tripMemoryOverridesResponseSchema,
@@ -60,7 +65,6 @@ import {
   adoptTripPlaceRequestSchema,
   revokeTripPlaceRequestSchema,
   tripPlaceActionResponseSchema,
-  researchResultSchema,
   routeEvidenceListSchema,
   navigationRouteSearchRequestSchema,
   navigationRouteSearchResponseSchema,
@@ -80,6 +84,10 @@ import {
   type ConfirmTripConstraintProposalRequest,
   type UpsertTripConstraintFactRequest,
   type CastAdoptionVoteRequest,
+  type ResearchCommandRequest,
+  type ResearchCommandAcceptedResponse,
+  type LatestResearchResultResponse,
+  type SoloAdoptPlanResponse,
 } from "./contracts";
 import type { TravelApi } from "./travel-api";
 import { fetchLocationIntroduction } from "./location-introduction-api";
@@ -508,6 +516,45 @@ export class HttpTravelApi implements TravelApi {
       `/trips/${encodeURIComponent(tripId)}/research-results${params}`,
       researchResultSchema,
     );
+  }
+
+  // ─── Phase 6 / Personal Trip Orchestrator ───────────────────────────────
+  postResearchCommand(
+    tripId: string,
+    input: import("./contracts").ResearchCommandRequest,
+    options?: { idempotencyKey?: string },
+  ): Promise<import("./contracts").ResearchCommandAcceptedResponse> {
+    const body = researchCommandRequestSchema.parse(input);
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/research`,
+      researchCommandAcceptedResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        ...(options?.idempotencyKey ? { headers: { "Idempotency-Key": options.idempotencyKey } } : {}),
+      },
+    ) as Promise<import("./contracts").ResearchCommandAcceptedResponse>;
+  }
+
+  getLatestResearchResult(tripId: string): Promise<import("./contracts").LatestResearchResultResponse> {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/research/latest`,
+      latestResearchResultResponseSchema,
+    );
+  }
+
+  acceptSoloPlan(
+    planId: string,
+    options?: { idempotencyKey?: string },
+  ): Promise<import("./contracts").SoloAdoptPlanResponse> {
+    return this.client.request(
+      `/plans/${encodeURIComponent(planId)}/accept-solo`,
+      soloAdoptPlanResponseSchema,
+      {
+        method: "POST",
+        ...(options?.idempotencyKey ? { headers: { "Idempotency-Key": options.idempotencyKey } } : {}),
+      },
+    ) as Promise<import("./contracts").SoloAdoptPlanResponse>;
   }
 
   // ─── Phase 3 navigation route evidence ──────────────────────────────────

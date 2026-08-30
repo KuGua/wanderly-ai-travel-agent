@@ -308,7 +308,7 @@ export async function tripRoutes(app: FastifyInstance) {
       }
 
       // Phase 1 — per-mode candidate validation. SOLO trips (1 required
-      // member) may activate with 1..5 candidates; TEAM trips keep 2..5.
+      // member) may activate with 1..5 candidates; TEAM trips allow 2..3.
       // Throws RESEARCH_BRIEF_INVALID on violation.
       await loadAndAssertTripModeForBrief(tx, tripId, body.destinationCandidates);
 
