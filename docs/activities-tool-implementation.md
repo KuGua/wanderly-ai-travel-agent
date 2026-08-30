@@ -127,7 +127,7 @@ authenticated PLAN / REPLAN Worker
 - 每次请求生成不含用户信息的随机 MCP `sessionId`。
 - 默认每次最多返回 5 个结果。
 - response body 上限 1 MB；超过即 `INVALID_PROVIDER_RESPONSE`。
-- transient retry 只适用于 timeout 与 5xx/network；默认最多重试 1 次，可配置为 0..2。429 立即返回 `RATE_LIMITED`，避免在 provider 未给出 reset window 时放大公共 MCP 压力。
+- transient retry 适用于 timeout 与 5xx/network；默认最多重试 1 次，可配置为 0..2。429 只有在 HTTP `Retry-After` 或 MCP 错误文本明确给出不超过 5 秒的等待窗口时才在同一 retry budget 内重试；缺少窗口或等待超过 5 秒立即返回 `RATE_LIMITED`，避免放大公共 MCP 压力。
 - caller cancellation 立即向上传播，不伪装成 provider timeout。
 - 401/403 → `PROVIDER_NOT_APPROVED`；429 → `RATE_LIMITED`；空数组 → `NO_RESULTS`；schema drift → `INVALID_PROVIDER_RESPONSE`。
 
@@ -163,6 +163,8 @@ Migration `0025_viator_mcp_activities_tool.sql` 新增 activities search audit e
 - LIVE 时 `provider_offers.category='activity'` 只保存 normalized evidence；
 - 不保存 raw JSON-RPC、MCP text、click-off URL、无币种价格、cookie、API credential 或对话正文。
 
+跨 run 调用使用通用 PostgreSQL `provider_search_cache`：fingerprint 包含 provider、`activity` category、destination、日期、theme 与 locale；LIVE 最长复用 15 分钟且必须保留至少 60 秒有效期，`UNAVAILABLE` 只缓存 30 秒。并发 miss 通过 35 秒 lease 合并，等待者最多等待 1.5 秒；命中时复制为当前 run 的新 `queryId` 和 evidence，绝不跨 run 引用旧记录。每个 task 的相同 fingerprint 仍由数据库唯一索引保证只尝试一次。
+
 Audit：`ACTIVITIES_SEARCH_REQUESTED`、`ACTIVITIES_SEARCH_COMPLETED`、`ACTIVITIES_SEARCH_UNAVAILABLE`。
 
 Metrics：
@@ -170,6 +172,7 @@ Metrics：
 - `activities_provider_requests_total{outcome,provider,error_category}`
 - `activities_provider_latency_ms{provider,outcome}`
 - `activities_tool_invocations_total{outcome,provider,error_category}`
+- `provider_search_cache_total{category="activity",outcome}`，其中 outcome 仅为 `hit_live`、`hit_unavailable`、`miss`、`wait_timeout`
 
 所有 labels 使用固定低基数 allow-list；destination/trip/snapshot/run/user 不进入指标标签。
 
@@ -188,7 +191,7 @@ Metrics：
 
 ## 9. 测试与验证
 
-自动化覆盖：live structured content normalization；click-off URL 与 currency-less price 丢弃；429、timeout、malformed response → bounded `UNAVAILABLE`；config opt-in、HTTPS 与数值范围；snapshot/destination/date authority；existing plan validator 与 LLM tool loop regression；typecheck、lint、build、docs verify。
+自动化覆盖：live structured content normalization；click-off URL 与 currency-less price 丢弃；带短 `Retry-After` 的 429 有界重试、无窗口/长窗口 429、timeout、malformed response → bounded `UNAVAILABLE`；同 task 原子去重、跨 run LIVE/negative cache、过期或悬空 cache miss、`queryId` 重写；config opt-in、HTTPS 与数值范围；snapshot/destination/date authority；existing plan validator 与 LLM tool loop regression；typecheck、lint、build、docs verify。
 
 Live spike 只允许合成 destination/date，不包含用户、Trip 或聊天数据。CI 不依赖 live MCP；fixture 只用于 adapter contract tests，不进入产品运行路径。
 

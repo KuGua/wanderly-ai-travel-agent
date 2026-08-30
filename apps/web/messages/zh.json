@@ -540,6 +540,8 @@
         "capability": {
           "flight": "航班",
           "stay": "住宿",
+          "hotel": "实时酒店",
+          "accommodation": "住宿发现",
           "activities": "活动",
           "navigation": "步行 / 驾车 / 骑行",
           "mobility": "打车 / 接送 / 包车",

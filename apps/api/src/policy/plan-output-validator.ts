@@ -4,6 +4,8 @@ import type {
   ConstraintSnapshotData,
   ActivityEvidence,
   FlightOffer,
+  GroundOffer,
+  HotelOffer,
   StayOffer,
 } from "../types/domain.js";
 import { assertFieldAllowed, assertFieldAllowedV2, SnapshotFieldNotAllowedError } from "./snapshot-policy.js";
@@ -77,6 +79,17 @@ const activityEvidenceSchema = z.object({
   expiresAt: z.string().datetime(),
 }).strict();
 
+const hotelOfferSchema = z.object({
+  id: z.string().uuid(), providerOfferId: z.string().min(1), queryId: z.string().uuid(),
+  providerName: z.literal("serpapi_google_hotels"), destinationId: z.string().min(1),
+  propertyId: z.string().min(1), propertyName: z.string().min(1), checkIn: z.string(), checkOut: z.string(),
+  nights: z.number().int().positive(), roomCount: z.number().int().positive(), adultsPerRoom: z.array(z.number().int().positive()),
+  totalPrice: z.number().nonnegative(), pricePerNight: z.number().nonnegative(), currency: z.string().length(3),
+  taxesAndFees: z.object({ status: z.enum(["INCLUDED", "PARTIAL", "UNKNOWN"]), amount: z.number().nonnegative().optional() }).strict(),
+  cancellationSummary: z.string().nullable(), roomSummary: z.string().nullable(),
+  source: z.literal("SerpApi Google Hotels"), capturedAt: z.string().datetime(), expiresAt: z.string().datetime(),
+}).strict();
+
 export const planOutputSchema = z.object({
   destination: z.string().min(1),
   // Optional for legacy plans. New planners (Team Agent 协作编排 Phase 3) emit
@@ -86,6 +99,7 @@ export const planOutputSchema = z.object({
   flights: z.array(flightOfferSchema).min(1),
   stays: z.array(stayOfferSchema).min(1),
   activities: z.array(activityEvidenceSchema).optional(),
+  hotels: z.array(hotelOfferSchema).optional(),
   generatedAt: z.string().min(1),
   constraintReferences: z.array(z.string().min(1)).optional(),
   publicExplanationTokens: z.array(z.string().min(1)).optional(),
@@ -120,6 +134,7 @@ export interface PlanProviderEvidence {
   flights: FlightOffer[];
   stays: StayOffer[];
   activities?: ActivityEvidence[];
+  hotels?: HotelOffer[];
 }
 
 export class PlanValidationError extends Error {
@@ -146,7 +161,7 @@ function validateOfferEvidence<T extends {
   source: string;
   capturedAt: string;
 }>(params: {
-  category: "flights" | "stays" | "activities";
+  category: "flights" | "stays" | "ground" | "activities" | "hotels";
   offers: T[];
   evidence: T[];
   violations: PlanValidationViolation[];
@@ -182,6 +197,7 @@ export function validatePlanOutput(params: {
   snapshot: ConstraintSnapshotData;
   evidence: PlanProviderEvidence;
   requireActivities?: boolean;
+  requireHotels?: boolean;
 }): ValidatedPlanOutput {
   const parsed = planOutputSchema.safeParse(params.planData);
   if (!parsed.success) {
@@ -270,13 +286,21 @@ export function validatePlanOutput(params: {
       addViolation(violations, "PROVENANCE_REQUIRED", `activities.${index}.expiresAt`, "Activity evidence has expired");
     }
   });
+  (plan.hotels ?? []).forEach((hotel, index) => {
+    if (hotel.destinationId !== plan.destination) addViolation(violations, "DESTINATION_MISMATCH", `hotels.${index}.destinationId`, "Hotel destination does not match the plan");
+    if (Date.parse(hotel.expiresAt) <= Date.now()) addViolation(violations, "PROVENANCE_REQUIRED", `hotels.${index}.expiresAt`, "Hotel evidence has expired");
+  });
   if (params.requireActivities && (plan.activities?.length ?? 0) === 0) {
     addViolation(violations, "EVIDENCE_NOT_FOUND", "activities", "A provider-backed activity is required for the selected destination");
+  }
+  if (params.requireHotels && (plan.hotels?.length ?? 0) === 0) {
+    addViolation(violations, "EVIDENCE_NOT_FOUND", "hotels", "A provider-backed hotel is required for the selected destination");
   }
 
   validateOfferEvidence({ category: "flights", offers: plan.flights, evidence: params.evidence.flights, violations });
   validateOfferEvidence({ category: "stays", offers: plan.stays, evidence: params.evidence.stays, violations });
   validateOfferEvidence({ category: "activities", offers: plan.activities ?? [], evidence: params.evidence.activities ?? [], violations });
+  validateOfferEvidence({ category: "hotels", offers: plan.hotels ?? [], evidence: params.evidence.hotels ?? [], violations });
 
   for (const hardViolation of evaluateHardConstraints({ snapshot: params.snapshot, flights: plan.flights })) {
     addViolation(violations, hardViolation.code, "constraints", hardViolation.publicReason);
@@ -292,7 +316,7 @@ export function validatePlanOutput(params: {
     violations,
   });
 
-  const expectedGeneratedAt = [...plan.flights, ...plan.stays, ...(plan.activities ?? [])]
+  const expectedGeneratedAt = [...plan.flights, ...plan.stays, ...(plan.activities ?? []), ...(plan.hotels ?? [])]
     .map(offer => offer.capturedAt)
     .sort()
     .at(-1);

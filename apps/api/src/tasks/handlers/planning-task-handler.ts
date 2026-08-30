@@ -37,6 +37,9 @@ export async function handlePlanningTask(params: {
   ) {
     throw new Error("Planning task authority is incomplete");
   }
+  if (process.env.PLAN_ENABLE_HOTEL === "true" && !run.staySearchPreferencesVersion) {
+    throw new Error("Planning task stay-search authority is incomplete");
+  }
   const [member] = await db.select({ userId: tripMembers.userId }).from(tripMembers).where(and(
     eq(tripMembers.tripId, run.tripId), eq(tripMembers.userId, run.createdByUserId),
   )).limit(1);
@@ -113,6 +116,7 @@ export async function handlePlanningTask(params: {
     memberIds: [],
     agentTaskRunId: run.id,
     flightSearchPreferencesVersion: run.flightSearchPreferencesVersion,
+    staySearchPreferencesVersion: run.staySearchPreferencesVersion ?? undefined,
     signal: params.signal,
     leaseToken: params.leaseToken,
     outputMode: "PROPOSED",

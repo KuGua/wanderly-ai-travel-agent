@@ -10,6 +10,13 @@ const baseOptions = {
   baseUrl: "https://ors.test",
   timeoutMs: 1000,
 };
+const destination = {
+  destinationId: "tokyo",
+  cityName: "Tokyo",
+  countryCode: "JP",
+  latitude: 35.6812,
+  longitude: 139.7671,
+};
 
 describe("OrsPlaceProvider", () => {
   it("ORS_ATTRIBUTION string is the required ToS line", () => {
@@ -20,7 +27,7 @@ describe("OrsPlaceProvider", () => {
     const fetchImpl = vi.fn(async () => jsonResponse(500, { error: "down" }));
     const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
     const result = await provider.searchPlaces({
-      destinationId: "tokyo",
+      destination,
       keyword: "ramen",
       category: "RESTAURANT",
       snapshotId: "11111111-1111-4111-8111-111111111111",
@@ -33,7 +40,7 @@ describe("OrsPlaceProvider", () => {
     const fetchImpl = vi.fn(async () => jsonResponse(429, { error: "rate" }));
     const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
     const result = await provider.searchPlaces({
-      destinationId: "tokyo",
+      destination,
       keyword: "ramen",
       category: "RESTAURANT",
       snapshotId: "11111111-1111-4111-8111-111111111111",
@@ -63,7 +70,7 @@ describe("OrsPlaceProvider", () => {
     }));
     const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
     const result = await provider.searchPlaces({
-      destinationId: "tokyo",
+      destination,
       keyword: "sushi",
       category: "RESTAURANT",
       snapshotId: "11111111-1111-4111-8111-111111111111",
@@ -88,13 +95,13 @@ describe("OrsPlaceProvider", () => {
         {
           type: "Feature",
           geometry: { type: "Point", coordinates: [139.69, 35.68] },
-          properties: { layer: "venue", name: "Maybe", confidence: 0.4 },
+            properties: { layer: "venue", name: "Maybe", country_a: "JP", confidence: 0.4 },
         },
       ],
     }));
     const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
     const result = await provider.searchPlaces({
-      destinationId: "tokyo",
+      destination,
       keyword: "tower",
       category: "ATTRACTION",
       snapshotId: "11111111-1111-4111-8111-111111111111",
@@ -113,7 +120,7 @@ describe("OrsPlaceProvider", () => {
     }));
     const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
     const result = await provider.searchPlaces({
-      destinationId: "tokyo",
+      destination,
       keyword: "nothing",
       category: "ATTRACTION",
       snapshotId: "11111111-1111-4111-8111-111111111111",
@@ -126,12 +133,23 @@ describe("OrsPlaceProvider", () => {
     const fetchImpl = vi.fn(async () => jsonResponse(200, { type: "Unexpected" }));
     const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
     const result = await provider.searchPlaces({
-      destinationId: "tokyo",
+      destination,
       keyword: "ramen",
       category: "RESTAURANT",
       snapshotId: "11111111-1111-4111-8111-111111111111",
     });
     expect(result.outcome).toBe("UNAVAILABLE");
     if (result.outcome === "UNAVAILABLE") expect(result.reason).toBe("INVALID_PROVIDER_RESPONSE");
+  });
+
+  it("uses only valid venue layers and the resolved ISO country boundary", async () => {
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      expect(url.searchParams.get("layers")).toBe("venue");
+      expect(url.searchParams.get("boundary.country")).toBe("JP");
+      return jsonResponse(200, { type: "FeatureCollection", features: [] });
+    });
+    const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
+    await provider.searchPlaces({ destination, keyword: "hotel", category: "HOTEL", snapshotId: "11111111-1111-4111-8111-111111111111" });
   });
 });

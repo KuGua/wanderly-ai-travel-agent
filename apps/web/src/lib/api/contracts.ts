@@ -752,7 +752,7 @@ export const tripPlaceActionResponseSchema = z.object({
   status: tripPlaceStatusSchema,
 }).strict();
 
-export const serviceCapabilitySchema = z.enum(["flight", "stay", "activities", "navigation", "transit", "mobility"]);
+export const serviceCapabilitySchema = z.enum(["flight", "stay", "hotel", "accommodation", "activities", "navigation", "transit", "mobility"]);
 export const providerUnavailableCodeSchema = z.enum([
   "NOT_CONFIGURED",
   "SEARCH_CONSTRAINTS_INCOMPLETE",

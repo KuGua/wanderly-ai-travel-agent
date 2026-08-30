@@ -35,6 +35,9 @@ runs **before** any insert. Rejection propagates as
   revision; `valueJson` is intentionally excluded.
 - Flight search: `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`; summaries contain only provider, bounded outcome/error code, and safe correlation identifiers, never raw provider payloads.
 - Activities search: `ACTIVITIES_SEARCH_REQUESTED`, `ACTIVITIES_SEARCH_COMPLETED`, `ACTIVITIES_SEARCH_UNAVAILABLE`; summaries contain only the bounded provider/outcome/error category and never activity titles, MCP payloads, prices or links.
+- Accommodation discovery: `ACCOMMODATION_DISCOVERY_REQUESTED`, `ACCOMMODATION_DISCOVERY_COMPLETED`, `ACCOMMODATION_DISCOVERY_UNAVAILABLE`; summaries contain only bounded provider/outcome/count metadata and never destination text, accommodation names, coordinates, OSM identifiers or raw provider payloads.
+- Hotel search: `HOTEL_SEARCH_REQUESTED`, `HOTEL_SEARCH_COMPLETED`, `HOTEL_SEARCH_UNAVAILABLE`; summaries contain only bounded provider/outcome/error categories and never destination text, property names, prices, occupancy, links or raw provider payloads.
+- Stay preferences: `STAY_SEARCH_PREFERENCES_CONFIRMED`; summary contains only the new preference version, never occupancy or currency values.
 - Place, navigation, and mobility providers: `PLACE_SEARCH_REQUESTED`,
   `PLACE_SEARCH_COMPLETED`, `PLACE_SEARCH_UNAVAILABLE`,
   `NAVIGATION_ROUTE_REQUESTED`, `NAVIGATION_ROUTE_COMPLETED`,
@@ -102,6 +105,9 @@ The supported `AuditAction` values are:
   `PLAN_REPLAN_ENQUEUED`, `PLAN_ADOPTION_VOTED`, `PLAN_ADOPTED`
 - `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`
 - `ACTIVITIES_SEARCH_REQUESTED`, `ACTIVITIES_SEARCH_COMPLETED`, `ACTIVITIES_SEARCH_UNAVAILABLE`
+- `ACCOMMODATION_DISCOVERY_REQUESTED`, `ACCOMMODATION_DISCOVERY_COMPLETED`, `ACCOMMODATION_DISCOVERY_UNAVAILABLE`
+- `HOTEL_SEARCH_REQUESTED`, `HOTEL_SEARCH_COMPLETED`, `HOTEL_SEARCH_UNAVAILABLE`
+- `STAY_SEARCH_PREFERENCES_CONFIRMED`
 - `PLACE_SEARCH_REQUESTED`, `PLACE_SEARCH_COMPLETED`, `PLACE_SEARCH_UNAVAILABLE`
 - `NAVIGATION_ROUTE_REQUESTED`, `NAVIGATION_ROUTE_COMPLETED`, `NAVIGATION_ROUTE_UNAVAILABLE`
 - `MOBILITY_OFFER_REQUESTED`, `MOBILITY_OFFER_COMPLETED`, `MOBILITY_OFFER_UNAVAILABLE`

@@ -50,6 +50,19 @@ export interface ConstraintSnapshotData {
   safePublicExplanationTokens?: ReadonlySet<string>;
 }
 
+/**
+ * Server-owned, unambiguous destination identity used at provider boundaries.
+ * Free-text city labels are resolved into this shape before any supplier is
+ * called; adapters deliberately have no overload that accepts a string.
+ */
+export interface DestinationReference {
+  destinationId: string;
+  cityName: string;
+  countryCode: string;
+  latitude: number;
+  longitude: number;
+}
+
 export interface FlightOffer {
   id: string;
   providerOfferId: string;
@@ -88,6 +101,65 @@ export interface StayOffer {
   pricePerNightUsd: number;
   style: string;
   location: string;
+  source: string;
+  capturedAt: string;
+}
+
+/**
+ * Provider-neutral, non-bookable hotel evidence. Supplier URLs, rate tokens,
+ * coordinates and raw payloads are intentionally excluded.
+ */
+export interface HotelOffer {
+  id: string;
+  providerOfferId: string;
+  queryId: string;
+  providerName: "serpapi_google_hotels";
+  destinationId: string;
+  propertyId: string;
+  propertyName: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  roomCount: number;
+  adultsPerRoom: number[];
+  totalPrice: number;
+  pricePerNight: number;
+  currency: string;
+  taxesAndFees: {
+    status: "INCLUDED" | "PARTIAL" | "UNKNOWN";
+    amount?: number;
+  };
+  cancellationSummary: string | null;
+  roomSummary: string | null;
+  source: "SerpApi Google Hotels";
+  capturedAt: string;
+  expiresAt: string;
+}
+
+/** Public, non-price accommodation discovery evidence. */
+export interface AccommodationEvidence {
+  id: string;
+  queryId: string;
+  providerPlaceId: string;
+  destinationId: string;
+  name: string;
+  kind: string;
+  longitude: number;
+  latitude: number;
+  distanceMeters: number | null;
+  popularityTier: number | null;
+  source: "OpenTripMap";
+  attribution: "© OpenStreetMap contributors";
+  capturedAt: string;
+  expiresAt: string;
+}
+
+export interface GroundOffer {
+  id: string;
+  destination: string;
+  type: "airport_transfer" | "local_transport";
+  priceUsd: number;
+  provider: string;
   source: string;
   capturedAt: string;
 }
@@ -267,7 +339,7 @@ export interface MobilityOffer {
   capturedAt: string;
 }
 
-export type ServiceCapability = "flight" | "stay" | "activities" | "navigation" | "transit" | "mobility";
+export type ServiceCapability = "flight" | "stay" | "hotel" | "accommodation" | "activities" | "navigation" | "transit" | "mobility";
 
 export type ProviderUnavailableCode =
   | "NOT_CONFIGURED"

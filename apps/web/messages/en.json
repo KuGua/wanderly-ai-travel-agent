@@ -540,6 +540,8 @@
         "capability": {
           "flight": "Flights",
           "stay": "Stays",
+          "hotel": "Live hotels",
+          "accommodation": "Accommodation discovery",
           "activities": "Activities",
           "navigation": "Walking / driving / cycling",
           "mobility": "Taxis / transfers / rental",

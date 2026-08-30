@@ -240,6 +240,7 @@ export async function acceptPlanningTask(params: {
   userId: string;
   snapshotId: string;
   flightSearchPreferencesVersion: number;
+  staySearchPreferencesVersion?: number;
   operation: "PLAN" | "REPLAN";
   requestId: string;
   tx?: Tx;
@@ -278,6 +279,7 @@ export async function acceptPlanningTask(params: {
       tripId: params.tripId,
       snapshotId: params.snapshotId,
       flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
+      staySearchPreferencesVersion: params.staySearchPreferencesVersion ?? null,
       requestId: params.requestId,
       expiresAt,
       traceContext: buildTraceContextForTask(params.ctx),

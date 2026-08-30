@@ -863,18 +863,39 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 1. In a private conversation, let the model ask for missing room count, adults per room and currency. Confirm the resulting stay-search-preferences proposal as the trip owner; repeat without confirmation and with a non-member.
 2. Create a snapshot with two candidates and a confirmed preference version. Drive the Worker with a model double that calls `hotel.search` once for each `destinationId`.
-3. Attempt tool arguments containing dates, room count, adults, currency, price, provider, address, coordinate, URL, snapshot ID and a cross-run destination. Repeat with a stale preference version, lost lease and duplicate tool call.
+3. Attempt tool arguments containing dates, room count, adults, currency, price, provider, address, coordinate, URL, snapshot ID and a cross-run destination. Repeat with a missing/ambiguous `DestinationReference`, stale preference version, lost lease and duplicate tool call.
 4. Return normalized LIVE offers carrying total/per-night prices and `INCLUDED`, `PARTIAL`, then `UNKNOWN` taxes/fees; inspect the plan DTO, `provider_search_runs`, `provider_offers`, source evidence and telemetry/audit output.
-5. Force `NOT_CONFIGURED`, `NO_RESULTS`, 429, timeout, 5xx, malformed supplier payload and expired offer outcomes. Change dates, occupancy, stay preference and consent after a live plan exists.
+5. Repeat the exact query in a second run before expiry, concurrently repeat it in the same run, and repeat a transient `UNAVAILABLE` within and after the 30-second negative-cache window. Force `NOT_CONFIGURED`, `NO_RESULTS`, 429, timeout, 5xx, malformed supplier payload and expired offer outcomes. Change dates, occupancy, stay preference and consent after a live plan exists.
 
 **Expected outcomes:**
 
 - The model can ask only to create a user-confirmed structured preference; no private message directly writes preference, invokes supplier search or starts planning.
-- `hotel.search` accepts only a current task's allowed `destinationId`; all supplier parameters are server-derived. It is unavailable to Personal/Review agents and exposes no raw payload, URL, supplier credentials, rate ID, address or location coordinates.
-- LIVE rows are bound to the current snapshot/run and exact normalized evidence; the validator rejects fabricated, stale, expired or cross-run hotel offers. A duplicate call does not create a second supplier query/evidence row.
+- `hotel.search` accepts only a current task's allowed `destinationId`; all supplier parameters are server-derived. The provider receives a complete canonical city/ISO country/coordinate reference and there is no free-text overload. SerpApi properties without coordinates or beyond the configured city radius are discarded before the 10-result cap; if nothing remains the outcome is explicit `NO_RESULTS`, never a wrong-city offer. The Tool is unavailable to Personal/Review agents and exposes no raw payload, URL, supplier credentials, rate ID, address or location coordinates.
+- LIVE rows are bound to the current snapshot/run and exact normalized evidence; the validator rejects fabricated, stale, expired or cross-run hotel offers. A same-run duplicate cannot pass the database uniqueness guard. A cross-run cache hit performs no supplier request but creates a fresh current-run query/evidence ID; expired or less-than-60-second evidence is not reused.
+- Exact-query LIVE results are cached for at most 15 minutes and never beyond supplier expiry. `UNAVAILABLE` is cached for 30 seconds only. Concurrent misses share a bounded database lease; a waiter that times out fails closed without issuing a duplicate supplier request. Rows expired for more than 24 hours are opportunistically removed through the expiry index. Cache rows contain only a hash, bounded state/timestamps/error code and normalized-evidence pointer—never user IDs, raw payload, URL or key.
 - Every hotel card includes total price, per-night price, source, captured time and expiry. `PARTIAL` and `UNKNOWN` taxes/fees always display “可能另计”; only explicit `INCLUDED` is presented as included.
 - Failure or missing data creates only a `hotel` `RESEARCH_UNAVAILABLE`/`COMPLETED_WITH_GAPS` result. Sandbox fixtures are never used at runtime; no supplier order, payment, redirect or booking link is created or persisted.
 - Date, occupancy, preference, consent and offer-expiry changes stale dependent plan/confirmations and enqueue a new run. Audit, logs, metrics and traces contain no user input, price, property, supplier URL or high-cardinality identifiers.
+
+### TS-HOTEL-TOOL-2 — Non-price accommodation discovery and destination integrity
+
+**Stories:** H3, H5, S1
+**Objective:** Verify that OpenTripMap can provide a low-cost accommodation planning skeleton without being mistaken for live hotel pricing, and that every location provider is structurally protected from silent wrong-city results.
+
+**Steps:**
+
+1. Create a snapshot containing a uniquely resolvable Tokyo candidate, then call `accommodation.discover({ destinationId })` from the Shared planning Worker without confirming stay-search preferences.
+2. Inspect the OpenTripMap request, normalized output, current-run evidence, cache row, research matrix, public DTO and UI attribution.
+3. Repeat the exact request in a second run, concurrently repeat it in the same run, then test a 30-second negative cache, expired lease, 429, timeout, malformed payload, unnamed POI and POI beyond the configured radius.
+4. Repeat with a missing destination, an ambiguous same-name destination without country disambiguation, and a destination reference missing ISO country code or coordinates. Exercise ORS place search with the resolved reference and inspect `boundary.country`.
+
+**Expected outcomes:**
+
+- `accommodation.discover` accepts only the snapshot `destinationId`; the server resolves a complete `DestinationReference` or returns `SEARCH_CONSTRAINTS_INCOMPLETE` without calling any provider. No fallback passes a city string into a country boundary.
+- OpenTripMap is called by latitude/longitude with its documented `accomodations` taxonomy. Results include name/type/location/distance/source/captured/expiry and `© OpenStreetMap contributors`; they contain no price, availability, booking link, key, raw OSM payload or claim of bookability.
+- ORS receives a real ISO-3166 country code and only a valid geocoder layer. The removed `accommodation` layer and permissive destination-ID-as-country behavior cannot recur.
+- Same-task duplicates are rejected atomically. Cross-run cache hits copy evidence to a fresh `queryId` without a provider call; LIVE discovery is cached at most 24 hours and `UNAVAILABLE` for 30 seconds. A cache wait timeout fails closed rather than issuing another request.
+- Missing, ambiguous, out-of-radius, quota-limited, timed-out or malformed data produces only a bounded accommodation gap and never a fabricated candidate or hotel quote.
 
 ### TS-ACTIVITIES-TOOL-1 — Durable Shared activities research and guarded plan finalization
 
@@ -887,7 +908,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 2. Configure the task scheduler to enable both flight and activities sub-stages; drive the Worker with a deterministic model double that requests `activities.search` for every destination candidate independently of any flight call.
 3. Verify each Tool request against the task snapshot, controlled destination list and accepted preference version; reject browser/model coordinates, free-text query, provider URL/session ID and a theme outside the fixed allow-list.
 4. Inspect only normalized Shared `provider_search_runs` rows with `category='activity'`; assert Tool output and persistence contain neither raw MCP payload, `clickOffToLander`/booking link nor currency-less `fromPrice`.
-5. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, a lost lease, MCP schema drift and a Viator MCP 429.
+5. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, a lost lease, MCP schema drift and Viator MCP 429 responses with no reset window, a <=5-second `Retry-After`, and a longer reset window. Repeat the exact request concurrently and in a second run before expiry.
 6. Disable the activities sub-stage via configuration while keeping the flight sub-stage enabled; verify it does not schedule activities research. With the sub-stage enabled but unavailable, verify a safe `COMPLETED_WITH_GAPS` research result is displayed without any activity evidence or booking authority.
 
 **Expected outcomes:**
@@ -895,7 +916,8 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The HTTP command returns `202` with a run ID; browser disconnect does not cancel it.
 - Only same-task, same-snapshot `LIVE` activities data becomes evidence. A same-task `UNAVAILABLE` row satisfies the required-attempt matrix but becomes a bounded service gap; wrong-task/wrong-snapshot rows and `MISSING` never satisfy coverage.
 - The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, destination coordinates, free-text searches, dates or themes; raw MCP payloads, session IDs, currency-less prices, click-off links and private snapshot data never leave the server boundary.
-- A Viator MCP 429 returns bounded `RATE_LIMITED` immediately and does not retry without a provider reset window. Activities and Amadeus Flight have independent credentials/configuration and failure domains.
+- A Viator MCP 429 retries only when the provider supplies a reset window no longer than five seconds and retry budget remains; absent or longer windows return bounded `RATE_LIMITED`. Activities and Amadeus Flight have independent credentials/configuration and failure domains.
+- Same-task exact duplicates are rejected by the database guard. Cross-run LIVE and 30-second negative cache hits do not call Viator again and always create current-run `queryId`/evidence; expired/dangling cache rows miss safely, and a concurrent cache waiter never issues a duplicate provider request.
 - Final atomic plan/task completion is rejected when any activities cell is `MISSING`, the task has lost its `RUNNING` lease, or the accepted preference version changed. An `UNAVAILABLE` cell persists only a safe `COMPLETED_WITH_GAPS` summary with service/candidate/reason codes; it never creates an activity offer or source evidence.
 - Flight and activities evidence are distinct categories with independent staleness triggers and application-controlled freshness expiry; the unavailable summary is not evidence and cannot be selected by a plan.
 - Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, `MISSING` matrix and bounded-tool-loop failures are terminal; a bounded provider `UNAVAILABLE` result is a non-commercial gap, not invented evidence.

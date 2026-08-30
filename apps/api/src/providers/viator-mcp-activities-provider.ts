@@ -24,6 +24,7 @@ export interface ViatorMcpActivitiesProviderOptions {
 }
 
 type UnavailableReason = Extract<ProviderResult<never>, { outcome: "UNAVAILABLE" }>["reason"];
+type ProviderAttempt = ProviderResult<ActivityProviderItem[]> & { retryAfterMs?: number };
 
 export function readViatorMcpConfiguration(
   env: NodeJS.ProcessEnv = process.env,
@@ -62,9 +63,15 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
           return this.record(response, startedAt);
         }
         lastReason = response.reason;
-        if (!isRetryable(response.reason) || attempt === this.options.maxRetries) {
-          return this.record(response, startedAt);
+        if (response.reason === "RATE_LIMITED" && response.retryAfterMs !== undefined
+          && response.retryAfterMs <= 5_000 && attempt < this.options.maxRetries) {
+          await delay(response.retryAfterMs, params.signal);
+          continue;
         }
+        if (!isRetryable(response.reason) || attempt === this.options.maxRetries) {
+          return this.record({ outcome: "UNAVAILABLE", reason: response.reason }, startedAt);
+        }
+        await delay(250 * 2 ** attempt, params.signal);
       } catch (error) {
         if (params.signal?.aborted) {
           throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
@@ -82,7 +89,7 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
 
   private async callSearch(
     params: ActivitiesSearchParams,
-  ): Promise<ProviderResult<ActivityProviderItem[]>> {
+  ): Promise<ProviderAttempt> {
     const controller = new AbortController();
     const abortFromCaller = () => controller.abort(params.signal?.reason);
     if (params.signal?.aborted) abortFromCaller();
@@ -116,7 +123,13 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
         }),
         signal: controller.signal,
       });
-      if (response.status === 429) return { outcome: "UNAVAILABLE", reason: "RATE_LIMITED" };
+      if (response.status === 429) return {
+        outcome: "UNAVAILABLE",
+        reason: "RATE_LIMITED",
+        ...(retryAfterMs(response.headers.get("retry-after")) !== null
+          ? { retryAfterMs: retryAfterMs(response.headers.get("retry-after"))! }
+          : {}),
+      };
       if (response.status === 401 || response.status === 403) {
         return { outcome: "UNAVAILABLE", reason: "PROVIDER_NOT_APPROVED" };
       }
@@ -131,14 +144,21 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
       const envelope = viatorMcpResponseSchema.safeParse(protocolPayload);
       if (!envelope.success) return { outcome: "UNAVAILABLE", reason: "INVALID_PROVIDER_RESPONSE" };
       if (envelope.data.error) {
+        const resetMs = retryAfterFromMessage(envelope.data.error.message);
         return {
           outcome: "UNAVAILABLE",
           reason: /rate limit/i.test(envelope.data.error.message) ? "RATE_LIMITED" : "UPSTREAM_FAILURE",
+          ...(resetMs === null ? {} : { retryAfterMs: resetMs }),
         };
       }
       if (envelope.data.result?.isError) {
         const text = envelope.data.result.content?.map((part) => part.text ?? "").join(" ") ?? "";
-        return { outcome: "UNAVAILABLE", reason: /rate limit/i.test(text) ? "RATE_LIMITED" : "UPSTREAM_FAILURE" };
+        const resetMs = retryAfterFromMessage(text);
+        return {
+          outcome: "UNAVAILABLE",
+          reason: /rate limit/i.test(text) ? "RATE_LIMITED" : "UPSTREAM_FAILURE",
+          ...(resetMs === null ? {} : { retryAfterMs: resetMs }),
+        };
       }
       const structured = viatorSearchStructuredContentSchema.safeParse(
         envelope.data.result?.structuredContent,
@@ -256,6 +276,32 @@ function isRetryable(reason: UnavailableReason): boolean {
   // A 429 is surfaced immediately instead of retrying without a provider-
   // supplied reset window. This avoids amplifying pressure on a public MCP.
   return reason === "UPSTREAM_TIMEOUT" || reason === "UPSTREAM_FAILURE";
+}
+
+function retryAfterMs(value: string | null): number | null {
+  if (!value) return null;
+  const seconds = Number(value);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.ceil(seconds * 1_000) : null;
+}
+
+function retryAfterFromMessage(message: string): number | null {
+  const match = message.match(/retry after\s+(\d+(?:\.\d+)?)\s+seconds?/i);
+  return match ? Math.ceil(Number(match[1]) * 1_000) : null;
+}
+
+async function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw signal.reason ?? new DOMException("Aborted", "AbortError");
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function parseBoundedInteger(

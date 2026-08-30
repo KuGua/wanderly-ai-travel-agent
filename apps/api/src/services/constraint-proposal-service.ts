@@ -7,6 +7,7 @@ import {
   tripMembers,
   sharedTrips,
   tripSearchPreferences,
+  tripStaySearchPreferences,
   consentGrants,
 } from "../db/schema.js";
 import { enqueueMemoryObservation } from "./memory-observation-bridge.js";
@@ -176,6 +177,13 @@ async function enqueueReplanForConstraintMutation(params: {
       "Confirmed flight search preferences are required before changing shared constraints",
     );
   }
+  const [stayPreference] = process.env.PLAN_ENABLE_HOTEL === "true"
+    ? await params.tx.select({ version: tripStaySearchPreferences.version }).from(tripStaySearchPreferences)
+      .where(eq(tripStaySearchPreferences.tripId, params.tripId)).orderBy(desc(tripStaySearchPreferences.version)).limit(1)
+    : [];
+  if (process.env.PLAN_ENABLE_HOTEL === "true" && !stayPreference) {
+    throw new ConstraintProposalServiceError("FORBIDDEN", "Confirmed stay search preferences are required before changing shared constraints");
+  }
 
   const snapshotId = await createConstraintSnapshot({
     tripId: params.tripId,
@@ -192,6 +200,7 @@ async function enqueueReplanForConstraintMutation(params: {
     userId: params.userId,
     snapshotId,
     flightSearchPreferencesVersion: preference.version,
+    staySearchPreferencesVersion: stayPreference?.version,
     operation: "REPLAN",
     requestId: stableUuidFromRequestKey(params.requestId),
     tx: params.tx,

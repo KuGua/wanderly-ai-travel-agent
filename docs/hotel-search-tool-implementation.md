@@ -1,7 +1,7 @@
-# 酒店实时搜索与方案比较实施方案
+# 住宿发现与酒店实时报价实施方案
 
-**状态：** 已确认，待实施
-**范围：** 在现有 Shared PLAN/REPLAN durable task 中接入实时酒店搜索，将受控的 `hotel.search` 作为 Shared Agent 的 LLM tool，用于两至三个目的地候选的住宿比较。
+**状态：** Phase 1 已实施，待完整回归与发布门禁
+**范围：** 在现有 Shared PLAN/REPLAN durable task 中接入 provider-neutral `accommodation.discover` 与 `hotel.search`。前者用 OpenTripMap 建立无价格的住宿规划骨架；后者只在用户确认入住日期、房间、住客数和币种后，用 SerpApi 查询实时价格。
 **不在范围：** 真实预订、支付、供应商订单创建、供应商 booking/deep link 对 LLM 的透传、浏览器直连供应商、使用 fixture 或 sandbox 库存作为产品运行时数据。
 
 ## 1. 实施边界与完成标准
@@ -18,6 +18,7 @@
 ### 1.2 完成标准
 
 - Shared PLAN/REPLAN Worker 可针对 snapshot 中每个 destination candidate 调用一次 `hotel.search`，并持久化同一 run/snapshot 的规范化结果或安全缺口。
+- Shared PLAN/REPLAN Worker 可在没有报价偏好时调用 `accommodation.discover`；返回结果只表达名称、类别、坐标、距离、来源和归因，绝不表达实时价格、库存或可预订性。
 - LLM 只接收规范化 hotel offers，最终 plan 只能引用当前 run 的同一完整 evidence 对象。
 - 报价、日期、住客/房间配置、偏好或授权变化，以及 `expiresAt` 到期，均能使相关 plan 进入 `STALE` 并通过现有 replan 控制面重新研究。
 - 所有新增行为有 adapter、skill、服务、planning、stale、权限、失败和回归测试；新增酒店文档须被文档校验器覆盖。当前仓库既有非酒店文档校验债务应在实施 PR 中一并清零。
@@ -27,7 +28,7 @@
 | 现有模块 | 当前事实 | 本功能的处理 |
 |---|---|---|
 | `src/providers/types.ts` | 已有 `StayProvider.searchStays` 与过于简化的 `StayOffer` | 以兼容方式演进为 hotel 专用 port 和可验证报价模型；不新建通用 HTTP client。 |
-| `src/providers/live-provider-factory.ts` | `stayProvider` 始终为 `UnavailableStayProvider` | 仅在 production supplier 配置和批准后注册 `BookingDemandHotelProvider`；否则保持 `UNAVAILABLE/NOT_CONFIGURED`。 |
+| `src/providers/live-provider-factory.ts` | `stayProvider` 始终为 `UnavailableStayProvider` | 通过独立 provider-neutral `HotelProvider` 注册 SerpApi Google Hotels adapter；未配置 key 时保持 `UNAVAILABLE/NOT_CONFIGURED`。 |
 | `src/agents/*` | Registry、scope gate、Zod Skill、timeout 和 `SKILL_INVOKE` audit 已可用 | 新增 Shared-only `hotel:search` scope、execution context 和 `hotel.search` Skill。 |
 | `src/services/flight-search-*` | 已有 confirmed preferences、snapshot/run binding 和 provider search run 模式 | 复用该模式新增独立的住宿搜索偏好服务；不得混入 flight preference 版本。 |
 | `src/services/planning-service.ts` | tool loop 当前仅调度 `flight.search`；`stayProvider` 被直接调用 | 将酒店改为同一 bounded tool loop 的受控 tool，并把 hotel coverage 纳入研究矩阵和最终 evidence validator。 |
@@ -38,7 +39,11 @@
 
 不新增运行时技术栈：Node.js LTS、TypeScript、Fastify、PostgreSQL、Drizzle、Zod、OpenTelemetry、Pino、现有 PostgreSQL durable Worker 与 ModelGateway 均复用。
 
-首发 adapter 名称为 `BookingDemandHotelProvider`，但 provider port 必须保持供应商无关。启用条件是团队已取得 Booking.com Demand API 的 production 准入、API key 和 Affiliate ID，并完成覆盖、限额、价格字段、展示归因和条款 spike。未满足任一条件时，禁止开启 production provider。Booking.com sandbox 和 test hotel 仅用于 adapter contract 测试，绝不作为运行时 fallback。
+2026-08-29 的 supplier spike 确认 Booking.com Demand 要求 Managed Affiliate Partner、合同及 Account Manager 开通，团队无法在 Hackathon 时限内取得；Amadeus 也已被项目既有准入结论排除。因此首发 adapter 改为 `SerpApiHotelProvider`，但 provider port 保持供应商无关。SerpApi 提供即时 self-service key 与每月免费额度；它聚合 Google Hotels 公开搜索结果而非 Google 官方合作 API，故必须显示 `SerpApi Google Hotels` 来源，禁止暗示由 Google/OTA 背书。无 key、额度耗尽、上游失败或字段漂移均严格 `UNAVAILABLE`。
+
+2026-08-30 的 live spike 同时确认：openrouteservice geocoder 不存在 `accommodation` layer，不能承担住宿类别发现；OpenTripMap `places/radius?kinds=accomodations` 可通过目的地中心坐标返回住宿 POI。因此非价格发现使用 `OpenTripMapAccommodationProvider`。免费计划适合本次非商业 Hackathon，但有 5,000 次/日、10 次/秒、无 SLA 和非商业限制；运行时必须保留 `© OpenStreetMap contributors` 归因。商业化或正式生产前必须重新审查许可和供应商方案。
+
+Spike 依据（2026-08-30 复核）：[Booking Demand prerequisites](https://developers.booking.com/demand/docs/getting-started/prerequisites)、[SerpApi Google Hotels contract](https://serpapi.com/google-hotels-api)、[SerpApi free quota](https://serpapi.com/use-cases/web-search-api)、[SerpApi terms](https://serpapi.com/legal)。当前 SerpApi contract 没有可验证的多房参数，因此首发只接受 `room_count=1`；多房请求返回 `SEARCH_CONSTRAINTS_INCOMPLETE`，绝不把单房价乘算成多房实时价。
 
 仅使用 Search/Look 所需接口；本方案不实现 Redirect、Orders 或 Payments。即使 upstream 返回 URL，也在 adapter 边界删除。
 
@@ -52,9 +57,14 @@ Private conversation
 POST /planning/generate or replan event
   -> immutable constraint_snapshot + durable task lease
   -> bounded Shared model tool loop
+  -> accommodation.discover(destinationId)
+  -> DestinationReference -> OpenTripMap -> non-price AccommodationEvidence[]
+  -> provider_search_cache (24h live / 30s negative)
+  -> when confirmed stay preferences exist:
   -> hotel.search(destinationId)
-  -> server derives HotelSearchRequest
-  -> HotelProvider -> normalized HotelOffer[] | UNAVAILABLE
+  -> DestinationReference -> server derives HotelSearchRequest
+  -> SerpApiHotelProvider -> distance-validated HotelOffer[] | UNAVAILABLE
+  -> provider_search_cache (up to 15m live / 30s negative)
   -> provider_search_runs + provider_offers (only LIVE)
   -> evidence/plan validator
   -> PROPOSED plan, or COMPLETED_WITH_GAPS research result
@@ -65,7 +75,7 @@ POST /planning/generate or replan event
 - `constraint_snapshot`：候选目的地、旅行日期、已授权住宿偏好与预算；
 - 最新且已确认的 `trip_stay_search_preferences`：房间数、每间成人数、请求币种、价格口径；
 - task row：`tripId`、`snapshotId`、`agentTaskRunId`、lease 和 preference version；
-- server-owned destination reference：supplier 所需的 city/location ID。
+- server-owned `DestinationReference`：`destinationId`、规范城市名、ISO-3166 国家码和城市中心坐标。Provider port 不接受自由文本重载；无法唯一解析时直接 `UNAVAILABLE`，禁止降级为城市名猜测。
 
 模型、浏览器或 private chat 不得提供上述权威字段；模型只看到 HotelOffer 的安全展示字段和 provenance。
 
@@ -90,16 +100,20 @@ POST /planning/generate or replan event
 | `src/providers/llm-gateway.ts` | system prompt 和 tool definitions 加入 `hotel.search`；保持现有最大 turns，未知 tool 立即失败。 |
 | `src/policy/plan-output-validator.ts` | 校验 hotel ID、destination、日期、occupancy、price/currency、tax-fee status、source/capturedAt/expiresAt 与当前 evidence 精确一致。 |
 | `src/db/schema.ts` | `provider_search_runs.category` 支持 `hotel`；`provider_offers` 保存正规化 hotel offer；新增住宿搜索偏好表和必要索引。 |
-| `apps/api/.env.example` | 增加无敏感 Booking Demand 配置及 feature flag 说明。 |
+| `apps/api/.env.example` | 增加无敏感 SerpApi 配置及 feature flag 说明。 |
 | `apps/web` contracts/query/components | 增加住宿偏好确认表单、research gap 和酒店 comparison DTO；TanStack Query 只缓存服务端 DTO，不保存 supplier secret/URL。 |
 
 ### 5.3 新增
 
-- `src/providers/booking-demand-hotel-provider.ts` 与 `booking-demand-hotel-schemas.ts`：受 Zod 约束的 supplier anti-corruption adapter。
-- `src/services/hotel-search-preferences-service.ts`、`hotel-search-service.ts`、`hotel-research-matrix-service.ts`：确认偏好、snapshot/run 参数验证、持久化、coverage。
+- `src/providers/serpapi-hotel-provider.ts` 与 `serpapi-hotel-schemas.ts`：受 Zod 约束的 supplier anti-corruption adapter。
+- `src/providers/opentripmap-accommodation-provider.ts` 与 schema：以中心坐标发现住宿；只返回无价格 POI，并保留 OSM 归因。
+- `src/services/destination-reference-service.ts`：从服务端 destination 数据或本地城市目录产生唯一 `DestinationReference`；歧义或字段缺失时 fail closed。
+- `src/services/provider-search-cache-service.ts`：hotel、activity、accommodation 共用的跨 run read-through cache、短负缓存和数据库租约防击穿。
+- `src/services/accommodation-discovery-service.ts`、研究矩阵与 `accommodation-discovery-skill.ts`：Shared-only 非价格住宿发现。
+- `src/services/stay-search-preferences-service.ts`、`hotel-search-service.ts`、`hotel-research-matrix-service.ts`：确认偏好、snapshot/run 参数验证、持久化、coverage。
 - `src/skills/shared/hotel-search-skill.ts` 与 `hotel-search.md`：Shared-only typed Skill。
 - migration：`trip_stay_search_preferences` 及索引；如无法安全复用现有类别类型，再添加受限 enum/check constraint。
-- `POST/GET /api/v1/trips/:tripId/stay-search-preferences`：仅成员可读；mutation 需 idempotency key，确认后返回 version。
+- `PUT/GET /api/v1/trips/:tripId/stay-search-preferences`：仅成员可读；确认后返回 version。
 
 ## 6. 数据模型与接口
 
@@ -145,28 +159,34 @@ Tool hotel.search
 Input:  { destinationId }
 Output: { outcome: "LIVE", queryId, offers: HotelOffer[] }
       | { outcome: "UNAVAILABLE", code: ProviderUnavailableCode }
+
+Tool accommodation.discover
+Input:  { destinationId }
+Output: { outcome: "LIVE", queryId, accommodations: AccommodationEvidence[] }
+      | { outcome: "UNAVAILABLE", code: ProviderUnavailableCode }
 ```
 
 该 HTTP endpoint 只保存用户已确认的表单值；私聊中的模型提问只能创建现有 proposal 模式下的确认草稿，不能调用此 endpoint 或 provider。planning endpoint 不新增浏览器直连 hotel search API。
 
 ## 7. 失效、并发与错误语义
 
-1. 每个 task 对每个 destination 最多执行一次 hotel query；以 task/run/snapshot/destination/preference-version 的稳定 fingerprint 去重。重试只允许瞬态网络、429 和 5xx，且遵守 provider deadline 和 bounded retry policy。
-2. provider 成功时写入同一 snapshot/run 的 `provider_search_runs` 与 `provider_offers`；失败只写安全 outcome/code，绝不写虚假 offer。
-3. 任一 hotel `UNAVAILABLE` 只产生 `hotel` service gap，其他 research 继续；最终写 `COMPLETED_WITH_GAPS`，不能把缺口摘要作为 plan evidence。
-4. `expiresAt` 到期、价格/库存 change event、旅行日期、候选目的地、住宿偏好、房间/住客数、币种或授权投影改变，均在同一事务中 stale 相关 ACTIVE plan 与 confirmations，并 enqueue REPLAN。
-5. 当前 task lease 丢失、preference version 已变化、snapshot 不匹配、tool schema 无效、未知 tool、跨 run evidence 或 final validator 失败均为 terminal；不得产生新 plan。
+1. 每个 task 对每个 destination 最多执行一次 hotel query；`provider_search_runs_hotel_task_destination_unique` 在数据库层原子占位，避免并发 Tool call 绕过应用层检查。跨 run 使用不含用户 ID 的稳定 fingerprint（目的地、日期、房间/住客、币种、locale）做 read-through cache；命中时复制规范化 offer 为当前 run 的新 evidence，不跨 run 引用旧 `queryId`。
+2. 通用 `provider_search_cache` 按 provider、category 和完整受控请求计算 fingerprint。hotel LIVE 最长 15 分钟且绝不超过最早 offer 的 `expiresAt`；accommodation LIVE 最长 24 小时；`UNAVAILABLE` 均只缓存 30 秒。并发 miss 由 35 秒数据库 lease 合并；等待者最多等待 1.5 秒，未完成则安全返回 `UPSTREAM_TIMEOUT`，不再发起第二次 supplier 请求。cache hit 必须复制为当前 run 的新 `queryId`，不得跨 run 引用旧 evidence。
+3. provider 成功时写入同一 snapshot/run 的 `provider_search_runs` 与 `provider_offers`；失败只写安全 outcome/code，绝不写虚假 offer。
+4. 任一 hotel `UNAVAILABLE` 只产生 `hotel` service gap，其他 research 继续；最终写 `COMPLETED_WITH_GAPS`，不能把缺口摘要作为 plan evidence。
+5. `expiresAt` 到期、价格/库存 change event、旅行日期、候选目的地、住宿偏好、房间/住客数、币种或授权投影改变，均在同一事务中 stale 相关 ACTIVE plan 与 confirmations，并 enqueue REPLAN。
+6. 当前 task lease 丢失、preference version 已变化、snapshot 不匹配、tool schema 无效、未知 tool、跨 run evidence 或 final validator 失败均为 terminal；不得产生新 plan。
 
 ## 8. 可观测性与安全
 
-- OTel client span：`provider.name=booking_demand`、`provider.operation=hotel_search`、`provider.outcome`、`error.category`；不写 trip/run/query/property ID、目的地文本、价格、住客数或请求体。
-- Metrics：`hotel_search_tool_invocations_total{outcome,error_category}`、`hotel_provider_requests_total{outcome,error_category}`、`hotel_provider_latency_ms`、`planning_research_results_total{capability,status}`。不得增加高基数标签。
-- Audit：`HOTEL_SEARCH_REQUESTED`、`HOTEL_SEARCH_COMPLETED`、`HOTEL_SEARCH_UNAVAILABLE`、`STAY_SEARCH_PREFERENCES_CONFIRMED`；summary 仅含稳定 ID、版本、outcome 和 count，不含价格、地点、房型或用户输入。
-- 密钥仅来自 AWS Secrets Manager/运行时 secret：`BOOKING_DEMAND_API_KEY`、`BOOKING_DEMAND_AFFILIATE_ID`；浏览器不可见，`.env.example` 仅留占位符。
+- OTel client span：`provider.name=serpapi_google_hotels`、`provider.operation=hotel_search`、`provider.outcome`、`error.category`；不写 trip/run/query/property ID、目的地文本、价格、住客数或请求体。
+- Metrics：hotel/accommodation provider 与 tool 指标，以及 `provider_search_cache_total{category,outcome}`。cache outcome 仅允许 `hit_live`、`hit_unavailable`、`miss`、`wait_timeout`，不得增加 fingerprint 或其他高基数标签。
+- Audit：`HOTEL_SEARCH_*`、`ACCOMMODATION_DISCOVERY_*`、`STAY_SEARCH_PREFERENCES_CONFIRMED`；summary 仅含稳定 ID、版本、outcome 和 count，不含价格、地点、房型或用户输入。
+- 密钥仅来自 AWS Secrets Manager/运行时 secret：`SERPAPI_API_KEY`、`OPENTRIPMAP_API_KEY`；浏览器不可见，`.env.example` 仅留占位符。
 
 ## 9. 实施阶段与依赖
 
-1. **Supplier spike（阻塞后续启用）**：确认 Booking Demand production access、目标城市覆盖、配额、字段、归因、条款和 API version；记录结果。未通过时保留 feature disabled。
+1. **Supplier spike（已完成）**：记录 Booking/Amadeus/ORS accommodation 不可用结论，以及 SerpApi 与 OpenTripMap 的准入、额度、字段、归因和条款；没有 runtime key 时对应 feature 保持 disabled。
 2. **领域与存储**：migration、Zod schemas、`HotelOffer`、住宿偏好服务/route、stale trigger、测试 doubles。依赖：无。
 3. **Provider adapter**：配置读取、deadline、认证、schema 校验、错误映射、normalization、provider metrics。依赖：阶段 1、2。
 4. **Skill 与 planning**：scope/context、`hotel.search`、registry、bounded model loop、coverage matrix、validator、研究结果。依赖：阶段 2、3。
@@ -176,7 +196,9 @@ Output: { outcome: "LIVE", queryId, offers: HotelOffer[] }
 ## 10. 必测场景
 
 - 未确认住宿偏好、无房间/住客数、跨成员越权读取或写入、模型试图传日期/价格/provider/URL。
-- 每目的地一次成功与一次 `NO_RESULTS`、429、timeout、5xx、认证失败、schema 漂移、过期报价和重复 tool call。
+- 每目的地一次成功与一次 `NO_RESULTS`、429、timeout、5xx、认证失败、schema 漂移、过期报价和重复 tool call；覆盖同 task 并发去重、跨 run LIVE cache、30 秒负缓存、过期/悬空 cache miss 与 run-bound `queryId` 重写。
+- `DestinationReference` 缺少 ISO 国家码/坐标、同名城市歧义时不调用 provider；ORS 只接受 ISO `boundary.country`；SerpApi 丢弃无坐标或受控半径外结果，并在截取 10 条前完成过滤。
+- OpenTripMap 使用坐标而非城市文本，输出不含价格/库存/booking link，保留 OSM attribution；超过半径、无名称、quota/timeout/schema drift 均安全不可用。
 - 房间配置、日期、预算/住宿偏好或 consent 变化后的 stale/replan；旧 evidence 和跨 run evidence 被 validator 拒绝。
 - `PARTIAL`/`UNKNOWN` 税费始终展示“可能另计”；`INCLUDED` 仅在 provider 明确返回时显示为已包含。
 - 任何 raw supplier payload、key、URL、价格/房型输入均不出现在日志、trace、metric label、audit 或模型 tool output。
@@ -184,7 +206,7 @@ Output: { outcome: "LIVE", queryId, offers: HotelOffer[] }
 
 ## 11. 明确禁止事项
 
-- 不将 Booking.com sandbox、免费试用返回或 fixture 当作生产/演示实时酒店库存。
+- 不将任何 demo response、fixture 或缓存样例当作生产/演示实时酒店库存。
 - 不实现 Redirect、Orders、Payments，且不保存 booking URL。
 - 不引入 Redis、Temporal、Step Functions、WebSocket、MCP server、自由 multi-agent 或新的客户端业务真相状态。
 - 不把住房搜索、报价有效性或税费判断交给 LLM；LLM 只选择已验证证据并解释取舍。

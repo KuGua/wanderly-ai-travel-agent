@@ -407,6 +407,39 @@ metrics.registerHistogram("activities_provider_latency_ms", "Viator MCP activity
   provider: ["viator_mcp"],
   outcome: ["live", "unavailable"],
 });
+
+metrics.registerCounter("hotel_provider_requests_total", "Hotel provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["serpapi_google_hotels"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerHistogram("hotel_provider_latency_ms", "Hotel provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000], {
+  provider: ["serpapi_google_hotels"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("accommodation_provider_requests_total", "Accommodation discovery provider requests by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["opentripmap"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerHistogram("accommodation_provider_latency_ms", "Accommodation discovery provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000], {
+  provider: ["opentripmap"],
+  outcome: ["live", "unavailable"],
+});
+metrics.registerCounter("accommodation_tool_invocations_total", "accommodation.discover Tool invocations by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["opentripmap"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerCounter("hotel_tool_invocations_total", "hotel.search Tool invocations by bounded outcome.", {
+  outcome: ["live", "unavailable"],
+  provider: ["serpapi_google_hotels"],
+  error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerCounter("provider_search_cache_total", "Provider search read-through cache outcomes.", {
+  category: ["hotel", "activity", "accommodation"],
+  outcome: ["hit_live", "hit_unavailable", "miss", "wait_timeout"],
+});
 metrics.registerCounter("activities_tool_invocations_total", "Activities tool execution outcomes.", {
   outcome: ["live", "unavailable"],
   provider: ["viator_mcp"],

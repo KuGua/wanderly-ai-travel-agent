@@ -5,37 +5,13 @@ import { SkillError } from "../../agents/errors.js";
 import { createTravelProviders } from "../../providers/live-provider-factory.js";
 import type { ActivitiesProvider } from "../../providers/types.js";
 import {
+  ActivitiesSearchAlreadyAttemptedError,
+  activityEvidenceSchema,
   activitiesSearchInputSchema,
   executeAndPersistActivitiesSearch,
   validateSnapshotBoundActivitiesSearch,
   type ActivitiesSearchInput,
 } from "../../services/activities-search-service.js";
-
-const activityEvidenceSchema = z.object({
-  id: z.string().uuid(),
-  providerOfferId: z.string().min(1),
-  providerName: z.literal("viator"),
-  queryId: z.string().uuid(),
-  destination: z.string().min(1).max(128),
-  title: z.string().min(1).max(512),
-  thumbnailUrl: z.string().url(),
-  rating: z.number().min(0).max(5).nullable(),
-  reviewCount: z.number().int().nonnegative(),
-  freeCancellation: z.boolean(),
-  durationMinutes: z.object({
-    fixed: z.number().int().nonnegative().nullable(),
-    from: z.number().int().nonnegative().nullable(),
-    to: z.number().int().nonnegative().nullable(),
-  }).strict(),
-  category: z.string().min(1).nullable(),
-  // Price and currency travel together or not at all: an amount without a
-  // stated denomination is what made this field unusable before.
-  fromPrice: z.number().nonnegative(),
-  currency: z.string().regex(/^[A-Z]{3}$/),
-  source: z.literal("Viator Experiences MCP"),
-  capturedAt: z.string().datetime({ offset: true }),
-  expiresAt: z.string().datetime({ offset: true }),
-}).strict();
 
 export const activitiesSearchOutputSchema = z.discriminatedUnion("outcome", [
   z.object({
@@ -94,17 +70,23 @@ async function executeActivitiesSearchSkill(
   } catch (error) {
     throw new SkillError("POLICY_DENIED", `activities.search constraints rejected: ${(error as Error).message}`);
   }
-  const result = await executeAndPersistActivitiesSearch({
-    currency: ctx.activitiesSearch.currency,
-    ctx: ctx.ctx,
-    tripId: ctx.activitiesSearch.tripId,
-    snapshotId: ctx.activitiesSearch.snapshotId,
-    agentTaskRunId: ctx.activitiesSearch.agentTaskRunId,
-    snapshot: ctx.snapshot,
-    input: validated,
-    provider,
-    signal,
-  });
+  let result;
+  try {
+    result = await executeAndPersistActivitiesSearch({
+      currency: ctx.activitiesSearch.currency,
+      ctx: ctx.ctx,
+      tripId: ctx.activitiesSearch.tripId,
+      snapshotId: ctx.activitiesSearch.snapshotId,
+      agentTaskRunId: ctx.activitiesSearch.agentTaskRunId,
+      snapshot: ctx.snapshot,
+      input: validated,
+      provider,
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof ActivitiesSearchAlreadyAttemptedError) throw new SkillError("POLICY_DENIED", error.message);
+    throw error;
+  }
   return result.outcome === "LIVE"
     ? { outcome: "LIVE", queryId: result.queryId!, activities: result.data }
     : { outcome: "UNAVAILABLE", code: result.reason };

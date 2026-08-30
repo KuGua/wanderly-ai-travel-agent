@@ -143,6 +143,21 @@ describe("ViatorMcpActivitiesProvider", () => {
     });
   });
 
+  it("honors a bounded provider reset window before retrying a 429", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response("", { status: 429, headers: { "retry-after": "0" } }))
+      .mockResolvedValueOnce(jsonResponse(validEnvelope([experience()]))) as typeof fetch;
+    const retrying = new ViatorMcpActivitiesProvider({
+      endpoint: "https://example.test/mcp",
+      timeoutMs: 100,
+      maxRetries: 1,
+      fetchImpl,
+      now: () => fixedNow,
+    });
+    await expect(retrying.searchActivities(searchParams())).resolves.toMatchObject({ outcome: "LIVE" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it("maps its own request deadline to UPSTREAM_TIMEOUT", async () => {
     const fetchImpl = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });

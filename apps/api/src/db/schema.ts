@@ -43,6 +43,9 @@ export const auditActionEnum = pgEnum("audit_action", [
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
   "FLIGHT_SEARCH_REQUESTED", "FLIGHT_SEARCH_COMPLETED", "FLIGHT_SEARCH_UNAVAILABLE",
   "ACTIVITIES_SEARCH_REQUESTED", "ACTIVITIES_SEARCH_COMPLETED", "ACTIVITIES_SEARCH_UNAVAILABLE",
+  "ACCOMMODATION_DISCOVERY_REQUESTED", "ACCOMMODATION_DISCOVERY_COMPLETED", "ACCOMMODATION_DISCOVERY_UNAVAILABLE",
+  "HOTEL_SEARCH_REQUESTED", "HOTEL_SEARCH_COMPLETED", "HOTEL_SEARCH_UNAVAILABLE",
+  "STAY_SEARCH_PREFERENCES_CONFIRMED",
   // Phase 2 / spec §8 audit surface (added via 0021_team_orchestration_enums.sql):
   "TRIP_CONSTRAINT_PROPOSED",
   "TRIP_CONSTRAINT_CONFIRMED",
@@ -377,6 +380,31 @@ export const providerSearchRuns = pgTable("provider_search_runs", {
 }, (table) => ({
   snapshotIdx: index("provider_search_runs_snapshot_id_idx").on(table.snapshotId),
   taskIdx: index("provider_search_runs_agent_task_run_id_idx").on(table.agentTaskRunId),
+  hotelTaskDestinationUnique: uniqueIndex("provider_search_runs_hotel_task_destination_unique")
+    .on(table.agentTaskRunId, table.snapshotId, table.destinationId)
+    .where(sql`${table.agentTaskRunId} IS NOT NULL AND ${table.destinationId} IS NOT NULL AND ${table.category} = 'hotel'`),
+}));
+
+/**
+ * Provider-neutral, bounded search cache shared by hotel quotes, activities,
+ * and accommodation discovery. It stores only a SHA-256 fingerprint and a
+ * pointer to normalized evidence; supplier payloads, request URLs and user
+ * identifiers never enter this table.
+ */
+export const providerSearchCache = pgTable("provider_search_cache", {
+  requestFingerprint: varchar("request_fingerprint", { length: 64 }).primaryKey(),
+  providerName: varchar("provider_name", { length: 128 }).notNull(),
+  category: varchar("category", { length: 32 }).notNull(),
+  state: varchar("state", { length: 16 }).notNull(),
+  sourceSearchRunId: uuid("source_search_run_id").references(() => providerSearchRuns.id, { onDelete: "cascade" }),
+  errorCode: varchar("error_code", { length: 64 }),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  expiresIdx: index("provider_search_cache_expires_at_idx").on(table.expiresAt),
+  providerCategoryIdx: index("provider_search_cache_provider_category_idx").on(table.providerName, table.category),
 }));
 
 export const tripSearchPreferences = pgTable("trip_search_preferences", {
@@ -393,6 +421,22 @@ export const tripSearchPreferences = pgTable("trip_search_preferences", {
 }, (table) => ({
   tripVersionUnique: uniqueIndex("trip_search_preferences_trip_version_unique").on(table.tripId, table.version),
   tripIdx: index("trip_search_preferences_trip_id_idx").on(table.tripId),
+}));
+
+export const tripStaySearchPreferences = pgTable("trip_stay_search_preferences", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  version: integer("version").notNull(),
+  roomCount: integer("room_count").notNull(),
+  adultsPerRoom: jsonb("adults_per_room").$type<number[]>().notNull(),
+  currency: varchar("currency", { length: 3 }).notNull(),
+  priceDisplayMode: varchar("price_display_mode", { length: 32 }).default("TOTAL_AND_PER_NIGHT").notNull(),
+  taxFeeDisclosure: varchar("tax_fee_disclosure", { length: 48 }).default("SHOW_POSSIBLY_EXTRA_WHEN_UNKNOWN").notNull(),
+  confirmedBy: uuid("confirmed_by").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tripVersionUnique: uniqueIndex("trip_stay_search_preferences_trip_version_unique").on(table.tripId, table.version),
+  tripIdx: index("trip_stay_search_preferences_trip_id_idx").on(table.tripId),
 }));
 
 // ─── Booking Executions ─────────────────────────────────────────────────────
@@ -533,6 +577,8 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   snapshotId: uuid("snapshot_id").references(() => constraintSnapshots.id),
   /** Immutable confirmed-search-preference version bound at PLAN/REPLAN acceptance. */
   flightSearchPreferencesVersion: integer("flight_search_preferences_version"),
+  /** Immutable confirmed stay-search-preference version bound at acceptance. */
+  staySearchPreferencesVersion: integer("stay_search_preferences_version"),
   requestId: uuid("request_id").notNull(),
   userMessageId: uuid("user_message_id").references(() => chatMessages.id, { onDelete: "cascade" }),
   assistantMessageId: uuid("assistant_message_id").references(() => chatMessages.id, { onDelete: "set null" }),

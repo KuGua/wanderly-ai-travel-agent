@@ -5,6 +5,7 @@ import {
   sharedTrips,
   tripMembers,
   constraintSnapshots,
+  tripStaySearchPreferences,
 } from "../db/schema.js";
 import { claimIdempotency } from "./idempotency-service.js";
 import { createConstraintSnapshot } from "./planning-service.js";
@@ -124,11 +125,17 @@ export async function processChangeEvent(params: {
       .where(eq(tripSearchPreferences.tripId, params.tripId))
       .orderBy(desc(tripSearchPreferences.version)).limit(1);
     if (!preference) throw new Error("Confirmed flight search preferences are required for replan");
+    const [stayPreference] = process.env.PLAN_ENABLE_HOTEL === "true"
+      ? await tx.select().from(tripStaySearchPreferences).where(eq(tripStaySearchPreferences.tripId, params.tripId))
+        .orderBy(desc(tripStaySearchPreferences.version)).limit(1)
+      : [];
+    if (process.env.PLAN_ENABLE_HOTEL === "true" && !stayPreference) throw new Error("Confirmed stay search preferences are required for replan");
     // This is durable acceptance only.  Provider/model execution belongs to
     // the Worker after the transaction commits.
     const accepted = await acceptPlanningTask({
       ctx: params.ctx, tripId: params.tripId, userId: actorUserId,
       snapshotId: newSnapshotId, flightSearchPreferencesVersion: preference.version,
+      staySearchPreferencesVersion: stayPreference?.version,
       operation: "REPLAN", requestId: params.eventId, tx,
     });
 

@@ -4,6 +4,7 @@ import type {
   PlaceSearchProvider,
   ProviderResult,
 } from "./types.js";
+import type { DestinationReference } from "../types/domain.js";
 import { metrics } from "../observability/metrics.js";
 import { orsGeocodingResponseSchema, type OrsGeocodingResponse } from "./ors-place-schemas.js";
 
@@ -44,7 +45,7 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
   }
 
   async searchPlaces(params: {
-    destinationId: string;
+    destination: DestinationReference;
     keyword: string;
     category: "ATTRACTION" | "HOTEL" | "RESTAURANT" | "TRANSPORT_HUB" | "OTHER";
     snapshotId: string;
@@ -62,7 +63,7 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
         text: params.keyword,
         layers: layer,
         size: "5",
-        "boundary.country": destinationCountryCodeHint(params.destinationId),
+        "boundary.country": params.destination.countryCode,
       });
       const response = await this.request(`/geocode/search?${query.toString()}`, params.signal);
       if (response.status === 429) return this.unavailable("RATE_LIMITED", start);
@@ -80,6 +81,7 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
       for (const feature of payload.features) {
         const normalized = normalizeFeature(feature, params.category, capturedAt);
         if (!normalized) continue;
+        if (normalized.countryCode !== params.destination.countryCode) continue;
         candidates.push(normalized);
         if (candidates.length >= 5) break;
       }
@@ -130,11 +132,8 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
 function categoryToLayer(category: NormalizedPlaceCandidate["kind"]): string {
   switch (category) {
     case "HOTEL":
-      return "accommodation";
     case "RESTAURANT":
-      return "food";
     case "TRANSPORT_HUB":
-      return "transport";
     case "ATTRACTION":
       return "venue";
     case "OTHER":
@@ -170,16 +169,4 @@ function normalizeFeature(
     source: "ORS Geocoding",
     capturedAt,
   };
-}
-
-/**
- * DestinationId → ISO-3166-1 alpha-2 hint. Today the planner stores
- * destination candidates as free-text city names, not country codes. The
- * router keeps the hint permissive: we pass through whatever the planner
- * gives us, and ORS's own boundary filter (when set) refines it. Future
- * iterations will consult `destination_candidates.countryCode` once the
- * trip catalog is normalized.
- */
-function destinationCountryCodeHint(destinationId: string): string {
-  return destinationId;
 }

@@ -2,7 +2,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
-import { sharedTrips, tripMembers, tripSearchPreferences } from "../db/schema.js";
+import { sharedTrips, tripMembers, tripSearchPreferences, tripStaySearchPreferences } from "../db/schema.js";
 import { planRequestSchema } from "../types/schemas.js";
 import { createConstraintSnapshot, getLatestActivePlan } from "../services/planning-service.js";
 import { acceptPlanningTask } from "../tasks/task-repository.js";
@@ -60,9 +60,16 @@ export async function planningRoutes(app: FastifyInstance) {
       .where(eq(tripSearchPreferences.tripId, body.tripId))
       .orderBy(desc(tripSearchPreferences.version)).limit(1);
     if (!latestPreference[0]) throw new ApiError(422, "Unprocessable Entity", "Confirmed flight search preferences are required");
+    const latestStayPreference = process.env.PLAN_ENABLE_HOTEL === "true"
+      ? await db.select().from(tripStaySearchPreferences).where(eq(tripStaySearchPreferences.tripId, body.tripId)).orderBy(desc(tripStaySearchPreferences.version)).limit(1)
+      : [];
+    if (process.env.PLAN_ENABLE_HOTEL === "true" && !latestStayPreference[0]) {
+      throw new ApiError(422, "Unprocessable Entity", "Confirmed stay search preferences are required");
+    }
     const accepted = await acceptPlanningTask({
       ctx, tripId: body.tripId, userId: request.user.id, snapshotId,
       flightSearchPreferencesVersion: latestPreference[0].version,
+      staySearchPreferencesVersion: latestStayPreference[0]?.version,
       operation: "PLAN", requestId: request.clientRequestId ?? randomUUID(),
     });
     return reply.code(202).send({ ...accepted, snapshotId });

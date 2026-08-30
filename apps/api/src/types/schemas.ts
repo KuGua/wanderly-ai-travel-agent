@@ -259,6 +259,28 @@ export const tripSearchPreferencesResponseSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
+export const tripStaySearchPreferencesRequestSchema = z.object({
+  roomCount: z.number().int().min(1).max(8),
+  adultsPerRoom: z.array(z.number().int().min(1).max(8)).min(1).max(8),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+}).strict().superRefine((value, ctx) => {
+  if (value.adultsPerRoom.length !== value.roomCount) {
+    ctx.addIssue({ code: "custom", message: "adultsPerRoom must contain one entry per room", path: ["adultsPerRoom"] });
+  }
+});
+
+export const tripStaySearchPreferencesResponseSchema = z.object({
+  tripId: uuidSchema,
+  version: z.number().int().positive(),
+  roomCount: z.number().int().min(1).max(8),
+  adultsPerRoom: z.array(z.number().int().min(1).max(8)).min(1).max(8),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  priceDisplayMode: z.literal("TOTAL_AND_PER_NIGHT"),
+  taxFeeDisclosure: z.literal("SHOW_POSSIBLY_EXTRA_WHEN_UNKNOWN"),
+  confirmedBy: uuidSchema,
+  createdAt: z.string().datetime(),
+});
+
 export const changeEventSchema = z.object({
   tripId: uuidSchema,
   eventId: uuidSchema,
@@ -653,6 +675,7 @@ export type OwnerConversationMessage = z.infer<typeof ownerConversationMessageSc
 export type ConversationResponseMode = z.infer<typeof conversationResponseModeSchema>;
 export type ConversationTurnAcceptedResponse = z.infer<typeof conversationTurnAcceptedResponseSchema>;
 export type TripSearchPreferencesRequest = z.infer<typeof tripSearchPreferencesRequestSchema>;
+export type TripStaySearchPreferencesRequest = z.infer<typeof tripStaySearchPreferencesRequestSchema>;
 export type AgentTaskOperation = z.infer<typeof agentTaskOperationSchema>;
 export type AgentTaskStatus = z.infer<typeof agentTaskStatusSchema>;
 export type AgentRunResponse = z.infer<typeof agentRunResponseSchema>;

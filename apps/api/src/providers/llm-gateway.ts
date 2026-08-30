@@ -54,6 +54,7 @@ const parsedCompletionSchema = z.object({
     flights: z.array(z.unknown()),
     stays: z.array(z.unknown()),
     activities: z.array(z.unknown()).optional(),
+    hotels: z.array(z.unknown()).optional(),
     generatedAt: z.string().min(1),
     constraintReferences: z.array(z.string().min(1)).optional(),
     publicExplanationTokens: z.array(z.string().min(1)).optional(),
@@ -488,7 +489,8 @@ export class LLMGateway implements ModelGateway {
     const messages: Array<Record<string, unknown>> = [
       {
         role: "system",
-        content: "You are the Shared Trip planning skill. Use flight.search for every controlled origin/destination cell and activities.search for every controlled destination when those tools are available. "
+        content: "You are the Shared Trip planning skill. Use flight.search, accommodation.discover, hotel.search, and activities.search for every controlled destination cell when those tools are available. "
+          + "accommodation.discover is a non-price planning skeleton; never describe it as availability or a quote. hotel.search is the only live hotel price source and is exposed only after explicit stay-search preferences are confirmed. "
           + "Tool arguments are ordinary search parameters only; never invent authority fields. "
           + "Never invent, alter, or infer provider evidence, prices, currencies, links, or expiry. "
           + "After research, return exactly one JSON object with a top-level plan field.",
