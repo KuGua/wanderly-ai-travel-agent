@@ -16,6 +16,7 @@ import type { ConversationPlace } from "../types/schemas.js";
 import type { PersonalTripContext } from "../skills/personal/personal-trip-context-schema.js";
 import { recordAgentRun, type AgentRunTokens } from "../observability/agent-runs.js";
 import { metrics, type MetricProvider } from "../observability/metrics.js";
+import { logSafeRuntimeEvent } from "../observability/telemetry.js";
 import {
   TRACEPARENT_HEADER,
   TRACESTATE_HEADER,
@@ -335,6 +336,10 @@ export class LLMGateway implements ModelGateway {
     const ctx = params.ctx ?? this.options.ctx;
     const signal = params.signal;
     const start = Date.now();
+    logSafeRuntimeEvent(ctx, {
+      component: "llm", event: "request", operation: "plan.comparison", outcome: "started",
+      promptVersion: this.options.promptVersion,
+    });
     const span = getTracer().startSpan("llm.openai.parse", {
       kind: SpanKind.CLIENT,
       attributes: {
@@ -350,6 +355,10 @@ export class LLMGateway implements ModelGateway {
     );
 
     const recordFailure = async (errorCode: string, extra?: AgentRunTokens): Promise<never> => {
+      logSafeRuntimeEvent(ctx, {
+        component: "llm", event: "request", operation: "plan.comparison", outcome: "failure",
+        errorCode, latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,
+      });
       await recordAgentRun({
         ctx,
         skillName: "plan.comparison",
@@ -425,6 +434,11 @@ export class LLMGateway implements ModelGateway {
         }
         safeSetAttribute(span, "llm.outcome", "success");
         span.end();
+        logSafeRuntimeEvent(ctx, {
+          component: "llm", event: "request", operation: "plan.comparison", outcome: "success",
+          latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,
+          outputHash: hashOutput(parsed.plan), tokenCount: tokens?.total,
+        });
         await recordAgentRun({
           ctx,
           skillName: "plan.comparison",
@@ -470,6 +484,11 @@ export class LLMGateway implements ModelGateway {
     }
     const client = await this.loadClient();
     const ctx = params.ctx ?? this.options.ctx;
+    const start = Date.now();
+    logSafeRuntimeEvent(ctx, {
+      component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "started",
+      promptVersion: this.options.promptVersion,
+    });
     const messages: Array<Record<string, unknown>> = [
       {
         role: "system",
@@ -491,21 +510,43 @@ export class LLMGateway implements ModelGateway {
     ];
     for (let turn = 0; turn < params.maxTurns; turn += 1) {
       if (params.signal?.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
-      const raw = await client.chat.completions.create({
-        model: this.options.modelName,
-        messages,
-        tools: params.tools.map((tool) => ({ type: "function", function: tool })),
-        tool_choice: "auto",
-        response_format: { type: "json_object" },
-      }, { signal: params.signal, headers: outboundTraceHeaders(ctx) }) as {
+      let raw: {
         choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }>;
       };
+      try {
+        raw = await client.chat.completions.create({
+          model: this.options.modelName,
+          messages,
+          tools: params.tools.map((tool) => ({ type: "function", function: tool })),
+          tool_choice: "auto",
+          response_format: { type: "json_object" },
+        }, { signal: params.signal, headers: outboundTraceHeaders(ctx) }) as typeof raw;
+      } catch (error) {
+        logSafeRuntimeEvent(ctx, {
+          component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "failure",
+          errorCode: classifyError(error), latencyMs: Date.now() - start,
+          promptVersion: this.options.promptVersion,
+        });
+        throw error;
+      }
       const message = raw.choices?.[0]?.message;
       const calls = message?.tool_calls ?? [];
       if (calls.length === 0) {
         await params.beforeFinal?.();
         const completion = parsedCompletionSchema.safeParse(completionPayload({ parsed: null, content: message?.content }));
-        if (!completion.success) throw new ModelGatewayError("SCHEMA_PARSE");
+        if (!completion.success) {
+          logSafeRuntimeEvent(ctx, {
+            component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "failure",
+            errorCode: "SCHEMA_PARSE", latencyMs: Date.now() - start,
+            promptVersion: this.options.promptVersion,
+          });
+          throw new ModelGatewayError("SCHEMA_PARSE");
+        }
+        logSafeRuntimeEvent(ctx, {
+          component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "success",
+          latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,
+          outputHash: hashOutput(completion.data.plan),
+        });
         return completion.data.plan;
       }
       messages.push({ role: "assistant", content: message?.content ?? null, tool_calls: calls });
@@ -515,10 +556,35 @@ export class LLMGateway implements ModelGateway {
         if (!name || !id) throw new ModelGatewayError("SCHEMA_PARSE");
         let args: unknown;
         try { args = JSON.parse(call.function?.arguments ?? ""); } catch { throw new ModelGatewayError("SCHEMA_PARSE"); }
-        const result = await params.dispatchTool({ id, name, arguments: args });
+        const toolStart = Date.now();
+        logSafeRuntimeEvent(ctx, {
+          component: "tool", event: "dispatch", operation: "plan.comparison", outcome: "started",
+          toolName: name, attempt: turn + 1,
+        });
+        let result: unknown;
+        try {
+          result = await params.dispatchTool({ id, name, arguments: args });
+          logSafeRuntimeEvent(ctx, {
+            component: "tool", event: "dispatch", operation: "plan.comparison", outcome: "success",
+            toolName: name, attempt: turn + 1, latencyMs: Date.now() - toolStart,
+            outputHash: hashOutput(result),
+          });
+        } catch (error) {
+          logSafeRuntimeEvent(ctx, {
+            component: "tool", event: "dispatch", operation: "plan.comparison", outcome: "failure",
+            toolName: name, attempt: turn + 1, latencyMs: Date.now() - toolStart,
+            errorCode: classifyError(error),
+          });
+          throw error;
+        }
         messages.push({ role: "tool", tool_call_id: id, content: JSON.stringify(result) });
       }
     }
+    logSafeRuntimeEvent(ctx, {
+      component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "failure",
+      errorCode: "TOOL_CALL_MAX_TURNS", latencyMs: Date.now() - start,
+      promptVersion: this.options.promptVersion,
+    });
     throw new ModelGatewayError("TOOL_CALL_MAX_TURNS");
   }
 
@@ -550,6 +616,10 @@ export class LLMGateway implements ModelGateway {
   }): Promise<ConversationReply> {
     const ctx = params.ctx ?? this.options.ctx;
     const start = Date.now();
+    logSafeRuntimeEvent(ctx, {
+      component: "llm", event: "request", operation: "travel.conversation", outcome: "started",
+      promptVersion: this.options.promptVersion,
+    });
     const span = getTracer().startSpan("llm.openai.parse", {
       kind: SpanKind.CLIENT,
       attributes: {
@@ -566,6 +636,10 @@ export class LLMGateway implements ModelGateway {
     );
 
     const recordFailure = async (errorCode: string, tokens?: AgentRunTokens): Promise<never> => {
+      logSafeRuntimeEvent(ctx, {
+        component: "llm", event: "request", operation: "travel.conversation", outcome: "failure",
+        errorCode, latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,
+      });
       await recordAgentRun({
         ctx,
         skillName: "travel.conversation",
@@ -644,6 +718,11 @@ export class LLMGateway implements ModelGateway {
         }
         safeSetAttribute(span, "llm.outcome", "success");
         span.end();
+        logSafeRuntimeEvent(ctx, {
+          component: "llm", event: "request", operation: "travel.conversation", outcome: "success",
+          latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,
+          outputHash: hashOutput(reply), tokenCount: usage?.total,
+        });
         await recordAgentRun({
           ctx,
           skillName: "travel.conversation",

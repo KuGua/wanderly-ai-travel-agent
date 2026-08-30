@@ -14,6 +14,7 @@ import {
   extractSnapshotV2Meta,
 } from "../../services/planning-service.js";
 import type { RequestContext } from "../../utils/context.js";
+import { logSafeRuntimeEvent } from "../../observability/telemetry.js";
 import type { AgentTaskRow } from "../task-repository.js";
 
 /** Runs only from the durable Worker.  All authority comes from the accepted
@@ -25,6 +26,11 @@ export async function handlePlanningTask(params: {
   leaseToken: string;
 }): Promise<string> {
   const { run } = params;
+  const startedAt = Date.now();
+  logSafeRuntimeEvent(params.ctx, {
+    component: "planner", event: "task", operation: run.operation.toLowerCase(), outcome: "started",
+    attempt: run.generationAttempt,
+  });
   if (
     (run.operation !== "PLAN" && run.operation !== "REPLAN")
     || !run.tripId || !run.snapshotId || !run.flightSearchPreferencesVersion
@@ -70,6 +76,11 @@ export async function handlePlanningTask(params: {
     travelDateStart: snapshot.travelDateStart,
     travelDateEnd: snapshot.travelDateEnd,
     signal: params.signal,
+  });
+  logSafeRuntimeEvent(params.ctx, {
+    component: "planner", event: "research_coverage", operation: run.operation.toLowerCase(), outcome: "success",
+    attempt: run.generationAttempt, latencyMs: Date.now() - startedAt,
+    itemCount: coverage.allFlights.length,
   });
 
   // If any candidate lacks both stay AND ground coverage, refuse to synthesize
@@ -123,6 +134,10 @@ export async function handlePlanningTask(params: {
       { code: "STALE_SNAPSHOT_GUARD" },
     );
   }
+  logSafeRuntimeEvent(params.ctx, {
+    component: "planner", event: "task", operation: run.operation.toLowerCase(), outcome: "success",
+    attempt: run.generationAttempt, latencyMs: Date.now() - startedAt,
+  });
   return resultPlanId;
 }
 

@@ -1,6 +1,6 @@
 import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
-import { LOGGER_REDACTION } from "../src/observability/telemetry.js";
+import { LOGGER_REDACTION, resolveLocalDebugLogPath } from "../src/observability/telemetry.js";
 import { MetricLabelError, metrics } from "../src/observability/metrics.js";
 
 afterEach(() => {
@@ -46,6 +46,13 @@ describe("logger redaction", () => {
     ]) {
       expect(output).not.toContain(secret);
     }
+  });
+
+  it("restricts the optional local diagnostic file to a Git-ignored runtime filename", () => {
+    expect(resolveLocalDebugLogPath("agent-runtime.ndjson")).toMatch(/[\\/]runtime[\\/]agent-runtime\.ndjson$/);
+    expect(() => resolveLocalDebugLogPath("../secrets.ndjson")).toThrow("simple .ndjson filename");
+    expect(() => resolveLocalDebugLogPath("C:\\temp\\events.ndjson")).toThrow("simple .ndjson filename");
+    expect(() => resolveLocalDebugLogPath("events.log")).toThrow("simple .ndjson filename");
   });
 });
 

@@ -38,9 +38,14 @@ services:
       OTEL_SERVICE_NAME: ai-travel-agent-api
       OTEL_SDK_DISABLED: "false"
       OTEL_TRACES_SAMPLER_ARG: "1.0"
+      # Optional safe local NDJSON fallback. Set API_LOCAL_DEBUG_LOG_FILE to a
+      # simple filename (for example api-runtime.ndjson) in the compose .env.
+      LOCAL_DEBUG_LOG_FILE: ${API_LOCAL_DEBUG_LOG_FILE:-}
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - ./runtime:/app/apps/api/runtime
 
   worker:
     build:
@@ -60,6 +65,9 @@ services:
       OTEL_SERVICE_NAME: ai-travel-agent-worker
       OTEL_SDK_DISABLED: "false"
       OTEL_TRACES_SAMPLER_ARG: "1.0"
+      # Use a distinct filename from the API process: two processes must not
+      # concurrently append to the same NDJSON diagnostic file.
+      LOCAL_DEBUG_LOG_FILE: ${WORKER_LOCAL_DEBUG_LOG_FILE:-}
       # The worker never calls the resolver. Force `disabled` mode so even
       # if the in-process fallback path is reached, no 70 MB GeoJSON gets
       # loaded into this container.
@@ -69,6 +77,8 @@ services:
         condition: service_healthy
       app:
         condition: service_started
+    volumes:
+      - ./runtime:/app/apps/api/runtime
 
   location-reference:
     # Dev-only sidecar for the ~70 MB GeoJSON resolver. Off by default

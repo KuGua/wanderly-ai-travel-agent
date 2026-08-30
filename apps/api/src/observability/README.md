@@ -62,6 +62,14 @@ samples and is used by tests.
 
 ### Pino paths (`telemetry.ts:6-46`)
 
+### Local file fallback
+
+When `LOCAL_DEBUG_LOG_FILE` is set to a simple `.ndjson` filename, Pino writes
+the normal redacted stdout stream and a second NDJSON stream under
+`apps/api/runtime/`. This sink is independent of OTel and contains only safe
+`runtime_event` lifecycle metadata (no prompt, completion, tool payload or
+private data). See [the deployment runbook](../../../../docs/observability-deployment.md#local-diagnostic-fallback).
+
 `LOGGER_REDACT_PATHS` is a 39-entry string list array. Pino replaces every
 matched path with `"[REDACTED]"` at log time. Categories (verbatim):
 
