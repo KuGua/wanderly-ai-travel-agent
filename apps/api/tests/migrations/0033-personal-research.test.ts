@@ -7,7 +7,7 @@ const connectionString =
   process.env.TEST_DATABASE_URL
   ?? "postgres://travelagent:travelagent@127.0.0.1:5432/travelagent?options=-csearch_path%3Dtravelagent_test";
 
-describe("migrations 0033/0034 — Personal Trip Orchestrator", () => {
+describe("migrations 0033/0034/0036 — Personal Trip Orchestrator", () => {
   let client: postgres.Sql;
 
   beforeEach(async () => {
@@ -23,15 +23,20 @@ describe("migrations 0033/0034 — Personal Trip Orchestrator", () => {
     expect(second).toEqual([]);
   });
 
-  it("records 0033 and 0034 in schema_migrations", async () => {
+  it("records 0033, 0034, and 0036 in schema_migrations", async () => {
     const rows = await client<{ filename: string }[]>`
       SELECT filename FROM schema_migrations
-      WHERE filename IN ('0033_personal_research_add_value.sql', '0034_personal_research_columns_and_checks.sql')
+      WHERE filename IN (
+        '0033_personal_research_add_value.sql',
+        '0034_personal_research_columns_and_checks.sql',
+        '0036_restore_trip_scoped_conversation_task_constraint.sql'
+      )
       ORDER BY filename
     `;
     expect(rows.map((r) => r.filename)).toEqual([
       "0033_personal_research_add_value.sql",
       "0034_personal_research_columns_and_checks.sql",
+      "0036_restore_trip_scoped_conversation_task_constraint.sql",
     ]);
   });
 
@@ -90,5 +95,54 @@ describe("migrations 0033/0034 — Personal Trip Orchestrator", () => {
     ).rejects.toThrow(/agent_task_runs_operation_refs_check|check constraint/i);
 
     await client`DELETE FROM users WHERE id = ${userId}`;
+  });
+
+  it("requires a trip-bound thread for CONVERSATION tasks", async () => {
+    const userId = "00000000-0000-0000-0000-000000000098";
+    const tripId = "00000000-0000-0000-0000-0000000000a8";
+    const threadId = "00000000-0000-0000-0000-0000000000b8";
+    const messageId = "00000000-0000-0000-0000-0000000000c8";
+
+    try {
+      await client`
+        INSERT INTO users (id, external_id, display_name)
+        VALUES (${userId}, 'conversation-constraint-user', 'Conversation Constraint Test')
+        ON CONFLICT (id) DO NOTHING
+      `;
+      await client`
+        INSERT INTO shared_trips (id, name, created_by, departure_cities, destination_candidates)
+        VALUES (${tripId}, 'Conversation constraint trip', ${userId}, '["Singapore"]'::jsonb, '["Jiangxi"]'::jsonb)
+      `;
+      await client`
+        INSERT INTO chat_threads (id, owner_user_id, trip_id, title)
+        VALUES (${threadId}, ${userId}, ${tripId}, 'Conversation constraint thread')
+      `;
+      await client`
+        INSERT INTO chat_messages (id, thread_id, sender_user_id, role, body)
+        VALUES (${messageId}, ${threadId}, ${userId}, 'USER', 'constraint test')
+      `;
+
+      await expect(client`
+        INSERT INTO agent_task_runs (
+          operation, created_by_user_id, thread_id, trip_id, user_message_id, request_id, expires_at
+        ) VALUES (
+          'CONVERSATION', ${userId}, ${threadId}, ${tripId}, ${messageId},
+          '00000000-0000-0000-0000-0000000000d8', NOW() + INTERVAL '5 minutes'
+        )
+      `).resolves.toHaveLength(0);
+
+      await expect(client`
+        INSERT INTO agent_task_runs (
+          operation, created_by_user_id, thread_id, user_message_id, request_id, expires_at
+        ) VALUES (
+          'CONVERSATION', ${userId}, ${threadId}, ${messageId},
+          '00000000-0000-0000-0000-0000000000e8', NOW() + INTERVAL '5 minutes'
+        )
+      `).rejects.toThrow(/agent_task_runs_operation_refs_check|check constraint/i);
+    } finally {
+      await client`DELETE FROM chat_threads WHERE id = ${threadId}`;
+      await client`DELETE FROM shared_trips WHERE id = ${tripId}`;
+      await client`DELETE FROM users WHERE id = ${userId}`;
+    }
   });
 });

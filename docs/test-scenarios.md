@@ -650,6 +650,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - `audit_events.correlation_id` 上存在索引；按 correlation id 查询审计链的 EXPLAIN 不应触发顺序扫描。
 - **TS-MIG-0005-replay**：连续跑两次 `npm run db:migrate` 后，`enum_range(NULL::audit_action)` 必须包含 `apps/api/src/db/schema.ts:18-28` 列出的所有值，包括 `VISA_CHECK` 与 `PLAN_RESTART`；断言方式为尝试 `recordAudit({ action: "VISA_CHECK", ctx, summary: {} })` 不抛 `invalid input value for enum`。
 - **TS-MIG-0008-legacy-system**：在 develop 的 `0007_remove_demo_provider_state.sql` 之后，从允许浏览器以认证用户身份写入 `USER | SYSTEM` 的 pre-0008 状态开始，迁移必须原地将 `SYSTEM` 规范化为 `USER`，保留消息 ID、thread、sender、正文、脱敏摘要、分享标记和时间戳；随后强制 `USER/non-null sender` 与 `ASSISTANT/null sender`，且再次运行迁移无新增变更。
+- **TS-MIG-0036-trip-scoped-conversation-task**：在已执行 `0034_personal_research_columns_and_checks.sql` 的升级库上执行 `0036_restore_trip_scoped_conversation_task_constraint.sql` 后，`CONVERSATION` task 必须接受同一可信 Trip 的 `thread_id`、`user_message_id` 与非空 `trip_id`，并拒绝缺少 `trip_id` 的写入；`PLAN`、`REPLAN`、`RESEARCH` 仍必须具备 `trip_id` 与 `snapshot_id`。随后对 `POST /api/v1/threads/:threadId/turns` 发送有效请求必须返回 `202`，而不是约束错误 `500`。
 
 ### TS-OTEL-1 — Inbound `traceparent` propagation through the request lifecycle
 

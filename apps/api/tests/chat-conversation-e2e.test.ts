@@ -27,8 +27,15 @@ beforeAll(async () => {
   __setModelGatewayForTests(successfulConversationGateway);
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken, agentStreamRelay: new AgentStreamRelay() });
   await app.ready();
-  const [alice] = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
-  aliceId = alice.id;
+  const [createdAlice] = await db.insert(users)
+    .values({ externalId: "alice", displayName: "Alice" })
+    .onConflictDoNothing({ target: users.externalId })
+    .returning();
+  await db.insert(users)
+    .values({ externalId: "bob", displayName: "Bob" })
+    .onConflictDoNothing({ target: users.externalId });
+  aliceId = (createdAlice ?? (await db.select().from(users)
+    .where(eq(users.externalId, "alice")).limit(1))[0])!.id;
   // Per docs/trip-scoped-private-threads-implementation.md §1.1 every
   // chat thread must belong to a Trip and the creator must be an active
   // member.  Provision a Trip for this test suite up-front so the
@@ -63,6 +70,14 @@ describe("durable owner-only Personal Agent conversation flow", () => {
         status: "QUEUED",
         generationAttempt: 0,
         userMessage: { role: "USER", content: "Tell me about Tokyo", sequence: expect.any(Number) },
+      });
+      const [acceptedRun] = await db.select().from(agentTaskRuns)
+        .where(eq(agentTaskRuns.id, firstBody.runId)).limit(1);
+      expect(acceptedRun).toMatchObject({
+        operation: "CONVERSATION",
+        threadId,
+        tripId,
+        userMessageId: firstBody.userMessage.id,
       });
 
       const duplicate = await submitTurn(threadId, requestIds[0], "Tell me about Tokyo");
