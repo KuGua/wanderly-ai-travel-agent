@@ -313,7 +313,7 @@ export const explorationStartRequestSchema = z.object({
 export const explorationDraftTripSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-    status: z.literal("PLANNING"),
+  status: z.literal("DRAFT"),
   departureCities: z.array(z.string()).length(0),
   destinationCandidates: z.array(z.string()).length(0),
   travelDateStart: z.null(),

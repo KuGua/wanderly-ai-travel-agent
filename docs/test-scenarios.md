@@ -740,7 +740,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 **Expected outcomes:**
 
 - Before the first submitted message, no Trip, thread, idempotency or audit row is created; map input is not persisted as a business fact.
-- One start request ID yields exactly one `DRAFT` Trip, one creator membership and one owner-only default `TRIP` thread, even under concurrent retry. Audit summaries contain IDs/status only, never the question or map data.
+- One start request ID yields exactly one `DRAFT` Trip, one creator membership and one owner-only default `TRIP` thread, even under concurrent retry. The browser must accept the `201`/`200` response with `trip.status = DRAFT`, then submit the first turn to `POST /api/v1/threads/:threadId/turns` and receive `202`. Audit summaries contain IDs/status only, never the question or map data.
 - The first task derives the created thread's `trip_id`; start success plus turn failure/retry cannot create another Trip.
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.

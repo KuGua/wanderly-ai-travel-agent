@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentStreamEventSchema,
   conversationTurnAcceptedResponseSchema,
+  explorationStartResponseSchema,
   locationReferenceResponseSchema,
   ownerConversationResponseSchema,
   profileResponseSchema,
@@ -49,6 +50,34 @@ describe("API contracts", () => {
       checkedAt: "2026-08-25T00:00:00.000Z",
       isTravelFact: false,
     }).isTravelFact).toBe(false);
+  });
+
+  it("accepts a DRAFT exploration start response and rejects a prematurely planning Trip", () => {
+    const response = {
+      trip: {
+        id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        name: "Untitled exploration",
+        status: "DRAFT",
+        departureCities: [],
+        destinationCandidates: [],
+        travelDateStart: null,
+        travelDateEnd: null,
+        createdAt: "2026-08-30T00:00:00.000Z",
+        updatedAt: "2026-08-30T00:00:00.000Z",
+      },
+      defaultThread: {
+        id: "11111111-1111-4111-8111-111111111111",
+        tripId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        scope: "TRIP",
+        isDefault: true,
+      },
+    };
+
+    expect(explorationStartResponseSchema.parse(response).trip.status).toBe("DRAFT");
+    expect(() => explorationStartResponseSchema.parse({
+      ...response,
+      trip: { ...response.trip, status: "PLANNING" },
+    })).toThrow();
   });
 
   it("accepts owner conversation history and current MODEL/SAFE_REFUSAL modes only", () => {
