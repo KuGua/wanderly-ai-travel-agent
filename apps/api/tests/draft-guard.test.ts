@@ -33,7 +33,7 @@ beforeAll(async () => {
 
   // Ensure both `alice` and `bob` users exist so `authHeaders("alice")`
   // resolves a known identity in the draft-guard tests and the non-creator
-  // invitation test has bob's id to pass as `invitedUserId`.
+  // invitation test uses a recipient email; it must not enumerate Bob's account.
   for (const subject of ["alice", "bob"] as const) {
     const [existing] = await db.select().from(users)
       .where(eq(users.externalId, subject)).limit(1);
@@ -253,7 +253,7 @@ describe("Draft trip command guards", () => {
       url: `/api/v1/trips/${draftId}/invitations`,
       headers: authHeaders("alice"),
       payload: {
-        invitedUserId: bobId,
+        recipientEmail: "bob@example.test",
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
       },
     });

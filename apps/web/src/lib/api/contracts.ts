@@ -126,17 +126,8 @@ export const tripDetailResponseSchema = z.object({
   members: z.array(tripMemberSchema),
 });
 
-export const tripInviteeSchema = z.object({
-  id: z.string().uuid(),
-  displayName: z.string().min(1).max(128),
-}).strict();
-
-export const searchTripInviteesResponseSchema = z.object({
-  candidates: z.array(tripInviteeSchema).max(10),
-}).strict();
-
 export const createTripInvitationInputSchema = z.object({
-  invitedUserId: z.string().uuid(),
+  recipientEmail: z.string().trim().email().max(256),
   expiresAt: z.string().datetime(),
 }).strict();
 
@@ -500,8 +491,6 @@ export type TripDetailResponse = z.infer<typeof tripDetailResponseSchema>;
 export type InvitationPreviewResponse = z.infer<typeof invitationPreviewResponseSchema>;
 export type AcceptInvitationResponse = z.infer<typeof acceptInvitationResponseSchema>;
 export type DeclineInvitationResponse = z.infer<typeof declineInvitationResponseSchema>;
-export type TripInvitee = z.infer<typeof tripInviteeSchema>;
-export type SearchTripInviteesResponse = z.infer<typeof searchTripInviteesResponseSchema>;
 export type CreateTripInvitationInput = z.infer<typeof createTripInvitationInputSchema>;
 export type TripInvitationCreateResponse = z.infer<typeof tripInvitationCreateResponseSchema>;
 export type ConversationPlace = z.infer<typeof conversationPlaceSchema>;

@@ -510,7 +510,7 @@ export const tripInvitationStatusSchema = z.enum([
 ]);
 
 export const createTripInvitationSchema = z.object({
-  invitedUserId: uuidSchema,
+  recipientEmail: z.string().trim().email().max(256),
   expiresAt: z.string().datetime(),
 }).strict();
 
@@ -520,24 +520,10 @@ export const tripInvitationCreateResponseSchema = z.object({
   expiresAt: z.string().datetime(),
 });
 
-/** A privacy-minimized account record used only while choosing a trip invitee. */
-export const tripInviteeSchema = z.object({
-  id: uuidSchema,
-  displayName: z.string().min(1).max(128),
-}).strict();
-
-export const searchTripInviteesQuerySchema = z.object({
-  q: z.string().trim().min(2).max(64),
-}).strict();
-
-export const searchTripInviteesResponseSchema = z.object({
-  candidates: z.array(tripInviteeSchema).max(10),
-}).strict();
-
 export const tripInvitationSummarySchema = z.object({
   id: uuidSchema,
   tripId: uuidSchema,
-  invitedUserId: uuidSchema,
+  invitedUserId: uuidSchema.nullable(),
   invitedByUserId: uuidSchema,
   status: tripInvitationStatusSchema,
   expiresAt: z.string().datetime(),

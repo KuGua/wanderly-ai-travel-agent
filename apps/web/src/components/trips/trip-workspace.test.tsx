@@ -90,7 +90,6 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     startExploration: vi.fn(),
     activateTrip: vi.fn(),
     updateTripTitle: vi.fn(),
-    searchTripInvitees: vi.fn().mockResolvedValue({ candidates: [] }),
     createTripInvitation: vi.fn(),
     getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),
     updateMemoryFact: vi.fn(),
@@ -209,7 +208,7 @@ describe("TripWorkspace", () => {
     expect(invite).toHaveAttribute("href", `/trips/${TRIP_ID}/invite`);
   });
 
-  it("lets a creator search accounts and creates an invite link for the selected account", async () => {
+  it("lets a creator create an email-bound invite link", async () => {
     const createTripInvitation = vi.fn().mockResolvedValue({
       invitationId: "55555555-5555-4555-8555-555555555555",
       inviteToken: "a".repeat(43),
@@ -217,17 +216,14 @@ describe("TripWorkspace", () => {
     });
     const api = createApi({
       getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
-      searchTripInvitees: vi.fn().mockResolvedValue({ candidates: [{ id: SECOND_THREAD_ID, displayName: "Bob" }] }),
       createTripInvitation,
     });
     renderWithIntl(<TripInvitationPage tripId={TRIP_ID} />, { api });
 
-    fireEvent.change(await screen.findByRole("textbox", { name: "Find a registered account" }), { target: { value: "Bo" } });
-    expect(await screen.findByRole("button", { name: /Bob/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Bob/ }));
+    fireEvent.change(await screen.findByRole("textbox", { name: "Teammate email" }), { target: { value: "bob@example.test" } });
     fireEvent.click(screen.getByRole("button", { name: "Create invite link" }));
 
-    await waitFor(() => expect(createTripInvitation).toHaveBeenCalledWith(TRIP_ID, expect.objectContaining({ invitedUserId: SECOND_THREAD_ID })));
+    await waitFor(() => expect(createTripInvitation).toHaveBeenCalledWith(TRIP_ID, expect.objectContaining({ recipientEmail: "bob@example.test" })));
     expect(await screen.findByLabelText("One-time invite link")).toHaveValue(`http://localhost:3000/en/trips/join/${"a".repeat(43)}`);
   });
 

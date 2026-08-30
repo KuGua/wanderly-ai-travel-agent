@@ -52,7 +52,7 @@
 **Acceptance criteria:**
 
 1. Organizer can create one shared trip and invite two additional test travelers.
-2. An invited traveler can open a token-bound invitation page, see only the authenticated decision summary, then explicitly accept or decline; accepting leads only to sharing-scope setup and does not grant consent.
+2. An organizer can enter an email and copy an email-bound invitation link without account search or enumeration. A traveler can sign in or register with that email, open the token-bound invitation page, see only the authenticated decision summary, then explicitly accept or decline; accepting leads only to sharing-scope setup and does not grant consent.
 3. Each traveler can separately approve or decline sharing each relevant profile field and their nationality/entry data.
 4. Shared trip shows only approved fields with member and consent source; private chat/history is never displayed.
 5. Revoking a shared field immediately expires affected plan and visa outputs.

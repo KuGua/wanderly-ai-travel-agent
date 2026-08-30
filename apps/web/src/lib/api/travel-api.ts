@@ -64,7 +64,6 @@ import type {
   AcceptInvitationResponse,
   DeclineInvitationResponse,
   CreateTripInvitationInput,
-  SearchTripInviteesResponse,
   TripInvitationCreateResponse,
 } from "./contracts";
 
@@ -87,7 +86,6 @@ export interface TravelApi {
   getInvitationPreview?(inviteToken: string): Promise<InvitationPreviewResponse>;
   acceptInvitation?(inviteToken: string): Promise<AcceptInvitationResponse>;
   declineInvitation?(inviteToken: string): Promise<DeclineInvitationResponse>;
-  searchTripInvitees?(tripId: string, query: string): Promise<SearchTripInviteesResponse>;
   createTripInvitation?(tripId: string, input: CreateTripInvitationInput): Promise<TripInvitationCreateResponse>;
   getLocationReference(input: LocationReferenceInput): Promise<LocationReferenceResponse>;
   getLocationIntroduction(input: LocationIntroductionInput, options?: { signal?: AbortSignal }): Promise<LocationIntroductionResponse>;

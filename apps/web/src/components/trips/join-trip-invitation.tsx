@@ -64,6 +64,7 @@ export function JoinTripInvitation({ inviteToken }: { inviteToken: string }) {
               <Link href="/login" className="mt-6 inline-flex min-h-11 items-center gap-2 px-5 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action">
                 {t("signInAction")} <ArrowRight aria-hidden="true" className="size-4" />
               </Link>
+              <p className="mt-4 text-sm text-muted-foreground">{t("registerPrompt")} <Link href="/register" className="font-bold underline underline-offset-4">{t("registerAction")}</Link></p>
             </section>
           ) : null}
 

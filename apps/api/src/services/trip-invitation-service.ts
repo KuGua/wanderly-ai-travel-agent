@@ -1,9 +1,9 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-import { and, eq, ilike, lt, notInArray, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 
 import { db } from "../db/database.js";
-import { chatThreads, sharedTrips, tripInvitations, tripMembers, users } from "../db/schema.js";
+import { chatThreads, sharedTrips, tripInvitations, tripMembers } from "../db/schema.js";
 import { recordAudit } from "./audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { metrics } from "../observability/metrics.js";
@@ -53,45 +53,10 @@ export type InvitationPreviewResult = {
   expiresAt: Date;
 };
 
-/**
- * Returns only display names and opaque IDs for a creator choosing an invitee.
- * It deliberately excludes email, username and any profile data, and it never
- * returns the creator or people who already belong to this trip.
- */
-export async function searchInvitees(params: {
-  tripId: string;
-  actorUserId: string;
-  query: string;
-}): Promise<Array<{ id: string; displayName: string }>> {
-  const [membership] = await db.select({ role: tripMembers.role })
-    .from(tripMembers)
-    .where(and(eq(tripMembers.tripId, params.tripId), eq(tripMembers.userId, params.actorUserId)))
-    .limit(1);
-  if (!membership || membership.role !== "CREATOR") {
-    throw new ApiError(403, "Forbidden", "Only the trip creator may search invitees");
-  }
-
-  await assertTripActive(params.tripId);
-  const memberRows = await db.select({ userId: tripMembers.userId })
-    .from(tripMembers)
-    .where(eq(tripMembers.tripId, params.tripId));
-  const excludedIds = [...new Set([params.actorUserId, ...memberRows.map((member) => member.userId)])];
-  const escapedQuery = params.query.replace(/[\\%_]/g, "\\$&");
-
-  return await db.select({ id: users.id, displayName: users.displayName })
-    .from(users)
-    .where(and(
-      ilike(users.displayName, `%${escapedQuery}%`),
-      notInArray(users.id, excludedIds),
-    ))
-    .orderBy(users.displayName, users.id)
-    .limit(10);
-}
-
 export async function createInvitation(params: {
   ctx: RequestContext;
   tripId: string;
-  invitedUserId: string;
+  recipientEmail: string;
   expiresAt: Date;
   actorUserId: string;
 }): Promise<InvitationCreateResult> {
@@ -120,29 +85,12 @@ export async function createInvitation(params: {
       throw new ApiError(403, "Forbidden", "Only the trip creator may invite members");
     }
 
-    if (params.invitedUserId === params.actorUserId) {
-      throw new ApiError(409, "Conflict", "Cannot invite yourself");
-    }
-
-    const [invitedUser] = await tx.select({ id: users.id })
-      .from(users)
-      .where(eq(users.id, params.invitedUserId))
-      .limit(1);
-    if (!invitedUser) {
-      throw new ApiError(404, "Not Found", "Invited user is not a registered account");
-    }
-
-    const [existingMember] = await tx.select({ id: tripMembers.id })
-      .from(tripMembers)
-      .where(and(eq(tripMembers.tripId, params.tripId), eq(tripMembers.userId, params.invitedUserId)))
-      .limit(1);
-    if (existingMember) {
-      throw new ApiError(409, "Conflict", "User is already a member of this trip");
-    }
+    const recipientEmail = normalizeEmail(params.recipientEmail);
+    const recipientEmailHash = hashEmail(recipientEmail);
 
     await tx.update(tripInvitations).set({ status: "EXPIRED" }).where(and(
       eq(tripInvitations.tripId, params.tripId),
-      eq(tripInvitations.invitedUserId, params.invitedUserId),
+      eq(tripInvitations.recipientEmailHash, recipientEmailHash),
       eq(tripInvitations.status, "PENDING"),
       lt(tripInvitations.expiresAt, new Date()),
     ));
@@ -151,13 +99,13 @@ export async function createInvitation(params: {
       .from(tripInvitations)
       .where(and(
         eq(tripInvitations.tripId, params.tripId),
-        eq(tripInvitations.invitedUserId, params.invitedUserId),
+        eq(tripInvitations.recipientEmailHash, recipientEmailHash),
         eq(tripInvitations.status, "PENDING"),
       ))
       .limit(1)
       .for("update");
     if (existingPending) {
-      throw new ApiError(409, "Conflict", "A pending invitation already exists for this user");
+      throw new ApiError(409, "Conflict", "A pending invitation already exists for this email address");
     }
 
     const rawToken = randomBytes(TOKEN_BYTES).toString("base64url");
@@ -165,7 +113,8 @@ export async function createInvitation(params: {
 
     const [created] = await tx.insert(tripInvitations).values({
       tripId: params.tripId,
-      invitedUserId: params.invitedUserId,
+      recipientEmailHash,
+      recipientEmailMasked: maskEmail(recipientEmail),
       invitedByUserId: params.actorUserId,
       status: "PENDING",
       tokenHash,
@@ -196,6 +145,7 @@ export async function acceptInvitation(params: {
   ctx: RequestContext;
   token: string;
   actorUserId: string;
+  actorEmail: string | null;
 }): Promise<InvitationAcceptResult> {
   if (typeof params.token !== "string" || params.token.length < 32) {
     throw new ApiError(400, "Bad Request", "Invalid invitation token");
@@ -219,7 +169,7 @@ export async function acceptInvitation(params: {
       throw new ApiError(404, "Not Found", "Invitation not found");
     }
 
-    if (invitation.invitedUserId !== params.actorUserId) {
+    if (!matchesRecipient(invitation, params.actorUserId, params.actorEmail)) {
       throw new ApiError(403, "Forbidden", "This invitation is for a different account");
     }
 
@@ -312,6 +262,7 @@ export async function acceptInvitation(params: {
 export async function getInvitationPreview(params: {
   token: string;
   actorUserId: string;
+  actorEmail: string | null;
 }): Promise<InvitationPreviewResult> {
   const invitation = await getPendingInvitationForActor(params);
   const [trip] = await db.select({
@@ -337,6 +288,7 @@ export async function declineInvitation(params: {
   ctx: RequestContext;
   token: string;
   actorUserId: string;
+  actorEmail: string | null;
 }): Promise<void> {
   await db.transaction(async (tx) => {
     const invitation = await getPendingInvitationForActor(params, tx);
@@ -441,14 +393,14 @@ function hashToken(raw: string): string {
 type InvitationReader = Pick<typeof db, "select">;
 
 async function getPendingInvitationForActor(
-  params: { token: string; actorUserId: string },
+  params: { token: string; actorUserId: string; actorEmail: string | null },
   reader: InvitationReader = db,
 ) {
   if (typeof params.token !== "string" || params.token.length < 32) throw invitationUnavailable();
   const tokenHash = hashToken(params.token);
   const [invitation] = await reader.select().from(tripInvitations)
     .where(eq(tripInvitations.tokenHash, tokenHash)).limit(1);
-  if (!invitation || invitation.invitedUserId !== params.actorUserId) throw invitationUnavailable();
+  if (!invitation || !matchesRecipient(invitation, params.actorUserId, params.actorEmail)) throw invitationUnavailable();
   if (invitation.status !== "PENDING" || invitation.expiresAt.getTime() <= Date.now()) {
     throw invitationUnavailable();
   }
@@ -462,4 +414,33 @@ function invitationUnavailable(): ApiError {
 function constantTimeEquals(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   return timingSafeEqual(Buffer.from(a, "utf8"), Buffer.from(b, "utf8"));
+}
+
+function normalizeEmail(email: string): string {
+  const normalized = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(normalized)) {
+    throw new ApiError(400, "Bad Request", "recipientEmail must be a valid email address");
+  }
+  return normalized;
+}
+
+function hashEmail(email: string): string {
+  const secret = process.env.INVITATION_EMAIL_HMAC_SECRET?.trim();
+  if (!secret || secret.length < 32) {
+    throw new ApiError(503, "Service Unavailable", "Invitation email protection is not configured");
+  }
+  return createHmac("sha256", secret).update(email).digest("hex");
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  return `${local.slice(0, 1)}${"•".repeat(Math.max(2, local.length - 1))}@${domain}`;
+}
+
+function matchesRecipient(invitation: typeof tripInvitations.$inferSelect, actorUserId: string, actorEmail: string | null): boolean {
+  if (invitation.recipientEmailHash) {
+    if (!actorEmail) return false;
+    return constantTimeEquals(invitation.recipientEmailHash, hashEmail(normalizeEmail(actorEmail)));
+  }
+  return invitation.invitedUserId === actorUserId;
 }

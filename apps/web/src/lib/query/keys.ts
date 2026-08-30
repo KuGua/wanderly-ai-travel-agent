@@ -22,7 +22,6 @@ export const tripKeys = {
 
 export const invitationKeys = {
   preview: (inviteToken: string) => ["trip-invitations", inviteToken, "preview"] as const,
-  invitees: (tripId: string, query: string) => ["trips", tripId, "invitees", query] as const,
 };
 
 export const threadKeys = {

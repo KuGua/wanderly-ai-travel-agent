@@ -7,7 +7,6 @@ import {
   declineInvitation,
   getInvitationPreview,
   revokeInvitation,
-  searchInvitees,
 } from "../services/trip-invitation-service.js";
 import { createRequestContext } from "../utils/context.js";
 import {
@@ -17,8 +16,6 @@ import {
   toJsonSchema,
   tripInvitationCreateResponseSchema,
   tripInvitationPreviewResponseSchema,
-  searchTripInviteesQuerySchema,
-  searchTripInviteesResponseSchema,
 } from "../types/schemas.js";
 
 const tripIdParamSchema = z.object({ tripId: z.string().uuid() }).strict();
@@ -29,25 +26,10 @@ const invitationIdParamSchema = z.object({
 const inviteTokenParamSchema = z.object({ inviteToken: z.string().min(32).max(256) }).strict();
 
 export async function tripInvitationRoutes(app: FastifyInstance) {
-  app.get("/trips/:tripId/invitees", {
-    schema: {
-      description: "Search privacy-minimized registered accounts eligible for a Trip invitation.",
-      tags: ["invitations"],
-      params: toJsonSchema(tripIdParamSchema),
-      querystring: toJsonSchema(searchTripInviteesQuerySchema),
-      response: { 200: toJsonSchema(searchTripInviteesResponseSchema) },
-    },
-  }, async (request) => {
-    const { tripId } = tripIdParamSchema.parse(request.params);
-    const { q } = searchTripInviteesQuerySchema.parse(request.query);
-    const candidates = await searchInvitees({ tripId, actorUserId: request.user.id, query: q });
-    return searchTripInviteesResponseSchema.parse({ candidates });
-  });
-
   // Only the trip creator may invite additional members.
   app.post("/trips/:tripId/invitations", {
     schema: {
-      description: "Create a one-time invitation for a registered user to join a Trip.",
+      description: "Create a one-time email-bound invitation to join a Trip.",
       tags: ["invitations"],
       params: toJsonSchema(tripIdParamSchema),
       body: toJsonSchema(createTripInvitationSchema),
@@ -64,7 +46,7 @@ export async function tripInvitationRoutes(app: FastifyInstance) {
     const result = await createInvitation({
       ctx,
       tripId,
-      invitedUserId: body.invitedUserId,
+      recipientEmail: body.recipientEmail,
       expiresAt,
       actorUserId: request.user.id,
     });
@@ -84,7 +66,7 @@ export async function tripInvitationRoutes(app: FastifyInstance) {
     },
   }, async (request, reply) => {
     const { inviteToken } = inviteTokenParamSchema.parse(request.params);
-    const result = await getInvitationPreview({ token: inviteToken, actorUserId: request.user.id });
+    const result = await getInvitationPreview({ token: inviteToken, actorUserId: request.user.id, actorEmail: request.user.email });
     return reply.code(200).send(tripInvitationPreviewResponseSchema.parse({
       ...result,
       membership: "MEMBER",
@@ -111,6 +93,7 @@ export async function tripInvitationRoutes(app: FastifyInstance) {
       ctx,
       token: inviteToken,
       actorUserId: request.user.id,
+      actorEmail: request.user.email,
     });
     return reply.code(200).send(acceptInvitationResponseSchema.parse({
       tripId: result.tripId,
@@ -136,7 +119,7 @@ export async function tripInvitationRoutes(app: FastifyInstance) {
       request.user.id, request.correlationId, request.traceId,
       request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
-    await declineInvitation({ ctx, token: inviteToken, actorUserId: request.user.id });
+    await declineInvitation({ ctx, token: inviteToken, actorUserId: request.user.id, actorEmail: request.user.email });
     return reply.code(200).send({ declined: true });
   });
 

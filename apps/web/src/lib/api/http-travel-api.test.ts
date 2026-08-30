@@ -145,22 +145,18 @@ describe("HttpTravelApi invitation join", () => {
     expect((fetchMock.mock.calls[2][1] as RequestInit).method).toBe("POST");
   });
 
-  it("searches minimal eligible accounts and creates a recipient-bound invitation", async () => {
+  it("creates an email-bound invitation", async () => {
     const tripId = "99999999-9999-4999-8999-999999999999";
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ candidates: [{ id: USER_ID, displayName: "Bob" }] }))
-      .mockResolvedValueOnce(jsonResponse({ invitationId: THREAD_ID, inviteToken: "a".repeat(43), expiresAt: CREATED_AT }, 201));
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ invitationId: THREAD_ID, inviteToken: "a".repeat(43), expiresAt: CREATED_AT }, 201));
     const api = new HttpTravelApi("https://api.example.test", fetchMock);
 
-    await api.searchTripInvitees(tripId, "Bo");
-    await api.createTripInvitation(tripId, { invitedUserId: USER_ID, expiresAt: CREATED_AT });
+    await api.createTripInvitation(tripId, { recipientEmail: "bob@example.test", expiresAt: CREATED_AT });
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      `https://api.example.test/api/v1/trips/${tripId}/invitees?q=Bo`,
       `https://api.example.test/api/v1/trips/${tripId}/invitations`,
     ]);
-    expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("POST");
-    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({ invitedUserId: USER_ID, expiresAt: CREATED_AT });
+    expect((fetchMock.mock.calls[0][1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({ recipientEmail: "bob@example.test", expiresAt: CREATED_AT });
   });
 });
 

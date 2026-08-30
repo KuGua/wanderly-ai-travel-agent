@@ -529,7 +529,11 @@ export const chatThreads = pgTable("chat_threads", {
 export const tripInvitations = pgTable("trip_invitations", {
   id: uuid("id").primaryKey().defaultRandom(),
   tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
-  invitedUserId: uuid("invited_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // Legacy account-bound invitations retain their recipient ID. New
+  // invitations are email-bound, so an account need not exist at creation.
+  invitedUserId: uuid("invited_user_id").references(() => users.id, { onDelete: "cascade" }),
+  recipientEmailHash: varchar("recipient_email_hash", { length: 64 }),
+  recipientEmailMasked: varchar("recipient_email_masked", { length: 256 }),
   invitedByUserId: uuid("invited_by_user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
   status: tripInvitationStatusEnum("status").notNull().default("PENDING"),
   // SHA-256 of the raw invite token; raw token is returned once at
@@ -543,7 +547,10 @@ export const tripInvitations = pgTable("trip_invitations", {
 }, (table) => ({
   onePendingInvitee: uniqueIndex("trip_invitations_one_pending_invitee")
     .on(table.tripId, table.invitedUserId)
-    .where(sql`${table.status} = 'PENDING'`),
+    .where(sql`${table.status} = 'PENDING' AND ${table.invitedUserId} IS NOT NULL`),
+  onePendingRecipientEmail: uniqueIndex("trip_invitations_one_pending_recipient_email")
+    .on(table.tripId, table.recipientEmailHash)
+    .where(sql`${table.status} = 'PENDING' AND ${table.recipientEmailHash} IS NOT NULL`),
   acceptLookupIdx: index("trip_invitations_accept_lookup_idx")
     .on(table.tokenHash, table.status, table.expiresAt),
 }));

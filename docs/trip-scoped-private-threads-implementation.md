@@ -2,7 +2,7 @@
 
 **状态：** Approved for implementation  
 **适用范围：** Hackathon MVP  
-**实施边界：** 本文只定义 Trip 范围内的私有 Personal Agent 对话、已注册用户邀请和成员线程初始化。不改变 consent、snapshot、Shared Trip planning、确认或 booking sandbox 的权威状态边界。
+**实施边界：** 本文只定义 Trip 范围内的私有 Personal Agent 对话、邮箱绑定邀请和成员线程初始化。不改变 consent、snapshot、Shared Trip planning、确认或 booking sandbox 的权威状态边界。
 
 ## 1. 决策与不变量
 
@@ -12,7 +12,7 @@
 2. 一个 Trip 可有多个线程；线程只能属于一个 Trip、一个 owner。一个成员可在同一 Trip 下拥有多条线程。
 3. 用户接受邀请并成为 Trip 成员时，服务端在同一数据库事务内为其创建一条空白的默认私有线程。
 4. Trip 内所有线程均为私有：其他成员、Trip 创建者和 Shared Trip Agent 都不得读取 thread 元数据以外的他人线程，且不得读取消息正文、摘要或对话历史。
-5. 邀请仅面向已注册用户。邀请记录指定受邀 `userId`；不实现邮箱领取、注册后匹配、群组邀请或公开链接加入。
+5. 邀请绑定创建者输入的邮箱，不查询账号是否存在。受邀者必须登录或注册同一邮箱后才能领取；不实现群组邀请或公开链接加入。
 6. 从 thread 发起的对话绝不创建新的 Trip。服务端从 `threadId` 推导既有 `tripId`；浏览器不得提交或覆盖该关联。
 7. Personal Agent 仅获得最小只读 Trip 上下文，不自动获得其他成员资料、私聊、consent、constraint snapshot、报价、确认或 booking 数据。
 
@@ -44,7 +44,7 @@
 flowchart LR
   O["Trip creator"] --> IC["Create invitation"]
   IC --> INV["trip_invitations"]
-  U["Registered invited user"] --> IA["Accept invitation"]
+  U["Email-bound invited user"] --> IA["Sign in/register, then accept invitation"]
   IA --> TX["One PostgreSQL transaction"]
   TX --> TM["trip_members"]
   TX --> DT["Default private chat_thread"]
@@ -97,7 +97,9 @@ CREATE TYPE trip_invitation_status AS ENUM (
 CREATE TABLE trip_invitations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   trip_id uuid NOT NULL REFERENCES shared_trips(id) ON DELETE CASCADE,
-  invited_user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  invited_user_id uuid REFERENCES users(id) ON DELETE CASCADE, -- legacy only
+  recipient_email_hash varchar(64), -- HMAC; raw email is never stored
+  recipient_email_masked varchar(256),
   invited_by_user_id uuid NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
   status trip_invitation_status NOT NULL DEFAULT 'PENDING',
   token_hash varchar(128) NOT NULL UNIQUE,
@@ -178,7 +180,7 @@ ACCEPTED / REVOKED / EXPIRED -------------------> terminal
 仅 Trip `CREATOR` 可调用。
 
 ```json
-{ "invitedUserId": "uuid", "expiresAt": "2026-09-01T00:00:00.000Z" }
+{ "recipientEmail": "traveler@example.com", "expiresAt": "2026-09-01T00:00:00.000Z" }
 ```
 
 响应 `201`：
@@ -187,7 +189,7 @@ ACCEPTED / REVOKED / EXPIRED -------------------> terminal
 { "invitationId": "uuid", "inviteToken": "one-time-secret", "expiresAt": "..." }
 ```
 
-不得邀请已是 member 的用户；同一受邀人存在 pending invitation 时返回 `409`。
+创建时不查询账号，因此可邀请尚未注册的邮箱；同一邮箱存在 pending invitation 时返回 `409`。邮件仅以 HMAC 和掩码保存，当前 MVP 返回可复制链接而不实际发送邮件。
 
 #### `POST /trip-invitations/:inviteToken/accept`
 
@@ -272,7 +274,7 @@ type PersonalTripContext = {
 |---|---|---|---|
 | 0 | 更新 PRD、TECH_STACK、backlog、test scenarios 与 API reference | 本文批准 | 旧的 optional/general thread 与无 token join 说明被移除。 |
 | 1 | 数据库 migration、Drizzle schema、audit enum | 无 | 新约束在干净测试库和升级库均可执行。 |
-| 2 | invitation service/routes；accept 原子 provision | 阶段 1 | 已注册受邀人可幂等获得 member + default thread。 |
+| 2 | invitation service/routes；accept 原子 provision | 阶段 1 | 同邮箱受邀人可幂等获得 member + default thread。 |
 | 3 | Trip-scoped thread routes、统一 auth helper、废弃通用 thread create/list | 阶段 1 | 非成员不能创建/读/写绑定其他 Trip 的 thread。 |
 | 4 | task repository/context handler | 阶段 3 | conversation task 有可信 trip ID 且只用 allow-listed context。 |
 | 5 | Web Trip workspace、thread rail/new-thread/empty/loading/error states | 阶段 2、3 | 成员可从原 Trip 进入其默认或新增私有 thread。 |
@@ -284,7 +286,7 @@ type PersonalTripContext = {
 
 新增后端集成测试至少覆盖：
 
-1. creator 只能邀请已注册、非成员用户；非 creator 创建 invitation 返回 `403`。
+1. creator 可邀请任意有效邮箱且不会触发账号搜索；非 creator 创建 invitation 返回 `403`。
 2. 非受邀用户、过期 token、撤销 token、重放 token 和无 bearer token 不能加入。
 3. 同一 invitation 并发 accept 20 次后，恰有一条 membership 和一条 active default thread。
 4. 同一 member 同一 Trip 可创建多条 non-default thread，但不能创建第二条 default thread。

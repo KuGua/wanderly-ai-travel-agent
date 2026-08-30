@@ -705,18 +705,18 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Acceptance is idempotent and creates at most one required membership and one recipient-owned default thread. The post-success primary action is setting the sharing scope; acceptance itself grants no consent or snapshot fields.
 - Decline creates no membership or thread and records `TRIP_INVITATION_DECLINE`; creator revocation remains distinct. Audit summaries contain IDs/status only, never the raw token or private profile data.
 
-### TS-INVITATION-SEARCH-1 — Creator-only account search
+### TS-INVITATION-EMAIL-1 — Email-bound invitation without account enumeration
 
-**Objective:** Verify that the workspace invite control searches only the minimum data needed to select an eligible registered account.
+**Objective:** Verify that the workspace invite control creates an invitation for an email without disclosing whether an account exists.
 
-**Starting conditions:** An active Trip has a creator, at least one existing member, and several registered accounts.
+**Starting conditions:** An active Trip has a creator and at least one existing member.
 
-1. As creator, open `/trips/:tripId/invite` from the right workspace header and verify the current-member list before searching with fewer than two characters, then a matching display-name substring.
-2. Verify each result exposes only display name and opaque ID; it never exposes email, username, profile, nationality, passport data, or invitation tokens.
-3. Verify the creator and existing Trip members are absent. Repeat as a non-creator and for a Draft Trip; expect no usable control and API `403`/`409` respectively.
-4. Select an account, create an invitation, and verify the one-time token link is shown once, has a seven-day expiry, and the creation audit data contains IDs/expiry only.
+1. As creator, open `/trips/:tripId/invite`, enter a valid email and create an invitation. Verify the page returns a one-time link with a seven-day expiry and explicitly says email delivery is not configured.
+2. Verify no API searches users and neither request/response, audit event nor telemetry contains the raw recipient email; storage contains only HMAC and masked display data.
+3. Repeat as a non-creator and for a Draft Trip; expect no usable control and API `403`/`409` respectively.
+4. Open the link signed out, then sign in or register with the invited email and return to the link. Verify that only the matching email can preview, accept or decline; a different email gets the same unavailable result.
 
-**Expected:** The creator can create an account-bound invitation without account enumeration beyond the narrow search result. The selected recipient must still authenticate and explicitly accept; no consent is created by search, creation, or acceptance.
+**Expected:** The creator can create an email-bound invitation without account enumeration. The recipient must still authenticate (or register) with the invited email and explicitly accept; no consent is created by creation or acceptance.
 
 ### TS-EXPLORE-TRIP-1 — Create a Draft Trip only on first submitted exploration message
 
