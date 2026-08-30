@@ -791,6 +791,24 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 2. Assert `trace_id` and `span_id` are present and match the active span.
 3. Assert `req.body.passportNumber === "[REDACTED]"`, `req.body.nationality === "[REDACTED]"`, `req.body.prompt === "[REDACTED]"`.
 
+### TS-UI-OBS-1 — Safe frontend action correlation
+
+**Objective:** Verify a failed authenticated browser action can be correlated to API/Agent telemetry without collecting browser content.
+
+**Steps:**
+
+1. As an authenticated user, force `POST /api/v1/threads/:threadId/turns` to return 500 from the Explore screen.
+2. Inspect the resulting `POST /api/v1/diagnostics/ui-events` record, local NDJSON output and Tempo trace.
+3. Repeat with an offline network failure, a route render error and an unhandled rejected Promise.
+4. Attempt to submit diagnostic fields named `message`, `stack`, `url`, `prompt`, `question`, a form value or an unknown key.
+
+**Expected outcomes:**
+
+- The diagnostic event contains only the fixed `conversation.submit` action, `explore` screen, bounded outcome/error category, bounded status/latency and validated request/correlation UUIDs.
+- The log has `runtime_event.component="ui"`; the endpoint's Tempo HTTP span has safe `ui.*` enum attributes. Correlation IDs are not metric labels.
+- Raw chat text, form values, URLs, error messages/stacks, profile/passport data and credentials are absent from browser payloads, logs, traces and metrics. Unknown fields return 400 before a runtime event is emitted.
+- Diagnostics are authenticated, rate-limited and best-effort: an unavailable diagnostic endpoint never blocks the original action or retry. An unauthenticated sign-in failure is not sent to this endpoint.
+
 - Profile memory is explicit, editable, deletable and private by default.
 - Shared workspace never shows unapproved Profile/private-chat fields.
 - Flight/Stay/Ground and Visa outputs use one consent snapshot and show source/time or demo label.
