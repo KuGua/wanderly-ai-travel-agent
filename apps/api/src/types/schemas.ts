@@ -380,7 +380,7 @@ export const ownerConversationMessageSchema = z.object({
 
 export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL", "FALLBACK"]);
 
-export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN"]);
+export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]);
 export const agentTaskStatusSchema = z.enum([
   "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "FAILED", "CANCELLED", "STALE",
 ]);
@@ -437,6 +437,108 @@ const streamBaseSchema = z.object({
     .optional(),
 });
 
+// ─── Personal Trip Research ─────────────────────────────────────────────────
+// Phase 1 — Personal Trip Orchestrator. Zod schemas for the
+// `personalResearchIntent`, the closed-shape research command request/response,
+// the dedicated 8-stage research SSE channel, and the
+// `research.intent_extracted` SSE event. `.strict()` rejects every extra
+// field at the API boundary; the server derives every authority field from
+// the active Trip / required-member state.
+// Source of truth: docs/personal-trip-orchestration-implementation.md §4,
+// docs/contracts/research-command.md.
+
+export const personalResearchCapabilitySchema = z.enum([
+  "flight",
+  "accommodation",
+  "hotel",
+  "activities",
+  "places",
+  "navigation",
+  "mobility",
+  "readiness",
+]);
+
+export const personalResearchKindSchema = z.enum([
+  "RESEARCH_ONLY",
+  "PROPOSE_PLAN",
+]);
+
+export const personalResearchIntentSchema = z.object({
+  kind: personalResearchKindSchema,
+  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
+}).strict();
+
+/**
+ * Closed-shape request for `POST /api/v1/trips/:tripId/research`.
+ * `.strict()` rejects any extra field — including `snapshotId`, `provider`,
+ * `latitude`, `longitude`, `placeId`, `dates`, `currency`, `toolCallId`,
+ * `identity`, or chat content. The server derives every authority field
+ * from the active Trip / required-member state.
+ */
+export const researchCommandRequestSchema = z.object({
+  requestId: uuidSchema,
+  outputMode: personalResearchKindSchema,
+  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+}).strict();
+
+/** 202 envelope for an accepted research command. */
+export const researchCommandAcceptedResponseSchema = z.object({
+  runId: uuidSchema,
+  operation: z.enum(["RESEARCH", "PLAN"]),
+  snapshotId: uuidSchema,
+  status: z.literal("QUEUED"),
+}).strict();
+
+/**
+ * Safe research-stage enum used by the dedicated `research.stage` SSE
+ * channel. Kept separate from `agentRunPhaseSchema` so cross-cutting phases
+ * (ACCEPTED / GENERATING / RETRYING / etc.) stay orthogonal to the
+ * research lifecycle.
+ */
+export const researchStageSchema = z.enum([
+  "SNAPSHOT_CREATED",
+  "RESEARCHING",
+  "VALIDATING",
+  "PERSISTING",
+  "COMPLETED",
+  "COMPLETED_WITH_GAPS",
+  "FAILED",
+  "STALE",
+]);
+
+/** `research.stage` SSE event. */
+export const researchStageEventSchema = streamBaseSchema.extend({
+  event: z.literal("research.stage"),
+  stage: researchStageSchema,
+}).strict();
+
+/** `research.intent_extracted` SSE event — carries the model-extracted research draft. */
+export const researchIntentExtractedEventSchema = streamBaseSchema.extend({
+  event: z.literal("research.intent_extracted"),
+  intent: personalResearchIntentSchema,
+}).strict();
+
+/**
+ * Safe DTO returned by `GET /api/v1/trips/:tripId/research/latest`. Carries
+ * only the persisted `planning_research_results` row + service-gap summary —
+ * never raw provider payloads, snapshot values, or chat content.
+ */
+export const researchResultResponseSchema = z.object({
+  id: uuidSchema,
+  tripId: uuidSchema,
+  snapshotId: uuidSchema,
+  agentTaskRunId: uuidSchema.nullable(),
+  status: z.enum(["COMPLETE", "COMPLETED_WITH_GAPS"]),
+  serviceGaps: z.array(z.record(z.string(), z.unknown())).max(64),
+  resultPlanId: uuidSchema.nullable(),
+  createdAt: z.string().datetime(),
+}).strict();
+
+export const latestResearchResultResponseSchema = z.object({
+  result: researchResultResponseSchema.nullable(),
+}).strict();
+
 export const agentStreamEventSchema = z.discriminatedUnion("event", [
   streamBaseSchema.extend({
     event: z.literal("turn.started"),
@@ -474,6 +576,8 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     code: agentRunErrorCodeSchema,
     retryable: z.boolean(),
   }).strict(),
+  researchStageEventSchema,
+  researchIntentExtractedEventSchema,
 ]);
 
 // ─── Booking ────────────────────────────────────────────────────────────────
@@ -591,9 +695,12 @@ export const explorationStartResponseSchema = z.object({
 
 // Activate mirrors `createTripSchema` (the full brief validation) so the only
 // way out of DRAFT is a structurally complete brief.
+// Phase 1 — solo trips may activate with a single destination candidate
+// (validated per-mode by `assertTripModeForBrief` in
+// `services/trip-mode-service.ts`).
 export const tripActivationRequestSchema = z.object({
   departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3),
-  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(2).max(5),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5),
   travelDateStart: dateStr.nullable().optional(),
   travelDateEnd: dateStr.nullable().optional(),
   titleLocale: z.enum(["en", "zh"]),

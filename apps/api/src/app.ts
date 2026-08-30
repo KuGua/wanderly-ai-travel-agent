@@ -12,6 +12,7 @@ import { tripMemoryRoutes } from "./routes/trip-memory.js";
 import { tripRoutes } from "./routes/trips.js";
 import { consentRoutes } from "./routes/consent.js";
 import { planningRoutes } from "./routes/planning.js";
+import { researchRoutes } from "./routes/research.js";
 import { confirmationRoutes } from "./routes/confirmations.js";
 import { bookingRoutes } from "./routes/bookings.js";
 import { changeEventRoutes } from "./routes/change-events.js";
@@ -214,6 +215,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(tripRoutes, { prefix: "/api/v1" });
   await app.register(consentRoutes, { prefix: "/api/v1" });
   await app.register(planningRoutes, { prefix: "/api/v1" });
+  await app.register(researchRoutes, { prefix: "/api/v1" }); // Phase 2 — Personal Trip Orchestrator
   await app.register(confirmationRoutes, { prefix: "/api/v1" });
   await app.register(bookingRoutes, { prefix: "/api/v1" });
   await app.register(changeEventRoutes, { prefix: "/api/v1" });

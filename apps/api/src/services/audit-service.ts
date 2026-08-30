@@ -45,6 +45,10 @@ export type AuditAction =
   | "TRIP_PLACE_ADOPTED"
   | "TRIP_PLACE_REVOKED"
   | "RESEARCH_RESULT_RECORDED"
+  // Phase 2 / Personal Trip Orchestrator (mirrors 0035_personal_research_audit_actions.sql):
+  | "RESEARCH_COMMAND_ACCEPTED"
+  | "RESEARCH_COMMAND_REJECTED"
+  | "RESEARCH_COMPLETED"
   // Long-term memory (docs/long-term-memory-implementation.md section 7):
   | "MEMORY_PROPOSAL_CREATE" | "MEMORY_PROPOSAL_CONFIRM" | "MEMORY_PROPOSAL_DISMISS"
   | "PREFERENCE_FACT_UPDATE" | "PREFERENCE_FACT_DELETE"

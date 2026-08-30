@@ -330,7 +330,7 @@ metrics.registerCounter("trip_draft_brief_update_total", "Creator-confirmed DRAF
   result: ["success"],
 });
 metrics.registerCounter("draft_command_rejected_total", "Collaboration commands rejected because the Trip is still a Draft.", {
-  operation: ["invitation", "consent", "planning", "confirmation", "booking", "change_event"],
+  operation: ["invitation", "consent", "planning", "confirmation", "booking", "change_event", "research"],
 });
 metrics.registerCounter("agent_task_recoveries_total", "Expired Agent task leases and queue entries recovered.", {
   outcome: ["retrying", "failed", "cancelled"],
@@ -501,6 +501,32 @@ metrics.registerCounter(
   {
     decision: ["accept", "needs_changes"],
     result: ["cast", "adopted", "blocked", "stale_plan"],
+  },
+);
+
+// Phase 3 — Personal Trip Orchestrator.
+metrics.registerCounter(
+  "research_stage_total",
+  "Personal Trip Orchestrator SSE stage transitions by bounded outcome.",
+  {
+    stage: [
+      "snapshot_created",
+      "researching",
+      "validating",
+      "persisting",
+      "completed",
+      "completed_with_gaps",
+      "failed",
+      "stale",
+    ],
+    outcome: ["success", "failure"],
+  },
+);
+metrics.registerCounter(
+  "solo_plan_adoption_total",
+  "Solo plan adoption outcomes — owner ACCEPT flips PROPOSED to ACTIVE in one round trip.",
+  {
+    outcome: ["adopted", "stale_plan", "not_solo", "forbidden", "plan_not_proposed", "error"],
   },
 );
 

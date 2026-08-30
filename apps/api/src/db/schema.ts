@@ -23,7 +23,7 @@ export const outboxStatusEnum = pgEnum("outbox_status", [
   "PROCESSED",
   "FAILED",
 ]);
-export const agentTaskOperationEnum = pgEnum("agent_task_operation", ["CONVERSATION", "PLAN", "REPLAN"]);
+export const agentTaskOperationEnum = pgEnum("agent_task_operation", ["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]);
 export const agentTaskStatusEnum = pgEnum("agent_task_status", [
   "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELLED", "STALE",
 ]);
@@ -67,6 +67,10 @@ export const auditActionEnum = pgEnum("audit_action", [
   "TRIP_PLACE_ADOPTED",
   "TRIP_PLACE_REVOKED",
   "RESEARCH_RESULT_RECORDED",
+  // Phase 2 / Personal Trip Orchestrator (added via 0035_personal_research_audit_actions.sql):
+  "RESEARCH_COMMAND_ACCEPTED",
+  "RESEARCH_COMMAND_REJECTED",
+  "RESEARCH_COMPLETED",
   // Long-term memory (docs/long-term-memory-implementation.md section 7):
   "MEMORY_PROPOSAL_CREATE", "MEMORY_PROPOSAL_CONFIRM", "MEMORY_PROPOSAL_DISMISS",
   "PREFERENCE_FACT_UPDATE", "PREFERENCE_FACT_DELETE",
@@ -590,6 +594,22 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   userMessageId: uuid("user_message_id").references(() => chatMessages.id, { onDelete: "cascade" }),
   assistantMessageId: uuid("assistant_message_id").references(() => chatMessages.id, { onDelete: "set null" }),
   resultPlanId: uuid("result_plan_id").references(() => itineraryPlans.id, { onDelete: "set null" }),
+  // ─── Phase 1 — Personal Trip Orchestrator ───────────────────────────────
+  // `RESEARCH` (and the columns below) live only on rows with
+  // operation === 'RESEARCH'. Other operations keep all three columns NULL.
+  // The `research_mode` CHECK is enforced server-side via the Zod
+  // `personalResearchKindSchema`; the SQL CHECK is defined in
+  // migrations/0033b_personal_research_columns_and_checks.sql so this table
+  // shape stays Drizzle-only.
+  //
+  // `researchResultId` is intentionally declared without an in-Drizzle
+  // `.references()` callback: `planningResearchResults` references
+  // `agentTaskRuns` (via its own `agentTaskRunId` column), so a mutual
+  // reference would form a circular type that Drizzle's inference cannot
+  // resolve. The FK is added at the DB layer by migration 0033b.
+  researchMode: varchar("research_mode", { length: 16 }),
+  requestedCapabilities: jsonb("requested_capabilities").$type<string[]>(),
+  researchResultId: uuid("research_result_id"),
   placeSourceId: varchar("place_source_id", { length: 128 }),
   placeName: varchar("place_name", { length: 160 }),
   placeLatitude: doublePrecision("place_latitude"),
@@ -638,7 +658,7 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   activeConversationUnique: uniqueIndex("agent_task_runs_one_active_conversation")
     .on(table.threadId).where(sql`${table.threadId} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED')`),
   activePlanningUnique: uniqueIndex("agent_task_runs_one_active_planning")
-    .on(table.tripId).where(sql`${table.tripId} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED')`),
+    .on(table.tripId).where(sql`${table.tripId} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED') AND operation IN ('PLAN', 'REPLAN', 'RESEARCH')`),
   createdByIdx: index("agent_task_runs_created_by_idx").on(table.createdByUserId),
   claimIdx: index("agent_task_runs_claim_idx").on(table.status, table.nextAttemptAt, table.leaseExpiresAt, table.createdAt),
 }));

@@ -1,8 +1,11 @@
 # 单人行程编排实施规范
 
-**状态：** 已确认，待实施  
+**状态：** 已确认，待实施（Phase 0 已起，契约骨架落地）  
 **范围：** 让 Personal Agent 在单成员 Trip 中发起完整、证据化的个人旅行研究与规划；复用现有 Shared planning 能力和所有 Shared tools。  
 **事实来源：** [TECH_STACK.md](../TECH_STACK.md)、[PRD.md](PRD.md)、[backlog.md](backlog.md)、[test-scenarios.md](test-scenarios.md)。
+**实施计划：** [plans/linear-hugging-simon.md](../plans/linear-hugging-simon.md)（按 0–6 阶段推进）。  
+**API 契约：** [apps/api/docs/contracts/research-command.md](../apps/api/docs/contracts/research-command.md)。  
+**Phase 0 owner：** TBD。
 
 ## 1. 固定决策与不变量
 

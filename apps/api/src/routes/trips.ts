@@ -23,6 +23,7 @@ import { buildTripTitle, isValidTripDate } from "../services/trip-title-service.
 import { createRequestContext } from "../utils/context.js";
 import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
+import { loadAndAssertTripModeForBrief } from "../services/trip-mode-service.js";
 import { getOrCreateDefaultThread } from "../services/trip-invitation-service.js";
 import { metrics } from "../observability/metrics.js";
 
@@ -305,6 +306,11 @@ export async function tripRoutes(app: FastifyInstance) {
         metrics.inc("trip_activation_total", { result: "forbidden" });
         throw new ApiError(403, "Forbidden", "Only the creator may activate the trip");
       }
+
+      // Phase 1 — per-mode candidate validation. SOLO trips (1 required
+      // member) may activate with 1..5 candidates; TEAM trips keep 2..5.
+      // Throws RESEARCH_BRIEF_INVALID on violation.
+      await loadAndAssertTripModeForBrief(tx, tripId, body.destinationCandidates);
 
       await tx.update(sharedTrips).set({
         name: generatedTitle,
