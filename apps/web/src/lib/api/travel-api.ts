@@ -44,6 +44,13 @@ import type {
   AdoptTripPlaceRequest,
   RevokeTripPlaceRequest,
   TripPlaceActionResponse,
+  MemoryFact,
+  ProfileMemoryResponse,
+  ResolveProposalResponse,
+  UpdateMemoryFactInput,
+  TripMemoryFact,
+  TripMemoryGroupResponse,
+  TripMemoryOverridesResponse,
   ResearchResult,
   RouteEvidenceList,
   NavigationRouteSearchRequest,
@@ -61,6 +68,16 @@ import type {
 export interface TravelApi {
   getMyProfile(): Promise<ProfileResponse>;
   updateMyProfile(input: UpdateProfileInput): Promise<UpdateProfileResponse>;
+  getProfileMemory(): Promise<ProfileMemoryResponse>;
+  updateMemoryFact(factId: string, input: UpdateMemoryFactInput): Promise<MemoryFact>;
+  deleteMemoryFact(factId: string): Promise<void>;
+  confirmMemoryProposal(proposalId: string): Promise<ResolveProposalResponse>;
+  dismissMemoryProposal(proposalId: string): Promise<ResolveProposalResponse>;
+  getTripMemoryOverrides(tripId: string): Promise<TripMemoryOverridesResponse>;
+  getTripMemoryGroupDecisions(tripId: string): Promise<TripMemoryGroupResponse>;
+  saveTripMemoryOverride(tripId: string, fieldKey: string, value: unknown): Promise<TripMemoryFact>;
+  saveTripMemoryGroupDecision(tripId: string, fieldKey: string, value: unknown): Promise<TripMemoryFact>;
+  deleteTripMemory(tripId: string, factId: string): Promise<void>;
   getTrips(): Promise<TripsResponse>;
   getTrip(tripId: string): Promise<TripDetailResponse>;
   // Optional while older fixtures and API adapters adopt the invitation flow.

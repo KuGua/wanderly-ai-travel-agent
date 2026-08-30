@@ -39,7 +39,7 @@
 
 三位用户、2–3 个固定候选目的地和结构化 provider 结果不构成非结构化知识检索问题。RAG 会增加索引更新、来源过期、误检索、prompt injection 与敏感数据暴露面，却不能解决本项目核心问题：授权边界和多成员方案一致性。
 
-长期记忆也采用结构化事实，而不是把私聊归档或模型摘要用作知识库。低风险行为只能生成待用户确认的提案；敏感资料（国籍、旅行证件、出生日期、健康和无障碍信息）只能通过 Profile 表单维护。Shared Agent 从不直读个人事实，而只消费当前 Trip 的 consent-derived memory projection；详细契约见 [长期记忆实施方案](long-term-memory-implementation.md)。
+长期记忆也采用结构化事实，而不是把私聊归档或模型摘要用作知识库。低风险行为只能生成待用户确认的提案，其排序与触发使用 ACT-R base-level activation 的 Petrov hybrid 近似，且**衰减只作用于提案，已确认事实永不衰减**；敏感资料（国籍、旅行证件、出生日期、健康和无障碍信息）只能通过 Profile 表单维护。Shared Agent 从不直读个人事实，而只消费当前 Trip 的 consent-derived memory projection；详细契约见 [长期记忆实施方案](long-term-memory-implementation.md)。
 
 ## 2. Agent 拓扑
 
@@ -131,7 +131,8 @@ Personal Agent 默认采用 Memory-Augmented + Tool-Augmented；仅在必要时�
 
 | 记忆类型 | 现有位置 | 使用规则 |
 |---|---|---|
-| 长期个人偏好 | user_profiles、preference_facts | 用户可查看、编辑、删除；仅 Personal Agent 私有读取。 |
+| 长期个人偏好 | user_profiles、preference_facts | 用户可查看、编辑、删除；仅 Personal Agent 私有读取。不随时间衰减。 |
+| 行为建议候选 | memory_proposals | 聚合计数 + 上限 10 条的 UTC day 观察窗口；随时间衰减，终态即清空窗口。永不直接进入计划输入。 |
 | 本次行程偏好 | 当前未实现 | 新增独立 trip override；不得静默覆盖长期 Profile。`this trip` 标记 = 线程创建时绑定的 tripId。 |
 | 私有对话 archive 与 session context | 已实现 archive；有界原文 context 待实施 | `chat_threads`（归属 `ownerUserId`，绑定 `tripId`）+ `chat_messages`。USER 由 authenticated owner 发送；ASSISTANT 的 sender 为 null，且角色/sender 组合由 DB CHECK 约束。owner UI 可经专用 endpoint 恢复 raw history；待实施的 `ConversationContextBuilder` 仅为同一 owner 的同一 thread 提取最近、有预算的原文窗口，供 Personal Agent 使用。trip 关联不赋予其他成员或 Shared Agent 读取权限。 |
 | 共享协作记忆 | consent_grants、constraint_snapshots | 仅通过服务端最小化导出；snapshot 不可变。 |

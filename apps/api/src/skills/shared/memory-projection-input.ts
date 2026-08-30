@@ -1,0 +1,141 @@
+import { z } from "zod";
+
+import { memoryFieldDefinition } from "../../memory/memory-field-catalog.js";
+import { memoryProjectionSchema, type MemoryProjection } from "../../types/schemas.js";
+
+/**
+ * The Shared Trip Agent's only view of personal memory
+ * (docs/long-term-memory-implementation.md §4.4, §5.3).
+ *
+ * The Shared Agent has no repository access and no memory Skill. Everything it
+ * knows about what members prefer arrives inside an immutable snapshot, and
+ * this module is the single place that reads it. A Shared Skill that wants a
+ * preference embeds `sharedMemoryInputSchema` and calls `readMemoryProjection`;
+ * it never reaches into `authorized_data` itself.
+ *
+ * Reading through a parse rather than a cast is the point. A snapshot is a
+ * JSONB blob, so anything that ends up in `_meta.memory` would otherwise be
+ * handed to the model verbatim, including a field that was never supposed to be
+ * exportable. Parsing turns that into a load-time failure.
+ */
+
+/** Members carry no user ids here — only the run-scoped aliases. */
+export const sharedMemoryInputSchema = z.object({
+  memory: memoryProjectionSchema,
+}).strict();
+
+export type SharedMemoryInput = z.infer<typeof sharedMemoryInputSchema>;
+
+export class MemoryProjectionUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`Memory projection is unavailable: ${reason}`);
+    this.name = "MemoryProjectionUnavailableError";
+  }
+}
+
+const EMPTY_PROJECTION: MemoryProjection = Object.freeze({
+  members: {},
+  groupDecisions: {},
+});
+
+/**
+ * Everything a member's memory says for this trip, for building a planning
+ * prompt.
+ *
+ * Includes confidential overrides, which planning may use. Never use this to
+ * build anything a member reads — see `tripWidePreferences`, which is the one
+ * that is safe to repeat back.
+ */
+export function memberPlanningPreferences(
+  projection: MemoryProjection,
+  alias: string,
+): Record<string, unknown> {
+  const member = projection.members[alias];
+  if (!member) return {};
+  return { ...member.profileFacts, ...member.tripOverrides, ...member.confidentialOverrides };
+}
+
+/**
+ * Extracts the memory namespace from a snapshot's `authorized_data`.
+ *
+ * Returns an empty projection for a snapshot taken before the namespace
+ * existed: a Shared run over an older snapshot should plan without preferences,
+ * not fail. A namespace that is present but malformed throws — that is a
+ * projection bug, and planning on a half-understood shape is worse than
+ * stopping.
+ */
+export function readMemoryProjection(authorizedData: unknown): MemoryProjection {
+  if (!authorizedData || typeof authorizedData !== "object") return EMPTY_PROJECTION;
+
+  const meta = (authorizedData as Record<string, unknown>)._meta;
+  if (!meta || typeof meta !== "object") return EMPTY_PROJECTION;
+
+  const memory = (meta as Record<string, unknown>).memory;
+  if (memory === undefined || memory === null) return EMPTY_PROJECTION;
+
+  const parsed = memoryProjectionSchema.safeParse(memory);
+  if (!parsed.success) {
+    throw new MemoryProjectionUnavailableError(
+      parsed.error.issues.map((issue) => issue.path.join(".") || "root").join(", "),
+    );
+  }
+  return parsed.data;
+}
+
+/**
+ * Preferences that apply to the whole trip: group decisions, plus anything
+ * every member independently agrees on.
+ *
+ * A field only counts as unanimous when every member expresses it, so a trip
+ * where one member stated nothing has no unanimous value — silence is not
+ * assent. A group decision always wins over member preferences, because it is
+ * the trip's own decision rather than an inference about it.
+ *
+ * Unanimity is only computed for fields the catalog marks `groupDecidable`,
+ * which answers the question "can this field meaningfully hold one value for
+ * the whole trip?". That restriction is what makes comparing values sound:
+ * every group-decidable field is a closed enum or a boolean, so two members
+ * expressing the same preference produce byte-identical values and equality is
+ * exact.
+ *
+ * `interests` is the field this excludes, and deliberately. It is free text, so
+ * "food" and "cuisine" — or the same list in a different order — are equal in
+ * meaning and unequal as data. Matching those would mean guessing at agreement,
+ * and inventing a consensus the members never reached is worse than reporting
+ * none. Per-member interests stay visible in the projection, so planning can
+ * take their union without anyone having to agree.
+ */
+export function tripWidePreferences(projection: MemoryProjection): Record<string, unknown> {
+  const aliases = Object.keys(projection.members);
+  const result: Record<string, unknown> = {};
+
+  if (aliases.length > 0) {
+    const counts = new Map<string, { value: unknown; agree: number }>();
+    for (const alias of aliases) {
+      const member = projection.members[alias];
+      // A this-trip override is what the member wants for this trip, so it
+      // takes precedence over their standing profile fact.
+      // Confidential overrides are deliberately absent: a trip-wide value can
+      // be shown to the team, and one derived from a confidential override
+      // would leak it by inference (§3.3).
+      const effective = { ...member.profileFacts, ...member.tripOverrides };
+      for (const [fieldKey, value] of Object.entries(effective)) {
+        if (!memoryFieldDefinition(fieldKey)?.groupDecidable) continue;
+
+        const seen = counts.get(fieldKey);
+        if (!seen) {
+          counts.set(fieldKey, { value, agree: 1 });
+        } else if (Object.is(seen.value, value)) {
+          seen.agree += 1;
+        } else {
+          seen.agree = -1; // conflicting; can never be unanimous
+        }
+      }
+    }
+    for (const [fieldKey, seen] of counts) {
+      if (seen.agree === aliases.length) result[fieldKey] = seen.value;
+    }
+  }
+
+  return { ...result, ...projection.groupDecisions };
+}

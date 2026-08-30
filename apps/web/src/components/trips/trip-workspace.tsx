@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
 import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
+import { TripMemoryPanel } from "@/components/trips/trip-memory-panel";
 import { PlacesPanel } from "@/components/trips/places-panel";
 import { ResearchGapBanner } from "@/components/trips/research-gap-banner";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
@@ -422,6 +423,18 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                   </div>
                 ))}
               </div>
+            </section>
+
+            {/* Preferences scoped to this trip only; the stable Profile is
+                edited on the profile page and is never rewritten from here. */}
+            <section className="overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow">
+              <div className="flex items-center justify-between gap-[7px] border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] px-2.5 py-2.5">
+                <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
+                  <span aria-hidden="true" className="grid size-[21px] place-items-center bg-[var(--w-highlight)] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">☰</span>
+                  <span className="truncate">{t("memory.windowTitle")}</span>
+                </div>
+              </div>
+              <TripMemoryPanel tripId={trip.id} />
             </section>
 
             <PlacesPanel tripId={trip.id} destinationCandidates={trip.destinationCandidates} />

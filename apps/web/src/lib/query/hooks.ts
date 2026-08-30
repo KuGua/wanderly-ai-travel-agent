@@ -33,6 +33,107 @@ export function useMyProfile() {
   });
 }
 
+/**
+ * The owner's long-term memory: confirmed facts plus any suggestion that has
+ * cleared the server-side trigger rule.
+ */
+export function useProfileMemory() {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: profileKeys.memory,
+    queryFn: () => api.getProfileMemory(),
+  });
+}
+
+/**
+ * Every memory mutation invalidates the whole memory query rather than
+ * patching the cache. Confirming or editing one field can clear suggestions
+ * for it server-side, so a local patch would leave stale cards on screen.
+ */
+function useMemoryMutation<TArgs>(mutationFn: (args: TArgs) => Promise<unknown>) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: profileKeys.memory });
+    },
+  });
+}
+
+export function useUpdateMemoryFact() {
+  const api = useTravelApi();
+  return useMemoryMutation(({ factId, value }: { factId: string; value: unknown }) =>
+    api.updateMemoryFact(factId, { value }));
+}
+
+export function useDeleteMemoryFact() {
+  const api = useTravelApi();
+  return useMemoryMutation((factId: string) => api.deleteMemoryFact(factId));
+}
+
+export function useConfirmMemoryProposal() {
+  const api = useTravelApi();
+  return useMemoryMutation((proposalId: string) => api.confirmMemoryProposal(proposalId));
+}
+
+export function useDismissMemoryProposal() {
+  const api = useTravelApi();
+  return useMemoryMutation((proposalId: string) => api.dismissMemoryProposal(proposalId));
+}
+
+/** The caller's own "this trip" preferences. Never another member's. */
+export function useTripMemoryOverrides(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.memoryOverrides(tripId),
+    queryFn: () => api.getTripMemoryOverrides(tripId),
+  });
+}
+
+/** Group decisions, visible to every active member of the trip. */
+export function useTripMemoryGroupDecisions(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.memoryGroup(tripId),
+    queryFn: () => api.getTripMemoryGroupDecisions(tripId),
+  });
+}
+
+/**
+ * Saving trip memory stales the trip's active plan server-side, so both memory
+ * lists and the trip detail are invalidated rather than patched locally.
+ */
+function useTripMemoryMutation<TArgs>(tripId: string, mutationFn: (args: TArgs) => Promise<unknown>) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: tripKeys.memoryOverrides(tripId) }),
+        queryClient.invalidateQueries({ queryKey: tripKeys.memoryGroup(tripId) }),
+        queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) }),
+      ]);
+    },
+  });
+}
+
+export function useSaveTripMemoryOverride(tripId: string) {
+  const api = useTravelApi();
+  return useTripMemoryMutation(tripId, ({ fieldKey, value }: { fieldKey: string; value: unknown }) =>
+    api.saveTripMemoryOverride(tripId, fieldKey, value));
+}
+
+export function useSaveTripMemoryGroupDecision(tripId: string) {
+  const api = useTravelApi();
+  return useTripMemoryMutation(tripId, ({ fieldKey, value }: { fieldKey: string; value: unknown }) =>
+    api.saveTripMemoryGroupDecision(tripId, fieldKey, value));
+}
+
+export function useDeleteTripMemory(tripId: string) {
+  const api = useTravelApi();
+  return useTripMemoryMutation(tripId, (factId: string) => api.deleteTripMemory(tripId, factId));
+}
+
 export function useTrips() {
   const api = useTravelApi();
   return useQuery({
