@@ -257,7 +257,44 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     code: agentRunErrorCodeSchema,
     retryable: z.boolean(),
   }).strict(),
+  // Phase 6 / Personal Trip Orchestrator — research-specific SSE events.
+  // Personal research schemas are defined below the discriminated union, so
+  // we re-declare lightweight inline shapes for these two SSE members
+  // (kept in sync with the canonical schemas in §6 of this file).
+  streamBaseSchema.extend({
+    event: z.literal("research.intent_extracted"),
+    intent: z.object({
+      kind: z.enum(["RESEARCH_ONLY", "PROPOSE_PLAN"]),
+      requestedCapabilities: z.array(z.enum([
+        "flight", "accommodation", "hotel", "activities", "places", "navigation", "mobility", "readiness",
+      ])).min(1),
+      destinationCandidates: z.array(z.string().min(1).max(64)).min(1).max(5).optional(),
+    }).strict(),
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("research.stage"),
+    stage: z.enum([
+      "SNAPSHOT_CREATED", "RESEARCHING", "VALIDATING", "PERSISTING",
+      "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "STALE",
+    ]),
+  }).strict(),
 ]);
+
+// ─── Personal Trip Research command (Phase 6 / docs §4) ───────────────────
+export const personalResearchCapabilitySchema = z.enum([
+  "flight", "accommodation", "hotel", "activities", "places", "navigation", "mobility", "readiness",
+]);
+export type PersonalResearchCapability = z.infer<typeof personalResearchCapabilitySchema>;
+
+export const personalResearchKindSchema = z.enum(["RESEARCH_ONLY", "PROPOSE_PLAN"]);
+export type PersonalResearchKind = z.infer<typeof personalResearchKindSchema>;
+
+export const personalResearchIntentSchema = z.object({
+  kind: personalResearchKindSchema,
+  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+  destinationCandidates: z.array(z.string().min(1).max(64)).min(1).max(5).optional(),
+}).strict();
+export type PersonalResearchIntent = z.infer<typeof personalResearchIntentSchema>;
 
 export const apiErrorResponseSchema = z.object({
   statusCode: z.number(),
@@ -778,21 +815,10 @@ export type ServiceGap = z.infer<typeof serviceGapSchema>;
 export type ResearchResultStatus = z.infer<typeof researchResultStatusSchema>;
 export type ResearchResult = z.infer<typeof researchResultSchema>;
 
-// ─── Personal Trip Research command (Phase 6 / docs §4) ───────────────────
-export const personalResearchCapabilitySchema = z.enum([
-  "flight", "accommodation", "hotel", "activities", "places", "navigation", "mobility", "readiness",
-]);
-export type PersonalResearchCapability = z.infer<typeof personalResearchCapabilitySchema>;
-
-export const personalResearchKindSchema = z.enum(["RESEARCH_ONLY", "PROPOSE_PLAN"]);
-export type PersonalResearchKind = z.infer<typeof personalResearchKindSchema>;
-
-export const personalResearchIntentSchema = z.object({
-  kind: personalResearchKindSchema,
-  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
-  destinationCandidates: z.array(z.string().min(1).max(64)).min(1).max(5).optional(),
-}).strict();
-export type PersonalResearchIntent = z.infer<typeof personalResearchIntentSchema>;
+// Note: `personalResearchCapabilitySchema` / `personalResearchKindSchema` /
+// `personalResearchIntentSchema` are declared above the `agentStreamEventSchema`
+// discriminated union (so the SSE member can reference them). The remaining
+// Phase 6 request/response schemas follow below.
 
 export const researchCommandRequestSchema = z.object({
   requestId: z.string().uuid(),

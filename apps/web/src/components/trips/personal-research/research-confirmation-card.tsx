@@ -5,7 +5,7 @@ import type {
   PersonalResearchIntent,
   ResearchCommandRequest,
 } from "@/lib/api/contracts";
-import { useTravelApi } from "@/lib/query/provider";
+import { useTravelApi, useOptionalTravelApi } from "@/lib/query/provider";
 import { Button } from "@/components/ui/button";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 
@@ -26,7 +26,7 @@ export function ResearchConfirmationCard({
   intent: PersonalResearchIntent;
   onDismiss: () => void;
 }): ReactNode {
-  const api = useTravelApi();
+  const api = useOptionalTravelApi();
   const mutation = useConfirmResearchCommand(tripId);
 
   function buildPayload(): ResearchCommandRequest | null {
