@@ -131,18 +131,19 @@ describe("strict local development authentication", () => {
     expect(response.headers["access-control-allow-origin"]).toBeUndefined();
   });
 
-  it("returns trace context for an allowed CORS preflight", async () => {
+  it("allows an authenticated draft-brief PATCH preflight with trace context", async () => {
     const response = await app.inject({
       method: "OPTIONS",
-      url: "/api/v1/threads",
+      url: "/api/v1/trips/11111111-1111-4111-8111-111111111111/draft-brief",
       headers: {
         origin: "http://localhost:3001",
-        "access-control-request-method": "POST",
+        "access-control-request-method": "PATCH",
       },
     });
 
     expect(response.statusCode).toBe(204);
     expect(response.headers["access-control-allow-origin"]).toBe("http://localhost:3001");
+    expect(response.headers["access-control-allow-methods"]).toContain("PATCH");
     const traceparent = response.headers.traceparent;
     expect(typeof traceparent).toBe("string");
     expect(parseTraceparent(traceparent as string)).not.toBeNull();

@@ -176,6 +176,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
     origin: authMode === "local-dev" || authMode === "custom-local"
       ? (origin, callback) => callback(null, isAllowedLocalDevOrigin(origin, localDevAllowedOrigins))
       : true,
+    // Keep this allow-list aligned with the API's browser-facing routes.
+    // In particular, creator-confirmed draft brief updates use PATCH.
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
 
   app.addHook("preHandler", async (request) => {
