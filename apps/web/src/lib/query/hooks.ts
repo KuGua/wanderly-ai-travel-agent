@@ -307,6 +307,22 @@ export function useUpdateTripTitle(tripId: string) {
   });
 }
 
+/** Creator-only edits to the private Draft brief, before activation. */
+export function useUpdateDraftTripBrief(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: import("../api/contracts").UpdateDraftTripBriefInput) => {
+      if (!api.updateDraftTripBrief) throw new Error("Draft brief updates are unavailable");
+      return api.updateDraftTripBrief(tripId, input);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.all });
+      void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
 function mergeConversationMessages(
   current: OwnerConversationResponse["messages"],
   incoming: OwnerConversationResponse["messages"],

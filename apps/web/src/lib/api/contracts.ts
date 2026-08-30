@@ -140,6 +140,7 @@ export const tripInvitationCreateResponseSchema = z.object({
 export const invitationPreviewResponseSchema = z.object({
   trip: z.object({
     name: z.string().min(1).max(256),
+    status: tripStatusSchema,
     destinationCandidates: z.array(z.string().min(1)).max(5),
     travelDateStart: dateSchema.nullable(),
     travelDateEnd: dateSchema.nullable(),
@@ -359,12 +360,16 @@ export const tripActivationResponseSchema = z.object({
 
 export const updateTripTitleInputSchema = z.object({ name: z.string().trim().min(1).max(256) }).strict();
 export const updateDraftTripBriefInputSchema = z.object({
-  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+  departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
+  replaceDestinationCandidates: z.boolean().optional(),
+  travelDateStart: dateSchema.nullable().optional(),
+  travelDateEnd: dateSchema.nullable().optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
-}).strict().refine((value) => value.destinationCandidates !== undefined || value.travelDays !== undefined);
+}).strict().refine((value) => value.departureCities !== undefined || value.destinationCandidates !== undefined || value.travelDateStart !== undefined || value.travelDateEnd !== undefined || value.travelDays !== undefined);
 export const updateDraftTripBriefResponseSchema = z.object({
-  trip: z.object({ id: z.string().uuid(), name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"), destinationCandidates: z.array(z.string()), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime() }).strict(),
+  trip: z.object({ id: z.string().uuid(), name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"), departureCities: z.array(z.string()), destinationCandidates: z.array(z.string()), travelDateStart: dateSchema.nullable(), travelDateEnd: dateSchema.nullable(), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime() }).strict(),
 });
 export const updateTripTitleResponseSchema = z.object({
   trip: z.object({

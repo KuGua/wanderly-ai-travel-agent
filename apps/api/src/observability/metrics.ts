@@ -332,6 +332,9 @@ metrics.registerCounter("trip_draft_brief_update_total", "Creator-confirmed DRAF
 metrics.registerCounter("draft_command_rejected_total", "Collaboration commands rejected because the Trip is still a Draft.", {
   operation: ["invitation", "consent", "planning", "confirmation", "booking", "change_event", "research"],
 });
+metrics.registerCounter("trip_invitation_rejected_total", "Trip invitation attempts rejected because the Trip is archived or cancelled.", {
+  reason: ["terminal_trip"],
+});
 metrics.registerCounter("agent_task_recoveries_total", "Expired Agent task leases and queue entries recovered.", {
   outcome: ["retrying", "failed", "cancelled"],
 });

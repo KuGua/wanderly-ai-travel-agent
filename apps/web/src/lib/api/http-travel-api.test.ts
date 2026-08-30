@@ -121,7 +121,7 @@ describe("HttpTravelApi invitation join", () => {
   it("uses an opaque token for preview, accept, and decline instead of a trip ID", async () => {
     const token = "a".repeat(43);
     const preview = {
-      trip: { name: "Kyoto together", destinationCandidates: ["Kyoto"], travelDateStart: null, travelDateEnd: null },
+      trip: { name: "Kyoto together", status: "PLANNING" as const, destinationCandidates: ["Kyoto"], travelDateStart: null, travelDateEnd: null },
       membership: "MEMBER" as const,
       isRequired: true as const,
       expiresAt: CREATED_AT,

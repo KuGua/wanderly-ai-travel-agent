@@ -715,10 +715,32 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 1. As creator, open `/trips/:tripId/invite`. At 375px, 768px, 1024px and 1440px widths, verify the invite form and current-member list remain within one responsive workspace, use the standard Wanderly card colors, show translated member roles, and have no horizontal overflow. Enter a valid email and create an invitation. Verify the page returns a one-time link with a seven-day expiry and explicitly says email delivery is not configured.
 2. Verify no API searches users and neither request/response, audit event nor telemetry contains the raw recipient email; storage contains only HMAC and masked display data.
-3. Repeat as a non-creator and for a Draft Trip; expect no usable control and API `403`/`409` respectively.
+3. Repeat as a non-creator (expect `403`) and against an archived or cancelled Trip (expect `409 TRIP_NOT_INVITABLE`); a Draft Trip invitation must succeed and the creator control must not be disabled.
 4. Open the link signed out, then sign in or register with the invited email and return to the link. Verify that only the matching email can preview, accept or decline; a different email gets the same unavailable result.
 
 **Expected:** The creator can create an email-bound invitation without account enumeration. The recipient must still authenticate (or register) with the invited email and explicitly accept; no consent is created by creation or acceptance.
+
+### TS-INVITATION-DRAFT-1 — Inviting into a Draft keeps the creator's private conversation private
+
+**Stories:** H1, H2, S1
+**Objective:** Verify that a `DRAFT` trip may form a team before activation, while the creator's private conversation, profile and unconfirmed exploration stay hidden from invitees; only the normal collaboration gates (`DRAFT` → `PLANNING`) still block shared planning actions.
+
+**Starting conditions:** Alice owns a Draft Trip in `DRAFT` status; Bob has registered with `bob@example.com`; the system has configured the email-bound invitation HMAC secret.
+
+**Steps:**
+
+1. As Alice, open the workspace invite control. Confirm the control is enabled (not disabled) and links to `/trips/:tripId/invite` with no `DRAFT` restriction copy.
+2. Submit Bob's email and create an email-bound invitation. Confirm a one-time `inviteToken` is returned with a seven-day expiry.
+3. As Bob, open `/trips/join/:inviteToken`. Confirm the preview shows `{ trip.name, status: "DRAFT", destinationCandidates: [], travelDateStart: null, travelDateEnd: null, expiresAt }` and explicitly states that joining grants only a blank private thread.
+4. Accept the invitation as Bob. Confirm Bob is added as a required `MEMBER`, his own blank default `TRIP` thread is provisioned, and Bob's `GET /threads/:creatorThreadId/conversation` returns `403`.
+5. As Alice, complete the Draft brief via `PATCH /trips/:tripId/draft-brief` (departures, destinations, dates) and then `POST /trips/:tripId/activate` to transition to `PLANNING`.
+6. As a separate flow, create a Draft Trip, cancel it, then attempt to create another invitation; expect `409 TRIP_NOT_INVITABLE`. Bob's pending token against a cancelled trip must return `409 TRIP_NOT_INVITABLE` on accept.
+
+**Expected outcomes:**
+
+- Draft invitations create exactly one membership row and one recipient-owned default thread; the creator's existing thread remains invisible to the invitee (`403`).
+- Cancelled or archived trips reject both `POST /trips/:tripId/invitations` and `POST /trip-invitations/:inviteToken/accept` with `409 TRIP_NOT_INVITABLE`. Audit events continue to record only IDs and status, never raw emails or token text.
+- After the creator activates the brief, the team enters the existing PLANNING collaboration flow without re-issuing invitations; Bob's previously accepted membership continues to count as a required member for activation rules.
 
 ### TS-EXPLORE-TRIP-1 — Create a Draft Trip only on first submitted exploration message
 
@@ -745,7 +767,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
 - An unarchived, non-expired `DRAFT` owned by the authenticated member appears in the default `/projects` active list immediately after its creation, contributes to the active count, and is labelled as a draft needing completion. A Draft explicitly archived by the user, or one whose end date has elapsed, is excluded from that default list.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
-- Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control, which remains disabled until the persisted brief is complete. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
+- Draft commands for consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. Draft invitation creation and acceptance are explicitly allowed: the creator can copy an email-bound invitation link, the invitee sees a minimal summary (trip name, `DRAFT` status, expiry and "joining grants only a blank private thread"), and accepting adds the invitee as a member while still hiding the creator's private conversation. Cancelled or archived trips reject both new invitations and acceptance with `409 TRIP_NOT_INVITABLE`. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control and the creator-authored draft brief editor, both of which are required to reach `PLANNING`. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
 
 ### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields only
 

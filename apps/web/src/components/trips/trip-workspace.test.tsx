@@ -122,7 +122,8 @@ describe("TripWorkspace", () => {
     expect(await screen.findByRole("button", { name: /Draft notes/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New thread" })).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Activate draft trip" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Invite teammates" })).toBeDisabled();
+    expect(screen.getByRole("link", { name: "Invite teammates" })).toHaveAttribute("href", `/trips/${TRIP_ID}/invite`);
+    expect(screen.getByRole("button", { name: "Save brief" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start planning" }));
     await waitFor(() => expect(api.activateTrip).toHaveBeenCalledWith(TRIP_ID, {
       departureCities: ["San Francisco"],
