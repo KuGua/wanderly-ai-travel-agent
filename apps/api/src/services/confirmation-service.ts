@@ -2,6 +2,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "../db/database.js";
 import { memberConfirmations, tripMembers, itineraryPlans } from "../db/schema.js";
 import { recordAudit } from "./audit-service.js";
+import { validateSelectedFlightOffersFresh } from "./flight-offer-freshness-service.js";
 import type { RequestContext } from "../utils/context.js";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -27,6 +28,14 @@ export async function setConfirmation(params: {
     if (!plan) throw new Error("Plan not found");
     if (plan.status !== "ACTIVE") {
       throw new Error(`Cannot confirm plan with status ${plan.status}`);
+    }
+
+    // Spec §6.2 — confirmation is one of the two named freshness
+    // checkpoints (the other is the booking sandbox). Only gate the
+    // CONFIRMED decision: a member choosing NEEDS_CHANGES is not asserting
+    // the offer is still bookable, and must always be able to record that.
+    if (params.decision === "CONFIRMED") {
+      await validateSelectedFlightOffersFresh({ ctx: params.ctx, planId: params.planId, tripId: params.tripId, tx });
     }
 
     // Verify user is a required member

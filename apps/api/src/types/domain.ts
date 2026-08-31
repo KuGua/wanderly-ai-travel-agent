@@ -64,6 +64,18 @@ export interface DestinationReference {
   longitude: number;
 }
 
+/**
+ * Provenance of `FlightOffer.expiresAt` (spec §6.2 — confirmation/booking
+ * freshness). `PROVIDER_VERIFIED` means the supplier itself returned a
+ * ticketing deadline (e.g. Amadeus `lastTicketingDate`); `SYNTHETIC` means
+ * the adapter invented a local cache-freshness heuristic because the
+ * supplier has no such field (SerpAPI and FlightAPI always fall in this
+ * bucket; Amadeus falls back to it when a specific offer lacks
+ * `lastTicketingDate`). Only `PROVIDER_VERIFIED` may ever pass the
+ * confirmation/booking freshness guard — never inferred from provider name.
+ */
+export type FlightOfferExpiryProvenance = "PROVIDER_VERIFIED" | "SYNTHETIC";
+
 export interface FlightOffer {
   id: string;
   providerOfferId: string;
@@ -82,6 +94,7 @@ export interface FlightOffer {
   source: string;
   capturedAt: string;
   expiresAt: string;
+  expiryProvenance: FlightOfferExpiryProvenance;
 }
 
 export interface FlightSegment {

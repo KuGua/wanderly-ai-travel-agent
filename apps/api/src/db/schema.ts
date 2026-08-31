@@ -42,6 +42,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE", "TRIP_DRAFT_BRIEF_UPDATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
   "FLIGHT_SEARCH_REQUESTED", "FLIGHT_SEARCH_COMPLETED", "FLIGHT_SEARCH_UNAVAILABLE",
+  "FLIGHT_OFFER_EXPIRED",
   "ACTIVITIES_SEARCH_REQUESTED", "ACTIVITIES_SEARCH_COMPLETED", "ACTIVITIES_SEARCH_UNAVAILABLE",
   "ACCOMMODATION_DISCOVERY_REQUESTED", "ACCOMMODATION_DISCOVERY_COMPLETED", "ACCOMMODATION_DISCOVERY_UNAVAILABLE",
   "HOTEL_SEARCH_REQUESTED", "HOTEL_SEARCH_COMPLETED", "HOTEL_SEARCH_UNAVAILABLE",
@@ -388,6 +389,12 @@ export const providerOffers = pgTable("provider_offers", {
   providerOfferId: varchar("provider_offer_id", { length: 256 }),
   currency: varchar("currency", { length: 3 }),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
+  // Whether expiresAt is a real supplier commitment ('PROVIDER_VERIFIED') or
+  // a locally-invented cache-freshness heuristic ('SYNTHETIC'). NULL means
+  // unknown (historical rows predating this column) and is treated
+  // identically to 'SYNTHETIC' by the freshness guard — never inferred from
+  // provider_name. See flight-offer-freshness-service.ts.
+  expiryProvenance: varchar("expiry_provenance", { length: 32 }),
   offerData: jsonb("offer_data").$type<Record<string, unknown>>().notNull(),
   capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
 });

@@ -33,6 +33,29 @@ describe("AmadeusFlightProvider", () => {
     if (result.outcome === "LIVE") expect(result.data[0]).toMatchObject({
       providerOfferId: "1", origin: "SFO", destination: "NRT", totalPrice: 850.5, currency: "USD", adults: 2,
       baggageSummary: "1 checked bag(s) included",
+      // A real lastTicketingDate is a genuine supplier commitment — the
+      // freshness guard (flight-offer-freshness-service.ts) only trusts
+      // offers persisted with this exact provenance value.
+      expiryProvenance: "PROVIDER_VERIFIED",
+      expiresAt: "2026-09-01T23:59:59.999Z",
+    });
+  });
+
+  it("falls back to a SYNTHETIC (not PROVIDER_VERIFIED) expiry when lastTicketingDate is absent", async () => {
+    const offerWithoutTicketingDate = {
+      data: [{ ...offer.data[0], lastTicketingDate: undefined }],
+    };
+    const result = await provider([
+      new Response(JSON.stringify(token), { status: 200 }),
+      new Response(JSON.stringify(offerWithoutTicketingDate), { status: 200 }),
+    ]).searchFlights({ ...request, adults: 2, cabin: "ECONOMY", currency: "USD" });
+    expect(result).toMatchObject({ outcome: "LIVE" });
+    if (result.outcome === "LIVE") expect(result.data[0]).toMatchObject({
+      // No real supplier commitment exists for this offer — this is only a
+      // local cache-freshness heuristic and must never be treated as
+      // booking-eligible, regardless of provider name.
+      expiryProvenance: "SYNTHETIC",
+      expiresAt: "2026-08-27T00:15:00.000Z",
     });
   });
 

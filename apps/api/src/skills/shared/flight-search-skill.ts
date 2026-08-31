@@ -48,6 +48,7 @@ const normalizedFlightOfferSchema = z.object({
   source: z.string().min(1),
   capturedAt: z.string().datetime({ offset: true }),
   expiresAt: z.string().datetime({ offset: true }),
+  expiryProvenance: z.enum(["PROVIDER_VERIFIED", "SYNTHETIC"]),
 }).strict();
 
 export const flightSearchOutputSchema = z.discriminatedUnion("outcome", [

@@ -4,6 +4,7 @@ import { bookingExecutions, idempotencyRecords, itineraryPlans } from "../db/sch
 import { checkAllConfirmed } from "./confirmation-service.js";
 import { claimIdempotency } from "./idempotency-service.js";
 import { recordAudit } from "./audit-service.js";
+import { validateSelectedFlightOffersFresh, FlightOfferStaleError } from "./flight-offer-freshness-service.js";
 import type { RequestContext } from "../utils/context.js";
 import type { BookingExecutionResult, SandboxResult } from "../types/domain.js";
 
@@ -18,7 +19,8 @@ export type BookingGateCategory =
   | "plan_unavailable"
   | "quorum"
   | "non_unanimous"
-  | "snapshot_stale";
+  | "snapshot_stale"
+  | "offer_stale";
 
 export class BookingGateError extends Error {
   readonly statusCode: 409 | 422 = 422;
@@ -102,6 +104,25 @@ export async function submitBooking(params: {
         "quorum",
         "Not all required members have confirmed this plan",
       );
+    }
+
+    // Spec §6.2 — confirmation-time freshness (checked at adoption, in
+    // `activateProposedPlan`) is not sufficient on its own: time can pass
+    // between adoption and this booking attempt, so the offer must be
+    // independently revalidated again here, inside this same transaction,
+    // immediately before the booking-execution row is written.
+    try {
+      await validateSelectedFlightOffersFresh({
+        ctx: params.ctx,
+        planId: params.planId,
+        tripId: params.tripId,
+        tx,
+      });
+    } catch (err) {
+      if (err instanceof FlightOfferStaleError) {
+        throw new BookingGateError("offer_stale", err.message);
+      }
+      throw err;
     }
 
     await tx.insert(bookingExecutions).values({

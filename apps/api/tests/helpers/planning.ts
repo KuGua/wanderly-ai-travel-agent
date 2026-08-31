@@ -7,6 +7,10 @@ import type {
 } from "../../src/providers/types.js";
 
 const CAPTURED_AT = "2026-08-25T00:00:00.000Z";
+// Freshness must stay relative to wall time, not the fixed CAPTURED_AT above —
+// otherwise this fixture's flight offer eventually reads as expired to
+// `validateSelectedFlightOffersFresh` regardless of when the suite runs.
+const TEST_FLIGHT_OFFER_EXPIRES_AT = () => new Date(Date.now() + 60 * 60_000).toISOString();
 
 const unavailablePlaceProvider: PlaceSearchProvider = {
   async searchPlaces() {
@@ -71,7 +75,12 @@ export const testPlanningDependencies: PlanningDependencies = {
           changeSummary: null,
           source: "Test flight provider",
           capturedAt: CAPTURED_AT,
-          expiresAt: "2026-08-25T01:00:00.000Z",
+          expiresAt: TEST_FLIGHT_OFFER_EXPIRES_AT(),
+          // This fixture stands in for a well-behaved, trustworthy provider
+          // for every OTHER test that isn't specifically about the
+          // freshness guard; see flight-offer-*-freshness*.test.ts for
+          // dedicated PROVIDER_VERIFIED vs SYNTHETIC coverage.
+          expiryProvenance: "PROVIDER_VERIFIED",
         }],
       };
     },

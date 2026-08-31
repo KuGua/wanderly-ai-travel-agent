@@ -238,7 +238,7 @@ metrics.registerCounter("plan_validation_failures_total", "Plan validation failu
   validationResult: ["schema", "authorization", "route", "provenance", "evidence", "unknown"],
 });
 metrics.registerCounter("booking_gate_denials_total", "Booking gate denials by bounded category.", {
-  errorCategory: ["callback_auth", "membership", "quorum", "plan_state", "unknown"],
+  errorCategory: ["callback_auth", "membership", "quorum", "plan_state", "plan_unavailable", "non_unanimous", "snapshot_stale", "offer_stale", "unknown"],
 });
 metrics.registerCounter("callback_verifications_total", "Sandbox callback signature verification results.", {
   callbackResult: [
@@ -351,6 +351,9 @@ metrics.registerCounter("flight_tool_invocations_total", "Flight tool execution 
   outcome: ["live", "unavailable"],
   provider: ["amadeus", "flightapi", "serpapi", "unconfigured"],
   error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
+});
+metrics.registerCounter("flight_offer_staleness_total", "Selected flight offers rejected by the confirmation/booking freshness guard, by bounded reason.", {
+  reason: ["expired", "missing_expiry", "unverifiable_expiry"],
 });
 // Global POI & ground mobility (docs/ground-mobility-implementation.md §7).
 // All label sets are bounded enums; identifiers (trip_id / run_id /

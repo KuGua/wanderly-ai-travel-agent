@@ -34,6 +34,8 @@ runs **before** any insert. Rejection propagates as
   (catalog-derived label, never the value), visibility enum, strength enum, and
   revision; `valueJson` is intentionally excluded.
 - Flight search: `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`; summaries contain only provider, bounded outcome/error code, and safe correlation identifiers, never raw provider payloads.
+- Flight offer freshness (`flight-offer-freshness-service.ts`, spec §6.2): `FLIGHT_OFFER_EXPIRED`, recorded when confirmation/adoption or booking rejects a selected flight offer as expired, missing a verifiable expiry, or sourced from a provider (SerpAPI, FlightAPI) that cannot supply one; summary contains only provider, the bounded reason, and the server-observed expiry/server-time comparison, never provider payloads.
+- Hotel provider authorization (`stay-search-provider-authorization.ts`): `HOTEL_PROVIDER_GRANTED`, `HOTEL_PROVIDER_REVOKED` record a member granting or revoking the guest-nationality authorization Nuitee Connect quoting requires; `HOTEL_PROVIDER_SWITCH_BLOCKED` is reserved for a rejected provider switch. Summaries contain only the bounded provider name, field name, and authorization version, never the nationality value itself.
 - Activities search: `ACTIVITIES_SEARCH_REQUESTED`, `ACTIVITIES_SEARCH_COMPLETED`, `ACTIVITIES_SEARCH_UNAVAILABLE`; summaries contain only the bounded provider/outcome/error category and never activity titles, MCP payloads, prices or links.
 - Accommodation discovery: `ACCOMMODATION_DISCOVERY_REQUESTED`, `ACCOMMODATION_DISCOVERY_COMPLETED`, `ACCOMMODATION_DISCOVERY_UNAVAILABLE`; summaries contain only bounded provider/outcome/count metadata and never destination text, accommodation names, coordinates, OSM identifiers or raw provider payloads.
 - Hotel search: `HOTEL_SEARCH_REQUESTED`, `HOTEL_SEARCH_COMPLETED`, `HOTEL_SEARCH_UNAVAILABLE`; summaries contain only bounded provider/outcome/error categories and never destination text, property names, prices, occupancy, links or raw provider payloads.
@@ -108,6 +110,8 @@ The supported `AuditAction` values are:
 - `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`,
   `PLAN_REPLAN_ENQUEUED`, `PLAN_ADOPTION_VOTED`, `PLAN_ADOPTED`
 - `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`
+- `FLIGHT_OFFER_EXPIRED`
+- `HOTEL_PROVIDER_GRANTED`, `HOTEL_PROVIDER_REVOKED`, `HOTEL_PROVIDER_SWITCH_BLOCKED`
 - `ACTIVITIES_SEARCH_REQUESTED`, `ACTIVITIES_SEARCH_COMPLETED`, `ACTIVITIES_SEARCH_UNAVAILABLE`
 - `ACCOMMODATION_DISCOVERY_REQUESTED`, `ACCOMMODATION_DISCOVERY_COMPLETED`, `ACCOMMODATION_DISCOVERY_UNAVAILABLE`
 - `HOTEL_SEARCH_REQUESTED`, `HOTEL_SEARCH_COMPLETED`, `HOTEL_SEARCH_UNAVAILABLE`

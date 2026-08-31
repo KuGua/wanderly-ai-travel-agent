@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FlightOffer } from "../types/domain.js";
+import type { FlightOffer, FlightOfferExpiryProvenance } from "../types/domain.js";
 import { metrics } from "../observability/metrics.js";
 import type { FlightProvider, FlightSearchParams, ProviderResult } from "./types.js";
 import { amadeusFlightOffersResponseSchema, amadeusTokenSchema } from "./amadeus-flight-schemas.js";
@@ -127,6 +127,11 @@ function normalizeOffer(offer: ReturnType<typeof amadeusFlightOffersResponseSche
   const lastSegment = firstItinerary.segments.at(-1)!;
   const fareDetails = offer.travelerPricings[0].fareDetailsBySegment;
   const baggageQuantity = fareDetails[0]?.includedCheckedBags?.quantity;
+  // lastTicketingDate, when present, is Amadeus's own commitment on how long
+  // this fare is held — a real supplier guarantee. Its absence means we have
+  // no such guarantee at all, so the 15-minute fallback below is only ever a
+  // local cache-freshness heuristic, never a substitute booking guarantee.
+  const expiryProvenance: FlightOfferExpiryProvenance = offer.lastTicketingDate ? "PROVIDER_VERIFIED" : "SYNTHETIC";
   const expiresAt = offer.lastTicketingDate
     ? new Date(`${offer.lastTicketingDate}T23:59:59.999Z`).toISOString()
     : new Date(Date.parse(params.capturedAt) + 15 * 60_000).toISOString();
@@ -156,5 +161,6 @@ function normalizeOffer(offer: ReturnType<typeof amadeusFlightOffersResponseSche
     source: params.source,
     capturedAt: params.capturedAt,
     expiresAt,
+    expiryProvenance,
   };
 }

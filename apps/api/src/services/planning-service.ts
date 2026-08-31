@@ -1037,6 +1037,19 @@ export async function generatePlan(params: {
       providerName,
       offerData: offer as unknown as Record<string, unknown>,
       capturedAt: new Date(offer.capturedAt),
+      // Flight is the only category with a confirmation/booking-time
+      // freshness requirement (spec §6.2) — carry the fields
+      // `validateSelectedFlightOffersFresh` needs from the in-memory
+      // FlightOffer through to the plan-linked row. Search-time
+      // `provider_offers` rows already have these, but this second,
+      // plan-linked row (the one `planId` actually resolves to) previously
+      // never did, so `expires_at` was always NULL for any selected offer.
+      ...(category === "flight" ? {
+        providerOfferId: (offer as FlightOffer).providerOfferId,
+        currency: (offer as FlightOffer).currency,
+        expiresAt: new Date((offer as FlightOffer).expiresAt),
+        expiryProvenance: (offer as FlightOffer).expiryProvenance,
+      } : {}),
     })));
 
     await tx.insert(sourceEvidence).values(normalizedOffers.map(({ category, offer }) => ({
@@ -1186,6 +1199,12 @@ export async function activateProposedPlan(params: {
       if (plan.status === "ACTIVE") return plan.id;
       return null;
     }
+    // Spec §6.2 names confirmation and the booking sandbox as the freshness
+    // checkpoints, not adoption — ACTIVE means "this is the chosen
+    // itinerary," not "this quote is still bookable." Adoption must succeed
+    // even for SYNTHETIC-provenance offers (e.g. SerpAPI, which never
+    // qualifies as PROVIDER_VERIFIED); the guard runs later, in
+    // `setConfirmation` and `submitBooking`.
     // Find the previous ACTIVE (or PROPOSED) head to wire replacedByPlanId.
     await tx.update(itineraryPlans)
       .set({ status: "SUPERSEDED", supersededAt: new Date() })

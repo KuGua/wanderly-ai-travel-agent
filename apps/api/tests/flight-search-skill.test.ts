@@ -29,6 +29,7 @@ function liveProvider(): FlightProvider {
         segments: [{ carrierCode: "TA", flightNumber: "1", origin: "SFO", destination: "NRT", departureAt: "2026-10-01T08:00:00Z", arrivalAt: "2026-10-01T20:00:00Z", duration: "PT12H" }],
         totalDuration: "PT12H", totalPrice: 500, currency: "USD", cabin: "ECONOMY" as const, adults: 2,
         baggageSummary: null, changeSummary: null, source: "Test provider", capturedAt: "2026-08-28T00:00:00.000Z", expiresAt: "2026-08-28T01:00:00.000Z",
+        expiryProvenance: "PROVIDER_VERIFIED" as const,
       }],
     };
   } };

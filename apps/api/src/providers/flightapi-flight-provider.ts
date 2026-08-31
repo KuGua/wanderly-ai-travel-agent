@@ -141,7 +141,12 @@ function normalizeOffer(
     changeSummary: null,
     source: SOURCE,
     capturedAt: params.capturedAt,
+    // FlightAPI.io's Flight Price API has no fare-hold/ticketing-deadline
+    // field — this is purely our own cache-freshness heuristic, never a
+    // supplier guarantee (spec §6.2). Always SYNTHETIC; never
+    // PROVIDER_VERIFIED.
     expiresAt: new Date(Date.parse(params.capturedAt) + 15 * 60_000).toISOString(),
+    expiryProvenance: "SYNTHETIC",
   };
 }
 

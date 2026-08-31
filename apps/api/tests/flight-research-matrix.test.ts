@@ -108,6 +108,7 @@ describe("flight research matrix", () => {
           segments: [{ carrierCode: "TT", flightNumber: "1", origin: input.origin, destination: input.destination, departureAt: `${input.dateStart}T08:00:00.000Z`, arrivalAt: `${input.dateStart}T18:00:00.000Z`, duration: "PT10H" }],
           totalDuration: "PT10H", totalPrice: 500, currency: input.currency!, cabin: input.cabin!, adults: input.adults!,
           baggageSummary: null, changeSummary: null, source: "TOCTOU test provider", capturedAt, expiresAt: "2026-12-31T00:00:00.000Z",
+          expiryProvenance: "PROVIDER_VERIFIED" as const,
         }] };
       },
     }));

@@ -41,6 +41,7 @@ const flightOfferSchema = z.object({
   changeSummary: z.string().nullable(),
   ...provenanceFields,
   expiresAt: z.string().datetime(),
+  expiryProvenance: z.enum(["PROVIDER_VERIFIED", "SYNTHETIC"]),
 }).strict();
 
 const stayOfferSchema = z.object({

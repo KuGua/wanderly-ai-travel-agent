@@ -41,6 +41,7 @@ function goodPlanData() {
       source: "Provider API",
       capturedAt: "2026-08-23T00:00:00.000Z",
       expiresAt: "2026-08-24T00:00:00.000Z",
+      expiryProvenance: "PROVIDER_VERIFIED" as const,
     }],
     stays: [{
       id: "stay-tyo-01",

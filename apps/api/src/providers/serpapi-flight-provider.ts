@@ -164,7 +164,11 @@ function normalizeOffer(
     changeSummary: segments.length > 1 ? `${segments.length - 1} stop${segments.length === 2 ? "" : "s"}` : "Nonstop",
     source: SOURCE,
     capturedAt: params.capturedAt,
+    // Google Flights has no fare-hold/ticketing-deadline concept at all —
+    // this is purely our own cache-freshness heuristic, never a supplier
+    // guarantee (spec §6.2). Always SYNTHETIC; never PROVIDER_VERIFIED.
     expiresAt: new Date(Date.parse(params.capturedAt) + 15 * 60_000).toISOString(),
+    expiryProvenance: "SYNTHETIC",
   };
 }
 
