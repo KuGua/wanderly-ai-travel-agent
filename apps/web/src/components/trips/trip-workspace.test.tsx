@@ -138,6 +138,24 @@ describe("TripWorkspace", () => {
     }));
   });
 
+  it("requires a team Draft to keep two to three destinations before it can be saved or activated", async () => {
+    const draft = buildTripResponse("DRAFT");
+    draft.trip.destinationCandidates = ["Tokyo", "Kyoto", "Osaka", "Nara"];
+    draft.members.push({
+      userId: "bob-user-id",
+      displayName: "Bob",
+      role: "MEMBER",
+      isRequired: true,
+      joinedAt: "2026-08-02T10:00:00.000Z",
+    });
+    const api = createApi({ getTrip: vi.fn().mockResolvedValue(draft) });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    expect(await screen.findByText("Enter 2–3 distinct destinations, separated by commas.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save brief" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Start planning" })).toBeDisabled();
+  });
+
   it("auto-provisions a default thread when none exists", async () => {
     // First call returns empty (no threads yet); subsequent calls
     // return the freshly-provisioned default thread.

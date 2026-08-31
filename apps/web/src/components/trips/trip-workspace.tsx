@@ -232,8 +232,8 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     : t("header.datesUnknown");
   const canActivateDraft = trip.status === "DRAFT"
     && trip.departureCities.length >= 1
-    && trip.destinationCandidates.length >= 2
-    && trip.destinationCandidates.length <= 5;
+    && trip.destinationCandidates.length >= (members.length > 1 ? 2 : 1)
+    && trip.destinationCandidates.length <= (members.length > 1 ? 3 : 5);
 
   async function activateDraft() {
     if (!canActivateDraft || activate.isPending) return;
@@ -465,7 +465,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                 </div>
                 {trip.status === "DRAFT" && callerRole === "CREATOR" ? (
                   <div className="mt-3">
-                    <DraftBriefEditor trip={trip} />
+                    <DraftBriefEditor trip={trip} memberCount={members.length} />
                     <p className="text-[11px] leading-4 text-muted-foreground">{t("workspace.draftActivationHint")}</p>
                     <button
                       type="button"
@@ -562,7 +562,7 @@ function ResearchGapBannerWrapper({ tripId }: { tripId: string }) {
   return <ResearchGapBanner result={research.data} />;
 }
 
-function DraftBriefEditor({ trip }: { trip: TripDetail }) {
+function DraftBriefEditor({ trip, memberCount }: { trip: TripDetail; memberCount: number }) {
   const t = useTranslations("trips.workspace.draftBrief");
   const locale = useLocale();
   const update = useUpdateDraftTripBrief(trip.id);
@@ -575,12 +575,20 @@ function DraftBriefEditor({ trip }: { trip: TripDetail }) {
     return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
   }
 
+  const parsedDepartures = splitValues(departureCities);
+  const parsedDestinations = splitValues(destinations);
+  const minimumDestinations = memberCount > 1 ? 2 : 1;
+  const maximumDestinations = memberCount > 1 ? 3 : 5;
+  const canSave = parsedDepartures.length >= 1
+    && parsedDestinations.length >= minimumDestinations
+    && parsedDestinations.length <= maximumDestinations;
+
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (update.isPending) return;
+    if (!canSave || update.isPending) return;
     await update.mutateAsync({
-      departureCities: splitValues(departureCities),
-      destinationCandidates: splitValues(destinations),
+      departureCities: parsedDepartures,
+      destinationCandidates: parsedDestinations,
       replaceDestinationCandidates: true,
       travelDateStart: travelDateStart || null,
       travelDateEnd: travelDateEnd || null,
@@ -598,12 +606,13 @@ function DraftBriefEditor({ trip }: { trip: TripDetail }) {
       <label className="grid gap-1 text-[11px] font-bold">
         {t("destinations")}
         <input value={destinations} onChange={(event) => setDestinations(event.target.value)} placeholder={t("destinationsPlaceholder")} className="min-h-9 border bg-background px-2 text-xs" />
+        <span className="font-normal text-muted-foreground">{t("destinationCountHint", { min: minimumDestinations, max: maximumDestinations })}</span>
       </label>
       <div className="grid grid-cols-2 gap-2">
         <label className="grid gap-1 text-[11px] font-bold">{t("startDate")}<input type="date" value={travelDateStart} onChange={(event) => setTravelDateStart(event.target.value)} className="min-h-9 border bg-background px-2 text-xs" /></label>
         <label className="grid gap-1 text-[11px] font-bold">{t("endDate")}<input type="date" value={travelDateEnd} onChange={(event) => setTravelDateEnd(event.target.value)} className="min-h-9 border bg-background px-2 text-xs" /></label>
       </div>
-      <button type="submit" disabled={update.isPending} className="min-h-9 bg-card px-2 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs disabled:opacity-50">{update.isPending ? t("saving") : t("save")}</button>
+      <button type="submit" disabled={!canSave || update.isPending} className="min-h-9 bg-card px-2 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs disabled:opacity-50">{update.isPending ? t("saving") : t("save")}</button>
       {update.isError ? <p role="alert" className="text-[11px] text-destructive">{t("saveError")}</p> : null}
     </form>
   );

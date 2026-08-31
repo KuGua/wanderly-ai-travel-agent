@@ -338,4 +338,38 @@ describe("Draft trip command guards", () => {
     expect(lateAccept.statusCode).toBe(409);
     expect(lateAccept.json().message).toMatch(/TRIP_NOT_INVITABLE/);
   });
+
+  it("does not disclose a pending invitation after its Draft trip is archived", async () => {
+    const draftId = await createDraftFor("alice");
+    const create = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/invitations`,
+      headers: authHeaders("alice"),
+      payload: {
+        recipientEmail: "bob@example.com",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+    expect(create.statusCode).toBe(201);
+    const inviteToken = create.json().inviteToken as string;
+
+    await db.update(sharedTrips)
+      .set({ archivedAt: new Date(), archiveReason: "USER_ARCHIVED" })
+      .where(eq(sharedTrips.id, draftId));
+
+    const preview = await app.inject({
+      method: "GET",
+      url: `/api/v1/trip-invitations/${inviteToken}`,
+      headers: authHeaders("bob"),
+    });
+    expect(preview.statusCode).toBe(404);
+
+    const accept = await app.inject({
+      method: "POST",
+      url: `/api/v1/trip-invitations/${inviteToken}/accept`,
+      headers: authHeaders("bob"),
+    });
+    expect(accept.statusCode).toBe(409);
+    expect(accept.json().message).toMatch(/TRIP_NOT_INVITABLE/);
+  });
 });

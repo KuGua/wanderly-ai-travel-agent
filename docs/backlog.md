@@ -43,7 +43,7 @@
 2. Map browsing, coordinate clicks and opening/closing chat create no Trip, thread or audit event.
 3. The first submitted message atomically and idempotently creates one `DRAFT` Trip, creator membership and owner-only default thread, then enters the existing durable conversation flow.
 4. The visible “Start new exploration” action resets only the in-memory session; it never deletes or silently changes an existing Trip.
-5. Draft Trip collaboration commands are rejected server-side until the creator explicitly activates a complete brief as `PLANNING`.
+5. Draft Trip collaboration commands, except invitation creation and acceptance, are rejected server-side until the creator explicitly activates a complete brief as `PLANNING`; private chats remain isolated after a Draft invitation is accepted.
 
 ### H2 — Join a shared trip and grant scoped consent
 

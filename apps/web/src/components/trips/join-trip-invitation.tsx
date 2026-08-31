@@ -97,6 +97,18 @@ export function JoinTripInvitation({ inviteToken }: { inviteToken: string }) {
                 </div>
               </section>
 
+              {preview.data.trip.status === "DRAFT" ? (
+                <section className="mt-6 bg-[var(--w-fog)] p-4 wanderly-edge-thin wanderly-r-sm" aria-labelledby="draft-heading">
+                  <div className="flex items-start gap-3">
+                    <LockKeyhole aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
+                    <div>
+                      <h2 id="draft-heading" className="font-bold">{t("draftTitle")}</h2>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">{t("draftBody")}</p>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+
               <section className="mt-6 bg-[var(--w-mist)] p-4 wanderly-edge-thin wanderly-r-sm" aria-labelledby="membership-heading">
                 <div className="flex items-start gap-3">
                   <UserRound aria-hidden="true" className="mt-0.5 size-5 shrink-0" />

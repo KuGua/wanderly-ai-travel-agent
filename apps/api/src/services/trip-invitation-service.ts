@@ -268,11 +268,14 @@ export async function getInvitationPreview(params: {
   const [trip] = await db.select({
     name: sharedTrips.name,
     status: sharedTrips.status,
+    archivedAt: sharedTrips.archivedAt,
     destinationCandidates: sharedTrips.destinationCandidates,
     travelDateStart: sharedTrips.travelDateStart,
     travelDateEnd: sharedTrips.travelDateEnd,
   }).from(sharedTrips).where(eq(sharedTrips.id, invitation.tripId)).limit(1);
-  if (!trip || trip.status === "CANCELLED") throw invitationUnavailable();
+  // A pending token must not disclose a trip that can no longer be joined.
+  // Keep this indistinguishable from any other invalid invitation.
+  if (!trip || trip.status === "CANCELLED" || trip.archivedAt) throw invitationUnavailable();
   return {
     trip: {
       name: trip.name,
