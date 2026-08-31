@@ -657,6 +657,10 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
    * never mutates an in-flight task's source. Spec §3.1.
    */
   hotelProvider: hotelProviderEnum("hotel_provider"),
+  /** Non-sensitive pointer to the exact Nuitee nationality grant used by this task. */
+  hotelQuoteNationalityAuthorizationId: uuid("hotel_quote_nationality_authorization_id")
+    .references(() => staySearchProviderAuthorizations.id),
+  hotelQuoteNationalityAuthorizationVersion: integer("hotel_quote_nationality_authorization_version"),
   requestId: uuid("request_id").notNull(),
   userMessageId: uuid("user_message_id").references(() => chatMessages.id, { onDelete: "cascade" }),
   assistantMessageId: uuid("assistant_message_id").references(() => chatMessages.id, { onDelete: "set null" }),

@@ -76,6 +76,7 @@ export function buildHotelSearchFingerprint(params: {
   checkOut: string;
   preferences: { roomCount: number; adultsPerRoom: number[]; currency: string };
   locale: "en" | "zh";
+  quoteAuthorization?: { id: string; version: number };
 }): string {
   return createHash("sha256").update(JSON.stringify({
     provider: params.provider,
@@ -86,6 +87,7 @@ export function buildHotelSearchFingerprint(params: {
     checkOut: params.checkOut,
     preferences: params.preferences,
     locale: params.locale,
+    quoteAuthorization: params.quoteAuthorization ?? null,
   })).digest("hex");
 }
 
@@ -122,9 +124,14 @@ export async function executeAndPersistHotelSearch(params: {
    * the value into logs, traces, audit summaries, or metric labels.
    */
   quoteNationality?: string;
+  /** Non-sensitive task-bound authorization pointer; isolates Nuitee cache entries. */
+  quoteAuthorization?: { id: string; version: number };
   resolveDestinationReference?: typeof resolveTripDestinationReference;
   signal?: AbortSignal;
 }): Promise<ProviderResult<HotelOffer[]> & { queryId?: string }> {
+  if (params.provider.providerName === "unconfigured") {
+    return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
+  }
   // Runtime invariant: a LIVE result is only ever returned by a real adapter.
   // `UnavailableHotelProvider` (`providerName === "unconfigured"`) is the
   // sole carrier of the broader value and never produces offers, so the
@@ -143,6 +150,7 @@ export async function executeAndPersistHotelSearch(params: {
     checkOut: params.snapshot.travelDateEnd!,
     preferences: params.preferences,
     locale: params.locale,
+    ...(params.quoteAuthorization ? { quoteAuthorization: params.quoteAuthorization } : {}),
   });
   const [reservedRun] = await db.insert(providerSearchRuns).values({
     snapshotId: params.snapshotId,

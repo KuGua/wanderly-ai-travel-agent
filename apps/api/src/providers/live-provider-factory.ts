@@ -3,6 +3,7 @@ import type {
   ActivitiesProvider,
   FlightProvider,
   HotelOfferProviderName,
+  HotelProviderName,
   HotelProvider,
   MobilityOfferProvider,
   NavigationProvider,
@@ -214,10 +215,9 @@ export function resolveHotelProviderByName(name: HotelOfferProviderName): HotelP
 }
 
 /**
- * Resolve the hotel provider bound to an agent task run. Returns the
- * persisted `hotel_provider` value if set, otherwise falls back to the
- * current env value (cached at task acceptance). Returns
- * `UnavailableHotelProvider` when neither side yields a real adapter.
+ * Resolve the hotel provider bound to an agent task run. A durable task never
+ * falls back to the current environment: an absent/missing binding is an
+ * `UnavailableHotelProvider` so configuration changes cannot reroute it.
  *
  * The function is intentionally pure: it does not mutate any state and
  * never reads credentials outside the standard env readers. Planner
@@ -228,23 +228,27 @@ export function resolveHotelProviderByName(name: HotelOfferProviderName): HotelP
  */
 export async function resolveBoundHotelProvider(
   agentTaskRunId: string | undefined,
-  options: {
-    loadQuoteNationality?: typeof import("../services/stay-search-provider-authorization.js").loadActiveQuoteNationality;
-  } = {},
 ): Promise<{
-  providerName: import("./types.js").HotelOfferProviderName;
+  providerName: HotelProviderName;
   adapter: HotelProvider;
   authorization?: { id: string; version: number };
 }> {
   if (agentTaskRunId) {
-    const [row] = await db.select({ hotelProvider: agentTaskRuns.hotelProvider })
+    const [row] = await db.select({
+      hotelProvider: agentTaskRuns.hotelProvider,
+      authorizationId: agentTaskRuns.hotelQuoteNationalityAuthorizationId,
+      authorizationVersion: agentTaskRuns.hotelQuoteNationalityAuthorizationVersion,
+    })
       .from(agentTaskRuns)
       .where(eq(agentTaskRuns.id, agentTaskRunId))
       .limit(1);
-    if (row?.hotelProvider) {
+    if (row) {
+      if (!row.hotelProvider) return { providerName: "unconfigured", adapter: new UnavailableHotelProvider() };
       const adapter = resolveHotelProviderByName(row.hotelProvider);
-      const authorization = row.hotelProvider === "nuitee_connect" && options.loadQuoteNationality
-        ? await resolveNuiteeAuthorization(agentTaskRunId, options.loadQuoteNationality)
+      const authorization = row.hotelProvider === "nuitee_connect"
+        && row.authorizationId
+        && row.authorizationVersion !== null
+        ? { id: row.authorizationId, version: row.authorizationVersion }
         : undefined;
       return {
         providerName: row.hotelProvider,
@@ -253,30 +257,9 @@ export async function resolveBoundHotelProvider(
       };
     }
   }
-  const fallbackName = resolvePersistedHotelProviderName();
-  if (fallbackName === null) {
-    const adapter = new UnavailableHotelProvider();
-    // Adapter always exposes `providerName` in the broader union; the
-    // persisted/run-bound `HotelOfferProviderName` stays `null` in this
-    // fallback path. The skill reads the adapter's identity and the
-    // skill-internal `providerName` field tracks the run-bound intent.
-    return { providerName: "serpapi_google_hotels", adapter };
-  }
-  return { providerName: fallbackName, adapter: resolveHotelProviderByName(fallbackName) };
-}
-
-async function resolveNuiteeAuthorization(
-  agentTaskRunId: string,
-  loadQuoteNationality: typeof import("../services/stay-search-provider-authorization.js").loadActiveQuoteNationality,
-): Promise<{ id: string; version: number } | undefined> {
-  const [row] = await db.select({
-    tripId: agentTaskRuns.tripId,
-    createdByUserId: agentTaskRuns.createdByUserId,
-  }).from(agentTaskRuns).where(eq(agentTaskRuns.id, agentTaskRunId)).limit(1);
-  if (!row) return undefined;
-  if (!row.createdByUserId || !row.tripId) return undefined;
-  const loaded = await loadQuoteNationality({ tripId: row.tripId, memberId: row.createdByUserId });
-  return loaded ? { id: loaded.id, version: loaded.version } : undefined;
+  // Durable production tasks must be bound above. This branch exists only
+  // for isolated tests that do not create an agent_task_runs record.
+  return { providerName: "unconfigured", adapter: new UnavailableHotelProvider() };
 }
 
 function logHotelProviderSelection(selection: string | HotelOfferProviderName): void {

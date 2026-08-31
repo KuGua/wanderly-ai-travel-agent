@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { RequestContext } from "../utils/context.js";
 import type { ConstraintSnapshotData } from "../types/domain.js";
-import type { HotelOfferProviderName, HotelProvider } from "../providers/types.js";
+import type { HotelProviderName, HotelProvider } from "../providers/types.js";
 
 export type AgentKind = "personal" | "shared" | "review" | "public-content";
 
@@ -95,7 +95,7 @@ export interface HotelSearchExecutionContext {
    * value (not a module-load singleton) so a config reload after acceptance
    * never changes the source for an in-flight task. Spec §3.1.
    */
-  provider: HotelOfferProviderName;
+  provider: HotelProviderName;
   /**
    * The actual adapter instance resolved for `provider`. The planner service
    * selects it once at acceptance time and threads it through the skill so

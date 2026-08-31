@@ -26,6 +26,7 @@ import {
 } from "../types/schemas.js";
 import type { HotelOfferProviderName } from "../providers/types.js";
 import { resolvePersistedHotelProviderName } from "../providers/live-provider-factory.js";
+import { loadActiveQuoteNationality } from "../services/stay-search-provider-authorization.js";
 import type { RequestContext } from "../utils/context.js";
 import {
   getTracer,
@@ -271,6 +272,12 @@ export async function acceptPlanningTask(params: {
   const hotelProvider = params.hotelProvider === undefined
     ? resolvePersistedHotelProviderName()
     : params.hotelProvider;
+  const quoteAuthorization = hotelProvider === "nuitee_connect"
+    ? await loadActiveQuoteNationality({ tripId: params.tripId, memberId: params.userId })
+    : null;
+  if (hotelProvider === "nuitee_connect" && !quoteAuthorization) {
+    throw new ApiError(422, "Unprocessable Entity", "A confirmed Nuitee hotel quote nationality is required");
+  }
   const accept = async (tx: Tx) => {
     const [active] = await tx.select({ id: agentTaskRuns.id }).from(agentTaskRuns).where(and(
       eq(agentTaskRuns.tripId, params.tripId),
@@ -305,6 +312,8 @@ export async function acceptPlanningTask(params: {
       flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
       staySearchPreferencesVersion: params.staySearchPreferencesVersion ?? null,
       hotelProvider,
+      hotelQuoteNationalityAuthorizationId: quoteAuthorization?.id ?? null,
+      hotelQuoteNationalityAuthorizationVersion: quoteAuthorization?.version ?? null,
       requestId: params.requestId,
       expiresAt,
       traceContext: buildTraceContextForTask(params.ctx),
@@ -359,6 +368,12 @@ export async function acceptResearchTask(params: {
   const hotelProvider = params.hotelProvider === undefined
     ? resolvePersistedHotelProviderName()
     : params.hotelProvider;
+  const quoteAuthorization = hotelProvider === "nuitee_connect"
+    ? await loadActiveQuoteNationality({ tripId: params.tripId, memberId: params.userId })
+    : null;
+  if (hotelProvider === "nuitee_connect" && !quoteAuthorization) {
+    throw new ApiError(422, "Unprocessable Entity", "A confirmed Nuitee hotel quote nationality is required");
+  }
   const accept = async (tx: Tx) => {
     // Idempotency: the partial unique index `(tripId, requestId)` makes a
     // second insert a hard error. Catch the constraint violation and return
@@ -399,6 +414,8 @@ export async function acceptResearchTask(params: {
       flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
       staySearchPreferencesVersion: params.staySearchPreferencesVersion ?? null,
       hotelProvider,
+      hotelQuoteNationalityAuthorizationId: quoteAuthorization?.id ?? null,
+      hotelQuoteNationalityAuthorizationVersion: quoteAuthorization?.version ?? null,
       requestId: params.requestId,
       researchMode: params.outputMode,
       requestedCapabilities: params.requestedCapabilities as string[],

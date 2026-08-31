@@ -12,8 +12,6 @@ import {
 import { recordAudit } from "./audit-service.js";
 import { stalePlansAndConfirmationsForTrip } from "./consent-service.js";
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
 export type StaySearchProviderName = "nuitee_connect" | "serpapi_google_hotels";
 export type StaySearchAuthorizationField = "guest_nationality";
 
@@ -49,7 +47,12 @@ export async function grantQuoteNationality(params: {
   expiresAt?: Date;
 }): Promise<{ id: string; version: number }> {
   const value = normalizeNationality(params.value);
-  const ciphertext = encryptQuoteNationality(value);
+  let ciphertext: string;
+  try {
+    ciphertext = await encryptQuoteNationality(value);
+  } catch {
+    throw new ApiError(503, "Service Unavailable", "Hotel quote authorization encryption is not configured");
+  }
   return db.transaction(async (tx) => {
     // Read the current max version for this tuple so the new row strictly
     // supersedes any prior ACTIVE row, instead of resetting to 1 and
@@ -171,7 +174,7 @@ export async function loadActiveQuoteNationality(params: {
   if (!row) return null;
   if (row.expiresAt && row.expiresAt.getTime() <= now.getTime()) return null;
   try {
-    const nationality = decryptQuoteNationality(row.valueEncrypted);
+    const nationality = await decryptQuoteNationality(row.valueEncrypted);
     return { id: row.id, version: row.version, nationality };
   } catch {
     return null;

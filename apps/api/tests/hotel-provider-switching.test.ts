@@ -103,6 +103,21 @@ describe("hotel provider switching", () => {
     expect(fingerprintNuitee).toHaveLength(64);
   });
 
+  it("isolates Nuitee cache entries by the task-bound authorization pointer", () => {
+    const base = {
+      provider: "nuitee_connect" as const,
+      destinationId: "Tokyo",
+      checkIn: "2026-09-15",
+      checkOut: "2026-09-18",
+      preferences,
+      locale: "en" as const,
+    };
+    expect(buildHotelSearchFingerprint({ ...base, quoteAuthorization: { id: "grant-a", version: 1 } }))
+      .not.toBe(buildHotelSearchFingerprint({ ...base, quoteAuthorization: { id: "grant-b", version: 1 } }));
+    expect(buildHotelSearchFingerprint({ ...base, quoteAuthorization: { id: "grant-a", version: 1 } }))
+      .not.toBe(buildHotelSearchFingerprint({ ...base, quoteAuthorization: { id: "grant-a", version: 2 } }));
+  });
+
   it("never persists an offer when the run-bound provider is not configured", async () => {
     const provider: HotelProvider = resolveHotelProviderByName("nuitee_connect");
     expect(provider.providerName).toBe("unconfigured");
@@ -122,9 +137,9 @@ describe("hotel provider switching", () => {
     }
     const runs = await db.select().from(providerSearchRuns)
       .where(eq(providerSearchRuns.snapshotId, snapshotId));
-    expect(runs).toHaveLength(1);
-    expect(runs[0].outcome).toBe("UNAVAILABLE");
-    expect(runs[0].errorCode).toBe("NOT_CONFIGURED");
+    // `unconfigured` is never persisted as an offer/search-run provider.
+    // The caller turns this into a bounded hotel service gap instead.
+    expect(runs).toHaveLength(0);
   });
 
   it("stamps providerName and source onto every persisted offer", async () => {
