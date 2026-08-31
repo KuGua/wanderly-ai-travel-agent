@@ -1219,3 +1219,14 @@ that a grant/revoke invalidates dependent plans.
 - Planning completes; `summarizeProviderGaps` records `navigation: NOT_CONFIGURED` only when the LLM actually called `navigation.route` (the post-deprecation gate no longer emits a `navigation: NO_RESULTS` gap from an empty `ground[]`).
 - No `provider_offers` row is written with `category="ground"`.
 - `itinerary_plans.planData` JSON does NOT contain a top-level `ground` key.
+## TS-H1g — Personal research confirmation and route binding
+
+**Starting conditions:** An owner has a `PROPOSED` navigation intent in an active eligible trip and two active non-private TripPlaces.
+
+**Steps and expected results:**
+
+1. Submit a route selection with distinct endpoint IDs and an explicit mode; it is persisted against the intent run and the draft becomes `READY`.
+2. Confirm with `originatingIntentRunId`; the API creates one RESEARCH run and atomically changes the source draft to `CONFIRMED`.
+3. Retry with the same request ID; the API returns the original run. Confirm with a different request ID or a dismissed source draft; the API returns `409` and creates no task.
+4. Change either selected endpoint to private/inactive before confirmation; confirmation fails closed with a capability gap.
+5. Worker execution uses the selected IDs and mode; it must never select the earliest TripPlaces or default to `WALK`.

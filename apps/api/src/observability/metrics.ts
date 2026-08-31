@@ -525,6 +525,41 @@ metrics.registerCounter(
     outcome: ["success", "failure"],
   },
 );
+
+// Personal Research Intent Routing — Phase 0/1.
+// Labels carry only bounded enum values. The question text, place names,
+// and identifiers live in log/trace context (NOT as metric labels —
+// `FORBIDDEN_LABEL_KEYS` blocks them upstream).
+metrics.registerCounter(
+  "personal_research_intent_total",
+  "Personal research intent classifier dispositions.",
+  {
+    capability: [
+      "flight", "accommodation", "hotel", "activities",
+      "places", "navigation", "mobility", "readiness",
+    ],
+    disposition: ["proposed", "conversation", "refusal"],
+  },
+);
+metrics.registerCounter(
+  "personal_research_readiness_total",
+  "Personal research readiness evaluation outcomes.",
+  {
+    capability: [
+      "flight", "accommodation", "hotel", "activities",
+      "places", "navigation", "mobility", "readiness",
+    ],
+    outcome: ["ready", "needs_setup", "needs_place_selection"],
+  },
+);
+metrics.registerCounter(
+  "personal_research_intent_confirmation_total",
+  "Personal research intent lifecycle transitions.",
+  {
+    outcome: ["confirmed", "dismissed", "superseded", "lease_lost"],
+  },
+);
+
 metrics.registerCounter(
   "solo_plan_adoption_total",
   "Solo plan adoption outcomes — owner ACCEPT flips PROPOSED to ACTIVE in one round trip.",

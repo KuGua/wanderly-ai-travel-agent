@@ -1,4 +1,4 @@
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 
 import { db } from "../db/database.js";
 import {
@@ -8,6 +8,7 @@ import {
   tripSearchPreferences,
   tripStaySearchPreferences,
   tripPlaces,
+  researchRouteSelections,
 } from "../db/schema.js";
 import { DefaultPolicyGate } from "../agents/policy-gate.js";
 import {
@@ -419,15 +420,15 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
     }
 
     case "navigation": {
-      const places = await loadRoutablePlaces(tripId);
-      if (places.length < 2) {
+      const selection = await loadRouteSelection(run);
+      if (!selection) {
         gaps.push({ capability: "navigation", code: "SEARCH_CONSTRAINTS_INCOMPLETE" });
         return;
       }
       const result = await invokeSkill(
         "navigation.route",
         { ...baseCtx, navigation: { tripId, snapshotId, agentTaskRunId: run.id } },
-        { snapshotId, originPlaceId: places[0]!.id, destinationPlaceId: places[1]!.id, mode: "WALK" },
+        { snapshotId, originPlaceId: selection.originPlaceId, destinationPlaceId: selection.destinationPlaceId, mode: selection.mode },
         { expectedVersion: "1.0.0", signal },
       ) as { outcome: "LIVE" | "UNAVAILABLE"; code?: ServiceGap["code"] };
       if (result.outcome === "UNAVAILABLE" && result.code) {
@@ -437,8 +438,8 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
     }
 
     case "mobility": {
-      const places = await loadRoutablePlaces(tripId);
-      if (places.length < 2 || !latestFlightPref) {
+      const selection = await loadRouteSelection(run);
+      if (!selection || !latestFlightPref) {
         gaps.push({ capability: "mobility", code: "SEARCH_CONSTRAINTS_INCOMPLETE" });
         return;
       }
@@ -447,8 +448,8 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
         { ...baseCtx, mobility: { tripId, snapshotId, agentTaskRunId: run.id } },
         {
           snapshotId,
-          originPlaceId: places[0]!.id,
-          destinationPlaceId: places[1]!.id,
+          originPlaceId: selection.originPlaceId,
+          destinationPlaceId: selection.destinationPlaceId,
           passengers: latestFlightPref.adults,
           departureAt: new Date(`${snapshotData.travelDateStart}T09:00:00.000Z`).toISOString(),
           serviceType: "TAXI",
@@ -487,12 +488,22 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
   void traceparent; // Reserved for future SSE enrichment.
 }
 
-async function loadRoutablePlaces(tripId: string): Promise<Array<{ id: string }>> {
-  return db.select({ id: tripPlaces.id }).from(tripPlaces).where(and(
-    eq(tripPlaces.tripId, tripId),
+async function loadRouteSelection(run: AgentTaskRow): Promise<{ originPlaceId: string; destinationPlaceId: string; mode: "WALK" | "DRIVE" | "CYCLE" } | null> {
+  if (!run.tripId || !run.originatingIntentRunId) return null;
+  const [selection] = await db.select().from(researchRouteSelections).where(and(
+    eq(researchRouteSelections.intentRunId, run.originatingIntentRunId),
+    eq(researchRouteSelections.tripId, run.tripId),
+    eq(researchRouteSelections.ownerUserId, run.createdByUserId),
+  )).limit(1);
+  if (!selection) return null;
+  const places = await db.select({ id: tripPlaces.id }).from(tripPlaces).where(and(
+    eq(tripPlaces.tripId, run.tripId),
     eq(tripPlaces.status, "ACTIVE"),
     ne(tripPlaces.visibility, "OWNER_PRIVATE"),
-  )).orderBy(tripPlaces.createdAt).limit(2);
+    inArray(tripPlaces.id, [selection.originPlaceId, selection.destinationPlaceId]),
+  ));
+  if (places.length !== 2) return null;
+  return { originPlaceId: selection.originPlaceId, destinationPlaceId: selection.destinationPlaceId, mode: selection.mode };
 }
 
 /**

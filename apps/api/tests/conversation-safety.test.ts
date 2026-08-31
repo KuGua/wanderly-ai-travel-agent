@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ModelGateway } from "../src/providers/model-gateway.js";
 import {
+  containsUnsupportedOperationalClaim,
+  requestsUnsupportedOperationalFacts,
   resolveConversationPlace,
 } from "../src/policy/conversation-safety.js";
 import { __setModelGatewayForTests } from "../src/providers/gateway-factory.js";
@@ -149,3 +151,88 @@ function buildGateway(generateConversationReply: ReturnType<typeof vi.fn>): Mode
     },
   };
 }
+
+describe("requestsUnsupportedOperationalFacts — Personal Research Intent (Phase 0/1)", () => {
+  describe("Chinese visa / entry terms trigger refusal", () => {
+    it.each([
+      "签证怎么办",
+      "日本签证需要什么",
+      "护照要求",
+      "入境规则",
+      "免签国家",
+      "落地签材料",
+    ])("flags %s as operational", (question) => {
+      expect(requestsUnsupportedOperationalFacts(question)).toBe(true);
+    });
+  });
+
+  describe("Chinese price / live-data terms trigger refusal", () => {
+    it.each([
+      "酒店多少钱",
+      "机票价格",
+      "查一下酒店现在的价格",
+      "今天航班几点的",
+      "今晚酒店有房吗",
+    ])("flags %s as operational", (question) => {
+      expect(requestsUnsupportedOperationalFacts(question)).toBe(true);
+    });
+  });
+
+  describe("Chinese booking / availability terms trigger refusal", () => {
+    it.each([
+      "酒店还有空房吗",
+      "航班已订",
+      "已确认机票",
+      "取消预订",
+    ])("flags %s as operational", (question) => {
+      expect(requestsUnsupportedOperationalFacts(question)).toBe(true);
+    });
+  });
+
+  describe("Chinese flight-status terms trigger refusal", () => {
+    it.each([
+      "航班晚点",
+      "航班延误",
+      "航班取消",
+      "航班准点吗",
+    ])("flags %s as operational", (question) => {
+      expect(requestsUnsupportedOperationalFacts(question)).toBe(true);
+    });
+  });
+
+  describe("does NOT flag research requests as operational facts", () => {
+    // The classifier handles research requests BEFORE the safety gate
+    // (see conversation-task-handler.ts Phase 1 branch). If those questions
+    // also fired the safety gate, the classifier would never reach the
+    // proposal path. This guards the gate's verb-only scope.
+    it.each([
+      "查酒店",
+      "搜酒店",
+      "找住宿",
+      "查活动",
+      "从桃园机场到西园町怎么走",
+    ])("does NOT flag %s", (question) => {
+      expect(requestsUnsupportedOperationalFacts(question)).toBe(false);
+    });
+  });
+});
+
+describe("containsUnsupportedOperationalClaim — Chinese output-side gate", () => {
+  it("strips a model response that introduces a Chinese visa claim", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "你需要办理签证才能入境日本，建议提前两周申请。",
+    )).toBe(true);
+  });
+
+  it("strips a model response that introduces a Chinese price claim", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "这家酒店今晚 ¥820 起，每晚约 800 元人民币。",
+    )).toBe(true);
+  });
+
+  it("does NOT strip a general qualitative comparison", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "两家酒店风格不同：A 更现代，B 更传统；按个人偏好选择。",
+    )).toBe(false);
+  });
+});

@@ -94,6 +94,12 @@ type PersistedResearchIntentDraft = {
 
 `agent_task_runs.research_intent_draft` 只保存上述 JSON；`research_intent_state` 为 `PROPOSED | DISMISSED | CONFIRMED | SUPERSEDED`。确认产生新 `RESEARCH` run 后，将 originating conversation run 标记 `CONFIRMED`；草案本身从不作为研究任务的输入权威。
 
+### 4.1.1 已实现的确认与路线绑定
+
+`POST /trips/:tripId/research` 可选接收 `originatingIntentRunId`。该字段存在时，服务端在同一事务中锁定来源 `CONVERSATION` run，校验 owner、Trip、`PROPOSED` 状态和能力集合，创建 `RESEARCH` run 后才迁移来源草稿到 `CONFIRMED`。相同 `requestId` 返回既有 run；不同请求不得重复确认同一草稿。
+
+路线选择持久化在 `research_route_selections`，以 intent run 为一对一键，保存两个非私有 `ACTIVE` TripPlace 和用户明确选择的 `WALK | DRIVE | CYCLE`。浏览器只能采纳服务端返回的 `trip_place:<id>` 候选标识，不能提交坐标、来源或置信度；Worker 通过 RESEARCH run 的 `originating_intent_run_id` 读取该选择，缺失或失效即 fail closed，不回退到任意旧地点或默认步行。
+
 新增 migration 必须有 `CHECK` 或应用层 Zod 双重校验。不得复用既有 `agent_task_runs.intent` 文本列：该列保存的是浏览器 UI intent（`auto_intro | user_typed`），语义不同。
 
 ### 4.2 对外 API 与 SSE
@@ -279,4 +285,3 @@ ResearchConfirmationCard
 - 不能把 `PLAN_ENABLE_HOTEL` 或 provider selection 启动日志当成实际 provider 调用证据；必须以 tool dispatch/provider evidence/audit 记录验证。
 - 不得扩展 Personal Agent 为直接 Shared Skill caller，不得新建自由 multi-agent、Redis、Temporal 或 WebSocket。
 - fixture 只能用于测试和 adapter contract；运行时缺数据必须 `UNAVAILABLE`。
-

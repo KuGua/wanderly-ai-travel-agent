@@ -382,6 +382,8 @@ function run(status: AgentRun["status"]): AgentRun {
     errorCode: null,
     assistantMessageId: null,
     resultPlanId: null,
+    researchIntentDraft: null,
+    researchIntentState: null,
   };
 }
 

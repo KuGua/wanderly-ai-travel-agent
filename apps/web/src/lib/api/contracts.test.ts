@@ -32,6 +32,8 @@ describe("API contracts", () => {
       errorCode: null,
       assistantMessageId: null,
       resultPlanId: "66666666-6666-4666-8666-666666666666",
+      researchIntentDraft: null,
+      researchIntentState: null,
     });
 
     expect(run.status).toBe("COMPLETED_WITH_GAPS");

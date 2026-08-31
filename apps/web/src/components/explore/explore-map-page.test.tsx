@@ -627,6 +627,8 @@ function createTravelApiForAutoAsk(): TravelApi & {
     errorCode: null,
     assistantMessageId: null,
     resultPlanId: null,
+    researchIntentDraft: null,
+    researchIntentState: null,
   };
 
   return {

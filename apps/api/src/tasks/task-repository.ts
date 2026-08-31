@@ -18,6 +18,8 @@ import { claimIdempotency } from "../services/idempotency-service.js";
 import {
   agentRunResponseSchema,
   conversationTurnAcceptedResponseSchema,
+  persistedResearchIntentDraftSchema,
+  researchIntentStateSchema,
   type AgentRunResponse,
   type ConversationPlace,
   type ConversationTurnAcceptedResponse,
@@ -263,6 +265,7 @@ export async function acceptPlanningTask(params: {
    * require hotel capability. Spec §3.1.
    */
   hotelProvider?: HotelOfferProviderName | null;
+  originatingIntentRunId?: string;
   operation: "PLAN" | "REPLAN";
   requestId: string;
   tx?: Tx;
@@ -354,6 +357,7 @@ export async function acceptResearchTask(params: {
   requestedCapabilities: readonly string[];
   /** See `acceptPlanningTask.hotelProvider`. */
   hotelProvider?: HotelOfferProviderName | null;
+  originatingIntentRunId?: string;
   requestId: string;
   tx?: Tx;
 }): Promise<{
@@ -419,6 +423,7 @@ export async function acceptResearchTask(params: {
       requestId: params.requestId,
       researchMode: params.outputMode,
       requestedCapabilities: params.requestedCapabilities as string[],
+      originatingIntentRunId: params.originatingIntentRunId ?? null,
       expiresAt,
       traceContext: buildTraceContextForTask(params.ctx),
     }).returning();
@@ -563,6 +568,144 @@ export async function requestAgentTaskCancellation(params: {
   }
   return result;
 }
+
+// ─── Personal Research Intent Draft (Phase 0) ───────────────────────────────
+// Non-executable persisted drafts. The lifecycle is PROPOSED →
+// {DISMISSED, CONFIRMED, SUPERSEDED}. All four writes below are
+// lease-guarded; the `WHERE` clause carries `lease_token = $X AND
+// status = 'RUNNING'` so a worker that has lost the lease cannot mutate
+// state out from under the next claim. See
+// docs/personal-research-intent-routing-implementation.md §4.1, §7 Phase 0.
+
+export type ResearchIntentState = "PROPOSED" | "DISMISSED" | "CONFIRMED" | "SUPERSEDED";
+
+export type PersistedResearchIntentDraft = {
+  schemaVersion: 1;
+  kind: "RESEARCH_ONLY" | "PROPOSE_PLAN";
+  requestedCapabilities: Array<
+    "flight" | "accommodation" | "hotel" | "activities" |
+    "places" | "navigation" | "mobility" | "readiness"
+  >;
+  classifierVersion: string;
+  readiness: "READY" | "NEEDS_SETUP" | "NEEDS_PLACE_SELECTION";
+  missing: Array<
+    "TRIP_NOT_ACTIVE" | "DESTINATION_NOT_CONFIGURED" | "DATES_MISSING" |
+    "FLIGHT_PREFERENCES_MISSING" | "STAY_PREFERENCES_MISSING" |
+    "HOTEL_PROVIDER_NOT_APPROVED" | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING" |
+    "ROUTE_ENDPOINTS_UNCONFIRMED" | "MODE_NOT_CHOSEN"
+  >;
+};
+
+/**
+ * Persist (or supersede-existing-then-persist) the draft on the worker-held
+ * RUNNING lease. Returns the new draft, or `null` if the lease was lost —
+ * the caller must abandon the proposal branch in that case rather than
+ * silently fall back to the LLM path.
+ */
+export async function persistResearchIntentDraft(params: {
+  runId: string;
+  leaseToken: string;
+  draft: PersistedResearchIntentDraft;
+  tx?: Tx;
+}): Promise<PersistedResearchIntentDraft | null> {
+  // Defensive Zod parse so an upstream bug never lets free text into JSONB.
+  const draft = persistedResearchIntentDraftSchema.parse(params.draft);
+  const dbHandle = params.tx ?? db;
+  const updated = await dbHandle.update(agentTaskRuns)
+    .set({
+      researchIntentDraft: draft,
+      researchIntentState: "PROPOSED",
+      updatedAt: new Date(),
+    })
+    .where(and(
+      eq(agentTaskRuns.id, params.runId),
+      eq(agentTaskRuns.leaseToken, params.leaseToken),
+      eq(agentTaskRuns.status, "RUNNING"),
+    ))
+    .returning({ id: agentTaskRuns.id });
+  return updated.length === 1 ? draft : null;
+}
+
+/**
+ * Move the draft through its lifecycle under a from-state guard. Returns
+ * `true` on transition, `false` if the row was missing or already in a
+ * different state (caller maps to 409).
+ */
+export async function transitionResearchIntentState(params: {
+  runId: string;
+  fromState: ResearchIntentState;
+  toState: ResearchIntentState;
+  leaseToken?: string;
+  tx?: Tx;
+}): Promise<boolean> {
+  const dbHandle = params.tx ?? db;
+  const where = params.leaseToken !== undefined
+    ? and(
+        eq(agentTaskRuns.id, params.runId),
+        eq(agentTaskRuns.researchIntentState, params.fromState),
+        eq(agentTaskRuns.leaseToken, params.leaseToken),
+        eq(agentTaskRuns.status, "RUNNING"),
+      )
+    : and(
+        eq(agentTaskRuns.id, params.runId),
+        eq(agentTaskRuns.researchIntentState, params.fromState),
+      );
+  const updated = await dbHandle.update(agentTaskRuns)
+    .set({ researchIntentState: params.toState, updatedAt: new Date() })
+    .where(where)
+    .returning({ id: agentTaskRuns.id });
+  return updated.length === 1;
+}
+
+/**
+ * Transition every PROPOSED draft for a thread (other than the just-inserted
+ * `excludingRunId`) to SUPERSEDED. Intended to be called inside the same
+ * transaction that inserts a new draft, so a thread never carries two
+ * PROPOSED drafts concurrently.
+ */
+export async function supersedePriorProposedDraft(params: {
+  threadId: string;
+  excludingRunId: string;
+  tx: Tx;
+}): Promise<number> {
+  // The excludingRunId guard is enforced in the application layer because
+  // Drizzle's column type is uuid (not literal-typed) — the runId we are
+  // about to write to is excluded from the SET list returned below, then
+  // counted.
+  const updated = await params.tx.update(agentTaskRuns)
+    .set({ researchIntentState: "SUPERSEDED", updatedAt: new Date() })
+    .where(and(
+      eq(agentTaskRuns.threadId, params.threadId),
+      eq(agentTaskRuns.researchIntentState, "PROPOSED"),
+    )).returning({ id: agentTaskRuns.id });
+  return updated.filter((r) => r.id !== params.excludingRunId).length;
+}
+
+/**
+ * Load the latest non-superseded draft for a thread. Used by the
+ * dismiss / recovery paths. Returns `null` when the thread has no
+ * PROPOSED draft (e.g. owner already dismissed or confirmed).
+ */
+export async function loadLatestProposedDraftForThread(params: {
+  threadId: string;
+  tx?: Tx;
+}): Promise<{ runId: string; draft: PersistedResearchIntentDraft } | null> {
+  const dbHandle = params.tx ?? db;
+  const rows = await dbHandle.select({
+    runId: agentTaskRuns.id,
+    draft: agentTaskRuns.researchIntentDraft,
+    state: agentTaskRuns.researchIntentState,
+  }).from(agentTaskRuns).where(and(
+    eq(agentTaskRuns.threadId, params.threadId),
+    eq(agentTaskRuns.researchIntentState, "PROPOSED"),
+  )).orderBy(desc(agentTaskRuns.createdAt)).limit(1);
+  const row = rows[0];
+  if (!row?.draft) return null;
+  return { runId: row.runId, draft: row.draft };
+}
+
+// Re-export the Zod-inferred state schema for downstream consumers.
+export { researchIntentStateSchema };
 
 async function requireRunAccess(run: AgentTaskRow, userId: string, tx?: Tx): Promise<void> {
   if (run.operation === "CONVERSATION") {
@@ -984,6 +1127,18 @@ function toOwnerMessage(row: typeof chatMessages.$inferSelect): OwnerConversatio
 }
 
 function toRunResponse(run: AgentTaskRow): AgentRunResponse {
+  // Project the persisted draft down to the closed-shape owner-safe subset.
+  // SUPERSEDED drafts are intentionally hidden — they are server-internal
+  // bookkeeping (see docs/personal-research-intent-routing-implementation.md
+  // §4.1) and never exposed to clients.
+  const draft = (run.researchIntentState === "SUPERSEDED" || run.researchIntentDraft === null)
+    ? null
+    : {
+        kind: run.researchIntentDraft.kind,
+        requestedCapabilities: run.researchIntentDraft.requestedCapabilities,
+        readiness: run.researchIntentDraft.readiness,
+        missing: run.researchIntentDraft.missing,
+      };
   return agentRunResponseSchema.parse({
     runId: run.id,
     operation: run.operation,
@@ -996,6 +1151,8 @@ function toRunResponse(run: AgentTaskRow): AgentRunResponse {
     errorCode: run.errorCode,
     assistantMessageId: run.assistantMessageId,
     resultPlanId: run.resultPlanId,
+    researchIntentDraft: draft,
+    researchIntentState: run.researchIntentState === "SUPERSEDED" ? null : run.researchIntentState,
   });
 }
 

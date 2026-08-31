@@ -20,6 +20,7 @@ export const UI_ACTIONS = [
   "research.command_confirm",
   "research.command_reject",
   "research.stage_view",
+  "research.intent_dismiss",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 
