@@ -6,6 +6,8 @@ import { TravelApiError } from "@/lib/api/errors";
 import type { TravelApi } from "@/lib/api";
 import { renderWithIntl } from "@/test/render";
 
+import * as navigationStub from "@/test/mock-next-navigation";
+
 import { TripWorkspace } from "./trip-workspace";
 import { TripInvitationPage } from "./trip-invitation-page";
 
@@ -92,7 +94,10 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     updateTripTitle: vi.fn(),
     saveTripSearchPreferences: vi.fn(),
     startPlanning: vi.fn(),
-    getLatestPlanningRun: vi.fn(),
+    // Queried on mount, so it has to resolve: an unstubbed `vi.fn()` returns
+    // undefined, which React Query rejects, and the failing query took the
+    // conversation down with it.
+    getLatestPlanningRun: vi.fn().mockResolvedValue({ run: null }),
     getLatestPlan: vi.fn(),
     createTripInvitation: vi.fn(),
     getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),
@@ -191,6 +196,14 @@ describe("TripWorkspace", () => {
   });
 
   it("shows the personal research setup card when a hotel search is missing trip settings", async () => {
+    // The workspace reads the active thread out of `?thread=`, and the send
+    // button stays disabled without one. Selecting a thread in the rail goes
+    // through `router.push`, which the navigation stub does not carry back
+    // into `useSearchParams`, so the parameter is supplied directly.
+    vi.spyOn(navigationStub, "useSearchParams")
+      .mockReturnValue(new URLSearchParams(`thread=${DEFAULT_THREAD_ID}`));
+
+
     const api = createApi({
       getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
       getAgentRun: vi.fn().mockResolvedValue({
