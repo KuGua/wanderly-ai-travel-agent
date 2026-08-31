@@ -11,9 +11,17 @@
 -- ─── Enum type for draft lifecycle ──────────────────────────────────────────
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'research_intent_state') THEN
-    CREATE TYPE research_intent_state AS ENUM
-      ('PROPOSED', 'DISMISSED', 'CONFIRMED', 'SUPERSEDED');
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type type_row
+    JOIN pg_namespace namespace_row ON namespace_row.oid = type_row.typnamespace
+    WHERE type_row.typname = 'research_intent_state'
+      AND namespace_row.nspname = current_schema()
+  ) THEN
+    EXECUTE format(
+      'CREATE TYPE %I.research_intent_state AS ENUM (''PROPOSED'', ''DISMISSED'', ''CONFIRMED'', ''SUPERSEDED'')',
+      current_schema()
+    );
   END IF;
 END
 $$;

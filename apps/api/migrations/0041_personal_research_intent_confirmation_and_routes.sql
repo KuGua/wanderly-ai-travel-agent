@@ -3,6 +3,26 @@
 -- originating draft, while a one-to-one selection records two active places
 -- and the owner-selected transport mode.
 
+-- `0040` predates schema-scoped migration execution and may have observed a
+-- same-named enum in another schema. Re-establish the type in this migration's
+-- active schema so a partially upgraded database can safely continue.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type type_row
+    JOIN pg_namespace namespace_row ON namespace_row.oid = type_row.typnamespace
+    WHERE type_row.typname = 'research_intent_state'
+      AND namespace_row.nspname = current_schema()
+  ) THEN
+    EXECUTE format(
+      'CREATE TYPE %I.research_intent_state AS ENUM (''PROPOSED'', ''DISMISSED'', ''CONFIRMED'', ''SUPERSEDED'')',
+      current_schema()
+    );
+  END IF;
+END
+$$;
+
 -- Earlier local builds created a partial draft index while the column was a
 -- varchar. Drop it before converting to enum: PostgreSQL would otherwise
 -- preserve a varchar cast in the predicate, which is not immutable.
