@@ -243,13 +243,13 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - Explicit hotel, planning and activity/place requests produce only a controlled `research.intent_extracted` draft with enum capabilities and readiness state. General qualitative advice and low-confidence messages remain ordinary conversation.
 - Before confirmation, no snapshot, `RESEARCH` task, Shared Skill, provider request, provider evidence or booking authority exists. The Personal Agent never directly calls a provider or Shared Skill.
 - A draft survives SSE disconnect and refresh through the owner-safe run DTO. Dismissal creates no research task; duplicate confirmation request IDs are idempotent and create at most one snapshot/task.
-- Missing Trip status, dates, preferences, provider approval or Nuitee authorization returns a stable readiness gap and a next-step UI state; it never calls Nuitee or emits a fabricated hotel result.
+- Missing Trip status, dates, preferences, provider approval or Nuitee authorization returns a stable readiness gap and a next-step UI state; the Trip workspace renders the corresponding setup card with each missing item rather than only a chat-text instruction. It never calls Nuitee or emits a fabricated hotel result.
 - An unconfirmed or ambiguous route request never calls `navigation.route` and never substitutes unrelated existing TripPlaces. Only two owner-adopted ACTIVE, non-private endpoints plus an explicit mode may reach confirmed navigation research.
 - Confirmation revalidates all current authority. A revoked authorization, changed preference, stale Trip or expired draft cannot reuse the previous classification-time state to start research.
 - Provider timeout, no results and schema failure produce `UNAVAILABLE`/`COMPLETED_WITH_GAPS` with safe source/status metadata and never a model-invented price, availability, schedule or route.
 - Draft JSON, audits, logs, traces, SSE and metric labels omit raw chat text, free-form route/place names, Profile/nationality values, provider URLs/raw payloads and high-cardinality identifiers. Bob cannot read Alice's draft or private conversation.
 
-Runnable coverage: add `apps/api/tests/services/personal-research-intent-classifier.test.ts`, extend `apps/api/tests/conversation-safety.test.ts` and `apps/api/tests/chat-conversation-e2e.test.ts`, extend `apps/api/tests/routes/research-command.test.ts`, and add Web coverage for `TravelAgentChat` draft recovery plus `ResearchConfirmationCard` readiness/dismissal behavior.
+Runnable coverage: add `apps/api/tests/services/personal-research-intent-classifier.test.ts`, extend `apps/api/tests/conversation-safety.test.ts` and `apps/api/tests/chat-conversation-e2e.test.ts`, extend `apps/api/tests/routes/research-command.test.ts`, and add Web coverage for `TravelAgentChat` draft recovery, Trip workspace setup-card rendering, plus `ResearchConfirmationCard` readiness/dismissal behavior.
 
 ### TS-H1d — Same-thread bounded LLM context survives re-entry
 

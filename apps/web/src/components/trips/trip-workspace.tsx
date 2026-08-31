@@ -397,6 +397,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
         <TravelAgentChat
           variant="docked"
           threadId={activeThread?.id ?? null}
+          tripId={tripId}
           onThreadInvalidated={() => threadsQuery.refetch()}
         />
       </section>

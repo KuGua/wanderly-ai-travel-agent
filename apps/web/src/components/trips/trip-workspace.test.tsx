@@ -190,6 +190,53 @@ describe("TripWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Bob/ })).not.toBeInTheDocument();
   });
 
+  it("shows the personal research setup card when a hotel search is missing trip settings", async () => {
+    const api = createApi({
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+      getAgentRun: vi.fn().mockResolvedValue({
+        runId: "00000000-0000-4000-8000-000000000000",
+        operation: "CONVERSATION",
+        status: "RUNNING",
+        generationAttempt: 1,
+        attemptCount: 1,
+        createdAt: "2026-08-22T10:00:00.000Z",
+        updatedAt: "2026-08-22T10:00:00.000Z",
+        finishedAt: null,
+        errorCode: null,
+        assistantMessageId: null,
+        resultPlanId: null,
+        researchIntentDraft: null,
+        researchIntentState: null,
+      }),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "research.intent_extracted",
+          runId: "00000000-0000-4000-8000-000000000000",
+          generationAttempt: 1,
+          intent: { kind: "RESEARCH_ONLY", requestedCapabilities: ["hotel"] },
+          readiness: "NEEDS_SETUP",
+          missing: ["DATES_MISSING", "STAY_PREFERENCES_MISSING"],
+          schemaVersion: 1,
+          classifierVersion: "research-intent/v1",
+        });
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) return resolve();
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    const input = await screen.findByRole("textbox", { name: "Message Wanderly Agent" });
+    fireEvent.change(input, { target: { value: "请你帮我搜搜看西门町附近的酒店" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    const setupCard = await screen.findByTestId("research-setup-card");
+    expect(setupCard).toHaveAttribute("data-readiness", "NEEDS_SETUP");
+    expect(setupCard).toHaveTextContent("尚未填写出行日期");
+    expect(setupCard).toHaveTextContent("尚未确认住宿偏好");
+  });
+
   it("starts a new thread session in one click, without prompting for a title", async () => {
     const api = createApi({
       getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
