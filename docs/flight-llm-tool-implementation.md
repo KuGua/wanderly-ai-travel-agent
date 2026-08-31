@@ -83,7 +83,7 @@ Authenticated user
 | 路径 | 改动 |
 |---|---|
 | `providers/types.ts` | 将 `FlightProvider.searchFlights()` 输入升级为 IATA、行程类型、日期、旅客数、舱等、币种和 `snapshotId`；`ProviderResult` 明确仅 `LIVE | UNAVAILABLE`。 |
-| `types/domain.ts` | 扩展 `FlightOffer`：总价/币种、segments、总时长、cabin、旅客数、退改/行李摘要、`offerExpiresAt`、provider offer ID；另新增 `expiryProvenance: "PROVIDER_VERIFIED" \| "SYNTHETIC"` 字段，由三个 Flight provider adapter 各自显式填写，`provider_offers.expiry_provenance`（迁移 `0040`）持久化该值。 |
+| `types/domain.ts` | 扩展 `FlightOffer`：总价/币种、segments、总时长、cabin、旅客数、退改/行李摘要、`offerExpiresAt`、provider offer ID；另新增 `expiryProvenance: "PROVIDER_VERIFIED" \| "SYNTHETIC"` 字段，由三个 Flight provider adapter 各自显式填写，`provider_offers.expiry_provenance`（迁移 `0043`）持久化该值。 |
 | `agents/contracts.ts`、`policy-gate.ts` | 新增 `flight:search` scope，仅加入 shared Agent allow-list。 |
 | `agents/shared-trip-agent.ts` | 注册 `flight.search`，但不赋予 Personal/Review Agent。 |
 | `providers/live-provider-factory.ts` | 根据完整 Amadeus 配置返回 adapter；否则返回 unavailable provider。 |
@@ -180,7 +180,7 @@ SearchPreferencesProposal
 三种拒绝原因（`FlightOfferStalenessReason`）：
 - `EXPIRED`——`expires_at` 已早于服务器当前时间（409）。
 - `MISSING_EXPIRY`——`expires_at` 为 `NULL`（422）。
-- `UNVERIFIABLE_EXPIRY`——offer 的到期语义无法向供应商验证（422）。判定依据是持久化在 `provider_offers.expiry_provenance` 列的显式 provenance 值（`PROVIDER_VERIFIED` | `SYNTHETIC` | `NULL`），**从不从 `provider_name` 推断**：SerpAPI 与 FlightAPI 的 adapter 永远写入 `SYNTHETIC`（两者的 `expires_at` 都只是自行发明的 `capturedAt+15min` 缓存新鲜度启发式，不是供应商保证）；Amadeus 的 adapter 在响应含真实 `lastTicketingDate` 时写入 `PROVIDER_VERIFIED`，缺失时同样写入 `SYNTHETIC`——因此同一 provider_name 下的两种情形现在被显式区分，不再是"持久化后无法区分"的已知限制。历史行（早于 `0040_flight_offer_expiry_provenance.sql` 迁移）的该列为 `NULL`，与 `SYNTHETIC` 同等对待、一律 fail closed，永不追溯性地升级为可信。**在当前 `.env` 默认选择 SerpAPI 的情况下，这意味着任何依赖 Flight Tool 产出的 plan 都能正常完成生成与采纳（PROPOSED → ACTIVE，Web 可展示 grounded 的 Flight evidence），但 member 确认（`CONFIRMED`）与 booking sandbox 都无法通过新鲜度校验**——这是按规范要求的 fail-closed 行为，不是缺陷；要让确认与 booking 真正跑通，需要切换到 Amadeus 且该次查询返回的报价确实带有 `lastTicketingDate`。
+- `UNVERIFIABLE_EXPIRY`——offer 的到期语义无法向供应商验证（422）。判定依据是持久化在 `provider_offers.expiry_provenance` 列的显式 provenance 值（`PROVIDER_VERIFIED` | `SYNTHETIC` | `NULL`），**从不从 `provider_name` 推断**：SerpAPI 与 FlightAPI 的 adapter 永远写入 `SYNTHETIC`（两者的 `expires_at` 都只是自行发明的 `capturedAt+15min` 缓存新鲜度启发式，不是供应商保证）；Amadeus 的 adapter 在响应含真实 `lastTicketingDate` 时写入 `PROVIDER_VERIFIED`，缺失时同样写入 `SYNTHETIC`——因此同一 provider_name 下的两种情形现在被显式区分，不再是"持久化后无法区分"的已知限制。历史行（早于 `0043_flight_offer_expiry_provenance.sql` 迁移）的该列为 `NULL`，与 `SYNTHETIC` 同等对待、一律 fail closed，永不追溯性地升级为可信。**在当前 `.env` 默认选择 SerpAPI 的情况下，这意味着任何依赖 Flight Tool 产出的 plan 都能正常完成生成与采纳（PROPOSED → ACTIVE，Web 可展示 grounded 的 Flight evidence），但 member 确认（`CONFIRMED`）与 booking sandbox 都无法通过新鲜度校验**——这是按规范要求的 fail-closed 行为，不是缺陷；要让确认与 booking 真正跑通，需要切换到 Amadeus 且该次查询返回的报价确实带有 `lastTicketingDate`。
 
 绝不自动刷新或静默替换价格：拒绝后唯一的补救路径是重新发起 `flight.search`（REPLAN）产生新的、经过持久化的 evidence。
 
