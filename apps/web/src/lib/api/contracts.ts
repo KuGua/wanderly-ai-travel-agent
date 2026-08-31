@@ -857,6 +857,60 @@ export const serviceGapSchema = z.object({
 
 export const researchResultStatusSchema = z.enum(["COMPLETE", "COMPLETED_WITH_GAPS"]);
 
+/**
+ * Phase E — hotel offer DTO.
+ *
+ * Mirrors `apps/api/src/types/domain.ts` `HotelOffer`. Sensitive supplier
+ * fields (raw offerId, hotel URL, address, image URLs, nationality) are
+ * NEVER exposed here — only the server-derived stable identifiers needed
+ * to render the comparison card and revalidate cached state.
+ */
+export const hotelTaxFeeStatusSchema = z.enum(["INCLUDED", "PARTIAL", "UNKNOWN"]);
+export const hotelProviderNameSchema = z.enum(["nuitee_connect", "serpapi_google_hotels"]);
+
+export const hotelOfferDtoSchema = z.object({
+  id: z.string().uuid(),
+  providerOfferId: z.string().min(1),
+  queryId: z.string().uuid(),
+  providerName: hotelProviderNameSchema,
+  destinationId: z.string().min(1),
+  propertyId: z.string().min(1),
+  propertyName: z.string().min(1),
+  checkIn: z.string(),
+  checkOut: z.string(),
+  nights: z.number().int().positive(),
+  roomCount: z.number().int().positive(),
+  adultsPerRoom: z.array(z.number().int().positive()),
+  totalPrice: z.number().nonnegative(),
+  pricePerNight: z.number().nonnegative(),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  taxesAndFees: z.object({
+    status: hotelTaxFeeStatusSchema,
+    amount: z.number().nonnegative().optional(),
+  }).strict(),
+  cancellationSummary: z.string().nullable(),
+  roomSummary: z.string().nullable(),
+  source: z.string().min(1),
+  capturedAt: z.string().datetime({ offset: true }),
+  expiresAt: z.string().datetime({ offset: true }),
+}).strict();
+export type HotelOfferDto = z.infer<typeof hotelOfferDtoSchema>;
+
+/**
+ * Provider-only quote authorization DTO. The response intentionally
+ * omits the decrypted value (e.g. nationality) — only the id/version
+ * pointer and metadata.
+ */
+export const staySearchAuthorizationDtoSchema = z.object({
+  id: z.string().uuid(),
+  providerName: hotelProviderNameSchema,
+  field: z.literal("guest_nationality"),
+  version: z.number().int().positive(),
+  grantedAt: z.string().datetime(),
+  expiresAt: z.string().datetime().nullable(),
+}).strict();
+export type StaySearchAuthorizationDto = z.infer<typeof staySearchAuthorizationDtoSchema>;
+
 export const researchResultSchema = z.object({
   id: z.string().uuid(),
   tripId: z.string().uuid(),

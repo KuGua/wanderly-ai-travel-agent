@@ -24,6 +24,8 @@ import {
   type ConversationTurnRequest,
   type OwnerConversationMessage,
 } from "../types/schemas.js";
+import type { HotelOfferProviderName } from "../providers/types.js";
+import { resolvePersistedHotelProviderName } from "../providers/live-provider-factory.js";
 import type { RequestContext } from "../utils/context.js";
 import {
   getTracer,
@@ -251,12 +253,24 @@ export async function acceptPlanningTask(params: {
   snapshotId: string;
   flightSearchPreferencesVersion: number;
   staySearchPreferencesVersion?: number;
+  /**
+   * Hotel provider bound to this task. Persisted from the resolved
+   * `HOTEL_PROVIDER` env value at acceptance; never re-read mid-run
+   * and never mutated by a later env reload. `null` when no real
+   * adapter is configured (e.g. `disabled`, or `nuitee` before the
+   * adapter ships in Phase C), or when the task simply does not
+   * require hotel capability. Spec §3.1.
+   */
+  hotelProvider?: HotelOfferProviderName | null;
   operation: "PLAN" | "REPLAN";
   requestId: string;
   tx?: Tx;
 }): Promise<{ runId: string; operation: "PLAN" | "REPLAN"; status: "QUEUED"; generationAttempt: 0 }> {
   const runId = randomUUID();
   const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
+  const hotelProvider = params.hotelProvider === undefined
+    ? resolvePersistedHotelProviderName()
+    : params.hotelProvider;
   const accept = async (tx: Tx) => {
     const [active] = await tx.select({ id: agentTaskRuns.id }).from(agentTaskRuns).where(and(
       eq(agentTaskRuns.tripId, params.tripId),
@@ -290,6 +304,7 @@ export async function acceptPlanningTask(params: {
       snapshotId: params.snapshotId,
       flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
       staySearchPreferencesVersion: params.staySearchPreferencesVersion ?? null,
+      hotelProvider,
       requestId: params.requestId,
       expiresAt,
       traceContext: buildTraceContextForTask(params.ctx),
@@ -328,6 +343,8 @@ export async function acceptResearchTask(params: {
   staySearchPreferencesVersion?: number;
   outputMode: "RESEARCH_ONLY" | "PROPOSE_PLAN";
   requestedCapabilities: readonly string[];
+  /** See `acceptPlanningTask.hotelProvider`. */
+  hotelProvider?: HotelOfferProviderName | null;
   requestId: string;
   tx?: Tx;
 }): Promise<{
@@ -339,6 +356,9 @@ export async function acceptResearchTask(params: {
 }> {
   const runId = randomUUID();
   const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
+  const hotelProvider = params.hotelProvider === undefined
+    ? resolvePersistedHotelProviderName()
+    : params.hotelProvider;
   const accept = async (tx: Tx) => {
     // Idempotency: the partial unique index `(tripId, requestId)` makes a
     // second insert a hard error. Catch the constraint violation and return
@@ -378,6 +398,7 @@ export async function acceptResearchTask(params: {
       snapshotId: params.snapshotId,
       flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
       staySearchPreferencesVersion: params.staySearchPreferencesVersion ?? null,
+      hotelProvider,
       requestId: params.requestId,
       researchMode: params.outputMode,
       requestedCapabilities: params.requestedCapabilities as string[],

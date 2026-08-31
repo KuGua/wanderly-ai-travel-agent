@@ -26,7 +26,7 @@ export async function runMigrations(connectionString: string = buildConnectionSt
     )`;
 
     const files = (await readdir(migrationsDir))
-      .filter(name => /^\d{4}_.*\.sql$/.test(name))
+      .filter(name => /^\d{4}_.*\.sql$/.test(name) && !name.endsWith(".down.sql"))
       .sort();
 
     for (const file of files) {

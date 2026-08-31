@@ -80,13 +80,13 @@ const activityEvidenceSchema = z.object({
 
 const hotelOfferSchema = z.object({
   id: z.string().uuid(), providerOfferId: z.string().min(1), queryId: z.string().uuid(),
-  providerName: z.literal("serpapi_google_hotels"), destinationId: z.string().min(1),
+  providerName: z.enum(["nuitee_connect", "serpapi_google_hotels"]), destinationId: z.string().min(1),
   propertyId: z.string().min(1), propertyName: z.string().min(1), checkIn: z.string(), checkOut: z.string(),
   nights: z.number().int().positive(), roomCount: z.number().int().positive(), adultsPerRoom: z.array(z.number().int().positive()),
   totalPrice: z.number().nonnegative(), pricePerNight: z.number().nonnegative(), currency: z.string().length(3),
   taxesAndFees: z.object({ status: z.enum(["INCLUDED", "PARTIAL", "UNKNOWN"]), amount: z.number().nonnegative().optional() }).strict(),
   cancellationSummary: z.string().nullable(), roomSummary: z.string().nullable(),
-  source: z.literal("SerpApi Google Hotels"), capturedAt: z.string().datetime(), expiresAt: z.string().datetime(),
+  source: z.string().min(1), capturedAt: z.string().datetime(), expiresAt: z.string().datetime(),
 }).strict();
 
 export const planOutputSchema = z.object({

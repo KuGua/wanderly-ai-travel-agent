@@ -69,6 +69,7 @@ describe("hotel-search-service cache and dedupe", () => {
     snapshotId = storedSnapshot.id;
     taskId = await createTask();
     fingerprint = buildHotelSearchFingerprint({
+      provider: "serpapi_google_hotels",
       destinationId,
       destinationReference: {
         destinationId,
@@ -123,6 +124,8 @@ describe("hotel-search-service cache and dedupe", () => {
 
   it("briefly caches an unavailable outcome instead of spending quota repeatedly", async () => {
     const provider: HotelProvider = {
+      providerName: "serpapi_google_hotels",
+      source: "SerpApi Google Hotels",
       searchHotels: vi.fn(async () => ({ outcome: "UNAVAILABLE", reason: "RATE_LIMITED" as const })),
     };
     await expect(search(provider, taskId)).resolves.toEqual({ outcome: "UNAVAILABLE", reason: "RATE_LIMITED" });
@@ -180,6 +183,8 @@ describe("hotel-search-service cache and dedupe", () => {
 
   function liveProvider(): HotelProvider {
     return {
+      providerName: "serpapi_google_hotels",
+      source: "SerpApi Google Hotels",
       searchHotels: vi.fn(async () => {
         const capturedAt = new Date().toISOString();
         return {
@@ -188,7 +193,6 @@ describe("hotel-search-service cache and dedupe", () => {
           capturedAt,
           data: [{
             providerOfferId: "offer-1",
-            providerName: "serpapi_google_hotels" as const,
             destinationId,
             propertyId: "property-1",
             propertyName: "Cached Hotel",
@@ -203,7 +207,6 @@ describe("hotel-search-service cache and dedupe", () => {
             taxesAndFees: { status: "UNKNOWN" as const },
             cancellationSummary: null,
             roomSummary: null,
-            source: "SerpApi Google Hotels" as const,
             capturedAt,
             expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
           }],

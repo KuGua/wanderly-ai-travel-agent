@@ -29,7 +29,7 @@ import {
 import { safePublicExplanationTokensFor } from "../policy/constraint-field-catalog.js";
 import { withMemorySpan } from "../memory/memory-spans.js";
 import { metrics } from "../observability/metrics.js";
-import { createTravelProviders } from "../providers/live-provider-factory.js";
+import { createTravelProviders, resolveBoundHotelProvider } from "../providers/live-provider-factory.js";
 import { modelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
 import type { ModelGateway } from "../providers/model-gateway.js";
 import type {
@@ -849,12 +849,19 @@ export async function generatePlan(params: {
         }
         if (call.name === "hotel.search" && hotelEnabled && stayPreferences) {
           const modelArgs = hotelSearchModelArgumentsSchema.parse(call.arguments);
+          // Spec §3.1: pick the provider the task was bound to, not the
+          // current env. Falls back to the env-resolved value when no run
+          // row is in scope (legacy call paths, tests).
+          const hotelProviderResolution = await resolveBoundHotelProvider(params.agentTaskRunId);
           const result = await invokeSkill("hotel.search", {
             ctx: params.ctx, snapshot: snapshotContext,
             hotelSearch: {
               tripId: params.tripId, snapshotId: params.snapshotId, searchPreferencesVersion: stayPreferences.version,
               searchPreferences: { roomCount: stayPreferences.roomCount, adultsPerRoom: stayPreferences.adultsPerRoom, currency: stayPreferences.currency },
               locale: "en", agentTaskRunId: params.agentTaskRunId,
+              provider: hotelProviderResolution.providerName,
+              providerAdapter: hotelProviderResolution.adapter,
+              ...(hotelProviderResolution.authorization ? { quoteNationalityAuthorization: hotelProviderResolution.authorization } : {}),
             },
             policyGate: new DefaultPolicyGate("shared"),
           }, { ...modelArgs, snapshotId: params.snapshotId }, { signal: params.signal });

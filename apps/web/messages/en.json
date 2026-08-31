@@ -449,6 +449,24 @@
       "threadSubtitle": "Private thread, visible only to you",
       "currentBadge": "Current"
     },
+    "hotel": {
+      "card": {
+        "totalLabel": "Total",
+        "perNightLabel": "Per night",
+        "nightsLabel": "Nights",
+        "occupancyLabel": "Adults",
+        "taxFeeDisclaimer": "Taxes and fees may apply — not all charges are included in the shown total.",
+        "capturedAtLabel": "Quote captured at {value}"
+      },
+      "authorization": {
+        "title": "Hotel quote nationality",
+        "body": "The default hotel provider needs you to confirm which passport/nationality to use for quotes. This stays server-side and is never shared with other members.",
+        "field": "Nationality",
+        "confirm": "Use for this trip",
+        "revoke": "Revoke",
+        "success": "Confirmed. We'll use this for future hotel quotes on this trip."
+      }
+    },
     "workspace": {
       "agentChip": "Collab agent",
       "inspectorTitle": "Workspace",

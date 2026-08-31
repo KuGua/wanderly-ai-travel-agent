@@ -53,7 +53,9 @@ export type AuditAction =
   | "MEMORY_PROPOSAL_CREATE" | "MEMORY_PROPOSAL_CONFIRM" | "MEMORY_PROPOSAL_DISMISS"
   | "PREFERENCE_FACT_UPDATE" | "PREFERENCE_FACT_DELETE"
   | "TRIP_MEMORY_UPDATE" | "TRIP_MEMORY_DELETE"
-  | "MEMORY_PROJECTION_CREATE" | "MEMORY_INVALIDATION";
+  | "MEMORY_PROJECTION_CREATE" | "MEMORY_INVALIDATION"
+  // Hotel provider switching (docs/nuitee-serpapi-hotel-provider-switching-implementation.md §5):
+  | "HOTEL_PROVIDER_GRANTED" | "HOTEL_PROVIDER_REVOKED" | "HOTEL_PROVIDER_SWITCH_BLOCKED";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
   [key: string]: AuditSummaryValue;

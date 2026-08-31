@@ -936,6 +936,86 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Failure or missing data creates only a `hotel` `RESEARCH_UNAVAILABLE`/`COMPLETED_WITH_GAPS` result. Sandbox fixtures are never used at runtime; no supplier order, payment, redirect or booking link is created or persisted.
 - Date, occupancy, preference, consent and offer-expiry changes stale dependent plan/confirmations and enqueue a new run. Audit, logs, metrics and traces contain no user input, price, property, supplier URL or high-cardinality identifiers.
 
+### TS-HOTEL-PROVIDER-1 — Provider switching, run-binding, and cache isolation
+
+**Stories:** H3, S1
+**Objective:** Verify that `HOTEL_PROVIDER` switches the live adapter used by
+newly accepted tasks, that an in-flight task keeps the adapter it was bound to,
+and that the per-provider cache never collides. Spec:
+[nuitee-serpapi-hotel-provider-switching-implementation.md](../nuitee-serpapi-hotel-provider-switching-implementation.md).
+
+**Steps:**
+
+1. With `HOTEL_PROVIDER=serpapi` and `SERPAPI_HOTEL_ENABLED=true`, accept a
+   research task and verify `agent_task_runs.hotel_provider =
+   'serpapi_google_hotels'`.
+2. Change `HOTEL_PROVIDER=nuitee` (and `NUITEE_API_KEY=<sandbox>`) and roll the
+   API. Accept another research task; verify the new row's
+   `hotel_provider = 'nuitee_connect'` while the row from step 1 is unchanged.
+3. Repeat the same `(destination, dates, occupancy)` under both providers.
+   Verify the `provider_search_cache.request_fingerprint` is different and
+   that no row in `provider_search_runs` ever carries both provider names
+   for the same `(task, snapshot, destination)` tuple (the unique index
+   `provider_search_runs_hotel_task_provider_unique` enforces this).
+4. Read the boot log; confirm `[hotel] provider selection: nuitee` (or the
+   `NOT_CONFIGURED` line when the key is missing).
+5. Set `HOTEL_PROVIDER=disabled` and verify new tasks carry
+   `hotel_provider = NULL` and `hotel.search` returns `UNAVAILABLE /
+   NOT_CONFIGURED` without any HTTP probe.
+
+**Expected outcomes:**
+
+- New tasks persist `agent_task_runs.hotel_provider` from the env-resolved
+  selection; tasks accepted before the env change are never rewritten.
+- Provider-scoped cache keys never collide across providers; cache hits
+  reuse only the provider that originally produced them.
+- The provider selection never swaps an in-flight task's source. The
+  shared planner service reads the run-bound value, not the live env.
+- Boot log emits the resolved selection exactly once. Unknown values or
+  missing credentials fall through to a labelled `NOT_CONFIGURED`
+  selection; the API never crashes on misconfiguration.
+
+### TS-HOTEL-PROVIDER-2 — Provider-only quote nationality authorization and redaction
+
+**Stories:** H3, S1, S6
+**Objective:** Verify that Nuitee `guestNationality` is encrypted at rest,
+resolved only inside the supplier call, never echoed to the browser, and
+that a grant/revoke invalidates dependent plans.
+
+**Steps:**
+
+1. `PUT /api/v1/trips/:tripId/stay-search-provider-authorizations` with
+   `{ "provider": "nuitee_connect", "field": "guest_nationality", "value":
+   "us" }`. Verify 201 with `id` and `version`; confirm the response does
+   **not** echo `"us"`, `"US"`, or the encrypted payload.
+2. `SELECT value_encrypted FROM stay_search_provider_authorizations WHERE
+   id = …;` — confirm the column does not contain the plaintext.
+3. Inspect `audit_events` for `HOTEL_PROVIDER_GRANTED`; confirm the summary
+   carries `{provider, field, version}` and never the value or any PII.
+4. Accept a hotel-capable research task; verify the worker invokes the
+   adapter and the request body includes `guestNationality: "US"`.
+5. Revoke the authorization via the DELETE endpoint and accept another
+   research task; verify `hotel.search` returns
+   `UNAVAILABLE / SEARCH_CONSTRAINTS_INCOMPLETE` and no supplier request is
+   made (mocked fetch impl).
+6. Grep logs, traces, telemetry, plan DTOs, audit summaries, and the
+   `provider_search_runs` / `provider_offers` payloads for the
+   nationality string. The string MUST NOT appear in any of them.
+
+**Expected outcomes:**
+
+- The nationality is encrypted with a server-only key. The same input
+  yields a different ciphertext across processes because the local-mode
+  key is derived from process-local secrets.
+- The plaintext appears only inside the local variable that calls
+  `NuiteeHotelProvider.searchHotels`; nothing the adapter or its callers
+  return ever carries the value.
+- A grant invalidates dependent ACTIVE/PROPOSED plans (`status='STALE'`,
+  `stale_reason='quote_nationality_changed'`).
+- A revoke performs the same stale cascade.
+- The authorization endpoint returns `404` for foreign trip/member
+  combinations; `422` for non-ISO-3166-1 alpha-2 input.
+
 ### TS-HOTEL-TOOL-2 — Non-price accommodation discovery and destination integrity
 
 **Stories:** H3, H5, S1

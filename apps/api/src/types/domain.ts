@@ -1,4 +1,5 @@
 import type { consentScopeValues } from "./schemas.js";
+import type { HotelOfferProviderName } from "../providers/types.js";
 
 export type ConsentScope = (typeof consentScopeValues)[number];
 
@@ -108,12 +109,17 @@ export interface StayOffer {
 /**
  * Provider-neutral, non-bookable hotel evidence. Supplier URLs, rate tokens,
  * coordinates and raw payloads are intentionally excluded.
+ *
+ * `providerName` is the stable adapter identity (see `HotelProviderName`);
+ * `source` is the display string persisted alongside evidence and shown on
+ * the comparison card. Both are stamped by the adapter; downstream code
+ * MUST NOT mutate them.
  */
 export interface HotelOffer {
   id: string;
   providerOfferId: string;
   queryId: string;
-  providerName: "serpapi_google_hotels";
+  providerName: HotelOfferProviderName;
   destinationId: string;
   propertyId: string;
   propertyName: string;
@@ -131,7 +137,7 @@ export interface HotelOffer {
   };
   cancellationSummary: string | null;
   roomSummary: string | null;
-  source: "SerpApi Google Hotels";
+  source: string;
   capturedAt: string;
   expiresAt: string;
 }

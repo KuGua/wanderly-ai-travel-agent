@@ -27,6 +27,7 @@ import {
 import { recordPlanningResearchResult } from "../services/planning-research-result-service.js";
 import { assertSnapshotManifestStable, hashProjectionManifest } from "../services/snapshot-manifest-guard.js";
 import { metrics } from "../observability/metrics.js";
+import { resolveBoundHotelProvider } from "../providers/live-provider-factory.js";
 import type { RequestContext } from "../utils/context.js";
 
 export type ResearchRunOutcome = "COMPLETED" | "COMPLETED_WITH_GAPS";
@@ -338,6 +339,7 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
         .where(eq(sharedTrips.id, run.tripId!))
         .limit(1))[0]?.titleLocale ?? "en";
       const locale = tripLocale === "zh" ? "zh" : "en";
+      const hotelProviderResolution = await resolveBoundHotelProvider(run.id);
       for (const dest of destinationCandidates) {
         const result = await invokeSkill(
           "hotel.search",
@@ -354,6 +356,9 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
               },
               locale,
               agentTaskRunId: run.id,
+              provider: hotelProviderResolution.providerName,
+              providerAdapter: hotelProviderResolution.adapter,
+              ...(hotelProviderResolution.authorization ? { quoteNationalityAuthorization: hotelProviderResolution.authorization } : {}),
             },
           },
           { snapshotId, destinationId: dest },

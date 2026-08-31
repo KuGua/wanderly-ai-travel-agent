@@ -47,12 +47,19 @@ describe("SerpApiHotelProvider", () => {
     expect(result).toMatchObject({
       outcome: "LIVE", source: "SerpApi Google Hotels",
       data: [{
-        providerName: "serpapi_google_hotels", propertyName: "Safe Hotel",
+        propertyName: "Safe Hotel",
         totalPrice: 360, pricePerNight: 120, currency: "USD",
         taxesAndFees: { status: "INCLUDED", amount: 60 },
         cancellationSummary: "Free cancellation available",
       }],
     });
+    // providerName is stamped by the service layer after the adapter returns;
+    // the adapter does not embed it in items.
+    expect(result).toMatchObject({ outcome: "LIVE", source: "SerpApi Google Hotels" });
+    if (result.outcome === "LIVE") {
+      expect(result.data[0]).not.toHaveProperty("providerName");
+      expect(result.data[0]).not.toHaveProperty("source");
+    }
     expect(JSON.stringify(result)).not.toContain("raw-property-token");
     expect(JSON.stringify(result)).not.toContain("provider.example");
     expect(JSON.stringify(result)).not.toContain("secret");

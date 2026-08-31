@@ -76,6 +76,8 @@ export const auditActionEnum = pgEnum("audit_action", [
   "PREFERENCE_FACT_UPDATE", "PREFERENCE_FACT_DELETE",
   "TRIP_MEMORY_UPDATE", "TRIP_MEMORY_DELETE",
   "MEMORY_PROJECTION_CREATE", "MEMORY_INVALIDATION",
+  // Hotel provider switching (docs/nuitee-serpapi-hotel-provider-switching-implementation.md §5):
+  "HOTEL_PROVIDER_GRANTED", "HOTEL_PROVIDER_REVOKED", "HOTEL_PROVIDER_SWITCH_BLOCKED",
 ]);
 
 // ─── Long-term memory (docs/long-term-memory-implementation.md) ─────────────
@@ -91,6 +93,29 @@ export const chatThreadScopeEnum = pgEnum("chat_thread_scope", ["TRIP"]);
 
 export const tripInvitationStatusEnum = pgEnum("trip_invitation_status", [
   "PENDING", "ACCEPTED", "DECLINED", "REVOKED", "EXPIRED",
+]);
+
+/**
+ * Hotel provider identity. Mirrors `apps/api/src/providers/types.ts`
+ * `HotelProviderName` (and the narrower `HotelOfferProviderName`); the
+ * DB enum excludes `"unconfigured"` because an offer only exists when
+ * a real adapter produced it. Adding a new provider requires both an
+ * enum value here AND a metrics allow-list update in
+ * `apps/api/src/observability/metrics.ts`.
+ */
+export const hotelProviderEnum = pgEnum("hotel_provider", [
+  "nuitee_connect",
+  "serpapi_google_hotels",
+]);
+
+export const staySearchProviderAuthorizationStatusEnum = pgEnum("stay_search_provider_authorization_status", [
+  "ACTIVE",
+  "REVOKED",
+  "EXPIRED",
+]);
+
+export const staySearchProviderAuthorizationFieldEnum = pgEnum("stay_search_provider_authorization_field", [
+  "guest_nationality",
 ]);
 
 // S4 / docs/location-introduction-cache-implementation.md §4.  Shared,
@@ -427,6 +452,41 @@ export const tripSearchPreferences = pgTable("trip_search_preferences", {
   tripIdx: index("trip_search_preferences_trip_id_idx").on(table.tripId),
 }));
 
+/**
+ * Provider-only field authorizations for hotel quote adapters.
+ *
+ * Stores values that adapters require (e.g. Nuitee `guestNationality`)
+ * but must never appear in Profile / shared DTO / LLM prompt / log /
+ * trace / metric / audit. `value_encrypted` is opaque ciphertext; only
+ * the adapter's per-call KMS path can decrypt it, and that path runs
+ * only inside the supplier request — it never logs or persists the
+ * plaintext. Adding a new field requires an enum value above AND a
+ * server-side adapter that owns the corresponding KMS key.
+ *
+ * Spec §5.1 — provider-only quote nationality authorization.
+ */
+export const staySearchProviderAuthorizations = pgTable("stay_search_provider_authorizations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  memberId: uuid("member_id").references(() => users.id).notNull(),
+  providerName: hotelProviderEnum("provider_name").notNull(),
+  field: staySearchProviderAuthorizationFieldEnum("field").notNull(),
+  valueEncrypted: text("value_encrypted").notNull(),
+  status: staySearchProviderAuthorizationStatusEnum("status").notNull().default("ACTIVE"),
+  grantedAt: timestamp("granted_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  version: integer("version").notNull().default(1),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  activeUnique: uniqueIndex("stay_search_provider_authorizations_active_unique")
+    .on(table.tripId, table.memberId, table.providerName, table.field)
+    .where(sql`${table.status} = 'ACTIVE'`),
+  tripIdx: index("stay_search_provider_authorizations_trip_idx").on(table.tripId),
+  memberIdx: index("stay_search_provider_authorizations_member_idx").on(table.memberId),
+}));
+
 export const tripStaySearchPreferences = pgTable("trip_stay_search_preferences", {
   id: uuid("id").primaryKey().defaultRandom(),
   tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
@@ -590,6 +650,13 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   flightSearchPreferencesVersion: integer("flight_search_preferences_version"),
   /** Immutable confirmed stay-search-preference version bound at acceptance. */
   staySearchPreferencesVersion: integer("stay_search_preferences_version"),
+  /**
+   * Hotel provider resolved at task acceptance from `HOTEL_PROVIDER`.
+   * Nullable: tasks without a hotel capability (e.g. RESEARCH on a flight
+   * capability) keep this NULL. Persisted here so a configuration reload
+   * never mutates an in-flight task's source. Spec §3.1.
+   */
+  hotelProvider: hotelProviderEnum("hotel_provider"),
   requestId: uuid("request_id").notNull(),
   userMessageId: uuid("user_message_id").references(() => chatMessages.id, { onDelete: "cascade" }),
   assistantMessageId: uuid("assistant_message_id").references(() => chatMessages.id, { onDelete: "set null" }),
