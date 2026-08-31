@@ -104,7 +104,7 @@ flowchart LR
 9. 未被用户归档、且 `travelDateEnd` 未早于当前 UTC 日期的 Trip 属于活跃行程；首页以“规划中”呈现。归档是独立于 `PLANNING`/`CONFIRMED`/`BOOKED` 等业务状态的可见性属性：用户主动归档或行程结束日期过去后进入归档列表。缺失规划所需字段时，服务端只拒绝相应的 provider/planning 操作并说明缺口，不把行程降为草稿或阻止成员邀请。
 10. 系统可从重复、非敏感旅行行为生成长期偏好**提案**，但提案在用户确认前不是 Profile 事实、不得进入共享 snapshot 或计划输入。已确认的事实不随时间衰减，在用户主动修改或删除前一直有效；行为长期与已确认事实冲突时，系统只能提出"是否更新偏好"的非阻塞建议，并受最少独立观察次数、跨 Trip 数、证据跨度和记忆强度阈值共同约束（见 [长期记忆实施方案](long-term-memory-implementation.md) §3.6）。国籍、旅行证件、出生日期、健康和无障碍信息只能由用户通过 Profile 表单维护，禁止从私有对话或行为自动提取。
 11. 用户点击服务端认可的稳定地图地点时，系统可在地点抽屉自动展示按语言共享的短介绍；有效期内不得重复调用 LLM。该内容不得使用任何用户、Profile、Trip、thread 或私聊输入，也不得创建 Draft Trip 或聊天消息。无稳定 `sourceId` 的灵感点不提供该能力。
-12. Personal Agent 可将“查找/规划”理解为不可执行的个人 research intent，并展示 owner 确认卡。确认后，服务端在该 owner 的单人 Trip snapshot 下接受 durable `RESEARCH` 或 `PROPOSE_PLAN` task；Personal Agent 不直接调用 provider、MCP、数据库或 Shared Skill。`PROPOSE_PLAN` 自动生成首版 `PROPOSED` plan，owner adoption 后才激活。
+12. Personal Agent 可将中英自然语言中的明确“查找/规划”识别为不可执行的个人 research intent，并展示可恢复的 owner 确认卡；低置信度表达保持普通对话或请求澄清。确认后，服务端在该 owner 的单人 Trip snapshot 下接受 durable `RESEARCH` 或 `PROPOSE_PLAN` task；Personal Agent 不直接调用 provider、MCP、数据库或 Shared Skill。酒店 research 必须满足日期、已确认住宿搜索偏好、provider feature gate 及适用的 quote-nationality authorization；路线原始文本必须先经 owner 确认两个地点并采用为可路由 TripPlace，不能以模型猜测或任意旧地点直接执行。`PROPOSE_PLAN` 自动生成首版 `PROPOSED` plan，owner adoption 后才激活。实施合同见 [Personal Research Intent Routing 实施规范](personal-research-intent-routing-implementation.md)。
 
 ### FR-2 共享行程工作台与授权
 

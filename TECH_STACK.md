@@ -94,7 +94,7 @@ Agent 不能自行跨越以下边界：
 
 同一受控 `TripOrchestrator` 同时服务单人和多人 Trip；`Personal Agent` 是 owner 私聊入口、补问与受控命令发起者，而不是 provider/tool 的直接调用者。单人 Trip 只有一位 required member，使用该 owner 明确授权的最小 snapshot；多人 Trip 使用全体成员授权汇总的 snapshot。两种模式均通过 PostgreSQL durable Worker、Shared Skill registry、typed provider adapter、evidence validator 和 plan 状态机执行，绝不新建 Personal 专属 provider、evidence store 或自由 Agent-to-Agent 通道。
 
-单人用户必须先显式激活完整 Trip 才能发起外部 research；单人允许 1–5 个目的地候选，多人保持 2–3 个。owner 确认 research command 后，Worker 可按 feature flag 和 provider 准入调用全部 Shared tools：Flight、Accommodation discovery、Hotel、Activities、Places、Navigation、Mobility 与 Readiness。`PROPOSE_PLAN` 自动生成第一版 `PROPOSED` plan 供 owner 查看；owner 的显式 adoption 才能将其变为 `ACTIVE`，booking 仍须经过既有显式确认 gate。详细合同见 [单人行程编排实施规范](docs/personal-trip-orchestration-implementation.md)。
+单人用户必须先显式激活完整 Trip 才能发起外部 research；单人允许 1–5 个目的地候选，多人保持 2–3 个。Personal Agent 私聊中的自然语言只可由服务端生成不可执行的 research intent 草案；owner 明确确认后，现有 research command 才创建 snapshot 和 durable task。Worker 可按 feature flag 和 provider 准入调用全部 Shared tools：Flight、Accommodation discovery、Hotel、Activities、Places、Navigation、Mobility 与 Readiness。`PROPOSE_PLAN` 自动生成第一版 `PROPOSED` plan 供 owner 查看；owner 的显式 adoption 才能将其变为 `ACTIVE`，booking 仍须经过既有显式确认 gate。路线原始文本必须先经地点选择/采用，不能直接调用 `navigation.route`。详细合同见 [单人行程编排实施规范](docs/personal-trip-orchestration-implementation.md) 与 [Personal Research Intent Routing 实施规范](docs/personal-research-intent-routing-implementation.md)。
 
 酒店住宿的 provider 切换实施契约见 [Nuitee Connect / LiteAPI 与 SerpApi Google Hotels 可切换报价实施规范](docs/nuitee-serpapi-hotel-provider-switching-implementation.md)：Nuitee 为默认实时报价源，SerpApi 保留为显式可切换来源；首期仅搜索与比较，不能创建供应商订单、支付或跳转预订；税费不完整时必须展示“可能另计”。
 
