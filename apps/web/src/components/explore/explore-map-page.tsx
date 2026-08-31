@@ -91,14 +91,30 @@ async function loadGlobeStyle(): Promise<StyleSpecification> {
  * opens on that country instead of the default globe, and offers a way back
  * to the trip the viewer came from.
  */
+/**
+ * Reads a camera hand-off out of the query string, or `null` when there is not
+ * one.
+ *
+ * The numbers are parsed only after the parameters are known to be present.
+ * `Number(null)` is `0`, and zero is finite and a legal coordinate, so parsing
+ * first made every visit without a hand-off look like a hand-off to
+ * `[0, 0]` — the map opened in the Gulf of Guinea instead of Singapore, and the
+ * globe never span, because the spin is skipped whenever a hand-off chose the
+ * opening camera.
+ */
 function readFocusHandoff(params: URLSearchParams) {
-  const latitude = Number(params.get("focusLat"));
-  const longitude = Number(params.get("focusLng"));
+  const rawLatitude = params.get("focusLat")?.trim();
+  const rawLongitude = params.get("focusLng")?.trim();
+  if (!rawLatitude || !rawLongitude) return null;
+
+  const latitude = Number(rawLatitude);
+  const longitude = Number(rawLongitude);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
 
   const tripId = params.get("fromTrip");
-  const zoom = Number(params.get("focusZoom"));
+  const rawZoom = params.get("focusZoom")?.trim();
+  const zoom = rawZoom ? Number(rawZoom) : Number.NaN;
   return {
     center: [longitude, latitude] as [number, number],
     zoom: Number.isFinite(zoom) ? Math.min(6, Math.max(1, zoom)) : 3.4,
