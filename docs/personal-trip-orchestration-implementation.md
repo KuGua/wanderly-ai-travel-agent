@@ -21,7 +21,7 @@
 
 ```text
 owner private thread
-  -> Personal Agent conversation (intent extraction / missing-input questions)
+  -> Personal Agent conversation (server-side intent proposal / missing-input questions)
   -> owner-confirmed Trip Research Command
   -> Fastify acceptance transaction
        -> constraint snapshot + durable agent_task_run
@@ -71,7 +71,7 @@ UI 的“帮我规划”默认使用 `PROPOSE_PLAN`；“查东京活动”等�
 
 ### 4.1 Conversation intent（内部合同）
 
-`travel.conversation` 的结构化输出增加可选、不可直接执行的命令草案：
+具体分类、持久化草案、readiness 和路线端点选择以 [Personal Research Intent Routing 实施规范](personal-research-intent-routing-implementation.md) 为准。本规范保留其与 research command 的接口关系：私聊由服务端规则生成可选、不可直接执行的命令草案；浏览器的 `auto_intro | user_typed` intent 不是业务分类来源，LLM 也不负责决定外部工具执行。
 
 ```ts
 type PersonalResearchIntent = {
@@ -79,11 +79,10 @@ type PersonalResearchIntent = {
   requestedCapabilities: Array<
     'flight' | 'accommodation' | 'hotel' | 'activities' | 'places' | 'navigation' | 'mobility' | 'readiness'
   >;
-  destinationCandidates?: string[]; // only a proposal; server validates against Trip
 };
 ```
 
-模型不能返回 snapshotId、provider、坐标、地址、日期、旅客数量、币种、placeId、tool call ID 或任何身份字段。前端只把草案显示为确认卡，不能将其当成已接受任务。
+草案不能包含 snapshotId、provider、坐标、地址、日期、旅客数量、币种、placeId、tool call ID、身份字段或私聊原文。它必须持久化为 owner-only、可恢复状态；前端只将其显示为确认卡，不能将其当成已接受任务。路线文本在两个端点被 owner 选择并采用为 `ACTIVE trip_place` 前，只能生成地点选择下一步。
 
 ### 4.2 Research command
 
@@ -113,7 +112,7 @@ type PersonalResearchIntent = {
 
 将 `agent_task_runs.operation` 和 API schema 增加 `RESEARCH`。任务行必须保存 `research_mode` 与受控 capability allow-list；其余 authority 与现有 `PLAN/REPLAN` 一致：`tripId`、`snapshotId`、lease、requestId、trace context 和偏好版本均由服务端写入。
 
-SSE 只发送安全阶段：`SNAPSHOT_CREATED`、`RESEARCHING`、`VALIDATING`、`PERSISTING`、`COMPLETED`、`COMPLETED_WITH_GAPS`、`FAILED`、`STALE`。最终资源从 `GET /agent-runs/:runId` 和研究/plan REST DTO 重新获取，事件不得携带 raw provider payload、snapshot 值、未验证文本或聊天内容。
+Conversation run 可发送安全的 `research.intent_extracted` 草案事件；确认后的 Research run 只发送安全阶段：`SNAPSHOT_CREATED`、`RESEARCHING`、`VALIDATING`、`PERSISTING`、`COMPLETED`、`COMPLETED_WITH_GAPS`、`FAILED`、`STALE`。最终资源和待确认草案从 `GET /agent-runs/:runId` 及研究/plan REST DTO 重新获取，事件不得携带 raw provider payload、snapshot 值、未验证文本或聊天内容。
 
 ## 5. 执行和工具调度
 
@@ -151,7 +150,7 @@ SSE 只发送安全阶段：`SNAPSHOT_CREATED`、`RESEARCHING`、`VALIDATING`、
 | 修改 | `trip-status-guard.ts`、planning routes/services | Draft 仍拒绝；激活后的单人 Trip 允许 research；旧 generate endpoint 委托新 command。 |
 | 修改 | `task-repository.ts`、`agent-task-worker.ts`、planning handler | 接受、领取、执行和终结 `RESEARCH`，写 safe result reference。 |
 | 修改 | `planning-service.ts`、coverage matrix | 支持按 capability allow-list 执行；允许单候选研究；`PROPOSE_PLAN` 保持全候选确定性校验。 |
-| 修改 | `travel-conversation-skill.ts`、ModelGateway contract | 输出不可执行 intent；新增确认后的 tool-loop final-message path，保留 delta gate。 |
+| 修改 | `travel-conversation-skill.ts`、conversation handler、task repository | 在模型调用前按服务端规则生成、持久化并发布不可执行 intent；研究草案分支不新增 Personal tool-loop，保留 delta gate。 |
 | 新增 | `personal-trip-orchestrator-service.ts`、research command service/route | 聚合 server-side checks、snapshot/task acceptance 和 Shared dispatcher。 |
 | 新增 | Web research confirmation/result cards | TanStack Query 管理 trip/run/research/plan server state；不在 Zustand/localStorage 放业务真相。 |
 
@@ -163,6 +162,7 @@ SSE 只发送安全阶段：`SNAPSHOT_CREATED`、`RESEARCHING`、`VALIDATING`、
 
 - `agent_task_operation` 增加 `RESEARCH`；
 - `agent_task_runs.research_mode`（`RESEARCH_ONLY | PROPOSE_PLAN`）和 `requested_capabilities`（受控 enum array/JSON）；
+- `agent_task_runs.research_intent_draft` 与 `research_intent_state`，仅保存 owner-safe capability/readiness 草案；
 - 可选 `research_result_id` 指向已有或新增的安全研究摘要记录；
 - 为 `(trip_id, request_id, created_by_user_id)` 保留/验证唯一幂等约束；
 - 更新 Trip brief validation 的数据库约束/trigger，使它可根据 required-member count 校验 Solo 1–5、Team 2–3。

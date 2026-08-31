@@ -7,6 +7,8 @@ import { createPortal } from "react-dom";
 
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
 import { ResearchConfirmationCard } from "@/components/trips/personal-research/research-confirmation-card";
+import { ResearchSetupCard } from "@/components/trips/personal-research/research-setup-card";
+import { ResearchPlaceSelectionCard } from "@/components/trips/personal-research/research-place-selection-card";
 import { ResearchRunCard } from "@/components/trips/personal-research/research-run-card";
 
 import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest } from "@/lib/api/contracts";
@@ -109,6 +111,18 @@ export function TravelAgentChat({
   // accumulated stage events for the in-flight run.
   const [researchIntent, setResearchIntent] =
     useState<Extract<AgentStreamEvent, { event: "research.intent_extracted" }>["intent"] | null>(null);
+  // Phase 2 / Personal Research Intent Routing — persisted draft recovery.
+  // `classifierDraft` carries the full server-side classification result
+  // (intent + readiness + missing) so we can mount the right card variant
+  // and survive SSE drops / refresh via the agent-run DTO. SUPERSEDED drafts
+  // are server-internal and never surface here.
+  const [classifierDraft, setClassifierDraft] =
+    useState<Extract<AgentStreamEvent, { event: "research.intent_extracted" }> | null>(null);
+  const [routeEndpoints, setRouteEndpoints] = useState<Array<{ placeId: string; displayName: string }>>([]);
+  const [routeOrigin, setRouteOrigin] = useState<{ placeId: string; displayName: string } | null>(null);
+  const [routeDestination, setRouteDestination] = useState<{ placeId: string; displayName: string } | null>(null);
+  const [routeMode, setRouteMode] = useState<"WALK" | "DRIVE" | "CYCLE" | null>(null);
+  const [isSavingRouteSelection, setIsSavingRouteSelection] = useState(false);
   const [researchStages, setResearchStages] = useState<
     Array<Extract<AgentStreamEvent, { event: "research.stage" }>>
   >([]);
@@ -138,7 +152,34 @@ export function TravelAgentChat({
     setStreamState(emptyStreamState());
     setRequestError(null);
     setBriefProposal(null);
+    setClassifierDraft(null);
+    setRouteEndpoints([]);
+    setRouteOrigin(null);
+    setRouteDestination(null);
+    setRouteMode(null);
   }, []);
+
+  useEffect(() => {
+    if (!tripId || classifierDraft?.readiness !== "NEEDS_PLACE_SELECTION" || !api.getRouteEndpoints) return;
+    void api.getRouteEndpoints(tripId).then(setRouteEndpoints).catch(setRequestError);
+  }, [api, classifierDraft?.readiness, tripId]);
+
+  const saveRouteSelection = useCallback(async () => {
+    if (!classifierDraft || !routeOrigin || !routeDestination || !routeMode || !api.saveRouteSelection) return;
+    setIsSavingRouteSelection(true);
+    try {
+      await api.saveRouteSelection(classifierDraft.runId, {
+        originPlaceId: routeOrigin.placeId,
+        destinationPlaceId: routeDestination.placeId,
+        mode: routeMode,
+      });
+      setClassifierDraft((current) => current ? { ...current, readiness: "READY", missing: [] } : current);
+    } catch (error) {
+      setRequestError(error);
+    } finally {
+      setIsSavingRouteSelection(false);
+    }
+  }, [api, classifierDraft, routeDestination, routeMode, routeOrigin]);
 
   useEffect(() => {
     const restorePointers = window.setTimeout(() => {
@@ -245,7 +286,19 @@ export function TravelAgentChat({
     const controller = new AbortController();
     void api.subscribeAgentRun(activeRunId, controller.signal, (event) => {
       if (event.event === "trip.brief_proposed") setBriefProposal(event.proposal);
-      if (event.event === "research.intent_extracted") setResearchIntent(event.intent);
+      if (event.event === "research.intent_extracted") {
+        setResearchIntent(event.intent);
+        // Phase 2: persist the full classifier payload so the card can
+        // pick a variant and the user can refresh without losing state.
+        setClassifierDraft(event);
+      }
+      if (event.event === "research.intent_dismissed") {
+        // Owner dismissed the draft via POST /dismiss-intent. Clear local
+        // state immediately so the card unmounts without waiting for the
+        // next 1.5 s agent-run poll.
+        setClassifierDraft(null);
+        setResearchIntent(null);
+      }
       if (event.event === "research.stage") {
         setResearchStages((current) => [...current, event]);
         if (event.stage === "COMPLETED"
@@ -270,6 +323,35 @@ export function TravelAgentChat({
     });
     return () => controller.abort();
   }, [activeRunId, api, refetchAgentRun]);
+
+  // Phase 2 — recover a PROPOSED classifier draft from the durable agent-run
+  // DTO. The SSE may have dropped (browser backgrounded, network blip, etc.)
+  // and the user refreshed — without this effect the card would not re-mount
+  // and the owner would lose the ability to confirm or dismiss.
+  useEffect(() => {
+    const data = agentRun.data;
+    if (!data || !activeRunId || data.runId !== activeRunId) return;
+    if (data.researchIntentState !== "PROPOSED" || !data.researchIntentDraft) {
+      return;
+    }
+    setResearchIntent((current) => current ?? {
+      kind: data.researchIntentDraft!.kind,
+      requestedCapabilities: data.researchIntentDraft!.requestedCapabilities,
+    });
+    setClassifierDraft((current) => current ?? {
+      event: "research.intent_extracted",
+      runId: activeRunId,
+      generationAttempt: data.generationAttempt,
+      intent: {
+        kind: data.researchIntentDraft!.kind,
+        requestedCapabilities: data.researchIntentDraft!.requestedCapabilities,
+      },
+      readiness: data.researchIntentDraft!.readiness,
+      missing: data.researchIntentDraft!.missing,
+      schemaVersion: 1,
+      classifierVersion: "research-intent/v1",
+    });
+  }, [agentRun.data, activeRunId]);
 
   useEffect(() => {
     if (
@@ -536,11 +618,61 @@ export function TravelAgentChat({
           {/* Phase 6 / Personal Trip Orchestrator — research intent + run card. */}
           {researchIntent && tripId ? (
             <div className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}>
-              <ResearchConfirmationCard
-                tripId={tripId}
-                intent={researchIntent}
-                onDismiss={() => setResearchIntent(null)}
-              />
+              {classifierDraft ? (
+                classifierDraft.readiness === "NEEDS_PLACE_SELECTION" ? (
+                  // Phase 4 place picker binds owner-selected endpoints and
+                  // a transport mode before the confirm button enables.
+                  // Origin/destination start as null and are filled by the
+                  // dedicated place-picker UX (introduced when the
+                  // proposal / adopt flow ships).
+                  <ResearchPlaceSelectionCard
+                    intent={classifierDraft.intent}
+                    origin={routeOrigin}
+                    destination={routeDestination}
+                    mode={routeMode}
+                    endpoints={routeEndpoints}
+                    onSelectOrigin={setRouteOrigin}
+                    onSelectDestination={setRouteDestination}
+                    onSelectMode={setRouteMode}
+                    onConfirm={() => void saveRouteSelection()}
+                    onDismiss={() => {
+                      setClassifierDraft(null);
+                      setResearchIntent(null);
+                    }}
+                    isSubmitting={isSavingRouteSelection}
+                  />
+                ) : classifierDraft.readiness === "NEEDS_SETUP" ? (
+                  <ResearchSetupCard
+                    readiness={classifierDraft.readiness}
+                    missing={classifierDraft.missing}
+                    intent={classifierDraft.intent}
+                    onDismiss={() => {
+                      setClassifierDraft(null);
+                      setResearchIntent(null);
+                    }}
+                  />
+                ) : (
+                  <ResearchConfirmationCard
+                    tripId={tripId}
+                    source="classifier-extracted"
+                    runId={classifierDraft.runId}
+                    intent={classifierDraft.intent}
+                    readiness={classifierDraft.readiness}
+                    missing={classifierDraft.missing}
+                    onDismiss={() => {
+                      setClassifierDraft(null);
+                      setResearchIntent(null);
+                    }}
+                  />
+                )
+              ) : (
+                <ResearchConfirmationCard
+                  tripId={tripId}
+                  source="model-extracted"
+                  intent={researchIntent}
+                  onDismiss={() => setResearchIntent(null)}
+                />
+              )}
             </div>
           ) : null}
           {activeRunId ? (

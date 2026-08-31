@@ -3,7 +3,7 @@
 # Use together with `docker-compose.yml`:
 #   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
 #
-# Adds two services: `tempo` (OTLP/HTTP trace receiver) and `grafana`
+# Adds two optional services: `tempo` (OTLP/HTTP trace receiver) and `grafana`
 # (provisioned with a Tempo datasource and the bundled `api-correlations`
 # dashboard). Pino logs are read directly from `docker logs <svc> | jq` so
 # we deliberately do not stand up Loki or Mimir locally — see
@@ -11,6 +11,24 @@
 #
 # Both services bind to 127.0.0.1 only. No public ingress.
 services:
+  app:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_SDK_DISABLED: "false"
+    depends_on:
+      tempo:
+        condition: service_healthy
+
+  worker:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4318
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_SDK_DISABLED: "false"
+    depends_on:
+      tempo:
+        condition: service_healthy
+
   tempo:
     image: grafana/tempo:2.6.0
     command: ["-config.file=/etc/tempo.yaml"]
@@ -18,6 +36,7 @@ services:
     ports:
       - "127.0.0.1:4317:4317"  # OTLP gRPC
       - "127.0.0.1:4318:4318"  # OTLP HTTP
+      - "127.0.0.1:3100:3100"  # Tempo query/readiness HTTP
     volumes:
       - ./observability/tempo-config.yaml:/etc/tempo.yaml:ro
       - tempo-data:/var/tempo/traces
@@ -26,17 +45,28 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: 0.50
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "2"
 
   grafana:
     image: grafana/grafana:11.3.0
     ports:
-      - "127.0.0.1:3001:3000"
+      # 3001 belongs to the Next.js Web app in local development.
+      - "127.0.0.1:3003:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: wanderly-dev
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_LOG_LEVEL: warn
     volumes:
       - ./observability/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
       - ./observability/grafana-dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
@@ -44,6 +74,13 @@ services:
     depends_on:
       tempo:
         condition: service_healthy
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: 0.50
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "2"
 
 volumes:
   tempo-data:

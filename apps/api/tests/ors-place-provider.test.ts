@@ -49,6 +49,57 @@ describe("OrsPlaceProvider", () => {
     if (result.outcome === "UNAVAILABLE") expect(result.reason).toBe("RATE_LIMITED");
   });
 
+  it("keeps candidates whose alpha-3 country would truncate to another country", async () => {
+    // ORS reports alpha-3. Cutting it to two characters is not a conversion:
+    // CHN reads as CH (Switzerland), so every Chinese candidate used to fail
+    // the alpha-2 comparison and be discarded. The country is taken from the
+    // request instead, which is what `boundary.country` already filtered on.
+    const fetchImpl = vi.fn(async () => jsonResponse(200, {
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [121.47, 31.23] },
+        properties: {
+          layer: "venue", name: "Shanghai Museum", country_a: "CHN",
+          locality: "Shanghai", confidence: 0.9,
+        },
+      }],
+    }));
+    const result = await new OrsPlaceProvider({ ...baseOptions, fetchImpl }).searchPlaces({
+      destination: {
+        destinationId: "shanghai", cityName: "Shanghai", countryCode: "CN",
+        latitude: 31.2304, longitude: 121.4737,
+      },
+      keyword: "museum",
+      category: "ATTRACTION",
+      snapshotId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(result.outcome).toBe("LIVE");
+    if (result.outcome !== "LIVE") return;
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].countryCode).toBe("CN");
+  });
+
+  it("parses a response whose country code is alpha-3", async () => {
+    // The schema required two characters, so every real response failed to
+    // parse and the whole search became INVALID_PROVIDER_RESPONSE — a provider
+    // that reads as unavailable rather than as broken.
+    const fetchImpl = vi.fn(async () => jsonResponse(200, {
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [139.69, 35.68] },
+        properties: { layer: "venue", name: "Ohi Museum", country_a: "JPN", confidence: 1 },
+      }],
+    }));
+    const result = await new OrsPlaceProvider({ ...baseOptions, fetchImpl }).searchPlaces({
+      destination, keyword: "museum", category: "ATTRACTION",
+      snapshotId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(result.outcome).toBe("LIVE");
+  });
+
   it("normalizes a live geocoding response", async () => {
     const fetchImpl = vi.fn(async () => jsonResponse(200, {
       type: "FeatureCollection",
@@ -59,7 +110,7 @@ describe("OrsPlaceProvider", () => {
           properties: {
             layer: "food",
             name: "Sushi Saito",
-            country_a: "JP",
+            country_a: "JPN",
             region_a: "Tokyo",
             locality: "Tokyo",
             confidence: 0.93,
@@ -95,7 +146,7 @@ describe("OrsPlaceProvider", () => {
         {
           type: "Feature",
           geometry: { type: "Point", coordinates: [139.69, 35.68] },
-            properties: { layer: "venue", name: "Maybe", country_a: "JP", confidence: 0.4 },
+            properties: { layer: "venue", name: "Maybe", country_a: "JPN", confidence: 0.4 },
         },
       ],
     }));

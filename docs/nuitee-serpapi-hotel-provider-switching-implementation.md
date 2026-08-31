@@ -1,8 +1,55 @@
 # Nuitee Connect / LiteAPI 与 SerpApi Google Hotels 可切换报价实施规范
 
-**状态：** 待开发  
+**状态：** 实施中；task-bound provider、授权指针、缓存隔离和 KMS fail-closed 路径已修复，待完整 planning Worker E2E 与部署 KMS/IAM 验证后才可启用 Nuitee。
 **目标实现：** 在既有 `hotel.search` 实时搜索与方案比较能力中，以 Nuitee Connect / LiteAPI Rates 为首选 provider，同时保留 SerpApi Google Hotels，并支持通过服务端配置快速切换。  
 **范围：** 仅搜索与方案比较；不接入 prebook、book、支付、跳转链接或真实预订。
+
+> **当前审计阻断项（2026-08-31）：** `PlanningService` 虽已解析 run-bound provider，却仍通过 registry 的 legacy `hotelSearchSkill` 调用；该 handler 忽略 `HotelSearchExecutionContext.providerAdapter`，重新从当前环境创建 adapter。因此运行中切换配置可改变旧 task 的实际来源。该调用还未向 resolver 传入国籍加载器，Nuitee 任务无法取得授权引用而被 policy 拒绝。另有 quote-nationality cache key 未区分国籍、cipher 在未配置稳定密钥时会以进程随机 key 加密。修复这些问题、移除 legacy 生产路径，并覆盖 task-bound Nuitee E2E 后，才满足本规范。
+
+## 0. 上线阻断项修复计划
+
+在本节所有验收完成前，保持 `PLAN_ENABLE_HOTEL=false` 或 `HOTEL_PROVIDER=serpapi`；不得将 `HOTEL_PROVIDER=nuitee` 用于真实用户 task。
+
+### 阶段 A — 收敛唯一的 task-bound 调用路径
+
+1. 删除 `hotelSearchSkill.handler` 从 `createTravelProviders()` 读取环境并自行选择 adapter 的 legacy 行为。registry handler 必须只调用 `handleHotelSearch(ctx, input, { provider: ctx.hotelSearch.providerAdapter, loadQuoteNationality })`。
+2. 在 `handleHotelSearch` 首行作运行时一致性校验：`ctx.hotelSearch.providerAdapter.providerName === ctx.hotelSearch.provider`；否则返回固定的 `POLICY_DENIED`/`PROVIDER_BINDING_INVALID`，不得发起 provider 请求或写 evidence。
+3. `resolveBoundHotelProvider(taskId)` 只从 `agent_task_runs.hotel_provider` 解析 adapter；若 task 存在但该列为 `NULL`、adapter 未配置或 provider 名不匹配，返回 `UnavailableHotelProvider` 和显式的无 provider 状态。不得伪造为 `serpapi_google_hotels`，也不得回读当前环境。只有无 durable task 的明确测试 fixture 可注入 provider。
+4. `PlanningService` 与 Personal Trip Orchestrator 继续将相同的 adapter 放入 `HotelSearchExecutionContext`；移除未被生产路径使用的 `PlanningDependencies.hotelProvider` / factory fallback，或仅保留为测试注入且不能绕过上述校验。
+
+**阶段验收：** task 在 `HOTEL_PROVIDER=nuitee` 下接受后，把运行环境切为 SerpApi，仍只调用 Nuitee mock；反向场景同理。未配置/NULL binding 只产生 `NOT_CONFIGURED` gap，绝不尝试 SerpApi，也不写入伪造 provider 名。
+
+### 阶段 B — 将国籍授权绑定到 task，并在持久化边界复核
+
+1. task 接受事务中，当绑定 `nuitee_connect` 时查找发起成员当前有效的 provider-only quote authorization，并将非敏感的 `authorization_id`、`authorization_version` 写入 `agent_task_runs`（或独立 run-to-authorization relation）。缺失则拒绝接受 hotel capability，返回 `422/SEARCH_CONSTRAINTS_INCOMPLETE`，不创建可执行 hotel slot。
+2. skill 只按该 pointer 加载并解密授权；必须校验 trip、member、provider、field、status、expiry、id 与 version 全部匹配。禁止“取最新 ACTIVE 授权”替代绑定值。
+3. 在写入 `provider_search_runs`/offers 前、与最终 run 状态更新同一事务内再次校验授权仍有效。授权撤回/变化应同时取消或使相关运行 `STALE`，防止 in-flight supplier 响应在撤回后落库。
+4. SerpApi task 不读、不写、不要求此授权；它继续按单房能力校验。
+
+**阶段验收：** Nuitee 授权缺失时不接受或不调用供应商；变更/撤回发生在请求前、请求中、结果持久化前均不能留下可选 hotel evidence。国籍明文不出现在 task、snapshot、DTO、audit、日志、trace、metric 或 fixture。
+
+### 阶段 C — 替换不稳定的本地加密实现
+
+1. 删除“进程随机 key”与把 `NUITEE_NATIONALITY_KMS_KEY_ID` 当作对称密钥素材的实现。生产与 sandbox 均使用 AWS KMS `Encrypt`/`Decrypt`，密钥 ARN/alias 仅作为 KMS key identifier，不作为密码。
+2. 增加 `QuoteNationalityCipher` 接口，生产实现通过 AWS SDK KMS；测试使用内存 fake。KMS encryption context 只使用固定 purpose 和安全的内部关联值，不含国籍、日志值或可公开的用户资料。
+3. 无 KMS 配置、权限拒绝、解密失败或 ciphertext 格式非法时，grant endpoint 返回安全配置错误且拒绝写入；search 返回 `SEARCH_CONSTRAINTS_INCOMPLETE`/`UNAVAILABLE`，绝不降级到明文或随机 key。
+4. 更新 `.env.example`、IAM 最小权限、部署 runbook 与 key rotation/re-encryption 迁移步骤。历史随机-key ciphertext 不能被安全恢复，须逐条 revoke 并要求用户重新确认，不能迁移猜测。
+
+**阶段验收：** 跨进程重启后可用 KMS 解密同一授权；无权限、错误 key、篡改 ciphertext 均 fail closed；数据库、日志、trace 与审计中不存在国籍明文。
+
+### 阶段 D — 修正缓存隔离与证据一致性
+
+1. Nuitee cache fingerprint 加入 task-bound `authorization_id + authorization_version`；它们不是国籍明文，也不允许写入 metric labels。这样不同授权、授权变更和不同成员永不共享 Nuitee rate cache。
+2. `provider_search_runs`、cache、offer、plan validator 全部检查一致的 real provider name；`unconfigured` 永不得进入持久化 enum 或 evidence。
+3. 现有不含 authorization 维度的 Nuitee cache rows 以 fingerprint schema version 失效；不做跨版本读取。SerpApi cache key 保持兼容。
+
+**阶段验收：** 同一日期/目的地/入住配置但不同 Nuitee authorization 必须 cache miss；相同 authorization 可按现有 TTL 命中；两家 provider 永不互命中，且不可用结果保持 30 秒负缓存。
+
+### 阶段 E — 端到端验证与灰度
+
+按顺序新增：factory/task repository unit tests、skill handler binding tests、authorization service race tests、Nuitee adapter contract tests、planning Worker E2E tests、fresh-database migration test。E2E 必须覆盖环境切换、授权缺失/撤回/替换、Nuitee 2001/401/429/5xx/schema drift、multi-room Nuitee、单房 SerpApi、cache fingerprint 与泄露扫描。
+
+发布顺序：先在 sandbox 使用 `HOTEL_PROVIDER=serpapi` 完成回归；随后以内部测试 trip 启用 Nuitee 并观测请求、失败、延迟、授权拒绝与 cache 指标；通过后才把新 task 默认设为 `nuitee`。回滚仅切换新 task 的 `HOTEL_PROVIDER=serpapi|disabled`；已接受 run 继续使用原 binding 或安全失败，绝不改写其 provider。
 
 ## 1. 已确认的实施决策
 

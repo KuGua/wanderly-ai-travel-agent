@@ -50,9 +50,10 @@ describe("logger redaction", () => {
 
   it("restricts the optional local diagnostic file to a Git-ignored runtime filename", () => {
     expect(resolveLocalDebugLogPath("agent-runtime.ndjson")).toMatch(/[\\/]runtime[\\/]agent-runtime\.ndjson$/);
-    expect(() => resolveLocalDebugLogPath("../secrets.ndjson")).toThrow("simple .ndjson filename");
-    expect(() => resolveLocalDebugLogPath("C:\\temp\\events.ndjson")).toThrow("simple .ndjson filename");
-    expect(() => resolveLocalDebugLogPath("events.log")).toThrow("simple .ndjson filename");
+    expect(resolveLocalDebugLogPath("auto")).toMatch(/[\\/]runtime[\\/]api-runtime\.ndjson$/);
+    expect(() => resolveLocalDebugLogPath("../secrets.ndjson")).toThrow('"auto" or a simple .ndjson filename');
+    expect(() => resolveLocalDebugLogPath("C:\\temp\\events.ndjson")).toThrow('"auto" or a simple .ndjson filename');
+    expect(() => resolveLocalDebugLogPath("events.log")).toThrow('"auto" or a simple .ndjson filename');
   });
 });
 

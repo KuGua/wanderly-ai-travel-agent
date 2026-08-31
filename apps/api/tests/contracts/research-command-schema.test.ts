@@ -193,8 +193,64 @@ describe("research command contract", () => {
         requestedCapabilities: ["activities", "places"],
         destinationCandidates: ["Tokyo"],
       },
+      readiness: "READY",
+      missing: [],
+      schemaVersion: 1,
+      classifierVersion: "research-intent/v1",
     });
     expect(parsed.intent.kind).toBe("PROPOSE_PLAN");
+    expect(parsed.readiness).toBe("READY");
+    expect(parsed.classifierVersion).toBe("research-intent/v1");
+  });
+
+  it("accepts a research.intent_extracted event with NEEDS_PLACE_SELECTION", () => {
+    const parsed = researchIntentExtractedEventSchema.parse({
+      runId: "00000000-0000-0000-0000-000000000000",
+      generationAttempt: 0,
+      event: "research.intent_extracted",
+      intent: {
+        kind: "RESEARCH_ONLY",
+        requestedCapabilities: ["navigation"],
+      },
+      readiness: "NEEDS_PLACE_SELECTION",
+      missing: ["ROUTE_ENDPOINTS_UNCONFIRMED"],
+      schemaVersion: 1,
+      classifierVersion: "research-intent/v1",
+    });
+    expect(parsed.readiness).toBe("NEEDS_PLACE_SELECTION");
+    expect(parsed.missing).toEqual(["ROUTE_ENDPOINTS_UNCONFIRMED"]);
+  });
+
+  it("rejects a research.intent_extracted event with unknown readiness", () => {
+    expect(() => researchIntentExtractedEventSchema.parse({
+      runId: "00000000-0000-0000-0000-000000000000",
+      generationAttempt: 0,
+      event: "research.intent_extracted",
+      intent: {
+        kind: "RESEARCH_ONLY",
+        requestedCapabilities: ["hotel"],
+      },
+      readiness: "ALMOST_READY",
+      missing: [],
+      schemaVersion: 1,
+      classifierVersion: "research-intent/v1",
+    })).toThrow();
+  });
+
+  it("rejects a research.intent_extracted event when classifierVersion is empty", () => {
+    expect(() => researchIntentExtractedEventSchema.parse({
+      runId: "00000000-0000-0000-0000-000000000000",
+      generationAttempt: 0,
+      event: "research.intent_extracted",
+      intent: {
+        kind: "RESEARCH_ONLY",
+        requestedCapabilities: ["hotel"],
+      },
+      readiness: "READY",
+      missing: [],
+      schemaVersion: 1,
+      classifierVersion: "",
+    })).toThrow();
   });
 
   it("rejects a research.intent_extracted event when intent leaks authority fields", () => {

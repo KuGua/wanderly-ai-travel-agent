@@ -2,20 +2,54 @@ import type { ConversationPlace } from "../types/schemas.js";
 import type { ConversationReply } from "../providers/model-gateway.js";
 import { getLocationReferenceSource } from "../location-reference/location-reference-source.js";
 
-const PRICE_TERMS = ["price", "prices", "cost", "costs", "fare", "fares", "rate", "rates"];
-const LIVE_TERMS = ["current", "currently", "live", "real time", "today", "tonight", "now", "latest", "up to date"];
+const PRICE_TERMS = [
+  "price", "prices", "cost", "costs", "fare", "fares", "rate", "rates",
+  // Chinese equivalents — captured by the input/output gate when a user asks
+  // directly for current price/fare facts. The classifier recognizes the
+  // research-request shape ("查酒店") and bypasses this gate for that path;
+  // these terms fire only on non-classified chat turns.
+  "价格", "票价", "多少钱", "几钱", "价位",
+];
+const LIVE_TERMS = [
+  "current", "currently", "live", "real time", "today", "tonight", "now", "latest", "up to date",
+  // Chinese: live data, schedule, on-time status.
+  "现在", "今天", "今晚", "实时", "最新", "此时此刻", "班次", "时刻表",
+];
 const TRAVEL_INVENTORY_TERMS = [
   "flight", "flights", "hotel", "hotels", "room", "rooms", "seat", "seats",
   "ticket", "tickets", "stay", "stays", "inventory",
+  // Chinese: travel-inventory objects whose current state is a provider fact.
+  "航班", "班机", "酒店", "房", "座位", "票", "住宿", "客栈",
 ];
 const AVAILABILITY_TERMS = [
   "availability", "available", "unavailable", "sold out", "vacancy", "vacancies", "vacant", "left",
+  // Chinese: remaining-inventory phrases.
+  "有空", "没空", "满了", "售罄", "剩余", "可订", "有房",
+];
+const SCHEDULE_TERMS = [
+  "几点的", "几时", "什么时候", "几点", "几点钟",
 ];
 const BOOKING_STATUS_TERMS = [
   "availability", "available", "status", "confirmed", "confirmation", "pending", "cancelled", "canceled",
+  // Chinese: booking-status verbs.
+  "已订", "已确认", "待确认", "取消", "退订", "改签",
 ];
 const FLIGHT_STATUS_TERMS = [
   "status", "delayed", "delay", "late", "cancelled", "canceled", "on time", "departure gate", "arrival gate",
+  // Chinese: flight on-time / disruption terms.
+  "准点", "晚点", "延误", "起飞", "到达", "登机口", "取消",
+];
+// Visa / entry / passport — a closed set that has no provider path. Both
+// English and Chinese forms must be intercepted on the input and output sides.
+const VISA_TERMS = [
+  "visa", "visas",
+  "签证", "护照", "入境", "免签", "落地签",
+];
+const ENTRY_RULE_TERMS = [
+  "rule", "rules", "require", "requires", "required", "requirement", "requirements",
+  "need", "needs", "eligible", "eligibility", "valid", "allowed", "without",
+  // Chinese: requirement / eligibility phrasing.
+  "需要", "要求", "必须", "能不能", "可以", "允许", "资格",
 ];
 
 export async function resolveConversationPlace(place: ConversationPlace | undefined): Promise<ConversationPlace | undefined> {
@@ -49,32 +83,40 @@ export async function resolveConversationPlace(place: ConversationPlace | undefi
 export function requestsUnsupportedOperationalFacts(question: string): boolean {
   const text = normalizePolicyText(question);
 
-  if (hasAnyTerm(text, ["visa", "visas"])) return true;
+  if (hasAnyTerm(text, VISA_TERMS)) return true;
   if (
     hasAnyTerm(text, ["entry", "enter", "immigration", "passport"])
-    && hasAnyTerm(text, [
-      "rule", "rules", "require", "requires", "required", "requirement", "requirements",
-      "need", "needs", "eligible", "eligibility", "valid", "allowed", "without",
-    ])
+    && hasAnyTerm(text, ENTRY_RULE_TERMS)
   ) return true;
 
   if (
     hasAnyTerm(text, PRICE_TERMS)
-    && (hasAnyTerm(text, [...LIVE_TERMS, ...TRAVEL_INVENTORY_TERMS]) || hasTerm(text, "how much"))
+    && (hasAnyTerm(text, [...LIVE_TERMS, ...TRAVEL_INVENTORY_TERMS]) || hasTerm(text, "how much") || hasTerm(text, "多少钱"))
   ) return true;
   if (hasTerm(text, "how much") && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
   if (hasTerm(text, "exchange rate") && hasAnyTerm(text, LIVE_TERMS)) return true;
 
   if (hasAnyTerm(text, AVAILABILITY_TERMS) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
   if (hasAnyTerm(text, ["are there", "is there"]) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
+  if (hasAnyTerm(text, ["还有", "有空", "有房"]) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
+  // Live-data schedule questions ("今天航班几点的", "今晚酒店几点开门") are
+  // operational facts and must be refused even without a price/booking verb.
+  if (hasAnyTerm(text, LIVE_TERMS) && hasAnyTerm(text, SCHEDULE_TERMS)) return true;
 
   if (
-    hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations"])
+    hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations", "预订", "订"])
     && hasAnyTerm(text, BOOKING_STATUS_TERMS)
   ) return true;
   if (
-    hasAnyTerm(text, ["book", "booking", "bookings", "reserve", "reservation", "reservations"])
-    && hasAnyTerm(text, [...TRAVEL_INVENTORY_TERMS, "this", "it", "now"])
+    hasAnyTerm(text, ["book", "booking", "bookings", "reserve", "reservation", "reservations", "订", "预订"])
+    && hasAnyTerm(text, [...TRAVEL_INVENTORY_TERMS, "this", "it", "now", "现在", "今天"])
+  ) return true;
+  // Chinese booking-status questions ("已确认机票") need their own rule
+  // because the booking-verb + status-term gate does not fire when only
+  // the status word is present.
+  if (
+    hasAnyTerm(text, ["已确认", "已订", "待确认", "退订", "改签"])
+    && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)
   ) return true;
 
   return hasFlightReference(text) && hasAnyTerm(text, FLIGHT_STATUS_TERMS);
@@ -85,12 +127,13 @@ export function containsUnsupportedOperationalClaim(content: string): boolean {
 
   // Chat has no authoritative visa provider path. Conservatively reject every
   // MODEL response that introduces visa facts, including unfamiliar phrasing.
-  if (hasAnyTerm(text, ["visa", "visas"])) return true;
+  if (hasAnyTerm(text, VISA_TERMS)) return true;
   if (
     hasAnyTerm(text, ["entry", "enter", "immigration", "passport"])
     && hasAnyTerm(text, [
       "require", "requires", "required", "requirement", "requirements", "need", "needs", "must",
       "eligible", "eligibility", "ineligible", "allowed", "not allowed", "valid", "invalid", "without",
+      "需要", "要求", "必须", "资格",
     ])
   ) return true;
 
@@ -102,7 +145,7 @@ export function containsUnsupportedOperationalClaim(content: string): boolean {
 
   if (hasAnyTerm(text, AVAILABILITY_TERMS) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
   if (
-    hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations"])
+    hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations", "已订", "已确认", "待确认", "取消"])
     && hasAnyTerm(text, BOOKING_STATUS_TERMS)
   ) return true;
 
@@ -133,6 +176,11 @@ export function safeConversationFallback(): ConversationReply {
 }
 
 function normalizePolicyText(value: string): string {
+  // NFKC collapses variant kanji + half-width digits into canonical form.
+  // Chinese / Japanese terms are matched by substring (see `hasTerm`) so we
+  // intentionally do NOT insert artificial spaces between CJK characters —
+  // doing so would fragment multi-character terms like "签证" into
+  // "签 证" and break detection.
   return value.normalize("NFKC")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}$€£¥]+/gu, " ")
@@ -141,6 +189,13 @@ function normalizePolicyText(value: string): string {
 }
 
 function hasTerm(text: string, term: string): boolean {
+  // Chinese (CJK) terms use substring matching because Chinese has no
+  // inter-word spaces; the term "签证" must match "我需要签证" even though
+  // there's no space around it. English / Latin terms keep the
+  // space-bounded semantics so "visa" does not match "television".
+  if (/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(term)) {
+    return text.includes(term);
+  }
   return ` ${text} `.includes(` ${term} `);
 }
 
@@ -157,6 +212,6 @@ function hasNumericValue(text: string): boolean {
 }
 
 function hasFlightReference(text: string): boolean {
-  return hasAnyTerm(text, ["flight", "flights"])
+  return hasAnyTerm(text, ["flight", "flights", "航班", "班机"])
     || /\b[a-z]{2,3}\s?\d{1,4}\b/i.test(text);
 }

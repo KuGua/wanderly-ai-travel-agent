@@ -97,6 +97,8 @@ describe("HttpTravelApi private conversation", () => {
       errorCode: null,
       assistantMessageId: null,
       resultPlanId: null,
+      researchIntentDraft: null,
+      researchIntentState: null,
     };
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {

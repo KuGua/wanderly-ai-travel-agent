@@ -27,7 +27,15 @@ ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'HOTEL_PROVIDER_SWITCH_BLOCKED';
 -- metrics allow-list update.
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'hotel_provider') THEN
+  -- Type names are schema-scoped. A leftover test-schema type must not make
+  -- this migration skip the type required by the target schema.
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_type AS type
+    INNER JOIN pg_namespace AS namespace ON namespace.oid = type.typnamespace
+    WHERE type.typname = 'hotel_provider'
+      AND namespace.nspname = current_schema()
+  ) THEN
     CREATE TYPE hotel_provider AS ENUM ('nuitee_connect', 'serpapi_google_hotels');
   END IF;
 END

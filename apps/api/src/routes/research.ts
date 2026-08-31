@@ -1,10 +1,13 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 
 import { db } from "../db/database.js";
 import {
   planningResearchResults,
+  agentTaskRuns,
+  researchRouteSelections,
+  tripPlaces,
   sharedTrips,
   tripMembers,
   tripSearchPreferences,
@@ -13,7 +16,7 @@ import {
 import { ApiError } from "../middleware/error-handler.js";
 import { createConstraintSnapshot } from "../services/planning-service.js";
 import { requireResearchEligible } from "../services/trip-status-guard.js";
-import { acceptResearchTask, findResearchTaskByRequestId } from "../tasks/task-repository.js";
+import { acceptResearchTask, findResearchTaskByRequestId, transitionResearchIntentState } from "../tasks/task-repository.js";
 import { publishAgentStreamEvent } from "../tasks/task-stream-publisher.js";
 import {
   errorResponseSchema,
@@ -75,6 +78,44 @@ export async function researchRoutes(app: FastifyInstance): Promise<void> {
       const existing = await findResearchTaskByRequestId({ tripId, requestId: body.requestId, tx });
       if (existing) return { accepted: existing, created: false };
 
+      // A classifier-derived command may be accepted exactly once. Locking the
+      // source row serializes two distinct request IDs racing to confirm the
+      // same proposal; the transition below is in this transaction with task
+      // creation so failures leave the draft actionable.
+      if (body.originatingIntentRunId) {
+        const [intentRun] = await tx.select().from(agentTaskRuns)
+          .where(eq(agentTaskRuns.id, body.originatingIntentRunId)).for("update").limit(1);
+        if (!intentRun
+          || intentRun.operation !== "CONVERSATION"
+          || intentRun.tripId !== tripId
+          || intentRun.createdByUserId !== request.user.id
+          || intentRun.researchIntentState !== "PROPOSED"
+          || !intentRun.researchIntentDraft) {
+          throw new ApiError(409, "Conflict", "Research intent is no longer available for confirmation");
+        }
+        const draft = intentRun.researchIntentDraft;
+        if (draft.kind !== body.outputMode
+          || draft.requestedCapabilities.length !== body.requestedCapabilities.length
+          || draft.requestedCapabilities.some((capability) => !body.requestedCapabilities.includes(capability))) {
+          throw new ApiError(422, "Unprocessable Entity", "Research command does not match the proposed intent");
+        }
+        if (draft.requestedCapabilities.some((capability: string) => capability === "navigation" || capability === "mobility")) {
+          const [selection] = await tx.select().from(researchRouteSelections).where(and(
+            eq(researchRouteSelections.intentRunId, intentRun.id),
+            eq(researchRouteSelections.tripId, tripId),
+            eq(researchRouteSelections.ownerUserId, request.user.id),
+          )).limit(1);
+          if (!selection) throw new ApiError(422, "Unprocessable Entity", "RESEARCH_CAPABILITY_GAP: route endpoints and mode must be selected");
+          const places = await tx.select({ id: tripPlaces.id }).from(tripPlaces).where(and(
+            eq(tripPlaces.tripId, tripId),
+            eq(tripPlaces.status, "ACTIVE"),
+            ne(tripPlaces.visibility, "OWNER_PRIVATE"),
+            inArray(tripPlaces.id, [selection.originPlaceId, selection.destinationPlaceId]),
+          ));
+          if (places.length !== 2) throw new ApiError(422, "Unprocessable Entity", "RESEARCH_CAPABILITY_GAP: selected route endpoints are no longer active");
+        }
+      }
+
       await requireResearchEligible(tripId, request.user.id, trip.destinationCandidates, tx);
       if (trip.departureCities.length === 0 || !trip.travelDateStart || !trip.travelDateEnd) {
         throw new ApiError(422, "Unprocessable Entity", "RESEARCH_CAPABILITY_GAP: trip requires departure cities and travel dates");
@@ -124,6 +165,7 @@ export async function researchRoutes(app: FastifyInstance): Promise<void> {
         staySearchPreferencesVersion: latestStayPref?.version,
         outputMode: body.outputMode,
         requestedCapabilities: body.requestedCapabilities,
+        originatingIntentRunId: body.originatingIntentRunId,
         // Spec §3.1: bind the hotel provider at acceptance. `undefined` here
         // lets `acceptResearchTask` resolve `HOTEL_PROVIDER` itself when the
         // task uses the hotel capability; `null` when the capability is not
@@ -132,6 +174,17 @@ export async function researchRoutes(app: FastifyInstance): Promise<void> {
         requestId: body.requestId,
         tx,
       });
+      if (body.originatingIntentRunId) {
+        const transitioned = await transitionResearchIntentState({
+          runId: body.originatingIntentRunId,
+          fromState: "PROPOSED",
+          toState: "CONFIRMED",
+          tx,
+        });
+        if (!transitioned) {
+          throw new ApiError(409, "Conflict", "Research intent is no longer available for confirmation");
+        }
+      }
       return { accepted, created: true };
     });
 

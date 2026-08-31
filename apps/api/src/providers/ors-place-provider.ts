@@ -79,9 +79,10 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
       }
       const candidates: NormalizedPlaceCandidate[] = [];
       for (const feature of payload.features) {
-        const normalized = normalizeFeature(feature, params.category, capturedAt);
+        const normalized = normalizeFeature(
+          feature, params.category, capturedAt, params.destination.countryCode,
+        );
         if (!normalized) continue;
-        if (normalized.countryCode !== params.destination.countryCode) continue;
         candidates.push(normalized);
         if (candidates.length >= 5) break;
       }
@@ -147,18 +148,27 @@ function normalizeFeature(
   feature: OrsGeocodingResponse["features"][number],
   category: NormalizedPlaceCandidate["kind"],
   capturedAt: string,
+  countryCode: string,
 ): NormalizedPlaceCandidate | null {
   const props = feature.properties;
   const confidence = typeof props.confidence === "number" ? props.confidence : 0;
   const [longitude, latitude] = feature.geometry.coordinates;
   const displayName = props.name ?? `${latitude.toFixed(3)}, ${longitude.toFixed(3)}`;
-  const countryCode = (props.country_a ?? "").toUpperCase().slice(0, 2) || null;
   const cityName = props.locality ?? props.region_a ?? null;
   return {
     candidateId: randomUUID(),
     displayName,
     kind: category,
-    countryCode: countryCode && countryCode.length === 2 ? countryCode : null,
+    // The country comes from the request, which is authoritative: the search
+    // is filtered server-side by `boundary.country`, and ORS rejects a code it
+    // does not recognise rather than widening the search.
+    //
+    // It is deliberately not derived from the response. That field is alpha-3,
+    // and cutting it to two characters is not a conversion — CHN would read as
+    // CH (Switzerland), AUT as AU (Australia), PRT as PR (Puerto Rico). Every
+    // candidate in those countries was then discarded for failing to match the
+    // alpha-2 that was asked for.
+    countryCode,
     cityName,
     longitude,
     latitude,

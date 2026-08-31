@@ -22,7 +22,7 @@ export function readSerpApiHotelConfiguration(
   env: NodeJS.ProcessEnv = process.env,
 ): SerpApiHotelProviderOptions | null {
   if ((env.SERPAPI_HOTEL_ENABLED ?? "false").trim().toLowerCase() !== "true") return null;
-  const apiKey = env.SERPAPI_API_KEY?.trim();
+  const apiKey = env.SERPAPI_HOTEL_API_KEY?.trim();
   if (!apiKey) return null;
   return {
     apiKey,

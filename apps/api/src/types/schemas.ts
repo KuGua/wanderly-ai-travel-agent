@@ -422,6 +422,35 @@ export const agentRunResponseSchema = z.object({
   errorCode: agentRunErrorCodeSchema.nullable(),
   assistantMessageId: uuidSchema.nullable(),
   resultPlanId: uuidSchema.nullable(),
+  /**
+   * Personal Research Intent Routing — Phase 0/1.
+   * Owner-safe DTO for the persisted research-intent draft. Surfaced only
+   * when a CONVERSATION run carries a non-null draft (and only to the
+   * owning user). Plan/REPLAN/Research runs keep these null. Inline
+   * literals here (mirroring the canonical `personalResearch*Schema`
+   * declared below) because `agentRunResponseSchema` is referenced from
+   * callers above this section. See
+   * docs/personal-research-intent-routing-implementation.md §4.2.
+   */
+  researchIntentDraft: z.object({
+    kind: z.enum(["RESEARCH_ONLY", "PROPOSE_PLAN"]),
+    requestedCapabilities: z.array(z.enum([
+      "flight", "accommodation", "hotel", "activities", "places", "navigation", "mobility", "readiness",
+    ])).min(1),
+    readiness: z.enum(["READY", "NEEDS_SETUP", "NEEDS_PLACE_SELECTION"]),
+    missing: z.array(z.enum([
+      "TRIP_NOT_ACTIVE",
+      "DESTINATION_NOT_CONFIGURED",
+      "DATES_MISSING",
+      "FLIGHT_PREFERENCES_MISSING",
+      "STAY_PREFERENCES_MISSING",
+      "HOTEL_PROVIDER_NOT_APPROVED",
+      "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
+      "ROUTE_ENDPOINTS_UNCONFIRMED",
+      "MODE_NOT_CHOSEN",
+    ])),
+  }).strict().nullable(),
+  researchIntentState: z.enum(["PROPOSED", "DISMISSED", "CONFIRMED", "SUPERSEDED"]).nullable(),
 });
 
 const streamBaseSchema = z.object({
@@ -472,6 +501,54 @@ export const personalResearchIntentSchema = z.object({
 }).strict();
 
 /**
+ * Personal Research Intent Routing — Phase 0/1.
+ * Lifecycle of the persisted draft. SUPERSEDED is server-internal and is
+ * NEVER exposed via owner DTOs. Source:
+ * docs/personal-research-intent-routing-implementation.md §4.1.
+ */
+export const researchIntentStateSchema = z.enum([
+  "PROPOSED",
+  "DISMISSED",
+  "CONFIRMED",
+  "SUPERSEDED",
+]);
+
+/** Readiness outcome evaluated by `personal-research-readiness-service`. */
+export const researchReadinessSchema = z.enum([
+  "READY",
+  "NEEDS_SETUP",
+  "NEEDS_PLACE_SELECTION",
+]);
+
+/** Stable gap codes emitted in `missing[]`. Web renders via lookup table. */
+export const researchMissingCodeSchema = z.enum([
+  "TRIP_NOT_ACTIVE",
+  "DESTINATION_NOT_CONFIGURED",
+  "DATES_MISSING",
+  "FLIGHT_PREFERENCES_MISSING",
+  "STAY_PREFERENCES_MISSING",
+  "HOTEL_PROVIDER_NOT_APPROVED",
+  "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
+  "ROUTE_ENDPOINTS_UNCONFIRMED",
+  "MODE_NOT_CHOSEN",
+]);
+
+/**
+ * Persisted, non-executable research-intent draft. `.strict()` rejects every
+ * extra field — including coordinates, dates, party size, currency, provider,
+ * place IDs, identity, and the original question text. The MVP deliberately
+ * does NOT consume `destinationCandidates` (spec §4.1).
+ */
+export const persistedResearchIntentDraftSchema = z.object({
+  schemaVersion: z.literal(1),
+  kind: personalResearchKindSchema,
+  requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+  classifierVersion: z.string().min(1).max(64),
+  readiness: researchReadinessSchema,
+  missing: z.array(researchMissingCodeSchema),
+}).strict();
+
+/**
  * Closed-shape request for `POST /api/v1/trips/:tripId/research`.
  * `.strict()` rejects any extra field — including `snapshotId`, `provider`,
  * `latitude`, `longitude`, `placeId`, `dates`, `currency`, `toolCallId`,
@@ -482,6 +559,10 @@ export const researchCommandRequestSchema = z.object({
   requestId: uuidSchema,
   outputMode: personalResearchKindSchema,
   requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+  // Present only when an owner confirms a persisted Personal conversation
+  // draft. It binds acceptance to that exact PROPOSED run; it is never a
+  // substitute for the server-side ownership/readiness checks.
+  originatingIntentRunId: uuidSchema.optional(),
 }).strict();
 
 /** 202 envelope for an accepted research command. */
@@ -515,10 +596,31 @@ export const researchStageEventSchema = streamBaseSchema.extend({
   stage: researchStageSchema,
 }).strict();
 
-/** `research.intent_extracted` SSE event — carries the model-extracted research draft. */
+/**
+ * `research.intent_extracted` SSE event — carries the classifier-extracted
+ * research draft. The intent field is the closed-shape
+ * `personalResearchIntent`; `readiness` + `missing` describe the server-side
+ * evaluation outcome. The event NEVER includes the question text, free-text
+ * place names, profile values, snapshot payloads, or provider raw responses.
+ * Source: docs/personal-research-intent-routing-implementation.md §4.2.
+ */
 export const researchIntentExtractedEventSchema = streamBaseSchema.extend({
   event: z.literal("research.intent_extracted"),
   intent: personalResearchIntentSchema,
+  readiness: researchReadinessSchema,
+  missing: z.array(researchMissingCodeSchema),
+  schemaVersion: z.literal(1),
+  classifierVersion: z.string().min(1).max(64),
+}).strict();
+
+/**
+ * `research.intent_dismissed` SSE event — emitted when the owner dismisses
+ * a PROPOSED draft via `POST /agent-runs/:runId/dismiss-intent`. Carries no
+ * draft content (the draft is preserved in DB but hidden from owner DTOs).
+ */
+export const researchIntentDismissedEventSchema = streamBaseSchema.extend({
+  event: z.literal("research.intent_dismissed"),
+  dismissedAt: z.string().datetime(),
 }).strict();
 
 /**
@@ -580,6 +682,7 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
   }).strict(),
   researchStageEventSchema,
   researchIntentExtractedEventSchema,
+  researchIntentDismissedEventSchema,
 ]);
 
 // ─── Booking ────────────────────────────────────────────────────────────────

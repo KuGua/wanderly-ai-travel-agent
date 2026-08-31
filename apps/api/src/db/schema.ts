@@ -1,6 +1,43 @@
 import { sql } from "drizzle-orm";
 import { pgTable, uuid, varchar, text, timestamp, date, jsonb, boolean, integer, bigint, doublePrecision, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
 
+// ─── Inline structural types ─────────────────────────────────────────────────
+// These mirror the Zod schemas in src/types/schemas.ts so the Drizzle column
+// typing stays self-contained (no upstream cycle). Parity is locked by
+// schema tests under tests/contracts/.
+
+export type ResearchIntentCapability =
+  | "flight"
+  | "accommodation"
+  | "hotel"
+  | "activities"
+  | "places"
+  | "navigation"
+  | "mobility"
+  | "readiness";
+
+export type ResearchIntentMissingCode =
+  | "TRIP_NOT_ACTIVE"
+  | "DESTINATION_NOT_CONFIGURED"
+  | "DATES_MISSING"
+  | "FLIGHT_PREFERENCES_MISSING"
+  | "STAY_PREFERENCES_MISSING"
+  | "HOTEL_PROVIDER_NOT_APPROVED"
+  | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING"
+  | "ROUTE_ENDPOINTS_UNCONFIRMED"
+  | "MODE_NOT_CHOSEN";
+
+export type ResearchIntentReadiness = "READY" | "NEEDS_SETUP" | "NEEDS_PLACE_SELECTION";
+
+export interface ResearchIntentDraftShape {
+  schemaVersion: 1;
+  kind: "RESEARCH_ONLY" | "PROPOSE_PLAN";
+  requestedCapabilities: ResearchIntentCapability[];
+  classifierVersion: string;
+  readiness: ResearchIntentReadiness;
+  missing: ResearchIntentMissingCode[];
+}
+
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
 export const tripStatusEnum = pgEnum("trip_status", ["DRAFT", "PLANNING", "CONFIRMED", "BOOKED", "CANCELLED", "STALE"]);
@@ -26,6 +63,11 @@ export const outboxStatusEnum = pgEnum("outbox_status", [
 export const agentTaskOperationEnum = pgEnum("agent_task_operation", ["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]);
 export const agentTaskStatusEnum = pgEnum("agent_task_status", [
   "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELLED", "STALE",
+]);
+// Lifecycle of the persisted research-intent draft on a CONVERSATION run.
+// The draft is never authoritative — see docs/personal-research-intent-routing-implementation.md §4.1, §7 Phase 0.
+export const researchIntentStateEnum = pgEnum("research_intent_state", [
+  "PROPOSED", "DISMISSED", "CONFIRMED", "SUPERSEDED",
 ]);
 export const auditActionEnum = pgEnum("audit_action", [
   "PROFILE_CREATE", "PROFILE_UPDATE", "PROFILE_DELETE",
@@ -664,6 +706,10 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
    * never mutates an in-flight task's source. Spec §3.1.
    */
   hotelProvider: hotelProviderEnum("hotel_provider"),
+  /** Non-sensitive pointer to the exact Nuitee nationality grant used by this task. */
+  hotelQuoteNationalityAuthorizationId: uuid("hotel_quote_nationality_authorization_id")
+    .references(() => staySearchProviderAuthorizations.id),
+  hotelQuoteNationalityAuthorizationVersion: integer("hotel_quote_nationality_authorization_version"),
   requestId: uuid("request_id").notNull(),
   userMessageId: uuid("user_message_id").references(() => chatMessages.id, { onDelete: "cascade" }),
   assistantMessageId: uuid("assistant_message_id").references(() => chatMessages.id, { onDelete: "set null" }),
@@ -690,6 +736,23 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   placeLongitude: doublePrecision("place_longitude"),
   placeSourceType: varchar("place_source_type", { length: 16 }),
   intent: text("intent"),
+  /**
+   * Personal Research Intent Routing — Phase 0/1.
+   * Non-executable persisted draft (kind + capabilities + readiness gaps only).
+   * Validation: Zod `persistedResearchIntentDraftSchema`. Never carries
+   * coordinates, dates, party size, currency, provider, place IDs, identity,
+   * or the original question text. Scope CHECK and pair CHECK are defined
+   * in migration `0040_personal_research_intent_draft.sql`.
+   * The shape is kept as an inline structural type to match the
+   * `traceContext` pattern — the Zod parser is the source of truth at the
+   * service boundary and round-trip parity is covered by schema tests.
+   * See docs/personal-research-intent-routing-implementation.md §4.1.
+   */
+  researchIntentDraft: jsonb("research_intent_draft").$type<ResearchIntentDraftShape | null>(),
+  researchIntentState: researchIntentStateEnum("research_intent_state"),
+  // Bound only on a RESEARCH run created from a confirmed Personal intent.
+  // This is the durable link used to load the owner's explicit route choice.
+  originatingIntentRunId: uuid("originating_intent_run_id"),
   generationAttempt: integer("generation_attempt").default(0).notNull(),
   attemptCount: integer("attempt_count").default(0).notNull(),
   maxAttempts: integer("max_attempts").default(3).notNull(),
@@ -735,6 +798,11 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
     .on(table.tripId).where(sql`${table.tripId} IS NOT NULL AND ${table.status} IN ('QUEUED', 'RUNNING', 'CANCEL_REQUESTED') AND operation IN ('PLAN', 'REPLAN', 'RESEARCH')`),
   createdByIdx: index("agent_task_runs_created_by_idx").on(table.createdByUserId),
   claimIdx: index("agent_task_runs_claim_idx").on(table.status, table.nextAttemptAt, table.leaseExpiresAt, table.createdAt),
+  // Index for the supersede-on-new-draft helper. Most threads carry at most
+  // one PROPOSED draft at a time, so the index stays small and the lookup
+  // inside the draft-insert transaction is O(1).
+  threadDraftProposedIdx: index("agent_task_runs_thread_draft_proposed_idx")
+    .on(table.threadId).where(sql`${table.researchIntentState} = 'PROPOSED' AND ${table.threadId} IS NOT NULL`),
 }));
 
 // ─── Agent Runs (LLM gateway observability) ─────────────────────────────────
@@ -932,6 +1000,20 @@ export const tripPlaces = pgTable("trip_places", {
   tripVisibilityIdx: index("trip_places_trip_visibility_idx").on(table.tripId, table.visibility),
   runIdx: index("trip_places_run_idx").on(table.createdFromRunId)
     .where(sql`created_from_run_id IS NOT NULL`),
+}));
+
+/** Explicit owner selection for one navigation/mobility intent draft. */
+export const researchRouteSelections = pgTable("research_route_selections", {
+  intentRunId: uuid("intent_run_id").primaryKey().references(() => agentTaskRuns.id, { onDelete: "cascade" }),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  originPlaceId: uuid("origin_place_id").references(() => tripPlaces.id, { onDelete: "restrict" }).notNull(),
+  destinationPlaceId: uuid("destination_place_id").references(() => tripPlaces.id, { onDelete: "restrict" }).notNull(),
+  mode: navigationRouteModeEnum("mode").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tripOwnerIdx: index("research_route_selections_trip_owner_idx").on(table.tripId, table.ownerUserId),
 }));
 
 export const navigationRouteEvidence = pgTable("navigation_route_evidence", {

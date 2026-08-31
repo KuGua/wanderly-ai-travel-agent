@@ -274,6 +274,33 @@ export class HttpTravelApi implements TravelApi {
     );
   }
 
+  async dismissResearchIntent(runId: string): Promise<void> {
+    // The server returns 204 No Content; we ignore the empty body and
+    // resolve with `void`. The mutation hook observes TanStack's
+    // `onSuccess` so a successful dismiss invalidates the run query.
+    await this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/dismiss-intent",
+      z.unknown(),
+      { method: "POST" },
+    );
+  }
+
+  async getRouteEndpoints(tripId: string): Promise<Array<{ placeId: string; displayName: string }>> {
+    const response = await this.client.request(
+      "/trips/" + encodeURIComponent(tripId) + "/route-endpoints",
+      z.object({ endpoints: z.array(z.object({ placeId: z.string().uuid(), displayName: z.string() }).strict()) }).strict(),
+    ) as { endpoints: Array<{ placeId: string; displayName: string }> };
+    return response.endpoints;
+  }
+
+  async saveRouteSelection(runId: string, input: { originPlaceId: string; destinationPlaceId: string; mode: "WALK" | "DRIVE" | "CYCLE" }): Promise<void> {
+    await this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/route-selection",
+      z.unknown(),
+      { method: "PUT", body: JSON.stringify(input) },
+    );
+  }
+
   subscribeAgentRun(
     runId: string,
     signal: AbortSignal,

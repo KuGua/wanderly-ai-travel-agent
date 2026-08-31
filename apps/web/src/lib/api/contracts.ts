@@ -226,6 +226,32 @@ export const agentRunResponseSchema = z.object({
   errorCode: agentRunErrorCodeSchema.nullable(),
   assistantMessageId: z.string().uuid().nullable(),
   resultPlanId: z.string().uuid().nullable(),
+  /**
+   * Personal Research Intent Routing — Phase 0/1.
+   * Owner-safe DTO for the persisted research-intent draft. Only present
+   * when a CONVERSATION run carries a non-null draft. Mirrors the server
+   * contract; see docs/personal-research-intent-routing-implementation.md §4.2.
+   * Inline literals (matching the canonical schemas declared below in §6).
+   */
+  researchIntentDraft: z.object({
+    kind: z.enum(["RESEARCH_ONLY", "PROPOSE_PLAN"]),
+    requestedCapabilities: z.array(z.enum([
+      "flight", "accommodation", "hotel", "activities", "places", "navigation", "mobility", "readiness",
+    ])).min(1),
+    readiness: z.enum(["READY", "NEEDS_SETUP", "NEEDS_PLACE_SELECTION"]),
+    missing: z.array(z.enum([
+      "TRIP_NOT_ACTIVE",
+      "DESTINATION_NOT_CONFIGURED",
+      "DATES_MISSING",
+      "FLIGHT_PREFERENCES_MISSING",
+      "STAY_PREFERENCES_MISSING",
+      "HOTEL_PROVIDER_NOT_APPROVED",
+      "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
+      "ROUTE_ENDPOINTS_UNCONFIRMED",
+      "MODE_NOT_CHOSEN",
+    ])),
+  }).strict().nullable(),
+  researchIntentState: z.enum(["PROPOSED", "DISMISSED", "CONFIRMED", "SUPERSEDED"]).nullable(),
 });
 
 export const tripSearchPreferencesInputSchema = z.object({
@@ -309,8 +335,9 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
   }).strict(),
   // Phase 6 / Personal Trip Orchestrator — research-specific SSE events.
   // Personal research schemas are defined below the discriminated union, so
-  // we re-declare lightweight inline shapes for these two SSE members
-  // (kept in sync with the canonical schemas in §6 of this file).
+  // we re-declare lightweight inline shapes for these SSE members (kept in
+  // sync with the canonical server schemas in apps/api/src/types/schemas.ts
+  // and the canonical client schemas declared below in §6 of this file).
   streamBaseSchema.extend({
     event: z.literal("research.intent_extracted"),
     intent: z.object({
@@ -320,6 +347,24 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
       ])).min(1),
       destinationCandidates: z.array(z.string().min(1).max(64)).min(1).max(5).optional(),
     }).strict(),
+    readiness: z.enum(["READY", "NEEDS_SETUP", "NEEDS_PLACE_SELECTION"]),
+    missing: z.array(z.enum([
+      "TRIP_NOT_ACTIVE",
+      "DESTINATION_NOT_CONFIGURED",
+      "DATES_MISSING",
+      "FLIGHT_PREFERENCES_MISSING",
+      "STAY_PREFERENCES_MISSING",
+      "HOTEL_PROVIDER_NOT_APPROVED",
+      "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
+      "ROUTE_ENDPOINTS_UNCONFIRMED",
+      "MODE_NOT_CHOSEN",
+    ])),
+    schemaVersion: z.literal(1),
+    classifierVersion: z.string().min(1).max(64),
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("research.intent_dismissed"),
+    dismissedAt: z.string().datetime(),
   }).strict(),
   streamBaseSchema.extend({
     event: z.literal("research.stage"),
@@ -937,6 +982,7 @@ export const researchCommandRequestSchema = z.object({
   requestId: z.string().uuid(),
   outputMode: personalResearchKindSchema,
   requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
+  originatingIntentRunId: z.string().uuid().optional(),
 }).strict();
 export type ResearchCommandRequest = z.infer<typeof researchCommandRequestSchema>;
 

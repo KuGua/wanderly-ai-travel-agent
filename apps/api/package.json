@@ -18,6 +18,10 @@
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "logs:tail": "tail -F runtime/api-runtime.ndjson runtime/worker-runtime.ndjson",
+    "observability:up": "docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d tempo grafana",
+    "observability:stop": "docker compose -f docker-compose.yml -f docker-compose.observability.yml stop grafana tempo",
+    "observability:status": "docker compose -f docker-compose.yml -f docker-compose.observability.yml ps tempo grafana",
     "env:init": "node -e \"const fs=require('fs');if(!fs.existsSync('.env')&&fs.existsSync('.env.example')){fs.copyFileSync('.env.example','.env');console.log('Created .env from .env.example');}else{console.log('.env already exists or .env.example missing');}\"",
     "postinstall": "node -e \"const fs=require('fs');if(!fs.existsSync('.env')&&fs.existsSync('.env.example')){fs.copyFileSync('.env.example','.env');console.log('Created .env from .env.example');}\"",
     "test": "vitest run",
@@ -28,6 +32,7 @@
     "docs:verify": "tsx scripts/verify-docs.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-kms": "^3.1121.0",
     "@aws-sdk/client-sesv2": "^3.1118.0",
     "@fastify/cors": "^11.0.1",
     "@fastify/swagger": "^9.5.0",

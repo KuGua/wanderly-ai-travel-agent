@@ -62,8 +62,17 @@ export const LOGGER_REDACTION = {
  */
 export function resolveLocalDebugLogPath(value = process.env.LOCAL_DEBUG_LOG_FILE): string | null {
   if (!value) return null;
+  if (value === "auto") {
+    const entrypoint = process.argv.slice(1).join("/").toLowerCase();
+    const fileName = entrypoint.includes("worker-main")
+      ? "worker-runtime.ndjson"
+      : entrypoint.includes("sidecar-main")
+        ? "location-reference-runtime.ndjson"
+        : "api-runtime.ndjson";
+    return path.join(process.cwd(), "runtime", fileName);
+  }
   if (path.isAbsolute(value) || value.includes("..") || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.ndjson$/.test(value)) {
-    throw new Error("LOCAL_DEBUG_LOG_FILE must be a simple .ndjson filename");
+    throw new Error('LOCAL_DEBUG_LOG_FILE must be "auto" or a simple .ndjson filename');
   }
   return path.join(process.cwd(), "runtime", value);
 }

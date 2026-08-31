@@ -25,6 +25,7 @@ import type {
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
 import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys, invitationKeys, personalOrchestrationKeys } from "./keys";
+import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 
 export function useMyProfile() {
   const api = useTravelApi();
@@ -553,6 +554,35 @@ export function useConfirmResearchCommand(tripId: string) {
       qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
       qc.invalidateQueries({ queryKey: tripKeys.researchResults(tripId) });
       void vars; // keep TS happy
+    },
+  });
+}
+
+/**
+ * Personal Research Intent — owner-driven dismissal of a PROPOSED draft.
+ *
+ * Phase 2: the mutation invokes the new
+ * `POST /api/v1/agent-runs/:runId/dismiss-intent` endpoint and on success
+ * invalidates the agent-run query so the SSE-derived card unmounts via
+ * the next poll. A `research.intent_dismissed` SSE event from the same
+ * run will arrive ahead of the poll when the connection is open, which
+ * unmounts immediately — the two paths converge on the same final state.
+ */
+export function useDismissResearchIntent(runId: string | null) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!runId) throw new Error("dismissResearchIntent requires a runId");
+      const fn = api.dismissResearchIntent;
+      if (!fn) throw new Error("dismissResearchIntent is not implemented by this transport");
+      return fn(runId);
+    },
+    onSuccess: () => {
+      if (runId) {
+        qc.invalidateQueries({ queryKey: ["agent-runs", runId] });
+      }
+      recordUiDiagnostic("research.intent_dismiss");
     },
   });
 }

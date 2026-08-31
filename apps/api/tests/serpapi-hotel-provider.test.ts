@@ -129,7 +129,7 @@ describe("readSerpApiHotelConfiguration", () => {
   it("is opt-in and fail-closed without a key", () => {
     expect(readSerpApiHotelConfiguration({})).toBeNull();
     expect(readSerpApiHotelConfiguration({ SERPAPI_HOTEL_ENABLED: "true" })).toBeNull();
-    expect(readSerpApiHotelConfiguration({ SERPAPI_HOTEL_ENABLED: "true", SERPAPI_API_KEY: "key" })).toMatchObject({
+    expect(readSerpApiHotelConfiguration({ SERPAPI_HOTEL_ENABLED: "true", SERPAPI_HOTEL_API_KEY: "key" })).toMatchObject({
       apiKey: "key", timeoutMs: 10_000, maxRetries: 1, maxDistanceKm: 75,
     });
   });

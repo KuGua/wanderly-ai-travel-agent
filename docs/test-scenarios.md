@@ -221,6 +221,36 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - Concurrent Workers cannot both commit a result: lease expiry/recovery may repeat an external model call, but final persistence is conditional on the current lease token and task state. A concurrent request ID cannot duplicate the USER message or create a second task.
 - Text, prompts, chunks and model payloads are absent from audit summaries, logs, traces and metric labels.
 
+### TS-H1f — Route private research intent through explicit owner confirmation
+
+**Stories:** H1, H3, P1, S1, S2
+**Objective:** Verify that a Personal Agent can classify a high-confidence Chinese or English research request into a non-executable, recoverable draft while retaining the private-chat, authorization, and provider-evidence boundaries.
+
+**Starting conditions:** Alice owns an active Solo Trip with destination, dates and confirmed search preferences. Hotel provider feature configuration and quote-nationality authorization can be toggled by test doubles. Alice has a Trip thread; Bob is a different active member with a separate private thread.
+
+**Steps:**
+
+1. Alice submits Chinese and English messages requesting a hotel search, a full itinerary, an activities/place search, a general accommodation-area recommendation, and a low-confidence ambiguous message.
+2. Observe the accepted conversation run, its SSE events, final assistant message, persisted safe draft and provider/audit records before Alice confirms any card.
+3. Disconnect the SSE observer, reload the chat, read the owner-safe agent-run DTO and dismiss the restored draft. Repeat with a fresh draft and owner confirmation.
+4. Repeat the hotel request for a `DRAFT` Trip, missing dates, missing stay preferences, disabled hotel provider, and missing Nuitee quote-nationality authorization.
+5. Submit “from Taoyuan Airport to Xiyuan Town how do I get there?” before two route endpoints are selected/adopted; then repeat after the owner has explicitly adopted two non-private ACTIVE TripPlaces and selected a mode.
+6. After draft generation but before confirmation, revoke a required authorization or change a search preference. Confirm the old card. Simulate provider timeout, no results and invalid provider output after a valid confirmation.
+7. Inspect task rows, snapshots, SSE, audit summaries, logs, traces, metrics and all Bob-visible responses.
+
+**Expected outcomes:**
+
+- Explicit hotel, planning and activity/place requests produce only a controlled `research.intent_extracted` draft with enum capabilities and readiness state. General qualitative advice and low-confidence messages remain ordinary conversation.
+- Before confirmation, no snapshot, `RESEARCH` task, Shared Skill, provider request, provider evidence or booking authority exists. The Personal Agent never directly calls a provider or Shared Skill.
+- A draft survives SSE disconnect and refresh through the owner-safe run DTO. Dismissal creates no research task; duplicate confirmation request IDs are idempotent and create at most one snapshot/task.
+- Missing Trip status, dates, preferences, provider approval or Nuitee authorization returns a stable readiness gap and a next-step UI state; the Trip workspace renders the corresponding setup card with each missing item rather than only a chat-text instruction. It never calls Nuitee or emits a fabricated hotel result.
+- An unconfirmed or ambiguous route request never calls `navigation.route` and never substitutes unrelated existing TripPlaces. Only two owner-adopted ACTIVE, non-private endpoints plus an explicit mode may reach confirmed navigation research.
+- Confirmation revalidates all current authority. A revoked authorization, changed preference, stale Trip or expired draft cannot reuse the previous classification-time state to start research.
+- Provider timeout, no results and schema failure produce `UNAVAILABLE`/`COMPLETED_WITH_GAPS` with safe source/status metadata and never a model-invented price, availability, schedule or route.
+- Draft JSON, audits, logs, traces, SSE and metric labels omit raw chat text, free-form route/place names, Profile/nationality values, provider URLs/raw payloads and high-cardinality identifiers. Bob cannot read Alice's draft or private conversation.
+
+Runnable coverage: add `apps/api/tests/services/personal-research-intent-classifier.test.ts`, extend `apps/api/tests/conversation-safety.test.ts` and `apps/api/tests/chat-conversation-e2e.test.ts`, extend `apps/api/tests/routes/research-command.test.ts`, and add Web coverage for `TravelAgentChat` draft recovery, Trip workspace setup-card rendering, plus `ResearchConfirmationCard` readiness/dismissal behavior.
+
 ### TS-H1d — Same-thread bounded LLM context survives re-entry
 
 **Stories:** H1, S1
@@ -1189,3 +1219,14 @@ that a grant/revoke invalidates dependent plans.
 - Planning completes; `summarizeProviderGaps` records `navigation: NOT_CONFIGURED` only when the LLM actually called `navigation.route` (the post-deprecation gate no longer emits a `navigation: NO_RESULTS` gap from an empty `ground[]`).
 - No `provider_offers` row is written with `category="ground"`.
 - `itinerary_plans.planData` JSON does NOT contain a top-level `ground` key.
+## TS-H1g — Personal research confirmation and route binding
+
+**Starting conditions:** An owner has a `PROPOSED` navigation intent in an active eligible trip and two active non-private TripPlaces.
+
+**Steps and expected results:**
+
+1. Submit a route selection with distinct endpoint IDs and an explicit mode; it is persisted against the intent run and the draft becomes `READY`.
+2. Confirm with `originatingIntentRunId`; the API creates one RESEARCH run and atomically changes the source draft to `CONFIRMED`.
+3. Retry with the same request ID; the API returns the original run. Confirm with a different request ID or a dismissed source draft; the API returns `409` and creates no task.
+4. Change either selected endpoint to private/inactive before confirmation; confirmation fails closed with a capability gap.
+5. Worker execution uses the selected IDs and mode; it must never select the earliest TripPlaces or default to `WALK`.

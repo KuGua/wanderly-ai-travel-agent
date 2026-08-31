@@ -48,6 +48,9 @@ export async function handleHotelSearch(
     throw new SkillError("POLICY_DENIED", "hotel.search requires an authorized Shared planning context");
   }
   const exec = ctx.hotelSearch;
+  if (exec.providerAdapter.providerName !== exec.provider) {
+    throw new SkillError("POLICY_DENIED", "hotel.search provider binding does not match the task-bound adapter");
+  }
   let validated: HotelSearchInput;
   try {
     validated = validateSnapshotBoundHotelSearch({ input, snapshotId: exec.snapshotId, snapshot: ctx.snapshot });
@@ -90,6 +93,7 @@ export async function handleHotelSearch(
       input: validated,
       provider: deps.provider,
       ...(quoteNationality ? { quoteNationality } : {}),
+      ...(exec.quoteNationalityAuthorization ? { quoteAuthorization: exec.quoteNationalityAuthorization } : {}),
       signal,
     });
   } catch (error) {
@@ -103,11 +107,9 @@ export async function handleHotelSearch(
 
 // ─── Legacy compatibility ──────────────────────────────────────────────────
 //
-// Older call sites still import `hotelSearchSkill`. The export is preserved
-// as a Skill object that resolves the default provider at registration time
-// (acceptable for the in-test planner fixture). The production planner
-// service uses `handleHotelSearch` directly with a per-task provider.
-import { createTravelProviders } from "../../providers/live-provider-factory.js";
+// The registered handler intentionally consumes the task-bound adapter from
+// SkillContext. It must never read HOTEL_PROVIDER itself: that would allow a
+// deployment config change to reroute an in-flight durable task.
 export const hotelSearchSkill: Skill<HotelSearchInput, HotelSearchOutput> = {
   name: "hotel.search",
   agent: "shared",
@@ -118,7 +120,10 @@ export const hotelSearchSkill: Skill<HotelSearchInput, HotelSearchOutput> = {
   input: hotelSearchInputSchema,
   output: hotelSearchOutputSchema,
   async handler(ctx, input, signal) {
-    const provider = createTravelProviders().hotelProvider;
-    return handleHotelSearch(ctx, input, { provider }, signal);
+    if (!ctx.hotelSearch) throw new SkillError("POLICY_DENIED", "hotel.search requires a task-bound hotel context");
+    return handleHotelSearch(ctx, input, {
+      provider: ctx.hotelSearch.providerAdapter,
+      loadQuoteNationality: loadActiveQuoteNationality,
+    }, signal);
   },
 };

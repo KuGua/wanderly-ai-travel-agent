@@ -19,6 +19,7 @@ import {
   listStaySearchAuthorizations,
   revokeQuoteNationality,
 } from "../src/services/stay-search-provider-authorization.js";
+import { __setQuoteNationalityCipherForTests } from "../src/services/quote-nationality-cipher.js";
 import { eq } from "drizzle-orm";
 
 describe("stay-search-provider-authorization", () => {
@@ -26,6 +27,10 @@ describe("stay-search-provider-authorization", () => {
   let tripId: string;
 
   beforeEach(async () => {
+    __setQuoteNationalityCipherForTests({
+      encrypt: async (value) => Buffer.from(`test:${value}:opaque-test-padding`).toString("base64"),
+      decrypt: async (value) => Buffer.from(value, "base64").toString("utf8").replace(/^test:|:opaque-test-padding$/g, ""),
+    });
     const [owner] = await db.insert(users).values({
       externalId: `auth-${randomUUID()}`,
       displayName: "Auth owner",
@@ -43,6 +48,7 @@ describe("stay-search-provider-authorization", () => {
   });
 
   afterEach(async () => {
+    __setQuoteNationalityCipherForTests(undefined);
     await db.delete(staySearchProviderAuthorizations).where(eq(staySearchProviderAuthorizations.tripId, tripId));
     await db.delete(auditEvents).where(eq(auditEvents.tripId, tripId));
     await db.delete(agentTaskRuns).where(eq(agentTaskRuns.tripId, tripId));

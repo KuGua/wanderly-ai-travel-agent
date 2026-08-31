@@ -105,6 +105,9 @@ export interface TravelApi {
   submitConversationTurn(threadId: string, input: ConversationTurnRequest): Promise<ConversationTurnAcceptedResponse>;
   getAgentRun(runId: string): Promise<AgentRun>;
   cancelAgentRun(runId: string): Promise<AgentRun>;
+  dismissResearchIntent?(runId: string): Promise<void>;
+  getRouteEndpoints?(tripId: string): Promise<Array<{ placeId: string; displayName: string }>>;
+  saveRouteSelection?(runId: string, input: { originPlaceId: string; destinationPlaceId: string; mode: "WALK" | "DRIVE" | "CYCLE" }): Promise<void>;
   subscribeAgentRun(runId: string, signal: AbortSignal, onEvent: (event: AgentStreamEvent) => void): Promise<void>;
   startExploration(input: ExplorationStartRequest): Promise<ExplorationStartResponse>;
   activateTrip(tripId: string, input: TripActivationRequest): Promise<TripActivationResponse>;
