@@ -1,6 +1,7 @@
 # 住宿发现与酒店实时报价实施方案
 
 **状态：** Phase 1 已实施，待完整回归与发布门禁
+**后续 provider 演进：** 本文记录已实施的 SerpApi Phase 1 基线。Nuitee Connect / LiteAPI 作为默认报价源、以及与 SerpApi 的 task-bound 可切换设计，以 [Nuitee Connect / LiteAPI 与 SerpApi Google Hotels 可切换报价实施规范](nuitee-serpapi-hotel-provider-switching-implementation.md) 为准；后续开发不得以本文的“首发 SerpApi”描述替代该规范。
 **范围：** 在现有 Shared PLAN/REPLAN durable task 中接入 provider-neutral `accommodation.discover` 与 `hotel.search`。前者用 OpenTripMap 建立无价格的住宿规划骨架；后者只在用户确认入住日期、房间、住客数和币种后，用 SerpApi 查询实时价格。
 **不在范围：** 真实预订、支付、供应商订单创建、供应商 booking/deep link 对 LLM 的透传、浏览器直连供应商、使用 fixture 或 sandbox 库存作为产品运行时数据。
 

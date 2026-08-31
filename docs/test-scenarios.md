@@ -956,6 +956,25 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Same-task duplicates are rejected atomically. Cross-run cache hits copy evidence to a fresh `queryId` without a provider call; LIVE discovery is cached at most 24 hours and `UNAVAILABLE` for 30 seconds. A cache wait timeout fails closed rather than issuing another request.
 - Missing, ambiguous, out-of-radius, quota-limited, timed-out or malformed data produces only a bounded accommodation gap and never a fabricated candidate or hotel quote.
 
+### TS-HOTEL-PROVIDER-SWITCH-1 — Nuitee default and SerpApi task-bound switching
+
+**Stories:** H3, H5, S1
+**Objective:** Verify that Nuitee Connect / LiteAPI and SerpApi Google Hotels are selectable only by server configuration, remain isolated per task, and preserve privacy/fail-closed semantics.
+
+**Steps:**
+
+1. With `HOTEL_PROVIDER=nuitee`, accept a hotel-enabled task with complete preferences but no provider-only quote nationality; then grant, revoke and change its ISO nationality confirmation.
+2. Inspect the Nuitee request and normalized output for one room and two rooms. Return HTTP 200 with business `error.code=2001`, 401/403, 429, 5xx, timeout and malformed schema.
+3. Accept a task under `HOTEL_PROVIDER=serpapi`, then change deployment config to `nuitee` while that task runs and accept a second task. Repeat a cacheable equivalent query across providers and attempt model/browser supplied provider or nationality arguments.
+4. Inspect task rows, cache keys, evidence, plan DTO, LLM context, logs, metrics, traces and audit events. Force a live plan, then revoke/change the Nuitee authorization.
+
+**Expected outcomes:**
+
+- New tasks persist exactly one provider; a config change affects only later tasks. Existing runs neither switch providers nor combine results, and cache/evidence from one provider never satisfies the other.
+- Nuitee receives only server-derived dates, currency, city/country, occupancies and a valid provider-only nationality. It supports canonical multi-room occupancies; SerpApi multi-room requests fail before any upstream call. Neither provider can be selected by the LLM or browser.
+- Nuitee 2001 becomes explicit `NO_RESULTS`; all other unavailable, malformed or unauthorized outcomes become bounded `RESEARCH_UNAVAILABLE`/`COMPLETED_WITH_GAPS`. No automatic SerpApi fallback or runtime fixture occurs.
+- Nuitee `offerId`, supplier URL/raw payload, nationality and unverified tax detail never leave the server boundary. `PARTIAL`/`UNKNOWN` taxes always render “可能另计”. Authorization changes stale dependent evidence, plan and confirmations before replan.
+
 ### TS-ACTIVITIES-TOOL-1 — Durable Shared activities research and guarded plan finalization
 
 **Stories:** H3, H5, S1

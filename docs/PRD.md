@@ -124,7 +124,7 @@ flowchart LR
 4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
 5. Planning/replan 运行期间可实时显示安全阶段状态（例如 snapshot、research、validation、persistence），但不得向客户端发送内部推理、原始 prompt、未验证模型输出、未持久化 provider 结果或未授权 snapshot 数据；最终 plan 仅在验证并持久化后展示。
 6. Activities 工具与 Flight 工具相互独立：拥有独立的 typed port、覆盖矩阵、stale 触发器和 evidence 写入；同一 PLAN/REPLAN durable task 内作为并列子阶段，各自拥有独立的并发与失败语义。失败不取消其他 research，但只能形成安全的 `RESEARCH_UNAVAILABLE` 摘要；活动 provider 的 booking link 不得在 MVP 中展示、持久化或透传。
-7. 住宿能力分两层：OpenTripMap discovery 只显示名称、类别、位置、距离、来源和 `© OpenStreetMap contributors` 归因，不代表实时价格、库存或可预订性；SerpApi hotel quote 只在确认入住条件后提供实时搜索与方案比较。每个价格 offer 显示总价、每晚价、来源、采集时间和有效期；税费或强制费用不完整时固定提示“可能另计”。模型可在私有对话询问缺失的房间/住客/币种信息，但仅能创建待用户确认的住宿搜索偏好提案。无 live supplier 数据时为 `RESEARCH_UNAVAILABLE`，不得使用 sandbox、fixture 或模型生成报价。
+7. 住宿能力分两层：OpenTripMap discovery 只显示名称、类别、位置、距离、来源和 `© OpenStreetMap contributors` 归因，不代表实时价格、库存或可预订性；酒店 quote 默认使用 Nuitee Connect / LiteAPI Rates，SerpApi Google Hotels 保留为服务端显式可切换来源。每个 task 只使用接受时持久化的一家 provider，禁止自动 fallback 或混合报价。每个价格 offer 显示总价、每晚价、来源、采集时间和有效期；税费或强制费用不完整时固定提示“可能另计”。Nuitee quote 还须由用户显式确认 provider-only `guestNationality`，不得从 Profile 自动推断或暴露给模型/同行。模型可在私有对话询问缺失的房间/住客/币种信息，但仅能创建待用户确认的住宿搜索偏好提案。无 live supplier 数据时为 `RESEARCH_UNAVAILABLE`，不得使用 sandbox、fixture 或模型生成报价。
 8. Personal Agent 生成的约束提案必须由 owner 确认后才能进入本次 Shared snapshot；约束区分 HARD 与 SOFT，HARD 冲突必须返回阻塞/调整请求，SOFT 约束只能影响候选排序。
 
 ### FR-4 签证/入境准备
