@@ -57,6 +57,28 @@ const SINGAPORE: [number, number] = [103.8198, 1.3521];
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 const NEARBY_RADIUS_KM = 50;
 
+/**
+ * Pointing devices, i.e. a desktop. Only there is the floor applied: a phone
+ * has so little width beside the chat panel that clamping the zoom would push
+ * the globe off screen rather than keep it whole.
+ */
+const DESKTOP_QUERY = "(min-width: 768px) and (pointer: fine)";
+
+/**
+ * Lowest zoom the desktop globe may reach.
+ *
+ * Below this the sphere is small enough to show both poles, and the raster
+ * relief behind it is Web Mercator — it carries no tiles past roughly ±85°, so
+ * the caps render as a couple of stretched lines and the ocean loses its
+ * colour. The chat panel used to squeeze the globe to zoom 1 to make room for
+ * itself, which is exactly when that shows.
+ */
+const DESKTOP_MIN_ZOOM = 2;
+
+function isDesktopViewport(): boolean {
+  return typeof window !== "undefined" && window.matchMedia(DESKTOP_QUERY).matches;
+}
+
 async function loadGlobeStyle(): Promise<StyleSpecification> {
   const styleResponse = await fetch(MAP_STYLE_URL);
   if (!styleResponse.ok) throw new Error(`Map style request failed (${styleResponse.status})`);
@@ -537,6 +559,10 @@ export function ExploreMapPage() {
           style: globeStyle,
           center: focusHandoffRef.current?.center ?? SINGAPORE,
           zoom: focusHandoffRef.current?.zoom ?? 2.25,
+          // Applies to every camera move, including the automatic ones: MapLibre
+          // clamps `easeTo`/`flyTo` to it, so the chat panel can no longer zoom
+          // out past the point where the globe stops looking like one.
+          minZoom: isDesktopViewport() ? DESKTOP_MIN_ZOOM : undefined,
           attributionControl: false,
         });
         mapRef.current = map;
@@ -643,6 +669,29 @@ export function ExploreMapPage() {
       setGeographyLayerVisibility(mapRef.current, geographyVisibility);
     }
   }, [readiness, geographyVisibility]);
+
+  // Dragging a window between a phone-sized pane and a desktop one has to move
+  // the floor with it, or the globe stays clamped where it should not be.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia(DESKTOP_QUERY);
+    const apply = () => {
+      const map = mapRef.current;
+      // Guarded because the floor is an enhancement, not a requirement: a map
+      // implementation without it should still render rather than throw.
+      if (typeof map?.setMinZoom !== "function") return;
+      map.setMinZoom(media.matches ? DESKTOP_MIN_ZOOM : undefined);
+    };
+    apply();
+    // Older Safari, and the jsdom stub, expose only the deprecated
+    // `addListener`. Feature-detect rather than assume the modern one.
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", apply);
+      return () => media.removeEventListener("change", apply);
+    }
+    media.addListener?.(apply);
+    return () => media.removeListener?.(apply);
+  }, [readiness.kind]);
 
   useEffect(() => {
     const map = mapRef.current;
