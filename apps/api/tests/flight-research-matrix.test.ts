@@ -1,25 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/database.js";
-import { agentTaskRuns, auditEvents, constraintSnapshots, itineraryPlans, planningResearchResults, providerOffers, providerSearchRuns, sharedTrips, sourceEvidence, tripSearchPreferences, users } from "../src/db/schema.js";
-import { evaluateFlightResearchCompleteness, flightMatrixToGaps } from "../src/services/flight-research-matrix-service.js";
-import { acceptPlanningTask } from "../src/tasks/task-repository.js";
+import { agentTaskRuns, auditEvents, constraintSnapshots, itineraryPlans, providerOffers, providerSearchRuns, sharedTrips, tripMembers, tripSearchPreferences, users } from "../src/db/schema.js";
+import { evaluateFlightResearchCompleteness, FlightResearchIncompleteError } from "../src/services/flight-research-matrix-service.js";
+import { acceptPlanningTask, getLatestAuthorizedPlanningRun } from "../src/tasks/task-repository.js";
 import { createRequestContext } from "../src/utils/context.js";
-import { __resetRegistryForTests } from "../src/agents/skill-registry.js";
+import { generatePlan, type PlanningDependencies } from "../src/services/planning-service.js";
+import { __resetRegistryForTests, registerSkill } from "../src/agents/skill-registry.js";
+import { createFlightSearchSkill } from "../src/skills/shared/flight-search-skill.js";
+import { saveConfirmedSearchPreferences } from "../src/services/flight-search-preferences-service.js";
+import { testPlanningDependencies } from "./helpers/planning.js";
 
 describe("flight research matrix", () => {
   let userId: string; let tripId: string; let snapshotId: string; let taskId: string; let otherTaskId: string; let planningSnapshotId: string | null;
   beforeEach(async () => {
     const [user] = await db.insert(users).values({ externalId: `matrix-${randomUUID()}`, displayName: "Matrix" }).returning(); userId = user.id;
     const [trip] = await db.insert(sharedTrips).values({ name: "Matrix", createdBy: userId, authorizedData: {}, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] }).returning(); tripId = trip.id;
+    await db.insert(tripMembers).values({ tripId, userId, role: "CREATOR", isRequired: true });
     const [snapshot] = await db.insert(constraintSnapshots).values({ tripId, version: 1, authorizedData: {}, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] }).returning(); snapshotId = snapshot.id;
     planningSnapshotId = null; taskId = randomUUID();
     await db.insert(agentTaskRuns).values({ id: taskId, operation: "PLAN", status: "QUEUED", createdByUserId: userId, tripId, snapshotId, flightSearchPreferencesVersion: 1, requestId: randomUUID(), expiresAt: new Date(Date.now() + 60_000) });
     otherTaskId = randomUUID();
     await db.insert(agentTaskRuns).values({ id: otherTaskId, operation: "REPLAN", status: "COMPLETED", createdByUserId: userId, tripId, snapshotId, flightSearchPreferencesVersion: 1, requestId: randomUUID(), expiresAt: new Date(Date.now() + 60_000), finishedAt: new Date() });
   });
-  afterEach(async () => { __resetRegistryForTests(); await db.delete(auditEvents).where(or(eq(auditEvents.tripId, tripId), eq(auditEvents.actorUserId, userId))); if (planningSnapshotId) { await db.delete(planningResearchResults).where(eq(planningResearchResults.snapshotId, planningSnapshotId)); const planIds = (await db.select({ id: itineraryPlans.id }).from(itineraryPlans).where(eq(itineraryPlans.snapshotId, planningSnapshotId))).map((p) => p.id); if (planIds.length > 0) { await db.delete(auditEvents).where(inArray(auditEvents.planId, planIds)); await db.delete(sourceEvidence).where(inArray(sourceEvidence.planId, planIds)); } await db.delete(providerOffers).where(eq(providerOffers.snapshotId, planningSnapshotId)); await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, planningSnapshotId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.snapshotId, planningSnapshotId)); await db.delete(itineraryPlans).where(eq(itineraryPlans.snapshotId, planningSnapshotId)); await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, planningSnapshotId)); } await db.delete(providerOffers).where(eq(providerOffers.snapshotId, snapshotId)); await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, snapshotId)); await db.delete(itineraryPlans).where(eq(itineraryPlans.tripId, tripId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, taskId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, otherTaskId)); await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, snapshotId)); await db.delete(tripSearchPreferences).where(eq(tripSearchPreferences.tripId, tripId)); await db.delete(sharedTrips).where(eq(sharedTrips.id, tripId)); await db.delete(users).where(eq(users.id, userId)); });
+  afterEach(async () => { __resetRegistryForTests(); if (planningSnapshotId) { await db.delete(providerOffers).where(eq(providerOffers.snapshotId, planningSnapshotId)); await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, planningSnapshotId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.snapshotId, planningSnapshotId)); await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, planningSnapshotId)); } await db.delete(providerOffers).where(eq(providerOffers.snapshotId, snapshotId)); await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, snapshotId)); await db.delete(itineraryPlans).where(eq(itineraryPlans.tripId, tripId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, taskId)); await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, otherTaskId)); await db.delete(auditEvents).where(eq(auditEvents.tripId, tripId)); await db.delete(auditEvents).where(eq(auditEvents.actorUserId, userId)); await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, snapshotId)); await db.delete(tripSearchPreferences).where(eq(tripSearchPreferences.tripId, tripId)); await db.delete(tripMembers).where(eq(tripMembers.tripId, tripId)); await db.delete(sharedTrips).where(eq(sharedTrips.id, tripId)); await db.delete(users).where(eq(users.id, userId)); });
   async function evidence(originId: string, destinationId: string, outcome: "LIVE" | "UNAVAILABLE" = "LIVE", runId = taskId, sid = snapshotId) {
     await db.insert(providerSearchRuns).values({ snapshotId: sid, agentTaskRunId: runId, category: "flight", providerName: "amadeus", requestFingerprint: randomUUID().replaceAll("-", ""), outcome, errorCode: outcome === "UNAVAILABLE" ? "NO_RESULTS" : null, originId, destinationId });
   }
@@ -39,19 +44,12 @@ describe("flight research matrix", () => {
     expect((await evaluateFlightResearchCompleteness({ snapshotId, agentTaskRunId: taskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] })).complete).toBe(true);
   });
 
-  it("does not treat wrong-snapshot evidence as coverage, but accepts UNAVAILABLE-only as a gap (Phase 4)", async () => {
-    // First: UNAVAILABLE-only is a gap (Phase 4) — recorded as attempted.
+  it("does not treat UNAVAILABLE-only or wrong-snapshot evidence as coverage", async () => {
     await evidence("SFO", "NRT", "UNAVAILABLE");
     const unavailable = await evaluateFlightResearchCompleteness({
       snapshotId, agentTaskRunId: taskId, departureCities: ["SFO"], destinationCandidates: ["NRT"],
     });
-    expect(unavailable).toMatchObject({ complete: true, cells: [{ originId: "SFO", destinationId: "NRT", outcome: "UNAVAILABLE" }] });
-    // Remove the UNAVAILABLE evidence so the next query has to fall back on the
-    // other-snapshot LIVE row, which must NOT be counted.
-    await db.delete(providerSearchRuns).where(and(
-      eq(providerSearchRuns.snapshotId, snapshotId),
-      eq(providerSearchRuns.agentTaskRunId, taskId),
-    ));
+    expect(unavailable).toMatchObject({ complete: false, cells: [{ originId: "SFO", destinationId: "NRT", outcome: "UNAVAILABLE" }] });
 
     const [otherSnapshot] = await db.insert(constraintSnapshots).values({
       tripId, version: 2, authorizedData: {}, departureCities: ["SFO"], destinationCandidates: ["NRT"],
@@ -77,28 +75,75 @@ describe("flight research matrix", () => {
     await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, accepted.runId));
   });
 
-  it("flightMatrixToGaps converts UNAVAILABLE cells into bounded gap entries (Phase 4)", () => {
-    const gaps = flightMatrixToGaps([
-      { originId: "SFO", destinationId: "NRT", outcome: "LIVE" },
-      { originId: "SIN", destinationId: "NRT", outcome: "UNAVAILABLE" },
-      { originId: "SFO", destinationId: "CDG", outcome: "MISSING" },
-    ]);
-    expect(gaps).toEqual([
-      { capability: "flight", code: "UPSTREAM_FAILURE", originId: "SIN", destinationId: "NRT" },
-    ]);
+  it("recovers the latest Shared planning run from server state for a current member", async () => {
+    const recovered = await getLatestAuthorizedPlanningRun(tripId, userId);
+    expect(recovered).toMatchObject({ runId: otherTaskId, operation: "REPLAN", status: "COMPLETED" });
   });
 
   it("re-checks research in the final transaction when evidence changes after beforeFinal", async () => {
-    // Phase 4 TOCTOU check: a cell that returned LIVE earlier may flip to
-    // UNAVAILABLE before finalization. The planner must accept the
-    // UNAVAILABLE outcome (treated as a gap) rather than abort the round.
-    //
-    // NOTE: this integration test is temporarily disabled — the cleanup
-    // chain for planning-service end-to-end flows is brittle in the test
-    // harness. The matrix-level behavior is covered by the unit assertions
-    // above and by the planning-research-result-service tests; an end-to-end
-    // regression test will be re-introduced alongside the dedicated
-    // navigation route evidence path in Phase 3.
-    void planningSnapshotId;
+    const [planningSnapshot] = await db.insert(constraintSnapshots).values({
+      tripId, version: 2, authorizedData: {}, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"],
+      travelDateStart: "2026-10-10", travelDateEnd: "2026-10-17",
+    }).returning();
+    planningSnapshotId = planningSnapshot.id;
+    const preference = await saveConfirmedSearchPreferences({
+      ctx: createRequestContext(userId), tripId, confirmedBy: userId,
+      input: { tripType: "ROUND_TRIP", adults: 1, cabin: "ECONOMY", currency: "USD", offerFreshnessMinutes: 30 },
+    });
+    await db.update(agentTaskRuns).set({ status: "CANCELLED", finishedAt: new Date() }).where(eq(agentTaskRuns.id, taskId));
+    const durableTaskId = randomUUID();
+    const leaseToken = randomUUID();
+    await db.insert(agentTaskRuns).values({
+      id: durableTaskId, operation: "PLAN", status: "RUNNING", createdByUserId: userId, tripId,
+      snapshotId: planningSnapshot.id, flightSearchPreferencesVersion: preference.version, requestId: randomUUID(),
+      expiresAt: new Date(Date.now() + 60_000), leaseToken, leaseExpiresAt: new Date(Date.now() + 60_000), startedAt: new Date(),
+    });
+    __resetRegistryForTests();
+    registerSkill(createFlightSearchSkill({
+      async searchFlights(input) {
+        const capturedAt = "2026-08-25T00:00:00.000Z";
+        return { outcome: "LIVE" as const, source: "TOCTOU test provider", capturedAt, data: [{
+          id: `toctou-${input.origin}-${input.destination}`, providerOfferId: `toctou-${input.origin}-${input.destination}`,
+          providerName: "toctou-test-provider", queryId: randomUUID(), origin: input.origin, destination: input.destination,
+          segments: [{ carrierCode: "TT", flightNumber: "1", origin: input.origin, destination: input.destination, departureAt: `${input.dateStart}T08:00:00.000Z`, arrivalAt: `${input.dateStart}T18:00:00.000Z`, duration: "PT10H" }],
+          totalDuration: "PT10H", totalPrice: 500, currency: input.currency!, cabin: input.cabin!, adults: input.adults!,
+          baggageSummary: null, changeSummary: null, source: "TOCTOU test provider", capturedAt, expiresAt: "2026-12-31T00:00:00.000Z",
+        }] };
+      },
+    }));
+    let beforeFinalPassed = false;
+    let matrixCompleteBeforeFinal = false;
+    const dependencies: PlanningDependencies = {
+      ...testPlanningDependencies,
+      modelGateway: {
+        ...testPlanningDependencies.modelGateway,
+        async generateStructuredPlanWithTools(params) {
+          const flights = [];
+          for (const originId of ["SFO", "SIN"]) {
+            const result = await params.dispatchTool({ id: randomUUID(), name: "flight.search", arguments: {
+              originId, destinationId: "NRT",
+            } });
+            if ((result as { outcome: string }).outcome === "LIVE") flights.push(...(result as { offers: never[] }).offers);
+          }
+          matrixCompleteBeforeFinal = (await evaluateFlightResearchCompleteness({ snapshotId: planningSnapshot.id, agentTaskRunId: durableTaskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"] })).complete;
+          await params.beforeFinal?.();
+          beforeFinalPassed = true;
+          await db.update(providerSearchRuns).set({ outcome: "UNAVAILABLE", errorCode: "UPSTREAM_FAILURE" }).where(and(eq(providerSearchRuns.snapshotId, planningSnapshot.id), eq(providerSearchRuns.agentTaskRunId, durableTaskId), eq(providerSearchRuns.originId, "SFO"), eq(providerSearchRuns.destinationId, "NRT")));
+          return { destination: "NRT", destinationCandidatesEvaluated: ["NRT"], flights, stays: params.stays, generatedAt: "2026-08-25T00:00:00.000Z" };
+        },
+      },
+    };
+
+    await expect(generatePlan({ ctx: createRequestContext(userId), tripId, snapshotId: planningSnapshot.id, destination: "NRT", memberIds: [], agentTaskRunId: durableTaskId, flightSearchPreferencesVersion: preference.version, leaseToken }, dependencies)).rejects.toBeInstanceOf(FlightResearchIncompleteError);
+    expect(matrixCompleteBeforeFinal).toBe(true);
+    expect(beforeFinalPassed).toBe(true);
+    expect((await db.select().from(itineraryPlans).where(eq(itineraryPlans.snapshotId, planningSnapshot.id))).length).toBe(0);
+    const [task] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, durableTaskId));
+    expect(task.status).toBe("RUNNING");
+    await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, durableTaskId));
+    await db.delete(providerOffers).where(eq(providerOffers.snapshotId, planningSnapshot.id));
+    await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, planningSnapshot.id));
+    await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, planningSnapshot.id));
+    planningSnapshotId = null;
   });
 });

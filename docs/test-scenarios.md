@@ -53,7 +53,7 @@ memberships overlap only where explicitly configured.
 **Stories:** H3, P1
 **Objective:** Verify `FlightProvider` validates and normalizes provider results without fabricating availability or using runtime fixture fallback.
 
-**Starting conditions:** A test-only FlightProvider double and an Amadeus adapter contract fixture cover configured Hero routes, dates and provider failures. Runtime paths never import these fixtures.
+**Starting conditions:** Test-only FlightProvider doubles and adapter contract fixtures cover configured Hero routes, dates and provider failures for Amadeus, FlightAPI and SerpAPI. Runtime paths never import these fixtures; adapter tests mock all HTTP.
 
 **Steps:**
 
@@ -67,6 +67,8 @@ memberships overlap only where explicitly configured.
 - Test-only supported searches return deterministic normalized offers; production adapter responses carry their real source, capture time and expiry.
 - Results outside the requested date range are excluded.
 - Unsupported searches return no offers and never fabricate inventory or price.
+- A SerpAPI response may only contribute normalized flight fields after its Google Flights response schema validates. Airport-local wall-clock values returned at minute precision are normalized to the shared seconds-precision contract without inventing a timezone; existing provider seconds are preserved. Its query-parameter API key, supplier links, raw payload, booking/departure tokens and provider error text never enter evidence, Tool output, logs or traces.
+- For a multi-destination Shared PLAN, an early model final answer is rejected while any authoritative `origin × destination` cell remains `MISSING`. The server returns only the controlled coverage status to the bounded model loop and requires another genuine `flight.search` call. Repeated calls for an identical controlled cell reuse that loop's normalized result and do not issue another provider request or consume another live credit.
 
 ### TS-H3b — Reject unauthorized or fabricated plan output before persistence
 
@@ -594,6 +596,8 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 
 - The client receives only documented safe phases and an identifier/version-safe terminal result; it never receives model reasoning, prompt, raw provider payload or unvalidated plan content.
 - A final `COMPLETED` event refers only to an already validated and persisted plan version; a final `COMPLETED_WITH_GAPS` event refers only to an already persisted safe research summary and carries no commercial authority.
+- The API and Web task-status contracts accept `COMPLETED_WITH_GAPS`; a durable planning run in that state remains readable and the Web fetches its persisted plan instead of presenting a response-schema error.
+- After the proposal is adopted, the Web accepts and renders a grounded flight plan even when optional stay or ground evidence is absent; the missing capabilities remain explicit gaps and are never populated with fixtures.
 - Consent revocation or a newer run makes the old stream terminal/stale; it cannot activate, display or overwrite a plan after invalidation.
 - Stream identifiers remain out of metric labels, and no event widens membership or snapshot authorization.
 
@@ -715,10 +719,32 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 1. As creator, open `/trips/:tripId/invite`. At 375px, 768px, 1024px and 1440px widths, verify the invite form and current-member list remain within one responsive workspace, use the standard Wanderly card colors, show translated member roles, and have no horizontal overflow. Enter a valid email and create an invitation. Verify the page returns a one-time link with a seven-day expiry and explicitly says email delivery is not configured.
 2. Verify no API searches users and neither request/response, audit event nor telemetry contains the raw recipient email; storage contains only HMAC and masked display data.
-3. Repeat as a non-creator and for a Draft Trip; expect no usable control and API `403`/`409` respectively.
+3. Repeat as a non-creator (expect `403`) and against an archived or cancelled Trip (expect `409 TRIP_NOT_INVITABLE`); a Draft Trip invitation must succeed and the creator control must not be disabled.
 4. Open the link signed out, then sign in or register with the invited email and return to the link. Verify that only the matching email can preview, accept or decline; a different email gets the same unavailable result.
 
 **Expected:** The creator can create an email-bound invitation without account enumeration. The recipient must still authenticate (or register) with the invited email and explicitly accept; no consent is created by creation or acceptance.
+
+### TS-INVITATION-DRAFT-1 — Inviting into a Draft keeps the creator's private conversation private
+
+**Stories:** H1, H2, S1
+**Objective:** Verify that a `DRAFT` trip may form a team before activation, while the creator's private conversation, profile and unconfirmed exploration stay hidden from invitees; only the normal collaboration gates (`DRAFT` → `PLANNING`) still block shared planning actions.
+
+**Starting conditions:** Alice owns a Draft Trip in `DRAFT` status; Bob has registered with `bob@example.com`; the system has configured the email-bound invitation HMAC secret.
+
+**Steps:**
+
+1. As Alice, open the workspace invite control. Confirm the control is enabled (not disabled) and links to `/trips/:tripId/invite` with no `DRAFT` restriction copy.
+2. Submit Bob's email and create an email-bound invitation. Confirm a one-time `inviteToken` is returned with a seven-day expiry.
+3. As Bob, open `/trips/join/:inviteToken`. Confirm the preview shows `{ trip.name, status: "DRAFT", destinationCandidates: [], travelDateStart: null, travelDateEnd: null, expiresAt }` and explicitly states that joining grants only a blank private thread.
+4. Accept the invitation as Bob. Confirm Bob is added as a required `MEMBER`, his own blank default `TRIP` thread is provisioned, and Bob's `GET /threads/:creatorThreadId/conversation` returns `403`.
+5. As Alice, complete the Draft brief via `PATCH /trips/:tripId/draft-brief` (departures, destinations, dates) and then `POST /trips/:tripId/activate` to transition to `PLANNING`.
+6. As a separate flow, create a Draft Trip, cancel it, then attempt to create another invitation; expect `409 TRIP_NOT_INVITABLE`. Bob's pending token against a cancelled trip must return `409 TRIP_NOT_INVITABLE` on accept.
+
+**Expected outcomes:**
+
+- Draft invitations create exactly one membership row and one recipient-owned default thread; the creator's existing thread remains invisible to the invitee (`403`).
+- Cancelled or archived trips reject both `POST /trips/:tripId/invitations` and `POST /trip-invitations/:inviteToken/accept` with `409 TRIP_NOT_INVITABLE`. Audit events continue to record only IDs and status, never raw emails or token text.
+- After the creator activates the brief, the team enters the existing PLANNING collaboration flow without re-issuing invitations; Bob's previously accepted membership continues to count as a required member for activation rules.
 
 ### TS-EXPLORE-TRIP-1 — Create a Draft Trip only on first submitted exploration message
 
@@ -740,11 +766,30 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 **Expected outcomes:**
 
 - Before the first submitted message, no Trip, thread, idempotency or audit row is created; map input is not persisted as a business fact.
-- One start request ID yields exactly one `DRAFT` Trip, one creator membership and one owner-only default `TRIP` thread, even under concurrent retry. Audit summaries contain IDs/status only, never the question or map data.
+- One start request ID yields exactly one `DRAFT` Trip, one creator membership and one owner-only default `TRIP` thread, even under concurrent retry. The browser must accept the `201`/`200` response with `trip.status = DRAFT`, then submit the first turn to `POST /api/v1/threads/:threadId/turns` and receive `202`. Audit summaries contain IDs/status only, never the question or map data.
 - The first task derives the created thread's `trip_id`; start success plus turn failure/retry cannot create another Trip.
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
+- An unarchived, non-expired `DRAFT` owned by the authenticated member appears in the default `/projects` active list immediately after its creation, contributes to the active count, and is labelled as a draft needing completion. A Draft explicitly archived by the user, or one whose end date has elapsed, is excluded from that default list.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
-- Draft commands for invitation, consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control, which remains disabled until the persisted brief is complete. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
+- Draft commands for consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. Draft invitation creation and acceptance are explicitly allowed: the creator can copy an email-bound invitation link, the invitee sees a minimal summary (trip name, `DRAFT` status, expiry and "joining grants only a blank private thread"), and accepting adds the invitee as a member while still hiding the creator's private conversation. Cancelled or archived trips reject both new invitations and acceptance with `409 TRIP_NOT_INVITABLE`. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control and the creator-authored draft brief editor, both of which are required to reach `PLANNING`. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
+
+### TS-EXPLORE-TRIP-1a — Create a Draft directly from My program and resize the planning workspace
+
+**Objective:** Verify the My program entry point creates one idempotent Draft Trip and opens its workspace directly. On desktop, the workspace order is thread list → trip/planning panel → Agent, and users can resize both boundaries without changing Trip state.
+
+**Steps:**
+
+1. From `/projects`, select **New trip** once; simulate a delayed response and repeat only after an error.
+2. Verify the resulting route is `/trips/:tripId?thread=:threadId`, the Trip is `DRAFT`, and the creator sees the bounded brief/activation controls in the right inspector.
+3. On a desktop-width viewport, verify the thread list is on the left, trip overview/Shared planning is in the centre, and Agent conversation is on the right.
+4. Drag both vertical dividers and repeat with keyboard Left/Right arrows on each divider. Verify the thread rail can shrink to its bounded minimum and the planning panel can grow while keeping a usable Agent pane.
+5. Narrow the viewport below the desktop breakpoint and verify the existing inspector drawer remains usable.
+
+**Expected outcomes:**
+
+- New trip uses the existing idempotent exploration-start command; it never creates a second Trip after a response retry and never routes the user through the map merely to reach the Draft workspace.
+- Resizing changes only local layout. It neither writes browser-persisted business state nor changes the Trip, snapshot, preference, task or plan. The desktop bounds preserve a minimum usable width for all three panes.
+- Mobile/tablet keeps the existing explicit inspector open/close behavior.
 
 ### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields only
 
@@ -843,6 +888,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 2. Drive the Worker with a deterministic model double that requests `flight.search` for every origin × destination cell and then requests final synthesis.
 3. Verify each Tool request against the task snapshot, controlled airport reference and accepted preference version; inspect only normalized `provider_search_runs` and offers.
 4. Repeat with an unknown Tool, malformed arguments, a wrong snapshot/destination, an `UNAVAILABLE` provider result, a changed preference version, cancellation, and a lost lease.
+5. In the Shared Trip workspace, confirm bounded preferences and start planning. Refresh the page while the task is active, then verify that the latest server-owned planning run is recovered. Confirm that only an ACTIVE plan displays flight source and captured time; a failed run displays only its stable safe code.
 
 **Expected outcomes:**
 
@@ -851,6 +897,17 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The model receives only normalized Tool output. It cannot select arbitrary tools, snapshots, providers, airports, dates, passengers, cabin or currency; raw Amadeus payloads, OAuth values and private snapshot data never leave the server boundary.
 - Final model synthesis and the atomic plan/task completion transaction are rejected unless the full matrix is live, the task is still `RUNNING` with its lease, and the accepted preference version is still current. Repeated or late finalization cannot activate a second plan.
 - Provider/model transient failures may retry according to Worker policy. Policy, schema, preference-stale, cancellation, matrix and bounded-tool-loop failures are terminal and create no active plan.
+- A forced missing-flight Tool turn omits the final-answer JSON response format because Gemini's OpenAI-compatible endpoint rejects forced function calling combined with a JSON response MIME type; auto/final turns continue to require strict JSON output.
+- Stateless multi-turn Tool history returns the complete in-memory assistant message to the model so Gemini thought-signature metadata is preserved; opaque signatures are never logged, persisted or exposed in Tool results.
+- SerpAPI LIVE and UNAVAILABLE outcomes are accepted by the bounded `flight_tool_invocations_total` metric; observability validation must never turn a normalized provider outcome into an `INTERNAL` task failure.
+- When `flight.search` is the only registered planning Tool, completing every authoritative flight cell switches the next model turn to `tool_choice: none` so Gemini must synthesize the final strict JSON instead of repeating cached Tool calls until the turn limit.
+- The completed research message uses an explicit final-plan schema instruction rather than the intermediate `serverFlightResearchProgress` JSON envelope, preventing Gemini from echoing progress as the final response; missing stay evidence still fails closed later as planning-data unavailable.
+- OpenAI-compatible model responses that materialize optional plan arrays as `null` are normalized to omission at the provider boundary; required fields and supplied non-null values remain strictly validated.
+- A structurally invalid final model response receives a content-free schema-path correction and is retried inside the existing bounded loop; exhaustion fails closed as `SCHEMA_PARSE`.
+- Final Shared-plan evidence selections are treated as ids, rebound to complete server-owned normalized evidence, and assigned a server-derived `generatedAt`; unknown ids remain unbound and fail deterministic validation.
+- The final model contract returns compact `{id}` references rather than copying full provider evidence, keeping multi-offer responses bounded while the server remains authoritative for all normalized fields.
+- After the flight matrix is complete, missing required flight-origin coverage fails as `PLANNING_DATA_UNAVAILABLE`; unavailable stay evidence is normalized to `stays: []` and persisted as the Phase 4 `stay:NO_RESULTS` service gap, with no runtime fixture substitution.
+- The browser never treats submitted preferences, a run ID, Tool result or plan as authoritative local state. It reloads the durable planning run and, only after completion, the server-activated plan.
 
 - A DRAFT-trip private-chat turn may emit only an in-memory destination/days candidate; raw conversation content is never included in the event, audit summary, or client persistence.
 - The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write.
@@ -879,6 +936,86 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Failure or missing data creates only a `hotel` `RESEARCH_UNAVAILABLE`/`COMPLETED_WITH_GAPS` result. Sandbox fixtures are never used at runtime; no supplier order, payment, redirect or booking link is created or persisted.
 - Date, occupancy, preference, consent and offer-expiry changes stale dependent plan/confirmations and enqueue a new run. Audit, logs, metrics and traces contain no user input, price, property, supplier URL or high-cardinality identifiers.
 
+### TS-HOTEL-PROVIDER-1 — Provider switching, run-binding, and cache isolation
+
+**Stories:** H3, S1
+**Objective:** Verify that `HOTEL_PROVIDER` switches the live adapter used by
+newly accepted tasks, that an in-flight task keeps the adapter it was bound to,
+and that the per-provider cache never collides. Spec:
+[nuitee-serpapi-hotel-provider-switching-implementation.md](../nuitee-serpapi-hotel-provider-switching-implementation.md).
+
+**Steps:**
+
+1. With `HOTEL_PROVIDER=serpapi` and `SERPAPI_HOTEL_ENABLED=true`, accept a
+   research task and verify `agent_task_runs.hotel_provider =
+   'serpapi_google_hotels'`.
+2. Change `HOTEL_PROVIDER=nuitee` (and `NUITEE_API_KEY=<sandbox>`) and roll the
+   API. Accept another research task; verify the new row's
+   `hotel_provider = 'nuitee_connect'` while the row from step 1 is unchanged.
+3. Repeat the same `(destination, dates, occupancy)` under both providers.
+   Verify the `provider_search_cache.request_fingerprint` is different and
+   that no row in `provider_search_runs` ever carries both provider names
+   for the same `(task, snapshot, destination)` tuple (the unique index
+   `provider_search_runs_hotel_task_provider_unique` enforces this).
+4. Read the boot log; confirm `[hotel] provider selection: nuitee` (or the
+   `NOT_CONFIGURED` line when the key is missing).
+5. Set `HOTEL_PROVIDER=disabled` and verify new tasks carry
+   `hotel_provider = NULL` and `hotel.search` returns `UNAVAILABLE /
+   NOT_CONFIGURED` without any HTTP probe.
+
+**Expected outcomes:**
+
+- New tasks persist `agent_task_runs.hotel_provider` from the env-resolved
+  selection; tasks accepted before the env change are never rewritten.
+- Provider-scoped cache keys never collide across providers; cache hits
+  reuse only the provider that originally produced them.
+- The provider selection never swaps an in-flight task's source. The
+  shared planner service reads the run-bound value, not the live env.
+- Boot log emits the resolved selection exactly once. Unknown values or
+  missing credentials fall through to a labelled `NOT_CONFIGURED`
+  selection; the API never crashes on misconfiguration.
+
+### TS-HOTEL-PROVIDER-2 — Provider-only quote nationality authorization and redaction
+
+**Stories:** H3, S1, S6
+**Objective:** Verify that Nuitee `guestNationality` is encrypted at rest,
+resolved only inside the supplier call, never echoed to the browser, and
+that a grant/revoke invalidates dependent plans.
+
+**Steps:**
+
+1. `PUT /api/v1/trips/:tripId/stay-search-provider-authorizations` with
+   `{ "provider": "nuitee_connect", "field": "guest_nationality", "value":
+   "us" }`. Verify 201 with `id` and `version`; confirm the response does
+   **not** echo `"us"`, `"US"`, or the encrypted payload.
+2. `SELECT value_encrypted FROM stay_search_provider_authorizations WHERE
+   id = …;` — confirm the column does not contain the plaintext.
+3. Inspect `audit_events` for `HOTEL_PROVIDER_GRANTED`; confirm the summary
+   carries `{provider, field, version}` and never the value or any PII.
+4. Accept a hotel-capable research task; verify the worker invokes the
+   adapter and the request body includes `guestNationality: "US"`.
+5. Revoke the authorization via the DELETE endpoint and accept another
+   research task; verify `hotel.search` returns
+   `UNAVAILABLE / SEARCH_CONSTRAINTS_INCOMPLETE` and no supplier request is
+   made (mocked fetch impl).
+6. Grep logs, traces, telemetry, plan DTOs, audit summaries, and the
+   `provider_search_runs` / `provider_offers` payloads for the
+   nationality string. The string MUST NOT appear in any of them.
+
+**Expected outcomes:**
+
+- The nationality is encrypted with a server-only key. The same input
+  yields a different ciphertext across processes because the local-mode
+  key is derived from process-local secrets.
+- The plaintext appears only inside the local variable that calls
+  `NuiteeHotelProvider.searchHotels`; nothing the adapter or its callers
+  return ever carries the value.
+- A grant invalidates dependent ACTIVE/PROPOSED plans (`status='STALE'`,
+  `stale_reason='quote_nationality_changed'`).
+- A revoke performs the same stale cascade.
+- The authorization endpoint returns `404` for foreign trip/member
+  combinations; `422` for non-ISO-3166-1 alpha-2 input.
+
 ### TS-HOTEL-TOOL-2 — Non-price accommodation discovery and destination integrity
 
 **Stories:** H3, H5, S1
@@ -898,6 +1035,25 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - ORS receives a real ISO-3166 country code and only a valid geocoder layer. The removed `accommodation` layer and permissive destination-ID-as-country behavior cannot recur.
 - Same-task duplicates are rejected atomically. Cross-run cache hits copy evidence to a fresh `queryId` without a provider call; LIVE discovery is cached at most 24 hours and `UNAVAILABLE` for 30 seconds. A cache wait timeout fails closed rather than issuing another request.
 - Missing, ambiguous, out-of-radius, quota-limited, timed-out or malformed data produces only a bounded accommodation gap and never a fabricated candidate or hotel quote.
+
+### TS-HOTEL-PROVIDER-SWITCH-1 — Nuitee default and SerpApi task-bound switching
+
+**Stories:** H3, H5, S1
+**Objective:** Verify that Nuitee Connect / LiteAPI and SerpApi Google Hotels are selectable only by server configuration, remain isolated per task, and preserve privacy/fail-closed semantics.
+
+**Steps:**
+
+1. With `HOTEL_PROVIDER=nuitee`, accept a hotel-enabled task with complete preferences but no provider-only quote nationality; then grant, revoke and change its ISO nationality confirmation.
+2. Inspect the Nuitee request and normalized output for one room and two rooms. Return HTTP 200 with business `error.code=2001`, 401/403, 429, 5xx, timeout and malformed schema.
+3. Accept a task under `HOTEL_PROVIDER=serpapi`, then change deployment config to `nuitee` while that task runs and accept a second task. Repeat a cacheable equivalent query across providers and attempt model/browser supplied provider or nationality arguments.
+4. Inspect task rows, cache keys, evidence, plan DTO, LLM context, logs, metrics, traces and audit events. Force a live plan, then revoke/change the Nuitee authorization.
+
+**Expected outcomes:**
+
+- New tasks persist exactly one provider; a config change affects only later tasks. Existing runs neither switch providers nor combine results, and cache/evidence from one provider never satisfies the other.
+- Nuitee receives only server-derived dates, currency, city/country, occupancies and a valid provider-only nationality. It supports canonical multi-room occupancies; SerpApi multi-room requests fail before any upstream call. Neither provider can be selected by the LLM or browser.
+- Nuitee 2001 becomes explicit `NO_RESULTS`; all other unavailable, malformed or unauthorized outcomes become bounded `RESEARCH_UNAVAILABLE`/`COMPLETED_WITH_GAPS`. No automatic SerpApi fallback or runtime fixture occurs.
+- Nuitee `offerId`, supplier URL/raw payload, nationality and unverified tax detail never leave the server boundary. `PARTIAL`/`UNKNOWN` taxes always render “可能另计”. Authorization changes stale dependent evidence, plan and confirmations before replan.
 
 ### TS-ACTIVITIES-TOOL-1 — Durable Shared activities research and guarded plan finalization
 

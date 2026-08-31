@@ -80,13 +80,13 @@ const activityEvidenceSchema = z.object({
 
 const hotelOfferSchema = z.object({
   id: z.string().uuid(), providerOfferId: z.string().min(1), queryId: z.string().uuid(),
-  providerName: z.literal("serpapi_google_hotels"), destinationId: z.string().min(1),
+  providerName: z.enum(["nuitee_connect", "serpapi_google_hotels"]), destinationId: z.string().min(1),
   propertyId: z.string().min(1), propertyName: z.string().min(1), checkIn: z.string(), checkOut: z.string(),
   nights: z.number().int().positive(), roomCount: z.number().int().positive(), adultsPerRoom: z.array(z.number().int().positive()),
   totalPrice: z.number().nonnegative(), pricePerNight: z.number().nonnegative(), currency: z.string().length(3),
   taxesAndFees: z.object({ status: z.enum(["INCLUDED", "PARTIAL", "UNKNOWN"]), amount: z.number().nonnegative().optional() }).strict(),
   cancellationSummary: z.string().nullable(), roomSummary: z.string().nullable(),
-  source: z.literal("SerpApi Google Hotels"), capturedAt: z.string().datetime(), expiresAt: z.string().datetime(),
+  source: z.string().min(1), capturedAt: z.string().datetime(), expiresAt: z.string().datetime(),
 }).strict();
 
 export const planOutputSchema = z.object({
@@ -96,7 +96,9 @@ export const planOutputSchema = z.object({
   // single-element set from `destination` so pre-Phase 3 plans still pass.
   destinationCandidatesEvaluated: z.array(z.string().min(1)).min(1).optional(),
   flights: z.array(flightOfferSchema).min(1),
-  stays: z.array(stayOfferSchema).min(1),
+  // A missing stay provider/result is persisted as a Phase 4 service gap; it
+  // must not force the LLM to invent a hotel offer.
+  stays: z.array(stayOfferSchema),
   activities: z.array(activityEvidenceSchema).optional(),
   hotels: z.array(hotelOfferSchema).optional(),
   generatedAt: z.string().min(1),

@@ -48,17 +48,34 @@ export interface LLMGatewayOptions {
   maxRetries?: number;
 }
 
+const optionalArray = <T extends z.ZodTypeAny>(item: T) => z.preprocess(
+  // Gemini's OpenAI-compatible JSON mode may materialize an omitted optional
+  // property as null. At this provider boundary null has the same meaning as
+  // absence; required plan facts remain strictly typed below.
+  (value) => value === null ? undefined : value,
+  z.array(item).optional(),
+);
+
 const parsedCompletionSchema = z.object({
   plan: z.object({
     destination: z.string().min(1),
-    destinationCandidatesEvaluated: z.array(z.string().min(1)).min(1).optional(),
+    destinationCandidatesEvaluated: z.preprocess(
+      (value) => value === null ? undefined : value,
+      z.array(z.string().min(1)).min(1).optional(),
+    ),
     flights: z.array(z.unknown()),
-    stays: z.array(z.unknown()),
-    activities: z.array(z.unknown()).optional(),
-    hotels: z.array(z.unknown()).optional(),
+    stays: z.preprocess(
+      // Stay-provider unavailability is a Phase 4 service gap. Some models
+      // omit the empty category entirely; normalize it to the explicit empty
+      // selection consumed by deterministic planning validation.
+      (value) => value === null || value === undefined ? [] : value,
+      z.array(z.unknown()),
+    ),
+    activities: optionalArray(z.unknown()),
+    hotels: optionalArray(z.unknown()),
     generatedAt: z.string().min(1),
-    constraintReferences: z.array(z.string().min(1)).optional(),
-    publicExplanationTokens: z.array(z.string().min(1)).optional(),
+    constraintReferences: optionalArray(z.string().min(1)),
+    publicExplanationTokens: optionalArray(z.string().min(1)),
   }).strict(),
 }).strict();
 
@@ -503,6 +520,16 @@ export class LLMGateway implements ModelGateway {
   async generateStructuredPlanWithTools(params: {
     destination: string;
     destinationCandidates?: string[];
+    flightSearchConstraints: {
+      originIds: string[];
+      destinationIds: string[];
+      tripType: "ONE_WAY" | "ROUND_TRIP";
+      departureDate: string;
+      returnDate?: string;
+      adults: number;
+      cabin: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST";
+      currency: string;
+    };
     stays: StayOffer[];
     memberPreferences: Record<string, unknown>;
     tools: ModelToolDefinition[];
@@ -528,10 +555,12 @@ export class LLMGateway implements ModelGateway {
     const messages: Array<Record<string, unknown>> = [
       {
         role: "system",
-        content: "You are the Shared Trip planning skill. Use flight.search, accommodation.discover, hotel.search, and activities.search for every controlled destination cell when those tools are available. "
+        content: "You are the Shared Trip planning skill. Use flight.search for every originId/destinationId combination in flightSearchConstraints, and accommodation.discover, hotel.search, and activities.search for every controlled destination cell when those tools are available. "
+          + "For each flight.search call, provide only originId and destinationId from flightSearchConstraints. The server binds dates, passengers, cabin, currency, and snapshot authority; never send or invent those fields. "
           + "accommodation.discover is a non-price planning skeleton; never describe it as availability or a quote. hotel.search is the only live hotel price source and is exposed only after explicit stay-search preferences are confirmed. "
           + "Tool arguments are ordinary search parameters only; never invent authority fields. "
           + "Never invent, alter, or infer provider evidence, prices, currencies, links, or expiry. "
+          + "In the final plan, flights, stays, and activities are compact selections: copy only the exact id of each selected evidence item as an object shaped {\"id\":\"...\"}. The server rebinds those ids to authoritative evidence. "
           + "After research, return exactly one JSON object with a top-level plan field.",
       },
       {
@@ -539,13 +568,63 @@ export class LLMGateway implements ModelGateway {
         content: JSON.stringify({
           destination: params.destination,
           destinationCandidates: params.destinationCandidates ?? [params.destination],
+          flightSearchConstraints: params.flightSearchConstraints,
           stays: params.stays,
           memberPreferences: params.memberPreferences,
         }),
       },
     ];
+    type FlightCellState = "LIVE" | "UNAVAILABLE";
+    const flightToolAvailable = params.tools.some((tool) => tool.name === "flight.search");
+    const flightIsOnlyAvailableTool = flightToolAvailable
+      && params.tools.every((tool) => tool.name === "flight.search");
+    const requiredFlightCells = params.flightSearchConstraints.originIds.flatMap((originId) =>
+      params.flightSearchConstraints.destinationIds.map((destinationId) => ({ originId, destinationId })),
+    );
+    const flightCellStates = new Map<string, FlightCellState>();
+    const flightResultCache = new Map<string, unknown>();
+    let finalSchemaFailed = false;
+    const flightCellKey = (originId: string, destinationId: string) => `${originId}\u0000${destinationId}`;
+    const missingFlightCells = () => requiredFlightCells.filter(
+      ({ originId, destinationId }) => !flightCellStates.has(flightCellKey(originId, destinationId)),
+    );
+    const appendFlightProgress = () => {
+      if (!flightToolAvailable) return;
+      const cells = requiredFlightCells.map(({ originId, destinationId }) => ({
+        originId,
+        destinationId,
+        status: flightCellStates.get(flightCellKey(originId, destinationId)) ?? "MISSING",
+      }));
+      const hasMissingCells = cells.some((cell) => cell.status === "MISSING");
+      if (!hasMissingCells) {
+        messages.push({
+          role: "system",
+          content: "Authoritative flight research is complete. Do not call flight.search again. "
+            + "Return exactly one JSON object with one top-level key named plan. "
+            + "The plan object may contain only destination, destinationCandidatesEvaluated, flights, stays, activities, generatedAt, constraintReferences, and publicExplanationTokens. "
+            + "flights, stays, and activities must contain only compact {\"id\":\"exact evidence id\"} selection objects; do not copy or summarize the remaining evidence fields. "
+            + "destination, flights, and generatedAt are required. Return stays as an empty array when no stay evidence exists. Omit optional properties when they have no value; do not set them to null. "
+            + "Use only the normalized Tool results already present in this conversation; never invent missing evidence.",
+        });
+        return;
+      }
+      messages.push({
+        role: "system",
+        content: JSON.stringify({
+          serverFlightResearchProgress: {
+            cells,
+            instruction: "Call flight.search exactly once for each MISSING cell. Do not repeat LIVE or UNAVAILABLE cells and do not return the final plan yet.",
+          },
+        }),
+      });
+    };
     for (let turn = 0; turn < params.maxTurns; turn += 1) {
       if (params.signal?.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
+      const forceMissingFlightSearch = turn > 0
+        && flightToolAvailable
+        && missingFlightCells().length > 0;
+      const forceFinalPlan = flightIsOnlyAvailableTool
+        && missingFlightCells().length === 0;
       let raw: {
         choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }>;
       };
@@ -554,29 +633,55 @@ export class LLMGateway implements ModelGateway {
           model: this.options.modelName,
           messages,
           tools: params.tools.map((tool) => ({ type: "function", function: tool })),
-          tool_choice: "auto",
-          response_format: { type: "json_object" },
+          tool_choice: forceMissingFlightSearch
+            ? { type: "function", function: { name: "flight.search" } }
+            : forceFinalPlan ? "none" : "auto",
+          // Gemini's OpenAI-compatible endpoint rejects forced function
+          // calling when a JSON response MIME type is requested in the same
+          // turn. Tool arguments remain schema-bound; strict JSON output is
+          // restored for auto/final turns where the model may return a plan.
+          ...(!forceMissingFlightSearch ? { response_format: { type: "json_object" as const } } : {}),
         }, { signal: params.signal, headers: outboundTraceHeaders(ctx) }) as typeof raw;
       } catch (error) {
+        const errorCode = classifyError(error);
         logSafeRuntimeEvent(ctx, {
           component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "failure",
-          errorCode: classifyError(error), latencyMs: Date.now() - start,
+          errorCode, latencyMs: Date.now() - start,
           promptVersion: this.options.promptVersion,
         });
-        throw error;
+        throw new ModelGatewayError(errorCode);
       }
       const message = raw.choices?.[0]?.message;
       const calls = message?.tool_calls ?? [];
       if (calls.length === 0) {
+        // The model may try to synthesize a plan after only a subset of the
+        // authoritative matrix. Keep the bounded model loop alive and require
+        // another genuine flight.search call instead of failing the durable
+        // task immediately or prefetching on the model's behalf.
+        if (flightToolAvailable && missingFlightCells().length > 0) {
+          // Keep provider compatibility metadata (for example Gemini thought
+          // signatures) in memory for the next turn. Never log or persist it.
+          messages.push({ ...message, role: "assistant", content: message?.content ?? null });
+          appendFlightProgress();
+          continue;
+        }
         await params.beforeFinal?.();
         const completion = parsedCompletionSchema.safeParse(completionPayload({ parsed: null, content: message?.content }));
         if (!completion.success) {
-          logSafeRuntimeEvent(ctx, {
-            component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "failure",
-            errorCode: "SCHEMA_PARSE", latencyMs: Date.now() - start,
-            promptVersion: this.options.promptVersion,
+          finalSchemaFailed = true;
+          // A provider may occasionally emit null optionals or an incomplete
+          // wrapper despite JSON mode. Keep the retry inside the same bounded
+          // Tool loop and disclose only schema paths back to the model — never
+          // raw provider evidence, private snapshot data, or error text.
+          messages.push({ ...message, role: "assistant", content: message?.content ?? null });
+          const issuePaths = [...new Set(completion.error.issues.map((issue) =>
+            issue.path.join(".") || "response",
+          ))].sort();
+          messages.push({
+            role: "system",
+            content: `The previous final JSON failed the required schema at: ${issuePaths.join(", ")}. Return a corrected JSON object with exactly one top-level plan key. Keep flights, stays, and activities compact by returning only {"id":"exact evidence id"} selection objects. Omit optional properties rather than setting them to null.`,
           });
-          throw new ModelGatewayError("SCHEMA_PARSE");
+          continue;
         }
         logSafeRuntimeEvent(ctx, {
           component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "success",
@@ -585,7 +690,12 @@ export class LLMGateway implements ModelGateway {
         });
         return completion.data.plan;
       }
-      messages.push({ role: "assistant", content: message?.content ?? null, tool_calls: calls });
+      // Gemini 3 requires the complete model message, including opaque
+      // thought-signature metadata attached to a function call, to be sent
+      // back unchanged on the next stateless turn. Reconstructing only the
+      // OpenAI-standard fields can make the next Tool request fail with 400.
+      // This object remains loop-local and is never logged or persisted.
+      messages.push({ ...message, role: "assistant", content: message?.content ?? null, tool_calls: calls });
       for (const call of calls) {
         const name = call.function?.name;
         const id = call.id;
@@ -599,7 +709,28 @@ export class LLMGateway implements ModelGateway {
         });
         let result: unknown;
         try {
-          result = await params.dispatchTool({ id, name, arguments: args });
+          const flightArgs = name === "flight.search"
+            && typeof args === "object" && args !== null
+            && typeof (args as { originId?: unknown }).originId === "string"
+            && typeof (args as { destinationId?: unknown }).destinationId === "string"
+            ? {
+                originId: (args as { originId: string }).originId,
+                destinationId: (args as { destinationId: string }).destinationId,
+              }
+            : null;
+          const cacheKey = flightArgs ? flightCellKey(flightArgs.originId, flightArgs.destinationId) : null;
+          if (cacheKey && flightResultCache.has(cacheKey)) {
+            result = flightResultCache.get(cacheKey);
+          } else {
+            result = await params.dispatchTool({ id, name, arguments: args });
+            if (cacheKey) flightResultCache.set(cacheKey, result);
+          }
+          if (cacheKey && typeof result === "object" && result !== null) {
+            const outcome = (result as { outcome?: unknown }).outcome;
+            if (outcome === "LIVE" || outcome === "UNAVAILABLE") {
+              flightCellStates.set(cacheKey, outcome);
+            }
+          }
           logSafeRuntimeEvent(ctx, {
             component: "tool", event: "dispatch", operation: "plan.comparison", outcome: "success",
             toolName: name, attempt: turn + 1, latencyMs: Date.now() - toolStart,
@@ -615,13 +746,17 @@ export class LLMGateway implements ModelGateway {
         }
         messages.push({ role: "tool", tool_call_id: id, content: JSON.stringify(result) });
       }
+      appendFlightProgress();
     }
+    const exhaustedCode = finalSchemaFailed && missingFlightCells().length === 0
+      ? "SCHEMA_PARSE"
+      : "TOOL_CALL_MAX_TURNS";
     logSafeRuntimeEvent(ctx, {
       component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "failure",
-      errorCode: "TOOL_CALL_MAX_TURNS", latencyMs: Date.now() - start,
+      errorCode: exhaustedCode, latencyMs: Date.now() - start,
       promptVersion: this.options.promptVersion,
     });
-    throw new ModelGatewayError("TOOL_CALL_MAX_TURNS");
+    throw new ModelGatewayError(exhaustedCode);
   }
 
   async explainPlanDiff(params: {

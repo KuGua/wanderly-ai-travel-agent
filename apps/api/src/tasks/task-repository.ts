@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { SpanKind } from "@opentelemetry/api";
 
 import { db, rawDb } from "../db/database.js";
@@ -24,10 +24,13 @@ import {
   type ConversationTurnRequest,
   type OwnerConversationMessage,
 } from "../types/schemas.js";
+import type { HotelOfferProviderName } from "../providers/types.js";
+import { resolvePersistedHotelProviderName } from "../providers/live-provider-factory.js";
+import { loadActiveQuoteNationality } from "../services/stay-search-provider-authorization.js";
 import type { RequestContext } from "../utils/context.js";
-import { createRequestContext } from "../utils/context.js";
 import {
   getTracer,
+  parseTraceparent,
   recordSpanError,
   safeSetAttribute,
 } from "../observability/tracing.js";
@@ -61,20 +64,30 @@ function buildTraceContextForTask(ctx: RequestContext): {
 /**
  * Inverse of `buildTraceContextForTask`. Reads the persisted
  * `trace_context` column and rehydrates a `RequestContext` suitable for the
- * Worker. When the column is `null` (old rows, recovery, or background
- * replay), returns a context with a freshly-minted UUID so downstream
- * consumers never see `undefined` ids.
+ * Worker. `correlationId` and `traceId` are carried over verbatim so Worker
+ * log lines join the API log lines for the same PLAN. When the column is
+ * `null` (old rows, recovery, or background replay), `correlationId` falls
+ * back to a freshly-minted UUID and the trace fields stay unset, so
+ * `correlationChild` binds the Worker's own active span instead.
  */
 export function ctxFromRun(run: AgentTaskRow): RequestContext {
   const tc = run.traceContext ?? null;
-  return createRequestContext(
-    run.createdByUserId,
-    tc?.correlationId ?? randomUUID(),
-    randomUUID(),
-    undefined,
-    tc?.traceparent,
-    tc?.tracestate,
-  );
+  const parsed = tc?.traceparent ? parseTraceparent(tc.traceparent) : null;
+  // The W3C trace id of the originating HTTP request is what makes
+  // `jq 'select(.trace_id == "<id>")'` return API *and* Worker lines for one
+  // PLAN. Minting a fresh UUID here would put an id in `trace_id` that
+  // matches neither the API log thread nor any span, so we reuse the
+  // persisted one. `spanId` is deliberately left unset: `correlationChild`
+  // then reads the *active* Worker span, so `span_id` always identifies the
+  // Worker's own unit of work rather than the already-ended HTTP span.
+  const ctx: RequestContext = {
+    correlationId: tc?.correlationId ?? randomUUID(),
+    actorUserId: run.createdByUserId,
+  };
+  if (parsed) ctx.traceId = parsed.traceId;
+  if (tc?.traceparent) ctx.traceparent = tc.traceparent;
+  if (tc?.tracestate) ctx.tracestate = tc.tracestate;
+  return ctx;
 }
 
 const CLAIM_CONVERSATION_SQL = [
@@ -241,12 +254,30 @@ export async function acceptPlanningTask(params: {
   snapshotId: string;
   flightSearchPreferencesVersion: number;
   staySearchPreferencesVersion?: number;
+  /**
+   * Hotel provider bound to this task. Persisted from the resolved
+   * `HOTEL_PROVIDER` env value at acceptance; never re-read mid-run
+   * and never mutated by a later env reload. `null` when no real
+   * adapter is configured (e.g. `disabled`, or `nuitee` before the
+   * adapter ships in Phase C), or when the task simply does not
+   * require hotel capability. Spec §3.1.
+   */
+  hotelProvider?: HotelOfferProviderName | null;
   operation: "PLAN" | "REPLAN";
   requestId: string;
   tx?: Tx;
 }): Promise<{ runId: string; operation: "PLAN" | "REPLAN"; status: "QUEUED"; generationAttempt: 0 }> {
   const runId = randomUUID();
   const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
+  const hotelProvider = params.hotelProvider === undefined
+    ? resolvePersistedHotelProviderName()
+    : params.hotelProvider;
+  const quoteAuthorization = hotelProvider === "nuitee_connect"
+    ? await loadActiveQuoteNationality({ tripId: params.tripId, memberId: params.userId })
+    : null;
+  if (hotelProvider === "nuitee_connect" && !quoteAuthorization) {
+    throw new ApiError(422, "Unprocessable Entity", "A confirmed Nuitee hotel quote nationality is required");
+  }
   const accept = async (tx: Tx) => {
     const [active] = await tx.select({ id: agentTaskRuns.id }).from(agentTaskRuns).where(and(
       eq(agentTaskRuns.tripId, params.tripId),
@@ -280,6 +311,9 @@ export async function acceptPlanningTask(params: {
       snapshotId: params.snapshotId,
       flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
       staySearchPreferencesVersion: params.staySearchPreferencesVersion ?? null,
+      hotelProvider,
+      hotelQuoteNationalityAuthorizationId: quoteAuthorization?.id ?? null,
+      hotelQuoteNationalityAuthorizationVersion: quoteAuthorization?.version ?? null,
       requestId: params.requestId,
       expiresAt,
       traceContext: buildTraceContextForTask(params.ctx),
@@ -318,6 +352,8 @@ export async function acceptResearchTask(params: {
   staySearchPreferencesVersion?: number;
   outputMode: "RESEARCH_ONLY" | "PROPOSE_PLAN";
   requestedCapabilities: readonly string[];
+  /** See `acceptPlanningTask.hotelProvider`. */
+  hotelProvider?: HotelOfferProviderName | null;
   requestId: string;
   tx?: Tx;
 }): Promise<{
@@ -329,6 +365,15 @@ export async function acceptResearchTask(params: {
 }> {
   const runId = randomUUID();
   const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
+  const hotelProvider = params.hotelProvider === undefined
+    ? resolvePersistedHotelProviderName()
+    : params.hotelProvider;
+  const quoteAuthorization = hotelProvider === "nuitee_connect"
+    ? await loadActiveQuoteNationality({ tripId: params.tripId, memberId: params.userId })
+    : null;
+  if (hotelProvider === "nuitee_connect" && !quoteAuthorization) {
+    throw new ApiError(422, "Unprocessable Entity", "A confirmed Nuitee hotel quote nationality is required");
+  }
   const accept = async (tx: Tx) => {
     // Idempotency: the partial unique index `(tripId, requestId)` makes a
     // second insert a hard error. Catch the constraint violation and return
@@ -347,6 +392,18 @@ export async function acceptResearchTask(params: {
       };
     }
 
+    // Mirrors acceptPlanningTask: PLAN/REPLAN/RESEARCH share one active slot
+    // per trip (the `agent_task_runs_one_active_planning` partial unique
+    // index), so a second concurrent request must fail closed with 409
+    // rather than surface the raw constraint violation as a 500.
+    const [active] = await tx.select({ id: agentTaskRuns.id }).from(agentTaskRuns).where(and(
+      eq(agentTaskRuns.tripId, params.tripId),
+      inArray(agentTaskRuns.status, ["QUEUED", "RUNNING", "CANCEL_REQUESTED"]),
+    )).limit(1);
+    if (active) {
+      throw new ApiError(409, "Conflict", "This trip already has an active planning run");
+    }
+
     const [run] = await tx.insert(agentTaskRuns).values({
       id: runId,
       operation: "RESEARCH",
@@ -356,6 +413,9 @@ export async function acceptResearchTask(params: {
       snapshotId: params.snapshotId,
       flightSearchPreferencesVersion: params.flightSearchPreferencesVersion,
       staySearchPreferencesVersion: params.staySearchPreferencesVersion ?? null,
+      hotelProvider,
+      hotelQuoteNationalityAuthorizationId: quoteAuthorization?.id ?? null,
+      hotelQuoteNationalityAuthorizationVersion: quoteAuthorization?.version ?? null,
       requestId: params.requestId,
       researchMode: params.outputMode,
       requestedCapabilities: params.requestedCapabilities as string[],
@@ -437,6 +497,23 @@ export async function getAuthorizedAgentRun(runId: string, userId: string): Prom
   if (!run) throw new ApiError(404, "Not Found", "Agent run not found");
   await requireRunAccess(run, userId);
   return toRunResponse(run);
+}
+
+/**
+ * Returns the most recent Shared planning task visible to a current trip
+ * member. This is a recovery read for the Web workspace: the durable task
+ * remains authoritative across refreshes and is never reconstructed from
+ * browser state.
+ */
+export async function getLatestAuthorizedPlanningRun(tripId: string, userId: string): Promise<AgentRunResponse | null> {
+  const [member] = await db.select({ userId: tripMembers.userId }).from(tripMembers).where(and(
+    eq(tripMembers.tripId, tripId), eq(tripMembers.userId, userId),
+  )).limit(1);
+  if (!member) throw new ApiError(403, "Forbidden", "Not authorized for this planning run");
+  const [run] = await db.select().from(agentTaskRuns).where(and(
+    eq(agentTaskRuns.tripId, tripId), inArray(agentTaskRuns.operation, ["PLAN", "REPLAN"]),
+  )).orderBy(desc(agentTaskRuns.createdAt)).limit(1);
+  return run ? toRunResponse(run) : null;
 }
 
 export async function requestAgentTaskCancellation(params: {

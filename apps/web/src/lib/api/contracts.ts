@@ -140,6 +140,7 @@ export const tripInvitationCreateResponseSchema = z.object({
 export const invitationPreviewResponseSchema = z.object({
   trip: z.object({
     name: z.string().min(1).max(256),
+    status: tripStatusSchema,
     destinationCandidates: z.array(z.string().min(1)).max(5),
     travelDateStart: dateSchema.nullable(),
     travelDateEnd: dateSchema.nullable(),
@@ -186,7 +187,8 @@ export const conversationTurnRequestSchema = z.object({
 
 export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN"]);
 export const agentTaskStatusSchema = z.enum([
-  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "FAILED", "CANCELLED", "STALE",
+  "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS",
+  "FAILED", "CANCELLED", "STALE",
 ]);
 export const agentRunPhaseSchema = z.enum([
   "ACCEPTED", "RESEARCHING", "GENERATING", "VALIDATING", "PERSISTING",
@@ -194,7 +196,8 @@ export const agentRunPhaseSchema = z.enum([
 ]);
 export const agentRunErrorCodeSchema = z.enum([
   "NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "SCHEMA_PARSE",
-  "POLICY_DENIED", "CANCELLED", "EXPIRED", "RETRY_EXHAUSTED", "INTERNAL",
+  "POLICY_DENIED", "SEARCH_PREFERENCES_STALE", "PLANNING_DATA_UNAVAILABLE", "UNKNOWN_SKILL", "TOOL_CALL_MAX_TURNS",
+  "CANCELLED", "EXPIRED", "RETRY_EXHAUSTED", "INTERNAL",
 ]);
 
 export const conversationTurnAcceptedResponseSchema = z.object({
@@ -224,6 +227,53 @@ export const agentRunResponseSchema = z.object({
   assistantMessageId: z.string().uuid().nullable(),
   resultPlanId: z.string().uuid().nullable(),
 });
+
+export const tripSearchPreferencesInputSchema = z.object({
+  tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  adults: z.number().int().min(1).max(9),
+  cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
+  offerFreshnessMinutes: z.number().int().min(1).max(1_440),
+}).strict();
+
+export const tripSearchPreferencesResponseSchema = tripSearchPreferencesInputSchema.extend({
+  tripId: z.string().uuid(),
+  version: z.number().int().positive(),
+  confirmedBy: z.string().uuid(),
+  createdAt: z.string().datetime(),
+}).strict();
+
+export const planningTaskAcceptedResponseSchema = z.object({
+  runId: z.string().uuid(),
+  operation: z.literal("PLAN"),
+  status: z.literal("QUEUED"),
+  generationAttempt: z.literal(0),
+  snapshotId: z.string().uuid(),
+}).strict();
+
+const latestPlanFlightSchema = z.object({
+  id: z.string().min(1), providerOfferId: z.string().min(1), providerName: z.string().min(1), queryId: z.string().uuid(),
+  origin: z.string().min(1), destination: z.string().min(1),
+  segments: z.array(z.object({ carrierCode: z.string().min(1), flightNumber: z.string().min(1), origin: z.string().min(1), destination: z.string().min(1), departureAt: z.string().min(1), arrivalAt: z.string().min(1), duration: z.string().min(1) }).strict()).min(1),
+  totalDuration: z.string().min(1), totalPrice: z.number().nonnegative(), currency: z.string().length(3),
+  cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]), adults: z.number().int().min(1).max(9),
+  baggageSummary: z.string().nullable(), changeSummary: z.string().nullable(), source: z.string().min(1), capturedAt: z.string().datetime(), expiresAt: z.string().datetime(),
+}).strict();
+
+const latestPlanDataSchema = z.object({
+  destination: z.string().min(1),
+  destinationCandidatesEvaluated: z.array(z.string().min(1)).optional(),
+  flights: z.array(latestPlanFlightSchema).min(1),
+  stays: z.array(z.unknown()).default([]),
+  ground: z.array(z.unknown()).default([]),
+  generatedAt: z.string().datetime(),
+  constraintReferences: z.array(z.string()).optional(),
+}).strict();
+
+export const latestPlanResponseSchema = z.object({
+  plan: z.object({ id: z.string().uuid(), version: z.number().int().positive(), planData: latestPlanDataSchema }).strict(),
+}).strict();
+export const latestPlanningRunResponseSchema = z.object({ run: agentRunResponseSchema.nullable() }).strict();
 
 const streamBaseSchema = z.object({
   runId: z.string().uuid(),
@@ -313,7 +363,7 @@ export const explorationStartRequestSchema = z.object({
 export const explorationDraftTripSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-    status: z.literal("PLANNING"),
+  status: z.literal("DRAFT"),
   departureCities: z.array(z.string()).length(0),
   destinationCandidates: z.array(z.string()).length(0),
   travelDateStart: z.null(),
@@ -359,12 +409,16 @@ export const tripActivationResponseSchema = z.object({
 
 export const updateTripTitleInputSchema = z.object({ name: z.string().trim().min(1).max(256) }).strict();
 export const updateDraftTripBriefInputSchema = z.object({
-  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+  departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
+  replaceDestinationCandidates: z.boolean().optional(),
+  travelDateStart: dateSchema.nullable().optional(),
+  travelDateEnd: dateSchema.nullable().optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
-}).strict().refine((value) => value.destinationCandidates !== undefined || value.travelDays !== undefined);
+}).strict().refine((value) => value.departureCities !== undefined || value.destinationCandidates !== undefined || value.travelDateStart !== undefined || value.travelDateEnd !== undefined || value.travelDays !== undefined);
 export const updateDraftTripBriefResponseSchema = z.object({
-  trip: z.object({ id: z.string().uuid(), name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"), destinationCandidates: z.array(z.string()), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime() }).strict(),
+  trip: z.object({ id: z.string().uuid(), name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"), departureCities: z.array(z.string()), destinationCandidates: z.array(z.string()), travelDateStart: dateSchema.nullable(), travelDateEnd: dateSchema.nullable(), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime() }).strict(),
 });
 export const updateTripTitleResponseSchema = z.object({
   trip: z.object({
@@ -508,6 +562,11 @@ export type LocationReferenceInput = z.infer<typeof locationReferenceInputSchema
 export type LocationReferenceResponse = z.infer<typeof locationReferenceResponseSchema>;
 export type LocationIntroductionInput = z.infer<typeof locationIntroductionInputSchema>;
 export type LocationIntroductionReady = z.infer<typeof locationIntroductionReadySchema>;
+export type TripSearchPreferencesInput = z.infer<typeof tripSearchPreferencesInputSchema>;
+export type TripSearchPreferencesResponse = z.infer<typeof tripSearchPreferencesResponseSchema>;
+export type PlanningTaskAcceptedResponse = z.infer<typeof planningTaskAcceptedResponseSchema>;
+export type LatestPlanResponse = z.infer<typeof latestPlanResponseSchema>;
+export type LatestPlanningRunResponse = z.infer<typeof latestPlanningRunResponseSchema>;
 export type LocationIntroductionGenerating = z.infer<typeof locationIntroductionGeneratingSchema>;
 export type LocationIntroductionResponse = z.infer<typeof locationIntroductionResponseSchema>;
 export type ExplorationStartRequest = z.infer<typeof explorationStartRequestSchema>;
@@ -797,6 +856,60 @@ export const serviceGapSchema = z.object({
 }).strict();
 
 export const researchResultStatusSchema = z.enum(["COMPLETE", "COMPLETED_WITH_GAPS"]);
+
+/**
+ * Phase E — hotel offer DTO.
+ *
+ * Mirrors `apps/api/src/types/domain.ts` `HotelOffer`. Sensitive supplier
+ * fields (raw offerId, hotel URL, address, image URLs, nationality) are
+ * NEVER exposed here — only the server-derived stable identifiers needed
+ * to render the comparison card and revalidate cached state.
+ */
+export const hotelTaxFeeStatusSchema = z.enum(["INCLUDED", "PARTIAL", "UNKNOWN"]);
+export const hotelProviderNameSchema = z.enum(["nuitee_connect", "serpapi_google_hotels"]);
+
+export const hotelOfferDtoSchema = z.object({
+  id: z.string().uuid(),
+  providerOfferId: z.string().min(1),
+  queryId: z.string().uuid(),
+  providerName: hotelProviderNameSchema,
+  destinationId: z.string().min(1),
+  propertyId: z.string().min(1),
+  propertyName: z.string().min(1),
+  checkIn: z.string(),
+  checkOut: z.string(),
+  nights: z.number().int().positive(),
+  roomCount: z.number().int().positive(),
+  adultsPerRoom: z.array(z.number().int().positive()),
+  totalPrice: z.number().nonnegative(),
+  pricePerNight: z.number().nonnegative(),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+  taxesAndFees: z.object({
+    status: hotelTaxFeeStatusSchema,
+    amount: z.number().nonnegative().optional(),
+  }).strict(),
+  cancellationSummary: z.string().nullable(),
+  roomSummary: z.string().nullable(),
+  source: z.string().min(1),
+  capturedAt: z.string().datetime({ offset: true }),
+  expiresAt: z.string().datetime({ offset: true }),
+}).strict();
+export type HotelOfferDto = z.infer<typeof hotelOfferDtoSchema>;
+
+/**
+ * Provider-only quote authorization DTO. The response intentionally
+ * omits the decrypted value (e.g. nationality) — only the id/version
+ * pointer and metadata.
+ */
+export const staySearchAuthorizationDtoSchema = z.object({
+  id: z.string().uuid(),
+  providerName: hotelProviderNameSchema,
+  field: z.literal("guest_nationality"),
+  version: z.number().int().positive(),
+  grantedAt: z.string().datetime(),
+  expiresAt: z.string().datetime().nullable(),
+}).strict();
+export type StaySearchAuthorizationDto = z.infer<typeof staySearchAuthorizationDtoSchema>;
 
 export const researchResultSchema = z.object({
   id: z.string().uuid(),

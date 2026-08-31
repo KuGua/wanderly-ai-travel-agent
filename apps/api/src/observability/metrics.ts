@@ -332,21 +332,24 @@ metrics.registerCounter("trip_draft_brief_update_total", "Creator-confirmed DRAF
 metrics.registerCounter("draft_command_rejected_total", "Collaboration commands rejected because the Trip is still a Draft.", {
   operation: ["invitation", "consent", "planning", "confirmation", "booking", "change_event", "research"],
 });
+metrics.registerCounter("trip_invitation_rejected_total", "Trip invitation attempts rejected because the Trip is archived or cancelled.", {
+  reason: ["terminal_trip"],
+});
 metrics.registerCounter("agent_task_recoveries_total", "Expired Agent task leases and queue entries recovered.", {
   outcome: ["retrying", "failed", "cancelled"],
 });
-metrics.registerCounter("flight_provider_requests_total", "Amadeus flight provider requests by bounded outcome.", {
+metrics.registerCounter("flight_provider_requests_total", "Flight provider requests by bounded outcome.", {
   outcome: ["live", "unavailable"],
-  provider: ["amadeus"],
-  error_category: ["none", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "no_results"],
+  provider: ["amadeus", "flightapi", "serpapi"],
+  error_category: ["none", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "no_results", "provider_not_approved", "search_constraints_incomplete"],
 });
-metrics.registerHistogram("flight_provider_latency_ms", "Amadeus flight provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
-  provider: ["amadeus"],
+metrics.registerHistogram("flight_provider_latency_ms", "Flight provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
+  provider: ["amadeus", "flightapi", "serpapi"],
   outcome: ["live", "unavailable"],
 });
 metrics.registerCounter("flight_tool_invocations_total", "Flight tool execution outcomes.", {
   outcome: ["live", "unavailable"],
-  provider: ["amadeus"],
+  provider: ["amadeus", "flightapi", "serpapi", "unconfigured"],
   error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
 });
 // Global POI & ground mobility (docs/ground-mobility-implementation.md §7).
@@ -419,11 +422,11 @@ metrics.registerHistogram("activities_provider_latency_ms", "Viator MCP activity
 
 metrics.registerCounter("hotel_provider_requests_total", "Hotel provider requests by bounded outcome.", {
   outcome: ["live", "unavailable"],
-  provider: ["serpapi_google_hotels"],
+  provider: ["nuitee_connect", "serpapi_google_hotels", "unconfigured"],
   error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
 });
-metrics.registerHistogram("hotel_provider_latency_ms", "Hotel provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000], {
-  provider: ["serpapi_google_hotels"],
+metrics.registerHistogram("hotel_provider_latency_ms", "Hotel provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 10_000, 15_000, 30_000], {
+  provider: ["nuitee_connect", "serpapi_google_hotels", "unconfigured"],
   outcome: ["live", "unavailable"],
 });
 metrics.registerCounter("accommodation_provider_requests_total", "Accommodation discovery provider requests by bounded outcome.", {
@@ -442,7 +445,7 @@ metrics.registerCounter("accommodation_tool_invocations_total", "accommodation.d
 });
 metrics.registerCounter("hotel_tool_invocations_total", "hotel.search Tool invocations by bounded outcome.", {
   outcome: ["live", "unavailable"],
-  provider: ["serpapi_google_hotels"],
+  provider: ["nuitee_connect", "serpapi_google_hotels", "unconfigured"],
   error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
 });
 metrics.registerCounter("provider_search_cache_total", "Provider search read-through cache outcomes.", {

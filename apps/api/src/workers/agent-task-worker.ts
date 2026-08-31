@@ -126,7 +126,7 @@ export async function processNextAgentTask(): Promise<boolean> {
     try {
       logSafeRuntimeEvent(ctx, {
         component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "started",
-        attempt: run.generationAttempt,
+        attempt: run.generationAttempt, relatedRunId: run.id,
       });
       await publishAgentStreamEvent({
         event: "turn.started",
@@ -142,7 +142,7 @@ export async function processNextAgentTask(): Promise<boolean> {
         metrics.inc("agent_task_outcomes_total", { operation: run.operation.toLowerCase(), outcome: "completed" });
         logSafeRuntimeEvent(ctx, {
           component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "success",
-          attempt: run.generationAttempt,
+          attempt: run.generationAttempt, relatedRunId: run.id,
         });
         return true;
       }
@@ -184,7 +184,7 @@ export async function processNextAgentTask(): Promise<boolean> {
       });
       logSafeRuntimeEvent(ctx, {
         component: "worker", event: "task", operation: "conversation", outcome: "success",
-        attempt: run.generationAttempt,
+        attempt: run.generationAttempt, relatedRunId: run.id,
       });
       return true;
     } catch (error) {
@@ -210,6 +210,7 @@ export async function processNextAgentTask(): Promise<boolean> {
       logSafeRuntimeEvent(ctx, {
         component: "worker", event: "task", operation: run.operation.toLowerCase(),
         outcome: "failure", attempt: run.generationAttempt, errorCode: classified.code,
+        relatedRunId: run.id,
       });
       const outcome = await failOrRetryTask({
         run,
@@ -252,7 +253,7 @@ function classifyTaskError(error: unknown): {
   if (code === "NETWORK") return { code: "NETWORK", retryable: true };
   if (code === "UPSTREAM_5XX") return { code: "UPSTREAM_5XX", retryable: true };
   if (code === "UPSTREAM_FAILURE") return { code: "UPSTREAM_FAILURE", retryable: true };
-  if (code === "SCHEMA_PARSE" || code === "OUTPUT_INVALID") return { code: "SCHEMA_PARSE", retryable: false };
+  if (code === "SCHEMA_PARSE" || code === "OUTPUT_INVALID" || code === "INPUT_INVALID" || code === "PLAN_VALIDATION_FAILED") return { code: "SCHEMA_PARSE", retryable: false };
   if (code === "POLICY_DENIED") return { code: "POLICY_DENIED", retryable: false };
   if (code === "SEARCH_PREFERENCES_STALE") return { code: "SEARCH_PREFERENCES_STALE", retryable: false };
   if (code === "PLANNING_DATA_UNAVAILABLE") return { code: "PLANNING_DATA_UNAVAILABLE", retryable: false };

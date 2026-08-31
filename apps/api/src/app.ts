@@ -13,6 +13,7 @@ import { tripRoutes } from "./routes/trips.js";
 import { consentRoutes } from "./routes/consent.js";
 import { planningRoutes } from "./routes/planning.js";
 import { researchRoutes } from "./routes/research.js";
+import { staySearchProviderAuthorizationRoutes } from "./routes/stay-search-provider-authorizations.js";
 import { confirmationRoutes } from "./routes/confirmations.js";
 import { bookingRoutes } from "./routes/bookings.js";
 import { changeEventRoutes } from "./routes/change-events.js";
@@ -114,12 +115,18 @@ export async function buildApp(options: BuildAppOptions = {}) {
     );
     request.traceId = inbound?.traceId ?? newTraceId();
     request.spanId = newSpanId();
+    // The serialized form is what crosses the durable boundary: routes pass
+    // `request.traceparent` into `createRequestContext`, and
+    // `tasks/task-repository.ts#buildTraceContextForTask` persists it into
+    // `agent_task_runs.trace_context`. Without it that column is always NULL
+    // and the Worker cannot rejoin the originating request's log thread.
+    request.traceparent = formatTraceparent(request.traceId, request.spanId, "01");
+    const rawTracestate = request.headers["tracestate"];
+    const tracestate = Array.isArray(rawTracestate) ? rawTracestate[0] : rawTracestate;
+    if (tracestate) request.tracestate = tracestate;
     // This must be set before the CORS hook runs: a successful preflight is
     // short-circuited there and does not reach the regular route lifecycle.
-    reply.header(
-      TRACEPARENT_HEADER,
-      formatTraceparent(request.traceId, request.spanId, "01"),
-    );
+    reply.header(TRACEPARENT_HEADER, request.traceparent);
 
     // Open the server span. The route pattern is not yet known in onRequest
     // for Fastify 5, so we set the bare minimum attributes here and enrich
@@ -216,6 +223,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(consentRoutes, { prefix: "/api/v1" });
   await app.register(planningRoutes, { prefix: "/api/v1" });
   await app.register(researchRoutes, { prefix: "/api/v1" }); // Phase 2 — Personal Trip Orchestrator
+  await app.register(staySearchProviderAuthorizationRoutes, { prefix: "/api/v1" }); // Phase D — hotel provider authorization
   await app.register(confirmationRoutes, { prefix: "/api/v1" });
   await app.register(bookingRoutes, { prefix: "/api/v1" });
   await app.register(changeEventRoutes, { prefix: "/api/v1" });

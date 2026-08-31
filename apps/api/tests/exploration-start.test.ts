@@ -77,13 +77,13 @@ async function startExploration(userKey: "alice" | "bob", requestId: string) {
 }
 
 describe("Exploration start", () => {
-  it("creates a PLANNING trip with creator member and default thread in one transaction", async () => {
+  it("creates a DRAFT trip with creator member and default thread in one transaction", async () => {
     const requestId = randomUUID();
     const res = await startExploration("alice", requestId);
 
     expect(res.statusCode).toBe(201);
     const body = res.json();
-    expect(body.trip.status).toBe("PLANNING");
+    expect(body.trip.status).toBe("DRAFT");
     expect(body.trip.departureCities).toEqual([]);
     expect(body.trip.destinationCandidates).toEqual([]);
     expect(body.trip.travelDateStart).toBeNull();
@@ -95,7 +95,7 @@ describe("Exploration start", () => {
     // All three resources exist and agree on the trip id.
     const [tripRows] = await db.select().from(sharedTrips)
       .where(eq(sharedTrips.id, body.trip.id)).limit(1);
-    expect(tripRows.status).toBe("PLANNING");
+    expect(tripRows.status).toBe("DRAFT");
     expect(tripRows.createdBy).toBe(aliceId);
 
     const memberRows = await db.select().from(tripMembers)

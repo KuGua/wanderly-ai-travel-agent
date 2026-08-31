@@ -3,9 +3,10 @@
 import { ExternalLink, PanelRight, Pencil, Plus, UserPlus, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
+import { SharedPlanningPanel } from "@/components/trips/shared-planning-panel";
 import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
 import { TripMemoryPanel } from "@/components/trips/trip-memory-panel";
 import { PlacesPanel } from "@/components/trips/places-panel";
@@ -19,9 +20,11 @@ import {
   useResearchResult,
   useTrip,
   useTripThreads,
+  useUpdateDraftTripBrief,
   useUpdateTripTitle,
 } from "@/lib/query/hooks";
 import { TravelApiError } from "@/lib/api/errors";
+import type { TripDetail } from "@/lib/api/contracts";
 
 const DEFAULT_THREAD_QUERY = "thread";
 
@@ -49,6 +52,10 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const [manualTitle, setManualTitle] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [activationError, setActivationError] = useState(false);
+  // Local layout preference only: dragging never changes trip or planning state.
+  const [threadRailWidth, setThreadRailWidth] = useState(260);
+  const [planningWidth, setPlanningWidth] = useState(500);
+  const workspaceRef = useRef<HTMLElement>(null);
 
   const autoProvisionAttemptedRef = useRef(false);
 
@@ -128,6 +135,54 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     }
   }, [createThread, router, searchParams, t, threads.length, tripId]);
 
+  const setThreadRailWidthFromPointer = useCallback((clientX: number) => {
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width <= 0) return;
+    const max = Math.min(360, Math.max(180, bounds.width - planningWidth - 320));
+    setThreadRailWidth(Math.round(Math.max(180, Math.min(max, clientX - bounds.left))));
+  }, [planningWidth]);
+
+  const setPlanningWidthFromPointer = useCallback((clientX: number) => {
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    if (!bounds || bounds.width <= 0) return;
+    const max = Math.min(760, Math.max(360, bounds.width - threadRailWidth - 320));
+    setPlanningWidth(Math.round(Math.max(360, Math.min(max, clientX - bounds.left - threadRailWidth))));
+  }, [threadRailWidth]);
+
+  const beginThreadRailResize = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (window.innerWidth < 1280) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setThreadRailWidthFromPointer(event.clientX);
+  }, [setThreadRailWidthFromPointer]);
+
+  const beginPlanningResize = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (window.innerWidth < 1280) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setPlanningWidthFromPointer(event.clientX);
+  }, [setPlanningWidthFromPointer]);
+
+  const resizeThreadRailWithKeyboard = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const step = event.shiftKey ? 64 : 24;
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    const max = bounds && bounds.width > 0 ? Math.min(360, Math.max(180, bounds.width - planningWidth - 320)) : 360;
+    setThreadRailWidth((current) => Math.max(180, Math.min(max, current + direction * step)));
+  }, [planningWidth]);
+
+  const resizePlanningWithKeyboard = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const step = event.shiftKey ? 64 : 24;
+    const direction = event.key === "ArrowRight" ? 1 : -1;
+    const bounds = workspaceRef.current?.getBoundingClientRect();
+    const max = bounds && bounds.width > 0 ? Math.min(760, Math.max(360, bounds.width - threadRailWidth - 320)) : 760;
+    setPlanningWidth((current) => Math.max(360, Math.min(max, current + direction * step)));
+  }, [threadRailWidth]);
+
   if (membershipRevoked) {
     return (
       <main className="mx-auto flex min-h-[60vh] w-full max-w-[640px] flex-col items-center justify-center gap-4 px-5 py-12 text-center">
@@ -177,8 +232,8 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     : t("header.datesUnknown");
   const canActivateDraft = trip.status === "DRAFT"
     && trip.departureCities.length >= 1
-    && trip.destinationCandidates.length >= 2
-    && trip.destinationCandidates.length <= 5;
+    && trip.destinationCandidates.length >= (members.length > 1 ? 2 : 1)
+    && trip.destinationCandidates.length <= (members.length > 1 ? 3 : 5);
 
   async function activateDraft() {
     if (!canActivateDraft || activate.isPending) return;
@@ -232,8 +287,12 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   };
 
   return (
-    <main className="grid h-[calc(100dvh-62px)] min-h-[620px] grid-cols-1 overflow-hidden bg-background sm:h-dvh md:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)] xl:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)_minmax(280px,0.9fr)]">
-      <aside className="hidden min-h-0 min-w-0 flex-col border-r-2 border-[var(--w-ink)] bg-background md:flex" aria-label={t("threads.heading")}>
+    <main
+      ref={workspaceRef}
+      className="grid h-[calc(100dvh-62px)] min-h-[620px] grid-cols-1 overflow-hidden bg-background sm:h-dvh md:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)] xl:grid-cols-[var(--trip-thread-rail-width)_var(--trip-planning-width)_minmax(320px,1fr)]"
+      style={{ "--trip-thread-rail-width": `${threadRailWidth}px`, "--trip-planning-width": `${planningWidth}px` } as CSSProperties}
+    >
+      <aside className="relative hidden min-h-0 min-w-0 flex-col border-r-2 border-[var(--w-ink)] bg-background md:flex xl:order-1" aria-label={t("threads.heading")}>
         <header className="flex h-[66px] shrink-0 items-center justify-between gap-2 border-b-2 border-[var(--w-ink)] px-4">
           {editingTitle ? (
             <form
@@ -300,9 +359,10 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             </>
           )}
         </div>
+        <div role="separator" tabIndex={0} aria-orientation="vertical" aria-label={t("workspace.resizeThreads")} onPointerDown={beginThreadRailResize} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setThreadRailWidthFromPointer(event.clientX); }} onKeyDown={resizeThreadRailWithKeyboard} className="absolute right-[-7px] top-0 z-10 hidden h-full w-3 cursor-col-resize xl:block" />
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-col bg-background">
+      <section className="flex min-h-0 min-w-0 flex-col bg-background xl:order-3">
         <header className="flex h-[66px] shrink-0 items-center justify-between gap-2 border-b-2 border-[var(--w-ink)] px-[18px]">
           <div className="min-w-0">
             <strong className="block truncate text-[15px] tracking-[-0.02em]">{activeThread?.title ?? trip.name}</strong>
@@ -316,17 +376,10 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               <span className="hidden sm:inline">{t("workspace.agentChip")}</span>
             </span>
             {callerRole === "CREATOR" ? (
-              trip.status === "DRAFT" ? (
-                <button type="button" disabled aria-label={t("workspace.invitation.compactTrigger")} title={t("workspace.invitation.draftHint")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm disabled:cursor-not-allowed disabled:opacity-50 xl:hidden">
-                  <UserPlus aria-hidden="true" className="size-4" />
-                  <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
-                </button>
-              ) : (
-                <Link href={`/trips/${tripId}/invite`} aria-label={t("workspace.invitation.compactTrigger")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden">
-                  <UserPlus aria-hidden="true" className="size-4" />
-                  <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
-                </Link>
-              )
+              <Link href={`/trips/${tripId}/invite`} aria-label={t("workspace.invitation.compactTrigger")} className="inline-flex min-h-11 items-center gap-2 px-2.5 text-xs font-extrabold wanderly-edge wanderly-r-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 xl:hidden">
+                <UserPlus aria-hidden="true" className="size-4" />
+                <span className="hidden sm:inline">{t("workspace.invitation.trigger")}</span>
+              </Link>
             ) : null}
             <button
               type="button"
@@ -355,23 +408,16 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       <aside
         id="trip-inspector"
         aria-label={t("workspace.inspectorTitle")}
-        className={`relative grid min-h-0 min-w-0 grid-rows-[66px_minmax(0,1fr)_auto] border-l-2 border-[var(--w-ink)] bg-[var(--w-mist)] max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
+        className={`relative grid min-h-0 min-w-0 grid-rows-[66px_minmax(0,1fr)_auto] border-l-2 border-[var(--w-ink)] bg-[var(--w-mist)] xl:order-2 max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
       >
         {/* Deliberately untitled: the spec keeps a bar here purely so the
             inspector's rule lines up with the history and chat headers. */}
         <header className="flex h-[66px] items-center justify-end gap-2 border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
           {callerRole === "CREATOR" ? (
-            trip.status === "DRAFT" ? (
-              <button type="button" disabled title={t("workspace.invitation.draftHint")} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm disabled:cursor-not-allowed disabled:opacity-50">
-                <UserPlus aria-hidden="true" className="size-4" />
-                {t("workspace.invitation.trigger")}
-              </button>
-            ) : (
-              <Link href={`/trips/${tripId}/invite`} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
-                <UserPlus aria-hidden="true" className="size-4" />
-                {t("workspace.invitation.trigger")}
-              </Link>
-            )
+            <Link href={`/trips/${tripId}/invite`} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+              <UserPlus aria-hidden="true" className="size-4" />
+              {t("workspace.invitation.trigger")}
+            </Link>
           ) : null}
           <button
             type="button"
@@ -419,6 +465,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                 </div>
                 {trip.status === "DRAFT" && callerRole === "CREATOR" ? (
                   <div className="mt-3">
+                    <DraftBriefEditor trip={trip} memberCount={members.length} />
                     <p className="text-[11px] leading-4 text-muted-foreground">{t("workspace.draftActivationHint")}</p>
                     <button
                       type="button"
@@ -463,6 +510,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               <TripMemoryPanel tripId={trip.id} />
             </section>
 
+            <SharedPlanningPanel tripId={tripId} tripStatus={trip.status} />
             <PlacesPanel tripId={trip.id} destinationCandidates={trip.destinationCandidates} />
             <ResearchGapBannerWrapper tripId={trip.id} />
           </div>
@@ -481,6 +529,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           </div>
           <TripMiniGlobe places={globePlaces} fallbackLabel={destinationsLabel} tripId={tripId} />
         </section>
+        <div role="separator" tabIndex={0} aria-orientation="vertical" aria-label={t("workspace.resizeInspector")} onPointerDown={beginPlanningResize} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setPlanningWidthFromPointer(event.clientX); }} onKeyDown={resizePlanningWithKeyboard} className="absolute right-[-7px] top-0 z-40 hidden h-full w-3 cursor-col-resize xl:block" />
       </aside>
     </main>
   );
@@ -511,4 +560,60 @@ function ResearchGapBannerWrapper({ tripId }: { tripId: string }) {
   const research = useResearchResult(tripId);
   if (!research.data || research.isLoading) return null;
   return <ResearchGapBanner result={research.data} />;
+}
+
+function DraftBriefEditor({ trip, memberCount }: { trip: TripDetail; memberCount: number }) {
+  const t = useTranslations("trips.workspace.draftBrief");
+  const locale = useLocale();
+  const update = useUpdateDraftTripBrief(trip.id);
+  const [departureCities, setDepartureCities] = useState(trip.departureCities.join(", "));
+  const [destinations, setDestinations] = useState(trip.destinationCandidates.join(", "));
+  const [travelDateStart, setTravelDateStart] = useState(trip.travelDateStart ?? "");
+  const [travelDateEnd, setTravelDateEnd] = useState(trip.travelDateEnd ?? "");
+
+  function splitValues(value: string): string[] {
+    return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))];
+  }
+
+  const parsedDepartures = splitValues(departureCities);
+  const parsedDestinations = splitValues(destinations);
+  const minimumDestinations = memberCount > 1 ? 2 : 1;
+  const maximumDestinations = memberCount > 1 ? 3 : 5;
+  const canSave = parsedDepartures.length >= 1
+    && parsedDestinations.length >= minimumDestinations
+    && parsedDestinations.length <= maximumDestinations;
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSave || update.isPending) return;
+    await update.mutateAsync({
+      departureCities: parsedDepartures,
+      destinationCandidates: parsedDestinations,
+      replaceDestinationCandidates: true,
+      travelDateStart: travelDateStart || null,
+      travelDateEnd: travelDateEnd || null,
+      titleLocale: locale === "zh" ? "zh" : "en",
+    });
+  }
+
+  return (
+    <form onSubmit={(event) => void save(event)} className="mb-3 grid gap-2 border-b border-dashed border-[var(--w-ink)] pb-3">
+      <p className="text-xs font-bold">{t("title")}</p>
+      <label className="grid gap-1 text-[11px] font-bold">
+        {t("departure")}
+        <input value={departureCities} onChange={(event) => setDepartureCities(event.target.value)} placeholder={t("departurePlaceholder")} className="min-h-9 border bg-background px-2 text-xs" />
+      </label>
+      <label className="grid gap-1 text-[11px] font-bold">
+        {t("destinations")}
+        <input value={destinations} onChange={(event) => setDestinations(event.target.value)} placeholder={t("destinationsPlaceholder")} className="min-h-9 border bg-background px-2 text-xs" />
+        <span className="font-normal text-muted-foreground">{t("destinationCountHint", { min: minimumDestinations, max: maximumDestinations })}</span>
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="grid gap-1 text-[11px] font-bold">{t("startDate")}<input type="date" value={travelDateStart} onChange={(event) => setTravelDateStart(event.target.value)} className="min-h-9 border bg-background px-2 text-xs" /></label>
+        <label className="grid gap-1 text-[11px] font-bold">{t("endDate")}<input type="date" value={travelDateEnd} onChange={(event) => setTravelDateEnd(event.target.value)} className="min-h-9 border bg-background px-2 text-xs" /></label>
+      </div>
+      <button type="submit" disabled={!canSave || update.isPending} className="min-h-9 bg-card px-2 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs disabled:opacity-50">{update.isPending ? t("saving") : t("save")}</button>
+      {update.isError ? <p role="alert" className="text-[11px] text-destructive">{t("saveError")}</p> : null}
+    </form>
+  );
 }

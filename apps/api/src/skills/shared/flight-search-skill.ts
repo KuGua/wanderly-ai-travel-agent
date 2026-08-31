@@ -14,6 +14,14 @@ import {
   SearchPreferencesStaleError,
 } from "../../services/flight-search-preferences-service.js";
 
+// FlightAPI documents departure/arrival values in airport-local time without
+// an offset. The value remains explicit local wall-clock time; we must not
+// invent a UTC offset. Amadeus offset date-times remain valid as well.
+const normalizedFlightDateTimeSchema = z.string().regex(
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/,
+  "Expected an ISO-8601 local or offset date-time",
+);
+
 const normalizedFlightOfferSchema = z.object({
   id: z.string().min(1),
   providerOfferId: z.string().min(1),
@@ -26,8 +34,8 @@ const normalizedFlightOfferSchema = z.object({
     flightNumber: z.string().min(1),
     origin: z.string().length(3),
     destination: z.string().length(3),
-    departureAt: z.string().datetime({ offset: true }),
-    arrivalAt: z.string().datetime({ offset: true }),
+    departureAt: normalizedFlightDateTimeSchema,
+    arrivalAt: normalizedFlightDateTimeSchema,
     duration: z.string().min(1),
   }).strict()).min(1),
   totalDuration: z.string().min(1),

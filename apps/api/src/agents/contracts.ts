@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import type { RequestContext } from "../utils/context.js";
 import type { ConstraintSnapshotData } from "../types/domain.js";
+import type { HotelProviderName, HotelProvider } from "../providers/types.js";
 
 export type AgentKind = "personal" | "shared" | "review" | "public-content";
 
@@ -89,6 +90,25 @@ export interface HotelSearchExecutionContext {
     currency: string;
   };
   locale: "en" | "zh";
+  /**
+   * Provider that this task is bound to. The skill handler MUST use this
+   * value (not a module-load singleton) so a config reload after acceptance
+   * never changes the source for an in-flight task. Spec §3.1.
+   */
+  provider: HotelProviderName;
+  /**
+   * The actual adapter instance resolved for `provider`. The planner service
+   * selects it once at acceptance time and threads it through the skill so
+   * the handler never has to consult the env or the factory registry.
+   */
+  providerAdapter: HotelProvider;
+  /**
+   * When `provider === "nuitee_connect"`, this carries the active quote
+   * nationality authorization id/version so the skill can resolve the
+   * plaintext server-side and pass it to the adapter. `undefined` when
+   * the provider does not require any user-confirmed field.
+   */
+  quoteNationalityAuthorization?: { id: string; version: number };
   agentTaskRunId?: string;
 }
 

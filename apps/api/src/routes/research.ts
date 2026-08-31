@@ -124,6 +124,11 @@ export async function researchRoutes(app: FastifyInstance): Promise<void> {
         staySearchPreferencesVersion: latestStayPref?.version,
         outputMode: body.outputMode,
         requestedCapabilities: body.requestedCapabilities,
+        // Spec §3.1: bind the hotel provider at acceptance. `undefined` here
+        // lets `acceptResearchTask` resolve `HOTEL_PROVIDER` itself when the
+        // task uses the hotel capability; `null` when the capability is not
+        // requested so the row never carries a misleading provider.
+        hotelProvider: requiresStayPreferences ? undefined : null,
         requestId: body.requestId,
         tx,
       });

@@ -30,6 +30,11 @@ import {
   updateTripTitleResponseSchema,
   updateDraftTripBriefInputSchema,
   updateDraftTripBriefResponseSchema,
+  tripSearchPreferencesInputSchema,
+  tripSearchPreferencesResponseSchema,
+  planningTaskAcceptedResponseSchema,
+  latestPlanningRunResponseSchema,
+  latestPlanResponseSchema,
   tripDetailResponseSchema,
   invitationPreviewResponseSchema,
   acceptInvitationResponseSchema,
@@ -80,6 +85,7 @@ import {
   type TripActivationRequest,
   type UpdateTripTitleInput,
   type UpdateDraftTripBriefInput,
+  type TripSearchPreferencesInput,
   type CreateTripConstraintProposalRequest,
   type ConfirmTripConstraintProposalRequest,
   type UpsertTripConstraintFactRequest,
@@ -313,6 +319,29 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request("/trips/" + encodeURIComponent(tripId) + "/draft-brief", updateDraftTripBriefResponseSchema, {
       method: "PATCH", body: JSON.stringify(body),
     });
+  }
+
+  saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput) {
+    const body = tripSearchPreferencesInputSchema.parse(input);
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/search-preferences`,
+      tripSearchPreferencesResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  }
+
+  startPlanning(tripId: string) {
+    return this.client.request("/planning/generate", planningTaskAcceptedResponseSchema, {
+      method: "POST", body: JSON.stringify({ tripId }),
+    });
+  }
+
+  getLatestPlanningRun(tripId: string) {
+    return this.client.request(`/planning/${encodeURIComponent(tripId)}/run/latest`, latestPlanningRunResponseSchema);
+  }
+
+  getLatestPlan(tripId: string) {
+    return this.client.request(`/planning/${encodeURIComponent(tripId)}/latest`, latestPlanResponseSchema);
   }
 
   // ── Team Agent 协作编排 (Phase 5) ─────────────────────────────────────────

@@ -9,6 +9,7 @@ import type { ConstraintSnapshotData } from "../types/domain.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 import { metrics } from "../observability/metrics.js";
+import { logSafeRuntimeEvent, type SafeRuntimeEvent } from "../observability/telemetry.js";
 
 export const flightSearchInputSchema = z.object({
   snapshotId: z.string().uuid(),
@@ -34,24 +35,16 @@ export const flightSearchInputSchema = z.object({
 
 export type FlightSearchInput = z.infer<typeof flightSearchInputSchema>;
 /**
- * The schema exposed to a planning model deliberately excludes snapshotId.
- * A snapshot is execution authority, not a model-selectable search parameter.
- * The dispatcher adds the task-bound id immediately before registry dispatch.
+ * This is the *model-facing* contract, not the registered Skill contract.
+ * The model may select a controlled route, but it must never supply dates,
+ * passenger counts, cabin, currency, or a snapshot id.  Those values are
+ * bound from the immutable planning execution context immediately before the
+ * full `flight.search` Skill is invoked.
  */
 export const flightSearchModelArgumentsSchema = z.object({
   originId: z.string().min(1).max(16),
   destinationId: z.string().min(1).max(16),
-  tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
-  departureDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  returnDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  adults: z.number().int().min(1).max(9),
-  cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
-  currency: z.string().regex(/^[A-Z]{3}$/),
-}).strict().superRefine((input, ctx) => {
-  if (input.tripType === "ROUND_TRIP" && !input.returnDate) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["returnDate"], message: "returnDate is required for ROUND_TRIP" });
-  if (input.tripType === "ONE_WAY" && input.returnDate) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["returnDate"], message: "returnDate is not allowed for ONE_WAY" });
-  if (input.returnDate && input.returnDate < input.departureDate) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["returnDate"], message: "returnDate must not precede departureDate" });
-});
+}).strict();
 export type FlightSearchModelArguments = z.infer<typeof flightSearchModelArgumentsSchema>;
 export type ConfirmedFlightSearchPreferences = Pick<FlightSearchInput, "tripType" | "adults" | "cabin" | "currency">;
 
@@ -92,6 +85,10 @@ export async function executeAndPersistFlightSearch(params: {
   provider: FlightProvider;
   signal?: AbortSignal;
 }): Promise<ProviderResult<FlightOffer[]> & { queryId?: string }> {
+  // Test-only legacy doubles may predate the provider identity field. Runtime
+  // adapters always declare it; the fallback remains fail-closed and never
+  // guesses another live provider.
+  const providerName = params.provider.providerName ?? "unconfigured";
   const fingerprint = createHash("sha256").update(JSON.stringify({
     originId: params.input.originId,
     destinationId: params.input.destinationId,
@@ -104,10 +101,26 @@ export async function executeAndPersistFlightSearch(params: {
   })).digest("hex");
   await recordAudit({
     ctx: params.ctx, action: "FLIGHT_SEARCH_REQUESTED", tripId: params.tripId,
-    summary: { provider: "amadeus", operation: "flight_search" },
+    summary: { provider: providerName, operation: "flight_search" },
   });
   const origin = resolveAirportReference(params.input.originId)!;
   const destination = resolveAirportReference(params.input.destinationId)!;
+  // Local-debug lifecycle records. Bounded fields only: provider identity,
+  // controlled route ids, normalized outcome, offer count and duration. The
+  // supplier URL, key, raw payload and raw error never reach this layer.
+  const providerLogFields = {
+    component: "tool",
+    event: "provider_search",
+    operation: "flight.search",
+    toolName: "flight.search",
+    provider: providerName,
+    originId: params.input.originId,
+    destinationId: params.input.destinationId,
+    relatedRunId: params.agentTaskRunId,
+    relatedSnapshotId: params.snapshotId,
+  } satisfies Partial<SafeRuntimeEvent>;
+  logSafeRuntimeEvent(params.ctx, { ...providerLogFields, outcome: "started" });
+  const startedAt = Date.now();
   const result = await params.provider.searchFlights({
     origin: origin.iataCode,
     destination: destination.iataCode,
@@ -125,7 +138,7 @@ export async function executeAndPersistFlightSearch(params: {
       snapshotId: params.snapshotId,
       agentTaskRunId: params.agentTaskRunId ?? null,
       category: "flight",
-      providerName: result.outcome === "LIVE" ? "amadeus" : "amadeus",
+      providerName,
       originId: params.input.originId,
       destinationId: params.input.destinationId,
       requestFingerprint: fingerprint,
@@ -149,15 +162,24 @@ export async function executeAndPersistFlightSearch(params: {
       ctx: params.ctx,
       action: result.outcome === "LIVE" ? "FLIGHT_SEARCH_COMPLETED" : "FLIGHT_SEARCH_UNAVAILABLE",
       tripId: params.tripId,
-      summary: { provider: "amadeus", outcome: result.outcome, ...(result.outcome === "UNAVAILABLE" ? { errorCode: result.reason } : {}) },
+      summary: { provider: providerName, outcome: result.outcome, ...(result.outcome === "UNAVAILABLE" ? { errorCode: result.reason } : {}) },
       tx,
     });
     return [run];
   });
   metrics.inc("flight_tool_invocations_total", {
     outcome: result.outcome === "LIVE" ? "live" : "unavailable",
-    provider: "amadeus",
+    provider: providerName,
     error_category: result.outcome === "LIVE" ? "none" : result.reason.toLowerCase(),
+  });
+  logSafeRuntimeEvent(params.ctx, {
+    ...providerLogFields,
+    outcome: result.outcome === "LIVE" ? "success" : "failure",
+    providerStatus: result.outcome,
+    latencyMs: Date.now() - startedAt,
+    ...(result.outcome === "LIVE"
+      ? { itemCount: result.data.length }
+      : { errorCode: result.reason }),
   });
   return result.outcome === "LIVE" ? { ...result, queryId: searchRun.id } : result;
 }

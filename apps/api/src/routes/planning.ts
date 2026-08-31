@@ -5,7 +5,7 @@ import { db } from "../db/database.js";
 import { sharedTrips, tripMembers, tripSearchPreferences, tripStaySearchPreferences } from "../db/schema.js";
 import { planRequestSchema } from "../types/schemas.js";
 import { createConstraintSnapshot, getLatestActivePlan } from "../services/planning-service.js";
-import { acceptResearchTask } from "../tasks/task-repository.js";
+import { acceptResearchTask, getLatestAuthorizedPlanningRun } from "../tasks/task-repository.js";
 import { requireActiveTrip } from "../services/trip-status-guard.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
@@ -85,6 +85,14 @@ export async function planningRoutes(app: FastifyInstance) {
       staySearchPreferencesVersion: latestStayPreference[0]?.version ?? undefined,
       outputMode: "PROPOSE_PLAN",
       requestedCapabilities: FULL_CAPABILITY_SET,
+      // Hotel capability is active only when PLAN_ENABLE_HOTEL=true; in
+      // every other case the task has no hotel slot and `hotel_provider`
+      // stays NULL. When the capability IS active but the env-side
+      // `HOTEL_PROVIDER` is unset (still defaults to disabled), the
+      // underlying resolver also returns null — the run row stays
+      // NULL and the Worker reports hotel as NOT_CONFIGURED, never a
+      // silent fallback. Spec §3.1, §3.2.
+      hotelProvider: process.env.PLAN_ENABLE_HOTEL === "true" ? undefined : null,
       requestId: request.clientRequestId ?? randomUUID(),
     });
     // Rewrite operation label for the legacy public contract.
@@ -141,5 +149,10 @@ export async function planningRoutes(app: FastifyInstance) {
     }
 
     return { plan };
+  });
+
+  app.get("/planning/:tripId/run/latest", async (request) => {
+    const { tripId } = request.params as { tripId: string };
+    return { run: await getLatestAuthorizedPlanningRun(tripId, request.user.id) };
   });
 }

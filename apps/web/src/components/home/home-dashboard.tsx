@@ -2,11 +2,14 @@
 
 import { ArrowRight, Heart, MapPinned, Search, Settings2 } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 import { useMyProfile, useTrips } from "@/lib/query/hooks";
+import { useTravelApi } from "@/lib/query/provider";
+import { tripKeys } from "@/lib/query/keys";
 import type { TripSummary } from "@/lib/api/contracts";
 
 import { TripList } from "./trip-list";
@@ -14,7 +17,9 @@ import { TripList } from "./trip-list";
 type StatusFilter = "active" | "all" | "completed" | "archived";
 
 const STATUS_GROUPS: Record<StatusFilter, TripSummary["status"][]> = {
-  active: ["PLANNING", "STALE", "CONFIRMED", "BOOKED"],
+  // A DRAFT is a private, unfinished trip, not an archived one. It must be
+  // discoverable from the default list after the first Explore message.
+  active: ["DRAFT", "PLANNING", "STALE", "CONFIRMED", "BOOKED"],
   completed: ["CONFIRMED", "BOOKED"],
   archived: ["CANCELLED"],
   all: ["DRAFT", "PLANNING", "STALE", "CONFIRMED", "BOOKED", "CANCELLED"],
@@ -41,10 +46,25 @@ export function HomeDashboard() {
   const tCommon = useTranslations("common");
   const profileQuery = useMyProfile();
   const tripsQuery = useTrips();
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  const router = useRouter();
   const fmt = useFormatter();
 
   const [filter, setFilter] = useState<StatusFilter>("active");
   const [searchQuery, setSearchQuery] = useState("");
+  const createRequestId = useRef<string | null>(null);
+  const startTrip = useMutation({
+    mutationFn: async () => {
+      createRequestId.current ??= crypto.randomUUID();
+      return api.startExploration({ requestId: createRequestId.current });
+    },
+    onSuccess: async (response) => {
+      createRequestId.current = null;
+      await queryClient.invalidateQueries({ queryKey: tripKeys.all });
+      router.push(`/trips/${response.trip.id}?thread=${response.defaultThread.id}` as Parameters<typeof router.push>[0]);
+    },
+  });
 
   const trips = tripsQuery.data?.trips ?? [];
 
@@ -68,9 +88,12 @@ export function HomeDashboard() {
   }, [trips, filter, searchQuery]);
 
   const heroTrip = useMemo(() => {
-    return trips.find(
-      (trip) => !isArchivedTrip(trip) && (trip.status === "STALE" || trip.status === "PLANNING"),
-    ) ?? null;
+    const visibleTrips = trips.filter((trip) => !isArchivedTrip(trip));
+    // Returning to an unfinished private exploration is the most immediate
+    // action, so surface a Draft before an in-progress or stale plan.
+    return visibleTrips.find((trip) => trip.status === "DRAFT")
+      ?? visibleTrips.find((trip) => trip.status === "STALE" || trip.status === "PLANNING")
+      ?? null;
   }, [trips]);
 
   const filters: { key: StatusFilter; count: number }[] = [
@@ -94,16 +117,19 @@ export function HomeDashboard() {
             {tHome("subtitle")}
           </p>
         </div>
-        <Link
-          href="/home"
-          className="inline-flex min-h-12 items-center gap-2 px-5 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action"
+        <button
+          type="button"
+          onClick={() => startTrip.mutate()}
+          disabled={startTrip.isPending}
+          className="inline-flex min-h-12 items-center gap-2 px-5 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-60"
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[17px] fill-none stroke-current stroke-[2.4px]">
             <path d="M12 5v14M5 12h14" />
           </svg>
-          {tHome("newTrip")}
-        </Link>
+          {startTrip.isPending ? tCommon("loadingTrips") : tHome("newTrip")}
+        </button>
       </header>
+      {startTrip.isError ? <p role="alert" className="mt-3 text-sm font-semibold text-destructive">{tHome("newTripError")}</p> : null}
 
       {/* Summary cards */}
       <section
@@ -260,13 +286,19 @@ export function HomeDashboard() {
               <div className="p-5 sm:p-6">
                 <span className="inline-flex items-center gap-1.5 bg-[var(--w-fog)] px-2.5 py-1 text-xs font-black text-[var(--w-ink)] wanderly-edge wanderly-r-xs">
                   <span className="size-[7px] rounded-full bg-current" />
-                  {heroTrip.status === "STALE" ? tHome("hero.staleBadge") : tHome("hero.planningBadge")}
+                  {heroTrip.status === "DRAFT"
+                    ? tHome("hero.draftBadge")
+                    : heroTrip.status === "STALE"
+                      ? tHome("hero.staleBadge")
+                      : tHome("hero.planningBadge")}
                 </span>
                 <h3 className="mt-2 text-2xl font-bold tracking-[-0.045em]">{heroTrip.name}</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {heroTrip.status === "STALE"
-                    ? tHome("hero.staleBody")
-                    : tHome("hero.planningBody")}
+                  {heroTrip.status === "DRAFT"
+                    ? tHome("hero.draftBody")
+                    : heroTrip.status === "STALE"
+                      ? tHome("hero.staleBody")
+                      : tHome("hero.planningBody")}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {heroTrip.departureCities.length > 0 || heroTrip.memberCount > 0 ? (
@@ -293,9 +325,11 @@ export function HomeDashboard() {
                   href={`/trips/${heroTrip.id}` as "/trips/[tripId]"}
                   className="inline-flex min-h-[45px] items-center gap-2 px-4 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action"
                 >
-                  {heroTrip.status === "STALE"
-                    ? tHome("hero.reviewCta")
-                    : tHome("hero.continueCta")}
+                  {heroTrip.status === "DRAFT"
+                    ? tHome("hero.draftCta")
+                    : heroTrip.status === "STALE"
+                      ? tHome("hero.reviewCta")
+                      : tHome("hero.continueCta")}
                   <ArrowRight aria-hidden="true" className="size-4" />
                 </Link>
               </div>

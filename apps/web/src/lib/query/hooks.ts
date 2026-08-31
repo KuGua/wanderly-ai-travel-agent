@@ -9,6 +9,7 @@ import type {
   OwnerConversationResponse,
   ThreadsResponse,
   TripActivationRequest,
+  TripSearchPreferencesInput,
   UpdateProfileInput,
   CastAdoptionVoteRequest,
   ConfirmTripConstraintProposalRequest,
@@ -300,6 +301,59 @@ export function useUpdateTripTitle(tripId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: import("../api/contracts").UpdateTripTitleInput) => api.updateTripTitle(tripId, input),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.all });
+      void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+    },
+  });
+}
+
+export function useLatestPlanningRun(tripId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.planningRun(tripId),
+    queryFn: () => api.getLatestPlanningRun(tripId),
+    retry: false,
+    refetchInterval: (query) => {
+      const status = query.state.data?.run?.status;
+      return status === "QUEUED" || status === "RUNNING" || status === "CANCEL_REQUESTED" ? 1_500 : false;
+    },
+  });
+}
+
+export function useLatestPlan(tripId: string, enabled: boolean) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.latestPlan(tripId),
+    queryFn: () => api.getLatestPlan(tripId),
+    enabled,
+    retry: false,
+  });
+}
+
+export function useStartPlanning(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (preferences: TripSearchPreferencesInput) => {
+      await api.saveTripSearchPreferences(tripId, preferences);
+      return api.startPlanning(tripId);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: tripKeys.planningRun(tripId) });
+    },
+  });
+}
+
+/** Creator-only edits to the private Draft brief, before activation. */
+export function useUpdateDraftTripBrief(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: import("../api/contracts").UpdateDraftTripBriefInput) => {
+      if (!api.updateDraftTripBrief) throw new Error("Draft brief updates are unavailable");
+      return api.updateDraftTripBrief(tripId, input);
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: tripKeys.all });
       void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });

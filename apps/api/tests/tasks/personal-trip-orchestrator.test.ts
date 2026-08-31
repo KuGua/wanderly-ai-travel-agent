@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
 import { and, eq } from "drizzle-orm";
 
@@ -51,6 +51,14 @@ describe("personal-trip-orchestrator-service", () => {
     __resetRegistryForTests();
     delete process.env.PLAN_ENABLE_HOTEL;
     capturedInputs.length = 0;
+  });
+
+  afterAll(async () => {
+    // beforeEach truncates before each test but not after the last one; a
+    // RESEARCH row left behind here breaks migrate.test.ts's from-scratch
+    // migration replay (0012's pre-RESEARCH constraint) if it runs later in
+    // the same single-forked vitest process.
+    await cleanup.unsafe(`DELETE FROM agent_task_runs`);
   });
 
   beforeEach(async () => {

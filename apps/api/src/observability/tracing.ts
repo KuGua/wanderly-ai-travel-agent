@@ -309,11 +309,9 @@ export function initTracing(
 
     const mode = resolveExporterMode();
     if (mode === "none") {
-      // Propagator must be set unconditionally so that even when the SDK is
-      // disabled, `propagation.extract` still parses inbound `traceparent`
-      // correctly. When the SDK is enabled, `provider.register()` (called
-      // below) sets the propagator itself — doing both throws a
-      // "duplicate registration of API: propagation" error from the OTel API.
+      // With no SDK provider, install the propagator ourselves so inbound
+      // traceparent headers remain readable. An SDK provider registers its own
+      // propagator; registering twice causes OpenTelemetry to reject it.
       if (!propagatorRegistered) {
         propagation.setGlobalPropagator(new W3CTraceContextPropagator());
         propagatorRegistered = true;
@@ -323,6 +321,13 @@ export function initTracing(
       );
       return;
     }
+
+    // This process owns its OpenTelemetry SDK. A dev runner or a prior test
+    // module can leave a global propagator behind; clear it before the SDK
+    // installs its own so provider registration cannot be rejected as a
+    // duplicate global registration.
+    propagation.disable();
+    propagatorRegistered = false;
 
     const resource = new Resource({
       [ATTR_SERVICE_NAME]: serviceName,
@@ -353,6 +358,7 @@ export function initTracing(
     }
 
     provider.register();
+    propagatorRegistered = true;
     registeredProvider = provider;
     diag.info(`tracing: initialized (exporter=${mode}, service=${serviceName})`);
   })();
@@ -401,6 +407,7 @@ export function _resetTracingForTests(): void {
   try {
     trace.disable();
     context.disable();
+    propagation.disable();
   } catch {
     // best-effort; tests will surface real failures separately
   }

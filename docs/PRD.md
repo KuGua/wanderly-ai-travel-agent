@@ -109,7 +109,7 @@ flowchart LR
 ### FR-2 共享行程工作台与授权
 
 1. 创建者可创建一个共享行程并邀请另外两位测试用户加入。
-2. 外部邀请入口必须使用不可猜测、一次性的 invitation token，不得以 URL 中的 Trip ID 授权或读取数据。创建者输入邮箱后，系统仅持久化规范化邮箱的 HMAC 和掩码，不搜索或暴露账号是否存在；登录或注册同一邮箱后，受邀者才可查看最小行程摘要、必需成员身份与有效期。当前 MVP 返回可复制链接，不自动发送邮件；无效、过期、撤回、已处理或错邮箱邀请返回同一最小不可用结果。
+2. 外部邀请入口必须使用不可猜测、一次性的 invitation token，不得以 URL 中的 Trip ID 授权或读取数据。创建者输入邮箱后，系统仅持久化规范化邮箱的 HMAC 和掩码，不搜索或暴露账号是否存在；登录或注册同一邮箱后，受邀者才可查看最小行程摘要、必需成员身份与有效期。当前 MVP 返回可复制链接，不自动发送邮件；无效、过期、撤回、已处理或错邮箱邀请返回同一最小不可用结果。`DRAFT` 与 `PLANNING` 行程都允许创建邀请：`DRAFT` 邀请可由创建者创建、由受邀者接受，但受邀者接受前仅看到最小可用摘要（行程名、`DRAFT` 状态、有效期与“加入后仅获得空白私有线程”）而非创建者未确认的探索内容；创建者的私有对话、Profile 与未授权字段仍仅对其本人可见。已取消或归档的行程不可再新增或接受邀请。
 3. 受邀人可显式接受或拒绝。接受只创建所需 membership 与私有默认 thread，且必须幂等；拒绝不得创建 membership/thread，并记录独立审计事件。接受后唯一主操作为设置本次共享范围，不得自动授予 consent 或写入 snapshot。
 4. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
 5. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
@@ -124,7 +124,7 @@ flowchart LR
 4. Agent 必须解释候选之间的取舍及其如何使用每位成员授权的约束；不得引用未授权资料。
 5. Planning/replan 运行期间可实时显示安全阶段状态（例如 snapshot、research、validation、persistence），但不得向客户端发送内部推理、原始 prompt、未验证模型输出、未持久化 provider 结果或未授权 snapshot 数据；最终 plan 仅在验证并持久化后展示。
 6. Activities 工具与 Flight 工具相互独立：拥有独立的 typed port、覆盖矩阵、stale 触发器和 evidence 写入；同一 PLAN/REPLAN durable task 内作为并列子阶段，各自拥有独立的并发与失败语义。失败不取消其他 research，但只能形成安全的 `RESEARCH_UNAVAILABLE` 摘要；活动 provider 的 booking link 不得在 MVP 中展示、持久化或透传。
-7. 住宿能力分两层：OpenTripMap discovery 只显示名称、类别、位置、距离、来源和 `© OpenStreetMap contributors` 归因，不代表实时价格、库存或可预订性；SerpApi hotel quote 只在确认入住条件后提供实时搜索与方案比较。每个价格 offer 显示总价、每晚价、来源、采集时间和有效期；税费或强制费用不完整时固定提示“可能另计”。模型可在私有对话询问缺失的房间/住客/币种信息，但仅能创建待用户确认的住宿搜索偏好提案。无 live supplier 数据时为 `RESEARCH_UNAVAILABLE`，不得使用 sandbox、fixture 或模型生成报价。
+7. 住宿能力分两层：OpenTripMap discovery 只显示名称、类别、位置、距离、来源和 `© OpenStreetMap contributors` 归因，不代表实时价格、库存或可预订性；酒店 quote 默认使用 Nuitee Connect / LiteAPI Rates，SerpApi Google Hotels 保留为服务端显式可切换来源。每个 task 只使用接受时持久化的一家 provider，禁止自动 fallback 或混合报价。每个价格 offer 显示总价、每晚价、来源、采集时间和有效期；税费或强制费用不完整时固定提示“可能另计”。Nuitee quote 还须由用户显式确认 provider-only `guestNationality`，不得从 Profile 自动推断或暴露给模型/同行。模型可在私有对话询问缺失的房间/住客/币种信息，但仅能创建待用户确认的住宿搜索偏好提案。无 live supplier 数据时为 `RESEARCH_UNAVAILABLE`，不得使用 sandbox、fixture 或模型生成报价。
 8. Personal Agent 生成的约束提案必须由 owner 确认后才能进入本次 Shared snapshot；约束区分 HARD 与 SOFT，HARD 冲突必须返回阻塞/调整请求，SOFT 约束只能影响候选排序。
 
 ### FR-4 签证/入境准备

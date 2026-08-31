@@ -24,6 +24,11 @@ import type {
   UpdateTripTitleResponse,
   UpdateDraftTripBriefInput,
   UpdateDraftTripBriefResponse,
+  TripSearchPreferencesInput,
+  TripSearchPreferencesResponse,
+  PlanningTaskAcceptedResponse,
+  LatestPlanResponse,
+  LatestPlanningRunResponse,
   TripConstraintProposal,
   TripConstraintsResponse,
   TripConstraintsOwnerResponse,
@@ -105,6 +110,10 @@ export interface TravelApi {
   activateTrip(tripId: string, input: TripActivationRequest): Promise<TripActivationResponse>;
   updateTripTitle(tripId: string, input: UpdateTripTitleInput): Promise<UpdateTripTitleResponse>;
   updateDraftTripBrief?(tripId: string, input: UpdateDraftTripBriefInput): Promise<UpdateDraftTripBriefResponse>;
+  saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput): Promise<TripSearchPreferencesResponse>;
+  startPlanning(tripId: string): Promise<PlanningTaskAcceptedResponse>;
+  getLatestPlanningRun(tripId: string): Promise<LatestPlanningRunResponse>;
+  getLatestPlan(tripId: string): Promise<LatestPlanResponse>;
 
   // ── Team Agent 协作编排 (Phase 5) ────────────────────────────────────────────
   // These are intentionally optional so existing partial mocks and consumers

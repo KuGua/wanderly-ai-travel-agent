@@ -7,10 +7,7 @@ import {
   tripConstraintFacts,
   tripMembers,
 } from "../../db/schema.js";
-import {
-  generatePlan,
-  researchCoverageForSnapshot,
-} from "../../services/planning-service.js";
+import { generatePlan } from "../../services/planning-service.js";
 import { assertSnapshotManifestStable, hashProjectionManifest } from "../../services/snapshot-manifest-guard.js";
 import type { RequestContext } from "../../utils/context.js";
 import { logSafeRuntimeEvent } from "../../observability/telemetry.js";
@@ -39,7 +36,7 @@ export async function handlePlanningTask(params: {
   const startedAt = Date.now();
   logSafeRuntimeEvent(params.ctx, {
     component: "planner", event: "task", operation: run.operation.toLowerCase(), outcome: "started",
-    attempt: run.generationAttempt,
+    attempt: run.generationAttempt, relatedRunId: run.id, relatedSnapshotId: run.snapshotId ?? undefined,
   });
   if (
     (run.operation !== "PLAN" && run.operation !== "REPLAN")
@@ -80,49 +77,13 @@ export async function handlePlanningTask(params: {
   // the finalization transaction re-reads it and rejects writes if it changed.
   const initialManifestHash = hashProjectionManifest(snapshot.authorizedData);
 
-  // Phase 3 / spec §6.1 — iterate the full candidate matrix.
-  const coverage = await researchCoverageForSnapshot({
-    snapshotId: run.snapshotId,
-    agentTaskRunId: run.id,
-    departureCities,
-    destinationCandidates: candidates,
-    travelDateStart: snapshot.travelDateStart,
-    travelDateEnd: snapshot.travelDateEnd,
-    signal: params.signal,
-  });
-  logSafeRuntimeEvent(params.ctx, {
-    component: "planner", event: "research_coverage", operation: run.operation.toLowerCase(), outcome: "success",
-    attempt: run.generationAttempt, latencyMs: Date.now() - startedAt,
-    itemCount: coverage.allFlights.length,
-  });
-
-  // If any candidate lacks stay coverage, refuse to synthesize a plan: the
-// model would be flying blind on those branches (spec §10.6). POI / route
-// evidence is gathered through the LLM tool loop when the corresponding
-// capability is enabled.
-  if (coverage.missingDestinations.length > 0) {
-    throw Object.assign(
-      new Error(`Research uncovered all required candidates: ${coverage.missingDestinations.join(", ")}`),
-      { code: "PLANNING_DATA_UNAVAILABLE" },
-    );
-  }
   if (params.signal.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
-
-  // Pick a destination recommendation from coverage. The model still ranks;
-  // here we choose the destination with the most flights as a deterministic
-  // primary. Selection is advisory; the user votes the proposal regardless.
-  const counts = new Map<string, number>();
-  for (const flight of coverage.allFlights) {
-    counts.set(flight.destination, (counts.get(flight.destination) ?? 0) + 1);
-  }
-  const sortedDestinations = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d);
-  const recommended = sortedDestinations[0] ?? candidates[0];
 
   const resultPlanId = await generatePlan({
     ctx: params.ctx,
     tripId: run.tripId,
     snapshotId: run.snapshotId,
-    destination: recommended,
+    destination: candidates[0],
     memberIds: [],
     agentTaskRunId: run.id,
     flightSearchPreferencesVersion: run.flightSearchPreferencesVersion,
@@ -130,7 +91,6 @@ export async function handlePlanningTask(params: {
     signal: params.signal,
     leaseToken: params.leaseToken,
     outputMode: "PROPOSED",
-    coverage,
   });
 
   // Final stale-snapshot guard. Re-reading the projection manifest guarantees
@@ -154,6 +114,7 @@ export async function handlePlanningTask(params: {
   logSafeRuntimeEvent(params.ctx, {
     component: "planner", event: "task", operation: run.operation.toLowerCase(), outcome: "success",
     attempt: run.generationAttempt, latencyMs: Date.now() - startedAt,
+    relatedRunId: run.id, relatedSnapshotId: run.snapshotId ?? undefined,
   });
   return resultPlanId;
 }

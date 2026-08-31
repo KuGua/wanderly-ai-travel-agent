@@ -12,22 +12,21 @@ import type { RequestContext } from "../utils/context.js";
 const TOKEN_BYTES = 32;
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-// Reject any invitation flow while the Trip is still a Draft. The Trip
-// status guard throws ApiError(409, ...) which the route maps to a clean
-// rejection without partial state. Used by both `createInvitation` and
-// `acceptInvitation`.
-async function assertTripActive(tripId: string): Promise<void> {
-  const [trip] = await db.select({ status: sharedTrips.status })
+// Draft teams may form before the creator finalizes the brief. Invitations
+// never grant access to another member's private thread or profile, and all
+// shared planning commands remain guarded independently.
+async function assertTripInvitable(tripId: string): Promise<void> {
+  const [trip] = await db.select({ status: sharedTrips.status, archivedAt: sharedTrips.archivedAt })
     .from(sharedTrips)
     .where(eq(sharedTrips.id, tripId))
     .limit(1);
   if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
-  if (trip.status === "DRAFT") {
-    metrics.inc("draft_command_rejected_total", { operation: "invitation" });
+  if (trip.status === "CANCELLED" || trip.archivedAt) {
+    metrics.inc("trip_invitation_rejected_total", { reason: "terminal_trip" });
     throw new ApiError(
       409,
       "Conflict",
-      "TRIP_NOT_ACTIVE: activate the trip before running collaboration commands",
+      "TRIP_NOT_INVITABLE: archived or cancelled trips cannot accept new members",
     );
   }
 }
@@ -46,6 +45,7 @@ export type InvitationAcceptResult = {
 export type InvitationPreviewResult = {
   trip: {
     name: string;
+    status: "DRAFT" | "PLANNING" | "CONFIRMED" | "BOOKED" | "CANCELLED" | "STALE";
     destinationCandidates: string[];
     travelDateStart: string | null;
     travelDateEnd: string | null;
@@ -69,7 +69,7 @@ export async function createInvitation(params: {
   }
 
   return await db.transaction(async (tx) => {
-    await assertTripActive(params.tripId);
+    await assertTripInvitable(params.tripId);
 
     const [trip] = await tx.select({ id: sharedTrips.id })
       .from(sharedTrips)
@@ -161,7 +161,7 @@ export async function acceptInvitation(params: {
       throw new ApiError(404, "Not Found", "Invitation not found");
     }
 
-    await assertTripActive(invitation.tripId);
+    await assertTripInvitable(invitation.tripId);
 
     // Reject when caller is not the invited user; never 404 in place of
     // 403 to avoid enumeration.
@@ -268,17 +268,23 @@ export async function getInvitationPreview(params: {
   const [trip] = await db.select({
     name: sharedTrips.name,
     status: sharedTrips.status,
+    archivedAt: sharedTrips.archivedAt,
     destinationCandidates: sharedTrips.destinationCandidates,
     travelDateStart: sharedTrips.travelDateStart,
     travelDateEnd: sharedTrips.travelDateEnd,
   }).from(sharedTrips).where(eq(sharedTrips.id, invitation.tripId)).limit(1);
-  if (!trip || trip.status === "DRAFT") throw invitationUnavailable();
+  // A pending token must not disclose a trip that can no longer be joined.
+  // Keep this indistinguishable from any other invalid invitation.
+  if (!trip || trip.status === "CANCELLED" || trip.archivedAt) throw invitationUnavailable();
   return {
     trip: {
       name: trip.name,
-      destinationCandidates: trip.destinationCandidates,
-      travelDateStart: trip.travelDateStart,
-      travelDateEnd: trip.travelDateEnd,
+      status: trip.status,
+      // An invitee can decide whether to join a Draft, but must not see its
+      // creator's unconfirmed exploration details before accepting.
+      destinationCandidates: trip.status === "DRAFT" ? [] : trip.destinationCandidates,
+      travelDateStart: trip.status === "DRAFT" ? null : trip.travelDateStart,
+      travelDateEnd: trip.status === "DRAFT" ? null : trip.travelDateEnd,
     },
     expiresAt: invitation.expiresAt,
   };

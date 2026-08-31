@@ -43,7 +43,7 @@
 2. Map browsing, coordinate clicks and opening/closing chat create no Trip, thread or audit event.
 3. The first submitted message atomically and idempotently creates one `DRAFT` Trip, creator membership and owner-only default thread, then enters the existing durable conversation flow.
 4. The visible “Start new exploration” action resets only the in-memory session; it never deletes or silently changes an existing Trip.
-5. Draft Trip collaboration commands are rejected server-side until the creator explicitly activates a complete brief as `PLANNING`.
+5. Draft Trip collaboration commands, except invitation creation and acceptance, are rejected server-side until the creator explicitly activates a complete brief as `PLANNING`; private chats remain isolated after a Draft invitation is accepted.
 
 ### H2 — Join a shared trip and grant scoped consent
 
@@ -51,7 +51,7 @@
 
 **Acceptance criteria:**
 
-1. Organizer can create one shared trip and invite two additional test travelers.
+1. Organizer can create one shared trip and invite two additional test travelers. A `DRAFT` trip is also invitable: the organizer may create an email-bound invitation before activating the brief, the invitee sees only a minimal decision surface (trip name, `DRAFT` status, expiry, “joining grants only a blank private thread”), and accepting does not reveal the creator's private conversation or unconfirmed exploration. Draft collaboration commands (`consent`, `snapshot`, `planning`, `confirmation`, `booking`) remain rejected until activation. Cancelled or archived trips reject both new invitations and acceptance attempts.
 2. An organizer can enter an email and copy an email-bound invitation link without account search or enumeration. A traveler can sign in or register with that email, open the token-bound invitation page, see only the authenticated decision summary, then explicitly accept or decline; accepting leads only to sharing-scope setup and does not grant consent.
 3. Each traveler can separately approve or decline sharing each relevant profile field and their nationality/entry data.
 4. Shared trip shows only approved fields with member and consent source; private chat/history is never displayed.
@@ -65,14 +65,14 @@
 
 **Acceptance criteria:**
 
-1. Owner-confirmed research commands create one versioned snapshot and durable task; the Worker invokes all enabled Shared tools (`flight.search`、`accommodation.discover`、`hotel.search`、`activities.search`、`places.search`、`places.adopt`、`navigation.route`、`mobility.search`、readiness) with server-derived parameters and run binding. Accommodation discovery returns only non-price planning candidates; hotel quote requires confirmed dates, single-room occupancy and currency. Both accept only `destinationId`; the server resolves a complete `DestinationReference` with canonical city, ISO country code and coordinates, and fails closed on missing/ambiguous references. Personal chat has no direct tool/provider authority.
+1. Owner-confirmed research commands create one versioned snapshot and durable task; the Worker invokes all enabled Shared tools (`flight.search`、`accommodation.discover`、`hotel.search`、`activities.search`、`places.search`、`places.adopt`、`navigation.route`、`mobility.search`、readiness) with server-derived parameters and run binding. Accommodation discovery returns only non-price planning candidates; hotel quote requires confirmed dates, occupancy and currency. Nuitee quote additionally requires provider-only user-confirmed quote nationality; SerpApi retains its single-room capability limit. The server binds exactly one configured hotel provider to each task, never automatically falls back or mixes provider evidence. Both tools accept only `destinationId`; the server resolves a complete `DestinationReference` with canonical city, ISO country code and coordinates, and fails closed on missing/ambiguous references. Personal chat has no direct tool/provider authority.
 2. Team Trips compare two to three configured candidates; Solo Trips permit one to five. Results support any two authorized POIs under a candidate. Each item includes source/captured time and route distance/duration/steps or commercial price/currency as applicable; absent service explicitly appears in a non-confirmable `RESEARCH_UNAVAILABLE` summary.
 3. Each item shows source, captured time, offer expiry when applicable, price/currency when available, and linked authorized constraints.
 4. Comparison explains destination and service trade-offs without referencing a private or unapproved Profile field.
 5. Tool failure yields a recoverable `UNAVAILABLE` missing-service state; it never fabricates or substitutes inventory, route, schedule or price. Provider gaps complete the task as `COMPLETED_WITH_GAPS` and persist only a safe research summary. Only a user-selected live commercial offer blocks its corresponding confirmation/booking action; route evidence never creates commercial authority.
 6. Planning may publish only safe progress events (`SNAPSHOT_CREATED`, `RESEARCHING`, `VALIDATING`, `PERSISTING`, `COMPLETED` or `FAILED`). It never streams chain-of-thought, raw tool payloads, unvalidated plan candidates, or private snapshot fields; the UI shows a plan only after authoritative validation and persistence.
 7. Flight, Activities, Place/Navigation and Mobility are independently schedulable typed capabilities with distinct provider evidence, staleness trigger and audit action. The planning scheduler enforces bounded tool loops and independent concurrency/failure semantics; no provider booking link may enter the MVP.
-8. Accommodation discovery and hotel quote are independently schedulable. OpenTripMap discovery shows only name/type/location/distance/source and OSM attribution, never price, inventory or bookability. SerpApi quote shows total and per-night price plus `source`/`captured_at`/`expires_at`; partial or unknown taxes/mandatory fees display “可能另计”. Neither creates a provider order, payment, redirect or booking link; unavailable supplier data only produces `RESEARCH_UNAVAILABLE`.
+8. Accommodation discovery and hotel quote are independently schedulable. OpenTripMap discovery shows only name/type/location/distance/source and OSM attribution, never price, inventory or bookability. Nuitee (default) or explicitly selected SerpApi quote shows total and per-night price plus `source`/`captured_at`/`expires_at`; partial or unknown taxes/mandatory fees display “可能另计”. Neither creates a provider order, payment, redirect or booking link; unavailable supplier data only produces `RESEARCH_UNAVAILABLE`.
 9. A Personal Agent may propose a `RESEARCH_ONLY` or `PROPOSE_PLAN` command in an active Solo Trip, but the owner must confirm it. `PROPOSE_PLAN` automatically creates a first `PROPOSED` plan; one owner `ACCEPT` activates it. `RESEARCH_ONLY` never creates plan or booking authority.
 
 ### H4 — Produce per-traveler visa and entry readiness

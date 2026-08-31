@@ -10,6 +10,8 @@ import type {
 // ─── Provider Interfaces ────────────────────────────────────────────────────
 
 export interface FlightProvider {
+  /** Stable, non-secret provider identity persisted with normalized evidence. */
+  readonly providerName: "amadeus" | "flightapi" | "serpapi" | "unconfigured";
   searchFlights(params: FlightSearchParams): Promise<ProviderResult<FlightOffer[]>>;
 }
 
@@ -36,11 +38,47 @@ export interface StayProvider {
   }): Promise<ProviderResult<StayOffer[]>>;
 }
 
+/**
+ * Adapter identity. Includes `"unconfigured"` for the in-tree
+ * `UnavailableHotelProvider` placeholder so its identity never has to be
+ * faked as one of the real providers. `"unconfigured"` is therefore never
+ * permitted on persisted `HotelOffer.providerName`; see
+ * `HotelOfferProviderName` below.
+ */
+export type HotelProviderName = "nuitee_connect" | "serpapi_google_hotels" | "unconfigured";
+
+/**
+ * Persisted/stamped offer identity. The adapter stamps this onto every
+ * normalized item and into `provider_offers.provider_name`,
+ * `provider_search_runs.provider_name`, and `agent_task_runs.hotel_provider`.
+ * An offer only exists when a real adapter produced it, so
+ * `"unconfigured"` is intentionally absent.
+ */
+export type HotelOfferProviderName = Exclude<HotelProviderName, "unconfigured">;
+
+export const HOTEL_PROVIDER_NAMES: readonly HotelOfferProviderName[] = [
+  "nuitee_connect",
+  "serpapi_google_hotels",
+] as const;
+
 export interface HotelProvider {
+  /**
+   * Stable, non-secret provider identity. Stamped onto every normalized
+   * item, persisted on `provider_offers`/`provider_search_runs`, and emitted
+   * as the `provider` label on hotel metrics.
+   */
+  readonly providerName: HotelProviderName;
+  /**
+   * Human-readable source string persisted with normalized evidence and
+   * displayed on the comparison card. MUST remain stable per provider.
+   * `UnavailableHotelProvider` uses the placeholder `"Not configured"`,
+   * which never reaches an offer.
+   */
+  readonly source: string;
   searchHotels(params: HotelSearchParams): Promise<ProviderResult<HotelProviderItem[]>>;
 }
 
-export type HotelProviderItem = Omit<HotelOffer, "id" | "queryId">;
+export type HotelProviderItem = Omit<HotelOffer, "id" | "queryId" | "providerName" | "source">;
 
 export interface HotelSearchParams {
   /** Server-owned destination; adapters cannot accept ambiguous free text. */
@@ -51,6 +89,13 @@ export interface HotelSearchParams {
   adultsPerRoom: number[];
   currency: string;
   locale: "en" | "zh";
+  /**
+   * Provider-only quote nationality (ISO-3166-1 alpha-2), decrypted server-side
+   * from a `stay_search_provider_authorizations` row. Required by Nuitee;
+   * SerpApi ignores it. Never accepted from the browser or the model.
+   * Spec §3.4, §4.2.
+   */
+  quoteNationality?: string;
   signal?: AbortSignal;
 }
 

@@ -34,6 +34,8 @@ export function readSerpApiHotelConfiguration(
 }
 
 export class SerpApiHotelProvider implements HotelProvider {
+  readonly providerName = "serpapi_google_hotels" as const;
+  readonly source = SOURCE;
   private readonly fetchImpl: typeof fetch;
   private readonly now: () => Date;
 
@@ -110,7 +112,6 @@ export class SerpApiHotelProvider implements HotelProvider {
         ?? (typeof property.hotel_class === "number" ? property.hotel_class : undefined);
       return [{
         providerOfferId: digest(`${parsed.data.search_metadata.id}:${property.property_token}`),
-        providerName: "serpapi_google_hotels" as const,
         destinationId: params.destination.destinationId,
         propertyId: digest(property.property_token),
         propertyName: property.name,
@@ -130,7 +131,6 @@ export class SerpApiHotelProvider implements HotelProvider {
           starClass ? `${starClass}-star` : null,
           property.amenities?.slice(0, 3).join(", ") || null,
         ].filter(Boolean).join(" · ") || null,
-        source: SOURCE,
         capturedAt,
         expiresAt: new Date(Date.parse(capturedAt) + 15 * 60_000).toISOString(),
       } satisfies HotelProviderItem];

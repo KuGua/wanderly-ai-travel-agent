@@ -119,6 +119,27 @@ export type SafeRuntimeEvent = {
   /** Validated UUIDs only; log/trace correlation, never metric labels. */
   relatedCorrelationId?: string;
   relatedClientRequestId?: string;
+  /**
+   * Durable task identity. `agent_task_runs.id` and the immutable constraint
+   * snapshot the run is bound to. UUIDs only, for log/trace correlation and
+   * for joining a log line to its `provider_search_runs` evidence row. Never
+   * metric labels.
+   */
+  relatedRunId?: string;
+  relatedSnapshotId?: string;
+  /**
+   * Provider identity and the normalized provider outcome for an external
+   * search. Both are bounded server-side enums, never supplier-supplied text.
+   */
+  provider?: "amadeus" | "flightapi" | "serpapi" | "unconfigured";
+  providerStatus?: "LIVE" | "UNAVAILABLE";
+  /**
+   * Controlled route identifiers resolved through the airport reference
+   * before the request leaves the process. These are catalogue ids (e.g.
+   * `SIN`, `NRT`), never free-text user input, and never metric labels.
+   */
+  originId?: string;
+  destinationId?: string;
 };
 
 export function logSafeRuntimeEvent(ctx: RequestContext, event: SafeRuntimeEvent): void {

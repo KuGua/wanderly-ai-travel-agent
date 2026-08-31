@@ -14,7 +14,7 @@ const DRAFT_RESPONSE: ExplorationStartResponse = {
   trip: {
     id: TRIP_ID,
     name: "Untitled exploration",
-    status: "PLANNING",
+    status: "DRAFT",
     departureCities: [],
     destinationCandidates: [],
     travelDateStart: null,
@@ -54,6 +54,10 @@ function makeApi(overrides: Partial<TravelApi> = {}): TravelApi {
     startExploration: vi.fn().mockResolvedValue(DRAFT_RESPONSE),
     activateTrip: vi.fn(),
     updateTripTitle: vi.fn(),
+    saveTripSearchPreferences: vi.fn(),
+    startPlanning: vi.fn(),
+    getLatestPlanningRun: vi.fn(),
+    getLatestPlan: vi.fn(),
     getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),
     updateMemoryFact: vi.fn(),
     deleteMemoryFact: vi.fn(),
@@ -83,7 +87,7 @@ describe("ExploreChatHost exploration provisioning", () => {
     expect(api.getOrCreateDefaultTripThread).not.toHaveBeenCalled();
   });
 
-  it("provisions the draft on the first send and never fetches trips", async () => {
+  it("accepts a DRAFT start response, then submits the first turn without fetching trips", async () => {
     const api = makeApi();
     renderWithIntl(<ExploreChatHost />, { api });
 
@@ -101,6 +105,9 @@ describe("ExploreChatHost exploration provisioning", () => {
     expect(api.getOrCreateDefaultTripThread).not.toHaveBeenCalled();
     // The send was wired through onEnsureThreadForFirstSend → submitTurn.
     expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, expect.objectContaining({
+      question: "Tell me about Tokyo",
+    }));
   });
 
   it("does not start a second exploration on a second send", async () => {

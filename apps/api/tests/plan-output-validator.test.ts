@@ -195,4 +195,13 @@ describe("plan-output-validator", () => {
   it("schema parses a clean plan", () => {
     expect(() => planOutputSchema.parse(goodPlanData())).not.toThrow();
   });
+
+  it("accepts an empty stay selection as a provider service gap", () => {
+    const planData = { ...goodPlanData(), stays: [] };
+    expect(() => validatePlanOutput({
+      planData,
+      snapshot,
+      evidence: { flights: planData.flights, stays: [] },
+    })).not.toThrow();
+  });
 });

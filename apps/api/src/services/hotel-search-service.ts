@@ -6,7 +6,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { db } from "../db/database.js";
 import { providerOffers, providerSearchRuns } from "../db/schema.js";
 import { metrics } from "../observability/metrics.js";
-import type { HotelProvider, ProviderResult } from "../providers/types.js";
+import type { HotelOfferProviderName, HotelProvider, ProviderResult } from "../providers/types.js";
 import type { ConstraintSnapshotData, DestinationReference, HotelOffer } from "../types/domain.js";
 import type { RequestContext } from "../utils/context.js";
 import { recordAudit } from "./audit-service.js";
@@ -28,7 +28,8 @@ export type HotelSearchInput = z.infer<typeof hotelSearchInputSchema>;
 
 export const hotelOfferSchema = z.object({
   id: z.string().uuid(), providerOfferId: z.string().min(1), queryId: z.string().uuid(),
-  providerName: z.literal("serpapi_google_hotels"), destinationId: z.string().min(1),
+  providerName: z.enum(["nuitee_connect", "serpapi_google_hotels"]),
+  destinationId: z.string().min(1),
   propertyId: z.string().min(1), propertyName: z.string().min(1),
   checkIn: z.string(), checkOut: z.string(), nights: z.number().int().positive(),
   roomCount: z.number().int().positive(), adultsPerRoom: z.array(z.number().int().positive()),
@@ -39,7 +40,7 @@ export const hotelOfferSchema = z.object({
     amount: z.number().nonnegative().optional(),
   }).strict(),
   cancellationSummary: z.string().nullable(), roomSummary: z.string().nullable(),
-  source: z.literal("SerpApi Google Hotels"),
+  source: z.string().min(1),
   capturedAt: z.string().datetime({ offset: true }),
   expiresAt: z.string().datetime({ offset: true }),
 }).strict();
@@ -68,17 +69,25 @@ export class HotelSearchAlreadyAttemptedError extends Error {
 }
 
 export function buildHotelSearchFingerprint(params: {
+  provider: HotelOfferProviderName;
   destinationId: string;
   destinationReference?: DestinationReference | null;
   checkIn: string;
   checkOut: string;
   preferences: { roomCount: number; adultsPerRoom: number[]; currency: string };
   locale: "en" | "zh";
+  quoteAuthorization?: { id: string; version: number };
 }): string {
   return createHash("sha256").update(JSON.stringify({
-    provider: "serpapi_google_hotels",
+    provider: params.provider,
     category: "hotel",
-    ...params,
+    destinationId: params.destinationId,
+    destinationReference: params.destinationReference ?? null,
+    checkIn: params.checkIn,
+    checkOut: params.checkOut,
+    preferences: params.preferences,
+    locale: params.locale,
+    quoteAuthorization: params.quoteAuthorization ?? null,
   })).digest("hex");
 }
 
@@ -108,26 +117,46 @@ export async function executeAndPersistHotelSearch(params: {
   locale: "en" | "zh";
   input: HotelSearchInput;
   provider: HotelProvider;
+  /**
+   * Server-resolved ISO-3166-1 alpha-2 nationality, decrypted from
+   * `stay_search_provider_authorizations` by the skill handler. Required
+   * by the Nuitee adapter; ignored by SerpApi. The service MUST NOT echo
+   * the value into logs, traces, audit summaries, or metric labels.
+   */
+  quoteNationality?: string;
+  /** Non-sensitive task-bound authorization pointer; isolates Nuitee cache entries. */
+  quoteAuthorization?: { id: string; version: number };
   resolveDestinationReference?: typeof resolveTripDestinationReference;
   signal?: AbortSignal;
 }): Promise<ProviderResult<HotelOffer[]> & { queryId?: string }> {
+  if (params.provider.providerName === "unconfigured") {
+    return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
+  }
+  // Runtime invariant: a LIVE result is only ever returned by a real adapter.
+  // `UnavailableHotelProvider` (`providerName === "unconfigured"`) is the
+  // sole carrier of the broader value and never produces offers, so the
+  // narrowing cast below cannot mislabel a persisted offer.
+  const providerName = params.provider.providerName as HotelOfferProviderName;
+  const providerSource = params.provider.source;
   const destination = await (params.resolveDestinationReference ?? resolveTripDestinationReference)({
     tripId: params.tripId,
     destinationId: params.input.destinationId,
   });
   const fingerprint = buildHotelSearchFingerprint({
+    provider: providerName,
     destinationId: params.input.destinationId,
     destinationReference: destination,
     checkIn: params.snapshot.travelDateStart!,
     checkOut: params.snapshot.travelDateEnd!,
     preferences: params.preferences,
     locale: params.locale,
+    ...(params.quoteAuthorization ? { quoteAuthorization: params.quoteAuthorization } : {}),
   });
   const [reservedRun] = await db.insert(providerSearchRuns).values({
     snapshotId: params.snapshotId,
     agentTaskRunId: params.agentTaskRunId ?? null,
     category: "hotel",
-    providerName: "serpapi_google_hotels",
+    providerName,
     destinationId: params.input.destinationId,
     requestFingerprint: fingerprint,
     outcome: "PENDING",
@@ -138,12 +167,12 @@ export async function executeAndPersistHotelSearch(params: {
     ctx: params.ctx,
     action: "HOTEL_SEARCH_REQUESTED",
     tripId: params.tripId,
-    summary: { provider: "serpapi_google_hotels", operation: "hotel_search" },
+    summary: { provider: providerName, operation: "hotel_search" },
   });
 
   let cacheDecision = await claimProviderSearchCache({
     requestFingerprint: fingerprint,
-    providerName: "serpapi_google_hotels",
+    providerName,
     category: "hotel",
     now: new Date(),
     policy: HOTEL_CACHE_POLICY,
@@ -151,7 +180,7 @@ export async function executeAndPersistHotelSearch(params: {
   if (cacheDecision.kind === "PENDING") {
     cacheDecision = await waitForProviderSearchCache({
       requestFingerprint: fingerprint,
-      providerName: "serpapi_google_hotels",
+      providerName,
       category: "hotel",
       policy: HOTEL_CACHE_POLICY,
     });
@@ -165,14 +194,14 @@ export async function executeAndPersistHotelSearch(params: {
     if (cachedOffers) {
       metrics.inc("provider_search_cache_total", { category: "hotel", outcome: "hit_live" });
       await finalizeSearchRun({
-        params, runId: reservedRun.id, result: {
-          outcome: "LIVE", data: cachedOffers, source: "SerpApi Google Hotels",
+        params, runId: reservedRun.id, providerName, providerSource, result: {
+          outcome: "LIVE", data: cachedOffers, source: providerSource,
           capturedAt: cacheDecision.capturedAt.toISOString(),
         },
         capturedAt: cacheDecision.capturedAt,
       });
       return {
-        outcome: "LIVE", data: cachedOffers, source: "SerpApi Google Hotels",
+        outcome: "LIVE", data: cachedOffers, source: providerSource,
         capturedAt: cacheDecision.capturedAt.toISOString(), queryId: reservedRun.id,
       };
     }
@@ -181,7 +210,7 @@ export async function executeAndPersistHotelSearch(params: {
     await expireProviderSearchCache(fingerprint);
     cacheDecision = await claimProviderSearchCache({
       requestFingerprint: fingerprint,
-      providerName: "serpapi_google_hotels",
+      providerName,
       category: "hotel",
       now: new Date(),
       policy: HOTEL_CACHE_POLICY,
@@ -190,13 +219,13 @@ export async function executeAndPersistHotelSearch(params: {
   if (cacheDecision.kind === "UNAVAILABLE") {
     metrics.inc("provider_search_cache_total", { category: "hotel", outcome: "hit_unavailable" });
     const result = { outcome: "UNAVAILABLE" as const, reason: cacheDecision.reason };
-    await finalizeSearchRun({ params, runId: reservedRun.id, result, capturedAt: cacheDecision.capturedAt });
+    await finalizeSearchRun({ params, runId: reservedRun.id, providerName, providerSource, result, capturedAt: cacheDecision.capturedAt });
     return result;
   }
   if (cacheDecision.kind === "PENDING") {
     metrics.inc("provider_search_cache_total", { category: "hotel", outcome: "wait_timeout" });
     const result = { outcome: "UNAVAILABLE" as const, reason: "UPSTREAM_TIMEOUT" as const };
-    await finalizeSearchRun({ params, runId: reservedRun.id, result, capturedAt: new Date() });
+    await finalizeSearchRun({ params, runId: reservedRun.id, providerName, providerSource, result, capturedAt: new Date() });
     return result;
   }
 
@@ -209,13 +238,21 @@ export async function executeAndPersistHotelSearch(params: {
     adultsPerRoom: params.preferences.adultsPerRoom,
     currency: params.preferences.currency,
     locale: params.locale,
+    ...(params.quoteNationality ? { quoteNationality: params.quoteNationality } : {}),
     signal: params.signal,
   }) : { outcome: "UNAVAILABLE" as const, reason: "SEARCH_CONSTRAINTS_INCOMPLETE" as const };
   const capturedAt = result.outcome === "LIVE" ? new Date(result.capturedAt) : new Date();
   const offers: HotelOffer[] = result.outcome === "LIVE"
-    ? result.data.map((item) => ({ id: randomUUID(), queryId: reservedRun.id, ...item }))
+    ? result.data.map((item) => ({ id: randomUUID(), queryId: reservedRun.id, providerName, source: providerSource, ...item }))
     : [];
-  await finalizeSearchRun({ params, runId: reservedRun.id, result: result.outcome === "LIVE" ? { ...result, data: offers } : result, capturedAt });
+  await finalizeSearchRun({
+    params,
+    runId: reservedRun.id,
+    providerName,
+    providerSource,
+    result: result.outcome === "LIVE" ? { ...result, data: offers } : result,
+    capturedAt,
+  });
   await completeProviderSearchCache({
     requestFingerprint: fingerprint,
     runId: reservedRun.id,
@@ -227,7 +264,7 @@ export async function executeAndPersistHotelSearch(params: {
     } : {}),
   });
   return result.outcome === "LIVE"
-    ? { outcome: "LIVE", data: offers, source: result.source, capturedAt: result.capturedAt, queryId: reservedRun.id }
+    ? { outcome: "LIVE", data: offers, source: providerSource, capturedAt: result.capturedAt, queryId: reservedRun.id }
     : result;
 }
 
@@ -252,6 +289,8 @@ async function copyCachedOffers(params: {
 async function finalizeSearchRun(params: {
   params: Parameters<typeof executeAndPersistHotelSearch>[0];
   runId: string;
+  providerName: HotelOfferProviderName;
+  providerSource: string;
   result: ProviderResult<HotelOffer[]>;
   capturedAt: Date;
 }): Promise<void> {
@@ -279,7 +318,7 @@ async function finalizeSearchRun(params: {
       action: params.result.outcome === "LIVE" ? "HOTEL_SEARCH_COMPLETED" : "HOTEL_SEARCH_UNAVAILABLE",
       tripId: params.params.tripId,
       summary: {
-        provider: "serpapi_google_hotels",
+        provider: params.providerName,
         outcome: params.result.outcome,
         ...(params.result.outcome === "UNAVAILABLE" ? { errorCode: params.result.reason } : {}),
       },
@@ -288,7 +327,7 @@ async function finalizeSearchRun(params: {
   });
   metrics.inc("hotel_tool_invocations_total", {
     outcome: params.result.outcome === "LIVE" ? "live" : "unavailable",
-    provider: "serpapi_google_hotels",
+    provider: params.providerName,
     error_category: params.result.outcome === "LIVE" ? "none" : params.result.reason.toLowerCase(),
   });
 }

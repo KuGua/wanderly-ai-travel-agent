@@ -16,13 +16,9 @@ export type FlightResearchCell = {
 };
 
 /**
- * Spec §4.3 — Phase 4 outcome matrix.
- *
- * `complete` is now defined as "every required cell has an attempted search
- * run" (LIVE *or* UNAVAILABLE), not "every cell returned LIVE". The
- * distinction lets UNAVAILABLE be reported as a gap rather than a fatal
- * condition. MISSING still indicates a planner that never even attempted the
- * cell, which is the only remaining hard failure surfaced by this matrix.
+ * A final flight-aware plan requires fresh, grounded LIVE evidence for every
+ * authorized origin × destination pair. An attempted but unavailable search is
+ * auditable but is not sufficient to synthesize or persist a final plan.
  */
 export async function evaluateFlightResearchCompleteness(params: {
   snapshotId: string;
@@ -47,7 +43,7 @@ export async function evaluateFlightResearchCompleteness(params: {
       ? "LIVE" : matching.some((run) => run.outcome === "UNAVAILABLE") ? "UNAVAILABLE" : "MISSING";
     return { originId, destinationId, outcome };
   }));
-  return { complete: cells.every((cell) => cell.outcome !== "MISSING"), cells };
+  return { complete: cells.every((cell) => cell.outcome === "LIVE"), cells };
 }
 
 /**

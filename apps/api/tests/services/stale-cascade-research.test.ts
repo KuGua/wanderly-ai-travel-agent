@@ -32,6 +32,11 @@ describe("stale cascade — Phase 4 RESEARCH cancellation", () => {
   });
 
   afterAll(async () => {
+    // beforeEach truncates before each test but not after the last one; a
+    // RESEARCH row left behind here breaks migrate.test.ts's from-scratch
+    // migration replay (0012's pre-RESEARCH constraint) if it runs later in
+    // the same single-forked vitest process.
+    await cleanup.unsafe(`DELETE FROM agent_task_runs`);
     await cleanup.end({ timeout: 5 });
   });
 

@@ -2,6 +2,8 @@ import type {
   AccommodationDiscoveryProvider,
   ActivitiesProvider,
   FlightProvider,
+  HotelOfferProviderName,
+  HotelProviderName,
   HotelProvider,
   MobilityOfferProvider,
   NavigationProvider,
@@ -18,17 +20,24 @@ import type {
 } from "./types.js";
 import type { FlightOffer, StayOffer } from "../types/domain.js";
 import { AmadeusFlightProvider, readAmadeusConfiguration } from "./amadeus-flight-provider.js";
+import { FlightApiProvider, readFlightApiConfiguration } from "./flightapi-flight-provider.js";
+import { SerpApiFlightProvider, readSerpApiConfiguration } from "./serpapi-flight-provider.js";
 import { AmadeusTransferProvider, readAmadeusTransferConfiguration } from "./amadeus-transfer-provider.js";
 import { OrsPlaceProvider, readOrsPlaceConfiguration } from "./ors-place-provider.js";
 import { OrsNavigationProvider, readOrsNavigationConfiguration } from "./ors-navigation-provider.js";
 import { ViatorMcpActivitiesProvider, readViatorMcpConfiguration } from "./viator-mcp-activities-provider.js";
 import { SerpApiHotelProvider, readSerpApiHotelConfiguration } from "./serpapi-hotel-provider.js";
+import { NuiteeHotelProvider, readNuiteeHotelConfiguration } from "./nuitee-hotel-provider.js";
 import {
   OpenTripMapAccommodationProvider,
   readOpenTripMapAccommodationConfiguration,
 } from "./opentripmap-accommodation-provider.js";
+import { db } from "../db/database.js";
+import { agentTaskRuns } from "../db/schema.js";
+import { eq } from "drizzle-orm";
 
 class UnavailableFlightProvider implements FlightProvider {
+  readonly providerName = "unconfigured" as const;
   async searchFlights(): Promise<ProviderResult<FlightOffer[]>> {
     return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
   }
@@ -71,6 +80,8 @@ class UnavailableActivitiesProvider implements ActivitiesProvider {
 }
 
 class UnavailableHotelProvider implements HotelProvider {
+  readonly providerName = "unconfigured" as const;
+  readonly source = "Not configured" as const;
   async searchHotels() {
     return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" } as const;
   }
@@ -115,6 +126,23 @@ export function createTravelProviders(): {
   };
 }
 
+export function createFlightProvider(env: NodeJS.ProcessEnv = process.env): FlightProvider {
+  const selected = (env.FLIGHT_PROVIDER ?? "disabled").trim().toLowerCase();
+  if (selected === "disabled") return new UnavailableFlightProvider();
+  if (selected === "amadeus") {
+    const configuration = readAmadeusConfiguration(env);
+    if (!configuration) throw new Error("FLIGHT_PROVIDER=amadeus requires AMADEUS_ENVIRONMENT=test or production");
+    return new AmadeusFlightProvider(configuration);
+  }
+  if (selected === "flightapi") {
+    return new FlightApiProvider(readFlightApiConfiguration(env));
+  }
+  if (selected === "serpapi") {
+    return new SerpApiFlightProvider(readSerpApiConfiguration(env));
+  }
+  throw new Error("FLIGHT_PROVIDER must be disabled, amadeus, flightapi, or serpapi");
+}
+
 function createAccommodationDiscoveryProvider(): AccommodationDiscoveryProvider {
   const configuration = readOpenTripMapAccommodationConfiguration();
   return configuration
@@ -122,9 +150,124 @@ function createAccommodationDiscoveryProvider(): AccommodationDiscoveryProvider 
     : new UnavailableAccommodationDiscoveryProvider();
 }
 
-function createHotelProvider(): HotelProvider {
-  const configuration = readSerpApiHotelConfiguration();
-  return configuration ? new SerpApiHotelProvider(configuration) : new UnavailableHotelProvider();
+function createHotelProvider(env: NodeJS.ProcessEnv = process.env): HotelProvider {
+  const resolved = resolvePersistedHotelProviderName(env);
+  if (resolved === null) {
+    const reason = (env.HOTEL_PROVIDER ?? "disabled").trim().toLowerCase() === "serpapi"
+      ? "serpapi (NOT_CONFIGURED — SERPAPI_HOTEL_ENABLED or SERPAPI_API_KEY missing)"
+      : (env.HOTEL_PROVIDER ?? "disabled").trim().toLowerCase() === "nuitee"
+        ? "nuitee (NOT_CONFIGURED — NUITEE_API_KEY missing)"
+        : `disabled (HOTEL_PROVIDER=${(env.HOTEL_PROVIDER ?? "disabled").trim() || "disabled"})`;
+    logHotelProviderSelection(reason);
+    return new UnavailableHotelProvider();
+  }
+  logHotelProviderSelection(resolved);
+  if (resolved === "serpapi_google_hotels") {
+    return new SerpApiHotelProvider(readSerpApiHotelConfiguration(env)!);
+  }
+  // resolved === "nuitee_connect"
+  return new NuiteeHotelProvider(readNuiteeHotelConfiguration(env)!);
+}
+
+/**
+ * Resolves the `HOTEL_PROVIDER` env value to the canonical
+ * `HotelOfferProviderName` that should be persisted on
+ * `agent_task_runs.hotel_provider` at task acceptance.
+ *
+ * Returns `null` when no real adapter is configured for the requested
+ * selection (`disabled`, unknown value, or `nuitee` while the adapter
+ * is still pending Phase C). Returning `null` lets the caller persist
+ * `NULL` on the row; the planner then sees the hotel search return
+ * `UNAVAILABLE/NOT_CONFIGURED` and reports it as a ServiceGap. This is
+ * the spec §3.1 invariant: a task bound to no provider never silently
+ * picks one at call time.
+ */
+export function resolvePersistedHotelProviderName(env: NodeJS.ProcessEnv = process.env): HotelOfferProviderName | null {
+  const selected = (env.HOTEL_PROVIDER ?? "disabled").trim().toLowerCase();
+  if (selected === "serpapi") {
+    return readSerpApiHotelConfiguration(env) ? "serpapi_google_hotels" : null;
+  }
+  if (selected === "nuitee") {
+    return readNuiteeHotelConfiguration(env) ? "nuitee_connect" : null;
+  }
+  return null;
+}
+
+/**
+ * Resolve the live `HotelProvider` adapter for the named provider.
+ * Used by the planner service to convert the persisted
+ * `hotel_provider` value into an actual instance at run time. Falls
+ * back to `UnavailableHotelProvider` when the bound provider's adapter
+ * cannot be constructed (e.g. credentials revoked after acceptance);
+ * the skill will then return `UNAVAILABLE/NOT_CONFIGURED` rather than
+ * silently swapping providers. Spec §3.1.
+ */
+export function resolveHotelProviderByName(name: HotelOfferProviderName): HotelProvider {
+  if (name === "serpapi_google_hotels") {
+    const configuration = readSerpApiHotelConfiguration();
+    return configuration ? new SerpApiHotelProvider(configuration) : new UnavailableHotelProvider();
+  }
+  if (name === "nuitee_connect") {
+    const configuration = readNuiteeHotelConfiguration();
+    return configuration ? new NuiteeHotelProvider(configuration) : new UnavailableHotelProvider();
+  }
+  return new UnavailableHotelProvider();
+}
+
+/**
+ * Resolve the hotel provider bound to an agent task run. A durable task never
+ * falls back to the current environment: an absent/missing binding is an
+ * `UnavailableHotelProvider` so configuration changes cannot reroute it.
+ *
+ * The function is intentionally pure: it does not mutate any state and
+ * never reads credentials outside the standard env readers. Planner
+ * service calls it once per `hotel.search` invocation; the result is
+ * cached for the lifetime of the run via `HotelSearchExecutionContext`.
+ *
+ * Spec §3.1, §3.2.
+ */
+export async function resolveBoundHotelProvider(
+  agentTaskRunId: string | undefined,
+): Promise<{
+  providerName: HotelProviderName;
+  adapter: HotelProvider;
+  authorization?: { id: string; version: number };
+}> {
+  if (agentTaskRunId) {
+    const [row] = await db.select({
+      hotelProvider: agentTaskRuns.hotelProvider,
+      authorizationId: agentTaskRuns.hotelQuoteNationalityAuthorizationId,
+      authorizationVersion: agentTaskRuns.hotelQuoteNationalityAuthorizationVersion,
+    })
+      .from(agentTaskRuns)
+      .where(eq(agentTaskRuns.id, agentTaskRunId))
+      .limit(1);
+    if (row) {
+      if (!row.hotelProvider) return { providerName: "unconfigured", adapter: new UnavailableHotelProvider() };
+      const adapter = resolveHotelProviderByName(row.hotelProvider);
+      const authorization = row.hotelProvider === "nuitee_connect"
+        && row.authorizationId
+        && row.authorizationVersion !== null
+        ? { id: row.authorizationId, version: row.authorizationVersion }
+        : undefined;
+      return {
+        providerName: row.hotelProvider,
+        adapter,
+        ...(authorization ? { authorization } : {}),
+      };
+    }
+  }
+  // Durable production tasks must be bound above. This branch exists only
+  // for isolated tests that do not create an agent_task_runs record.
+  return { providerName: "unconfigured", adapter: new UnavailableHotelProvider() };
+}
+
+function logHotelProviderSelection(selection: string | HotelOfferProviderName): void {
+  // Boot-time INFO; never includes keys, request URLs, or any offer data.
+  // Production logs use the structured logger; this falls back to console
+  // when running before the logger is wired (CLI tools, ad-hoc scripts).
+  const line = `[hotel] provider selection: ${selection}`;
+  if (typeof console !== "undefined") console.info(line);
 }
 
 function createActivitiesProvider(): ActivitiesProvider {
@@ -132,11 +275,6 @@ function createActivitiesProvider(): ActivitiesProvider {
   return configuration
     ? new ViatorMcpActivitiesProvider(configuration)
     : new UnavailableActivitiesProvider();
-}
-
-function createFlightProvider(): FlightProvider {
-  const configuration = readAmadeusConfiguration();
-  return configuration ? new AmadeusFlightProvider(configuration) : new UnavailableFlightProvider();
 }
 
 function createOrsPlace(): PlaceSearchProvider {

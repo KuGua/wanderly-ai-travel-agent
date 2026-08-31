@@ -653,6 +653,7 @@ export const acceptInvitationResponseSchema = z.object({
 export const tripInvitationPreviewResponseSchema = z.object({
   trip: z.object({
     name: z.string().min(1).max(256),
+    status: tripStatusSchema,
     destinationCandidates: z.array(z.string().min(1)).max(5),
     travelDateStart: dateStr.nullable(),
     travelDateEnd: dateStr.nullable(),
@@ -709,15 +710,21 @@ export const tripActivationRequestSchema = z.object({
 }).strict();
 
 export const updateDraftTripBriefRequestSchema = z.object({
-  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+  departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
+  replaceDestinationCandidates: z.boolean().optional(),
+  travelDateStart: dateStr.nullable().optional(),
+  travelDateEnd: dateStr.nullable().optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
-}).strict().refine((value) => value.destinationCandidates !== undefined || value.travelDays !== undefined);
+}).strict().refine((value) => value.departureCities !== undefined || value.destinationCandidates !== undefined || value.travelDateStart !== undefined || value.travelDateEnd !== undefined || value.travelDays !== undefined);
 
 export const updateDraftTripBriefResponseSchema = z.object({
   trip: z.object({
     id: uuidSchema, name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"),
-    destinationCandidates: z.array(z.string()), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime(),
+    departureCities: z.array(z.string()), destinationCandidates: z.array(z.string()),
+    travelDateStart: dateStr.nullable(), travelDateEnd: dateStr.nullable(),
+    travelDays: z.number().int().nullable(), updatedAt: z.string().datetime(),
   }).strict(),
 });
 
