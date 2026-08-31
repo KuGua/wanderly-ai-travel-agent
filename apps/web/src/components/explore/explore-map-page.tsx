@@ -848,8 +848,15 @@ export function ExploreMapPage() {
   }, [locale]);
 
   return (
-    <main data-drawer-open={selected && !chatOpen ? "true" : "false"} className="wanderly-explore-map wanderly-cosmos wanderly-starfield relative isolate h-[calc(100dvh-62px)] min-h-[620px] overflow-hidden sm:h-screen">
-      <div className="absolute inset-0 bg-[var(--w-space)]" aria-hidden="true" />
+    <main data-drawer-open={selected && !chatOpen ? "true" : "false"} className="wanderly-explore-map wanderly-cosmos relative isolate h-[calc(100dvh-62px)] min-h-[620px] overflow-hidden sm:h-screen">
+      {/*
+        * Space, with the stars painted onto it rather than over the scene. The
+        * globe canvas is transparent around the sphere, so stars on this layer
+        * show through beside the planet and are hidden behind it — which is
+        * where stars belong. Carried by the page instead, they landed on the
+        * globe itself and read as specks on the map.
+        */}
+      <div className="wanderly-starfield absolute inset-0 bg-[var(--w-space)]" aria-hidden="true" />
       <div className="absolute inset-0">
         <div ref={containerRef} className="size-full" aria-label={t("globeAriaLabel")} />
       </div>

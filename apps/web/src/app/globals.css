@@ -286,10 +286,17 @@
   filter: brightness(0.88) saturate(1.12) contrast(1.1);
 }
 
-/* Star field. Decorative and inert so it never intercepts map gestures. */
+/*
+ * Star field. Decorative and inert so it never intercepts map gestures.
+ *
+ * Sits on the space layer beneath the map, not above the whole scene. The
+ * globe canvas is transparent around the sphere, so these points show beside
+ * the planet and the planet itself covers the ones behind it. No z-index:
+ * ordinary paint order already puts a parent's `::after` above that parent's
+ * own background and below the layers that follow it.
+ */
 .wanderly-starfield::after {
   position: absolute;
-  z-index: 2;
   inset: 0;
   opacity: 0.72;
   background-image:
