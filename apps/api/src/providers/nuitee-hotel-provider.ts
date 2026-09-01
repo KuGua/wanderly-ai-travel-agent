@@ -7,7 +7,7 @@ import type {
   HotelSearchParams,
   ProviderResult,
 } from "./types.js";
-import { nuiteeHotelRatesResponseSchema } from "./nuitee-hotel-schemas.js";
+import { nuiteeHotelDirectorySchema, nuiteeHotelRatesResponseSchema, nuiteeRatedHotelEntrySchema } from "./nuitee-hotel-schemas.js";
 
 /**
  * Spec: docs/nuitee-serpapi-hotel-provider-switching-implementation.md §4.2
@@ -147,23 +147,44 @@ export class NuiteeHotelProvider implements HotelProvider {
       }
       return { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };
     }
+    // Hotel names are not on the rated entries — they live in the sibling
+    // `hotels[]` directory, in a different order, joined by id. An entry with
+    // no directory match is skipped rather than shown without a name.
+    const directory = new Map<string, string>();
+    for (const raw of parsed.data.hotels ?? []) {
+      const entry = nuiteeHotelDirectorySchema.safeParse(raw);
+      if (entry.success) directory.set(entry.data.id, entry.data.name);
+    }
+
     const hotels = parsed.data.data ?? [];
     if (hotels.length === 0) return { outcome: "UNAVAILABLE", reason: "NO_RESULTS" };
 
     const capturedAt = this.now().toISOString();
     const nights = daysBetween(params.checkIn, params.checkOut);
     const offers: HotelProviderItem[] = [];
-    for (const hotel of hotels) {
-      if (hotel.rates.length === 0) continue;
+    for (const rawHotel of hotels) {
+      // Validated per hotel so one malformed entry cannot discard the page.
+      const parsedHotel = nuiteeRatedHotelEntrySchema.safeParse(rawHotel);
+      if (!parsedHotel.success) continue;
+      const hotel = parsedHotel.data;
+
+      const propertyName = directory.get(hotel.hotelId);
+      if (!propertyName) continue;
+
       // `maxRatesPerHotel: 1` is requested, but the response can still
       // contain more than one rate if the upstream contract drifts; the
       // adapter picks the first valid one to keep the result deterministic.
-      const rate = hotel.rates[0];
-      const retail = rate.retailRate;
-      const totalAmount = roundMoney(retail.totalAmount);
+      const rate = hotel.roomTypes.flatMap((roomType) => roomType.rates)[0];
+      if (!rate) continue;
+      // A rate can be quoted in several currencies. Only the one the caller
+      // asked for is usable — converting here would invent a rate nobody
+      // quoted.
+      const total = rate.retailRate.total.find((money) => money.currency === params.currency);
+      if (!total) continue;
+      const totalAmount = roundMoney(total.amount);
       const pricePerNight = nights > 0 ? roundMoney(totalAmount / nights) : totalAmount;
-      const taxFeeStatus = classifyTaxFeeStatus(retail.taxesAndFeesIncluded, retail.taxesAndFeesAmount);
-      const roomSummary = composeRoomSummary(rate, hotel);
+      const taxFeeStatus = classifyTaxFeeStatus(rate.retailRate.taxesAndFees ?? undefined);
+      const roomSummary = composeRoomSummary(rate);
       const cancellationSummary = composeCancellationSummary(rate);
       offers.push({
         providerOfferId: stableOfferId({
@@ -177,7 +198,7 @@ export class NuiteeHotelProvider implements HotelProvider {
         }),
         destinationId: params.destination.destinationId,
         propertyId: digest(hotel.hotelId),
-        propertyName: hotel.name,
+        propertyName,
         checkIn: params.checkIn,
         checkOut: params.checkOut,
         nights,
@@ -185,7 +206,7 @@ export class NuiteeHotelProvider implements HotelProvider {
         adultsPerRoom: [...params.adultsPerRoom],
         totalPrice: totalAmount,
         pricePerNight,
-        currency: retail.currency,
+        currency: total.currency,
         taxesAndFees: taxFeeStatus,
         cancellationSummary,
         roomSummary,
@@ -212,45 +233,56 @@ export class NuiteeHotelProvider implements HotelProvider {
 }
 
 function classifyTaxFeeStatus(
-  included: boolean | undefined,
-  amount: number | undefined,
+  lines: Array<{ included: boolean; amount: number }> | undefined,
 ): { status: "INCLUDED"; amount: number } | { status: "PARTIAL"; amount?: number } | { status: "UNKNOWN" } {
-  // Strict classification per spec §4.2:
-  //   INCLUDED only when the upstream marks the amount included and the
-  //              numeric field is present and bounded.
-  //   PARTIAL   when the upstream exposes a taxesAndFeesAmount but does
-  //              not explicitly mark it complete (e.g. mandatory fees
-  //              that the supplier cannot enumerate).
-  //   UNKNOWN   otherwise.
-  if (included === true && typeof amount === "number") {
-    return { status: "INCLUDED", amount: roundMoney(amount) };
+  // Nuitee itemizes taxes and fees, each line flagged for whether it is
+  // already inside `retailRate.total`. Classification per spec §4.2:
+  //   INCLUDED every line is inside the total — the quoted price is what
+  //              the guest pays.
+  //   PARTIAL  at least one line is settled at the property; the reported
+  //              amount is the part already included, never the sum of both,
+  //              which would overstate what the total covers.
+  //   UNKNOWN  the supplier itemized nothing.
+  if (lines === undefined || lines.length === 0) return { status: "UNKNOWN" };
+  const includedAmount = lines
+    .filter((line) => line.included)
+    .reduce((sum, line) => sum + line.amount, 0);
+  if (lines.every((line) => line.included)) {
+    return { status: "INCLUDED", amount: roundMoney(includedAmount) };
   }
-  if (typeof amount === "number") {
-    return { status: "PARTIAL", amount: roundMoney(amount) };
-  }
-  return { status: "UNKNOWN" };
+  return { status: "PARTIAL", amount: roundMoney(includedAmount) };
 }
 
 function composeRoomSummary(
-  rate: { roomTypes?: Array<{ description?: string | null; adults?: number }> },
-  hotel: { starRating?: number | null },
+  rate: { name?: string | null; boardName?: string | null; adultCount?: number },
 ): string | null {
+  // Room detail now sits on the rate itself (`TWIN PREMIUM`, `Breakfast
+  // included`), not on a nested room-type list, and star rating belongs to
+  // the directory entry rather than the rate.
   const parts: string[] = [];
-  if (typeof hotel.starRating === "number" && hotel.starRating > 0) parts.push(`${hotel.starRating}-star`);
-  const firstRoom = rate.roomTypes?.[0];
-  if (firstRoom?.description) parts.push(firstRoom.description);
-  if (firstRoom?.adults && firstRoom.adults > 0) parts.push(`${firstRoom.adults} adults`);
+  if (rate.name) parts.push(rate.name);
+  if (rate.boardName) parts.push(rate.boardName);
+  if (rate.adultCount && rate.adultCount > 0) parts.push(`${rate.adultCount} adults`);
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 function composeCancellationSummary(
-  rate: { cancellationPolicies?: { cancellationPolicy?: Array<{ description?: string | null; type?: string }> | null } },
+  rate: {
+    cancellationPolicies?: {
+      refundableTag?: string | null;
+      cancelPolicyInfos?: Array<{ cancelTime?: string | null; type?: string | null }> | null;
+    };
+  },
 ): string | null {
-  const policies = rate.cancellationPolicies?.cancellationPolicy ?? [];
-  const first = policies[0];
-  if (!first) return null;
-  if (first.description) return first.description;
-  if (first.type) return `Cancellation: ${first.type}`;
+  const policies = rate.cancellationPolicies;
+  if (!policies) return null;
+  const first = policies.cancelPolicyInfos?.[0];
+  if (first?.cancelTime) return `Free cancellation until ${first.cancelTime}`;
+  if (first?.type) return `Cancellation: ${first.type}`;
+  // `NRFN` is the supplier's non-refundable marker; anything else is
+  // reported verbatim rather than guessed at.
+  if (policies.refundableTag === "NRFN") return "Non-refundable";
+  if (policies.refundableTag) return `Cancellation: ${policies.refundableTag}`;
   return null;
 }
 

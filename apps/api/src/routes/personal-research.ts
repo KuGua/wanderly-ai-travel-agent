@@ -74,6 +74,33 @@ async function loadConversationIntentRun(runId: string, userId: string): Promise
   };
 }
 
+/**
+ * The classifier records the coarse capability names it works in
+ * (`hotel`, `places`) on the intent draft; the personal research routes
+ * work in operation capabilities (`hotel.search`, `places.search`). A
+ * conversation run has no typed draft until answers are saved, so before
+ * that point this is the only capability the run carries.
+ *
+ * `readiness` has no research operation behind it and is skipped.
+ */
+function deriveCapabilityFromClassifiedIntent(
+  capabilities: readonly string[],
+): PersonalResearchOperationCapability | undefined {
+  for (const capability of capabilities) {
+    switch (capability) {
+      case "flight": return "flight.search";
+      case "hotel": return "hotel.search";
+      case "accommodation": return "accommodation.discovery";
+      case "activities": return "activities.search";
+      case "places": return "places.search";
+      case "navigation": return "navigation.route";
+      case "mobility": return "mobility.search";
+      default: continue;
+    }
+  }
+  return undefined;
+}
+
 function deriveCapabilityFromDraft(draft: { kind: string }): PersonalResearchOperationCapability {
   switch (draft.kind) {
     case "FLIGHT_SEARCH": return "flight.search";
@@ -127,8 +154,14 @@ export async function personalResearchRoutes(app: FastifyInstance): Promise<void
     }
     if (row.operation === "CONVERSATION") {
       // Pre-confirm shape: typed draft lives on researchIntentDraft JSONB.
-      const capability = (row.requestedCapabilities ?? [])[0] as PersonalResearchOperationCapability | undefined;
-      const draft = row.researchIntentDraft as unknown;
+      const draft = row.researchIntentDraft as { requestedCapabilities?: readonly string[] } | null;
+      // `requestedCapabilities` is a column only on RESEARCH and
+      // PERSONAL_RESEARCH runs; a conversation run carries its capabilities
+      // on the intent draft the classifier wrote, so read whichever is
+      // actually populated. Reading only the column meant this route
+      // answered 409 for every pre-confirm draft.
+      const capability = ((row.requestedCapabilities ?? [])[0] as PersonalResearchOperationCapability | undefined)
+        ?? deriveCapabilityFromClassifiedIntent(draft?.requestedCapabilities ?? []);
       if (!capability) {
         throw new ApiError(409, "Conflict", "Conversation run is missing a personal research capability");
       }

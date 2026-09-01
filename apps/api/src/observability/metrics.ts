@@ -473,6 +473,10 @@ metrics.registerCounter("conversation_context_chars", "Total UTF-16 characters r
 metrics.registerCounter("conversation_context_truncated_total", "Same-thread LLM context builder truncations by bounded reason.", {
   reason: ["turn_limit", "char_limit"],
 });
+metrics.registerCounter("conversation_memory_context_total", "Cross-thread long-term memory context build outcomes.", {
+  result: ["success", "empty"],
+});
+metrics.registerCounter("conversation_memory_context_facts", "Total long-term memory facts passed to a conversation turn (count, no labels).");
 metrics.registerHistogram(
   "agent_task_duration_ms",
   "Accepted-to-terminal durable Agent task latency in milliseconds.",

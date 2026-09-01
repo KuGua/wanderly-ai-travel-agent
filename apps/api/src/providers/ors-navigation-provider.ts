@@ -3,6 +3,7 @@ import type {
   NormalizedRouteEvidence,
   NormalizedRouteStep,
   ProviderResult,
+  RouteCoordinate,
 } from "./types.js";
 import { metrics } from "../observability/metrics.js";
 import {
@@ -49,6 +50,8 @@ export class OrsNavigationProvider implements NavigationProvider {
   async searchRoute(params: {
     originPlaceId: string;
     destinationPlaceId: string;
+    originCoordinate: RouteCoordinate;
+    destinationCoordinate: RouteCoordinate;
     mode: "WALK" | "DRIVE" | "CYCLE";
     snapshotId: string;
     runId?: string;
@@ -58,12 +61,20 @@ export class OrsNavigationProvider implements NavigationProvider {
     const capturedAt = this.now().toISOString();
     try {
       const profile = ORS_DIRECTIONS_PROFILE[params.mode];
-      const query = new URLSearchParams({
-        api_key: this.options.apiKey,
-        start: params.originPlaceId,
-        end: params.destinationPlaceId,
-      });
-      const response = await this.request(`/v2/directions/${profile}/geojson?${query.toString()}`, params.signal);
+      // The `/geojson` variant is POST-only — a GET against it answers 405,
+      // which is what every route request used to get. Its body is the
+      // FeatureCollection `orsDirectionsResponseSchema` already expects, so
+      // POST is the variant to keep.
+      const response = await this.request(
+        `/v2/directions/${profile}/geojson`,
+        {
+          coordinates: [
+            [params.originCoordinate.longitude, params.originCoordinate.latitude],
+            [params.destinationCoordinate.longitude, params.destinationCoordinate.latitude],
+          ],
+        },
+        params.signal,
+      );
       if (response.status === 429) return this.unavailable("RATE_LIMITED", start);
       if (response.status >= 500) return this.unavailable("UPSTREAM_FAILURE", start);
       if (!response.ok) return this.unavailable("UPSTREAM_FAILURE", start);
@@ -113,10 +124,22 @@ export class OrsNavigationProvider implements NavigationProvider {
     }
   }
 
-  private async request(path: string, signal?: AbortSignal): Promise<Response> {
+  private async request(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
     const timeout = AbortSignal.timeout(this.options.timeoutMs);
     const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    return this.fetchImpl(`${this.options.baseUrl}${path}`, { signal: composed });
+    // The key moves to a header with the switch to POST: ORS accepts
+    // `api_key` only as a query parameter, and a credential does not belong
+    // in a URL that proxies and access logs retain.
+    return this.fetchImpl(`${this.options.baseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: this.options.apiKey,
+        "content-type": "application/json",
+        accept: "application/geo+json",
+      },
+      body: JSON.stringify(body),
+      signal: composed,
+    });
   }
 
   private unavailable(

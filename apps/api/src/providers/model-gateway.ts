@@ -13,6 +13,30 @@ export type ConversationIntent = "auto_intro" | "user_typed";
  * a translation layer. Both modules define the type locally to keep the
  * service free of any dependency on the providers package.
  */
+/**
+ * A single active long-term memory fact for the authenticated owner,
+ * produced by `apps/api/src/services/conversation-memory-context.ts`.
+ * Deliberately structural (not a Zod import) so this provider-facing
+ * contract stays free of service-layer dependencies, matching the way
+ * `ThreadContextMessage` is declared below.
+ */
+export interface ResearchEvidenceOffer {
+  category: "activity" | "hotel";
+  providerName: string;
+  title: string;
+  price: { amount: number; currency: string } | null;
+  rating: number | null;
+  detail: string | null;
+  capturedAt: string;
+}
+
+export interface ConversationMemoryFact {
+  field: string;
+  value: unknown;
+  category: "PREFERENCE" | "CONSTRAINT";
+  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION";
+}
+
 export interface ThreadContextMessage {
   role: "USER" | "ASSISTANT";
   content: string;
@@ -110,6 +134,15 @@ export interface ModelGateway {
      * submit, or store this field.
      */
     threadContext: ThreadContextMessage[];
+    /**
+     * Server-built cross-thread long-term memory for the authenticated
+     * owner.  Built only by
+     * `apps/api/src/services/conversation-memory-context.ts`; browsers
+     * never see, submit, or store this field.
+     */
+    memoryContext?: ConversationMemoryFact[];
+    /** Evidence the agent's own providers returned for this trip. */
+    researchEvidence?: ResearchEvidenceOffer[];
     intent?: ConversationIntent;
     /**
      * Server-owned behavioural constraints selected by the invoking Skill.
@@ -131,6 +164,9 @@ export interface ModelGateway {
     question: string;
     place?: ConversationPlace;
     threadContext: ThreadContextMessage[];
+    memoryContext?: ConversationMemoryFact[];
+    /** Evidence the agent's own providers returned for this trip. */
+    researchEvidence?: ResearchEvidenceOffer[];
     intent?: ConversationIntent;
     responseConstraints?: readonly ConversationResponseConstraint[];
     tripContext?: PersonalTripContext;

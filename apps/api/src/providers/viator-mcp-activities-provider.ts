@@ -9,6 +9,7 @@ import type {
 } from "./types.js";
 import {
   viatorMcpResponseSchema,
+  viatorExperienceSchema,
   viatorSearchStructuredContentSchema,
 } from "./viator-mcp-activities-schemas.js";
 
@@ -166,11 +167,21 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
       if (!structured.success) return { outcome: "UNAVAILABLE", reason: "INVALID_PROVIDER_RESPONSE" };
       if (structured.data.experiences.length === 0) return { outcome: "UNAVAILABLE", reason: "NO_RESULTS" };
 
+      // Validate one experience at a time. A single malformed entry is the
+      // supplier's problem with that entry, not grounds for discarding the
+      // page — the owner would see "unavailable" while usable results sat in
+      // the response. If nothing survives, that is genuine schema drift.
+      const experiences = structured.data.experiences
+        .map((raw) => viatorExperienceSchema.safeParse(raw))
+        .filter((parsed) => parsed.success)
+        .map((parsed) => parsed.data);
+      if (experiences.length === 0) return { outcome: "UNAVAILABLE", reason: "INVALID_PROVIDER_RESPONSE" };
+
       return {
         outcome: "LIVE",
         source: SOURCE,
         capturedAt: this.now().toISOString(),
-        data: structured.data.experiences
+        data: experiences
           .filter((experience) => matchesDestination(experience.clickOffToLander, params.destination))
           .map((experience) => ({
           providerOfferId: experience.code,

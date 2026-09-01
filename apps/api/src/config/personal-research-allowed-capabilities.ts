@@ -26,7 +26,10 @@
  *   2. Add the corresponding typed input schema in apps/api/src/types/{schemas,domain}.ts.
  *   3. Add the corresponding executor in apps/api/src/services/personal-research-executors/.
  *   4. Add provider contract tests under apps/api/tests/personal-research/.
- *   5. Add the corresponding input/result card under apps/web/src/components/trips/personal-research/.
+ *   5. (Superseded) A per-capability input/result card used to be required
+ *      here. The deterministic setup-card flow was removed with the move to
+ *      LLM-driven tool calling, so there is no card to add — the capability
+ *      surfaces through the tool loop instead.
  */
 
 export const PERSONAL_RESEARCH_OPERATION_CAPABILITIES = [
@@ -49,6 +52,18 @@ export type PersonalResearchOperationCapability = (typeof PERSONAL_RESEARCH_OPER
  */
 export const PERSONAL_RESEARCH_ALLOWED_CAPABILITIES = [
   "flight.search",
+  // Stage 2 (partial) / Stage 3 (partial): unlocked once each capability had a
+  // typed draft branch, an executor, provider contract tests covering both the
+  // AVAILABLE and NOT_CONFIGURED paths, and its input/result cards. The rest of
+  // stage 2 and 3 stay closed until their cards land — see the checklist above.
+  "hotel.search",
+  "accommodation.discovery",
+  "activities.search",
+  "places.search",
+  "navigation.route",
+  // `mobility.search` stays closed: it has no Amadeus credentials, so
+  // opening it would only ever answer NOT_CONFIGURED.
+  // `visa.*` remains stage 4 and is not in the capability enum at all.
 ] as const satisfies readonly PersonalResearchOperationCapability[];
 
 export function isPersonalResearchCapabilityAllowed(

@@ -52,14 +52,19 @@ export async function executePersonalAccommodationDiscovery(params: {
     destinationId: `${params.draft.latitude.toFixed(4)},${params.draft.longitude.toFixed(4)}`,
   });
   if (!destination) {
-    destination = getLocationReferenceResolver().resolveDestinationReference({
+    // The draft already carries the search centroid, so there is nothing to
+    // resolve: asking the resolver to turn a coordinate string back into a
+    // known destination fails by construction, and it was the reason a DRAFT
+    // trip with only manual destinations reported an incomplete search.
+    // OpenTripMap queries by lat/lon, so a reference anchored on the draft's
+    // own point is exactly what the adapter needs.
+    destination = {
       destinationId: `${params.draft.latitude.toFixed(4)},${params.draft.longitude.toFixed(4)}`,
       cityName: "",
-      countryHint: null,
-    });
-  }
-  if (!destination) {
-    return unavailableSummary("SEARCH_CONSTRAINTS_INCOMPLETE");
+      countryCode: "",
+      latitude: params.draft.latitude,
+      longitude: params.draft.longitude,
+    };
   }
 
   const input = {

@@ -63,8 +63,20 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
         text: params.keyword,
         layers: layer,
         size: "5",
-        "boundary.country": params.destination.countryCode,
       });
+      // ORS rejects an empty `boundary.country` with 400 rather than
+      // ignoring it. Callers that anchor a search on coordinates alone have
+      // no country to give, so the filter is only applied when there is one.
+      if (params.destination.countryCode.trim().length > 0) {
+        query.set("boundary.country", params.destination.countryCode);
+      }
+      // Bias results toward the destination itself. Without this a
+      // coordinate-anchored search is a plain global text lookup, which is
+      // not what a caller passing a point and a radius is asking for.
+      if (Number.isFinite(params.destination.latitude) && Number.isFinite(params.destination.longitude)) {
+        query.set("focus.point.lat", String(params.destination.latitude));
+        query.set("focus.point.lon", String(params.destination.longitude));
+      }
       const response = await this.request(`/geocode/search?${query.toString()}`, params.signal);
       if (response.status === 429) return this.unavailable("RATE_LIMITED", start);
       if (response.status >= 500) return this.unavailable("UPSTREAM_FAILURE", start);

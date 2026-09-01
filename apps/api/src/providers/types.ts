@@ -162,10 +162,23 @@ export interface AccommodationProviderItem {
  * model only ever submits two authorized `placeId`s plus a mode; coordinates
  * are derived server-side from the current-trip place table.
  */
+export interface RouteCoordinate {
+  longitude: number;
+  latitude: number;
+}
+
 export interface NavigationProvider {
   searchRoute(params: {
     originPlaceId: string;
     destinationPlaceId: string;
+    /**
+     * Endpoint coordinates, resolved by the caller from the place rows it
+     * has already loaded for its visibility checks. The adapter cannot
+     * resolve them itself: place ids are this system's identifiers and mean
+     * nothing to the routing supplier, which takes coordinates.
+     */
+    originCoordinate: RouteCoordinate;
+    destinationCoordinate: RouteCoordinate;
     mode: "WALK" | "DRIVE" | "CYCLE";
     snapshotId: string;
     runId?: string;

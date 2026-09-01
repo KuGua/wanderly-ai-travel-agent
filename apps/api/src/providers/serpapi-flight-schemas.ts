@@ -28,7 +28,14 @@ const flightSegmentSchema = z.object({
   extensions: z.array(z.string().min(1)).optional(),
 }).passthrough();
 
-const itinerarySchema = z.object({
+/**
+ * Validated per itinerary rather than as part of the response array, so a
+ * single unpriced leg cannot discard the priced ones alongside it. Google
+ * Flights omits `price` on some round-trip itineraries; as a required field
+ * inside `z.array(itinerarySchema)` that turned a page with 10 usable
+ * offers into `INVALID_PROVIDER_RESPONSE`.
+ */
+export const serpApiItinerarySchema = z.object({
   flights: z.array(flightSegmentSchema).min(1),
   total_duration: z.number().int().positive(),
   price: z.number().finite().nonnegative(),
@@ -45,8 +52,11 @@ export const serpApiFlightSearchResponseSchema = z.object({
     id: z.string().min(1),
     status: z.string().min(1),
   }).passthrough(),
-  best_flights: z.array(itinerarySchema).optional().default([]),
-  other_flights: z.array(itinerarySchema).optional().default([]),
+  // Elements stay unparsed here; the provider validates each one with
+  // `serpApiItinerarySchema` and keeps what passes.
+  best_flights: z.array(z.unknown()).optional().default([]),
+  other_flights: z.array(z.unknown()).optional().default([]),
 }).passthrough();
 
 export type SerpApiFlightSearchResponse = z.infer<typeof serpApiFlightSearchResponseSchema>;
+export type SerpApiItinerary = z.infer<typeof serpApiItinerarySchema>;

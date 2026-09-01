@@ -18,23 +18,27 @@
 -- See docs/draft-personal-research-implementation.md §3.2.
 
 -- ─── Enums ────────────────────────────────────────────────────────────────
-CREATE TYPE personal_research_outcome AS ENUM ('AVAILABLE', 'UNAVAILABLE', 'EXPIRED');
+DO $$ BEGIN
+  CREATE TYPE personal_research_outcome AS ENUM ('AVAILABLE', 'UNAVAILABLE', 'EXPIRED');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- Capability enum. Visa is intentionally NOT included: stage 4 of spec §3.5
 -- requires real `VisaProvider` contract / DPA / credentials / audit / sandbox
 -- validation, and must ship as its own migration + PR.
-CREATE TYPE personal_research_capability AS ENUM (
-  'flight.search',
-  'hotel.search',
-  'accommodation.discovery',
-  'activities.search',
-  'places.search',
-  'navigation.route',
-  'mobility.search'
-);
+DO $$ BEGIN
+  CREATE TYPE personal_research_capability AS ENUM (
+    'flight.search',
+    'hotel.search',
+    'accommodation.discovery',
+    'activities.search',
+    'places.search',
+    'navigation.route',
+    'mobility.search'
+  );
+EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ─── Table ────────────────────────────────────────────────────────────────
-CREATE TABLE personal_research_evidence (
+CREATE TABLE IF NOT EXISTS personal_research_evidence (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id uuid NOT NULL REFERENCES agent_task_runs(id) ON DELETE CASCADE,
   trip_id uuid NOT NULL REFERENCES shared_trips(id) ON DELETE CASCADE,
@@ -61,10 +65,10 @@ CREATE TABLE personal_research_evidence (
 -- Combined with the FK to `agent_task_runs.run_id`, this means every evidence
 -- row's `owner_user_id` is constrained to match the run's `created_by_user_id`
 -- via the unique key alone.
-CREATE UNIQUE INDEX personal_research_evidence_run_owner_unique
+CREATE UNIQUE INDEX IF NOT EXISTS personal_research_evidence_run_owner_unique
   ON personal_research_evidence (run_id, owner_user_id);
 
-CREATE INDEX personal_research_evidence_trip_created_idx
+CREATE INDEX IF NOT EXISTS personal_research_evidence_trip_created_idx
   ON personal_research_evidence (trip_id, created_at DESC);
-CREATE INDEX personal_research_evidence_owner_created_idx
+CREATE INDEX IF NOT EXISTS personal_research_evidence_owner_created_idx
   ON personal_research_evidence (owner_user_id, created_at DESC);

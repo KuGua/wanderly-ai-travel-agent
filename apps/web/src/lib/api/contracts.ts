@@ -411,6 +411,8 @@ export const personalResearchAccommodationDraftSchema = z.object({
   }).strict(),
 }).strict();
 
+export type PersonalResearchAccommodationDraft = z.infer<typeof personalResearchAccommodationDraftSchema>;
+
 export const personalResearchActivitiesDraftSchema = z.object({
   kind: z.literal("ACTIVITIES_SEARCH"),
   destinationCode: z.string().trim().min(1).max(64),
@@ -419,6 +421,8 @@ export const personalResearchActivitiesDraftSchema = z.object({
   category: z.string().trim().min(1).max(64).nullable(),
   limit: z.number().int().min(1).max(50).nullable(),
 }).strict();
+
+export type PersonalResearchActivitiesDraft = z.infer<typeof personalResearchActivitiesDraftSchema>;
 
 export const personalResearchPlacesDraftSchema = z.object({
   kind: z.literal("PLACES_SEARCH"),
@@ -436,6 +440,8 @@ export const personalResearchNavigationRouteDraftSchema = z.object({
   destinationPlaceId: z.string().uuid(),
   mode: z.enum(["driving", "walking", "cycling"]),
 }).strict();
+
+export type PersonalResearchNavigationRouteDraft = z.infer<typeof personalResearchNavigationRouteDraftSchema>;
 
 export const personalResearchMobilityDraftSchema = z.object({
   kind: z.literal("MOBILITY_SEARCH"),
@@ -501,6 +507,26 @@ export const personalResearchHotelEvidenceSummarySchema = z.object({
 }).strict();
 export type PersonalResearchHotelEvidenceSummary = z.infer<typeof personalResearchHotelEvidenceSummarySchema>;
 
+export const personalResearchAccommodationEvidenceSummarySchema = z.object({
+  candidateCount: z.number().int().nonnegative(),
+  topCategory: z.string().nullable(),
+  radiusMeters: z.number().int().nonnegative(),
+  checkIn: dateOnlySchema,
+  checkOut: dateOnlySchema,
+}).strict();
+export type PersonalResearchAccommodationEvidenceSummary = z.infer<typeof personalResearchAccommodationEvidenceSummarySchema>;
+
+export const personalResearchActivitiesEvidenceSummarySchema = z.object({
+  activityCount: z.number().int().nonnegative(),
+  currency: currencyCodeSchema.nullable(),
+  destinationCode: z.string(),
+  startDate: dateOnlySchema,
+  endDate: dateOnlySchema,
+  minPrice: z.number().nonnegative().nullable(),
+  maxPrice: z.number().nonnegative().nullable(),
+}).strict();
+export type PersonalResearchActivitiesEvidenceSummary = z.infer<typeof personalResearchActivitiesEvidenceSummarySchema>;
+
 export const personalResearchPlacesEvidenceSummarySchema = z.object({
   candidateCount: z.number().int().nonnegative(),
   categories: z.array(z.string()),
@@ -529,6 +555,8 @@ export const personalResearchEvidenceSummarySchema = z.discriminatedUnion("outco
     capability: personalResearchOperationCapabilitySchema,
     flight: personalResearchFlightEvidenceSummarySchema.optional(),
     hotel: personalResearchHotelEvidenceSummarySchema.optional(),
+    accommodation: personalResearchAccommodationEvidenceSummarySchema.optional(),
+    activities: personalResearchActivitiesEvidenceSummarySchema.optional(),
     places: personalResearchPlacesEvidenceSummarySchema.optional(),
     navigation: personalResearchNavigationRouteEvidenceSummarySchema.optional(),
     mobility: personalResearchMobilityEvidenceSummarySchema.optional(),

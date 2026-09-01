@@ -14,6 +14,8 @@ import {
 const RESEARCH_INTENT_CLASSIFIER_VERSION = "llm.research/v1";
 import { evaluateReadiness } from "../../services/personal-research-readiness-service.js";
 import { buildConversationContext } from "../../services/conversation-context-service.js";
+import { buildConversationMemoryContext } from "../../services/conversation-memory-context.js";
+import { loadLatestResearchEvidence } from "../../services/research-evidence-service.js";
 import { proposeTripBriefFromTurn } from "../../services/trip-brief-proposal-service.js";
 import {
   executeTravelConversation,
@@ -83,10 +85,20 @@ export async function handleConversationTask(params: {
   // the read path stays pure and retryable (§3.1.4 / §6). Failures here
   // bubble up as a terminal task error before any model call.
   const context = await buildConversationContext(params.run);
+  // Cross-thread long-term memory for the owner. `buildConversationContext`
+  // covers only this thread; without this the assistant restarts from zero
+  // in every new thread even though the facts are already stored.
+  const memoryContext = await buildConversationMemoryContext(params.run.createdByUserId);
+  // What this trip's own providers last returned. Without it the assistant
+  // cannot refer to a search it ran itself: the offers were persisted and
+  // never read back.
+  const evidence = await loadLatestResearchEvidence(params.run.tripId);
   const input = travelConversationInputSchema.parse({
     ...turnInput,
     tripContext,
     threadContext: context.messages,
+    memoryContext,
+    researchEvidence: evidence?.offers ?? [],
   });
 
   // ─── Personal Research Intent Routing — replaced by LLM tool loop ────────

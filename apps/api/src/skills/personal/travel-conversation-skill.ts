@@ -47,10 +47,44 @@ const threadContextMessageSchema = z.object({
   content: z.string().min(1).max(8000),
 }).strict();
 
+/**
+ * The owner's cross-thread long-term memory, built server-side by
+ * `conversation-memory-context.ts` from the authenticated task's owner.
+ * Like `threadContext` this is never browser-supplied — the strict request
+ * schema rejects a same-named field before the Worker runs.
+ */
+const memoryContextFactSchema = z.object({
+  field: z.string().min(1).max(64),
+  value: z.unknown(),
+  category: z.enum(["PREFERENCE", "CONSTRAINT"]),
+  source: z.enum(["PROFILE_FORM", "PROPOSAL_CONFIRMATION"]),
+}).strict();
+
+/**
+ * Normalized evidence from the trip's most recent research run, built
+ * server-side by `research-evidence-service.ts`. This is what the agent
+ * itself found through its providers; it is the only channel through
+ * which a conversation reply may refer to a concrete offer.
+ */
+const researchEvidenceOfferSchema = z.object({
+  category: z.enum(["activity", "hotel"]),
+  providerName: z.string().min(1).max(128),
+  title: z.string().min(1).max(256),
+  price: z.object({
+    amount: z.number(),
+    currency: z.string().length(3),
+  }).strict().nullable(),
+  rating: z.number().nullable(),
+  detail: z.string().max(128).nullable(),
+  capturedAt: z.string().datetime(),
+}).strict();
+
 export const travelConversationInputSchema = z.object({
   question: z.string().trim().min(1).max(4000),
   place: conversationPlaceSchema.optional(),
   intent: conversationIntentSchema.optional(),
+  memoryContext: z.array(memoryContextFactSchema).max(16).default([]),
+  researchEvidence: z.array(researchEvidenceOfferSchema).max(12).default([]),
   // Server-derived minimal Trip context, attached by the worker after
   // membership re-verification.  Optional so existing tests / non-trip
   // unit paths keep working; in production this is always present.
@@ -99,6 +133,8 @@ export async function executeTravelConversation(
           question: input.question,
           place: input.place,
           threadContext: input.threadContext,
+          memoryContext: input.memoryContext,
+          researchEvidence: input.researchEvidence,
           intent: input.intent,
           responseConstraints: TRAVEL_CONVERSATION_RESPONSE_CONSTRAINTS,
           tripContext: input.tripContext,
@@ -110,6 +146,8 @@ export async function executeTravelConversation(
           question: input.question,
           place: input.place,
           threadContext: input.threadContext,
+          memoryContext: input.memoryContext,
+          researchEvidence: input.researchEvidence,
           intent: input.intent,
           responseConstraints: TRAVEL_CONVERSATION_RESPONSE_CONSTRAINTS,
           tripContext: input.tripContext,

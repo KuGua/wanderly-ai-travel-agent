@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { eq, inArray } from "drizzle-orm";
 
 /**
  * Pure unit tests for the stage 3 Personal research executors. Provider
@@ -58,6 +59,54 @@ const baseRun = {
   traceContext: null,
   expiresAt: new Date(Date.now() + 60_000),
 } as unknown as Parameters<typeof executePersonalPlacesSearch>[0]["run"];
+
+const ORIGIN_PLACE_ID = "11111111-1111-4111-8111-111111111111";
+const DESTINATION_PLACE_ID = "22222222-2222-4222-8222-222222222222";
+
+/**
+ * The navigation executor resolves its endpoints to coordinates before it
+ * calls the adapter, so these rows have to exist for real — a mocked
+ * provider is not enough. Seeded with the ids the drafts below reference.
+ */
+beforeAll(async () => {
+  const { db } = await import("../../src/db/database.js");
+  const { users, sharedTrips, tripPlaces } = await import("../../src/db/schema.js");
+
+  await db.insert(users).values({
+    id: baseRun.createdByUserId,
+    externalId: `stage3-${baseRun.createdByUserId}`,
+    displayName: "stage3",
+  }).onConflictDoNothing();
+  await db.insert(sharedTrips).values({
+    id: baseRun.tripId,
+    name: "stage3 trip",
+    createdBy: baseRun.createdByUserId,
+    departureCities: ["Tokyo"],
+    destinationCandidates: ["Tokyo"],
+  }).onConflictDoNothing();
+  await db.insert(tripPlaces).values([
+    {
+      id: ORIGIN_PLACE_ID, tripId: baseRun.tripId, ownerUserId: baseRun.createdByUserId,
+      visibility: "TEAM_VISIBLE", status: "ACTIVE", kind: "ATTRACTION",
+      displayName: "Tokyo Station", source: "test",
+      longitude: 139.7671, latitude: 35.6812,
+    },
+    {
+      id: DESTINATION_PLACE_ID, tripId: baseRun.tripId, ownerUserId: baseRun.createdByUserId,
+      visibility: "TEAM_VISIBLE", status: "ACTIVE", kind: "ATTRACTION",
+      displayName: "Shinjuku Station", source: "test",
+      longitude: 139.7005, latitude: 35.6896,
+    },
+  ]).onConflictDoNothing();
+});
+
+afterAll(async () => {
+  const { db } = await import("../../src/db/database.js");
+  const { users, sharedTrips, tripPlaces } = await import("../../src/db/schema.js");
+  await db.delete(tripPlaces).where(inArray(tripPlaces.id, [ORIGIN_PLACE_ID, DESTINATION_PLACE_ID]));
+  await db.delete(sharedTrips).where(eq(sharedTrips.id, baseRun.tripId));
+  await db.delete(users).where(eq(users.id, baseRun.createdByUserId));
+});
 
 describe("executePersonalPlacesSearch", () => {
   it("returns UNAVAILABLE NOT_CONFIGURED when ORS place provider is unconfigured", async () => {
@@ -174,8 +223,8 @@ describe("executePersonalNavigationRoute", () => {
       run: baseRun,
       draft: {
         kind: "NAVIGATION_ROUTE",
-        originPlaceId: "11111111-1111-4111-8111-111111111111",
-        destinationPlaceId: "22222222-2222-4222-8222-222222222222",
+        originPlaceId: ORIGIN_PLACE_ID,
+        destinationPlaceId: DESTINATION_PLACE_ID,
         mode: "driving",
       },
       signal: new AbortController().signal,
@@ -208,8 +257,8 @@ describe("executePersonalNavigationRoute", () => {
       run: baseRun,
       draft: {
         kind: "NAVIGATION_ROUTE",
-        originPlaceId: "11111111-1111-4111-8111-111111111111",
-        destinationPlaceId: "22222222-2222-4222-8222-222222222222",
+        originPlaceId: ORIGIN_PLACE_ID,
+        destinationPlaceId: DESTINATION_PLACE_ID,
         mode: "driving",
       },
       signal: new AbortController().signal,

@@ -22,6 +22,8 @@ describe("OrsNavigationProvider", () => {
     const result = await provider.searchRoute({
       originPlaceId: "11111111-1111-4111-8111-111111111111",
       destinationPlaceId: "22222222-2222-4222-8222-222222222222",
+      originCoordinate: { longitude: 139.7671, latitude: 35.6812 },
+      destinationCoordinate: { longitude: 139.7005, latitude: 35.6896 },
       mode: "WALK",
       snapshotId: "33333333-3333-4333-8333-333333333333",
     });
@@ -35,6 +37,8 @@ describe("OrsNavigationProvider", () => {
     const result = await provider.searchRoute({
       originPlaceId: "11111111-1111-4111-8111-111111111111",
       destinationPlaceId: "22222222-2222-4222-8222-222222222222",
+      originCoordinate: { longitude: 139.7671, latitude: 35.6812 },
+      destinationCoordinate: { longitude: 139.7005, latitude: 35.6896 },
       mode: "DRIVE",
       snapshotId: "33333333-3333-4333-8333-333333333333",
     });
@@ -68,6 +72,8 @@ describe("OrsNavigationProvider", () => {
     const result = await provider.searchRoute({
       originPlaceId: "11111111-1111-4111-8111-111111111111",
       destinationPlaceId: "22222222-2222-4222-8222-222222222222",
+      originCoordinate: { longitude: 139.7671, latitude: 35.6812 },
+      destinationCoordinate: { longitude: 139.7005, latitude: 35.6896 },
       mode: "WALK",
       snapshotId: "33333333-3333-4333-8333-333333333333",
     });
@@ -95,6 +101,8 @@ describe("OrsNavigationProvider", () => {
     const result = await provider.searchRoute({
       originPlaceId: "11111111-1111-4111-8111-111111111111",
       destinationPlaceId: "22222222-2222-4222-8222-222222222222",
+      originCoordinate: { longitude: 139.7671, latitude: 35.6812 },
+      destinationCoordinate: { longitude: 139.7005, latitude: 35.6896 },
       mode: "CYCLE",
       snapshotId: "33333333-3333-4333-8333-333333333333",
     });
@@ -111,6 +119,8 @@ describe("OrsNavigationProvider", () => {
     const result = await provider.searchRoute({
       originPlaceId: "11111111-1111-4111-8111-111111111111",
       destinationPlaceId: "22222222-2222-4222-8222-222222222222",
+      originCoordinate: { longitude: 139.7671, latitude: 35.6812 },
+      destinationCoordinate: { longitude: 139.7005, latitude: 35.6896 },
       mode: "WALK",
       snapshotId: "33333333-3333-4333-8333-333333333333",
     });

@@ -54,6 +54,13 @@ describe("personal-research-readiness-service", () => {
       destinationCandidates: ["Tokyo"],
       travelDateStart: "2026-09-01",
       travelDateEnd: "2026-09-07",
+      // A fully-configured trip now includes a declared budget: flight /
+      // hotel / accommodation readiness surfaces BUDGET_HINT_MISSING as a
+      // soft warning without one. The two cases that assert the warning
+      // *is* raised clear these fields themselves.
+      budgetHintAmount: 5000,
+      budgetHintCurrency: "USD",
+      budgetHintCadence: "TOTAL",
     }).returning();
     tripId = trip.id;
 
@@ -545,6 +552,11 @@ describe("personal-research-readiness-service", () => {
     const original = process.env.PLAN_ENABLE_HOTEL;
     process.env.PLAN_ENABLE_HOTEL = "true";
     try {
+      await db.update(sharedTrips).set({
+        budgetHintAmount: null,
+        budgetHintCurrency: null,
+        budgetHintCadence: null,
+      }).where(eq(sharedTrips.id, tripId));
       await db.insert(tripStaySearchPreferences).values({
         tripId,
         version: 1,

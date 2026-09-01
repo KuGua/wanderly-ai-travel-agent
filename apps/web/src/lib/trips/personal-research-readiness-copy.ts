@@ -54,6 +54,7 @@ export const REAL_PROVIDER_CAPABILITIES: ReadonlySet<ResearchCapability> = new S
   "flight",
   "hotel",
   "accommodation",
+  "activities",
   "places",
   "mobility",
   "navigation",
