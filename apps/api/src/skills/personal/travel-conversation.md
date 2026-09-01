@@ -13,7 +13,7 @@ Generates one private travel answer from the current owner question, optional
 minimal place context, and a server-built bounded raw-message window from the
 same owner thread. `thread.recall` remains a separate redacted Skill and is
 not the runtime context source. It is registered by `personal-travel-agent.ts`
-and invoked only through the Skill Registry with expected version `1.0.0`.
+and invoked only through the Skill Registry with expected version `1.1.0`.
 
 ## 注册元数据
 
@@ -21,7 +21,7 @@ and invoked only through the Skill Registry with expected version `1.0.0`.
 | --- | --- | --- |
 | `name` | `travel.conversation` | `Skill.name` |
 | `agent` | `personal` | `Skill.agent` |
-| `version` | `1.0.0` | `Skill.version` |
+| `version` | `1.1.0` | `Skill.version` |
 | `allowedTools` | `"chat:read"` | Personal Agent allow-list |
 | `timeoutMs` | `15000` | `Skill.timeoutMs` |
 | `needsConfirm` | `false` | `Skill.needsConfirm` |
@@ -51,6 +51,24 @@ guidance remain allowed.
 Provider unavailability, timeout, retry exhaustion, or malformed model output
 is not a refusal. It becomes a controlled `UPSTREAM_FAILURE`/`TIMEOUT`; the
 service persists no USER or ASSISTANT row for that failed turn.
+
+## Hotel-search readiness behaviour
+
+The Skill attaches the server-owned `HOTEL_SEARCH_READINESS` response
+constraint to each model call. It is a behavioural rule, not a canned reply:
+when the user asks to find, compare, filter, or quote lodging, the model reuses
+facts already stated in the current question and same-thread context, retains a
+neighbourhood or landmark as a location anchor, and asks only for missing
+search inputs. Those required inputs are dates, adult/room configuration, and
+currency; a distance/walking limit is requested only when the stated location
+anchor has no usable boundary. Budget and amenities are optional refinements.
+
+The constraint limits clarification to three grouped prompts and preserves the
+existing live-data boundary: qualitative advice is allowed, but it cannot be
+presented as current pricing, inventory, or booking availability. It also
+forbids collecting passport, payment, or full guest data in chat. Any
+provider-specific nationality requirement stays in the separate explicit
+authorization flow.
 
 ## Privacy and observability
 

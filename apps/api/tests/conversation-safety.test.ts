@@ -128,6 +128,20 @@ describe("conversation operational fact boundary", () => {
     });
     expect(generateConversationReply).toHaveBeenCalledOnce();
   });
+
+  it("attaches the hotel-readiness behaviour as a server-owned Skill constraint", async () => {
+    const generateConversationReply = vi.fn().mockResolvedValue({
+      content: "请告诉我入住日期、退房日期、入住人数与房间数。",
+      responseMode: "MODEL",
+    });
+    __setModelGatewayForTests(buildGateway(generateConversationReply));
+
+    await invokeConversation("请帮我找西门町附近的酒店");
+
+    expect(generateConversationReply).toHaveBeenCalledWith(expect.objectContaining({
+      responseConstraints: ["HOTEL_SEARCH_READINESS"],
+    }));
+  });
 });
 
 async function invokeConversation(question: string) {

@@ -112,6 +112,12 @@ export interface ModelGateway {
     threadContext: ThreadContextMessage[];
     intent?: ConversationIntent;
     /**
+     * Server-owned behavioural constraints selected by the invoking Skill.
+     * They are not supplied by the browser or included in the conversation
+     * transcript, so user text cannot enable, disable, or rewrite them.
+     */
+    responseConstraints?: readonly ConversationResponseConstraint[];
+    /**
      * Server-derived minimal Trip context.  When provided, the gateway
      * MUST treat it as the sole Trip-side information available to
      * the model — never substitute a richer DB read.
@@ -126,6 +132,7 @@ export interface ModelGateway {
     place?: ConversationPlace;
     threadContext: ThreadContextMessage[];
     intent?: ConversationIntent;
+    responseConstraints?: readonly ConversationResponseConstraint[];
     tripContext?: PersonalTripContext;
     onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
@@ -154,3 +161,6 @@ export interface ModelGateway {
     ctx?: RequestContext;
   }): Promise<LocationIntroductionResult>;
 }
+
+/** Narrow, versioned conversation behaviours; add values deliberately. */
+export type ConversationResponseConstraint = "HOTEL_SEARCH_READINESS";
