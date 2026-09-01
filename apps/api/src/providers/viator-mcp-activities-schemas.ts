@@ -4,12 +4,12 @@ const viatorDurationSchema = z.object({
   fixedDurationInMinutes: z.number().int().nonnegative().optional(),
   variableDurationFromMinutes: z.number().int().nonnegative().optional(),
   variableDurationToMinutes: z.number().int().nonnegative().optional(),
-}).strict();
+}).passthrough();
 
 const viatorKeyAttributesSchema = z.object({
   features: z.array(z.string()),
   mainCategory: z.string().trim().min(1),
-}).strict();
+}).passthrough();
 
 export const viatorExperienceSchema = z.object({
   title: z.string().trim().min(1).max(512),
@@ -25,12 +25,20 @@ export const viatorExperienceSchema = z.object({
   clickOffToLander: z.string().url().max(4096),
   duration: viatorDurationSchema.optional(),
   keyAttributes: viatorKeyAttributesSchema.optional(),
-}).strict();
+// Suppliers add fields; that is not a schema violation. `.strict()` here
+// meant a single new upstream key (`reviewData`, added Sept 2026) rejected
+// the whole response and the capability reported UNAVAILABLE while the
+// data was intact. Unknown keys are ignored; the fields we do read are
+// still validated exactly as before.
+}).passthrough();
 
 export const viatorSearchStructuredContentSchema = z.object({
   sessionId: z.string().uuid(),
-  experiences: z.array(viatorExperienceSchema).max(20),
-}).strict();
+  // Deliberately unvalidated here: the provider parses each element with
+  // `viatorExperienceSchema` and keeps the ones that pass, so one malformed
+  // experience cannot discard the rest of the page.
+  experiences: z.array(z.unknown()).max(20),
+}).passthrough();
 
 const jsonRpcErrorSchema = z.object({
   code: z.number().int(),
