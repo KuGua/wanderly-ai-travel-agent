@@ -560,6 +560,8 @@ export const personalResearchAccommodationDraftSchema = z.object({
   }).strict(),
 }).strict();
 
+export type PersonalResearchAccommodationDraft = z.infer<typeof personalResearchAccommodationDraftSchema>;
+
 export const personalResearchActivitiesDraftSchema = z.object({
   kind: z.literal("ACTIVITIES_SEARCH"),
   destinationCode: z.string().trim().min(1).max(64),
