@@ -733,6 +733,19 @@ export const personalResearchOperationCapabilitySchema = z.enum([
 export type PersonalResearchOperationCapability = z.infer<typeof personalResearchOperationCapabilitySchema>;
 
 const iataCodeSchema = z.string().regex(/^[A-Z]{3}$/);
+/**
+ * A city the location resolver can look up — an IATA city code (`TYO`) or a
+ * city name (`Kyoto`, `京都`), which is what it already accepts.
+ *
+ * Requiring bare IATA here silently broke every city the model named in
+ * words. The hotel tool's own description invites "IATA city code or city
+ * name", so a call saying `Kyoto` was well-formed by the contract the model
+ * was given, failed this schema, and came back as an unreported NEEDS_FIELDS
+ * — the traveller just saw a search that never finished. Cities whose code
+ * the model happened to know (`SHA`, `TYO`) worked, which is why it looked
+ * intermittent.
+ */
+const cityReferenceSchema = z.string().trim().min(2).max(64);
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const currencyCodeSchema = z.string().regex(/^[A-Z]{3}$/);
 
@@ -757,7 +770,7 @@ const personalResearchFlightDraftSchema = z.object({
 
 export const personalResearchHotelDraftSchema = z.object({
   kind: z.literal("HOTEL_SEARCH"),
-  cityCode: iataCodeSchema,
+  cityCode: cityReferenceSchema,
   checkIn: dateOnlySchema,
   checkOut: dateOnlySchema,
   occupancy: z.object({
@@ -906,7 +919,7 @@ export const personalResearchHotelEvidenceSummarySchema = z.object({
   items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   propertyCount: z.number().int().nonnegative(),
   currency: currencyCodeSchema,
-  cityCode: iataCodeSchema,
+  cityCode: cityReferenceSchema,
   checkIn: dateOnlySchema,
   checkOut: dateOnlySchema,
   minNightlyPrice: z.number().nonnegative().nullable(),

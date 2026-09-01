@@ -350,3 +350,35 @@ describe("requestsUnsupportedOperationalFacts — Phase 4 userConfirmed exemptio
     expect(requestsUnsupportedOperationalFacts("还有房吗")).toBe(true);
   });
 });
+
+describe("cancellation terms are not booking status", () => {
+  it("admits a supplier's cancellation policy in an evidence-backed reply", () => {
+    // These come back on every hotel rate. Reading them as "your booking was
+    // cancelled" threw away answers that were entirely grounded.
+    for (const reply of [
+      "Hilton Tokyo Hotel 548.69 USD 每晚，3 晚，不可退订。",
+      "Hotel Mystays 157 USD 每晚，可免费取消至 2026-09-30。",
+      "The rate is non-refundable but includes taxes.",
+      "Free cancellation until 30 September on this booking rate.",
+    ]) {
+      expect(containsUnsupportedOperationalClaim(reply, { evidenceBacked: true }), reply).toBe(false);
+    }
+  });
+
+  it("still refuses a claim about the traveller's own reservation", () => {
+    for (const reply of [
+      "你的预订已确认。",
+      "Your booking is confirmed and the reservation status is pending.",
+      "我已经帮你取消了这个预订。",
+    ]) {
+      expect(containsUnsupportedOperationalClaim(reply, { evidenceBacked: true }), reply).toBe(true);
+    }
+  });
+
+  it("keeps refusing cancellation wording when nothing was searched", () => {
+    // Without evidence the same sentence is the model inventing terms.
+    expect(containsUnsupportedOperationalClaim(
+      "Your booking is confirmed with free cancellation.", { evidenceBacked: false },
+    )).toBe(true);
+  });
+});
