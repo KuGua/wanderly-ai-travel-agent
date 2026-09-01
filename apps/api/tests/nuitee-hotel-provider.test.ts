@@ -49,23 +49,31 @@ describe("NuiteeHotelProvider", () => {
       seen.url = String(input);
       seen.headers = init?.headers;
       seen.body = typeof init?.body === "string" ? init.body : undefined;
+      // Shape mirrors the live LiteAPI v3.0 response: rates hang off room
+      // types, prices are per-currency arrays, taxes are itemized lines, and
+      // hotel names live in the sibling `hotels[]` directory keyed by id.
       return jsonResponse({
         data: [{
           hotelId: "hotel-raw-id",
-          name: "Safe Nuitee Hotel",
-          starRating: 4,
-          rates: [{
-            rateId: "rate-raw-id",
-            retailRate: {
-              totalAmount: 360,
-              currency: "USD",
-              taxesAndFeesAmount: 60,
-              taxesAndFeesIncluded: true,
-            },
-            cancellationPolicies: { cancellationPolicy: [{ description: "Free cancellation" }] },
-            roomTypes: [{ description: "Deluxe Room", adults: 2 }],
+          roomTypes: [{
+            roomTypeId: "room-type-raw-id",
+            rates: [{
+              rateId: "rate-raw-id",
+              name: "Deluxe Room",
+              boardName: "Breakfast included",
+              adultCount: 2,
+              retailRate: {
+                total: [{ amount: 360, currency: "USD" }],
+                taxesAndFees: [{ included: true, description: "taxes", amount: 60, currency: "USD" }],
+              },
+              cancellationPolicies: {
+                refundableTag: "RFN",
+                cancelPolicyInfos: [{ cancelTime: "2026-09-13 12:00:00", type: "FREE_CANCELLATION" }],
+              },
+            }],
           }],
         }],
+        hotels: [{ id: "hotel-raw-id", name: "Safe Nuitee Hotel", stars: 4 }],
       });
     }) as typeof fetch;
     const result = await providerWith(fetchImpl).searchHotels(baseRequest);
@@ -76,7 +84,7 @@ describe("NuiteeHotelProvider", () => {
         propertyName: "Safe Nuitee Hotel",
         totalPrice: 360, pricePerNight: 120, currency: "USD",
         taxesAndFees: { status: "INCLUDED", amount: 60 },
-        cancellationSummary: "Free cancellation",
+        cancellationSummary: "Free cancellation until 2026-09-13 12:00:00",
         roomCount: 1, adultsPerRoom: [2],
       }],
     });
@@ -110,9 +118,9 @@ describe("NuiteeHotelProvider", () => {
     [200, { error: { code: "2001", message: "no results" } }, "NO_RESULTS"],
     [200, { error: { code: "9999", message: "server error" } }, "UPSTREAM_FAILURE"],
     [200, { data: [] }, "NO_RESULTS"],
-    [200, { data: [{ hotelId: "x", name: "x", rates: [] }] }, "NO_RESULTS"],
+    [200, { data: [{ hotelId: "x", roomTypes: [] }], hotels: [{ id: "x", name: "x" }] }, "NO_RESULTS"],
     [200, "this is not json", "INVALID_PROVIDER_RESPONSE"],
-    [200, { data: [{ hotelId: "x", name: "x", rates: [{ rateId: "y", retailRate: { totalAmount: -1, currency: "USD" } }] }] }, "INVALID_PROVIDER_RESPONSE"],
+    [200, { data: [{ hotelId: "x", roomTypes: [{ rates: [{ rateId: "y", retailRate: { total: [{ amount: -1, currency: "USD" }] } }] }] }], hotels: [{ id: "x", name: "x" }] }, "NO_RESULTS"],
   ])("maps status %s body %j to %s", async (status, body, reason) => {
     const fetchImpl = vi.fn(async () => jsonResponse(body, status)) as typeof fetch;
     await expect(providerWith(fetchImpl).searchHotels(baseRequest))
@@ -151,13 +159,24 @@ describe("NuiteeHotelProvider", () => {
     expect(captured.occupancies).toEqual([{ adults: 2 }, { adults: 1 }, { adults: 4 }]);
   });
 
-  it("classifies PARTIAL when taxesAndFeesAmount is set but not explicitly included", async () => {
+  it("classifies PARTIAL when a tax line is settled at the property", async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({
+      hotels: [{ id: "h", name: "Partial Tax Hotel" }],
       data: [{
-        hotelId: "h", name: "Partial Tax Hotel", rates: [{
-          rateId: "r",
-          retailRate: { totalAmount: 200, currency: "USD", taxesAndFeesAmount: 15 },
-          roomTypes: [],
+        hotelId: "h",
+        roomTypes: [{
+          rates: [{
+            rateId: "r",
+            retailRate: {
+              total: [{ amount: 200, currency: "USD" }],
+              // One line is already inside the total, one is collected on
+              // arrival — the reported amount is the included part only.
+              taxesAndFees: [
+                { included: true, description: "taxes", amount: 15, currency: "USD" },
+                { included: false, description: "resort fee", amount: 20, currency: "USD" },
+              ],
+            },
+          }],
         }],
       }],
     })) as typeof fetch;
@@ -170,11 +189,14 @@ describe("NuiteeHotelProvider", () => {
 
   it("classifies UNKNOWN when no tax information is present", async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({
+      hotels: [{ id: "h", name: "Unknown Tax Hotel" }],
       data: [{
-        hotelId: "h", name: "Unknown Tax Hotel", rates: [{
-          rateId: "r",
-          retailRate: { totalAmount: 200, currency: "USD" },
-          roomTypes: [],
+        hotelId: "h",
+        roomTypes: [{
+          rates: [{
+            rateId: "r",
+            retailRate: { total: [{ amount: 200, currency: "USD" }] },
+          }],
         }],
       }],
     })) as typeof fetch;
@@ -207,17 +229,24 @@ describe("NuiteeHotelProvider", () => {
     expect(calls).toBe(2);
   });
 
-  it("caps results at ten and drops malformed rate blocks", async () => {
-    const hotels = Array.from({ length: 12 }, (_, index) => ({
+  it("caps results at ten and skips entries with no directory match", async () => {
+    const rated = Array.from({ length: 12 }, (_, index) => ({
       hotelId: `hotel-${index}`,
-      name: `Hotel ${index}`,
-      rates: [{
-        rateId: `rate-${index}`,
-        retailRate: { totalAmount: 100 + index, currency: "USD", taxesAndFeesAmount: 10, taxesAndFeesIncluded: true },
-        roomTypes: [{ description: "Standard" }],
+      roomTypes: [{
+        rates: [{
+          rateId: `rate-${index}`,
+          retailRate: {
+            total: [{ amount: 100 + index, currency: "USD" }],
+            taxesAndFees: [{ included: true, description: "taxes", amount: 10, currency: "USD" }],
+          },
+        }],
       }],
     }));
-    const fetchImpl = vi.fn(async () => jsonResponse({ data: hotels })) as typeof fetch;
+    const directory = Array.from({ length: 12 }, (_, index) => ({
+      id: `hotel-${index}`,
+      name: `Hotel ${index}`,
+    }));
+    const fetchImpl = vi.fn(async () => jsonResponse({ data: rated, hotels: directory })) as typeof fetch;
     const result = await providerWith(fetchImpl).searchHotels(baseRequest);
     if (result.outcome !== "LIVE") throw new Error("expected LIVE");
     expect(result.data).toHaveLength(10);
