@@ -257,8 +257,17 @@ export function TripMiniGlobe({ places, fallbackLabel, tripId }: { places: strin
 
     return () => {
       active = false;
-      for (const marker of markers) marker.remove();
-      map?.remove();
+      // Teardown must not throw. When the map constructor got far enough to
+      // return an object but WebGL2 initialization failed — the case the
+      // `setFailed` path above already renders for — `remove()` reaches into
+      // internals that were never built and throws, which React surfaces as an
+      // unmount error rather than the graceful fallback the component intends.
+      try {
+        for (const marker of markers) marker.remove();
+        map?.remove();
+      } catch {
+        // Nothing to release: the map never acquired the resources it frees.
+      }
       mapRef.current = null;
     };
   }, [openPinLabel, pins, router, tripId]);
