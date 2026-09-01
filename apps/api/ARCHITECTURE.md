@@ -74,6 +74,13 @@ prices or inventory.
 Test-only provider doubles may be deterministic, but are injected only by test
 code. They are not imported, configured, or reachable from product runtime.
 
+**Approved evolution, not current runtime:** DRAFT Personal Research will add a
+server-built owner/thread/run authority for explicitly confirmed, read-only
+research. It must reuse these adapter contracts without weakening snapshot-bound
+Shared evidence or plan validation; see
+[`docs/draft-personal-research-implementation.md`](../../docs/draft-personal-research-implementation.md).
+Until that work lands, Personal conversation has no provider authority.
+
 ### 2a. Plan Output Control Plane (`src/policy/`)
 
 `snapshot-policy.ts` accepts only exact

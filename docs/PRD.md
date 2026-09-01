@@ -7,6 +7,8 @@
 
 本 MVP 让每位旅行者拥有一个可控的 Personal Travel Agent：用户通过私有对话维护自己的旅行偏好和资料，并可在显式激活的单人 Trip 中发起个人旅行研究与规划。多人行程由同一受控编排核心在成员明确授权本次信息后协调航班、酒店、地面交通，以及按成员国籍区分的 visa/entry readiness 待办。
 
+> **已批准、待实现的下一阶段：** DRAFT Personal Research 保持每个 Personal Session 均绑定 Trip，并让 owner 在明确确认后进行 owner-only 的真实查询；只有显式激活、授权和 snapshot 后才进入 Shared Planning。现有 MVP 仍要求激活后研究，详细迁移合同见 [DRAFT Personal Research 到 Shared Planning 实施规范](draft-personal-research-implementation.md)。
+
 系统在价格或计划变化后重新编排，并在每位成员明确确认后调用 sandbox/已批准的 booking orchestration 工具。系统不自动扣款、不承诺真实全球预订、不提供法律意见或签证代办。
 
 ## 2. 问题、用户与目标

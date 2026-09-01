@@ -2,6 +2,8 @@
 
 **状态：** 已确认，待实施  
 **适用范围：** Personal Agent 私有对话、owner-confirmed Research command、Shared Trip Orchestrator  
+
+> **状态说明（2026-09）：** 本文记录当前已实现/既有的 snapshot-bound research 合同，不能据此认为 DRAFT 已可真实查询。已批准的下一阶段设计见 [DRAFT Personal Research 到 Shared Planning 实施规范](draft-personal-research-implementation.md)。后者实施完成前，本文件的 activated Solo Trip 与 Shared Worker 边界继续是运行时事实。
 **事实来源：** 本文、`TECH_STACK.md`、`docs/PRD.md`、`docs/backlog.md`、`docs/test-scenarios.md`
 
 ## 1. 目标与完成条件

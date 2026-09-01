@@ -75,6 +75,18 @@
 8. Accommodation discovery and hotel quote are independently schedulable. OpenTripMap discovery shows only name/type/location/distance/source and OSM attribution, never price, inventory or bookability. Nuitee (default) or explicitly selected SerpApi quote shows total and per-night price plus `source`/`captured_at`/`expires_at`; partial or unknown taxes/mandatory fees display “可能另计”. Neither creates a provider order, payment, redirect or booking link; unavailable supplier data only produces `RESEARCH_UNAVAILABLE`.
 9. A Personal Agent may generate a persisted, non-executable `RESEARCH_ONLY` or `PROPOSE_PLAN` draft from a high-confidence Chinese or English research request in an active Solo Trip, but the owner must confirm it. The draft contains only controlled capability enums and readiness gaps, is restored after SSE disconnect/refresh, and cannot contain raw chat text, provider parameters, place IDs, dates, identity or snapshot fields. `PROPOSE_PLAN` automatically creates a first `PROPOSED` plan; one owner `ACCEPT` activates it. `RESEARCH_ONLY` never creates plan or booking authority. Raw route text must first complete owner-controlled route endpoint selection/adoption; it must not invoke navigation using arbitrary existing TripPlaces. See `docs/personal-research-intent-routing-implementation.md`.
 
+### S6 — Approved: DRAFT Personal Research handoff（未实施）
+
+**Story:** As a Trip owner, I want to explicitly run a real, private research query before my trip brief is complete, so that I can explore options without creating a shared plan prematurely.
+
+**Acceptance criteria:**
+
+1. The existing DRAFT Trip and its owner-only `chat_threads` thread are the only Trip/Session objects; no unbound query and no duplicate personal-session table are introduced.
+2. An owner-confirmed `PERSONAL_RESEARCH` task uses the same typed capability/provider adapter as Shared research but receives a server-built `{ tripId, threadId, ownerUserId, runId }` authority and has no snapshot/plan/booking authority.
+3. The first vertical slice is Flight. It persists only a normalized, owner-only result with source and capture/expiry time; unavailable providers fail closed. Other tools are enabled only after their own contracts and tests are complete.
+4. Personal results never enter a Shared snapshot, plan validator or another member's view. “Start planning” uses the existing explicit activation and consent flow, which re-queries Shared facts under a new snapshot.
+5. See `docs/draft-personal-research-implementation.md` for data model, endpoints, risks, and implementation order. This story intentionally supersedes the future direction of active-Solo-only Personal research, but does not alter current runtime until implemented.
+
 ### H4 — Produce per-traveler visa and entry readiness
 
 **Story:** As an international traveler, I want my Agent to show the preparation items that apply to my nationality and route, so that I do not miss a travel requirement while planning with friends.

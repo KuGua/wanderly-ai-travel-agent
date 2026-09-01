@@ -60,6 +60,8 @@ Amazon RDS for PostgreSQL
 
 `DRAFT` 仅允许私有探索对话、creator 编辑 brief、创建者向受邀者发送邀请（受邀者只能看到最小行程名与 `DRAFT` 状态，不可读取创建者私有对话或未确认的探索内容），但禁止授权、创建 snapshot、planning/replan、确认或 booking。只有 creator 显式“开始规划”且 brief 满足正式约束后，服务端才将其激活为 `PLANNING`。实现细节见 [探索会话与 Trip 生命周期实施方案](docs/exploration-trip-lifecycle-implementation.md)。
 
+**已批准、尚未实现的演进：** [DRAFT Personal Research 到 Shared Planning 实施规范](docs/draft-personal-research-implementation.md) 会在保持 TripID 与 `chat_threads` 绑定不变的前提下，为 owner-only Personal Agent 增加经确认的 DRAFT research。该规范不是当前运行时行为；实现前仍按本段 fail closed，不能仅通过提示词、前端或 Shared feature flag 放开 provider 调用。
+
 ## 3. 为什么不用 SQLite 作主数据库
 
 SQLite 适合本地开发、单进程测试和 fixture，但不承担云端主库。当前 Hero 至少要求：三名彼此隔离的用户、可撤回字段级授权、不可变约束快照、计划失效、三人确认、callback 幂等和审计。将 SQLite 放在 App Runner 容器内会遇到无状态磁盘、并发写入、横向扩容、备份恢复与数据层权限的风险。
