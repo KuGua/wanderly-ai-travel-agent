@@ -15,7 +15,9 @@ import {
 import { evaluateReadiness } from "../../services/personal-research-readiness-service.js";
 import { buildConversationContext } from "../../services/conversation-context-service.js";
 import { proposeTripBriefFromTurn } from "../../services/trip-brief-proposal-service.js";
-import { generateSetupFollowup } from "../../services/setup-followup-generator.js";
+import {
+  generateSetupFollowups,
+} from "../../services/setup-followup-generator.js";
 import {
   executeTravelConversation,
   travelConversationSkill,
@@ -35,12 +37,27 @@ import { publishAgentStreamEvent } from "../task-stream-publisher.js";
 import type { AgentTaskRow } from "../task-repository.js";
 import { loadConversationTurnInput } from "../task-repository.js";
 import { getOrOpenSession } from "../../services/personal-research-setup-service.js";
+import { buildProactiveIntro } from "../../i18n/proactive-intro.js";
 
 export async function handleConversationTask(params: {
   run: AgentTaskRow;
   ctx: RequestContext;
   signal: AbortSignal;
-}) {
+}): Promise<{
+  content: string;
+  responseMode: import("../../types/schemas.js").ConversationResponseMode;
+  tripBriefProposal?: { destinationCandidates?: string[]; travelDays?: number };
+} | null> {
+  // ─── Quick Orchestration — Proactive intro (no user message) ─────────────
+  // The run was created server-side on trip activation; the conversation
+  // worker renders the locale-aware greeting template and emits a single
+  // `message.delta` SSE event. No LLM call. No setup session. The first
+  // user turn will go through the normal classifier path below.
+  if (isProactiveIntroRun(params.run)) {
+    await handleProactiveIntro(params);
+    return null;
+  }
+
   // Re-check that the creator is still an active member of the
   // thread's Trip.  Membership may have changed between acceptance
   // (when the row was locked) and worker pick-up (now).  Per
@@ -373,7 +390,7 @@ async function handleClassifiedResearchRequest(
   // surfaces a follow-up bubble alongside the existing confirmation card.
   let content = buildClassifiedResearchReply(readiness.readiness);
   if (readiness.readiness === "NEEDS_SETUP") {
-    let setupFollowup: Awaited<ReturnType<typeof generateSetupFollowup>> = null;
+    let setupFollowups: Awaited<ReturnType<typeof generateSetupFollowups>> = [];
     try {
       // Open (or refresh) the session. Eager so a refresh after the SSE
       // reconnects can recover the session from `GET /agent-runs/:runId`.
@@ -384,13 +401,18 @@ async function handleClassifiedResearchRequest(
         ownerUserId: params.run.createdByUserId,
         requestedCapabilities: params.classifiedIntent.requestedCapabilities,
       });
-      setupFollowup = await generateSetupFollowup({
+      // Multi-slot follow-up — generateSetupFollowups runs the existing
+      // single-question generator in a loop (≤3 questions per turn),
+      // preserving the wire shape (one SSE event per question). The
+      // server-owned chat bubble renderer will dedupe by questionCode.
+      setupFollowups = await generateSetupFollowups({
         ctx: params.ctx,
         tripId: params.run.tripId,
         ownerUserId: params.run.createdByUserId,
         locale: "zh-CN",
         requestedMissing: readiness.missing,
         filledFieldNames: [],
+        maxQuestions: 3,
       });
     } catch {
       metrics.inc("personal_research_setup_session_total", { outcome: "open_failed" });
@@ -398,28 +420,30 @@ async function handleClassifiedResearchRequest(
       // with no followup so the owner still sees the existing
       // ResearchSetupCard. The error is logged via the open_failed counter.
     }
-    if (setupFollowup) {
-      await publishAgentStreamEvent({
-        event: "research.setup.followup",
-        runId: params.run.id,
-        generationAttempt: params.run.generationAttempt,
-        followup: {
-          // The generator narrows this through Zod before returning; the
-          // SSE schema's `researchMissingCodeSchema` is the canonical
-          // closed set, so the cast is structural, not a leap of faith.
-          questionCode: setupFollowup.questionCode as Extract<
-            Parameters<typeof publishAgentStreamEvent>[0],
-            { event: "research.setup.followup" }
-          >["followup"]["questionCode"],
-          promptText: setupFollowup.promptText,
-        },
-        source: setupFollowup.source,
-        traceparent: params.ctx.traceparent,
-      });
-      // The deterministic templated reply stays the same so the existing
-      // finalize path continues to work; the follow-up question rides on
-      // its own SSE event and is rendered as an extra chat bubble.
-      content = `${buildClassifiedResearchReply(readiness.readiness)}\n${setupFollowup.promptText}`;
+    // Append the first followup's prompt text to the assistant content so
+    // it surfaces in the chat bubble stream; additional followups ride
+    // their own SSE events.
+    const firstFollowupPrompt = setupFollowups[0]?.promptText;
+    if (setupFollowups.length > 0) {
+      for (const fu of setupFollowups) {
+        await publishAgentStreamEvent({
+          event: "research.setup.followup",
+          runId: params.run.id,
+          generationAttempt: params.run.generationAttempt,
+          followup: {
+            questionCode: fu.questionCode as Extract<
+              Parameters<typeof publishAgentStreamEvent>[0],
+              { event: "research.setup.followup" }
+            >["followup"]["questionCode"],
+            promptText: fu.promptText,
+          },
+          source: fu.source,
+          traceparent: params.ctx.traceparent,
+        });
+      }
+      if (firstFollowupPrompt) {
+        content = `${buildClassifiedResearchReply(readiness.readiness)}\n${firstFollowupPrompt}`;
+      }
     }
   }
 
@@ -465,5 +489,52 @@ export function publishPhase(
     generationAttempt: run.generationAttempt,
     phase,
     traceparent,
+  });
+}
+
+/**
+ * Quick orchestration. A proactive intro run is server-enqueued on Solo
+ * trip activation; it carries no user message and no conversation input.
+ * We tag the run via `researchIntentDraft.proactiveIntro === true`. The
+ * flag lives in the persisted draft JSON so we never need a separate
+ * column or migration to gate this code path.
+ */
+function isProactiveIntroRun(run: AgentTaskRow): boolean {
+  const draft = run.researchIntentDraft;
+  if (!draft || typeof draft !== "object") return false;
+  // The DB column type doesn't expose `proactiveIntro` (it's an optional
+  // forward-looking flag), so we cast through unknown to a loose record.
+  return (draft as unknown as Record<string, unknown>).proactiveIntro === true;
+}
+
+/**
+ * Proactive intro worker. Deterministic template + one SSE event + a
+ * persisted ASSISTANT message. No LLM, no setup session, no classifier,
+ * no readiness evaluation. The first real user turn goes through the
+ * normal pipeline.
+ */
+async function handleProactiveIntro(params: {
+  run: AgentTaskRow;
+  ctx: RequestContext;
+}): Promise<void> {
+  // No locale on RequestContext yet — default zh-CN for the deterministic
+  // intro template. The i18n helper accepts undefined and falls back.
+  const intro = buildProactiveIntro("zh-CN");
+  metrics.inc("personal_research_proactive_intro_total", { outcome: "rendered" });
+
+  await publishAgentStreamEvent({
+    event: "message.delta",
+    runId: params.run.id,
+    generationAttempt: params.run.generationAttempt,
+    sequence: 0,
+    delta: intro.content,
+    traceparent: params.ctx.traceparent,
+  });
+  await publishAgentStreamEvent({
+    event: "turn.completed",
+    runId: params.run.id,
+    generationAttempt: params.run.generationAttempt,
+    assistantMessageId: params.run.assistantMessageId ?? crypto.randomUUID(),
+    traceparent: params.ctx.traceparent,
   });
 }

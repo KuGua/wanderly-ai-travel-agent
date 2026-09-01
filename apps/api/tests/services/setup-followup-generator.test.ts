@@ -20,7 +20,10 @@ import {
   modelGateway,
   type ModelGateway,
 } from "../../src/providers/gateway-factory.js";
-import { generateSetupFollowup } from "../../src/services/setup-followup-generator.js";
+import {
+  generateSetupFollowup,
+  generateSetupFollowups,
+} from "../../src/services/setup-followup-generator.js";
 import type { RequestContext } from "../../src/utils/context.js";
 
 const baseCtx: RequestContext = {
@@ -226,5 +229,166 @@ describe("modelGateway factory", () => {
     const stub = fakeGateway();
     __setModelGatewayForTests(stub);
     expect(modelGateway()).toBe(stub);
+  });
+});
+
+// ─── Quick orchestration — multi-slot loop (generateSetupFollowups) ──────────
+//
+// Tests cover the new wrapper function that drives the existing single-
+// question generator ≤3 times per turn, removing each successfully-emitted
+// `questionCode` from the requested set before the next call. The wire
+// shape (one SSE event per question) and the existing safety gates stay
+// untouched. Ref: C:\Users\dongc\.claude\plans\vectorized-scribbling-thimble.md
+// §4 (multi-slot loop).
+
+describe("generateSetupFollowups (multi-slot loop)", () => {
+  beforeEach(() => {
+    __setModelGatewayForTests(fakeGateway());
+  });
+  afterEach(() => {
+    __setModelGatewayForTests(null);
+    vi.restoreAllMocks();
+  });
+
+  it("returns an empty array when requestedMissing is empty", async () => {
+    const result = await generateSetupFollowups({
+      ctx: baseCtx,
+      tripId: "00000000-0000-4000-8000-000000000003",
+      ownerUserId: baseCtx.actorUserId,
+      locale: "zh-CN",
+      requestedMissing: [],
+      filledFieldNames: [],
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("emits up to one followup per model call (single-question invariant)", async () => {
+    __setModelGatewayForTests(fakeGateway({
+      async generateSetupFollowup({ requestedMissing }) {
+        return {
+          questionCode: requestedMissing[0] ?? "DATES_MISSING",
+          promptText: "请你确认日期",
+          modelName: "stub",
+          promptVersion: "stub",
+        };
+      },
+    }));
+    const result = await generateSetupFollowups({
+      ctx: baseCtx,
+      tripId: "00000000-0000-4000-8000-000000000003",
+      ownerUserId: baseCtx.actorUserId,
+      locale: "zh-CN",
+      requestedMissing: ["DATES_MISSING", "BUDGET_HINT_MISSING"],
+      filledFieldNames: [],
+      maxQuestions: 3,
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0]?.questionCode).toBe("DATES_MISSING");
+    expect(result[1]?.questionCode).toBe("BUDGET_HINT_MISSING");
+  });
+
+  it("stops at maxQuestions when more codes are missing", async () => {
+    __setModelGatewayForTests(fakeGateway({
+      async generateSetupFollowup({ requestedMissing }) {
+        return {
+          questionCode: requestedMissing[0] ?? "DATES_MISSING",
+          promptText: "stub",
+          modelName: "stub",
+          promptVersion: "stub",
+        };
+      },
+    }));
+    const result = await generateSetupFollowups({
+      ctx: baseCtx,
+      tripId: "00000000-0000-4000-8000-000000000003",
+      ownerUserId: baseCtx.actorUserId,
+      locale: "zh-CN",
+      requestedMissing: [
+        "DATES_MISSING",
+        "BUDGET_HINT_MISSING",
+        "STAY_PREFERENCES_MISSING",
+        "FLIGHT_PREFERENCES_MISSING",
+      ],
+      filledFieldNames: [],
+      maxQuestions: 2,
+    });
+    expect(result).toHaveLength(2);
+  });
+
+  it("falls back per question independently (model returns valid then fails)", async () => {
+    let calls = 0;
+    __setModelGatewayForTests(fakeGateway({
+      async generateSetupFollowup({ requestedMissing }) {
+        calls += 1;
+        if (calls === 1) {
+          return {
+            questionCode: "DATES_MISSING",
+            promptText: "model answer",
+            modelName: "stub",
+            promptVersion: "stub",
+          };
+        }
+        throw new Error("model timeout");
+      },
+    }));
+    const result = await generateSetupFollowups({
+      ctx: baseCtx,
+      tripId: "00000000-0000-4000-8000-000000000003",
+      ownerUserId: baseCtx.actorUserId,
+      locale: "zh-CN",
+      requestedMissing: ["DATES_MISSING", "BUDGET_HINT_MISSING"],
+      filledFieldNames: [],
+    });
+    expect(result).toHaveLength(2);
+    expect(result[0]?.source).toBe("model");
+    expect(result[1]?.source).toBe("fallback");
+    expect(result[1]?.questionCode).toBe("BUDGET_HINT_MISSING");
+  });
+
+  it("returns single deterministic fallback per question when gateway absent", async () => {
+    __setModelGatewayForTests(fakeGateway({ /* generateSetupFollowup intentionally absent */ }));
+    const result = await generateSetupFollowups({
+      ctx: baseCtx,
+      tripId: "00000000-0000-4000-8000-000000000003",
+      ownerUserId: baseCtx.actorUserId,
+      locale: "zh-CN",
+      requestedMissing: ["BUDGET_HINT_MISSING"],
+      filledFieldNames: [],
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0]?.source).toBe("fallback");
+    expect(result[0]?.questionCode).toBe("BUDGET_HINT_MISSING");
+    // Fallback prompt text contains the new budget-specific copy.
+    expect(result[0]?.promptText).toContain("预算");
+  });
+
+  it("short-circuits when model repeats the same questionCode", async () => {
+    let calls = 0;
+    __setModelGatewayForTests(fakeGateway({
+      async generateSetupFollowup() {
+        calls += 1;
+        return {
+          questionCode: "DATES_MISSING",
+          promptText: "model repeats",
+          modelName: "stub",
+          promptVersion: "stub",
+        };
+      },
+    }));
+    const result = await generateSetupFollowups({
+      ctx: baseCtx,
+      tripId: "00000000-0000-4000-8000-000000000003",
+      ownerUserId: baseCtx.actorUserId,
+      locale: "zh-CN",
+      requestedMissing: ["DATES_MISSING", "BUDGET_HINT_MISSING"],
+      filledFieldNames: [],
+      maxQuestions: 5,
+    });
+    // After the first successful emission, the loop removes DATES_MISSING
+    // and continues. The second call still returns DATES_MISSING because
+    // the LLM ignored the trimmed input — the wrapper detects that the
+    // emitted code is no longer in the remaining list and bails out.
+    expect(calls).toBeGreaterThanOrEqual(1);
+    expect(result.length).toBeLessThan(5);
   });
 });

@@ -157,6 +157,29 @@ export const nextActionSchema = z.object({
   href: z.string().min(1).max(512),
 });
 
+/**
+ * Server-managed projection of the latest owner-accepted terminal run for
+ * a Trip. Surfaced on `tripSummarySchema` and `tripDetailsResponseSchema`
+ * so the trip header / chat can render a single "current result" card
+ * without the owner having to scroll through every agent run.
+ *
+ * The pointer is server-managed: writes happen in
+ * `pinSessionIfAbsent` (confirmAndSearch tx) and `pinSessionIfTerminal`
+ * (runResearch terminal events). No manual pin/unpin UI in MVP.
+ */
+export const tripPinnedSessionSchema = z.object({
+  agentTaskRunId: uuidSchema,
+  operation: z.enum(["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]),
+  status: z.enum([
+    "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS",
+    "FAILED", "CANCELLED", "STALE",
+  ]),
+  destinationCandidates: z.array(z.string()).max(5),
+  travelDays: z.number().int().min(1).max(365).nullable(),
+  generatedAt: z.string().datetime(),
+  pinnedAt: z.string().datetime(),
+}).strict();
+
 export const tripSummarySchema = z.object({
   id: uuidSchema,
   name: z.string(),
@@ -174,6 +197,12 @@ export const tripSummarySchema = z.object({
   displayState: projectDisplayStateSchema,
   latestPlan: latestPlanSchema.nullable(),
   nextAction: nextActionSchema.nullable(),
+  // Quick orchestration — server-managed pointer to the latest
+  // owner-accepted terminal run. Null when no run has been pinned yet.
+  // `.optional()` so legacy responses that predate the column still parse
+  // cleanly; new responses always include the field (server projects it
+  // from `shared_trips.pinned_session_id`).
+  pinnedSession: tripPinnedSessionSchema.nullable().optional(),
 });
 
 export const tripsResponseSchema = z.object({
@@ -203,6 +232,7 @@ export const tripDetailsResponseSchema = z.object({
     archiveReason: tripArchiveReasonSchema.nullable(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
+    pinnedSession: tripPinnedSessionSchema.nullable().optional(),
   }),
   callerRole: tripRoleSchema,
   members: z.array(tripMemberSchema),
@@ -448,6 +478,7 @@ export const agentRunResponseSchema = z.object({
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])).default([]),
     warnings: z.array(z.enum([
       "TRIP_NOT_ACTIVE",
@@ -459,6 +490,7 @@ export const agentRunResponseSchema = z.object({
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])).default([]),
     missing: z.array(z.enum([
       "TRIP_NOT_ACTIVE",
@@ -470,6 +502,7 @@ export const agentRunResponseSchema = z.object({
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])),
   }).strict().nullable(),
   researchIntentState: z.enum(["PROPOSED", "DISMISSED", "CONFIRMED", "SUPERSEDED"]).nullable(),
@@ -509,7 +542,13 @@ export const agentRunResponseSchema = z.object({
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])),
+    budgetHint: z.object({
+      amount: z.number().positive().max(1_000_000),
+      currency: z.string().regex(/^[A-Z]{3}$/),
+      cadence: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
+    }).strict().nullable(),
     version: z.number().int().positive(),
     status: z.enum(["OPEN", "CONFIRMED", "CANCELLED", "EXPIRED", "SUPERSEDED"]),
     expiresAt: z.string().datetime(),
@@ -599,6 +638,7 @@ export const researchMissingCodeSchema = z.enum([
   "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
   "ROUTE_ENDPOINTS_UNCONFIRMED",
   "MODE_NOT_CHOSEN",
+  "BUDGET_HINT_MISSING",
 ]);
 
 /**
@@ -742,6 +782,14 @@ export const personalResearchSetupAnswerSchema = z.discriminatedUnion("field", [
     field: z.literal("flightPreferences"),
     value: tripSearchPreferencesRequestSchema,
   }).strict(),
+  z.object({
+    field: z.literal("budget"),
+    value: z.object({
+      amount: z.number().int().positive().max(1_000_000),
+      currency: z.string().regex(/^[A-Z]{3}$/),
+      cadence: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
+    }).strict(),
+  }).strict(),
 ]);
 export type PersonalResearchSetupAnswer = z.infer<typeof personalResearchSetupAnswerSchema>;
 
@@ -772,6 +820,11 @@ export const personalResearchSetupSessionResponseSchema = z.object({
   travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   stayPreferences: tripStaySearchPreferencesRequestSchema.nullable(),
   flightPreferences: tripSearchPreferencesRequestSchema.nullable(),
+  budgetHint: z.object({
+    amount: z.number().int().positive().max(1_000_000),
+    currency: z.string().regex(/^[A-Z]{3}$/),
+    cadence: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
+  }).strict().nullable(),
   missing: z.array(researchMissingCodeSchema),
   version: z.number().int().positive(),
   status: personalResearchSetupSessionStatusSchema,

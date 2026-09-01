@@ -27,7 +27,8 @@ export type PersonalResearchMissingCode =
   | "HOTEL_PROVIDER_NOT_APPROVED"
   | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING"
   | "ROUTE_ENDPOINTS_UNCONFIRMED"
-  | "MODE_NOT_CHOSEN";
+  | "MODE_NOT_CHOSEN"
+  | "BUDGET_HINT_MISSING";
 
 export type PersonalResearchReadiness =
   | "READY"
@@ -126,6 +127,16 @@ export const MISSING_COPY: Record<PersonalResearchMissingCode, MissingCodeCopy> 
     detail: "路线研究需要选择交通方式（步行 / 驾车 / 骑行）。",
     ctaHint: "在下方确认卡中选择交通方式",
     severity: "blocker",
+  },
+  // Quick orchestration — soft budget hint. Always optional; absence
+  // never blocks research. The conversational setup card surfaces a
+  // 3-field widget (amount / currency / cadence) so the owner can
+  // declare one without leaving the chat.
+  BUDGET_HINT_MISSING: {
+    title: "本次预算（可选）",
+    detail: "预算仅用于偏向供应商价格区间，不填也能正常研究。",
+    ctaHint: "在下方填写预算金额与币种",
+    severity: "warning",
   },
 };
 

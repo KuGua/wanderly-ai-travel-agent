@@ -56,7 +56,8 @@ export type ResearchMissingCode =
   | "HOTEL_PROVIDER_NOT_APPROVED"
   | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING"
   | "ROUTE_ENDPOINTS_UNCONFIRMED"
-  | "MODE_NOT_CHOSEN";
+  | "MODE_NOT_CHOSEN"
+  | "BUDGET_HINT_MISSING";
 
 export type ResearchReadiness =
   | "READY"
@@ -82,6 +83,7 @@ export function categorize(code: ResearchMissingCode): ResearchMissingSeverity {
     case "TRIP_NOT_ACTIVE":
     case "FLIGHT_PREFERENCES_MISSING":
     case "STAY_PREFERENCES_MISSING":
+    case "BUDGET_HINT_MISSING":
       return "warning";
     case "DESTINATION_NOT_CONFIGURED":
     case "DATES_MISSING":
@@ -194,6 +196,18 @@ export async function evaluateReadiness(
 
   // ─── Capability-specific gates ────────────────────────────────────────────
   const needs = new Set(input.requestedCapabilities);
+
+  // Quick orchestration: surface `BUDGET_HINT_MISSING` as a soft warning
+  // whenever the request needs flight / hotel capability AND the trip has
+  // no declared budget. The conversational setup card may capture one
+  // opportunistically; absence is non-blocking (categorize returns
+  // "warning"). Owner proceeds via the existing confirmation modal.
+  if (
+    (needs.has("flight") || needs.has("hotel") || needs.has("accommodation"))
+    && trip.budgetHintAmount === null
+  ) {
+    warnings.add("BUDGET_HINT_MISSING");
+  }
 
   if (needs.has("flight") || needs.has("activities") || needs.has("mobility")) {
     const [latestFlightPref] = await db.select().from(tripSearchPreferences)

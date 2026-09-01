@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 
 import { db } from "../db/database.js";
 import {
@@ -27,6 +27,8 @@ import {
 } from "../services/planning-service.js";
 import { recordPlanningResearchResult } from "../services/planning-research-result-service.js";
 import { assertSnapshotManifestStable, hashProjectionManifest } from "../services/snapshot-manifest-guard.js";
+import { PlanAdoptionServiceError, soloAdoptProposedPlan } from "../services/plan-adoption-service.js";
+import { recordAudit } from "../services/audit-service.js";
 import { metrics } from "../observability/metrics.js";
 import { resolveBoundHotelProvider } from "../providers/live-provider-factory.js";
 import type { RequestContext } from "../utils/context.js";
@@ -255,6 +257,54 @@ export async function runResearch(params: {
         traceparent: params.ctx.traceparent,
       });
       throw err;
+    }
+
+    // ─── 6.5 Solo auto-accept (Quick orchestration) ────────────────────────
+    // The owner has already explicitly confirmed the research request via
+    // the conversational setup card; on Solo trips we close the loop by
+    // flipping the freshly-generated PROPOSED plan to ACTIVE inline. Failure
+    // paths are swallowed (PLAN_NOT_PROPOSED, PLAN_ADOPTED, NOT_SOLO) — the
+    // research has succeeded and the user should see a usable terminal
+    // state; only catastrophic errors rethrow. The plan stays `PROPOSED`
+    // when swallow fires so the existing team-vote / manual adopt path
+    // still works.
+    if (run.createdByUserId) {
+      try {
+        await soloAdoptProposedPlan({
+          ctx: params.ctx,
+          planId: resultPlanId,
+          userId: run.createdByUserId,
+        });
+        metrics.inc("research_auto_accept_total", { outcome: "adopted" });
+        await recordAudit({
+          ctx: params.ctx,
+          action: "PLAN_ADOPTION_VOTED",
+          actorUserId: run.createdByUserId,
+          tripId: run.tripId!,
+          summary: { decision: "ACCEPT", path: "solo_auto", planStatusAtVote: "PROPOSED" },
+        });
+      } catch (err) {
+        if (err instanceof PlanAdoptionServiceError) {
+          switch (err.code) {
+            case "PLAN_NOT_PROPOSED":
+              metrics.inc("research_auto_accept_total", { outcome: "stale_plan" });
+              break;
+            case "PLAN_ADOPTED":
+              metrics.inc("research_auto_accept_total", { outcome: "already_adopted" });
+              break;
+            case "NOT_SOLO":
+              metrics.inc("research_auto_accept_total", { outcome: "not_solo" });
+              break;
+            default:
+              // Unknown error code: log and continue (do not fail the
+              // research run — the user already paid the LLM cost).
+              metrics.inc("research_auto_accept_total", { outcome: "error" });
+          }
+        } else {
+          // Unexpected (non-ServiceError) — log and continue.
+          metrics.inc("research_auto_accept_total", { outcome: "error" });
+        }
+      }
     }
 
     metrics.inc("research_stage_total", { stage: "completed", outcome: "success" });
@@ -533,4 +583,59 @@ function classifyError(err: unknown): ServiceGap["code"] {
   if (message.includes("not_configured") || message.includes("not configured")) return "NOT_CONFIGURED";
   if (message.includes("policy")) return "SEARCH_CONSTRAINTS_INCOMPLETE";
   return "UPSTREAM_FAILURE";
+}
+
+/**
+ * Idempotent server-managed pin write — called on terminal research.stage
+ * events (COMPLETED / COMPLETED_WITH_GAPS) so the trip header always
+ * points at the latest owner-accepted terminal run. Never throws —
+ * a pin failure must not block the orchestrator's terminal completion
+ * event, which has already fired by the time this runs.
+ *
+ * Inverse of `pinSessionIfAbsent` (confirm path): one writes the run
+ * the moment it is accepted; this one re-points to the run once it
+ * actually finishes. Idempotent under both predicates:
+ *   `pinned_session_id IS NULL OR pinned_session_id <> $runId`.
+ */
+export async function pinSessionIfTerminal(params: {
+  ctx: RequestContext;
+  tripId: string;
+  runId: string;
+  outcome: "COMPLETED" | "COMPLETED_WITH_GAPS";
+  actorUserId?: string;
+}): Promise<{ written: boolean }> {
+  try {
+    const result = await db.update(sharedTrips)
+      .set({
+        pinnedSessionId: params.runId,
+        pinnedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(sharedTrips.id, params.tripId),
+        or(
+          isNull(sharedTrips.pinnedSessionId),
+          ne(sharedTrips.pinnedSessionId, params.runId),
+        ),
+      ))
+      .returning({ pinnedSessionId: sharedTrips.pinnedSessionId });
+
+    const written = result.length > 0;
+    if (written) {
+      await recordAudit({
+        ctx: params.ctx,
+        action: "TRIP_PIN_SESSION_WRITTEN",
+        ...(params.actorUserId ? { actorUserId: params.actorUserId } : {}),
+        tripId: params.tripId,
+        summary: { runId: params.runId, path: "orchestrator", outcome: params.outcome },
+      });
+      metrics.inc("pin_write_total", { path: "orchestrator", outcome: "success" });
+    } else {
+      metrics.inc("pin_write_total", { path: "orchestrator", outcome: "skipped" });
+    }
+    return { written };
+  } catch (err) {
+    metrics.inc("pin_write_total", { path: "orchestrator", outcome: "failure" });
+    return { written: false };
+  }
 }

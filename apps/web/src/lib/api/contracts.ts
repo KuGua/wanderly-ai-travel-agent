@@ -54,6 +54,21 @@ export const tripArchiveReasonSchema = z.enum(["USER_ARCHIVED", "DATE_ELAPSED"])
 
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
+export const tripPinnedSessionSchema = z.object({
+  agentTaskRunId: z.string().uuid(),
+  operation: z.enum(["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]),
+  status: z.enum([
+    "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS",
+    "FAILED", "CANCELLED", "STALE",
+  ]),
+  destinationCandidates: z.array(z.string()).max(5),
+  travelDays: z.number().int().min(1).max(365).nullable(),
+  generatedAt: z.string().datetime(),
+  pinnedAt: z.string().datetime(),
+}).strict();
+
+export type TripPinnedSession = z.infer<typeof tripPinnedSessionSchema>;
+
 export const tripSummarySchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -67,6 +82,7 @@ export const tripSummarySchema = z.object({
   memberCount: z.number().int().nonnegative(),
   role: tripRoleSchema,
   createdAt: z.string().datetime(),
+  pinnedSession: tripPinnedSessionSchema.nullable().optional(),
 });
 
 export const tripsResponseSchema = z.object({
@@ -110,6 +126,7 @@ export const tripDetailSchema = z.object({
   archiveReason: tripArchiveReasonSchema.nullable().optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  pinnedSession: tripPinnedSessionSchema.nullable().optional(),
 });
 
 export const tripMemberSchema = z.object({
@@ -249,6 +266,7 @@ export const agentRunResponseSchema = z.object({
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])).default([]),
     warnings: z.array(z.enum([
       "TRIP_NOT_ACTIVE",
@@ -260,6 +278,7 @@ export const agentRunResponseSchema = z.object({
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])).default([]),
     missing: z.array(z.enum([
       "TRIP_NOT_ACTIVE",
@@ -271,6 +290,7 @@ export const agentRunResponseSchema = z.object({
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])),
   }).strict().nullable(),
   researchIntentState: z.enum(["PROPOSED", "DISMISSED", "CONFIRMED", "SUPERSEDED"]).nullable(),
@@ -308,7 +328,13 @@ export const agentRunResponseSchema = z.object({
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])),
+    budgetHint: z.object({
+      amount: z.number().int().positive().max(1_000_000),
+      currency: z.string().regex(/^[A-Z]{3}$/),
+      cadence: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
+    }).strict().nullable(),
     version: z.number().int().positive(),
     status: z.enum(["OPEN", "CONFIRMED", "CANCELLED", "EXPIRED", "SUPERSEDED"]),
     expiresAt: z.string().datetime(),
@@ -347,7 +373,13 @@ export const researchSetupSessionResponseSchema = z.object({
     "ROUTE_ENDPOINTS_UNCONFIRMED",
     "MODE_NOT_CHOSEN",
     "DEPARTURE_CITY_MISSING",
+    "BUDGET_HINT_MISSING",
   ])),
+  budgetHint: z.object({
+    amount: z.number().int().positive().max(1_000_000),
+    currency: z.string().regex(/^[A-Z]{3}$/),
+    cadence: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
+  }).strict().nullable(),
   version: z.number().int().positive(),
   status: z.enum(["OPEN", "CONFIRMED", "CANCELLED", "EXPIRED", "SUPERSEDED"]),
   expiresAt: z.string().datetime(),
@@ -384,6 +416,14 @@ export const researchSetupAnswerSchema = z.discriminatedUnion("field", [
       adults: z.number().int().min(1).max(9),
       cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
       offerFreshnessMinutes: z.number().int().min(1).max(1_440),
+    }).strict(),
+  }).strict(),
+  z.object({
+    field: z.literal("budget"),
+    value: z.object({
+      amount: z.number().int().positive().max(1_000_000),
+      currency: z.string().regex(/^[A-Z]{3}$/),
+      cadence: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
     }).strict(),
   }).strict(),
 ]);
@@ -539,6 +579,7 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])).default([]),
     warnings: z.array(z.enum([
       "TRIP_NOT_ACTIVE",
@@ -550,6 +591,7 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])).default([]),
     missing: z.array(z.enum([
       "TRIP_NOT_ACTIVE",
@@ -561,6 +603,7 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      "BUDGET_HINT_MISSING",
     ])),
     schemaVersion: z.literal(1),
     classifierVersion: z.string().min(1).max(64),
@@ -589,6 +632,7 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
         "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
         "ROUTE_ENDPOINTS_UNCONFIRMED",
         "MODE_NOT_CHOSEN",
+        "BUDGET_HINT_MISSING",
       ]),
       promptText: z.string().min(1).max(280),
     }).strict(),
@@ -1273,6 +1317,7 @@ export const setupFollowupQuestionSchema = z.object({
     "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
     "ROUTE_ENDPOINTS_UNCONFIRMED",
     "MODE_NOT_CHOSEN",
+    "BUDGET_HINT_MISSING",
   ]),
   promptText: z.string().min(1).max(280),
 }).strict();

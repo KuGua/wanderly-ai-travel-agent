@@ -17,7 +17,7 @@
  *   * The owner DTO carries only structured slot values.
  */
 
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
 
 import { db } from "../db/database.js";
 import { ApiError } from "../middleware/error-handler.js";
@@ -54,6 +54,8 @@ import {
 } from "../types/schemas.js";
 import type { RequestContext } from "../utils/context.js";
 
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 // Inline structural type for the underlying Drizzle row. No `Tx` alias is
 // needed here because every public function delegates to `db.transaction`,
 // which infers the tx handle from the callback signature.
@@ -77,7 +79,8 @@ export type ResearchMissingCode =
   | "HOTEL_PROVIDER_NOT_APPROVED"
   | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING"
   | "ROUTE_ENDPOINTS_UNCONFIRMED"
-  | "MODE_NOT_CHOSEN";
+  | "MODE_NOT_CHOSEN"
+  | "BUDGET_HINT_MISSING";
 
 type SetupRow = typeof personalResearchSetupSessions.$inferSelect;
 
@@ -85,6 +88,18 @@ interface SessionPatchInput {
   field: PersonalResearchSetupAnswer["field"];
   value: unknown;
 }
+
+/**
+ * Shape of the optional budget-hint slot. Mirrors the discriminated-union
+ * `budget` variant in `personalResearchSetupAnswerSchema` and the column
+ * JSONB shape on `personal_research_setup_sessions.budget_hint`. Server
+ * always validates before write.
+ */
+export type SetupBudgetHint = {
+  amount: number;
+  currency: string;
+  cadence: "TOTAL" | "PER_NIGHT" | "PER_PERSON";
+};
 
 interface OpenSessionInput {
   runId: string;
@@ -124,6 +139,7 @@ function projectSetupRow(row: SetupRow): PersonalResearchSetupSessionResponse {
       : null,
     stayPreferences: row.stayPreferences,
     flightPreferences: row.flightPreferences,
+    budgetHint: row.budgetHint ?? null,
     missing: row.missing as ResearchMissingCode[],
     version: row.version,
     status: row.status,
@@ -353,6 +369,9 @@ export async function applyAnswer(input: ApplyAnswerInput): Promise<PersonalRese
       : (row.travelDateEnd ? toIsoDate(row.travelDateEnd) : null);
     const nextStay = parsedPatch.field === "stayPreferences" ? parsedPatch.value : row.stayPreferences;
     const nextFlight = parsedPatch.field === "flightPreferences" ? parsedPatch.value : row.flightPreferences;
+    const nextBudget: SetupBudgetHint | null = parsedPatch.field === "budget"
+      ? parsedPatch.value
+      : row.budgetHint;
 
     // Cross-field validation: dates must be a valid pair (server-side mirror
     // of `routes/trips.ts#isValidTripDate`).
@@ -361,7 +380,7 @@ export async function applyAnswer(input: ApplyAnswerInput): Promise<PersonalRese
     }
 
     const [trip] = await tx.select().from(sharedTrips).where(eq(sharedTrips.id, row.tripId)).limit(1);
-    if (!trip) throw new ApiError(404, "Not Found", "Trip not found while applying setup answer");
+    if (!trip) throw new ApiError(404, "Not Found", "Trip not found while applying setup session answer");
     const [intentRun] = await tx.select({ researchIntentDraft: agentTaskRuns.researchIntentDraft })
       .from(agentTaskRuns)
       .where(eq(agentTaskRuns.id, row.intentRunId))
@@ -387,6 +406,7 @@ export async function applyAnswer(input: ApplyAnswerInput): Promise<PersonalRese
         travelDateEnd: nextTravelDateEnd ?? null,
         stayPreferences: nextStay,
         flightPreferences: nextFlight,
+        budgetHint: nextBudget,
         missing: uniqueSlots(missing),
         version: row.version + 1,
         updatedAt: new Date(),
@@ -396,13 +416,22 @@ export async function applyAnswer(input: ApplyAnswerInput): Promise<PersonalRese
 
     await recordAudit({
       ctx: input.ctx,
-      action: "PERSONAL_RESEARCH_SETUP_UPDATED",
+      action: parsedPatch.field === "budget"
+        ? "PERSONAL_RESEARCH_BUDGET_HINT_SAVED"
+        : "PERSONAL_RESEARCH_SETUP_UPDATED",
       actorUserId: input.ownerUserId,
       tripId: row.tripId,
-      summary: {
-        sessionVersion: updated!.version,
-        fieldsFilled: [parsedPatch.field],
-      },
+      summary: parsedPatch.field === "budget"
+        ? {
+            sessionVersion: updated!.version,
+            amount: (parsedPatch.value as SetupBudgetHint).amount,
+            currency: (parsedPatch.value as SetupBudgetHint).currency,
+            cadence: (parsedPatch.value as SetupBudgetHint).cadence,
+          }
+        : {
+            sessionVersion: updated!.version,
+            fieldsFilled: [parsedPatch.field],
+          },
       tx,
     });
     return projectSetupRow(updated!);
@@ -587,6 +616,15 @@ export async function confirmAndSearch(input: ConfirmAndSearchInput): Promise<{
     if (row.travelDateEnd && toIsoDate(row.travelDateEnd) !== trip.travelDateEnd) {
       tripUpdate.travelDateEnd = toIsoDate(row.travelDateEnd);
     }
+    // Mirror the optional budget hint onto the trip row so downstream
+    // projections (readiness, provider adapters) can read it without joining
+    // the setup session. We only write when the trip has no current value
+    // — never clobber a later, more authoritative source.
+    if (row.budgetHint && trip.budgetHintAmount === null) {
+      tripUpdate.budgetHintAmount = row.budgetHint.amount;
+      tripUpdate.budgetHintCurrency = row.budgetHint.currency;
+      tripUpdate.budgetHintCadence = row.budgetHint.cadence;
+    }
     if (Object.keys(tripUpdate).length > 0) {
       tripUpdate.updatedAt = new Date();
       await tx.update(sharedTrips)
@@ -694,6 +732,21 @@ export async function confirmAndSearch(input: ConfirmAndSearchInput): Promise<{
       outcome: "confirmed",
     });
 
+    // Auto-pin the freshly accepted run as the trip's current pinned
+    // session. Idempotent: only writes when the column is NULL or points
+    // to a different run. Errors here are never propagated — the
+    // confirm-and-search tx has already succeeded and the run is
+    // accepted; pin is best-effort server-managed projection. Re-written
+    // via `pinSessionIfTerminal` on the orchestrator's terminal events
+    // to keep it pointing at the latest COMPLETED run.
+    await pinSessionIfAbsent({
+      tx,
+      tripId: input.tripId,
+      runId: accepted.runId,
+      ctx: input.ctx,
+      actorUserId: input.ownerUserId,
+    });
+
     // Fire SSE after the tx commits — see below.
     queueMicrotask(() => {
       void publishAgentStreamEvent({
@@ -721,5 +774,56 @@ function collectFilledFields(session: SetupRow): string[] {
   }
   if (session.stayPreferences) filled.push("stayPreferences");
   if (session.flightPreferences) filled.push("flightPreferences");
+  if (session.budgetHint) filled.push("budget");
   return filled;
+}
+
+/**
+ * Idempotent server-managed pin write. Updates `shared_trips.pinned_session_id`
+ * to `runId` only when the column is NULL or already points to a different
+ * run. Never throws — the caller has already committed the originating state
+ * change and a pin failure must not roll that back.
+ */
+export async function pinSessionIfAbsent(params: {
+  tx: Tx;
+  tripId: string;
+  runId: string;
+  ctx: RequestContext;
+  actorUserId: string;
+}): Promise<{ written: boolean }> {
+  try {
+    const result = await params.tx.update(sharedTrips)
+      .set({
+        pinnedSessionId: params.runId,
+        pinnedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(sharedTrips.id, params.tripId),
+        or(
+          isNull(sharedTrips.pinnedSessionId),
+          ne(sharedTrips.pinnedSessionId, params.runId),
+        ),
+      ))
+      .returning({ pinnedSessionId: sharedTrips.pinnedSessionId });
+
+    const written = result.length > 0;
+    if (written) {
+      await recordAudit({
+        ctx: params.ctx,
+        action: "TRIP_PIN_SESSION_WRITTEN",
+        actorUserId: params.actorUserId,
+        tripId: params.tripId,
+        summary: { runId: params.runId, path: "confirm" },
+        tx: params.tx,
+      });
+      metrics.inc("pin_write_total", { path: "confirm", outcome: "success" });
+    } else {
+      metrics.inc("pin_write_total", { path: "confirm", outcome: "skipped" });
+    }
+    return { written };
+  } catch (err) {
+    metrics.inc("pin_write_total", { path: "confirm", outcome: "failure" });
+    return { written: false };
+  }
 }

@@ -131,6 +131,8 @@ describe("agentRunResponseSchema — research intent fields (Phase 0/1)", () => 
       "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
       "ROUTE_ENDPOINTS_UNCONFIRMED",
       "MODE_NOT_CHOSEN",
+      // Quick orchestration — soft budget hint added in 0045.
+      "BUDGET_HINT_MISSING",
     ];
     const parsed = agentRunResponseSchema.parse({
       ...baseRow,

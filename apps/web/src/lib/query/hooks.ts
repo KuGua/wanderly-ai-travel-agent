@@ -669,15 +669,39 @@ export function useConfirmResearchSetup(runId: string | null, tripId: string) {
     onSuccess: () => {
       // Refresh the run + research latest summaries so the existing
       // `ResearchRunCard` can mount in place of the setup card via the
-      // SNAPSHOT_CREATED → RESEARCHING → COMPLETED SSE pipeline.
+      // SNAPSHOT_CREATED → RESEARCHING → COMPLETED SSE pipeline. The
+      // confirm path also writes the trip's `pinned_session_id` (server-
+      // managed), so the trip detail and pinned key must re-fetch.
       qc.invalidateQueries({ queryKey: ["agent-runs", runId].filter(Boolean) as string[] });
       qc.invalidateQueries({ queryKey: personalOrchestrationKeys.researchLatest(tripId) });
       qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.pinned(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.list });
       recordUiDiagnostic("setup.confirm");
     },
     onError: () => {
       qc.invalidateQueries({ queryKey: ["agent-runs", runId].filter(Boolean) as string[] });
     },
+  });
+}
+
+/**
+ * Quick orchestration — read the server-managed pinned session for a trip.
+ * Derives the data from the existing `useTrip` DTO (which already
+ * projects `pinnedSession`); returns the same value through a stable
+ * query key so the `PinnedResultCard` can re-render in isolation. When
+ * the underlying trip detail is invalidated (e.g. after `confirm` or
+ * orchestrator terminal events), the pinned key refetches too.
+ */
+export function useTripPin(tripId: string | null) {
+  const trip = useTrip(tripId);
+  const pinned = trip.data?.trip?.pinnedSession ?? null;
+  return useQuery({
+    queryKey: tripId ? tripKeys.pinned(tripId) : ["trips", "none", "pinned-session"],
+    queryFn: () => pinned,
+    enabled: Boolean(tripId),
+    initialData: pinned,
+    staleTime: 30_000,
   });
 }
 

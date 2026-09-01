@@ -153,6 +153,20 @@ export async function processNextAgentTask(): Promise<boolean> {
         abortController.abort();
         throw new Error("Agent task cancellation requested");
       }
+
+      // Quick orchestration — proactive intro returns `null` because no
+      // user message exists; `handleProactiveIntro` already published its
+      // own SSE events and a `turn.completed`, so the worker just bails
+      // out cleanly without trying to persist a duplicate message.
+      if (!output) {
+        metrics.inc("agent_task_outcomes_total", { operation: run.operation.toLowerCase(), outcome: "completed" });
+        logSafeRuntimeEvent(ctx, {
+          component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "success",
+          attempt: run.generationAttempt, relatedRunId: run.id,
+        });
+        return true;
+      }
+
       await publishPhase(run, "PERSISTING", traceparent);
       const assistant = await completeConversationTask({
         ctx,

@@ -83,6 +83,8 @@ describe("personal-research-readiness-service", () => {
       "TRIP_NOT_ACTIVE",
       "FLIGHT_PREFERENCES_MISSING",
       "STAY_PREFERENCES_MISSING",
+      // Quick orchestration — soft budget hint. Always optional.
+      "BUDGET_HINT_MISSING",
     ])("classifies %s as a warning", (code) => {
       expect(categorize(code)).toBe("warning");
     });
@@ -536,5 +538,76 @@ describe("personal-research-readiness-service", () => {
       if (original === undefined) delete process.env.PLAN_ENABLE_HOTEL;
       else process.env.PLAN_ENABLE_HOTEL = original;
     }
+  });
+
+  // ─── Quick orchestration — BUDGET_HINT_MISSING warning ────────────────────
+  it("surfaces BUDGET_HINT_MISSING as a warning when hotel capability requested and no budget", async () => {
+    const original = process.env.PLAN_ENABLE_HOTEL;
+    process.env.PLAN_ENABLE_HOTEL = "true";
+    try {
+      await db.insert(tripStaySearchPreferences).values({
+        tripId,
+        version: 1,
+        roomCount: 1,
+        adultsPerRoom: [2],
+        currency: "USD",
+        confirmedBy: ownerId,
+      });
+      const result = await evaluateReadiness({
+        tripId,
+        ownerUserId: ownerId,
+        requestedCapabilities: ["hotel"],
+      });
+      // Hotel prefs are set, no other blockers — research is ready with
+      // only the soft budget hint advisory.
+      expect(result.readiness).toBe("READY_WITH_WARNINGS");
+      expect(result.blockers).toEqual([]);
+      expect(result.warnings).toContain("BUDGET_HINT_MISSING");
+      expect(result.missing).toContain("BUDGET_HINT_MISSING");
+    } finally {
+      if (original === undefined) delete process.env.PLAN_ENABLE_HOTEL;
+      else process.env.PLAN_ENABLE_HOTEL = original;
+    }
+  });
+
+  it("does NOT surface BUDGET_HINT_MISSING when budget is already declared on the trip", async () => {
+    const original = process.env.PLAN_ENABLE_HOTEL;
+    process.env.PLAN_ENABLE_HOTEL = "true";
+    try {
+      await db.update(sharedTrips).set({
+        budgetHintAmount: 5000,
+        budgetHintCurrency: "USD",
+        budgetHintCadence: "TOTAL",
+      }).where(eq(sharedTrips.id, tripId));
+      await db.insert(tripStaySearchPreferences).values({
+        tripId,
+        version: 1,
+        roomCount: 1,
+        adultsPerRoom: [2],
+        currency: "USD",
+        confirmedBy: ownerId,
+      });
+      const result = await evaluateReadiness({
+        tripId,
+        ownerUserId: ownerId,
+        requestedCapabilities: ["hotel"],
+      });
+      // Budget already declared — no advisory.
+      expect(result.readiness).toBe("READY");
+      expect(result.warnings).not.toContain("BUDGET_HINT_MISSING");
+    } finally {
+      if (original === undefined) delete process.env.PLAN_ENABLE_HOTEL;
+      else process.env.PLAN_ENABLE_HOTEL = original;
+    }
+  });
+
+  it("does NOT surface BUDGET_HINT_MISSING for non-budget-relevant capabilities", async () => {
+    // Activities-only request — budget hint not applicable.
+    const result = await evaluateReadiness({
+      tripId,
+      ownerUserId: ownerId,
+      requestedCapabilities: ["activities"],
+    });
+    expect(result.warnings).not.toContain("BUDGET_HINT_MISSING");
   });
 });

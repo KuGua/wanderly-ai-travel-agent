@@ -1,7 +1,10 @@
 import type { RequestContext } from "../../utils/context.js";
 import type { AgentTaskRow } from "../task-repository.js";
 import { completeResearchTask } from "../task-repository.js";
-import { runResearch } from "../personal-trip-orchestrator-service.js";
+import {
+  pinSessionIfTerminal,
+  runResearch,
+} from "../personal-trip-orchestrator-service.js";
 import { publishPhase } from "./conversation-task-handler.js";
 import { publishAgentStreamEvent } from "../task-stream-publisher.js";
 
@@ -76,6 +79,19 @@ export async function handleResearchTask(params: {
     stage: result.outcome,
     traceparent: params.ctx.traceparent,
   });
+
+  // Quick orchestration — auto-pin the terminal run on the trip header so
+  // the owner sees the latest accepted research / plan result. Idempotent
+  // and never throws; failure is logged via the pin_write_total counter.
+  if (result.outcome === "COMPLETED" || result.outcome === "COMPLETED_WITH_GAPS") {
+    await pinSessionIfTerminal({
+      ctx: params.ctx,
+      tripId: params.run.tripId,
+      runId: params.run.id,
+      outcome: result.outcome,
+      ...(params.run.createdByUserId ? { actorUserId: params.run.createdByUserId } : {}),
+    });
+  }
 
   return result.resultPlanId ?? null;
 }

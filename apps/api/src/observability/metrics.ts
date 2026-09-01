@@ -577,6 +577,35 @@ metrics.registerCounter(
     reason: ["model", "empty", "no_gateway", "schema", "invalid_code", "pii", "length", "model_error"],
   },
 );
+metrics.registerCounter(
+  "personal_research_setup_followup_questions_total",
+  "Quick-orchestration multi-slot follow-up: per-question outcome.",
+  {
+    outcome: ["model", "fallback"],
+  },
+);
+metrics.registerCounter(
+  "personal_research_proactive_intro_total",
+  "Quick-orchestration proactive intro: enqueue + render outcomes.",
+  {
+    outcome: ["rendered", "skipped_team", "failure", "enqueued"],
+  },
+);
+metrics.registerCounter(
+  "research_auto_accept_total",
+  "Quick-orchestration solo auto-accept outcomes (PROPOSE_PLAN → ACTIVE inline).",
+  {
+    outcome: ["adopted", "stale_plan", "already_adopted", "not_solo", "error"],
+  },
+);
+metrics.registerCounter(
+  "pin_write_total",
+  "Server-managed pinned-session writes.",
+  {
+    path: ["orchestrator", "confirm"],
+    outcome: ["success", "skipped", "failure"],
+  },
+);
 
 metrics.registerCounter(
   "solo_plan_adoption_total",

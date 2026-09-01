@@ -15,7 +15,8 @@ export type SetupFollowupQuestionCode =
   | "HOTEL_PROVIDER_NOT_APPROVED"
   | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING"
   | "ROUTE_ENDPOINTS_UNCONFIRMED"
-  | "MODE_NOT_CHOSEN";
+  | "MODE_NOT_CHOSEN"
+  | "BUDGET_HINT_MISSING";
 
 export interface SetupFollowupResult {
   questionCode: string;

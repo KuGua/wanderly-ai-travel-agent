@@ -603,14 +603,16 @@ export type PersistedResearchIntentDraft = {
     "TRIP_NOT_ACTIVE" | "DESTINATION_NOT_CONFIGURED" | "DATES_MISSING" |
     "FLIGHT_PREFERENCES_MISSING" | "STAY_PREFERENCES_MISSING" |
     "HOTEL_PROVIDER_NOT_APPROVED" | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING" |
-    "ROUTE_ENDPOINTS_UNCONFIRMED" | "MODE_NOT_CHOSEN"
+    "ROUTE_ENDPOINTS_UNCONFIRMED" | "MODE_NOT_CHOSEN" |
+    "BUDGET_HINT_MISSING"
   >;
   /** Soft warnings — research can start, but quality may degrade. */
   warnings: Array<
     "TRIP_NOT_ACTIVE" | "DESTINATION_NOT_CONFIGURED" | "DATES_MISSING" |
     "FLIGHT_PREFERENCES_MISSING" | "STAY_PREFERENCES_MISSING" |
     "HOTEL_PROVIDER_NOT_APPROVED" | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING" |
-    "ROUTE_ENDPOINTS_UNCONFIRMED" | "MODE_NOT_CHOSEN"
+    "ROUTE_ENDPOINTS_UNCONFIRMED" | "MODE_NOT_CHOSEN" |
+    "BUDGET_HINT_MISSING"
   >;
   /** Union of `blockers ∪ warnings`. Retained for backward compatibility
    *  with older clients that still read `missing[]` directly. */
@@ -618,8 +620,14 @@ export type PersistedResearchIntentDraft = {
     "TRIP_NOT_ACTIVE" | "DESTINATION_NOT_CONFIGURED" | "DATES_MISSING" |
     "FLIGHT_PREFERENCES_MISSING" | "STAY_PREFERENCES_MISSING" |
     "HOTEL_PROVIDER_NOT_APPROVED" | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING" |
-    "ROUTE_ENDPOINTS_UNCONFIRMED" | "MODE_NOT_CHOSEN"
+    "ROUTE_ENDPOINTS_UNCONFIRMED" | "MODE_NOT_CHOSEN" |
+    "BUDGET_HINT_MISSING"
   >;
+  /** Quick orchestration — proactive intro marker. When true, the
+   *  conversation worker bypasses the classifier + LLM path and renders
+   *  the locale-aware greeting template. Strict optional so legacy
+   *  drafts (which never had this marker) still parse. */
+  proactiveIntro?: true;
 };
 
 /**

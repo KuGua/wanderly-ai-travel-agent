@@ -39,7 +39,8 @@ type MissingCode =
   | "HOTEL_PROVIDER_NOT_APPROVED"
   | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING"
   | "ROUTE_ENDPOINTS_UNCONFIRMED"
-  | "MODE_NOT_CHOSEN";
+  | "MODE_NOT_CHOSEN"
+  | "BUDGET_HINT_MISSING";
 
 interface GenerateInput {
   ctx: RequestContext;
@@ -61,6 +62,7 @@ const FALLBACK_LABELS: Record<MissingCode, { zh: string; en: string }> = {
   QUOTE_NATIONALITY_AUTHORIZATION_MISSING: { zh: "酒店供应商的国籍授权", en: "hotel provider nationality authorization" },
   ROUTE_ENDPOINTS_UNCONFIRMED: { zh: "路线端点", en: "route endpoints" },
   MODE_NOT_CHOSEN: { zh: "出行方式", en: "transport mode" },
+  BUDGET_HINT_MISSING: { zh: "本次预算", en: "trip budget" },
 };
 
 const FALLBACK_PROMPTS: Record<MissingCode, { zh: string; en: string }> = {
@@ -99,6 +101,10 @@ const FALLBACK_PROMPTS: Record<MissingCode, { zh: string; en: string }> = {
   MODE_NOT_CHOSEN: {
     zh: "请选择一种出行方式（步行 / 驾车 / 骑行）。",
     en: "Please pick a transport mode (walk / drive / cycle).",
+  },
+  BUDGET_HINT_MISSING: {
+    zh: "本次行程的总预算或人均预算是多少（币种 + 金额）？",
+    en: "What is the total or per-person budget for this trip (currency + amount)?",
   },
 };
 
@@ -208,4 +214,46 @@ async function recordFollowupFallbackAudit(input: GenerateInput, reason: string)
     tripId: input.tripId,
     summary: { reason, missingCount: input.requestedMissing.length },
   });
+}
+
+/**
+ * Quick orchestration — multi-slot followup loop. Drives the existing
+ * single-question generator at most `maxQuestions` times, removing each
+ * successfully-emitted questionCode from the requested set before the
+ * next call. Preserves the existing wire shape (one
+ * `research.setup.followup` SSE event per question), avoids
+ * re-introducing a multi-question event variant, and lets the chat
+ * surface multiple bubbles in one turn.
+ *
+ * Termination conditions:
+ *   * `requestedMissing` is empty.
+ *   * `maxQuestions` reached.
+ *   * The model returns the same code twice in a row (loop guard).
+ *   * The gateway returns no followup (deterministic fallback exhausted).
+ */
+export async function generateSetupFollowups(input: GenerateInput & {
+  maxQuestions?: number;
+}): Promise<ConversationFollowupFallback[]> {
+  const max = Math.max(1, Math.min(input.maxQuestions ?? 3, 3));
+  const remaining: MissingCode[] = [...input.requestedMissing];
+  const out: ConversationFollowupFallback[] = [];
+  const filledNames = [...input.filledFieldNames];
+
+  for (let i = 0; i < max; i++) {
+    if (remaining.length === 0) break;
+    const fb = await generateSetupFollowup({
+      ...input,
+      requestedMissing: remaining,
+      filledFieldNames: filledNames,
+    });
+    if (!fb) break;
+    out.push(fb);
+    const emitted = fb.questionCode as MissingCode;
+    if (!remaining.includes(emitted)) break; // safety
+    remaining.splice(remaining.indexOf(emitted), 1);
+    metrics.inc("personal_research_setup_followup_questions_total", {
+      outcome: fb.source,
+    });
+  }
+  return out;
 }

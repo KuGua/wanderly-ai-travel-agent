@@ -11,11 +11,12 @@ import { ResearchConfirmationCard } from "@/components/trips/personal-research/r
 import { ResearchSetupCard } from "@/components/trips/personal-research/research-setup-card";
 import { ResearchPlaceSelectionCard } from "@/components/trips/personal-research/research-place-selection-card";
 import { ResearchRunCard } from "@/components/trips/personal-research/research-run-card";
+import { PinnedResultCard } from "@/components/trips/personal-research/pinned-result-card";
 
 import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest, ResearchSetupSessionResponse } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
-import { useAgentRun, useCancelAgentRun, useOwnerConversation, useSubmitConversationTurn } from "@/lib/query/hooks";
+import { useAgentRun, useCancelAgentRun, useOwnerConversation, useSubmitConversationTurn, useTripPin } from "@/lib/query/hooks";
 import { useTravelApi } from "@/lib/query/provider";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
@@ -92,6 +93,11 @@ export function TravelAgentChat({
   const docked = variant === "docked";
   const effectiveThreadId = controlledThreadId;
   const resolvedThreadStatus = threadStatus ?? (effectiveThreadId ? "ready" : "preparing");
+  // Quick orchestration — read the server-managed pinned session for the
+  // current trip. Renders above the messages (only when not actively
+  // handling a research intent draft). The card is read-only in MVP.
+  const tripPin = useTripPin(tripId ?? null);
+  const pinnedSession = tripPin.data ?? null;
   // Send is allowed when we already have a thread, or when the parent
   // has supplied a provisioner the first send can use (exploration
   // flow). It is blocked only when there is no thread AND no provisioner,
@@ -124,9 +130,11 @@ export function TravelAgentChat({
   // agent-run DTO so the conversational setup card can hydrate on refresh.
   const [researchSetupSession, setResearchSetupSession] =
     useState<ResearchSetupSessionResponse | null>(null);
-  // §9 — Latest conversational followup bubble (server-pushed via SSE).
-  const [setupFollowup, setSetupFollowup] =
-    useState<Extract<AgentStreamEvent, { event: "research.setup.followup" }> | null>(null);
+  // §9 + Quick orchestration — Conversational followup bubbles. Multi-slot
+  // loops may emit up to 3 followups in a single turn; we keep them as an
+  // array deduped by `questionCode` so re-emission never duplicates UI.
+  const [setupFollowups, setSetupFollowups] =
+    useState<Extract<AgentStreamEvent, { event: "research.setup.followup" }>[]>([]);
   const [routeEndpoints, setRouteEndpoints] = useState<Array<{ placeId: string; displayName: string }>>([]);
   const [routeOrigin, setRouteOrigin] = useState<{ placeId: string; displayName: string } | null>(null);
   const [routeDestination, setRouteDestination] = useState<{ placeId: string; displayName: string } | null>(null);
@@ -320,13 +328,20 @@ export function TravelAgentChat({
         setClassifierDraft(null);
         setResearchIntent(null);
         setResearchSetupSession(null);
-        setSetupFollowup(null);
+        setSetupFollowups([]);
       }
       if (event.event === "research.setup.followup") {
         // §9 — Conversational followup bubble. The card hydrates from
         // the agent-run DTO after a refetch; this state only drives the
-        // chat bubble the owner reads inline.
-        setSetupFollowup(event);
+        // chat bubble the owner reads inline. Quick orchestration may emit
+        // multiple followups in one turn (multi-slot loop). Dedupe by
+        // `questionCode` so the same code pushed twice never produces two
+        // bubbles (the LLM may legitimately re-emit one while the model
+        // re-runs after a transient error).
+        setSetupFollowups((current) => {
+          const next = current.filter((fu) => fu.followup.questionCode !== event.followup.questionCode);
+          return [...next, event];
+        });
         recordUiDiagnostic("setup.followup_received");
         // Trigger a refresh so the setup card rehydrates with the freshly
         // opened session row.
@@ -658,6 +673,17 @@ export function TravelAgentChat({
               </div>
             </section>
           ) : null}
+          {/* Quick orchestration — server-managed pinned session card.
+              Surfaces the latest owner-accepted terminal run. Renders only
+              when (a) we are bound to a trip, (b) the server has pinned a
+              session, and (c) the current view is not mid-classification
+              for an unrelated draft. The card is read-only — no manual
+              pin/unpin UI in MVP. */}
+          {tripId && pinnedSession && !researchIntent ? (
+            <div className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}>
+              <PinnedResultCard tripId={tripId} pinned={pinnedSession} />
+            </div>
+          ) : null}
           {/* Phase 6 / Personal Trip Orchestrator — research intent + run card. */}
           {researchIntent && tripId ? (
             <div className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}>
@@ -725,24 +751,25 @@ export function TravelAgentChat({
               )}
             </div>
           ) : null}
-          {/* §9 — Conversational followup bubble. Renders right below the
-              research card so the owner can read the LLM followup in
-              chat order; auto-clears when the SSE handler refreshes. */}
-          {setupFollowup ? (
+          {/* §9 + Quick orchestration — Conversational followup bubble(s). Multi-slot
+              loops may push up to 3 in one turn; deduped by questionCode so
+              the same code never produces a duplicate bubble. */}
+          {setupFollowups.map((followup) => (
             <div
+              key={`${followup.runId}:${followup.followup.questionCode}`}
               className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}
               data-testid="setup-followup-bubble"
-              data-question-code={setupFollowup.followup.questionCode}
-              data-source={setupFollowup.source}
+              data-question-code={followup.followup.questionCode}
+              data-source={followup.source}
             >
               <article className="rounded-md border border-amber-200 bg-white p-2 text-sm text-amber-900">
-                <p className="text-xs">{setupFollowup.followup.promptText}</p>
+                <p className="text-xs">{followup.followup.promptText}</p>
                 <p className="mt-1 text-[10px] italic text-muted-foreground">
-                  来源：{setupFollowup.source === "model" ? "LLM 生成" : "本地模板"}
+                  来源：{followup.source === "model" ? "LLM 生成" : "本地模板"}
                 </p>
               </article>
             </div>
-          ) : null}
+          ))}
           {activeRunId ? (
             <div className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}>
               <ResearchRunCard

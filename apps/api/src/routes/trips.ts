@@ -1,8 +1,17 @@
 import { eq, and, asc, count, desc, inArray, sql, type SQL } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
-import { sharedTrips, tripMembers, users, itineraryPlans, memberConfirmations, consentGrants } from "../db/schema.js";
+import {
+  agentTaskRuns,
+  sharedTrips,
+  tripMembers,
+  users,
+  itineraryPlans,
+  memberConfirmations,
+  consentGrants,
+} from "../db/schema.js";
 import {
   createTripSchema,
   errorResponseSchema,
@@ -25,6 +34,7 @@ import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { loadAndAssertTripModeForBrief } from "../services/trip-mode-service.js";
 import { getOrCreateDefaultThread } from "../services/trip-invitation-service.js";
+import { agentTaskConfig } from "../tasks/config.js";
 import { metrics } from "../observability/metrics.js";
 
 const tripIdParamSchema = z.object({ tripId: z.string().uuid() }).strict();
@@ -346,6 +356,75 @@ export async function tripRoutes(app: FastifyInstance) {
     if (!trip) {
       throw new ApiError(500, "Internal Server Error", "Trip vanished after activate");
     }
+
+    // Quick orchestration — proactively enqueue a Personal Research intro
+    // CONVERSATION run for SOLO trips only. Best-effort: failure is
+    // recorded but does not block the 200 response. TEAM trips get
+    // skipped explicitly (no proactive assistant message mid-team-flow).
+    try {
+      const requiredMembers = await db.select({ count: count() })
+        .from(tripMembers)
+        .where(and(
+          eq(tripMembers.tripId, trip.id),
+          eq(tripMembers.isRequired, true),
+        ));
+      const memberCount = Number(requiredMembers[0]?.count ?? 0);
+      if (memberCount === 1) {
+        const threadId = await db.transaction(async (tx) =>
+          getOrCreateDefaultThread(tx, {
+            ownerUserId: trip.createdBy,
+            tripId: trip.id,
+          }),
+        );
+        const introRunId = randomUUID();
+        const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
+        await db.insert(agentTaskRuns).values({
+          id: introRunId,
+          operation: "CONVERSATION",
+          status: "QUEUED",
+          createdByUserId: trip.createdBy,
+          threadId,
+          tripId: trip.id,
+          requestId: randomUUID(),
+          expiresAt,
+          traceContext: ctx.traceparent
+            ? {
+                traceparent: ctx.traceparent,
+                ...(ctx.tracestate ? { tracestate: ctx.tracestate } : {}),
+                correlationId: ctx.correlationId,
+              }
+            : null,
+          // The proactive intro branch in handleConversationTask reads
+          // this flag and short-circuits before loading any user
+          // message or LLM context. Shape mirrors the existing
+          // PersistedResearchIntentDraft.
+          researchIntentDraft: {
+            schemaVersion: 1,
+            kind: "RESEARCH_ONLY",
+            requestedCapabilities: [],
+            classifierVersion: "proactive_intro_v1",
+            readiness: "NEEDS_SETUP",
+            proactiveIntro: true,
+            blockers: [],
+            warnings: [],
+            missing: [],
+          },
+        });
+        await recordAudit({
+          ctx,
+          action: "PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED",
+          actorUserId: trip.createdBy,
+          tripId: trip.id,
+          summary: { runId: introRunId },
+        });
+        metrics.inc("personal_research_proactive_intro_total", { outcome: "enqueued" });
+      } else {
+        metrics.inc("personal_research_proactive_intro_total", { outcome: "skipped_team" });
+      }
+    } catch (err) {
+      metrics.inc("personal_research_proactive_intro_total", { outcome: "failure" });
+    }
+
     return reply.code(200).send(tripActivationResponseSchema.parse({
       trip: {
         id: trip.id,
@@ -496,11 +575,46 @@ export async function tripRoutes(app: FastifyInstance) {
       .where(eq(tripMembers.tripId, tripId))
       .orderBy(asc(tripMembers.joinedAt), asc(tripMembers.userId));
 
+    // Quick orchestration — project the server-managed pinned run for the
+    // owner-visible "current result" card. Best-effort: a failure here
+    // must not block the rest of the trip detail (owner can still browse
+    // without the pinned card). The DTO is `.nullable()` so a missing pin
+    // returns cleanly.
+    let pinnedSession: unknown = null;
+    if (trip?.pinnedSessionId) {
+      try {
+        const [pinnedRun] = await db.select({
+          id: agentTaskRuns.id,
+          operation: agentTaskRuns.operation,
+          status: agentTaskRuns.status,
+          destinationCandidates: agentTaskRuns.researchIntentDraft,
+          createdAt: agentTaskRuns.createdAt,
+        })
+          .from(agentTaskRuns)
+          .where(eq(agentTaskRuns.id, trip.pinnedSessionId))
+          .limit(1);
+        if (pinnedRun) {
+          pinnedSession = {
+            agentTaskRunId: pinnedRun.id,
+            operation: pinnedRun.operation,
+            status: pinnedRun.status,
+            destinationCandidates: ((pinnedRun.destinationCandidates as Record<string, unknown> | null)?.destinationCandidates as string[] | undefined) ?? trip.destinationCandidates ?? [],
+            travelDays: trip.travelDays ?? null,
+            generatedAt: pinnedRun.createdAt.toISOString(),
+            pinnedAt: trip.pinnedAt?.toISOString() ?? new Date().toISOString(),
+          };
+        }
+      } catch {
+        // swallow — fall back to null
+      }
+    }
+
     return tripDetailsResponseSchema.parse({
       trip: {
         ...trip,
         createdAt: trip.createdAt.toISOString(),
         updatedAt: trip.updatedAt.toISOString(),
+        pinnedSession,
       },
       callerRole: membership[0].role,
       members: members.map(member => ({

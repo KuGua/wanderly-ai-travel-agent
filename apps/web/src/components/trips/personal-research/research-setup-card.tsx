@@ -42,6 +42,11 @@ import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 const IN_SCOPE_MISSING: ReadonlyArray<PersonalResearchMissingCode> = [
   "DATES_MISSING",
   "STAY_PREFERENCES_MISSING",
+  // Quick orchestration — budget hint surfaces inline as a soft warning.
+  // It is in-scope for rendering but does NOT count as a blocker for the
+  // confirm-enable check (categorized as `warning`, not `blocker`, on the
+  // server).
+  "BUDGET_HINT_MISSING",
 ];
 
 export function ResearchSetupCard({
@@ -79,6 +84,7 @@ export function ResearchSetupCard({
     runId={runId}
     session={setupSession}
     blockers={blockers}
+    warnings={warnings}
     intent={intent}
     onDismiss={onDismiss}
   />;
@@ -165,6 +171,7 @@ function ConversationalSetupCard({
   runId,
   session,
   blockers,
+  warnings,
   intent,
   onDismiss,
 }: {
@@ -172,6 +179,7 @@ function ConversationalSetupCard({
   runId: string;
   session: ResearchSetupSessionResponse;
   blockers: PersonalResearchMissingCode[];
+  warnings: PersonalResearchMissingCode[];
   intent: { kind: "RESEARCH_ONLY" | "PROPOSE_PLAN"; requestedCapabilities: string[] };
   onDismiss: () => void;
 }): ReactNode {
@@ -196,6 +204,18 @@ function ConversationalSetupCard({
   );
   const [currency, setCurrency] = useState<string>(
     session.stayPreferences?.currency ?? "USD",
+  );
+  // Quick orchestration — soft budget hint. Always optional; absence does
+  // not block confirm. Surfaced inline so the owner can declare an amount
+  // if they care to bias provider pricing ranges.
+  const [budgetAmount, setBudgetAmount] = useState<string>(
+    session.budgetHint ? String(session.budgetHint.amount) : "",
+  );
+  const [budgetCurrency, setBudgetCurrency] = useState<string>(
+    session.budgetHint?.currency ?? "USD",
+  );
+  const [budgetCadence, setBudgetCadence] = useState<"TOTAL" | "PER_NIGHT" | "PER_PERSON">(
+    session.budgetHint?.cadence ?? "TOTAL",
   );
   const confirmRequestId = useRef<string | null>(null);
   const submissionInFlight = useRef(false);
@@ -226,13 +246,25 @@ function ConversationalSetupCard({
     return /^[A-Z]{3}$/.test(currency);
   }, [roomCount, adultsPerRoom, currency]);
 
-  // Only the in-scope blocker codes drive the confirm enable check. Soft
-  // warnings (FLIGHT_PREFERENCES_MISSING, STAY_PREFERENCES_MISSING once
-  // demoted, etc.) never block the confirm flow — the owner can proceed
-  // past them via the real-provider acknowledgement dialog.
-  const requiredCodes = blockers.filter((code) => IN_SCOPE_MISSING.includes(code));
-  const hasBlockers = requiredCodes.length > 0;
-  const confirmEnabled = !hasBlockers && requiredCodes.every((code) => {
+  const budgetValid = useMemo(() => {
+    // Empty budget = "no hint" → always valid (warning, not blocker).
+    if (budgetAmount === "") return true;
+    const parsed = Number(budgetAmount);
+    if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) return false;
+    if (parsed <= 0 || parsed > 1_000_000) return false;
+    return /^[A-Z]{3}$/.test(budgetCurrency);
+  }, [budgetAmount, budgetCurrency]);
+
+  // Only the in-scope *blocker* codes drive the confirm enable check.
+  // Soft warnings (including `BUDGET_HINT_MISSING`) never block — the
+  // owner can proceed past them via the real-provider acknowledgement
+  // dialog. BUDGET is excluded from the blocker gate even though it's
+  // listed in `IN_SCOPE_MISSING` for rendering.
+  const blockerCodes = blockers.filter(
+    (code) => IN_SCOPE_MISSING.includes(code) && code !== "BUDGET_HINT_MISSING",
+  );
+  const hasBlockers = blockerCodes.length > 0;
+  const confirmEnabled = !hasBlockers && blockerCodes.every((code) => {
     if (code === "DATES_MISSING") return datesValid;
     if (code === "STAY_PREFERENCES_MISSING") return stayValid;
     return false;
@@ -263,19 +295,32 @@ function ConversationalSetupCard({
 
   async function persistRequiredAnswers(currentSession: ResearchSetupSessionResponse): Promise<ResearchSetupSessionResponse> {
     let next = currentSession;
-    if (requiredCodes.includes("DATES_MISSING") && datesValid) {
+    if (blockerCodes.includes("DATES_MISSING") && datesValid) {
       next = await submitAnswer(next.version, {
         field: "travelDates",
         value: { start: checkIn, end: checkOut },
       });
     }
-    if (requiredCodes.includes("STAY_PREFERENCES_MISSING") && stayValid) {
+    if (blockerCodes.includes("STAY_PREFERENCES_MISSING") && stayValid) {
       next = await submitAnswer(next.version, {
         field: "stayPreferences",
         value: {
           roomCount,
           adultsPerRoom: ensureAdultsLength(roomCount, adultsPerRoom),
           currency,
+        },
+      });
+    }
+    // Quick orchestration — budget hint. Only submit when the user has
+    // actually typed an amount; empty input is "no hint" (the existing
+    // behavior). Validation is mirrored from the server Zod schema.
+    if (budgetAmount !== "" && budgetValid) {
+      next = await submitAnswer(next.version, {
+        field: "budget",
+        value: {
+          amount: Number(budgetAmount),
+          currency: budgetCurrency,
+          cadence: budgetCadence,
         },
       });
     }
@@ -343,7 +388,7 @@ function ConversationalSetupCard({
     >
       <p className="mb-2 font-medium">补全资料后即可开始研究</p>
       <ul className="mb-3 space-y-2">
-        {requiredCodes.includes("DATES_MISSING") && (
+        {blockerCodes.includes("DATES_MISSING") && (
           <li className="rounded-md border border-amber-200 bg-white p-2">
             <p className="text-xs font-medium">{MISSING_COPY.DATES_MISSING.title}</p>
             <div className="mt-1 grid grid-cols-2 gap-2">
@@ -372,7 +417,7 @@ function ConversationalSetupCard({
             </div>
           </li>
         )}
-        {requiredCodes.includes("STAY_PREFERENCES_MISSING") && (
+        {blockerCodes.includes("STAY_PREFERENCES_MISSING") && (
           <li className="rounded-md border border-amber-200 bg-white p-2">
             <p className="text-xs font-medium">{MISSING_COPY.STAY_PREFERENCES_MISSING.title}</p>
             <div className="mt-1 grid grid-cols-3 gap-2">
@@ -421,6 +466,67 @@ function ConversationalSetupCard({
                 />
               </label>
             </div>
+          </li>
+        )}
+        {/* Quick orchestration — soft budget hint. Always optional; surface
+            in the warnings list when missing or as a small read-only summary
+            when already declared. Does NOT block the confirm button. */}
+        {(blockers.includes("BUDGET_HINT_MISSING") || warnings.includes("BUDGET_HINT_MISSING")) && (
+          <li
+            className="rounded-md border border-sky-200 bg-white p-2"
+            data-testid="setup-budget-hint"
+          >
+            <p className="text-xs font-medium text-sky-900">
+              {MISSING_COPY.BUDGET_HINT_MISSING?.title ?? "本次预算（可选）"}
+            </p>
+            <p className="mt-0.5 text-[11px] text-sky-700">
+              {MISSING_COPY.BUDGET_HINT_MISSING?.detail ?? "预算仅用于偏向供应商价格区间，非强制。"}
+            </p>
+            <div className="mt-1 grid grid-cols-3 gap-2">
+              <label className="grid gap-1 text-[11px]">
+                金额
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={1_000_000}
+                  value={budgetAmount}
+                  onChange={(event) => setBudgetAmount(event.target.value)}
+                  placeholder="可留空"
+                  className="min-h-9 border bg-background px-2 text-xs"
+                  data-testid="setup-budget-amount"
+                />
+              </label>
+              <label className="grid gap-1 text-[11px]">
+                币种
+                <input
+                  type="text"
+                  value={budgetCurrency}
+                  onChange={(event) => setBudgetCurrency(event.target.value.toUpperCase())}
+                  className="min-h-9 border bg-background px-2 text-xs uppercase"
+                  maxLength={3}
+                  data-testid="setup-budget-currency"
+                />
+              </label>
+              <label className="grid gap-1 text-[11px]">
+                范围
+                <select
+                  value={budgetCadence}
+                  onChange={(event) => setBudgetCadence(event.target.value as typeof budgetCadence)}
+                  className="min-h-9 border bg-background px-2 text-xs"
+                  data-testid="setup-budget-cadence"
+                >
+                  <option value="TOTAL">总计</option>
+                  <option value="PER_NIGHT">每晚</option>
+                  <option value="PER_PERSON">人均</option>
+                </select>
+              </label>
+            </div>
+            {!budgetValid && (
+              <p className="mt-1 text-[11px] text-rose-600">
+                金额需为 1 到 1,000,000 的整数；币种需为 3 个大写字母。
+              </p>
+            )}
           </li>
         )}
       </ul>

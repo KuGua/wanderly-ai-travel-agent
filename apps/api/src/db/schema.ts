@@ -25,7 +25,8 @@ export type ResearchIntentMissingCode =
   | "HOTEL_PROVIDER_NOT_APPROVED"
   | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING"
   | "ROUTE_ENDPOINTS_UNCONFIRMED"
-  | "MODE_NOT_CHOSEN";
+  | "MODE_NOT_CHOSEN"
+  | "BUDGET_HINT_MISSING";
 
 export type ResearchIntentReadiness =
   | "READY"
@@ -48,6 +49,10 @@ export interface ResearchIntentDraftShape {
   /** Union of `blockers ∪ warnings`. Retained for backward compatibility
    *  with older clients that still read `missing[]` directly. */
   missing: ResearchIntentMissingCode[];
+  /** Quick orchestration — proactive intro marker. Optional so legacy
+   *  drafts parse cleanly. When `true`, the conversation worker renders
+   *  the locale-aware greeting template without an LLM call. */
+  proactiveIntro?: true;
 }
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
@@ -156,6 +161,10 @@ export const auditActionEnum = pgEnum("audit_action", [
   "PERSONAL_RESEARCH_SETUP_EXPIRED",
   "PERSONAL_RESEARCH_SETUP_FOLLOWUP_GENERATED",
   "PERSONAL_RESEARCH_SETUP_FOLLOWUP_FELLBACK",
+  // Quick orchestration (added via 0045):
+  "PERSONAL_RESEARCH_BUDGET_HINT_SAVED",
+  "PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED",
+  "TRIP_PIN_SESSION_WRITTEN",
 ]);
 
 // ─── Long-term memory (docs/long-term-memory-implementation.md) ─────────────
@@ -337,6 +346,20 @@ export const sharedTrips = pgTable("shared_trips", {
   travelDays: integer("travel_days"),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   archiveReason: varchar("archive_reason", { length: 16 }).$type<"USER_ARCHIVED" | "DATE_ELAPSED" | null>(),
+  // Quick orchestration — soft budget hint mirrored from the conversational
+  // setup session. Always nullable; absence means "no budget declared".
+  budgetHintAmount: integer("budget_hint_amount"),
+  budgetHintCurrency: varchar("budget_hint_currency", { length: 3 }),
+  budgetHintCadence: varchar("budget_hint_cadence", { length: 16 })
+    .$type<"TOTAL" | "PER_NIGHT" | "PER_PERSON">(),
+  // Server-managed pointer to the latest owner-accepted terminal run.
+  // Auto-pin only — no manual UI in MVP. ON DELETE SET NULL keeps the
+  // column self-healing when the underlying run is purged. We deliberately
+  // skip the `.references(...)` callback to break the circular type
+  // dependency with `agentTaskRuns.tripId`; the FK constraint lives on
+  // the Postgres side (migration 0045).
+  pinnedSessionId: uuid("pinned_session_id"),
+  pinnedAt: timestamp("pinned_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -1083,6 +1106,15 @@ export const personalResearchSetupSessions = pgTable("personal_research_setup_se
     adults: number;
     cabin: string;
     offerFreshnessMinutes: number;
+  } | null>(),
+  // Soft budget hint — only meaningful when the conversational setup card
+  // captures one. Shape: `{ amount: number, currency: "USD"|..., cadence:
+  // "TOTAL"|"PER_NIGHT"|"PER_PERSON" }`. Zod enforces the shape at the
+  // service boundary.
+  budgetHint: jsonb("budget_hint").$type<{
+    amount: number;
+    currency: string;
+    cadence: "TOTAL" | "PER_NIGHT" | "PER_PERSON";
   } | null>(),
 
   missing: jsonb("missing").$type<string[]>().notNull(),

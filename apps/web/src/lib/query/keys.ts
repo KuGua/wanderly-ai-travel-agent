@@ -8,6 +8,12 @@ export const tripKeys = {
   all: ["trips"] as const,
   list: ["trips", "list"] as const,
   detail: (tripId: string) => ["trips", tripId, "detail"] as const,
+  // Quick orchestration — server-managed pinned session id. Most call
+  // sites re-derive this from `tripKeys.detail(tripId).pinnedSession`,
+  // but this standalone key lets the `PinnedResultCard` refetch
+  // independently and lets hooks invalidate just the pin without
+  // bouncing the whole trip detail.
+  pinned: (tripId: string) => ["trips", tripId, "pinned-session"] as const,
   threads: (tripId: string) => ["trips", tripId, "my-threads"] as const,
   planningRun: (tripId: string) => ["trips", tripId, "planning-run"] as const,
   latestPlan: (tripId: string) => ["trips", tripId, "latest-plan"] as const,
