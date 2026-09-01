@@ -197,7 +197,15 @@ export function createPersonalResearchDispatcher(
 
     let result: unknown;
     try {
-      result = await runExecutor(call.name, { run, draft: draft.data, signal: context.signal });
+      const executed = await runExecutor(call.name, { run, draft: draft.data, signal: context.signal });
+      // Signals to the turn that a supplier actually answered, which is what
+      // lets the output safety filter admit prices and availability. Only a
+      // real provider round trip counts: a refusal, a confirmation prompt or
+      // an unavailable result would otherwise license the model to state
+      // figures nothing produced.
+      result = (executed as { outcome?: unknown })?.outcome === "AVAILABLE"
+        ? { ...(executed as Record<string, unknown>), providerDispatched: true }
+        : executed;
     } catch (error) {
       result = unavailable((error as { name?: string })?.name === "AbortError" ? "UPSTREAM_TIMEOUT" : "UPSTREAM_FAILURE");
     }

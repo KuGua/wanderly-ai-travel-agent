@@ -349,6 +349,13 @@ export async function handleConversationTask(params: {
       // whichever capability the model reached for.
       await publishToolEvent(params.run, { phase: "started", name: call.name }, params.ctx.traceparent);
       const settled = await runDispatch(call);
+      // Both routes report the same way. Evidence is what a supplier actually
+      // returned — a confirmation prompt or an unavailable result must not
+      // unlock grounded price prose, so the flag is only ever raised, never
+      // cleared, and only by a dispatcher that reached a provider.
+      if ((settled as { providerDispatched?: unknown })?.providerDispatched === true) {
+        evidenceDispatched = true;
+      }
       await publishToolEvent(params.run, { phase: "settled", name: call.name, ...settledSummary(settled) }, params.ctx.traceparent);
       return settled;
     };
@@ -365,7 +372,6 @@ export async function handleConversationTask(params: {
       const result = await baseDispatch(call);
       // A readiness save/confirmation prompt is not evidence. Only the
       // server-side provider branch may unlock grounded price/inventory prose.
-      evidenceDispatched = (result as { providerDispatched?: unknown }).providerDispatched === true;
       return result;
     };
   }
