@@ -857,7 +857,44 @@ export const personalResearchOutcomeSchema = z.enum(["AVAILABLE", "UNAVAILABLE",
  * shown in `GET /agent-runs/:runId/personal-research` — never raw provider
  * payloads, chat text, nationality, passport, or document data. Spec §3.2.
  */
+/**
+ * One thing a research tool actually found.
+ *
+ * Summaries used to carry counts and a price band and nothing else, which
+ * left the model with "there are five restaurants nearby" — not enough to
+ * answer with, so it answered from its own knowledge instead and the lookup
+ * counted for nothing.
+ *
+ * Isolation from Shared planning is not what this was protecting: personal
+ * evidence is already scoped by owner, trip and run, and Shared plans read a
+ * different table under snapshot binding. Emptying the payload defended
+ * something already defended.
+ *
+ * Still bounded: a handful of items, no supplier tokens, no booking URLs, no
+ * raw provider payload. `capturedAt` travels with them because a price is
+ * only true as of a moment.
+ */
+export const personalResearchEvidenceItemSchema = z.object({
+  /** Property, place, activity title, or a flight's route summary. */
+  label: z.string().trim().min(1).max(200),
+  /** Null when the provider stated no denominated amount. */
+  price: z.object({
+    amount: z.number().nonnegative(),
+    currency: currencyCodeSchema,
+    /** What the amount is per, so a nightly rate is not read as a total. */
+    unit: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
+  }).strict().nullable(),
+  /** Short qualifier: duration, board type, category, cabin. */
+  detail: z.string().trim().max(160).nullable(),
+}).strict();
+
+export type PersonalResearchEvidenceItem = z.infer<typeof personalResearchEvidenceItemSchema>;
+
+/** Ceiling per capability. Evidence is a prompt input, not a catalogue. */
+export const PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT = 6;
+
 export const personalResearchFlightEvidenceSummarySchema = z.object({
+  items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   offerCount: z.number().int().nonnegative(),
   currency: currencyCodeSchema,
   originIata: iataCodeSchema,
@@ -866,6 +903,7 @@ export const personalResearchFlightEvidenceSummarySchema = z.object({
   latestReturn: z.string().datetime().nullable(),
 }).strict();
 export const personalResearchHotelEvidenceSummarySchema = z.object({
+  items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   propertyCount: z.number().int().nonnegative(),
   currency: currencyCodeSchema,
   cityCode: iataCodeSchema,
@@ -875,6 +913,7 @@ export const personalResearchHotelEvidenceSummarySchema = z.object({
   maxNightlyPrice: z.number().nonnegative().nullable(),
 }).strict();
 export const personalResearchAccommodationEvidenceSummarySchema = z.object({
+  items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   candidateCount: z.number().int().nonnegative(),
   topCategory: z.string().nullable(),
   radiusMeters: z.number().int().nonnegative(),
@@ -882,6 +921,7 @@ export const personalResearchAccommodationEvidenceSummarySchema = z.object({
   checkOut: dateOnlySchema,
 }).strict();
 export const personalResearchActivitiesEvidenceSummarySchema = z.object({
+  items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   activityCount: z.number().int().nonnegative(),
   currency: currencyCodeSchema.nullable(),
   destinationCode: z.string(),
@@ -891,6 +931,7 @@ export const personalResearchActivitiesEvidenceSummarySchema = z.object({
   maxPrice: z.number().nonnegative().nullable(),
 }).strict();
 export const personalResearchPlacesEvidenceSummarySchema = z.object({
+  items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   candidateCount: z.number().int().nonnegative(),
   categories: z.array(z.string()),
   radiusMeters: z.number().int().nonnegative(),
