@@ -49,6 +49,13 @@ export type PersonalResearchOperationCapability = (typeof PERSONAL_RESEARCH_OPER
  */
 export const PERSONAL_RESEARCH_ALLOWED_CAPABILITIES = [
   "flight.search",
+  // Stage 2 (partial) / Stage 3 (partial): unlocked once each capability had a
+  // typed draft branch, an executor, provider contract tests covering both the
+  // AVAILABLE and NOT_CONFIGURED paths, and its input/result cards. The rest of
+  // stage 2 and 3 stay closed until their cards land — see the checklist above.
+  "hotel.search",
+  "activities.search",
+  "places.search",
 ] as const satisfies readonly PersonalResearchOperationCapability[];
 
 export function isPersonalResearchCapabilityAllowed(
