@@ -277,13 +277,30 @@
       "threadTitleWithPlace": "Explore · {name}",
       "composerNote": "Enter to send · Shift + Enter for a new line · This thread is private to you and scoped to this trip.",
       "briefProposalTitle": "Update trip brief?",
-      "briefProposalDeparture": "Departure: {cities}",
-      "briefProposalDestinations": "Destinations: {destinations}",
-      "briefProposalDateRange": "Dates: {start} – {end}",
-      "briefProposalDays": "Length: {days} days",
+      "briefProposalBody": "Destination: {destination} · Duration: {days}",
+      "briefProposalNoDestination": "not specified",
+      "briefProposalNoDays": "not specified",
       "briefProposalConfirm": "Confirm update",
       "briefProposalSaving": "Saving…",
-      "briefProposalIgnore": "Ignore"
+      "briefProposalIgnore": "Ignore",
+      "tools": {
+        "heading": "Lookups for this reply",
+        "capability": {
+          "places_search": "Finding places",
+          "navigation_route": "Working out a route",
+          "accommodation_discovery": "Looking for places to stay nearby",
+          "activities_search": "Finding things to do",
+          "flight_search": "Checking flights",
+          "hotel_search": "Checking hotels",
+          "mobility_search": "Checking transfers"
+        },
+        "outcome": {
+          "RUNNING": "Looking",
+          "AVAILABLE": "Done",
+          "UNAVAILABLE": "Nothing found",
+          "NEEDS_CONFIRMATION": "Needs your OK"
+        }
+      }
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",
@@ -483,9 +500,22 @@
       "mapWindow": "Explore map",
       "mapPinned": "Pinned",
       "openFullMap": "Open in full map",
-      "draftActivationHint": "Tell the agent your departure city, destinations, and dates in the private chat, then start planning. Teammates can join now but cannot view your private conversation.",
+      "draftActivationHint": "Save a complete brief, then start planning. Teammates can join now but cannot view your private conversation.",
       "activateDraft": "Start planning",
       "activateDraftError": "Could not start planning. Please try again.",
+      "draftBrief": {
+        "title": "Complete your private trip brief",
+        "departure": "Departure cities",
+        "departurePlaceholder": "Singapore, Taipei",
+        "destinations": "Destination candidates",
+        "destinationsPlaceholder": "Tokyo, Kyoto",
+        "destinationCountHint": "Enter {min}–{max} distinct destinations, separated by commas.",
+        "startDate": "Start date",
+        "endDate": "End date",
+        "save": "Save brief",
+        "saving": "Saving…",
+        "saveError": "Could not save the brief. Check the entries and try again."
+      },
       "invitation": {
         "unavailableTitle": "This trip is unavailable",
         "trigger": "Invite teammates",
@@ -550,7 +580,6 @@
         "passengers": "{count, plural, one {# passenger} other {# passengers}}",
         "select": "Select",
         "dismiss": "Dismiss",
-        "filter": "Filter by service type",
         "filter": {
           "all": "All",
           "taxi": "Taxi",
