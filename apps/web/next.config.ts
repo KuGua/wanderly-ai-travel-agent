@@ -4,10 +4,6 @@ import createNextIntlPlugin from "next-intl/plugin";
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 const nextConfig: NextConfig = {
-  // Next.js blocks dev-only chunks requested through a LAN hostname unless it
-  // is explicitly allow-listed. Keep this to the current trusted test host;
-  // do not use a wildcard or a public/tunnel domain.
-  allowedDevOrigins: ["10.91.95.100"],
   turbopack: {
     root: process.cwd(),
   },
