@@ -2,20 +2,37 @@
 
 import { ArrowLeft, LoaderCircle, UserPlus } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState, type FormEvent } from "react";
 
 import { Link, useRouter } from "@/i18n/navigation";
 import { useAuth } from "@/lib/auth/auth-provider";
 import { registerUser } from "@/lib/auth/custom-browser-auth";
 
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
+  );
+}
+
+function RegisterForm() {
   const t = useTranslations("register");
   const tCommon = useTranslations("common");
   const router = useRouter();
   const auth = useAuth();
+  const searchParams = useSearchParams();
+
+  // Sends a member back to the invitation link they came from (see
+  // JoinTripInvitation) instead of always landing on /home.
+  const redirectTarget = searchParams.get("redirect");
 
   const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
+  // Pre-fill from an invitation link's `email` param (see
+  // JoinTripInvitation) so an invited recipient without an account yet
+  // does not have to retype the address the invite was sent to.
+  const [email, setEmail] = useState(() => searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -59,7 +76,7 @@ export default function RegisterPage() {
     try {
       await registerUser({ username, email, password, confirmPassword });
       await auth.signIn(username, password);
-      router.push("/home");
+      router.push((redirectTarget?.startsWith("/") ? redirectTarget : "/home") as "/home");
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : t("failed");
       if (message.includes("already taken")) {

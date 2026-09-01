@@ -101,6 +101,13 @@ export function createCustomBrowserAuth(): BrowserAuthService {
   };
 }
 
+export async function checkEmailExists(email: string): Promise<boolean> {
+  const response = await fetch(`${getApiBaseUrl()}/api/v1/auth/check-email?email=${encodeURIComponent(email)}`);
+  if (!response.ok) return false;
+  const data = (await response.json()) as { exists: boolean };
+  return data.exists;
+}
+
 export async function registerUser(body: {
   username: string;
   email: string;

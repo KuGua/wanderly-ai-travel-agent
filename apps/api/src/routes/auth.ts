@@ -120,6 +120,25 @@ export async function authRoutes(app: FastifyInstance) {
     });
   });
 
+  // Demo-only convenience: lets the invitation join page decide whether to
+  // point an invited recipient at sign-in or register. Not a security
+  // boundary — deliberately not rate-limited or auth-gated.
+  app.get("/auth/check-email", async (request, reply) => {
+    const query = request.query as Record<string, unknown>;
+    const email = typeof query.email === "string" ? query.email.trim().toLowerCase() : "";
+
+    if (!EMAIL_PATTERN.test(email)) {
+      throw new ApiError(422, "Validation Error", "Invalid email address");
+    }
+
+    const [user] = await db.select({ id: users.id })
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+
+    reply.send({ exists: Boolean(user) });
+  });
+
   app.post("/auth/login", async (request, reply) => {
     const body = request.body as Record<string, unknown>;
     const username = typeof body.username === "string" ? body.username.trim() : "";

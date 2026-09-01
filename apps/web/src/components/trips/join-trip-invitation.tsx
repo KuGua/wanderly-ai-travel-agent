@@ -1,11 +1,14 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, CalendarDays, Check, LoaderCircle, LockKeyhole, MapPinned, ShieldCheck, UserRound } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
+import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 import { Link, useRouter } from "@/i18n/navigation";
 import { useAuth } from "@/lib/auth/auth-provider";
+import { checkEmailExists } from "@/lib/auth/custom-browser-auth";
 import { useAcceptInvitation, useDeclineInvitation, useInvitationPreview } from "@/lib/query/hooks";
 
 export function JoinTripInvitation({ inviteToken }: { inviteToken: string }) {
@@ -13,8 +16,30 @@ export function JoinTripInvitation({ inviteToken }: { inviteToken: string }) {
   const fmt = useFormatter();
   const router = useRouter();
   const auth = useAuth();
+  // Present only when the creator's own browser embedded it while building
+  // the shareable link (see trip-invitation-page.tsx); the server never
+  // stores or returns the recipient's plaintext email, so there is no way
+  // to recover or pre-fill it otherwise.
+  const invitedEmail = useSearchParams().get("email");
   const isCheckingIdentity = auth.status === "CHECKING";
   const isSignedIn = auth.status === "SIGNED_IN" || auth.status === "LOCAL_DEV";
+  // Demo convenience: decides whether the unauthenticated view below leads
+  // with Sign in or Register for the invited email. See auth.ts's
+  // /auth/check-email — not rate-limited or hardened, fine for a demo.
+  const emailCheck = useQuery({
+    queryKey: ["check-email", invitedEmail],
+    queryFn: () => checkEmailExists(invitedEmail as string),
+    enabled: !isSignedIn && Boolean(invitedEmail),
+  });
+  // Defaults to the sign-in-first view (no invited email, or the check
+  // hasn't resolved yet) and only leads with Register once we positively
+  // know the email has no account.
+  const showRegisterFirst = Boolean(invitedEmail) && emailCheck.data === false;
+  // Sends the member back here (rather than /home) once they finish signing
+  // in or registering — see login/page.tsx and register/page.tsx.
+  const redirectTarget = `/trips/join/${inviteToken}${invitedEmail ? `?email=${encodeURIComponent(invitedEmail)}` : ""}`;
+  const loginHref = { pathname: "/login", query: { redirect: redirectTarget } } as const;
+  const registerHref = { pathname: "/register", query: invitedEmail ? { email: invitedEmail, redirect: redirectTarget } : { redirect: redirectTarget } } as const;
   const preview = useInvitationPreview(isSignedIn ? inviteToken : null);
   const accept = useAcceptInvitation();
   const decline = useDeclineInvitation();
@@ -54,17 +79,30 @@ export function JoinTripInvitation({ inviteToken }: { inviteToken: string }) {
 
         <div className="p-6 sm:p-8">
           {isCheckingIdentity ? <PendingState label={t("checkingIdentity")} /> : null}
-          {!isCheckingIdentity && !isSignedIn ? (
+          {!isCheckingIdentity && !isSignedIn && showRegisterFirst ? (
+            <section className="text-center" aria-labelledby="register-heading">
+              <span className="mx-auto grid size-12 place-items-center bg-[var(--w-info)] wanderly-edge wanderly-r-md wanderly-shadow-sm">
+                <LockKeyhole aria-hidden="true" className="size-5" />
+              </span>
+              <h2 id="register-heading" className="mt-4 text-xl font-bold tracking-[-0.035em]">{t("registerTitle")}</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{t("registerBody")}</p>
+              <Link href={registerHref} className="mt-6 inline-flex min-h-11 items-center gap-2 px-5 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action">
+                {t("registerAction")} <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
+              <p className="mt-4 text-sm text-muted-foreground">{t("signInPrompt")} <Link href={loginHref} className="font-bold underline underline-offset-4">{t("signInAction")}</Link></p>
+            </section>
+          ) : null}
+          {!isCheckingIdentity && !isSignedIn && !showRegisterFirst ? (
             <section className="text-center" aria-labelledby="sign-in-heading">
               <span className="mx-auto grid size-12 place-items-center bg-[var(--w-info)] wanderly-edge wanderly-r-md wanderly-shadow-sm">
                 <LockKeyhole aria-hidden="true" className="size-5" />
               </span>
               <h2 id="sign-in-heading" className="mt-4 text-xl font-bold tracking-[-0.035em]">{t("signInTitle")}</h2>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">{t("signInBody")}</p>
-              <Link href="/login" className="mt-6 inline-flex min-h-11 items-center gap-2 px-5 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action">
+              <Link href={loginHref} className="mt-6 inline-flex min-h-11 items-center gap-2 px-5 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action">
                 {t("signInAction")} <ArrowRight aria-hidden="true" className="size-4" />
               </Link>
-              <p className="mt-4 text-sm text-muted-foreground">{t("registerPrompt")} <Link href="/register" className="font-bold underline underline-offset-4">{t("registerAction")}</Link></p>
+              <p className="mt-4 text-sm text-muted-foreground">{t("registerPrompt")} <Link href={registerHref} className="font-bold underline underline-offset-4">{t("registerAction")}</Link></p>
             </section>
           ) : null}
 

@@ -2,17 +2,31 @@
 
 import { ArrowLeft, LoaderCircle, LogIn } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState, type FormEvent } from "react";
 
 import { Link, useRouter } from "@/i18n/navigation";
 import { useAuth } from "@/lib/auth/auth-provider";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const t = useTranslations("login");
   const tCommon = useTranslations("common");
   const router = useRouter();
   const auth = useAuth();
   const supportsPasswordReset = process.env.NEXT_PUBLIC_AUTH_MODE === "custom";
+  // Sends a member back to the invitation link they came from (see
+  // JoinTripInvitation) instead of always landing on /home. Only ever a
+  // same-origin relative path built by this app, never taken verbatim from
+  // an external source.
+  const redirectTarget = useSearchParams().get("redirect");
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -28,7 +42,7 @@ export default function LoginPage() {
     try {
       const success = await auth.signIn(username, password, remember);
       if (success) {
-        router.push("/home");
+        router.push((redirectTarget?.startsWith("/") ? redirectTarget : "/home") as "/home");
       } else {
         setError(t("failed"));
       }

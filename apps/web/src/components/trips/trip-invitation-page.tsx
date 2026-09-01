@@ -23,7 +23,19 @@ export function TripInvitationPage({ tripId }: { tripId: string }) {
   if (tripQuery.isPending) return <main className="mx-auto w-full max-w-[960px] px-5 py-8"><LoadingState label={tCommon("loadingTrips")} /></main>;
   if (tripQuery.isError || !tripQuery.data) return <main className="mx-auto w-full max-w-[960px] px-5 py-8"><ErrorState error={tripQuery.error} title={t("unavailableTitle")} /></main>;
   const { trip, members, callerRole } = tripQuery.data;
-  async function createInvitation() { if (!email.trim() || create.isPending) return; try { const result = await create.mutateAsync({ recipientEmail: email.trim(), expiresAt: new Date(Date.now() + INVITATION_DURATION_MS).toISOString() }); setInviteLink(`${window.location.origin}/${locale}/trips/join/${result.inviteToken}`); } catch { /* safe mutation feedback below */ } }
+  async function createInvitation() {
+    if (!email.trim() || create.isPending) return;
+    try {
+      const recipientEmail = email.trim();
+      const result = await create.mutateAsync({ recipientEmail, expiresAt: new Date(Date.now() + INVITATION_DURATION_MS).toISOString() });
+      // trip-invitation-service.ts persists only an irreversible hash and a
+      // masked display value, never the plaintext email — so this is the only
+      // place the recipient's join page can ever learn it. Embedding it here
+      // lets that page pre-fill the register form instead of requiring the
+      // recipient to retype the exact address the invite was sent to.
+      setInviteLink(`${window.location.origin}/${locale}/trips/join/${result.inviteToken}?email=${encodeURIComponent(recipientEmail)}`);
+    } catch { /* safe mutation feedback below */ }
+  }
   async function copyLink() { if (inviteLink) { try { await navigator.clipboard.writeText(inviteLink); setCopied(true); } catch { setCopied(false); } } }
   if (callerRole !== "CREATOR") return <main className="mx-auto w-full max-w-[720px] px-5 py-8"><section role="alert" className="bg-card p-6 text-center wanderly-edge wanderly-r-lg wanderly-shadow"><h1 className="text-xl font-bold">{t("creatorOnlyTitle")}</h1><p className="mt-2 text-sm text-muted-foreground">{t("creatorOnlyBody")}</p><Link href={`/trips/${tripId}`} className="mt-5 inline-flex min-h-11 items-center gap-2 px-3 font-bold wanderly-underline"><ArrowLeft aria-hidden="true" className="size-4" />{t("back")}</Link></section></main>;
 
