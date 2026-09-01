@@ -1,6 +1,16 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import pino from "pino";
 import { afterEach, describe, expect, it } from "vitest";
-import { LOGGER_REDACTION, resolveLocalDebugLogPath } from "../src/observability/telemetry.js";
+import {
+  createDailyRotatingLogStream,
+  LOGGER_REDACTION,
+  localDebugLogDate,
+  pruneLocalDebugLogs,
+  resolveLocalDebugLogPath,
+  type LocalLogDescriptor,
+} from "../src/observability/telemetry.js";
 import { MetricLabelError, metrics } from "../src/observability/metrics.js";
 
 afterEach(() => {
@@ -48,14 +58,50 @@ describe("logger redaction", () => {
     }
   });
 
-  it("restricts the optional local diagnostic file to a Git-ignored runtime filename", () => {
-    expect(resolveLocalDebugLogPath("agent-runtime.ndjson")).toMatch(/[\\/]runtime[\\/]agent-runtime\.ndjson$/);
-    expect(resolveLocalDebugLogPath("auto")).toMatch(/[\\/]runtime[\\/]api-runtime\.ndjson$/);
+  it("rotates local diagnostic files by the configured calendar day", () => {
+    const august31 = new Date("2026-08-31T15:59:00.000Z");
+    const september1 = new Date("2026-08-31T16:01:00.000Z");
+    expect(localDebugLogDate(august31, "Asia/Singapore")).toBe("2026-08-31");
+    expect(localDebugLogDate(september1, "Asia/Singapore")).toBe("2026-09-01");
+    expect(resolveLocalDebugLogPath("agent-runtime.ndjson", august31)).toMatch(/[\\/]runtime[\\/]agent-2026-08-31\.ndjson$/);
+    expect(resolveLocalDebugLogPath("auto", august31)).toMatch(/[\\/]runtime[\\/]api-2026-08-31\.ndjson$/);
     expect(() => resolveLocalDebugLogPath("../secrets.ndjson")).toThrow('"auto" or a simple .ndjson filename');
     expect(() => resolveLocalDebugLogPath("C:\\temp\\events.ndjson")).toThrow('"auto" or a simple .ndjson filename');
     expect(() => resolveLocalDebugLogPath("events.log")).toThrow('"auto" or a simple .ndjson filename');
   });
+
+  it("switches files at midnight and retains only the most recent seven dated files on startup", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "ai-travel-agent-logs-"));
+    const descriptor: LocalLogDescriptor = { directory, prefix: "api", timeZone: "Asia/Singapore" };
+    try {
+      writeFileSync(join(directory, "api-2026-08-25.ndjson"), "expired\n");
+      writeFileSync(join(directory, "api-2026-08-26.ndjson"), "retained\n");
+      writeFileSync(join(directory, "worker-2026-08-01.ndjson"), "other-role\n");
+      pruneLocalDebugLogs(descriptor, new Date("2026-09-01T01:00:00.000+08:00"));
+      expect(() => readFileSync(join(directory, "api-2026-08-25.ndjson"))).toThrow();
+      expect(readFileSync(join(directory, "api-2026-08-26.ndjson"), "utf8")).toBe("retained\n");
+      expect(readFileSync(join(directory, "worker-2026-08-01.ndjson"), "utf8")).toBe("other-role\n");
+
+      let now = new Date("2026-08-31T15:59:00.000Z");
+      const stream = createDailyRotatingLogStream(descriptor, () => now);
+      await write(stream, "before-midnight\n");
+      now = new Date("2026-08-31T16:01:00.000Z");
+      await write(stream, "after-midnight\n");
+      stream.destroy();
+
+      expect(readFileSync(join(directory, "api-2026-08-31.ndjson"), "utf8")).toBe("before-midnight\n");
+      expect(readFileSync(join(directory, "api-2026-09-01.ndjson"), "utf8")).toBe("after-midnight\n");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });
+
+function write(stream: NodeJS.WritableStream, line: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.write(line, (error?: Error | null) => error ? reject(error) : resolve());
+  });
+}
 
 describe("bounded metrics", () => {
   it("emits only expected bounded callback and model-provider labels", () => {

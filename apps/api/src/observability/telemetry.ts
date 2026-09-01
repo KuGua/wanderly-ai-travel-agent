@@ -1,4 +1,6 @@
 import path from "node:path";
+import { appendFile, mkdirSync, readdirSync, unlinkSync } from "node:fs";
+import { Writable } from "node:stream";
 import pino from "pino";
 import type { Context, Span } from "@opentelemetry/api";
 import type { RequestContext } from "../utils/context.js";
@@ -60,21 +62,114 @@ export const LOGGER_REDACTION = {
  * same Pino-redacted records as stdout and is intentionally independent from
  * OpenTelemetry export availability.
  */
-export function resolveLocalDebugLogPath(value = process.env.LOCAL_DEBUG_LOG_FILE): string | null {
-  if (!value) return null;
+const LOCAL_DEBUG_LOG_RETENTION_DAYS = 7;
+const LOCAL_DEBUG_LOG_TIME_ZONE = process.env.LOCAL_LOG_TIMEZONE ?? "UTC";
+
+export type LocalLogDescriptor = {
+  directory: string;
+  prefix: string;
+  timeZone: string;
+};
+
+function localLogPrefix(value: string): string {
   if (value === "auto") {
     const entrypoint = process.argv.slice(1).join("/").toLowerCase();
-    const fileName = entrypoint.includes("worker-main")
-      ? "worker-runtime.ndjson"
+    return entrypoint.includes("worker-main")
+      ? "worker"
       : entrypoint.includes("sidecar-main")
-        ? "location-reference-runtime.ndjson"
-        : "api-runtime.ndjson";
-    return path.join(process.cwd(), "runtime", fileName);
+        ? "location-reference"
+        : "api";
   }
-  if (path.isAbsolute(value) || value.includes("..") || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.ndjson$/.test(value)) {
+  return path.basename(value, ".ndjson").replace(/-runtime$/u, "");
+}
+
+function localDateParts(date: Date, timeZone: string): Record<string, string> {
+  try {
+    return Object.fromEntries(
+      new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(date)
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, part.value]),
+    );
+  } catch {
+    throw new Error("LOCAL_LOG_TIMEZONE must be a valid IANA time zone");
+  }
+}
+
+/** Format the configured local calendar day as a stable file-name segment. */
+export function localDebugLogDate(date = new Date(), timeZone = LOCAL_DEBUG_LOG_TIME_ZONE): string {
+  const parts = localDateParts(date, timeZone);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function dateDaysBefore(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const value = new Date(Date.UTC(year, month - 1, day));
+  value.setUTCDate(value.getUTCDate() - days);
+  return value.toISOString().slice(0, 10);
+}
+
+function resolveLocalLogDescriptor(value = process.env.LOCAL_DEBUG_LOG_FILE): LocalLogDescriptor | null {
+  if (!value) return null;
+  if (value !== "auto" && (path.isAbsolute(value) || value.includes("..") || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.ndjson$/.test(value))) {
     throw new Error('LOCAL_DEBUG_LOG_FILE must be "auto" or a simple .ndjson filename');
   }
-  return path.join(process.cwd(), "runtime", value);
+  return {
+    directory: path.join(process.cwd(), "runtime"),
+    prefix: localLogPrefix(value),
+    timeZone: LOCAL_DEBUG_LOG_TIME_ZONE,
+  };
+}
+
+/** Resolve today's rotated NDJSON destination without creating a file. */
+export function resolveLocalDebugLogPath(value = process.env.LOCAL_DEBUG_LOG_FILE, date = new Date()): string | null {
+  const descriptor = resolveLocalLogDescriptor(value);
+  if (!descriptor) return null;
+  return path.join(descriptor.directory, `${descriptor.prefix}-${localDebugLogDate(date, descriptor.timeZone)}.ndjson`);
+}
+
+/** Remove only this process role's dated files that predate the 7-day window. */
+export function pruneLocalDebugLogs(descriptor: LocalLogDescriptor, date = new Date()): void {
+  mkdirSync(descriptor.directory, { recursive: true });
+  const cutoff = dateDaysBefore(localDebugLogDate(date, descriptor.timeZone), LOCAL_DEBUG_LOG_RETENTION_DAYS - 1);
+  const pattern = new RegExp(`^${descriptor.prefix.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}-(\\d{4}-\\d{2}-\\d{2})\\.ndjson$`, "u");
+  for (const name of readdirSync(descriptor.directory)) {
+    const match = pattern.exec(name);
+    if (match && match[1] < cutoff) unlinkSync(path.join(descriptor.directory, name));
+  }
+}
+
+class DailyRotatingLogStream extends Writable {
+  constructor(
+    private readonly descriptor: LocalLogDescriptor,
+    private readonly now: () => Date = () => new Date(),
+  ) {
+    super();
+    pruneLocalDebugLogs(descriptor, now());
+  }
+
+  override _write(chunk: Buffer | string, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+    try {
+      const target = path.join(
+        this.descriptor.directory,
+        `${this.descriptor.prefix}-${localDebugLogDate(this.now(), this.descriptor.timeZone)}.ndjson`,
+      );
+      appendFile(target, chunk, (error) => callback(error));
+    } catch (error) {
+      callback(error instanceof Error ? error : new Error("Unable to write local debug log"));
+    }
+  }
+}
+
+export function createDailyRotatingLogStream(
+  descriptor: LocalLogDescriptor,
+  now?: () => Date,
+): Writable {
+  return new DailyRotatingLogStream(descriptor, now);
 }
 
 function createLogStream(): pino.DestinationStream | NodeJS.WritableStream {
@@ -83,9 +178,9 @@ function createLogStream(): pino.DestinationStream | NodeJS.WritableStream {
       ? pino.destination(1)
       : pino.transport({ target: "pino-pretty", options: { colorize: true } }),
   }];
-  const localPath = resolveLocalDebugLogPath();
-  if (localPath) {
-    streams.push({ stream: pino.destination({ dest: localPath, mkdir: true, sync: false }) });
+  const localDescriptor = resolveLocalLogDescriptor();
+  if (localDescriptor) {
+    streams.push({ stream: createDailyRotatingLogStream(localDescriptor) });
   }
   return pino.multistream(streams);
 }

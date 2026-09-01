@@ -64,11 +64,14 @@ samples and is used by tests.
 
 ### Local file fallback
 
-When `LOCAL_DEBUG_LOG_FILE` is set to a simple `.ndjson` filename, Pino writes
-the normal redacted stdout stream and a second NDJSON stream under
-`apps/api/runtime/`. This sink is independent of OTel and contains only safe
-`runtime_event` lifecycle metadata (no prompt, completion, tool payload or
-private data). See [the deployment runbook](../../../../docs/observability-deployment.md#local-diagnostic-fallback).
+When `LOCAL_DEBUG_LOG_FILE` is set to `auto` or a simple `.ndjson` filename,
+Pino writes the normal redacted stdout stream and a second, daily NDJSON stream
+under `apps/api/runtime/` (for example `api-2026-09-01.ndjson`). The sink
+switches at midnight in `LOCAL_LOG_TIMEZONE` and removes this process role's
+dated files outside the newest seven calendar days at startup. It is
+independent of OTel and contains only safe `runtime_event` lifecycle metadata
+(no prompt, completion, tool payload or private data). See [the deployment
+runbook](../../../../docs/observability-deployment.md#local-diagnostic-fallback).
 
 `LOGGER_REDACT_PATHS` is a 39-entry string list array. Pino replaces every
 matched path with `"[REDACTED]"` at log time. Categories (verbatim):

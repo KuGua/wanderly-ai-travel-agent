@@ -33,15 +33,21 @@ Only the destination differs.
 
 ### Local diagnostic fallback
 
-Set `LOCAL_DEBUG_LOG_FILE=agent-runtime.ndjson` for a locally started process
-to keep a second, local NDJSON copy at `apps/api/runtime/agent-runtime.ndjson`.
-For Docker Compose, use distinct `API_LOCAL_DEBUG_LOG_FILE=api-runtime.ndjson`
-and `WORKER_LOCAL_DEBUG_LOG_FILE=worker-runtime.ndjson` values in
-`apps/api/.env`; the runtime directory is mounted into both containers. It is
-written by Pino and does not depend on Tempo or an OTLP endpoint, so it remains
-available while trace export is disabled or the collector is down. Do not point
-two processes at the same file. The directory is Git-ignored and must be
-treated as local diagnostic data; delete it after a debugging session.
+Set `LOCAL_DEBUG_LOG_FILE=auto` for a locally started process to write daily
+copies such as `apps/api/runtime/api-2026-09-01.ndjson` and
+`worker-2026-09-01.ndjson`. The process identifies its own role, rotates when
+the configured calendar day changes, and removes only its own dated files
+older than the most recent seven calendar days at startup. Set
+`LOCAL_LOG_TIMEZONE` to the same IANA zone for host-run and Docker processes
+(for example `Asia/Singapore`); `UTC` is the portable default.
+
+Docker Compose may continue to use `API_LOCAL_DEBUG_LOG_FILE=api-runtime.ndjson`
+and `WORKER_LOCAL_DEBUG_LOG_FILE=worker-runtime.ndjson`: the `-runtime` suffix
+is converted to the same `api-YYYY-MM-DD.ndjson` / `worker-YYYY-MM-DD.ndjson`
+series. The runtime directory is mounted into both containers. It is written by
+Pino and does not depend on Tempo or an OTLP endpoint, so it remains available
+while trace export is disabled or the collector is down. The directory is
+Git-ignored and must be treated as local diagnostic data.
 
 Each `runtime_event` is a deliberately content-free lifecycle record for LLM
 calls, tool dispatches, planner research and Worker tasks. It includes outcome,
@@ -53,7 +59,7 @@ private conversation text, profile fields, nationality or document data.
 To inspect it in PowerShell:
 
 ```powershell
-Get-Content .\runtime\agent-runtime.ndjson -Wait |
+Get-Content .\runtime\api-$(Get-Date -Format yyyy-MM-dd).ndjson -Wait |
   Select-String '"runtime_event"'
 ```
 

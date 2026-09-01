@@ -899,6 +899,23 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Raw chat text, form values, URLs, error messages/stacks, profile/passport data and credentials are absent from browser payloads, logs, traces and metrics. Unknown fields return 400 before a runtime event is emitted.
 - Diagnostics are authenticated, rate-limited and best-effort: an unavailable diagnostic endpoint never blocks the original action or retry. An unauthenticated sign-in failure is not sent to this endpoint.
 
+### TS-LOG-ROTATION-1 — Daily local diagnostics retention
+
+**Objective:** Verify local API and Worker diagnostics rotate by one configured calendar day without sharing files or retaining stale local data indefinitely.
+
+**Steps:**
+
+1. Set `LOCAL_DEBUG_LOG_FILE=auto` and `LOCAL_LOG_TIMEZONE=Asia/Singapore`; write one safe API event before and one after midnight in that zone.
+2. Place dated API files representing the current day, six prior calendar days and an eighth-old day in `apps/api/runtime/`; start the API process.
+3. Repeat with Worker files present in the same directory.
+
+**Expected outcomes:**
+
+- API writes `api-YYYY-MM-DD.ndjson`, Worker writes `worker-YYYY-MM-DD.ndjson`; the two processes never append to one file.
+- A write after midnight switches to a new dated file without restart.
+- Startup retains the newest seven calendar days for its own role and deletes only older files matching that role/date pattern. Legacy or another role's files are not deleted.
+- Rotation remains a local Pino behavior and never changes redaction, prompt/private-data exclusions, OTLP export or product state.
+
 - Profile memory is explicit, editable, deletable and private by default.
 - Shared workspace never shows unapproved Profile/private-chat fields.
 - Flight/Stay/Ground and Visa outputs use one consent snapshot and show source/time or demo label.
