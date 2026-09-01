@@ -1303,3 +1303,8 @@ that a grant/revoke invalidates dependent plans.
 1. The setup row never contains the original question text, free-text extraction, the Profile, snapshot values, or any PII (passport / ID / phone / address). The audit summary contains only `{ sessionVersion, fieldsFilled }` (field names) plus bounded counters.
 2. The followup generator's input is bounded to `missing[]`, `locale`, `filledFieldNames` (field labels only), and a server-known `missingCodeLabels` map; it never receives the original question.
 3. The SSE `research.setup.followup` payload contains only `questionCode + promptText + source`; no `runId` echo, no original question.
+
+### TS-CONVERSATIONAL-SETUP-11 — DRAFT and duplicate confirmation fail safely
+
+1. A DRAFT Trip with missing dates produces `TRIP_NOT_ACTIVE` before date or preference gaps. It does not create an OPEN setup session or emit an editable setup follow-up; the read-only activation hint is shown instead.
+2. Double-clicking 确认并搜索 while dates or stay preferences are being saved produces exactly one request per required slot and at most one confirm request. A failed request is rendered as a card error, never as an unhandled browser Promise rejection.

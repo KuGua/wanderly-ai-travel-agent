@@ -128,7 +128,16 @@ describe("POST /api/v1/trips/:tripId/research — Phase 2", () => {
     });
   }
 
-  it("§10.1 rejects a DRAFT trip with 409 and creates no run", async () => {
+  it("§10.1 accepts a DRAFT trip — research is no longer gated by status", async () => {
+    // Phase 2: DRAFT trips are research-eligible per the product intent in
+    // §5.2. The 409 TRIP_NOT_ACTIVE rejection was removed in favor of a
+    // soft `TRIP_NOT_ACTIVE` advisory in the readiness preflight — the
+    // launch route now passes DRAFT/STALE/CANCELED through.
+    //
+    // We use `["places"]` capabilities so we don't trip the
+    // `RESEARCH_CAPABILITY_GAP: trip has no confirmed flight search
+    // preferences` gate at line 137. The places capability runs against
+    // ORS (external) but does not require persisted preferences.
     const { tripId } = await makeTripAndAddMember({
       ownerExternalId: "alice",
       destinationCount: 2,
@@ -141,13 +150,12 @@ describe("POST /api/v1/trips/:tripId/research — Phase 2", () => {
       payload: {
         requestId: randomUUID(),
         outputMode: "RESEARCH_ONLY",
-        requestedCapabilities: ["activities", "places"],
+        requestedCapabilities: ["places"],
       },
     });
-    expect(res.statusCode).toBe(409);
-    expect(res.json()).toMatchObject({ message: expect.stringMatching(/TRIP_NOT_ACTIVE/) });
+    expect(res.statusCode).toBe(202);
     const runs = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.tripId, tripId));
-    expect(runs).toEqual([]);
+    expect(runs.length).toBeGreaterThan(0);
   });
 
   it("§10.3 rejects TEAM with 1 candidate (RESEARCH_BRIEF_INVALID)", async () => {

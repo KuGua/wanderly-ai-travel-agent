@@ -296,6 +296,8 @@ async function handleClassifiedResearchRequest(
     requestedCapabilities: params.classifiedIntent.requestedCapabilities,
     classifierVersion: RESEARCH_INTENT_CLASSIFIER_VERSION,
     readiness: readiness.readiness,
+    blockers: readiness.blockers,
+    warnings: readiness.warnings,
     missing: readiness.missing,
   };
 
@@ -355,6 +357,8 @@ async function handleClassifiedResearchRequest(
       requestedCapabilities: params.classifiedIntent.requestedCapabilities,
     },
     readiness: readiness.readiness,
+    blockers: readiness.blockers,
+    warnings: readiness.warnings,
     missing: readiness.missing,
     schemaVersion: 1,
     classifierVersion: RESEARCH_INTENT_CLASSIFIER_VERSION,
@@ -439,9 +443,9 @@ async function handleClassifiedResearchRequest(
  * real confirmation / setup / place-selection card.
  */
 function buildClassifiedResearchReply(
-  readiness: "READY" | "NEEDS_SETUP" | "NEEDS_PLACE_SELECTION",
+  readiness: "READY" | "READY_WITH_WARNINGS" | "NEEDS_SETUP" | "NEEDS_PLACE_SELECTION",
 ): string {
-  if (readiness === "READY") {
+  if (readiness === "READY" || readiness === "READY_WITH_WARNINGS") {
     return "我已准备好发起研究。请在下方确认卡中检查研究范围后点击「确认运行」开始。";
   }
   if (readiness === "NEEDS_PLACE_SELECTION") {

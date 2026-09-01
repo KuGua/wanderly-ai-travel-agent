@@ -27,7 +27,11 @@ export type ResearchIntentMissingCode =
   | "ROUTE_ENDPOINTS_UNCONFIRMED"
   | "MODE_NOT_CHOSEN";
 
-export type ResearchIntentReadiness = "READY" | "NEEDS_SETUP" | "NEEDS_PLACE_SELECTION";
+export type ResearchIntentReadiness =
+  | "READY"
+  | "READY_WITH_WARNINGS"
+  | "NEEDS_SETUP"
+  | "NEEDS_PLACE_SELECTION";
 
 export interface ResearchIntentDraftShape {
   schemaVersion: 1;
@@ -35,6 +39,14 @@ export interface ResearchIntentDraftShape {
   requestedCapabilities: ResearchIntentCapability[];
   classifierVersion: string;
   readiness: ResearchIntentReadiness;
+  /** Hard blockers — optional for backward compatibility with drafts
+   *  persisted before the Phase 2 two-tier split. Old rows are `null`. */
+  blockers: ResearchIntentMissingCode[] | null;
+  /** Soft warnings — optional for backward compatibility. Old rows are
+   *  `null`. */
+  warnings: ResearchIntentMissingCode[] | null;
+  /** Union of `blockers ∪ warnings`. Retained for backward compatibility
+   *  with older clients that still read `missing[]` directly. */
   missing: ResearchIntentMissingCode[];
 }
 

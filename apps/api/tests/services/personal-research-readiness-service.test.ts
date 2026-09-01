@@ -1,5 +1,5 @@
 /**
- * Personal Research Readiness Service — Phase 0/1.
+ * Personal Research Readiness Service — Phase 0/1/2.
  *
  * Verifies the read-only readiness gate against real DB fixtures. The
  * service is the single source of truth for "can the owner confirm this
@@ -7,8 +7,11 @@
  * observable state. Missing a gap here surfaces as a runtime provider
  * call that should never have fired.
  *
- * Source: docs/personal-research-intent-routing-implementation.md §5.2,
- * §7 Phase 1.
+ * Phase 2 — Two-tier model: `blockers[]` is the hard set the owner MUST
+ * resolve before research can start; `warnings[]` is advisory and the
+ * owner can proceed past it. `missing[]` is retained as the union of
+ * both for backward compatibility. See
+ * docs/personal-research-intent-routing-implementation.md §5.2.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
@@ -23,7 +26,11 @@ import {
   tripStaySearchPreferences,
   users,
 } from "../../src/db/schema.js";
-import { evaluateReadiness } from "../../src/services/personal-research-readiness-service.js";
+import {
+  categorize,
+  evaluateReadiness,
+  type ResearchMissingCode,
+} from "../../src/services/personal-research-readiness-service.js";
 
 describe("personal-research-readiness-service", () => {
   let ownerId: string;
@@ -70,6 +77,28 @@ describe("personal-research-readiness-service", () => {
     await db.delete(users).where(eq(users.id, ownerId));
   });
 
+  // ─── categorize() ──────────────────────────────────────────────────────────
+  describe("categorize()", () => {
+    it.each<ResearchMissingCode>([
+      "TRIP_NOT_ACTIVE",
+      "FLIGHT_PREFERENCES_MISSING",
+      "STAY_PREFERENCES_MISSING",
+    ])("classifies %s as a warning", (code) => {
+      expect(categorize(code)).toBe("warning");
+    });
+
+    it.each<ResearchMissingCode>([
+      "DESTINATION_NOT_CONFIGURED",
+      "DATES_MISSING",
+      "HOTEL_PROVIDER_NOT_APPROVED",
+      "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
+      "ROUTE_ENDPOINTS_UNCONFIRMED",
+      "MODE_NOT_CHOSEN",
+    ])("classifies %s as a blocker", (code) => {
+      expect(categorize(code)).toBe("blocker");
+    });
+  });
+
   // ─── Happy path ────────────────────────────────────────────────────────────
   it("returns READY for a fully-configured hotel-capability request", async () => {
     const original = process.env.PLAN_ENABLE_HOTEL;
@@ -88,7 +117,13 @@ describe("personal-research-readiness-service", () => {
         ownerUserId: ownerId,
         requestedCapabilities: ["hotel"],
       });
-      expect(result).toEqual({ readiness: "READY", missing: [] });
+      // PLANNING status — no advisory, no hard gaps.
+      expect(result).toEqual({
+        readiness: "READY",
+        blockers: [],
+        warnings: [],
+        missing: [],
+      });
     } finally {
       if (original === undefined) delete process.env.PLAN_ENABLE_HOTEL;
       else process.env.PLAN_ENABLE_HOTEL = original;
@@ -96,40 +131,118 @@ describe("personal-research-readiness-service", () => {
   });
 
   // ─── Trip-status gates ─────────────────────────────────────────────────────
-  it("returns TRIP_NOT_ACTIVE when trip does not exist", async () => {
+  it("returns TRIP_NOT_ACTIVE as a hard blocker when trip does not exist", async () => {
     const result = await evaluateReadiness({
       tripId: randomUUID(),
       ownerUserId: ownerId,
       requestedCapabilities: ["hotel"],
     });
+    // Trip missing entirely — `TRIP_NOT_ACTIVE` is repurposed as a hard
+    // blocker here because you cannot research what does not exist.
     expect(result).toEqual({
       readiness: "NEEDS_SETUP",
+      blockers: ["TRIP_NOT_ACTIVE"],
+      warnings: [],
       missing: ["TRIP_NOT_ACTIVE"],
     });
   });
 
-  it("returns TRIP_NOT_ACTIVE when trip is DRAFT", async () => {
+  it("returns READY_WITH_WARNINGS with TRIP_NOT_ACTIVE advisory for DRAFT trip", async () => {
+    // Phase 2: DRAFT trips are research-eligible. The advisory invites
+    // the owner to finalize the trip before running research, but the
+    // research command can still go through.
     await db.update(sharedTrips).set({ status: "DRAFT" }).where(eq(sharedTrips.id, tripId));
     const result = await evaluateReadiness({
       tripId,
       ownerUserId: ownerId,
       requestedCapabilities: ["hotel"],
     });
+    // PLANNING-style defaults plus the DRAFT status. Hotel capability
+    // requested with PLAN_ENABLE_HOTEL unset surfaces a hard blocker —
+    // but the TRIP_NOT_ACTIVE advisory is in `warnings`, not `blockers`.
     expect(result).toEqual({
       readiness: "NEEDS_SETUP",
-      missing: ["TRIP_NOT_ACTIVE"],
+      blockers: ["HOTEL_PROVIDER_NOT_APPROVED"],
+      warnings: ["TRIP_NOT_ACTIVE"],
+      missing: ["HOTEL_PROVIDER_NOT_APPROVED", "TRIP_NOT_ACTIVE"],
     });
   });
 
-  it("returns TRIP_NOT_ACTIVE when owner is no longer a required member", async () => {
+  it("returns READY_WITH_WARNINGS for DRAFT trip with hotel enabled and prefs set", async () => {
+    const original = process.env.PLAN_ENABLE_HOTEL;
+    process.env.PLAN_ENABLE_HOTEL = "true";
+    try {
+      await db.update(sharedTrips).set({ status: "DRAFT" }).where(eq(sharedTrips.id, tripId));
+      await db.insert(tripStaySearchPreferences).values({
+        tripId,
+        version: 1,
+        roomCount: 1,
+        adultsPerRoom: [2],
+        currency: "USD",
+        confirmedBy: ownerId,
+      });
+      const result = await evaluateReadiness({
+        tripId,
+        ownerUserId: ownerId,
+        requestedCapabilities: ["hotel"],
+      });
+      expect(result).toEqual({
+        readiness: "READY_WITH_WARNINGS",
+        blockers: [],
+        warnings: ["TRIP_NOT_ACTIVE"],
+        missing: ["TRIP_NOT_ACTIVE"],
+      });
+    } finally {
+      if (original === undefined) delete process.env.PLAN_ENABLE_HOTEL;
+      else process.env.PLAN_ENABLE_HOTEL = original;
+    }
+  });
+
+  it("returns READY_WITH_WARNINGS for CANCELED trip with everything else configured", async () => {
+    // Phase 2: CANCELED trips are also research-eligible (per product
+    // intent — user wants to be able to research even canceled trips).
+    const original = process.env.PLAN_ENABLE_HOTEL;
+    process.env.PLAN_ENABLE_HOTEL = "true";
+    try {
+      await db.update(sharedTrips).set({ status: "CANCELLED" }).where(eq(sharedTrips.id, tripId));
+      await db.insert(tripStaySearchPreferences).values({
+        tripId,
+        version: 1,
+        roomCount: 1,
+        adultsPerRoom: [2],
+        currency: "USD",
+        confirmedBy: ownerId,
+      });
+      const result = await evaluateReadiness({
+        tripId,
+        ownerUserId: ownerId,
+        requestedCapabilities: ["hotel"],
+      });
+      expect(result).toEqual({
+        readiness: "READY_WITH_WARNINGS",
+        blockers: [],
+        warnings: ["TRIP_NOT_ACTIVE"],
+        missing: ["TRIP_NOT_ACTIVE"],
+      });
+    } finally {
+      if (original === undefined) delete process.env.PLAN_ENABLE_HOTEL;
+      else process.env.PLAN_ENABLE_HOTEL = original;
+    }
+  });
+
+  it("returns TRIP_NOT_ACTIVE as a hard blocker when owner is no longer a required member", async () => {
     await db.delete(tripMembers).where(eq(tripMembers.tripId, tripId));
     const result = await evaluateReadiness({
       tripId,
       ownerUserId: ownerId,
       requestedCapabilities: ["hotel"],
     });
+    // Membership failure masked as TRIP_NOT_ACTIVE for wire stability —
+    // the underlying 403 still propagates to non-readiness callers.
     expect(result).toEqual({
       readiness: "NEEDS_SETUP",
+      blockers: ["TRIP_NOT_ACTIVE"],
+      warnings: [],
       missing: ["TRIP_NOT_ACTIVE"],
     });
   });
@@ -140,10 +253,14 @@ describe("personal-research-readiness-service", () => {
     const result = await evaluateReadiness({
       tripId,
       ownerUserId: ownerId,
-      requestedCapabilities: ["hotel"],
+      requestedCapabilities: ["flight"],
     });
+    // Use ["flight"] capabilities to isolate the destination check from
+    // the hotel-provider gate (PLAN_ENABLE_HOTEL is unset by default).
     expect(result).toEqual({
       readiness: "NEEDS_SETUP",
+      blockers: ["DESTINATION_NOT_CONFIGURED"],
+      warnings: [],
       missing: ["DESTINATION_NOT_CONFIGURED"],
     });
   });
@@ -156,23 +273,28 @@ describe("personal-research-readiness-service", () => {
     const result = await evaluateReadiness({
       tripId,
       ownerUserId: ownerId,
-      requestedCapabilities: ["hotel"],
+      requestedCapabilities: ["flight"],
     });
     expect(result).toEqual({
       readiness: "NEEDS_SETUP",
+      blockers: ["DATES_MISSING"],
+      warnings: [],
       missing: ["DATES_MISSING"],
     });
   });
 
   // ─── Capability-specific gates ─────────────────────────────────────────────
-  it("returns FLIGHT_PREFERENCES_MISSING for flight capability without preferences", async () => {
+  it("returns FLIGHT_PREFERENCES_MISSING as a soft warning for flight without preferences", async () => {
+    // Phase 2: flight preferences missing is a warning, not a blocker.
     const result = await evaluateReadiness({
       tripId,
       ownerUserId: ownerId,
       requestedCapabilities: ["flight"],
     });
     expect(result).toEqual({
-      readiness: "NEEDS_SETUP",
+      readiness: "READY_WITH_WARNINGS",
+      blockers: [],
+      warnings: ["FLIGHT_PREFERENCES_MISSING"],
       missing: ["FLIGHT_PREFERENCES_MISSING"],
     });
   });
@@ -193,10 +315,15 @@ describe("personal-research-readiness-service", () => {
       ownerUserId: ownerId,
       requestedCapabilities: ["flight"],
     });
-    expect(result).toEqual({ readiness: "READY", missing: [] });
+    expect(result).toEqual({
+      readiness: "READY",
+      blockers: [],
+      warnings: [],
+      missing: [],
+    });
   });
 
-  it("returns STAY_PREFERENCES_MISSING for hotel without stay preferences", async () => {
+  it("returns STAY_PREFERENCES_MISSING as a soft warning for hotel without stay prefs", async () => {
     // Force hotel feature flag on for this assertion; otherwise the result
     // would surface HOTEL_PROVIDER_NOT_APPROVED first.
     const original = process.env.PLAN_ENABLE_HOTEL;
@@ -208,7 +335,9 @@ describe("personal-research-readiness-service", () => {
         requestedCapabilities: ["hotel"],
       });
       expect(result).toEqual({
-        readiness: "NEEDS_SETUP",
+        readiness: "READY_WITH_WARNINGS",
+        blockers: [],
+        warnings: ["STAY_PREFERENCES_MISSING"],
         missing: ["STAY_PREFERENCES_MISSING"],
       });
     } finally {
@@ -228,6 +357,8 @@ describe("personal-research-readiness-service", () => {
       });
       expect(result).toEqual({
         readiness: "NEEDS_SETUP",
+        blockers: ["HOTEL_PROVIDER_NOT_APPROVED"],
+        warnings: [],
         missing: ["HOTEL_PROVIDER_NOT_APPROVED"],
       });
     } finally {
@@ -245,6 +376,8 @@ describe("personal-research-readiness-service", () => {
     });
     expect(result).toEqual({
       readiness: "NEEDS_PLACE_SELECTION",
+      blockers: ["ROUTE_ENDPOINTS_UNCONFIRMED"],
+      warnings: [],
       missing: ["ROUTE_ENDPOINTS_UNCONFIRMED"],
     });
   });
@@ -267,6 +400,8 @@ describe("personal-research-readiness-service", () => {
     });
     expect(result).toEqual({
       readiness: "NEEDS_PLACE_SELECTION",
+      blockers: ["ROUTE_ENDPOINTS_UNCONFIRMED"],
+      warnings: [],
       missing: ["ROUTE_ENDPOINTS_UNCONFIRMED"],
     });
   });
@@ -300,6 +435,8 @@ describe("personal-research-readiness-service", () => {
     });
     expect(result).toEqual({
       readiness: "NEEDS_PLACE_SELECTION",
+      blockers: ["ROUTE_ENDPOINTS_UNCONFIRMED"],
+      warnings: [],
       missing: ["ROUTE_ENDPOINTS_UNCONFIRMED"],
     });
   });
@@ -329,7 +466,12 @@ describe("personal-research-readiness-service", () => {
       ownerUserId: ownerId,
       requestedCapabilities: ["navigation"],
     });
-    expect(result).toEqual({ readiness: "READY", missing: [] });
+    expect(result).toEqual({
+      readiness: "READY",
+      blockers: [],
+      warnings: [],
+      missing: [],
+    });
   });
 
   // ─── Invariants ────────────────────────────────────────────────────────────
@@ -340,13 +482,14 @@ describe("personal-research-readiness-service", () => {
       requestedCapabilities: ["navigation"],
     });
     if (result.readiness === "NEEDS_PLACE_SELECTION") {
+      expect(result.blockers).toEqual(["ROUTE_ENDPOINTS_UNCONFIRMED"]);
       expect(result.missing).toEqual(["ROUTE_ENDPOINTS_UNCONFIRMED"]);
     } else {
       throw new Error("expected NEEDS_PLACE_SELECTION, got " + result.readiness);
     }
   });
 
-  it("READY never carries any missing code", async () => {
+  it("READY and READY_WITH_WARNINGS both carry an empty blockers array", async () => {
     const original = process.env.PLAN_ENABLE_HOTEL;
     process.env.PLAN_ENABLE_HOTEL = "true";
     try {
@@ -363,8 +506,8 @@ describe("personal-research-readiness-service", () => {
         ownerUserId: ownerId,
         requestedCapabilities: ["hotel"],
       });
-      expect(result.readiness).toBe("READY");
-      expect(result.missing).toEqual([]);
+      expect(["READY", "READY_WITH_WARNINGS"]).toContain(result.readiness);
+      expect(result.blockers).toEqual([]);
     } finally {
       if (original === undefined) delete process.env.PLAN_ENABLE_HOTEL;
       else process.env.PLAN_ENABLE_HOTEL = original;
@@ -373,7 +516,9 @@ describe("personal-research-readiness-service", () => {
 
   it("handles PROPOSE_PLAN with the full capability surface — one missing collapses to NEEDS_SETUP", async () => {
     // PROPOSE_PLAN requests all capabilities. With flight pref missing
-    // and hotel feature on but stay pref missing, both must surface.
+    // and hotel feature on but stay pref missing, both must surface as
+    // warnings. Navigation/mobility would also surface, but the place
+    // check fires first (no ACTIVE places) and returns NEEDS_PLACE_SELECTION.
     const original = process.env.PLAN_ENABLE_HOTEL;
     process.env.PLAN_ENABLE_HOTEL = "true";
     try {
@@ -385,9 +530,6 @@ describe("personal-research-readiness-service", () => {
           "places", "navigation", "mobility", "readiness",
         ],
       });
-      // We expect at least FLIGHT_PREFERENCES_MISSING and STAY_PREFERENCES_MISSING.
-      // Navigation/mobility would also surface, but the place check fires
-      // first (no ACTIVE places) and returns NEEDS_PLACE_SELECTION.
       expect(result.readiness).toBe("NEEDS_PLACE_SELECTION");
       expect(result.missing).toContain("ROUTE_ENDPOINTS_UNCONFIRMED");
     } finally {

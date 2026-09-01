@@ -157,17 +157,66 @@ Classifier 输入是当前 `question` 的 NFKC 规范化文本和受信任的 `t
 
 规则只能在命中明确动作时提案；否定表达、假设讨论、没有旅行对象、多个相互冲突 capability 或低置信度文本均返回 `CONVERSATION`。分类输出不得推导目的地、日期、人数或身份。
 
-### 5.2 Readiness 判定
+### 5.2 Readiness 判定（两层模型 — Phase 2）
 
 `personal-research-readiness-service` 在草案落库前执行：
 
-1. Trip 必须存在，当前 owner 必须是 active required member，且 Trip 为 `PLANNING` 或允许 research 的 `STALE` 状态；`DRAFT` 返回 `TRIP_NOT_ACTIVE`。
-2. Hotel 必须有 destination、日期、已确认 stay preferences，且 `PLAN_ENABLE_HOTEL=true`；若任务绑定 Nuitee，还必须有当前有效的 quote-nationality authorization。
-3. Flight、activities、mobility 按现有 `/research` route 的 confirmed flight preferences 门禁处理。
-4. Navigation 或 mobility 必须存在两个 owner 已确认、非私有、`ACTIVE` 的 `trip_place`。否则只产生 `NEEDS_PLACE_SELECTION`，绝不以任意两个旧地点替代。
-5. 任意缺口都返回稳定 code 和 UI 可显示的下一步，且不创建 snapshot、RESEARCH task 或 provider request。
+**Hard blockers（必须解决才能发起研究）**——research plan 不能在缺失这些项时构建，调用方拿到 `NEEDS_SETUP`：
 
-### 5.3 Conversation Worker 流程
+| Code | 触发条件 |
+|---|---|
+| `DESTINATION_NOT_CONFIGURED` | `trip.destinationCandidates` 为空 |
+| `DATES_MISSING` | `travelDateStart` 或 `travelDateEnd` 为空 |
+| `HOTEL_PROVIDER_NOT_APPROVED` | `hotel` capability + `PLAN_ENABLE_HOTEL !== "true"` |
+| `QUOTE_NATIONALITY_AUTHORIZATION_MISSING` | 酒店供应商绑定 Nuitee 且当前 owner 没有 active quote-nationality authorization |
+| `ROUTE_ENDPOINTS_UNCONFIRMED` / `MODE_NOT_CHOSEN` | navigation/mobility 需要且 endpoint 选择未就绪 |
+
+**Soft warnings（可降级，研究可启动）**——call 站点拿到 `READY_WITH_WARNINGS`，按钮可点：
+
+| Code | 触发条件 |
+|---|---|
+| `TRIP_NOT_ACTIVE` | Trip 状态非 `PLANNING / CONFIRMED / BOOKED`（即 `DRAFT / STALE / CANCELLED`）——所有状态都研究可选 |
+| `FLIGHT_PREFERENCES_MISSING` | flight / activities / mobility capability + 无最新 `tripSearchPreferences` 行——使用默认值 |
+| `STAY_PREFERENCES_MISSING` | hotel capability + `PLAN_ENABLE_HOTEL=true` + 无最新 `tripStaySearchPreferences` 行——使用默认值 |
+
+**Readiness 状态扩展**——原 `READY | NEEDS_SETUP | NEEDS_PLACE_SELECTION` 增加 `"READY_WITH_WARNINGS"`，表示无 blocker 但有 warning；`READY` 与 `READY_WITH_WARNINGS` 都能触发 `POST /trips/:tripId/research`。
+
+**Trip 生命周期闸门移除**——`requireResearchEligible` 不再因 `DRAFT / STALE / CANCELLED` 拒绝 research；只有 membership 与 brief-mode 校验仍 409/422。`requireActiveTrip`（用于 planning / consent / booking 等非 research 操作）继续对 `DRAFT` 严格拒绝。详见 §5.3 的两闸门对比。
+
+**Wire 形态**——服务响应：
+
+```ts
+{
+  readiness: "READY" | "READY_WITH_WARNINGS" | "NEEDS_SETUP" | "NEEDS_PLACE_SELECTION",
+  blockers: ResearchMissingCode[],   // hard
+  warnings: ResearchMissingCode[],    // soft
+  missing: ResearchMissingCode[],    // 保留：= blockers ∪ warnings，向后兼容
+}
+```
+
+`missing[]` 是 `blockers ∪ warnings` 的稳定联合，确保旧客户端按原契约读取即可。`categorize()` 是分类的 single source of truth。
+
+### 5.3 Capability 二次确认弹窗（Phase 2）
+
+真实供应商调用的客户端二次确认。所有 6 个外部 capability 命中时弹窗：
+
+- `flight` —— Amadeus / FlightAPI / SerpApi（付费/限速）
+- `hotel` —— Nuitee LiteAPI / SerpApi（付费/限速）
+- `accommodation` —— OpenTripMap（外部 HTTP）
+- `places` —— ORS（外部 HTTP）
+- `mobility` —— Amadeus Transfer（外部 HTTP）
+- `navigation` —— ORS Directions（外部 HTTP）
+
+行为契约：
+
+- `ResearchConfirmationCard`（Path A：直接 `POST /trips/:tripId/research`）与 `ConversationalSetupCard`（Path B：`POST /agent-runs/:runId/research-setup/confirm-and-search`）的确认按钮都套这道闸。
+- 弹窗为 `apps/web/src/components/ui/confirm-dialog.tsx`——固定位置遮罩、`role="dialog"`、amber 警告文案、必勾选 acknowledgement 复选框（未勾选时确认按钮 disabled）。
+- 用户确认后写入 `sessionStorage` 的 `research.realProviderAcked.<capabilities-hash>`，key 是按 capability 排序后拼接的稳定字符串。换 session / 清浏览器存储会重新弹。
+- 取消发射 `recordUiDiagnostic("research.real_provider_declined", { capabilities })`，确认发射 `recordUiDiagnostic("research.real_provider_acknowledged", { capabilities })`——可观测拒绝率/确认率。
+
+服务端不做这道闸——服务端的 `requireResearchEligible` 已不再因 DRAFT 拒绝；服务端再叠闸门会让服务端成为策略与客户端 UX 双源真理，违反 §4.1 的「draft is non-executable JSON envelope」原则。
+
+### 5.4 Conversation Worker 流程
 
 ```text
 acceptConversationTask
@@ -340,7 +389,7 @@ CHECK 仅覆盖 date pair；OPEN 会话必须允许从空 slot 开始，完整�
 
 ### 10.3 服务层（`personal-research-setup-service.ts`）
 
-- `getOrOpenSession({ runId, ownerUserId, tripId, requestedCapabilities })`：upsert 一行 OPEN 会话，`expires_at = now + 15min`；用 `partial unique index` 处理同一 `(trip, owner)` 多会话场景。`missing[]` 由 `computeMissingForSetup(trip, slots, capabilities)` 服务端重算。
+- `getOrOpenSession({ runId, ownerUserId, tripId, requestedCapabilities })`：先通过 `requireResearchEligible`，只有 `PLANNING` / `STALE` 的 required member 才能 upsert 一行 OPEN 会话，`expires_at = now + 15min`；用 `partial unique index` 处理同一 `(trip, owner)` 多会话场景。`missing[]` 由 `computeMissingForSetup(trip, slots, capabilities)` 服务端重算。DRAFT 仅显示 `TRIP_NOT_ACTIVE`，不创建可编辑会话。
 - `applyAnswer({ runId, ownerUserId, expectedVersion, patch })`：`SELECT FOR UPDATE`，Zod 解析 `patch`（discriminated union over `field ∈ {departureCity | travelDates | stayPreferences | flightPreferences}`）；`travelDates` 在一个版本更新中提交 `{ start, end }`，校验 `end > start`，按该 intent 的真实 capabilities 重算 `missing[]`，`version+1`；opportunistic `OPEN → EXPIRED` 在 `expiresAt < now` 时触发。`422 / 409 / 410` 各自明确。
 - `cancelSession({ runId, ownerUserId })`：`status = CANCELLED`，幂等。
 - `confirmAndSearch({ runId, ownerUserId, tripId, requestId })`：单事务按以下顺序（顺序固定以满足 `agent_task_runs_one_active_planning` 部分唯一索引）：
@@ -384,7 +433,7 @@ CHECK 仅覆盖 date pair；OPEN 会话必须允许从空 slot 开始，完整�
 
 - `agentRunResponseSchema.researchSetupSession`：仅当 `OPEN + 未过期` 时投影；前端 refresh 时直接 hydrate，无需再次调 `GET`。
 - `agentStreamEventSchema` 新增 `research.setup.followup` 变体；`travel-agent-chat.tsx` 内置 `setupFollowup` 状态，渲染为 inline 气泡（`data-testid="setup-followup-bubble"`）。
-- `ResearchSetupCard` 改为两段：`setupSession` 缺失或 missing code 越界 → 既有只读 fallback；否则挂载 `ConversationalSetupCard` 渲染日期 / 房间数 / 成人 / 币种 widget。`disabled` 状态由 `useMemo` 本地校验，日期以单个 `travelDates` patch 保存；一次确认尝试复用同一个 `requestId`，因此网络重试会命中服务端幂等记录。
+- `ResearchSetupCard` 改为两段：`setupSession` 缺失或 missing code 越界 → 既有只读 fallback；否则挂载 `ConversationalSetupCard` 渲染日期 / 房间数 / 成人 / 币种 widget。`disabled` 状态由 `useMemo` 本地校验，日期以单个 `travelDates` patch 保存；一次确认尝试复用同一个 `requestId`，并以同步 ref 锁住完整的“保存 slot → 确认”生命周期，避免重复点击产生版本冲突。失败在卡片内显示并刷新 run session，绝不留下未处理 Promise rejection。
 - Hooks：`useOpenResearchSetup`、`useSaveResearchSetupAnswer`、`useCancelResearchSetup`、`useConfirmResearchSetup`；mutation 成功后 `setQueryData` 写回 `["agent-runs", runId]` 缓存，避免再次 `refetch` 闪烁。可选 transport 方法必须经由 `api.method(...)` 调用，不能先解构再调用，否则 `HttpTravelApi` 会失去 `this.client` 绑定。
 - UI diagnostics：`setup.session_open` / `setup.field_update` / `setup.confirm` / `setup.cancel` / `setup.followup_received`。
 

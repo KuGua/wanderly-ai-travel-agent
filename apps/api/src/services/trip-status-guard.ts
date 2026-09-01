@@ -56,12 +56,19 @@ export async function requireActiveTrip(
 /**
  * Phase 1 — Personal Trip Orchestrator research-command guard.
  *
- * Rejects with the same `TRIP_NOT_ACTIVE` semantics as `requireActiveTrip`
- * for DRAFT trips, then verifies the caller is a required member of the
- * trip and that the supplied candidate list matches the derived trip mode
- * (SOLO 1..5 / TEAM 2..3). Capability-dependency checks (e.g. confirmed
- * search preferences) live in the Phase 2 research command route, where the
- * requested capability list is known.
+ * Verifies the caller is a required member of the trip and that the supplied
+ * candidate list matches the derived trip mode (SOLO 1..5 / TEAM 2..3).
+ * Capability-dependency checks (e.g. confirmed search preferences) live in
+ * the Phase 2 research command route, where the requested capability list
+ * is known.
+ *
+ * **Phase 2 — All Trip statuses are research-eligible.** This guard no
+ * longer rejects DRAFT/STALE/CANCELED trips. Trip lifecycle gates
+ * (`requireActiveTrip`) remain authoritative for planning, consent,
+ * booking, change-events, confirmations, and other collaboration commands —
+ * research is the only command surface that accepts pre-activation states
+ * per the product intent documented in
+ * docs/personal-research-intent-routing-implementation.md §5.2.
  *
  * Returns the derived mode so the route can branch on it without a second
  * trip_members query.
@@ -80,14 +87,10 @@ export async function requireResearchEligible(
   if (!trip) {
     throw new ApiError(404, "Not Found", "Trip not found");
   }
-  if (trip.status === "DRAFT") {
-    metrics.inc("draft_command_rejected_total", { operation: "research" });
-    throw new ApiError(
-      409,
-      "Conflict",
-      "TRIP_NOT_ACTIVE: activate the trip before running research commands",
-    );
-  }
+
+  // Status filter intentionally omitted (see JSDoc above). DRAFT/STALE/
+  // CANCELED are all research-eligible. The `requireActiveTrip` guard still
+  // rejects DRAFT for non-research operations.
 
   const [membership] = await handle.select({ isRequired: tripMembers.isRequired })
     .from(tripMembers)

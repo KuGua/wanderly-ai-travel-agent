@@ -633,6 +633,9 @@ export function useSaveResearchSetupAnswer(runId: string | null) {
       }
       recordUiDiagnostic("setup.field_update");
     },
+    onError: () => {
+      if (runId) qc.invalidateQueries({ queryKey: ["agent-runs", runId] });
+    },
   });
 }
 
@@ -671,6 +674,9 @@ export function useConfirmResearchSetup(runId: string | null, tripId: string) {
       qc.invalidateQueries({ queryKey: personalOrchestrationKeys.researchLatest(tripId) });
       qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
       recordUiDiagnostic("setup.confirm");
+    },
+    onError: () => {
+      qc.invalidateQueries({ queryKey: ["agent-runs", runId].filter(Boolean) as string[] });
     },
   });
 }

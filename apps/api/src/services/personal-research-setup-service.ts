@@ -209,6 +209,7 @@ export async function getOrOpenSession(params: OpenSessionInput & {
 }): Promise<PersonalResearchSetupSessionResponse> {
   const [trip] = await db.select().from(sharedTrips).where(eq(sharedTrips.id, params.tripId)).limit(1);
   if (!trip) throw new ApiError(404, "Not Found", "Trip not found while opening setup session");
+  await requireResearchEligible(params.tripId, params.ownerUserId, trip.destinationCandidates);
 
   return db.transaction(async (tx) => {
     const [existing] = await tx.select().from(personalResearchSetupSessions)

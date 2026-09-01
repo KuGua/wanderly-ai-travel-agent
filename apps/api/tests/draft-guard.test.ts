@@ -1,4 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+/**
+ * DRAFT-trip rejection tests for collaboration commands (planning, consent,
+ * confirmation, booking, change-events, etc.). All of these go through
+ * `requireActiveTrip` which still rejects DRAFT — research is the only
+ * command surface that accepts pre-activation states.
+ *
+ * NOTE: This file exercises the trip-lifecycle guard. For research
+ * commands, see `trip-status-guard.test.ts` and `routes/research-command.test.ts`
+ * — those are the Phase 2-relaxed equivalents.
+ */
 import type { FastifyInstance } from "fastify";
 import { randomUUID } from "node:crypto";
 import { buildApp } from "../src/app.js";

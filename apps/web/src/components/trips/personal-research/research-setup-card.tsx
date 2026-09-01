@@ -3,7 +3,9 @@ import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   type PersonalResearchMissingCode,
   type PersonalResearchReadiness,
+  type ResearchCapability,
   MISSING_COPY,
+  realProviderCapabilities,
   renderReadinessHeadline,
 } from "@/lib/trips/personal-research-readiness-copy";
 import {
@@ -15,6 +17,8 @@ import {
   useCancelResearchSetup,
   useConfirmResearchSetup,
 } from "@/lib/query/hooks";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 
 /**
  * Personal Research Setup — conversational completion card (Phase §9).
@@ -44,7 +48,8 @@ export function ResearchSetupCard({
   tripId,
   runId,
   readiness,
-  missing,
+  blockers,
+  warnings,
   intent,
   setupSession,
   onDismiss,
@@ -52,37 +57,49 @@ export function ResearchSetupCard({
   tripId: string;
   runId: string;
   readiness: PersonalResearchReadiness;
-  missing: PersonalResearchMissingCode[];
+  /** Hard gaps — research cannot start until these are resolved. */
+  blockers: PersonalResearchMissingCode[];
+  /** Soft advisories — research can start, but quality may degrade. */
+  warnings: PersonalResearchMissingCode[];
   intent: { kind: "RESEARCH_ONLY" | "PROPOSE_PLAN"; requestedCapabilities: string[] };
   setupSession?: ResearchSetupSessionResponse | null;
   onDismiss: () => void;
 }): ReactNode {
-  if (!setupSession || !isInScope(missing)) {
-    return <ReadOnlySetupCard readiness={readiness} missing={missing} intent={intent} onDismiss={onDismiss} />;
+  if (!setupSession || !isInScope(blockers)) {
+    return <ReadOnlySetupCard
+      readiness={readiness}
+      blockers={blockers}
+      warnings={warnings}
+      intent={intent}
+      onDismiss={onDismiss}
+    />;
   }
   return <ConversationalSetupCard
     tripId={tripId}
     runId={runId}
     session={setupSession}
-    missing={missing}
+    blockers={blockers}
+    intent={intent}
     onDismiss={onDismiss}
   />;
 }
 
-function isInScope(missing: PersonalResearchMissingCode[]): boolean {
-  if (missing.length === 0) return false;
-  return missing.every((code) => IN_SCOPE_MISSING.includes(code));
+function isInScope(blockers: PersonalResearchMissingCode[]): boolean {
+  if (blockers.length === 0) return false;
+  return blockers.every((code) => IN_SCOPE_MISSING.includes(code));
 }
 // ─── Read-only fallback (unchanged behavior) ──────────────────────────────
 
 function ReadOnlySetupCard({
   readiness,
-  missing,
+  blockers,
+  warnings,
   intent,
   onDismiss,
 }: {
   readiness: PersonalResearchReadiness;
-  missing: PersonalResearchMissingCode[];
+  blockers: PersonalResearchMissingCode[];
+  warnings: PersonalResearchMissingCode[];
   intent: { kind: "RESEARCH_ONLY" | "PROPOSE_PLAN"; requestedCapabilities: string[] };
   onDismiss: () => void;
 }): ReactNode {
@@ -98,18 +115,36 @@ function ReadOnlySetupCard({
       <p className="mb-2 text-xs text-muted-foreground">
         模式：{intent.kind === "PROPOSE_PLAN" ? "研究 + 自动生成方案" : "仅研究"}
       </p>
-      <ul className="mb-3 space-y-2">
-        {missing.map((code) => {
-          const copy = MISSING_COPY[code];
-          return (
-            <li key={code} className="rounded-md border border-amber-200 bg-white p-2">
-              <p className="text-xs font-medium">{copy.title}</p>
-              <p className="text-xs text-muted-foreground">{copy.detail}</p>
-              <p className="mt-1 text-xs italic text-muted-foreground">{copy.ctaHint}</p>
-            </li>
-          );
-        })}
-      </ul>
+      {blockers.length > 0 ? (
+        <ul className="mb-3 space-y-2" data-testid="setup-card-blockers">
+          {blockers.map((code) => {
+            const copy = MISSING_COPY[code];
+            return (
+              <li key={code} className="rounded-md border border-amber-200 bg-white p-2">
+                <p className="text-xs font-medium">{copy.title}</p>
+                <p className="text-xs text-muted-foreground">{copy.detail}</p>
+                <p className="mt-1 text-xs italic text-muted-foreground">{copy.ctaHint}</p>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
+      {warnings.length > 0 ? (
+        <div className="mb-3 rounded-md border border-border bg-muted/40 p-2" data-testid="setup-card-warnings">
+          <p className="mb-1 text-xs font-medium text-muted-foreground">提示（可继续）：</p>
+          <ul className="list-disc pl-4 text-xs text-muted-foreground">
+            {warnings.map((code) => {
+              const copy = MISSING_COPY[code];
+              return (
+                <li key={code}>
+                  <span>{copy.title}</span>
+                  <span className="ml-1 text-muted-foreground/80">— {copy.detail}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
       <div className="flex gap-2">
         <button
           type="button"
@@ -129,13 +164,15 @@ function ConversationalSetupCard({
   tripId,
   runId,
   session,
-  missing,
+  blockers,
+  intent,
   onDismiss,
 }: {
   tripId: string;
   runId: string;
   session: ResearchSetupSessionResponse;
-  missing: PersonalResearchMissingCode[];
+  blockers: PersonalResearchMissingCode[];
+  intent: { kind: "RESEARCH_ONLY" | "PROPOSE_PLAN"; requestedCapabilities: string[] };
   onDismiss: () => void;
 }): ReactNode {
   const saveAnswer = useSaveResearchSetupAnswer(runId);
@@ -161,6 +198,21 @@ function ConversationalSetupCard({
     session.stayPreferences?.currency ?? "USD",
   );
   const confirmRequestId = useRef<string | null>(null);
+  const submissionInFlight = useRef(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<Error | null>(null);
+
+  // Real-provider acknowledgement gate (Phase 2). When the requested
+  // capabilities hit any paid/limited provider (flight / hotel / etc.),
+  // the confirm path opens a `ConfirmDialog` first.
+  const realProviders = realProviderCapabilities(
+    intent.requestedCapabilities as ResearchCapability[],
+  );
+  const needsRealProviderAck = realProviders.length > 0;
+  const realProviderKey = needsRealProviderAck
+    ? `research.realProviderAcked.${[...realProviders].sort().join("|")}`
+    : "";
+  const [realProviderModalOpen, setRealProviderModalOpen] = useState(false);
 
   const datesValid = useMemo(() => {
     if (!checkIn || !checkOut) return false;
@@ -174,30 +226,51 @@ function ConversationalSetupCard({
     return /^[A-Z]{3}$/.test(currency);
   }, [roomCount, adultsPerRoom, currency]);
 
-  // Only the in-scope missing codes drive the confirm enable check.
-  const requiredCodes = missing.filter((code) => IN_SCOPE_MISSING.includes(code));
-  const confirmEnabled = requiredCodes.every((code) => {
+  // Only the in-scope blocker codes drive the confirm enable check. Soft
+  // warnings (FLIGHT_PREFERENCES_MISSING, STAY_PREFERENCES_MISSING once
+  // demoted, etc.) never block the confirm flow — the owner can proceed
+  // past them via the real-provider acknowledgement dialog.
+  const requiredCodes = blockers.filter((code) => IN_SCOPE_MISSING.includes(code));
+  const hasBlockers = requiredCodes.length > 0;
+  const confirmEnabled = !hasBlockers && requiredCodes.every((code) => {
     if (code === "DATES_MISSING") return datesValid;
     if (code === "STAY_PREFERENCES_MISSING") return stayValid;
     return false;
   });
+
+  function isRealProviderAcked(): boolean {
+    if (!needsRealProviderAck) return true;
+    try {
+      return sessionStorage.getItem(realProviderKey) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function markRealProviderAcked(): void {
+    if (!needsRealProviderAck) return;
+    try {
+      sessionStorage.setItem(realProviderKey, "1");
+    } catch {
+      /* sessionStorage unavailable — fall through and re-prompt next time. */
+    }
+  }
 
   const submitAnswer = async (expectedVersion: number, patch: ResearchSetupAnswer) => {
     const result = await saveAnswer.mutateAsync({ expectedVersion, patch });
     return result.session;
   };
 
-  const onConfirm = async () => {
-    let currentSession = session;
-    // Persist any field that's still missing in the session.
+  async function persistRequiredAnswers(currentSession: ResearchSetupSessionResponse): Promise<ResearchSetupSessionResponse> {
+    let next = currentSession;
     if (requiredCodes.includes("DATES_MISSING") && datesValid) {
-      currentSession = await submitAnswer(currentSession.version, {
+      next = await submitAnswer(next.version, {
         field: "travelDates",
         value: { start: checkIn, end: checkOut },
       });
     }
     if (requiredCodes.includes("STAY_PREFERENCES_MISSING") && stayValid) {
-      currentSession = await submitAnswer(currentSession.version, {
+      next = await submitAnswer(next.version, {
         field: "stayPreferences",
         value: {
           roomCount,
@@ -206,11 +279,61 @@ function ConversationalSetupCard({
         },
       });
     }
-    // Generate an idempotent requestId so retries hit the same RESEARCH task.
+    return next;
+  }
+
+  async function fireConfirm(): Promise<void> {
     const requestId = confirmRequestId.current ?? crypto.randomUUID();
     confirmRequestId.current = requestId;
+    recordUiDiagnostic("setup.confirm", {
+      capabilities: intent.requestedCapabilities,
+    });
     await confirm.mutateAsync({ requestId });
+  }
+
+  const onConfirm = async () => {
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    setIsSubmitting(true);
+    setSubmissionError(null);
+    try {
+      await persistRequiredAnswers(session);
+      if (needsRealProviderAck && !isRealProviderAcked()) {
+        setRealProviderModalOpen(true);
+        return;
+      }
+      await fireConfirm();
+    } catch (error) {
+      setSubmissionError(error instanceof Error ? error : new Error("提交失败，请重试"));
+    } finally {
+      submissionInFlight.current = false;
+      setIsSubmitting(false);
+    }
   };
+
+  async function handleModalConfirm(): Promise<void> {
+    markRealProviderAcked();
+    setRealProviderModalOpen(false);
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    setIsSubmitting(true);
+    setSubmissionError(null);
+    try {
+      await fireConfirm();
+    } catch (error) {
+      setSubmissionError(error instanceof Error ? error : new Error("提交失败，请重试"));
+    } finally {
+      submissionInFlight.current = false;
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleModalCancel(): void {
+    recordUiDiagnostic("research.real_provider_declined", {
+      capabilities: realProviders,
+    });
+    setRealProviderModalOpen(false);
+  }
 
   return (
     <div
@@ -305,37 +428,41 @@ function ConversationalSetupCard({
         <button
           type="button"
           onClick={() => {
-            if (confirm.isPending) return;
             void onConfirm();
           }}
-          disabled={!confirmEnabled || confirm.isPending || saveAnswer.isPending}
+          disabled={!confirmEnabled || isSubmitting || cancel.isPending}
           className="min-h-11 rounded-full bg-amber-600 px-3 text-xs font-bold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-amber-300/30"
           data-testid="setup-confirm"
         >
-          {confirm.isPending ? "提交中…" : "确认并搜索"}
+          {isSubmitting ? "提交中…" : "确认并搜索"}
         </button>
         <button
           type="button"
           onClick={() => {
-            if (cancel.isPending) return;
+            if (cancel.isPending || isSubmitting) return;
             cancel.mutate();
             onDismiss();
           }}
-          disabled={cancel.isPending}
+          disabled={cancel.isPending || isSubmitting}
           className="min-h-11 rounded-full border border-amber-300 px-3 text-xs font-bold text-amber-900 disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-amber-300/30"
           data-testid="setup-cancel"
         >
           关闭
         </button>
       </div>
-      {saveAnswer.isError && (
+      {saveAnswer.isError && !submissionError && (
         <p role="alert" className="mt-2 text-xs text-red-500">
           保存失败：{(saveAnswer.error as Error).message}
         </p>
       )}
-      {confirm.isError && (
+      {confirm.isError && !submissionError && (
         <p role="alert" className="mt-2 text-xs text-red-500">
           提交失败：{(confirm.error as Error).message}
+        </p>
+      )}
+      {submissionError && (
+        <p role="alert" className="mt-2 text-xs text-red-500">
+          提交失败：{submissionError.message}
         </p>
       )}
       {cancel.isError && (
@@ -343,6 +470,18 @@ function ConversationalSetupCard({
           取消失败：{(cancel.error as Error).message}
         </p>
       )}
+      <ConfirmDialog
+        open={realProviderModalOpen}
+        title="本次研究将调用真实供应商"
+        body={`你请求的研究会向 ${realProviders.join("、")} 发送实时查询，可能产生费用或占用配额。结果与最终行程可能不完全匹配。`}
+        acknowledgeLabel="我已知晓，仍要继续"
+        confirmLabel="继续运行"
+        cancelLabel="取消"
+        capabilities={realProviders as ResearchCapability[]}
+        diagnosticTag="research.real_provider_acknowledged"
+        onConfirm={() => { void handleModalConfirm(); }}
+        onCancel={handleModalCancel}
+      />
     </div>
   );
 }

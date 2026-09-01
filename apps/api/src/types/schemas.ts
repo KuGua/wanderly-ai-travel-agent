@@ -437,7 +437,29 @@ export const agentRunResponseSchema = z.object({
     requestedCapabilities: z.array(z.enum([
       "flight", "accommodation", "hotel", "activities", "places", "navigation", "mobility", "readiness",
     ])).min(1),
-    readiness: z.enum(["READY", "NEEDS_SETUP", "NEEDS_PLACE_SELECTION"]),
+    readiness: z.enum(["READY", "READY_WITH_WARNINGS", "NEEDS_SETUP", "NEEDS_PLACE_SELECTION"]),
+    blockers: z.array(z.enum([
+      "TRIP_NOT_ACTIVE",
+      "DESTINATION_NOT_CONFIGURED",
+      "DATES_MISSING",
+      "FLIGHT_PREFERENCES_MISSING",
+      "STAY_PREFERENCES_MISSING",
+      "HOTEL_PROVIDER_NOT_APPROVED",
+      "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
+      "ROUTE_ENDPOINTS_UNCONFIRMED",
+      "MODE_NOT_CHOSEN",
+    ])).default([]),
+    warnings: z.array(z.enum([
+      "TRIP_NOT_ACTIVE",
+      "DESTINATION_NOT_CONFIGURED",
+      "DATES_MISSING",
+      "FLIGHT_PREFERENCES_MISSING",
+      "STAY_PREFERENCES_MISSING",
+      "HOTEL_PROVIDER_NOT_APPROVED",
+      "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
+      "ROUTE_ENDPOINTS_UNCONFIRMED",
+      "MODE_NOT_CHOSEN",
+    ])).default([]),
     missing: z.array(z.enum([
       "TRIP_NOT_ACTIVE",
       "DESTINATION_NOT_CONFIGURED",
@@ -554,9 +576,14 @@ export const researchIntentStateSchema = z.enum([
   "SUPERSEDED",
 ]);
 
-/** Readiness outcome evaluated by `personal-research-readiness-service`. */
+/** Readiness outcome evaluated by `personal-research-readiness-service`.
+ *  `READY_WITH_WARNINGS` means no hard blockers but at least one soft warning
+ *  — the owner is allowed to proceed past it via the real-provider
+ *  confirmation modal in the web client. Source:
+ *  docs/personal-research-intent-routing-implementation.md §5.2. */
 export const researchReadinessSchema = z.enum([
   "READY",
+  "READY_WITH_WARNINGS",
   "NEEDS_SETUP",
   "NEEDS_PLACE_SELECTION",
 ]);
@@ -579,6 +606,11 @@ export const researchMissingCodeSchema = z.enum([
  * extra field — including coordinates, dates, party size, currency, provider,
  * place IDs, identity, and the original question text. The MVP deliberately
  * does NOT consume `destinationCandidates` (spec §4.1).
+ *
+ * `blockers` and `warnings` are optional for backward compatibility with
+ * drafts persisted before the Phase 2 two-tier split — old rows have
+ * `null` and the projection default-fills both to `[]`. `missing[]` is
+ * retained as the union of the two for older clients.
  */
 export const persistedResearchIntentDraftSchema = z.object({
   schemaVersion: z.literal(1),
@@ -586,6 +618,8 @@ export const persistedResearchIntentDraftSchema = z.object({
   requestedCapabilities: z.array(personalResearchCapabilitySchema).min(1),
   classifierVersion: z.string().min(1).max(64),
   readiness: researchReadinessSchema,
+  blockers: z.array(researchMissingCodeSchema).default([]),
+  warnings: z.array(researchMissingCodeSchema).default([]),
   missing: z.array(researchMissingCodeSchema),
 }).strict();
 
@@ -649,6 +683,8 @@ export const researchIntentExtractedEventSchema = streamBaseSchema.extend({
   event: z.literal("research.intent_extracted"),
   intent: personalResearchIntentSchema,
   readiness: researchReadinessSchema,
+  blockers: z.array(researchMissingCodeSchema).default([]),
+  warnings: z.array(researchMissingCodeSchema).default([]),
   missing: z.array(researchMissingCodeSchema),
   schemaVersion: z.literal(1),
   classifierVersion: z.string().min(1).max(64),

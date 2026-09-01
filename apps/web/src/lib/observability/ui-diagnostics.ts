@@ -27,6 +27,9 @@ export const UI_ACTIONS = [
   "setup.confirm",
   "setup.cancel",
   "setup.followup_received",
+  // Phase 2 — Real-provider acknowledgement (flight / hotel / etc.)
+  "research.real_provider_acknowledged",
+  "research.real_provider_declined",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 
@@ -145,7 +148,10 @@ export function getCurrentUiScreen(): UiScreen {
  * `console.debug` no-op if no reporter is wired (the events are still
  * captured in the renderer's logs).
  */
-export function recordUiDiagnostic(action: UiAction, extras?: { screen?: UiScreen }): void {
+export function recordUiDiagnostic(
+  action: UiAction,
+  extras?: { screen?: UiScreen; capabilities?: readonly string[] },
+): void {
   if (typeof window === "undefined") return;
   // The reporter is wired up per-app via `createUiDiagnosticReporter`;
   // we do not have access to it here, so the helper just emits a debug
@@ -153,6 +159,9 @@ export function recordUiDiagnostic(action: UiAction, extras?: { screen?: UiScree
   // for HTTP-triggered events.
   const screen = extras?.screen ?? currentScreen();
   if (typeof console !== "undefined" && process.env.NODE_ENV !== "production") {
-    console.debug(`[ui-diagnostic] ${action} @ ${screen}`);
+    const capabilitiesSuffix = extras?.capabilities?.length
+      ? ` capabilities=${extras.capabilities.join(",")}`
+      : "";
+    console.debug(`[ui-diagnostic] ${action} @ ${screen}${capabilitiesSuffix}`);
   }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+import { screen, fireEvent, cleanup } from "@testing-library/react";
 
 import { ResearchConfirmationCard } from "@/components/trips/personal-research/research-confirmation-card";
 import type { PersonalResearchIntent } from "@/lib/api/contracts";
@@ -13,6 +13,7 @@ const intent: PersonalResearchIntent = {
 describe("ResearchConfirmationCard — model-extracted path (Phase 2)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    sessionStorage.clear();
   });
 
   it("renders the draft kind and capability list", () => {
@@ -63,6 +64,7 @@ describe("ResearchConfirmationCard — model-extracted path (Phase 2)", () => {
 describe("ResearchConfirmationCard — classifier-extracted path (Phase 2)", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    sessionStorage.clear();
   });
   afterEach(() => {
     // RTL does not unmount between tests by default; without cleanup
@@ -71,7 +73,7 @@ describe("ResearchConfirmationCard — classifier-extracted path (Phase 2)", () 
     cleanup();
   });
 
-  it("disables confirm when readiness is NEEDS_SETUP", () => {
+  it("disables confirm when there is a hard blocker (DESTINATION_NOT_CONFIGURED)", () => {
     renderWithIntl(
       <ResearchConfirmationCard
         tripId="00000000-0000-0000-0000-000000000001"
@@ -79,7 +81,9 @@ describe("ResearchConfirmationCard — classifier-extracted path (Phase 2)", () 
         runId="00000000-0000-0000-0000-000000000099"
         intent={intent}
         readiness="NEEDS_SETUP"
-        missing={["STAY_PREFERENCES_MISSING"]}
+        blockers={["DESTINATION_NOT_CONFIGURED"]}
+        warnings={[]}
+        missing={["DESTINATION_NOT_CONFIGURED"]}
         onDismiss={() => {}}
       />,
     );
@@ -89,17 +93,15 @@ describe("ResearchConfirmationCard — classifier-extracted path (Phase 2)", () 
     );
     expect(classifierCard).toBeDefined();
     expect(classifierCard!.getAttribute("data-readiness")).toBe("NEEDS_SETUP");
-    const confirmButtons = classifierCard!.querySelectorAll("button");
-    const confirmButton = Array.from(confirmButtons).find(
-      (b) => b.textContent === "确认运行",
-    ) as HTMLButtonElement | undefined;
+    const confirmButton = Array.from(classifierCard!.querySelectorAll("button"))
+      .find((b) => b.textContent === "补全资料后继续") as HTMLButtonElement | undefined;
     expect(confirmButton).toBeDefined();
     expect(confirmButton!.disabled).toBe(true);
-    // Missing-code copy surfaces in the warning block.
-    expect(classifierCard!.textContent).toContain("尚未确认住宿偏好");
+    // Blocker code copy surfaces in the amber region.
+    expect(classifierCard!.textContent).toContain("尚未选择目的地");
   });
 
-  it("enables confirm when readiness is READY", () => {
+  it("enables confirm when readiness is READY (no blockers, no warnings)", () => {
     renderWithIntl(
       <ResearchConfirmationCard
         tripId="00000000-0000-0000-0000-000000000001"
@@ -107,6 +109,8 @@ describe("ResearchConfirmationCard — classifier-extracted path (Phase 2)", () 
         runId="00000000-0000-0000-0000-000000000099"
         intent={intent}
         readiness="READY"
+        blockers={[]}
+        warnings={[]}
         missing={[]}
         onDismiss={() => {}}
       />,
@@ -120,6 +124,35 @@ describe("ResearchConfirmationCard — classifier-extracted path (Phase 2)", () 
     expect(confirmButton.disabled).toBe(false);
   });
 
+  it("enables confirm with the '继续运行' label when there are only soft warnings (READY_WITH_WARNINGS)", () => {
+    renderWithIntl(
+      <ResearchConfirmationCard
+        tripId="00000000-0000-0000-0000-000000000001"
+        source="classifier-extracted"
+        runId="00000000-0000-0000-0000-000000000099"
+        intent={intent}
+        readiness="READY_WITH_WARNINGS"
+        blockers={[]}
+        warnings={["STAY_PREFERENCES_MISSING"]}
+        missing={["STAY_PREFERENCES_MISSING"]}
+        onDismiss={() => {}}
+      />,
+    );
+    const cards = screen.getAllByTestId("research-confirmation-card");
+    const classifierCard = cards.find(
+      (el) => el.getAttribute("data-source") === "classifier-extracted",
+    );
+    expect(classifierCard!.getAttribute("data-readiness")).toBe("READY_WITH_WARNINGS");
+    const confirmButton = Array.from(classifierCard!.querySelectorAll("button"))
+      .find((b) => b.textContent === "继续运行") as HTMLButtonElement;
+    expect(confirmButton).toBeDefined();
+    expect(confirmButton.disabled).toBe(false);
+    // Soft warning surfaces in the muted region.
+    const warningsRegion = classifierCard!.querySelector('[data-testid="warnings-region"]');
+    expect(warningsRegion).not.toBeNull();
+    expect(warningsRegion!.textContent).toContain("尚未确认住宿偏好");
+  });
+
   it("renders the placeholder copy for NEEDS_PLACE_SELECTION", () => {
     renderWithIntl(
       <ResearchConfirmationCard
@@ -128,6 +161,8 @@ describe("ResearchConfirmationCard — classifier-extracted path (Phase 2)", () 
         runId="00000000-0000-0000-0000-000000000099"
         intent={intent}
         readiness="NEEDS_PLACE_SELECTION"
+        blockers={["ROUTE_ENDPOINTS_UNCONFIRMED"]}
+        warnings={[]}
         missing={["ROUTE_ENDPOINTS_UNCONFIRMED"]}
         onDismiss={() => {}}
       />,

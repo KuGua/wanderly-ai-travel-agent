@@ -205,7 +205,13 @@ export async function personalRouteEndpointsRoutes(app: FastifyInstance): Promis
       requestedCapabilities: run.researchIntentDraft.requestedCapabilities,
     });
     await db.update(agentTaskRuns).set({
-      researchIntentDraft: { ...run.researchIntentDraft, readiness: readiness.readiness, missing: readiness.missing },
+      researchIntentDraft: {
+        ...run.researchIntentDraft,
+        readiness: readiness.readiness,
+        blockers: readiness.blockers,
+        warnings: readiness.warnings,
+        missing: readiness.missing,
+      },
       updatedAt: new Date(),
     }).where(and(eq(agentTaskRuns.id, runId), eq(agentTaskRuns.researchIntentState, "PROPOSED")));
     return reply.code(204).send();

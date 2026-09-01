@@ -597,7 +597,23 @@ export type PersistedResearchIntentDraft = {
     "places" | "navigation" | "mobility" | "readiness"
   >;
   classifierVersion: string;
-  readiness: "READY" | "NEEDS_SETUP" | "NEEDS_PLACE_SELECTION";
+  readiness: "READY" | "READY_WITH_WARNINGS" | "NEEDS_SETUP" | "NEEDS_PLACE_SELECTION";
+  /** Hard blockers — research cannot start until these are resolved. */
+  blockers: Array<
+    "TRIP_NOT_ACTIVE" | "DESTINATION_NOT_CONFIGURED" | "DATES_MISSING" |
+    "FLIGHT_PREFERENCES_MISSING" | "STAY_PREFERENCES_MISSING" |
+    "HOTEL_PROVIDER_NOT_APPROVED" | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING" |
+    "ROUTE_ENDPOINTS_UNCONFIRMED" | "MODE_NOT_CHOSEN"
+  >;
+  /** Soft warnings — research can start, but quality may degrade. */
+  warnings: Array<
+    "TRIP_NOT_ACTIVE" | "DESTINATION_NOT_CONFIGURED" | "DATES_MISSING" |
+    "FLIGHT_PREFERENCES_MISSING" | "STAY_PREFERENCES_MISSING" |
+    "HOTEL_PROVIDER_NOT_APPROVED" | "QUOTE_NATIONALITY_AUTHORIZATION_MISSING" |
+    "ROUTE_ENDPOINTS_UNCONFIRMED" | "MODE_NOT_CHOSEN"
+  >;
+  /** Union of `blockers ∪ warnings`. Retained for backward compatibility
+   *  with older clients that still read `missing[]` directly. */
   missing: Array<
     "TRIP_NOT_ACTIVE" | "DESTINATION_NOT_CONFIGURED" | "DATES_MISSING" |
     "FLIGHT_PREFERENCES_MISSING" | "STAY_PREFERENCES_MISSING" |
@@ -711,7 +727,22 @@ export async function loadLatestProposedDraftForThread(params: {
   )).orderBy(desc(agentTaskRuns.createdAt)).limit(1);
   const row = rows[0];
   if (!row?.draft) return null;
-  return { runId: row.runId, draft: row.draft };
+  // Coerce legacy rows (Phase 1) where `blockers` / `warnings` were not
+  // yet on the JSONB shape — they deserialize as `null` or `undefined`.
+  // Default-fill to `[]` so downstream callers always receive arrays.
+  return {
+    runId: row.runId,
+    draft: {
+      schemaVersion: 1,
+      kind: row.draft.kind,
+      requestedCapabilities: row.draft.requestedCapabilities,
+      classifierVersion: row.draft.classifierVersion,
+      readiness: row.draft.readiness,
+      blockers: row.draft.blockers ?? [],
+      warnings: row.draft.warnings ?? [],
+      missing: row.draft.missing,
+    },
+  };
 }
 
 // Re-export the Zod-inferred state schema for downstream consumers.
@@ -1150,6 +1181,11 @@ function toRunResponse(
         kind: run.researchIntentDraft.kind,
         requestedCapabilities: run.researchIntentDraft.requestedCapabilities,
         readiness: run.researchIntentDraft.readiness,
+        // Coerce legacy rows (Phase 1) where `blockers` / `warnings` were not
+        // yet on the JSONB shape — they deserialize as `undefined` / `null`.
+        // Default-fill to `[]` so the client always receives explicit arrays.
+        blockers: run.researchIntentDraft.blockers ?? [],
+        warnings: run.researchIntentDraft.warnings ?? [],
         missing: run.researchIntentDraft.missing,
       };
   const projectedSetupSession = setupSession && setupSession.status === "OPEN"

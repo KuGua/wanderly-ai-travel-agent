@@ -64,16 +64,16 @@ describe("requireResearchEligible", () => {
     ).rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it("rejects a DRAFT trip with 409 TRIP_NOT_ACTIVE", async () => {
+  it("accepts a DRAFT trip — research commands are no longer gated by status", async () => {
+    // Phase 2: DRAFT trips are research-eligible. `requireActiveTrip`
+    // still rejects DRAFT for non-research operations (planning, consent,
+    // booking, etc.), but research is the only command surface that
+    // accepts pre-activation states per the product intent in §5.2.
     const owner = await makeUser();
     const tripId = await makeTrip("DRAFT", owner);
     await addMember(tripId, owner, true);
-    await expect(
-      requireResearchEligible(tripId, owner, ["Solo City"]),
-    ).rejects.toMatchObject({
-      statusCode: 409,
-      message: expect.stringMatching(/TRIP_NOT_ACTIVE/),
-    });
+    const mode = await requireResearchEligible(tripId, owner, ["Solo City"]);
+    expect(mode).toBe("SOLO");
   });
 
   it("rejects a non-member caller with 403", async () => {

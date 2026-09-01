@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { createPortal } from "react-dom";
 
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
+import { partitionMissingCodes } from "@/lib/trips/personal-research-readiness-copy";
 import { ResearchConfirmationCard } from "@/components/trips/personal-research/research-confirmation-card";
 import { ResearchSetupCard } from "@/components/trips/personal-research/research-setup-card";
 import { ResearchPlaceSelectionCard } from "@/components/trips/personal-research/research-place-selection-card";
@@ -181,7 +182,9 @@ export function TravelAgentChat({
         destinationPlaceId: routeDestination.placeId,
         mode: routeMode,
       });
-      setClassifierDraft((current) => current ? { ...current, readiness: "READY", missing: [] } : current);
+      setClassifierDraft((current) => current
+        ? { ...current, readiness: "READY", blockers: [], warnings: [], missing: [] }
+        : current);
     } catch (error) {
       setRequestError(error);
     } finally {
@@ -298,7 +301,17 @@ export function TravelAgentChat({
         setResearchIntent(event.intent);
         // Phase 2: persist the full classifier payload so the card can
         // pick a variant and the user can refresh without losing state.
-        setClassifierDraft(event);
+        // Normalize blockers / warnings to arrays — the server always sends
+        // them (with `.default([])` on the Zod schema), but legacy / mocked
+        // SSE events from tests may omit them. When only `missing[]` is
+        // present, partition it on severity so the UI still renders the
+        // right split.
+        const partitioned = partitionMissingCodes(event.missing ?? []);
+        setClassifierDraft({
+          ...event,
+          blockers: event.blockers ?? partitioned.blockers,
+          warnings: event.warnings ?? partitioned.warnings,
+        });
       }
       if (event.event === "research.intent_dismissed") {
         // Owner dismissed the draft via POST /dismiss-intent. Clear local
@@ -367,6 +380,8 @@ export function TravelAgentChat({
         requestedCapabilities: data.researchIntentDraft!.requestedCapabilities,
       },
       readiness: data.researchIntentDraft!.readiness,
+      blockers: data.researchIntentDraft!.blockers,
+      warnings: data.researchIntentDraft!.warnings,
       missing: data.researchIntentDraft!.missing,
       schemaVersion: 1,
       classifierVersion: "research-intent/v1",
@@ -674,7 +689,8 @@ export function TravelAgentChat({
                     tripId={tripId ?? ""}
                     runId={classifierDraft.runId}
                     readiness={classifierDraft.readiness}
-                    missing={classifierDraft.missing}
+                    blockers={classifierDraft.blockers}
+                    warnings={classifierDraft.warnings}
                     intent={classifierDraft.intent}
                     setupSession={researchSetupSession}
                     onDismiss={() => {
@@ -690,6 +706,8 @@ export function TravelAgentChat({
                     runId={classifierDraft.runId}
                     intent={classifierDraft.intent}
                     readiness={classifierDraft.readiness}
+                    blockers={classifierDraft.blockers}
+                    warnings={classifierDraft.warnings}
                     missing={classifierDraft.missing}
                     onDismiss={() => {
                       setClassifierDraft(null);
