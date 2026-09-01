@@ -16,6 +16,8 @@ export const personalTripContextSchema = z.object({
   tripStatus: z.enum(["DRAFT", "PLANNING", "STALE", "CONFIRMED", "BOOKED", "CANCELLED"]),
   travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  travelDays: z.number().int().nullable(),
+  departureCities: z.array(z.string().min(1).max(128)).max(20),
   destinationCandidates: z.array(z.string().min(1).max(128)).max(20),
 }).strict();
 

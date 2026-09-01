@@ -104,8 +104,14 @@ export const travelConversationInputSchema = z.object({
 export const travelConversationOutputSchema = z.object({
   content: z.string().trim().min(1).max(8000),
   responseMode: conversationResponseModeSchema,
+  // Owner-stated departure/destination/date update, extracted from this turn
+  // by a separate best-effort model call (see the gateway's
+  // `extractTripBriefProposal`) — never fabricated by this Skill itself.
   tripBriefProposal: z.object({
-    destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+    departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
+    destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
+    travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     travelDays: z.number().int().min(1).max(365).optional(),
   }).strict().optional(),
 }).strict();
@@ -192,7 +198,25 @@ export async function executeTravelConversation(
   ) {
     return safeConversationRefusal();
   }
-  return travelConversationOutputSchema.parse(reply);
+
+  let tripBriefProposal: TravelConversationOutput["tripBriefProposal"];
+  if (reply.responseMode === "MODEL" && input.tripContext && input.tripContext.tripStatus === "DRAFT") {
+    try {
+      const gateway = modelGateway();
+      const extracted = await gateway.extractTripBriefProposal?.({
+        question: input.question,
+        replyContent: reply.content,
+        tripContext: input.tripContext,
+        signal,
+        ctx: ctx.ctx,
+      });
+      if (extracted && Object.keys(extracted).length > 0) tripBriefProposal = extracted;
+    } catch {
+      // Best-effort only — never fail the conversation turn over this.
+    }
+  }
+
+  return travelConversationOutputSchema.parse({ ...reply, tripBriefProposal });
 }
 
 function modelErrorCode(code: string): "TIMEOUT" | "NETWORK" | "UPSTREAM_5XX" | "SCHEMA_PARSE" | "UPSTREAM_FAILURE" {

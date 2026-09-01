@@ -46,7 +46,7 @@ describe("Personal places privacy: never writes trip_places", () => {
         trip_places, trip_members, trip_search_preferences,
         trip_stay_search_preferences, shared_trips, itinerary_plans,
         member_confirmations, source_evidence, visa_readiness_checks,
-        trip_constraint_proposals, trip_constraint_facts, trip_invitations,
+        trip_constraint_proposals, trip_constraint_facts, trip_invitations
       RESTART IDENTITY CASCADE
     `);
     await cleanup`DELETE FROM users`;

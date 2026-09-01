@@ -24,7 +24,7 @@ import {
 import { personalTripContextSchema, type PersonalTripContext } from "../../skills/personal/personal-trip-context-schema.js";
 import type { AgentStreamEvent } from "../../types/schemas.js";
 import { personalResearchHotelDraftSchema } from "../../types/schemas.js";
-import type { ModelToolDefinition, ModelToolDispatcher } from "../../providers/model-gateway.js";
+import type { ModelToolDefinition, ModelToolDispatcher, TripBriefProposal } from "../../providers/model-gateway.js";
 import type { RequestContext } from "../../utils/context.js";
 import { agentTaskConfig } from "../config.js";
 import { publishAgentStreamEvent } from "../task-stream-publisher.js";
@@ -165,7 +165,7 @@ export async function handleConversationTask(params: {
 }): Promise<{
   content: string;
   responseMode: import("../../types/schemas.js").ConversationResponseMode;
-  tripBriefProposal?: { destinationCandidates?: string[]; travelDays?: number };
+  tripBriefProposal?: TripBriefProposal;
 } | null> {
   // ─── Quick Orchestration — Proactive intro (no user message) ─────────────
   // The run was created server-side on trip activation; the conversation
@@ -316,6 +316,8 @@ async function loadPersonalTripContext(tripId: string): Promise<PersonalTripCont
     status: sharedTrips.status,
     travelDateStart: sharedTrips.travelDateStart,
     travelDateEnd: sharedTrips.travelDateEnd,
+    travelDays: sharedTrips.travelDays,
+    departureCities: sharedTrips.departureCities,
     destinationCandidates: sharedTrips.destinationCandidates,
   }).from(sharedTrips).where(eq(sharedTrips.id, tripId)).limit(1);
   if (!trip) {
@@ -334,6 +336,8 @@ async function loadPersonalTripContext(tripId: string): Promise<PersonalTripCont
     tripStatus,
     travelDateStart: trip.travelDateStart,
     travelDateEnd: trip.travelDateEnd,
+    travelDays: trip.travelDays,
+    departureCities: trip.departureCities,
     destinationCandidates: trip.destinationCandidates,
   });
 }

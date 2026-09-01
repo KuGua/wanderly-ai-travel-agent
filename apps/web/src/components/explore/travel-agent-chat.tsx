@@ -402,7 +402,14 @@ export function TravelAgentChat({
     setIsConfirmingBrief(true);
     setRequestError(null);
     try {
-      await api.updateDraftTripBrief(tripId, { ...briefProposal, titleLocale });
+      await api.updateDraftTripBrief(tripId, {
+        ...briefProposal,
+        // The extractor is instructed to return the full updated destination
+        // set (not just newly-added ones) whenever it proposes this field —
+        // replace rather than merge-append so a corrected list actually wins.
+        replaceDestinationCandidates: briefProposal.destinationCandidates ? true : undefined,
+        titleLocale,
+      });
       setBriefProposal(null);
     } catch (error) {
       setRequestError(error);
@@ -527,7 +534,9 @@ export function TravelAgentChat({
           {briefProposal && tripId ? (
             <section aria-label={t("briefProposalTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} rounded-[18px] border border-primary/20 bg-white p-3 text-sm shadow-sm`}>
               <p className="font-bold text-primary">{t("briefProposalTitle")}</p>
-              <p className="mt-1 text-muted-foreground">{t("briefProposalBody", { destination: briefProposal.destinationCandidates?.join(" · ") ?? t("briefProposalNoDestination"), days: briefProposal.travelDays ?? t("briefProposalNoDays") })}</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">
+                {describeBriefProposal(briefProposal, t).map((line) => <li key={line}>{line}</li>)}
+              </ul>
               <div className="mt-3 flex gap-2">
                 <button type="button" onClick={() => void confirmBriefProposal()} disabled={isConfirmingBrief} className="min-h-11 rounded-full bg-primary px-3 text-xs font-bold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{isConfirmingBrief ? t("briefProposalSaving") : t("briefProposalConfirm")}</button>
                 <button type="button" onClick={() => setBriefProposal(null)} disabled={isConfirmingBrief} className="min-h-11 rounded-full border border-primary/20 px-3 text-xs font-bold text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{t("briefProposalIgnore")}</button>
@@ -646,6 +655,21 @@ function applyStreamEvent(current: StreamState, event: AgentStreamEvent): Stream
 
 function isRetryable(error: unknown) {
   return !(error instanceof TravelApiError) || error.statusCode === null || [404, 500, 502, 504].includes(error.statusCode);
+}
+
+function describeBriefProposal(
+  proposal: Extract<AgentStreamEvent, { event: "trip.brief_proposed" }>["proposal"],
+  t: ReturnType<typeof useTranslations>,
+): string[] {
+  const lines: string[] = [];
+  if (proposal.departureCities?.length) lines.push(t("briefProposalDeparture", { cities: proposal.departureCities.join(" · ") }));
+  if (proposal.destinationCandidates?.length) lines.push(t("briefProposalDestinations", { destinations: proposal.destinationCandidates.join(" · ") }));
+  if (proposal.travelDateStart && proposal.travelDateEnd) {
+    lines.push(t("briefProposalDateRange", { start: proposal.travelDateStart, end: proposal.travelDateEnd }));
+  } else if (proposal.travelDays) {
+    lines.push(t("briefProposalDays", { days: proposal.travelDays }));
+  }
+  return lines;
 }
 
 function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {

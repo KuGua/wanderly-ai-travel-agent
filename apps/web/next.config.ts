@@ -4,6 +4,13 @@ import createNextIntlPlugin from "next-intl/plugin";
 const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 const nextConfig: NextConfig = {
+  // Next.js blocks dev-only chunks requested through a LAN hostname unless it
+  // is explicitly allow-listed. Keep this to the current trusted test host;
+  // do not use a wildcard or a public/tunnel domain. This machine's LAN IP
+  // changes whenever it switches networks — update this value (and the
+  // matching apps/api/.env HOST/LOCAL_DEV_ALLOWED_ORIGINS and apps/web/
+  // .env.local NEXT_PUBLIC_API_BASE_URL) if LAN dev access breaks again.
+  allowedDevOrigins: ["192.168.0.103"],
   turbopack: {
     root: process.cwd(),
   },

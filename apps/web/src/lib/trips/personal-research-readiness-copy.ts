@@ -84,13 +84,13 @@ export const MISSING_COPY: Record<PersonalResearchMissingCode, MissingCodeCopy> 
   DESTINATION_NOT_CONFIGURED: {
     title: "尚未选择目的地",
     detail: "研究需要先确定目的地。",
-    ctaHint: "在行程页填写目的地",
+    ctaHint: "在私密对话里告诉 Agent 目的地",
     severity: "blocker",
   },
   DATES_MISSING: {
     title: "尚未填写出行日期",
     detail: "酒店与活动研究依赖出行日期。",
-    ctaHint: "在行程页填写出发与返回日期",
+    ctaHint: "在私密对话里告诉 Agent 出发与返回日期",
     severity: "blocker",
   },
   FLIGHT_PREFERENCES_MISSING: {

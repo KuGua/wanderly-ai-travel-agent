@@ -13,6 +13,7 @@ import type {
   ModelGateway,
   ModelToolDefinition,
   ModelToolDispatcher,
+  TripBriefProposal,
 } from "./model-gateway.js";
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace } from "../types/schemas.js";
@@ -94,6 +95,35 @@ const parsedConversationCompletionSchema = z.object({
 const geminiConversationCompletionSchema = z.object({
   content: z.string().trim().min(1).max(8000),
 }).strict().transform(({ content }) => ({ reply: { content } }));
+
+const tripBriefProposalFieldsSchema = z.object({
+  departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
+  travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  travelDays: z.number().int().min(1).max(365).optional(),
+}).strict();
+
+const tripBriefExtractionSchema = z.object({
+  proposal: tripBriefProposalFieldsSchema.nullable(),
+}).strict();
+
+// Same Gemini root-flattening quirk as geminiConversationCompletionSchema above.
+const geminiTripBriefExtractionSchema = z.union([z.null(), tripBriefProposalFieldsSchema])
+  .transform((proposal) => ({ proposal }));
+
+const TRIP_BRIEF_EXTRACTION_SYSTEM_PROMPT = [
+  "You are a strict, conservative extractor for a private trip-planning assistant.",
+  "Given the owner's latest message, the assistant's reply, and the trip's currently known brief, decide whether the owner explicitly stated a NEW or CHANGED departure city/cities, destination candidate(s), exact travel start/end date, or trip length in days for this specific trip.",
+  "Rules:",
+  "- Only extract information the owner explicitly stated in this turn. Never infer, guess, or fill in from general knowledge.",
+  "- If a field's value already matches the currently known brief (no real change), omit that field.",
+  "- If nothing new or changed was stated, respond with a null proposal.",
+  "- Departure cities are 1-3 short place names; destination candidates are 1-5 short place names.",
+  "- Dates must be exact calendar dates in YYYY-MM-DD format; omit a date field unless the owner gave a concrete, resolvable date (a vague relative phrase like \"next month\" is not enough).",
+  "- If the owner instead states a trip length (e.g. \"about 5 days\") without exact dates, use travelDays instead of the date fields.",
+  "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
+].join("\n");
 
 function canonicalize(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -1395,6 +1425,65 @@ export class LLMGateway implements ModelGateway {
       tokens: usage,
     });
     return reply;
+  }
+
+  /**
+   * Best-effort side call, deliberately separate from the streamed reply
+   * above: the streamed conversation completion has no structured output at
+   * all (it is raw token-by-token text), so a trip-brief proposal can only
+   * ever come from a second, small, non-streaming structured request. Any
+   * failure here (including a provider outage) returns `null` rather than
+   * throwing — this must never fail or delay the conversation turn.
+   */
+  async extractTripBriefProposal(params: {
+    question: string;
+    replyContent: string;
+    tripContext?: PersonalTripContext;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<TripBriefProposal | null> {
+    const ctx = params.ctx ?? this.options.ctx;
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch {
+      return null;
+    }
+    try {
+      const response = await client.chat.completions.parse({
+        model: this.options.modelName,
+        messages: [
+          { role: "system", content: TRIP_BRIEF_EXTRACTION_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: JSON.stringify({
+              question: params.question,
+              assistantReply: params.replyContent,
+              currentBrief: params.tripContext ? {
+                departureCities: params.tripContext.departureCities,
+                destinationCandidates: params.tripContext.destinationCandidates,
+                travelDateStart: params.tripContext.travelDateStart,
+                travelDateEnd: params.tripContext.travelDateEnd,
+                travelDays: params.tripContext.travelDays,
+              } : null,
+            }),
+          },
+        ],
+        response_format: { type: "json_object" },
+      }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+
+      const payload = completionPayload(response.choices[0]?.message);
+      const parsed = tripBriefExtractionSchema.safeParse(payload);
+      const normalized = parsed.success
+        ? parsed
+        : this.options.provider === "gemini"
+          ? geminiTripBriefExtractionSchema.safeParse(payload)
+          : parsed;
+      if (!normalized.success || !normalized.data.proposal) return null;
+      return normalized.data.proposal;
+    } catch {
+      return null;
+    }
   }
 
   async generateLocationIntroduction(params: {

@@ -132,7 +132,6 @@ describe("TripWorkspace", () => {
     expect(screen.getByRole("button", { name: "New thread" })).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Activate draft trip" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Invite teammates" })).toHaveAttribute("href", `/trips/${TRIP_ID}/invite`);
-    expect(screen.getByRole("button", { name: "Save brief" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Start planning" }));
     await waitFor(() => expect(api.activateTrip).toHaveBeenCalledWith(TRIP_ID, {
       departureCities: ["San Francisco"],
@@ -143,7 +142,7 @@ describe("TripWorkspace", () => {
     }));
   });
 
-  it("requires a team Draft to keep two to three destinations before it can be saved or activated", async () => {
+  it("keeps Start planning disabled for a team Draft outside the two-to-three destination range", async () => {
     const draft = buildTripResponse("DRAFT");
     draft.trip.destinationCandidates = ["Tokyo", "Kyoto", "Osaka", "Nara"];
     draft.members.push({
@@ -156,9 +155,7 @@ describe("TripWorkspace", () => {
     const api = createApi({ getTrip: vi.fn().mockResolvedValue(draft) });
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
 
-    expect(await screen.findByText("Enter 2–3 distinct destinations, separated by commas.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save brief" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Start planning" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Start planning" })).toBeDisabled();
   });
 
   it("auto-provisions a default thread when none exists", async () => {
@@ -303,7 +300,7 @@ describe("TripWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create invite link" }));
 
     await waitFor(() => expect(createTripInvitation).toHaveBeenCalledWith(TRIP_ID, expect.objectContaining({ recipientEmail: "bob@example.test" })));
-    expect(await screen.findByLabelText("One-time invite link")).toHaveValue(`http://localhost:3000/en/trips/join/${"a".repeat(43)}`);
+    expect(await screen.findByLabelText("One-time invite link")).toHaveValue(`http://localhost:3000/en/trips/join/${"a".repeat(43)}?email=bob%40example.test`);
   });
 
   it("shows a generic membership-revoked error on 403/410 from the trip detail", async () => {

@@ -645,7 +645,10 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
   streamBaseSchema.extend({
     event: z.literal("trip.brief_proposed"),
     proposal: z.object({
-      destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+      departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
+      destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
+      travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       travelDays: z.number().int().min(1).max(365).optional(),
     }).strict(),
   }).strict(),

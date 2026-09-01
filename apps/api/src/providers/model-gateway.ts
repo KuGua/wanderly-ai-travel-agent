@@ -47,6 +47,20 @@ export interface ConversationReply {
   responseMode: ConversationResponseMode;
 }
 
+/**
+ * Owner-stated update to the trip's departure cities, destination
+ * candidates, and/or exact travel dates, extracted from a single
+ * conversation turn. Every field is optional — only fields the owner
+ * actually stated or changed in this turn are present.
+ */
+export interface TripBriefProposal {
+  departureCities?: string[];
+  destinationCandidates?: string[];
+  travelDateStart?: string;
+  travelDateEnd?: string;
+  travelDays?: number;
+}
+
 export type ConversationDeltaHandler = (delta: string) => void | Promise<void>;
 
 /** A provider-neutral OpenAI-compatible function declaration. */
@@ -184,6 +198,22 @@ export interface ModelGateway {
     tools?: ModelToolDefinition[];
     dispatchTool?: ModelToolDispatcher;
   }): Promise<ConversationReply>;
+
+  /**
+   * Best-effort, non-streaming side extraction: does this conversation turn
+   * explicitly state a new/changed departure city, destination, or exact
+   * travel date for the trip in `tripContext`? Returns `null` on anything
+   * short of a positive extraction (including any provider failure) — this
+   * must never fail or delay the conversation turn it accompanies.
+   */
+  extractTripBriefProposal?(params: {
+    question: string;
+    replyContent: string;
+    tripContext?: PersonalTripContext;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<TripBriefProposal | null>;
+
   /**
    * S4: generate a single non-personalized short introduction for a
    * server-versioned stable `sourceId`. Inputs come only from the
