@@ -1137,6 +1137,25 @@ export const setupFollowupEventSchema = streamBaseSchema.extend({
  * only the persisted `planning_research_results` row + service-gap summary —
  * never raw provider payloads, snapshot values, or chat content.
  */
+/**
+ * Normalized provider evidence gathered by the run. Summaries only — the
+ * raw `offer_data` payload never leaves the server (see the DTO note
+ * above). Present so a caller can see *what* a research run actually
+ * found; previously the run's offers were written and never readable.
+ */
+export const researchEvidenceOfferSchema = z.object({
+  category: z.enum(["activity", "hotel"]),
+  providerName: z.string().min(1).max(128),
+  title: z.string().min(1).max(256),
+  price: z.object({
+    amount: z.number(),
+    currency: z.string().length(3),
+  }).strict().nullable(),
+  rating: z.number().nullable(),
+  detail: z.string().max(128).nullable(),
+  capturedAt: z.string().datetime(),
+}).strict();
+
 export const researchResultResponseSchema = z.object({
   id: uuidSchema,
   tripId: uuidSchema,
@@ -1145,6 +1164,7 @@ export const researchResultResponseSchema = z.object({
   status: z.enum(["COMPLETE", "COMPLETED_WITH_GAPS"]),
   serviceGaps: z.array(z.record(z.string(), z.unknown())).max(64),
   resultPlanId: uuidSchema.nullable(),
+  offers: z.array(researchEvidenceOfferSchema).max(32).default([]),
   createdAt: z.string().datetime(),
 }).strict();
 

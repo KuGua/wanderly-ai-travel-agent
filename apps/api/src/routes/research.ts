@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { loadOffersForSnapshot } from "../services/research-evidence-service.js";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 
@@ -234,6 +235,10 @@ export async function researchRoutes(app: FastifyInstance): Promise<void> {
       .orderBy(desc(planningResearchResults.createdAt))
       .limit(1);
 
+    // Offers are keyed by the run's snapshot, so this read stays inside the
+    // trip the membership check above authorized.
+    const offers = latest ? await loadOffersForSnapshot(latest.snapshotId) : [];
+
     const payload = latestResearchResultResponseSchema.parse({
       result: latest ? {
         id: latest.id,
@@ -243,6 +248,7 @@ export async function researchRoutes(app: FastifyInstance): Promise<void> {
         status: latest.status as "COMPLETE" | "COMPLETED_WITH_GAPS",
         serviceGaps: latest.serviceGaps,
         resultPlanId: latest.resultPlanId,
+        offers,
         createdAt: latest.createdAt.toISOString(),
       } : null,
     });
