@@ -58,7 +58,9 @@ export interface BuildAppOptions {
 
 export async function buildApp(options: BuildAppOptions = {}) {
   const authMode = resolveAuthMode();
-  const localDevAllowedOrigins = authMode === "local-dev" || authMode === "custom-local" ? resolveLocalDevAllowedOrigins() : [];
+  const localDevAllowedOrigins = authMode === "local-dev" || authMode === "custom-local"
+    ? resolveLocalDevAllowedOrigins(undefined, authMode)
+    : [];
   const app = Fastify({
     loggerInstance: pinoInstance,
     genReqId: () => randomUUID(),

@@ -5,6 +5,7 @@ import {
   assertCustomLocalJwtSecret,
   assertLocalDevServerHost,
   isLoopbackAddress,
+  isPrivateIpv4Address,
   isAllowedLocalDevOrigin,
   resolveLocalDevAllowedOrigins,
   resolveAuthMode,
@@ -40,6 +41,9 @@ describe("authentication mode safety", () => {
     expect(() => assertLocalDevServerHost("local-dev", "0.0.0.0", true)).not.toThrow();
     expect(() => assertLocalDevServerHost("local-dev", "192.168.1.10", true)).toThrow(/loopback/);
     expect(() => assertLocalDevServerHost("local-dev", "192.168.1.10")).toThrow(/loopback/);
+    expect(() => assertLocalDevServerHost("custom-local", "10.91.182.185")).not.toThrow();
+    expect(() => assertLocalDevServerHost("local-dev", "10.91.182.185")).toThrow(/loopback/);
+    expect(() => assertLocalDevServerHost("custom-local", "198.51.100.10")).toThrow(/loopback/);
     expect(() => assertLocalDevServerHost("local-dev", "127.0.0.1")).not.toThrow();
     expect(isLoopbackAddress("::1")).toBe(true);
     expect(isLoopbackAddress("::ffff:127.0.0.1")).toBe(true);
@@ -55,10 +59,22 @@ describe("authentication mode safety", () => {
     expect(resolveLocalDevAllowedOrigins("http://localhost:3001,http://127.0.0.1:3001"))
       .toEqual(["http://localhost:3001", "http://127.0.0.1:3001"]);
     expect(() => resolveLocalDevAllowedOrigins("https://localhost:3001")).toThrow(/loopback HTTP/);
-    expect(() => resolveLocalDevAllowedOrigins("http://192.168.1.10:3001")).toThrow(/loopback HTTP/);
+    expect(() => resolveLocalDevAllowedOrigins("http://192.168.1.10:3001", "local-dev")).toThrow(/loopback HTTP/);
     expect(() => resolveLocalDevAllowedOrigins("http://localhost:3001/path")).toThrow(/exact loopback HTTP/);
     expect(() => resolveLocalDevAllowedOrigins("")).toThrow(/LOCAL_DEV_ALLOWED_ORIGINS/);
     expect(isAllowedLocalDevOrigin("http://localhost:3001", ["http://localhost:3001"])).toBe(true);
     expect(isAllowedLocalDevOrigin("https://attacker.example", ["http://localhost:3001"])).toBe(false);
+  });
+
+  it("allows exact private IPv4 origins only for custom-local LAN testing", () => {
+    expect(isPrivateIpv4Address("10.91.182.185")).toBe(true);
+    expect(isPrivateIpv4Address("172.20.1.4")).toBe(true);
+    expect(isPrivateIpv4Address("192.168.1.4")).toBe(true);
+    expect(isPrivateIpv4Address("172.32.1.4")).toBe(false);
+    expect(isPrivateIpv4Address("198.51.100.10")).toBe(false);
+    expect(resolveLocalDevAllowedOrigins("http://10.91.182.185:3001", "custom-local"))
+      .toEqual(["http://10.91.182.185:3001"]);
+    expect(() => resolveLocalDevAllowedOrigins("http://10.91.182.185:3001", "local-dev")).toThrow(/loopback HTTP/);
+    expect(() => resolveLocalDevAllowedOrigins("http://198.51.100.10:3001", "custom-local")).toThrow(/loopback HTTP/);
   });
 });
