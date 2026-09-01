@@ -1337,18 +1337,40 @@ export class LLMGateway implements ModelGateway {
     };
 
     const accumulatedToolCalls = new Map<
-      number,
+      string,
       { index: number; id?: string; function: { name?: string; arguments: string }; extraContent?: unknown }
     >();
     let lastFinishReason: string | null = null;
+    let nextToolCallOrdinal = 0;
+    /**
+     * Which delta belongs to which call.
+     *
+     * OpenAI streams a call's arguments in fragments and puts `index` on each
+     * one; that is the only thing tying the fragments together. Gemini's
+     * OpenAI-compatible endpoint sends the call complete in a single delta and
+     * omits `index` entirely, so keying on it alone collapsed every Gemini
+     * call onto one `undefined` bucket and the arguments never reassembled —
+     * the parse then failed on an empty string and the whole turn came back
+     * as TOOL_PROTOCOL.
+     *
+     * So: `index` when the provider supplies one, `id` when it does not, and
+     * a running ordinal only if neither is present. Ordering still comes from
+     * `index`, which falls back to arrival order.
+     */
     const accumulateToolCall = (toolCallDelta: {
-      index: number;
+      index?: number;
       id?: string;
       function?: { name?: string; arguments?: string };
       extra_content?: unknown;
     }): void => {
-      const existing = accumulatedToolCalls.get(toolCallDelta.index) ?? {
-        index: toolCallDelta.index,
+      const hasIndex = typeof toolCallDelta.index === "number";
+      const key = hasIndex
+        ? `i:${toolCallDelta.index}`
+        : toolCallDelta.id
+          ? `id:${toolCallDelta.id}`
+          : `n:${nextToolCallOrdinal}`;
+      const existing = accumulatedToolCalls.get(key) ?? {
+        index: hasIndex ? (toolCallDelta.index as number) : nextToolCallOrdinal++,
         id: undefined,
         function: { name: undefined, arguments: "" },
       };
@@ -1360,7 +1382,7 @@ export class LLMGateway implements ModelGateway {
       if (toolCallDelta.extra_content !== undefined) {
         existing.extraContent = toolCallDelta.extra_content;
       }
-      accumulatedToolCalls.set(toolCallDelta.index, existing);
+      accumulatedToolCalls.set(key, existing);
     };
 
     await consumeStream();
