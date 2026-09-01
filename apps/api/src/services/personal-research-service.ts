@@ -27,6 +27,11 @@ import type { PersonalResearchEvidenceSummary, PersonalResearchOwnerDraft } from
 import type { AgentTaskRow } from "../tasks/task-repository.js";
 import { executePersonalFlightSearch } from "./personal-research-executors/flight.js";
 import { executePersonalHotelSearch } from "./personal-research-executors/hotel.js";
+import { executePersonalPlacesSearch } from "./personal-research-executors/places.js";
+import { executePersonalNavigationRoute } from "./personal-research-executors/navigation-route.js";
+import { executePersonalMobilitySearch } from "./personal-research-executors/mobility.js";
+import { executePersonalAccommodationDiscovery } from "./personal-research-executors/accommodation.js";
+import { executePersonalActivitiesSearch } from "./personal-research-executors/activities.js";
 
 const PROVIDER_NAME_BY_CAPABILITY: Record<PersonalResearchOperationCapability, string> = {
   "flight.search": "personal-flight-adapter",
@@ -133,15 +138,22 @@ async function dispatchCapability(params: {
       return executePersonalFlightSearch({ run: params.run, draft: params.draft, signal: params.signal });
     case "HOTEL_SEARCH":
       return executePersonalHotelSearch({ run: params.run, draft: params.draft, signal: params.signal });
-    // Stage 2/3 capability executors ship in their own PRs (spec §3.5). The
-    // runtime allow-list gate above prevents the route from ever reaching
-    // this branch with a non-flight kind.
-    case "ACCOMMODATION_DISCOVERY":
-    case "ACTIVITIES_SEARCH":
     case "PLACES_SEARCH":
+      return executePersonalPlacesSearch({ run: params.run, draft: params.draft, signal: params.signal });
     case "NAVIGATION_ROUTE":
+      return executePersonalNavigationRoute({ run: params.run, draft: params.draft, signal: params.signal });
     case "MOBILITY_SEARCH":
-      throw new ExecutorNotImplementedError(params.draft.kind);
+      return executePersonalMobilitySearch({ run: params.run, draft: params.draft, signal: params.signal });
+    case "ACCOMMODATION_DISCOVERY":
+      return executePersonalAccommodationDiscovery({ run: params.run, draft: params.draft, signal: params.signal });
+    case "ACTIVITIES_SEARCH":
+      return executePersonalActivitiesSearch({ run: params.run, draft: params.draft, signal: params.signal });
+    // The runtime allow-list gate above prevents the route from ever reaching
+    // this branch with a non-enabled kind.
+    default: {
+      const unknown: never = params.draft;
+      throw new ExecutorNotImplementedError((unknown as { kind: string }).kind);
+    }
   }
 }
 

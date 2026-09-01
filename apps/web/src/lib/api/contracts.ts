@@ -574,9 +574,10 @@ export const personalResearchPlacesDraftSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   radiusMeters: z.number().int().min(100).max(50_000),
-  category: z.string().trim().min(1).max(64).nullable(),
+  category: z.enum(["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER"]).nullable(),
   limit: z.number().int().min(1).max(50).nullable(),
 }).strict();
+export type PersonalResearchPlacesDraft = z.infer<typeof personalResearchPlacesDraftSchema>;
 
 export const personalResearchNavigationRouteDraftSchema = z.object({
   kind: z.literal("NAVIGATION_ROUTE"),
@@ -647,6 +648,29 @@ export const personalResearchHotelEvidenceSummarySchema = z.object({
   minNightlyPrice: z.number().nonnegative().nullable(),
   maxNightlyPrice: z.number().nonnegative().nullable(),
 }).strict();
+export type PersonalResearchHotelEvidenceSummary = z.infer<typeof personalResearchHotelEvidenceSummarySchema>;
+
+export const personalResearchPlacesEvidenceSummarySchema = z.object({
+  candidateCount: z.number().int().nonnegative(),
+  categories: z.array(z.string()),
+  radiusMeters: z.number().int().nonnegative(),
+}).strict();
+export type PersonalResearchPlacesEvidenceSummary = z.infer<typeof personalResearchPlacesEvidenceSummarySchema>;
+
+export const personalResearchNavigationRouteEvidenceSummarySchema = z.object({
+  distanceMeters: z.number().nonnegative(),
+  durationSeconds: z.number().nonnegative(),
+  mode: z.enum(["driving", "walking", "cycling"]),
+}).strict();
+export type PersonalResearchNavigationRouteEvidenceSummary = z.infer<typeof personalResearchNavigationRouteEvidenceSummarySchema>;
+
+export const personalResearchMobilityEvidenceSummarySchema = z.object({
+  offerCount: z.number().int().nonnegative(),
+  currency: currencyCodeSchema.nullable(),
+  transferDateTime: z.string().datetime(),
+  passengers: z.number().int().nonnegative(),
+}).strict();
+export type PersonalResearchMobilityEvidenceSummary = z.infer<typeof personalResearchMobilityEvidenceSummarySchema>;
 
 export const personalResearchEvidenceSummarySchema = z.discriminatedUnion("outcome", [
   z.object({
@@ -654,6 +678,9 @@ export const personalResearchEvidenceSummarySchema = z.discriminatedUnion("outco
     capability: personalResearchOperationCapabilitySchema,
     flight: personalResearchFlightEvidenceSummarySchema.optional(),
     hotel: personalResearchHotelEvidenceSummarySchema.optional(),
+    places: personalResearchPlacesEvidenceSummarySchema.optional(),
+    navigation: personalResearchNavigationRouteEvidenceSummarySchema.optional(),
+    mobility: personalResearchMobilityEvidenceSummarySchema.optional(),
   }).strict(),
   z.object({
     outcome: z.literal("UNAVAILABLE"),

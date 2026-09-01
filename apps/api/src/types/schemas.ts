@@ -942,7 +942,7 @@ const personalResearchPlacesDraftSchema = z.object({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180),
   radiusMeters: z.number().int().min(100).max(50_000),
-  category: z.string().trim().min(1).max(64).nullable(),
+  category: z.enum(["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER"]).nullable(),
   limit: z.number().int().min(1).max(50).nullable(),
 }).strict();
 

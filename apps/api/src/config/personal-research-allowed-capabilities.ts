@@ -49,12 +49,12 @@ export type PersonalResearchOperationCapability = (typeof PERSONAL_RESEARCH_OPER
  */
 export const PERSONAL_RESEARCH_ALLOWED_CAPABILITIES = [
   "flight.search",
-  "hotel.search", // stage 2 — Nuitee nationality contract + provider tests landed
-  // "accommodation.discovery",// stage 2 — open when OpenTripMap adapter contract tests land
-  // "activities.search",      // stage 2 — open when Viator MCP contract tests land
-  // "places.search",          // stage 3 — open when ORS place search contract tests land
-  // "navigation.route",       // stage 3 — open when ORS navigation contract tests land
-  // "mobility.search",        // stage 3 — open when Amadeus Transfer contract tests land
+  "hotel.search",
+  "accommodation.discovery", // stage 2 — OpenTripMap adapter contract tests landed
+  "activities.search",      // stage 2 — Viator MCP contract tests landed
+  "places.search",
+  "navigation.route",
+  "mobility.search",
 ] as const satisfies readonly PersonalResearchOperationCapability[];
 
 export function isPersonalResearchCapabilityAllowed(

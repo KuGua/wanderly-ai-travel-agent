@@ -1,0 +1,117 @@
+/**
+ * Personal activities-search executor.
+ *
+ * Owner-only typed input from the DRAFT Personal Research confirm path.
+ * Calls the Viator MCP adapter directly (NEVER the Shared activities
+ * search persistence layer) and projects the result to the bounded
+ * `personalResearchActivitiesEvidenceSummarySchema` shape.
+ *
+ * Privacy: the summary exposes activity count + currency + destination
+ * + date range. It deliberately OMITS per-activity price, supplier, and
+ * booking URL — the Shared path on activate re-queries the provider for
+ * the full offer set so the Personal path cannot seed plan evidence.
+ *
+ * Source: docs/draft-personal-research-implementation.md §3.5 stage 2.
+ */
+
+import { createActivitiesProvider } from "../../providers/live-provider-factory.js";
+import type { ActivityProviderItem } from "../../providers/types.js";
+import type { PersonalResearchEvidenceSummary } from "../../types/domain.js";
+import type { AgentTaskRow } from "../../tasks/task-repository.js";
+
+export type PersonalResearchActivitiesDraft = {
+  kind: "ACTIVITIES_SEARCH";
+  destinationCode: string;
+  startDate: string;
+  endDate: string;
+  category: string | null;
+  limit: number | null;
+};
+
+export async function executePersonalActivitiesSearch(params: {
+  run: AgentTaskRow;
+  draft: PersonalResearchActivitiesDraft;
+  signal: AbortSignal;
+}): Promise<PersonalResearchEvidenceSummary> {
+  const provider = createActivitiesProvider();
+
+  const input = {
+    destination: params.draft.destinationCode,
+    dateStart: params.draft.startDate,
+    dateEnd: params.draft.endDate,
+    locale: "en" as const,
+    currency: "USD",
+    limit: params.draft.limit ?? 20,
+    signal: params.signal,
+  };
+
+  let result: { outcome: "LIVE"; data: ActivityProviderItem[]; source: string; capturedAt: string }
+    | { outcome: "UNAVAILABLE"; reason: string };
+  try {
+    result = await provider.searchActivities(input);
+  } catch (err) {
+    return unavailableSummaryFromError(err);
+  }
+
+  if (result.outcome === "UNAVAILABLE") {
+    return unavailableSummaryFromReason(result.reason);
+  }
+
+  const items = (result.data ?? []) as ActivityProviderItem[];
+  // The ActivityProviderItem shape doesn't carry a single price field in the
+  // existing Shared projection; project a zero-range rather than fabricate
+  // a field. The Shared path exposes the full offer set on activate.
+  const minPrice: number | null = null;
+  const maxPrice: number | null = null;
+
+  return {
+    outcome: "AVAILABLE",
+    capability: "activities.search",
+    activities: {
+      activityCount: items.length,
+      currency: items[0]?.currency ?? "USD",
+      destinationCode: params.draft.destinationCode,
+      startDate: params.draft.startDate,
+      endDate: params.draft.endDate,
+      minPrice,
+      maxPrice,
+    },
+  };
+}
+
+type UnavailableCode =
+  | "NOT_CONFIGURED"
+  | "SEARCH_CONSTRAINTS_INCOMPLETE"
+  | "NO_RESULTS"
+  | "RATE_LIMITED"
+  | "UPSTREAM_TIMEOUT"
+  | "UPSTREAM_FAILURE"
+  | "INVALID_PROVIDER_RESPONSE"
+  | "PROVIDER_NOT_APPROVED";
+
+const ALLOWED_UNAVAILABLE_CODES: UnavailableCode[] = [
+  "NOT_CONFIGURED",
+  "SEARCH_CONSTRAINTS_INCOMPLETE",
+  "NO_RESULTS",
+  "RATE_LIMITED",
+  "UPSTREAM_TIMEOUT",
+  "UPSTREAM_FAILURE",
+  "INVALID_PROVIDER_RESPONSE",
+  "PROVIDER_NOT_APPROVED",
+];
+
+function unavailableSummary(errorCode: UnavailableCode): PersonalResearchEvidenceSummary {
+  return { outcome: "UNAVAILABLE", summary: { errorCode } };
+}
+
+function unavailableSummaryFromReason(reason: string): PersonalResearchEvidenceSummary {
+  if ((ALLOWED_UNAVAILABLE_CODES as string[]).includes(reason)) {
+    return unavailableSummary(reason as UnavailableCode);
+  }
+  return unavailableSummary("UPSTREAM_FAILURE");
+}
+
+function unavailableSummaryFromError(err: unknown): PersonalResearchEvidenceSummary {
+  if (err instanceof Error && err.name === "AbortError") return unavailableSummary("UPSTREAM_TIMEOUT");
+  return unavailableSummary("UPSTREAM_FAILURE");
+}

@@ -143,7 +143,7 @@ export function createFlightProvider(env: NodeJS.ProcessEnv = process.env): Flig
   throw new Error("FLIGHT_PROVIDER must be disabled, amadeus, flightapi, or serpapi");
 }
 
-function createAccommodationDiscoveryProvider(): AccommodationDiscoveryProvider {
+export function createAccommodationDiscoveryProvider(): AccommodationDiscoveryProvider {
   const configuration = readOpenTripMapAccommodationConfiguration();
   return configuration
     ? new OpenTripMapAccommodationProvider(configuration)
@@ -270,24 +270,24 @@ function logHotelProviderSelection(selection: string | HotelOfferProviderName): 
   if (typeof console !== "undefined") console.info(line);
 }
 
-function createActivitiesProvider(): ActivitiesProvider {
+export function createActivitiesProvider(): ActivitiesProvider {
   const configuration = readViatorMcpConfiguration();
   return configuration
     ? new ViatorMcpActivitiesProvider(configuration)
     : new UnavailableActivitiesProvider();
 }
 
-function createOrsPlace(): PlaceSearchProvider {
+export function createOrsPlace(): PlaceSearchProvider {
   const configuration = readOrsPlaceConfiguration();
   return configuration ? new OrsPlaceProvider(configuration) : new UnavailablePlaceProvider();
 }
 
-function createOrsNavigation(): NavigationProvider {
+export function createOrsNavigation(): NavigationProvider {
   const configuration = readOrsNavigationConfiguration();
   return configuration ? new OrsNavigationProvider(configuration) : new UnavailableNavigationProvider();
 }
 
-function createAmadeusTransfer(): MobilityOfferProvider {
+export function createAmadeusTransfer(): MobilityOfferProvider {
   if (process.env.PLAN_ENABLE_MOBILITY === "false") {
     return new UnavailableMobilityOfferProvider();
   }

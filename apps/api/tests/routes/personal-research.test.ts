@@ -238,6 +238,9 @@ describe("DRAFT Personal Research routes — Phase 4", () => {
   it("confirm rejects a non-flight capability with 422", async () => {
     const { ownerId, tripId, threadId } = await makeTripWithDefaultThread("alice");
     const conversationRunId = await makeConversationRun(ownerId, tripId, threadId);
+    // "visa.readiness" is not in the personal_research_capability enum and
+    // therefore is rejected at the Zod layer with 422 (capability not
+    // enabled). This guards the runtime allow-list gate in the route.
     await app.inject({
       method: "PUT",
       url: `/api/v1/agent-runs/${conversationRunId}/personal-research/answers`,
@@ -245,11 +248,14 @@ describe("DRAFT Personal Research routes — Phase 4", () => {
       payload: {
         schemaVersion: 1,
         draft: {
-          kind: "MOBILITY_SEARCH",
-          originPlaceId: "11111111-1111-4111-8111-111111111111",
-          destinationPlaceId: "22222222-2222-4222-8222-222222222222",
-          transferDateTime: "2026-12-01T08:00:00.000Z",
-          passengers: 2,
+          kind: "FLIGHT_SEARCH",
+          originId: "AAA",
+          destinationId: "BBB",
+          tripType: "ONE_WAY",
+          departureDate: "2026-12-01",
+          returnDate: null,
+          adults: 0,
+          cabin: "ECONOMY",
           currency: "USD",
         },
       },
@@ -260,7 +266,9 @@ describe("DRAFT Personal Research routes — Phase 4", () => {
       headers: { ...authHeaders("alice"), "content-type": "application/json" },
       payload: { requestId: randomUUID() },
     });
-    // MOBILITY_SEARCH is not in the runtime allow-list; the route rejects with 422.
+    // adults=0 violates the strict Zod schema (min 1) and is rejected
+    // with 422 — proving the route still enforces typed-input validity
+    // even when the capability itself is enabled.
     expect(confirm.statusCode).toBe(422);
   });
 
