@@ -46,6 +46,19 @@ export interface LocationIntroductionResult {
 }
 
 /**
+ * Output shape for `generateSetupFollowup`. The model picks ONE missing
+ * code from the server-known set and produces a localized prompt. The
+ * server validates against `requestedMissing` and falls back to a
+ * deterministic template on any failure.
+ */
+export interface SetupFollowupResult {
+  questionCode: string;
+  promptText: string;
+  modelName: string;
+  promptVersion: string;
+}
+
+/**
  * Application-layer interface for configured real-model interactions.
  * The model cannot access the database or execute irreversible operations.
  * Tests may inject a deterministic implementation through gateway-factory.
@@ -153,4 +166,23 @@ export interface ModelGateway {
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<LocationIntroductionResult>;
+
+  /**
+   * Personal Research Setup Sessions — generate ONE follow-up question
+   * to ask the owner about a missing setup field. Bounded (≤200 token
+   * input, ≤80 token output). Inputs come only from the server-known
+   * missing-code enum and locale; never the original question, profile,
+   * thread context, snapshot values, or PII.
+   * Source: docs/personal-research-intent-routing-implementation.md §9.
+   */
+  generateSetupFollowup?(params: {
+    locale: "zh-CN" | "zh-TW" | "en-US";
+    requestedMissing: string[];
+    /** Field names already filled in the session — values are NEVER included. */
+    filledFieldNames: string[];
+    /** Human-readable labels for each missing code, so the model can refer to them. */
+    missingCodeLabels: Record<string, { zh: string; en: string }>;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<SetupFollowupResult>;
 }

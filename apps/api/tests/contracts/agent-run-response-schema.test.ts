@@ -25,6 +25,7 @@ describe("agentRunResponseSchema — research intent fields (Phase 0/1)", () => 
     errorCode: null,
     assistantMessageId: null,
     resultPlanId: null,
+    researchSetupSession: null,
   };
 
   it("accepts a CONVERSATION row without the new fields (legacy / non-classified turn)", () => {

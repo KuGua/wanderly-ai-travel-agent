@@ -562,6 +562,21 @@ metrics.registerCounter(
     outcome: ["confirmed", "dismissed", "superseded", "lease_lost"],
   },
 );
+metrics.registerCounter(
+  "personal_research_setup_session_total",
+  "Personal research setup session lifecycle outcomes (per-intent).",
+  {
+    outcome: ["opened", "updated", "confirmed", "cancelled", "expired", "open_failed"],
+  },
+);
+metrics.registerCounter(
+  "personal_research_setup_followup_total",
+  "Conversational setup follow-up generator outcomes.",
+  {
+    outcome: ["model", "fallback"],
+    reason: ["model", "empty", "no_gateway", "schema", "invalid_code", "pii", "length", "model_error"],
+  },
+);
 
 metrics.registerCounter(
   "solo_plan_adoption_total",

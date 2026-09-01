@@ -587,6 +587,99 @@ export function useDismissResearchIntent(runId: string | null) {
   });
 }
 
+// ─── Personal Research Setup Sessions (§9) ─────────────────────────────────
+
+/**
+ * Owner-driven mutation hooks for the conversational completion flow.
+ * All four mutate the same agent-run query key so the card unmounts via
+ * either the SSE-driven refresh path or the local mutation invalidation.
+ */
+
+export function useOpenResearchSetup(runId: string | null) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!runId) throw new Error("openResearchSetup requires a runId");
+      const fn = api.openResearchSetup;
+      if (!fn) throw new Error("openResearchSetup is not implemented by this transport");
+      return fn(runId);
+    },
+    onSuccess: (data) => {
+      if (runId) {
+        qc.setQueryData(["agent-runs", runId], (prev: unknown) => {
+          if (!prev || typeof prev !== "object") return prev;
+          return { ...(prev as Record<string, unknown>), researchSetupSession: data.session };
+        });
+      }
+      recordUiDiagnostic("setup.session_open");
+    },
+  });
+}
+
+export function useSaveResearchSetupAnswer(runId: string | null) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: import("@/lib/api/contracts").ResearchSetupApplyRequest) => {
+      if (!runId) throw new Error("saveResearchSetupAnswer requires a runId");
+      const fn = api.saveResearchSetupAnswer;
+      if (!fn) throw new Error("saveResearchSetupAnswer is not implemented by this transport");
+      return fn(runId, input);
+    },
+    onSuccess: (data) => {
+      if (runId) {
+        qc.setQueryData(["agent-runs", runId], (prev: unknown) => {
+          if (!prev || typeof prev !== "object") return prev;
+          return { ...(prev as Record<string, unknown>), researchSetupSession: data.session };
+        });
+      }
+      recordUiDiagnostic("setup.field_update");
+    },
+  });
+}
+
+export function useCancelResearchSetup(runId: string | null) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (!runId) throw new Error("cancelResearchSetup requires a runId");
+      const fn = api.cancelResearchSetup;
+      if (!fn) throw new Error("cancelResearchSetup is not implemented by this transport");
+      return fn(runId);
+    },
+    onSuccess: () => {
+      if (runId) {
+        qc.invalidateQueries({ queryKey: ["agent-runs", runId] });
+      }
+      recordUiDiagnostic("setup.cancel");
+    },
+  });
+}
+
+export function useConfirmResearchSetup(runId: string | null, tripId: string) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: import("@/lib/api/contracts").ResearchSetupConfirmRequest) => {
+      if (!runId) throw new Error("confirmResearchSetup requires a runId");
+      const fn = api.confirmResearchSetup;
+      if (!fn) throw new Error("confirmResearchSetup is not implemented by this transport");
+      return fn(runId, input);
+    },
+    onSuccess: () => {
+      // Refresh the run + research latest summaries so the existing
+      // `ResearchRunCard` can mount in place of the setup card via the
+      // SNAPSHOT_CREATED → RESEARCHING → COMPLETED SSE pipeline.
+      qc.invalidateQueries({ queryKey: ["agent-runs", runId].filter(Boolean) as string[] });
+      qc.invalidateQueries({ queryKey: personalOrchestrationKeys.researchLatest(tripId) });
+      qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
+      recordUiDiagnostic("setup.confirm");
+    },
+  });
+}
+
 export function useSoloAdoptPlan(tripId: string) {
   const api = useTravelApi();
   const qc = useQueryClient();

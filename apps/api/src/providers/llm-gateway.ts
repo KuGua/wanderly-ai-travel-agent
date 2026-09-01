@@ -32,6 +32,15 @@ import {
   LOCATION_INTRODUCTION_SYSTEM_PROMPT,
   buildLocationIntroductionUserPayload,
 } from "./location-introduction-prompts.js";
+import {
+  SETUP_FOLLOWUP_SYSTEM_PROMPT,
+  buildSetupFollowupUserPayload,
+} from "./setup-followup-prompts.js";
+import {
+  assertSetupFollowupOutputSafe,
+  setupFollowupOutputSchema,
+} from "./setup-followup-schema.js";
+import type { SetupFollowupResult } from "./model-gateway.js";
 import { safeConversationFallback } from "../policy/conversation-safety.js";
 
 export interface LLMGatewayOptions {
@@ -1266,6 +1275,150 @@ export class LLMGateway implements ModelGateway {
         });
         return {
           content: parsed.data.content,
+          modelName: this.options.modelName,
+          promptVersion: this.options.promptVersion,
+        };
+      } catch (err) {
+        const code = classifyError(err);
+        if (code === "TIMEOUT") {
+          lastError = code;
+          break;
+        }
+        lastError = code;
+      }
+    }
+
+    safeSetAttribute(span, "llm.outcome", lastError);
+    safeSetAttribute(span, "llm.error_code", lastError);
+    span.end();
+    return recordFailure(lastError);
+  }
+
+  /**
+   * §9 — Personal Research Setup Sessions: generate ONE follow-up
+   * question for a missing setup field. Bounded; mirrors the
+   * location-introduction shape but targets the conversational setup
+   * card. Always throws `ModelGatewayError` on failure; the route layer
+   * catches and falls back to deterministic templates.
+   */
+  async generateSetupFollowup(params: {
+    locale: "zh-CN" | "zh-TW" | "en-US";
+    requestedMissing: string[];
+    filledFieldNames: string[];
+    missingCodeLabels: Record<string, { zh: string; en: string }>;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<SetupFollowupResult> {
+    const ctx = params.ctx ?? this.options.ctx;
+    const start = Date.now();
+    const span = getTracer().startSpan("llm.openai.parse", {
+      kind: SpanKind.CLIENT,
+      attributes: {
+        "llm.method": "setup.followup",
+        "llm.stream": false,
+      },
+    });
+    annotateLlmSpan(
+      span,
+      this.options.provider,
+      this.options.modelName,
+      this.options.promptVersion,
+      "setup.followup",
+    );
+
+    const recordFailure = async (errorCode: string, tokens?: AgentRunTokens): Promise<never> => {
+      await recordAgentRun({
+        ctx,
+        skillName: "setup.followup",
+        agentName: "personal",
+        modelName: this.options.modelName,
+        promptVersion: this.options.promptVersion,
+        outputHash: hashOutput({ errorCode }),
+        latencyMs: Date.now() - start,
+        status: errorCode === "TIMEOUT" ? "TIMEOUT" : "ERROR",
+        errorCode,
+        tokens,
+      });
+      throw new ModelGatewayError(errorCode, "conversation");
+    };
+
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch (err) {
+      safeSetAttribute(span, "llm.outcome", classifyError(err));
+      safeSetAttribute(span, "llm.error_code", classifyError(err));
+      span.end();
+      return recordFailure(classifyError(err));
+    }
+
+    const maxRetries = this.options.maxRetries ?? 1;
+    let lastError = "SCHEMA_PARSE";
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        const response = await client.chat.completions.parse({
+          model: this.options.modelName,
+          messages: [
+            {
+              role: "system",
+              content: SETUP_FOLLOWUP_SYSTEM_PROMPT,
+            },
+            {
+              role: "user",
+              content: buildSetupFollowupUserPayload({
+                locale: params.locale,
+                requestedMissing: params.requestedMissing,
+                filledFieldNames: params.filledFieldNames,
+                missingCodeLabels: params.missingCodeLabels,
+              }),
+            },
+          ],
+          response_format: { type: "json_object" },
+        }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+
+        const payload = completionPayload(response.choices[0]?.message);
+        const parsed = setupFollowupOutputSchema.safeParse(payload);
+        if (!parsed.success) {
+          lastError = "SCHEMA_PARSE";
+          continue;
+        }
+        // Defense-in-depth: PII / live-fact regex.
+        try {
+          assertSetupFollowupOutputSafe(parsed.data);
+        } catch {
+          lastError = "POLICY_DENIED";
+          safeSetAttribute(span, "llm.error_code", lastError);
+          continue;
+        }
+        // Enforce questionCode ∈ requestedMissing.
+        if (!params.requestedMissing.includes(parsed.data.questionCode)) {
+          lastError = "INVALID_CODE";
+          safeSetAttribute(span, "llm.error_code", lastError);
+          continue;
+        }
+
+        const usage = response.usage;
+        if (usage) {
+          if (typeof usage.prompt === "number") safeSetAttribute(span, "llm.tokens.prompt", usage.prompt);
+          if (typeof usage.completion === "number") safeSetAttribute(span, "llm.tokens.completion", usage.completion);
+          if (typeof usage.total === "number") safeSetAttribute(span, "llm.tokens.total", usage.total);
+        }
+        safeSetAttribute(span, "llm.outcome", "success");
+        span.end();
+        await recordAgentRun({
+          ctx,
+          skillName: "setup.followup",
+          agentName: "personal",
+          modelName: this.options.modelName,
+          promptVersion: this.options.promptVersion,
+          outputHash: hashOutput(parsed.data),
+          latencyMs: Date.now() - start,
+          status: "SUCCESS",
+          tokens: response.usage,
+        });
+        return {
+          questionCode: parsed.data.questionCode,
+          promptText: parsed.data.promptText,
           modelName: this.options.modelName,
           promptVersion: this.options.promptVersion,
         };

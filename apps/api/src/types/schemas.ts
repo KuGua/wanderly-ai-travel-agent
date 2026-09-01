@@ -451,6 +451,47 @@ export const agentRunResponseSchema = z.object({
     ])),
   }).strict().nullable(),
   researchIntentState: z.enum(["PROPOSED", "DISMISSED", "CONFIRMED", "SUPERSEDED"]).nullable(),
+  /**
+   * Personal Research Setup Sessions — owner-safe inline projection.
+   * Surfaced only when a CONVERSATION run carries an OPEN setup session
+   * for this owner. Mirrors `personalResearchSetupSessionResponseSchema`
+   * declared later in this file; redeclared here because callers above
+   * this section reference `agentRunResponseSchema`.
+   */
+  researchSetupSession: z.object({
+    intentRunId: uuidSchema,
+    tripId: uuidSchema,
+    ownerUserId: uuidSchema,
+    departureCity: z.string().nullable(),
+    travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    stayPreferences: z.object({
+      roomCount: z.number().int().min(1).max(8),
+      adultsPerRoom: z.array(z.number().int().min(1).max(8)).min(1).max(8),
+      currency: z.string().regex(/^[A-Z]{3}$/),
+    }).strict().nullable(),
+    flightPreferences: z.object({
+      tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
+      currency: z.string().regex(/^[A-Z]{3}$/),
+      adults: z.number().int().min(1).max(9),
+      cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
+      offerFreshnessMinutes: z.number().int().min(1).max(1_440),
+    }).strict().nullable(),
+    missing: z.array(z.enum([
+      "TRIP_NOT_ACTIVE",
+      "DESTINATION_NOT_CONFIGURED",
+      "DATES_MISSING",
+      "FLIGHT_PREFERENCES_MISSING",
+      "STAY_PREFERENCES_MISSING",
+      "HOTEL_PROVIDER_NOT_APPROVED",
+      "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
+      "ROUTE_ENDPOINTS_UNCONFIRMED",
+      "MODE_NOT_CHOSEN",
+    ])),
+    version: z.number().int().positive(),
+    status: z.enum(["OPEN", "CONFIRMED", "CANCELLED", "EXPIRED", "SUPERSEDED"]),
+    expiresAt: z.string().datetime(),
+  }).strict().nullable(),
 });
 
 const streamBaseSchema = z.object({
@@ -623,6 +664,122 @@ export const researchIntentDismissedEventSchema = streamBaseSchema.extend({
   dismissedAt: z.string().datetime(),
 }).strict();
 
+// ─── Personal Research Setup Sessions (docs §9) ────────────────────────────
+
+/**
+ * Missing codes the conversational setup card can resolve.
+ * Codes outside this set fall back to the read-only `ResearchSetupCard`.
+ */
+export const conversationalSetupMissingCodeSchema = z.enum([
+  "DATES_MISSING",
+  "DEPARTURE_CITY_MISSING",
+  "STAY_PREFERENCES_MISSING",
+  "FLIGHT_PREFERENCES_MISSING",
+]);
+export type ConversationalSetupMissingCode = z.infer<typeof conversationalSetupMissingCodeSchema>;
+
+/**
+ * Strict discriminated union of slot patches. Date ranges are one atomic
+ * patch because the database persists them as an ordered pair. The server
+ * merges a validated patch into the existing row and recomputes `missing[]`.
+ */
+export const personalResearchSetupAnswerSchema = z.discriminatedUnion("field", [
+  z.object({
+    field: z.literal("departureCity"),
+    value: z.string().trim().min(1).max(64),
+  }).strict(),
+  z.object({
+    field: z.literal("travelDates"),
+    value: z.object({
+      start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "travelDateStart must be YYYY-MM-DD"),
+      end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "travelDateEnd must be YYYY-MM-DD"),
+    }).strict().refine((value) => value.end > value.start, {
+      message: "travelDateEnd must be after travelDateStart",
+      path: ["end"],
+    }),
+  }).strict(),
+  z.object({
+    field: z.literal("stayPreferences"),
+    value: tripStaySearchPreferencesRequestSchema,
+  }).strict(),
+  z.object({
+    field: z.literal("flightPreferences"),
+    value: tripSearchPreferencesRequestSchema,
+  }).strict(),
+]);
+export type PersonalResearchSetupAnswer = z.infer<typeof personalResearchSetupAnswerSchema>;
+
+export const personalResearchSetupApplyRequestSchema = z.object({
+  expectedVersion: z.number().int().positive(),
+  patch: personalResearchSetupAnswerSchema,
+}).strict();
+
+export const personalResearchSetupSessionStatusSchema = z.enum([
+  "OPEN",
+  "CONFIRMED",
+  "CANCELLED",
+  "EXPIRED",
+  "SUPERSEDED",
+]);
+
+/**
+ * Owner-safe DTO returned by `GET /api/v1/agent-runs/:runId/research-setup`
+ * and embedded in the `agentRunResponseSchema.researchSetupSession` field.
+ * No raw chat text, model extraction, profile, or provider raw data.
+ */
+export const personalResearchSetupSessionResponseSchema = z.object({
+  intentRunId: uuidSchema,
+  tripId: uuidSchema,
+  ownerUserId: uuidSchema,
+  departureCity: z.string().trim().min(1).max(64).nullable(),
+  travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  stayPreferences: tripStaySearchPreferencesRequestSchema.nullable(),
+  flightPreferences: tripSearchPreferencesRequestSchema.nullable(),
+  missing: z.array(researchMissingCodeSchema),
+  version: z.number().int().positive(),
+  status: personalResearchSetupSessionStatusSchema,
+  expiresAt: z.string().datetime(),
+}).strict();
+export type PersonalResearchSetupSessionResponse = z.infer<typeof personalResearchSetupSessionResponseSchema>;
+
+export const personalResearchSetupSessionEnvelopeSchema = z.object({
+  session: personalResearchSetupSessionResponseSchema,
+}).strict();
+
+export const personalResearchSetupConfirmRequestSchema = z.object({
+  requestId: uuidSchema,
+}).strict();
+
+export const personalResearchSetupConfirmAcceptedResponseSchema = z.object({
+  runId: uuidSchema,
+  snapshotId: uuidSchema,
+  status: z.literal("QUEUED"),
+}).strict();
+
+/**
+ * Output contract for `generateSetupFollowup`. The model picks ONE of the
+ * server-known `missing` codes and produces a localized prompt; the server
+ * validates against the requested set before emitting the SSE event.
+ */
+export const setupFollowupQuestionSchema = z.object({
+  questionCode: researchMissingCodeSchema,
+  promptText: z.string().trim().min(1).max(280),
+}).strict();
+export type SetupFollowupQuestion = z.infer<typeof setupFollowupQuestionSchema>;
+
+/**
+ * `research.setup.followup` SSE event — emitted once per classified turn
+ * whose readiness is NEEDS_SETUP. Carries the bounded LLM followup (or a
+ * deterministic fallback). The owner UI surfaces it as a chat bubble AND
+ * uses it to drive the inline card. Source: docs §9.
+ */
+export const setupFollowupEventSchema = streamBaseSchema.extend({
+  event: z.literal("research.setup.followup"),
+  followup: setupFollowupQuestionSchema,
+  source: z.enum(["model", "fallback"]),
+}).strict();
+
 /**
  * Safe DTO returned by `GET /api/v1/trips/:tripId/research/latest`. Carries
  * only the persisted `planning_research_results` row + service-gap summary —
@@ -683,6 +840,7 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
   researchStageEventSchema,
   researchIntentExtractedEventSchema,
   researchIntentDismissedEventSchema,
+  setupFollowupEventSchema,
 ]);
 
 // ─── Booking ────────────────────────────────────────────────────────────────

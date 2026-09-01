@@ -21,6 +21,12 @@ export const UI_ACTIONS = [
   "research.command_reject",
   "research.stage_view",
   "research.intent_dismiss",
+  // Personal Research Setup Sessions (§9)
+  "setup.session_open",
+  "setup.field_update",
+  "setup.confirm",
+  "setup.cancel",
+  "setup.followup_received",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 

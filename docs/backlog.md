@@ -167,6 +167,22 @@
 6. Redis is not introduced. PostgreSQL remains the shared cache and lease authority; TanStack Query is browser-only caching.
 
 
+### S5 — Conversational completion for Personal Research (§9)
+
+**Story:** As a Solo Trip owner, I want the Personal Agent to ask me short follow-up questions in chat and let me answer inline (with an editable preview card) when my hotel / flight / trip request is missing fields, so that I can finish the research request in one place without bouncing to a settings page or guessing fields the model invents.
+
+**Acceptance criteria:**
+
+1. When the classifier extracts a `RESEARCH_ONLY` / `PROPOSE_PLAN` intent whose readiness is `NEEDS_SETUP` with in-scope codes (`DATES_MISSING`, `STAY_PREFERENCES_MISSING`, `FLIGHT_PREFERENCES_MISSING`), the conversation worker eagerly opens a `personal_research_setup_sessions` row bound to the intent run + trip + owner, with `expires_at ≈ now + 15min`, supersedes older OPEN siblings via the partial unique index.
+2. A bounded LLM call (`generateSetupFollowup`) picks one missing code and emits a localized prompt. Output is Zod-validated against `researchMissingCodeSchema`, PII / live-fact regex-gated, and falls back to a deterministic `MISSING_COPY`-style template on any failure (model error, schema rejection, invalid code, length > 280). The fallback reason is captured in `personal_research_setup_followup_total{outcome="fallback",reason=...}`. The LLM input never carries the original question.
+3. A `research.setup.followup` SSE event surfaces the question as an inline chat bubble; the same intent run's `agentRunResponseSchema.researchSetupSession` projection hydrates the card on refresh so a tab reload can recover without losing filled slots.
+4. Per-field answers go through `POST /agent-runs/:runId/research-setup/answers` under optimistic-version concurrency; the server recomputes `missing[]` from server-owned Trip / preference state and rejects invalid dates / room-count / adults / currency with `422`. The first success of a session increments `PERSONAL_RESEARCH_SETUP_OPENED`; each accepted answer increments `PERSONAL_RESEARCH_SETUP_UPDATED` (summary: `{ sessionVersion, fieldsFilled }`).
+5. `POST /agent-runs/:runId/research-setup/confirm-and-search` runs one atomic transaction: re-validate trip status (`PLANNING`/`STALE`), `requireResearchEligible`, hotel provider gate (`PLAN_ENABLE_HOTEL` + Nuitee `loadActiveQuoteNationality`), regex-validated dates, `UPDATE shared_trips.travel_date_start/end` and `departure_cities` (when changed), `INSERT trip_stay_search_preferences` and `trip_search_preferences` (when the corresponding slot is set), `stalePlansAndConfirmationsForTrip` **before** `acceptResearchTask`, `transitionResearchIntentState PROPOSED → CONFIRMED`, `acceptResearchTask({ originatingIntentRunId, requestId, ... })`, then publish `research.stage SNAPSHOT_CREATED`. Idempotent on `requestId` via `findResearchTaskByRequestId`. Failed confirm leaves no preference row, no task, no intent transition, and only a failure audit row.
+6. Cancel and expiry are terminal: `POST /cancel` sets `status='CANCELLED'`; `expires_at` past returns `410 Gone` from both `applyAnswer` and `confirmAndSearch` after an opportunistic `OPEN → EXPIRED` transition. Neither writes preferences nor creates tasks.
+7. The setup row, audit summary, and SSE payloads carry only structured slot values / field names. Raw chat text, the original question, place names, profile, snapshot content, and PII (passport / ID / phone / address / price tokens) are NEVER persisted, logged, traced, or metric-labeled.
+8. The first iteration covers hotel + flight + trip-level slots in an activated Solo Trip only. Budget preferences, activity preferences, multi-room types, and shared-trip conversational completion are explicit deferred scope.
+9. Missing codes outside the in-scope set (`HOTEL_PROVIDER_NOT_APPROVED`, `QUOTE_NATIONALITY_AUTHORIZATION_MISSING`, `TRIP_NOT_ACTIVE`, `DESTINATION_NOT_CONFIGURED`, `FLIGHT_PREFERENCES_MISSING` once flight widgets land) keep rendering the existing read-only `research-setup-card`; the conversational API is not invoked for them.
+
 ### P3 — Observe one owner request across API → DB → Worker → SSE
 
 **Story:** As a team operator, I want a single owner request to be traceable as one OTel trace across the API, the DB hot-spots, the durable Worker, and the SSE event stream, so that the Hero Demo and post-demo debugging show a complete end-to-end flow.

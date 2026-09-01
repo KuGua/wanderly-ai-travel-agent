@@ -6,6 +6,8 @@ import {
   conversationTurnAcceptedResponseSchema,
   agentRunResponseSchema,
   agentStreamEventSchema,
+  researchSetupSessionEnvelopeSchema,
+  researchSetupConfirmAcceptedResponseSchema,
   createThreadResponseSchema,
   createTripThreadInputSchema,
   explorationStartRequestSchema,
@@ -282,6 +284,51 @@ export class HttpTravelApi implements TravelApi {
       "/agent-runs/" + encodeURIComponent(runId) + "/dismiss-intent",
       z.unknown(),
       { method: "POST" },
+    );
+  }
+
+  async getResearchSetup(runId: string): Promise<{ session: import("./contracts").ResearchSetupSessionResponse }> {
+    return this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/research-setup",
+      researchSetupSessionEnvelopeSchema,
+    );
+  }
+
+  async openResearchSetup(runId: string): Promise<{ session: import("./contracts").ResearchSetupSessionResponse }> {
+    return this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/research-setup",
+      researchSetupSessionEnvelopeSchema,
+      { method: "POST" },
+    );
+  }
+
+  async saveResearchSetupAnswer(
+    runId: string,
+    input: import("./contracts").ResearchSetupApplyRequest,
+  ): Promise<{ session: import("./contracts").ResearchSetupSessionResponse }> {
+    return this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/research-setup/answers",
+      researchSetupSessionEnvelopeSchema,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+  }
+
+  async cancelResearchSetup(runId: string): Promise<{ status: "CANCELLED" }> {
+    return this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/research-setup/cancel",
+      z.object({ status: z.literal("CANCELLED") }).strict(),
+      { method: "POST" },
+    );
+  }
+
+  async confirmResearchSetup(
+    runId: string,
+    input: import("./contracts").ResearchSetupConfirmRequest,
+  ): Promise<import("./contracts").ResearchSetupConfirmAcceptedResponse> {
+    return this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/research-setup/confirm-and-search",
+      researchSetupConfirmAcceptedResponseSchema,
+      { method: "POST", body: JSON.stringify(input) },
     );
   }
 

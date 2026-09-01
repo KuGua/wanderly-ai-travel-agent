@@ -15,6 +15,7 @@ import {
 import { evaluateReadiness } from "../../services/personal-research-readiness-service.js";
 import { buildConversationContext } from "../../services/conversation-context-service.js";
 import { proposeTripBriefFromTurn } from "../../services/trip-brief-proposal-service.js";
+import { generateSetupFollowup } from "../../services/setup-followup-generator.js";
 import {
   executeTravelConversation,
   travelConversationSkill,
@@ -33,6 +34,7 @@ import {
 import { publishAgentStreamEvent } from "../task-stream-publisher.js";
 import type { AgentTaskRow } from "../task-repository.js";
 import { loadConversationTurnInput } from "../task-repository.js";
+import { getOrOpenSession } from "../../services/personal-research-setup-service.js";
 
 export async function handleConversationTask(params: {
   run: AgentTaskRow;
@@ -359,11 +361,64 @@ async function handleClassifiedResearchRequest(
     traceparent: params.ctx.traceparent,
   });
 
-  // The deterministic assistant message is the same shape as a normal
-  // MODEL reply so the existing finalize path (delta gate, persist,
-  // assistant-message row) works without branching. The content is
-  // templated, never derived from the question.
-  const content = buildClassifiedResearchReply(readiness.readiness);
+  // ─── §9 — Conversational setup followup (NEEDS_SETUP branch) ────────────
+  // Eagerly open the setup session so the owner can fill in fields without
+  // a separate API round-trip; generate ONE follow-up question via the
+  // bounded LLM call (with deterministic fallback); persist it as the
+  // ASSISTANT message and publish `research.setup.followup` SSE so the chat
+  // surfaces a follow-up bubble alongside the existing confirmation card.
+  let content = buildClassifiedResearchReply(readiness.readiness);
+  if (readiness.readiness === "NEEDS_SETUP") {
+    let setupFollowup: Awaited<ReturnType<typeof generateSetupFollowup>> = null;
+    try {
+      // Open (or refresh) the session. Eager so a refresh after the SSE
+      // reconnects can recover the session from `GET /agent-runs/:runId`.
+      await getOrOpenSession({
+        ctx: params.ctx,
+        runId: params.run.id,
+        tripId: params.run.tripId,
+        ownerUserId: params.run.createdByUserId,
+        requestedCapabilities: params.classifiedIntent.requestedCapabilities,
+      });
+      setupFollowup = await generateSetupFollowup({
+        ctx: params.ctx,
+        tripId: params.run.tripId,
+        ownerUserId: params.run.createdByUserId,
+        locale: "zh-CN",
+        requestedMissing: readiness.missing,
+        filledFieldNames: [],
+      });
+    } catch {
+      metrics.inc("personal_research_setup_session_total", { outcome: "open_failed" });
+      // The session open failure MUST NOT block the draft — fall through
+      // with no followup so the owner still sees the existing
+      // ResearchSetupCard. The error is logged via the open_failed counter.
+    }
+    if (setupFollowup) {
+      await publishAgentStreamEvent({
+        event: "research.setup.followup",
+        runId: params.run.id,
+        generationAttempt: params.run.generationAttempt,
+        followup: {
+          // The generator narrows this through Zod before returning; the
+          // SSE schema's `researchMissingCodeSchema` is the canonical
+          // closed set, so the cast is structural, not a leap of faith.
+          questionCode: setupFollowup.questionCode as Extract<
+            Parameters<typeof publishAgentStreamEvent>[0],
+            { event: "research.setup.followup" }
+          >["followup"]["questionCode"],
+          promptText: setupFollowup.promptText,
+        },
+        source: setupFollowup.source,
+        traceparent: params.ctx.traceparent,
+      });
+      // The deterministic templated reply stays the same so the existing
+      // finalize path continues to work; the follow-up question rides on
+      // its own SSE event and is rendered as an extra chat bubble.
+      content = `${buildClassifiedResearchReply(readiness.readiness)}\n${setupFollowup.promptText}`;
+    }
+  }
+
   await publishAgentStreamEvent({
     event: "message.delta",
     runId: params.run.id,

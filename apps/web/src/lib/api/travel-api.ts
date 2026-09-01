@@ -5,6 +5,10 @@ import type {
   CreateTripThreadInput,
   OwnerConversationResponse,
   ProfileResponse,
+  ResearchSetupApplyRequest,
+  ResearchSetupConfirmAcceptedResponse,
+  ResearchSetupConfirmRequest,
+  ResearchSetupSessionResponse,
   ThreadsResponse,
   TripDetailResponse,
   TripsResponse,
@@ -106,6 +110,14 @@ export interface TravelApi {
   getAgentRun(runId: string): Promise<AgentRun>;
   cancelAgentRun(runId: string): Promise<AgentRun>;
   dismissResearchIntent?(runId: string): Promise<void>;
+  // Personal Research Setup Sessions (§9) — owner-only conversational
+  // completion flow. Optional in the interface so older test mocks and
+  // partial adapters degrade gracefully.
+  getResearchSetup?(runId: string): Promise<{ session: ResearchSetupSessionResponse }>;
+  openResearchSetup?(runId: string): Promise<{ session: ResearchSetupSessionResponse }>;
+  saveResearchSetupAnswer?(runId: string, input: ResearchSetupApplyRequest): Promise<{ session: ResearchSetupSessionResponse }>;
+  cancelResearchSetup?(runId: string): Promise<{ status: "CANCELLED" }>;
+  confirmResearchSetup?(runId: string, input: ResearchSetupConfirmRequest): Promise<ResearchSetupConfirmAcceptedResponse>;
   getRouteEndpoints?(tripId: string): Promise<Array<{ placeId: string; displayName: string }>>;
   saveRouteSelection?(runId: string, input: { originPlaceId: string; destinationPlaceId: string; mode: "WALK" | "DRIVE" | "CYCLE" }): Promise<void>;
   subscribeAgentRun(runId: string, signal: AbortSignal, onEvent: (event: AgentStreamEvent) => void): Promise<void>;

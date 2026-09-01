@@ -11,8 +11,9 @@ import { ResearchSetupCard } from "@/components/trips/personal-research/research
 import { ResearchPlaceSelectionCard } from "@/components/trips/personal-research/research-place-selection-card";
 import { ResearchRunCard } from "@/components/trips/personal-research/research-run-card";
 
-import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest } from "@/lib/api/contracts";
+import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest, ResearchSetupSessionResponse } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
+import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import { useAgentRun, useCancelAgentRun, useOwnerConversation, useSubmitConversationTurn } from "@/lib/query/hooks";
 import { useTravelApi } from "@/lib/query/provider";
 
@@ -118,6 +119,13 @@ export function TravelAgentChat({
   // are server-internal and never surface here.
   const [classifierDraft, setClassifierDraft] =
     useState<Extract<AgentStreamEvent, { event: "research.intent_extracted" }> | null>(null);
+  // §9 — Personal Research Setup Session state, surfaced inline from the
+  // agent-run DTO so the conversational setup card can hydrate on refresh.
+  const [researchSetupSession, setResearchSetupSession] =
+    useState<ResearchSetupSessionResponse | null>(null);
+  // §9 — Latest conversational followup bubble (server-pushed via SSE).
+  const [setupFollowup, setSetupFollowup] =
+    useState<Extract<AgentStreamEvent, { event: "research.setup.followup" }> | null>(null);
   const [routeEndpoints, setRouteEndpoints] = useState<Array<{ placeId: string; displayName: string }>>([]);
   const [routeOrigin, setRouteOrigin] = useState<{ placeId: string; displayName: string } | null>(null);
   const [routeDestination, setRouteDestination] = useState<{ placeId: string; displayName: string } | null>(null);
@@ -298,6 +306,18 @@ export function TravelAgentChat({
         // next 1.5 s agent-run poll.
         setClassifierDraft(null);
         setResearchIntent(null);
+        setResearchSetupSession(null);
+        setSetupFollowup(null);
+      }
+      if (event.event === "research.setup.followup") {
+        // §9 — Conversational followup bubble. The card hydrates from
+        // the agent-run DTO after a refetch; this state only drives the
+        // chat bubble the owner reads inline.
+        setSetupFollowup(event);
+        recordUiDiagnostic("setup.followup_received");
+        // Trigger a refresh so the setup card rehydrates with the freshly
+        // opened session row.
+        void refetchAgentRun();
       }
       if (event.event === "research.stage") {
         setResearchStages((current) => [...current, event]);
@@ -351,6 +371,14 @@ export function TravelAgentChat({
       schemaVersion: 1,
       classifierVersion: "research-intent/v1",
     });
+    // §9 — Rehydrate the setup session projection on mount / SSE refresh
+    // so a tab reload can render the conversational card with the
+    // already-filled slots intact.
+    if (data.researchSetupSession) {
+      setResearchSetupSession(data.researchSetupSession);
+    } else if (data.researchIntentState !== "PROPOSED") {
+      setResearchSetupSession(null);
+    }
   }, [agentRun.data, activeRunId]);
 
   useEffect(() => {
@@ -643,12 +671,16 @@ export function TravelAgentChat({
                   />
                 ) : classifierDraft.readiness === "NEEDS_SETUP" ? (
                   <ResearchSetupCard
+                    tripId={tripId ?? ""}
+                    runId={classifierDraft.runId}
                     readiness={classifierDraft.readiness}
                     missing={classifierDraft.missing}
                     intent={classifierDraft.intent}
+                    setupSession={researchSetupSession}
                     onDismiss={() => {
                       setClassifierDraft(null);
                       setResearchIntent(null);
+                      setResearchSetupSession(null);
                     }}
                   />
                 ) : (
@@ -673,6 +705,24 @@ export function TravelAgentChat({
                   onDismiss={() => setResearchIntent(null)}
                 />
               )}
+            </div>
+          ) : null}
+          {/* §9 — Conversational followup bubble. Renders right below the
+              research card so the owner can read the LLM followup in
+              chat order; auto-clears when the SSE handler refreshes. */}
+          {setupFollowup ? (
+            <div
+              className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}
+              data-testid="setup-followup-bubble"
+              data-question-code={setupFollowup.followup.questionCode}
+              data-source={setupFollowup.source}
+            >
+              <article className="rounded-md border border-amber-200 bg-white p-2 text-sm text-amber-900">
+                <p className="text-xs">{setupFollowup.followup.promptText}</p>
+                <p className="mt-1 text-[10px] italic text-muted-foreground">
+                  来源：{setupFollowup.source === "model" ? "LLM 生成" : "本地模板"}
+                </p>
+              </article>
             </div>
           ) : null}
           {activeRunId ? (

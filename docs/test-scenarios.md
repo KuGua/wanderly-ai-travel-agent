@@ -1230,3 +1230,59 @@ that a grant/revoke invalidates dependent plans.
 3. Retry with the same request ID; the API returns the original run. Confirm with a different request ID or a dismissed source draft; the API returns `409` and creates no task.
 4. Change either selected endpoint to private/inactive before confirmation; confirmation fails closed with a capability gap.
 5. Worker execution uses the selected IDs and mode; it must never select the earliest TripPlaces or default to `WALK`.
+
+## TS-CONVERSATIONAL-SETUP — Conversational hotel setup (§9)
+
+**Starting conditions:** An owner has an activated Solo Trip (`PLANNING`) with no travel dates, no departure city, no stay preferences, no flight preferences, and a `PROPOSED` hotel research intent draft whose readiness is `NEEDS_SETUP` with `missing = ["DATES_MISSING", "STAY_PREFERENCES_MISSING"]`.
+
+### TS-CONVERSATIONAL-SETUP-1 — Owner fills only dates; confirm blocks until stay prefs are also supplied
+
+1. The owner submits a chat turn that the classifier turns into `RESEARCH_ONLY: [hotel]`. The conversation worker opens a `personal_research_setup_sessions` row with `expires_at` ≈ now + 15 min, emits `research.intent_extracted` + `research.setup.followup`, and persists no question text.
+2. The owner enters check-in / check-out via the inline card; one `POST /agent-runs/:runId/research-setup/answers` with `{ field: "travelDates", value: { start, end } }` persists the ordered date pair under a single optimistic-version update.
+3. `missing[]` recomputes to `["STAY_PREFERENCES_MISSING"]`. The card disables 确认并搜索.
+4. The owner bypasses the disabled button and calls 确认并搜索. The API returns `422` because `STAY_PREFERENCES_MISSING` is still unresolved. No `trip_stay_search_preferences` row is written and no RESEARCH task is accepted.
+
+### TS-CONVERSATIONAL-SETUP-2 — Owner confirms; preferences + dates are persisted atomically
+
+1. Continuing from the previous step, the owner supplies `stayPreferences = { roomCount: 1, adultsPerRoom: [2], currency: "TWD" }`.
+2. Click 确认并搜索 with `requestId = uuid()`. The server returns `202 { runId, snapshotId, status: "QUEUED" }`, writes a new `trip_stay_search_preferences` row (version +1), updates `shared_trips.travel_date_start` / `travel_date_end`, cascades stale plans, transitions the source draft to `CONFIRMED`, and accepts a RESEARCH task bound to `originatingIntentRunId`. The setup session is set to `CONFIRMED`. Audit row `PERSONAL_RESEARCH_SETUP_CONFIRMED` exists.
+3. Client receives `research.stage SNAPSHOT_CREATED` for the new RESEARCH run; the existing `ResearchRunCard` mounts in place of the setup card.
+
+### TS-CONVERSATIONAL-SETUP-3 — Idempotent retry of confirm-and-search
+
+1. After TS-CONVERSATIONAL-SETUP-2, the client retries the same `POST /confirm-and-search` with the same `requestId`. The server returns the original 202 envelope; no second `trip_stay_search_preferences` row, no second RESEARCH task, no second audit row.
+2. A second request with a different `requestId` and an already-confirmed session returns `409`.
+
+### TS-CONVERSATIONAL-SETUP-4 — Hotel provider disabled or Nuitee auth missing
+
+1. With `PLAN_ENABLE_HOTEL=false`, `confirm-and-search` returns `422`; no preferences persisted.
+2. With `HOTEL_PROVIDER=nuitee_connect` and no `stay_search_provider_authorizations` row, the confirm tx throws `422` from `loadActiveQuoteNationality`; the audit row records the failure but no preferences / task / intent transition is committed.
+
+### TS-CONVERSATIONAL-SETUP-5 — Stale-cascade ordering
+
+1. With an in-flight `RESEARCH` task on the trip, the confirm tx must call `stalePlansAndConfirmationsForTrip` BEFORE `acceptResearchTask`. The transition is atomic; the new task lands only after the prior slot is freed.
+2. If the prior run is `RUNNING` rather than `QUEUED`, the partial unique index frees after `status='STALE'`; no `agent_task_runs_one_active_planning` constraint violation surfaces.
+
+### TS-CONVERSATIONAL-SETUP-6 — Cancel vs expiry
+
+1. The owner clicks 关闭. `POST /agent-runs/:runId/research-setup/cancel` sets `status='CANCELLED'`. A subsequent `confirm-and-search` returns `410 Gone`.
+2. A separate session past `expires_at` is opportunistically transitioned to `EXPIRED` on the next `applyAnswer` or `confirm-and-search` call; the API returns `410 Gone`. No RESEARCH task is created.
+
+### TS-CONVERSATIONAL-SETUP-7 — Cross-user 403
+
+1. A second owner calls `GET / POST /answers /cancel /confirm-and-search` on the run. `getAuthorizedAgentRun` rejects with `403` before any setup row read or write fires. No audit / metric row is emitted.
+
+### TS-CONVERSATIONAL-SETUP-8 — Followup generator fallback when LLM fails
+
+1. With `generateSetupFollowup`'s model gateway throwing, the conversation worker still emits `research.setup.followup` whose `source = "fallback"` and whose `questionCode` is one of the server-known missing codes. The metric `personal_research_setup_followup_total{outcome="fallback",reason="model_error"}` increments. The conversation task is not blocked; the setup card mounts and is editable.
+2. The model gateway returns a `questionCode` not in `missing[]`. The generator falls back to the deterministic template and increments `reason="invalid_code"`. Audit summary for the fallback is `{ reason, missingCount }` only.
+
+### TS-CONVERSATIONAL-SETUP-9 — Out-of-scope missing codes still surface the read-only card
+
+1. The classifier returns `missing = ["HOTEL_PROVIDER_NOT_APPROVED"]`. The conversational card does NOT mount; the existing read-only `research-setup-card` renders with the `HOTEL_PROVIDER_NOT_APPROVED` hint and a single 关闭 button. The conversational API endpoints are not invoked.
+
+### TS-CONVERSATIONAL-SETUP-10 — Privacy invariants
+
+1. The setup row never contains the original question text, free-text extraction, the Profile, snapshot values, or any PII (passport / ID / phone / address). The audit summary contains only `{ sessionVersion, fieldsFilled }` (field names) plus bounded counters.
+2. The followup generator's input is bounded to `missing[]`, `locale`, `filledFieldNames` (field labels only), and a server-known `missingCodeLabels` map; it never receives the original question.
+3. The SSE `research.setup.followup` payload contains only `questionCode + promptText + source`; no `runId` echo, no original question.

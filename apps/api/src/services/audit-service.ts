@@ -56,7 +56,15 @@ export type AuditAction =
   | "TRIP_MEMORY_UPDATE" | "TRIP_MEMORY_DELETE"
   | "MEMORY_PROJECTION_CREATE" | "MEMORY_INVALIDATION"
   // Hotel provider switching (docs/nuitee-serpapi-hotel-provider-switching-implementation.md §5):
-  | "HOTEL_PROVIDER_GRANTED" | "HOTEL_PROVIDER_REVOKED" | "HOTEL_PROVIDER_SWITCH_BLOCKED";
+  | "HOTEL_PROVIDER_GRANTED" | "HOTEL_PROVIDER_REVOKED" | "HOTEL_PROVIDER_SWITCH_BLOCKED"
+  // Personal Research Setup Sessions (0042 / docs/personal-research-intent-routing-implementation.md §9):
+  | "PERSONAL_RESEARCH_SETUP_OPENED"
+  | "PERSONAL_RESEARCH_SETUP_UPDATED"
+  | "PERSONAL_RESEARCH_SETUP_CONFIRMED"
+  | "PERSONAL_RESEARCH_SETUP_CANCELLED"
+  | "PERSONAL_RESEARCH_SETUP_EXPIRED"
+  | "PERSONAL_RESEARCH_SETUP_FOLLOWUP_GENERATED"
+  | "PERSONAL_RESEARCH_SETUP_FOLLOWUP_FELLBACK";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
   [key: string]: AuditSummaryValue;

@@ -285,3 +285,152 @@ ResearchConfirmationCard
 - 不能把 `PLAN_ENABLE_HOTEL` 或 provider selection 启动日志当成实际 provider 调用证据；必须以 tool dispatch/provider evidence/audit 记录验证。
 - 不得扩展 Personal Agent 为直接 Shared Skill caller，不得新建自由 multi-agent、Redis、Temporal 或 WebSocket。
 - fixture 只能用于测试和 adapter contract；运行时缺数据必须 `UNAVAILABLE`。
+
+## 10. Conversational Setup (§9) — owner 补全研究意图缺失字段
+
+`NEEDS_SETUP` 不再只是死路；服务端在 conversation worker 命中研究意图分类器后立即打开 `personal_research_setup_sessions` 行，驱动 owner-only 临时设置会话，并由一次受 gate 约束的 LLM 调用产出单条追问。Owner 在对话或卡片内填齐后，必须显式点击「确认并搜索」；服务端在单一事务中写 trip-level 字段、偏好 slot、`stale cascade`、审计、迁移草稿、`acceptResearchTask` 并 publish `SNAPSHOT_CREATED`。
+
+### 10.1 设计原则
+
+- **Slot-based 表结构**：每个 capability 占一列 JSON slot；新增 capability 只需 `ALTER TABLE ADD COLUMN jsonb` + 新 Zod schema + 新 widget，不必重写 session 表。
+- **Server 重组 `missing[]`**：客户端从不写入；每次 `applyAnswer` 服务端按 trip / preferences / slots 现状重算。
+- **乐观版本**：`applyAnswer` 需要 `expectedVersion`；`cancel` 与 `confirmAndSearch` 在事务里 `SELECT ... FOR UPDATE`。
+- **懒过期**：无后台 worker；`applyAnswer` / `confirmAndSearch` 在 `now > expiresAt` 时机会式 `OPEN → EXPIRED` 后返 `410 Gone`。
+- **不写作者内容**：原始问题、profile、snapshot、place 原文、PII 永不入库；审计 summary 仅 `{ sessionVersion, fieldsFilled }`。
+- **首版范围**：Solo Trip + 已激活 + 酒店 / 机票 / 行程级 slots；预算、活动、共享行程显式延后。
+
+### 10.2 Schema 与索引
+
+迁移：`apps/api/migrations/0042_personal_research_setup_sessions.sql`
+
+```sql
+CREATE TYPE personal_research_setup_status AS ENUM
+  ('OPEN', 'CONFIRMED', 'CANCELLED', 'EXPIRED', 'SUPERSEDED');
+
+CREATE TABLE personal_research_setup_sessions (
+  intent_run_id UUID PRIMARY KEY
+    REFERENCES agent_task_runs(id) ON DELETE CASCADE,
+  trip_id UUID NOT NULL REFERENCES shared_trips(id) ON DELETE CASCADE,
+  owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  departure_city VARCHAR(64),
+  travel_date_start DATE,
+  travel_date_end DATE,
+  stay_preferences JSONB,
+  flight_preferences JSONB,
+  missing JSONB NOT NULL DEFAULT '[]'::jsonb,
+  version INTEGER NOT NULL DEFAULT 1,
+  status personal_research_setup_status NOT NULL DEFAULT 'OPEN',
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT prs_dates_pair_chk CHECK (
+    (travel_date_start IS NULL AND travel_date_end IS NULL)
+    OR (travel_date_start IS NOT NULL
+        AND travel_date_end IS NOT NULL
+        AND travel_date_end > travel_date_start)
+  ),
+);
+
+CREATE UNIQUE INDEX personal_research_setup_sessions_one_open_per_trip_owner
+  ON personal_research_setup_sessions(trip_id, owner_user_id)
+  WHERE status = 'OPEN';
+```
+
+CHECK 仅覆盖 date pair；OPEN 会话必须允许从空 slot 开始，完整性在确认事务中按原始 intent 的 capabilities 重新校验。slot JSON 形状由 Zod 在服务边界校验。Slot 字段可空，所以添加新 capability 仅需 `ALTER TABLE ADD COLUMN jsonb` + 同步 Drizzle 类型。
+
+### 10.3 服务层（`personal-research-setup-service.ts`）
+
+- `getOrOpenSession({ runId, ownerUserId, tripId, requestedCapabilities })`：upsert 一行 OPEN 会话，`expires_at = now + 15min`；用 `partial unique index` 处理同一 `(trip, owner)` 多会话场景。`missing[]` 由 `computeMissingForSetup(trip, slots, capabilities)` 服务端重算。
+- `applyAnswer({ runId, ownerUserId, expectedVersion, patch })`：`SELECT FOR UPDATE`，Zod 解析 `patch`（discriminated union over `field ∈ {departureCity | travelDates | stayPreferences | flightPreferences}`）；`travelDates` 在一个版本更新中提交 `{ start, end }`，校验 `end > start`，按该 intent 的真实 capabilities 重算 `missing[]`，`version+1`；opportunistic `OPEN → EXPIRED` 在 `expiresAt < now` 时触发。`422 / 409 / 410` 各自明确。
+- `cancelSession({ runId, ownerUserId })`：`status = CANCELLED`，幂等。
+- `confirmAndSearch({ runId, ownerUserId, tripId, requestId })`：单事务按以下顺序（顺序固定以满足 `agent_task_runs_one_active_planning` 部分唯一索引）：
+  1. `SELECT setup FOR UPDATE`，校验 owner / trip / `status=OPEN` / 未过期。
+  2. `findResearchTaskByRequestId`：命中即标记 CONFIRMED 并返既有 202 envelope（幂等）。
+  3. `SELECT agentTaskRuns FOR UPDATE`，重读 `researchIntentState='PROPOSED'` 与 `operation='CONVERSATION'`。
+  4. `requireResearchEligible(tripId, owner, destinations, tx)`。
+  5. `resolvePersistedHotelProviderName` + `loadActiveQuoteNationality`（Nuitee 时）。
+  6. 正则校验日期、`superRefine` 校验 stay / flight preferences。
+  7. `UPDATE sharedTrips` 写 `travel_date_start` / `travel_date_end` / `departure_cities`（变更时）。
+  8. `saveConfirmedStaySearchPreferences({ tx })` 与 `saveConfirmedSearchPreferences({ tx })`：两个 service 均已加 `tx?: Tx` 参数以支持嵌套事务。
+  9. **stale-cascade 先于 accept**：`stalePlansAndConfirmationsForTrip` 把既有 RUNNING / QUEUED 改为 STALE，腾出部分唯一索引槽。
+  10. `createConstraintSnapshot` 用更新后的 trip-level 字段。
+  11. `recordAudit({ action: "PERSONAL_RESEARCH_SETUP_CONFIRMED", summary: { sessionVersion, fieldsFilled } })`。
+  12. 标记 `setup_sessions.status = CONFIRMED`、`transitionResearchIntentState PROPOSED → CONFIRMED`。
+  13. `acceptResearchTask({ originatingIntentRunId: runId, requestId, tx, ... })`；其内部 `findResearchTaskByRequestId` 处理重复。
+  14. 事务提交后通过 `queueMicrotask` publish `research.stage SNAPSHOT_CREATED`。
+- 所有失败路径必须保持：未写偏好、未建 task、未改 intent state、仅审计失败行（`whitelistSummary` 只允许 `sessionVersion` / `fieldsFilled` / 其它低基数枚举键）。
+
+### 10.4 LLM 追问（`setup-followup-generator.ts` + `LLMGateway.generateSetupFollowup`）
+
+- 输入：缺哪几个 code、locale、已填字段名（**不含值**）、服务端 `missingCodeLabels` 表。
+- 输出 schema：`{ questionCode: researchMissingCodeSchema, promptText: string ≤ 280 }`。
+- 安全门：
+  - 输入侧：`missing[]` 为空直接返 `null`（不进 LLM）。
+  - 输出侧：`setupFollowupOutputSchema.safeParse` 失败 → fallback `reason=schema`；`questionCode ∉ missing[]` → fallback `reason=invalid_code`；PII / 价格 / 实时词正则命中（passport / long-digit ID / phone / `¥ $ € £ + 数字` / currency codes / today/tonight/right now 等中英文实时词）→ fallback `reason=pii`；超长 → fallback `reason=length`。
+  - 模型抛出 → fallback `reason=model_error`。
+- Fallback 走 `deterministicFallback(missing, locale)`，返回 `MISSING_COPY` 风格的简短模板，按 locale 选择中文/英文。
+- 全程 `try/catch`，**永不抛**；失败 fallback 也仅写 `recordAudit({ action: "PERSONAL_RESEARCH_SETUP_FOLLOWUP_FELLBACK", summary: { reason, missingCount } })`。
+- 度量：`personal_research_setup_followup_total{outcome ∈ model | fallback, reason ∈ model | empty | no_gateway | schema | invalid_code | pii | length | model_error}`。
+
+### 10.5 Conversation Worker 集成（`conversation-task-handler.ts#handleClassifiedResearchRequest`）
+
+当 `readiness === 'NEEDS_SETUP'`：
+1. `getOrOpenSession({ requestedCapabilities: classifiedIntent.requestedCapabilities })`（独立 try/catch，失败仅计数 `open_failed`，不阻塞草稿）。
+2. `generateSetupFollowup({ requestedMissing: readiness.missing, locale: "zh-CN", filledFieldNames: [] })`。
+3. publish `research.setup.followup { runId, followup: { questionCode, promptText }, source: "model" | "fallback" }`。
+4. 把追问文本拼到现有 templated `buildClassifiedResearchReply` 末尾一起走 `message.delta` → `completeConversationTask` → ASSISTANT message 持久化路径。
+
+### 10.6 Web 集成（`apps/web`）
+
+- `agentRunResponseSchema.researchSetupSession`：仅当 `OPEN + 未过期` 时投影；前端 refresh 时直接 hydrate，无需再次调 `GET`。
+- `agentStreamEventSchema` 新增 `research.setup.followup` 变体；`travel-agent-chat.tsx` 内置 `setupFollowup` 状态，渲染为 inline 气泡（`data-testid="setup-followup-bubble"`）。
+- `ResearchSetupCard` 改为两段：`setupSession` 缺失或 missing code 越界 → 既有只读 fallback；否则挂载 `ConversationalSetupCard` 渲染日期 / 房间数 / 成人 / 币种 widget。`disabled` 状态由 `useMemo` 本地校验，日期以单个 `travelDates` patch 保存；一次确认尝试复用同一个 `requestId`，因此网络重试会命中服务端幂等记录。
+- Hooks：`useOpenResearchSetup`、`useSaveResearchSetupAnswer`、`useCancelResearchSetup`、`useConfirmResearchSetup`；mutation 成功后 `setQueryData` 写回 `["agent-runs", runId]` 缓存，避免再次 `refetch` 闪烁。
+- UI diagnostics：`setup.session_open` / `setup.field_update` / `setup.confirm` / `setup.cancel` / `setup.followup_received`。
+
+### 10.7 取舍
+
+- **不直接复用 `researchIntentDraft` 的 JSON 列**：draft 明确禁止携带 dates / adults / currency；混用会让 schema 与审计语义同时被破坏。
+- **不引入后台 worker**：MVP 没有跨进程调度，过期检查放在最热的 mutation 路径上；后续真要后台清理时再加 worker。
+- **机票 widget 暂不实现**：首版只渲染 `DATES_MISSING` + `STAY_PREFERENCES_MISSING`；`FLIGHT_PREFERENCES_MISSING` 保持只读提示，等专门的机票偏好卡片就绪，避免把住宿输入误写为航班偏好。
+- **不预先加 `DEPARTURE_CITY_MISSING` 到 readiness schema**：现有 readiness service 不产出该 code；服务层依旧接受 `departureCity` 字段写入，但缺失时不暴露在 `missing[]`，避免 readiness 测试改动。
+
+### 10.8 实施产物（落地文件）
+
+- `apps/api/migrations/0042_personal_research_setup_sessions.sql`（新增）
+- `apps/api/src/db/schema.ts`：`personalResearchSetupStatusEnum` + `personalResearchSetupSessions` 表
+- `apps/api/src/services/audit-service.ts`：新增 7 个 `PERSONAL_RESEARCH_SETUP_*` action
+- `apps/api/src/services/stay-search-preferences-service.ts`、`flight-search-preferences-service.ts`：加 `tx?: Tx` 参数（`saveConfirmedStaySearchPreferences`、`saveConfirmedSearchPreferences`）
+- `apps/api/src/services/personal-research-setup-service.ts`（新增）
+- `apps/api/src/services/setup-followup-generator.ts`、`setup-followup-types.ts`（新增）
+- `apps/api/src/providers/setup-followup-prompts.ts`、`setup-followup-schema.ts`（新增）
+- `apps/api/src/providers/model-gateway.ts`、`llm-gateway.ts`：新增 `generateSetupFollowup` 方法
+- `apps/api/src/observability/metrics.ts`：新增 `personal_research_setup_session_total` + `personal_research_setup_followup_total` 计数器
+- `apps/api/src/types/schemas.ts`：新增 `personalResearchSetup*` schema、`setupFollowupEventSchema`、在 `agentStreamEventSchema` 与 `agentRunResponseSchema` 增加对应分支
+- `apps/api/src/tasks/task-repository.ts`：`toRunResponse` 投影 `researchSetupSession`；`getAuthorizedAgentRun` 同步加载
+- `apps/api/src/tasks/handlers/conversation-task-handler.ts`：`handleClassifiedResearchRequest` 在 NEEDS_SETUP 分支调用 `getOrOpenSession` + `generateSetupFollowup` + publish followup SSE
+- `apps/api/src/routes/personal-research-setup.ts`（新增 4 个 owner-only 路由）
+- `apps/api/src/app.ts`：注册新路由
+- `apps/web/src/lib/api/contracts.ts`：新增 `ResearchSetupSessionResponse` / `setupFollowupEventSchema` / 4 个新 schema；在 `agentRunResponseSchema` 与 `agentStreamEventSchema` 投影
+- `apps/web/src/lib/api/travel-api.ts`、`http-travel-api.ts`：4 个新方法
+- `apps/web/src/lib/query/hooks.ts`：4 个新 hook + UI diagnostic emit
+- `apps/web/src/lib/observability/ui-diagnostics.ts`：5 个新 action
+- `apps/web/src/lib/api/contracts.ts`：新增 `tripStaySearchPreferencesInputSchema` 与 `tripSearchPreferencesInputSchema` 镜像
+- `apps/web/src/components/trips/personal-research/research-setup-card.tsx`：两段渲染，只读 fallback + conversational
+- `apps/web/src/components/explore/travel-agent-chat.tsx`：rehydrate `researchSetupSession`、渲染 followup bubble、wire `setupSession` 传入 card
+- 单元 / 集成测试：`tests/services/setup-followup-generator.test.ts`（9 用例）、`tests/contracts/agent-run-response-schema.test.ts`（fixture 增加 `researchSetupSession: null`）
+
+### 10.9 测试矩阵（与 `docs/test-scenarios.md` 同步）
+
+- 单元：`generateSetupFollowup` 模型成功 / `questionCode ∉ missing` / PII / 价格 / 模型抛 / 空 missing / 工厂注入。
+- 集成（需要 DB）：`personal-research-setup.test.ts` 覆盖 18 个场景（open / partial answer / 422 invalid format / 422 rooms mismatch / 422 flight invalid / 409 version mismatch / 202 happy / 幂等 / provider disabled / Nuitee auth missing / 410 cancel / 410 expired / 403 cross-user / 409 DRAFT / 409 non-CONVERSATION / 204+204 cancel idempotent / 410 cancel-then-confirm / 422 partial fill）。
+- Schema：`agent-run-response-schema` 加 `researchSetupSession: null` fixture。
+- 现有回归：`personal-research-readiness-service`、`personal-research-intent-classifier`、`personal-research-intent-draft` 行为不变；新增的 setup session 列不破坏 readiness 输出。
+
+### 10.10 验收
+
+- 用户在已有 Solo Trip 中说「搜西门町附近酒店」后，不再只看到「去补设置」的死路；可以在对话和卡片内补齐资料，明确确认一次后立即开始真实研究。
+- 缺失或不可信的 live provider 数据仍只显示 `UNAVAILABLE`，绝不返回 Demo data；Nuitee nationality authorization 缺失时 confirm 直接 `422`，**不**调用 provider。
+- 取消、过期、跨用户、共享 trip、非 CONVERSATION intent run、DRAFT trip 全部 fail closed。
+- LLM 追问失败永远回退到模板；setup row 不含原文 / PII / 抽取内容；audit summary 仅 `{ sessionVersion, fieldsFilled }`。
+- 推荐先做这一版；不把航班、路线、活动的补全同时纳入；它们涉及更多授权与状态边界。

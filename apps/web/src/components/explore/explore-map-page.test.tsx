@@ -629,6 +629,7 @@ function createTravelApiForAutoAsk(): TravelApi & {
     resultPlanId: null,
     researchIntentDraft: null,
     researchIntentState: null,
+    researchSetupSession: null,
   };
 
   return {

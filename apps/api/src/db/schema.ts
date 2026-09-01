@@ -69,6 +69,21 @@ export const agentTaskStatusEnum = pgEnum("agent_task_status", [
 export const researchIntentStateEnum = pgEnum("research_intent_state", [
   "PROPOSED", "DISMISSED", "CONFIRMED", "SUPERSEDED",
 ]);
+
+/**
+ * Lifecycle of a per-intent-run conversational setup scratchpad.
+ * OPEN rows are the only ones surfaced to the owner; CONFIRMED means the
+ * authoritative preferences were persisted and the RESEARCH task was
+ * accepted; CANCELLED / EXPIRED / SUPERSEDED are terminal.
+ * See docs/personal-research-intent-routing-implementation.md §9.
+ */
+export const personalResearchSetupStatusEnum = pgEnum("personal_research_setup_status", [
+  "OPEN",
+  "CONFIRMED",
+  "CANCELLED",
+  "EXPIRED",
+  "SUPERSEDED",
+]);
 export const auditActionEnum = pgEnum("audit_action", [
   "PROFILE_CREATE", "PROFILE_UPDATE", "PROFILE_DELETE",
   "TRIP_CREATE", "TRIP_JOIN",
@@ -121,6 +136,14 @@ export const auditActionEnum = pgEnum("audit_action", [
   "MEMORY_PROJECTION_CREATE", "MEMORY_INVALIDATION",
   // Hotel provider switching (docs/nuitee-serpapi-hotel-provider-switching-implementation.md §5):
   "HOTEL_PROVIDER_GRANTED", "HOTEL_PROVIDER_REVOKED", "HOTEL_PROVIDER_SWITCH_BLOCKED",
+  // Personal Research Setup Sessions (0042 / docs/personal-research-intent-routing-implementation.md §9):
+  "PERSONAL_RESEARCH_SETUP_OPENED",
+  "PERSONAL_RESEARCH_SETUP_UPDATED",
+  "PERSONAL_RESEARCH_SETUP_CONFIRMED",
+  "PERSONAL_RESEARCH_SETUP_CANCELLED",
+  "PERSONAL_RESEARCH_SETUP_EXPIRED",
+  "PERSONAL_RESEARCH_SETUP_FOLLOWUP_GENERATED",
+  "PERSONAL_RESEARCH_SETUP_FOLLOWUP_FELLBACK",
 ]);
 
 // ─── Long-term memory (docs/long-term-memory-implementation.md) ─────────────
@@ -1014,6 +1037,54 @@ export const researchRouteSelections = pgTable("research_route_selections", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   tripOwnerIdx: index("research_route_selections_trip_owner_idx").on(table.tripId, table.ownerUserId),
+}));
+
+/**
+ * Per-intent-run conversational setup scratchpad. See migration
+ * `0042_personal_research_setup_sessions.sql` and
+ * docs/personal-research-intent-routing-implementation.md §9.
+ *
+ * Slot columns:
+ *   - trip-level: `departureCity`, `travelDateStart`, `travelDateEnd`
+ *   - per-capability: `stayPreferences`, `flightPreferences`
+ * The server recomputes `missing[]` on every write; the client never authors
+ * it. Slot JSON shape is enforced at the service boundary by Zod; CHECK
+ * constraints only cover the date pair / OPEN-status pair invariants.
+ */
+export const personalResearchSetupSessions = pgTable("personal_research_setup_sessions", {
+  intentRunId: uuid("intent_run_id").primaryKey().references(() => agentTaskRuns.id, { onDelete: "cascade" }),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+
+  departureCity: varchar("departure_city", { length: 64 }),
+  travelDateStart: date("travel_date_start"),
+  travelDateEnd: date("travel_date_end"),
+
+  stayPreferences: jsonb("stay_preferences").$type<{
+    roomCount: number;
+    adultsPerRoom: number[];
+    currency: string;
+  } | null>(),
+  flightPreferences: jsonb("flight_preferences").$type<{
+    tripType: string;
+    currency: string;
+    adults: number;
+    cabin: string;
+    offerFreshnessMinutes: number;
+  } | null>(),
+
+  missing: jsonb("missing").$type<string[]>().notNull(),
+  version: integer("version").notNull().default(1),
+
+  status: personalResearchSetupStatusEnum("status").notNull().default("OPEN"),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tripOwnerIdx: index("personal_research_setup_sessions_trip_owner_idx").on(table.tripId, table.ownerUserId),
+  oneOpenPerTripOwner: uniqueIndex("personal_research_setup_sessions_one_open_per_trip_owner")
+    .on(table.tripId, table.ownerUserId).where(sql`${table.status} = 'OPEN'`),
 }));
 
 export const navigationRouteEvidence = pgTable("navigation_route_evidence", {

@@ -8,6 +8,7 @@ import {
   chatMessages,
   idempotencyRecords,
   outboxEvents,
+  personalResearchSetupSessions,
   tripMembers,
 } from "../db/schema.js";
 import { ApiError } from "../middleware/error-handler.js";
@@ -501,7 +502,16 @@ export async function getAuthorizedAgentRun(runId: string, userId: string): Prom
   const [run] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, runId)).limit(1);
   if (!run) throw new ApiError(404, "Not Found", "Agent run not found");
   await requireRunAccess(run, userId);
-  return toRunResponse(run);
+  // Surface an OPEN setup session when the caller is the owner. Non-owners
+  // never see the setup session; the WHERE clause below is structural but
+  // requireRunAccess enforces ownership first so cross-user leakage is
+  // impossible from this projection.
+  const setupSession = run.createdByUserId === userId
+    ? (await db.select().from(personalResearchSetupSessions)
+      .where(eq(personalResearchSetupSessions.intentRunId, runId))
+      .limit(1))[0]
+    : null;
+  return toRunResponse(run, setupSession);
 }
 
 /**
@@ -1126,7 +1136,10 @@ function toOwnerMessage(row: typeof chatMessages.$inferSelect): OwnerConversatio
   };
 }
 
-function toRunResponse(run: AgentTaskRow): AgentRunResponse {
+function toRunResponse(
+  run: AgentTaskRow,
+  setupSession?: typeof personalResearchSetupSessions.$inferSelect | null,
+): AgentRunResponse {
   // Project the persisted draft down to the closed-shape owner-safe subset.
   // SUPERSEDED drafts are intentionally hidden — they are server-internal
   // bookkeeping (see docs/personal-research-intent-routing-implementation.md
@@ -1139,6 +1152,29 @@ function toRunResponse(run: AgentTaskRow): AgentRunResponse {
         readiness: run.researchIntentDraft.readiness,
         missing: run.researchIntentDraft.missing,
       };
+  const projectedSetupSession = setupSession && setupSession.status === "OPEN"
+    && setupSession.expiresAt.getTime() > Date.now()
+    ? {
+        intentRunId: setupSession.intentRunId,
+        tripId: setupSession.tripId,
+        ownerUserId: setupSession.ownerUserId,
+        departureCity: setupSession.departureCity,
+        travelDateStart: setupSession.travelDateStart
+          ? toIsoDate(setupSession.travelDateStart)
+          : null,
+        travelDateEnd: setupSession.travelDateEnd
+          ? toIsoDate(setupSession.travelDateEnd)
+          : null,
+        stayPreferences: setupSession.stayPreferences,
+        flightPreferences: setupSession.flightPreferences,
+        missing: setupSession.missing as AgentRunResponse["researchSetupSession"] extends infer S
+          ? S extends { missing: infer M } ? M : never
+          : never,
+        version: setupSession.version,
+        status: setupSession.status,
+        expiresAt: setupSession.expiresAt.toISOString(),
+      }
+    : null;
   return agentRunResponseSchema.parse({
     runId: run.id,
     operation: run.operation,
@@ -1153,7 +1189,17 @@ function toRunResponse(run: AgentTaskRow): AgentRunResponse {
     resultPlanId: run.resultPlanId,
     researchIntentDraft: draft,
     researchIntentState: run.researchIntentState === "SUPERSEDED" ? null : run.researchIntentState,
+    researchSetupSession: projectedSetupSession,
   });
+}
+
+function toIsoDate(value: string | Date): string {
+  if (typeof value === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+    const parsed = new Date(value);
+    return parsed.toISOString().slice(0, 10);
+  }
+  return value.toISOString().slice(0, 10);
 }
 
 function placeColumns(place: ConversationPlace | undefined) {

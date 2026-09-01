@@ -6,6 +6,10 @@ import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 import type { TripSearchPreferencesRequest } from "../types/schemas.js";
 
+// Drizzle transaction handle. Mirrors the alias in `audit-service.ts` and
+// the pattern in `task-repository.ts#acceptResearchTask`.
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export class SearchPreferencesStaleError extends Error {
   constructor() {
     super("Confirmed flight search preferences are missing or stale");
@@ -30,8 +34,11 @@ export async function saveConfirmedSearchPreferences(params: {
   tripId: string;
   confirmedBy: string;
   input: TripSearchPreferencesRequest;
+  /** Optional outer transaction so the caller can compose the save with
+   *  other writes (e.g. conversational setup confirm). */
+  tx?: Tx;
 }) {
-  return db.transaction(async (tx) => {
+  const write = async (tx: Tx) => {
     const [latest] = await tx.select({ version: tripSearchPreferences.version })
       .from(tripSearchPreferences)
       .where(eq(tripSearchPreferences.tripId, params.tripId))
@@ -53,5 +60,6 @@ export async function saveConfirmedSearchPreferences(params: {
       tx,
     });
     return created;
-  });
+  };
+  return params.tx ? write(params.tx) : db.transaction(write);
 }
