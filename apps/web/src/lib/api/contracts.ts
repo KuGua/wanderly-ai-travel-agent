@@ -629,7 +629,28 @@ const streamBaseSchema = z.object({
   generationAttempt: z.number().int().nonnegative(),
 });
 
+/**
+ * The assistant went and looked something up. Rendered so a reply that pauses
+ * while a supplier answers reads as work in progress rather than a hang.
+ *
+ * Carries the capability and, once settled, its outcome — never arguments or
+ * provider data. The findings themselves arrive in the reply text.
+ */
+export const toolStartedEventSchema = streamBaseSchema.extend({
+  event: z.literal("tool.started"),
+  capability: personalResearchOperationCapabilitySchema,
+}).strict();
+
+export const toolSettledEventSchema = streamBaseSchema.extend({
+  event: z.literal("tool.settled"),
+  capability: personalResearchOperationCapabilitySchema,
+  outcome: z.enum(["AVAILABLE", "UNAVAILABLE", "NEEDS_CONFIRMATION"]),
+  reason: z.string().regex(/^[A-Z_]{3,40}$/).optional(),
+}).strict();
+
 export const agentStreamEventSchema = z.discriminatedUnion("event", [
+  toolStartedEventSchema,
+  toolSettledEventSchema,
   streamBaseSchema.extend({ event: z.literal("turn.started") }).strict(),
   streamBaseSchema.extend({ event: z.literal("run.phase"), phase: agentRunPhaseSchema }).strict(),
   streamBaseSchema.extend({

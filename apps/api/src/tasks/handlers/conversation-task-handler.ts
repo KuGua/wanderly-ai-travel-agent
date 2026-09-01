@@ -38,6 +38,10 @@ import { loadConversationTurnInput } from "../task-repository.js";
 import { buildProactiveIntro } from "../../i18n/proactive-intro.js";
 import { ToolCallDeduplicator } from "../../agents/personal-research-tool-policy.js";
 import {
+  personalResearchOperationCapabilitySchema,
+  toolSettledEventSchema,
+} from "../../types/schemas.js";
+import {
   PERSONAL_RESEARCH_TOOLS,
   createPersonalResearchDispatcher,
 } from "../../agents/personal-research-tools.js";
@@ -341,6 +345,15 @@ export async function handleConversationTask(params: {
 
     toolContext.tools = [HOTEL_SEARCH_TOOL, ...PERSONAL_RESEARCH_TOOLS];
     toolContext.dispatchTool = async (call) => {
+      // Reported around both routes, so the traveller sees the same thing
+      // whichever capability the model reached for.
+      await publishToolEvent(params.run, { phase: "started", name: call.name }, params.ctx.traceparent);
+      const settled = await runDispatch(call);
+      await publishToolEvent(params.run, { phase: "settled", name: call.name, ...settledSummary(settled) }, params.ctx.traceparent);
+      return settled;
+    };
+
+    const runDispatch = async (call: Parameters<ModelToolDispatcher>[0]) => {
       if (call.name !== HOTEL_SEARCH_TOOL.name) {
         if (deduplicator.claim(call.name, call.arguments).duplicate) {
           // Answered rather than thrown: the model has to learn it already
@@ -515,6 +528,40 @@ function boundedTextChunks(value: string, maxBytes: number): string[] {
   }
   if (chunk) chunks.push(chunk);
   return chunks;
+}
+
+/**
+ * Publishes tool progress. A name the capability enum does not know is
+ * dropped rather than guessed at: it would fail the strict event schema at
+ * the relay and take the whole SSE stream with it, and losing the reply over
+ * a status message is the worse failure.
+ */
+function publishToolEvent(
+  run: AgentTaskRow,
+  event: { phase: "started"; name: string } | { phase: "settled"; name: string; outcome: string; reason?: string },
+  traceparent?: string,
+) {
+  const capability = personalResearchOperationCapabilitySchema.safeParse(event.name);
+  if (!capability.success) return Promise.resolve();
+  const base = { runId: run.id, generationAttempt: run.generationAttempt, capability: capability.data, traceparent };
+  if (event.phase === "started") return publishAgentStreamEvent({ event: "tool.started", ...base });
+  const outcome = toolSettledEventSchema.shape.outcome.safeParse(event.outcome);
+  return publishAgentStreamEvent({
+    event: "tool.settled",
+    ...base,
+    outcome: outcome.success ? outcome.data : "UNAVAILABLE",
+    ...(event.reason ? { reason: event.reason } : {}),
+  });
+}
+
+/** The reportable part of a tool result: outcome, and a bounded code if it failed. */
+function settledSummary(result: unknown): { outcome: string; reason?: string } {
+  const outcome = (result as { outcome?: unknown })?.outcome;
+  const reason = (result as { reason?: unknown })?.reason;
+  return {
+    outcome: typeof outcome === "string" ? outcome : "AVAILABLE",
+    ...(typeof reason === "string" && /^[A-Z_]{3,40}$/.test(reason) ? { reason } : {}),
+  };
 }
 
 export function publishPhase(

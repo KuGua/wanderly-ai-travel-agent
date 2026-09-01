@@ -277,13 +277,30 @@
       "threadTitleWithPlace": "探索 · {name}",
       "composerNote": "Enter 发送 · Shift + Enter 换行 · 对话仅归属于本行程且仅你可见。",
       "briefProposalTitle": "更新行程信息？",
-      "briefProposalDeparture": "出发城市：{cities}",
-      "briefProposalDestinations": "目的地：{destinations}",
-      "briefProposalDateRange": "日期：{start} – {end}",
-      "briefProposalDays": "行程天数：{days} 天",
+      "briefProposalBody": "目的地：{destination} · 天数：{days}",
+      "briefProposalNoDestination": "未提供",
+      "briefProposalNoDays": "未提供",
       "briefProposalConfirm": "确认更新",
       "briefProposalSaving": "正在保存…",
-      "briefProposalIgnore": "忽略"
+      "briefProposalIgnore": "忽略",
+      "tools": {
+        "heading": "本次查询",
+        "capability": {
+          "places_search": "查找地点",
+          "navigation_route": "计算路线",
+          "accommodation_discovery": "查找周边住宿",
+          "activities_search": "查找活动",
+          "flight_search": "查询航班",
+          "hotel_search": "查询酒店",
+          "mobility_search": "查询接送"
+        },
+        "outcome": {
+          "RUNNING": "查询中",
+          "AVAILABLE": "已完成",
+          "UNAVAILABLE": "无结果",
+          "NEEDS_CONFIRMATION": "待确认"
+        }
+      }
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",
@@ -483,9 +500,22 @@
       "mapWindow": "探索地图",
       "mapPinned": "固定",
       "openFullMap": "在完整地图中打开",
-      "draftActivationHint": "在私密对话里告诉 Agent 出发城市、目的地和日期，再开始规划。同行者现在即可加入，但无法查看你的私密对话。",
+      "draftActivationHint": "先保存完整行程简报，再开始规划。同行者现在即可加入，但无法查看你的私密对话。",
       "activateDraft": "开始规划",
       "activateDraftError": "暂时无法开始规划，请重试。",
+      "draftBrief": {
+        "title": "完善私密行程简报",
+        "departure": "出发城市",
+        "departurePlaceholder": "新加坡，台北",
+        "destinations": "目的地候选",
+        "destinationsPlaceholder": "东京，京都",
+        "destinationCountHint": "请输入 {min}–{max} 个不同目的地，以逗号分隔。",
+        "startDate": "开始日期",
+        "endDate": "结束日期",
+        "save": "保存简报",
+        "saving": "正在保存…",
+        "saveError": "暂时无法保存简报，请检查内容后重试。"
+      },
       "invitation": {
         "unavailableTitle": "该行程暂时无法加载",
         "trigger": "邀请同行者",
@@ -550,7 +580,6 @@
         "passengers": "{count} 位乘客",
         "select": "选择",
         "dismiss": "忽略",
-        "filter": "按服务类型筛选",
         "filter": {
           "all": "全部",
           "taxi": "Taxi",
