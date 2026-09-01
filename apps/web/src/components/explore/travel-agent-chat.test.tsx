@@ -384,7 +384,6 @@ function run(status: AgentRun["status"]): AgentRun {
     resultPlanId: null,
     researchIntentDraft: null,
     researchIntentState: null,
-    researchSetupSession: null,
   };
 }
 

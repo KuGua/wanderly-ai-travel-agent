@@ -587,103 +587,11 @@ export function useDismissResearchIntent(runId: string | null) {
 }
 
 // ─── Personal Research Setup Sessions (§9) ─────────────────────────────────
-
-/**
- * Owner-driven mutation hooks for the conversational completion flow.
- * All four mutate the same agent-run query key so the card unmounts via
- * either the SSE-driven refresh path or the local mutation invalidation.
- */
-
-export function useOpenResearchSetup(runId: string | null) {
-  const api = useTravelApi();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => {
-      if (!runId) throw new Error("openResearchSetup requires a runId");
-      if (!api.openResearchSetup) throw new Error("openResearchSetup is not implemented by this transport");
-      return api.openResearchSetup(runId);
-    },
-    onSuccess: (data) => {
-      if (runId) {
-        qc.setQueryData(["agent-runs", runId], (prev: unknown) => {
-          if (!prev || typeof prev !== "object") return prev;
-          return { ...(prev as Record<string, unknown>), researchSetupSession: data.session };
-        });
-      }
-      recordUiDiagnostic("setup.session_open");
-    },
-  });
-}
-
-export function useSaveResearchSetupAnswer(runId: string | null) {
-  const api = useTravelApi();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: import("@/lib/api/contracts").ResearchSetupApplyRequest) => {
-      if (!runId) throw new Error("saveResearchSetupAnswer requires a runId");
-      if (!api.saveResearchSetupAnswer) throw new Error("saveResearchSetupAnswer is not implemented by this transport");
-      return api.saveResearchSetupAnswer(runId, input);
-    },
-    onSuccess: (data) => {
-      if (runId) {
-        qc.setQueryData(["agent-runs", runId], (prev: unknown) => {
-          if (!prev || typeof prev !== "object") return prev;
-          return { ...(prev as Record<string, unknown>), researchSetupSession: data.session };
-        });
-      }
-      recordUiDiagnostic("setup.field_update");
-    },
-    onError: () => {
-      if (runId) qc.invalidateQueries({ queryKey: ["agent-runs", runId] });
-    },
-  });
-}
-
-export function useCancelResearchSetup(runId: string | null) {
-  const api = useTravelApi();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => {
-      if (!runId) throw new Error("cancelResearchSetup requires a runId");
-      if (!api.cancelResearchSetup) throw new Error("cancelResearchSetup is not implemented by this transport");
-      return api.cancelResearchSetup(runId);
-    },
-    onSuccess: () => {
-      if (runId) {
-        qc.invalidateQueries({ queryKey: ["agent-runs", runId] });
-      }
-      recordUiDiagnostic("setup.cancel");
-    },
-  });
-}
-
-export function useConfirmResearchSetup(runId: string | null, tripId: string) {
-  const api = useTravelApi();
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: import("@/lib/api/contracts").ResearchSetupConfirmRequest) => {
-      if (!runId) throw new Error("confirmResearchSetup requires a runId");
-      if (!api.confirmResearchSetup) throw new Error("confirmResearchSetup is not implemented by this transport");
-      return api.confirmResearchSetup(runId, input);
-    },
-    onSuccess: () => {
-      // Refresh the run + research latest summaries so the existing
-      // `ResearchRunCard` can mount in place of the setup card via the
-      // SNAPSHOT_CREATED → RESEARCHING → COMPLETED SSE pipeline. The
-      // confirm path also writes the trip's `pinned_session_id` (server-
-      // managed), so the trip detail and pinned key must re-fetch.
-      qc.invalidateQueries({ queryKey: ["agent-runs", runId].filter(Boolean) as string[] });
-      qc.invalidateQueries({ queryKey: personalOrchestrationKeys.researchLatest(tripId) });
-      qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
-      qc.invalidateQueries({ queryKey: tripKeys.pinned(tripId) });
-      qc.invalidateQueries({ queryKey: tripKeys.list });
-      recordUiDiagnostic("setup.confirm");
-    },
-    onError: () => {
-      qc.invalidateQueries({ queryKey: ["agent-runs", runId].filter(Boolean) as string[] });
-    },
-  });
-}
+// All four setup hooks (useOpenResearchSetup / useSaveResearchSetupAnswer /
+// useCancelResearchSetup / useConfirmResearchSetup) were removed with the
+// conversational setup pipeline (migration 0049). LLM-driven tool calling
+// (Phase 4) drives the same flow inline via chat history + the agent-run
+// SSE stream — no client-side mutation hooks are needed.
 
 /**
  * Quick orchestration — read the server-managed pinned session for a trip.
