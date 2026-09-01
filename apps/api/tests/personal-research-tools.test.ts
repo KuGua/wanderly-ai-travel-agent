@@ -107,6 +107,47 @@ describe("schema and draft agree", () => {
     }
   });
 
+describe("evidence signal", () => {
+  const base = {
+    ctx: { correlationId: "c" } as never,
+    ownerUserId: "00000000-0000-0000-0000-000000000002",
+    tripId: "00000000-0000-0000-0000-000000000003",
+    threadId: "00000000-0000-0000-0000-000000000004",
+    runId: "00000000-0000-0000-0000-000000000001",
+    signal: new AbortController().signal,
+  };
+
+  it("does not claim evidence for a call it refused before reaching a provider", async () => {
+    // The flag is what lets the output filter admit prices. A refusal that
+    // set it would license the model to state figures nothing produced.
+    const { createPersonalResearchDispatcher } = await import("../src/agents/personal-research-tools.js");
+    const dispatch = createPersonalResearchDispatcher(base);
+    for (const call of [
+      { id: "1", name: "mobility.search", arguments: {} },
+      { id: "2", name: "places.search", arguments: { latitude: 999 } },
+    ]) {
+      const result = await dispatch(call) as { providerDispatched?: unknown };
+      expect(result.providerDispatched).toBeUndefined();
+    }
+  });
+
+  it("does not claim evidence for a search still waiting on the traveller", async () => {
+    vi.resetModules();
+    vi.doMock("../src/db/database.js", () => ({
+      db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ userId: base.ownerUserId }] }) }) }) },
+    }));
+    const { createPersonalResearchDispatcher } = await import("../src/agents/personal-research-tools.js");
+    const dispatch = createPersonalResearchDispatcher(base);
+    const result = await dispatch({ id: "1", name: "flight.search", arguments: SAMPLE["flight.search"] }) as {
+      outcome: string; providerDispatched?: unknown;
+    };
+    expect(result.outcome).toBe("NEEDS_CONFIRMATION");
+    expect(result.providerDispatched).toBeUndefined();
+    vi.doUnmock("../src/db/database.js");
+    vi.resetModules();
+  });
+});
+
 describe("tools deliberately withheld", () => {
   it("does not offer navigation.route", () => {
     // Its draft takes two trip-place UUIDs and nothing in the conversation
