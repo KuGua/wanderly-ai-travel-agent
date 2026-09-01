@@ -209,7 +209,8 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 3. Submit another question, consume at least one event, then close the browser/SSE connection and verify the Worker completes without cancellation.
 4. Submit a third question, issue explicit Stop, and simulate an upstream network/5xx failure on a fourth.
 5. Kill the claiming Worker after it acquires a lease; start/allow another Worker to recover it. Repeat completed and running request IDs concurrently.
-6. Inspect task rows, messages, idempotency records, audit, logs, traces and metric labels.
+6. Submit “请帮我找西门町附近的酒店”, then a follow-up that supplies dates; inspect the model request boundary and reply for reuse of the existing location anchor and only the remaining grouped questions.
+7. Inspect task rows, messages, idempotency records, audit, logs, traces and metric labels.
 
 **Expected outcomes:**
 
@@ -219,6 +220,7 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 - `COMPLETED` persists exactly one USER and one final-policy-approved ASSISTANT message atomically and is replayable by request ID.
 - Browser/SSE disconnect does not cancel the run. Explicit Stop produces `CANCELLED`; terminal failure preserves the submitted USER message exactly once, persists no partial ASSISTANT body, and exposes only a safe terminal code/status.
 - Concurrent Workers cannot both commit a result: lease expiry/recovery may repeat an external model call, but final persistence is conditional on the current lease token and task state. A concurrent request ID cannot duplicate the USER message or create a second task.
+- Hotel-finding turns receive the server-owned `HOTEL_SEARCH_READINESS` Skill constraint, not a canned response. The model retains “西门町附近” as the location anchor, reuses supplied dates, asks only for missing dates/adult-room configuration/currency (and a distance boundary only when needed), and treats budget and amenities as optional refinements. It never requests passport, payment, or full guest data in chat.
 - Text, prompts, chunks and model payloads are absent from audit summaries, logs, traces and metric labels.
 
 ### TS-H1f — Route private research intent through explicit owner confirmation

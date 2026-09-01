@@ -26,7 +26,10 @@
  *   2. Add the corresponding typed input schema in apps/api/src/types/{schemas,domain}.ts.
  *   3. Add the corresponding executor in apps/api/src/services/personal-research-executors/.
  *   4. Add provider contract tests under apps/api/tests/personal-research/.
- *   5. Add the corresponding input/result card under apps/web/src/components/trips/personal-research/.
+ *   5. (Superseded) A per-capability input/result card used to be required
+ *      here. The deterministic setup-card flow was removed with the move to
+ *      LLM-driven tool calling, so there is no card to add — the capability
+ *      surfaces through the tool loop instead.
  */
 
 export const PERSONAL_RESEARCH_OPERATION_CAPABILITIES = [

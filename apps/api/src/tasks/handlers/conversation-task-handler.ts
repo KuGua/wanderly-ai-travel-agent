@@ -8,18 +8,15 @@ import { metrics } from "../../observability/metrics.js";
 import {
   containsUnsupportedOperationalClaim,
 } from "../../policy/conversation-safety.js";
-import {
-  RESEARCH_INTENT_CLASSIFIER_VERSION,
-  classifyResearchIntent,
-} from "../../services/personal-research-intent-classifier.js";
+// `RESEARCH_INTENT_CLASSIFIER_VERSION` was sourced from the deleted rule pack.
+// The field is preserved on the persisted draft for wire stability; this
+// string is now the version identifier emitted alongside LLM-derived drafts.
+const RESEARCH_INTENT_CLASSIFIER_VERSION = "llm.research/v1";
 import { evaluateReadiness } from "../../services/personal-research-readiness-service.js";
 import { buildConversationContext } from "../../services/conversation-context-service.js";
 import { buildConversationMemoryContext } from "../../services/conversation-memory-context.js";
 import { loadLatestResearchEvidence } from "../../services/research-evidence-service.js";
 import { proposeTripBriefFromTurn } from "../../services/trip-brief-proposal-service.js";
-import {
-  generateSetupFollowups,
-} from "../../services/setup-followup-generator.js";
 import {
   executeTravelConversation,
   travelConversationSkill,
@@ -38,7 +35,6 @@ import {
 import { publishAgentStreamEvent } from "../task-stream-publisher.js";
 import type { AgentTaskRow } from "../task-repository.js";
 import { loadConversationTurnInput } from "../task-repository.js";
-import { getOrOpenSession } from "../../services/personal-research-setup-service.js";
 import { buildProactiveIntro } from "../../i18n/proactive-intro.js";
 
 export async function handleConversationTask(params: {
@@ -105,23 +101,11 @@ export async function handleConversationTask(params: {
     researchEvidence: evidence?.offers ?? [],
   });
 
-  // ─── Personal Research Intent Routing — Phase 1 ─────────────────────────
-  // High-confidence research requests (verb + travel object) skip the LLM
-  // path entirely and persist a non-executable draft. The owner must then
-  // explicitly confirm via POST /trips/:tripId/research, which rebuilds
-  // every authority field from server-owned state. Spec §5.1, §5.3.
-  const classified = classifyResearchIntent({
-    question: turnInput.question,
-    locale: "zh-CN",
-  });
-  if (classified.kind === "PROPOSED") {
-    return handleClassifiedResearchRequest({
-      run: params.run,
-      ctx: params.ctx,
-      input,
-      classifiedIntent: classified.intent,
-    });
-  }
+  // ─── Personal Research Intent Routing — replaced by LLM tool loop ────────
+  // The deterministic rule-pack classifier is gone. The LLM in
+  // `executeTravelConversation` decides whether to call a research tool.
+  // Spec: docs/personal-trip-orchestration-implementation.md §5.1 (new).
+  void RESEARCH_INTENT_CLASSIFIER_VERSION; // preserved for wire stability
 
   const gate = new SafeConversationDeltaGate(params.run, params.ctx.traceparent);
   const execution = new AbortController();
@@ -394,70 +378,7 @@ async function handleClassifiedResearchRequest(
     traceparent: params.ctx.traceparent,
   });
 
-  // ─── §9 — Conversational setup followup (NEEDS_SETUP branch) ────────────
-  // Eagerly open the setup session so the owner can fill in fields without
-  // a separate API round-trip; generate ONE follow-up question via the
-  // bounded LLM call (with deterministic fallback); persist it as the
-  // ASSISTANT message and publish `research.setup.followup` SSE so the chat
-  // surfaces a follow-up bubble alongside the existing confirmation card.
-  let content = buildClassifiedResearchReply(readiness.readiness);
-  if (readiness.readiness === "NEEDS_SETUP") {
-    let setupFollowups: Awaited<ReturnType<typeof generateSetupFollowups>> = [];
-    try {
-      // Open (or refresh) the session. Eager so a refresh after the SSE
-      // reconnects can recover the session from `GET /agent-runs/:runId`.
-      await getOrOpenSession({
-        ctx: params.ctx,
-        runId: params.run.id,
-        tripId: params.run.tripId,
-        ownerUserId: params.run.createdByUserId,
-        requestedCapabilities: params.classifiedIntent.requestedCapabilities,
-      });
-      // Multi-slot follow-up — generateSetupFollowups runs the existing
-      // single-question generator in a loop (≤3 questions per turn),
-      // preserving the wire shape (one SSE event per question). The
-      // server-owned chat bubble renderer will dedupe by questionCode.
-      setupFollowups = await generateSetupFollowups({
-        ctx: params.ctx,
-        tripId: params.run.tripId,
-        ownerUserId: params.run.createdByUserId,
-        locale: "zh-CN",
-        requestedMissing: readiness.missing,
-        filledFieldNames: [],
-        maxQuestions: 3,
-      });
-    } catch {
-      metrics.inc("personal_research_setup_session_total", { outcome: "open_failed" });
-      // The session open failure MUST NOT block the draft — fall through
-      // with no followup so the owner still sees the existing
-      // ResearchSetupCard. The error is logged via the open_failed counter.
-    }
-    // Append the first followup's prompt text to the assistant content so
-    // it surfaces in the chat bubble stream; additional followups ride
-    // their own SSE events.
-    const firstFollowupPrompt = setupFollowups[0]?.promptText;
-    if (setupFollowups.length > 0) {
-      for (const fu of setupFollowups) {
-        await publishAgentStreamEvent({
-          event: "research.setup.followup",
-          runId: params.run.id,
-          generationAttempt: params.run.generationAttempt,
-          followup: {
-            questionCode: fu.questionCode as Extract<
-              Parameters<typeof publishAgentStreamEvent>[0],
-              { event: "research.setup.followup" }
-            >["followup"]["questionCode"],
-            promptText: fu.promptText,
-          },
-          source: fu.source,
-          traceparent: params.ctx.traceparent,
-        });
-      }
-      if (firstFollowupPrompt) {
-        content = `${buildClassifiedResearchReply(readiness.readiness)}\n${firstFollowupPrompt}`;
-      }
-    }
-  }
+  const content = buildClassifiedResearchReply(readiness.readiness);
 
   await publishAgentStreamEvent({
     event: "message.delta",

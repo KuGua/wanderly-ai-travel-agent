@@ -73,6 +73,27 @@ describe("conversational ModelGateway", () => {
     expect(parse.mock.calls[0][1]).toHaveProperty("signal");
   });
 
+  it("adds Skill-selected hotel readiness guidance without placing it in user content", async () => {
+    const parse = vi.fn().mockResolvedValue({
+      choices: [{ message: {
+        parsed: null,
+        content: JSON.stringify({ reply: { content: "请告诉我入住日期。" } }),
+      } }],
+    });
+    const gateway = buildGateway({ chat: { completions: { parse } } });
+
+    await gateway.generateConversationReply({
+      question: "请帮我找西门町附近的酒店",
+      threadContext: [],
+      responseConstraints: ["HOTEL_SEARCH_READINESS"],
+    });
+
+    const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
+    expect(messages[0]).toMatchObject({ role: "system" });
+    expect(messages[0]?.content).toContain("住宿/酒店搜索约束");
+    expect(messages[1]?.content).not.toContain("HOTEL_SEARCH_READINESS");
+  });
+
   it("normalizes Gemini's root-level content response", async () => {
     const client = {
       chat: { completions: { parse: vi.fn().mockResolvedValue({

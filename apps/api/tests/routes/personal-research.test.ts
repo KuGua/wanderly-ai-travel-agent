@@ -66,7 +66,6 @@ describe("DRAFT Personal Research routes — Phase 4", () => {
         trip_constraint_facts,
         trip_invitations,
         consent_grants,
-        personal_research_setup_sessions
       RESTART IDENTITY CASCADE
     `);
     await cleanup`DELETE FROM users`;

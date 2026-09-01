@@ -286,13 +286,7 @@ export async function readPersonalResearchEvidence(params: {
 
 /**
  * Internal helper for tests / route handlers that need to project the draft
- * back into the canonical capability key. Re-exported so the route layer can
- * validate the allow-list gate against the persisted draft.
+ * back into the canonical capability key. Imported directly from this module
+ * by `personal-research-task-handler.ts` and `routes/personal-research.ts`.
  */
 export { capabilityForDraft };
-
-/**
- * Re-export of `agentTaskRuns` to keep the existing module surface stable
- * for downstream consumers that may import it from here.
- */
-export { agentTaskRuns };

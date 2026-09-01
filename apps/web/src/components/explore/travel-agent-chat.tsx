@@ -8,12 +8,11 @@ import { createPortal } from "react-dom";
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
 import { partitionMissingCodes } from "@/lib/trips/personal-research-readiness-copy";
 import { ResearchConfirmationCard } from "@/components/trips/personal-research/research-confirmation-card";
-import { ResearchSetupCard } from "@/components/trips/personal-research/research-setup-card";
 import { ResearchPlaceSelectionCard } from "@/components/trips/personal-research/research-place-selection-card";
 import { ResearchRunCard } from "@/components/trips/personal-research/research-run-card";
 import { PinnedResultCard } from "@/components/trips/personal-research/pinned-result-card";
 
-import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest, ResearchSetupSessionResponse } from "@/lib/api/contracts";
+import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import { useAgentRun, useCancelAgentRun, useOwnerConversation, useSubmitConversationTurn, useTripPin } from "@/lib/query/hooks";
@@ -126,15 +125,10 @@ export function TravelAgentChat({
   // are server-internal and never surface here.
   const [classifierDraft, setClassifierDraft] =
     useState<Extract<AgentStreamEvent, { event: "research.intent_extracted" }> | null>(null);
-  // §9 — Personal Research Setup Session state, surfaced inline from the
-  // agent-run DTO so the conversational setup card can hydrate on refresh.
-  const [researchSetupSession, setResearchSetupSession] =
-    useState<ResearchSetupSessionResponse | null>(null);
-  // §9 + Quick orchestration — Conversational followup bubbles. Multi-slot
-  // loops may emit up to 3 followups in a single turn; we keep them as an
-  // array deduped by `questionCode` so re-emission never duplicates UI.
-  const [setupFollowups, setSetupFollowups] =
-    useState<Extract<AgentStreamEvent, { event: "research.setup.followup" }>[]>([]);
+  // Setup-session state and conversational followup bubble state were removed
+  // with the conversational setup pipeline (migration 0049). LLM-driven tool
+  // calling (Phase 4) emits followup prompts as inline `message.delta` events
+  // and reads tool results directly from the agent-run stream.
   const [routeEndpoints, setRouteEndpoints] = useState<Array<{ placeId: string; displayName: string }>>([]);
   const [routeOrigin, setRouteOrigin] = useState<{ placeId: string; displayName: string } | null>(null);
   const [routeDestination, setRouteDestination] = useState<{ placeId: string; displayName: string } | null>(null);
@@ -327,25 +321,6 @@ export function TravelAgentChat({
         // next 1.5 s agent-run poll.
         setClassifierDraft(null);
         setResearchIntent(null);
-        setResearchSetupSession(null);
-        setSetupFollowups([]);
-      }
-      if (event.event === "research.setup.followup") {
-        // §9 — Conversational followup bubble. The card hydrates from
-        // the agent-run DTO after a refetch; this state only drives the
-        // chat bubble the owner reads inline. Quick orchestration may emit
-        // multiple followups in one turn (multi-slot loop). Dedupe by
-        // `questionCode` so the same code pushed twice never produces two
-        // bubbles (the LLM may legitimately re-emit one while the model
-        // re-runs after a transient error).
-        setSetupFollowups((current) => {
-          const next = current.filter((fu) => fu.followup.questionCode !== event.followup.questionCode);
-          return [...next, event];
-        });
-        recordUiDiagnostic("setup.followup_received");
-        // Trigger a refresh so the setup card rehydrates with the freshly
-        // opened session row.
-        void refetchAgentRun();
       }
       if (event.event === "research.stage") {
         setResearchStages((current) => [...current, event]);
@@ -401,14 +376,7 @@ export function TravelAgentChat({
       schemaVersion: 1,
       classifierVersion: "research-intent/v1",
     });
-    // §9 — Rehydrate the setup session projection on mount / SSE refresh
-    // so a tab reload can render the conversational card with the
-    // already-filled slots intact.
-    if (data.researchSetupSession) {
-      setResearchSetupSession(data.researchSetupSession);
-    } else if (data.researchIntentState !== "PROPOSED") {
-      setResearchSetupSession(null);
-    }
+    // Setup-session rehydration removed with the conversational setup pipeline.
   }, [agentRun.data, activeRunId]);
 
   useEffect(() => {
@@ -710,21 +678,6 @@ export function TravelAgentChat({
                     }}
                     isSubmitting={isSavingRouteSelection}
                   />
-                ) : classifierDraft.readiness === "NEEDS_SETUP" ? (
-                  <ResearchSetupCard
-                    tripId={tripId ?? ""}
-                    runId={classifierDraft.runId}
-                    readiness={classifierDraft.readiness}
-                    blockers={classifierDraft.blockers}
-                    warnings={classifierDraft.warnings}
-                    intent={classifierDraft.intent}
-                    setupSession={researchSetupSession}
-                    onDismiss={() => {
-                      setClassifierDraft(null);
-                      setResearchIntent(null);
-                      setResearchSetupSession(null);
-                    }}
-                  />
                 ) : (
                   <ResearchConfirmationCard
                     tripId={tripId}
@@ -751,25 +704,6 @@ export function TravelAgentChat({
               )}
             </div>
           ) : null}
-          {/* §9 + Quick orchestration — Conversational followup bubble(s). Multi-slot
-              loops may push up to 3 in one turn; deduped by questionCode so
-              the same code never produces a duplicate bubble. */}
-          {setupFollowups.map((followup) => (
-            <div
-              key={`${followup.runId}:${followup.followup.questionCode}`}
-              className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}
-              data-testid="setup-followup-bubble"
-              data-question-code={followup.followup.questionCode}
-              data-source={followup.source}
-            >
-              <article className="rounded-md border border-amber-200 bg-white p-2 text-sm text-amber-900">
-                <p className="text-xs">{followup.followup.promptText}</p>
-                <p className="mt-1 text-[10px] italic text-muted-foreground">
-                  来源：{followup.source === "model" ? "LLM 生成" : "本地模板"}
-                </p>
-              </article>
-            </div>
-          ))}
           {activeRunId ? (
             <div className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}>
               <ResearchRunCard

@@ -294,165 +294,16 @@ export const agentRunResponseSchema = z.object({
     ])),
   }).strict().nullable(),
   researchIntentState: z.enum(["PROPOSED", "DISMISSED", "CONFIRMED", "SUPERSEDED"]).nullable(),
-  /**
-   * Personal Research Setup Sessions — owner-safe inline projection
-   * (docs §9). Surfaced only when the CONVERSATION run carries an OPEN
-   * setup session for this owner. Null on legacy rows or non-owner DTOs.
-   */
-  researchSetupSession: z.object({
-    intentRunId: z.string().uuid(),
-    tripId: z.string().uuid(),
-    ownerUserId: z.string().uuid(),
-    departureCity: z.string().nullable(),
-    travelDateStart: z.string().nullable(),
-    travelDateEnd: z.string().nullable(),
-    stayPreferences: z.object({
-      roomCount: z.number().int().min(1).max(8),
-      adultsPerRoom: z.array(z.number().int().min(1).max(8)).min(1).max(8),
-      currency: z.string().regex(/^[A-Z]{3}$/),
-    }).strict().nullable(),
-    flightPreferences: z.object({
-      tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
-      currency: z.string().regex(/^[A-Z]{3}$/),
-      adults: z.number().int().min(1).max(9),
-      cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
-      offerFreshnessMinutes: z.number().int().min(1).max(1_440),
-    }).strict().nullable(),
-    missing: z.array(z.enum([
-      "TRIP_NOT_ACTIVE",
-      "DESTINATION_NOT_CONFIGURED",
-      "DATES_MISSING",
-      "FLIGHT_PREFERENCES_MISSING",
-      "STAY_PREFERENCES_MISSING",
-      "HOTEL_PROVIDER_NOT_APPROVED",
-      "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
-      "ROUTE_ENDPOINTS_UNCONFIRMED",
-      "MODE_NOT_CHOSEN",
-      "BUDGET_HINT_MISSING",
-    ])),
-    budgetHint: z.object({
-      amount: z.number().int().positive().max(1_000_000),
-      currency: z.string().regex(/^[A-Z]{3}$/),
-      cadence: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
-    }).strict().nullable(),
-    version: z.number().int().positive(),
-    status: z.enum(["OPEN", "CONFIRMED", "CANCELLED", "EXPIRED", "SUPERSEDED"]),
-    expiresAt: z.string().datetime(),
-  }).strict().nullable(),
+  // researchSetupSession was removed with the conversational setup pipeline.
+  // LLM-driven tool calling (Phase 4) emits state via chat history +
+  // personal_research_evidence, not via this DTO.
 });
 
-// ─── Personal Research Setup Sessions (§9) ─────────────────────────────────
-
-export const researchSetupSessionResponseSchema = z.object({
-  intentRunId: z.string().uuid(),
-  tripId: z.string().uuid(),
-  ownerUserId: z.string().uuid(),
-  departureCity: z.string().nullable(),
-  travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  stayPreferences: z.object({
-    roomCount: z.number().int().min(1).max(8),
-    adultsPerRoom: z.array(z.number().int().min(1).max(8)).min(1).max(8),
-    currency: z.string().regex(/^[A-Z]{3}$/),
-  }).strict().nullable(),
-  flightPreferences: z.object({
-    tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
-    currency: z.string().regex(/^[A-Z]{3}$/),
-    adults: z.number().int().min(1).max(9),
-    cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
-    offerFreshnessMinutes: z.number().int().min(1).max(1_440),
-  }).strict().nullable(),
-  missing: z.array(z.enum([
-    "TRIP_NOT_ACTIVE",
-    "DESTINATION_NOT_CONFIGURED",
-    "DATES_MISSING",
-    "FLIGHT_PREFERENCES_MISSING",
-    "STAY_PREFERENCES_MISSING",
-    "HOTEL_PROVIDER_NOT_APPROVED",
-    "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
-    "ROUTE_ENDPOINTS_UNCONFIRMED",
-    "MODE_NOT_CHOSEN",
-    "DEPARTURE_CITY_MISSING",
-    "BUDGET_HINT_MISSING",
-  ])),
-  budgetHint: z.object({
-    amount: z.number().int().positive().max(1_000_000),
-    currency: z.string().regex(/^[A-Z]{3}$/),
-    cadence: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
-  }).strict().nullable(),
-  version: z.number().int().positive(),
-  status: z.enum(["OPEN", "CONFIRMED", "CANCELLED", "EXPIRED", "SUPERSEDED"]),
-  expiresAt: z.string().datetime(),
-}).strict();
-
-export const researchSetupSessionEnvelopeSchema = z.object({
-  session: researchSetupSessionResponseSchema,
-}).strict();
-
-export const researchSetupAnswerSchema = z.discriminatedUnion("field", [
-  z.object({ field: z.literal("departureCity"), value: z.string().min(1).max(64) }).strict(),
-  z.object({
-    field: z.literal("travelDates"),
-    value: z.object({
-      start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-      end: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-    }).strict().refine((value) => value.end > value.start, {
-      path: ["end"],
-    }),
-  }).strict(),
-  z.object({
-    field: z.literal("stayPreferences"),
-    value: z.object({
-      roomCount: z.number().int().min(1).max(8),
-      adultsPerRoom: z.array(z.number().int().min(1).max(8)).min(1).max(8),
-      currency: z.string().regex(/^[A-Z]{3}$/),
-    }).strict(),
-  }).strict(),
-  z.object({
-    field: z.literal("flightPreferences"),
-    value: z.object({
-      tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
-      currency: z.string().regex(/^[A-Z]{3}$/),
-      adults: z.number().int().min(1).max(9),
-      cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
-      offerFreshnessMinutes: z.number().int().min(1).max(1_440),
-    }).strict(),
-  }).strict(),
-  z.object({
-    field: z.literal("budget"),
-    value: z.object({
-      amount: z.number().int().positive().max(1_000_000),
-      currency: z.string().regex(/^[A-Z]{3}$/),
-      cadence: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
-    }).strict(),
-  }).strict(),
-]);
-
-export const researchSetupApplyRequestSchema = z.object({
-  expectedVersion: z.number().int().positive(),
-  patch: researchSetupAnswerSchema,
-}).strict();
-
-export const researchSetupConfirmRequestSchema = z.object({
-  requestId: z.string().uuid(),
-}).strict();
-
-export type ResearchSetupConfirmRequest = z.infer<typeof researchSetupConfirmRequestSchema>;
-
-export const researchSetupConfirmAcceptedResponseSchema = z.object({
-  runId: z.string().uuid(),
-  snapshotId: z.string().uuid(),
-  status: z.literal("QUEUED"),
-}).strict();
-
-export const researchSetupCancelResponseSchema = z.object({
-  status: z.literal("CANCELLED"),
-}).strict();
-
-export type ResearchSetupSessionResponse = z.infer<typeof researchSetupSessionResponseSchema>;
-export type ResearchSetupAnswer = z.infer<typeof researchSetupAnswerSchema>;
-export type ResearchSetupApplyRequest = z.infer<typeof researchSetupApplyRequestSchema>;
-export type ResearchSetupConfirmAcceptedResponse = z.infer<typeof researchSetupConfirmAcceptedResponseSchema>;
+// researchSetupSessionResponseSchema, researchSetupSessionEnvelopeSchema,
+// researchSetupAnswerSchema, researchSetupApplyRequestSchema,
+// researchSetupConfirmRequestSchema, researchSetupConfirmAcceptedResponseSchema,
+// researchSetupCancelResponseSchema, and their type exports were removed with
+// the conversational setup pipeline.
 
 export const tripSearchPreferencesInputSchema = z.object({
   tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
@@ -869,25 +720,6 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
       "SNAPSHOT_CREATED", "RESEARCHING", "VALIDATING", "PERSISTING",
       "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "STALE",
     ]),
-  }).strict(),
-  streamBaseSchema.extend({
-    event: z.literal("research.setup.followup"),
-    followup: z.object({
-      questionCode: z.enum([
-        "TRIP_NOT_ACTIVE",
-        "DESTINATION_NOT_CONFIGURED",
-        "DATES_MISSING",
-        "FLIGHT_PREFERENCES_MISSING",
-        "STAY_PREFERENCES_MISSING",
-        "HOTEL_PROVIDER_NOT_APPROVED",
-        "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
-        "ROUTE_ENDPOINTS_UNCONFIRMED",
-        "MODE_NOT_CHOSEN",
-        "BUDGET_HINT_MISSING",
-      ]),
-      promptText: z.string().min(1).max(280),
-    }).strict(),
-    source: z.enum(["model", "fallback"]),
   }).strict(),
 ]);
 
@@ -1552,34 +1384,9 @@ export const researchIntentExtractedEventSchema = z.object({
 }).strict();
 export type ResearchIntentExtractedEvent = z.infer<typeof researchIntentExtractedEventSchema>;
 
-/**
- * `research.setup.followup` SSE event — emitted once per classified turn
- * whose readiness is NEEDS_SETUP. Drives the conversational follow-up
- * bubble alongside the existing confirmation / setup card. Source: docs §9.
- */
-export const setupFollowupQuestionSchema = z.object({
-  questionCode: z.enum([
-    "TRIP_NOT_ACTIVE",
-    "DESTINATION_NOT_CONFIGURED",
-    "DATES_MISSING",
-    "FLIGHT_PREFERENCES_MISSING",
-    "STAY_PREFERENCES_MISSING",
-    "HOTEL_PROVIDER_NOT_APPROVED",
-    "QUOTE_NATIONALITY_AUTHORIZATION_MISSING",
-    "ROUTE_ENDPOINTS_UNCONFIRMED",
-    "MODE_NOT_CHOSEN",
-    "BUDGET_HINT_MISSING",
-  ]),
-  promptText: z.string().min(1).max(280),
-}).strict();
-
-export const setupFollowupEventSchema = z.object({
-  ...streamBaseShape,
-  event: z.literal("research.setup.followup"),
-  followup: setupFollowupQuestionSchema,
-  source: z.enum(["model", "fallback"]),
-}).strict();
-export type SetupFollowupEvent = z.infer<typeof setupFollowupEventSchema>;
+// `setupFollowupQuestionSchema` and `setupFollowupEventSchema` were removed
+// with the conversational setup pipeline (migration 0049). LLM-driven tool
+// calling (Phase 4) emits followup prompts as inline `message.delta` events.
 
 // ─── Navigation route evidence (spec §5.2) ─────────────────────────────────
 // Server-authoritative route snapshot. The geometry is bound to the

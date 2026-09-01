@@ -9,10 +9,6 @@ import type {
   PersonalResearchConfirmRequest,
   PersonalResearchReadResponse,
   ProfileResponse,
-  ResearchSetupApplyRequest,
-  ResearchSetupConfirmAcceptedResponse,
-  ResearchSetupConfirmRequest,
-  ResearchSetupSessionResponse,
   ThreadsResponse,
   TripDetailResponse,
   TripsResponse,
@@ -117,11 +113,10 @@ export interface TravelApi {
   // Personal Research Setup Sessions (§9) — owner-only conversational
   // completion flow. Optional in the interface so older test mocks and
   // partial adapters degrade gracefully.
-  getResearchSetup?(runId: string): Promise<{ session: ResearchSetupSessionResponse }>;
-  openResearchSetup?(runId: string): Promise<{ session: ResearchSetupSessionResponse }>;
-  saveResearchSetupAnswer?(runId: string, input: ResearchSetupApplyRequest): Promise<{ session: ResearchSetupSessionResponse }>;
-  cancelResearchSetup?(runId: string): Promise<{ status: "CANCELLED" }>;
-  confirmResearchSetup?(runId: string, input: ResearchSetupConfirmRequest): Promise<ResearchSetupConfirmAcceptedResponse>;
+  // Setup-session methods (getResearchSetup / openResearchSetup /
+// saveResearchSetupAnswer / cancelResearchSetup / confirmResearchSetup) were
+// removed with the conversational setup pipeline (migration 0049). LLM-driven
+// tool calling (Phase 4) drives the same flow inline via chat history.
   getRouteEndpoints?(tripId: string): Promise<Array<{ placeId: string; displayName: string }>>;
   saveRouteSelection?(runId: string, input: { originPlaceId: string; destinationPlaceId: string; mode: "WALK" | "DRIVE" | "CYCLE" }): Promise<void>;
   // DRAFT Personal Research (docs/draft-personal-research-implementation.md) —

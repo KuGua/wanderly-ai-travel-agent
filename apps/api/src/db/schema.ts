@@ -88,23 +88,18 @@ export const researchIntentStateEnum = pgEnum("research_intent_state", [
 ]);
 
 /**
- * Lifecycle of a per-intent-run conversational setup scratchpad.
- * OPEN rows are the only ones surfaced to the owner; CONFIRMED means the
- * authoritative preferences were persisted and the RESEARCH task was
- * accepted; CANCELLED / EXPIRED / SUPERSEDED are terminal.
- * See docs/personal-research-intent-routing-implementation.md §9.
+ * Setup-scratchpad lifecycle (OPEN/CONFIRMED/CANCELLED/EXPIRED/SUPERSEDED)
+ * was dropped with the conversational setup pipeline
+ * (migrations/0049_drop_personal_research_setup.sql). Enum is removed.
  */
-export const personalResearchSetupStatusEnum = pgEnum("personal_research_setup_status", [
-  "OPEN",
-  "CONFIRMED",
-  "CANCELLED",
-  "EXPIRED",
-  "SUPERSEDED",
-]);
+// personalResearchSetupStatusEnum intentionally deleted in 0049.
+
 export const auditActionEnum = pgEnum("audit_action", [
   "PROFILE_CREATE", "PROFILE_UPDATE", "PROFILE_DELETE",
   "TRIP_CREATE", "TRIP_JOIN",
   "CONSENT_GRANT", "CONSENT_REVOKE",
+  // Trip-level consent for Personal Research (Phase 3):
+  "CONSENT_GRANT_TRIP", "CONSENT_REVOKE_TRIP",
   "PLAN_CREATE", "PLAN_STALE", "PLAN_REPLAN", "PLAN_RESTART",
   "CONFIRMATION_SET",
   "BOOKING_SUBMIT", "BOOKING_RESULT",
@@ -153,17 +148,11 @@ export const auditActionEnum = pgEnum("audit_action", [
   "MEMORY_PROJECTION_CREATE", "MEMORY_INVALIDATION",
   // Hotel provider switching (docs/nuitee-serpapi-hotel-provider-switching-implementation.md §5):
   "HOTEL_PROVIDER_GRANTED", "HOTEL_PROVIDER_REVOKED", "HOTEL_PROVIDER_SWITCH_BLOCKED",
-  // Personal Research Setup Sessions (0042 / docs/personal-research-intent-routing-implementation.md §9):
-  "PERSONAL_RESEARCH_SETUP_OPENED",
-  "PERSONAL_RESEARCH_SETUP_UPDATED",
-  "PERSONAL_RESEARCH_SETUP_CONFIRMED",
-  "PERSONAL_RESEARCH_SETUP_CANCELLED",
-  "PERSONAL_RESEARCH_SETUP_EXPIRED",
-  "PERSONAL_RESEARCH_SETUP_FOLLOWUP_GENERATED",
-  "PERSONAL_RESEARCH_SETUP_FOLLOWUP_FELLBACK",
-  // Quick orchestration (added via 0045):
-  "PERSONAL_RESEARCH_BUDGET_HINT_SAVED",
+  // Personal Research setup pipeline values removed in 0049.
+  // Quick orchestration (proactive-intro enqueue kept):
   "PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED",
+  // LLM-driven Personal Research tool dispatch (added via 0049):
+  "PERSONAL_RESEARCH_TOOL_DISPATCH",
   "TRIP_PIN_SESSION_WRITTEN",
   // DRAFT Personal Research (added via 0047a, docs/draft-personal-research-implementation.md §3.2):
   "PERSONAL_RESEARCH_COMMAND_ACCEPTED",
@@ -1079,61 +1068,13 @@ export const researchRouteSelections = pgTable("research_route_selections", {
 }));
 
 /**
- * Per-intent-run conversational setup scratchpad. See migration
- * `0042_personal_research_setup_sessions.sql` and
- * docs/personal-research-intent-routing-implementation.md §9.
- *
- * Slot columns:
- *   - trip-level: `departureCity`, `travelDateStart`, `travelDateEnd`
- *   - per-capability: `stayPreferences`, `flightPreferences`
- * The server recomputes `missing[]` on every write; the client never authors
- * it. Slot JSON shape is enforced at the service boundary by Zod; CHECK
- * constraints only cover the date pair / OPEN-status pair invariants.
+ * Per-intent-run conversational setup scratchpad — removed in
+ * migrations/0049_drop_personal_research_setup.sql. The LLM-driven
+ * Personal Research tool loop (Phase 4) replaces this with
+ * conversational state in chat + the existing `personal_research_evidence`
+ * table for typed outputs.
  */
-export const personalResearchSetupSessions = pgTable("personal_research_setup_sessions", {
-  intentRunId: uuid("intent_run_id").primaryKey().references(() => agentTaskRuns.id, { onDelete: "cascade" }),
-  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
-  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-
-  departureCity: varchar("departure_city", { length: 64 }),
-  travelDateStart: date("travel_date_start"),
-  travelDateEnd: date("travel_date_end"),
-
-  stayPreferences: jsonb("stay_preferences").$type<{
-    roomCount: number;
-    adultsPerRoom: number[];
-    currency: string;
-  } | null>(),
-  flightPreferences: jsonb("flight_preferences").$type<{
-    tripType: string;
-    currency: string;
-    adults: number;
-    cabin: string;
-    offerFreshnessMinutes: number;
-  } | null>(),
-  // Soft budget hint — only meaningful when the conversational setup card
-  // captures one. Shape: `{ amount: number, currency: "USD"|..., cadence:
-  // "TOTAL"|"PER_NIGHT"|"PER_PERSON" }`. Zod enforces the shape at the
-  // service boundary.
-  budgetHint: jsonb("budget_hint").$type<{
-    amount: number;
-    currency: string;
-    cadence: "TOTAL" | "PER_NIGHT" | "PER_PERSON";
-  } | null>(),
-
-  missing: jsonb("missing").$type<string[]>().notNull(),
-  version: integer("version").notNull().default(1),
-
-  status: personalResearchSetupStatusEnum("status").notNull().default("OPEN"),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-}, (table) => ({
-  tripOwnerIdx: index("personal_research_setup_sessions_trip_owner_idx").on(table.tripId, table.ownerUserId),
-  oneOpenPerTripOwner: uniqueIndex("personal_research_setup_sessions_one_open_per_trip_owner")
-    .on(table.tripId, table.ownerUserId).where(sql`${table.status} = 'OPEN'`),
-}));
+// personalResearchSetupSessions table intentionally deleted.
 
 export const navigationRouteEvidence = pgTable("navigation_route_evidence", {
   id: uuid("id").primaryKey().defaultRandom(),
