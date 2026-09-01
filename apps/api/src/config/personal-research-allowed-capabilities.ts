@@ -57,9 +57,9 @@ export const PERSONAL_RESEARCH_ALLOWED_CAPABILITIES = [
   "accommodation.discovery",
   "activities.search",
   "places.search",
-  // `navigation.route` and `mobility.search` stay closed: both still need
-  // their input and result cards, and mobility has no Amadeus credentials,
-  // so it would only ever answer NOT_CONFIGURED.
+  "navigation.route",
+  // `mobility.search` stays closed: it has no Amadeus credentials, so
+  // opening it would only ever answer NOT_CONFIGURED.
   // `visa.*` remains stage 4 and is not in the capability enum at all.
 ] as const satisfies readonly PersonalResearchOperationCapability[];
 

@@ -590,6 +590,8 @@ export const personalResearchNavigationRouteDraftSchema = z.object({
   mode: z.enum(["driving", "walking", "cycling"]),
 }).strict();
 
+export type PersonalResearchNavigationRouteDraft = z.infer<typeof personalResearchNavigationRouteDraftSchema>;
+
 export const personalResearchMobilityDraftSchema = z.object({
   kind: z.literal("MOBILITY_SEARCH"),
   originPlaceId: z.string().uuid(),
