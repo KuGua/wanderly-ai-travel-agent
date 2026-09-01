@@ -1250,6 +1250,53 @@ that a grant/revoke invalidates dependent plans.
 4. Change either selected endpoint to private/inactive before confirmation; confirmation fails closed with a capability gap.
 5. Worker execution uses the selected IDs and mode; it must never select the earliest TripPlaces or default to `WALK`.
 
+## TS-CONVERSATION-HOTEL-TOOL-COMPAT — Gemini 流式酒店工具调用
+
+**Objective:** Verify that a Gemini OpenAI-compatible stream reliably
+persists a complete private hotel query, binds explicit owner confirmation on
+the server, and dispatches exactly one live `hotel.search` request without
+depending on a provider-specific `finish_reason`.
+
+**Steps:**
+
+1. In one private thread submit a complete hotel query without confirmation.
+   Simulate a streamed `tool_calls` response terminated by `stop` and then a
+   prose follow-up after the tool result.
+2. Verify that no provider request occurred, exactly one
+   `conversation_hotel_search_states` row holds city/date/occupancy/currency,
+   and its confirmation marker is null. The tool result is
+   `CONFIRMATION_REQUIRED`.
+3. Submit `确认搜索`; simulate a legacy streamed `function_call` envelope with
+   no finish marker and empty arguments. Verify the dispatcher reuses the
+   persisted fields, binds the current USER message as confirmation, invokes
+   the provider once, persists bounded evidence, and returns a grounded
+   second-stream response.
+4. Repeat with Gemini `tool_calls`, `finish_reason = stop`, and an opaque
+   `extra_content.google.thought_signature`; verify the assistant tool-call
+   message in the second request carries that opaque field unchanged. Repeat
+   with OpenAI `tool_calls` and `finish_reason = tool_calls`; behavior is
+   identical. Repeat a confirmed request with malformed JSON arguments, mixed
+   prose plus a tool call, and a missing function name.
+5. Inspect safe runtime events and audit records.
+
+**Expected outcomes:**
+
+- `stop`, `function_call`, and a missing finish marker never discard a fully
+  accumulated tool call or become an empty-content `SCHEMA_PARSE`.
+- Invalid/mixed tool envelopes fail closed with `TOOL_PROTOCOL`; the provider
+  is not called and no raw tool arguments or conversation text enter logs,
+  traces, metrics, or audit summaries.
+- A Gemini thought signature is replayed only to Gemini as opaque request
+  compatibility metadata; it is never logged, traced, persisted, or exposed
+  to the client. A retryable second-completion failure before visible text
+  yields a safe fallback reply rather than a failed message.
+- Only a server-recognised explicit confirmation for the current USER message
+  may invoke the provider. New query fields replace the private state and
+  invalidate any previous confirmation.
+- Telemetry contains only the bounded tool envelope family, normalized finish
+  reason, operation, outcome and correlation identifiers. It contains neither
+  city/date/occupancy/currency nor provider request/response payloads.
+
 ## TS-CONVERSATIONAL-SETUP — Conversational hotel setup (§9)
 
 **Starting conditions:** An owner has an activated Solo Trip (`PLANNING`) with no travel dates, no departure city, no stay preferences, no flight preferences, and a `PROPOSED` hotel research intent draft whose readiness is `NEEDS_SETUP` with `missing = ["DATES_MISSING", "STAY_PREFERENCES_MISSING"]`.

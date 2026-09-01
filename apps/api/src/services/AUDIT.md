@@ -26,7 +26,7 @@ runs **before** any insert. Rejection propagates as
   `TRIP_TITLE_UPDATE`, `TRIP_DRAFT_BRIEF_UPDATE`, `TRIP_ACTIVATE`,
   `EXPLORATION_START`, `TRIP_DEFAULT_THREAD_PROVISION`,
   `TRIP_PIN_SESSION_WRITTEN`,
-  `CONSENT_GRANT`, `CONSENT_REVOKE`.
+  `CONSENT_GRANT`, `CONSENT_REVOKE`, `CONSENT_GRANT_TRIP`, `CONSENT_REVOKE_TRIP`.
 - Planning: `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`, `CONFIRMATION_SET`,
   `PLAN_REPLAN_ENQUEUED`, `PLAN_ADOPTION_VOTED`, `PLAN_ADOPTED`.
 - Team constraint orchestration (Phase 2 / `docs/team-agent-orchestration-implementation.md` §8):
@@ -40,14 +40,10 @@ runs **before** any insert. Rejection propagates as
 - Accommodation discovery: `ACCOMMODATION_DISCOVERY_REQUESTED`, `ACCOMMODATION_DISCOVERY_COMPLETED`, `ACCOMMODATION_DISCOVERY_UNAVAILABLE`; summaries contain only bounded provider/outcome/count metadata and never destination text, accommodation names, coordinates, OSM identifiers or raw provider payloads.
 - Hotel search: `HOTEL_SEARCH_REQUESTED`, `HOTEL_SEARCH_COMPLETED`, `HOTEL_SEARCH_UNAVAILABLE`; summaries contain only bounded provider/outcome/error categories and never destination text, property names, prices, occupancy, links or raw provider payloads. Provider-only quote authorization uses `HOTEL_PROVIDER_GRANTED`, `HOTEL_PROVIDER_REVOKED`, and `HOTEL_PROVIDER_SWITCH_BLOCKED`; summaries contain only provider, field and version/status metadata, never nationality or ciphertext.
 - Stay preferences: `STAY_SEARCH_PREFERENCES_CONFIRMED`; summary contains only the new preference version, never occupancy or currency values.
-- Personal research setup: `PERSONAL_RESEARCH_BUDGET_HINT_SAVED`,
-  `PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED`, `PERSONAL_RESEARCH_SETUP_OPENED`,
-  `PERSONAL_RESEARCH_SETUP_UPDATED`, `PERSONAL_RESEARCH_SETUP_CONFIRMED`,
-  `PERSONAL_RESEARCH_SETUP_CANCELLED`, `PERSONAL_RESEARCH_SETUP_EXPIRED`,
-  `PERSONAL_RESEARCH_SETUP_FOLLOWUP_GENERATED`, and
-  `PERSONAL_RESEARCH_SETUP_FOLLOWUP_FELLBACK`. Summaries contain only safe
-  state, bounded field/category labels, version and counters; never user text,
-  extracted values, Profile fields or provider payloads.
+- Personal research: `PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED` and
+  `PERSONAL_RESEARCH_TOOL_DISPATCH`. Summaries contain only safe state,
+  bounded capability/field-count labels, version and counters; never user
+  text, extracted values, Profile fields or provider payloads.
 - Place, navigation, and mobility providers: `PLACE_SEARCH_REQUESTED`,
   `PLACE_SEARCH_COMPLETED`, `PLACE_SEARCH_UNAVAILABLE`,
   `NAVIGATION_ROUTE_REQUESTED`, `NAVIGATION_ROUTE_COMPLETED`,
@@ -118,7 +114,7 @@ safe task/capability/status identifiers, never the confirmed request input.
   `TRIP_INVITATION_DECLINE`
 - `TRIP_TITLE_UPDATE`, `TRIP_DRAFT_BRIEF_UPDATE`, `TRIP_ACTIVATE`
 - `EXPLORATION_START`, `TRIP_DEFAULT_THREAD_PROVISION`, `TRIP_PIN_SESSION_WRITTEN`
-- `CONSENT_GRANT`, `CONSENT_REVOKE`
+- `CONSENT_GRANT`, `CONSENT_REVOKE`, `CONSENT_GRANT_TRIP`, `CONSENT_REVOKE_TRIP`
 - `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`,
   `PLAN_REPLAN_ENQUEUED`, `PLAN_ADOPTION_VOTED`, `PLAN_ADOPTED`
 - `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`
@@ -128,11 +124,7 @@ safe task/capability/status identifiers, never the confirmed request input.
 - `HOTEL_SEARCH_REQUESTED`, `HOTEL_SEARCH_COMPLETED`, `HOTEL_SEARCH_UNAVAILABLE`
 - `HOTEL_PROVIDER_GRANTED`, `HOTEL_PROVIDER_REVOKED`, `HOTEL_PROVIDER_SWITCH_BLOCKED`
 - `STAY_SEARCH_PREFERENCES_CONFIRMED`
-- `PERSONAL_RESEARCH_BUDGET_HINT_SAVED`, `PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED`
-- `PERSONAL_RESEARCH_SETUP_OPENED`, `PERSONAL_RESEARCH_SETUP_UPDATED`,
-  `PERSONAL_RESEARCH_SETUP_CONFIRMED`, `PERSONAL_RESEARCH_SETUP_CANCELLED`,
-  `PERSONAL_RESEARCH_SETUP_EXPIRED`, `PERSONAL_RESEARCH_SETUP_FOLLOWUP_GENERATED`,
-  `PERSONAL_RESEARCH_SETUP_FOLLOWUP_FELLBACK`
+- `PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED`, `PERSONAL_RESEARCH_TOOL_DISPATCH`
 - `PLACE_SEARCH_REQUESTED`, `PLACE_SEARCH_COMPLETED`, `PLACE_SEARCH_UNAVAILABLE`
 - `NAVIGATION_ROUTE_REQUESTED`, `NAVIGATION_ROUTE_COMPLETED`, `NAVIGATION_ROUTE_UNAVAILABLE`
 - `MOBILITY_OFFER_REQUESTED`, `MOBILITY_OFFER_COMPLETED`, `MOBILITY_OFFER_UNAVAILABLE`

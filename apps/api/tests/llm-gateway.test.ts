@@ -432,11 +432,9 @@ describe("LLMGateway streamConversationReply tool calling (Phase 4)", () => {
               index: 0,
               id: "call_sig",
               function: { name: "hotel.search", arguments: args },
+              extra_content: { google: { thought_signature: "sig_xyz" } },
             }],
           },
-          // Streaming chunks can carry provider-only metadata; the second
-          // request must preserve this opaque field verbatim.
-          extra_content: { google: { thought_signature: "sig_xyz" } },
         }],
       },
       { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
@@ -467,13 +465,82 @@ describe("LLMGateway streamConversationReply tool calling (Phase 4)", () => {
     });
     const reqs = (fakeClient as unknown as { __requests: Array<Record<string, unknown>> }).__requests;
     const assistantMessage = (reqs[1].messages as Array<Record<string, unknown>>)[2];
-    // The OpenAI-standard fields are preserved. We do not currently echo
-    // the opaque metadata in the streaming path (it does not survive
-    // chunk accumulation), but the assistant tool_calls shape is intact.
     expect(assistantMessage).toMatchObject({
       role: "assistant",
-      tool_calls: [expect.objectContaining({ id: "call_sig" })],
+      tool_calls: [expect.objectContaining({
+        id: "call_sig",
+        extra_content: { google: { thought_signature: "sig_xyz" } },
+      })],
     });
+  });
+
+  it("dispatches a Gemini-compatible tool call even when it terminates with stop", async () => {
+    const args = JSON.stringify({
+      cityCode: "RMQ", checkIn: "2026-09-20", checkOut: "2026-09-25",
+      occupancy: { adults: 3, rooms: 2 }, currency: "CNY",
+    });
+    const fakeClient = buildStreamingClient([
+      chunks([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_stop", function: { name: "hotel.search", arguments: args } }] } }] },
+        { choices: [{ delta: {}, finish_reason: "stop" }] },
+      ]),
+      chunks([
+        { choices: [{ delta: { content: "Grounded hotel result." } }] },
+        { choices: [{ delta: {}, finish_reason: "stop" }] },
+      ]),
+    ]);
+    const dispatchTool = vi.fn().mockResolvedValue({ outcome: "AVAILABLE" });
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "gemini", modelName: "gemini-test", promptVersion: "test",
+      ctx: createRequestContext(), client: fakeClient, maxRetries: 0,
+    });
+
+    await expect(gateway.streamConversationReply!({
+      question: "确认搜索", threadContext: [], onDelta: async () => {},
+      tools: [{ name: "hotel.search", description: "stub", parameters: { type: "object" } }], dispatchTool,
+    })).resolves.toMatchObject({ content: "Grounded hotel result." });
+    expect(dispatchTool).toHaveBeenCalledOnce();
+  });
+
+  it("normalizes the legacy Gemini function_call stream envelope", async () => {
+    const args = JSON.stringify({ cityCode: "RMQ" });
+    const fakeClient = buildStreamingClient([
+      chunks([{ choices: [{ delta: { function_call: { name: "hotel.search", arguments: args } } }] }]),
+      chunks([
+        { choices: [{ delta: { content: "Please confirm the saved query." } }] },
+        { choices: [{ delta: {}, finish_reason: "stop" }] },
+      ]),
+    ]);
+    const dispatchTool = vi.fn().mockResolvedValue({ outcome: "CONFIRMATION_REQUIRED" });
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "gemini", modelName: "gemini-test", promptVersion: "test",
+      ctx: createRequestContext(), client: fakeClient, maxRetries: 0,
+    });
+
+    await gateway.streamConversationReply!({
+      question: "CNY", threadContext: [], onDelta: async () => {},
+      tools: [{ name: "hotel.search", description: "stub", parameters: { type: "object" } }], dispatchTool,
+    });
+    expect(dispatchTool).toHaveBeenCalledWith(expect.objectContaining({
+      id: "legacy_function_call_0", name: "hotel.search", arguments: { cityCode: "RMQ" },
+    }));
+  });
+
+  it("reports malformed streamed tool arguments as TOOL_PROTOCOL, never SCHEMA_PARSE", async () => {
+    const fakeClient = buildStreamingClient([chunks([
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_bad", function: { name: "hotel.search", arguments: "{" } }] } }] },
+      { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+    ])]);
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "gemini", modelName: "gemini-test", promptVersion: "test",
+      ctx: createRequestContext(), client: fakeClient, maxRetries: 0,
+    });
+
+    await expect(gateway.streamConversationReply!({
+      question: "确认搜索", threadContext: [], onDelta: async () => {},
+      tools: [{ name: "hotel.search", description: "stub", parameters: { type: "object" } }],
+      dispatchTool: vi.fn(),
+    })).rejects.toMatchObject({ code: "TOOL_PROTOCOL" });
   });
 
   it("falls through to the prose-only path when no tools are registered", async () => {

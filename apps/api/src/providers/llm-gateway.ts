@@ -8,6 +8,7 @@ import type {
   ThreadContextMessage,
   ConversationDeltaHandler,
   ConversationReply,
+  ConversationHotelSearchState,
   ConversationResponseConstraint,
   LocationIntroductionResult,
   ModelGateway,
@@ -140,6 +141,7 @@ function hashOutput(output: unknown): string {
 
 function classifyError(err: unknown): string {
   if (!err) return "UNKNOWN";
+  if (err instanceof ModelGatewayError) return err.code;
   if ((err as { name?: string }).name === "AbortError") return "TIMEOUT";
   const message = (err as Error).message ?? "";
   if (/timeout/i.test(message)) return "TIMEOUT";
@@ -427,11 +429,11 @@ const CONVERSATION_RESPONSE_CONSTRAINTS: Record<ConversationResponseConstraint, 
     "• 将缺口合并成不超过三条简短追问。预算、早餐、可取消、床型和设施是有用的可选筛选项，不应阻止用户继续。",
     "• 不得要求用户点击卡片、按钮或到其他页面补资料。",
     "",
-    "[Phase 4 — 强制工具调用] 当且仅当以下条件**全部**满足时，必须调用 `hotel.search` 工具，**不得**输出任何散文、价格或酒店推荐：",
-    "  1. threadContext 与本轮 question 合并后已具备四个必需字段：cityCode（IATA 城市代码）、checkIn（YYYY-MM-DD）、checkOut（YYYY-MM-DD）、occupancy（adults+rooms）。",
-    "  2. occupancy.currency（3 位币种代码，如 CNY / TWD / USD）。",
-    "  3. 用户已明确表达“继续搜索 / 现在搜索”的意图（典型措辞：「确认搜索」/「yes, search」/「go ahead」/「执行搜索」/「ok, search」/「do it」/「开始」等）。",
-    "满足上述三条时，本轮响应**仅**包含对 `hotel.search` 的函数调用，**不允许**先写「好的，我来查一下」「以下是结果」之类 prose；工具结果回来之后再基于 `researchEvidence` 给出 grounded 总结。任何提前出现的酒店名称、价格、星级描述都会被安全过滤器洗掉，且会让用户面对空白的拒绝页。",
+    "[Phase 4 — 服务端状态与强制工具调用] `hotelSearchState` 是服务器持久化的当前私有酒店查询状态，优先于从对话中猜测的字段。",
+    "  1. 若城市代码、入住/退房、adults+rooms、币种已经齐全，但 `hotelSearchState` 缺失或字段不同，必须调用 `hotel.search` 并带齐字段；此调用只会让服务器保存条件，工具返回 `CONFIRMATION_REQUIRED` 后再用散文请用户确认。",
+    "  2. 当用户明确表达“继续搜索 / 现在搜索”（典型措辞：「确认搜索」/「yes, search」/「go ahead」/「执行搜索」/「ok, search」/「do it」/「开始」等）且 `hotelSearchState` 已完整时，必须调用 `hotel.search`，可传 `{}` 复用该服务端状态。",
+    "  3. 用户确认且本轮给出了完整字段时，也必须调用 `hotel.search` 并带齐字段。",
+    "满足第 2 或第 3 条时，本轮响应**仅**包含函数调用，**不允许**先写「好的，我来查一下」「以下是结果」之类 prose；工具结果回来之后再基于工具结果给出 grounded 总结。任何提前出现的酒店名称、价格、星级描述都会被安全过滤器洗掉。",
     "",
     "如果字段不齐全，**仍要追问**（最多三条），不要因为「想发工具」就编造缺失字段。",
     "• 不得为酒店搜索索取护照、证件号码、支付信息或完整住客资料；若某供应商确实需要国籍，只能提示用户通过单独、明确授权的最小字段流程处理。",
@@ -893,6 +895,7 @@ export class LLMGateway implements ModelGateway {
     intent?: "auto_intro" | "user_typed";
     responseConstraints?: readonly ConversationResponseConstraint[];
     tripContext?: PersonalTripContext;
+    hotelSearchState?: ConversationHotelSearchState | null;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<ConversationReply> {
@@ -971,6 +974,7 @@ export class LLMGateway implements ModelGateway {
                     memoryContext: params.memoryContext ?? [],
                     researchEvidence: params.researchEvidence ?? [],
                     tripContext: params.tripContext ?? null,
+                    hotelSearchState: params.hotelSearchState ?? null,
                   }),
                 },
               ],
@@ -1071,6 +1075,7 @@ export class LLMGateway implements ModelGateway {
     intent?: "auto_intro" | "user_typed";
     responseConstraints?: readonly ConversationResponseConstraint[];
     tripContext?: PersonalTripContext;
+    hotelSearchState?: ConversationHotelSearchState | null;
     onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;
@@ -1135,6 +1140,7 @@ export class LLMGateway implements ModelGateway {
     // single broken message. Mid-stream failure rethrows so the worker
     // restarts the task with a fresh SSE channel.
     let sentAnyDelta = false;
+    let toolCallStarted = false;
     let lastError = "UPSTREAM_FAILURE";
     const maxRetries = this.options.maxRetries ?? 1;
 
@@ -1148,12 +1154,17 @@ export class LLMGateway implements ModelGateway {
           ctx,
           start,
           span,
-          markSent: () => { sentAnyDelta = true; },
+          markSent: (kind) => {
+            if (kind === "delta") sentAnyDelta = true;
+            else toolCallStarted = true;
+          },
         });
       } catch (error) {
         lastError = classifyError(error);
         recordRetryableError(this.options.provider, lastError);
-        if (sentAnyDelta) break; // mid-stream abort — let worker retry
+        // Retrying after a tool call can duplicate provider side effects;
+        // retrying after text can concatenate replies in the UI.
+        if (sentAnyDelta || toolCallStarted) break;
         if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
         await sleep(computeBackoffMs(attempt));
       }
@@ -1181,9 +1192,10 @@ export class LLMGateway implements ModelGateway {
       status: lastError === "TIMEOUT" ? "TIMEOUT" : "ERROR",
       errorCode: lastError,
     });
-    if (sentAnyDelta) {
+    if (sentAnyDelta || (toolCallStarted && !isRetryableUpstreamError(lastError))) {
       // Mid-stream failure: the partial text already reached the client;
-      // throw so the worker restarts the task and closes the SSE channel.
+      // protocol failures after a tool call also remain terminal so they are
+      // surfaced as a diagnosable error instead of being hidden by fallback.
       throw new ModelGatewayError(lastError, "conversation");
     }
     // Pre-stream failure: surface a FALLBACK reply so the UI keeps
@@ -1198,10 +1210,11 @@ export class LLMGateway implements ModelGateway {
       place?: ConversationPlace;
       threadContext: ThreadContextMessage[];
       memoryContext?: ConversationMemoryFact[];
-    researchEvidence?: ResearchEvidenceOffer[];
+      researchEvidence?: ResearchEvidenceOffer[];
       intent?: "auto_intro" | "user_typed";
       responseConstraints?: readonly ConversationResponseConstraint[];
       tripContext?: PersonalTripContext;
+      hotelSearchState?: ConversationHotelSearchState | null;
       onDelta: ConversationDeltaHandler;
       signal?: AbortSignal;
       ctx?: RequestContext;
@@ -1211,7 +1224,7 @@ export class LLMGateway implements ModelGateway {
     ctx: RequestContext;
     start: number;
     span: ReturnType<ReturnType<typeof getTracer>["startSpan"]>;
-    markSent: () => void;
+    markSent: (kind: "delta" | "tool") => void;
   }): Promise<ConversationReply> {
     const { client, params, tools, dispatchTool, ctx, start, span, markSent } = args;
     const toolsEnabled = Array.isArray(tools) && tools.length > 0 && typeof dispatchTool === "function";
@@ -1233,6 +1246,7 @@ export class LLMGateway implements ModelGateway {
           memoryContext: params.memoryContext ?? [],
           researchEvidence: params.researchEvidence ?? [],
           tripContext: params.tripContext ?? null,
+          hotelSearchState: params.hotelSearchState ?? null,
         }),
       },
     ];
@@ -1253,7 +1267,17 @@ export class LLMGateway implements ModelGateway {
       choices: Array<{
         delta: {
           content?: string | null;
-          tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }>;
+          tool_calls?: Array<{
+            index: number;
+            id?: string;
+            function?: { name?: string; arguments?: string };
+            // Gemini 3 carries its required thought signature here.
+            extra_content?: unknown;
+          }>;
+          // Some OpenAI-compatible providers still emit the legacy singular
+          // function-call shape while advertising the modern `tools` API.
+          // Accept it only in this server-owned compatibility boundary.
+          function_call?: { name?: string; arguments?: string };
         };
         finish_reason?: "stop" | "length" | "tool_calls" | "content_filter" | "function_call" | null;
       }>;
@@ -1264,6 +1288,7 @@ export class LLMGateway implements ModelGateway {
     let usage: AgentRunTokens | undefined;
     let toolCallsReceived = false;
     let toolCallsFinished = false;
+    let toolProtocol: "openai_tool_calls" | "legacy_function_call" | undefined;
 
     const consumeStream = async (): Promise<void> => {
       const stream = await client.chat.completions.create(
@@ -1282,17 +1307,28 @@ export class LLMGateway implements ModelGateway {
         if (delta?.content) {
           content += delta.content;
           if (content.length > 8000) throw new Error("Conversation stream exceeds schema limit");
-          markSent();
+          markSent("delta");
           await params.onDelta(delta.content);
         }
         if (delta?.tool_calls && delta.tool_calls.length > 0) {
           toolCallsReceived = true;
+          toolProtocol ??= "openai_tool_calls";
           // Tool calls also burn the retry budget: a retried stream would
           // re-emit the same tool call and double-invoke the dispatcher.
-          markSent();
+          markSent("tool");
           for (const toolCallDelta of delta.tool_calls) {
             accumulateToolCall(toolCallDelta);
           }
+        }
+        if (delta?.function_call) {
+          toolCallsReceived = true;
+          toolProtocol ??= "legacy_function_call";
+          markSent("tool");
+          accumulateToolCall({
+            index: 0,
+            id: "legacy_function_call_0",
+            function: delta.function_call,
+          });
         }
         if (choice?.finish_reason) {
           lastFinishReason = choice.finish_reason;
@@ -1302,13 +1338,14 @@ export class LLMGateway implements ModelGateway {
 
     const accumulatedToolCalls = new Map<
       number,
-      { index: number; id?: string; function: { name?: string; arguments: string } }
+      { index: number; id?: string; function: { name?: string; arguments: string }; extraContent?: unknown }
     >();
     let lastFinishReason: string | null = null;
     const accumulateToolCall = (toolCallDelta: {
       index: number;
       id?: string;
       function?: { name?: string; arguments?: string };
+      extra_content?: unknown;
     }): void => {
       const existing = accumulatedToolCalls.get(toolCallDelta.index) ?? {
         index: toolCallDelta.index,
@@ -1320,26 +1357,42 @@ export class LLMGateway implements ModelGateway {
       if (typeof toolCallDelta.function?.arguments === "string") {
         existing.function.arguments += toolCallDelta.function.arguments;
       }
+      if (toolCallDelta.extra_content !== undefined) {
+        existing.extraContent = toolCallDelta.extra_content;
+      }
       accumulatedToolCalls.set(toolCallDelta.index, existing);
     };
 
     await consumeStream();
 
-    // Tool dispatch branch: if the model emitted any tool calls AND the
-    // worker registered a dispatcher, run it and re-stream with the result.
+    const safeFinishReason = (reason: string | null): NonNullable<import("../observability/telemetry.js").SafeRuntimeEvent["toolFinishReason"]> => {
+      if (reason === "tool_calls" || reason === "function_call" || reason === "stop" || reason === "length" || reason === "content_filter") return reason;
+      return reason === null ? "missing" : "other";
+    };
+
+    // Tool dispatch is triggered by a complete accumulated call, not by a
+    // provider-specific finish_reason. Gemini's OpenAI-compatible stream may
+    // terminate a function call with `stop` (or omit the final marker); the
+    // old gate discarded that valid call and then reported its empty content
+    // as SCHEMA_PARSE. A simultaneous prose payload is an unsafe ambiguous
+    // protocol, so reject it explicitly instead of rendering partial text.
     if (
       toolsEnabled
       && toolCallsReceived
       && accumulatedToolCalls.size > 0
-      && lastFinishReason === "tool_calls"
     ) {
+      logSafeRuntimeEvent(ctx, {
+        component: "tool", event: "call_received", operation: "travel.conversation", outcome: "success",
+        toolContext: "conversation", toolProtocol: toolProtocol ?? "openai_tool_calls",
+        toolFinishReason: safeFinishReason(lastFinishReason), itemCount: accumulatedToolCalls.size,
+      });
+      if (content.trim().length > 0) {
+        throw new ModelGatewayError("TOOL_PROTOCOL", "conversation");
+      }
       const calls = [...accumulatedToolCalls.values()].sort((a, b) => a.index - b.index);
-      // Echo the assistant turn back to the model. The Shared planning
-      // loop spreads the entire provider response (`...message`) to
-      // preserve Gemini thought-signatures; for streaming we only have
-      // accumulated chunks, so we synthesise the OpenAI-standard shape.
-      // The Gemini-OpenAI-compat quirk (line 715-716 comment) only
-      // affects forced `tool_choice`, which this path does not use.
+      // Echo the assistant turn back to the model. Gemini 3 places its
+      // required opaque thought signature in `tool_calls[].extra_content`;
+      // retain it while accumulating chunks and replay it exactly here.
       conversationMessages.push({
         role: "assistant",
         content: content || null,
@@ -1350,18 +1403,24 @@ export class LLMGateway implements ModelGateway {
             name: call.function.name,
             arguments: call.function.arguments,
           },
+          ...(call.extraContent === undefined ? {} : { extra_content: call.extraContent }),
         })),
       });
 
       for (const call of calls) {
         if (!call.id || !call.function.name) {
-          throw new ModelGatewayError("SCHEMA_PARSE");
+          throw new ModelGatewayError("TOOL_PROTOCOL", "conversation");
         }
         let args: unknown;
         try {
           args = JSON.parse(call.function.arguments || "{}");
         } catch {
-          throw new ModelGatewayError("SCHEMA_PARSE");
+          logSafeRuntimeEvent(ctx, {
+            component: "tool", event: "call_invalid", operation: "travel.conversation", outcome: "failure",
+            errorCode: "TOOL_PROTOCOL", toolName: call.function.name, toolContext: "conversation",
+            toolProtocol: toolProtocol ?? "openai_tool_calls", toolFinishReason: safeFinishReason(lastFinishReason),
+          });
+          throw new ModelGatewayError("TOOL_PROTOCOL", "conversation");
         }
         const toolStart = Date.now();
         logSafeRuntimeEvent(ctx, {
@@ -1398,7 +1457,17 @@ export class LLMGateway implements ModelGateway {
     }
 
     const parsed = z.string().trim().min(1).max(8000).safeParse(content);
-    if (!parsed.success) throw new Error("Conversation stream schema validation failed");
+    if (!parsed.success) {
+      if (toolCallsReceived) {
+        logSafeRuntimeEvent(ctx, {
+          component: "tool", event: "call_invalid", operation: "travel.conversation", outcome: "failure",
+          errorCode: "TOOL_PROTOCOL", toolContext: "conversation",
+          toolProtocol: toolProtocol ?? "openai_tool_calls", toolFinishReason: safeFinishReason(lastFinishReason),
+        });
+        throw new ModelGatewayError("TOOL_PROTOCOL", "conversation");
+      }
+      throw new Error("Conversation stream schema validation failed");
+    }
 
     const reply: ConversationReply = { content: parsed.data, responseMode: "MODEL" };
     metrics.observe("llm_request_latency_ms", Date.now() - start, {

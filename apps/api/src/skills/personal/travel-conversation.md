@@ -78,14 +78,41 @@ always invokes this Skill; it does not create a confirmation/setup card or
 emit `research.intent_extracted`. The model reuses same-thread facts and asks
 for only the missing city, dates, adult/room configuration and currency.
 
-When `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true` and the user has
-expressed intent to search (e.g. "确认搜索" / "yes, search" / "go ahead")
-with all required fields present, the model invokes the `hotel.search` tool
-directly. The conversation worker dispatches the call against Nuitee,
-persists the bounded summary into `personal_research_evidence` (deduped by
-`(run_id, capability)`), and re-streams a grounded summary. The model does
-not emit a prose claim that the search has been made — the system runs the
-tool and feeds the result back.
+When `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true`, a complete hotel
+query is first written to the private, server-owned
+`conversation_hotel_search_states` row for the thread. The row contains only
+city code, dates, occupancy, currency, version and the current USER-message
+confirmation marker — never raw chat text, credentials, guest identity or a
+provider result. The model receives that typed state on later turns, so an
+explicit “确认搜索” can call `hotel.search` with `{}` and cannot depend on
+reconstructing values from transcript context. A field change replaces the
+stored query and clears the prior confirmation unless the same current turn
+contains a new explicit confirmation.
+
+Only an explicit confirmation bound by the server to the current USER message
+may reach Nuitee. Before that point the tool returns
+`CONFIRMATION_REQUIRED` after persisting the typed query; no provider request
+is made. A confirmed call dispatches against Nuitee, persists the bounded
+summary into `personal_research_evidence` (deduped by `(run_id, capability)`),
+and re-streams a grounded summary. The model does not emit a prose claim that
+the search has been made before the tool result arrives.
+
+The stream adapter treats an accumulated OpenAI `tool_calls` envelope or the
+legacy `function_call` envelope as authoritative even when an
+OpenAI-compatible provider returns `stop`, `function_call`, or no finish
+marker. Mixed text + tool payload, malformed arguments, and incomplete tool
+envelopes fail as the explicit `TOOL_PROTOCOL` code rather than a misleading
+empty-content `SCHEMA_PARSE`. Safe runtime events record only bounded protocol
+metadata (envelope family and normalized finish reason), never arguments or
+conversation content.
+
+For Gemini 3, the adapter also preserves the opaque
+`tool_calls[].extra_content.google.thought_signature` from streamed chunks and
+returns it unchanged in the assistant tool-call message before sending a tool
+result. Gemini requires this signature for the second completion in the same
+tool turn. If that second completion has a retryable upstream failure before
+any visible text is emitted, the conversation returns a safe fallback reply
+instead of falsely reporting the successfully dispatched tool as a failed send.
 
 When the rollout flag is off, the model still summarises the requested
 search and asks the owner to reply with an explicit "确认搜索". Without a

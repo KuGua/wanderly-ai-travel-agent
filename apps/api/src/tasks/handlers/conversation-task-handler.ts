@@ -1,5 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { createHash } from "node:crypto";
+import { z } from "zod";
 
 import { DefaultPolicyGate } from "../../agents/policy-gate.js";
 import { db } from "../../db/database.js";
@@ -15,6 +16,10 @@ import { buildConversationMemoryContext } from "../../services/conversation-memo
 import { loadLatestResearchEvidence } from "../../services/research-evidence-service.js";
 import { proposeTripBriefFromTurn } from "../../services/trip-brief-proposal-service.js";
 import { executePersonalResearch } from "../../services/personal-research-service.js";
+import {
+  loadConversationHotelSearchState,
+  saveConversationHotelSearchState,
+} from "../../services/conversation-hotel-search-state-service.js";
 import {
   executeTravelConversation,
   travelConversationSkill,
@@ -45,7 +50,6 @@ const HOTEL_SEARCH_TOOL: ModelToolDefinition = {
   parameters: {
     type: "object",
     additionalProperties: false,
-    required: ["cityCode", "checkIn", "checkOut", "occupancy", "currency"],
     properties: {
       cityCode: { type: "string" },
       checkIn: { type: "string", format: "date" },
@@ -63,6 +67,21 @@ const HOTEL_SEARCH_TOOL: ModelToolDefinition = {
     },
   },
 };
+
+// This partial boundary deliberately validates only transport shape. The
+// merged, complete draft is always checked by personalResearchHotelDraftSchema
+// before it is persisted or reaches a provider. Keeping it separate avoids
+// weakening the full schema's date-order refinement just to support `{}`.
+const hotelSearchToolArgumentsSchema = z.object({
+  cityCode: z.string().optional(),
+  checkIn: z.string().optional(),
+  checkOut: z.string().optional(),
+  occupancy: z.object({
+    adults: z.number().optional(),
+    rooms: z.number().optional(),
+  }).strict().optional(),
+  currency: z.string().optional(),
+}).strict();
 
 /**
  * Returns `true` when the conversation worker should hand the `hotel.search`
@@ -93,7 +112,8 @@ function canonicalizeForHash(value: unknown): string {
 
 /**
  * Builds the conversation worker's tool dispatch closure for `hotel.search`.
- *   - Validates arguments against `personalResearchHotelDraftSchema`.
+ *   - Merges model-supplied fields with server-persisted thread state, then
+ *     validates the complete result against `personalResearchHotelDraftSchema`.
  *   - Probes `personal_research_evidence` by `(run_id, capability)` — the
  *     existing unique index `personal_research_evidence_run_capability_unique`
  *     makes a second invocation on the same run a no-op (no Nuitee call).
@@ -106,28 +126,57 @@ function canonicalizeForHash(value: unknown): string {
  */
 function buildHotelSearchDispatcher(params: {
   run: AgentTaskRow;
+  ctx: RequestContext;
   signal: AbortSignal;
   traceparent?: string;
+  userConfirmed: boolean;
 }): ModelToolDispatcher {
   return async (call) => {
     if (call.name !== "hotel.search") {
       throw new Error(`Unsupported tool call from conversation: ${call.name}`);
     }
-    // Inject the discriminator the LLM does not send, then validate.
-    const parsed = personalResearchHotelDraftSchema.safeParse({
-      kind: "HOTEL_SEARCH",
-      ...(typeof call.arguments === "object" && call.arguments !== null ? call.arguments : {}),
-    });
-    if (!parsed.success) {
-      throw new Error(`Invalid hotel.search arguments: ${parsed.error.message}`);
+    const rawArguments = typeof call.arguments === "object" && call.arguments !== null
+      ? call.arguments as Record<string, unknown>
+      : null;
+    if (!rawArguments) return { outcome: "INVALID_ARGUMENTS", code: "TOOL_ARGUMENTS_INVALID" };
+    // The tool intentionally has no JSON-schema required fields: a later
+    // explicit confirmation can invoke it with `{}` and the dispatcher will
+    // use the owner-reviewed state. Unknown fields are rejected before merge.
+    const partial = hotelSearchToolArgumentsSchema.safeParse(rawArguments);
+    if (!partial.success) return { outcome: "INVALID_ARGUMENTS", code: "TOOL_ARGUMENTS_INVALID" };
+    if (!params.run.threadId || !params.run.tripId || !params.run.userMessageId) {
+      throw new Error("Conversation hotel tool task is missing private-thread references");
     }
+    const existingState = await loadConversationHotelSearchState({
+      threadId: params.run.threadId,
+      tripId: params.run.tripId,
+      ownerUserId: params.run.createdByUserId,
+    });
+    const parsed = personalResearchHotelDraftSchema.safeParse({
+      ...(existingState?.draft ?? { kind: "HOTEL_SEARCH" }),
+      ...partial.data,
+      kind: "HOTEL_SEARCH",
+    });
+    if (!parsed.success) return { outcome: "NEEDS_FIELDS", code: "HOTEL_SEARCH_FIELDS_INCOMPLETE" };
     const draft = parsed.data;
+    const saved = await saveConversationHotelSearchState({
+      ctx: params.ctx,
+      threadId: params.run.threadId,
+      tripId: params.run.tripId,
+      ownerUserId: params.run.createdByUserId,
+      userMessageId: params.run.userMessageId,
+      draft,
+      confirmed: params.userConfirmed,
+    });
+    if (!params.userConfirmed) {
+      return { outcome: "CONFIRMATION_REQUIRED", capability: "hotel.search", stateVersion: saved.version };
+    }
     const fingerprint = createHash("sha256")
       .update(canonicalizeForHash(draft))
       .digest("hex");
 
     // Dedup probe: existing row on this run for `hotel.search` wins.
-    const [existing] = await db.select({
+    const [existingEvidence] = await db.select({
       resultJson: personalResearchEvidence.resultJson,
       capturedAt: personalResearchEvidence.capturedAt,
     })
@@ -138,8 +187,8 @@ function buildHotelSearchDispatcher(params: {
       ))
       .orderBy(desc(personalResearchEvidence.capturedAt))
       .limit(1);
-    if (existing) {
-      return { ...(existing.resultJson as Record<string, unknown>), draftHash: fingerprint, deduped: true };
+    if (existingEvidence) {
+      return { ...(existingEvidence.resultJson as Record<string, unknown>), draftHash: fingerprint, deduped: true, providerDispatched: true };
     }
 
     // Tell the UI a tool-driven search is in flight so the chat can show a
@@ -154,7 +203,7 @@ function buildHotelSearchDispatcher(params: {
       draft,
       signal: params.signal,
     });
-    return { ...result.summary, draftHash: fingerprint, deduped: false, evidenceId: result.evidenceId };
+    return { ...result.summary, draftHash: fingerprint, deduped: false, evidenceId: result.evidenceId, providerDispatched: true };
   };
 }
 
@@ -214,6 +263,11 @@ export async function handleConversationTask(params: {
   // cannot refer to a search it ran itself: the offers were persisted and
   // never read back.
   const evidence = await loadLatestResearchEvidence(params.run.tripId);
+  const hotelSearchState = await loadConversationHotelSearchState({
+    threadId: params.run.threadId,
+    tripId: params.run.tripId,
+    ownerUserId: params.run.createdByUserId,
+  });
   const input = travelConversationInputSchema.parse({
     ...turnInput,
     tripContext,
@@ -241,31 +295,36 @@ export async function handleConversationTask(params: {
     dispatchTool?: ModelToolDispatcher;
     evidenceBacked?: boolean;
     userConfirmed?: boolean;
+    hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
   } = {};
-  // The user's most recent message expresses a "go" intent when it STARTS
-  // with any of these markers. The marker may be followed by a currency
-  // code, a punctuation mark, or whitespace (e.g. "确认搜索", "确认搜索 TWD",
-  // "go ahead.", "yes, search"); anything longer is treated as a regular
-  // question so off-topic replies do not slip through. Keep the list narrow
-  // enough that an off-topic reply does not slip through.
-  toolContext.userConfirmed = /^\s*(确认搜索|yes[\s,.]+(?:search|please|go)|go ahead|execute search|执行搜索|开始搜索|继续|search now|do it|ok\s+search|please search)([\s.,!?]|$)/i.test(
+  // Server-side explicit confirmation detector. It accepts a standalone
+  // confirmation at either end of a complete natural-language query (for
+  // example “...，CNY。确认搜索” and “CNY 确认搜索”), but does not treat an
+  // embedded phrase such as “如何确认搜索条件” as authorization.
+  toolContext.userConfirmed = /(?:^|[\s，,。.!！？])(?:确认搜索|yes[\s,.]+(?:search|please|go)|go ahead|execute search|执行搜索|开始搜索|继续搜索|search now|do it|ok\s+search|please search)(?=$|[\s，,。.!！？])/i.test(
     input.question,
   );
+  toolContext.hotelSearchState = hotelSearchState ? {
+    ...hotelSearchState.draft,
+    confirmed: hotelSearchState.confirmed,
+    version: hotelSearchState.version,
+  } : null;
   let evidenceDispatched = false;
   if (toolDispatchEnabled) {
     const baseDispatch = buildHotelSearchDispatcher({
       run: params.run,
+      ctx: params.ctx,
       signal: execution.signal,
       traceparent: params.ctx.traceparent,
+      userConfirmed: toolContext.userConfirmed,
     });
     toolContext.tools = [HOTEL_SEARCH_TOOL];
     toolContext.dispatchTool = async (call) => {
-      // Flip the flag the moment a tool call fires so the streaming gate
-      // relaxes the price/hotel and availability/hotel safety rules for
-      // the second stream's grounded summary. The flag starts false; only
-      // an actual dispatch turns it on.
-      evidenceDispatched = true;
-      return baseDispatch(call);
+      const result = await baseDispatch(call);
+      // A readiness save/confirmation prompt is not evidence. Only the
+      // server-side provider branch may unlock grounded price/inventory prose.
+      evidenceDispatched = (result as { providerDispatched?: unknown }).providerDispatched === true;
+      return result;
     };
   }
 

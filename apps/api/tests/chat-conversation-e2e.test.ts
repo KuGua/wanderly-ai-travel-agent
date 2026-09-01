@@ -8,7 +8,7 @@ import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
 import { invokeSkill } from "../src/agents/skill-registry.js";
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { agentTaskRuns, auditEvents, chatMessages, chatThreads, idempotencyRecords, personalResearchEvidence, users } from "../src/db/schema.js";
+import { agentTaskRuns, auditEvents, chatMessages, chatThreads, conversationHotelSearchStates, idempotencyRecords, personalResearchEvidence, users } from "../src/db/schema.js";
 import { __setModelGatewayForTests } from "../src/providers/gateway-factory.js";
 import { ModelGatewayError } from "../src/providers/llm-gateway.js";
 import type { ModelGateway } from "../src/providers/model-gateway.js";
@@ -351,6 +351,20 @@ describe("durable owner-only Personal Agent conversation flow", () => {
       expect(resultJson?.outcome).toBe("UNAVAILABLE");
       expect(resultJson?.summary?.errorCode).toBe("NOT_CONFIGURED");
       evidenceRowsToCleanup.push(firstEvidence!.id);
+      const [savedState] = await db.select().from(conversationHotelSearchStates)
+        .where(eq(conversationHotelSearchStates.threadId, threadId));
+      expect(savedState).toMatchObject({
+        tripId,
+        ownerUserId: aliceId,
+        cityCode: "TPE",
+        checkIn: "2026-09-15",
+        checkOut: "2026-09-20",
+        adults: 3,
+        rooms: 2,
+        currency: "CNY",
+        confirmedMessageId: expect.any(String),
+        confirmedAt: expect.any(Date),
+      });
 
       // Idempotency: a second confirmation in a new turn must not insert a
       // new evidence row — the worker's dispatch closure probes the table
@@ -477,7 +491,10 @@ function buildToolDispatchGateway(groundedReply: string): ModelGateway & {
     },
     async streamConversationReply(params: Parameters<NonNullable<ModelGateway["streamConversationReply"]>>[0]) {
       const onDelta = params.onDelta;
-      const args = {
+      // Subsequent confirmation turns deliberately provide no fields. The
+      // worker must merge the server-persisted hotel state before it can
+      // dispatch the provider, rather than relying on conversational context.
+      const args = params.hotelSearchState ? {} : {
         cityCode: "TPE",
         checkIn: "2026-09-15",
         checkOut: "2026-09-20",

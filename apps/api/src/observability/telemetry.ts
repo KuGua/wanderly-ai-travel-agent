@@ -211,6 +211,13 @@ export type SafeRuntimeEvent = {
    * dispatch volume by surface area.
    */
   toolContext?: "conversation" | "planning";
+  /**
+   * Sanitised OpenAI-compatible tool-call envelope metadata. These values
+   * diagnose provider protocol drift without recording model arguments,
+   * completions, or any private conversation content.
+   */
+  toolProtocol?: "openai_tool_calls" | "legacy_function_call";
+  toolFinishReason?: "tool_calls" | "function_call" | "stop" | "length" | "content_filter" | "missing" | "other";
   promptVersion?: string;
   outputHash?: string;
   tokenCount?: number;

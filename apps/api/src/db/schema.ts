@@ -736,6 +736,35 @@ export const chatMessages = pgTable("chat_messages", {
   threadSequenceIdx: uniqueIndex("chat_messages_thread_sequence_unique").on(table.threadId, table.messageSequence),
 }));
 
+/**
+ * Server-authoritative hotel search readiness for one private thread.
+ *
+ * This intentionally stores only the typed provider query fields and the
+ * explicit confirmation marker — never chat text, model output, credentials,
+ * guest names, nationality, or provider payload.  It lets a later “确认搜索”
+ * use the exact fields the owner previously reviewed instead of relying on
+ * the model to reconstruct them from transcript context.
+ */
+export const conversationHotelSearchStates = pgTable("conversation_hotel_search_states", {
+  threadId: uuid("thread_id").primaryKey().references(() => chatThreads.id, { onDelete: "cascade" }),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  cityCode: varchar("city_code", { length: 3 }).notNull(),
+  checkIn: date("check_in", { mode: "string" }).notNull(),
+  checkOut: date("check_out", { mode: "string" }).notNull(),
+  adults: integer("adults").notNull(),
+  rooms: integer("rooms").notNull(),
+  currency: varchar("currency", { length: 3 }).notNull(),
+  /** The USER message which explicitly authorized the provider search. */
+  confirmedMessageId: uuid("confirmed_message_id").references(() => chatMessages.id, { onDelete: "set null" }),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  version: integer("version").default(1).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tripOwnerIdx: index("conversation_hotel_search_states_trip_owner_idx").on(table.tripId, table.ownerUserId),
+}));
+
 // Durable business tasks. Unlike agentRuns below, these rows are authoritative
 // lifecycle state and never contain prompt text, partial output, or credentials.
 export const agentTaskRuns = pgTable("agent_task_runs", {

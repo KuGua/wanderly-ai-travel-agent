@@ -61,6 +61,17 @@ export interface TripBriefProposal {
   travelDays?: number;
 }
 
+/** Typed, private, server-owned readiness state for the hotel tool. */
+export interface ConversationHotelSearchState {
+  cityCode: string;
+  checkIn: string;
+  checkOut: string;
+  occupancy: { adults: number; rooms: number };
+  currency: string;
+  confirmed: boolean;
+  version: number;
+}
+
 export type ConversationDeltaHandler = (delta: string) => void | Promise<void>;
 
 /** A provider-neutral OpenAI-compatible function declaration. */
@@ -170,6 +181,7 @@ export interface ModelGateway {
      * the model — never substitute a richer DB read.
      */
     tripContext?: PersonalTripContext;
+    hotelSearchState?: ConversationHotelSearchState | null;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<ConversationReply>;
@@ -184,6 +196,7 @@ export interface ModelGateway {
     intent?: ConversationIntent;
     responseConstraints?: readonly ConversationResponseConstraint[];
     tripContext?: PersonalTripContext;
+    hotelSearchState?: ConversationHotelSearchState | null;
     onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;

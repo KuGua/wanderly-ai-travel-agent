@@ -312,7 +312,7 @@ metrics.registerCounter(
   "LLM request attempt outcomes, by provider, error category and retryability.",
   {
     provider: ["openai", "gemini", "openai-compatible"],
-    error_category: ["upstream_5xx", "upstream_failure", "network", "timeout", "schema_parse", "unknown"],
+    error_category: ["upstream_5xx", "upstream_failure", "network", "timeout", "schema_parse", "tool_protocol", "unknown"],
     retryable: ["true", "false"],
   },
 );

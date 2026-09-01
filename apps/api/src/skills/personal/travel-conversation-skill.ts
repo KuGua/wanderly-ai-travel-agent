@@ -137,6 +137,7 @@ export interface TravelConversationToolContext {
   dispatchTool?: import("../../providers/model-gateway.js").ModelToolDispatcher;
   evidenceBacked?: boolean;
   userConfirmed?: boolean;
+  hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
 }
 
 export async function executeTravelConversation(
@@ -165,6 +166,7 @@ export async function executeTravelConversation(
           intent: input.intent,
           responseConstraints: TRAVEL_CONVERSATION_RESPONSE_CONSTRAINTS,
           tripContext: input.tripContext,
+          hotelSearchState: toolContext.hotelSearchState,
           onDelta,
           signal,
           ctx: ctx.ctx,
@@ -180,6 +182,7 @@ export async function executeTravelConversation(
           intent: input.intent,
           responseConstraints: TRAVEL_CONVERSATION_RESPONSE_CONSTRAINTS,
           tripContext: input.tripContext,
+          hotelSearchState: toolContext.hotelSearchState,
           signal,
           ctx: ctx.ctx,
         });
