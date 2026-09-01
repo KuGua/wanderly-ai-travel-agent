@@ -70,6 +70,16 @@ const HOTEL_NOUNS = [
 const HOTEL_EN_VERBS = ["search", "find", "look", "look up", "check", "browse"];
 const HOTEL_EN_NOUNS = ["hotel", "stay", "lodging", "accommodation", "inn"];
 
+// Flight vocabulary. Its absence meant a flight question — the capability
+// stage 1 of the spec was built around — fell through to plain conversation
+// and never proposed a research draft.
+const FLIGHT_VERBS = ["查", "搜", "找", "搜索", "查一下", "查看", "查询", "看看"];
+// Deliberately narrow: "飞机" on its own appears in ordinary questions like
+// "坐飞机要多久", which is not a request to search inventory.
+const FLIGHT_NOUNS = ["机票", "航班", "飞机票"];
+const FLIGHT_EN_VERBS = ["search", "find", "look", "look up", "check", "browse"];
+const FLIGHT_EN_NOUNS = ["flight", "flights", "airfare", "plane ticket"];
+
 const ACTIVITY_VERBS = ["查", "找", "搜", "搜索", "推荐", "看看"];
 const ACTIVITY_NOUNS = ["景点", "活动", "好玩", "好玩的", "attraction", "activity", "activities", "things to do"];
 const PLACE_NOUNS = ["餐厅", "美食", "restaurant", "food", "dining", "cafe"];
@@ -213,6 +223,9 @@ export function classifyResearchIntent(input: ClassifyInput): ClassifyResult {
     return { kind: "CONVERSATION" };
   }
 
+  const flightHit = matchesGroup(
+    normalized, FLIGHT_VERBS, FLIGHT_NOUNS, FLIGHT_EN_VERBS, FLIGHT_EN_NOUNS,
+  );
   const hotelHit = matchesGroup(
     normalized, HOTEL_VERBS, HOTEL_NOUNS, HOTEL_EN_VERBS, HOTEL_EN_NOUNS,
   );
@@ -239,7 +252,8 @@ export function classifyResearchIntent(input: ClassifyInput): ClassifyResult {
   // activities + places collide when the user mentions both "景点" and
   // "餐厅" in one sentence — owner should split into separate turns.
   const intentCount =
-    (hotelHit ? 1 : 0)
+    (flightHit ? 1 : 0)
+    + (hotelHit ? 1 : 0)
     + (activityHit ? 1 : 0)
     + (placeHit ? 1 : 0)
     + (routeHit ? 1 : 0)
@@ -248,7 +262,9 @@ export function classifyResearchIntent(input: ClassifyInput): ClassifyResult {
     return { kind: "CONVERSATION" };
   }
 
-  // Priority order: hotel > route > places > activities > itinerary.
+  // Priority order: flight > hotel > route > places > activities > itinerary.
+  // Flight vocabulary does not overlap the others, so its position only
+  // matters for a sentence naming two intents — and those fall back above.
   // "查饭店" could map to either hotel or restaurant; we prefer hotel so a
   // user saying "查饭店" gets the more conservative research surface (hotel
   // is a higher-friction capability than places — places also has a search
@@ -266,6 +282,12 @@ export function classifyResearchIntent(input: ClassifyInput): ClassifyResult {
           "navigation", "mobility", "readiness",
         ],
       },
+    };
+  }
+  if (flightHit) {
+    return {
+      kind: "PROPOSED",
+      intent: { kind: "RESEARCH_ONLY", requestedCapabilities: ["flight"] },
     };
   }
   if (hotelHit) {

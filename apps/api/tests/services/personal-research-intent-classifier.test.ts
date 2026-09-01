@@ -14,6 +14,38 @@ describe("personal-research-intent-classifier", () => {
     });
   });
 
+  describe("flight research — high confidence", () => {
+    it.each([
+      ["查机票", "zh-CN"],
+      ["搜索航班", "zh-CN"],
+      ["查一下上海到东京的机票", "zh-CN"],
+      ["找飞机票", "zh-CN"],
+      ["search flight", "en-US"],
+      ["check flights", "en-US"],
+      ["look up airfare", "en-US"],
+    ])("classifies %s as flight RESEARCH_ONLY", (question) => {
+      const result = classifyResearchIntent({ question });
+      expect(result).toEqual({
+        kind: "PROPOSED",
+        intent: { kind: "RESEARCH_ONLY", requestedCapabilities: ["flight"] },
+      });
+    });
+
+    it.each([
+      "坐飞机要多久",
+      "飞机上能带充电宝吗",
+    ])("leaves %s to conversation — a plane question is not a fare search", (question) => {
+      expect(classifyResearchIntent({ question })).toEqual({ kind: "CONVERSATION" });
+    });
+
+    it("falls back to conversation when a turn names both a flight and a hotel", () => {
+      // Two research intents in one sentence: the classifier refuses to
+      // guess, exactly as it already does for route + hotel.
+      expect(classifyResearchIntent({ question: "查一下机票和酒店" }))
+        .toEqual({ kind: "CONVERSATION" });
+    });
+  });
+
   describe("hotel research — high confidence", () => {
     it.each([
       ["查酒店", "zh-CN"],
