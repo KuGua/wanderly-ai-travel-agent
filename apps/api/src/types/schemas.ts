@@ -1035,7 +1035,32 @@ export const latestResearchResultResponseSchema = z.object({
   result: researchResultResponseSchema.nullable(),
 }).strict();
 
+/**
+ * `tool.started` / `tool.settled` SSE events.
+ *
+ * A reply that pauses while a supplier answers reads as a hang. These say
+ * the assistant went and looked something up, and how it went.
+ *
+ * Deliberately narrow: the capability, and for a settled call its outcome
+ * plus a bounded reason code. No arguments, no provider payload, no counts.
+ * Arguments would carry the user's own text back out over a channel meant
+ * for status, and the findings already reach the browser in the reply.
+ */
+export const toolStartedEventSchema = streamBaseSchema.extend({
+  event: z.literal("tool.started"),
+  capability: personalResearchOperationCapabilitySchema,
+}).strict();
+
+export const toolSettledEventSchema = streamBaseSchema.extend({
+  event: z.literal("tool.settled"),
+  capability: personalResearchOperationCapabilitySchema,
+  outcome: z.enum(["AVAILABLE", "UNAVAILABLE", "NEEDS_CONFIRMATION"]),
+  reason: z.string().regex(/^[A-Z_]{3,40}$/).optional(),
+}).strict();
+
 export const agentStreamEventSchema = z.discriminatedUnion("event", [
+  toolStartedEventSchema,
+  toolSettledEventSchema,
   streamBaseSchema.extend({
     event: z.literal("turn.started"),
   }).strict(),

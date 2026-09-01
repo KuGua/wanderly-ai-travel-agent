@@ -9,7 +9,13 @@ import { ChatMarkdown } from "@/components/ui/chat-markdown";
 import { ResearchRunCard } from "@/components/trips/personal-research/research-run-card";
 import { PinnedResultCard } from "@/components/trips/personal-research/pinned-result-card";
 
-import type { AgentStreamEvent, ConversationMessage, ConversationPlace, ConversationTurnRequest } from "@/lib/api/contracts";
+import type {
+  AgentStreamEvent,
+  ConversationMessage,
+  ConversationPlace,
+  ConversationTurnRequest,
+  PersonalResearchOperationCapability,
+} from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import { useAgentRun, useCancelAgentRun, useOwnerConversation, useSubmitConversationTurn, useTripPin } from "@/lib/query/hooks";
@@ -17,12 +23,23 @@ import { useTravelApi } from "@/lib/query/provider";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
 type PendingTurn = ConversationTurnRequest;
+/**
+ * One lookup the assistant made while composing the current reply. Kept in
+ * arrival order so the reader sees the sequence of work, and settled entries
+ * stay visible — knowing a search came back empty is the useful part.
+ */
+type ToolActivity = {
+  capability: PersonalResearchOperationCapability;
+  outcome: "RUNNING" | "AVAILABLE" | "UNAVAILABLE" | "NEEDS_CONFIRMATION";
+};
+
 type StreamState = {
   attempt: number;
   nextSequence: number;
   pending: Record<number, string>;
   text: string;
   phase: string | null;
+  tools: ToolActivity[];
 };
 
 export type ChatThreadStatus = "preparing" | "ready" | "error";
@@ -506,6 +523,7 @@ export function TravelAgentChat({
             <article data-role="ASSISTANT" data-streaming="true" className={rowClass}>
               {agentLabel}
               <div className={docked ? "max-w-[86%] bg-card px-3.5 py-3 text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm" : "max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-foreground"}>
+              {streamState.tools.length > 0 ? <ToolActivityList items={streamState.tools} /> : null}
               {streamState.text ? (
                 <ChatMarkdown content={streamState.text} />
               ) : null}
@@ -631,7 +649,7 @@ function mergeMessages(current: ConversationMessage[], incoming: ConversationMes
 }
 
 function emptyStreamState(): StreamState {
-  return { attempt: 0, nextSequence: 0, pending: {}, text: "", phase: null };
+  return { attempt: 0, nextSequence: 0, pending: {}, text: "", phase: null, tools: [] };
 }
 
 function applyStreamEvent(current: StreamState, event: AgentStreamEvent): StreamState {
@@ -640,6 +658,19 @@ function applyStreamEvent(current: StreamState, event: AgentStreamEvent): Stream
     ? { ...emptyStreamState(), attempt: event.generationAttempt }
     : current;
   if (event.event === "run.phase") return { ...base, phase: event.phase };
+  if (event.event === "tool.started") {
+    return { ...base, tools: [...base.tools, { capability: event.capability, outcome: "RUNNING" }] };
+  }
+  if (event.event === "tool.settled") {
+    // Settle the newest still-running entry for this capability. The same
+    // tool can legitimately run twice in one reply with different arguments,
+    // and settling the oldest would leave the wrong one spinning.
+    const index = findLastRunning(base.tools, event.capability);
+    if (index < 0) return base;
+    const tools = [...base.tools];
+    tools[index] = { capability: event.capability, outcome: event.outcome };
+    return { ...base, tools };
+  }
   if (event.event !== "message.delta" || event.sequence < base.nextSequence) return base;
 
   const pending = { ...base.pending, [event.sequence]: event.delta };
@@ -651,6 +682,42 @@ function applyStreamEvent(current: StreamState, event: AgentStreamEvent): Stream
     nextSequence += 1;
   }
   return { ...base, pending, nextSequence, text };
+}
+
+function findLastRunning(tools: ToolActivity[], capability: string): number {
+  for (let index = tools.length - 1; index >= 0; index -= 1) {
+    if (tools[index].capability === capability && tools[index].outcome === "RUNNING") return index;
+  }
+  return -1;
+}
+
+/**
+ * The lookups behind the reply being composed.
+ *
+ * Above the text because that is the order they happened in: the assistant
+ * looked things up, then wrote. Settled rows stay — "found nothing" is what
+ * lets a reader judge the answer that follows.
+ */
+function ToolActivityList({ items }: { items: ToolActivity[] }) {
+  const t = useTranslations("explore.chat.tools");
+  return (
+    <ul aria-label={t("heading")} className="mb-2 grid gap-1 border-b border-[var(--w-line)] pb-2">
+      {items.map((item, index) => (
+        <li
+          key={`${item.capability}-${index}`}
+          data-capability={item.capability}
+          data-outcome={item.outcome}
+          className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground"
+        >
+          <span aria-hidden="true" className={item.outcome === "RUNNING" ? "size-[5px] shrink-0 animate-pulse rounded-full bg-primary motion-reduce:animate-none" : "size-[5px] shrink-0 rounded-full bg-[var(--w-line)]"} />
+          <span className="min-w-0 truncate">{t(`capability.${item.capability.replace(".", "_")}` as "capability.places_search")}</span>
+          <span className="ml-auto shrink-0 text-[10px] font-black uppercase tracking-[0.08em]">
+            {t(`outcome.${item.outcome}` as "outcome.RUNNING")}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function isRetryable(error: unknown) {

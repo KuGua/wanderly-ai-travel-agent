@@ -416,6 +416,55 @@ describe("LLMGateway streamConversationReply tool calling (Phase 4)", () => {
     expect(reqs).toHaveLength(2);
   });
 
+  it("dispatches a Gemini tool call, which arrives whole and carries no index", async () => {
+    // Gemini's OpenAI-compatible endpoint returns the call complete in one
+    // delta and omits `index` — the field OpenAI uses to tie streamed
+    // argument fragments together. Keying accumulation on it alone dropped
+    // every Gemini call into one `undefined` bucket, so the arguments never
+    // reassembled and the turn failed as TOOL_PROTOCOL. Captured from a live
+    // response; the other tests here all supply `index` and so cannot see it.
+    const args = JSON.stringify({ latitude: 35.6812, longitude: 139.7671, radiusMeters: 1000 });
+    const firstChunks = [
+      { choices: [{ delta: { role: "assistant", tool_calls: [{
+        id: "call_322535", type: "function",
+        extra_content: { google: { thought_signature: "EnEKbwER" } },
+        function: { name: "places.search", arguments: args },
+      }] } }] },
+      { choices: [{ delta: {}, finish_reason: "stop" }] },
+    ];
+    const secondChunks = [
+      { choices: [{ delta: { content: "Found some places." } }] },
+      { choices: [{ delta: {}, finish_reason: "stop" }] },
+    ];
+    const fakeClient = buildStreamingClient([chunks(firstChunks), chunks(secondChunks)]);
+    const dispatchTool = vi.fn().mockResolvedValue({ outcome: "AVAILABLE" });
+    const gateway = new LLMGateway({
+      apiKey: "test",
+      provider: "gemini",
+      modelName: "gemini-3.1-flash-lite",
+      promptVersion: "1.0.0",
+      ctx: createRequestContext(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      client: fakeClient as any,
+      maxRetries: 0,
+    });
+
+    await gateway.streamConversationReply!({
+      question: "东京站附近有什么餐厅",
+      threadContext: [],
+      onDelta: async () => {},
+      tools: [{ name: "places.search", description: "stub", parameters: { type: "object" } }],
+      dispatchTool,
+    });
+
+    expect(dispatchTool).toHaveBeenCalledTimes(1);
+    // The arguments must survive intact — an empty string here is the bug.
+    expect(dispatchTool.mock.calls[0][0]).toMatchObject({
+      name: "places.search",
+      arguments: { latitude: 35.6812, longitude: 139.7671, radiusMeters: 1000 },
+    });
+  });
+
   it("preserves Gemini thought-signature (extra_content.google) on the assistant tool message", async () => {
     const args = JSON.stringify({
       cityCode: "TPE",

@@ -108,6 +108,54 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("TravelAgentChat durable streaming flow", () => {
+  it("shows what the assistant looked up, and how each lookup ended", async () => {
+    // A reply that pauses while a supplier answers reads as a hang; these
+    // rows are the only thing telling the reader work is happening.
+    const api = createApi({
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId: string, signal: AbortSignal, onEvent: (e: unknown) => void) => {
+        onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+        onEvent({ event: "tool.started", runId: RUN_ID, generationAttempt: 1, capability: "places.search" });
+        onEvent({ event: "tool.started", runId: RUN_ID, generationAttempt: 1, capability: "flight.search" });
+        onEvent({ event: "tool.settled", runId: RUN_ID, generationAttempt: 1, capability: "places.search", outcome: "AVAILABLE" });
+        onEvent({ event: "tool.settled", runId: RUN_ID, generationAttempt: 1, capability: "flight.search", outcome: "UNAVAILABLE", reason: "NO_RESULTS" });
+        await untilAborted(signal);
+      }),
+    });
+    renderChat(api);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Where should I go?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => {
+      const lookups = screen.getAllByRole("listitem").filter((row) => row.getAttribute("data-capability"));
+      expect(lookups.map((row) => row.getAttribute("data-capability"))).toEqual(["places.search", "flight.search"]);
+      // A settled lookup keeps its row: "found nothing" is what lets the
+      // reader judge the answer that follows.
+      expect(lookups.map((row) => row.getAttribute("data-outcome"))).toEqual(["AVAILABLE", "UNAVAILABLE"]);
+    });
+  });
+
+  it("settles the newest run of a tool, so a second call does not stop the first from spinning", async () => {
+    // The same tool may legitimately run twice in one reply with different
+    // arguments; settling the oldest would leave the wrong row running.
+    const api = createApi({
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId: string, signal: AbortSignal, onEvent: (e: unknown) => void) => {
+        onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+        onEvent({ event: "tool.started", runId: RUN_ID, generationAttempt: 1, capability: "places.search" });
+        onEvent({ event: "tool.started", runId: RUN_ID, generationAttempt: 1, capability: "places.search" });
+        onEvent({ event: "tool.settled", runId: RUN_ID, generationAttempt: 1, capability: "places.search", outcome: "AVAILABLE" });
+        await untilAborted(signal);
+      }),
+    });
+    renderChat(api);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Twice please" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => {
+      const rows = screen.getAllByRole("listitem").filter((row) => row.getAttribute("data-capability"));
+      expect(rows.map((row) => row.getAttribute("data-outcome"))).toEqual(["RUNNING", "AVAILABLE"]);
+    });
+  });
+
   it("reports a typed place-bearing message to the map without waiting for the model", async () => {
     const api = createApi();
     const onConversationText = vi.fn();

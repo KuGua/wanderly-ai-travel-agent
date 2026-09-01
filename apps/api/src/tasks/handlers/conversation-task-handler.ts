@@ -41,6 +41,15 @@ import { publishAgentStreamEvent } from "../task-stream-publisher.js";
 import type { AgentTaskRow } from "../task-repository.js";
 import { loadConversationTurnInput } from "../task-repository.js";
 import { buildProactiveIntro } from "../../i18n/proactive-intro.js";
+import { ToolCallDeduplicator } from "../../agents/personal-research-tool-policy.js";
+import {
+  personalResearchOperationCapabilitySchema,
+  toolSettledEventSchema,
+} from "../../types/schemas.js";
+import {
+  PERSONAL_RESEARCH_TOOLS,
+  createPersonalResearchDispatcher,
+} from "../../agents/personal-research-tools.js";
 
 /**
  * Phase 4: the LLM-facing tool definitions for live evidence. Server-side
@@ -503,19 +512,68 @@ export async function handleConversationTask(params: {
     traceparent: params.ctx.traceparent,
     userConfirmed: toolContext.userConfirmed,
   }));
+  // Research capabilities (places / accommodation discovery / activities)
+  // route through a separate, generic dispatcher — same loop, separate
+  // route, neither owns the other's rules. `flight.search` is deliberately
+  // excluded from this list: it already has its own dedicated dispatcher and
+  // confirm/persist state machine above (mirroring hotel), which supports
+  // partial-argument reuse via the stored `flightSearchState` and returns
+  // richer per-offer evidence than this generic path does. Registering it
+  // twice would let whichever dispatcher runs second silently shadow the
+  // other's tool definition.
+  if (
+    process.env.PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED === "true"
+    && process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED === "true"
+  ) {
+    const researchDispatch = createPersonalResearchDispatcher({
+      ctx: params.ctx,
+      ownerUserId: params.run.createdByUserId,
+      tripId: params.run.tripId,
+      threadId: params.run.threadId,
+      runId: params.run.id,
+      signal: execution.signal,
+    });
+    // One guard per turn. A model cannot see it already ran a search, so it
+    // runs it again — the cost is not a wrong answer but a silently doubled
+    // supplier bill.
+    const deduplicator = new ToolCallDeduplicator();
+    for (const tool of PERSONAL_RESEARCH_TOOLS) {
+      if (tool.name === "flight.search") continue;
+      if (!isPersonalResearchCapabilityAllowed(tool.name as PersonalResearchOperationCapability)) continue;
+      tools.push(tool);
+      dispatchers.set(tool.name, async (call) => {
+        await publishToolEvent(params.run, { phase: "started", name: call.name }, params.ctx.traceparent);
+        const result = deduplicator.claim(call.name, call.arguments).duplicate
+          // Answered rather than thrown: the model has to learn it already
+          // ran this exact search.
+          ? { outcome: "UNAVAILABLE", reason: "DUPLICATE_CALL" }
+          : await researchDispatch(call);
+        if ((result as { providerDispatched?: unknown })?.providerDispatched === true) {
+          evidenceDispatched = true;
+          toolContext.evidenceBacked = true;
+        }
+        await publishToolEvent(params.run, { phase: "settled", name: call.name, ...settledSummary(result) }, params.ctx.traceparent);
+        return result;
+      });
+    }
+  }
   // A capability's own evidence, still within its freshness window, is just
   // as trustworthy as one dispatched THIS turn — the model routinely needs
   // to answer a plain follow-up ("筛选到 5000 CNY 左右") about a search it
   // ran a few turns ago without re-invoking the provider. Without this, the
   // safety gate treated every non-dispatching turn as unbacked and replaced
   // any price-mentioning reply with the canned refusal, even when real,
-  // unexpired evidence already existed for this trip.
-  if (tools.length > 0 && params.run.tripId) {
+  // unexpired evidence already existed for this trip. Scoped to hotel/flight
+  // only — the only two capabilities with a persisted evidence row today.
+  const persistedCapabilities = tools
+    .map((tool) => tool.name)
+    .filter((name): name is "hotel.search" | "flight.search" => name === "hotel.search" || name === "flight.search");
+  if (persistedCapabilities.length > 0 && params.run.tripId) {
     const [freshEvidence] = await db.select({ id: personalResearchEvidence.id })
       .from(personalResearchEvidence)
       .where(and(
         eq(personalResearchEvidence.tripId, params.run.tripId),
-        inArray(personalResearchEvidence.capability, tools.map((tool) => tool.name) as ("hotel.search" | "flight.search")[]),
+        inArray(personalResearchEvidence.capability, persistedCapabilities),
         gt(personalResearchEvidence.expiresAt, new Date()),
       ))
       .limit(1);
@@ -691,6 +749,40 @@ function boundedTextChunks(value: string, maxBytes: number): string[] {
   }
   if (chunk) chunks.push(chunk);
   return chunks;
+}
+
+/**
+ * Publishes tool progress. A name the capability enum does not know is
+ * dropped rather than guessed at: it would fail the strict event schema at
+ * the relay and take the whole SSE stream with it, and losing the reply over
+ * a status message is the worse failure.
+ */
+function publishToolEvent(
+  run: AgentTaskRow,
+  event: { phase: "started"; name: string } | { phase: "settled"; name: string; outcome: string; reason?: string },
+  traceparent?: string,
+) {
+  const capability = personalResearchOperationCapabilitySchema.safeParse(event.name);
+  if (!capability.success) return Promise.resolve();
+  const base = { runId: run.id, generationAttempt: run.generationAttempt, capability: capability.data, traceparent };
+  if (event.phase === "started") return publishAgentStreamEvent({ event: "tool.started", ...base });
+  const outcome = toolSettledEventSchema.shape.outcome.safeParse(event.outcome);
+  return publishAgentStreamEvent({
+    event: "tool.settled",
+    ...base,
+    outcome: outcome.success ? outcome.data : "UNAVAILABLE",
+    ...(event.reason ? { reason: event.reason } : {}),
+  });
+}
+
+/** The reportable part of a tool result: outcome, and a bounded code if it failed. */
+function settledSummary(result: unknown): { outcome: string; reason?: string } {
+  const outcome = (result as { outcome?: unknown })?.outcome;
+  const reason = (result as { reason?: unknown })?.reason;
+  return {
+    outcome: typeof outcome === "string" ? outcome : "AVAILABLE",
+    ...(typeof reason === "string" && /^[A-Z_]{3,40}$/.test(reason) ? { reason } : {}),
+  };
 }
 
 export function publishPhase(
