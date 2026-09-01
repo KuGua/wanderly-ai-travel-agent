@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { FlightOffer } from "../types/domain.js";
 import { metrics } from "../observability/metrics.js";
 import type { FlightProvider, FlightSearchParams, ProviderResult } from "./types.js";
-import { serpApiFlightSearchResponseSchema, type SerpApiFlightSearchResponse } from "./serpapi-flight-schemas.js";
+import { serpApiFlightSearchResponseSchema, serpApiItinerarySchema, type SerpApiFlightSearchResponse, type SerpApiItinerary } from "./serpapi-flight-schemas.js";
 
 export interface SerpApiFlightProviderOptions {
   apiKey: string;
@@ -62,9 +62,13 @@ export class SerpApiFlightProvider implements FlightProvider {
       if (parsed.data.search_metadata.status.toLowerCase() !== "success") return this.unavailable("UPSTREAM_FAILURE", start);
 
       const queryId = randomUUID();
-      const offers = [...parsed.data.best_flights, ...parsed.data.other_flights].flatMap((itinerary, index) => {
+      const offers = [...parsed.data.best_flights, ...parsed.data.other_flights].flatMap((raw, index) => {
+        // An itinerary that fails its own schema — most often one Google
+        // Flights returned with no `price` — is skipped, not fatal.
+        const itinerary = serpApiItinerarySchema.safeParse(raw);
+        if (!itinerary.success) return [];
         try {
-          return [normalizeOffer(parsed.data, itinerary, index, {
+          return [normalizeOffer(parsed.data, itinerary.data, index, {
             queryId,
             capturedAt,
             origin: params.origin,
@@ -124,7 +128,7 @@ function mapCabin(cabin: FlightSearchParams["cabin"]): 1 | 2 | 3 | 4 {
 
 function normalizeOffer(
   payload: SerpApiFlightSearchResponse,
-  itinerary: SerpApiFlightSearchResponse["best_flights"][number],
+  itinerary: SerpApiItinerary,
   index: number,
   params: { queryId: string; capturedAt: string; origin: string; destination: string; adults: number; cabin: NonNullable<FlightSearchParams["cabin"]>; currency: string },
 ): FlightOffer {
