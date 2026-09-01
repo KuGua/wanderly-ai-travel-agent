@@ -51,7 +51,6 @@ describe("DRAFT Personal Research — cancel + expiry", () => {
         trip_members, trip_search_preferences, trip_stay_search_preferences,
         shared_trips, itinerary_plans, member_confirmations, source_evidence,
         visa_readiness_checks, trip_constraint_proposals, trip_constraint_facts,
-        trip_invitations, consent_grants, personal_research_setup_sessions
       RESTART IDENTITY CASCADE
     `);
     await cleanup`DELETE FROM users`;

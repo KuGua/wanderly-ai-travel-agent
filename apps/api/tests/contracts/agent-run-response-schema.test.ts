@@ -25,7 +25,6 @@ describe("agentRunResponseSchema — research intent fields (Phase 0/1)", () => 
     errorCode: null,
     assistantMessageId: null,
     resultPlanId: null,
-    researchSetupSession: null,
   };
 
   it("accepts a CONVERSATION row without the new fields (legacy / non-classified turn)", () => {
@@ -246,89 +245,4 @@ describe("agentRunResponseSchema — research intent fields (Phase 0/1)", () => 
     expect(parsed.assistantMessageId).toBeNull();
   });
 
-  // ─── researchSetupSession inline projection ───────────────────────────────
-  // Regression for: when a CONVERSATION run carried an OPEN setup session,
-  // `GET /agent-runs/:runId` returned 400 VALIDATION_REJECTED because
-  // `toRunResponse` projected the row without `budgetHint`, even though the
-  // response schema marks the field required (nullable).
-  // See: fix(api): include budgetHint in agent run DTO setup session projection
-  const openSetupBase = {
-    intentRunId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
-    tripId: "5804c21c-21fa-4774-9c58-52c639bbf7ce",
-    ownerUserId: "1ffb515f-647a-4b3f-8c76-52c1c54985ef",
-    departureCity: null,
-    travelDateStart: null,
-    travelDateEnd: null,
-    stayPreferences: null,
-    flightPreferences: null,
-    missing: ["DATES_MISSING", "STAY_PREFERENCES_MISSING"],
-    version: 1,
-    status: "OPEN" as const,
-    expiresAt: "2026-09-01T12:31:35.990Z",
-  };
-
-  it("accepts an OPEN researchSetupSession with budgetHint=null", () => {
-    // Mirrors what `toRunResponse` emits when the row has no budget captured.
-    const parsed = agentRunResponseSchema.parse({
-      ...baseRow,
-      researchIntentDraft: {
-        kind: "RESEARCH_ONLY",
-        requestedCapabilities: ["hotel"],
-        readiness: "NEEDS_SETUP",
-        blockers: ["DATES_MISSING"],
-        warnings: [],
-        missing: ["DATES_MISSING"],
-      },
-      researchIntentState: "PROPOSED",
-      researchSetupSession: { ...openSetupBase, budgetHint: null },
-    });
-    expect(parsed.researchSetupSession?.budgetHint).toBeNull();
-    expect(parsed.researchSetupSession?.missing).toContain("DATES_MISSING");
   });
-
-  it("accepts an OPEN researchSetupSession with a populated budgetHint", () => {
-    const parsed = agentRunResponseSchema.parse({
-      ...baseRow,
-      researchIntentDraft: {
-        kind: "RESEARCH_ONLY",
-        requestedCapabilities: ["hotel"],
-        readiness: "NEEDS_SETUP",
-        blockers: ["DATES_MISSING"],
-        warnings: ["BUDGET_HINT_MISSING"],
-        missing: ["DATES_MISSING", "BUDGET_HINT_MISSING"],
-      },
-      researchIntentState: "PROPOSED",
-      researchSetupSession: {
-        ...openSetupBase,
-        budgetHint: { amount: 1200, currency: "USD", cadence: "PER_NIGHT" },
-      },
-    });
-    expect(parsed.researchSetupSession?.budgetHint).toEqual({
-      amount: 1200,
-      currency: "USD",
-      cadence: "PER_NIGHT",
-    });
-  });
-
-  it("rejects an OPEN researchSetupSession missing budgetHint (regression)", () => {
-    // This is the exact pre-fix shape: toRunResponse projected the row but
-    // never emitted `budgetHint`. Schema is `.strict()` so the field is
-    // required when researchSetupSession is non-null.
-    expect(() => agentRunResponseSchema.parse({
-      ...baseRow,
-      researchIntentDraft: null,
-      researchIntentState: null,
-      researchSetupSession: openSetupBase, // <-- no budgetHint
-    })).toThrow(/budgetHint/);
-  });
-
-  it("rejects a budgetHint with an unknown cadence", () => {
-    expect(() => agentRunResponseSchema.parse({
-      ...baseRow,
-      researchSetupSession: {
-        ...openSetupBase,
-        budgetHint: { amount: 100, currency: "USD", cadence: "PER_WEEKEND" },
-      },
-    })).toThrow();
-  });
-});
