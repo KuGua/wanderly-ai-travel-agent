@@ -36,6 +36,11 @@ import { publishAgentStreamEvent } from "../task-stream-publisher.js";
 import type { AgentTaskRow } from "../task-repository.js";
 import { loadConversationTurnInput } from "../task-repository.js";
 import { buildProactiveIntro } from "../../i18n/proactive-intro.js";
+import { ToolCallDeduplicator } from "../../agents/personal-research-tool-policy.js";
+import {
+  PERSONAL_RESEARCH_TOOLS,
+  createPersonalResearchDispatcher,
+} from "../../agents/personal-research-tools.js";
 
 /**
  * Phase 4: the LLM-facing tool definition for live hotel evidence. The
@@ -318,8 +323,32 @@ export async function handleConversationTask(params: {
       traceparent: params.ctx.traceparent,
       userConfirmed: toolContext.userConfirmed,
     });
-    toolContext.tools = [HOTEL_SEARCH_TOOL];
+    // Hotel keeps its own dispatcher and its own confirmation state machine.
+    // The research capabilities sit alongside it: same loop, separate route,
+    // so neither owns the other's rules.
+    const researchDispatch = createPersonalResearchDispatcher({
+      ctx: params.ctx,
+      ownerUserId: params.run.createdByUserId,
+      tripId: params.run.tripId,
+      threadId: params.run.threadId,
+      runId: params.run.id,
+      signal: execution.signal,
+    });
+    // One guard per turn. A model cannot see it already ran a search, so it
+    // runs it again — the cost is not a wrong answer but a silently doubled
+    // supplier bill.
+    const deduplicator = new ToolCallDeduplicator();
+
+    toolContext.tools = [HOTEL_SEARCH_TOOL, ...PERSONAL_RESEARCH_TOOLS];
     toolContext.dispatchTool = async (call) => {
+      if (call.name !== HOTEL_SEARCH_TOOL.name) {
+        if (deduplicator.claim(call.name, call.arguments).duplicate) {
+          // Answered rather than thrown: the model has to learn it already
+          // ran this exact search.
+          return { outcome: "UNAVAILABLE", reason: "DUPLICATE_CALL" };
+        }
+        return await researchDispatch(call);
+      }
       const result = await baseDispatch(call);
       // A readiness save/confirmation prompt is not evidence. Only the
       // server-side provider branch may unlock grounded price/inventory prose.
