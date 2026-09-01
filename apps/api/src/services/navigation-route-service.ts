@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "../db/database.js";
 import { navigationRouteEvidence, providerSearchRuns, tripPlaces } from "../db/schema.js";
-import type { NavigationProvider, NormalizedRouteEvidence, ProviderResult } from "../providers/types.js";
+import type { NavigationProvider, NormalizedRouteEvidence, ProviderResult, RouteCoordinate } from "../providers/types.js";
 import type { ConstraintSnapshotData, NavigationRouteEvidence, NavigationRouteMode } from "../types/domain.js";
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
@@ -153,6 +153,18 @@ export function summarizeRouteEvidence(evidence: NavigationRouteEvidence): Navig
  * transaction. Returns the model-safe summary on `LIVE`, or the bounded
  * `UNAVAILABLE` code on failure.
  */
+/**
+ * A place row is only routable once it has both coordinates. Rows can be
+ * created from a name alone, so this is a normal absence rather than a
+ * corruption — the caller reports it as a service gap.
+ */
+function toRouteCoordinate(
+  place: { longitude: number | null; latitude: number | null },
+): RouteCoordinate | null {
+  if (place.longitude === null || place.latitude === null) return null;
+  return { longitude: place.longitude, latitude: place.latitude };
+}
+
 export async function executeAndPersistNavigationRoute(params: {
   ctx: RequestContext;
   tripId: string;
@@ -164,10 +176,21 @@ export async function executeAndPersistNavigationRoute(params: {
 }): Promise<NavigationRouteOutput> {
   // Defensive place visibility / ACTIVE checks. The skill layer is the
   // public boundary; this is the second line.
-  await Promise.all([
+  // The visibility check already loads each place row, coordinates
+  // included; the route request needs those coordinates, so they are kept
+  // rather than re-queried.
+  const [origin, destination] = await Promise.all([
     assertPlaceVisible({ tripId: params.tripId, placeId: params.input.originPlaceId }),
     assertPlaceVisible({ tripId: params.tripId, placeId: params.input.destinationPlaceId }),
   ]);
+  const originCoordinate = toRouteCoordinate(origin);
+  const destinationCoordinate = toRouteCoordinate(destination);
+  if (originCoordinate === null || destinationCoordinate === null) {
+    // A place with no coordinates cannot be routed to. Reported as a normal
+    // provider outcome so the caller records a service gap rather than
+    // failing the whole run.
+    return { outcome: "UNAVAILABLE", code: "SEARCH_CONSTRAINTS_INCOMPLETE" };
+  }
   const fingerprint = createHash("sha256").update(JSON.stringify({
     originPlaceId: params.input.originPlaceId,
     destinationPlaceId: params.input.destinationPlaceId,
@@ -186,6 +209,8 @@ export async function executeAndPersistNavigationRoute(params: {
   const result = await params.provider.searchRoute({
     originPlaceId: params.input.originPlaceId,
     destinationPlaceId: params.input.destinationPlaceId,
+    originCoordinate,
+    destinationCoordinate,
     mode: params.input.mode,
     snapshotId: params.input.snapshotId,
     runId: params.agentTaskRunId,
@@ -291,11 +316,21 @@ export async function executeNavigationRoute(params: {
   signal?: AbortSignal;
 }): Promise<ProviderResult<NormalizedRouteEvidence>> {
   void params.ctx;
-  void params.tripId;
   void params.agentTaskRunId;
+  const [origin, destination] = await Promise.all([
+    assertPlaceVisible({ tripId: params.tripId, placeId: params.input.originPlaceId }),
+    assertPlaceVisible({ tripId: params.tripId, placeId: params.input.destinationPlaceId }),
+  ]);
+  const originCoordinate = toRouteCoordinate(origin);
+  const destinationCoordinate = toRouteCoordinate(destination);
+  if (originCoordinate === null || destinationCoordinate === null) {
+    return { outcome: "UNAVAILABLE", reason: "SEARCH_CONSTRAINTS_INCOMPLETE" };
+  }
   return params.provider.searchRoute({
     originPlaceId: params.input.originPlaceId,
     destinationPlaceId: params.input.destinationPlaceId,
+    originCoordinate,
+    destinationCoordinate,
     mode: params.input.mode,
     snapshotId: params.input.snapshotId,
     runId: params.agentTaskRunId,
