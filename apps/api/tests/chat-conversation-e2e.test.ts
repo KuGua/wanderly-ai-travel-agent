@@ -8,7 +8,7 @@ import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
 import { invokeSkill } from "../src/agents/skill-registry.js";
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { agentTaskRuns, auditEvents, chatMessages, chatThreads, idempotencyRecords, users } from "../src/db/schema.js";
+import { agentTaskRuns, auditEvents, chatMessages, chatThreads, idempotencyRecords, personalResearchEvidence, users } from "../src/db/schema.js";
 import { __setModelGatewayForTests } from "../src/providers/gateway-factory.js";
 import { ModelGatewayError } from "../src/providers/llm-gateway.js";
 import type { ModelGateway } from "../src/providers/model-gateway.js";
@@ -313,6 +313,85 @@ describe("durable owner-only Personal Agent conversation flow", () => {
       await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, `chat_turn:${threadId}:${requestId}`));
     }
   });
+
+  it("Phase 4 — conversation worker dispatches hotel.search inline and persists personal_research_evidence", async () => {
+    const previous = {
+      flag: process.env.PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED,
+      toolCalling: process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED,
+    };
+    process.env.PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED = "true";
+    process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = "true";
+
+    const grounded = "Search ran; the live hotel feed returned no live inventory at the moment.";
+    const toolGateway = buildToolDispatchGateway(grounded);
+    __setModelGatewayForTests(toolGateway as unknown as ModelGateway);
+
+    const threadId = await createThread(`Phase 4 tool dispatch ${randomUUID()}`);
+    const firstRequestId = randomUUID();
+    const secondRequestId = randomUUID();
+    const firstRunIds: string[] = [];
+    const evidenceRowsToCleanup: string[] = [];
+    try {
+      // First confirmation: full draft, expect a fresh evidence row.
+      const first = await submitTurn(threadId, firstRequestId,
+        "请你帮我找一下台北车站周边的酒店，2026/9/15 - 9/20，3 人 2 间房，豪华型，CNY。确认搜索");
+      expect(first.statusCode).toBe(202);
+      const firstRunId = (first.json() as AcceptedTurnResponse).runId;
+      firstRunIds.push(firstRunId);
+      expect(await processNextAgentTask()).toBe(true);
+
+      const [firstEvidence] = await db.select().from(personalResearchEvidence)
+        .where(eq(personalResearchEvidence.runId, firstRunId));
+      expect(firstEvidence).toBeDefined();
+      expect(firstEvidence?.capability).toBe("hotel.search");
+      // The provider is unconfigured in test env, so the executor
+      // returns NOT_CONFIGURED. The orchestrator persists that summary
+      // regardless.
+      const resultJson = firstEvidence?.resultJson as { outcome?: string; summary?: { errorCode?: string } };
+      expect(resultJson?.outcome).toBe("UNAVAILABLE");
+      expect(resultJson?.summary?.errorCode).toBe("NOT_CONFIGURED");
+      evidenceRowsToCleanup.push(firstEvidence!.id);
+
+      // Idempotency: a second confirmation in a new turn must not insert a
+      // new evidence row — the worker's dispatch closure probes the table
+      // before invoking the executor.
+      const second = await submitTurn(threadId, secondRequestId,
+        "确认搜索");
+      expect(second.statusCode).toBe(202);
+      const secondRunId = (second.json() as AcceptedTurnResponse).runId;
+      firstRunIds.push(secondRunId);
+      expect(await processNextAgentTask()).toBe(true);
+
+      const allRows = await db.select({ id: personalResearchEvidence.id, runId: personalResearchEvidence.runId })
+        .from(personalResearchEvidence)
+        .where(inArray(personalResearchEvidence.runId, firstRunIds));
+      // Each conversation turn is its own durable run. The worker probes
+      // by `(run_id, capability)` per-run, so a brand-new turn writes its
+      // own evidence row rather than reusing a previous turn's. The unique
+      // index prevents two `hotel.search` rows on the same runId; that is
+      // the dedup guarantee — not cross-turn memoisation.
+      expect(allRows).toHaveLength(2);
+      const runIdsWithRows = new Set(allRows.map(r => r.runId));
+      expect(runIdsWithRows.has(firstRunIds[0])).toBe(true);
+      expect(runIdsWithRows.has(firstRunIds[1])).toBe(true);
+      evidenceRowsToCleanup.push(...allRows.map(r => r.id));
+      // The tool loop ran exactly once per turn (one dispatch per turn).
+      expect(toolGateway.dispatchedNames).toEqual(["hotel.search", "hotel.search"]);
+    } finally {
+      for (const rowId of evidenceRowsToCleanup) {
+        await db.delete(personalResearchEvidence).where(eq(personalResearchEvidence.id, rowId));
+      }
+      for (const runId of firstRunIds) {
+        await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, runId));
+      }
+      await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
+      await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, `chat_turn:${threadId}:${firstRequestId}`));
+      await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, `chat_turn:${threadId}:${secondRequestId}`));
+      process.env.PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED = previous.flag;
+      process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = previous.toolCalling;
+      __setModelGatewayForTests(successfulConversationGateway);
+    }
+  });
 });
 
 async function createThread(title: string): Promise<string> {
@@ -372,4 +451,61 @@ const failingConversationGateway: ModelGateway = {
 function collectCorrelation(response: { headers: Record<string, string | string[] | undefined> }, target: string[]) {
   const value = response.headers["x-correlation-id"];
   if (typeof value === "string") target.push(value);
+}
+
+/**
+ * Phase 4 — tool-dispatching gateway. Simulates the LLMGateway's tool-calling
+ * loop in a single `streamConversationReply` call: invokes the worker's
+ * `dispatchTool` directly, then streams a grounded reply through `onDelta`.
+ * The llm-gateway.test.ts suite already exercises the chunk-accumulator
+ * path; this e2e verifies the worker's plumbing (dispatch closure invoked,
+ * evidence row written, second-stream grounded reply routed back).
+ */
+function buildToolDispatchGateway(groundedReply: string): ModelGateway & {
+  dispatchedNames: string[];
+  groundedReplyCount: number;
+} {
+  const state = {
+    dispatchedNames: [] as string[],
+    groundedReplyCount: 0,
+  };
+  const gateway = {
+    async generateStructuredPlan() { throw new Error("not used by conversation E2E"); },
+    async explainPlanDiff() { throw new Error("not used by conversation E2E"); },
+    async generateConversationReply() {
+      throw new Error("tool-dispatch path always uses the streaming gateway");
+    },
+    async streamConversationReply(params: Parameters<NonNullable<ModelGateway["streamConversationReply"]>>[0]) {
+      const onDelta = params.onDelta;
+      const args = {
+        cityCode: "TPE",
+        checkIn: "2026-09-15",
+        checkOut: "2026-09-20",
+        occupancy: { adults: 3, rooms: 2 },
+        currency: "CNY",
+      };
+      const toolResult = params.dispatchTool
+        ? await params.dispatchTool({ id: "call_phase4", name: "hotel.search", arguments: args })
+        : { outcome: "AVAILABLE", hotel: { currency: "CNY" } };
+      state.dispatchedNames.push("hotel.search");
+      void toolResult;
+      const chunks = [
+        { choices: [{ delta: { content: groundedReply } }] },
+        { choices: [{ delta: {}, finish_reason: "stop" }] },
+      ];
+      for (const chunk of chunks) {
+        const delta = chunk.choices[0].delta;
+        if (delta.content) await onDelta(delta.content);
+      }
+      state.groundedReplyCount += 1;
+      return { content: groundedReply, responseMode: "MODEL" };
+    },
+  } as ModelGateway;
+  // Attach mutable counters AFTER the gateway object is created so the
+  // object identity is stable across `__setModelGatewayForTests` calls
+  // and our assertions observe live values.
+  return Object.assign(gateway, {
+    get dispatchedNames() { return state.dispatchedNames; },
+    get groundedReplyCount() { return state.groundedReplyCount; },
+  });
 }

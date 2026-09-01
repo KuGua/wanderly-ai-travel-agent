@@ -173,6 +173,16 @@ export interface ModelGateway {
     onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;
+    /**
+     * Phase 4 LLM-driven tool calling. When supplied, the gateway
+     * accumulates `delta.tool_calls`, dispatches each call via
+     * `dispatchTool`, and re-streams a final answer with the tool result
+     * inlined. When undefined, behaviour is byte-identical to the prose
+     * path. Tool arguments never reach the conversation transcript;
+     * dispatch results are bounded `unknown` projections from the worker.
+     */
+    tools?: ModelToolDefinition[];
+    dispatchTool?: ModelToolDispatcher;
   }): Promise<ConversationReply>;
   /**
    * S4: generate a single non-personalized short introduction for a

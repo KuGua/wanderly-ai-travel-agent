@@ -113,13 +113,34 @@ export const travelConversationOutputSchema = z.object({
 export type TravelConversationInput = z.infer<typeof travelConversationInputSchema>;
 export type TravelConversationOutput = z.infer<typeof travelConversationOutputSchema>;
 
+/**
+ * Phase 4 tool-calling context. None of these fields are part of the public
+ * Skill input contract — they are passed by the conversation worker when the
+ * env-gated `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED` flag is on AND the
+ * `hotel.search` capability is allowed. The Skill treats them as opaque:
+ *   - `tools` / `dispatchTool` are forwarded to the streaming gateway.
+ *   - `evidenceBacked` is plumbed into the OUTPUT-side safety filter so the
+ *     LLM can summarise prices drawn from a fresh `personal_research_evidence`
+ *     row without being rejected by the price/hotel rule.
+ *   - `userConfirmed` is plumbed into the INPUT-side safety filter so a
+ *     legitimate "确认搜索 / execute search" reply that happens to mention
+ *     a currency or inventory term is not rejected before the LLM sees it.
+ */
+export interface TravelConversationToolContext {
+  tools?: import("../../providers/model-gateway.js").ModelToolDefinition[];
+  dispatchTool?: import("../../providers/model-gateway.js").ModelToolDispatcher;
+  evidenceBacked?: boolean;
+  userConfirmed?: boolean;
+}
+
 export async function executeTravelConversation(
   ctx: SkillContext,
   input: TravelConversationInput,
   signal: AbortSignal,
   onDelta?: (delta: string) => void | Promise<void>,
+  toolContext: TravelConversationToolContext = {},
 ): Promise<TravelConversationOutput> {
-  if (requestsUnsupportedOperationalFacts(input.question)) {
+  if (requestsUnsupportedOperationalFacts(input.question, { userConfirmed: toolContext.userConfirmed === true })) {
     const refusal = safeConversationRefusal();
     if (onDelta) await onDelta(refusal.content);
     return refusal;
@@ -141,6 +162,8 @@ export async function executeTravelConversation(
           onDelta,
           signal,
           ctx: ctx.ctx,
+          tools: toolContext.tools,
+          dispatchTool: toolContext.dispatchTool,
         })
       : await gateway.generateConversationReply({
           question: input.question,
@@ -163,7 +186,10 @@ export async function executeTravelConversation(
     if (!(error instanceof ModelGatewayError)) throw error;
     throw new SkillError(modelErrorCode(error.code), "The conversation stream was interrupted mid-flight.");
   }
-  if (reply.responseMode === "MODEL" && containsUnsupportedOperationalClaim(reply.content)) {
+  if (
+    reply.responseMode === "MODEL"
+    && containsUnsupportedOperationalClaim(reply.content, { evidenceBacked: toolContext.evidenceBacked === true })
+  ) {
     return safeConversationRefusal();
   }
   return travelConversationOutputSchema.parse(reply);
@@ -177,8 +203,14 @@ function modelErrorCode(code: string): "TIMEOUT" | "NETWORK" | "UPSTREAM_5XX" | 
 export const travelConversationSkill: Skill<TravelConversationInput, TravelConversationOutput> = {
   name: "travel.conversation",
   agent: "personal",
-  version: "1.1.0",
-  allowedTools: ["chat:read"],
+  version: "1.2.0",
+  // Phase 4: `hotel:search` is added so the Personal Skill can register a
+  // tool definition with the streaming gateway. The conversation worker
+  // still gates the dispatcher on `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED`
+  // AND `isPersonalResearchCapabilityAllowed("hotel.search")`, so the
+  // broader Personal agent never receives a tool call unless the feature
+  // is on AND the capability is enabled.
+  allowedTools: ["chat:read", "hotel:search"],
   timeoutMs: 15_000,
   needsConfirm: false,
   input: travelConversationInputSchema,

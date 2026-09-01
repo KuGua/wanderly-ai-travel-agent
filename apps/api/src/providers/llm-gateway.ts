@@ -395,9 +395,15 @@ const CONVERSATION_RESPONSE_CONSTRAINTS: Record<ConversationResponseConstraint, 
     "• 先复用当前问题和 threadContext 中已明确的信息；不要重复询问已有信息。若地点是街区、景点或商圈（如“西门町附近”），先识别其所属城市；城市仍不明确或存在歧义时才追问城市。",
     "• 若用户希望进一步进行酒店搜索或报价，只补齐仍缺的查询条件：城市、入住与退房日期、入住配置（成人数与房间数）、报价币种。街区或景点偏好可以保留为说明，但不得承诺为供应商的精确距离过滤。",
     "• 将缺口合并成不超过三条简短追问。预算、早餐、可取消、床型和设施是有用的可选筛选项，不应阻止用户继续。",
-    "• 不得要求用户点击卡片、按钮或到其他页面补资料。全部收集、复述和确认都在对话中完成；条件齐全时，先逐项复述查询范围，并请用户明确回复“确认搜索”。",
-    "• 在用户明确确认前，不得说已发起查询、已调用工具或已找到实时酒店结果。",
-    "• 若用户只想要定性住宿建议，可以先给出非实时的区域/取舍建议，再说明哪些条件可让后续搜索更精确。不得把建议说成实时价格、库存或可预订性。",
+    "• 不得要求用户点击卡片、按钮或到其他页面补资料。",
+    "",
+    "[Phase 4 — 强制工具调用] 当且仅当以下条件**全部**满足时，必须调用 `hotel.search` 工具，**不得**输出任何散文、价格或酒店推荐：",
+    "  1. threadContext 与本轮 question 合并后已具备四个必需字段：cityCode（IATA 城市代码）、checkIn（YYYY-MM-DD）、checkOut（YYYY-MM-DD）、occupancy（adults+rooms）。",
+    "  2. occupancy.currency（3 位币种代码，如 CNY / TWD / USD）。",
+    "  3. 用户已明确表达“继续搜索 / 现在搜索”的意图（典型措辞：「确认搜索」/「yes, search」/「go ahead」/「执行搜索」/「ok, search」/「do it」/「开始」等）。",
+    "满足上述三条时，本轮响应**仅**包含对 `hotel.search` 的函数调用，**不允许**先写「好的，我来查一下」「以下是结果」之类 prose；工具结果回来之后再基于 `researchEvidence` 给出 grounded 总结。任何提前出现的酒店名称、价格、星级描述都会被安全过滤器洗掉，且会让用户面对空白的拒绝页。",
+    "",
+    "如果字段不齐全，**仍要追问**（最多三条），不要因为「想发工具」就编造缺失字段。",
     "• 不得为酒店搜索索取护照、证件号码、支付信息或完整住客资料；若某供应商确实需要国籍，只能提示用户通过单独、明确授权的最小字段流程处理。",
   ].join("\n"),
 };
@@ -777,7 +783,7 @@ export class LLMGateway implements ModelGateway {
         const toolStart = Date.now();
         logSafeRuntimeEvent(ctx, {
           component: "tool", event: "dispatch", operation: "plan.comparison", outcome: "started",
-          toolName: name, attempt: turn + 1,
+          toolName: name, attempt: turn + 1, toolContext: "planning",
         });
         let result: unknown;
         try {
@@ -806,13 +812,13 @@ export class LLMGateway implements ModelGateway {
           logSafeRuntimeEvent(ctx, {
             component: "tool", event: "dispatch", operation: "plan.comparison", outcome: "success",
             toolName: name, attempt: turn + 1, latencyMs: Date.now() - toolStart,
-            outputHash: hashOutput(result),
+            toolContext: "planning", outputHash: hashOutput(result),
           });
         } catch (error) {
           logSafeRuntimeEvent(ctx, {
             component: "tool", event: "dispatch", operation: "plan.comparison", outcome: "failure",
             toolName: name, attempt: turn + 1, latencyMs: Date.now() - toolStart,
-            errorCode: classifyError(error),
+            toolContext: "planning", errorCode: classifyError(error),
           });
           throw error;
         }
@@ -1038,6 +1044,16 @@ export class LLMGateway implements ModelGateway {
     onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;
+    /**
+     * Phase 4 tool calling: optional tool definitions and dispatcher. When
+     * provided, the conversation worker has registered `hotel.search`
+     * (or any future tool) with the model; the inner method will buffer
+     * `delta.tool_calls`, run the dispatcher once per call, and re-issue
+     * a second stream with the tool result echoed back to the model.
+     * When undefined, behaviour is byte-identical to today.
+     */
+    tools?: ModelToolDefinition[];
+    dispatchTool?: ModelToolDispatcher;
   }): Promise<ConversationReply> {
     const ctx = params.ctx ?? this.options.ctx;
     const start = Date.now();
@@ -1097,6 +1113,8 @@ export class LLMGateway implements ModelGateway {
         return await this.streamConversationReplyOnce({
           client,
           params,
+          tools: params.tools,
+          dispatchTool: params.dispatchTool,
           ctx,
           start,
           span,
@@ -1158,58 +1176,197 @@ export class LLMGateway implements ModelGateway {
       signal?: AbortSignal;
       ctx?: RequestContext;
     };
+    tools?: ModelToolDefinition[];
+    dispatchTool?: ModelToolDispatcher;
     ctx: RequestContext;
     start: number;
     span: ReturnType<ReturnType<typeof getTracer>["startSpan"]>;
     markSent: () => void;
   }): Promise<ConversationReply> {
-    const { client, params, ctx, start, span, markSent } = args;
-    let content = "";
-    let usage: AgentRunTokens | undefined;
-    const stream = await client.chat.completions.create({
+    const { client, params, tools, dispatchTool, ctx, start, span, markSent } = args;
+    const toolsEnabled = Array.isArray(tools) && tools.length > 0 && typeof dispatchTool === "function";
+    const conversationMessages: Array<Record<string, unknown>> = [
+      {
+        role: "system",
+        content: buildConversationSystemPrompt({
+          base: STREAMED_CONVERSATION_SYSTEM_PROMPT,
+          responseConstraints: params.responseConstraints,
+        }),
+      },
+      {
+        role: "user",
+        content: JSON.stringify({
+          question: params.question,
+          place: params.place ?? null,
+          intent: params.intent ?? null,
+          threadContext: params.threadContext,
+          memoryContext: params.memoryContext ?? [],
+          researchEvidence: params.researchEvidence ?? [],
+          tripContext: params.tripContext ?? null,
+        }),
+      },
+    ];
+    const requestBody: Record<string, unknown> = {
       model: this.options.modelName,
-      messages: [
-        {
-          role: "system",
-          content: buildConversationSystemPrompt({
-            base: STREAMED_CONVERSATION_SYSTEM_PROMPT,
-            responseConstraints: params.responseConstraints,
-          }),
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            question: params.question,
-            place: params.place ?? null,
-            intent: params.intent ?? null,
-            threadContext: params.threadContext,
-            memoryContext: params.memoryContext ?? [],
-            researchEvidence: params.researchEvidence ?? [],
-            tripContext: params.tripContext ?? null,
-          }),
-        },
-      ],
+      messages: conversationMessages,
       stream: true,
       stream_options: { include_usage: true },
-    }, { signal: params.signal, headers: outboundTraceHeaders(ctx) }) as AsyncIterable<{
-      choices: Array<{ delta: { content?: string | null } }>;
-      usage?: AgentRunTokens;
-    }>;
-
-    for await (const chunk of stream) {
-      if (params.signal?.aborted) {
-        const abortError = new Error("Conversation stream aborted");
-        abortError.name = "AbortError";
-        throw abortError;
-      }
-      usage = chunk.usage ?? usage;
-      const delta = chunk.choices[0]?.delta.content;
-      if (!delta) continue;
-      content += delta;
-      if (content.length > 8000) throw new Error("Conversation stream exceeds schema limit");
-      markSent();
-      await params.onDelta(delta);
+    };
+    if (toolsEnabled) {
+      // OpenAI function-shape conversion: keep the `tools` array adjacent to
+      // the conversation messages so the second-stream request after a tool
+      // dispatch can reuse the same body shape verbatim.
+      requestBody.tools = tools!.map((tool) => ({ type: "function", function: tool }));
     }
+
+    type StreamChunk = {
+      choices: Array<{
+        delta: {
+          content?: string | null;
+          tool_calls?: Array<{ index: number; id?: string; function?: { name?: string; arguments?: string } }>;
+        };
+        finish_reason?: "stop" | "length" | "tool_calls" | "content_filter" | "function_call" | null;
+      }>;
+      usage?: AgentRunTokens;
+    };
+
+    let content = "";
+    let usage: AgentRunTokens | undefined;
+    let toolCallsReceived = false;
+    let toolCallsFinished = false;
+
+    const consumeStream = async (): Promise<void> => {
+      const stream = await client.chat.completions.create(
+        requestBody,
+        { signal: params.signal, headers: outboundTraceHeaders(ctx) },
+      ) as AsyncIterable<StreamChunk>;
+      for await (const chunk of stream) {
+        if (params.signal?.aborted) {
+          const abortError = new Error("Conversation stream aborted");
+          abortError.name = "AbortError";
+          throw abortError;
+        }
+        usage = chunk.usage ?? usage;
+        const choice = chunk.choices?.[0];
+        const delta = choice?.delta;
+        if (delta?.content) {
+          content += delta.content;
+          if (content.length > 8000) throw new Error("Conversation stream exceeds schema limit");
+          markSent();
+          await params.onDelta(delta.content);
+        }
+        if (delta?.tool_calls && delta.tool_calls.length > 0) {
+          toolCallsReceived = true;
+          // Tool calls also burn the retry budget: a retried stream would
+          // re-emit the same tool call and double-invoke the dispatcher.
+          markSent();
+          for (const toolCallDelta of delta.tool_calls) {
+            accumulateToolCall(toolCallDelta);
+          }
+        }
+        if (choice?.finish_reason) {
+          lastFinishReason = choice.finish_reason;
+        }
+      }
+    };
+
+    const accumulatedToolCalls = new Map<
+      number,
+      { index: number; id?: string; function: { name?: string; arguments: string } }
+    >();
+    let lastFinishReason: string | null = null;
+    const accumulateToolCall = (toolCallDelta: {
+      index: number;
+      id?: string;
+      function?: { name?: string; arguments?: string };
+    }): void => {
+      const existing = accumulatedToolCalls.get(toolCallDelta.index) ?? {
+        index: toolCallDelta.index,
+        id: undefined,
+        function: { name: undefined, arguments: "" },
+      };
+      if (toolCallDelta.id) existing.id = toolCallDelta.id;
+      if (toolCallDelta.function?.name) existing.function.name = toolCallDelta.function.name;
+      if (typeof toolCallDelta.function?.arguments === "string") {
+        existing.function.arguments += toolCallDelta.function.arguments;
+      }
+      accumulatedToolCalls.set(toolCallDelta.index, existing);
+    };
+
+    await consumeStream();
+
+    // Tool dispatch branch: if the model emitted any tool calls AND the
+    // worker registered a dispatcher, run it and re-stream with the result.
+    if (
+      toolsEnabled
+      && toolCallsReceived
+      && accumulatedToolCalls.size > 0
+      && lastFinishReason === "tool_calls"
+    ) {
+      const calls = [...accumulatedToolCalls.values()].sort((a, b) => a.index - b.index);
+      // Echo the assistant turn back to the model. The Shared planning
+      // loop spreads the entire provider response (`...message`) to
+      // preserve Gemini thought-signatures; for streaming we only have
+      // accumulated chunks, so we synthesise the OpenAI-standard shape.
+      // The Gemini-OpenAI-compat quirk (line 715-716 comment) only
+      // affects forced `tool_choice`, which this path does not use.
+      conversationMessages.push({
+        role: "assistant",
+        content: content || null,
+        tool_calls: calls.map((call) => ({
+          id: call.id,
+          type: "function",
+          function: {
+            name: call.function.name,
+            arguments: call.function.arguments,
+          },
+        })),
+      });
+
+      for (const call of calls) {
+        if (!call.id || !call.function.name) {
+          throw new ModelGatewayError("SCHEMA_PARSE");
+        }
+        let args: unknown;
+        try {
+          args = JSON.parse(call.function.arguments || "{}");
+        } catch {
+          throw new ModelGatewayError("SCHEMA_PARSE");
+        }
+        const toolStart = Date.now();
+        logSafeRuntimeEvent(ctx, {
+          component: "tool", event: "dispatch", operation: "travel.conversation", outcome: "started",
+          toolName: call.function.name, attempt: 1, toolContext: "conversation",
+        });
+        let toolResult: unknown;
+        try {
+          toolResult = await dispatchTool!({ id: call.id, name: call.function.name, arguments: args });
+          logSafeRuntimeEvent(ctx, {
+            component: "tool", event: "dispatch", operation: "travel.conversation", outcome: "success",
+            toolName: call.function.name, attempt: 1, latencyMs: Date.now() - toolStart,
+            toolContext: "conversation", outputHash: hashOutput(toolResult),
+          });
+        } catch (err) {
+          logSafeRuntimeEvent(ctx, {
+            component: "tool", event: "dispatch", operation: "travel.conversation", outcome: "failure",
+            toolName: call.function.name, attempt: 1, latencyMs: Date.now() - toolStart,
+            toolContext: "conversation", errorCode: classifyError(err),
+          });
+          throw err;
+        }
+        conversationMessages.push({
+          role: "tool",
+          tool_call_id: call.id,
+          content: JSON.stringify(toolResult),
+        });
+      }
+
+      // Reset content accumulator for the second stream and re-issue.
+      content = "";
+      toolCallsFinished = true;
+      await consumeStream();
+    }
+
     const parsed = z.string().trim().min(1).max(8000).safeParse(content);
     if (!parsed.success) throw new Error("Conversation stream schema validation failed");
 
@@ -1224,6 +1381,7 @@ export class LLMGateway implements ModelGateway {
       if (typeof usage.total === "number") safeSetAttribute(span, "llm.tokens.total", usage.total);
     }
     safeSetAttribute(span, "llm.outcome", "success");
+    if (toolCallsFinished) safeSetAttribute(span, "llm.tool_dispatched", true);
     span.end();
     await recordAgentRun({
       ctx,

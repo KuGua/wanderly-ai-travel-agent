@@ -13,7 +13,7 @@ Generates one private travel answer from the current owner question, optional
 minimal place context, and a server-built bounded raw-message window from the
 same owner thread. `thread.recall` remains a separate redacted Skill and is
 not the runtime context source. It is registered by `personal-travel-agent.ts`
-and invoked only through the Skill Registry with expected version `1.1.0`.
+and invoked only through the Skill Registry with expected version `1.2.0`.
 
 ## 注册元数据
 
@@ -21,8 +21,8 @@ and invoked only through the Skill Registry with expected version `1.1.0`.
 | --- | --- | --- |
 | `name` | `travel.conversation` | `Skill.name` |
 | `agent` | `personal` | `Skill.agent` |
-| `version` | `1.1.0` | `Skill.version` |
-| `allowedTools` | `"chat:read"` | Personal Agent allow-list |
+| `version` | `1.2.0` | `Skill.version` |
+| `allowedTools` | `"chat:read"`, `"hotel:search"` (Phase 4) | Personal Agent allow-list |
 | `timeoutMs` | `15000` | `Skill.timeoutMs` |
 | `needsConfirm` | `false` | `Skill.needsConfirm` |
 
@@ -34,12 +34,31 @@ and invoked only through the Skill Registry with expected version `1.1.0`.
   total context is at most 20,000 chars; the builder enforces the stricter
   runtime turn/character budget.
 - Output: non-empty answer plus `MODEL | SAFE_REFUSAL`.
-- Allowed scope: `chat:read`; no profile writes, shared planning, bookings, or
-  irreversible tools.
+- Allowed scope: `chat:read`; `hotel:search` declared but **only dispatched
+  when the rollout flag `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true` is
+  on AND `hotel.search` is in the personal-research allowed capabilities**.
+  No profile writes, shared planning, bookings, or irreversible tools.
 
 The service re-resolves every client-supplied coordinate against the server
 location-reference source. A matching result becomes `REFERENCE`; otherwise it
 remains `INSPIRATION`. Client names and source IDs are never authoritative.
+
+## Phase 4 — inline `hotel.search` tool dispatch
+
+When the rollout flag is on, the conversation worker registers the
+`hotel.search` tool with the streaming gateway. The model invokes the tool
+directly (no UI button, no `POST /confirm` round-trip) once all required
+fields are present and the user has expressed search intent. The tool result
+is persisted into `personal_research_evidence` (deduped by
+`(run_id, capability)` via the existing unique index), and the second LLM
+turn streams a grounded summary back to the SSE channel. The conversation
+worker relaxes the price/hotel and availability/hotel safety rules for the
+second turn only — every other safety rule (visa, booking status, flight
+status, schedule) keeps firing unconditionally.
+
+The flag is the rollout lever. Default off in `.env.example`; flip on per
+environment after deploy. Behaviour is byte-identical to v1.1.0 when the
+flag is off.
 
 Before model invocation, the Skill deterministically rejects explicit requests
 for live/current prices, inventory or availability, visa/entry conclusions,
@@ -56,10 +75,22 @@ service persists no USER or ASSISTANT row for that failed turn.
 
 Hotel searches remain inside the private conversation. The Conversation Worker
 always invokes this Skill; it does not create a confirmation/setup card or
-emit `research.intent_extracted`. The model reuses same-thread facts, asks for
-only the missing city, dates, adult/room configuration and currency, then
-summarizes the requested search and asks the owner to reply with an explicit
-“确认搜索”.
+emit `research.intent_extracted`. The model reuses same-thread facts and asks
+for only the missing city, dates, adult/room configuration and currency.
+
+When `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true` and the user has
+expressed intent to search (e.g. "确认搜索" / "yes, search" / "go ahead")
+with all required fields present, the model invokes the `hotel.search` tool
+directly. The conversation worker dispatches the call against Nuitee,
+persists the bounded summary into `personal_research_evidence` (deduped by
+`(run_id, capability)`), and re-streams a grounded summary. The model does
+not emit a prose claim that the search has been made — the system runs the
+tool and feeds the result back.
+
+When the rollout flag is off, the model still summarises the requested
+search and asks the owner to reply with an explicit "确认搜索". Without a
+UI button to press, the message acts as a verbal confirmation step in
+prose; the next turn re-enters the same loop.
 
 The `HOTEL_SEARCH_READINESS` constraint is a behavioural rule, not a canned
 reply: when a user asks for areas or trade-offs, the model may reuse stated
@@ -69,9 +100,9 @@ filter. The model must not ask users to click a card, button or settings page.
 
 The constraint preserves the live-data boundary: qualitative advice is allowed,
 but it cannot be presented as current pricing, inventory, or booking
-availability. It also forbids collecting passport, payment, or full guest data
-in chat. Any provider-specific nationality requirement stays in the separate
-explicit authorization flow.
+availability outside of an evidence-backed summary. It also forbids collecting
+passport, payment, or full guest data in chat. Any provider-specific
+nationality requirement stays in the separate explicit authorization flow.
 
 ## Privacy and observability
 

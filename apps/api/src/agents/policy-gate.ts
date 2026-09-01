@@ -11,7 +11,19 @@ interface AgentScopePolicy {
 }
 
 const DEFAULT_POLICY: AgentScopePolicy = {
-  personal: ["profile:read", "profile:write:propose", "consent:read", "chat:read"],
+  personal: [
+    "profile:read",
+    "profile:write:propose",
+    "consent:read",
+    "chat:read",
+    // Phase 4: LLM-driven tool calling. The conversation worker builds the
+    // `hotel.search` tool definition only when `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED`
+    // is on, but the scope must be in the allow-list so the Personal Skill
+    // can declare `allowedTools: ["chat:read", "hotel:search"]`. Owner-only
+    // authority (`requirePersonalResearchAuthority`) still gates every
+    // dispatch.
+    "hotel:search",
+  ],
   shared: [
     "snapshot:read",
     "plan:write:propose",

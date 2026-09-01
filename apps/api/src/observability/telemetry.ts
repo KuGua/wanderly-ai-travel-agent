@@ -204,6 +204,13 @@ export type SafeRuntimeEvent = {
   latencyMs?: number;
   attempt?: number;
   toolName?: string;
+  /**
+   * Bounded discriminator for which agent's tool loop fired. Phase 4 uses
+   * `"conversation"` (Personal chat) vs the existing `"planning"`
+   * (Shared planning tool loop). Closed enum so dashboards can split
+   * dispatch volume by surface area.
+   */
+  toolContext?: "conversation" | "planning";
   promptVersion?: string;
   outputHash?: string;
   tokenCount?: number;

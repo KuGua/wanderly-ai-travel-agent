@@ -80,8 +80,24 @@ export async function resolveConversationPlace(place: ConversationPlace | undefi
   };
 }
 
-export function requestsUnsupportedOperationalFacts(question: string): boolean {
+export interface OperationalRequestOptions extends OperationalClaimOptions {
+  /**
+   * `true` when the user's most recent message expresses "continue search"
+   * intent (e.g. 「确认搜索」/「yes, search」/「go ahead」/「执行搜索」/「do it」).
+   * The conversation worker sets this when it detects a confirmation
+   * pattern, so the input-side safety filter does not block a legitimate
+   * "go" reply that happens to mention a currency or inventory term.
+   * When `userConfirmed === true`, the PRICE/LIVE/inventory and
+   * AVAILABILITY/inventory rules are bypassed (the model's prose can
+   * safely describe the upcoming tool call); visa, booking-status and
+   * flight-status rules still fire.
+   */
+  userConfirmed?: boolean;
+}
+
+export function requestsUnsupportedOperationalFacts(question: string, opts?: OperationalRequestOptions): boolean {
   const text = normalizePolicyText(question);
+  const userConfirmed = opts?.userConfirmed === true;
 
   if (hasAnyTerm(text, VISA_TERMS)) return true;
   if (
@@ -89,19 +105,21 @@ export function requestsUnsupportedOperationalFacts(question: string): boolean {
     && hasAnyTerm(text, ENTRY_RULE_TERMS)
   ) return true;
 
-  if (
-    hasAnyTerm(text, PRICE_TERMS)
-    && (hasAnyTerm(text, [...LIVE_TERMS, ...TRAVEL_INVENTORY_TERMS]) || hasTerm(text, "how much") || hasTerm(text, "多少钱"))
-  ) return true;
-  if (hasTerm(text, "how much") && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
-  if (hasTerm(text, "exchange rate") && hasAnyTerm(text, LIVE_TERMS)) return true;
+  if (!userConfirmed) {
+    if (
+      hasAnyTerm(text, PRICE_TERMS)
+      && (hasAnyTerm(text, [...LIVE_TERMS, ...TRAVEL_INVENTORY_TERMS]) || hasTerm(text, "how much") || hasTerm(text, "多少钱"))
+    ) return true;
+    if (hasTerm(text, "how much") && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
+    if (hasTerm(text, "exchange rate") && hasAnyTerm(text, LIVE_TERMS)) return true;
 
-  if (hasAnyTerm(text, AVAILABILITY_TERMS) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
-  if (hasAnyTerm(text, ["are there", "is there"]) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
-  if (hasAnyTerm(text, ["还有", "有空", "有房"]) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
-  // Live-data schedule questions ("今天航班几点的", "今晚酒店几点开门") are
-  // operational facts and must be refused even without a price/booking verb.
-  if (hasAnyTerm(text, LIVE_TERMS) && hasAnyTerm(text, SCHEDULE_TERMS)) return true;
+    if (hasAnyTerm(text, AVAILABILITY_TERMS) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
+    if (hasAnyTerm(text, ["are there", "is there"]) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
+    if (hasAnyTerm(text, ["还有", "有空", "有房"]) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
+    // Live-data schedule questions ("今天航班几点的", "今晚酒店几点开门") are
+    // operational facts and must be refused even without a price/booking verb.
+    if (hasAnyTerm(text, LIVE_TERMS) && hasAnyTerm(text, SCHEDULE_TERMS)) return true;
+  }
 
   if (
     hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations", "预订", "订"])
@@ -122,8 +140,21 @@ export function requestsUnsupportedOperationalFacts(question: string): boolean {
   return hasFlightReference(text) && hasAnyTerm(text, FLIGHT_STATUS_TERMS);
 }
 
-export function containsUnsupportedOperationalClaim(content: string): boolean {
+export interface OperationalClaimOptions {
+  /**
+   * `true` only when a `personal_research_evidence` row exists for the
+   * current run — the conversation worker dispatches the tool and persists
+   * the evidence before calling back into the gateway for the final answer.
+   * In that state, the LLM is allowed to surface prices / availability
+   * figures backed by the tool result; all other rules (visa, booking
+   * status, flight status, schedule) keep firing unconditionally.
+   */
+  evidenceBacked?: boolean;
+}
+
+export function containsUnsupportedOperationalClaim(content: string, opts?: OperationalClaimOptions): boolean {
   const text = normalizePolicyText(content);
+  const evidenceBacked = opts?.evidenceBacked === true;
 
   // Chat has no authoritative visa provider path. Conservatively reject every
   // MODEL response that introduces visa facts, including unfamiliar phrasing.
@@ -137,13 +168,15 @@ export function containsUnsupportedOperationalClaim(content: string): boolean {
     ])
   ) return true;
 
-  if (
-    hasAnyTerm(text, PRICE_TERMS)
-    && (hasCurrencyValue(text) || hasNumericValue(text) || hasAnyTerm(text, [...LIVE_TERMS, "starts at", "from", "around", "approximately"]))
-  ) return true;
-  if (hasCurrencyValue(text) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
+  if (!evidenceBacked) {
+    if (
+      hasAnyTerm(text, PRICE_TERMS)
+      && (hasCurrencyValue(text) || hasNumericValue(text) || hasAnyTerm(text, [...LIVE_TERMS, "starts at", "from", "around", "approximately"]))
+    ) return true;
+    if (hasCurrencyValue(text) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
+    if (hasAnyTerm(text, AVAILABILITY_TERMS) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
+  }
 
-  if (hasAnyTerm(text, AVAILABILITY_TERMS) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
   if (
     hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations", "已订", "已确认", "待确认", "取消"])
     && hasAnyTerm(text, BOOKING_STATUS_TERMS)

@@ -754,7 +754,7 @@ const personalResearchFlightDraftSchema = z.object({
   }
 });
 
-const personalResearchHotelDraftSchema = z.object({
+export const personalResearchHotelDraftSchema = z.object({
   kind: z.literal("HOTEL_SEARCH"),
   cityCode: iataCodeSchema,
   checkIn: dateOnlySchema,

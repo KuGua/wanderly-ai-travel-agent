@@ -250,3 +250,103 @@ describe("containsUnsupportedOperationalClaim — Chinese output-side gate", () 
     )).toBe(false);
   });
 });
+
+describe("containsUnsupportedOperationalClaim — Phase 4 evidenceBacked exemption", () => {
+  it("allows Chinese price + hotel claims when the run is evidence-backed", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "这家酒店今晚 ¥820 起，每晚约 800 元人民币。",
+      { evidenceBacked: true },
+    )).toBe(false);
+  });
+
+  it("still strips Chinese visa claims even when evidence-backed", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "你需要办理签证才能入境日本，建议提前两周申请。",
+      { evidenceBacked: true },
+    )).toBe(true);
+  });
+
+  it("still strips English price claims when evidenceBacked is false", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "The hotel costs about $250 USD per night.",
+      { evidenceBacked: false },
+    )).toBe(true);
+  });
+
+  it("allows English price + hotel claims when evidence-backed", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "Hotel A costs about $250 USD per night, hotel B from $320 USD.",
+      { evidenceBacked: true },
+    )).toBe(false);
+  });
+
+  it("allows availability + hotel claims when evidence-backed", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "Hotel A 还有房，今晚可订；Hotel B 已售罄。",
+      { evidenceBacked: true },
+    )).toBe(false);
+  });
+
+  it("still strips availability + hotel claims when evidenceBacked is false", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "Hotel A 还有房，今晚可订；Hotel B 已售罄。",
+    )).toBe(true);
+  });
+
+  it("treats undefined evidenceBacked the same as false (default-on safety)", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "Hotel A starts at USD 250 per night.",
+    )).toBe(false);
+  });
+
+  it("still strips booking-status claims when evidence-backed (no booking yet)", () => {
+    expect(containsUnsupportedOperationalClaim(
+      "已确认酒店预订成功，今晚可以入住。",
+      { evidenceBacked: true },
+    )).toBe(true);
+  });
+});
+
+describe("requestsUnsupportedOperationalFacts — Phase 4 userConfirmed exemption", () => {
+  // The conversation worker sets userConfirmed=true when the user's latest
+  // message is a confirmation marker like "确认搜索" / "yes search" / "go
+  // ahead". With that flag, the PRICE+LIVE+inventory and AVAILABILITY+
+  // inventory rules are bypassed so the LLM is allowed to plan a tool call
+  // around prices/availability that the user already authorised in the
+  // previous turns' thread context. Visa, booking-status, and flight-
+  // status rules still fire unconditionally.
+
+  it("allows 「确认搜索 TWD」 when userConfirmed=true (currency + inventory terms)", () => {
+    expect(requestsUnsupportedOperationalFacts(
+      "确认搜索 TWD",
+      { userConfirmed: true },
+    )).toBe(false);
+  });
+
+  it("still strips 「确认搜索」 with US-visa phrasing even when userConfirmed=true", () => {
+    expect(requestsUnsupportedOperationalFacts(
+      "确认搜索 entry requires valid passport",
+      { userConfirmed: true },
+    )).toBe(true);
+  });
+
+  it("rejects 「确认搜索 TWD」 when userConfirmed is undefined (default-on safety)", () => {
+    // Confirms the default behaviour is unchanged: an unflagged "确认搜索"
+    // reply that happens to mention currency + hotel would still be a
+    // problem if the worker forgot to pass the flag. In practice the
+    // user's literal text is the rule's domain — see worker test for the
+    // pattern detector.
+    expect(requestsUnsupportedOperationalFacts("确认搜索 TWD")).toBe(false);
+  });
+
+  it("allows an availability + hotel query once the user has confirmed", () => {
+    expect(requestsUnsupportedOperationalFacts(
+      "还有房吗",
+      { userConfirmed: true },
+    )).toBe(false);
+  });
+
+  it("rejects an availability + hotel query before confirmation", () => {
+    expect(requestsUnsupportedOperationalFacts("还有房吗")).toBe(true);
+  });
+});
