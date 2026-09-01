@@ -155,7 +155,7 @@ export async function personalResearchSetupRoutes(app: FastifyInstance): Promise
     schema: {
       description: "Owner-only — cancel an open setup session.",
       response: {
-        200: z.object({ status: z.literal("CANCELLED") }).strict(),
+        200: toJsonSchema(z.object({ status: z.literal("CANCELLED") }).strict()),
         403: toJsonSchema(errorResponseSchema),
         404: toJsonSchema(errorResponseSchema),
         409: toJsonSchema(errorResponseSchema),
