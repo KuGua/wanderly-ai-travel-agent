@@ -1,7 +1,22 @@
 import type { consentScopeValues } from "./schemas.js";
 import type { HotelOfferProviderName } from "../providers/types.js";
+import type { PersonalResearchOperationCapability as PersonalResearchOperationCapabilityValue, PersonalResearchOwnerDraft as PersonalResearchOwnerDraftValue, PersonalResearchEvidenceSummary as PersonalResearchEvidenceSummaryValue, PersonalResearchReadResponse as PersonalResearchReadResponseValue } from "./schemas.js";
 
 export type ConsentScope = (typeof consentScopeValues)[number];
+
+// ─── DRAFT Personal Research (docs/draft-personal-research-implementation.md) ──
+//
+// Type-level mirror of the Zod schemas. The new operation capability enum
+// (named `personalResearchOperationCapabilitySchema` to avoid collision with
+// the existing `personalResearchCapabilitySchema` used by the personal
+// research intent routing), the discriminated draft union, the evidence
+// summary, and the read response are all Zod-driven; consumers that need
+// plain TS types import these aliases.
+export type PersonalResearchOperationCapability = PersonalResearchOperationCapabilityValue;
+export type PersonalResearchOwnerDraft = PersonalResearchOwnerDraftValue;
+export type PersonalResearchEvidenceSummary = PersonalResearchEvidenceSummaryValue;
+export type PersonalResearchReadResponse = PersonalResearchReadResponseValue;
+export type PersonalResearchOutcome = "AVAILABLE" | "UNAVAILABLE" | "EXPIRED";
 
 // ─── Constraint Visibility / Strength (mirror of policy/constraint-field-catalog.ts) ────
 // Re-export the source-of-truth types from the catalog so callers can use either module.

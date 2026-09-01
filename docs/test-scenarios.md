@@ -1309,33 +1309,81 @@ that a grant/revoke invalidates dependent plans.
 1. A DRAFT Trip with missing dates produces `TRIP_NOT_ACTIVE` before date or preference gaps. It does not create an OPEN setup session or emit an editable setup follow-up; the read-only activation hint is shown instead.
 2. Double-clicking 确认并搜索 while dates or stay preferences are being saved produces exactly one request per required slot and at most one confirm request. A failed request is rendered as a card error, never as an unhandled browser Promise rejection.
 
-## 已批准、待实现：DRAFT Personal Research
+## 已批准、已部分实现：DRAFT Personal Research（flight 已上线；其余 capability 按 §3.5 顺序逐项 PR 开放）
 
-> 本节是 [DRAFT Personal Research 到 Shared Planning 实施规范](draft-personal-research-implementation.md) 的验收矩阵，**不是当前回归预期**。当前实现仍须通过上一节的 `TS-CONVERSATIONAL-SETUP-11`：DRAFT 研究 fail closed。实现该规范时，将下列场景转为正式回归，并相应替换旧 DRAFT-only 断言。
+> 本节是 [DRAFT Personal Research 到 Shared Planning 实施规范](draft-personal-research-implementation.md) 的验收矩阵。
+>
+> **Phase 1 实施状态**（feature/draft-personal-research-phase1 分支，迁移 0047a/b/c 上线）：
+>
+> | capability | allow-list | executor | UI input card | UI result card | 备注 |
+> | --- | --- | --- | --- | --- | --- |
+> | `flight.search` | ✅ open | ✅ `services/personal-research-executors/flight.ts` | ✅ `inputs/flight-research-input-card.tsx` | ✅ `results/flight-research-result-card.tsx` | Phase 1 |
+> | `hotel.search` | ❌ commented | ❌ stub only | ❌ 待实现 | ❌ 待实现 | §3.5 stage 2 — 等 Nuitee nationality contract + provider tests |
+> | `accommodation.discovery` | ❌ commented | ❌ stub only | ❌ 待实现 | ❌ 待实现 | §3.5 stage 2 — 等 OpenTripMap contract tests |
+> | `activities.search` | ❌ commented | ❌ stub only | ❌ 待实现 | ❌ 待实现 | §3.5 stage 2 — 等 Viator MCP contract tests |
+> | `places.search` | ❌ commented | ❌ stub only | ❌ 待实现 | ❌ 待实现 | §3.5 stage 3 — 个人 place 绝不写入 `trip_places` |
+> | `navigation.route` | ❌ commented | ❌ stub only | ❌ 待实现 | ❌ 待实现 | §3.5 stage 3 — 不含商业票价/班次 |
+> | `mobility.search` | ❌ commented | ❌ stub only | ❌ 待实现 | ❌ 待实现 | §3.5 stage 3 — `PLAN_ENABLE_MOBILITY=false` → UNAVAILABLE |
+> | `visa.*` | ❌ 故意不在 enum | ❌ | ❌ | ❌ | §3.5 stage 4 — 等真实 `VisaProvider` + DPA + 凭据 + audit + sandbox |
+>
+> **Phase 1 路由**（`apps/api/src/routes/personal-research.ts`）：`GET / PUT / POST confirm / POST cancel`，全部 owner-only via `requireRunAccess` 第三分支 + `getAuthorizedAgentRun`。
+>
+> **既有 CI 回归**仍按上一节 `TS-CONVERSATIONAL-SETUP-11` 跑：DRAFT research fail closed。下面四组断言在 Phase 1 实施后正式生效；其他 capability 解锁时按 §3.5 顺序逐项追加。
 
 ### TS-DRAFT-PERSONAL-RESEARCH-1 — Trip 与 Personal Session 不分叉
 
 1. 首条已提交私聊消息仍原子创建一条 DRAFT `shared_trips`、一条创建者 membership 和一条 owner-only `chat_threads`；刷新/重连继续使用同一 thread。
 2. 不存在无 `trip_id` 的 Personal query、第二张 Personal Session 表或由 Shared Agent/LLM 创建的 Trip ID。
+3. 实施覆盖：`apps/api/migrations/0047a/b/c_personal_research*.sql` 的 CHECK 新分支 `(operation = 'PERSONAL_RESEARCH' AND trip_id NOT NULL AND snapshot_id NULL)` 保证新行永远 trip-bound 且不持 snapshot。
 
 ### TS-DRAFT-PERSONAL-RESEARCH-2 — 明确确认后才执行 Flight
 
 1. DRAFT owner 在完整的受控 airport/date/passenger input 上以稳定 `requestId` confirm 后，恰好接受一条 `PERSONAL_RESEARCH` task；worker 用 server-built `{ tripId, threadId, ownerUserId, runId }` authority 调用已配置 FlightProvider。
 2. 低置信度聊天、未确认 draft、缺字段、cancelled/expired draft 均不触发 provider network call。UI 可建议先规划，但不能仅因 DRAFT 拒绝有效确认。
 3. provider 的 timeout、empty、rate limit、schema drift 或缺配置写/显示安全 `UNAVAILABLE`，绝不使用 fixture、Demo data、模型价格或 provider 自动 fallback。
+4. 实施覆盖：`apps/api/src/tasks/handlers/personal-research-task-handler.ts` 在 provider 调用前先调 `DefaultPolicyGate.requirePersonalResearchAuthority(authority, run)`（拒绝 owner 不匹配 / capability 不在 allow-list），handler 失败路径走 `failPersonalResearchTask` 持久化 UNAVAILABLE 证据行，不重试无限循环。
 
 ### TS-DRAFT-PERSONAL-RESEARCH-3 — 私有结果与 Shared 边界
 
 1. 成功结果只对同一 `owner_user_id + thread_id + trip_id` 可读，带 source、captured_at 和适用的 expires_at；raw provider payload、私聊正文、国籍/证件不被持久化或发到 SSE/telemetry。
 2. 同 Trip 的另一 member、Shared Agent、snapshot 创建、plan validator 和 plan query 不能读取 Personal evidence。DRAFT research 不创建 snapshot、PLAN/REPLAN、plan、confirmation 或 booking request。
 3. 用户点击开始规划后仍走既有 activate + consent + snapshot 路径；Shared research 重新查询 provider，不能采用 Personal evidence。
+4. 实施覆盖：
+   - `apps/api/migrations/0047c` 的 `personal_research_evidence` 表 `owner_user_id` 与 `agent_task_runs.created_by_user_id` 等价 CHECK 防漂移；
+   - `apps/api/src/tasks/task-repository.ts` 的 `requireRunAccess` 第三分支对 `PERSONAL_RESEARCH` 仅校验 creator，不查询 `trip_members`；
+   - handler 调 `personal-research-service.ts.persistAvailability/persistUnavailability` 写入 `personal_research_evidence`，绝不**写入 `provider_offers` / `provider_search_runs`（snapshot-bound 既有表）**；
+   - audit summary 走 `PERSONAL_RESEARCH_COMMAND_ACCEPTED` / `PERSONAL_RESEARCH_COMPLETED` / `PERSONAL_RESEARCH_CANCELLED` 三值，bounded 且不含 user text。
 
 ### TS-DRAFT-PERSONAL-RESEARCH-4 — 授权、并发与恢复
 
 1. cross-user、thread/trip mismatch、membership 已移除、operation 不匹配和取消后的 confirm 在读取私有 request/evidence 前 fail closed。
 2. 重复 confirm、浏览器重试、worker lease recovery、cancel race 和乱序 callback 最多产生一次 execution/result；audit 与 trace 可按 run 关联，指标不以 trip/run ID 作标签。
+3. 实施覆盖：
+   - `apps/api/migrations/0047b` 的 partial unique index `agent_task_runs_personal_research_owner_request_unique (created_by_user_id, request_id) WHERE operation = 'PERSONAL_RESEARCH'` 保证同 owner + requestId 只能有一行；
+   - `completePersonalResearchTask` 与 `failPersonalResearchTask` 复用既有 `WHERE id = ? AND lease_token = ? AND status = 'RUNNING'` lease-guarded 写模式；
+   - `acceptPersonalResearchTask` 在事务内重检 owner / thread.tripId / trip membership，三处任一失败抛 4xx 而非依赖 DB 唯一约束；
+   - 路由 `POST /confirm` 在事务内重新校验 draft valid + capability ∈ allow-list + provider gate，再接受 task，duplicate requestId 走 `findPersonalResearchTaskByRequestId` 返回原 envelope（idempotent）。
 
 ### TS-DRAFT-PERSONAL-RESEARCH-5 — 按 capability 放开
 
 1. 未完成 contract 的 hotel、activities、places、navigation、mobility 和 visa 均被 Personal allow-list 拒绝；不能由 Flight 的开关间接启用。
 2. Hotel 必须覆盖 dates/occupancy/currency、provider-only nationality authorization 与 provider binding；route 必须覆盖 owner 选择的两个 private endpoints；visa 在 `VisaProvider` 可用前只返回 `UNAVAILABLE` 和官方核验下一步。
+3. 实施覆盖：
+   - `apps/api/src/config/personal-research-allowed-capabilities.ts` 的 `PERSONAL_RESEARCH_ALLOWED_CAPABILITIES` 常量（默认只有 `flight.search`），其余 capability 显式注释；
+   - `personal-research-service.ts.dispatchCapability` 的 switch 仅 `FLIGHT_SEARCH` 命中真 executor，其他 kind 抛 `ExecutorNotImplementedError` → UNAVAILABLE；
+   - route 层 `deriveCapabilityFromDraft` + `isPersonalResearchCapabilityAllowed` 校验在 confirm 之前，返回 422；
+   - 解锁新 capability 必须独立 PR：移除对应注释 + 新 executor + 新 input/result card + provider contract 测试 + 移除服务 dispatch 中的 throw + 增量 `test-scenarios.md` 条目。
+
+### TS-DRAFT-PERSONAL-RESEARCH-6 — 自动化测试矩阵
+
+| 类别 | 测试文件 | 覆盖 |
+| --- | --- | --- |
+| 路由契约 | `tests/routes/personal-research.test.ts` | cross-user 403 / 200 owner / 草稿持久化 / confirm 202 / 同幂幂幂 / capability not allowed 422 / cancel 幂等 / strict extra-key 400 / strict invalid IATA 400 |
+| Schema 契约 | `tests/contracts/personal-research-schema.test.ts` *(待补)* | strict reject 越权字段；visa.* 拒；discriminated union 完整 7 schema |
+| Migration | `tests/migrations/0047a-personal-research-enum.test.ts` *(待补)* | enum 值存在；CHECK 允许 PERSONAL_RESEARCH 分支 |
+| Migration | `tests/migrations/0047b-personal-research-refs.test.ts` *(待补)* | partial unique 强制；不同 operation requestId 互不冲突 |
+| Migration | `tests/migrations/0047c-personal-research-evidence.test.ts` *(待补)* | UNIQUE (run_id, capability) 强制；CASCADE；CHECK owner = creator |
+| Authority | `tests/personal-research/authority.test.ts` *(待补)* | `policy-gate.requirePersonalResearchAuthority` 拒绝 owner/trip/snapshot/capability 越界 |
+| Privacy | `tests/personal-research/privacy.test.ts` *(待补)* | Shared trip-member 不见 Personal evidence；navigation 不含票价；places 不写 `trip_places`；raw payload 不入库 |
+| Cancel | `tests/personal-research/cancel.test.ts` *(待补)* | QUEUED 取消无 provider 调用；double-cancel 幂等 |
+| Web 组件 | `apps/web/tests/personal-research/flight-input-card.test.tsx` *(待补)* | IATA 校验 / 日期校验 / saveAnswers 调用 |

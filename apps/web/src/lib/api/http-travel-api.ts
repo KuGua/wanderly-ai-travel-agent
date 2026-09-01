@@ -80,6 +80,10 @@ import {
   mobilitySearchResponseSchema,
   mobilityOfferSelectionRequestSchema,
   mobilityOfferSelectionResponseSchema,
+  personalResearchAnswersRequestSchema,
+  personalResearchConfirmRequestSchema,
+  personalResearchConfirmAcceptedResponseSchema,
+  personalResearchReadResponseSchema,
   type UpdateProfileInput,
   type ConversationTurnRequest,
   type CreateTripThreadInput,
@@ -88,6 +92,10 @@ import {
   type UpdateTripTitleInput,
   type UpdateDraftTripBriefInput,
   type TripSearchPreferencesInput,
+  type PersonalResearchAnswersRequest,
+  type PersonalResearchConfirmRequest,
+  type PersonalResearchReadResponse,
+  type PersonalResearchConfirmAcceptedResponse,
   type CreateTripConstraintProposalRequest,
   type ConfirmTripConstraintProposalRequest,
   type UpsertTripConstraintFactRequest,
@@ -345,6 +353,41 @@ export class HttpTravelApi implements TravelApi {
       "/agent-runs/" + encodeURIComponent(runId) + "/route-selection",
       z.unknown(),
       { method: "PUT", body: JSON.stringify(input) },
+    );
+  }
+
+  // ─── DRAFT Personal Research (docs/draft-personal-research-implementation.md) ──
+
+  async getPersonalResearch(runId: string): Promise<PersonalResearchReadResponse> {
+    return this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/personal-research",
+      personalResearchReadResponseSchema,
+    );
+  }
+
+  async savePersonalResearchAnswers(runId: string, input: PersonalResearchAnswersRequest): Promise<void> {
+    const body = personalResearchAnswersRequestSchema.parse(input);
+    await this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/personal-research/answers",
+      z.unknown(),
+      { method: "PUT", body: JSON.stringify(body) },
+    );
+  }
+
+  async confirmPersonalResearch(runId: string, input: PersonalResearchConfirmRequest): Promise<PersonalResearchConfirmAcceptedResponse> {
+    const body = personalResearchConfirmRequestSchema.parse(input);
+    return this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/personal-research/confirm",
+      personalResearchConfirmAcceptedResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  }
+
+  async cancelPersonalResearch(runId: string): Promise<PersonalResearchReadResponse> {
+    return this.client.request(
+      "/agent-runs/" + encodeURIComponent(runId) + "/personal-research/cancel",
+      personalResearchReadResponseSchema,
+      { method: "POST" },
     );
   }
 

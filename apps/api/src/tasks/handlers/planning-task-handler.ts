@@ -13,6 +13,7 @@ import type { RequestContext } from "../../utils/context.js";
 import { logSafeRuntimeEvent } from "../../observability/telemetry.js";
 import type { AgentTaskRow } from "../task-repository.js";
 import { handleResearchTask } from "./research-task-handler.js";
+import { handlePersonalResearchTask } from "./personal-research-task-handler.js";
 
 /** Runs only from the durable Worker.  All authority comes from the accepted
  * task row and immutable snapshot; no browser/model fields are consulted. */
@@ -23,6 +24,15 @@ export async function handlePlanningTask(params: {
   leaseToken: string;
 }): Promise<string> {
   const { run } = params;
+
+  // PERSONAL_RESEARCH (added via 0047a) is dispatched through the same
+  // Worker lease / cancellation / SSE plumbing as PLAN/REPLAN/RESEARCH,
+  // but it has its own owner-only handler that does not call generatePlan
+  // and never touches Shared snapshots. Spec §3.3.
+  if (run.operation === "PERSONAL_RESEARCH") {
+    const result = await handlePersonalResearchTask(params);
+    return result ?? "";
+  }
 
   // Phase 2 — Personal Trip Orchestrator. RESEARCH is dispatched through the
   // same Worker lease / cancellation / SSE plumbing as PLAN/REPLAN, but it

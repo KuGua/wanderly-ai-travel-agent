@@ -412,7 +412,7 @@ export const ownerConversationMessageSchema = z.object({
 
 export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL", "FALLBACK"]);
 
-export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]);
+export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN", "RESEARCH", "PERSONAL_RESEARCH"]);
 export const agentTaskStatusSchema = z.enum([
   "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELLED", "STALE",
 ]);
@@ -843,6 +843,269 @@ export const personalResearchSetupConfirmRequestSchema = z.object({
 export const personalResearchSetupConfirmAcceptedResponseSchema = z.object({
   runId: uuidSchema,
   snapshotId: uuidSchema,
+  status: z.literal("QUEUED"),
+}).strict();
+
+/**
+ * ─── DRAFT Personal Research (docs/draft-personal-research-implementation.md) ──
+ *
+ * Owner-only typed draft + request/response shapes. The state machine
+ * `DRAFT → CONFIRMED → QUEUED → COMPLETED | COMPLETED_WITH_GAPS | FAILED |
+ * CANCELLED` lives across two rows: the CONVERSATION row carries the typed
+ * draft + readiness during DRAFT/CONFIRMED; the PERSONAL_RESEARCH durable
+ * row carries QUEUED/COMPLETED/etc.
+ *
+ * The runtime allow-list (apps/api/src/config/personal-research-allowed-capabilities.ts)
+ * gates which `capability` values the owner may confirm. Confirming a draft
+ * whose `kind` is not in the allow-list returns 422 — the Zod discriminated
+ * union accepts all 7 shapes here for forward-compatibility, and the route
+ * applies the gate.
+ */
+export const personalResearchOperationCapabilitySchema = z.enum([
+  "flight.search",
+  "hotel.search",
+  "accommodation.discovery",
+  "activities.search",
+  "places.search",
+  "navigation.route",
+  "mobility.search",
+]);
+export type PersonalResearchOperationCapability = z.infer<typeof personalResearchOperationCapabilitySchema>;
+
+const iataCodeSchema = z.string().regex(/^[A-Z]{3}$/);
+const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const currencyCodeSchema = z.string().regex(/^[A-Z]{3}$/);
+
+const personalResearchFlightDraftSchema = z.object({
+  kind: z.literal("FLIGHT_SEARCH"),
+  originId: iataCodeSchema,
+  destinationId: iataCodeSchema,
+  tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
+  departureDate: dateOnlySchema,
+  returnDate: dateOnlySchema.nullable(),
+  adults: z.number().int().min(1).max(9),
+  cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
+  currency: currencyCodeSchema,
+}).strict().superRefine((draft, ctx) => {
+  if (draft.tripType === "ROUND_TRIP" && draft.returnDate === null) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["returnDate"], message: "round-trip requires returnDate" });
+  }
+  if (draft.returnDate !== null && draft.returnDate < draft.departureDate) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["returnDate"], message: "returnDate must be on or after departureDate" });
+  }
+});
+
+const personalResearchHotelDraftSchema = z.object({
+  kind: z.literal("HOTEL_SEARCH"),
+  cityCode: iataCodeSchema,
+  checkIn: dateOnlySchema,
+  checkOut: dateOnlySchema,
+  occupancy: z.object({
+    adults: z.number().int().min(1).max(8),
+    rooms: z.number().int().min(1).max(8),
+  }).strict(),
+  currency: currencyCodeSchema,
+}).strict().superRefine((draft, ctx) => {
+  if (draft.checkOut <= draft.checkIn) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["checkOut"], message: "checkOut must be after checkIn" });
+  }
+});
+
+const personalResearchAccommodationDraftSchema = z.object({
+  kind: z.literal("ACCOMMODATION_DISCOVERY"),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radiusMeters: z.number().int().min(100).max(50_000),
+  checkIn: dateOnlySchema,
+  checkOut: dateOnlySchema,
+  occupancy: z.object({
+    adults: z.number().int().min(1).max(8),
+    rooms: z.number().int().min(1).max(8),
+  }).strict(),
+}).strict();
+
+const personalResearchActivitiesDraftSchema = z.object({
+  kind: z.literal("ACTIVITIES_SEARCH"),
+  destinationCode: z.string().trim().min(1).max(64),
+  startDate: dateOnlySchema,
+  endDate: dateOnlySchema,
+  category: z.string().trim().min(1).max(64).nullable(),
+  limit: z.number().int().min(1).max(50).nullable(),
+}).strict().superRefine((draft, ctx) => {
+  if (draft.endDate < draft.startDate) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "endDate must be on or after startDate" });
+  }
+});
+
+const personalResearchPlacesDraftSchema = z.object({
+  kind: z.literal("PLACES_SEARCH"),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radiusMeters: z.number().int().min(100).max(50_000),
+  category: z.string().trim().min(1).max(64).nullable(),
+  limit: z.number().int().min(1).max(50).nullable(),
+}).strict();
+
+const personalResearchNavigationRouteDraftSchema = z.object({
+  kind: z.literal("NAVIGATION_ROUTE"),
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  mode: z.enum(["driving", "walking", "cycling"]),
+}).strict().superRefine((draft, ctx) => {
+  if (draft.originPlaceId === draft.destinationPlaceId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["destinationPlaceId"], message: "origin and destination must differ" });
+  }
+});
+
+const personalResearchMobilityDraftSchema = z.object({
+  kind: z.literal("MOBILITY_SEARCH"),
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  transferDateTime: z.string().datetime(),
+  passengers: z.number().int().min(1).max(8),
+  currency: currencyCodeSchema,
+}).strict().superRefine((draft, ctx) => {
+  if (draft.originPlaceId === draft.destinationPlaceId) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["destinationPlaceId"], message: "origin and destination must differ" });
+  }
+});
+
+export const personalResearchOwnerDraftSchema = z.discriminatedUnion("kind", [
+  personalResearchFlightDraftSchema,
+  personalResearchHotelDraftSchema,
+  personalResearchAccommodationDraftSchema,
+  personalResearchActivitiesDraftSchema,
+  personalResearchPlacesDraftSchema,
+  personalResearchNavigationRouteDraftSchema,
+  personalResearchMobilityDraftSchema,
+]);
+export type PersonalResearchOwnerDraft = z.infer<typeof personalResearchOwnerDraftSchema>;
+
+export const personalResearchAnswersRequestSchema = z.object({
+  schemaVersion: z.literal(1),
+  draft: personalResearchOwnerDraftSchema,
+}).strict();
+
+export const personalResearchConfirmRequestSchema = z.object({
+  requestId: uuidSchema,
+}).strict();
+
+export const personalResearchOutcomeSchema = z.enum(["AVAILABLE", "UNAVAILABLE", "EXPIRED"]);
+
+/**
+ * Per-capability result summaries. Each shape is the BOUNDED projection
+ * shown in `GET /agent-runs/:runId/personal-research` — never raw provider
+ * payloads, chat text, nationality, passport, or document data. Spec §3.2.
+ */
+export const personalResearchFlightEvidenceSummarySchema = z.object({
+  offerCount: z.number().int().nonnegative(),
+  currency: currencyCodeSchema,
+  originIata: iataCodeSchema,
+  destinationIata: iataCodeSchema,
+  earliestDeparture: z.string().datetime().nullable(),
+  latestReturn: z.string().datetime().nullable(),
+}).strict();
+export const personalResearchHotelEvidenceSummarySchema = z.object({
+  propertyCount: z.number().int().nonnegative(),
+  currency: currencyCodeSchema,
+  cityCode: iataCodeSchema,
+  checkIn: dateOnlySchema,
+  checkOut: dateOnlySchema,
+  minNightlyPrice: z.number().nonnegative().nullable(),
+  maxNightlyPrice: z.number().nonnegative().nullable(),
+}).strict();
+export const personalResearchAccommodationEvidenceSummarySchema = z.object({
+  candidateCount: z.number().int().nonnegative(),
+  topCategory: z.string().nullable(),
+  radiusMeters: z.number().int().nonnegative(),
+  checkIn: dateOnlySchema,
+  checkOut: dateOnlySchema,
+}).strict();
+export const personalResearchActivitiesEvidenceSummarySchema = z.object({
+  activityCount: z.number().int().nonnegative(),
+  currency: currencyCodeSchema.nullable(),
+  destinationCode: z.string(),
+  startDate: dateOnlySchema,
+  endDate: dateOnlySchema,
+  minPrice: z.number().nonnegative().nullable(),
+  maxPrice: z.number().nonnegative().nullable(),
+}).strict();
+export const personalResearchPlacesEvidenceSummarySchema = z.object({
+  candidateCount: z.number().int().nonnegative(),
+  categories: z.array(z.string()),
+  radiusMeters: z.number().int().nonnegative(),
+}).strict();
+export const personalResearchNavigationRouteEvidenceSummarySchema = z.object({
+  distanceMeters: z.number().nonnegative(),
+  durationSeconds: z.number().nonnegative(),
+  mode: z.enum(["driving", "walking", "cycling"]),
+}).strict();
+export const personalResearchMobilityEvidenceSummarySchema = z.object({
+  offerCount: z.number().int().nonnegative(),
+  currency: currencyCodeSchema.nullable(),
+  transferDateTime: z.string().datetime(),
+  passengers: z.number().int().nonnegative(),
+}).strict();
+
+export const personalResearchUnavailableEvidenceSummarySchema = z.object({
+  errorCode: z.enum([
+    "NOT_CONFIGURED",
+    "SEARCH_CONSTRAINTS_INCOMPLETE",
+    "NO_RESULTS",
+    "RATE_LIMITED",
+    "UPSTREAM_TIMEOUT",
+    "UPSTREAM_FAILURE",
+    "INVALID_PROVIDER_RESPONSE",
+    "PROVIDER_NOT_APPROVED",
+  ]),
+}).strict();
+
+export const personalResearchEvidenceSummarySchema = z.discriminatedUnion("outcome", [
+  z.object({
+    outcome: z.literal("AVAILABLE"),
+    capability: personalResearchOperationCapabilitySchema,
+    flight: personalResearchFlightEvidenceSummarySchema.optional(),
+    hotel: personalResearchHotelEvidenceSummarySchema.optional(),
+    accommodation: personalResearchAccommodationEvidenceSummarySchema.optional(),
+    activities: personalResearchActivitiesEvidenceSummarySchema.optional(),
+    places: personalResearchPlacesEvidenceSummarySchema.optional(),
+    navigation: personalResearchNavigationRouteEvidenceSummarySchema.optional(),
+    mobility: personalResearchMobilityEvidenceSummarySchema.optional(),
+  }).strict(),
+  z.object({
+    outcome: z.literal("UNAVAILABLE"),
+    summary: personalResearchUnavailableEvidenceSummarySchema,
+  }).strict(),
+  z.object({
+    outcome: z.literal("EXPIRED"),
+  }).strict(),
+]);
+export type PersonalResearchEvidenceSummary = z.infer<typeof personalResearchEvidenceSummarySchema>;
+
+export const personalResearchEvidenceResponseSchema = z.object({
+  id: uuidSchema,
+  capability: personalResearchOperationCapabilitySchema,
+  outcome: personalResearchOutcomeSchema,
+  providerName: z.string(),
+  source: z.string(),
+  capturedAt: z.string().datetime(),
+  expiresAt: z.string().datetime().nullable(),
+  summary: personalResearchEvidenceSummarySchema,
+}).strict();
+
+export const personalResearchReadResponseSchema = z.object({
+  runId: uuidSchema,
+  capability: personalResearchOperationCapabilitySchema,
+  status: agentTaskStatusSchema,
+  terminal: z.boolean(),
+  draft: personalResearchOwnerDraftSchema.nullable(),
+  evidence: personalResearchEvidenceResponseSchema.nullable(),
+}).strict();
+export type PersonalResearchReadResponse = z.infer<typeof personalResearchReadResponseSchema>;
+
+export const personalResearchConfirmAcceptedResponseSchema = z.object({
+  runId: uuidSchema,
+  capability: personalResearchOperationCapabilitySchema,
   status: z.literal("QUEUED"),
 }).strict();
 

@@ -202,7 +202,7 @@ export const conversationTurnRequestSchema = z.object({
   intent: conversationIntentSchema.optional(),
 }).strict();
 
-export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN"]);
+export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN", "RESEARCH", "PERSONAL_RESEARCH"]);
 export const agentTaskStatusSchema = z.enum([
   "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS",
   "FAILED", "CANCELLED", "STALE",
@@ -497,6 +497,202 @@ export const planningTaskAcceptedResponseSchema = z.object({
   generationAttempt: z.literal(0),
   snapshotId: z.string().uuid(),
 }).strict();
+
+/**
+ * ─── DRAFT Personal Research (docs/draft-personal-research-implementation.md) ──
+ *
+ * Mirror of apps/api/src/types/schemas.ts. The discriminator mirrors the
+ * server's `personalResearchOperationCapabilitySchema`; the typed-draft union
+ * mirrors `personalResearchOwnerDraftSchema`. `strict()` rejects any extra
+ * keys so the front-end never silently ignores a server-side field.
+ */
+export const personalResearchOperationCapabilitySchema = z.enum([
+  "flight.search",
+  "hotel.search",
+  "accommodation.discovery",
+  "activities.search",
+  "places.search",
+  "navigation.route",
+  "mobility.search",
+]);
+export type PersonalResearchOperationCapability = z.infer<typeof personalResearchOperationCapabilitySchema>;
+
+const iataCodeSchema = z.string().regex(/^[A-Z]{3}$/);
+const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const currencyCodeSchema = z.string().regex(/^[A-Z]{3}$/);
+
+export const personalResearchFlightDraftSchema = z.object({
+  kind: z.literal("FLIGHT_SEARCH"),
+  originId: iataCodeSchema,
+  destinationId: iataCodeSchema,
+  tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]),
+  departureDate: dateOnlySchema,
+  returnDate: dateOnlySchema.nullable(),
+  adults: z.number().int().min(1).max(9),
+  cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]),
+  currency: currencyCodeSchema,
+}).strict();
+export type PersonalResearchFlightDraft = z.infer<typeof personalResearchFlightDraftSchema>;
+
+export const personalResearchHotelDraftSchema = z.object({
+  kind: z.literal("HOTEL_SEARCH"),
+  cityCode: iataCodeSchema,
+  checkIn: dateOnlySchema,
+  checkOut: dateOnlySchema,
+  occupancy: z.object({
+    adults: z.number().int().min(1).max(8),
+    rooms: z.number().int().min(1).max(8),
+  }).strict(),
+  currency: currencyCodeSchema,
+}).strict();
+export type PersonalResearchHotelDraft = z.infer<typeof personalResearchHotelDraftSchema>;
+
+export const personalResearchAccommodationDraftSchema = z.object({
+  kind: z.literal("ACCOMMODATION_DISCOVERY"),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radiusMeters: z.number().int().min(100).max(50_000),
+  checkIn: dateOnlySchema,
+  checkOut: dateOnlySchema,
+  occupancy: z.object({
+    adults: z.number().int().min(1).max(8),
+    rooms: z.number().int().min(1).max(8),
+  }).strict(),
+}).strict();
+
+export const personalResearchActivitiesDraftSchema = z.object({
+  kind: z.literal("ACTIVITIES_SEARCH"),
+  destinationCode: z.string().trim().min(1).max(64),
+  startDate: dateOnlySchema,
+  endDate: dateOnlySchema,
+  category: z.string().trim().min(1).max(64).nullable(),
+  limit: z.number().int().min(1).max(50).nullable(),
+}).strict();
+
+export const personalResearchPlacesDraftSchema = z.object({
+  kind: z.literal("PLACES_SEARCH"),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  radiusMeters: z.number().int().min(100).max(50_000),
+  category: z.string().trim().min(1).max(64).nullable(),
+  limit: z.number().int().min(1).max(50).nullable(),
+}).strict();
+
+export const personalResearchNavigationRouteDraftSchema = z.object({
+  kind: z.literal("NAVIGATION_ROUTE"),
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  mode: z.enum(["driving", "walking", "cycling"]),
+}).strict();
+
+export const personalResearchMobilityDraftSchema = z.object({
+  kind: z.literal("MOBILITY_SEARCH"),
+  originPlaceId: z.string().uuid(),
+  destinationPlaceId: z.string().uuid(),
+  transferDateTime: z.string().datetime(),
+  passengers: z.number().int().min(1).max(8),
+  currency: currencyCodeSchema,
+}).strict();
+
+export const personalResearchOwnerDraftSchema = z.discriminatedUnion("kind", [
+  personalResearchFlightDraftSchema,
+  personalResearchHotelDraftSchema,
+  personalResearchAccommodationDraftSchema,
+  personalResearchActivitiesDraftSchema,
+  personalResearchPlacesDraftSchema,
+  personalResearchNavigationRouteDraftSchema,
+  personalResearchMobilityDraftSchema,
+]);
+export type PersonalResearchOwnerDraft = z.infer<typeof personalResearchOwnerDraftSchema>;
+
+export const personalResearchAnswersRequestSchema = z.object({
+  schemaVersion: z.literal(1),
+  draft: personalResearchOwnerDraftSchema,
+}).strict();
+export type PersonalResearchAnswersRequest = z.infer<typeof personalResearchAnswersRequestSchema>;
+
+export const personalResearchConfirmRequestSchema = z.object({
+  requestId: z.string().uuid(),
+}).strict();
+export type PersonalResearchConfirmRequest = z.infer<typeof personalResearchConfirmRequestSchema>;
+
+export const personalResearchUnavailableEvidenceSummarySchema = z.object({
+  errorCode: z.enum([
+    "NOT_CONFIGURED",
+    "SEARCH_CONSTRAINTS_INCOMPLETE",
+    "NO_RESULTS",
+    "RATE_LIMITED",
+    "UPSTREAM_TIMEOUT",
+    "UPSTREAM_FAILURE",
+    "INVALID_PROVIDER_RESPONSE",
+    "PROVIDER_NOT_APPROVED",
+  ]),
+}).strict();
+
+export const personalResearchFlightEvidenceSummarySchema = z.object({
+  offerCount: z.number().int().nonnegative(),
+  currency: currencyCodeSchema,
+  originIata: iataCodeSchema,
+  destinationIata: iataCodeSchema,
+  earliestDeparture: z.string().datetime().nullable(),
+  latestReturn: z.string().datetime().nullable(),
+}).strict();
+
+export const personalResearchHotelEvidenceSummarySchema = z.object({
+  propertyCount: z.number().int().nonnegative(),
+  currency: currencyCodeSchema,
+  cityCode: iataCodeSchema,
+  checkIn: dateOnlySchema,
+  checkOut: dateOnlySchema,
+  minNightlyPrice: z.number().nonnegative().nullable(),
+  maxNightlyPrice: z.number().nonnegative().nullable(),
+}).strict();
+
+export const personalResearchEvidenceSummarySchema = z.discriminatedUnion("outcome", [
+  z.object({
+    outcome: z.literal("AVAILABLE"),
+    capability: personalResearchOperationCapabilitySchema,
+    flight: personalResearchFlightEvidenceSummarySchema.optional(),
+    hotel: personalResearchHotelEvidenceSummarySchema.optional(),
+  }).strict(),
+  z.object({
+    outcome: z.literal("UNAVAILABLE"),
+    summary: personalResearchUnavailableEvidenceSummarySchema,
+  }).strict(),
+  z.object({
+    outcome: z.literal("EXPIRED"),
+  }).strict(),
+]);
+export type PersonalResearchEvidenceSummary = z.infer<typeof personalResearchEvidenceSummarySchema>;
+
+export const personalResearchEvidenceResponseSchema = z.object({
+  id: z.string().uuid(),
+  capability: personalResearchOperationCapabilitySchema,
+  outcome: z.enum(["AVAILABLE", "UNAVAILABLE", "EXPIRED"]),
+  providerName: z.string(),
+  source: z.string(),
+  capturedAt: z.string().datetime(),
+  expiresAt: z.string().datetime().nullable(),
+  summary: personalResearchEvidenceSummarySchema,
+}).strict();
+export type PersonalResearchEvidenceResponse = z.infer<typeof personalResearchEvidenceResponseSchema>;
+
+export const personalResearchReadResponseSchema = z.object({
+  runId: z.string().uuid(),
+  capability: personalResearchOperationCapabilitySchema,
+  status: agentTaskStatusSchema,
+  terminal: z.boolean(),
+  draft: personalResearchOwnerDraftSchema.nullable(),
+  evidence: personalResearchEvidenceResponseSchema.nullable(),
+}).strict();
+export type PersonalResearchReadResponse = z.infer<typeof personalResearchReadResponseSchema>;
+
+export const personalResearchConfirmAcceptedResponseSchema = z.object({
+  runId: z.string().uuid(),
+  capability: personalResearchOperationCapabilitySchema,
+  status: z.literal("QUEUED"),
+}).strict();
+export type PersonalResearchConfirmAcceptedResponse = z.infer<typeof personalResearchConfirmAcceptedResponseSchema>;
 
 const latestPlanFlightSchema = z.object({
   id: z.string().min(1), providerOfferId: z.string().min(1), providerName: z.string().min(1), queryId: z.string().uuid(),

@@ -70,7 +70,11 @@ export type AuditAction =
   | "PERSONAL_RESEARCH_SETUP_FOLLOWUP_FELLBACK"
   | "PERSONAL_RESEARCH_BUDGET_HINT_SAVED"
   | "PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED"
-  | "TRIP_PIN_SESSION_WRITTEN";
+  | "TRIP_PIN_SESSION_WRITTEN"
+  // DRAFT Personal Research durable tasks (added via 0047a, docs/draft-personal-research-implementation.md §3.2):
+  | "PERSONAL_RESEARCH_COMMAND_ACCEPTED"
+  | "PERSONAL_RESEARCH_COMPLETED"
+  | "PERSONAL_RESEARCH_CANCELLED";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
   [key: string]: AuditSummaryValue;

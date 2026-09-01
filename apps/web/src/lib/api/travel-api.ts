@@ -4,6 +4,10 @@ import type {
   CreateThreadResponse,
   CreateTripThreadInput,
   OwnerConversationResponse,
+  PersonalResearchAnswersRequest,
+  PersonalResearchConfirmAcceptedResponse,
+  PersonalResearchConfirmRequest,
+  PersonalResearchReadResponse,
   ProfileResponse,
   ResearchSetupApplyRequest,
   ResearchSetupConfirmAcceptedResponse,
@@ -120,6 +124,13 @@ export interface TravelApi {
   confirmResearchSetup?(runId: string, input: ResearchSetupConfirmRequest): Promise<ResearchSetupConfirmAcceptedResponse>;
   getRouteEndpoints?(tripId: string): Promise<Array<{ placeId: string; displayName: string }>>;
   saveRouteSelection?(runId: string, input: { originPlaceId: string; destinationPlaceId: string; mode: "WALK" | "DRIVE" | "CYCLE" }): Promise<void>;
+  // DRAFT Personal Research (docs/draft-personal-research-implementation.md) —
+  // owner-only typed-draft + durable-task surface for DRAFT trip research.
+  // Optional in the interface so older fixtures and partial adapters degrade.
+  getPersonalResearch?(runId: string): Promise<PersonalResearchReadResponse>;
+  savePersonalResearchAnswers?(runId: string, input: PersonalResearchAnswersRequest): Promise<void>;
+  confirmPersonalResearch?(runId: string, input: PersonalResearchConfirmRequest): Promise<PersonalResearchConfirmAcceptedResponse>;
+  cancelPersonalResearch?(runId: string): Promise<PersonalResearchReadResponse>;
   subscribeAgentRun(runId: string, signal: AbortSignal, onEvent: (event: AgentStreamEvent) => void): Promise<void>;
   startExploration(input: ExplorationStartRequest): Promise<ExplorationStartResponse>;
   activateTrip(tripId: string, input: TripActivationRequest): Promise<TripActivationResponse>;

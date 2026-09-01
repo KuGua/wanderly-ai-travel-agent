@@ -150,7 +150,7 @@ function createAccommodationDiscoveryProvider(): AccommodationDiscoveryProvider 
     : new UnavailableAccommodationDiscoveryProvider();
 }
 
-function createHotelProvider(env: NodeJS.ProcessEnv = process.env): HotelProvider {
+export function createHotelProvider(env: NodeJS.ProcessEnv = process.env): HotelProvider {
   const resolved = resolvePersistedHotelProviderName(env);
   if (resolved === null) {
     const reason = (env.HOTEL_PROVIDER ?? "disabled").trim().toLowerCase() === "serpapi"

@@ -1,0 +1,64 @@
+/**
+ * DRAFT Personal Research capability allow-list.
+ *
+ * Source of truth for which `personal_research_capability` values the owner
+ * may confirm during DRAFT. The runtime check is `isPersonalResearchCapabilityAllowed`
+ * invoked from:
+ *   - `apps/api/src/routes/personal-research.ts` (confirm route, 422 on rejection)
+ *   - `apps/api/src/agents/policy-gate.ts` (requirePersonalResearchAuthority)
+ *   - `apps/api/src/tasks/handlers/personal-research-task-handler.ts` (dispatch)
+ *
+ * Rollout order matches `docs/draft-personal-research-implementation.md` §3.5:
+ *   1. flight.search          — open
+ *   2. hotel.search,
+ *      accommodation.discovery,
+ *      activities.search       — gated by §3.5 stage 2; open when contract tests land
+ *   3. places.search,
+ *      navigation.route,
+ *      mobility.search         — gated by §3.5 stage 3
+ *   4. visa.*                  — gated by §3.5 stage 4 (real VisaProvider contract
+ *                                + DPA + credentials + audit + sandbox). The
+ *                                capability enum does NOT include `visa.*`; adding
+ *                                it requires its own enum-migration + PR.
+ *
+ * Each capability unlock requires, in one PR:
+ *   1. Remove the matching `// ` comment in PERSONAL_RESEARCH_ALLOWED_CAPABILITIES.
+ *   2. Add the corresponding typed input schema in apps/api/src/types/{schemas,domain}.ts.
+ *   3. Add the corresponding executor in apps/api/src/services/personal-research-executors/.
+ *   4. Add provider contract tests under apps/api/tests/personal-research/.
+ *   5. Add the corresponding input/result card under apps/web/src/components/trips/personal-research/.
+ */
+
+export const PERSONAL_RESEARCH_OPERATION_CAPABILITIES = [
+  "flight.search",
+  "hotel.search",
+  "accommodation.discovery",
+  "activities.search",
+  "places.search",
+  "navigation.route",
+  "mobility.search",
+] as const;
+
+export type PersonalResearchOperationCapability = (typeof PERSONAL_RESEARCH_OPERATION_CAPABILITIES)[number];
+
+/**
+ * Capabilities whose typed draft, executor, provider contract, authorization
+ * tests, and UI cards have all landed in this milestone. Stage 1 only opens
+ * `flight.search`; the rest stay commented until each is independently
+ * unblocked by its prerequisite per spec §3.5.
+ */
+export const PERSONAL_RESEARCH_ALLOWED_CAPABILITIES = [
+  "flight.search",
+  "hotel.search", // stage 2 — Nuitee nationality contract + provider tests landed
+  // "accommodation.discovery",// stage 2 — open when OpenTripMap adapter contract tests land
+  // "activities.search",      // stage 2 — open when Viator MCP contract tests land
+  // "places.search",          // stage 3 — open when ORS place search contract tests land
+  // "navigation.route",       // stage 3 — open when ORS navigation contract tests land
+  // "mobility.search",        // stage 3 — open when Amadeus Transfer contract tests land
+] as const satisfies readonly PersonalResearchOperationCapability[];
+
+export function isPersonalResearchCapabilityAllowed(
+  capability: PersonalResearchOperationCapability,
+): boolean {
+  return (PERSONAL_RESEARCH_ALLOWED_CAPABILITIES as readonly string[]).includes(capability);
+}

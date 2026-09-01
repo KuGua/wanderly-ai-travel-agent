@@ -77,7 +77,7 @@ export const outboxStatusEnum = pgEnum("outbox_status", [
   "PROCESSED",
   "FAILED",
 ]);
-export const agentTaskOperationEnum = pgEnum("agent_task_operation", ["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]);
+export const agentTaskOperationEnum = pgEnum("agent_task_operation", ["CONVERSATION", "PLAN", "REPLAN", "RESEARCH", "PERSONAL_RESEARCH"]);
 export const agentTaskStatusEnum = pgEnum("agent_task_status", [
   "QUEUED", "RUNNING", "CANCEL_REQUESTED", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELLED", "STALE",
 ]);
@@ -165,6 +165,10 @@ export const auditActionEnum = pgEnum("audit_action", [
   "PERSONAL_RESEARCH_BUDGET_HINT_SAVED",
   "PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED",
   "TRIP_PIN_SESSION_WRITTEN",
+  // DRAFT Personal Research (added via 0047a, docs/draft-personal-research-implementation.md §3.2):
+  "PERSONAL_RESEARCH_COMMAND_ACCEPTED",
+  "PERSONAL_RESEARCH_COMPLETED",
+  "PERSONAL_RESEARCH_CANCELLED",
 ]);
 
 // ─── Long-term memory (docs/long-term-memory-implementation.md) ─────────────
@@ -1167,4 +1171,59 @@ export const planningResearchResults = pgTable("planning_research_results", {
     .where(sql`agent_task_run_id IS NOT NULL`),
   tripSnapshotIdx: index("planning_research_results_trip_snapshot_idx").on(table.tripId, table.snapshotId),
   statusIdx: index("planning_research_results_status_idx").on(table.tripId, table.status),
+}));
+
+// ─── DRAFT Personal Research (docs/draft-personal-research-implementation.md §3.2) ──
+//
+// Owner-only thin evidence projection for PERSONAL_RESEARCH durable tasks.
+// Structurally independent of every snapshot-bound Shared evidence table —
+// the snapshot_id NOT NULL invariants on `provider_offers`,
+// `provider_search_runs`, `itinerary_plans`, `visa_readiness_checks`,
+// `navigation_route_evidence`, and `planning_research_results` are NOT
+// relaxed. `result_json` is a Zod-validated bounded summary; raw provider
+// payloads, chat text, nationality, passport, and document fields never
+// land here.
+export const personalResearchOutcomeEnum = pgEnum("personal_research_outcome", [
+  "AVAILABLE",
+  "UNAVAILABLE",
+  "EXPIRED",
+]);
+
+// Capability enum. Visa is intentionally NOT included — stage 4 of spec §3.5
+// requires real VisaProvider contract / DPA / credentials / audit / sandbox
+// validation and must ship as its own migration + PR. New capabilities are
+// added one per row (Postgres cannot batch ALTER TYPE ... ADD VALUE), and the
+// capability allow-list in apps/api/src/config/personal-research-allowed-capabilities.ts
+// must be updated in the same change.
+export const personalResearchCapabilityEnum = pgEnum("personal_research_capability", [
+  "flight.search",
+  "hotel.search",
+  "accommodation.discovery",
+  "activities.search",
+  "places.search",
+  "navigation.route",
+  "mobility.search",
+]);
+
+export const personalResearchEvidence = pgTable("personal_research_evidence", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  runId: uuid("run_id").notNull().references(() => agentTaskRuns.id, { onDelete: "cascade" }),
+  tripId: uuid("trip_id").notNull().references(() => sharedTrips.id, { onDelete: "cascade" }),
+  threadId: uuid("thread_id").notNull().references(() => chatThreads.id, { onDelete: "cascade" }),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  capability: personalResearchCapabilityEnum("capability").notNull(),
+  outcome: personalResearchOutcomeEnum("outcome").notNull(),
+  providerName: varchar("provider_name", { length: 64 }).notNull(),
+  source: varchar("source", { length: 128 }).notNull(),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  resultJson: jsonb("result_json").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  runCapabilityUnique: uniqueIndex("personal_research_evidence_run_capability_unique")
+    .on(table.runId, table.capability),
+  tripCreatedIdx: index("personal_research_evidence_trip_created_idx")
+    .on(table.tripId, table.createdAt),
+  ownerCreatedIdx: index("personal_research_evidence_owner_created_idx")
+    .on(table.ownerUserId, table.createdAt),
 }));

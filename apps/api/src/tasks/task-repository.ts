@@ -6,6 +6,7 @@ import { db, rawDb } from "../db/database.js";
 import {
   agentTaskRuns,
   chatMessages,
+  chatThreads,
   idempotencyRecords,
   outboxEvents,
   personalResearchSetupSessions,
@@ -17,6 +18,7 @@ import { recordAudit } from "../services/audit-service.js";
 import { requireOwnedTripThread } from "../services/chat-thread-service.js";
 import { claimIdempotency } from "../services/idempotency-service.js";
 import {
+  agentRunErrorCodeSchema,
   agentRunResponseSchema,
   conversationTurnAcceptedResponseSchema,
   persistedResearchIntentDraftSchema,
@@ -27,7 +29,9 @@ import {
   type ConversationTurnRequest,
   type OwnerConversationMessage,
 } from "../types/schemas.js";
+import type { PersonalResearchOperationCapability } from "../config/personal-research-allowed-capabilities.js";
 import type { HotelOfferProviderName } from "../providers/types.js";
+import type { z } from "zod";
 import { resolvePersistedHotelProviderName } from "../providers/live-provider-factory.js";
 import { loadActiveQuoteNationality } from "../services/stay-search-provider-authorization.js";
 import type { RequestContext } from "../utils/context.js";
@@ -112,7 +116,7 @@ const CLAIM_CONVERSATION_SQL = [
 ].join("\n");
 
 const CLAIM_PLANNING_SQL = CLAIM_CONVERSATION_SQL
-  .replace("operation = 'CONVERSATION'", "operation IN ('PLAN', 'REPLAN', 'RESEARCH')");
+  .replace("operation = 'CONVERSATION'", "operation IN ('PLAN', 'REPLAN', 'RESEARCH', 'PERSONAL_RESEARCH')");
 
 export class LostTaskLeaseError extends Error {
   constructor() {
@@ -498,6 +502,319 @@ export async function findResearchTaskByRequestId(params: {
   };
 }
 
+/**
+ * DRAFT Personal Research — accept a confirmed owner-only research command.
+ *
+ * Mirrors `acceptResearchTask` but explicitly drops every snapshot-bound
+ * invariant: there is no `snapshotId`, no preference versions, no
+ * `constraint_snapshot` is created, no `providerOffers` row is written.
+ * The capability is stored as a single-element `requestedCapabilities` JSONB
+ * array so the dispatcher / `requirePersonalResearchAuthority` and the
+ * `personal_research_evidence` row can read it without a new column.
+ *
+ * The new partial unique index
+ *   `agent_task_runs_personal_research_owner_request_unique`
+ * enforces idempotency at the DB layer; we still probe first to avoid
+ * surfacing the constraint violation as a 500.
+ *
+ * Source: docs/draft-personal-research-implementation.md §3.2, §3.3.
+ */
+export async function acceptPersonalResearchTask(params: {
+  ctx: RequestContext;
+  tripId: string;
+  threadId: string;
+  ownerUserId: string;
+  requestId: string;
+  capability: PersonalResearchOperationCapability;
+  originatingIntentRunId?: string;
+  tx?: Tx;
+}): Promise<{
+  runId: string;
+  capability: PersonalResearchOperationCapability;
+  status: "QUEUED";
+  generationAttempt: 0;
+}> {
+  const runId = randomUUID();
+  const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
+  const accept = async (tx: Tx) => {
+    const [existing] = await tx.select().from(agentTaskRuns).where(and(
+      eq(agentTaskRuns.createdByUserId, params.ownerUserId),
+      eq(agentTaskRuns.requestId, params.requestId),
+      eq(agentTaskRuns.operation, "PERSONAL_RESEARCH"),
+    )).limit(1);
+    if (existing) {
+      const existingCapability = (existing.requestedCapabilities ?? [])[0] as
+        | PersonalResearchOperationCapability
+        | undefined;
+      return {
+        runId: existing.id,
+        capability: existingCapability ?? params.capability,
+        status: "QUEUED" as const,
+        generationAttempt: 0 as const,
+      };
+    }
+
+    // Owner is the creator; double-check the trip binding is consistent with
+    // the locked thread row.
+    const [thread] = await tx.select().from(chatThreads).where(eq(chatThreads.id, params.threadId)).limit(1);
+    if (!thread) throw new ApiError(404, "Not Found", "Thread not found");
+    if (thread.tripId !== params.tripId) {
+      throw new ApiError(409, "Conflict", "Thread is not bound to the supplied trip");
+    }
+    if (thread.ownerUserId !== params.ownerUserId) {
+      throw new ApiError(403, "Forbidden", "Thread is not owned by the caller");
+    }
+    const [member] = await tx.select({ userId: tripMembers.userId }).from(tripMembers).where(and(
+      eq(tripMembers.tripId, params.tripId), eq(tripMembers.userId, params.ownerUserId),
+    )).limit(1);
+    if (!member) throw new ApiError(403, "Forbidden", "Caller is not an active trip member");
+
+    // Supersede the originating CONVERSATION run so the thread's
+    // `agent_task_runs_one_active_conversation` partial unique index
+    // releases the slot for the new PERSONAL_RESEARCH row. The
+    // CONVERSATION row's draft was already lifted into the new typed draft
+    // by the earlier PUT, so we only need to flip state + finished_at.
+    if (params.originatingIntentRunId) {
+      await tx.update(agentTaskRuns).set({
+        status: "COMPLETED",
+        finishedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(and(
+        eq(agentTaskRuns.id, params.originatingIntentRunId),
+        eq(agentTaskRuns.createdByUserId, params.ownerUserId),
+        eq(agentTaskRuns.operation, "CONVERSATION"),
+      ));
+    }
+
+    const [run] = await tx.insert(agentTaskRuns).values({
+      id: runId,
+      operation: "PERSONAL_RESEARCH",
+      status: "QUEUED",
+      createdByUserId: params.ownerUserId,
+      threadId: params.threadId,
+      tripId: params.tripId,
+      snapshotId: null,
+      flightSearchPreferencesVersion: null,
+      staySearchPreferencesVersion: null,
+      hotelProvider: null,
+      hotelQuoteNationalityAuthorizationId: null,
+      hotelQuoteNationalityAuthorizationVersion: null,
+      requestId: params.requestId,
+      userMessageId: null,
+      // The capability is the single dispatch key for this run; we use the
+      // existing JSONB column rather than introducing a new typed column.
+      requestedCapabilities: [params.capability],
+      originatingIntentRunId: params.originatingIntentRunId ?? null,
+      // Personal runs do NOT extend the trip's planning lifecycle; we deliberately
+      // skip `pinnedSessionId` writes here. Spec §3.4 forbids Personal evidence
+      // from reaching Shared surfaces.
+      expiresAt,
+      traceContext: buildTraceContextForTask(params.ctx),
+    }).returning();
+
+    await tx.insert(outboxEvents).values({
+      eventId: randomUUID(),
+      eventType: "AGENT_TASK_QUEUED",
+      payload: { taskId: run.id, operation: run.operation, capability: params.capability },
+    });
+    await recordAudit({
+      ctx: params.ctx,
+      action: "PERSONAL_RESEARCH_COMMAND_ACCEPTED",
+      actorUserId: params.ownerUserId,
+      tripId: params.tripId,
+      summary: {
+        taskId: run.id,
+        capability: params.capability,
+        threadId: params.threadId,
+      },
+      tx,
+    });
+    await recordAudit({
+      ctx: params.ctx,
+      action: "AGENT_TASK",
+      actorUserId: params.ownerUserId,
+      tripId: params.tripId,
+      summary: { taskId: run.id, operation: run.operation, status: run.status },
+      tx,
+    });
+
+    return {
+      runId: run.id,
+      capability: params.capability,
+      status: "QUEUED" as const,
+      generationAttempt: 0 as const,
+    };
+  };
+  return params.tx ? accept(params.tx) : db.transaction(accept);
+}
+
+/**
+ * Idempotent probe paired with `acceptPersonalResearchTask`. Mirrors
+ * `findResearchTaskByRequestId` but keys by owner (creator) + requestId +
+ * operation, since PERSONAL_RESEARCH never carries a tripId/snapshotId pair
+ * we can rely on.
+ */
+export async function findPersonalResearchTaskByRequestId(params: {
+  ownerUserId: string;
+  requestId: string;
+  tx: Tx;
+}): Promise<{
+  runId: string;
+  capability: PersonalResearchOperationCapability;
+  status: "QUEUED";
+} | null> {
+  const [existing] = await params.tx.select().from(agentTaskRuns).where(and(
+    eq(agentTaskRuns.createdByUserId, params.ownerUserId),
+    eq(agentTaskRuns.requestId, params.requestId),
+    eq(agentTaskRuns.operation, "PERSONAL_RESEARCH"),
+  )).limit(1);
+  if (!existing) return null;
+  const capability = (existing.requestedCapabilities ?? [])[0] as
+    | PersonalResearchOperationCapability
+    | undefined;
+  if (!capability) return null;
+  return { runId: existing.id, capability, status: "QUEUED" };
+}
+
+/**
+ * Lease-guarded terminal write. AVAILABLE → COMPLETED, UNAVAILABLE →
+ * COMPLETED_WITH_GAPS. Mirrors `completeResearchTask` but writes no plan id
+ * (PERSONAL_RESEARCH has no `resultPlanId`). The `evidenceId` is recorded in
+ * the audit summary so the operator can correlate the terminal row with
+ * the projection stored in `personal_research_evidence`.
+ */
+export async function completePersonalResearchTask(params: {
+  ctx: RequestContext;
+  run: AgentTaskRow;
+  leaseToken: string | undefined;
+  outcome: "AVAILABLE" | "UNAVAILABLE";
+  evidenceId: string;
+}): Promise<void> {
+  const nextStatus = params.outcome === "AVAILABLE" ? "COMPLETED" : "COMPLETED_WITH_GAPS";
+  const result = await db.transaction(async (tx) => {
+    const updated = await tx.update(agentTaskRuns).set({
+      status: nextStatus,
+      finishedAt: new Date(),
+      leaseToken: null,
+      leaseExpiresAt: null,
+      errorCode: null,
+      updatedAt: new Date(),
+    }).where(and(
+      eq(agentTaskRuns.id, params.run.id),
+      eq(agentTaskRuns.operation, "PERSONAL_RESEARCH"),
+      eq(agentTaskRuns.leaseToken, params.leaseToken ?? "__no_lease__"),
+      eq(agentTaskRuns.status, "RUNNING"),
+    )).returning({ id: agentTaskRuns.id });
+    if (updated.length === 0) throw new LostTaskLeaseError();
+    return updated[0];
+  });
+
+  await db.insert(outboxEvents).values({
+    eventId: randomUUID(),
+    eventType: "AGENT_TASK_COMPLETED",
+    payload: { taskId: result.id, operation: "PERSONAL_RESEARCH", outcome: params.outcome },
+  });
+  await recordAudit({
+    ctx: params.ctx,
+    action: "PERSONAL_RESEARCH_COMPLETED",
+    actorUserId: params.run.createdByUserId,
+    tripId: params.run.tripId ?? undefined,
+    summary: {
+      taskId: result.id,
+      outcome: params.outcome,
+      evidenceId: params.evidenceId,
+      capability: (params.run.requestedCapabilities ?? [])[0] ?? null,
+    },
+  });
+  await publishAgentStreamEvent({
+    event: "turn.completed",
+    runId: result.id,
+    generationAttempt: params.run.generationAttempt,
+  });
+}
+
+/**
+ * Lease-guarded failure write. Mirrors `failOrRetryTask`'s retry decision:
+ * retryable + under cap → status QUEUED, lease cleared, exponential
+ * `nextAttemptAt`; otherwise FAILED. Only the PERSONAL_RESEARCH branch is
+ * exercised here.
+ */
+export async function failPersonalResearchTask(params: {
+  ctx: RequestContext;
+  run: AgentTaskRow;
+  leaseToken: string | undefined;
+  code: z.infer<typeof agentRunErrorCodeSchema>;
+}): Promise<"RETRYING" | "FAILED"> {
+  const RETRYABLE: ReadonlySet<z.infer<typeof agentRunErrorCodeSchema>> = new Set([
+    "NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "SCHEMA_PARSE",
+    "SEARCH_PREFERENCES_STALE", "PLANNING_DATA_UNAVAILABLE",
+  ]);
+  const retryable = RETRYABLE.has(params.code);
+  const attemptCount = params.run.attemptCount + 1;
+  if (retryable && attemptCount < params.run.maxAttempts) {
+    const backoff = calculateRetryDelayMs(params.run.generationAttempt);
+    const nextAttemptAt = new Date(Date.now() + backoff);
+    const result = await db.transaction(async (tx) => {
+      const updated = await tx.update(agentTaskRuns).set({
+        status: "QUEUED",
+        leaseToken: null,
+        leaseExpiresAt: null,
+        errorCode: params.code,
+        attemptCount,
+        nextAttemptAt,
+        updatedAt: new Date(),
+      }).where(and(
+        eq(agentTaskRuns.id, params.run.id),
+        eq(agentTaskRuns.operation, "PERSONAL_RESEARCH"),
+        eq(agentTaskRuns.leaseToken, params.leaseToken ?? "__no_lease__"),
+        eq(agentTaskRuns.status, "RUNNING"),
+      )).returning({ id: agentTaskRuns.id });
+      if (updated.length === 0) throw new LostTaskLeaseError();
+      return updated[0];
+    });
+    await publishAgentStreamEvent({
+      event: "turn.failed",
+      runId: result.id,
+      generationAttempt: params.run.generationAttempt,
+      code: params.code,
+      retryable: true,
+    });
+    return "RETRYING";
+  }
+  const result = await db.transaction(async (tx) => {
+    const updated = await tx.update(agentTaskRuns).set({
+      status: "FAILED",
+      finishedAt: new Date(),
+      leaseToken: null,
+      leaseExpiresAt: null,
+      errorCode: params.code,
+      attemptCount,
+      nextAttemptAt: new Date(),
+      updatedAt: new Date(),
+    }).where(and(
+      eq(agentTaskRuns.id, params.run.id),
+      eq(agentTaskRuns.operation, "PERSONAL_RESEARCH"),
+      eq(agentTaskRuns.leaseToken, params.leaseToken ?? "__no_lease__"),
+      eq(agentTaskRuns.status, "RUNNING"),
+    )).returning({ id: agentTaskRuns.id });
+    if (updated.length === 0) throw new LostTaskLeaseError();
+    return updated[0];
+  });
+  await db.insert(outboxEvents).values({
+    eventId: randomUUID(),
+    eventType: "AGENT_TASK_FAILED",
+    payload: { taskId: result.id, operation: "PERSONAL_RESEARCH", code: params.code },
+  });
+  await publishAgentStreamEvent({
+    event: "turn.failed",
+    runId: result.id,
+    generationAttempt: params.run.generationAttempt,
+    code: params.code,
+    retryable: false,
+  });
+  return "FAILED";
+}
+
 export async function getAuthorizedAgentRun(runId: string, userId: string): Promise<AgentRunResponse> {
   const [run] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, runId)).limit(1);
   if (!run) throw new ApiError(404, "Not Found", "Agent run not found");
@@ -759,6 +1076,13 @@ export { researchIntentStateSchema };
 async function requireRunAccess(run: AgentTaskRow, userId: string, tx?: Tx): Promise<void> {
   if (run.operation === "CONVERSATION") {
     if (run.createdByUserId !== userId) throw new ApiError(403, "Forbidden", "Not authorized for this Agent run");
+    return;
+  }
+  // PERSONAL_RESEARCH is owner-only by design (spec §3.3): the creator of
+  // the run IS the owner, and trip members must NOT see Personal evidence.
+  // Trip-membership check applies to PLAN/REPLAN/RESEARCH as before.
+  if (run.operation === "PERSONAL_RESEARCH") {
+    if (run.createdByUserId !== userId) throw new ApiError(403, "Forbidden", "Not authorized for this personal research run");
     return;
   }
   if (!run.tripId) throw new ApiError(403, "Forbidden", "Planning task is not trip-bound");
@@ -1182,8 +1506,17 @@ function toRunResponse(
   // Project the persisted draft down to the closed-shape owner-safe subset.
   // SUPERSEDED drafts are intentionally hidden — they are server-internal
   // bookkeeping (see docs/personal-research-intent-routing-implementation.md
-  // §4.1) and never exposed to clients.
-  const draft = (run.researchIntentState === "SUPERSEDED" || run.researchIntentDraft === null)
+  // §4.1) and never exposed to clients. DRAFT Personal Research (added via
+  // 0047) writes a different envelope into the same JSONB column for the
+  // typed-flight-input path — those rows are surfaced via the dedicated
+  // `GET /agent-runs/:runId/personal-research` route, not via the run
+  // DTO; this projector hides them here so the legacy DTO stays schema-
+  // stable. Source: docs/draft-personal-research-implementation.md §3.3.
+  const isLegacyDraftShape = (d: { kind?: string } | null | undefined) =>
+    !!d && (d.kind === "RESEARCH_ONLY" || d.kind === "PROPOSE_PLAN");
+  const draft = (run.researchIntentState === "SUPERSEDED"
+    || run.researchIntentDraft === null
+    || !isLegacyDraftShape(run.researchIntentDraft as { kind?: string } | null))
     ? null
     : {
         kind: run.researchIntentDraft.kind,

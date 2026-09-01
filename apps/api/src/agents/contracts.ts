@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { RequestContext } from "../utils/context.js";
-import type { ConstraintSnapshotData } from "../types/domain.js";
+import type { ConstraintSnapshotData, PersonalResearchOperationCapability } from "../types/domain.js";
 import type { HotelProviderName, HotelProvider } from "../providers/types.js";
 
 export type AgentKind = "personal" | "shared" | "review" | "public-content";
@@ -124,6 +124,49 @@ export interface AccommodationDiscoveryExecutionContext {
  */
 export interface PolicyGate {
   requireScope(scopes: readonly SkillScope[]): void;
+  /**
+   * Owner-only PERSONAL_RESEARCH authority gate. Throws `SkillError("POLICY_DENIED")`
+   * unless the supplied authority is structurally valid AND the capability is
+   * currently allowed. See apps/api/src/config/personal-research-allowed-capabilities.ts.
+   * Source: docs/draft-personal-research-implementation.md §3.1.
+   */
+  requirePersonalResearchAuthority(authority: ResearchAuthority, run: AgentTaskRowLike): void;
+}
+
+/**
+ * Discriminated authority built server-side at the handler and reused by the
+ * Personal Research executor. Personal Research carries the run's owner,
+ * thread, and trip bindings; never a `snapshotId`. Shared Research keeps its
+ * snapshot-bound shape so the two paths cannot be confused at policy time.
+ */
+export type ResearchAuthority =
+  | {
+      kind: "PERSONAL";
+      tripId: string;
+      threadId: string;
+      ownerUserId: string;
+      runId: string;
+      capability: PersonalResearchOperationCapability;
+    }
+  | {
+      kind: "SHARED";
+      tripId: string;
+      snapshotId: string;
+      runId: string;
+    };
+
+/**
+ * Structural subset of `agent_task_runs` consulted by `PolicyGate.requirePersonalResearchAuthority`.
+ * Defined as a structural interface to avoid a circular type import
+ * (task-repository → policy-gate → task-repository).
+ */
+export interface AgentTaskRowLike {
+  id: string;
+  createdByUserId: string;
+  tripId: string | null;
+  threadId: string | null;
+  snapshotId: string | null;
+  operation: string;
 }
 
 export interface SkillContext {
