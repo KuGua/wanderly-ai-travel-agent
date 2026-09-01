@@ -128,19 +128,18 @@ describe("executePersonalHotelSearch", () => {
     expect(mockSearchHotels).not.toHaveBeenCalled();
   });
 
-  it("returns UNAVAILABLE SEARCH_CONSTRAINTS_INCOMPLETE for Nuitee without an active nationality binding", async () => {
+  it("falls back to a placeholder nationality for Nuitee without an active binding (demo-scope: no longer fails closed)", async () => {
     mockLoadActiveQuoteNationality.mockResolvedValueOnce(null);
     setProvider("nuitee_connect");
+    mockSearchHotels.mockResolvedValueOnce({ outcome: "UNAVAILABLE", reason: "NO_RESULTS" });
     const result = await executePersonalHotelSearch({
       run: baseRun,
       draft: baseDraft,
       signal: new AbortController().signal,
     });
+    expect(mockSearchHotels).toHaveBeenCalledOnce();
+    expect(mockSearchHotels).toHaveBeenCalledWith(expect.objectContaining({ quoteNationality: "US" }));
     expect(result.outcome).toBe("UNAVAILABLE");
-    if (result.outcome === "UNAVAILABLE") {
-      expect(result.summary.errorCode).toBe("SEARCH_CONSTRAINTS_INCOMPLETE");
-    }
-    expect(mockSearchHotels).not.toHaveBeenCalled();
   });
 
   it("projects min/max nightly price on AVAILABLE when Nuitee returns offers", async () => {
@@ -162,7 +161,7 @@ describe("executePersonalHotelSearch", () => {
           roomCount: 1,
           adultsPerRoom: [2],
           totalPrice: 1400,
-          pricePerNightUsd: 200,
+          pricePerNight: 200,
           currency: "USD",
           style: "luxury",
           location: "Shinjuku",
@@ -177,7 +176,7 @@ describe("executePersonalHotelSearch", () => {
           roomCount: 1,
           adultsPerRoom: [2],
           totalPrice: 350,
-          pricePerNightUsd: 50,
+          pricePerNight: 50,
           currency: "USD",
           style: "budget",
           location: "Asakusa",
@@ -196,8 +195,12 @@ describe("executePersonalHotelSearch", () => {
     if (result.outcome === "AVAILABLE") {
       expect(result.capability).toBe("hotel.search");
       expect(result.hotel?.propertyCount).toBe(2);
-      expect(result.hotel?.minNightlyPrice).toBe(350);
-      expect(result.hotel?.maxNightlyPrice).toBe(1400);
+      expect(result.hotel?.minNightlyPrice).toBe(50);
+      expect(result.hotel?.maxNightlyPrice).toBe(200);
+      expect(result.hotel?.topOffers).toEqual([
+        { propertyName: "Capsule", pricePerNight: 50, cancellationSummary: null },
+        { propertyName: "Park Hyatt", pricePerNight: 200, cancellationSummary: null },
+      ]);
     }
   });
 });

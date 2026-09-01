@@ -83,8 +83,44 @@ export async function executePersonalFlightSearch(params: {
       destinationIata: params.draft.destinationId,
       earliestDeparture: earliestDeparture || null,
       latestReturn,
+      topOffers: toTopOffers(offers),
     },
   };
+}
+
+/**
+ * Bounded per-offer line items, cheapest first, so the model can actually
+ * answer "which one / how much / when" instead of only aggregate stats.
+ * Capped at 5 — same privacy boundary as the aggregate fields (no booking
+ * link, offer id, or raw provider payload).
+ */
+function toTopOffers(offers: FlightOffer[]): {
+  carrierCode: string;
+  flightNumber: string | null;
+  departureAt: string;
+  arrivalAt: string;
+  totalDuration: string;
+  totalPrice: number;
+  stopCount: number;
+}[] {
+  return [...offers]
+    .filter((offer) => (offer.segments ?? []).length > 0)
+    .sort((a, b) => a.totalPrice - b.totalPrice)
+    .slice(0, 5)
+    .map((offer) => {
+      const segments = offer.segments;
+      const first = segments[0];
+      const last = segments[segments.length - 1];
+      return {
+        carrierCode: first.carrierCode,
+        flightNumber: first.flightNumber || null,
+        departureAt: first.departureAt,
+        arrivalAt: last.arrivalAt,
+        totalDuration: offer.totalDuration,
+        totalPrice: offer.totalPrice,
+        stopCount: Math.max(segments.length - 1, 0),
+      };
+    });
 }
 
 function earliestSegment(offer: FlightOffer): string {

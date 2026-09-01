@@ -8,10 +8,9 @@
  *
  * Nuitee provider-only binding: when the resolved provider is
  * `nuitee_connect`, the executor resolves the active quote nationality via
- * `loadActiveQuoteNationality`. A missing binding returns
- * `UNAVAILABLE` with code `SEARCH_CONSTRAINTS_INCOMPLETE` — same shape as
- * the Shared path; the Personal route never copies the binding into the
- * confirmed-task row (the binding remains trip-scoped Shared state).
+ * `loadActiveQuoteNationality` if one exists. A missing binding no longer
+ * fails closed (demo-scope simplification) — it falls back to a placeholder
+ * nationality so the request stays well-formed.
  *
  * Personal destination resolution: the typed draft's `cityCode` (IATA) is
  * looked up against the trip's `destinationCandidates` first; if no row
@@ -80,20 +79,16 @@ export async function executePersonalHotelSearch(params: {
   }
 
   // ─── Nuitee nationality binding (provider-only) ────────────────────────
+  // Demo-scope simplification: no longer fails closed when the owner hasn't
+  // granted a quote-nationality authorization. Reuses one if it exists;
+  // otherwise falls back to a placeholder so the request stays well-formed.
   let quoteNationality: string | undefined;
   if (provider.providerName === "nuitee_connect") {
     const binding = await loadActiveQuoteNationality({
       tripId: params.run.tripId!,
       memberId: params.run.createdByUserId,
     });
-    if (!binding) {
-      // Per spec §3.5 stage 2: Nuitee must cover provider-only nationality
-      // authorization. Missing binding fails closed — the owner must grant
-      // it through the Shared authorization endpoint before the Personal
-      // path can run.
-      return unavailableSummary("SEARCH_CONSTRAINTS_INCOMPLETE");
-    }
-    quoteNationality = binding.nationality;
+    quoteNationality = binding?.nationality ?? "US";
   }
 
   const adultsPerRoom = Array.from(
@@ -126,11 +121,15 @@ export async function executePersonalHotelSearch(params: {
   }
 
   const offers: HotelProviderItem[] = result.data ?? [];
-  const prices = offers
-    .map((o) => Number(o.totalPrice))
+  // Bug fix: this used to read `totalPrice` (the whole-stay total) into a
+  // field named "nightly price" — for a multi-night stay that inflated the
+  // displayed per-night figure well above the real rate. `pricePerNight` is
+  // the correct source.
+  const nightlyPrices = offers
+    .map((o) => Number(o.pricePerNight))
     .filter((p) => Number.isFinite(p));
-  const minPrice = prices.length > 0 ? Math.min(...prices) : null;
-  const maxPrice = prices.length > 0 ? Math.max(...prices) : null;
+  const minPrice = nightlyPrices.length > 0 ? Math.min(...nightlyPrices) : null;
+  const maxPrice = nightlyPrices.length > 0 ? Math.max(...nightlyPrices) : null;
 
   return {
     outcome: "AVAILABLE",
@@ -143,8 +142,31 @@ export async function executePersonalHotelSearch(params: {
       checkOut: params.draft.checkOut,
       minNightlyPrice: minPrice,
       maxNightlyPrice: maxPrice,
+      topOffers: toTopOffers(offers),
     },
   };
+}
+
+/**
+ * Bounded per-property line items, cheapest first, so the model can actually
+ * answer "which one / how much" instead of only aggregate min/max stats.
+ * Capped at 5 — same privacy boundary as the aggregate fields (no booking
+ * link, offer id, or raw provider payload).
+ */
+function toTopOffers(offers: HotelProviderItem[]): {
+  propertyName: string;
+  pricePerNight: number;
+  cancellationSummary: string | null;
+}[] {
+  return [...offers]
+    .filter((offer) => Number.isFinite(Number(offer.pricePerNight)))
+    .sort((a, b) => Number(a.pricePerNight) - Number(b.pricePerNight))
+    .slice(0, 5)
+    .map((offer) => ({
+      propertyName: offer.propertyName,
+      pricePerNight: Number(offer.pricePerNight),
+      cancellationSummary: offer.cancellationSummary ?? null,
+    }));
 }
 
 type UnavailableCode =

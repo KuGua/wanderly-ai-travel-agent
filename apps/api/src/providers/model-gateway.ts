@@ -72,6 +72,20 @@ export interface ConversationHotelSearchState {
   version: number;
 }
 
+/** Typed, private, server-owned readiness state for the flight tool. */
+export interface ConversationFlightSearchState {
+  originId: string;
+  destinationId: string;
+  tripType: "ONE_WAY" | "ROUND_TRIP";
+  departureDate: string;
+  returnDate: string | null;
+  adults: number;
+  cabin: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST";
+  currency: string;
+  confirmed: boolean;
+  version: number;
+}
+
 export type ConversationDeltaHandler = (delta: string) => void | Promise<void>;
 
 /** A provider-neutral OpenAI-compatible function declaration. */
@@ -182,6 +196,7 @@ export interface ModelGateway {
      */
     tripContext?: PersonalTripContext;
     hotelSearchState?: ConversationHotelSearchState | null;
+    flightSearchState?: ConversationFlightSearchState | null;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<ConversationReply>;
@@ -197,6 +212,7 @@ export interface ModelGateway {
     responseConstraints?: readonly ConversationResponseConstraint[];
     tripContext?: PersonalTripContext;
     hotelSearchState?: ConversationHotelSearchState | null;
+    flightSearchState?: ConversationFlightSearchState | null;
     onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;
@@ -252,4 +268,4 @@ export interface ModelGateway {
 }
 
 /** Narrow, versioned conversation behaviours; add values deliberately. */
-export type ConversationResponseConstraint = "HOTEL_SEARCH_READINESS";
+export type ConversationResponseConstraint = "HOTEL_SEARCH_READINESS" | "FLIGHT_SEARCH_READINESS";

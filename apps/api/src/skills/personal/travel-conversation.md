@@ -22,7 +22,7 @@ and invoked only through the Skill Registry with expected version `1.2.0`.
 | `name` | `travel.conversation` | `Skill.name` |
 | `agent` | `personal` | `Skill.agent` |
 | `version` | `1.2.0` | `Skill.version` |
-| `allowedTools` | `"chat:read"`, `"hotel:search"` (Phase 4) | Personal Agent allow-list |
+| `allowedTools` | `"chat:read"`, `"hotel:search"`, `"flight:search"` (Phase 4) | Personal Agent allow-list |
 | `timeoutMs` | `15000` | `Skill.timeoutMs` |
 | `needsConfirm` | `false` | `Skill.needsConfirm` |
 
@@ -34,27 +34,29 @@ and invoked only through the Skill Registry with expected version `1.2.0`.
   total context is at most 20,000 chars; the builder enforces the stricter
   runtime turn/character budget.
 - Output: non-empty answer plus `MODEL | SAFE_REFUSAL`.
-- Allowed scope: `chat:read`; `hotel:search` declared but **only dispatched
-  when the rollout flag `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true` is
-  on AND `hotel.search` is in the personal-research allowed capabilities**.
-  No profile writes, shared planning, bookings, or irreversible tools.
+- Allowed scope: `chat:read`; `hotel:search` and `flight:search` declared but
+  **only dispatched, per capability, when the rollout flag
+  `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true` is on AND that specific
+  capability is in the personal-research allowed capabilities**. No profile
+  writes, shared planning, bookings, or irreversible tools.
 
 The service re-resolves every client-supplied coordinate against the server
 location-reference source. A matching result becomes `REFERENCE`; otherwise it
 remains `INSPIRATION`. Client names and source IDs are never authoritative.
 
-## Phase 4 — inline `hotel.search` tool dispatch
+## Phase 4 — inline `hotel.search` / `flight.search` tool dispatch
 
-When the rollout flag is on, the conversation worker registers the
-`hotel.search` tool with the streaming gateway. The model invokes the tool
-directly (no UI button, no `POST /confirm` round-trip) once all required
-fields are present and the user has expressed search intent. The tool result
-is persisted into `personal_research_evidence` (deduped by
-`(run_id, capability)` via the existing unique index), and the second LLM
-turn streams a grounded summary back to the SSE channel. The conversation
-worker relaxes the price/hotel and availability/hotel safety rules for the
-second turn only — every other safety rule (visa, booking status, flight
-status, schedule) keeps firing unconditionally.
+When the rollout flag is on for a given capability, the conversation worker
+registers that tool (`hotel.search` and/or `flight.search`, independently)
+with the streaming gateway. The model invokes the tool directly (no UI
+button, no `POST /confirm` round-trip) once all required fields are present
+and the user has expressed search intent. The tool result is persisted into
+`personal_research_evidence` (deduped by `(run_id, capability)` via the
+existing unique index), and the second LLM turn streams a grounded summary
+back to the SSE channel. The conversation worker relaxes the price/hotel and
+availability/hotel safety rules for the second turn only — every other
+safety rule (visa, booking status, flight status, schedule) keeps firing
+unconditionally.
 
 The flag is the rollout lever. Default off in `.env.example`; flip on per
 environment after deploy. Behaviour is byte-identical to v1.1.0 when the
@@ -97,6 +99,35 @@ summary into `personal_research_evidence` (deduped by `(run_id, capability)`),
 and re-streams a grounded summary. The model does not emit a prose claim that
 the search has been made before the tool result arrives.
 
+## Flight-search readiness behaviour
+
+Flight searches follow the identical private-conversation pattern as hotel
+search — same Conversation Worker invocation, same two-phase confirm/persist
+state machine, same dedup and re-stream flow — for the `flight.search`
+capability. The model reuses same-thread facts and asks for only the missing
+origin/destination (as 3-letter IATA codes), trip type, dates, adult count,
+cabin and currency.
+
+When `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true`, a complete flight
+query is first written to the private, server-owned
+`conversation_flight_search_states` row for the thread. The row contains only
+route, trip type, dates, adult count, cabin, currency, version and the current
+USER-message confirmation marker — never raw chat text, credentials, passenger
+identity or a provider result. The model receives that typed state on later
+turns, so an explicit “确认搜索” can call `flight.search` with `{}` and cannot
+depend on reconstructing values from transcript context. A field change
+replaces the stored query and clears the prior confirmation unless the same
+current turn contains a new explicit confirmation.
+
+Only an explicit confirmation bound by the server to the current USER message
+may reach the configured flight provider. Before that point the tool returns
+`CONFIRMATION_REQUIRED` after persisting the typed query; no provider request
+is made. A confirmed call dispatches against the provider, persists the
+bounded summary into `personal_research_evidence` (deduped by
+`(run_id, capability)`), and re-streams a grounded summary. The model does not
+emit a prose claim that the search has been made before the tool result
+arrives.
+
 The stream adapter treats an accumulated OpenAI `tool_calls` envelope or the
 legacy `function_call` envelope as authoritative even when an
 OpenAI-compatible provider returns `stop`, `function_call`, or no finish
@@ -119,17 +150,19 @@ search and asks the owner to reply with an explicit "确认搜索". Without a
 UI button to press, the message acts as a verbal confirmation step in
 prose; the next turn re-enters the same loop.
 
-The `HOTEL_SEARCH_READINESS` constraint is a behavioural rule, not a canned
-reply: when a user asks for areas or trade-offs, the model may reuse stated
-context and suggest which search inputs matter. A neighbourhood or landmark
-may remain as a preference, but it is not represented as a provider distance
+The `HOTEL_SEARCH_READINESS` and `FLIGHT_SEARCH_READINESS` constraints are
+behavioural rules, not canned replies: when a user asks for areas, routes or
+trade-offs, the model may reuse stated context and suggest which search
+inputs matter. A neighbourhood, landmark, or airline preference may remain as
+a preference, but it is not represented as a provider distance or route
 filter. The model must not ask users to click a card, button or settings page.
 
-The constraint preserves the live-data boundary: qualitative advice is allowed,
-but it cannot be presented as current pricing, inventory, or booking
-availability outside of an evidence-backed summary. It also forbids collecting
-passport, payment, or full guest data in chat. Any provider-specific
-nationality requirement stays in the separate explicit authorization flow.
+Both constraints preserve the same live-data boundary: qualitative advice is
+allowed, but it cannot be presented as current pricing, inventory, or booking
+availability outside of an evidence-backed summary. They also forbid
+collecting passport, payment, or full guest/passenger data in chat. Any
+provider-specific identity requirement stays in the separate explicit
+authorization flow.
 
 ## Privacy and observability
 

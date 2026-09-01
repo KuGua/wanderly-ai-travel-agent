@@ -765,6 +765,29 @@ export const conversationHotelSearchStates = pgTable("conversation_hotel_search_
   tripOwnerIdx: index("conversation_hotel_search_states_trip_owner_idx").on(table.tripId, table.ownerUserId),
 }));
 
+/** Mirrors `conversationHotelSearchStates` for the `flight.search` capability. */
+export const conversationFlightSearchStates = pgTable("conversation_flight_search_states", {
+  threadId: uuid("thread_id").primaryKey().references(() => chatThreads.id, { onDelete: "cascade" }),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  originId: varchar("origin_id", { length: 3 }).notNull(),
+  destinationId: varchar("destination_id", { length: 3 }).notNull(),
+  tripType: varchar("trip_type", { length: 16 }).notNull(),
+  departureDate: date("departure_date", { mode: "string" }).notNull(),
+  returnDate: date("return_date", { mode: "string" }),
+  adults: integer("adults").notNull(),
+  cabin: varchar("cabin", { length: 32 }).notNull(),
+  currency: varchar("currency", { length: 3 }).notNull(),
+  /** The USER message which explicitly authorized the provider search. */
+  confirmedMessageId: uuid("confirmed_message_id").references(() => chatMessages.id, { onDelete: "set null" }),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  version: integer("version").default(1).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tripOwnerIdx: index("conversation_flight_search_states_trip_owner_idx").on(table.tripId, table.ownerUserId),
+}));
+
 // Durable business tasks. Unlike agentRuns below, these rows are authoritative
 // lifecycle state and never contain prompt text, partial output, or credentials.
 export const agentTaskRuns = pgTable("agent_task_runs", {

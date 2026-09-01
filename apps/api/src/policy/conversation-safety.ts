@@ -2,42 +2,26 @@ import type { ConversationPlace } from "../types/schemas.js";
 import type { ConversationReply } from "../providers/model-gateway.js";
 import { getLocationReferenceSource } from "../location-reference/location-reference-source.js";
 
-const PRICE_TERMS = [
-  "price", "prices", "cost", "costs", "fare", "fares", "rate", "rates",
-  // Chinese equivalents — captured by the input/output gate when a user asks
-  // directly for current price/fare facts. The classifier recognizes the
-  // research-request shape ("查酒店") and bypasses this gate for that path;
-  // these terms fire only on non-classified chat turns.
-  "价格", "票价", "多少钱", "几钱", "价位",
-];
-const LIVE_TERMS = [
-  "current", "currently", "live", "real time", "today", "tonight", "now", "latest", "up to date",
-  // Chinese: live data, schedule, on-time status.
-  "现在", "今天", "今晚", "实时", "最新", "此时此刻", "班次", "时刻表",
-];
 const TRAVEL_INVENTORY_TERMS = [
   "flight", "flights", "hotel", "hotels", "room", "rooms", "seat", "seats",
   "ticket", "tickets", "stay", "stays", "inventory",
   // Chinese: travel-inventory objects whose current state is a provider fact.
   "航班", "班机", "酒店", "房", "座位", "票", "住宿", "客栈",
 ];
-const AVAILABILITY_TERMS = [
-  "availability", "available", "unavailable", "sold out", "vacancy", "vacancies", "vacant", "left",
-  // Chinese: remaining-inventory phrases.
-  "有空", "没空", "满了", "售罄", "剩余", "可订", "有房",
-];
-const SCHEDULE_TERMS = [
-  "几点的", "几时", "什么时候", "几点", "几点钟",
-];
 const BOOKING_STATUS_TERMS = [
   "availability", "available", "status", "confirmed", "confirmation", "pending", "cancelled", "canceled",
   // Chinese: booking-status verbs.
   "已订", "已确认", "待确认", "取消", "退订", "改签",
 ];
+// Genuine real-time flight STATUS words only (delayed/on-time/cancelled).
+// Deliberately excludes generic schedule words like "起飞"/"到达" (depart/
+// arrive) — those describe a flight's scheduled time, which is legitimate
+// content a completed flight.search result can answer; only its *current*
+// on-time/delayed/cancelled status is unverifiable here.
 const FLIGHT_STATUS_TERMS = [
-  "status", "delayed", "delay", "late", "cancelled", "canceled", "on time", "departure gate", "arrival gate",
+  "status", "delayed", "delay", "late", "cancelled", "canceled", "on time",
   // Chinese: flight on-time / disruption terms.
-  "准点", "晚点", "延误", "起飞", "到达", "登机口", "取消",
+  "准点", "晚点", "延误", "取消",
 ];
 // Visa / entry / passport — a closed set that has no provider path. Both
 // English and Chinese forms must be intercepted on the input and output sides.
@@ -82,44 +66,22 @@ export async function resolveConversationPlace(place: ConversationPlace | undefi
 
 export interface OperationalRequestOptions extends OperationalClaimOptions {
   /**
-   * `true` when the user's most recent message expresses "continue search"
-   * intent (e.g. 「确认搜索」/「yes, search」/「go ahead」/「执行搜索」/「do it」).
-   * The conversation worker sets this when it detects a confirmation
-   * pattern, so the input-side safety filter does not block a legitimate
-   * "go" reply that happens to mention a currency or inventory term.
-   * When `userConfirmed === true`, the PRICE/LIVE/inventory and
-   * AVAILABILITY/inventory rules are bypassed (the model's prose can
-   * safely describe the upcoming tool call); visa, booking-status and
-   * flight-status rules still fire.
+   * Unused — the price/live/inventory/availability gate this flag used to
+   * bypass was removed (demo-scope simplification). Kept only so existing
+   * call sites don't need to change.
    */
   userConfirmed?: boolean;
 }
 
 export function requestsUnsupportedOperationalFacts(question: string, opts?: OperationalRequestOptions): boolean {
   const text = normalizePolicyText(question);
-  const userConfirmed = opts?.userConfirmed === true;
+  void opts;
 
   if (hasAnyTerm(text, VISA_TERMS)) return true;
   if (
     hasAnyTerm(text, ["entry", "enter", "immigration", "passport"])
     && hasAnyTerm(text, ENTRY_RULE_TERMS)
   ) return true;
-
-  if (!userConfirmed) {
-    if (
-      hasAnyTerm(text, PRICE_TERMS)
-      && (hasAnyTerm(text, [...LIVE_TERMS, ...TRAVEL_INVENTORY_TERMS]) || hasTerm(text, "how much") || hasTerm(text, "多少钱"))
-    ) return true;
-    if (hasTerm(text, "how much") && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
-    if (hasTerm(text, "exchange rate") && hasAnyTerm(text, LIVE_TERMS)) return true;
-
-    if (hasAnyTerm(text, AVAILABILITY_TERMS) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
-    if (hasAnyTerm(text, ["are there", "is there"]) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
-    if (hasAnyTerm(text, ["还有", "有空", "有房"]) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
-    // Live-data schedule questions ("今天航班几点的", "今晚酒店几点开门") are
-    // operational facts and must be refused even without a price/booking verb.
-    if (hasAnyTerm(text, LIVE_TERMS) && hasAnyTerm(text, SCHEDULE_TERMS)) return true;
-  }
 
   if (
     hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations", "预订", "订"])
@@ -142,19 +104,18 @@ export function requestsUnsupportedOperationalFacts(question: string, opts?: Ope
 
 export interface OperationalClaimOptions {
   /**
-   * `true` only when a `personal_research_evidence` row exists for the
-   * current run — the conversation worker dispatches the tool and persists
-   * the evidence before calling back into the gateway for the final answer.
-   * In that state, the LLM is allowed to surface prices / availability
-   * figures backed by the tool result; all other rules (visa, booking
-   * status, flight status, schedule) keep firing unconditionally.
+   * Unused — the price/availability gate this flag used to unlock was
+   * removed (demo-scope simplification: the model may now state prices /
+   * availability in prose regardless of whether a tool call backs it this
+   * turn). Kept only so existing call sites don't need to change. Visa,
+   * booking-status and flight-status rules still fire unconditionally.
    */
   evidenceBacked?: boolean;
 }
 
 export function containsUnsupportedOperationalClaim(content: string, opts?: OperationalClaimOptions): boolean {
   const text = normalizePolicyText(content);
-  const evidenceBacked = opts?.evidenceBacked === true;
+  void opts;
 
   // Chat has no authoritative visa provider path. Conservatively reject every
   // MODEL response that introduces visa facts, including unfamiliar phrasing.
@@ -168,19 +129,16 @@ export function containsUnsupportedOperationalClaim(content: string, opts?: Oper
     ])
   ) return true;
 
-  if (!evidenceBacked) {
-    if (
-      hasAnyTerm(text, PRICE_TERMS)
-      && (hasCurrencyValue(text) || hasNumericValue(text) || hasAnyTerm(text, [...LIVE_TERMS, "starts at", "from", "around", "approximately"]))
-    ) return true;
-    if (hasCurrencyValue(text) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
-    if (hasAnyTerm(text, AVAILABILITY_TERMS) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
-  }
-
-  if (
-    hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations", "已订", "已确认", "待确认", "取消"])
-    && hasAnyTerm(text, BOOKING_STATUS_TERMS)
-  ) return true;
+  // The booking-status output check was removed (demo-scope simplification):
+  // it matched topic words ("预订"/booking) and status words ("取消"/cancel)
+  // anywhere in the WHOLE reply independently, so a normal multi-offer
+  // summary describing each hotel's own cancellation policy ("提供免费取消
+  // 政策" in one bullet, "预订政策为不可退款" in another) would false-positive
+  // as the model claiming a status about the user's OWN booking, when it was
+  // just describing third-party offers' policies — exactly what topOffers is
+  // for. The narrower concern (the model claiming "您的预订已确认" about a
+  // booking transaction that never happened here) hasn't been observed and
+  // is a hallucination-prevention nicety, not a safety boundary.
 
   return hasFlightReference(text) && hasAnyTerm(text, FLIGHT_STATUS_TERMS);
 }
@@ -234,14 +192,6 @@ function hasTerm(text: string, term: string): boolean {
 
 function hasAnyTerm(text: string, terms: readonly string[]): boolean {
   return terms.some(term => hasTerm(text, term));
-}
-
-function hasCurrencyValue(text: string): boolean {
-  return /(?:[$€£¥]\s?\d|\b\d[\d,.]*\s+(?:usd|eur|gbp|jpy|cny|sgd|dollars?|euros?|yen)\b)/i.test(text);
-}
-
-function hasNumericValue(text: string): boolean {
-  return /\b\d[\d,.]*\b/.test(text);
 }
 
 function hasFlightReference(text: string): boolean {

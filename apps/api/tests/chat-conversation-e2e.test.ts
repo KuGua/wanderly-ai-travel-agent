@@ -8,7 +8,7 @@ import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
 import { invokeSkill } from "../src/agents/skill-registry.js";
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { agentTaskRuns, auditEvents, chatMessages, chatThreads, conversationHotelSearchStates, idempotencyRecords, personalResearchEvidence, users } from "../src/db/schema.js";
+import { agentTaskRuns, auditEvents, chatMessages, chatThreads, conversationFlightSearchStates, conversationHotelSearchStates, idempotencyRecords, personalResearchEvidence, users } from "../src/db/schema.js";
 import { __setModelGatewayForTests } from "../src/providers/gateway-factory.js";
 import { ModelGatewayError } from "../src/providers/llm-gateway.js";
 import type { ModelGateway } from "../src/providers/model-gateway.js";
@@ -406,6 +406,98 @@ describe("durable owner-only Personal Agent conversation flow", () => {
       __setModelGatewayForTests(successfulConversationGateway);
     }
   });
+
+  it("Phase 4 — conversation worker dispatches flight.search inline and persists personal_research_evidence", async () => {
+    const previous = {
+      flag: process.env.PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED,
+      toolCalling: process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED,
+    };
+    process.env.PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED = "true";
+    process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = "true";
+
+    const grounded = "Search ran; the live flight feed returned no live inventory at the moment.";
+    const toolGateway = buildFlightToolDispatchGateway(grounded);
+    __setModelGatewayForTests(toolGateway as unknown as ModelGateway);
+
+    const threadId = await createThread(`Phase 4 flight tool dispatch ${randomUUID()}`);
+    const firstRequestId = randomUUID();
+    const secondRequestId = randomUUID();
+    const firstRunIds: string[] = [];
+    const evidenceRowsToCleanup: string[] = [];
+    try {
+      // First confirmation: full draft, expect a fresh evidence row.
+      const first = await submitTurn(threadId, firstRequestId,
+        "帮我查一下新加坡飞东京，单程，2026-09-15，2 位成人，经济舱，SGD。确认搜索");
+      expect(first.statusCode).toBe(202);
+      const firstRunId = (first.json() as AcceptedTurnResponse).runId;
+      firstRunIds.push(firstRunId);
+      expect(await processNextAgentTask()).toBe(true);
+
+      const [firstEvidence] = await db.select().from(personalResearchEvidence)
+        .where(eq(personalResearchEvidence.runId, firstRunId));
+      expect(firstEvidence).toBeDefined();
+      expect(firstEvidence?.capability).toBe("flight.search");
+      // The provider is unconfigured in test env, so the executor
+      // returns NOT_CONFIGURED. The orchestrator persists that summary
+      // regardless.
+      const resultJson = firstEvidence?.resultJson as { outcome?: string; summary?: { errorCode?: string } };
+      expect(resultJson?.outcome).toBe("UNAVAILABLE");
+      expect(resultJson?.summary?.errorCode).toBe("NOT_CONFIGURED");
+      evidenceRowsToCleanup.push(firstEvidence!.id);
+      const [savedState] = await db.select().from(conversationFlightSearchStates)
+        .where(eq(conversationFlightSearchStates.threadId, threadId));
+      expect(savedState).toMatchObject({
+        tripId,
+        ownerUserId: aliceId,
+        originId: "SIN",
+        destinationId: "NRT",
+        tripType: "ONE_WAY",
+        departureDate: "2026-09-15",
+        adults: 2,
+        cabin: "ECONOMY",
+        currency: "SGD",
+        confirmedMessageId: expect.any(String),
+        confirmedAt: expect.any(Date),
+      });
+
+      // Idempotency: a second confirmation in a new turn must not insert a
+      // new evidence row — the worker's dispatch closure probes the table
+      // before invoking the executor.
+      const second = await submitTurn(threadId, secondRequestId,
+        "确认搜索");
+      expect(second.statusCode).toBe(202);
+      const secondRunId = (second.json() as AcceptedTurnResponse).runId;
+      firstRunIds.push(secondRunId);
+      expect(await processNextAgentTask()).toBe(true);
+
+      const allRows = await db.select({ id: personalResearchEvidence.id, runId: personalResearchEvidence.runId })
+        .from(personalResearchEvidence)
+        .where(inArray(personalResearchEvidence.runId, firstRunIds));
+      // Each conversation turn is its own durable run. The worker probes
+      // by `(run_id, capability)` per-run, so a brand-new turn writes its
+      // own evidence row rather than reusing a previous turn's.
+      expect(allRows).toHaveLength(2);
+      const runIdsWithRows = new Set(allRows.map(r => r.runId));
+      expect(runIdsWithRows.has(firstRunIds[0])).toBe(true);
+      expect(runIdsWithRows.has(firstRunIds[1])).toBe(true);
+      evidenceRowsToCleanup.push(...allRows.map(r => r.id));
+      // The tool loop ran exactly once per turn (one dispatch per turn).
+      expect(toolGateway.dispatchedNames).toEqual(["flight.search", "flight.search"]);
+    } finally {
+      for (const rowId of evidenceRowsToCleanup) {
+        await db.delete(personalResearchEvidence).where(eq(personalResearchEvidence.id, rowId));
+      }
+      for (const runId of firstRunIds) {
+        await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, runId));
+      }
+      await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
+      await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, `chat_turn:${threadId}:${firstRequestId}`));
+      await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, `chat_turn:${threadId}:${secondRequestId}`));
+      process.env.PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED = previous.flag;
+      process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = previous.toolCalling;
+      __setModelGatewayForTests(successfulConversationGateway);
+    }
+  });
 });
 
 async function createThread(title: string): Promise<string> {
@@ -521,6 +613,58 @@ function buildToolDispatchGateway(groundedReply: string): ModelGateway & {
   // Attach mutable counters AFTER the gateway object is created so the
   // object identity is stable across `__setModelGatewayForTests` calls
   // and our assertions observe live values.
+  return Object.assign(gateway, {
+    get dispatchedNames() { return state.dispatchedNames; },
+    get groundedReplyCount() { return state.groundedReplyCount; },
+  });
+}
+
+/** Mirrors `buildToolDispatchGateway` for `flight.search`. */
+function buildFlightToolDispatchGateway(groundedReply: string): ModelGateway & {
+  dispatchedNames: string[];
+  groundedReplyCount: number;
+} {
+  const state = {
+    dispatchedNames: [] as string[],
+    groundedReplyCount: 0,
+  };
+  const gateway = {
+    async generateStructuredPlan() { throw new Error("not used by conversation E2E"); },
+    async explainPlanDiff() { throw new Error("not used by conversation E2E"); },
+    async generateConversationReply() {
+      throw new Error("tool-dispatch path always uses the streaming gateway");
+    },
+    async streamConversationReply(params: Parameters<NonNullable<ModelGateway["streamConversationReply"]>>[0]) {
+      const onDelta = params.onDelta;
+      // Subsequent confirmation turns deliberately provide no fields. The
+      // worker must merge the server-persisted flight state before it can
+      // dispatch the provider, rather than relying on conversational context.
+      const args = params.flightSearchState ? {} : {
+        originId: "SIN",
+        destinationId: "NRT",
+        tripType: "ONE_WAY",
+        departureDate: "2026-09-15",
+        adults: 2,
+        cabin: "ECONOMY",
+        currency: "SGD",
+      };
+      const toolResult = params.dispatchTool
+        ? await params.dispatchTool({ id: "call_phase4", name: "flight.search", arguments: args })
+        : { outcome: "AVAILABLE" };
+      state.dispatchedNames.push("flight.search");
+      void toolResult;
+      const chunks = [
+        { choices: [{ delta: { content: groundedReply } }] },
+        { choices: [{ delta: {}, finish_reason: "stop" }] },
+      ];
+      for (const chunk of chunks) {
+        const delta = chunk.choices[0].delta;
+        if (delta.content) await onDelta(delta.content);
+      }
+      state.groundedReplyCount += 1;
+      return { content: groundedReply, responseMode: "MODEL" };
+    },
+  } as ModelGateway;
   return Object.assign(gateway, {
     get dispatchedNames() { return state.dispatchedNames; },
     get groundedReplyCount() { return state.groundedReplyCount; },

@@ -736,7 +736,7 @@ const iataCodeSchema = z.string().regex(/^[A-Z]{3}$/);
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const currencyCodeSchema = z.string().regex(/^[A-Z]{3}$/);
 
-const personalResearchFlightDraftSchema = z.object({
+export const personalResearchFlightDraftSchema = z.object({
   kind: z.literal("FLIGHT_SEARCH"),
   originId: iataCodeSchema,
   destinationId: iataCodeSchema,
@@ -857,6 +857,25 @@ export const personalResearchOutcomeSchema = z.enum(["AVAILABLE", "UNAVAILABLE",
  * shown in `GET /agent-runs/:runId/personal-research` — never raw provider
  * payloads, chat text, nationality, passport, or document data. Spec §3.2.
  */
+// Bounded per-offer line items so the model (and the read API) can answer
+// "which one / how much / when" instead of only aggregate min/max stats.
+// Capped at 5 and limited to the fields a normal search-results list would
+// show — never a raw provider payload, booking link, or offer id.
+export const personalResearchFlightOfferItemSchema = z.object({
+  carrierCode: z.string(),
+  flightNumber: z.string().nullable(),
+  departureAt: z.string().datetime(),
+  arrivalAt: z.string().datetime(),
+  totalDuration: z.string(),
+  totalPrice: z.number().nonnegative(),
+  stopCount: z.number().int().nonnegative(),
+}).strict();
+export const personalResearchHotelOfferItemSchema = z.object({
+  propertyName: z.string(),
+  pricePerNight: z.number().nonnegative(),
+  cancellationSummary: z.string().nullable(),
+}).strict();
+
 export const personalResearchFlightEvidenceSummarySchema = z.object({
   offerCount: z.number().int().nonnegative(),
   currency: currencyCodeSchema,
@@ -864,6 +883,7 @@ export const personalResearchFlightEvidenceSummarySchema = z.object({
   destinationIata: iataCodeSchema,
   earliestDeparture: z.string().datetime().nullable(),
   latestReturn: z.string().datetime().nullable(),
+  topOffers: z.array(personalResearchFlightOfferItemSchema).max(5),
 }).strict();
 export const personalResearchHotelEvidenceSummarySchema = z.object({
   propertyCount: z.number().int().nonnegative(),
@@ -873,6 +893,7 @@ export const personalResearchHotelEvidenceSummarySchema = z.object({
   checkOut: dateOnlySchema,
   minNightlyPrice: z.number().nonnegative().nullable(),
   maxNightlyPrice: z.number().nonnegative().nullable(),
+  topOffers: z.array(personalResearchHotelOfferItemSchema).max(5),
 }).strict();
 export const personalResearchAccommodationEvidenceSummarySchema = z.object({
   candidateCount: z.number().int().nonnegative(),

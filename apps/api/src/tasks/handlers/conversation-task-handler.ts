@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, gt, inArray } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
@@ -21,6 +21,10 @@ import {
   saveConversationHotelSearchState,
 } from "../../services/conversation-hotel-search-state-service.js";
 import {
+  loadConversationFlightSearchState,
+  saveConversationFlightSearchState,
+} from "../../services/conversation-flight-search-state-service.js";
+import {
   executeTravelConversation,
   travelConversationSkill,
   travelConversationInputSchema,
@@ -28,8 +32,9 @@ import {
 } from "../../skills/personal/travel-conversation-skill.js";
 import { personalTripContextSchema, type PersonalTripContext } from "../../skills/personal/personal-trip-context-schema.js";
 import type { AgentStreamEvent } from "../../types/schemas.js";
-import { personalResearchHotelDraftSchema } from "../../types/schemas.js";
+import { personalResearchHotelDraftSchema, personalResearchFlightDraftSchema } from "../../types/schemas.js";
 import type { ModelToolDefinition, ModelToolDispatcher, TripBriefProposal } from "../../providers/model-gateway.js";
+import type { PersonalResearchOperationCapability } from "../../config/personal-research-allowed-capabilities.js";
 import type { RequestContext } from "../../utils/context.js";
 import { agentTaskConfig } from "../config.js";
 import { publishAgentStreamEvent } from "../task-stream-publisher.js";
@@ -38,11 +43,12 @@ import { loadConversationTurnInput } from "../task-repository.js";
 import { buildProactiveIntro } from "../../i18n/proactive-intro.js";
 
 /**
- * Phase 4: the LLM-facing tool definition for live hotel evidence. The
- * model only ever calls this — no other tools are registered for the
- * Personal conversation worker. Server-side arguments validation lives in
- * `personalResearchHotelDraftSchema`, but the `kind` discriminator is
- * injected by the dispatch closure (the LLM never sends it).
+ * Phase 4: the LLM-facing tool definitions for live evidence. Server-side
+ * arguments validation lives in the matching `personalResearch*DraftSchema`,
+ * but the `kind` discriminator is injected by the dispatch closure (the LLM
+ * never sends it). Which tools actually get registered for a given turn is
+ * decided in `handleConversationTask` from the capability allow-list — a
+ * definition existing here does not by itself expose it to the model.
  */
 const HOTEL_SEARCH_TOOL: ModelToolDefinition = {
   name: "hotel.search",
@@ -84,16 +90,55 @@ const hotelSearchToolArgumentsSchema = z.object({
 }).strict();
 
 /**
- * Returns `true` when the conversation worker should hand the `hotel.search`
- * tool definition + dispatcher to the streaming gateway. The flag is the
- * rollout lever: keep it off in `.env.example`, flip it on per-environment
- * after a deploy. Both the feature flag AND the capability allow-list must
- * be on; either one alone keeps the conversation prose-only.
+ * Phase 4: the LLM-facing tool definition for live flight evidence.
+ * Mirrors `HOTEL_SEARCH_TOOL` — no `required` array so an explicit
+ * "确认搜索" can invoke it with `{}` and reuse the server-persisted state.
  */
-function conversationToolDispatchEnabled(): boolean {
+const FLIGHT_SEARCH_TOOL: ModelToolDefinition = {
+  name: "flight.search",
+  description: "Search live flight evidence for one controlled origin/destination pair. Server binds route/date/passenger/cabin/currency; never invent authority fields.",
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      originId: { type: "string", minLength: 3, maxLength: 3 },
+      destinationId: { type: "string", minLength: 3, maxLength: 3 },
+      tripType: { type: "string", enum: ["ONE_WAY", "ROUND_TRIP"] },
+      departureDate: { type: "string", format: "date" },
+      returnDate: { type: "string", format: "date" },
+      adults: { type: "integer", minimum: 1, maximum: 9 },
+      cabin: { type: "string", enum: ["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"] },
+      currency: { type: "string", minLength: 3, maxLength: 3 },
+    },
+  },
+};
+
+// Mirrors `hotelSearchToolArgumentsSchema`: partial transport-shape boundary
+// only. The merged, complete draft is always checked against
+// `personalResearchFlightDraftSchema` before it is persisted or dispatched.
+const flightSearchToolArgumentsSchema = z.object({
+  originId: z.string().optional(),
+  destinationId: z.string().optional(),
+  tripType: z.enum(["ONE_WAY", "ROUND_TRIP"]).optional(),
+  departureDate: z.string().optional(),
+  returnDate: z.string().optional(),
+  adults: z.number().optional(),
+  cabin: z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]).optional(),
+  currency: z.string().optional(),
+}).strict();
+
+/**
+ * Returns `true` when the conversation worker should hand the given tool's
+ * definition + dispatcher to the streaming gateway for this capability. The
+ * env flags are the rollout lever: keep them off in `.env.example`, flip
+ * them on per-environment after a deploy. Both feature flags AND the
+ * capability allow-list must be on; any one alone keeps that capability
+ * prose-only.
+ */
+function conversationToolDispatchEnabled(capability: PersonalResearchOperationCapability): boolean {
   if (process.env.PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED !== "true") return false;
   if (process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED !== "true") return false;
-  return isPersonalResearchCapabilityAllowed("hotel.search");
+  return isPersonalResearchCapabilityAllowed(capability);
 }
 
 /**
@@ -207,6 +252,103 @@ function buildHotelSearchDispatcher(params: {
   };
 }
 
+/**
+ * Builds the conversation worker's tool dispatch closure for `flight.search`.
+ * Mirrors `buildHotelSearchDispatcher` field-for-field — same two-phase
+ * confirm/persist state machine, same dedup-by-`(run_id, capability)` probe,
+ * same `RESEARCHING` SSE phase, same bounded evidence-summary return shape.
+ *
+ * `returnDate` defaults to `null` before merging so a `ONE_WAY` draft with no
+ * existing state and no model-supplied `returnDate` still satisfies
+ * `personalResearchFlightDraftSchema`'s `.nullable()` (not `.optional()`)
+ * field; an explicit value from prior state or this turn's arguments always
+ * overrides that default.
+ */
+function buildFlightSearchDispatcher(params: {
+  run: AgentTaskRow;
+  ctx: RequestContext;
+  signal: AbortSignal;
+  traceparent?: string;
+  userConfirmed: boolean;
+}): ModelToolDispatcher {
+  return async (call) => {
+    if (call.name !== "flight.search") {
+      throw new Error(`Unsupported tool call from conversation: ${call.name}`);
+    }
+    const rawArguments = typeof call.arguments === "object" && call.arguments !== null
+      ? call.arguments as Record<string, unknown>
+      : null;
+    if (!rawArguments) return { outcome: "INVALID_ARGUMENTS", code: "TOOL_ARGUMENTS_INVALID" };
+    // The tool intentionally has no JSON-schema required fields: a later
+    // explicit confirmation can invoke it with `{}` and the dispatcher will
+    // use the owner-reviewed state. Unknown fields are rejected before merge.
+    const partial = flightSearchToolArgumentsSchema.safeParse(rawArguments);
+    if (!partial.success) return { outcome: "INVALID_ARGUMENTS", code: "TOOL_ARGUMENTS_INVALID" };
+    if (!params.run.threadId || !params.run.tripId || !params.run.userMessageId) {
+      throw new Error("Conversation flight tool task is missing private-thread references");
+    }
+    const existingState = await loadConversationFlightSearchState({
+      threadId: params.run.threadId,
+      tripId: params.run.tripId,
+      ownerUserId: params.run.createdByUserId,
+    });
+    const merged: Record<string, unknown> = {
+      ...(existingState?.draft ?? {}),
+      ...partial.data,
+      kind: "FLIGHT_SEARCH",
+    };
+    if (merged.returnDate === undefined) merged.returnDate = null;
+    const parsed = personalResearchFlightDraftSchema.safeParse(merged);
+    if (!parsed.success) return { outcome: "NEEDS_FIELDS", code: "FLIGHT_SEARCH_FIELDS_INCOMPLETE" };
+    const draft = parsed.data;
+    const saved = await saveConversationFlightSearchState({
+      ctx: params.ctx,
+      threadId: params.run.threadId,
+      tripId: params.run.tripId,
+      ownerUserId: params.run.createdByUserId,
+      userMessageId: params.run.userMessageId,
+      draft,
+      confirmed: params.userConfirmed,
+    });
+    if (!params.userConfirmed) {
+      return { outcome: "CONFIRMATION_REQUIRED", capability: "flight.search", stateVersion: saved.version };
+    }
+    const fingerprint = createHash("sha256")
+      .update(canonicalizeForHash(draft))
+      .digest("hex");
+
+    // Dedup probe: existing row on this run for `flight.search` wins.
+    const [existingEvidence] = await db.select({
+      resultJson: personalResearchEvidence.resultJson,
+      capturedAt: personalResearchEvidence.capturedAt,
+    })
+      .from(personalResearchEvidence)
+      .where(and(
+        eq(personalResearchEvidence.runId, params.run.id),
+        eq(personalResearchEvidence.capability, "flight.search"),
+      ))
+      .orderBy(desc(personalResearchEvidence.capturedAt))
+      .limit(1);
+    if (existingEvidence) {
+      return { ...(existingEvidence.resultJson as Record<string, unknown>), draftHash: fingerprint, deduped: true, providerDispatched: true };
+    }
+
+    // Tell the UI a tool-driven search is in flight so the chat can show a
+    // loading state. Mirrors `personal-research-task-handler.ts:81`.
+    await publishPhase(params.run, "RESEARCHING", params.traceparent);
+
+    // Use the orchestrator, not the raw executor — it persists the bounded
+    // summary into `personal_research_evidence` so the next conversation
+    // turn (and any other reader) can see the result.
+    const result = await executePersonalResearch({
+      run: params.run,
+      draft,
+      signal: params.signal,
+    });
+    return { ...result.summary, draftHash: fingerprint, deduped: false, evidenceId: result.evidenceId, providerDispatched: true };
+  };
+}
+
 export async function handleConversationTask(params: {
   run: AgentTaskRow;
   ctx: RequestContext;
@@ -268,6 +410,11 @@ export async function handleConversationTask(params: {
     tripId: params.run.tripId,
     ownerUserId: params.run.createdByUserId,
   });
+  const flightSearchState = await loadConversationFlightSearchState({
+    threadId: params.run.threadId,
+    tripId: params.run.tripId,
+    ownerUserId: params.run.createdByUserId,
+  });
   const input = travelConversationInputSchema.parse({
     ...turnInput,
     tripContext,
@@ -286,16 +433,18 @@ export async function handleConversationTask(params: {
     execution.abort(error);
   }, travelConversationSkill.timeoutMs);
 
-  // Phase 4: build tool context when the rollout flag AND the capability
-  // allow-list are both on. Outside that window, the call falls through to
-  // the prose-only path with byte-identical behaviour to before Phase 4.
-  const toolDispatchEnabled = conversationToolDispatchEnabled();
+  // Phase 4: build tool context per-capability, from the rollout flag AND
+  // the capability allow-list. Each capability is independent — one being
+  // off leaves the other's tool dispatch untouched, and both off falls
+  // through to the prose-only path with byte-identical behaviour to before
+  // Phase 4.
   const toolContext: {
     tools?: ModelToolDefinition[];
     dispatchTool?: ModelToolDispatcher;
     evidenceBacked?: boolean;
     userConfirmed?: boolean;
     hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
+    flightSearchState?: import("../../providers/model-gateway.js").ConversationFlightSearchState | null;
   } = {};
   // Server-side explicit confirmation detector. It accepts a standalone
   // confirmation at either end of a complete natural-language query (for
@@ -309,22 +458,78 @@ export async function handleConversationTask(params: {
     confirmed: hotelSearchState.confirmed,
     version: hotelSearchState.version,
   } : null;
+  toolContext.flightSearchState = flightSearchState ? {
+    ...flightSearchState.draft,
+    confirmed: flightSearchState.confirmed,
+    version: flightSearchState.version,
+  } : null;
   let evidenceDispatched = false;
-  if (toolDispatchEnabled) {
-    const baseDispatch = buildHotelSearchDispatcher({
-      run: params.run,
-      ctx: params.ctx,
-      signal: execution.signal,
-      traceparent: params.ctx.traceparent,
-      userConfirmed: toolContext.userConfirmed,
-    });
-    toolContext.tools = [HOTEL_SEARCH_TOOL];
-    toolContext.dispatchTool = async (call) => {
+  const dispatchers = new Map<string, ModelToolDispatcher>();
+  const tools: ModelToolDefinition[] = [];
+  const registerToolDispatch = (
+    capability: PersonalResearchOperationCapability,
+    tool: ModelToolDefinition,
+    baseDispatch: ModelToolDispatcher,
+  ) => {
+    if (!conversationToolDispatchEnabled(capability)) return;
+    tools.push(tool);
+    dispatchers.set(tool.name, async (call) => {
       const result = await baseDispatch(call);
       // A readiness save/confirmation prompt is not evidence. Only the
       // server-side provider branch may unlock grounded price/inventory prose.
-      evidenceDispatched = (result as { providerDispatched?: unknown }).providerDispatched === true;
+      // Sticky: a later CONFIRMATION_REQUIRED call in the same turn must not
+      // revert a flag an earlier dispatch (or the freshness check below)
+      // already earned.
+      evidenceDispatched = evidenceDispatched || (result as { providerDispatched?: unknown }).providerDispatched === true;
+      // The Skill's own output-side safety check reads `toolContext.evidenceBacked`
+      // (not this closure's local `evidenceDispatched`) — keep both in sync so a
+      // real dispatch actually unlocks the grounded reply instead of the Skill
+      // always treating the turn as unbacked and swapping in a safe refusal.
+      toolContext.evidenceBacked = toolContext.evidenceBacked || evidenceDispatched;
       return result;
+    });
+  };
+  registerToolDispatch("hotel.search", HOTEL_SEARCH_TOOL, buildHotelSearchDispatcher({
+    run: params.run,
+    ctx: params.ctx,
+    signal: execution.signal,
+    traceparent: params.ctx.traceparent,
+    userConfirmed: toolContext.userConfirmed,
+  }));
+  registerToolDispatch("flight.search", FLIGHT_SEARCH_TOOL, buildFlightSearchDispatcher({
+    run: params.run,
+    ctx: params.ctx,
+    signal: execution.signal,
+    traceparent: params.ctx.traceparent,
+    userConfirmed: toolContext.userConfirmed,
+  }));
+  // A capability's own evidence, still within its freshness window, is just
+  // as trustworthy as one dispatched THIS turn — the model routinely needs
+  // to answer a plain follow-up ("筛选到 5000 CNY 左右") about a search it
+  // ran a few turns ago without re-invoking the provider. Without this, the
+  // safety gate treated every non-dispatching turn as unbacked and replaced
+  // any price-mentioning reply with the canned refusal, even when real,
+  // unexpired evidence already existed for this trip.
+  if (tools.length > 0 && params.run.tripId) {
+    const [freshEvidence] = await db.select({ id: personalResearchEvidence.id })
+      .from(personalResearchEvidence)
+      .where(and(
+        eq(personalResearchEvidence.tripId, params.run.tripId),
+        inArray(personalResearchEvidence.capability, tools.map((tool) => tool.name) as ("hotel.search" | "flight.search")[]),
+        gt(personalResearchEvidence.expiresAt, new Date()),
+      ))
+      .limit(1);
+    if (freshEvidence) {
+      evidenceDispatched = true;
+      toolContext.evidenceBacked = true;
+    }
+  }
+  if (tools.length > 0) {
+    toolContext.tools = tools;
+    toolContext.dispatchTool = async (call) => {
+      const dispatch = dispatchers.get(call.name);
+      if (!dispatch) throw new Error(`Unsupported tool call from conversation: ${call.name}`);
+      return dispatch(call);
     };
   }
 

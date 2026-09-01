@@ -9,6 +9,7 @@ import type {
   ConversationDeltaHandler,
   ConversationReply,
   ConversationHotelSearchState,
+  ConversationFlightSearchState,
   ConversationResponseConstraint,
   LocationIntroductionResult,
   ModelGateway,
@@ -433,10 +434,28 @@ const CONVERSATION_RESPONSE_CONSTRAINTS: Record<ConversationResponseConstraint, 
     "  1. 若城市代码、入住/退房、adults+rooms、币种已经齐全，但 `hotelSearchState` 缺失或字段不同，必须调用 `hotel.search` 并带齐字段；此调用只会让服务器保存条件，工具返回 `CONFIRMATION_REQUIRED` 后再用散文请用户确认。",
     "  2. 当用户明确表达“继续搜索 / 现在搜索”（典型措辞：「确认搜索」/「yes, search」/「go ahead」/「执行搜索」/「ok, search」/「do it」/「开始」等）且 `hotelSearchState` 已完整时，必须调用 `hotel.search`，可传 `{}` 复用该服务端状态。",
     "  3. 用户确认且本轮给出了完整字段时，也必须调用 `hotel.search` 并带齐字段。",
-    "满足第 2 或第 3 条时，本轮响应**仅**包含函数调用，**不允许**先写「好的，我来查一下」「以下是结果」之类 prose；工具结果回来之后再基于工具结果给出 grounded 总结。任何提前出现的酒店名称、价格、星级描述都会被安全过滤器洗掉。",
+    "满足第 2 或第 3 条时，本轮响应**仅**包含函数调用，**不允许**先写「好的，我来查一下」「以下是结果」之类 prose；工具结果回来之后再基于工具结果给出 grounded 总结。",
+    "• 工具结果里的 `topOffers`（最多 5 条，含酒店名、每晚价格、取消政策）是真实数据，可以直接引用具体酒店名和价格来回答「哪家最便宜」「有没有 X 元左右的」这类追问；不得编造 `topOffers` 里没有的酒店名或价格，超出范围时如实说明。",
     "",
     "如果字段不齐全，**仍要追问**（最多三条），不要因为「想发工具」就编造缺失字段。",
     "• 不得为酒店搜索索取护照、证件号码、支付信息或完整住客资料；若某供应商确实需要国籍，只能提示用户通过单独、明确授权的最小字段流程处理。",
+  ].join("\n"),
+  FLIGHT_SEARCH_READINESS: [
+    "机票搜索约束（仅在用户想找、比较、筛选或报价航班时适用）",
+    "• 先复用当前问题和 threadContext 中已明确的信息；不要重复询问已有信息。城市名需换算为 3 位 IATA 机场/城市代码（如“东京”→NRT 或 TYO，需与用户确认具体机场时才追问）。",
+    "• 若用户希望进一步进行机票搜索或报价，只补齐仍缺的查询条件：出发地代码、目的地代码、单程/往返、出发日期（往返需返程日期）、成人数、舱位、报价币种。",
+    "• 将缺口合并成不超过三条简短追问。行李、中转偏好、航司偏好是有用的可选筛选项，不应阻止用户继续。",
+    "• 不得要求用户点击卡片、按钮或到其他页面补资料。",
+    "",
+    "[Phase 4 — 服务端状态与强制工具调用] `flightSearchState` 是服务器持久化的当前私有机票查询状态，优先于从对话中猜测的字段。",
+    "  1. 若出发地、目的地、单程/往返、出发（及往返）日期、成人数、舱位、币种已经齐全，但 `flightSearchState` 缺失或字段不同，必须调用 `flight.search` 并带齐字段；此调用只会让服务器保存条件，工具返回 `CONFIRMATION_REQUIRED` 后再用散文请用户确认。",
+    "  2. 当用户明确表达“继续搜索 / 现在搜索”（典型措辞：「确认搜索」/「yes, search」/「go ahead」/「执行搜索」/「ok, search」/「do it」/「开始」等）且 `flightSearchState` 已完整时，必须调用 `flight.search`，可传 `{}` 复用该服务端状态。",
+    "  3. 用户确认且本轮给出了完整字段时，也必须调用 `flight.search` 并带齐字段。",
+    "满足第 2 或第 3 条时，本轮响应**仅**包含函数调用，**不允许**先写「好的，我来查一下」「以下是结果」之类 prose；工具结果回来之后再基于工具结果给出 grounded 总结。",
+    "• 工具结果里的 `topOffers`（最多 5 条，含航司/航班号、起降时间、总时长、价格、经停数）是真实数据，可以直接引用具体航班信息来回答「哪个最便宜」「几点起飞」这类追问；不得编造 `topOffers` 里没有的航班或价格，超出范围时如实说明。",
+    "",
+    "如果字段不齐全，**仍要追问**（最多三条），不要因为「想发工具」就编造缺失字段。",
+    "• 不得为机票搜索索取护照、证件号码、支付信息或完整乘客资料；若某供应商确实需要证件信息，只能提示用户通过单独、明确授权的最小字段流程处理。",
   ].join("\n"),
 };
 
@@ -896,6 +915,7 @@ export class LLMGateway implements ModelGateway {
     responseConstraints?: readonly ConversationResponseConstraint[];
     tripContext?: PersonalTripContext;
     hotelSearchState?: ConversationHotelSearchState | null;
+    flightSearchState?: ConversationFlightSearchState | null;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<ConversationReply> {
@@ -975,6 +995,7 @@ export class LLMGateway implements ModelGateway {
                     researchEvidence: params.researchEvidence ?? [],
                     tripContext: params.tripContext ?? null,
                     hotelSearchState: params.hotelSearchState ?? null,
+                    flightSearchState: params.flightSearchState ?? null,
                   }),
                 },
               ],
@@ -1076,6 +1097,7 @@ export class LLMGateway implements ModelGateway {
     responseConstraints?: readonly ConversationResponseConstraint[];
     tripContext?: PersonalTripContext;
     hotelSearchState?: ConversationHotelSearchState | null;
+    flightSearchState?: ConversationFlightSearchState | null;
     onDelta: ConversationDeltaHandler;
     signal?: AbortSignal;
     ctx?: RequestContext;
@@ -1215,6 +1237,7 @@ export class LLMGateway implements ModelGateway {
       responseConstraints?: readonly ConversationResponseConstraint[];
       tripContext?: PersonalTripContext;
       hotelSearchState?: ConversationHotelSearchState | null;
+      flightSearchState?: ConversationFlightSearchState | null;
       onDelta: ConversationDeltaHandler;
       signal?: AbortSignal;
       ctx?: RequestContext;
@@ -1247,6 +1270,7 @@ export class LLMGateway implements ModelGateway {
           researchEvidence: params.researchEvidence ?? [],
           tripContext: params.tripContext ?? null,
           hotelSearchState: params.hotelSearchState ?? null,
+          flightSearchState: params.flightSearchState ?? null,
         }),
       },
     ];

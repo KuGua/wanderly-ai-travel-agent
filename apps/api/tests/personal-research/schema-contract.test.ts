@@ -156,6 +156,7 @@ describe("personalResearchEvidenceSummarySchema (discriminated union)", () => {
         destinationIata: "NRT",
         earliestDeparture: null,
         latestReturn: null,
+        topOffers: [],
       },
     });
     expect(out.outcome).toBe("AVAILABLE");
@@ -201,7 +202,7 @@ describe("personalResearchEvidenceResponseSchema", () => {
       summary: {
         outcome: "AVAILABLE",
         capability: "flight.search",
-        flight: { offerCount: 1, currency: "USD", originIata: "PEK", destinationIata: "NRT", earliestDeparture: null, latestReturn: null },
+        flight: { offerCount: 1, currency: "USD", originIata: "PEK", destinationIata: "NRT", earliestDeparture: null, latestReturn: null, topOffers: [] },
       },
     });
     expect(out.outcome).toBe("AVAILABLE");

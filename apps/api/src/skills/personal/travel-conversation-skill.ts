@@ -25,6 +25,7 @@ import type { ConversationResponseConstraint } from "../../providers/model-gatew
  */
 const TRAVEL_CONVERSATION_RESPONSE_CONSTRAINTS: readonly ConversationResponseConstraint[] = [
   "HOTEL_SEARCH_READINESS",
+  "FLIGHT_SEARCH_READINESS",
 ];
 
 /**
@@ -138,6 +139,7 @@ export interface TravelConversationToolContext {
   evidenceBacked?: boolean;
   userConfirmed?: boolean;
   hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
+  flightSearchState?: import("../../providers/model-gateway.js").ConversationFlightSearchState | null;
 }
 
 export async function executeTravelConversation(
@@ -167,6 +169,7 @@ export async function executeTravelConversation(
           responseConstraints: TRAVEL_CONVERSATION_RESPONSE_CONSTRAINTS,
           tripContext: input.tripContext,
           hotelSearchState: toolContext.hotelSearchState,
+          flightSearchState: toolContext.flightSearchState,
           onDelta,
           signal,
           ctx: ctx.ctx,
@@ -183,6 +186,7 @@ export async function executeTravelConversation(
           responseConstraints: TRAVEL_CONVERSATION_RESPONSE_CONSTRAINTS,
           tripContext: input.tripContext,
           hotelSearchState: toolContext.hotelSearchState,
+          flightSearchState: toolContext.flightSearchState,
           signal,
           ctx: ctx.ctx,
         });

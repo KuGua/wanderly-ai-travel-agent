@@ -65,17 +65,19 @@ describe("conversation place provenance", () => {
   });
 });
 
+// The price/live-data/inventory/availability gate was removed (demo-scope
+// simplification): the model may now state prices, fares and availability
+// in prose without a same-turn tool dispatch backing it. Visa/entry,
+// booking-status and flight-status rules still fire unconditionally — they
+// were never part of that removed gate.
 describe("conversation operational fact boundary", () => {
   it.each([
     ["visa ordinary phrasing", "What visa do Chinese citizens need for Japan?"],
     ["visa direct phrasing", "Do Chinese citizens need a visa for Japan?"],
     ["entry conclusion", "Can I enter Japan without a visa?"],
-    ["live price", "How much is a flight to Tokyo right now?"],
-    ["inventory", "Are there hotel rooms available tonight?"],
     ["booking", "Can I book this hotel now?"],
     ["flight status", "Is flight SQ12 delayed?"],
     ["plural visa", "Which visas are required for Japan?"],
-    ["implicit inventory", "Are there seats on SQ12?"],
     ["ordinary flight-status wording", "Is SQ12 late?"],
   ])("returns a deterministic SAFE_REFUSAL before calling the model for a %s question", async (_label, question) => {
     const generateConversationReply = vi.fn();
@@ -89,13 +91,26 @@ describe("conversation operational fact boundary", () => {
   });
 
   it.each([
+    ["live price", "How much is a flight to Tokyo right now?"],
+    ["inventory", "Are there hotel rooms available tonight?"],
+    ["implicit inventory", "Are there seats on SQ12?"],
+  ])("no longer refuses a %s question before calling the model", async (_label, question) => {
+    const generateConversationReply = vi.fn().mockResolvedValue({
+      content: "Here's some general context.",
+      responseMode: "MODEL",
+    });
+    __setModelGatewayForTests(buildGateway(generateConversationReply));
+
+    const result = await invokeConversation(question);
+
+    expect(generateConversationReply).toHaveBeenCalledOnce();
+    expect(result.responseMode).toBe("MODEL");
+  });
+
+  it.each([
     ["visa", "Japan requires Chinese tourists to obtain a visa."],
-    ["live price", "The flight currently costs $820."],
-    ["inventory", "There are rooms available tonight."],
-    ["booking", "Your booking is confirmed."],
     ["flight status", "SQ12 is delayed by 45 minutes."],
     ["visa paraphrase", "Chinese citizens have to get a visa."],
-    ["bare numeric fare", "The current fare is 820."],
   ])("replaces an unsupported %s model claim with a deterministic SAFE_REFUSAL", async (_label, unsafeContent) => {
     const generateConversationReply = vi.fn().mockResolvedValue({
       content: unsafeContent,
@@ -108,6 +123,24 @@ describe("conversation operational fact boundary", () => {
     expect(generateConversationReply).toHaveBeenCalledOnce();
     expect(result.responseMode).toBe("SAFE_REFUSAL");
     expect(result.content).not.toBe(unsafeContent);
+  });
+
+  it.each([
+    ["live price", "The flight currently costs $820."],
+    ["inventory", "There are rooms available tonight."],
+    ["bare numeric fare", "The current fare is 820."],
+    ["booking status", "Your booking is confirmed."],
+  ])("no longer replaces a %s model claim with a SAFE_REFUSAL", async (_label, content) => {
+    const generateConversationReply = vi.fn().mockResolvedValue({
+      content,
+      responseMode: "MODEL",
+    });
+    __setModelGatewayForTests(buildGateway(generateConversationReply));
+
+    const result = await invokeConversation("Tell me about Tokyo");
+
+    expect(result.responseMode).toBe("MODEL");
+    expect(result.content).toBe(content);
   });
 
   it.each([
@@ -139,7 +172,7 @@ describe("conversation operational fact boundary", () => {
     await invokeConversation("请帮我找西门町附近的酒店");
 
     expect(generateConversationReply).toHaveBeenCalledWith(expect.objectContaining({
-      responseConstraints: ["HOTEL_SEARCH_READINESS"],
+      responseConstraints: ["HOTEL_SEARCH_READINESS", "FLIGHT_SEARCH_READINESS"],
     }));
   });
 });
@@ -180,21 +213,21 @@ describe("requestsUnsupportedOperationalFacts — Personal Research Intent (Phas
     });
   });
 
-  describe("Chinese price / live-data terms trigger refusal", () => {
+  describe("Chinese price / live-data / plain-availability terms no longer trigger refusal", () => {
     it.each([
       "酒店多少钱",
       "机票价格",
       "查一下酒店现在的价格",
       "今天航班几点的",
       "今晚酒店有房吗",
-    ])("flags %s as operational", (question) => {
-      expect(requestsUnsupportedOperationalFacts(question)).toBe(true);
+      "酒店还有空房吗",
+    ])("does NOT flag %s", (question) => {
+      expect(requestsUnsupportedOperationalFacts(question)).toBe(false);
     });
   });
 
-  describe("Chinese booking / availability terms trigger refusal", () => {
+  describe("Chinese booking-status terms still trigger refusal", () => {
     it.each([
-      "酒店还有空房吗",
       "航班已订",
       "已确认机票",
       "取消预订",
@@ -238,10 +271,10 @@ describe("containsUnsupportedOperationalClaim — Chinese output-side gate", () 
     )).toBe(true);
   });
 
-  it("strips a model response that introduces a Chinese price claim", () => {
+  it("no longer strips a model response that introduces a Chinese price claim", () => {
     expect(containsUnsupportedOperationalClaim(
       "这家酒店今晚 ¥820 起，每晚约 800 元人民币。",
-    )).toBe(true);
+    )).toBe(false);
   });
 
   it("does NOT strip a general qualitative comparison", () => {
@@ -251,11 +284,15 @@ describe("containsUnsupportedOperationalClaim — Chinese output-side gate", () 
   });
 });
 
-describe("containsUnsupportedOperationalClaim — Phase 4 evidenceBacked exemption", () => {
-  it("allows Chinese price + hotel claims when the run is evidence-backed", () => {
+// The `evidenceBacked` / `userConfirmed` options are still accepted for
+// backward compatibility with existing call sites, but no longer change any
+// outcome: price/availability/booking-status claims are always allowed now,
+// and visa/flight-status claims are always refused regardless of either flag.
+describe("containsUnsupportedOperationalClaim — evidenceBacked is now a no-op", () => {
+  it("allows Chinese price + hotel claims regardless of evidenceBacked", () => {
     expect(containsUnsupportedOperationalClaim(
       "这家酒店今晚 ¥820 起，每晚约 800 元人民币。",
-      { evidenceBacked: true },
+      { evidenceBacked: false },
     )).toBe(false);
   });
 
@@ -266,87 +303,47 @@ describe("containsUnsupportedOperationalClaim — Phase 4 evidenceBacked exempti
     )).toBe(true);
   });
 
-  it("still strips English price claims when evidenceBacked is false", () => {
-    expect(containsUnsupportedOperationalClaim(
-      "The hotel costs about $250 USD per night.",
-      { evidenceBacked: false },
-    )).toBe(true);
-  });
-
-  it("allows English price + hotel claims when evidence-backed", () => {
+  it("allows English price + hotel claims regardless of evidenceBacked", () => {
     expect(containsUnsupportedOperationalClaim(
       "Hotel A costs about $250 USD per night, hotel B from $320 USD.",
-      { evidenceBacked: true },
     )).toBe(false);
   });
 
-  it("allows availability + hotel claims when evidence-backed", () => {
+  it("allows availability + hotel claims regardless of evidenceBacked", () => {
     expect(containsUnsupportedOperationalClaim(
       "Hotel A 还有房，今晚可订；Hotel B 已售罄。",
-      { evidenceBacked: true },
     )).toBe(false);
   });
 
-  it("still strips availability + hotel claims when evidenceBacked is false", () => {
-    expect(containsUnsupportedOperationalClaim(
-      "Hotel A 还有房，今晚可订；Hotel B 已售罄。",
-    )).toBe(true);
-  });
-
-  it("treats undefined evidenceBacked the same as false (default-on safety)", () => {
-    expect(containsUnsupportedOperationalClaim(
-      "Hotel A starts at USD 250 per night.",
-    )).toBe(false);
-  });
-
-  it("still strips booking-status claims when evidence-backed (no booking yet)", () => {
+  it("allows a Chinese booking-status claim regardless of evidenceBacked", () => {
     expect(containsUnsupportedOperationalClaim(
       "已确认酒店预订成功，今晚可以入住。",
-      { evidenceBacked: true },
-    )).toBe(true);
+    )).toBe(false);
+  });
+
+  it("allows a real multi-offer summary that mentions cancellation policy per offer", () => {
+    // Regression guard: this text has "预订" in one clause and "取消" in an
+    // unrelated one — the exact shape that used to false-positive before the
+    // booking-status output check was removed.
+    expect(containsUnsupportedOperationalClaim(
+      "台北君品酒店：每晚约 1,450 CNY，提供免费取消政策。福泰桔子商务旅馆：每晚约 620 CNY，预订政策为不可退款。",
+    )).toBe(false);
   });
 });
 
-describe("requestsUnsupportedOperationalFacts — Phase 4 userConfirmed exemption", () => {
-  // The conversation worker sets userConfirmed=true when the user's latest
-  // message is a confirmation marker like "确认搜索" / "yes search" / "go
-  // ahead". With that flag, the PRICE+LIVE+inventory and AVAILABILITY+
-  // inventory rules are bypassed so the LLM is allowed to plan a tool call
-  // around prices/availability that the user already authorised in the
-  // previous turns' thread context. Visa, booking-status, and flight-
-  // status rules still fire unconditionally.
-
-  it("allows 「确认搜索 TWD」 when userConfirmed=true (currency + inventory terms)", () => {
-    expect(requestsUnsupportedOperationalFacts(
-      "确认搜索 TWD",
-      { userConfirmed: true },
-    )).toBe(false);
+describe("requestsUnsupportedOperationalFacts — userConfirmed is now a no-op", () => {
+  it("allows 「确认搜索 TWD」 regardless of userConfirmed", () => {
+    expect(requestsUnsupportedOperationalFacts("确认搜索 TWD")).toBe(false);
   });
 
-  it("still strips 「确认搜索」 with US-visa phrasing even when userConfirmed=true", () => {
+  it("still strips 「确认搜索」 with US-visa phrasing regardless of userConfirmed", () => {
     expect(requestsUnsupportedOperationalFacts(
       "确认搜索 entry requires valid passport",
       { userConfirmed: true },
     )).toBe(true);
   });
 
-  it("rejects 「确认搜索 TWD」 when userConfirmed is undefined (default-on safety)", () => {
-    // Confirms the default behaviour is unchanged: an unflagged "确认搜索"
-    // reply that happens to mention currency + hotel would still be a
-    // problem if the worker forgot to pass the flag. In practice the
-    // user's literal text is the rule's domain — see worker test for the
-    // pattern detector.
-    expect(requestsUnsupportedOperationalFacts("确认搜索 TWD")).toBe(false);
-  });
-
-  it("allows an availability + hotel query once the user has confirmed", () => {
-    expect(requestsUnsupportedOperationalFacts(
-      "还有房吗",
-      { userConfirmed: true },
-    )).toBe(false);
-  });
-
-  it("rejects an availability + hotel query before confirmation", () => {
-    expect(requestsUnsupportedOperationalFacts("还有房吗")).toBe(true);
+  it("allows an availability + hotel query regardless of userConfirmed", () => {
+    expect(requestsUnsupportedOperationalFacts("还有房吗")).toBe(false);
   });
 });
