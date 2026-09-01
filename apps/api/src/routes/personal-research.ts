@@ -22,7 +22,7 @@
  */
 
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
 import { db } from "../db/database.js";
@@ -42,6 +42,7 @@ import { isPersonalResearchCapabilityAllowed, type PersonalResearchOperationCapa
 import {
   personalResearchAnswersRequestSchema,
   personalResearchConfirmRequestSchema,
+  personalResearchOwnerDraftSchema,
   uuidSchema,
 } from "../types/schemas.js";
 import { createRequestContext } from "../utils/context.js";
@@ -187,6 +188,10 @@ export async function personalResearchRoutes(app: FastifyInstance): Promise<void
         eq(agentTaskRuns.id, runId),
         eq(agentTaskRuns.createdByUserId, request.user.id),
         eq(agentTaskRuns.operation, "CONVERSATION"),
+        or(
+          isNull(agentTaskRuns.researchIntentState),
+          eq(agentTaskRuns.researchIntentState, "PROPOSED"),
+        ),
       )).returning({ id: agentTaskRuns.id });
       if (!updated) {
         throw new ApiError(409, "Conflict", "Personal research draft state could not be updated");
@@ -209,7 +214,11 @@ export async function personalResearchRoutes(app: FastifyInstance): Promise<void
     if (!rawDraft?.draft || typeof rawDraft.draft.kind !== "string") {
       throw new ApiError(422, "Unprocessable Entity", "Conversation run is missing a typed personal research draft");
     }
-    const capability = deriveCapabilityFromDraft(rawDraft.draft as { kind: string });
+    const typedDraft = personalResearchOwnerDraftSchema.safeParse(rawDraft.draft);
+    if (!typedDraft.success) {
+      throw new ApiError(422, "Unprocessable Entity", "Conversation run contains an invalid personal research draft");
+    }
+    const capability = deriveCapabilityFromDraft(typedDraft.data);
     if (!isPersonalResearchCapabilityAllowed(capability)) {
       throw new ApiError(422, "Unprocessable Entity", `Capability ${capability} is not enabled for personal research`);
     }
@@ -223,6 +232,7 @@ export async function personalResearchRoutes(app: FastifyInstance): Promise<void
       ownerUserId: request.user.id,
       requestId: body.requestId,
       capability,
+      input: typedDraft.data,
       originatingIntentRunId: runId,
     });
     reply.status(202);

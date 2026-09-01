@@ -108,6 +108,10 @@ type AuditSummaryValue =
 
 The supported `AuditAction` values are:
 
+For DRAFT Personal Research durable tasks, `PERSONAL_RESEARCH_COMMAND_ACCEPTED`,
+`PERSONAL_RESEARCH_COMPLETED`, and `PERSONAL_RESEARCH_CANCELLED` retain only
+safe task/capability/status identifiers, never the confirmed request input.
+
 - `PROFILE_CREATE`, `PROFILE_UPDATE`, `PROFILE_DELETE`
 - `TRIP_CREATE`, `TRIP_JOIN`
 - `TRIP_INVITATION_CREATE`, `TRIP_INVITATION_ACCEPT`, `TRIP_INVITATION_REVOKE`,

@@ -1227,3 +1227,17 @@ export const personalResearchEvidence = pgTable("personal_research_evidence", {
   ownerCreatedIdx: index("personal_research_evidence_owner_created_idx")
     .on(table.ownerUserId, table.createdAt),
 }));
+
+// Immutable, owner-confirmed input for a PERSONAL_RESEARCH task. Keeping the
+// input beside the durable task (rather than re-reading the mutable
+// CONVERSATION draft) makes the Worker execute exactly what the owner saw at
+// confirmation time.
+export const personalResearchRequests = pgTable("personal_research_requests", {
+  runId: uuid("run_id").primaryKey().references(() => agentTaskRuns.id, { onDelete: "cascade" }),
+  originatingIntentRunId: uuid("originating_intent_run_id").notNull().references(() => agentTaskRuns.id, { onDelete: "cascade" }),
+  capability: personalResearchCapabilityEnum("capability").notNull(),
+  inputJson: jsonb("input_json").$type<Record<string, unknown>>().notNull(),
+  inputHash: varchar("input_hash", { length: 64 }).notNull(),
+  version: integer("version").default(1).notNull(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }).defaultNow().notNull(),
+});

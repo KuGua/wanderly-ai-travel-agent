@@ -1,8 +1,8 @@
 # DRAFT Personal Research 到 Shared Planning 实施规范
 
-**状态：** 已批准，待实现  
+**状态：** 部分实施；当前仅 Flight 可确认，其他 capability fail closed
 **适用范围：** `DRAFT` Trip、owner-only Personal Agent、真实 research provider、显式进入 Shared Planning  
-**实现前提：** 本文是下一阶段研发合同，不描述当前线上行为。当前运行时仍遵循 [探索行程生命周期实施记录](exploration-trip-lifecycle-implementation.md)、[Personal Research Intent Routing 实施规范](personal-research-intent-routing-implementation.md) 和 API 文档：`DRAFT` 不会调用 provider，确认后的 research 仍创建 snapshot 并由 Shared Worker 执行。
+**实现前提：** 当前运行时已具备 owner-only `PERSONAL_RESEARCH` durable task 与 immutable confirmed request；只允许 `flight.search`。它不创建 Shared snapshot，结果不能进入 plan。其余能力仍按 [Personal Research Intent Routing 实施规范](personal-research-intent-routing-implementation.md) 的 snapshot-bound Shared 路径处理，直到各自完成独立验收。
 
 ## 1. 目标与范围
 

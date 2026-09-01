@@ -1,5 +1,17 @@
 # API Reference
 
+## DRAFT Personal Research（owner-only）
+
+已确认的 DRAFT Flight 查询不创建 snapshot 或 plan。owner 先通过
+`PUT /api/v1/agent-runs/:runId/personal-research/answers` 保存严格校验的
+draft，再以 `{ requestId }` 调用
+`POST /api/v1/agent-runs/:runId/personal-research/confirm`，服务端返回
+`202` 和 `PERSONAL_RESEARCH` run。`GET /api/v1/agent-runs/:runId/personal-research`
+只向 owner 返回 bounded evidence；`POST .../cancel` 幂等取消尚未完成的 run。
+当前仅允许 `flight.search`；其余 capability 返回 `422`，不能以 Shared
+feature flag 绕过。确认输入被不可变地绑定到 task，Worker 不读取可编辑聊天
+draft。完整边界见 [DRAFT Personal Research 实施规范](../../docs/draft-personal-research-implementation.md).
+
 Base URL: `http://localhost:3000/api/v1`
 
 **Authentication**: All endpoints except `/health`, `/metrics`, `/docs`,

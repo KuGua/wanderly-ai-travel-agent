@@ -5,7 +5,7 @@
  * `run.operation === "PERSONAL_RESEARCH"`. The handler:
  *   1. Re-checks the run row invariant (owner-only, thread-bound, no snapshot).
  *   2. Calls `DefaultPolicyGate.requirePersonalResearchAuthority`.
- *   3. Loads the typed draft from the originating CONVERSATION row.
+ *   3. Loads the typed, immutable request captured when the owner confirmed it.
  *   4. Invokes the capability-specific executor via `executePersonalResearch`.
  *   5. Writes the terminal state with `completePersonalResearchTask`.
  *
@@ -19,7 +19,7 @@
 import { eq } from "drizzle-orm";
 
 import { db } from "../../db/database.js";
-import { agentTaskRuns } from "../../db/schema.js";
+import { personalResearchRequests } from "../../db/schema.js";
 import { DefaultPolicyGate } from "../../agents/policy-gate.js";
 import type { ResearchAuthority } from "../../agents/contracts.js";
 import { SkillError } from "../../agents/errors.js";
@@ -133,10 +133,12 @@ async function loadTypedDraft(params: {
   run: AgentTaskRow;
   capability: PersonalResearchOperationCapability;
 }): Promise<PersonalResearchOwnerDraft | null> {
-  const [intentRun] = await db.select({
-    researchIntentDraft: agentTaskRuns.researchIntentDraft,
-  }).from(agentTaskRuns).where(eq(agentTaskRuns.id, params.run.id)).limit(1);
-  const raw = intentRun?.researchIntentDraft;
+  const [request] = await db.select({
+    capability: personalResearchRequests.capability,
+    inputJson: personalResearchRequests.inputJson,
+  }).from(personalResearchRequests).where(eq(personalResearchRequests.runId, params.run.id)).limit(1);
+  if (request?.capability !== params.capability) return null;
+  const raw = request?.inputJson;
   if (!raw) return null;
   // The persisted draft is the Zod-validated object that the OWNER drafted
   // through PUT /personal-research/answers. We re-parse to verify and to

@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { SpanKind } from "@opentelemetry/api";
 
@@ -9,6 +9,7 @@ import {
   chatThreads,
   idempotencyRecords,
   outboxEvents,
+  personalResearchRequests,
   personalResearchSetupSessions,
   tripMembers,
 } from "../db/schema.js";
@@ -22,6 +23,7 @@ import {
   agentRunResponseSchema,
   conversationTurnAcceptedResponseSchema,
   persistedResearchIntentDraftSchema,
+  personalResearchOwnerDraftSchema,
   researchIntentStateSchema,
   type AgentRunResponse,
   type ConversationPlace,
@@ -526,6 +528,7 @@ export async function acceptPersonalResearchTask(params: {
   ownerUserId: string;
   requestId: string;
   capability: PersonalResearchOperationCapability;
+  input: z.infer<typeof personalResearchOwnerDraftSchema>;
   originatingIntentRunId?: string;
   tx?: Tx;
 }): Promise<{
@@ -577,6 +580,7 @@ export async function acceptPersonalResearchTask(params: {
     if (params.originatingIntentRunId) {
       await tx.update(agentTaskRuns).set({
         status: "COMPLETED",
+        researchIntentState: "CONFIRMED",
         finishedAt: new Date(),
         updatedAt: new Date(),
       }).where(and(
@@ -611,6 +615,20 @@ export async function acceptPersonalResearchTask(params: {
       expiresAt,
       traceContext: buildTraceContextForTask(params.ctx),
     }).returning();
+
+    // The request is an immutable, task-owned copy of the exact Zod-validated
+    // payload confirmed by the owner. The Worker must never re-read the
+    // originating conversation draft, which can otherwise race with a later
+    // browser edit.
+    const inputJson = params.input as unknown as Record<string, unknown>;
+    await tx.insert(personalResearchRequests).values({
+      runId: run.id,
+      originatingIntentRunId: params.originatingIntentRunId ?? run.id,
+      capability: params.capability,
+      inputJson,
+      inputHash: createHash("sha256").update(JSON.stringify(inputJson)).digest("hex"),
+      version: 1,
+    });
 
     await tx.insert(outboxEvents).values({
       eventId: randomUUID(),

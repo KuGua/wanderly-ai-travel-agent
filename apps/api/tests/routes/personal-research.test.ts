@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
+import { eq } from "drizzle-orm";
 
 import { runMigrations } from "../../src/db/migrate.js";
 import { db } from "../../src/db/database.js";
@@ -8,6 +9,7 @@ import {
   agentTaskRuns,
   chatMessages,
   chatThreads,
+  personalResearchRequests,
   sharedTrips,
   tripMembers,
   users,
@@ -233,6 +235,47 @@ describe("DRAFT Personal Research routes — Phase 4", () => {
 
     const countRows = await db.execute(`SELECT COUNT(*)::int AS count FROM agent_task_runs WHERE operation = 'PERSONAL_RESEARCH' AND created_by_user_id = '${ownerId}'`);
     expect(countRows[0]?.count ?? 0).toBe(1);
+  });
+
+  it("freezes the confirmed input on the durable run and rejects later draft edits", async () => {
+    const { ownerId, tripId, threadId } = await makeTripWithDefaultThread("alice");
+    const conversationRunId = await makeConversationRun(ownerId, tripId, threadId);
+    await app.inject({
+      method: "PUT",
+      url: `/api/v1/agent-runs/${conversationRunId}/personal-research/answers`,
+      headers: { ...authHeaders("alice"), "content-type": "application/json" },
+      payload: validFlightDraft,
+    });
+    const confirm = await app.inject({
+      method: "POST",
+      url: `/api/v1/agent-runs/${conversationRunId}/personal-research/confirm`,
+      headers: { ...authHeaders("alice"), "content-type": "application/json" },
+      payload: { requestId: randomUUID() },
+    });
+    expect(confirm.statusCode).toBe(202);
+    const durableRunId = confirm.json().runId as string;
+
+    const [request] = await db.select({
+      capability: personalResearchRequests.capability,
+      inputJson: personalResearchRequests.inputJson,
+      originatingIntentRunId: personalResearchRequests.originatingIntentRunId,
+    }).from(personalResearchRequests).where(eq(personalResearchRequests.runId, durableRunId));
+    expect(request).toMatchObject({
+      capability: "flight.search",
+      originatingIntentRunId: conversationRunId,
+      inputJson: validFlightDraft.draft,
+    });
+
+    const edit = await app.inject({
+      method: "PUT",
+      url: `/api/v1/agent-runs/${conversationRunId}/personal-research/answers`,
+      headers: { ...authHeaders("alice"), "content-type": "application/json" },
+      payload: {
+        schemaVersion: 1,
+        draft: { ...validFlightDraft.draft, destinationId: "HND" },
+      },
+    });
+    expect(edit.statusCode).toBe(409);
   });
 
   it("confirm rejects a non-flight capability with 422", async () => {
