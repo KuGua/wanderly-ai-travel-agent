@@ -1,17 +1,22 @@
 # Local Development Authentication
 
 `AUTH_MODE=local-dev` exists only for a single-user browser → API smoke path.
-`AUTH_MODE=custom-local` is the loopback-only, database-backed multi-user mode
-for isolation, invitation and private-thread tests. Cognito remains the default
-and the production authentication mechanism.
+`AUTH_MODE=custom-local` is the database-backed multi-user mode for isolation,
+invitation and private-thread tests. It can also support a short-lived trusted
+LAN test over an exact RFC1918 IPv4 address. Cognito remains the default and
+the production authentication mechanism.
 
 Local development mode is fail-closed:
 
 - it is rejected unless `NODE_ENV` is `development` or `test`;
-- API startup is rejected unless `HOST` is loopback-only;
-- each protected request is rejected unless its actual socket peer is loopback
-  (`trustProxy` is not enabled, so forwarded client headers do not choose it);
-- only explicit loopback browser Origins may read API responses; protected
+- `local-dev` startup and protected requests are rejected unless `HOST` and the
+  actual socket peer are loopback (`trustProxy` is not enabled, so forwarded
+  client headers do not choose it);
+- `custom-local` normally has the same loopback setup, but may bind an exact
+  RFC1918 IPv4 address for a trusted LAN test; public, tunnel and wildcard
+  bindings remain rejected;
+- only explicit loopback Origins may read local-dev API responses. custom-local
+  additionally accepts an exact configured RFC1918 IPv4 Origin; protected
   `POST`/`PUT`/`PATCH`/`DELETE` requests also require one of those Origins;
 - the server provisions one fixed `local-dev:default-traveler` external subject
   and resolves its database UUID itself;
@@ -70,11 +75,19 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
 ```
 
 `LOCAL_DEV_ALLOWED_ORIGINS` is a comma-separated allow-list of exact browser
-Origins. Every value must be an `http://` loopback Origin (for example
-`http://localhost:3001`), with no path, query, credentials or public/LAN host.
-The Web application's browser Origin must match one entry; its API base URL must
-separately remain loopback (normally `http://localhost:3000`). Do not add a
-phone, LAN, tunnel or deployed URL to this mode.
+Origins. Each value must be an `http://` loopback Origin (for example
+`http://localhost:3001`), with no path, query or credentials. In `custom-local`
+only, it may instead contain the exact RFC1918 IPv4 browser Origin for a
+trusted-LAN test. The Web application's browser Origin must match one entry and
+its API base URL must use the same private LAN address. Do not add public,
+tunnel or deployed URLs, and never use `local-dev` on LAN.
+
+To use one `custom-local` API from both this computer and a trusted LAN device,
+bind the API to its private IPv4 address, allow both browser Origins, and set
+the Web API URL to that one private IPv4 API address. For example,
+`LOCAL_DEV_ALLOWED_ORIGINS=http://localhost:3001,http://10.91.182.185:3001`
+and `NEXT_PUBLIC_API_BASE_URL=http://10.91.182.185:3000` allow both entry URLs;
+`NEXT_PUBLIC_API_BASE_URL` is one URL, not a comma-separated list.
 
 The key belongs only in ignored `apps/api/.env`. Never put it in
 `apps/web/.env.local`, any `NEXT_PUBLIC_*` variable, source code, tests, logs or
@@ -86,6 +99,39 @@ never through Git, chat screenshots or committed documentation.
 browser fabricate a token or user ID. The backend supplies one fixed,
 development-only, server-owned identity while all normal ownership and
 authorization checks remain active. Production continues to use Cognito.
+
+## Trusted LAN test (custom-local only)
+
+Use this only on a network you trust and only while actively testing. Every
+participant signs in with their own local account; do not share passwords or
+the API JWT. With this machine's address `10.91.182.185`, set:
+
+```dotenv
+# apps/api/.env
+AUTH_MODE=custom-local
+NODE_ENV=development
+HOST=10.91.182.185
+LOCAL_DEV_ALLOWED_ORIGINS=http://10.91.182.185:3001
+JWT_SECRET=<unique-local-secret-at-least-32-characters>
+
+# apps/web/.env.local
+NEXT_PUBLIC_AUTH_MODE=custom-local
+NEXT_PUBLIC_API_BASE_URL=http://10.91.182.185:3000
+```
+
+Restart both processes. Start Next.js so it listens on the LAN interface:
+
+```bash
+npm --prefix apps/web run dev -- --hostname 0.0.0.0 --port 3001
+```
+
+The checked-in `apps/web/next.config.ts` allow-lists `10.91.182.185` for
+Next.js development chunks. If the machine's LAN address changes, replace that
+single entry with the new private IPv4 address and restart the dev server.
+
+Friends can then open `http://10.91.182.185:3001`. Stop the servers or restore
+the loopback settings when the session ends. Do not expose this mode through a
+tunnel, router port forwarding, public DNS, or a shared/untrusted Wi-Fi.
 
 ## Start the working local stack
 

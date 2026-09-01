@@ -27,8 +27,9 @@ export function assertLocalDevServerHost(
   // Compose configuration binds the published port to 127.0.0.1; the explicit
   // flag keeps the exception unavailable to ordinary local processes.
   const isAllowedContainerHost = allowContainerHost && host === "0.0.0.0";
-  if (isLocalMode && !isLoopbackHost(host) && !isAllowedContainerHost) {
-    throw new Error(`AUTH_MODE=${mode} requires HOST to be a loopback address`);
+  const isAllowedCustomLocalLanHost = mode === "custom-local" && isPrivateIpv4Address(host);
+  if (isLocalMode && !isLoopbackHost(host) && !isAllowedContainerHost && !isAllowedCustomLocalLanHost) {
+    throw new Error(`AUTH_MODE=${mode} requires HOST to be a loopback address or private IPv4 address for custom-local`);
   }
 }
 
@@ -55,12 +56,26 @@ export function isLoopbackHost(host: string): boolean {
   return normalized === "localhost" || isLoopbackAddress(normalized);
 }
 
+export function isPrivateIpv4Address(address: string): boolean {
+  const octets = address.trim().split(".");
+  if (octets.length !== 4 || octets.some(octet => !/^(0|[1-9]\d{0,2})$/.test(octet))) return false;
+  const values = octets.map(Number);
+  if (values.some(value => value > 255)) return false;
+  return values[0] === 10
+    || (values[0] === 172 && values[1] >= 16 && values[1] <= 31)
+    || (values[0] === 192 && values[1] === 168);
+}
+
 /**
  * Parse the only browser origins that may access either local authentication mode.
- * The value is intentionally limited to loopback HTTP origins: accepting a LAN
- * or public origin would let an unrelated site exercise the local identity.
+ * `local-dev` is intentionally limited to loopback HTTP origins. `custom-local`
+ * may additionally use an exact RFC1918 IPv4 origin for an explicitly local
+ * LAN test; it still requires a password-backed API JWT and development/test.
  */
-export function resolveLocalDevAllowedOrigins(value: string | undefined = process.env.LOCAL_DEV_ALLOWED_ORIGINS): string[] {
+export function resolveLocalDevAllowedOrigins(
+  value: string | undefined = process.env.LOCAL_DEV_ALLOWED_ORIGINS,
+  mode: AuthMode = resolveAuthMode(),
+): string[] {
   const configured = value?.split(",").map(origin => origin.trim()).filter(Boolean) ?? [];
   if (configured.length === 0) {
     throw new Error("Local authentication requires LOCAL_DEV_ALLOWED_ORIGINS");
@@ -76,7 +91,7 @@ export function resolveLocalDevAllowedOrigins(value: string | undefined = proces
 
     if (
       parsed.protocol !== "http:"
-      || !isLoopbackHost(parsed.hostname)
+      || !(isLoopbackHost(parsed.hostname) || (mode === "custom-local" && isPrivateIpv4Address(parsed.hostname)))
       || parsed.pathname !== "/"
       || parsed.search
       || parsed.hash
@@ -84,7 +99,7 @@ export function resolveLocalDevAllowedOrigins(value: string | undefined = proces
       || parsed.password
       || parsed.origin !== origin
     ) {
-      throw new Error(`LOCAL_DEV_ALLOWED_ORIGINS must contain exact loopback HTTP origins: ${origin}`);
+      throw new Error(`LOCAL_DEV_ALLOWED_ORIGINS must contain exact loopback HTTP origins, or private IPv4 HTTP origins for custom-local: ${origin}`);
     }
     return parsed.origin;
   });

@@ -80,7 +80,8 @@ Authorization: Bearer <cognito-access-token>
 在 Cognito 尚未配置前，本地 browser-to-Agent 验证可显式设置
 `AUTH_MODE=local-dev`、`NODE_ENV=development`、`HOST=127.0.0.1`。该模式只接受
 loopback socket 请求并由服务端固定映射一个本地身份；production、非 loopback 绑定和
-非 loopback 客户端均 fail closed。浏览器不发送 token 或 user ID。详见
+非 loopback 客户端均 fail closed。需要朋友在受信任内网测试时，使用数据库账号模式
+`custom-local`，并仅配置精确 RFC1918 IPv4 host/origin；浏览器不发送 user ID。详见
 [`docs/local-development-auth.md`](../../docs/local-development-auth.md)。
 
 ## Sandbox callback 配置

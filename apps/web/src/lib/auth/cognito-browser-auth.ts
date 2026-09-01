@@ -42,7 +42,17 @@ export class CognitoChallengeRequiredError extends Error {
   }
 }
 
-export function isLoopbackHttpApiBaseUrl(value: string): boolean {
+function isPrivateIpv4Host(host: string): boolean {
+  const octets = host.split(".");
+  if (octets.length !== 4 || octets.some(octet => !/^(0|[1-9]\d{0,2})$/.test(octet))) return false;
+  const values = octets.map(Number);
+  if (values.some(value => value > 255)) return false;
+  return values[0] === 10
+    || (values[0] === 172 && values[1] >= 16 && values[1] <= 31)
+    || (values[0] === 192 && values[1] === 168);
+}
+
+export function isAllowedLocalHttpApiBaseUrl(value: string, allowPrivateLan: boolean = false): boolean {
   let parsed: URL;
   try {
     parsed = new URL(value);
@@ -52,12 +62,16 @@ export function isLoopbackHttpApiBaseUrl(value: string): boolean {
 
   const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
   return parsed.protocol === "http:"
-    && (host === "localhost" || host === "::1" || /^127(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(host))
+    && (host === "localhost" || host === "::1" || /^127(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(host) || (allowPrivateLan && isPrivateIpv4Host(host)))
     && parsed.pathname === "/"
     && !parsed.search
     && !parsed.hash
     && !parsed.username
     && !parsed.password;
+}
+
+export function isLoopbackHttpApiBaseUrl(value: string): boolean {
+  return isAllowedLocalHttpApiBaseUrl(value);
 }
 
 const unconfiguredAuthService: BrowserAuthService = {
@@ -88,7 +102,7 @@ const invalidLocalDevelopmentAuthService: BrowserAuthService = {
   localDevelopmentConfigurationInvalid: true,
   restoreSession: async () => null,
   signIn: async () => {
-    throw new Error("Local development authentication requires a loopback NEXT_PUBLIC_API_BASE_URL");
+    throw new Error("Local development authentication requires a loopback API URL, or a private IPv4 API URL for custom-local LAN testing");
   },
   signOut: async () => undefined,
   getAccessToken: async () => null,
@@ -97,13 +111,13 @@ const invalidLocalDevelopmentAuthService: BrowserAuthService = {
 export function resolveSyncAuthFallback(): BrowserAuthService {
   const authMode = process.env.NEXT_PUBLIC_AUTH_MODE?.trim() || "cognito";
   if (authMode === "custom-local" && process.env.NODE_ENV !== "production") {
-    if (!isLoopbackHttpApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")) {
+    if (!isAllowedLocalHttpApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000", true)) {
       return invalidLocalDevelopmentAuthService;
     }
     return createCustomBrowserAuth();
   }
   if (authMode === "local-dev" && process.env.NODE_ENV !== "production") {
-    if (!isLoopbackHttpApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")) {
+    if (!isAllowedLocalHttpApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")) {
       return invalidLocalDevelopmentAuthService;
     }
     return localDevelopmentAuthService;

@@ -91,6 +91,16 @@ describe("Cognito browser auth adapter", () => {
     expect(amplifyMocks.configure).not.toHaveBeenCalled();
   });
 
+  it("permits a private IPv4 API URL for custom-local LAN testing", async () => {
+    process.env.NEXT_PUBLIC_AUTH_MODE = "custom-local";
+    process.env.NEXT_PUBLIC_API_BASE_URL = "http://10.91.182.185:3000";
+
+    const service = await createCognitoBrowserAuth();
+
+    expect(service.configured).toBe(true);
+    expect(service.localDevelopmentConfigurationInvalid).toBeUndefined();
+  });
+
   it("does not activate local-dev when its API base URL is not loopback", async () => {
     process.env.NEXT_PUBLIC_AUTH_MODE = "local-dev";
     process.env.NEXT_PUBLIC_API_BASE_URL = "http://192.168.1.10:3000";

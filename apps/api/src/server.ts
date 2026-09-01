@@ -21,7 +21,7 @@ const AUTH_MODE = resolveAuthMode();
 assertAuthModeEnvironment(AUTH_MODE);
 assertLocalDevServerHost(AUTH_MODE, HOST);
 assertCustomLocalJwtSecret(AUTH_MODE);
-if (AUTH_MODE === "local-dev" || AUTH_MODE === "custom-local") resolveLocalDevAllowedOrigins();
+if (AUTH_MODE === "local-dev" || AUTH_MODE === "custom-local") resolveLocalDevAllowedOrigins(undefined, AUTH_MODE);
 
 async function main() {
   const app = await buildApp();
