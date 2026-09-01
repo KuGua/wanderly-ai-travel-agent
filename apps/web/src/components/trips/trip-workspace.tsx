@@ -3,13 +3,10 @@
 import { ExternalLink, PanelRight, Pencil, Plus, UserPlus, X } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
-import { SharedPlanningPanel } from "@/components/trips/shared-planning-panel";
 import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
-import { TripMemoryPanel } from "@/components/trips/trip-memory-panel";
-import { PlacesPanel } from "@/components/trips/places-panel";
 import { ResearchGapBanner } from "@/components/trips/research-gap-banner";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link, useRouter } from "@/i18n/navigation";
@@ -52,10 +49,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const [manualTitle, setManualTitle] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [activationError, setActivationError] = useState(false);
-  // Local layout preference only: dragging never changes trip or planning state.
-  const [threadRailWidth, setThreadRailWidth] = useState(260);
-  const [planningWidth, setPlanningWidth] = useState(500);
-  const workspaceRef = useRef<HTMLElement>(null);
 
   const autoProvisionAttemptedRef = useRef(false);
 
@@ -134,54 +127,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       // surfaced through the threads query error state.
     }
   }, [createThread, router, searchParams, t, threads.length, tripId]);
-
-  const setThreadRailWidthFromPointer = useCallback((clientX: number) => {
-    const bounds = workspaceRef.current?.getBoundingClientRect();
-    if (!bounds || bounds.width <= 0) return;
-    const max = Math.min(360, Math.max(180, bounds.width - planningWidth - 320));
-    setThreadRailWidth(Math.round(Math.max(180, Math.min(max, clientX - bounds.left))));
-  }, [planningWidth]);
-
-  const setPlanningWidthFromPointer = useCallback((clientX: number) => {
-    const bounds = workspaceRef.current?.getBoundingClientRect();
-    if (!bounds || bounds.width <= 0) return;
-    const max = Math.min(760, Math.max(360, bounds.width - threadRailWidth - 320));
-    setPlanningWidth(Math.round(Math.max(360, Math.min(max, clientX - bounds.left - threadRailWidth))));
-  }, [threadRailWidth]);
-
-  const beginThreadRailResize = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (window.innerWidth < 1280) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setThreadRailWidthFromPointer(event.clientX);
-  }, [setThreadRailWidthFromPointer]);
-
-  const beginPlanningResize = useCallback((event: PointerEvent<HTMLDivElement>) => {
-    if (window.innerWidth < 1280) return;
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setPlanningWidthFromPointer(event.clientX);
-  }, [setPlanningWidthFromPointer]);
-
-  const resizeThreadRailWithKeyboard = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const step = event.shiftKey ? 64 : 24;
-    const direction = event.key === "ArrowRight" ? 1 : -1;
-    const bounds = workspaceRef.current?.getBoundingClientRect();
-    const max = bounds && bounds.width > 0 ? Math.min(360, Math.max(180, bounds.width - planningWidth - 320)) : 360;
-    setThreadRailWidth((current) => Math.max(180, Math.min(max, current + direction * step)));
-  }, [planningWidth]);
-
-  const resizePlanningWithKeyboard = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const step = event.shiftKey ? 64 : 24;
-    const direction = event.key === "ArrowRight" ? 1 : -1;
-    const bounds = workspaceRef.current?.getBoundingClientRect();
-    const max = bounds && bounds.width > 0 ? Math.min(760, Math.max(360, bounds.width - threadRailWidth - 320)) : 760;
-    setPlanningWidth((current) => Math.max(360, Math.min(max, current + direction * step)));
-  }, [threadRailWidth]);
 
   if (membershipRevoked) {
     return (
@@ -287,12 +232,8 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   };
 
   return (
-    <main
-      ref={workspaceRef}
-      className="grid h-[calc(100dvh-62px)] min-h-[620px] grid-cols-1 overflow-hidden bg-background sm:h-dvh md:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)] xl:grid-cols-[var(--trip-thread-rail-width)_var(--trip-planning-width)_minmax(320px,1fr)]"
-      style={{ "--trip-thread-rail-width": `${threadRailWidth}px`, "--trip-planning-width": `${planningWidth}px` } as CSSProperties}
-    >
-      <aside className="relative hidden min-h-0 min-w-0 flex-col border-r-2 border-[var(--w-ink)] bg-background md:flex xl:order-1" aria-label={t("threads.heading")}>
+    <main className="grid h-[calc(100dvh-62px)] min-h-[620px] grid-cols-1 overflow-hidden bg-background sm:h-dvh md:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)] xl:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)_minmax(280px,0.9fr)]">
+      <aside className="relative hidden min-h-0 min-w-0 flex-col border-r-2 border-[var(--w-ink)] bg-background md:flex" aria-label={t("threads.heading")}>
         <header className="flex h-[66px] shrink-0 items-center justify-between gap-2 border-b-2 border-[var(--w-ink)] px-4">
           {editingTitle ? (
             <form
@@ -359,10 +300,9 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             </>
           )}
         </div>
-        <div role="separator" tabIndex={0} aria-orientation="vertical" aria-label={t("workspace.resizeThreads")} onPointerDown={beginThreadRailResize} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setThreadRailWidthFromPointer(event.clientX); }} onKeyDown={resizeThreadRailWithKeyboard} className="absolute right-[-7px] top-0 z-10 hidden h-full w-3 cursor-col-resize xl:block" />
       </aside>
 
-      <section className="flex min-h-0 min-w-0 flex-col bg-background xl:order-3">
+      <section className="flex min-h-0 min-w-0 flex-col bg-background">
         <header className="flex h-[66px] shrink-0 items-center justify-between gap-2 border-b-2 border-[var(--w-ink)] px-[18px]">
           <div className="min-w-0">
             <strong className="block truncate text-[15px] tracking-[-0.02em]">{activeThread?.title ?? trip.name}</strong>
@@ -409,7 +349,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       <aside
         id="trip-inspector"
         aria-label={t("workspace.inspectorTitle")}
-        className={`relative grid min-h-0 min-w-0 grid-rows-[66px_minmax(0,1fr)_auto] border-l-2 border-[var(--w-ink)] bg-[var(--w-mist)] xl:order-2 max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
+        className={`relative grid min-h-0 min-w-0 grid-rows-[66px_minmax(0,1fr)_auto] border-l-2 border-[var(--w-ink)] bg-[var(--w-mist)] max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
       >
         {/* Deliberately untitled: the spec keeps a bar here purely so the
             inspector's rule lines up with the history and chat headers. */}
@@ -482,10 +422,10 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-[15px] border border-[#d9e4e1] bg-[#fffdf9] shadow-[0_8px_20px_#102a430b]">
-              <div className="flex items-center justify-between gap-[7px] border-b border-[#e7ece9] px-2.5 py-2.5">
+            <section className="overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow">
+              <div className="flex items-center justify-between gap-[7px] border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] px-2.5 py-2.5">
                 <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
-                  <span aria-hidden="true" className="grid size-[21px] place-items-center rounded-[7px] bg-[#e7f4f0] text-primary">⌁</span>
+                  <span aria-hidden="true" className="grid size-[21px] place-items-center bg-[var(--w-highlight)] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">⌁</span>
                   <span className="truncate">{t("workspace.membersWindow")}</span>
                 </div>
               </div>
@@ -499,20 +439,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               </div>
             </section>
 
-            {/* Preferences scoped to this trip only; the stable Profile is
-                edited on the profile page and is never rewritten from here. */}
-            <section className="overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow">
-              <div className="flex items-center justify-between gap-[7px] border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] px-2.5 py-2.5">
-                <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
-                  <span aria-hidden="true" className="grid size-[21px] place-items-center bg-[var(--w-highlight)] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">☰</span>
-                  <span className="truncate">{t("memory.windowTitle")}</span>
-                </div>
-              </div>
-              <TripMemoryPanel tripId={trip.id} />
-            </section>
-
-            <SharedPlanningPanel tripId={tripId} tripStatus={trip.status} />
-            <PlacesPanel tripId={trip.id} destinationCandidates={trip.destinationCandidates} />
             <ResearchGapBannerWrapper tripId={trip.id} />
           </div>
         </div>
@@ -530,7 +456,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           </div>
           <TripMiniGlobe places={globePlaces} fallbackLabel={destinationsLabel} tripId={tripId} />
         </section>
-        <div role="separator" tabIndex={0} aria-orientation="vertical" aria-label={t("workspace.resizeInspector")} onPointerDown={beginPlanningResize} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) setPlanningWidthFromPointer(event.clientX); }} onKeyDown={resizePlanningWithKeyboard} className="absolute right-[-7px] top-0 z-40 hidden h-full w-3 cursor-col-resize xl:block" />
       </aside>
     </main>
   );
