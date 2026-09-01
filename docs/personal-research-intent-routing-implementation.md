@@ -385,7 +385,7 @@ CHECK 仅覆盖 date pair；OPEN 会话必须允许从空 slot 开始，完整�
 - `agentRunResponseSchema.researchSetupSession`：仅当 `OPEN + 未过期` 时投影；前端 refresh 时直接 hydrate，无需再次调 `GET`。
 - `agentStreamEventSchema` 新增 `research.setup.followup` 变体；`travel-agent-chat.tsx` 内置 `setupFollowup` 状态，渲染为 inline 气泡（`data-testid="setup-followup-bubble"`）。
 - `ResearchSetupCard` 改为两段：`setupSession` 缺失或 missing code 越界 → 既有只读 fallback；否则挂载 `ConversationalSetupCard` 渲染日期 / 房间数 / 成人 / 币种 widget。`disabled` 状态由 `useMemo` 本地校验，日期以单个 `travelDates` patch 保存；一次确认尝试复用同一个 `requestId`，因此网络重试会命中服务端幂等记录。
-- Hooks：`useOpenResearchSetup`、`useSaveResearchSetupAnswer`、`useCancelResearchSetup`、`useConfirmResearchSetup`；mutation 成功后 `setQueryData` 写回 `["agent-runs", runId]` 缓存，避免再次 `refetch` 闪烁。
+- Hooks：`useOpenResearchSetup`、`useSaveResearchSetupAnswer`、`useCancelResearchSetup`、`useConfirmResearchSetup`；mutation 成功后 `setQueryData` 写回 `["agent-runs", runId]` 缓存，避免再次 `refetch` 闪烁。可选 transport 方法必须经由 `api.method(...)` 调用，不能先解构再调用，否则 `HttpTravelApi` 会失去 `this.client` 绑定。
 - UI diagnostics：`setup.session_open` / `setup.field_update` / `setup.confirm` / `setup.cancel` / `setup.followup_received`。
 
 ### 10.7 取舍

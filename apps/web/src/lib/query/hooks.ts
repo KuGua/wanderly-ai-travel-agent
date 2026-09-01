@@ -574,9 +574,8 @@ export function useDismissResearchIntent(runId: string | null) {
   return useMutation({
     mutationFn: () => {
       if (!runId) throw new Error("dismissResearchIntent requires a runId");
-      const fn = api.dismissResearchIntent;
-      if (!fn) throw new Error("dismissResearchIntent is not implemented by this transport");
-      return fn(runId);
+      if (!api.dismissResearchIntent) throw new Error("dismissResearchIntent is not implemented by this transport");
+      return api.dismissResearchIntent(runId);
     },
     onSuccess: () => {
       if (runId) {
@@ -601,9 +600,8 @@ export function useOpenResearchSetup(runId: string | null) {
   return useMutation({
     mutationFn: () => {
       if (!runId) throw new Error("openResearchSetup requires a runId");
-      const fn = api.openResearchSetup;
-      if (!fn) throw new Error("openResearchSetup is not implemented by this transport");
-      return fn(runId);
+      if (!api.openResearchSetup) throw new Error("openResearchSetup is not implemented by this transport");
+      return api.openResearchSetup(runId);
     },
     onSuccess: (data) => {
       if (runId) {
@@ -623,9 +621,8 @@ export function useSaveResearchSetupAnswer(runId: string | null) {
   return useMutation({
     mutationFn: (input: import("@/lib/api/contracts").ResearchSetupApplyRequest) => {
       if (!runId) throw new Error("saveResearchSetupAnswer requires a runId");
-      const fn = api.saveResearchSetupAnswer;
-      if (!fn) throw new Error("saveResearchSetupAnswer is not implemented by this transport");
-      return fn(runId, input);
+      if (!api.saveResearchSetupAnswer) throw new Error("saveResearchSetupAnswer is not implemented by this transport");
+      return api.saveResearchSetupAnswer(runId, input);
     },
     onSuccess: (data) => {
       if (runId) {
@@ -645,9 +642,8 @@ export function useCancelResearchSetup(runId: string | null) {
   return useMutation({
     mutationFn: () => {
       if (!runId) throw new Error("cancelResearchSetup requires a runId");
-      const fn = api.cancelResearchSetup;
-      if (!fn) throw new Error("cancelResearchSetup is not implemented by this transport");
-      return fn(runId);
+      if (!api.cancelResearchSetup) throw new Error("cancelResearchSetup is not implemented by this transport");
+      return api.cancelResearchSetup(runId);
     },
     onSuccess: () => {
       if (runId) {
@@ -664,9 +660,8 @@ export function useConfirmResearchSetup(runId: string | null, tripId: string) {
   return useMutation({
     mutationFn: (input: import("@/lib/api/contracts").ResearchSetupConfirmRequest) => {
       if (!runId) throw new Error("confirmResearchSetup requires a runId");
-      const fn = api.confirmResearchSetup;
-      if (!fn) throw new Error("confirmResearchSetup is not implemented by this transport");
-      return fn(runId, input);
+      if (!api.confirmResearchSetup) throw new Error("confirmResearchSetup is not implemented by this transport");
+      return api.confirmResearchSetup(runId, input);
     },
     onSuccess: () => {
       // Refresh the run + research latest summaries so the existing
