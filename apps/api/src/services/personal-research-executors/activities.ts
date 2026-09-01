@@ -58,11 +58,14 @@ export async function executePersonalActivitiesSearch(params: {
   }
 
   const items = (result.data ?? []) as ActivityProviderItem[];
-  // The ActivityProviderItem shape doesn't carry a single price field in the
-  // existing Shared projection; project a zero-range rather than fabricate
-  // a field. The Shared path exposes the full offer set on activate.
-  const minPrice: number | null = null;
-  const maxPrice: number | null = null;
+  // `fromPrice` is a required field on every item, denominated in the
+  // currency the search asked for. This used to be hardcoded null, from
+  // before activities carried a stated price at all; the summary reported no
+  // band while every item had one, so the result card could only ever show
+  // a dash.
+  const prices = items.map((item) => item.fromPrice).filter((price) => Number.isFinite(price));
+  const minPrice: number | null = prices.length > 0 ? Math.min(...prices) : null;
+  const maxPrice: number | null = prices.length > 0 ? Math.max(...prices) : null;
 
   return {
     outcome: "AVAILABLE",
