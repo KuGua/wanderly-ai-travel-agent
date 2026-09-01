@@ -1562,6 +1562,10 @@ function toRunResponse(
           : null,
         stayPreferences: setupSession.stayPreferences,
         flightPreferences: setupSession.flightPreferences,
+        // `budgetHint` is captured only when the conversational setup card
+        // surfaces one; the response schema requires the field even when
+        // null, mirroring `personalResearchSetupSessionResponseSchema`.
+        budgetHint: setupSession.budgetHint ?? null,
         missing: setupSession.missing as AgentRunResponse["researchSetupSession"] extends infer S
           ? S extends { missing: infer M } ? M : never
           : never,
