@@ -10,7 +10,6 @@ import {
   idempotencyRecords,
   outboxEvents,
   personalResearchRequests,
-  personalResearchSetupSessions,
   tripMembers,
 } from "../db/schema.js";
 import { ApiError } from "../middleware/error-handler.js";
@@ -837,16 +836,9 @@ export async function getAuthorizedAgentRun(runId: string, userId: string): Prom
   const [run] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, runId)).limit(1);
   if (!run) throw new ApiError(404, "Not Found", "Agent run not found");
   await requireRunAccess(run, userId);
-  // Surface an OPEN setup session when the caller is the owner. Non-owners
-  // never see the setup session; the WHERE clause below is structural but
-  // requireRunAccess enforces ownership first so cross-user leakage is
-  // impossible from this projection.
-  const setupSession = run.createdByUserId === userId
-    ? (await db.select().from(personalResearchSetupSessions)
-      .where(eq(personalResearchSetupSessions.intentRunId, runId))
-      .limit(1))[0]
-    : null;
-  return toRunResponse(run, setupSession);
+  // Setup session projection removed with the conversational setup pipeline
+  // (migration 0049). The LLM tool loop (Phase 4) surfaces state via chat.
+  return toRunResponse(run);
 }
 
 /**
@@ -1519,7 +1511,6 @@ function toOwnerMessage(row: typeof chatMessages.$inferSelect): OwnerConversatio
 
 function toRunResponse(
   run: AgentTaskRow,
-  setupSession?: typeof personalResearchSetupSessions.$inferSelect | null,
 ): AgentRunResponse {
   // Project the persisted draft down to the closed-shape owner-safe subset.
   // SUPERSEDED drafts are intentionally hidden — they are server-internal
@@ -1547,33 +1538,6 @@ function toRunResponse(
         warnings: run.researchIntentDraft.warnings ?? [],
         missing: run.researchIntentDraft.missing,
       };
-  const projectedSetupSession = setupSession && setupSession.status === "OPEN"
-    && setupSession.expiresAt.getTime() > Date.now()
-    ? {
-        intentRunId: setupSession.intentRunId,
-        tripId: setupSession.tripId,
-        ownerUserId: setupSession.ownerUserId,
-        departureCity: setupSession.departureCity,
-        travelDateStart: setupSession.travelDateStart
-          ? toIsoDate(setupSession.travelDateStart)
-          : null,
-        travelDateEnd: setupSession.travelDateEnd
-          ? toIsoDate(setupSession.travelDateEnd)
-          : null,
-        stayPreferences: setupSession.stayPreferences,
-        flightPreferences: setupSession.flightPreferences,
-        // `budgetHint` is captured only when the conversational setup card
-        // surfaces one; the response schema requires the field even when
-        // null, mirroring `personalResearchSetupSessionResponseSchema`.
-        budgetHint: setupSession.budgetHint ?? null,
-        missing: setupSession.missing as AgentRunResponse["researchSetupSession"] extends infer S
-          ? S extends { missing: infer M } ? M : never
-          : never,
-        version: setupSession.version,
-        status: setupSession.status,
-        expiresAt: setupSession.expiresAt.toISOString(),
-      }
-    : null;
   return agentRunResponseSchema.parse({
     runId: run.id,
     operation: run.operation,
@@ -1588,7 +1552,6 @@ function toRunResponse(
     resultPlanId: run.resultPlanId,
     researchIntentDraft: draft,
     researchIntentState: run.researchIntentState === "SUPERSEDED" ? null : run.researchIntentState,
-    researchSetupSession: projectedSetupSession,
   });
 }
 

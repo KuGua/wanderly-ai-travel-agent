@@ -30,7 +30,6 @@ import { authRoutes } from "./routes/auth.js";
 import { searchPreferenceRoutes } from "./routes/search-preferences.js";
 import { teamOrchestrationRoutes } from "./routes/team-orchestration.js";
 import { uiDiagnosticsRoutes } from "./routes/ui-diagnostics.js";
-import { personalResearchSetupRoutes } from "./routes/personal-research-setup.js";
 import { personalResearchRoutes } from "./routes/personal-research.js";
 import { AgentStreamRelay } from "./tasks/agent-stream-relay.js";
 import { pinoInstance, correlationChild } from "./observability/telemetry.js";
@@ -246,7 +245,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(searchPreferenceRoutes, { prefix: "/api/v1" });
   await app.register(teamOrchestrationRoutes, { prefix: "/api/v1" });
   await app.register(uiDiagnosticsRoutes, { prefix: "/api/v1" });
-  await app.register(personalResearchSetupRoutes, { prefix: "/api/v1" });
   await app.register(personalResearchRoutes, { prefix: "/api/v1" }); // DRAFT Personal Research (added via 0047a)
 
   // Register agents (Skills) — must happen before the server accepts traffic so
