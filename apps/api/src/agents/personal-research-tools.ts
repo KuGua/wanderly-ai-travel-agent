@@ -51,7 +51,10 @@ export const PERSONAL_RESEARCH_TOOLS: readonly ModelToolDefinition[] = Object.fr
       + "Returns candidate names and categories, not prices or availability.",
     parameters: {
       type: "object", additionalProperties: false,
-      required: ["latitude", "longitude", "radiusMeters"],
+      // `category` and `limit` are nullable in the draft, not optional: the
+      // key has to be present even when its value is null. Advertising them as
+      // optional made the model omit them and the draft reject the call.
+      required: ["latitude", "longitude", "radiusMeters", "category", "limit"],
       properties: {
         latitude: { type: "number", minimum: -90, maximum: 90 },
         longitude: { type: "number", minimum: -180, maximum: 180 },
@@ -92,7 +95,7 @@ export const PERSONAL_RESEARCH_TOOLS: readonly ModelToolDefinition[] = Object.fr
       + "Returns how many were found and the price band. Spends supplier quota, so it needs the traveller's go-ahead.",
     parameters: {
       type: "object", additionalProperties: false,
-      required: ["destinationCode", "startDate", "endDate"],
+      required: ["destinationCode", "startDate", "endDate", "category", "limit"],
       properties: {
         destinationCode: { type: "string", minLength: 1, maxLength: 64 },
         startDate: DATE,
@@ -109,7 +112,7 @@ export const PERSONAL_RESEARCH_TOOLS: readonly ModelToolDefinition[] = Object.fr
       + "Spends a metered supplier allowance, so it needs the traveller's go-ahead.",
     parameters: {
       type: "object", additionalProperties: false,
-      required: ["originId", "destinationId", "tripType", "departureDate", "adults", "cabin", "currency"],
+      required: ["originId", "destinationId", "tripType", "departureDate", "returnDate", "adults", "cabin", "currency"],
       properties: {
         originId: { type: "string", minLength: 3, maxLength: 3, description: "IATA airport code" },
         destinationId: { type: "string", minLength: 3, maxLength: 3, description: "IATA airport code" },

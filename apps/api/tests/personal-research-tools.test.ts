@@ -90,6 +90,23 @@ describe("schema and draft agree", () => {
   });
 });
 
+  it("advertises as required every field the draft insists on being present", () => {
+    // `nullable()` is not `optional()`: the draft wants the key there with a
+    // null value. A field left out of `required` gets omitted by the model
+    // and the call is rejected for a reason it cannot see.
+    for (const tool of PERSONAL_RESEARCH_TOOLS) {
+      const properties = Object.keys((tool.parameters as { properties?: Record<string, unknown> }).properties ?? {});
+      const required = (tool.parameters as { required?: string[] }).required ?? [];
+      for (const field of properties) {
+        if (required.includes(field)) continue;
+        const without = { ...SAMPLE[tool.name] };
+        delete without[field];
+        const parsed = personalResearchOwnerDraftSchema.safeParse({ kind: DRAFT_KIND[tool.name], ...without });
+        expect(parsed.success, `${tool.name}.${field} is advertised as optional but the draft rejects it missing`).toBe(true);
+      }
+    }
+  });
+
 describe("tools deliberately withheld", () => {
   it("does not offer navigation.route", () => {
     // Its draft takes two trip-place UUIDs and nothing in the conversation
