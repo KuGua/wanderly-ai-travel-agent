@@ -479,6 +479,9 @@
         "taxFeeDisclaimer": "Taxes and fees may apply — not all charges are included in the shown total.",
         "capturedAtLabel": "Quote captured at {value}"
       },
+      "searchCard": {
+        "perNightLabel": "Per night"
+      },
       "authorization": {
         "title": "Hotel quote nationality",
         "body": "The default hotel provider needs you to confirm which passport/nationality to use for quotes. This stays server-side and is never shared with other members.",
@@ -486,6 +489,14 @@
         "confirm": "Use for this trip",
         "revoke": "Revoke",
         "success": "Confirmed. We'll use this for future hotel quotes on this trip."
+      }
+    },
+    "flight": {
+      "card": {
+        "nonstop": "Nonstop",
+        "stops": "{count, plural, one {# stop} other {# stops}}",
+        "timesLine": "{departure} → {arrival}",
+        "durationLine": "{duration}"
       }
     },
     "workspace": {

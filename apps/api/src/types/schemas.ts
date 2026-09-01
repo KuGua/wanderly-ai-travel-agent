@@ -1056,6 +1056,17 @@ export const toolSettledEventSchema = streamBaseSchema.extend({
   capability: personalResearchOperationCapabilitySchema,
   outcome: z.enum(["AVAILABLE", "UNAVAILABLE", "NEEDS_CONFIRMATION"]),
   reason: z.string().regex(/^[A-Z_]{3,40}$/).optional(),
+  // Deliberate, narrow exception to the "no provider data on this channel"
+  // rule: hotel.search/flight.search carry their own bounded top-offer list
+  // (same shape and 5-item cap as the persisted evidence summary) so the
+  // chat panel can render a structured result card instead of waiting for
+  // the reply text to describe the same offers in prose.
+  // Single currency for the whole search — every offer in one result set is
+  // priced in the same requested currency, so this isn't denormalized onto
+  // each item.
+  currency: currencyCodeSchema.optional(),
+  flightOffers: z.array(personalResearchFlightOfferItemSchema).max(5).optional(),
+  hotelOffers: z.array(personalResearchHotelOfferItemSchema).max(5).optional(),
 }).strict();
 
 export const agentStreamEventSchema = z.discriminatedUnion("event", [

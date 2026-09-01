@@ -479,6 +479,9 @@
         "taxFeeDisclaimer": "可能另计税费与必缴费用 — 显示总价不包含全部附加费。",
         "capturedAtLabel": "报价时间 {value}"
       },
+      "searchCard": {
+        "perNightLabel": "每晚"
+      },
       "authorization": {
         "title": "酒店报价国籍",
         "body": "默认酒店报价源需要您确认本次报价使用的护照/国籍。该信息仅在服务端使用，不与其他成员共享。",
@@ -486,6 +489,14 @@
         "confirm": "用于本次报价",
         "revoke": "撤回",
         "success": "已确认，后续酒店报价将使用该国籍。"
+      }
+    },
+    "flight": {
+      "card": {
+        "nonstop": "直飞",
+        "stops": "转机 {count} 次",
+        "timesLine": "{departure} → {arrival}",
+        "durationLine": "{duration}"
       }
     },
     "workspace": {

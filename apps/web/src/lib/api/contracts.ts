@@ -641,11 +641,40 @@ export const toolStartedEventSchema = streamBaseSchema.extend({
   capability: personalResearchOperationCapabilitySchema,
 }).strict();
 
+/**
+ * Bounded top-offer line items for `hotel.search` / `flight.search`
+ * specifically — a deliberate, narrow exception to "no provider data on this
+ * channel". Same shape and 5-item cap as the persisted evidence summary.
+ */
+export const conversationFlightOfferSchema = z.object({
+  carrierCode: z.string(),
+  flightNumber: z.string().nullable(),
+  departureAt: z.string(),
+  arrivalAt: z.string(),
+  totalDuration: z.string(),
+  totalPrice: z.number().nonnegative(),
+  stopCount: z.number().int().nonnegative(),
+}).strict();
+export type ConversationFlightOffer = z.infer<typeof conversationFlightOfferSchema>;
+
+export const conversationHotelOfferSchema = z.object({
+  propertyName: z.string(),
+  pricePerNight: z.number().nonnegative(),
+  cancellationSummary: z.string().nullable(),
+}).strict();
+export type ConversationHotelOffer = z.infer<typeof conversationHotelOfferSchema>;
+
 export const toolSettledEventSchema = streamBaseSchema.extend({
   event: z.literal("tool.settled"),
   capability: personalResearchOperationCapabilitySchema,
   outcome: z.enum(["AVAILABLE", "UNAVAILABLE", "NEEDS_CONFIRMATION"]),
   reason: z.string().regex(/^[A-Z_]{3,40}$/).optional(),
+  // Single currency for the whole search — every offer in one result set is
+  // priced in the same requested currency, so this isn't denormalized onto
+  // each item.
+  currency: z.string().regex(/^[A-Z]{3}$/).optional(),
+  flightOffers: z.array(conversationFlightOfferSchema).max(5).optional(),
+  hotelOffers: z.array(conversationHotelOfferSchema).max(5).optional(),
 }).strict();
 
 export const agentStreamEventSchema = z.discriminatedUnion("event", [

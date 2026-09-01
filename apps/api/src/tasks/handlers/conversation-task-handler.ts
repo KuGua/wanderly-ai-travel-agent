@@ -483,6 +483,7 @@ export async function handleConversationTask(params: {
     if (!conversationToolDispatchEnabled(capability)) return;
     tools.push(tool);
     dispatchers.set(tool.name, async (call) => {
+      await publishToolEvent(params.run, { phase: "started", name: call.name }, params.ctx.traceparent);
       const result = await baseDispatch(call);
       // A readiness save/confirmation prompt is not evidence. Only the
       // server-side provider branch may unlock grounded price/inventory prose.
@@ -495,6 +496,7 @@ export async function handleConversationTask(params: {
       // real dispatch actually unlocks the grounded reply instead of the Skill
       // always treating the turn as unbacked and swapping in a safe refusal.
       toolContext.evidenceBacked = toolContext.evidenceBacked || evidenceDispatched;
+      await publishToolEvent(params.run, { phase: "settled", name: call.name, ...settledSummary(result) }, params.ctx.traceparent);
       return result;
     });
   };
@@ -759,7 +761,12 @@ function boundedTextChunks(value: string, maxBytes: number): string[] {
  */
 function publishToolEvent(
   run: AgentTaskRow,
-  event: { phase: "started"; name: string } | { phase: "settled"; name: string; outcome: string; reason?: string },
+  event: {
+    phase: "started"; name: string;
+  } | {
+    phase: "settled"; name: string; outcome: string; reason?: string;
+    currency?: unknown; flightOffers?: unknown; hotelOffers?: unknown;
+  },
   traceparent?: string,
 ) {
   const capability = personalResearchOperationCapabilitySchema.safeParse(event.name);
@@ -767,21 +774,47 @@ function publishToolEvent(
   const base = { runId: run.id, generationAttempt: run.generationAttempt, capability: capability.data, traceparent };
   if (event.phase === "started") return publishAgentStreamEvent({ event: "tool.started", ...base });
   const outcome = toolSettledEventSchema.shape.outcome.safeParse(event.outcome);
+  const currency = toolSettledEventSchema.shape.currency.safeParse(event.currency);
+  const flightOffers = toolSettledEventSchema.shape.flightOffers.safeParse(event.flightOffers);
+  const hotelOffers = toolSettledEventSchema.shape.hotelOffers.safeParse(event.hotelOffers);
   return publishAgentStreamEvent({
     event: "tool.settled",
     ...base,
     outcome: outcome.success ? outcome.data : "UNAVAILABLE",
     ...(event.reason ? { reason: event.reason } : {}),
+    ...(currency.success && currency.data ? { currency: currency.data } : {}),
+    ...(flightOffers.success && flightOffers.data ? { flightOffers: flightOffers.data } : {}),
+    ...(hotelOffers.success && hotelOffers.data ? { hotelOffers: hotelOffers.data } : {}),
   });
 }
 
-/** The reportable part of a tool result: outcome, and a bounded code if it failed. */
-function settledSummary(result: unknown): { outcome: string; reason?: string } {
-  const outcome = (result as { outcome?: unknown })?.outcome;
+/**
+ * The reportable part of a tool result: outcome, a bounded code if it
+ * failed, and — for hotel.search/flight.search specifically — the same
+ * bounded top-offer list (plus the search's single currency) already
+ * persisted into evidence, so the chat panel can render a result card
+ * instead of waiting for the reply text.
+ */
+function settledSummary(result: unknown): {
+  outcome: string; reason?: string; currency?: unknown; flightOffers?: unknown; hotelOffers?: unknown;
+} {
+  const rawOutcome = (result as { outcome?: unknown })?.outcome;
+  // The hotel/flight dispatchers' own readiness state uses `CONFIRMATION_REQUIRED`
+  // (matches their DRAFT Personal Research vocabulary); the SSE event's outcome
+  // enum uses `NEEDS_CONFIRMATION` (matches the generic research dispatcher's
+  // vocabulary). Same concept, different name — normalize rather than letting
+  // publishToolEvent's schema reject it and silently report "UNAVAILABLE".
+  const outcome = rawOutcome === "CONFIRMATION_REQUIRED" ? "NEEDS_CONFIRMATION" : rawOutcome;
   const reason = (result as { reason?: unknown })?.reason;
+  const flight = (result as { flight?: { currency?: unknown; topOffers?: unknown } })?.flight;
+  const hotel = (result as { hotel?: { currency?: unknown; topOffers?: unknown } })?.hotel;
+  const currency = flight?.currency ?? hotel?.currency;
   return {
     outcome: typeof outcome === "string" ? outcome : "AVAILABLE",
     ...(typeof reason === "string" && /^[A-Z_]{3,40}$/.test(reason) ? { reason } : {}),
+    ...(typeof currency === "string" ? { currency } : {}),
+    ...(Array.isArray(flight?.topOffers) ? { flightOffers: flight.topOffers } : {}),
+    ...(Array.isArray(hotel?.topOffers) ? { hotelOffers: hotel.topOffers } : {}),
   };
 }
 

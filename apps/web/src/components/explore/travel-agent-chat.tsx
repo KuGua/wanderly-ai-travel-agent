@@ -11,11 +11,15 @@ import { PinnedResultCard } from "@/components/trips/personal-research/pinned-re
 
 import type {
   AgentStreamEvent,
+  ConversationFlightOffer,
+  ConversationHotelOffer,
   ConversationMessage,
   ConversationPlace,
   ConversationTurnRequest,
   PersonalResearchOperationCapability,
 } from "@/lib/api/contracts";
+import { FlightOfferCard } from "@/components/trips/flight-offer-card";
+import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
 import { TravelApiError } from "@/lib/api/errors";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import { useAgentRun, useCancelAgentRun, useOwnerConversation, useSubmitConversationTurn, useTripPin } from "@/lib/query/hooks";
@@ -31,6 +35,9 @@ type PendingTurn = ConversationTurnRequest;
 type ToolActivity = {
   capability: PersonalResearchOperationCapability;
   outcome: "RUNNING" | "AVAILABLE" | "UNAVAILABLE" | "NEEDS_CONFIRMATION";
+  currency?: string;
+  flightOffers?: ConversationFlightOffer[];
+  hotelOffers?: ConversationHotelOffer[];
 };
 
 type StreamState = {
@@ -668,7 +675,13 @@ function applyStreamEvent(current: StreamState, event: AgentStreamEvent): Stream
     const index = findLastRunning(base.tools, event.capability);
     if (index < 0) return base;
     const tools = [...base.tools];
-    tools[index] = { capability: event.capability, outcome: event.outcome };
+    tools[index] = {
+      capability: event.capability,
+      outcome: event.outcome,
+      ...(event.currency ? { currency: event.currency } : {}),
+      ...(event.flightOffers ? { flightOffers: event.flightOffers } : {}),
+      ...(event.hotelOffers ? { hotelOffers: event.hotelOffers } : {}),
+    };
     return { ...base, tools };
   }
   if (event.event !== "message.delta" || event.sequence < base.nextSequence) return base;
@@ -701,22 +714,37 @@ function findLastRunning(tools: ToolActivity[], capability: string): number {
 function ToolActivityList({ items }: { items: ToolActivity[] }) {
   const t = useTranslations("explore.chat.tools");
   return (
-    <ul aria-label={t("heading")} className="mb-2 grid gap-1 border-b border-[var(--w-line)] pb-2">
-      {items.map((item, index) => (
-        <li
-          key={`${item.capability}-${index}`}
-          data-capability={item.capability}
-          data-outcome={item.outcome}
-          className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground"
-        >
-          <span aria-hidden="true" className={item.outcome === "RUNNING" ? "size-[5px] shrink-0 animate-pulse rounded-full bg-primary motion-reduce:animate-none" : "size-[5px] shrink-0 rounded-full bg-[var(--w-line)]"} />
-          <span className="min-w-0 truncate">{t(`capability.${item.capability.replace(".", "_")}` as "capability.places_search")}</span>
-          <span className="ml-auto shrink-0 text-[10px] font-black uppercase tracking-[0.08em]">
-            {t(`outcome.${item.outcome}` as "outcome.RUNNING")}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <div className="mb-2 grid gap-2 border-b border-[var(--w-line)] pb-2">
+      <ul aria-label={t("heading")} className="grid gap-1">
+        {items.map((item, index) => (
+          <li
+            key={`${item.capability}-${index}`}
+            data-capability={item.capability}
+            data-outcome={item.outcome}
+            className="flex items-center gap-2 text-[11px] font-semibold text-muted-foreground"
+          >
+            <span aria-hidden="true" className={item.outcome === "RUNNING" ? "size-[5px] shrink-0 animate-pulse rounded-full bg-primary motion-reduce:animate-none" : "size-[5px] shrink-0 rounded-full bg-[var(--w-line)]"} />
+            <span className="min-w-0 truncate">{t(`capability.${item.capability.replace(".", "_")}` as "capability.places_search")}</span>
+            <span className="ml-auto shrink-0 text-[10px] font-black uppercase tracking-[0.08em]">
+              {t(`outcome.${item.outcome}` as "outcome.RUNNING")}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {/* Structured result cards for the two capabilities with real
+          per-offer evidence. Rendered right under their activity row so the
+          reader sees the concrete offers before the prose summary below. */}
+      {items.flatMap((item, index) => {
+        const currency = item.currency ?? "USD";
+        if (item.flightOffers?.length) {
+          return [<div key={`flight-offers-${index}`} className="grid gap-2">{item.flightOffers.map((offer, i) => <FlightOfferCard key={i} offer={offer} currency={currency} />)}</div>];
+        }
+        if (item.hotelOffers?.length) {
+          return [<div key={`hotel-offers-${index}`} className="grid gap-2">{item.hotelOffers.map((offer, i) => <SearchHotelOfferCard key={i} offer={offer} currency={currency} />)}</div>];
+        }
+        return [];
+      })}
+    </div>
   );
 }
 

@@ -151,6 +151,14 @@ export function useTrip(tripId: string | null) {
     queryFn: () => api.getTrip(tripId as string),
     enabled: Boolean(tripId),
     retry: false,
+    // Membership has no push channel (no SSE/websocket tied to trip
+    // membership changes), so a trip workspace left open in a focused tab
+    // would otherwise never notice a teammate accepting an invitation until
+    // an unrelated mutation happened to invalidate this query or the tab
+    // regained focus after the 30s staleTime elapsed. A light poll while the
+    // workspace is mounted keeps "who's on this trip" honest without needing
+    // a new transport.
+    refetchInterval: 20_000,
   });
 }
 
