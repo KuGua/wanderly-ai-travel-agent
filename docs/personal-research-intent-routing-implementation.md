@@ -1,9 +1,9 @@
 # Personal Research Intent Routing 实施规范
 
-**状态：** 已确认，待实施  
+**状态：** 已废弃（卡片式酒店意图分类不再作为运行时路径）
 **适用范围：** Personal Agent 私有对话、owner-confirmed Research command、Shared Trip Orchestrator  
 
-> **状态说明（2026-09）：** 本文记录当前已实现/既有的 snapshot-bound research 合同，不能据此认为 DRAFT 已可真实查询。已批准的下一阶段设计见 [DRAFT Personal Research 到 Shared Planning 实施规范](draft-personal-research-implementation.md)。后者实施完成前，本文件的 activated Solo Trip 与 Shared Worker 边界继续是运行时事实。
+> **状态说明（2026-09）：** 本文保留为已废弃的卡片式方案记录。酒店查询改由 `travel.conversation` 在私聊中收集和复述条件；在 server-validated chat-confirmation command 交付前，它不会调用 provider。
 **事实来源：** 本文、`TECH_STACK.md`、`docs/PRD.md`、`docs/backlog.md`、`docs/test-scenarios.md`
 
 ## 1. 目标与完成条件

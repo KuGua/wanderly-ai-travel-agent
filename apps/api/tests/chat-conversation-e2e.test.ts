@@ -224,19 +224,16 @@ describe("durable owner-only Personal Agent conversation flow", () => {
     }
   });
 
-  it("classifies a high-confidence hotel request into a persisted draft without calling the LLM", async () => {
+  it("routes a hotel request through the LLM conversation without persisting a card draft", async () => {
     const requestId = randomUUID();
     const threadId = await createThread(`Classified ${randomUUID()}`);
     let draftRunId: string | null = null;
     try {
-      const accepted = await submitTurn(threadId, requestId, "查酒店");
+      const accepted = await submitTurn(threadId, requestId, "请你帮我找一下西门町附近的酒店");
       expect(accepted.statusCode).toBe(202);
       const body = accepted.json() as AcceptedTurnResponse;
       draftRunId = body.runId;
 
-      // Process the queued conversation task. The classifier branch must
-      // bypass the model gateway entirely — a successfulConversationGateway
-      // would otherwise surface its canned reply in the assistant message.
       expect(await processNextAgentTask()).toBe(true);
 
       const run = await app.inject({
@@ -247,33 +244,22 @@ describe("durable owner-only Personal Agent conversation flow", () => {
       expect(run.statusCode).toBe(200);
       const runBody = run.json() as {
         status: string;
-        researchIntentDraft: { kind: string; requestedCapabilities: string[]; readiness: string; missing: string[] } | null;
+        researchIntentDraft: unknown;
         researchIntentState: string | null;
         assistantMessageId: string | null;
       };
       expect(runBody.status).toBe("COMPLETED");
-      // The classifier wrote a non-null draft and PROPOSED state into the
-      // durable run row.
-      expect(runBody.researchIntentDraft).not.toBeNull();
-      expect(runBody.researchIntentDraft!.kind).toBe("RESEARCH_ONLY");
-      expect(runBody.researchIntentDraft!.requestedCapabilities).toEqual(["hotel"]);
-      expect(runBody.researchIntentState).toBe("PROPOSED");
-      // The deterministic template reply is persisted (not the gateway's
-      // canned "Tokyo offers..." string), proving the LLM was bypassed.
+      expect(runBody.researchIntentDraft).toBeNull();
+      expect(runBody.researchIntentState).toBeNull();
       expect(runBody.assistantMessageId).not.toBeNull();
       const [assistantMessage] = await db.select().from(chatMessages).where(eq(chatMessages.id, runBody.assistantMessageId!));
-      expect(assistantMessage?.body).not.toContain("Tokyo offers");
+      expect(assistantMessage?.body).toContain("Tokyo offers");
 
-      // DB row carries the persisted draft + state — invariant for SSE
-      // recovery (see Phase 2 GET /agent-runs/:runId).
       const [runRow] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, body.runId));
-      expect(runRow.researchIntentDraft).toBeTruthy();
-      expect(runRow.researchIntentDraft!.kind).toBe("RESEARCH_ONLY");
-      expect(runRow.researchIntentDraft!.classifierVersion).toBe("research-intent/v1");
-      expect(runRow.researchIntentDraft!.schemaVersion).toBe(1);
-      expect(runRow.researchIntentState).toBe("PROPOSED");
+      expect(runRow.researchIntentDraft).toBeNull();
+      expect(runRow.researchIntentState).toBeNull();
 
-      // Cross-thread safety: Bob cannot see Alice's draft.
+      // Cross-thread safety remains unchanged for the conversation run.
       const bobView = await app.inject({
         method: "GET",
         url: `/api/v1/agent-runs/${body.runId}`,
@@ -281,13 +267,6 @@ describe("durable owner-only Personal Agent conversation flow", () => {
       });
       expect(bobView.statusCode).toBe(403);
 
-      // SPEC §9 — question text must not appear in draft / assistant body /
-      // persisted SSE-derived columns.
-      const serialized = JSON.stringify({
-        draft: runRow.researchIntentDraft,
-        assistantBody: assistantMessage?.body,
-      });
-      expect(serialized).not.toContain("查酒店");
     } finally {
       if (draftRunId) {
         await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, draftRunId));

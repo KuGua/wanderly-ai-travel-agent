@@ -47,8 +47,10 @@ export type PersonalResearchOperationCapability = (typeof PERSONAL_RESEARCH_OPER
 /**
  * Capabilities whose typed draft, executor, provider contract, authorization
  * tests, and UI cards have all landed in this milestone. Stage 1 only opens
- * `flight.search`; the rest stay commented until each is independently
- * unblocked by its prerequisite per spec §3.5.
+ * `flight.search`; the rest stay closed until each is independently unblocked
+ * by its prerequisite per spec §3.5. Hotel search is intentionally executed
+ * through the snapshot-bound Shared RESEARCH path; do not add `hotel.search`
+ * here.
  */
 export const PERSONAL_RESEARCH_ALLOWED_CAPABILITIES = [
   "flight.search",

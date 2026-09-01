@@ -8,11 +8,6 @@ import { metrics } from "../../observability/metrics.js";
 import {
   containsUnsupportedOperationalClaim,
 } from "../../policy/conversation-safety.js";
-// `RESEARCH_INTENT_CLASSIFIER_VERSION` was sourced from the deleted rule pack.
-// The field is preserved on the persisted draft for wire stability; this
-// string is now the version identifier emitted alongside LLM-derived drafts.
-const RESEARCH_INTENT_CLASSIFIER_VERSION = "llm.research/v1";
-import { evaluateReadiness } from "../../services/personal-research-readiness-service.js";
 import { buildConversationContext } from "../../services/conversation-context-service.js";
 import { buildConversationMemoryContext } from "../../services/conversation-memory-context.js";
 import { loadLatestResearchEvidence } from "../../services/research-evidence-service.js";
@@ -27,11 +22,6 @@ import { personalTripContextSchema, type PersonalTripContext } from "../../skill
 import type { AgentStreamEvent } from "../../types/schemas.js";
 import type { RequestContext } from "../../utils/context.js";
 import { agentTaskConfig } from "../config.js";
-import {
-  persistResearchIntentDraft,
-  supersedePriorProposedDraft,
-  type PersistedResearchIntentDraft,
-} from "../task-repository.js";
 import { publishAgentStreamEvent } from "../task-stream-publisher.js";
 import type { AgentTaskRow } from "../task-repository.js";
 import { loadConversationTurnInput } from "../task-repository.js";
@@ -100,12 +90,6 @@ export async function handleConversationTask(params: {
     memoryContext,
     researchEvidence: evidence?.offers ?? [],
   });
-
-  // ─── Personal Research Intent Routing — replaced by LLM tool loop ────────
-  // The deterministic rule-pack classifier is gone. The LLM in
-  // `executeTravelConversation` decides whether to call a research tool.
-  // Spec: docs/personal-trip-orchestration-implementation.md §5.1 (new).
-  void RESEARCH_INTENT_CLASSIFIER_VERSION; // preserved for wire stability
 
   const gate = new SafeConversationDeltaGate(params.run, params.ctx.traceparent);
   const execution = new AbortController();
@@ -254,161 +238,6 @@ function boundedTextChunks(value: string, maxBytes: number): string[] {
   }
   if (chunk) chunks.push(chunk);
   return chunks;
-}
-
-// ─── Personal Research Intent — classified branch ──────────────────────────
-
-interface ClassifiedBranchParams {
-  run: AgentTaskRow;
-  ctx: RequestContext;
-  input: ReturnType<typeof travelConversationInputSchema.parse>;
-  classifiedIntent: {
-    kind: "RESEARCH_ONLY" | "PROPOSE_PLAN";
-    requestedCapabilities: Array<
-      "flight" | "accommodation" | "hotel" | "activities" |
-      "places" | "navigation" | "mobility" | "readiness"
-    >;
-  };
-}
-
-/**
- * Handle a high-confidence research request: persist the draft under the
- * worker-held lease, evaluate readiness, publish `research.intent_extracted`
- * SSE, and return a deterministic confirmation/setup/place-selection reply.
- *
- * The branch NEVER calls the LLM. If the lease is lost mid-write (returned
- * `null`), we abort the proposal branch without falling back to LLM — a
- * classified turn must never silently degrade to ordinary conversation.
- * Spec §5.3.
- */
-async function handleClassifiedResearchRequest(
-  params: ClassifiedBranchParams,
-): Promise<ReturnType<typeof travelConversationOutputSchema.parse>> {
-  if (!params.run.tripId) {
-    // Classification requires a trip context; reject here rather than
-    // pretend we can propose a draft.
-    throw new ApiError(422, "Unprocessable Entity", "RESEARCH_PROPOSAL_REQUIRES_TRIP");
-  }
-  if (!params.run.leaseToken) {
-    throw new ApiError(500, "Internal Server Error", "Conversation task missing leaseToken");
-  }
-  if (!params.run.threadId) {
-    throw new ApiError(500, "Internal Server Error", "Conversation task missing threadId");
-  }
-
-  const readiness = await evaluateReadiness({
-    tripId: params.run.tripId,
-    ownerUserId: params.run.createdByUserId,
-    intentRunId: params.run.id,
-    requestedCapabilities: params.classifiedIntent.requestedCapabilities,
-  });
-
-  const draft: PersistedResearchIntentDraft = {
-    schemaVersion: 1,
-    kind: params.classifiedIntent.kind,
-    requestedCapabilities: params.classifiedIntent.requestedCapabilities,
-    classifierVersion: RESEARCH_INTENT_CLASSIFIER_VERSION,
-    readiness: readiness.readiness,
-    blockers: readiness.blockers,
-    warnings: readiness.warnings,
-    missing: readiness.missing,
-  };
-
-  // Lease-guarded write: supersede prior PROPOSED drafts on the same
-  // thread, then persist the new draft. Wrapped in a single transaction
-  // so a thread never carries two PROPOSED rows concurrently.
-  const persistedDraft = await db.transaction(async (tx) => {
-    await supersedePriorProposedDraft({
-      threadId: params.run.threadId!,
-      excludingRunId: params.run.id,
-      tx,
-    });
-    return persistResearchIntentDraft({
-      runId: params.run.id,
-      leaseToken: params.run.leaseToken!,
-      draft,
-      tx,
-    });
-  });
-
-  if (!persistedDraft) {
-    metrics.inc("personal_research_intent_confirmation_total", { outcome: "lease_lost" });
-    // Lease lost mid-flight; abandon the proposal branch rather than
-    // silently fall back to LLM. The standard lease-loss termination
-    // path will record the terminal state.
-    throw new ApiError(409, "Conflict", "RESEARCH_DRAFT_LEASE_LOST");
-  }
-
-  // Emit metrics — bounded labels only. Per-capability counters roll up
-  // each capability once per classified turn; for multi-capability drafts
-  // (PROPOSE_PLAN) we increment per capability so dashboards can filter by
-  // surface without leaking the question.
-  for (const capability of params.classifiedIntent.requestedCapabilities) {
-    metrics.inc("personal_research_intent_total", {
-      capability,
-      disposition: "proposed",
-    });
-    metrics.inc("personal_research_readiness_total", {
-      capability,
-      outcome: readiness.readiness === "READY"
-        ? "ready"
-        : readiness.readiness === "NEEDS_PLACE_SELECTION"
-          ? "needs_place_selection"
-          : "needs_setup",
-    });
-  }
-
-  // Publish `research.intent_extracted`. The event payload is the closed
-  // shape from `researchIntentExtractedEventSchema` — never the original
-  // question text, never place/profiling/provider raw data.
-  await publishAgentStreamEvent({
-    event: "research.intent_extracted",
-    runId: params.run.id,
-    generationAttempt: params.run.generationAttempt,
-    intent: {
-      kind: params.classifiedIntent.kind,
-      requestedCapabilities: params.classifiedIntent.requestedCapabilities,
-    },
-    readiness: readiness.readiness,
-    blockers: readiness.blockers,
-    warnings: readiness.warnings,
-    missing: readiness.missing,
-    schemaVersion: 1,
-    classifierVersion: RESEARCH_INTENT_CLASSIFIER_VERSION,
-    traceparent: params.ctx.traceparent,
-  });
-
-  const content = buildClassifiedResearchReply(readiness.readiness);
-
-  await publishAgentStreamEvent({
-    event: "message.delta",
-    runId: params.run.id,
-    generationAttempt: params.run.generationAttempt,
-    sequence: 0,
-    delta: content,
-    traceparent: params.ctx.traceparent,
-  });
-  return travelConversationOutputSchema.parse({
-    content,
-    responseMode: "MODEL",
-  });
-}
-
-/**
- * Deterministic assistant copy for the classified branch. The string is
- * intentionally generic — the UI uses the persisted draft to render the
- * real confirmation / setup / place-selection card.
- */
-function buildClassifiedResearchReply(
-  readiness: "READY" | "READY_WITH_WARNINGS" | "NEEDS_SETUP" | "NEEDS_PLACE_SELECTION",
-): string {
-  if (readiness === "READY" || readiness === "READY_WITH_WARNINGS") {
-    return "我已准备好发起研究。请在下方确认卡中检查研究范围后点击「确认运行」开始。";
-  }
-  if (readiness === "NEEDS_PLACE_SELECTION") {
-    return "路线研究需要先选择出发地和目的地。请在下方确认卡中指定两个有效地点。";
-  }
-  return "发起研究前还需要补充一些行程设置。请在下方确认卡中查看并补全所缺项目。";
 }
 
 export function publishPhase(

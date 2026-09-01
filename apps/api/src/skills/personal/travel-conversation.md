@@ -54,21 +54,24 @@ service persists no USER or ASSISTANT row for that failed turn.
 
 ## Hotel-search readiness behaviour
 
-The Skill attaches the server-owned `HOTEL_SEARCH_READINESS` response
-constraint to each model call. It is a behavioural rule, not a canned reply:
-when the user asks to find, compare, filter, or quote lodging, the model reuses
-facts already stated in the current question and same-thread context, retains a
-neighbourhood or landmark as a location anchor, and asks only for missing
-search inputs. Those required inputs are dates, adult/room configuration, and
-currency; a distance/walking limit is requested only when the stated location
-anchor has no usable boundary. Budget and amenities are optional refinements.
+Hotel searches remain inside the private conversation. The Conversation Worker
+always invokes this Skill; it does not create a confirmation/setup card or
+emit `research.intent_extracted`. The model reuses same-thread facts, asks for
+only the missing city, dates, adult/room configuration and currency, then
+summarizes the requested search and asks the owner to reply with an explicit
+“确认搜索”.
 
-The constraint limits clarification to three grouped prompts and preserves the
-existing live-data boundary: qualitative advice is allowed, but it cannot be
-presented as current pricing, inventory, or booking availability. It also
-forbids collecting passport, payment, or full guest data in chat. Any
-provider-specific nationality requirement stays in the separate explicit
-authorization flow.
+The `HOTEL_SEARCH_READINESS` constraint is a behavioural rule, not a canned
+reply: when a user asks for areas or trade-offs, the model may reuse stated
+context and suggest which search inputs matter. A neighbourhood or landmark
+may remain as a preference, but it is not represented as a provider distance
+filter. The model must not ask users to click a card, button or settings page.
+
+The constraint preserves the live-data boundary: qualitative advice is allowed,
+but it cannot be presented as current pricing, inventory, or booking
+availability. It also forbids collecting passport, payment, or full guest data
+in chat. Any provider-specific nationality requirement stays in the separate
+explicit authorization flow.
 
 ## Privacy and observability
 

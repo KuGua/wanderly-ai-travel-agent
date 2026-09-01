@@ -129,7 +129,7 @@ describe("conversation operational fact boundary", () => {
     expect(generateConversationReply).toHaveBeenCalledOnce();
   });
 
-  it("attaches the hotel-readiness behaviour as a server-owned Skill constraint", async () => {
+  it("attaches the hotel-readiness behaviour when the conversation Skill is used directly", async () => {
     const generateConversationReply = vi.fn().mockResolvedValue({
       content: "请告诉我入住日期、退房日期、入住人数与房间数。",
       responseMode: "MODEL",

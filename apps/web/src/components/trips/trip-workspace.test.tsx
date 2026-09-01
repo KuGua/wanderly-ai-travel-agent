@@ -195,6 +195,54 @@ describe("TripWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Bob/ })).not.toBeInTheDocument();
   });
 
+  it("keeps hotel-search follow-up inside the chat rather than rendering a setup card", async () => {
+    // The workspace reads the active thread out of `?thread=`, and the send
+    // button stays disabled without one. Selecting a thread in the rail goes
+    // through `router.push`, which the navigation stub does not carry back
+    // into `useSearchParams`, so the parameter is supplied directly.
+    vi.spyOn(navigationStub, "useSearchParams")
+      .mockReturnValue(new URLSearchParams(`thread=${DEFAULT_THREAD_ID}`));
+    const api = createApi({
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+      getAgentRun: vi.fn().mockResolvedValue({
+        runId: "00000000-0000-4000-8000-000000000000",
+        operation: "CONVERSATION",
+        status: "RUNNING",
+        generationAttempt: 1,
+        attemptCount: 1,
+        createdAt: "2026-08-22T10:00:00.000Z",
+        updatedAt: "2026-08-22T10:00:00.000Z",
+        finishedAt: null,
+        errorCode: null,
+        assistantMessageId: null,
+        resultPlanId: null,
+        researchIntentDraft: null,
+        researchIntentState: null,
+      }),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "message.delta",
+          runId: "00000000-0000-4000-8000-000000000000",
+          generationAttempt: 1,
+          sequence: 0,
+          delta: "请告诉我入住和退房日期，以及入住人数和房间数。",
+        });
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) return resolve();
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    const input = await screen.findByRole("textbox", { name: "Message Wanderly Agent" });
+    fireEvent.change(input, { target: { value: "请你帮我搜搜看西门町附近的酒店" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(await screen.findByText("请告诉我入住和退房日期，以及入住人数和房间数。")).toBeInTheDocument();
+    expect(screen.queryByTestId("research-confirmation-card")).not.toBeInTheDocument();
+  });
+
   it("starts a new thread session in one click, without prompting for a title", async () => {
     const api = createApi({
       getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
