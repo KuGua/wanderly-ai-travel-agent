@@ -190,6 +190,7 @@ export async function acceptConversationTask(params: {
         expiresAt,
         traceContext: buildTraceContextForTask(params.ctx),
         intent: params.input.intent ?? null,
+        conversationSurface: params.input.surface ?? null,
         ...placeColumns(place),
       }).returning();
 

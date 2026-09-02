@@ -345,6 +345,9 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
       requestId: REQUEST_ID,
       question: "Tell me about Tokyo",
+      // Every turn is stamped with the surface it was typed on; this host is
+      // the exploration globe, which must never feed long-term memory.
+      surface: "EXPLORE",
     });
     expect(api.subscribeAgentRun).toHaveBeenCalledWith(RUN_ID, expect.any(AbortSignal), expect.any(Function));
     expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
@@ -358,7 +361,12 @@ describe("TravelAgentChat durable streaming flow", () => {
     await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalledOnce());
     const [, body] = vi.mocked(api.submitConversationTurn).mock.calls[0];
 
-    expect(body).toEqual({ requestId: REQUEST_ID, question: "What makes it interesting?", place: TOKYO });
+    expect(body).toEqual({
+      requestId: REQUEST_ID,
+      question: "What makes it interesting?",
+      place: TOKYO,
+      surface: "EXPLORE",
+    });
     expect(body).not.toHaveProperty("role");
     expect(body).not.toHaveProperty("senderUserId");
   });
@@ -558,6 +566,7 @@ describe("TravelAgentChat durable streaming flow", () => {
       requestId: REQUEST_ID,
       question: "What is the weather like?",
       place: TOKYO,
+      surface: "EXPLORE",
     });
     expect(body).not.toHaveProperty("intent");
   });

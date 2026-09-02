@@ -196,11 +196,15 @@ export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL"]);
 
 export const conversationIntentSchema = z.enum(["auto_intro", "user_typed"]);
 
+/** Where the traveller typed. Only ever narrows what the server remembers. */
+export const conversationSurfaceSchema = z.enum(["EXPLORE", "TRIP_WORKSPACE"]);
+
 export const conversationTurnRequestSchema = z.object({
   requestId: z.string().uuid(),
   question: z.string().trim().min(1).max(4000),
   place: conversationPlaceSchema.optional(),
   intent: conversationIntentSchema.optional(),
+  surface: conversationSurfaceSchema.optional(),
 }).strict();
 
 export const agentTaskOperationSchema = z.enum(["CONVERSATION", "PLAN", "REPLAN", "RESEARCH", "PERSONAL_RESEARCH"]);

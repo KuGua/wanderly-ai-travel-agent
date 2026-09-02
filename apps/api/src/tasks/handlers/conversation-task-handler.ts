@@ -714,7 +714,9 @@ export async function handleConversationTask(params: {
   // exploration only; completed/cancelled trips must not create fresh shared
   // constraints. PLANNING and STALE are the two states that can safely accept
   // a new snapshot-backed PLAN/REPLAN.
-  if (!shouldExtractConversationHandoff(parsed.responseMode, tripContext.tripStatus)) {
+  if (!shouldExtractConversationHandoff(
+    parsed.responseMode, tripContext.tripStatus, params.run.conversationSurface,
+  )) {
     return travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
   }
 
@@ -760,11 +762,27 @@ export async function handleConversationTask(params: {
   return travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
 }
 
-/** Kept pure so the lifecycle boundary is directly regression-testable. */
+/**
+ * Kept pure so the lifecycle boundary is directly regression-testable.
+ *
+ * `surface` keeps exploration out of long-term memory. Someone turning the
+ * globe and asking about Kyoto is browsing, not stating how they travel, and
+ * nothing about the trip row can tell the two apart: the first message from
+ * the globe creates a DRAFT trip that is listed and openable immediately, so
+ * the same trip is reachable from both surfaces. Only the turn knows where it
+ * was typed, so the client sends it.
+ *
+ * Trusting the client here is safe because the field can only narrow. An
+ * absent or unrecognised surface reads as exploration and extracts nothing, so
+ * neither an old client nor a forged value can make the server remember more
+ * than it otherwise would — the failure direction is always forgetting.
+ */
 export function shouldExtractConversationHandoff(
   responseMode: "MODEL" | "SAFE_REFUSAL" | "FALLBACK",
   tripStatus: PersonalTripContext["tripStatus"],
+  surface: string | null | undefined,
 ): boolean {
+  if (surface !== "TRIP_WORKSPACE") return false;
   return responseMode === "MODEL" && (tripStatus === "PLANNING" || tripStatus === "STALE");
 }
 
