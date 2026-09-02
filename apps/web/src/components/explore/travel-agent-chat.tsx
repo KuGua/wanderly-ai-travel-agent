@@ -23,9 +23,7 @@ import type {
 import { FlightOfferCard } from "@/components/trips/flight-offer-card";
 import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
 import { TravelApiError } from "@/lib/api/errors";
-import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin,
-  useMyProfile,
-} from "@/lib/query/hooks";
+import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { useTravelApi } from "@/lib/query/provider";
 import { Link } from "@/i18n/navigation";
 
@@ -209,10 +207,6 @@ export function TravelAgentChat({
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
   const [pendingFlightConfirmation, setPendingFlightConfirmation] = useState(false);
-  // Asked for only when the traveller's profile has no nationality. Hotel
-  // prices are quoted per nationality, and a trip activated without one cannot
-  // get stay coverage at all — the plan is refused rather than degraded.
-  const [askedNationality, setAskedNationality] = useState("");
   // This is intentionally a local draft. Selecting a chip does not create a
   // preference version, invalidate a plan, or authorize a provider call; the
   // explicit Save button below is the sole durable write.
@@ -652,9 +646,6 @@ export function TravelAgentChat({
         travelDateEnd: currentTrip.travelDateEnd,
         travelDays: currentTrip.travelDays ?? undefined,
         titleLocale,
-        // Only ever sent when we had to ask. A profile nationality is read
-        // server-side; the client never echoes it back.
-        ...(profileNationality ? {} : { guestNationality: askedNationality.toUpperCase() }),
       }).then((result) => {
         if (result.planningRun) {
           setActiveRunId(result.planningRun.runId);
@@ -669,11 +660,6 @@ export function TravelAgentChat({
     }
   }
 
-  const myProfile = useMyProfile();
-  // Read for the card copy only. The server reads the profile itself when it
-  // grants the authorization, so this never becomes the value that is stored.
-  const profileNationality = myProfile.data?.profile?.nationality?.trim() || null;
-  const nationalityLooksValid = /^[A-Za-z]{2}$/.test(askedNationality.trim());
   const canStartSharedPlanning = trip.data?.trip.status === "DRAFT"
     && trip.data.trip.departureCities.length > 0
     && trip.data.trip.destinationCandidates.length > 0
@@ -980,31 +966,8 @@ export function TravelAgentChat({
             <section aria-label={t("startSharedPlanTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <p className="font-bold text-primary">{t("startSharedPlanTitle")}</p>
               <p className="mt-1 text-xs text-muted-foreground">{t("startSharedPlanBody")}</p>
-              {profileNationality ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("startSharedPlanQuoteFromProfile", { nationality: profileNationality.toUpperCase() })}
-                </p>
-              ) : (
-                <div className="mt-2">
-                  <label className="block text-xs text-muted-foreground" htmlFor="quote-nationality">
-                    {t("startSharedPlanQuoteAsk")}
-                  </label>
-                  <input
-                    id="quote-nationality"
-                    value={askedNationality}
-                    onChange={(event) => setAskedNationality(event.target.value.slice(0, 2))}
-                    placeholder={t("startSharedPlanQuotePlaceholder")}
-                    maxLength={2}
-                    autoComplete="country"
-                    className="mt-1 w-24 rounded-md border px-2 py-1 text-sm uppercase"
-                  />
-                  {askedNationality && !nationalityLooksValid ? (
-                    <p className="mt-1 text-xs text-destructive">{t("startSharedPlanQuoteInvalid")}</p>
-                  ) : null}
-                </div>
-              )}
               <div className="mt-3 flex gap-2">
-                <button type="button" onClick={() => void startSharedPlanning()} disabled={isStartingSharedPlan || (!profileNationality && !nationalityLooksValid)} className={actionPrimaryClass}>{isStartingSharedPlan ? t("startSharedPlanStarting") : t("startSharedPlanConfirm")}</button>
+                <button type="button" onClick={() => void startSharedPlanning()} disabled={isStartingSharedPlan} className={actionPrimaryClass}>{isStartingSharedPlan ? t("startSharedPlanStarting") : t("startSharedPlanConfirm")}</button>
               </div>
             </section>
           ) : null}
