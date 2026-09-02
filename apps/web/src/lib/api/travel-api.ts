@@ -24,6 +24,8 @@ import type {
   ExplorationStartResponse,
   TripActivationRequest,
   TripActivationResponse,
+  UpdateTripArchiveInput,
+  UpdateTripArchiveResponse,
   UpdateTripTitleInput,
   UpdateTripTitleResponse,
   UpdateDraftTripBriefInput,
@@ -142,6 +144,8 @@ export interface TravelApi {
   startExploration(input: ExplorationStartRequest): Promise<ExplorationStartResponse>;
   activateTrip(tripId: string, input: TripActivationRequest): Promise<TripActivationResponse>;
   updateTripTitle(tripId: string, input: UpdateTripTitleInput): Promise<UpdateTripTitleResponse>;
+  /** Optional so existing test doubles keep compiling without a stub. */
+  updateTripArchive?(tripId: string, input: UpdateTripArchiveInput): Promise<UpdateTripArchiveResponse>;
   updateDraftTripBrief?(tripId: string, input: UpdateDraftTripBriefInput): Promise<UpdateDraftTripBriefResponse>;
   saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput): Promise<TripSearchPreferencesResponse>;
   startPlanning(tripId: string): Promise<PlanningTaskAcceptedResponse>;

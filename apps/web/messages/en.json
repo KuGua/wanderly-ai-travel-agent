@@ -143,7 +143,9 @@
         "city_center": "City center",
         "budget": "Budget",
         "luxury": "Luxury"
-      }
+      },
+      "archive": "Archive",
+      "restore": "Restore"
     },
     "fixtures": {
       "tripName": "Asia Trip"

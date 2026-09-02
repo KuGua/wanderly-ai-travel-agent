@@ -20,6 +20,8 @@ import {
   tripActivationResponseSchema,
   updateDraftTripBriefRequestSchema,
   updateDraftTripBriefResponseSchema,
+  updateTripArchiveRequestSchema,
+  updateTripArchiveResponseSchema,
   updateTripTitleRequestSchema,
   updateTripTitleResponseSchema,
   tripDetailsResponseSchema,
@@ -484,6 +486,72 @@ export async function tripRoutes(app: FastifyInstance) {
 
     return updateTripTitleResponseSchema.parse({
       trip: { id: tripId, name: body.name, nameSource: "MANUAL", titleLocale: null, updatedAt: updatedAt.toISOString() },
+    });
+  });
+
+  // Archive is this product's "delete": the trip leaves the working list and
+  // joins the Archived tab, and everything it owns — itinerary, private
+  // threads, provider evidence, audit trail — is left intact so the decision
+  // stays reversible. A trip can also be *shown* as archived because its
+  // dates have passed (`DATE_ELAPSED`, derived on read); only the explicit
+  // user action is persisted here, so un-archiving never has to guess which
+  // of the two put it there.
+  app.patch("/trips/:tripId/archive", {
+    schema: {
+      description: "Archive or restore a trip. Creator-only; reversible and non-destructive.",
+      tags: ["trips"],
+      params: toJsonSchema(tripIdParamSchema),
+      body: toJsonSchema(updateTripArchiveRequestSchema),
+      response: {
+        200: toJsonSchema(updateTripArchiveResponseSchema),
+        403: toJsonSchema(errorResponseSchema),
+        404: toJsonSchema(errorResponseSchema),
+      },
+    },
+  }, async (request) => {
+    const { tripId } = tripIdParamSchema.parse(request.params);
+    const body = updateTripArchiveRequestSchema.parse(request.body);
+    const ctx = createRequestContext(
+      request.user.id, request.correlationId, request.traceId,
+      request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
+    );
+
+    const result = await db.transaction(async (tx) => {
+      const [trip] = await tx.select().from(sharedTrips)
+        .where(eq(sharedTrips.id, tripId)).for("update").limit(1);
+      if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
+      // Only the creator, matching who may rename or invite. A member losing
+      // a shared trip from their list because someone else tidied up is a
+      // different decision from leaving it, and this route is not that.
+      if (trip.createdBy !== request.user.id) {
+        throw new ApiError(403, "Forbidden", "Only the creator may archive the trip");
+      }
+
+      const now = new Date();
+      const archivedAt = body.archived ? (trip.archivedAt ?? now) : null;
+      await tx.update(sharedTrips).set({
+        archivedAt,
+        archiveReason: body.archived ? "USER_ARCHIVED" : null,
+        updatedAt: now,
+      }).where(eq(sharedTrips.id, tripId));
+      await recordAudit({
+        ctx,
+        action: body.archived ? "TRIP_ARCHIVE" : "TRIP_UNARCHIVE",
+        actorUserId: request.user.id,
+        tripId,
+        summary: { reason: body.archived ? "USER_ARCHIVED" : null },
+        tx,
+      });
+      return { archivedAt, updatedAt: now };
+    });
+
+    return updateTripArchiveResponseSchema.parse({
+      trip: {
+        id: tripId,
+        archivedAt: result.archivedAt?.toISOString() ?? null,
+        archiveReason: body.archived ? "USER_ARCHIVED" : null,
+        updatedAt: result.updatedAt.toISOString(),
+      },
     });
   });
 

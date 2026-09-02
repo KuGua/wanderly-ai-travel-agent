@@ -24,6 +24,7 @@ runs **before** any insert. Rejection propagates as
   `TRIP_INVITATION_ACCEPT`, `TRIP_INVITATION_REVOKE`,
   `TRIP_INVITATION_DECLINE`,
   `TRIP_TITLE_UPDATE`, `TRIP_DRAFT_BRIEF_UPDATE`, `TRIP_ACTIVATE`,
+  `TRIP_ARCHIVE`, `TRIP_UNARCHIVE`,
   `EXPLORATION_START`, `TRIP_DEFAULT_THREAD_PROVISION`,
   `TRIP_PIN_SESSION_WRITTEN`,
   `CONSENT_GRANT`, `CONSENT_REVOKE`, `CONSENT_GRANT_TRIP`, `CONSENT_REVOKE_TRIP`.
@@ -118,6 +119,7 @@ safe task/capability/status identifiers, never the confirmed request input.
 - `TRIP_INVITATION_CREATE`, `TRIP_INVITATION_ACCEPT`, `TRIP_INVITATION_REVOKE`,
   `TRIP_INVITATION_DECLINE`
 - `TRIP_TITLE_UPDATE`, `TRIP_DRAFT_BRIEF_UPDATE`, `TRIP_ACTIVATE`
+- `TRIP_ARCHIVE`, `TRIP_UNARCHIVE` — a reversible hide, never a delete
 - `EXPLORATION_START`, `TRIP_DEFAULT_THREAD_PROVISION`, `TRIP_PIN_SESSION_WRITTEN`
 - `CONSENT_GRANT`, `CONSENT_REVOKE`, `CONSENT_GRANT_TRIP`, `CONSENT_REVOKE_TRIP`
 - `PLAN_CREATE`, `PLAN_STALE`, `PLAN_REPLAN`, `PLAN_RESTART`,
@@ -176,6 +178,8 @@ status、count 与关联 ID，**禁止**出现 value、value hash、聊天正文
 | `PREFERENCE_FACT_DELETE` | `preference-fact-service.ts:deleteFact` | `fieldCategory` |
 | `TRIP_MEMORY_UPDATE` | `TripMemoryService`（待实现） | `fieldCategory`, `kind`, `source` |
 | `TRIP_MEMORY_DELETE` | `TripMemoryService`（待实现） | `fieldCategory`, `kind` |
+| `FREE_TEXT_MEMORY_CREATE` | `free-text-memory-service.ts:saveFreeTextMemory` | `memoryId`, `contentLength` |
+| `FREE_TEXT_MEMORY_DELETE` | `free-text-memory-service.ts:deleteFreeTextMemory` | `memoryId` |
 | `MEMORY_PROJECTION_CREATE` | `MemoryProjectionBuilder`（待实现） | `memberCount`, `fieldCount` |
 | `MEMORY_INVALIDATION` | `MemoryInvalidationService`（待实现） | `scope`, `count` |
 

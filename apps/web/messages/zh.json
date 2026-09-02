@@ -143,7 +143,9 @@
         "city_center": "市中心",
         "budget": "经济型",
         "luxury": "豪华型"
-      }
+      },
+      "archive": "归档",
+      "restore": "恢复"
     },
     "fixtures": {
       "tripName": "亚洲之旅"

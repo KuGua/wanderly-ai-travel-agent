@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowRight, CalendarDays, MapPin, UsersRound } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRight, CalendarDays, MapPin, UsersRound } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 
 import { Link } from "@/i18n/navigation";
 import type { TripSummary } from "@/lib/api/contracts";
+import { useUpdateTripArchive } from "@/lib/query/hooks";
 
 const artStyles = [
   "from-[var(--w-info)] to-[var(--w-highlight)]",
@@ -99,19 +100,59 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
                     ? t("trip.membersRoleOrganizer")
                     : t("trip.membersRoleMember")}
                 </span>
-                <Link
-                  href={`/trips/${trip.id}` as "/trips/[tripId]"}
-                  className="inline-flex min-h-11 items-center gap-1 font-black text-[var(--w-ink)] wanderly-underline hover:decoration-[var(--w-ink)]"
-                >
-                  {trip.status === "DRAFT" ? t("trip.draft.continueCta") : t("trip.open")}
-                  <ArrowRight aria-hidden="true" className="size-3.5" />
-                </Link>
+                <span className="flex items-center gap-3">
+                  {/* Creator-only, matching the API: a member losing a shared
+                      trip from their list is a different decision from the
+                      organiser putting it away. */}
+                  {trip.role === "CREATOR" ? <ArchiveToggle trip={trip} t={t} /> : null}
+                  <Link
+                    href={`/trips/${trip.id}` as "/trips/[tripId]"}
+                    className="inline-flex min-h-11 items-center gap-1 font-black text-[var(--w-ink)] wanderly-underline hover:decoration-[var(--w-ink)]"
+                  >
+                    {trip.status === "DRAFT" ? t("trip.draft.continueCta") : t("trip.open")}
+                    <ArrowRight aria-hidden="true" className="size-3.5" />
+                  </Link>
+                </span>
               </div>
             </div>
           </article>
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Put a trip away, or bring it back.
+ *
+ * No confirmation step: archiving destroys nothing and the Archived tab keeps
+ * the trip one click from returning, so a prompt would cost every deliberate
+ * use to protect against a mis-click that is already undoable.
+ *
+ * Only an explicit `archiveReason` of `USER_ARCHIVED` offers to restore. A
+ * trip shown as archived because its dates elapsed was never put away by
+ * anyone, so there is nothing for this button to undo.
+ */
+function ArchiveToggle({ trip, t }: { trip: TripSummary; t: Translator }) {
+  const archive = useUpdateTripArchive(trip.id);
+  const userArchived = trip.archiveReason === "USER_ARCHIVED";
+  const label = userArchived ? t("trip.restore") : t("trip.archive");
+  const Icon = userArchived ? ArchiveRestore : Archive;
+
+  if (trip.archivedAt && !userArchived) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => archive.mutate(!userArchived)}
+      disabled={archive.isPending}
+      aria-label={label}
+      title={label}
+      className="inline-flex min-h-11 items-center gap-1 font-black text-muted-foreground hover:text-[var(--w-ink)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+    >
+      <Icon aria-hidden="true" className="size-3.5" />
+      {label}
+    </button>
   );
 }
 

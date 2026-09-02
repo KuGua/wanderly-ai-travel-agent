@@ -1419,6 +1419,25 @@ export const updateTripTitleResponseSchema = z.object({
   }).strict(),
 });
 
+/**
+ * Archiving hides a trip from the working list without destroying anything —
+ * the itinerary, conversations, evidence and audit trail all stay, and
+ * `archived: false` puts it back. `DATE_ELAPSED` is derived, not chosen, so
+ * the request body only ever carries the user's own intent.
+ */
+export const updateTripArchiveRequestSchema = z.object({
+  archived: z.boolean(),
+}).strict();
+
+export const updateTripArchiveResponseSchema = z.object({
+  trip: z.object({
+    id: uuidSchema,
+    archivedAt: z.string().datetime().nullable(),
+    archiveReason: z.enum(["USER_ARCHIVED", "DATE_ELAPSED"]).nullable(),
+    updatedAt: z.string().datetime(),
+  }).strict(),
+});
+
 export const tripActivationResponseSchema = z.object({
   trip: z.object({
     id: uuidSchema,
