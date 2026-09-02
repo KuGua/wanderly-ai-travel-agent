@@ -463,6 +463,19 @@ export const agentRunResponseSchema = z.object({
   assistantMessageId: uuidSchema.nullable(),
   resultPlanId: uuidSchema.nullable(),
   /**
+   * The unconfirmed trip brief this turn extracted, if any. Read from the run
+   * for the same reason `pendingFlightConfirmation` is: the one-shot
+   * `trip.brief_proposed` notification is never re-delivered, so a client that
+   * subscribes late, reloads, or moves between the globe and the trip
+   * workspace would otherwise lose the confirmation card entirely.
+   */
+  tripBriefProposal: z.object({
+    departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
+    destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+    travelDateStart: dateStr.optional(),
+    travelDays: z.number().int().min(1).max(365).optional(),
+  }).strict().nullable().optional(),
+  /**
    * Personal Research Intent Routing — Phase 0/1.
    * Owner-safe DTO for the persisted research-intent draft. Surfaced only
    * when a CONVERSATION run carries a non-null draft (and only to the

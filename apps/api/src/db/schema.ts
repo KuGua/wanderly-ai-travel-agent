@@ -893,6 +893,13 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
    */
   conversationSurface: varchar("conversation_surface", { length: 32 }),
   /**
+   * The trip brief extracted from this turn, awaiting the traveller's
+   * confirmation. Kept here because the notification that used to carry it is
+   * fire-and-forget: a client that subscribes a moment late never sees it.
+   * Still a candidate — nothing reaches `shared_trips` without a confirm.
+   */
+  tripBriefProposal: jsonb("trip_brief_proposal"),
+  /**
    * Personal Research Intent Routing — Phase 0/1.
    * Non-executable persisted draft (kind + capabilities + readiness gaps only).
    * Validation: Zod `persistedResearchIntentDraftSchema`. Never carries

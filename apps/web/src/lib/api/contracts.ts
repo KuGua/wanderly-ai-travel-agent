@@ -248,6 +248,13 @@ export const agentRunResponseSchema = z.object({
   errorCode: agentRunErrorCodeSchema.nullable(),
   assistantMessageId: z.string().uuid().nullable(),
   resultPlanId: z.string().uuid().nullable(),
+  /** Unconfirmed brief from this turn; polled because the SSE event is one-shot. */
+  tripBriefProposal: z.object({
+    departureCities: z.array(z.string()).optional(),
+    destinationCandidates: z.array(z.string()).optional(),
+    travelDateStart: z.string().optional(),
+    travelDays: z.number().optional(),
+  }).nullable().optional(),
   /**
    * Personal Research Intent Routing — Phase 0/1.
    * Owner-safe DTO for the persisted research-intent draft. Only present

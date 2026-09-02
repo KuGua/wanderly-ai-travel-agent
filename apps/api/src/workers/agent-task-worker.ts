@@ -7,6 +7,9 @@ import {
   parseTraceparent,
   safeSetAttribute,
 } from "../observability/tracing.js";
+import { eq } from "drizzle-orm";
+import { db } from "../db/database.js";
+import { agentTaskRuns } from "../db/schema.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import { handleConversationTask, publishPhase } from "../tasks/handlers/conversation-task-handler.js";
 import { handlePlanningTask } from "../tasks/handlers/planning-task-handler.js";
@@ -176,6 +179,11 @@ export async function processNextAgentTask(): Promise<boolean> {
         responseMode: output.responseMode,
       });
       if (output.tripBriefProposal) {
+        // Persist before publishing: the notification can be missed, the row
+        // cannot. The client rebuilds the card from the run it already polls.
+        await db.update(agentTaskRuns)
+          .set({ tripBriefProposal: output.tripBriefProposal })
+          .where(eq(agentTaskRuns.id, run.id));
         await publishAgentStreamEvent({
           event: "trip.brief_proposed",
           runId: run.id,
