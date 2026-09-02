@@ -34,7 +34,7 @@ export interface ConversationMemoryFact {
   field: string;
   value: unknown;
   category: "PREFERENCE" | "CONSTRAINT";
-  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION" | "HIGHLIGHT";
+  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION" | "HIGHLIGHT" | "TRIP_OVERRIDE";
 }
 
 export interface ThreadContextMessage {

@@ -472,7 +472,9 @@ export async function handleConversationTask(params: {
   // Cross-thread long-term memory for the owner. `buildConversationContext`
   // covers only this thread; without this the assistant restarts from zero
   // in every new thread even though the facts are already stored.
-  const memoryContext = await buildConversationMemoryContext(params.run.createdByUserId);
+  // Scoped to this trip, so an adjustment made for it wins over the profile
+  // without touching what any other trip inherits.
+  const memoryContext = await buildConversationMemoryContext(params.run.createdByUserId, params.run.tripId);
   // What this trip's own providers last returned. Without it the assistant
   // cannot refer to a search it ran itself: the offers were persisted and
   // never read back.
