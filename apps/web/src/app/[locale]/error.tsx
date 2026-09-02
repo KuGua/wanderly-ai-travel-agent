@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 
-import { resolveApiBaseUrl } from "@/lib/api";
 import { createUiDiagnosticReporter, getCurrentUiScreen } from "@/lib/observability/ui-diagnostics";
 
 export default function LocaleError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
@@ -10,7 +9,7 @@ export default function LocaleError({ reset }: { error: Error & { digest?: strin
     // Route-level errors occur below AppProviders, so this tiny boundary uses
     // no page data and never serialises the error object.
     const reporter = createUiDiagnosticReporter({
-      apiBaseUrl: `${resolveApiBaseUrl()}/api/v1`,
+      apiBaseUrl: `${process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000"}/api/v1`,
       getAccessToken: () => localStorage.getItem("wanderly_auth_token") ?? sessionStorage.getItem("wanderly_auth_token"),
     });
     void reporter.send({

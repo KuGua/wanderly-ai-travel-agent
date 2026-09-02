@@ -27,19 +27,9 @@ export function assertLocalDevServerHost(
   // Compose configuration binds the published port to 127.0.0.1; the explicit
   // flag keeps the exception unavailable to ordinary local processes.
   const isAllowedContainerHost = allowContainerHost && host === "0.0.0.0";
-  // `custom-local` may serve every interface at once. Binding one private
-  // address already exposes the API to every device on that network, so this
-  // adds loopback rather than reach — and binding *only* the LAN address
-  // silently breaks every `localhost` URL, which is what a developer
-  // actually types. Deliberately not extended to `local-dev`: that mode
-  // authenticates a fixed user with no password, so its binding stays
-  // loopback-only. `custom-local` still requires a bcrypt password and a
-  // signed JWT, and `assertAuthModeEnvironment` still confines it to
-  // development/test.
-  const isAllowedCustomLocalHost = mode === "custom-local"
-    && (host === "0.0.0.0" || isPrivateIpv4Address(host));
-  if (isLocalMode && !isLoopbackHost(host) && !isAllowedContainerHost && !isAllowedCustomLocalHost) {
-    throw new Error(`AUTH_MODE=${mode} requires HOST to be a loopback address, or 0.0.0.0 / a private IPv4 address for custom-local`);
+  const isAllowedCustomLocalLanHost = mode === "custom-local" && isPrivateIpv4Address(host);
+  if (isLocalMode && !isLoopbackHost(host) && !isAllowedContainerHost && !isAllowedCustomLocalLanHost) {
+    throw new Error(`AUTH_MODE=${mode} requires HOST to be a loopback address or private IPv4 address for custom-local`);
   }
 }
 

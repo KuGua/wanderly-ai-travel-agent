@@ -19,7 +19,6 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "logs:tail": "tail -F runtime/api-runtime.ndjson runtime/worker-runtime.ndjson",
-    "update-lan-host": "tsx scripts/update-lan-host.ts",
     "observability:up": "docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d tempo grafana",
     "observability:stop": "docker compose -f docker-compose.yml -f docker-compose.observability.yml stop grafana tempo",
     "observability:status": "docker compose -f docker-compose.yml -f docker-compose.observability.yml ps tempo grafana",

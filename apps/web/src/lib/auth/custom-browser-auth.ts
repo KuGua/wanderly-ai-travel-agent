@@ -1,4 +1,3 @@
-import { resolveApiBaseUrl } from "@/lib/api";
 import type { AuthenticatedBrowserUser, BrowserAuthService } from "./cognito-browser-auth";
 
 const TOKEN_KEY = "wanderly_auth_token";
@@ -22,7 +21,9 @@ function clearStoredSession() {
   sessionStorage.removeItem(USER_KEY);
 }
 
-const getApiBaseUrl = resolveApiBaseUrl;
+function getApiBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000";
+}
 
 export function setRememberMe(value: boolean) {
   rememberMe = value;

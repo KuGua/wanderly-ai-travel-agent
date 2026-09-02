@@ -1,4 +1,3 @@
-import { resolveApiBaseUrl } from "@/lib/api";
 import { createCustomBrowserAuth } from "./custom-browser-auth";
 
 /**
@@ -112,13 +111,13 @@ const invalidLocalDevelopmentAuthService: BrowserAuthService = {
 export function resolveSyncAuthFallback(): BrowserAuthService {
   const authMode = process.env.NEXT_PUBLIC_AUTH_MODE?.trim() || "cognito";
   if (authMode === "custom-local" && process.env.NODE_ENV !== "production") {
-    if (!isAllowedLocalHttpApiBaseUrl(resolveApiBaseUrl(), true)) {
+    if (!isAllowedLocalHttpApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000", true)) {
       return invalidLocalDevelopmentAuthService;
     }
     return createCustomBrowserAuth();
   }
   if (authMode === "local-dev" && process.env.NODE_ENV !== "production") {
-    if (!isAllowedLocalHttpApiBaseUrl(resolveApiBaseUrl())) {
+    if (!isAllowedLocalHttpApiBaseUrl(process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")) {
       return invalidLocalDevelopmentAuthService;
     }
     return localDevelopmentAuthService;

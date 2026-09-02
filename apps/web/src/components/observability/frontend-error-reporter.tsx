@@ -2,7 +2,6 @@
 
 import { useEffect } from "react";
 
-import { resolveApiBaseUrl } from "@/lib/api";
 import { createUiDiagnosticReporter, getCurrentUiScreen } from "@/lib/observability/ui-diagnostics";
 import { useAuth } from "@/lib/auth/auth-provider";
 
@@ -12,7 +11,7 @@ export function FrontendErrorReporter() {
 
   useEffect(() => {
     const reporter = createUiDiagnosticReporter({
-      apiBaseUrl: `${resolveApiBaseUrl()}/api/v1`,
+      apiBaseUrl: `${process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "http://localhost:3000"}/api/v1`,
       getAccessToken: auth.getAccessToken,
     });
     const recent = new Map<string, number>();

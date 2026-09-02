@@ -44,12 +44,6 @@ describe("authentication mode safety", () => {
     expect(() => assertLocalDevServerHost("custom-local", "10.91.182.185")).not.toThrow();
     expect(() => assertLocalDevServerHost("local-dev", "10.91.182.185")).toThrow(/loopback/);
     expect(() => assertLocalDevServerHost("custom-local", "198.51.100.10")).toThrow(/loopback/);
-    // Binding only the LAN address left `localhost` with nothing listening, so
-    // every localhost URL failed at the network layer ("Failed to fetch") while
-    // the LAN URL worked. custom-local may serve both at once; local-dev, which
-    // authenticates without a password, may not.
-    expect(() => assertLocalDevServerHost("custom-local", "0.0.0.0")).not.toThrow();
-    expect(() => assertLocalDevServerHost("local-dev", "0.0.0.0")).toThrow(/loopback/);
     expect(() => assertLocalDevServerHost("local-dev", "127.0.0.1")).not.toThrow();
     expect(isLoopbackAddress("::1")).toBe(true);
     expect(isLoopbackAddress("::ffff:127.0.0.1")).toBe(true);
