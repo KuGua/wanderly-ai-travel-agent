@@ -163,7 +163,10 @@ describe("TravelAgentChat durable streaming flow", () => {
     fireEvent.click(confirmButton);
 
     await waitFor(() => {
-      expect(submitConversationTurn).toHaveBeenLastCalledWith(THREAD_ID, expect.objectContaining({ question: "确认搜索" }));
+      // Names flights. The bare "确认搜索" authorised whichever search the
+      // model then picked, and in a thread that had also discussed hotels it
+      // picked the hotel one — this button ran a hotel search.
+      expect(submitConversationTurn).toHaveBeenLastCalledWith(THREAD_ID, expect.objectContaining({ question: "确认搜索机票" }));
     });
   });
 

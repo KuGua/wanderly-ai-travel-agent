@@ -510,9 +510,14 @@ export function TravelAgentChat({
   function confirmFlightSearch() {
     if (isSending) return;
     // The server's confirmation gate reads the literal phrase from the user
-    // message (see `conversation-task-handler.ts`'s `userConfirmed` regex) —
+    // message (see `conversation-task-handler.ts`'s `CONFIRMATION_PATTERN`) —
     // sending it here is what actually authorizes the metered provider call.
-    void sendTurn({ requestId: crypto.randomUUID(), question: "确认搜索" });
+    //
+    // It names flights. The bare "确认搜索" authorised whichever search the
+    // model then chose, and in a thread that had also discussed hotels the
+    // hotel readiness rule won: pressing this button ran a hotel search. A
+    // button means one search, so it says which.
+    void sendTurn({ requestId: crypto.randomUUID(), question: "确认搜索机票" });
   }
 
   function cancelFlightSearch() {
