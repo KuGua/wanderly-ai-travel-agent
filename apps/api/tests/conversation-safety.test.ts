@@ -111,6 +111,7 @@ describe("conversation operational fact boundary", () => {
     ["visa", "Japan requires Chinese tourists to obtain a visa."],
     ["flight status", "SQ12 is delayed by 45 minutes."],
     ["visa paraphrase", "Chinese citizens have to get a visa."],
+    ["booking status", "Your booking is confirmed."],
   ])("replaces an unsupported %s model claim with a deterministic SAFE_REFUSAL", async (_label, unsafeContent) => {
     const generateConversationReply = vi.fn().mockResolvedValue({
       content: unsafeContent,
@@ -129,7 +130,6 @@ describe("conversation operational fact boundary", () => {
     ["live price", "The flight currently costs $820."],
     ["inventory", "There are rooms available tonight."],
     ["bare numeric fare", "The current fare is 820."],
-    ["booking status", "Your booking is confirmed."],
   ])("no longer replaces a %s model claim with a SAFE_REFUSAL", async (_label, content) => {
     const generateConversationReply = vi.fn().mockResolvedValue({
       content,
@@ -284,11 +284,13 @@ describe("containsUnsupportedOperationalClaim — Chinese output-side gate", () 
   });
 });
 
-// The `evidenceBacked` / `userConfirmed` options are still accepted for
-// backward compatibility with existing call sites, but no longer change any
-// outcome: price/availability/booking-status claims are always allowed now,
-// and visa/flight-status claims are always refused regardless of either flag.
-describe("containsUnsupportedOperationalClaim — evidenceBacked is now a no-op", () => {
+// `evidenceBacked` no longer gates price/availability (that check was
+// removed outright) but it still narrowly gates the cancellation-policy
+// carve-out on the booking-status check: only an evidence-backed reply may
+// describe a supplier's own cancellation terms without being read as a
+// claim about the traveller's own reservation. `userConfirmed` remains a
+// full no-op — nothing left consults it.
+describe("containsUnsupportedOperationalClaim — evidenceBacked", () => {
   it("allows Chinese price + hotel claims regardless of evidenceBacked", () => {
     expect(containsUnsupportedOperationalClaim(
       "这家酒店今晚 ¥820 起，每晚约 800 元人民币。",
@@ -315,19 +317,26 @@ describe("containsUnsupportedOperationalClaim — evidenceBacked is now a no-op"
     )).toBe(false);
   });
 
-  it("allows a Chinese booking-status claim regardless of evidenceBacked", () => {
+  it("still strips a Chinese booking-status claim about the traveller's own reservation", () => {
     expect(containsUnsupportedOperationalClaim(
       "已确认酒店预订成功，今晚可以入住。",
+    )).toBe(true);
+  });
+
+  it("admits a multi-offer summary's cancellation-policy wording when evidence-backed", () => {
+    // This text has "预订" in one clause and "取消" in an unrelated one — the
+    // exact shape that used to false-positive as a booking-status claim
+    // before the cancellation-policy carve-out existed.
+    expect(containsUnsupportedOperationalClaim(
+      "台北君品酒店：每晚约 1,450 CNY，提供免费取消政策。福泰桔子商务旅馆：每晚约 620 CNY，预订政策为不可退款。",
+      { evidenceBacked: true },
     )).toBe(false);
   });
 
-  it("allows a real multi-offer summary that mentions cancellation policy per offer", () => {
-    // Regression guard: this text has "预订" in one clause and "取消" in an
-    // unrelated one — the exact shape that used to false-positive before the
-    // booking-status output check was removed.
+  it("still strips that same cancellation-policy wording when nothing was searched", () => {
     expect(containsUnsupportedOperationalClaim(
       "台北君品酒店：每晚约 1,450 CNY，提供免费取消政策。福泰桔子商务旅馆：每晚约 620 CNY，预订政策为不可退款。",
-    )).toBe(false);
+    )).toBe(true);
   });
 });
 
@@ -345,5 +354,37 @@ describe("requestsUnsupportedOperationalFacts — userConfirmed is now a no-op",
 
   it("allows an availability + hotel query regardless of userConfirmed", () => {
     expect(requestsUnsupportedOperationalFacts("还有房吗")).toBe(false);
+  });
+});
+
+describe("cancellation terms are not booking status", () => {
+  it("admits a supplier's cancellation policy in an evidence-backed reply", () => {
+    // These come back on every hotel rate. Reading them as "your booking was
+    // cancelled" threw away answers that were entirely grounded.
+    for (const reply of [
+      "Hilton Tokyo Hotel 548.69 USD 每晚，3 晚，不可退订。",
+      "Hotel Mystays 157 USD 每晚，可免费取消至 2026-09-30。",
+      "The rate is non-refundable but includes taxes.",
+      "Free cancellation until 30 September on this booking rate.",
+    ]) {
+      expect(containsUnsupportedOperationalClaim(reply, { evidenceBacked: true }), reply).toBe(false);
+    }
+  });
+
+  it("still refuses a claim about the traveller's own reservation", () => {
+    for (const reply of [
+      "你的预订已确认。",
+      "Your booking is confirmed and the reservation status is pending.",
+      "我已经帮你取消了这个预订。",
+    ]) {
+      expect(containsUnsupportedOperationalClaim(reply, { evidenceBacked: true }), reply).toBe(true);
+    }
+  });
+
+  it("keeps refusing cancellation wording when nothing was searched", () => {
+    // Without evidence the same sentence is the model inventing terms.
+    expect(containsUnsupportedOperationalClaim(
+      "Your booking is confirmed with free cancellation.", { evidenceBacked: false },
+    )).toBe(true);
   });
 });

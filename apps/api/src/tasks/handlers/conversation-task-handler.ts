@@ -61,12 +61,22 @@ import {
  */
 const HOTEL_SEARCH_TOOL: ModelToolDefinition = {
   name: "hotel.search",
-  description: "Search live hotel evidence for one controlled destination. Server binds city/date/occupancy/currency; never invent authority fields.",
+  description:
+    "Search live hotel evidence for one controlled destination. Server binds city/date/occupancy/currency; never invent authority fields. "
+    + "cityCode is a single city (IATA city code or city name) — a country, prefecture or region is not one. "
+    + "Fields you omit keep the value already stored for this thread, so when the traveller names a new destination you MUST send the new cityCode; "
+    + "if their destination does not resolve to one city, ask which city instead of calling this tool, and never let a previously stored city stand in for it.",
   parameters: {
     type: "object",
     additionalProperties: false,
+    // Only the city is required. Dates, occupancy and currency may be filled
+    // in over several turns and inheriting them is harmless, but the city is
+    // the identity of the search: inheriting it silently searched Shanghai
+    // when the traveller had moved on to Japan, and the reply named the
+    // wrong place with real prices attached.
+    required: ["cityCode"],
     properties: {
-      cityCode: { type: "string" },
+      cityCode: { type: "string", description: "One city — IATA city code or city name. A country, prefecture or region is not a city." },
       checkIn: { type: "string", format: "date" },
       checkOut: { type: "string", format: "date" },
       occupancy: {
@@ -450,7 +460,7 @@ export async function handleConversationTask(params: {
   const toolContext: {
     tools?: ModelToolDefinition[];
     dispatchTool?: ModelToolDispatcher;
-    evidenceBacked?: boolean;
+    isEvidenceBacked?: () => boolean;
     userConfirmed?: boolean;
     hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
     flightSearchState?: import("../../providers/model-gateway.js").ConversationFlightSearchState | null;
@@ -459,6 +469,9 @@ export async function handleConversationTask(params: {
   // confirmation at either end of a complete natural-language query (for
   // example “...，CNY。确认搜索” and “CNY 确认搜索”), but does not treat an
   // embedded phrase such as “如何确认搜索条件” as authorization.
+  // Read at check time, after the tools have run. A snapshot taken here
+  // would always be false.
+  toolContext.isEvidenceBacked = () => evidenceDispatched;
   toolContext.userConfirmed = /(?:^|[\s，,。.!！？])(?:确认搜索|yes[\s,.]+(?:search|please|go)|go ahead|execute search|执行搜索|开始搜索|继续搜索|search now|do it|ok\s+search|please search)(?=$|[\s，,。.!！？])/i.test(
     input.question,
   );
@@ -491,11 +504,10 @@ export async function handleConversationTask(params: {
       // revert a flag an earlier dispatch (or the freshness check below)
       // already earned.
       evidenceDispatched = evidenceDispatched || (result as { providerDispatched?: unknown }).providerDispatched === true;
-      // The Skill's own output-side safety check reads `toolContext.evidenceBacked`
-      // (not this closure's local `evidenceDispatched`) — keep both in sync so a
-      // real dispatch actually unlocks the grounded reply instead of the Skill
-      // always treating the turn as unbacked and swapping in a safe refusal.
-      toolContext.evidenceBacked = toolContext.evidenceBacked || evidenceDispatched;
+      // The Skill's own output-side safety check reads `toolContext.isEvidenceBacked()`
+      // — a getter closing over this same `evidenceDispatched` variable (set up
+      // once, below, before any dispatch runs) — so mutating `evidenceDispatched`
+      // here is all that's needed; there's no separate flag to keep in sync.
       await publishToolEvent(params.run, { phase: "settled", name: call.name, ...settledSummary(result) }, params.ctx.traceparent);
       return result;
     });
@@ -552,7 +564,6 @@ export async function handleConversationTask(params: {
           : await researchDispatch(call);
         if ((result as { providerDispatched?: unknown })?.providerDispatched === true) {
           evidenceDispatched = true;
-          toolContext.evidenceBacked = true;
         }
         await publishToolEvent(params.run, { phase: "settled", name: call.name, ...settledSummary(result) }, params.ctx.traceparent);
         return result;
@@ -581,7 +592,6 @@ export async function handleConversationTask(params: {
       .limit(1);
     if (freshEvidence) {
       evidenceDispatched = true;
-      toolContext.evidenceBacked = true;
     }
   }
   if (tools.length > 0) {

@@ -749,7 +749,13 @@ export const conversationHotelSearchStates = pgTable("conversation_hotel_search_
   threadId: uuid("thread_id").primaryKey().references(() => chatThreads.id, { onDelete: "cascade" }),
   tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
   ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  cityCode: varchar("city_code", { length: 3 }).notNull(),
+  // Widened from VARCHAR(3): the hotel draft schema (`cityReferenceSchema`)
+  // accepts an IATA city code OR a city name up to 64 chars, matching what
+  // the location resolver actually resolves ("Kyoto", "京都", "UKY"). A
+  // 3-char column silently failed the INSERT for any name-form city,
+  // surfacing as a misclassified UPSTREAM_5XX with the real cause (a DB
+  // error) hidden behind that generic label.
+  cityCode: varchar("city_code", { length: 64 }).notNull(),
   checkIn: date("check_in", { mode: "string" }).notNull(),
   checkOut: date("check_out", { mode: "string" }).notNull(),
   adults: integer("adults").notNull(),

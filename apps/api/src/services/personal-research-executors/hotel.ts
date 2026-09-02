@@ -30,6 +30,7 @@ import type {
   PersonalResearchEvidenceSummary,
 } from "../../types/domain.js";
 import type { AgentTaskRow } from "../../tasks/task-repository.js";
+import { PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT } from "../../types/schemas.js";
 import { loadActiveQuoteNationality } from "../../services/stay-search-provider-authorization.js";
 import { resolveTripDestinationReference } from "../../services/destination-reference-service.js";
 import { getLocationReferenceResolver } from "../../location-reference/location-reference-resolver.js";
@@ -135,6 +136,20 @@ export async function executePersonalHotelSearch(params: {
     outcome: "AVAILABLE",
     capability: "hotel.search",
     hotel: {
+      // Named properties with their nightly rate. A min/max band answers
+      // "roughly how much" but never "which one", which is the question a
+      // traveller is actually asking.
+      items: offers.slice(0, PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).map((offer) => ({
+        label: offer.propertyName,
+        price: Number.isFinite(offer.pricePerNight)
+          ? { amount: offer.pricePerNight, currency: offer.currency, unit: "PER_NIGHT" as const }
+          : null,
+        detail: [
+          `${offer.nights} 晚`,
+          offer.taxesAndFees?.status === "INCLUDED" ? "含税费" : null,
+          offer.cancellationSummary,
+        ].filter(Boolean).join(" · ") || null,
+      })),
       propertyCount: offers.length,
       currency: params.draft.currency,
       cityCode: params.draft.cityCode,

@@ -94,6 +94,27 @@ describe("conversational ModelGateway", () => {
     expect(messages[1]?.content).not.toContain("HOTEL_SEARCH_READINESS");
   });
 
+  it("positions complete trip orchestration as the primary conversation goal", async () => {
+    const parse = vi.fn().mockResolvedValue({
+      choices: [{ message: {
+        parsed: null,
+        content: JSON.stringify({ reply: { content: "我可以帮你逐步规划这次旅行。" } }),
+      } }],
+    });
+    const gateway = buildGateway({ chat: { completions: { parse } } });
+
+    await gateway.generateConversationReply({
+      question: "帮我规划一次旅行",
+      threadContext: [],
+    });
+
+    const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
+    expect(messages[0]?.content).toContain("首要任务是帮助用户把一次旅行从想法逐步编排成完整、可确认的行程");
+    expect(messages[0]?.content).toContain("完整行程编排优先级");
+    expect(messages[0]?.content).toContain("不得声称已经完成预订、支付、实时查询或任何外部操作");
+    expect(messages[0]?.content).toContain("目的地介绍和一般旅行问答是辅助用户探索与决策的能力");
+  });
+
   it("normalizes Gemini's root-level content response", async () => {
     const client = {
       chat: { completions: { parse: vi.fn().mockResolvedValue({

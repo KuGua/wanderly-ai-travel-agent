@@ -13,6 +13,16 @@ const BOOKING_STATUS_TERMS = [
   // Chinese: booking-status verbs.
   "已订", "已确认", "待确认", "取消", "退订", "改签",
 ];
+/**
+ * Phrases that describe what a rate allows, not what an order is doing.
+ * Only consulted for an evidence-backed reply, where the wording came from
+ * the supplier's own cancellation policy.
+ */
+const CANCELLATION_POLICY_TERMS = [
+  "free cancellation", "non-refundable", "nonrefundable", "refundable",
+  "cancellation policy", "cancellation until", "cancel by", "cancel before",
+  "免费取消", "可免费取消", "不可退款", "不可退订", "可退款", "可取消", "退订政策",
+];
 // Genuine real-time flight STATUS words only (delayed/on-time/cancelled).
 // Deliberately excludes generic schedule words like "起飞"/"到达" (depart/
 // arrive) — those describe a flight's scheduled time, which is legitimate
@@ -104,18 +114,19 @@ export function requestsUnsupportedOperationalFacts(question: string, opts?: Ope
 
 export interface OperationalClaimOptions {
   /**
-   * Unused — the price/availability gate this flag used to unlock was
-   * removed (demo-scope simplification: the model may now state prices /
-   * availability in prose regardless of whether a tool call backs it this
-   * turn). Kept only so existing call sites don't need to change. Visa,
-   * booking-status and flight-status rules still fire unconditionally.
+   * No longer gates the price/availability check — that gate was removed
+   * (demo-scope simplification: the model may state prices / availability in
+   * prose regardless of whether a tool call backs it this turn). Still read,
+   * narrowly, to admit a supplier's own cancellation-policy wording in the
+   * booking-status check below — see `CANCELLATION_POLICY_TERMS`. Visa and
+   * flight-status rules never consult this flag.
    */
   evidenceBacked?: boolean;
 }
 
 export function containsUnsupportedOperationalClaim(content: string, opts?: OperationalClaimOptions): boolean {
   const text = normalizePolicyText(content);
-  void opts;
+  const evidenceBacked = opts?.evidenceBacked === true;
 
   // Chat has no authoritative visa provider path. Conservatively reject every
   // MODEL response that introduces visa facts, including unfamiliar phrasing.
@@ -129,16 +140,30 @@ export function containsUnsupportedOperationalClaim(content: string, opts?: Oper
     ])
   ) return true;
 
-  // The booking-status output check was removed (demo-scope simplification):
-  // it matched topic words ("预订"/booking) and status words ("取消"/cancel)
-  // anywhere in the WHOLE reply independently, so a normal multi-offer
-  // summary describing each hotel's own cancellation policy ("提供免费取消
-  // 政策" in one bullet, "预订政策为不可退款" in another) would false-positive
-  // as the model claiming a status about the user's OWN booking, when it was
-  // just describing third-party offers' policies — exactly what topOffers is
-  // for. The narrower concern (the model claiming "您的预订已确认" about a
-  // booking transaction that never happened here) hasn't been observed and
-  // is a hallucination-prevention nicety, not a safety boundary.
+  // The standalone price/availability gate was removed on purpose (demo-scope
+  // simplification, explicit request): the model may state prices, fares and
+  // availability in prose regardless of whether a tool call backs them this
+  // turn. `PRICE_TERMS`/`AVAILABILITY_TERMS`/`LIVE_TERMS` and the numeric/
+  // currency helpers that only fed that gate were removed with it.
+  //
+  // The booking-status check below is a SEPARATE rule and stays: it is not
+  // about prices, it is about the model claiming a status of the traveller's
+  // OWN reservation ("您的预订已确认") that never happened in this chat.
+  // Booking status means the state of a reservation the traveller holds. A
+  // rate's cancellation terms are a property of the offer — "free
+  // cancellation until the 30th", "non-refundable" — and describing one is
+  // not claiming an order exists. Evidence-backed replies quote those terms
+  // verbatim from the supplier, so the rule needs the traveller's own
+  // booking in view, not merely the word "cancel" anywhere in the answer
+  // (which is what made a normal multi-offer summary — "提供免费取消政策" in
+  // one bullet, "预订政策为不可退款" in another — false-positive before).
+  const mentionsCancellationTerms = evidenceBacked
+    && hasAnyTerm(text, CANCELLATION_POLICY_TERMS);
+  if (
+    !mentionsCancellationTerms
+    && hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations", "已订", "已确认", "待确认", "取消"])
+    && hasAnyTerm(text, BOOKING_STATUS_TERMS)
+  ) return true;
 
   return hasFlightReference(text) && hasAnyTerm(text, FLIGHT_STATUS_TERMS);
 }

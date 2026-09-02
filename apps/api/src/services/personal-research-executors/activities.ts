@@ -18,6 +18,7 @@ import { createActivitiesProvider } from "../../providers/live-provider-factory.
 import type { ActivityProviderItem } from "../../providers/types.js";
 import type { PersonalResearchEvidenceSummary } from "../../types/domain.js";
 import type { AgentTaskRow } from "../../tasks/task-repository.js";
+import { PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT } from "../../types/schemas.js";
 
 export type PersonalResearchActivitiesDraft = {
   kind: "ACTIVITIES_SEARCH";
@@ -71,6 +72,16 @@ export async function executePersonalActivitiesSearch(params: {
     outcome: "AVAILABLE",
     capability: "activities.search",
     activities: {
+      // Titles and per-person prices. The band alone could not name a single
+      // thing to do.
+      items: items.slice(0, PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).map((item) => ({
+        label: item.title,
+        price: Number.isFinite(item.fromPrice) && item.currency
+          ? { amount: item.fromPrice, currency: item.currency, unit: "PER_PERSON" as const }
+          : null,
+        detail: [item.category, item.rating === null ? null : `★${item.rating.toFixed(1)}`]
+          .filter(Boolean).join(" · ") || null,
+      })),
       activityCount: items.length,
       currency: items[0]?.currency ?? "USD",
       destinationCode: params.draft.destinationCode,

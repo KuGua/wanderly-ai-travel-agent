@@ -733,6 +733,19 @@ export const personalResearchOperationCapabilitySchema = z.enum([
 export type PersonalResearchOperationCapability = z.infer<typeof personalResearchOperationCapabilitySchema>;
 
 const iataCodeSchema = z.string().regex(/^[A-Z]{3}$/);
+/**
+ * A city the location resolver can look up — an IATA city code (`TYO`) or a
+ * city name (`Kyoto`, `京都`), which is what it already accepts.
+ *
+ * Requiring bare IATA here silently broke every city the model named in
+ * words. The hotel tool's own description invites "IATA city code or city
+ * name", so a call saying `Kyoto` was well-formed by the contract the model
+ * was given, failed this schema, and came back as an unreported NEEDS_FIELDS
+ * — the traveller just saw a search that never finished. Cities whose code
+ * the model happened to know (`SHA`, `TYO`) worked, which is why it looked
+ * intermittent.
+ */
+const cityReferenceSchema = z.string().trim().min(2).max(64);
 const dateOnlySchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const currencyCodeSchema = z.string().regex(/^[A-Z]{3}$/);
 
@@ -757,7 +770,7 @@ export const personalResearchFlightDraftSchema = z.object({
 
 export const personalResearchHotelDraftSchema = z.object({
   kind: z.literal("HOTEL_SEARCH"),
-  cityCode: iataCodeSchema,
+  cityCode: cityReferenceSchema,
   checkIn: dateOnlySchema,
   checkOut: dateOnlySchema,
   occupancy: z.object({
@@ -857,8 +870,46 @@ export const personalResearchOutcomeSchema = z.enum(["AVAILABLE", "UNAVAILABLE",
  * shown in `GET /agent-runs/:runId/personal-research` — never raw provider
  * payloads, chat text, nationality, passport, or document data. Spec §3.2.
  */
-// Bounded per-offer line items so the model (and the read API) can answer
-// "which one / how much / when" instead of only aggregate min/max stats.
+/**
+ * One thing a research tool actually found.
+ *
+ * Summaries used to carry counts and a price band and nothing else, which
+ * left the model with "there are five restaurants nearby" — not enough to
+ * answer with, so it answered from its own knowledge instead and the lookup
+ * counted for nothing.
+ *
+ * Isolation from Shared planning is not what this was protecting: personal
+ * evidence is already scoped by owner, trip and run, and Shared plans read a
+ * different table under snapshot binding. Emptying the payload defended
+ * something already defended.
+ *
+ * Still bounded: a handful of items, no supplier tokens, no booking URLs, no
+ * raw provider payload. `capturedAt` travels with them because a price is
+ * only true as of a moment.
+ */
+export const personalResearchEvidenceItemSchema = z.object({
+  /** Property, place, activity title, or a flight's route summary. */
+  label: z.string().trim().min(1).max(200),
+  /** Null when the provider stated no denominated amount. */
+  price: z.object({
+    amount: z.number().nonnegative(),
+    currency: currencyCodeSchema,
+    /** What the amount is per, so a nightly rate is not read as a total. */
+    unit: z.enum(["TOTAL", "PER_NIGHT", "PER_PERSON"]),
+  }).strict().nullable(),
+  /** Short qualifier: duration, board type, category, cabin. */
+  detail: z.string().trim().max(160).nullable(),
+}).strict();
+
+export type PersonalResearchEvidenceItem = z.infer<typeof personalResearchEvidenceItemSchema>;
+
+/** Ceiling per capability. Evidence is a prompt input, not a catalogue. */
+export const PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT = 6;
+
+// Bounded per-offer line items — richer and flight/hotel-specific, layered
+// alongside the generic `items` above so the chat panel's structured result
+// cards (FlightOfferCard / SearchHotelOfferCard) keep the per-field data
+// (times, carrier, stop count) that a flat label/detail string can't carry.
 // Capped at 5 and limited to the fields a normal search-results list would
 // show — never a raw provider payload, booking link, or offer id.
 export const personalResearchFlightOfferItemSchema = z.object({
@@ -877,6 +928,7 @@ export const personalResearchHotelOfferItemSchema = z.object({
 }).strict();
 
 export const personalResearchFlightEvidenceSummarySchema = z.object({
+  items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   offerCount: z.number().int().nonnegative(),
   currency: currencyCodeSchema,
   originIata: iataCodeSchema,
@@ -886,9 +938,10 @@ export const personalResearchFlightEvidenceSummarySchema = z.object({
   topOffers: z.array(personalResearchFlightOfferItemSchema).max(5),
 }).strict();
 export const personalResearchHotelEvidenceSummarySchema = z.object({
+  items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   propertyCount: z.number().int().nonnegative(),
   currency: currencyCodeSchema,
-  cityCode: iataCodeSchema,
+  cityCode: cityReferenceSchema,
   checkIn: dateOnlySchema,
   checkOut: dateOnlySchema,
   minNightlyPrice: z.number().nonnegative().nullable(),
@@ -896,6 +949,7 @@ export const personalResearchHotelEvidenceSummarySchema = z.object({
   topOffers: z.array(personalResearchHotelOfferItemSchema).max(5),
 }).strict();
 export const personalResearchAccommodationEvidenceSummarySchema = z.object({
+  items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   candidateCount: z.number().int().nonnegative(),
   topCategory: z.string().nullable(),
   radiusMeters: z.number().int().nonnegative(),
@@ -903,6 +957,7 @@ export const personalResearchAccommodationEvidenceSummarySchema = z.object({
   checkOut: dateOnlySchema,
 }).strict();
 export const personalResearchActivitiesEvidenceSummarySchema = z.object({
+  items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   activityCount: z.number().int().nonnegative(),
   currency: currencyCodeSchema.nullable(),
   destinationCode: z.string(),
@@ -912,6 +967,7 @@ export const personalResearchActivitiesEvidenceSummarySchema = z.object({
   maxPrice: z.number().nonnegative().nullable(),
 }).strict();
 export const personalResearchPlacesEvidenceSummarySchema = z.object({
+  items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   candidateCount: z.number().int().nonnegative(),
   categories: z.array(z.string()),
   radiusMeters: z.number().int().nonnegative(),

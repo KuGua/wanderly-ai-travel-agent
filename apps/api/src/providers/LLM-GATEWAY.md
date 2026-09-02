@@ -39,6 +39,14 @@ The conversation call receives only the current private question, optional
 minimal place context, and bounded safe/redacted recall. A valid structured
 reply is returned with `responseMode: "MODEL"`.
 
+The Personal Agent treats complete trip orchestration as its primary
+conversation objective. It can guide a traveller through destination,
+transport, stay, activities, routing, and readiness decisions, but only the
+server-controlled confirmation and durable-task workflow can initiate
+research or planning. Destination introductions and general travel questions
+remain optional exploration support; the prompt must never claim a completed
+booking, payment, live query, or external action.
+
 `SAFE_REFUSAL` is not produced by the gateway. It is a deterministic policy
 response produced by `travel.conversation` before model invocation for
 unsupported live/operational questions, or after invocation when model output

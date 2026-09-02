@@ -136,7 +136,17 @@ export type TravelConversationOutput = z.infer<typeof travelConversationOutputSc
 export interface TravelConversationToolContext {
   tools?: import("../../providers/model-gateway.js").ModelToolDefinition[];
   dispatchTool?: import("../../providers/model-gateway.js").ModelToolDispatcher;
-  evidenceBacked?: boolean;
+  /**
+   * Whether a supplier answered during this turn.
+   *
+   * A getter, not a value: the tools run inside the gateway call below, so at
+   * the moment this context is built no evidence exists yet. Passing a
+   * boolean captured beforehand always read false, and the output filter then
+   * replaced answers that were fully grounded — the search happened, the
+   * prices came back, and the traveller was told the chat cannot verify
+   * prices.
+   */
+  isEvidenceBacked?: () => boolean;
   userConfirmed?: boolean;
   hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
   flightSearchState?: import("../../providers/model-gateway.js").ConversationFlightSearchState | null;
@@ -201,7 +211,9 @@ export async function executeTravelConversation(
   }
   if (
     reply.responseMode === "MODEL"
-    && containsUnsupportedOperationalClaim(reply.content, { evidenceBacked: toolContext.evidenceBacked === true })
+    && containsUnsupportedOperationalClaim(reply.content, {
+      evidenceBacked: toolContext.isEvidenceBacked?.() === true,
+    })
   ) {
     return safeConversationRefusal();
   }

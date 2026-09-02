@@ -21,8 +21,8 @@ import type {
   PersonalResearchEvidenceSummary,
 } from "../../types/domain.js";
 import type { AgentTaskRow } from "../../tasks/task-repository.js";
+import { PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT } from "../../types/schemas.js";
 import { resolveTripDestinationReference } from "../../services/destination-reference-service.js";
-import { getLocationReferenceResolver } from "../../location-reference/location-reference-resolver.js";
 
 export type PersonalResearchAccommodationDraft = {
   kind: "ACCOMMODATION_DISCOVERY";
@@ -106,6 +106,13 @@ export async function executePersonalAccommodationDiscovery(params: {
     outcome: "AVAILABLE",
     capability: "accommodation.discovery",
     accommodation: {
+      // Named places to stay. Discovery quotes nothing, so every price here
+      // is null by construction — rates come from hotel search.
+      items: items.slice(0, PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).map((item) => ({
+        label: item.name,
+        price: null,
+        detail: item.kind,
+      })),
       candidateCount: items.length,
       topCategory,
       radiusMeters: params.draft.radiusMeters,
