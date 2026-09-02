@@ -225,7 +225,7 @@
       "sourceConfirmed": "经你确认",
       "deleteAria": "删除这条记忆",
       "notesHeading": "你让我记下的事",
-      "notesBody": "你划选保存、但没有归入上面某个字段的内容。删掉任何一条，我就不再用它。",
+      "notesBody": "你划选保存、但没有归入上面某个字段的内容。删掉任何一条，我就不再用它——数量多时，我读的是最近的几条。",
       "notesAriaLabel": "已保存的备忘",
       "notesDeleteAria": "删除这条备忘",
       "notesEmpty": "还没有。在回复里划选任意一段文字，选择「记住这个」即可。",

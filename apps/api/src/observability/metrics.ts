@@ -266,6 +266,10 @@ metrics.registerCounter(
   "Confirmed constraints that produced no memory observation, by bounded reason.",
   { reason: ["not_in_catalog", "value_not_an_object", "value_shape_mismatch"] },
 );
+metrics.registerCounter(
+  "conversation_memory_notes_dropped_total",
+  "Free-text notes a traveller keeps that did not fit the conversation budget.",
+);
 metrics.registerCounter("memory_proposals_total", "Behaviour-derived memory proposals by bounded outcome.", {
   outcome: ["created", "aggregated", "duplicate_episode", "in_cooldown", "rejected"],
   source: ["behavior_aggregation"],
