@@ -56,7 +56,7 @@ Amazon RDS for PostgreSQL
 
 ### 探索会话与 Draft Trip 生命周期
 
-`/home` 进入只创建浏览器内存中的探索会话，不立即写数据库；地图浏览、坐标点击和打开聊天均不持久化业务状态。稳定地点点击可读取或刷新全局、非个性化的地点介绍缓存，但不得创建任何用户、Trip、thread、message、授权或审计业务记录。用户提交第一条聊天消息时，Fastify 通过幂等、单事务的 `POST /explorations/start` 创建 `DRAFT` Trip、创建者 membership 与默认私有 thread，随后浏览器调用既有 thread turn endpoint。每次新标签页、整页刷新或重新打开开始新的内存会话；同一标签页内客户端路由切换保留该会话。不得使用 URL、`localStorage` 或 `sessionStorage` 恢复当前探索 Trip。地点介绍的完整实施契约见 [地点介绍共享缓存实施方案](docs/location-introduction-cache-implementation.md)。
+`/home` 进入只创建浏览器内存中的探索会话，不立即写数据库；地图浏览、坐标点击和打开聊天均不持久化业务状态。稳定地点点击可读取或刷新全局、非个性化的地点介绍缓存，但不得创建任何用户、Trip、thread、message、授权或审计业务记录。用户提交第一条聊天消息时，Fastify 通过幂等、单事务的 `POST /explorations/start` 创建 `DRAFT` Trip、创建者 membership 与默认私有 thread，随后浏览器调用既有 thread turn endpoint。每次新标签页、整页刷新或重新打开开始新的内存会话；同一标签页内客户端路由切换保留该会话。唯一例外是用户从已授权的 Trip Workspace 显式打开探索地图：该导航可携带 server-issued `tripId` 与 `threadId`，Home 必须重新查询当前用户在该 Trip 下的私有 threads，只有二者匹配才加载该既有聊天；URL 本身不授权、不得创建或恢复其他探索会话，校验失败时不得回退为新建 Trip。不得使用 `localStorage` 或 `sessionStorage` 恢复当前探索 Trip。地点介绍的完整实施契约见 [地点介绍共享缓存实施方案](docs/location-introduction-cache-implementation.md)。
 
 `DRAFT` 仅允许私有探索对话、creator 编辑 brief、创建者向受邀者发送邀请（受邀者只能看到最小行程名与 `DRAFT` 状态，不可读取创建者私有对话或未确认的探索内容），但禁止授权、创建 snapshot、planning/replan、确认或 booking。只有 creator 显式“开始规划”且 brief 满足正式约束后，服务端才将其激活为 `PLANNING`。实现细节见 [探索会话与 Trip 生命周期实施方案](docs/exploration-trip-lifecycle-implementation.md)。
 

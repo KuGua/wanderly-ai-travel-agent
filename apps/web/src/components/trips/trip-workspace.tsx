@@ -415,11 +415,15 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
               <span className="truncate">{t("workspace.mapWindow")}</span>
               <span className="shrink-0 bg-[var(--w-fog)] px-[7px] py-1 text-[10px] font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">{t("workspace.mapPinned")}</span>
             </div>
-            <Link href="/home" aria-label={t("workspace.openFullMap")} className="grid size-[25px] shrink-0 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press">
+            <Link
+              href={activeThread ? `/home?fromTrip=${tripId}&thread=${activeThread.id}` as "/home" : "/home"}
+              aria-label={t("workspace.openFullMap")}
+              className="grid size-[25px] shrink-0 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press"
+            >
               <ExternalLink aria-hidden="true" className="size-3.5" />
             </Link>
           </div>
-          <TripMiniGlobe places={globePlaces} fallbackLabel={destinationsLabel} tripId={tripId} />
+          <TripMiniGlobe places={globePlaces} fallbackLabel={destinationsLabel} tripId={tripId} threadId={activeThread?.id ?? null} />
         </section>
       </aside>
     </main>

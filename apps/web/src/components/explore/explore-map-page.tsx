@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
 import type { ConversationPlace } from "@/lib/api/contracts";
 import { applyGeographyContrast, inspectGeographyLayers, OPEN_MAP_TILES_SOURCE, setGeographyLayerVisibility, type GeographyInspection, type GeographyVisibility } from "./map-geography-layers";
-import { INITIAL_READINESS, layerCaptionFor, mapReadinessStage, panelDisabledReason, type LayerCaption, type MapReadiness, type MapStage } from "./map-readiness";
+import { INITIAL_READINESS, mapReadinessStage, type MapReadiness, type MapStage } from "./map-readiness";
 
 import { CountryBoundaryOverlay } from "./country-boundary-overlay";
 import { cityKey, findMentionedCities, loadCityCatalog, type CatalogCity } from "./city-catalog";
@@ -16,7 +16,7 @@ import { loadAdministrativeCenters, pinGranularityForZoom, pinSelectionForRefere
 import { solidifyGlobeStyle } from "./map-surface-style";
 import { WanderBot } from "./wander-bot";
 import { LocationIntroductionPanel } from "./location-introduction-panel";
-import { ExploreChatHost } from "./explore-chat-host";
+import { ExploreChatHost, type TripConversationHandoff } from "./explore-chat-host";
 import { useLocationIntroduction } from "@/lib/query/use-location-introduction";
 import { useOptionalAuth } from "@/lib/auth/auth-provider";
 import { useOptionalTravelApi } from "@/lib/query/provider";
@@ -56,6 +56,7 @@ type SourceEventDiagnostic = {
 const SINGAPORE: [number, number] = [103.8198, 1.3521];
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 const NEARBY_RADIUS_KM = 50;
+const DEFAULT_GEOGRAPHY_VISIBILITY: GeographyVisibility = { countries: true, regions: true, cities: true };
 
 /**
  * Pointing devices, i.e. a desktop. Only there is the floor applied: a phone
@@ -125,6 +126,19 @@ function readFocusHandoff(params: URLSearchParams) {
   };
 }
 
+/**
+ * An explicit Trip → Home navigation may carry IDs only as a request to load
+ * a conversation. `ExploreChatHost` still verifies ownership server-side via
+ * the caller's own Trip thread list before it renders or submits a turn.
+ */
+export function readTripConversationHandoff(params: URLSearchParams): TripConversationHandoff | null {
+  const tripId = params.get("fromTrip")?.trim();
+  const threadId = params.get("thread")?.trim();
+  return tripId && threadId && /^[0-9a-f-]{36}$/i.test(tripId) && /^[0-9a-f-]{36}$/i.test(threadId)
+    ? { tripId, threadId }
+    : null;
+}
+
 export function ExploreMapPage() {
   const auth = useOptionalAuth();
   const travelApi = useOptionalTravelApi();
@@ -133,6 +147,10 @@ export function ExploreMapPage() {
   // facing it rather than a stale coordinate.
   const [globeCenterPoint, setGlobeCenterPoint] = useState<{ x: number; y: number } | null>(null);
   const focusHandoff = useMemo(() => readFocusHandoff(new URLSearchParams(searchParams.toString())), [searchParams]);
+  const tripConversationHandoff = useMemo(
+    () => readTripConversationHandoff(new URLSearchParams(searchParams.toString())),
+    [searchParams],
+  );
   // The handoff only chooses the opening camera. Reading it through a ref keeps
   // it out of the map effect's deps, so a later URL change cannot tear the map
   // down and rebuild it.
@@ -152,7 +170,6 @@ export function ExploreMapPage() {
   const pendingChatCityKeysRef = useRef(new Set<string>());
   const spinAnimationRef = useRef<number | null>(null);
   const retriedLocationReferenceIdsRef = useRef(new Set<string>());
-  const geographyVisibilityRef = useRef<GeographyVisibility>({ countries: true, regions: true, cities: true });
   const [readiness, setReadiness] = useState<MapReadiness>(INITIAL_READINESS);
   const readinessRef = useRef<MapReadiness>(INITIAL_READINESS);
   const styleLoadedRef = useRef(false);
@@ -170,7 +187,6 @@ export function ExploreMapPage() {
     if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
   }, []);
   const [mapAttempt, setMapAttempt] = useState(0);
-  const [geographyVisibility, setGeographyVisibility] = useState<GeographyVisibility>({ countries: true, regions: true, cities: true });
   const [selected, setSelected] = useState<Destination | null>(null);
   const [inspirations, setInspirations] = useState<Destination[]>([]);
   const [checkedInspirationIds, setCheckedInspirationIds] = useState<Set<string>>(new Set());
@@ -536,7 +552,7 @@ export function ExploreMapPage() {
       // The country fallback is independent of Liberty's optional layer IDs.
       // It must initialize even when a custom style is only partially compatible.
       applyGeographyContrast(map);
-      setGeographyLayerVisibility(map, geographyVisibilityRef.current);
+      setGeographyLayerVisibility(map, DEFAULT_GEOGRAPHY_VISIBILITY);
       attachDevHook(map, inspection);
       readinessRef.current = next;
       setReadiness(next);
@@ -680,12 +696,6 @@ export function ExploreMapPage() {
     };
   }, [attachLocationReference, clearJourneyTimers, locale, mapAttempt, selectDestination, t]);
 
-  useEffect(() => {
-    if (mapRef.current && readiness.kind === "ready-supported") {
-      setGeographyLayerVisibility(mapRef.current, geographyVisibility);
-    }
-  }, [readiness, geographyVisibility]);
-
   // Dragging a window between a phone-sized pane and a desktop one has to move
   // the floor with it, or the globe stays clamped where it should not be.
   useEffect(() => {
@@ -797,14 +807,6 @@ export function ExploreMapPage() {
     setMapAttempt((attempt) => attempt + 1);
   }
 
-  function toggleGeographyLayer(layer: keyof GeographyVisibility) {
-    setGeographyVisibility((current) => {
-      const next = { ...current, [layer]: !current[layer] };
-      geographyVisibilityRef.current = next;
-      return next;
-    });
-  }
-
   function openPinManager() {
     if (!selected || selected.kind !== "inspiration") return;
     setManageAnchorCoordinates(selected.coordinates);
@@ -860,8 +862,8 @@ export function ExploreMapPage() {
       <div className="absolute inset-0">
         <div ref={containerRef} className="size-full" aria-label={t("globeAriaLabel")} />
       </div>
-      <CountryBoundaryOverlay map={mapForBoundaryOverlay} visible={geographyVisibility.countries} />
-      <GeographyLabelOverlay map={mapForBoundaryOverlay} locale={locale} visibility={geographyVisibility} />
+      <CountryBoundaryOverlay map={mapForBoundaryOverlay} visible />
+      <GeographyLabelOverlay map={mapForBoundaryOverlay} locale={locale} visibility={DEFAULT_GEOGRAPHY_VISIBILITY} />
 
       {readiness.kind === "loading" ? (
         <div className="pointer-events-none absolute inset-0 z-[4] grid place-items-center" role="status">
@@ -888,9 +890,9 @@ export function ExploreMapPage() {
 
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-4 p-4 sm:pb-6 sm:pl-[104px] sm:pr-6 sm:pt-6">
         <div data-wanderly-avoid className="pointer-events-auto flex flex-col items-start gap-2">
-          {focusHandoff?.tripId ? (
+          {tripConversationHandoff ? (
             <Link
-              href={`/trips/${focusHandoff.tripId}` as "/trips/[tripId]"}
+              href={`/trips/${tripConversationHandoff.tripId}?thread=${tripConversationHandoff.threadId}` as "/trips/[tripId]"}
               className="inline-flex min-h-10 items-center gap-1.5 px-3 text-xs font-extrabold wanderly-cosmos-control wanderly-r-sm wanderly-press"
             >
               <ArrowLeft aria-hidden="true" className="size-4" />
@@ -984,16 +986,6 @@ export function ExploreMapPage() {
         </section>
       ) : null}
 
-      {readiness.kind !== "loading" && readiness.kind !== "unavailable-network" ? (
-        <LayerToggleGroup
-          visibility={geographyVisibility}
-          disabledReason={panelDisabledReason(readiness)}
-          caption={layerCaptionFor(panelDisabledReason(readiness), readiness.kind === "ready-style-missing-layers" ? readiness.missingLayers : [])}
-          onToggle={toggleGeographyLayer}
-          t={t}
-        />
-      ) : null}
-
       {selected && !managePinsOpen && !chatOpen ? (
         <aside data-wanderly-avoid className="absolute inset-x-0 bottom-0 z-30 max-h-[70dvh] overflow-y-auto rounded-t-[24px] bg-card p-5 pb-24 text-[var(--w-ink)] wanderly-edge wanderly-shadow landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(360px,calc(100%-2rem))] landscape:wanderly-r-lg landscape:pb-5">
           <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label={t("drawerCloseAriaLabel")} className="absolute right-4 top-4 grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
@@ -1050,6 +1042,7 @@ export function ExploreMapPage() {
         onDismiss={dismissChat}
         selectedPlace={selected ? { place: toConversationPlace(selected), context: selected.country } : null}
         onConversationText={handleConversationText}
+        tripConversationHandoff={tripConversationHandoff}
       />
     </main>
   );
@@ -1205,60 +1198,4 @@ function stateAction(state: ExploreState, kind: Destination["kind"], t: ReturnTy
   if (kind === "inspiration") return t("action.inspiration");
   if (kind === "geography") return t("action.geography");
   return t("action.IDLE");
-}
-
-function LayerToggleGroup({
-  visibility,
-  disabledReason,
-  caption,
-  onToggle,
-  t,
-}: {
-  visibility: GeographyVisibility;
-  disabledReason: null | "missing-source" | "missing-layers";
-  caption: LayerCaption;
-  onToggle: (layer: keyof GeographyVisibility) => void;
-  t: ReturnType<typeof useTranslations>;
-}) {
-  const disabled = disabledReason !== null;
-  const labels: Record<keyof GeographyVisibility, string> = {
-    countries: t("layerPanel.countries"),
-    regions: t("layerPanel.regions"),
-    cities: t("layerPanel.cities"),
-  };
-  const captionText = (() => {
-    if (!caption) return t("layerPanel.captionSupported");
-    if (caption.kind === "missing-source") return t("layerPanel.captionMissingSource");
-    return t("layerPanel.captionMissingLayers", { layers: caption.layers.join(", ") });
-  })();
-  return (
-    <section
-      data-wanderly-avoid
-      className="absolute left-4 top-32 z-20 w-44 p-2 wanderly-cosmos-panel wanderly-r-lg sm:left-[104px] sm:top-36"
-      role="group"
-      aria-label={t("layerPanel.groupAriaLabel")}
-      data-readiness={disabledReason ?? "supported"}
-    >
-      <p className="px-2 pb-1 text-[10px] font-black uppercase tracking-[0.12em] opacity-80">{t("layerPanel.kicker")}</p>
-      {(["countries", "regions", "cities"] as const).map((layer) => (
-        <button
-          key={layer}
-          type="button"
-          aria-pressed={visibility[layer]}
-          disabled={disabled}
-          onClick={() => onToggle(layer)}
-          className="flex min-h-11 w-full items-center px-2 text-left text-xs font-bold wanderly-r-sm wanderly-press aria-pressed:wanderly-edge-thin aria-pressed:bg-[var(--w-highlight)] aria-pressed:text-[var(--w-ink)] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {labels[layer]}
-        </button>
-      ))}
-      <p
-        className="px-2 pb-1 pt-1 text-[10px] leading-4 opacity-80"
-        role="status"
-        aria-live="polite"
-      >
-        {captionText}
-      </p>
-    </section>
-  );
 }

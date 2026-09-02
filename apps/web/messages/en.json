@@ -258,6 +258,7 @@
       "sending": "Wanderly is thinking…",
       "stop": "Stop",
       "startNewExploration": "Start new exploration",
+      "goToTripPlanner": "Go to Trip Planner",
       "verificationRequired": "Verification required",
       "retry": "Retry",
       "authenticationRequired": "Sign-in is required before private chat can contact the Agent.",
@@ -370,16 +371,6 @@
     },
     "managePinsCta": "Manage pins",
     "deleteThisCta": "Delete this",
-    "layerPanel": {
-      "groupAriaLabel": "Map detail layers",
-      "kicker": "Map layers",
-      "countries": "Countries",
-      "regions": "States / Provinces",
-      "cities": "Cities",
-      "captionSupported": "Zoom in for capitals, cities and states / provinces.",
-      "captionMissingSource": "Country/region labels are hidden — this map style does not expose the openmaptiles source.",
-      "captionMissingLayers": "Country/region labels are hidden — missing layers: {layers}."
-    },
     "backToTrip": "Back to trip"
   },
   "invitation": {

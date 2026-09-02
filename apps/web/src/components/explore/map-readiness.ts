@@ -20,42 +20,10 @@ export type MapReadiness =
 export const INITIAL_READINESS: MapReadiness = { kind: "loading" };
 
 /**
- * Why the layer panel should render disabled (or `null` if it should be
- * fully interactive). Two failure kinds share the same panel-visible UI
- * but need different caption text.
- */
-export function panelDisabledReason(readiness: MapReadiness): null | "missing-source" | "missing-layers" {
-  if (readiness.kind === "ready-style-unsupported-source") return "missing-source";
-  if (readiness.kind === "ready-style-missing-layers") return "missing-layers";
-  return null;
-}
-
-/**
- * Structural descriptor for the layer-panel caption. The UI layer is
- * responsible for resolving the descriptor into a localized string via
- * `useTranslations("explore").t("layerPanel.captionMissingSource" | "captionMissingLayers")`.
- * Keeping the function i18n-agnostic means the readiness lifecycle stays
- * unit-testable without a React tree.
- */
-export type LayerCaption =
-  | null
-  | { kind: "missing-source" }
-  | { kind: "missing-layers"; layers: readonly string[] };
-
-export function layerCaptionFor(
-  reason: null | "missing-source" | "missing-layers",
-  missing: readonly string[],
-): LayerCaption {
-  if (reason === "missing-source") return { kind: "missing-source" };
-  if (reason === "missing-layers") return { kind: "missing-layers", layers: missing };
-  return null;
-}
-
-/**
  * Where the map is in its mount lifecycle, separate from `MapReadiness.kind`.
  *
  * `mounting`          — mapRef created, style JSON not yet parsed.
- * `ready`             — style inspected, geography initialized, UI shows the layer panel.
+ * `ready`             — style inspected and geography initialized.
  * `unavailable`       — terminal failure; UI shows the globe error fallback.
  *
  * Exposed on `window.__wanderlyMap.stage` in dev mode so future debugging can

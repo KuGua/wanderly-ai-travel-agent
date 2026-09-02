@@ -34,6 +34,7 @@ function ChatHarness({
   controlledThreadId = THREAD_ID,
   initiallyOpen = true,
   selectedPlace = null,
+  tripId = null,
   onStartNewExploration,
   onConversationText,
   onThreadInvalidated,
@@ -41,6 +42,7 @@ function ChatHarness({
   controlledThreadId?: string | null;
   initiallyOpen?: boolean;
   selectedPlace?: { place: ConversationPlace; context: string } | null;
+  tripId?: string | null;
   onStartNewExploration?: () => void;
   onConversationText?: (text: string) => void;
   onThreadInvalidated?: () => void;
@@ -54,6 +56,7 @@ function ChatHarness({
       threadId={controlledThreadId}
       onThreadInvalidated={onThreadInvalidated}
       selectedPlace={selectedPlace}
+      tripId={tripId}
       onStartNewExploration={onStartNewExploration}
       onConversationText={onConversationText}
     />
@@ -108,6 +111,26 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("TravelAgentChat durable streaming flow", () => {
+  it("links an exploration chat to its bound Trip Planner thread", () => {
+    renderChat(createApi(), { tripId: TRIP_ID });
+
+    const link = screen.getByRole("link", { name: "Go to Trip Planner" });
+    expect(link).toHaveAttribute(
+      "href",
+      `/trips/${TRIP_ID}?thread=${THREAD_ID}`,
+    );
+    expect(link).toHaveTextContent("Go to Trip Planner");
+  });
+
+  it("collapses the floating conversation from its header control", () => {
+    renderChat(createApi());
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse conversation" }));
+
+    expect(screen.queryByRole("dialog", { name: "Wanderly Agent conversation" })).not.toBeInTheDocument();
+    expect(screen.getByRole("form", { name: "Start a conversation with Wanderly Agent" })).toBeInTheDocument();
+  });
+
   it("shows what the assistant looked up, and how each lookup ended", async () => {
     // A reply that pauses while a supplier answers reads as a hang; these
     // rows are the only thing telling the reader work is happening.

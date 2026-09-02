@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentRun, ConversationTurnAcceptedResponse, OwnerConversationResponse, Thread } from "@/lib/api/contracts";
 import type { TravelApi } from "@/lib/api";
 import { AuthContext } from "@/lib/auth/auth-provider";
-import { configureMapAttribution, ExploreMapPage, toConversationPlace } from "./explore-map-page";
+import { configureMapAttribution, ExploreMapPage, readTripConversationHandoff, toConversationPlace } from "./explore-map-page";
 import { renderWithIntl } from "@/test/render";
 
 function resetDevHook() {
@@ -21,6 +21,17 @@ function mockGlobeStyleFetch() {
 }
 
 describe("Explore map conversation place DTO", () => {
+  it("accepts only a complete UUID trip/thread handoff", () => {
+    expect(readTripConversationHandoff(new URLSearchParams(
+      "fromTrip=11111111-1111-4111-8111-111111111111&thread=22222222-2222-4222-8222-222222222222",
+    ))).toEqual({
+      tripId: "11111111-1111-4111-8111-111111111111",
+      threadId: "22222222-2222-4222-8222-222222222222",
+    });
+    expect(readTripConversationHandoff(new URLSearchParams("fromTrip=not-a-uuid&thread=22222222-2222-4222-8222-222222222222"))).toBeNull();
+    expect(readTripConversationHandoff(new URLSearchParams("fromTrip=11111111-1111-4111-8111-111111111111"))).toBeNull();
+  });
+
   it("maps an inspected geography using MapLibre [lng, lat] order", () => {
     expect(toConversationPlace({
       id: "geography-1",
@@ -468,11 +479,10 @@ describe("ExploreMapPage private inspirations", () => {
     expect(await screen.findByRole("heading", { name: "China" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));
     expect(screen.getByRole("button", { name: "All pins (1)" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Countries" })).toHaveAttribute("aria-pressed", "true");
     expect(mapMock.layoutChanges).toContainEqual({ id: "label_city", visibility: "visible" });
   });
 
-  it("promotes Liberty geography layers and links the Countries toggle to its country layers", async () => {
+  it("promotes Liberty geography layers and keeps them visible by default", async () => {
     renderWithIntl(<ExploreMapPage />);
 
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
@@ -483,11 +493,11 @@ describe("ExploreMapPage private inspirations", () => {
       "label_city",
     ]));
 
-    fireEvent.click(screen.getByRole("button", { name: "Countries" }));
-    expect(mapMock.layoutChanges).toContainEqual({ id: "boundary_2", visibility: "none" });
+    expect(mapMock.layoutChanges).toContainEqual({ id: "boundary_2", visibility: "visible" });
+    expect(screen.queryByRole("group", { name: "Map detail layers" })).not.toBeInTheDocument();
   });
 
-  it("keeps the layer panel visible but disabled with a source-missing caption when the style lacks OpenMapTiles", async () => {
+  it("records source-missing readiness without rendering map-layer controls", async () => {
     mapMock.geography.source = false;
     mapMock.geography.layers = new Set<string>();
     renderWithIntl(<ExploreMapPage />);
@@ -496,12 +506,9 @@ describe("ExploreMapPage private inspirations", () => {
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
     await waitFor(() => expect((window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap).toBeDefined());
 
-    const group = screen.getByRole("group", { name: "Map detail layers" });
-    expect(group).toHaveAttribute("data-readiness", "missing-source");
-    expect(within(group).getByRole("button", { name: "Countries" })).toBeDisabled();
-    expect(within(group).getByRole("button", { name: "States / Provinces" })).toBeDisabled();
-    expect(within(group).getByRole("button", { name: "Cities" })).toBeDisabled();
-    expect(within(group).getByRole("status")).toHaveTextContent(/does not expose the openmaptiles source/);
+    const handle = (window as unknown as { __wanderlyMap?: { readiness: { kind: string } } }).__wanderlyMap;
+    expect(handle?.readiness.kind).toBe("ready-style-unsupported-source");
+    expect(screen.queryByRole("group", { name: "Map detail layers" })).not.toBeInTheDocument();
     expect(mapMock.layoutChanges).toHaveLength(0);
   });
 
@@ -548,7 +555,7 @@ describe("ExploreMapPage private inspirations", () => {
     expect(screen.getByRole("button", { name: /Ask about Japan/ })).toBeInTheDocument();
   });
 
-  it("keeps country, regional, and city controls available after opening a destination drawer", async () => {
+  it("keeps default geography layers visible after opening a destination drawer", async () => {
     const api = createTravelApiForAutoAsk();
     vi.mocked(api.getLocationReference).mockResolvedValue(locationReference("Japan", "JP", "Tokyo", "JP-13", "Tokyo", [139.692, 35.69]));
     renderWithIntl(<ExploreMapPage />, { api });
@@ -562,11 +569,8 @@ describe("ExploreMapPage private inspirations", () => {
     });
     expect(await screen.findByRole("heading", { name: "Japan" })).toBeInTheDocument();
 
-    const countryControl = screen.getByRole("button", { name: "Countries" });
-    expect(countryControl).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(countryControl);
-    expect(countryControl).toHaveAttribute("aria-pressed", "false");
-    expect(mapMock.layoutChanges).toContainEqual({ id: "boundary_2", visibility: "none" });
+    expect(mapMock.layoutChanges).toContainEqual({ id: "boundary_2", visibility: "visible" });
+    expect(screen.queryByRole("group", { name: "Map detail layers" })).not.toBeInTheDocument();
   });
 });
 
@@ -743,7 +747,7 @@ describe("ExploreMapPage readiness diagnostics", () => {
     mockGlobeStyleFetch();
   });
 
-  it("shows the layer panel disabled with a missing-layer caption when some layers are absent", async () => {
+  it("records missing-layer readiness without rendering map-layer controls", async () => {
     mapMock.geography.source = true;
     mapMock.geography.layers = new Set<string>(["boundary_2", "label_country_1"]);
     renderWithIntl(<ExploreMapPage />);
@@ -752,12 +756,10 @@ describe("ExploreMapPage readiness diagnostics", () => {
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
     await waitFor(() => expect((window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap).toBeDefined());
 
-    const group = screen.getByRole("group", { name: "Map detail layers" });
-    expect(group).toHaveAttribute("data-readiness", "missing-layers");
-    expect(within(group).getByRole("button", { name: "Countries" })).toBeDisabled();
-    const status = within(group).getByRole("status");
-    expect(status.textContent).toMatch(/missing layers:.*\blabel_state\b/);
-    expect(status.textContent).toMatch(/\blabel_city_capital\b/);
+    const handle = (window as unknown as { __wanderlyMap?: { readiness: { kind: string }; missingLayers: readonly string[] } }).__wanderlyMap;
+    expect(handle?.readiness.kind).toBe("ready-style-missing-layers");
+    expect(handle?.missingLayers).toEqual(expect.arrayContaining(["label_state", "label_city_capital"]));
+    expect(screen.queryByRole("group", { name: "Map detail layers" })).not.toBeInTheDocument();
   });
 
   it("exposes window.__wanderlyMap in dev mode with the current readiness snapshot", async () => {
@@ -817,12 +819,12 @@ describe("ExploreMapPage style-load lifecycle", () => {
     mockGlobeStyleFetch();
   });
 
-  it("renders the layer panel as soon as the style loads, before tiles finish", async () => {
+  it("records readiness as soon as the style loads, before tiles finish", async () => {
     renderWithIntl(<ExploreMapPage />);
 
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
 
-    await waitFor(() => expect(screen.getByRole("group", { name: "Map detail layers" })).toBeInTheDocument());
+    await waitFor(() => expect((window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap).toBeDefined());
     expect((window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap).toBeDefined();
   });
 
@@ -830,7 +832,7 @@ describe("ExploreMapPage style-load lifecycle", () => {
     renderWithIntl(<ExploreMapPage />);
 
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
-    await waitFor(() => expect(screen.getByRole("group", { name: "Map detail layers" })).toBeInTheDocument());
+    await waitFor(() => expect((window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap).toBeDefined());
 
     fireSourcedata({ sourceId: "unrelated-source", isSourceLoaded: true });
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: false });
@@ -857,7 +859,7 @@ describe("ExploreMapPage style-load lifecycle", () => {
     await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
 
     fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: false });
-    await waitFor(() => expect(screen.getByRole("group", { name: "Map detail layers" })).toBeInTheDocument());
+    await waitFor(() => expect((window as unknown as { __wanderlyMap?: unknown }).__wanderlyMap).toBeDefined());
     expect(screen.queryByRole("heading", { name: /globe could not load/i })).not.toBeInTheDocument();
   });
 
@@ -880,7 +882,7 @@ describe("ExploreMapPage style-load lifecycle", () => {
       });
 
       expect(screen.queryByRole("heading", { name: /globe could not load/i })).not.toBeInTheDocument();
-      expect(screen.getByRole("group", { name: "Map detail layers" })).toBeInTheDocument();
+      expect(screen.queryByRole("group", { name: "Map detail layers" })).not.toBeInTheDocument();
       const handle = (window as unknown as { __wanderlyMap?: { stage: string } }).__wanderlyMap;
       expect(handle?.stage).toBe("ready");
     } finally {

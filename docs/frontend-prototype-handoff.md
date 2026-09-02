@@ -118,10 +118,9 @@ AppShell
 | 首都 / 城市 | 本地 Natural Earth 标签 | 首都 zoom 2.6、重要城市 zoom 2.8 起，按碰撞规则渐进显示 |
 
 - 国家陆地边界与海岸线共同构成国家视觉轮廓；岛国海岸线不是国际边界数据。Liberty 原始 symbol 文字保持透明但参与标签点击命中；可见名称由 SVG 覆盖层统一处理球面背面裁剪和中英文显示。
-- 用户可独立开关 `Countries`、`States / Provinces` 和 `Cities`，默认开启。控件固定在地图右侧，地点抽屉打开后仍必须可操作。
-- `Countries` 同时控制本地国家线、独立九段线与洲/国家标签；另两个开关分别控制 `boundary_3` 与省州标签、首都/城市标签。`build-country-boundaries.mjs` 在构建期由 Natural Earth 10m 的单一 topology 生成两档简化 mesh：LOD-0（quantile 0.005，约 173 KB gzip）只负责整球首屏并守住 200 KB 传输预算，LOD-1（0.035，约 381 KB gzip）从 zoom 2 起接管 —— 相机一旦框住次大陆，LOD-0 的 0.5% 采样就会显出块状 —— 并在高 zoom 继续作为瓦片到齐前的替身。单一全球阈值会把新加坡这类微型国家整体削成退化线段，因此构建期把"整体跨度小于 1.5°"的国家的全部 arc 权重固定为 `Infinity`，两档简化 mesh 都保留它们的完整轮廓。LOD-1 之上还有一档 LOD-3：它不做简化，直接用量化 `1_000_000`（约 40 m 网格）的源几何，坐标保留 4 位小数，长 arc 切成 ≤128 点的段，按 20° 分块写入 `public/map-data/country-borders-lod3/`（164 片，合计约 3.3 MB gzip，最大单片约 119 KB，中位约 8 KB）与 `index.json`。zoom ≥4.5 时浏览器先取一次 index，再只请求视口覆盖且索引中存在的瓦片（避免海洋区域产生 404），瓦片按 LRU 最多缓存 24 片；索引或任一必需瓦片尚未到达/请求失败时继续绘制 LOD-1，全部到齐后才整体切换到瓦片，绝不混绘（否则共享边界会被叠画两次而加深）。精度上限来自 Natural Earth 10m 源数据本身，要再提升必须更换数据源（Overture/OSM），属另一次决策。浏览器按 zoom 懒加载且同一时刻只绘制一档，因此共享国界只描绘一次。边界和标签覆盖层均使用 `map.project()` 随 move/resize 更新，并以当前 map center 做半球可见性判断。国家边界覆盖层另外做视口剪裁：每条共享 arc 在首次加载时缓存自身 bbox，重绘只投影与当前视口（外扩 25% 边距）相交的 arc；zoom < 3 或视口跨度接近全球时不剪裁，因为此时本来就看得见整个半球。实测放大到新加坡（z≈9）每帧只投影 0.6% 的点，欧洲（z≈6）约 2.9%。`geography-labels.geojson` 由 `apps/web/scripts/build-geography-labels.mjs` 从来源化本地数据生成，仅作视觉参考，不可用于反向地理编码、旅行事实或候选推断；浏览器和标签构建均不调用 DataV。
+- 国家边界、省州和城市标签默认保持显示，探索地图不提供图层开关。`build-country-boundaries.mjs` 在构建期由 Natural Earth 10m 的单一 topology 生成两档简化 mesh：LOD-0（quantile 0.005，约 173 KB gzip）只负责整球首屏并守住 200 KB 传输预算，LOD-1（0.035，约 381 KB gzip）从 zoom 2 起接管 —— 相机一旦框住次大陆，LOD-0 的 0.5% 采样就会显出块状 —— 并在高 zoom 继续作为瓦片到齐前的替身。单一全球阈值会把新加坡这类微型国家整体削成退化线段，因此构建期把"整体跨度小于 1.5°"的国家的全部 arc 权重固定为 `Infinity`，两档简化 mesh 都保留它们的完整轮廓。LOD-1 之上还有一档 LOD-3：它不做简化，直接用量化 `1_000_000`（约 40 m 网格）的源几何，坐标保留 4 位小数，长 arc 切成 ≤128 点的段，按 20° 分块写入 `public/map-data/country-borders-lod3/`（164 片，合计约 3.3 MB gzip，最大单片约 119 KB，中位约 8 KB）与 `index.json`。zoom ≥4.5 时浏览器先取一次 index，再只请求视口覆盖且索引中存在的瓦片（避免海洋区域产生 404），瓦片按 LRU 最多缓存 24 片；索引或任一必需瓦片尚未到达/请求失败时继续绘制 LOD-1，全部到齐后才整体切换到瓦片，绝不混绘（否则共享边界会被叠画两次而加深）。精度上限来自 Natural Earth 10m 源数据本身，要再提升必须更换数据源（Overture/OSM），属另一次决策。浏览器按 zoom 懒加载且同一时刻只绘制一档，因此共享国界只描绘一次。边界和标签覆盖层均使用 `map.project()` 随 move/resize 更新，并以当前 map center 做半球可见性判断。国家边界覆盖层另外做视口剪裁：每条共享 arc 在首次加载时缓存自身 bbox，重绘只投影与当前视口（外扩 25% 边距）相交的 arc；zoom < 3 或视口跨度接近全球时不剪裁，因为此时本来就看得见整个半球。实测放大到新加坡（z≈9）每帧只投影 0.6% 的点，欧洲（z≈6）约 2.9%。`geography-labels.geojson` 由 `apps/web/scripts/build-geography-labels.mjs` 从来源化本地数据生成，仅作视觉参考，不可用于反向地理编码、旅行事实或候选推断；浏览器和标签构建均不调用 DataV。
 - 点击时的缩放层级决定会话内 pin 的行政粒度：国家名称层创建国家 pin，省/州名称层创建省/州 pin，城市名称层创建城市 pin；点击已渲染标签或周边区域行为一致。手动 pin 始终停在用户实际点击的经纬度，名称中心数据只用于识别实体；再次点击同层级同实体时，以最新点击坐标替换旧 pin。pin 创建后不随缩放改变或聚合，不同层级可共存。任何层级都不得由名称、坐标或边界推断旅行价格、库存、签证、可预订性或共享约束。
-- 遥测最多记录有界的 `feature_class`、`zoom_band` 与 `outcome`；不得写入城市名称、行政区名称、坐标或私有 pin。Map 详情开关（`Countries` / `States / Provinces` / `Cities`）在 style.load 之后始终可见并可被聚焦；style 缺少 `openmaptiles` source 或缺失任一必需图层时，按钮保持原可见态但被禁用，并以一段 `role="status"` 文案说明原因（"does not expose the openmaptiles source" 或 "missing layers: …"）。`/home` 不再静默隐藏控件，避免开发期把"style 不兼容"误判为"功能未实现"。
+- 遥测最多记录有界的 `feature_class`、`zoom_band` 与 `outcome`；不得写入城市名称、行政区名称、坐标或私有 pin。地图不显示 `Countries`、`States / Provinces` 或 `Cities` 开关；style 兼容性仅通过 `window.__wanderlyMap` 的开发诊断暴露。
 
 ### 5.2.2 调试速查
 
@@ -130,9 +129,9 @@ AppShell
 | `readiness.kind` | 含义 | 用户可见影响 |
 |---|---|---|
 | `loading` | style 尚未 load 或超时未到 | 全屏 Loading 蒙层 |
-| `ready-supported` | style 完整且 openmaptiles source 与 8 个必需图层齐全 | 开关可点击 |
-| `ready-style-unsupported-source` | style 已 load 但缺 `openmaptiles` source | 开关禁用，caption 提示换 style |
-| `ready-style-missing-layers` | source 存在但部分图层缺失（列出 `missingLayers`） | 开关禁用，caption 列出缺失图层 |
+| `ready-supported` | style 完整且 openmaptiles source 与 8 个必需图层齐全 | 默认地理图层保持显示 |
+| `ready-style-unsupported-source` | style 已 load 但缺 `openmaptiles` source | 无图层控制 UI；可通过开发诊断检查兼容性 |
+| `ready-style-missing-layers` | source 存在但部分图层缺失（列出 `missingLayers`） | 无图层控制 UI；可通过开发诊断检查缺失项 |
 | `unavailable-network` | 12 s 超时 / `error` 事件 / 异常 | Globe error 回退卡片 + 列表入口 |
 
 调试片段：
@@ -175,7 +174,7 @@ Layer ID 漂移由 `apps/web/src/components/explore/__fixtures__/openfreemap-lib
 | `FLYING` | 对话结束 | 新加坡至目标的路线、飞机/机器人沿路径移动；抽屉 step 2 | 取消/跳过动画 |
 | `EXPLORING` | 动画完成或减弱动态模式 | 地图聚焦目标、抽屉 step 3、推荐和 CTA | 保存灵感 / 围绕受支持候选进入规划 |
 | `MAP_UNAVAILABLE` | 加载失败 / style.load 超时 / WebGL/网络异常 | 无障碍地点列表、可恢复提示 | 选择 fixture 地点、重试地图 |
-| `MAP_READY_STYLE_INCOMPATIBLE` | style 已 load 但缺 `openmaptiles` source 或部分图层 | 控件可见并被禁用，附 caption；不静默隐藏 | 通过 `window.__wanderlyMap` 查看 `readiness.kind` 与 `missingLayers`；fixture 入口仍可用 |
+| `MAP_READY_STYLE_INCOMPATIBLE` | style 已 load 但缺 `openmaptiles` source 或部分图层 | 不显示图层控制 UI | 通过 `window.__wanderlyMap` 查看 `readiness.kind` 与 `missingLayers`；fixture 入口仍可用 |
 
 动效只表达状态转换；不可让用户等待动画后才可使用核心功能。减弱动态效果下可直接进入 `EXPLORING`，同时文字显示“已抵达”。
 

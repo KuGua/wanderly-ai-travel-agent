@@ -5,6 +5,12 @@ import { useLocale } from "next-intl";
 
 import { TravelAgentChat, type ChatThreadStatus } from "./travel-agent-chat";
 import { useExplorationSession } from "@/lib/exploration/exploration-session-provider";
+import { useTripThreads } from "@/lib/query/hooks";
+
+export type TripConversationHandoff = {
+  tripId: string;
+  threadId: string;
+};
 
 type ExploreChatHostProps = {
   open?: boolean;
@@ -12,6 +18,8 @@ type ExploreChatHostProps = {
   onDismiss?: () => void;
   selectedPlace?: Parameters<typeof TravelAgentChat>[0]["selectedPlace"];
   onConversationText?: (text: string) => void;
+  /** A server-owned private thread explicitly handed off by a Trip route. */
+  tripConversationHandoff?: TripConversationHandoff | null;
 };
 
 export function ExploreChatHost({
@@ -20,16 +28,34 @@ export function ExploreChatHost({
   onDismiss = () => {},
   selectedPlace,
   onConversationText,
+  tripConversationHandoff = null,
 }: ExploreChatHostProps) {
   const { session, startIfNeeded, reset } = useExplorationSession();
+  const handoffThreads = useTripThreads(tripConversationHandoff?.tripId ?? null);
   const locale = useLocale() === "zh" ? "zh" : "en";
 
-  const effectiveThreadId = session.threadId;
+  // URL values are only a handoff hint, never authority. Before showing a
+  // conversation or allowing another turn, the server-authorized thread list
+  // must prove that this member owns the requested thread within that Trip.
+  const handoffThreadIsOwned = Boolean(
+    tripConversationHandoff
+    && handoffThreads.data?.threads.some((thread) => thread.id === tripConversationHandoff.threadId),
+  );
+  const effectiveThreadId = tripConversationHandoff
+    ? (handoffThreadIsOwned ? tripConversationHandoff.threadId : null)
+    : session.threadId;
+  const effectiveTripId = tripConversationHandoff
+    ? (handoffThreadIsOwned ? tripConversationHandoff.tripId : null)
+    : session.tripId;
   const threadStatus: ChatThreadStatus = useMemo(() => {
+    if (tripConversationHandoff) {
+      if (handoffThreads.isPending) return "preparing";
+      return handoffThreadIsOwned ? "ready" : "error";
+    }
     if (session.status === "error") return "error";
     if (session.status === "ready" && session.threadId) return "ready";
     return "preparing";
-  }, [session]);
+  }, [handoffThreadIsOwned, handoffThreads.isPending, session, tripConversationHandoff]);
 
   const ensureThread = useCallback(async () => {
     const result = await startIfNeeded();
@@ -56,11 +82,11 @@ export function ExploreChatHost({
         onDismiss={onDismiss}
         threadId={effectiveThreadId}
         threadStatus={threadStatus}
-        onRetryThread={retryProvisioning}
+        onRetryThread={tripConversationHandoff ? undefined : retryProvisioning}
         onThreadInvalidated={handleInvalidated}
-        onEnsureThreadForFirstSend={ensureThread}
-        onStartNewExploration={reset}
-        tripId={session.tripId}
+        {...(tripConversationHandoff ? {} : { onEnsureThreadForFirstSend: ensureThread })}
+        {...(tripConversationHandoff ? {} : { onStartNewExploration: reset })}
+        tripId={effectiveTripId}
         titleLocale={locale}
         {...(selectedPlace !== undefined ? { selectedPlace } : {})}
         {...(onConversationText ? { onConversationText } : {})}

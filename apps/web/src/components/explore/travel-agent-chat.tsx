@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Check, Copy, LoaderCircle, MessageCircle, RotateCw, Sparkles, Square, X } from "lucide-react";
+import { ArrowRight, ArrowUp, Check, ChevronDown, Copy, LoaderCircle, MessageCircle, RotateCw, Sparkles, Square } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -25,6 +25,7 @@ import { TravelApiError } from "@/lib/api/errors";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { useTravelApi } from "@/lib/query/provider";
+import { Link } from "@/i18n/navigation";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
 type PendingTurn = ConversationTurnRequest;
@@ -489,7 +490,7 @@ export function TravelAgentChat({
     void sendTurn(pendingTurn);
   }
 
-  function closeConversation() {
+  function collapseConversation() {
     setExpanded(false);
     onDismiss();
   }
@@ -640,8 +641,20 @@ export function TravelAgentChat({
           <button type="button" onClick={() => setExpanded((current) => !current)} aria-label={expanded ? t("collapse") : t("expand")} className="absolute left-1/2 top-1 -translate-x-1/2 rounded-full bg-muted/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">{expanded ? t("collapse") : t("expand")}</button>
           <span className="grid size-7 place-items-center rounded-[10px] bg-sidebar text-white shadow-sm"><MessageCircle aria-hidden="true" className="size-4" /></span>
           <p className="min-w-0 flex-1 text-sm font-black tracking-[-0.025em] text-sidebar">{t("agentName")}</p>
+          {tripId && effectiveThreadId ? (
+            <Link
+              href={`/trips/${tripId}?thread=${effectiveThreadId}` as "/trips/[tripId]"}
+              aria-label={t("goToTripPlanner")}
+              className="group relative grid size-8 shrink-0 place-items-center rounded-full border border-primary/20 bg-white text-primary hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            >
+              <ArrowRight aria-hidden="true" className="size-4" />
+              <span role="tooltip" className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-10 w-max rounded-md bg-sidebar px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                {t("goToTripPlanner")}
+              </span>
+            </Link>
+          ) : null}
           {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} className="rounded-full border border-primary/20 bg-white px-2.5 py-1 text-[10px] font-bold text-primary hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">{t("startNewExploration")}</button> : null}
-          <button type="button" onClick={closeConversation} aria-label={t("close")} className="grid size-7 place-items-center rounded-full bg-sidebar text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar/25"><X aria-hidden="true" className="size-3.5" /></button>
+          <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-7 place-items-center rounded-full bg-sidebar text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar/25"><ChevronDown aria-hidden="true" className="size-4" /></button>
         </header>
         )}
 
@@ -783,7 +796,7 @@ export function TravelAgentChat({
 
       <form onSubmit={submitMessage} className={docked ? "border-t-2 border-[var(--w-ink)] bg-background px-[clamp(16px,3vw,34px)] pb-[18px] pt-3" : "bg-white px-3 pb-3 pt-2"}>
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className="mb-1.5 flex h-5 max-w-full items-center rounded-full border border-white/80 bg-[#dff3ed]/90 px-2.5 text-[10px] font-bold text-primary shadow-sm backdrop-blur hover:bg-[#d2eee6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
-        <div className={docked ? "mx-auto flex min-h-14 max-w-[640px] items-center gap-2 bg-card p-1.5 pl-4 wanderly-edge wanderly-r-md wanderly-shadow-sm" : "wanderly-liquid-glass flex min-h-14 items-end gap-2 rounded-[20px] p-1.5 pl-4"}>
+        <div className={docked ? "mx-auto flex min-h-14 max-w-[640px] items-center gap-2 bg-card p-1.5 pl-4 wanderly-edge wanderly-r-md wanderly-shadow-sm" : "wanderly-liquid-glass flex min-h-14 items-center gap-2 rounded-[20px] p-1.5 pl-4"}>
           <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
           {submitButton}
         </div>
