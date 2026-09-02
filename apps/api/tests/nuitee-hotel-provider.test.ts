@@ -262,3 +262,77 @@ describe("NuiteeHotelProvider", () => {
     expect(readNuiteeHotelConfiguration({ NUITEE_API_KEY: "key" })).toMatchObject({ apiKey: "key" });
   });
 });
+
+describe("NuiteeHotelProvider: the city that was searched", () => {
+  function ratesResponse(entries: Array<{ id: string; name: string; city: string | null; country?: string }>) {
+    return {
+      hotels: entries.map((entry) => ({
+        id: entry.id, name: entry.name, city_name: entry.city, country_code: entry.country ?? "JP",
+      })),
+      data: entries.map((entry) => ({
+        hotelId: entry.id,
+        roomTypes: [{ rates: [{ rateId: `r-${entry.id}`, retailRate: { total: [{ amount: 1000, currency: "CNY" }] } }] }],
+      })),
+    };
+  }
+  const kyoto = {
+    destinationId: "Kyoto", cityName: "Kyoto", countryCode: "JP", latitude: 35.021, longitude: 135.754,
+  };
+  const search = {
+    destination: kyoto, checkIn: "2026-12-20", checkOut: "2026-12-25",
+    roomCount: 1, adultsPerRoom: [1], currency: "CNY", locale: "en" as const,
+    quoteNationality: "CN",
+  };
+  function providerReturning(body: unknown, cityMatch = true) {
+    return new NuiteeHotelProvider({
+      apiKey: "k", timeoutMs: 1000, maxRetries: 0, cityMatch,
+      fetchImpl: (async () => new Response(JSON.stringify(body), {
+        status: 200, headers: { "content-type": "application/json" },
+      })) as unknown as typeof fetch,
+    });
+  }
+
+  it("does not offer a Hiroshima hotel as a Kyoto result", async () => {
+    const result = await providerReturning(ratesResponse([
+      { id: "1", name: "Hilton Hiroshima", city: "Hiroshima" },
+      { id: "2", name: "Oakwood Hotel Oike Kyoto", city: "Kyoto" },
+    ])).searchHotels(search);
+    expect(result.outcome).toBe("LIVE");
+    if (result.outcome === "LIVE") {
+      expect(result.data.map((offer) => offer.propertyName)).toEqual(["Oakwood Hotel Oike Kyoto"]);
+    }
+  });
+
+  it("reports nothing found rather than the wrong city, when every rate is elsewhere", async () => {
+    const result = await providerReturning(ratesResponse([
+      { id: "1", name: "Hilton Tokyo Hotel", city: "Tokyo" },
+      { id: "2", name: "Hilton Hiroshima", city: "Hiroshima" },
+    ])).searchHotels(search);
+    expect(result.outcome).toBe("UNAVAILABLE");
+    if (result.outcome === "UNAVAILABLE") expect(result.reason).toBe("NO_RESULTS");
+  });
+
+  it("keeps a listing the directory says nothing about", async () => {
+    // Missing data is not evidence of a mismatch; dropping on it would turn a
+    // thin response into an empty one.
+    const result = await providerReturning(ratesResponse([
+      { id: "1", name: "Unlisted Ryokan", city: null },
+    ])).searchHotels(search);
+    expect(result.outcome).toBe("LIVE");
+  });
+
+  it("matches across accents and a longer official name", async () => {
+    const result = await providerReturning({
+      hotels: [{ id: "1", name: "Kyōto Inn", city_name: "Kyōto", country_code: "JP" }],
+      data: [{ hotelId: "1", roomTypes: [{ rates: [{ rateId: "r1", retailRate: { total: [{ amount: 900, currency: "CNY" }] } }] }] }],
+    }).searchHotels(search);
+    expect(result.outcome).toBe("LIVE");
+  });
+
+  it("can be switched off for a deployment that wants the raw supplier pool", async () => {
+    const result = await providerReturning(ratesResponse([
+      { id: "1", name: "Hilton Tokyo Hotel", city: "Tokyo" },
+    ]), false).searchHotels(search);
+    expect(result.outcome).toBe("LIVE");
+  });
+});

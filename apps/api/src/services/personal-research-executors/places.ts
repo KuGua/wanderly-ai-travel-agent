@@ -100,6 +100,8 @@ export async function executePersonalPlacesSearch(params: {
   return {
     outcome: "AVAILABLE",
     capability: "places.search",
+    supplier: result.source,
+    capturedAt: result.capturedAt,
     places: {
       // The place names. A count and a category list could not answer
       // "which restaurants", which is the whole question.

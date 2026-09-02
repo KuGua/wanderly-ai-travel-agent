@@ -77,6 +77,8 @@ export async function executePersonalFlightSearch(params: {
   return {
     outcome: "AVAILABLE",
     capability: "flight.search",
+    supplier: result.source,
+    capturedAt: result.capturedAt,
     flight: {
       // The offers themselves, not just how many there were. A count told
       // the model nothing it could answer with, so it answered from memory.

@@ -988,6 +988,19 @@ export const personalResearchEvidenceSummarySchema = z.discriminatedUnion("outco
   z.object({
     outcome: z.literal("AVAILABLE"),
     capability: personalResearchOperationCapabilitySchema,
+    /**
+     * Who answered, in the supplier's own name, and when.
+     *
+     * The reply is asked to say where a figure came from, and the summary
+     * gave it nothing to say it with — so it cited the tool, telling the
+     * traveller the prices came from "hotel.search". A citation has to name
+     * something outside this system or it verifies nothing.
+     *
+     * Optional because an executor whose provider reports no source should
+     * leave it absent rather than invent one.
+     */
+    supplier: z.string().trim().min(1).max(120).optional(),
+    capturedAt: z.string().datetime().optional(),
     flight: personalResearchFlightEvidenceSummarySchema.optional(),
     hotel: personalResearchHotelEvidenceSummarySchema.optional(),
     accommodation: personalResearchAccommodationEvidenceSummarySchema.optional(),

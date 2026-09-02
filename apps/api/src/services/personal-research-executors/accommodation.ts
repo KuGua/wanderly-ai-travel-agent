@@ -110,6 +110,8 @@ export async function executePersonalAccommodationDiscovery(params: {
   return {
     outcome: "AVAILABLE",
     capability: "accommodation.discovery",
+    supplier: result.source,
+    capturedAt: result.capturedAt,
     accommodation: {
       // Named places to stay. Discovery quotes nothing, so every price here
       // is null by construction — rates come from hotel search.

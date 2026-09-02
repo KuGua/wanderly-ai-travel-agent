@@ -136,6 +136,8 @@ export async function executePersonalHotelSearch(params: {
   return {
     outcome: "AVAILABLE",
     capability: "hotel.search",
+    supplier: result.source,
+    capturedAt: result.capturedAt,
     hotel: {
       // Named properties with their nightly rate. A min/max band answers
       // "roughly how much" but never "which one", which is the question a

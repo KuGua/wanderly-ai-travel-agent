@@ -358,6 +358,11 @@ metrics.registerCounter("flight_offer_staleness_total", "Selected flight offers 
 // Global POI & ground mobility (docs/ground-mobility-implementation.md §7).
 // All label sets are bounded enums; identifiers (trip_id / run_id /
 // place_id / route_id) live only in trace/log correlation context.
+metrics.registerCounter(
+  "hotel_provider_city_mismatch_total",
+  "Hotel rates dropped for sitting in a different city from the one searched.",
+  { provider: ["nuitee_connect", "serpapi"], outcome: ["partial", "all_elsewhere", "empty"] },
+);
 metrics.registerCounter("place_provider_requests_total", "Place provider requests by bounded outcome.", {
   outcome: ["live", "unavailable"],
   provider: ["openrouteservice", "opentripmap"],
