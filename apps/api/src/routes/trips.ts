@@ -357,10 +357,10 @@ export async function tripRoutes(app: FastifyInstance) {
       throw new ApiError(500, "Internal Server Error", "Trip vanished after activate");
     }
 
-    // Quick orchestration — proactively enqueue a Personal Research intro
-    // CONVERSATION run for SOLO trips only. Best-effort: failure is
-    // recorded but does not block the 200 response. TEAM trips get
-    // skipped explicitly (no proactive assistant message mid-team-flow).
+    // Activation hands the trip into the shared lifecycle. A new Personal
+    // prompt here would make it look as though the private agent still owns
+    // itinerary planning, so the legacy proactive branch is intentionally
+    // suppressed after the DRAFT → PLANNING transition.
     try {
       const requiredMembers = await db.select({ count: count() })
         .from(tripMembers)
@@ -369,7 +369,7 @@ export async function tripRoutes(app: FastifyInstance) {
           eq(tripMembers.isRequired, true),
         ));
       const memberCount = Number(requiredMembers[0]?.count ?? 0);
-      if (memberCount === 1) {
+      if (memberCount === 1 && trip.status === "DRAFT") {
         const threadId = await db.transaction(async (tx) =>
           getOrCreateDefaultThread(tx, {
             ownerUserId: trip.createdBy,

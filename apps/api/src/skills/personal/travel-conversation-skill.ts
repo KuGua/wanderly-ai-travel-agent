@@ -160,7 +160,7 @@ export async function executeTravelConversation(
   toolContext: TravelConversationToolContext = {},
 ): Promise<TravelConversationOutput> {
   if (requestsUnsupportedOperationalFacts(input.question, { userConfirmed: toolContext.userConfirmed === true })) {
-    const refusal = safeConversationRefusal();
+    const refusal = safeConversationRefusal(input.question);
     if (onDelta) await onDelta(refusal.content);
     return refusal;
   }
@@ -215,7 +215,7 @@ export async function executeTravelConversation(
       evidenceBacked: toolContext.isEvidenceBacked?.() === true,
     })
   ) {
-    return safeConversationRefusal();
+    return safeConversationRefusal(input.question);
   }
 
   let tripBriefProposal: TravelConversationOutput["tripBriefProposal"];

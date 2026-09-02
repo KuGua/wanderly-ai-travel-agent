@@ -698,6 +698,7 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     event: z.literal("turn.completed"),
     assistantMessageId: z.string().uuid().optional(),
     resultPlanId: z.string().uuid().optional(),
+    responseMode: conversationResponseModeSchema.optional(),
   }).strict(),
   streamBaseSchema.extend({
     event: z.literal("trip.brief_proposed"),

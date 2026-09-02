@@ -11,4 +11,7 @@ describe("proposeTripBriefFromTurn", () => {
   it("does not create a candidate from unrelated text", () => {
     expect(proposeTripBriefFromTurn("What food should I try?")).toBeNull();
   });
+  it("extracts an explicit Chinese departure city without treating it as a route plan", () => {
+    expect(proposeTripBriefFromTurn("从上海走")).toEqual({ departureCities: ["上海"] });
+  });
 });

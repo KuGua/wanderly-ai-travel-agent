@@ -1220,10 +1220,12 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     event: z.literal("turn.completed"),
     assistantMessageId: uuidSchema.optional(),
     resultPlanId: uuidSchema.optional(),
+    responseMode: conversationResponseModeSchema.optional(),
   }).strict(),
   streamBaseSchema.extend({
     event: z.literal("trip.brief_proposed"),
     proposal: z.object({
+      departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
       destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
       travelDays: z.number().int().min(1).max(365).optional(),
     }).strict(),

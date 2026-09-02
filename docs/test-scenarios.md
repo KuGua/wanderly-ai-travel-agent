@@ -1411,18 +1411,29 @@ depending on a provider-specific `finish_reason`.
 - *English question, Tokyo destination, no other signal* — the reply is in English and the example reads "e.g. USD or JPY".
 - *Constraint breach attempt via prompt injection in `threadContext`* — when an earlier assistant turn in `threadContext` (treated as untrusted data, not instructions) tries to make the model promote a complete plan or invent a hotel list, the reply still follows the constraint.
 
-### TS-CONVERSATIONAL-SETUP-13 — Early itinerary planning uses defaults, not service upsell
+### TS-CONVERSATIONAL-SETUP-13 — Personal brief capture hands daily planning to Shared Agent
 
-**Objective:** Verify an exploratory itinerary request does not turn into an airline/hotel-search questionnaire before the traveller asks for either service.
+**Objective:** Verify an exploratory itinerary request does not turn into an airline/hotel-search questionnaire or a Personal-Agent-produced itinerary before the traveller confirms handoff to Shared Agent.
 
 **Starting conditions:** A private Personal Agent thread has no flight or hotel search state. The user says: "12 月从上海出发，3 位成人去台湾 10 天，想赏花和城市漫步。"
 
 **Expected outcomes:**
 
-- The reply proposes a coherent, editable 10-day route and states any material assumptions (for example, a Taipei-first route with one or two city changes).
-- The assistant chooses low-risk planning defaults such as base cities and whether to change stays; it does not require an exact departure day or a stay-change preference to begin.
-- At most one optional, short question is used for a preference that would materially change the route. If the user does not answer, a later reply continues with the stated assumptions.
+- The reply summarizes only the known brief (Shanghai departure, Taiwan, December, 10 days, three adults, flowers and city walks) and asks at most one short question needed to complete the brief.
+- It does not choose base cities, stay changes, daily pacing, transport, or a Day 1–N route. It says that the confirmed brief can be handed to Shared Agent to generate the shared plan.
+- Until the user confirms the brief, no snapshot, PLAN/REPLAN task, Shared Worker, provider research, or itinerary is created.
 - The reply does not offer to search or compare flights, hotels, accommodation, prices, availability, rooms, cabins, or currency. Those flows begin only after the user explicitly requests the relevant service.
+
+### TS-CONVERSATIONAL-SAFETY-REFUSAL-1 — Search conditions are not a refusal
+
+**Objective:** Verify that supplying hotel/flight query conditions is handled as readiness or confirmation, not as an unsupported real-time-fact request.
+
+**Steps:** In a Chinese private thread whose prior context contains a dated hotel request, submit `1人1间房间，CNY`.
+
+**Expected outcomes:**
+
+- The turn does not produce `SAFE_REFUSAL`; it saves or summarizes the typed readiness state and asks for the required explicit confirmation where applicable.
+- If a genuine safety refusal is required, the completed SSE event includes `responseMode: SAFE_REFUSAL`; the Chinese UI displays the localized verification marker next to the persisted assistant message.
 
 ## 已批准、已部分实现：DRAFT Personal Research（flight 已上线；其余 capability 按 §3.5 顺序逐项 PR 开放）
 

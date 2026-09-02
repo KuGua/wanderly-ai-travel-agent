@@ -111,10 +111,11 @@ describe("conversational ModelGateway", () => {
     });
 
     const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
-    expect(messages[0]?.content).toContain("首要任务是帮助用户把一次旅行从想法逐步编排成完整、可确认的行程");
+    expect(messages[0]?.content).toContain("澄清、归纳并确认本人的旅行意图与约束");
     expect(messages[0]?.content).toContain("完整行程编排优先级");
-    expect(messages[0]?.content).toContain("不得主动提议“帮你看/查机票、住宿”");
-    expect(messages[0]?.content).toContain("由你自行做低风险的默认决定");
+    expect(messages[0]?.content).toContain("不得把单独搜索包装成推荐路径");
+    expect(messages[0]?.content).toContain("不要生成 Day 1–N");
+    expect(messages[0]?.content).toContain("确认后可交给 Shared Agent 生成共享方案");
     expect(messages[0]?.content).toContain("不得声称已经完成预订、支付、实时查询或任何外部操作");
     expect(messages[0]?.content).toContain("目的地介绍和一般旅行问答是辅助用户探索与决策的能力");
   });

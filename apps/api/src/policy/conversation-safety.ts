@@ -168,10 +168,12 @@ export function containsUnsupportedOperationalClaim(content: string, opts?: Oper
   return hasFlightReference(text) && hasAnyTerm(text, FLIGHT_STATUS_TERMS);
 }
 
-export function safeConversationRefusal(): ConversationReply {
+export function safeConversationRefusal(question?: string): ConversationReply {
+  const chinese = question !== undefined && /[\p{Script=Han}]/u.test(question);
   return {
-    content:
-      "I can help with general destination inspiration and qualitative comparisons, but this chat cannot verify current prices, inventory or availability, visa or entry requirements, booking status, flight status, or other real-time provider facts. Please check the relevant official provider or government source.",
+    content: chinese
+      ? "我可以协助整理旅行想法和确认规划条件，但不能在对话中声称实时价格、库存、签证结论、预订状态或航班动态。你的查询条件已收到；确认后可交给 Shared Agent 在受控流程中生成共享方案。"
+      : "I can help organize travel ideas and confirm planning details, but this chat cannot claim live prices, inventory, visa conclusions, booking status, or flight status. Your search details are noted; after confirmation, Shared Agent can use them in the controlled shared-planning flow.",
     responseMode: "SAFE_REFUSAL",
   };
 }

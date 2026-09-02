@@ -53,20 +53,17 @@ The conversation call receives only the current private question, optional
 minimal place context, and bounded safe/redacted recall. A valid structured
 reply is returned with `responseMode: "MODEL"`.
 
-The Personal Agent treats complete trip orchestration as its primary
-conversation objective. It can guide a traveller through destination,
-transport, stay, activities, routing, and readiness decisions, but only the
-server-controlled confirmation and durable-task workflow can initiate
-research or planning. For an early itinerary conversation, it proposes a
-route using clearly stated, low-risk defaults instead of turning exact dates,
-stay changes, room configuration, cabin, or currency into a questionnaire.
-Flight and accommodation research are introduced only when the traveller
-explicitly asks to search, compare, filter, or quote those services. Each
-tool-backed request opens by offering to hand the current need to the Shared
-Agent for complete-trip orchestration; it must not instead promote a separate
-search flow. Destination introductions and general travel questions remain
-optional exploration support; the prompt must never claim a completed booking,
-payment, live query, or external action.
+The Personal Agent clarifies, summarizes, and obtains confirmation for the
+owner's private trip brief and constraints. It must not create a daily
+itinerary, route, base-city/stay plan, transport plan, or supplier comparison:
+those are Shared Agent outputs after the confirmed snapshot enters the durable
+planning workflow. Flight and accommodation research are introduced only when
+the traveller explicitly asks to search, compare, filter, or quote those
+services. Each tool-backed request opens by offering to hand the current need
+to the Shared Agent for complete-trip orchestration; it must not instead
+promote a separate search flow. Destination introductions and general travel
+questions remain optional exploration support; the prompt must never claim a
+completed booking, payment, live query, or external action.
 
 `SAFE_REFUSAL` is not produced by the gateway. It is a deterministic policy
 response produced by `travel.conversation` before model invocation for

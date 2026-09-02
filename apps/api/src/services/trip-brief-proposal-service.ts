@@ -1,13 +1,22 @@
 import type { ConversationPlace } from "../types/schemas.js";
 
-export type TripBriefProposal = { destinationCandidates?: string[]; travelDays?: number };
+export type TripBriefProposal = {
+  departureCities?: string[];
+  destinationCandidates?: string[];
+  travelDays?: number;
+};
 
 /** Extracts only explicit, current-turn facts; never history or a persisted question. */
 export function proposeTripBriefFromTurn(question: string, place?: ConversationPlace): TripBriefProposal | null {
   const travelDays = extractDays(question);
   const destination = place?.name.trim() || extractDestination(question);
-  if (!destination && travelDays === undefined) return null;
-  return { ...(destination ? { destinationCandidates: [destination] } : {}), ...(travelDays !== undefined ? { travelDays } : {}) };
+  const departure = extractDeparture(question);
+  if (!departure && !destination && travelDays === undefined) return null;
+  return {
+    ...(departure ? { departureCities: [departure] } : {}),
+    ...(destination ? { destinationCandidates: [destination] } : {}),
+    ...(travelDays !== undefined ? { travelDays } : {}),
+  };
 }
 
 function extractDays(question: string): number | undefined {
@@ -19,6 +28,13 @@ function extractDays(question: string): number | undefined {
 function extractDestination(question: string): string | undefined {
   const english = question.match(/\b(?:go|going|travel|travelling|traveling|visit|visiting|head|heading)\s+to\s+([A-Za-z][A-Za-z .'-]{0,63}?)(?=\s+(?:for\s+)?[1-9]\d{0,2}\s+days?\b|[,.!?]|$)/iu);
   const chinese = question.match(/(?:去|前往|想去|目的地(?:是|为)?)\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*(?:玩|待|住|旅行)?\s*[1-9]\d{0,2}\s*天|[，。！？]|$)/u);
+  const value = (english?.[1] ?? chinese?.[1])?.trim().replace(/\s+/g, " ");
+  return value && value.length <= 64 ? value : undefined;
+}
+
+function extractDeparture(question: string): string | undefined {
+  const english = question.match(/\bfrom\s+([A-Za-z][A-Za-z .'-]{0,63}?)(?=\s+(?:to|for|on)\b|[,.!?]|$)/iu);
+  const chinese = question.match(/从\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*(?:出发|走)|[，。！？]|$)/u);
   const value = (english?.[1] ?? chinese?.[1])?.trim().replace(/\s+/g, " ");
   return value && value.length <= 64 ? value : undefined;
 }

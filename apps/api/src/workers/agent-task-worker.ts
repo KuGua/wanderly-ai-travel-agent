@@ -189,6 +189,7 @@ export async function processNextAgentTask(): Promise<boolean> {
         runId: run.id,
         generationAttempt: run.generationAttempt,
         assistantMessageId: assistant.id,
+        responseMode: output.responseMode,
         traceparent,
       });
       metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "completed" });

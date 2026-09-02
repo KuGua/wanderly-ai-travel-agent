@@ -23,7 +23,7 @@ import { FlightOfferCard } from "@/components/trips/flight-offer-card";
 import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
 import { TravelApiError } from "@/lib/api/errors";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
-import { useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTripPin } from "@/lib/query/hooks";
+import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { useTravelApi } from "@/lib/query/provider";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
@@ -134,6 +134,8 @@ export function TravelAgentChat({
   // current trip. Renders above the messages (only when not actively
   // handling a research intent draft). The card is read-only in MVP.
   const tripPin = useTripPin(tripId ?? null);
+  const trip = useTrip(tripId);
+  const activateTrip = useActivateTrip(tripId ?? "");
   const pinnedSession = tripPin.data ?? null;
   // Send is allowed when we already have a thread, or when the parent
   // has supplied a provisioner the first send can use (exploration
@@ -153,6 +155,7 @@ export function TravelAgentChat({
   const [pendingFlightConfirmation, setPendingFlightConfirmation] = useState(false);
   const [briefProposal, setBriefProposal] = useState<Extract<AgentStreamEvent, { event: "trip.brief_proposed" }>["proposal"] | null>(null);
   const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
+  const [isStartingSharedPlan, setIsStartingSharedPlan] = useState(false);
   // The assistant already has every field it needs for a flight search but
   // won't spend the metered provider call without a person's say-so. Rather
   // than have the user type "确认搜索", a persistent button does it — it
@@ -306,6 +309,9 @@ export function TravelAgentChat({
     const controller = new AbortController();
     void api.subscribeAgentRun(activeRunId, controller.signal, (event) => {
       if (event.event === "trip.brief_proposed") setBriefProposal(event.proposal);
+      if (event.event === "turn.completed" && event.responseMode === "SAFE_REFUSAL" && event.assistantMessageId) {
+        setRefusalMessageIds((current) => new Set(current).add(event.assistantMessageId!));
+      }
       if (event.event === "tool.settled" && event.capability === "flight.search" && event.outcome === "NEEDS_CONFIRMATION") {
         setPendingFlightConfirmation(true);
       }
@@ -499,6 +505,7 @@ export function TravelAgentChat({
         replaceDestinationCandidates: briefProposal.destinationCandidates ? true : undefined,
         titleLocale,
       });
+      await trip.refetch();
       setBriefProposal(null);
     } catch (error) {
       setRequestError(error);
@@ -506,6 +513,31 @@ export function TravelAgentChat({
       setIsConfirmingBrief(false);
     }
   }
+
+  async function startSharedPlanning() {
+    const currentTrip = trip.data?.trip;
+    if (!tripId || !currentTrip || currentTrip.status !== "DRAFT" || isStartingSharedPlan) return;
+    setIsStartingSharedPlan(true);
+    setRequestError(null);
+    try {
+      await activateTrip.mutateAsync({
+        departureCities: currentTrip.departureCities,
+        destinationCandidates: currentTrip.destinationCandidates,
+        travelDateStart: currentTrip.travelDateStart,
+        travelDateEnd: currentTrip.travelDateEnd,
+        titleLocale,
+      });
+      await trip.refetch();
+    } catch (error) {
+      setRequestError(error);
+    } finally {
+      setIsStartingSharedPlan(false);
+    }
+  }
+
+  const canStartSharedPlanning = trip.data?.trip.status === "DRAFT"
+    && trip.data.trip.departureCities.length > 0
+    && trip.data.trip.destinationCandidates.length > 0;
 
   function confirmFlightSearch() {
     if (isSending) return;
@@ -664,6 +696,15 @@ export function TravelAgentChat({
               <div className="mt-3 flex gap-2">
                 <button type="button" onClick={() => void confirmBriefProposal()} disabled={isConfirmingBrief} className={actionPrimaryClass}>{isConfirmingBrief ? t("briefProposalSaving") : t("briefProposalConfirm")}</button>
                 <button type="button" onClick={() => setBriefProposal(null)} disabled={isConfirmingBrief} className={actionSecondaryClass}>{t("briefProposalIgnore")}</button>
+              </div>
+            </section>
+          ) : null}
+          {canStartSharedPlanning && !briefProposal ? (
+            <section aria-label={t("startSharedPlanTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
+              <p className="font-bold text-primary">{t("startSharedPlanTitle")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("startSharedPlanBody")}</p>
+              <div className="mt-3 flex gap-2">
+                <button type="button" onClick={() => void startSharedPlanning()} disabled={isStartingSharedPlan} className={actionPrimaryClass}>{isStartingSharedPlan ? t("startSharedPlanStarting") : t("startSharedPlanConfirm")}</button>
               </div>
             </section>
           ) : null}
