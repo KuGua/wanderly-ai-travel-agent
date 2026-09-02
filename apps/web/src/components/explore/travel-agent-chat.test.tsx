@@ -196,6 +196,54 @@ describe("TravelAgentChat durable streaming flow", () => {
     });
   });
 
+  it("offers flight preference chips only for a server-classified flight gap, and saves the latest explicit choice without searching", async () => {
+    const saveTripSearchPreferences = vi.fn().mockResolvedValue({});
+    const api = createApi({
+      saveTripSearchPreferences,
+      getAgentRun: vi.fn().mockResolvedValue({
+        ...run("COMPLETED"),
+        researchIntentDraft: {
+          kind: "RESEARCH_ONLY",
+          requestedCapabilities: ["flight"],
+          readiness: "READY_WITH_WARNINGS",
+          blockers: [],
+          warnings: ["FLIGHT_PREFERENCES_MISSING"],
+          missing: ["FLIGHT_PREFERENCES_MISSING"],
+        },
+      }),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId: string, signal: AbortSignal, onEvent: (e: unknown) => void) => {
+        onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+        onEvent({ event: "turn.completed", runId: RUN_ID, generationAttempt: 1 });
+        await untilAborted(signal);
+      }),
+    });
+    renderChat(api, { tripId: TRIP_ID });
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Find flights for my trip" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    const card = await screen.findByRole("region", { name: "Set your flight preferences" });
+    expect(saveTripSearchPreferences).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Round trip" }));
+    fireEvent.click(screen.getByRole("button", { name: /^2$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Economy" }));
+    fireEvent.click(screen.getByRole("button", { name: "SGD" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save preferences" }));
+
+    await waitFor(() => expect(saveTripSearchPreferences).toHaveBeenCalledWith(TRIP_ID, {
+      tripType: "ROUND_TRIP",
+      adults: 2,
+      cabin: "ECONOMY",
+      currency: "SGD",
+      offerFreshnessMinutes: 60,
+    }));
+    expect(api.submitConversationTurn).toHaveBeenCalledTimes(1);
+    expect(card).toHaveTextContent("Saved. You can change any option");
+
+    fireEvent.click(screen.getByRole("button", { name: /^3$/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save preferences" }));
+    await waitFor(() => expect(saveTripSearchPreferences).toHaveBeenLastCalledWith(TRIP_ID, expect.objectContaining({ adults: 3 })));
+  });
+
   it("still shows the confirm button when the SSE stream drops the tool.settled event, via the polled agent-run fallback", async () => {
     // A dropped/reconnected stream (routine over a LAN Wi-Fi hop) never
     // re-delivers a one-shot SSE event. `useAgentRun` polls regardless, so
@@ -465,6 +513,17 @@ describe("TravelAgentChat durable streaming flow", () => {
 
     await waitFor(() => expect(submitConversationTurn).toHaveBeenCalledTimes(2));
     expect(submitConversationTurn.mock.calls[1]).toEqual(submitConversationTurn.mock.calls[0]);
+  });
+
+  it("explains when the browser cannot reach the API instead of showing a generic send failure", async () => {
+    const api = createApi({
+      submitConversationTurn: vi.fn().mockRejectedValue(new TravelApiError("offline", null, "Network Error", null)),
+    });
+    renderChat(api);
+
+    await submitFromCapsule("Find flights");
+
+    expect(await screen.findByText("The travel service could not be reached. Check the connection and try again.")).toBeInTheDocument();
   });
 
   it("does not include the intent field for manually typed questions", async () => {

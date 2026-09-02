@@ -51,6 +51,20 @@ type StreamState = {
   tools: ToolActivity[];
 };
 
+type FlightPreferenceDraft = {
+  tripType: "ONE_WAY" | "ROUND_TRIP" | null;
+  adults: number | null;
+  cabin: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST" | null;
+  currency: "SGD" | "USD" | "CNY" | null;
+};
+
+const EMPTY_FLIGHT_PREFERENCE_DRAFT: FlightPreferenceDraft = {
+  tripType: null,
+  adults: null,
+  cabin: null,
+  currency: null,
+};
+
 export type ChatThreadStatus = "preparing" | "ready" | "error";
 
 type TravelAgentChatProps = {
@@ -179,6 +193,14 @@ export function TravelAgentChat({
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
   const [pendingFlightConfirmation, setPendingFlightConfirmation] = useState(false);
+  // This is intentionally a local draft. Selecting a chip does not create a
+  // preference version, invalidate a plan, or authorize a provider call; the
+  // explicit Save button below is the sole durable write.
+  const [showFlightPreferenceCard, setShowFlightPreferenceCard] = useState(false);
+  const [flightPreferenceDraft, setFlightPreferenceDraft] = useState<FlightPreferenceDraft>(EMPTY_FLIGHT_PREFERENCE_DRAFT);
+  const [isSavingFlightPreferences, setIsSavingFlightPreferences] = useState(false);
+  const [flightPreferenceSaveError, setFlightPreferenceSaveError] = useState<unknown>(null);
+  const [flightPreferencesSaved, setFlightPreferencesSaved] = useState(false);
   const [briefProposal, setBriefProposal] = useState<Extract<AgentStreamEvent, { event: "trip.brief_proposed" }>["proposal"] | null>(null);
   const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
   const [isStartingSharedPlan, setIsStartingSharedPlan] = useState(false);
@@ -224,6 +246,11 @@ export function TravelAgentChat({
     setRequestError(null);
     setBriefProposal(null);
     setPendingFlightConfirmation(false);
+    setShowFlightPreferenceCard(false);
+    setFlightPreferenceDraft(EMPTY_FLIGHT_PREFERENCE_DRAFT);
+    setIsSavingFlightPreferences(false);
+    setFlightPreferenceSaveError(null);
+    setFlightPreferencesSaved(false);
     setHandoffBatchId(null);
     setHandoffDismissed(false);
   }, []);
@@ -445,6 +472,16 @@ export function TravelAgentChat({
     setPendingFlightConfirmation(pending);
   }, [agentRun.data?.pendingFlightConfirmation]);
 
+  // The classifier is server-owned. Only its explicit flight-preference gap
+  // can open this card; a phrase that merely mentions a flight cannot cause a
+  // durable preference form to appear or be written against a trip.
+  useEffect(() => {
+    const intent = agentRun.data?.researchIntentDraft;
+    const needsFlightPreferences = intent?.requestedCapabilities.includes("flight")
+      && intent.missing.includes("FLIGHT_PREFERENCES_MISSING");
+    if (tripId && needsFlightPreferences) setShowFlightPreferenceCard(true);
+  }, [agentRun.data?.researchIntentDraft, tripId]);
+
   const messages = useMemo(
     () => mergeMessages(
       conversation.data?.messages ?? [],
@@ -600,6 +637,42 @@ export function TravelAgentChat({
   function cancelFlightSearch() {
     if (isSending) return;
     void sendTurn({ requestId: crypto.randomUUID(), question: "取消这次机票搜索" });
+  }
+
+  async function saveFlightPreferences() {
+    if (
+      !tripId
+      || !flightPreferenceDraft.tripType
+      || !flightPreferenceDraft.adults
+      || !flightPreferenceDraft.cabin
+      || !flightPreferenceDraft.currency
+      || isSavingFlightPreferences
+    ) return;
+
+    setIsSavingFlightPreferences(true);
+    setFlightPreferenceSaveError(null);
+    try {
+      await api.saveTripSearchPreferences(tripId, {
+        tripType: flightPreferenceDraft.tripType,
+        adults: flightPreferenceDraft.adults,
+        cabin: flightPreferenceDraft.cabin,
+        currency: flightPreferenceDraft.currency,
+        // This is a product freshness bound, not an inferred traveller
+        // preference. It keeps the existing endpoint contract intact.
+        offerFreshnessMinutes: 60,
+      });
+      setFlightPreferencesSaved(true);
+    } catch (error) {
+      setFlightPreferenceSaveError(error);
+    } finally {
+      setIsSavingFlightPreferences(false);
+    }
+  }
+
+  function updateFlightPreference<K extends keyof FlightPreferenceDraft>(key: K, value: FlightPreferenceDraft[K]) {
+    setFlightPreferenceDraft((current) => ({ ...current, [key]: value }));
+    setFlightPreferencesSaved(false);
+    setFlightPreferenceSaveError(null);
   }
 
   const rowClass = docked ? "mx-auto mb-[18px] max-w-[640px]" : "";
@@ -806,6 +879,45 @@ export function TravelAgentChat({
               </div>
             </section>
           ) : null}
+          {showFlightPreferenceCard && tripId ? (
+            <section aria-label={t("flightPreferenceTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
+              <p className="font-bold text-primary">{t("flightPreferenceTitle")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("flightPreferenceBody")}</p>
+              <FlightPreferenceOptions
+                draft={flightPreferenceDraft}
+                disabled={isSavingFlightPreferences}
+                onChange={updateFlightPreference}
+                labels={{
+                  tripType: t("flightPreferenceTripType"),
+                  oneWay: t("flightPreferenceOneWay"),
+                  roundTrip: t("flightPreferenceRoundTrip"),
+                  adults: t("flightPreferenceAdults"),
+                  cabin: t("flightPreferenceCabin"),
+                  economy: t("flightPreferenceEconomy"),
+                  premiumEconomy: t("flightPreferencePremiumEconomy"),
+                  business: t("flightPreferenceBusiness"),
+                  first: t("flightPreferenceFirst"),
+                  currency: t("flightPreferenceCurrency"),
+                }}
+              />
+              <p className="mt-3 text-xs text-muted-foreground">{t("flightPreferenceDatesNote")}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void saveFlightPreferences()}
+                  disabled={isSavingFlightPreferences || !isFlightPreferenceComplete(flightPreferenceDraft)}
+                  className={actionPrimaryClass}
+                >
+                  {isSavingFlightPreferences
+                    ? t("flightPreferenceSaving")
+                    : flightPreferencesSaved ? t("flightPreferenceUpdate") : t("flightPreferenceSave")}
+                </button>
+                <button type="button" onClick={() => setShowFlightPreferenceCard(false)} disabled={isSavingFlightPreferences} className={actionSecondaryClass}>{t("flightPreferenceLater")}</button>
+              </div>
+              {flightPreferencesSaved ? <p role="status" className="mt-2 text-xs font-semibold text-primary">{t("flightPreferenceSaved")}</p> : null}
+              {flightPreferenceSaveError ? <p role="alert" className="mt-2 text-xs text-destructive">{errorMessage(flightPreferenceSaveError, t)}</p> : null}
+            </section>
+          ) : null}
           {/* Only once the turn is over. The tool settles mid-reply, so the
               card used to slide in under a half-written answer and then sit
               there through the next turn's "thinking…" — pressing Search left
@@ -897,6 +1009,71 @@ export function TravelAgentChat({
   );
 
   return expanded && !docked && typeof document !== "undefined" ? createPortal(conversationPanel, document.body) : conversationPanel;
+}
+
+function isFlightPreferenceComplete(draft: FlightPreferenceDraft): draft is Required<FlightPreferenceDraft> {
+  return Boolean(draft.tripType && draft.adults && draft.cabin && draft.currency);
+}
+
+function FlightPreferenceOptions({
+  draft,
+  disabled,
+  onChange,
+  labels,
+}: {
+  draft: FlightPreferenceDraft;
+  disabled: boolean;
+  onChange: <K extends keyof FlightPreferenceDraft>(key: K, value: FlightPreferenceDraft[K]) => void;
+  labels: {
+    tripType: string;
+    oneWay: string;
+    roundTrip: string;
+    adults: string;
+    cabin: string;
+    economy: string;
+    premiumEconomy: string;
+    business: string;
+    first: string;
+    currency: string;
+  };
+}) {
+  const chipClass = (selected: boolean) => `min-h-8 px-2.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50 ${selected
+    ? "bg-primary text-white"
+    : "border border-primary/20 bg-white text-primary hover:bg-secondary"}`;
+  return (
+    <div className="mt-3 grid gap-3">
+      <fieldset disabled={disabled}>
+        <legend className="mb-1.5 text-xs font-bold text-foreground">{labels.tripType}</legend>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" aria-pressed={draft.tripType === "ONE_WAY"} onClick={() => onChange("tripType", "ONE_WAY")} className={chipClass(draft.tripType === "ONE_WAY")}>{labels.oneWay}</button>
+          <button type="button" aria-pressed={draft.tripType === "ROUND_TRIP"} onClick={() => onChange("tripType", "ROUND_TRIP")} className={chipClass(draft.tripType === "ROUND_TRIP")}>{labels.roundTrip}</button>
+        </div>
+      </fieldset>
+      <fieldset disabled={disabled}>
+        <legend className="mb-1.5 text-xs font-bold text-foreground">{labels.adults}</legend>
+        <div className="flex flex-wrap gap-2">
+          {[1, 2, 3, 4].map((adults) => <button key={adults} type="button" aria-pressed={draft.adults === adults} onClick={() => onChange("adults", adults)} className={chipClass(draft.adults === adults)}>{adults}</button>)}
+        </div>
+      </fieldset>
+      <fieldset disabled={disabled}>
+        <legend className="mb-1.5 text-xs font-bold text-foreground">{labels.cabin}</legend>
+        <div className="flex flex-wrap gap-2">
+          {([
+            ["ECONOMY", labels.economy],
+            ["PREMIUM_ECONOMY", labels.premiumEconomy],
+            ["BUSINESS", labels.business],
+            ["FIRST", labels.first],
+          ] as const).map(([cabin, label]) => <button key={cabin} type="button" aria-pressed={draft.cabin === cabin} onClick={() => onChange("cabin", cabin)} className={chipClass(draft.cabin === cabin)}>{label}</button>)}
+        </div>
+      </fieldset>
+      <fieldset disabled={disabled}>
+        <legend className="mb-1.5 text-xs font-bold text-foreground">{labels.currency}</legend>
+        <div className="flex flex-wrap gap-2">
+          {(["SGD", "USD", "CNY"] as const).map((currency) => <button key={currency} type="button" aria-pressed={draft.currency === currency} onClick={() => onChange("currency", currency)} className={chipClass(draft.currency === currency)}>{currency}</button>)}
+        </div>
+      </fieldset>
+    </div>
+  );
 }
 
 function ThreadStatus({ status, onRetry, compact = false }: { status: ChatThreadStatus; onRetry?: () => void; compact?: boolean }) {
@@ -1065,9 +1242,12 @@ function describeBriefProposal(
 
 function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
   if (error instanceof TravelApiError) {
+    if (error.statusCode === null) return t("networkError");
     if (error.statusCode === 401 || error.statusCode === 403) return t("authenticationRequired");
     if (error.statusCode === 502 || error.statusCode === 504) return t("providerUnavailable");
     if (error.statusCode === 404) return t("threadMissing");
+    if (error.statusCode === 409) return t("conversationBusy");
+    if (error.statusCode === 400 || error.statusCode === 422) return t("requestInvalid");
   }
   return t("genericError");
 }

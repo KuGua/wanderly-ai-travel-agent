@@ -1438,6 +1438,22 @@ depending on a provider-specific `finish_reason`.
 - The turn does not produce `SAFE_REFUSAL`; it saves or summarizes the typed readiness state and asks for the required explicit confirmation where applicable.
 - If a genuine safety refusal is required, the completed SSE event includes `responseMode: SAFE_REFUSAL`; the Chinese UI displays the localized verification marker next to the persisted assistant message.
 
+### TS-CONVERSATIONAL-FLIGHT-PREFERENCES-1 — 机票偏好对话选项卡
+
+**Objective:** 在私有对话中补充机票偏好，而不因选择本身调用实时供应商。
+
+**Steps:**
+
+1. 服务端对当前 owner 的 conversation run 分类为包含 `flight`，并返回 `FLIGHT_PREFERENCES_MISSING`。
+2. 在卡片中选择往返、成人数量、舱位和报价币种；不点击保存。
+3. 点击保存，再更改成人数量并再次保存。
+
+**Expected outcomes:**
+
+- 非 flight 分类或未返回该 missing code 时不显示卡片；不能由聊天文本自行触发。
+- 仅点击选项不会创建 preference version、使 plan 失效或调用 provider。保存后才以当前 trip membership 授权写入一条新的 search-preferences version；后一次保存是最新有效版本。
+- 保存本身不是 provider 搜索确认；日期仍由 trip brief / 对话确认，实时机票搜索继续需要独立的明确确认。
+
 ## 已批准、已部分实现：DRAFT Personal Research（flight 已上线；其余 capability 按 §3.5 顺序逐项 PR 开放）
 
 > 本节是 [DRAFT Personal Research 到 Shared Planning 实施规范](draft-personal-research-implementation.md) 的验收矩阵。

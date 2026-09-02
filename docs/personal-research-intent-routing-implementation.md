@@ -443,7 +443,7 @@ CHECK 仅覆盖 date pair；OPEN 会话必须允许从空 slot 开始，完整�
 
 - **不直接复用 `researchIntentDraft` 的 JSON 列**：draft 明确禁止携带 dates / adults / currency；混用会让 schema 与审计语义同时被破坏。
 - **不引入后台 worker**：MVP 没有跨进程调度，过期检查放在最热的 mutation 路径上；后续真要后台清理时再加 worker。
-- **机票 widget 暂不实现**：首版只渲染 `DATES_MISSING` + `STAY_PREFERENCES_MISSING`；`FLIGHT_PREFERENCES_MISSING` 保持只读提示，等专门的机票偏好卡片就绪，避免把住宿输入误写为航班偏好。
+- **机票偏好对话卡**：当服务端分类结果明确包含 `flight` 且出现 `FLIGHT_PREFERENCES_MISSING` 时，聊天显示单程/往返、成人数量、舱位和报价币种选项。选择仅保存在浏览器草稿；用户点击保存后才调用既有 `POST /trips/:tripId/search-preferences` 写入新的 preference version，并使依赖 plan 正常进入 `STALE`。该保存不调用 provider，也不等同于机票搜索确认；日期仍由 trip brief / 对话单独确认。
 - **不预先加 `DEPARTURE_CITY_MISSING` 到 readiness schema**：现有 readiness service 不产出该 code；服务层依旧接受 `departureCity` 字段写入，但缺失时不暴露在 `missing[]`，避免 readiness 测试改动。
 
 ### 10.8 实施产物（落地文件）
