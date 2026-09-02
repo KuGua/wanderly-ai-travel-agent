@@ -770,6 +770,43 @@ describe("the preference card and the globe", () => {
   });
 });
 
+describe("when a durable run fails", () => {
+  /**
+   * The old copy said "The message could not be sent. Please try again." for
+   * every failure, including a planning run that failed twenty seconds after
+   * the message was safely stored — and offered a retry that was guaranteed to
+   * fail the same way.
+   */
+  it("names the planning failure and its reason instead of blaming the send", async () => {
+    const api = {
+      ...createApi(),
+      getAgentRun: vi.fn().mockResolvedValue({
+        runId: RUN_ID,
+        operation: "RESEARCH",
+        status: "FAILED",
+        errorCode: "PLANNING_DATA_UNAVAILABLE",
+        generationAttempt: 0,
+        attemptCount: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        assistantMessageId: null,
+        resultPlanId: null,
+      }),
+    } as unknown as TravelApi;
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    await submitFromCapsule("上海出发，12月10日去东京玩四天");
+
+    await waitFor(() => {
+      expect(screen.getByText(/could not get room prices/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/message could not be sent/i)).not.toBeInTheDocument();
+    // Retrying this changes nothing, so it is not offered.
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+  });
+});
+
 describe("highlighting something worth remembering", () => {
   /**
    * jsdom's Selection cannot be produced by a drag, so this stands in for what
