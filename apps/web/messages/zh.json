@@ -164,7 +164,7 @@
     "fields": {
       "departureCity": "出发城市",
       "nationality": "国籍",
-      "nationalityHint": "仅用于本切片，不对外共享。",
+      "nationalityHint": "必填——酒店报价按国籍区分，缺了它这趟行程无法规划。私密，本切片内不共享。",
       "dateOfBirth": "出生日期",
       "dateOfBirthHint": "YYYY-MM-DD",
       "dateOfBirthPlaceholder": "YYYY-MM-DD",
@@ -193,13 +193,14 @@
     "savedToast": "资料已保存。您的私人快照已更新。",
     "saveErrorSuffix": "您的表单输入已保留。",
     "emptyTitle": "尚不存在出行偏好资料",
-    "emptyBody": "当前已确认的 API 切片仅支持已有资料的 GET 与 PUT。新建资料需要另行确认的合约，因此我们未编造或本地保存任何数据。",
+    "emptyBody": "先填一下旅行偏好——这个账号还没有。",
     "emptyAction": "返回探索",
     "validation": {
       "max64": "请使用不超过 64 个字符",
       "datePattern": "请使用 YYYY-MM-DD 格式",
       "datesList": "请使用以逗号分隔的 YYYY-MM-DD 日期",
-      "wholeNumber": "请输入整数"
+      "wholeNumber": "请输入整数",
+      "required": "必填"
     },
     "fixtures": {
       "displayName": "旅行者"
