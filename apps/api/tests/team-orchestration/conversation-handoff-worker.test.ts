@@ -31,6 +31,7 @@ import {
   agentTaskRuns,
   constraintSnapshots,
   consentGrants,
+  outboxEvents,
 } from "../../src/db/schema.js";
 import { sql } from "drizzle-orm";
 import {
@@ -207,6 +208,18 @@ runOrSkip(true)("TS-CONVERSATION-HANDOFF-3 — second handoff triggers REPLAN", 
       // endpoint guaranteed: a snapshot row exists, and the fact was written.
       const facts = await db.select().from(tripConstraintFacts).where(eq(tripConstraintFacts.tripId, tripId));
       expect(facts.length).toBeGreaterThanOrEqual(1);
+
+      // Long-term memory takes its evidence from this act. The single
+      // proposal path queued an observation and the batch path did not, and
+      // the batch path is the one with a UI — so every confirmation a real
+      // traveller could make was invisible to memory, and the only memory
+      // anyone ever had came from the profile form.
+      const observations = await db.select().from(outboxEvents)
+        .where(eq(outboxEvents.eventType, "MEMORY_OBSERVATION"));
+      expect(observations.some((row) => {
+        const payload = row.payload as { userId?: string; fieldKey?: string };
+        return payload.userId === aliceId && payload.fieldKey === "no_red_eye";
+      })).toBe(true);
       const snapshotsAfterFirst = await db.select().from(constraintSnapshots).where(eq(constraintSnapshots.tripId, tripId));
       expect(snapshotsAfterFirst.length).toBeGreaterThanOrEqual(1);
 
