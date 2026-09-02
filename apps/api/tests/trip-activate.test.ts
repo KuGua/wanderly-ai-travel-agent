@@ -146,7 +146,34 @@ describe("Trip activation", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json().trip.travelDateEnd).toBe("2026-12-12");
+    // The English-locale title is regenerated from explicit brief fields only.
+    // Regression: the dist activate endpoint previously forgot to forward
+    // `travelDays` to buildTripTitle, which silently dropped the day suffix
+    // and produced "Suzhou Trip Planner" instead.
+    expect(res.json().trip.name).toBe("Suzhou Trip Planner｜3 Days");
     expect(res.json().planningRun).toMatchObject({ runId: expect.any(String), snapshotId: expect.any(String) });
+  });
+
+  it("derives the title from explicit travelDays in the Chinese locale", async () => {
+    const draftId = await createDraftFor(aliceId, "alice");
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/activate`,
+      headers: authHeaders("alice"),
+      payload: {
+        departureCities: ["上海"],
+        destinationCandidates: ["苏州"],
+        travelDateStart: "2026-12-10",
+        travelDays: 3,
+        titleLocale: "zh",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().trip.travelDateEnd).toBe("2026-12-12");
+    // Chinese locale uses "行程规划" as the planner noun and "天" as the
+    // day suffix; destinations are concatenated without a separating space.
+    expect(res.json().trip.name).toBe("苏州行程规划｜3天");
   });
 
   it("rejects activation by a non-creator with 403", async () => {

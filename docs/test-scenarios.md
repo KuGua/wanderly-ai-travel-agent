@@ -840,10 +840,12 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 2. Activate another Draft with a Chinese locale and destinations but no complete date range.
 3. Submit an invalid or reverse date range.
 4. As Bob, attempt `PATCH /trips/:tripId/title`; then rename as Alice and inspect audit data.
+5. Activate with `travelDateStart` and `travelDays` only (no `travelDateEnd`) — both English and Chinese locales.
 
 **Expected outcomes:**
 
 - The first title is `Tokyo · Bangkok Trip Planner｜7 Days`; the Chinese title uses `行程规划` and no day suffix when dates are incomplete.
+- The `travelDays`-only activation derives `travelDateEnd` from `travelDateStart + travelDays - 1` and the resulting title carries the day suffix (`｜3 Days` / `｜3天`).
 - The title never reflects private chat text, profiles or inferred facts, and no LLM call is made.
 - Invalid calendar dates and reverse ranges are rejected; no title is fabricated from them.
 - Only the creator may manually rename. The change sets `name_source=MANUAL`; the audit event records the source but never title text.
