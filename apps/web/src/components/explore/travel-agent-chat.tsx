@@ -23,7 +23,6 @@ import type {
 import { FlightOfferCard } from "@/components/trips/flight-offer-card";
 import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
 import { TravelApiError } from "@/lib/api/errors";
-import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { useTravelApi } from "@/lib/query/provider";
 import { Link } from "@/i18n/navigation";
@@ -486,6 +485,9 @@ export function TravelAgentChat({
     const intent = agentRun.data?.researchIntentDraft;
     const needsFlightPreferences = intent?.requestedCapabilities.includes("flight")
       && intent.missing.includes("FLIGHT_PREFERENCES_MISSING");
+    // The server classifier is an external signal; the card intentionally
+    // latches open until the traveller saves or dismisses it.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (tripId && needsFlightPreferences) setShowFlightPreferenceCard(true);
   }, [agentRun.data?.researchIntentDraft, tripId]);
 
@@ -682,35 +684,21 @@ export function TravelAgentChat({
     setFlightPreferenceSaveError(null);
   }
 
-  const rowClass = docked ? "mx-auto mb-[18px] max-w-[640px]" : "";
-  const userBubbleClass = docked
-    ? "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
-    : "ml-auto max-w-[86%] rounded-[20px] rounded-tr-[6px] bg-sidebar px-4 py-3 text-sm leading-6 text-white shadow-sm";
-  const agentBubbleClass = docked
-    ? "group/msg relative max-w-[86%] bg-card px-3.5 py-3 text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
-    : "group/msg relative max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-foreground";
-  // The two inline action cards — a brief proposal and a flight confirmation
-  // — were styled for the undocked chat and kept those classes inside the
-  // docked one, where everything else is drawn with the wanderly edge, its
-  // uneven radius and its hard offset shadow. A soft-shadowed rounded box on
-  // a hardcoded white also ignored the theme. They now follow the agent
-  // bubble they sit beside.
-  const actionCardClass = docked
-    ? "bg-card px-3.5 py-3 text-sm text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
-    : "rounded-[18px] border border-primary/20 bg-card p-3 text-sm shadow-sm";
-  const actionPrimaryClass = docked
-    ? "min-h-10 px-3 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-50"
-    : "min-h-11 rounded-full bg-primary px-3 text-xs font-bold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30";
-  const actionSecondaryClass = docked
-    ? "min-h-10 bg-[var(--w-mist)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"
-    : "min-h-11 rounded-full border border-primary/20 px-3 text-xs font-bold text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30";
+  const rowClass = docked ? "mx-auto mb-[18px] max-w-[640px]" : "mb-4";
+  const userBubbleClass = "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm";
+  const agentBubbleClass = "group/msg relative max-w-[86%] bg-card px-3.5 py-3 text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm";
+  // Keep inline action cards on the same illustrated surface in both the
+  // floating Explore chat and the docked Trip workspace conversation.
+  const actionCardClass = "bg-card px-3.5 py-3 text-sm text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm";
+  const actionPrimaryClass = "min-h-10 px-3 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-50";
+  const actionSecondaryClass = "min-h-10 bg-[var(--w-mist)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50";
 
-  const agentLabel = docked ? (
-    <div className="mb-1.5 flex items-center gap-2.5 text-xs font-black text-[var(--w-ink)]">
+  const agentLabel = (
+    <div className={`mb-1.5 flex items-center gap-2.5 text-xs font-black ${docked ? "text-[var(--w-ink)]" : "text-white"}`}>
       <span aria-hidden="true" className="grid size-[23px] place-items-center bg-[var(--w-highlight)] text-[10px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">W</span>
       {t("agentName")}
     </div>
-  ) : null;
+  );
 
   useEffect(() => {
     if (!tripId || !api.getPreferenceCard) return;
@@ -784,13 +772,13 @@ export function TravelAgentChat({
   if (!open) {
     return (
       <>
-        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-20 right-4 z-40 px-3 py-1.5 text-[11px] font-bold wanderly-cosmos-control wanderly-r-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
+        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-20 right-4 z-40 bg-card px-3 py-1.5 text-[11px] font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
         {resolvedThreadStatus !== "ready" ? (
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
         ) : null}
-        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 p-1.5 pl-4 wanderly-cosmos-panel wanderly-r-lg landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)] landscape:translate-x-0" aria-label={t("startAria")}>
+        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 bg-card p-1.5 pl-4 text-[var(--w-ink)] wanderly-edge wanderly-r-lg wanderly-shadow sm:left-[94px] sm:right-3 sm:w-auto sm:translate-x-0 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)]" aria-label={t("startAria")}>
           <Sparkles aria-hidden="true" className="size-4 shrink-0 text-primary" />
-          <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--w-fog)] placeholder:text-[var(--w-fog)] placeholder:opacity-70 focus:outline-none disabled:opacity-60" />
+          <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--w-ink)] placeholder:text-[var(--w-muted)] focus:outline-none disabled:opacity-60" />
           {submitButton}
         </form>
       </>
@@ -798,39 +786,39 @@ export function TravelAgentChat({
   }
 
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} data-expanded={expanded ? "true" : "false"} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-white" : `flex flex-col overflow-hidden bg-white shadow-[0_28px_90px_rgb(8_47_63/28%)] transition-[inset,height,width,border-radius] duration-300 ${expanded ? "fixed inset-0 z-[100] h-dvh rounded-none" : "absolute inset-x-3 bottom-3 z-50 h-[60dvh] min-h-[300px] rounded-[28px] landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}`}>
-      <div className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-white" : `flex min-h-0 flex-1 flex-col overflow-hidden border-x border-t border-white/80 bg-white landscape:border ${expanded ? "rounded-none" : "rounded-t-[28px]"}`}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} data-expanded={expanded ? "true" : "false"} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : `flex flex-col overflow-hidden bg-sidebar transition-[inset,height,width,border-radius] duration-300 ${expanded ? "fixed inset-0 z-[100] h-dvh rounded-none" : "absolute inset-x-3 bottom-3 z-50 h-[60dvh] min-h-[300px] wanderly-edge wanderly-r-lg wanderly-shadow-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}`}>
+      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-sidebar"}`}>
         {docked ? null : (
-        <header className="relative flex items-center gap-2.5 border-b border-[#dbe8e5] px-3 pb-1 pt-2.5">
-          <button type="button" onClick={() => setExpanded((current) => !current)} aria-label={expanded ? t("collapse") : t("expand")} className="absolute left-1/2 top-1 -translate-x-1/2 rounded-full bg-muted/70 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">{expanded ? t("collapse") : t("expand")}</button>
-          <span className="grid size-7 place-items-center rounded-[10px] bg-sidebar text-white shadow-sm"><MessageCircle aria-hidden="true" className="size-4" /></span>
-          <p className="min-w-0 flex-1 text-sm font-black tracking-[-0.025em] text-sidebar">{t("agentName")}</p>
+        <header className="relative flex items-center gap-2.5 border-b-2 border-[var(--w-ink)] bg-sidebar px-3 pb-2 pt-3">
+          <button type="button" onClick={() => setExpanded((current) => !current)} aria-label={expanded ? t("collapse") : t("expand")} className="absolute left-1/2 top-1 -translate-x-1/2 bg-card px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press">{expanded ? t("collapse") : t("expand")}</button>
+          <span className="grid size-7 place-items-center bg-[var(--w-info)] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs"><MessageCircle aria-hidden="true" className="size-4" /></span>
+          <p className="min-w-0 flex-1 text-sm font-black tracking-[-0.025em] text-white">{t("agentName")}</p>
           {tripId && effectiveThreadId ? (
             <Link
               href={`/trips/${tripId}?thread=${effectiveThreadId}` as "/trips/[tripId]"}
               aria-label={t("goToTripPlanner")}
-              className="group relative grid size-8 shrink-0 place-items-center rounded-full border border-primary/20 bg-white text-primary hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+              className="group relative grid size-8 shrink-0 place-items-center bg-card text-primary wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press"
             >
               <ArrowRight aria-hidden="true" className="size-4" />
-              <span role="tooltip" className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-10 w-max rounded-md bg-sidebar px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-sm transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+              <span role="tooltip" className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-10 w-max bg-card px-2 py-1 text-[11px] font-semibold text-[var(--w-ink)] opacity-0 wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                 {t("goToTripPlanner")}
               </span>
             </Link>
           ) : null}
-          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} className="rounded-full border border-primary/20 bg-white px-2.5 py-1 text-[10px] font-bold text-primary hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30">{t("startNewExploration")}</button> : null}
-          <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-7 place-items-center rounded-full bg-sidebar text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-sidebar/25"><ChevronDown aria-hidden="true" className="size-4" /></button>
+          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} className="bg-card px-2.5 py-1 text-[10px] font-extrabold text-primary wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50">{t("startNewExploration")}</button> : null}
+          <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-7 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press"><ChevronDown aria-hidden="true" className="size-4" /></button>
         </header>
         )}
 
         <div ref={panelScrollRef} className={docked
           ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-4 pt-6"
-          : "flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,#ffffff_0%,#f6fbf9_100%)] px-5 py-5"} aria-live="polite">
+          : "flex-1 overflow-y-auto bg-sidebar px-5 py-5"} aria-live="polite">
           {resolvedThreadStatus !== "ready" ? <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} /> : null}
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
             <div className={rowClass}>
               {agentLabel}
-              <div className={docked ? "max-w-[86%] bg-card px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm" : "max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-sm leading-6 text-foreground"}>
+              <div className="max-w-[86%] bg-card px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm">
                 <p className="font-bold text-primary">{t("introTitle")}</p>
                 <p className="mt-1 text-muted-foreground">{t("introBody")}</p>
               </div>
@@ -862,7 +850,7 @@ export function TravelAgentChat({
           {activeRunId ? (
             <article data-role="ASSISTANT" data-streaming="true" className={rowClass}>
               {agentLabel}
-              <div className={docked ? "max-w-[86%] bg-card px-3.5 py-3 text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm" : "max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-foreground"}>
+              <div className="max-w-[86%] bg-card px-3.5 py-3 text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm">
               {streamState.tools.length > 0 ? <ToolActivityList items={streamState.tools} /> : null}
               {streamState.text ? (
                 <ChatMarkdown content={streamState.text} />
@@ -1035,9 +1023,9 @@ export function TravelAgentChat({
         </div>
       </div>
 
-      <form onSubmit={submitMessage} className={docked ? "border-t-2 border-[var(--w-ink)] bg-background px-[clamp(16px,3vw,34px)] pb-[18px] pt-3" : "bg-white px-3 pb-3 pt-2"}>
-        {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className="mb-1.5 flex h-5 max-w-full items-center rounded-full border border-white/80 bg-[#dff3ed]/90 px-2.5 text-[10px] font-bold text-primary shadow-sm backdrop-blur hover:bg-[#d2eee6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
-        <div className={docked ? "mx-auto flex min-h-14 max-w-[640px] items-center gap-2 bg-card p-1.5 pl-4 wanderly-edge wanderly-r-md wanderly-shadow-sm" : "wanderly-liquid-glass flex min-h-14 items-center gap-2 rounded-[20px] p-1.5 pl-4"}>
+      <form onSubmit={submitMessage} className={docked ? "border-t-2 border-[var(--w-ink)] bg-background px-[clamp(16px,3vw,34px)] pb-[18px] pt-3" : "border-t-2 border-[var(--w-ink)] bg-sidebar px-3 pb-3 pt-2"}>
+        {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className="mb-1.5 flex h-6 max-w-full items-center bg-[var(--w-mist)] px-2.5 text-[10px] font-extrabold text-primary wanderly-edge-thin wanderly-r-xs wanderly-press"><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
+        <div className={`${docked ? "mx-auto max-w-[640px]" : ""} flex min-h-14 items-center gap-2 bg-card p-1.5 pl-4 wanderly-edge wanderly-r-md wanderly-shadow-sm`}>
           <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
           {submitButton}
         </div>
@@ -1118,7 +1106,7 @@ function ThreadStatus({ status, onRetry, compact = false }: { status: ChatThread
   const t = useTranslations("explore.chat");
   const message = status === "preparing" ? t("preparingPrivateChat") : t("privateChatUnavailable");
   return (
-    <div role="status" data-wanderly-avoid={compact ? "" : undefined} className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold wanderly-cosmos-panel wanderly-r-xs landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "rounded-[16px] border border-border bg-card p-3 text-sm text-muted-foreground"}>
+    <div role="status" data-wanderly-avoid={compact ? "" : undefined} className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 bg-card px-3 py-1.5 text-[11px] font-semibold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs sm:left-[94px] landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "bg-card p-3 text-sm text-muted-foreground wanderly-edge-thin wanderly-r-sm wanderly-shadow-xs"}>
       <span>{message}</span>
       {status === "error" && onRetry ? <button type="button" onClick={onRetry} className="font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30">{t("retryPrivateChat")}</button> : null}
     </div>

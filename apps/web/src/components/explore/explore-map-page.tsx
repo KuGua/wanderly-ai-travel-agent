@@ -987,16 +987,16 @@ export function ExploreMapPage() {
       ) : null}
 
       {selected && !managePinsOpen && !chatOpen ? (
-        <aside data-wanderly-avoid className="absolute inset-x-0 bottom-0 z-30 max-h-[70dvh] overflow-y-auto rounded-t-[24px] bg-card p-5 pb-24 text-[var(--w-ink)] wanderly-edge wanderly-shadow landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(360px,calc(100%-2rem))] landscape:wanderly-r-lg landscape:pb-5">
-          <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label={t("drawerCloseAriaLabel")} className="absolute right-4 top-4 grid size-9 place-items-center rounded-full hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+        <aside data-wanderly-avoid className="absolute inset-x-3 bottom-3 z-30 max-h-[70dvh] overflow-y-auto bg-card p-5 pb-24 text-[var(--w-ink)] wanderly-edge wanderly-r-lg wanderly-shadow-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(360px,calc(100%-2rem))] landscape:pb-5">
+          <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label={t("drawerCloseAriaLabel")} className="absolute right-4 top-4 grid size-9 place-items-center bg-[var(--w-fog)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press">
             <X aria-hidden="true" className="size-4" />
           </button>
           <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[var(--w-ink)] wanderly-underline">{stateLabel(exploreState, t)}</p>
-          <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em] text-[var(--w-primary)]" aria-live="polite">
+          <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em] text-[var(--w-ink)]" aria-live="polite">
             {selected.locationReferenceStatus === "loading" ? t("resolvingLocation") : selected.name}
           </h2>
           <p className="font-semibold text-[var(--w-muted)]">{selected.country}</p>
-          <p className="mt-3 inline-flex rounded-full bg-secondary px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-secondary-foreground">
+          <p className="mt-3 inline-flex bg-[var(--w-mist)] px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
             {selected.kind === "geography"
                 ? t("drawerKindGeography")
                 : t("drawerKindInspiration")}
@@ -1019,17 +1019,17 @@ export function ExploreMapPage() {
           ) : null}
           {selected.locationReferenceStatus === "loading" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceLoading")}</p> : null}
           {selected.locationReferenceStatus === "unavailable" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceUnavailable")}</p> : null}
-          <button type="button" onClick={startExploring} disabled={exploreState !== "SELECTED"} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[16px] bg-primary px-4 font-bold text-primary-foreground transition hover:brightness-110 disabled:cursor-default disabled:opacity-80 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+          <button type="button" onClick={startExploring} disabled={exploreState !== "SELECTED"} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 px-4 font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action disabled:cursor-default disabled:opacity-80">
             {exploreState === "SELECTED" ? (
               <><MapPin aria-hidden="true" className="size-4" /> {selected.kind === "geography" ? t("action.viewGeography") : t("action.viewInspiration")}</>
             ) : stateAction(exploreState, selected.kind, t)}
           </button>
           {selected.kind === "inspiration" ? (
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <button type="button" onClick={openPinManager} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[14px] text-sm font-bold text-primary hover:bg-secondary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
+              <button type="button" onClick={openPinManager} className="inline-flex min-h-11 items-center justify-center gap-1.5 bg-[var(--w-mist)] text-sm font-extrabold text-primary wanderly-edge-thin wanderly-r-sm wanderly-press">
                 <ListChecks aria-hidden="true" className="size-4" /> {t("managePinsCta")}
               </button>
-              <button type="button" onClick={() => deleteInspirations([selected.id])} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-[14px] text-sm font-bold text-destructive hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-destructive/20">
+              <button type="button" onClick={() => deleteInspirations([selected.id])} className="inline-flex min-h-11 items-center justify-center gap-1.5 bg-card text-sm font-extrabold text-destructive wanderly-edge-thin wanderly-r-sm wanderly-press">
                 <Trash2 aria-hidden="true" className="size-4" /> {t("deleteThisCta")}
               </button>
             </div>
