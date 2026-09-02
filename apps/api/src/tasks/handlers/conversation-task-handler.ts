@@ -143,6 +143,25 @@ function canonicalizeForHash(value: unknown): string {
  *     `researchEvidence` on the next turn, so the second LLM turn has all
  *     the grounded context it needs.
  */
+/**
+ * Bookkeeping the model has no use for, removed before the result becomes a
+ * tool message.
+ *
+ * These fields ride back from the dispatchers to carry signals between our own
+ * layers — whether a supplier was reached, which evidence row was written. The
+ * model read them as part of the answer and wrote a reply citing "由
+ * providerDispatched 在 capturedAt 时提供", which is an internal flag quoted at
+ * a traveller as though it were a source.
+ */
+const INTERNAL_TOOL_RESULT_FIELDS = ["providerDispatched", "evidenceId", "draftHash", "deduped"] as const;
+
+function withoutInternalFields(result: unknown): unknown {
+  if (result === null || typeof result !== "object" || Array.isArray(result)) return result;
+  const visible = { ...(result as Record<string, unknown>) };
+  for (const field of INTERNAL_TOOL_RESULT_FIELDS) delete visible[field];
+  return visible;
+}
+
 function buildHotelSearchDispatcher(params: {
   run: AgentTaskRow;
   ctx: RequestContext;
@@ -370,7 +389,7 @@ export async function handleConversationTask(params: {
         evidenceDispatched = true;
       }
       await publishToolEvent(params.run, { phase: "settled", name: call.name, ...settledSummary(settled) }, params.ctx.traceparent);
-      return settled;
+      return withoutInternalFields(settled);
     };
 
     const runDispatch = async (call: Parameters<ModelToolDispatcher>[0]) => {

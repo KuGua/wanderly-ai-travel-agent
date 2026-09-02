@@ -749,7 +749,9 @@ export const conversationHotelSearchStates = pgTable("conversation_hotel_search_
   threadId: uuid("thread_id").primaryKey().references(() => chatThreads.id, { onDelete: "cascade" }),
   tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
   ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  cityCode: varchar("city_code", { length: 3 }).notNull(),
+  // A city the location resolver accepts: an IATA code or a city name.
+  // Matches `cityReferenceSchema`; see migration 0054.
+  cityCode: varchar("city_code", { length: 64 }).notNull(),
   checkIn: date("check_in", { mode: "string" }).notNull(),
   checkOut: date("check_out", { mode: "string" }).notNull(),
   adults: integer("adults").notNull(),
