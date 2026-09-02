@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, varchar, text, timestamp, date, jsonb, boolean, integer, bigint, doublePrecision, pgEnum, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, text, timestamp, date, jsonb, boolean, integer, bigint, doublePrecision, pgEnum, uniqueIndex, index, primaryKey } from "drizzle-orm/pg-core";
 
 // ─── Inline structural types ─────────────────────────────────────────────────
 // These mirror the Zod schemas in src/types/schemas.ts so the Drizzle column
@@ -767,6 +767,18 @@ export const freeTextMemories = pgTable("free_text_memories", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   userCreatedIdx: index("free_text_memories_user_created_idx").on(table.userId, table.createdAt),
+}));
+
+/**
+ * One row once a member has been shown a trip's preference card. See
+ * migration 0060 for why this is not inferred from having an override.
+ */
+export const tripPreferenceCardViews = pgTable("trip_preference_card_views", {
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  seenAt: timestamp("seen_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.tripId, table.userId] }),
 }));
 
 export const conversationHotelSearchStates = pgTable("conversation_hotel_search_states", {

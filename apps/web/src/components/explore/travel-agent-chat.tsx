@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
 import { ResearchRunCard } from "@/components/trips/personal-research/research-run-card";
+import { TripPreferenceCard } from "./trip-preference-card";
 import { PinnedResultCard } from "@/components/trips/personal-research/pinned-result-card";
 import { ConversationHandoffCard } from "@/components/trips/personal-research/conversation-handoff-card";
 
@@ -171,6 +172,12 @@ export function TravelAgentChat({
    * would remember the wrong thing.
    */
   const [highlight, setHighlight] = useState<{ text: string; x: number; y: number; messageId: string } | null>(null);
+  /**
+   * The trip's preference card, shown once per member per trip. `null` once
+   * answered or when the server says this member has already been asked.
+   */
+  const [preferenceCard, setPreferenceCard] = useState<import("@/lib/api/contracts").PreferenceCard | null>(null);
+  const [savingPreferences, setSavingPreferences] = useState(false);
   const [rememberState, setRememberState] = useState<{ status: "saving" | "done"; message?: string } | null>(null);
   const [refusalMessageIds, setRefusalMessageIds] = useState<Set<string>>(new Set());
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
@@ -631,6 +638,30 @@ export function TravelAgentChat({
     </div>
   ) : null;
 
+  useEffect(() => {
+    if (!tripId || !api.getPreferenceCard) return;
+    let active = true;
+    void api.getPreferenceCard(tripId)
+      .then((card) => { if (active && card.show) setPreferenceCard(card); })
+      // A card that cannot be fetched is not worth failing the chat over.
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [tripId, api]);
+
+  async function resolvePreferences(adjustments: Array<{ fieldKey: string; value: unknown }>) {
+    if (!tripId || !api.resolvePreferenceCard) return;
+    setSavingPreferences(true);
+    try {
+      await api.resolvePreferenceCard(tripId, adjustments);
+    } catch {
+      // Dismissing is the common answer and must not be blocked by a failed
+      // write; the server will offer the card again next time if it did not
+      // record this.
+    }
+    setSavingPreferences(false);
+    setPreferenceCard(null);
+  }
+
   function captureHighlight(messageId: string) {
     const selection = window.getSelection();
     const text = selection?.toString().trim() ?? "";
@@ -829,6 +860,13 @@ export function TravelAgentChat({
                 onDismissed={() => setHandoffDismissed(true)}
               />
             </div>
+          ) : null}
+          {preferenceCard ? (
+            <TripPreferenceCard
+              fields={preferenceCard.fields}
+              saving={savingPreferences}
+              onSubmit={(adjustments) => void resolvePreferences(adjustments)}
+            />
           ) : null}
           {/* Sits at the selection, not in the flow: it has to be reachable
               without clicking anywhere else, because clicking clears the

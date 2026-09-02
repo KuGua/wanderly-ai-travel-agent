@@ -13,6 +13,8 @@ import {
   ownerConversationResponseSchema,
   memoryFactSchema,
   memoryNotesResponseSchema,
+  preferenceCardResolveResponseSchema,
+  preferenceCardSchema,
   profileMemoryResponseSchema,
   rememberHighlightResponseSchema,
   researchResultSchema,
@@ -130,6 +132,17 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request("/profiles/me", updateProfileResponseSchema, {
       method: "PUT",
       body: JSON.stringify(body),
+    });
+  }
+
+  getPreferenceCard(tripId: string) {
+    return this.client.request(`/trips/${tripId}/preference-card`, preferenceCardSchema);
+  }
+
+  resolvePreferenceCard(tripId: string, adjustments: Array<{ fieldKey: string; value: unknown }>) {
+    return this.client.request(`/trips/${tripId}/preference-card`, preferenceCardResolveResponseSchema, {
+      method: "POST",
+      body: JSON.stringify({ adjustments }),
     });
   }
 

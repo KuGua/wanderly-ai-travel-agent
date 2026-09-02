@@ -31,6 +31,7 @@ afterEach(() => {
 });
 
 function ChatHarness({
+  tripId,
   controlledThreadId = THREAD_ID,
   initiallyOpen = true,
   selectedPlace = null,
@@ -39,6 +40,7 @@ function ChatHarness({
   onThreadInvalidated,
 }: {
   controlledThreadId?: string | null;
+  tripId?: string | null;
   initiallyOpen?: boolean;
   selectedPlace?: { place: ConversationPlace; context: string } | null;
   onStartNewExploration?: () => void;
@@ -52,6 +54,7 @@ function ChatHarness({
       onOpen={() => setOpen(true)}
       onDismiss={() => setOpen(false)}
       threadId={controlledThreadId}
+      tripId={tripId}
       onThreadInvalidated={onThreadInvalidated}
       selectedPlace={selectedPlace}
       onStartNewExploration={onStartNewExploration}
@@ -104,6 +107,8 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     saveTripMemoryGroupDecision: vi.fn(),
     deleteTripMemory: vi.fn(),
     rememberHighlight: vi.fn(),
+    getPreferenceCard: vi.fn().mockResolvedValue({ show: false, fields: [] }),
+    resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: [] }),
     getMemoryNotes: vi.fn().mockResolvedValue({ notes: [] }),
     deleteMemoryNote: vi.fn(),
     ...overrides,
@@ -534,6 +539,57 @@ function untilAborted(signal: AbortSignal) {
   if (signal.aborted) return Promise.resolve();
   return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
 }
+
+describe("the trip's preference card", () => {
+  const card = {
+    show: true,
+    fields: [
+      { fieldKey: "trip_pace", category: "PREFERENCE" as const, value: "relaxed", inherited: true, options: ["relaxed", "balanced", "packed"] },
+      { fieldKey: "interests", category: "PREFERENCE" as const, value: ["ramen"], inherited: true, options: null },
+    ],
+  };
+
+  it("submits only what the traveller changed", async () => {
+    // Writing every field would pin the whole set to this trip, and a later
+    // profile edit would stop reaching a trip nobody meant to detach.
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(card),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: ["trip_pace"] }),
+    });
+    renderChat(api, { tripId: TRIP_ID });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
+    fireEvent.click(screen.getByTestId("trip-preference-submit"));
+
+    await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(
+      TRIP_ID, [{ fieldKey: "trip_pace", value: "packed" }],
+    ));
+  });
+
+  it("treats closing without a change as an answer, and writes no override", async () => {
+    // Inheriting the profile is usually right, and saying so has to be as
+    // easy as changing something.
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(card),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: [] }),
+    });
+    renderChat(api, { tripId: TRIP_ID });
+
+    fireEvent.click(await screen.findByTestId("trip-preference-submit"));
+
+    await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(TRIP_ID, []));
+    await waitFor(() => expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument());
+  });
+
+  it("stays away once the member has been asked", async () => {
+    const api = createApi({ getPreferenceCard: vi.fn().mockResolvedValue({ show: false, fields: card.fields }) });
+    renderChat(api, { tripId: TRIP_ID });
+
+    await waitFor(() => expect(api.getPreferenceCard).toHaveBeenCalled());
+    expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument();
+  });
+});
 
 describe("highlighting something worth remembering", () => {
   /**

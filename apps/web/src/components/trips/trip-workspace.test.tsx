@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TripDetailResponse } from "@/lib/api/contracts";
@@ -111,6 +111,8 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     saveTripMemoryGroupDecision: vi.fn(),
     deleteTripMemory: vi.fn(),
     rememberHighlight: vi.fn(),
+    getPreferenceCard: vi.fn().mockResolvedValue({ show: false, fields: [] }),
+    resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: [] }),
     getMemoryNotes: vi.fn().mockResolvedValue({ notes: [] }),
     deleteMemoryNote: vi.fn(),
     ...overrides,
@@ -135,8 +137,11 @@ describe("TripWorkspace", () => {
     expect(screen.getByRole("button", { name: "New thread" })).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Activate draft trip" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Invite teammates" })).toHaveAttribute("href", `/trips/${TRIP_ID}/invite`);
-    // The overview card no longer carries an activation CTA.
-    expect(screen.queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
+    // The overview card no longer carries an activation CTA. Scoped to the
+    // card: the chat has its own unrelated "Start planning" for the shared
+    // plan, and matching on the label alone finds that one instead.
+    const overview = screen.getByRole("region", { name: "Trip overview" });
+    expect(within(overview).queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
   });
 
   it("shows no activation CTA on a team Draft, whatever its destination count", async () => {
@@ -153,7 +158,8 @@ describe("TripWorkspace", () => {
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
 
     expect(await screen.findByRole("link", { name: "Invite teammates" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
+    const overview = screen.getByRole("region", { name: "Trip overview" });
+    expect(within(overview).queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
   });
 
   it("auto-provisions a default thread when none exists", async () => {

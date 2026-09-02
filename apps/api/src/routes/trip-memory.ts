@@ -14,6 +14,10 @@ import {
   saveOverride,
   type TripMemoryFact,
 } from "../services/trip-memory-service.js";
+import {
+  readPreferenceCard,
+  resolvePreferenceCard,
+} from "../services/trip-preference-card-service.js";
 
 /**
  * Trip-scoped memory API (docs/long-term-memory-implementation.md §5.3).
@@ -165,4 +169,40 @@ export async function tripMemoryRoutes(app: FastifyInstance) {
       }
     },
   );
+
+  // ─── GET /trips/:tripId/preference-card ──────────────────────────────────
+  // What applies on this trip today, and whether the member has been asked.
+  app.get<{ Params: { tripId: string } }>("/trips/:tripId/preference-card", async (request) => {
+    const { tripId } = z.object({ tripId: z.string().uuid() }).parse(request.params);
+    try {
+      return await readPreferenceCard({ tripId, userId: request.user.id });
+    } catch (error) {
+      if (error instanceof TripMembershipError) throw new ApiError(403, "Forbidden", error.message);
+      throw error;
+    }
+  });
+
+  // ─── POST /trips/:tripId/preference-card ─────────────────────────────────
+  // The member's answer. An empty list is an answer: the profile is right for
+  // this trip, so nothing is overridden and the trip keeps inheriting.
+  app.post<{ Params: { tripId: string } }>("/trips/:tripId/preference-card", async (request) => {
+    const { tripId } = z.object({ tripId: z.string().uuid() }).parse(request.params);
+    const body = z.object({
+      adjustments: z.array(z.object({
+        fieldKey: z.string().min(1).max(64),
+        value: z.unknown(),
+      }).strict()).max(16),
+    }).strict().parse(request.body);
+    const ctx = createRequestContext(
+      request.user.id, request.correlationId, request.traceId,
+      request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
+    );
+    try {
+      return await resolvePreferenceCard({ ctx, tripId, userId: request.user.id, adjustments: body.adjustments });
+    } catch (error) {
+      if (error instanceof TripMembershipError) throw new ApiError(403, "Forbidden", error.message);
+      if (error instanceof MemoryFieldRejectedError) throw new ApiError(422, "Unprocessable Entity", error.message);
+      throw error;
+    }
+  });
 }

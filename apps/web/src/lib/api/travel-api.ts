@@ -86,6 +86,8 @@ import type {
 export interface TravelApi {
   getMyProfile(): Promise<ProfileResponse>;
   updateMyProfile(input: UpdateProfileInput): Promise<UpdateProfileResponse>;
+  getPreferenceCard(tripId: string): Promise<import("./contracts").PreferenceCard>;
+  resolvePreferenceCard(tripId: string, adjustments: Array<{ fieldKey: string; value: unknown }>): Promise<{ applied: string[] }>;
   rememberHighlight(input: {
     highlight: string;
     sourceThreadId?: string | null;
