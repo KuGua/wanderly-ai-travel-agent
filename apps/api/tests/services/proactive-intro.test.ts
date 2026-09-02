@@ -20,8 +20,7 @@ describe("buildProactiveIntro", () => {
     const { content, locale } = buildProactiveIntro(undefined);
     expect(locale).toBe("zh-CN");
     expect(content).toContain("想去哪里玩");
-    expect(content).toContain("多少预算");
-    expect(content).toContain("什么时候出发");
+    expect(content).toContain("大概什么时候");
   });
 
   it("returns zh-CN template when locale is explicitly zh-CN", () => {
@@ -34,14 +33,13 @@ describe("buildProactiveIntro", () => {
     const { content, locale } = buildProactiveIntro("zh-TW");
     expect(locale).toBe("zh-TW");
     expect(content).toContain("想去哪裡玩");
-    expect(content).toContain("多少預算");
+    expect(content).toContain("什麼時候");
   });
 
   it("returns en-US template when locale is en-US", () => {
     const { content, locale } = buildProactiveIntro("en-US");
     expect(locale).toBe("en-US");
     expect(content).toContain("Where would you like to go");
-    expect(content).toContain("budget");
     expect(content).toContain("when");
   });
 
@@ -75,5 +73,13 @@ describe("buildProactiveIntro", () => {
     // list that would imply a fixed order.
     const { content } = buildProactiveIntro("zh-CN");
     expect(content).not.toMatch(/第一|第二|第三|1\.|2\.|3\.|step 1/i);
+  });
+
+  it("does not proactively promote flights or accommodation research", () => {
+    const locales: ProactiveIntroLocale[] = ["zh-CN", "zh-TW", "en-US"];
+    for (const locale of locales) {
+      const { content } = buildProactiveIntro(locale);
+      expect(content).not.toMatch(/机票|酒店|住宿|flights?|hotels?|research/i);
+    }
   });
 });

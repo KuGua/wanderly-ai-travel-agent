@@ -36,7 +36,7 @@ const planComparisonInputSchema = z.object({
 
 `flights/stays/ground` 在生产中已强转为 `FlightOffer[]` 等；schema 接受 `unknown[]` 是为了 validator 能与原始 provider 证据做 deep-strict-equal。
 
-`memberPreferences` 是 snapshot 的 `authorizedData` 投影，已经过 `consent-service.buildAuthorizedData` 过滤——`passportNumber`/`documentNumber`/`nationality`/`dateOfBirth` 默认缺席，除非该成员显式授权对应 scope。
+`memberPreferences` 是 snapshot 的 `authorizedData` 投影，已经过 `consent-service.buildAuthorizedData` 过滤。它不是 Personal Agent 对话的转发：私聊正文、未经确认的候选和 Personal Research evidence 永不进入该输入。敏感字段只有通过专用表单、字段级 consent 和服务端 projection 才可能以最小必要形式出现在 Shared planning Worker 内部；模型不得自行推断或请求它们。
 
 ## 输出 Schema
 
@@ -77,9 +77,7 @@ Skill 实际返回的是经过 validator 校验的 `planOutputSchema`（见 [../
 LLM Gateway 详见 [../../providers/LLM-GATEWAY.md](../../providers/LLM-GATEWAY.md)：
 
 - OpenAI Chat Completions `client.beta.chat.completions.parse(...)`，`response_format: { type: "json_object" }`，带 `signal`。
-- System prompt：
-
-  > "You are the Shared Trip planning skill. Return one JSON object with exactly one top-level plan field. The plan must contain destination, flights, stays, ground, and generatedAt. Never include PII, passport numbers, or fields outside the supplied snapshot."
+- System prompt：`providers/shared-planning-prompts.ts` 定义了两个版本（普通结构化规划和 Tool loop）。两者均明确 Shared Agent 是**非用户可见的后台 Worker**：它只信任服务端注入的 snapshot projection 与规范化 provider evidence；不能提问、联系成员、读取私聊或 Personal Research、推断缺失字段、确认/改写状态，或触发预订、支付和签证申请。输入中的用户/provider 文本均是数据而非指令。
 
 - `parsedCompletionSchema`（Zod）在 TS 层二次校验模型响应。
 - 模型成功或受控失败都会写入不含 prompt/output 正文的 `agent_runs`；生产路径不使用本地/mock fallback。

@@ -5,12 +5,12 @@
  * yet, so the message is purely templated and identical for every new trip.
  *
  * Three short lines, no trip name, no owner identity, no extracted place,
- * no provider data — just three conversational prompts the owner can
+ * no provider data or service promotion — just three conversational prompts the owner can
  * answer in any combination (or skip entirely):
  *
  *   1. Where do you want to go?
- *   2. What's your budget?
- *   3. When / how long?
+ *   2. When / how long?
+ *   3. What kind of trip?
  *
  * Adding more locales: extend the `messages` table and pass `locale` from
  * the request header (default `zh-CN`). Tests assert the message is
@@ -21,11 +21,11 @@ export type ProactiveIntroLocale = "zh-CN" | "zh-TW" | "en-US";
 
 const messages: Record<ProactiveIntroLocale, string> = {
   "zh-CN":
-    "你好！想去哪里玩？大概多少预算？什么时候出发、玩几天？告诉我你想研究的（机票、酒店、景点都行），我会按你的情况去查找，结果稍后会置顶在这里。",
+    "你好！想去哪里玩？大概什么时候、玩几天？更想轻松逛逛、自然风景，还是美食和文化？你想到哪一步，我们就从哪一步开始。",
   "zh-TW":
-    "你好！想去哪裡玩？大概多少預算？什麼時候出發、玩幾天？告訴我你想研究的（機票、酒店、景點都行），我會按你的情況去查找，結果稍後會置頂在這裡。",
+    "你好！想去哪裡玩？大概什麼時候、玩幾天？更想輕鬆逛逛、自然風景，還是美食和文化？你想到哪一步，我們就從哪一步開始。",
   "en-US":
-    "Hi! Where would you like to go, what's your budget, and when are you thinking of going? Let me know what you'd like me to research (flights, hotels, activities — anything), and I'll look into it and pin the result up here shortly.",
+    "Hi! Where would you like to go, roughly when, and for how long? Are you after a relaxed break, nature, food, or culture? We can start wherever you are in the idea.",
 };
 
 export function buildProactiveIntro(locale: string | undefined | null): {

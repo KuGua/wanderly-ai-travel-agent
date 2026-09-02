@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LLMGateway, ModelGatewayError } from "../src/providers/llm-gateway.js";
+import { SHARED_TOOL_PLANNING_SYSTEM_PROMPT } from "../src/providers/shared-planning-prompts.js";
 import { createRequestContext } from "../src/utils/context.js";
 
 const oldEnabled = process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED;
@@ -25,6 +26,10 @@ describe("LLMGateway planning tools", () => {
     const finalMessages = create.mock.calls[1][0].messages as Array<Record<string, unknown>>;
     expect(finalMessages.some((message) => message.role === "tool" && String(message.content).includes("LIVE"))).toBe(true);
     const initialMessages = create.mock.calls[0][0].messages as Array<Record<string, unknown>>;
+    expect(initialMessages[0]).toEqual({ role: "system", content: SHARED_TOOL_PLANNING_SYSTEM_PROMPT });
+    expect(SHARED_TOOL_PLANNING_SYSTEM_PROMPT).toContain("not a user-facing assistant");
+    expect(SHARED_TOOL_PLANNING_SYSTEM_PROMPT).toContain("Personal Agent research");
+    expect(SHARED_TOOL_PLANNING_SYSTEM_PROMPT).toContain("cannot contact a traveller");
     expect(String(initialMessages[1]?.content)).toContain('"originIds":["SFO"]');
   });
 

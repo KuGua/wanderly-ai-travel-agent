@@ -27,7 +27,7 @@ function resolveProvider(): GatewayProvider {
 }
 
 function gatewayConfiguration(provider: GatewayProvider): GatewayConfiguration | null {
-  const promptVersion = process.env.MODEL_GATEWAY_PROMPT_VERSION ?? "1.0.0";
+  const promptVersion = process.env.MODEL_GATEWAY_PROMPT_VERSION ?? "1.1.0";
   const maxRetries = Number(process.env.MODEL_GATEWAY_MAX_RETRIES ?? 1);
   const apiKey = process.env.MODEL_GATEWAY_API_KEY?.trim();
   const configuredModel = process.env.MODEL_GATEWAY_MODEL?.trim();

@@ -91,6 +91,8 @@ describe("conversational ModelGateway", () => {
     const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
     expect(messages[0]).toMatchObject({ role: "system" });
     expect(messages[0]?.content).toContain("住宿/酒店搜索约束");
+    expect(messages[0]?.content).toContain("当前住宿需求可以直接交给 Shared Agent");
+    expect(messages[0]?.content).toContain("不要把这句话说成单独酒店搜索的推广");
     expect(messages[1]?.content).not.toContain("HOTEL_SEARCH_READINESS");
   });
 
@@ -111,8 +113,30 @@ describe("conversational ModelGateway", () => {
     const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
     expect(messages[0]?.content).toContain("首要任务是帮助用户把一次旅行从想法逐步编排成完整、可确认的行程");
     expect(messages[0]?.content).toContain("完整行程编排优先级");
+    expect(messages[0]?.content).toContain("不得主动提议“帮你看/查机票、住宿”");
+    expect(messages[0]?.content).toContain("由你自行做低风险的默认决定");
     expect(messages[0]?.content).toContain("不得声称已经完成预订、支付、实时查询或任何外部操作");
     expect(messages[0]?.content).toContain("目的地介绍和一般旅行问答是辅助用户探索与决策的能力");
+  });
+
+  it("uses the Shared Agent orchestration lead for a flight-tool request", async () => {
+    const parse = vi.fn().mockResolvedValue({
+      choices: [{ message: {
+        parsed: null,
+        content: JSON.stringify({ reply: { content: "请告诉我出发日期。" } }),
+      } }],
+    });
+    const gateway = buildGateway({ chat: { completions: { parse } } });
+
+    await gateway.generateConversationReply({
+      question: "帮我找上海到台北的航班",
+      threadContext: [],
+      responseConstraints: ["FLIGHT_SEARCH_READINESS"],
+    });
+
+    const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
+    expect(messages[0]?.content).toContain("当前航班需求可以直接交给 Shared Agent");
+    expect(messages[0]?.content).toContain("不要把这句话说成单独机票搜索的推广");
   });
 
   it("normalizes Gemini's root-level content response", async () => {

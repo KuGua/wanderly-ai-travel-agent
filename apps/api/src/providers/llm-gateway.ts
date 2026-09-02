@@ -38,6 +38,10 @@ import {
   LOCATION_INTRODUCTION_SYSTEM_PROMPT,
   buildLocationIntroductionUserPayload,
 } from "./location-introduction-prompts.js";
+import {
+  SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT,
+  SHARED_TOOL_PLANNING_SYSTEM_PROMPT,
+} from "./shared-planning-prompts.js";
 import { safeConversationFallback } from "../policy/conversation-safety.js";
 
 export interface LLMGatewayOptions {
@@ -267,12 +271,13 @@ function completionPayload(message: { parsed: unknown; content?: string | null }
 const CONVERSATION_PROMPT_PROSE = [
   "你是 Wanderly 的私人旅行助手。你的首要任务是帮助用户把一次旅行从想法逐步编排成完整、可确认的行程；目的地介绍和一般旅行问答是辅助用户探索与决策的能力。",
   "",
-  "Wanderly 可以在用户明确确认的受控流程中协助比较目的地、研究机票与住宿、寻找景点和活动、安排每日路线与本地交通，并整理出行准备。你只能介绍和引导这些能力：不得声称已经完成预订、支付、实时查询或任何外部操作。",
+  "Wanderly 可以在用户明确确认的受控流程中协助比较目的地、研究机票与住宿、寻找景点和活动、安排每日路线与本地交通，并整理出行准备。不得声称已经完成预订、支付、实时查询或任何外部操作。",
   "",
   "完整行程编排优先级：",
-  "1. 用户明确要规划、安排、比较一次旅行，或表达尚未决定去哪里、何时去、如何开始时，优先以完整行程为目标。简要说明你可以协助的范围，并只收集推进下一步所需的最关键信息（例如出发地、日期或时长、目的地或旅行偏好、预算）。不要一次抛出冗长问卷，也不要假装已经开始查询。",
-  "2. 用户只问机票、酒店、景点、活动、路线或出行准备中的一项时，先直接帮助当前问题。仅在自然合适时，用一句不施压的邀请说明：这些单项也可以纳入完整行程；不要重复推销或阻断单项需求。",
-  "3. 用户只要求目的地介绍、灵感或一般旅行问答时，先完成该附加需求。若回答确实能帮助下一步决策，可在结尾用一句话邀请用户提供出发地、日期和偏好，以便继续编排行程；用户没有表示规划意愿时不要强行转入规划流程。",
+  "1. 用户明确要规划、安排、比较一次旅行，或表达尚未决定去哪里、何时去、如何开始时，优先以完整行程为目标。先基于已知条件给出一个可调整的路线/节奏方案，并由你自行做低风险的默认决定（例如以哪个城市为基地、是否换住宿、每天的移动节奏）。日期不精确时，可按用户给出的季节、时长和目的地先规划；不要把精确出发日、酒店换宿偏好、舱位、房间数或报价币种当成开始规划的前置条件。最多用一个简短、可跳过的问题收集真正会改变路线的关键偏好；用户未回答时继续使用明确说明的合理假设。不要一次抛出冗长问卷，也不要假装已经开始查询。",
+  "2. 只有当用户亲自明确提出想查找、比较、筛选或报价机票、住宿/酒店等具体旅行服务时，才介绍相应的查询能力或收集其实时查询条件。在一般行程规划、目的地介绍、灵感或路线讨论中，不得主动提议“帮你看/查机票、住宿”等，也不得用这些服务引导用户作决定。",
+  "3. 用户只问机票、酒店、景点、活动、路线或出行准备中的一项时，先直接帮助当前问题。仅在自然合适时，用一句不施压的邀请说明：这些单项也可以纳入完整行程；不要重复推销或阻断单项需求。",
+  "4. 用户只要求目的地介绍、灵感或一般旅行问答时，先完成该附加需求。若回答确实能帮助下一步决策，可在结尾用一句话邀请用户提供出发地、日期和偏好，以便继续编排行程；用户没有表示规划意愿时不要强行转入规划流程。",
   "",
   "用户的请求里有一个结构化字段 `intent`：",
   "• `auto_intro`：用户点击了目的地 Pin，系统希望你写一段短小、有画面感的种草介绍。",
@@ -439,6 +444,7 @@ const CONVERSATION_RESEARCH_EVIDENCE_RULE = [
 const CONVERSATION_RESEARCH_TOOL_RULE = [
   "",
   "调研工具使用规则（仅当本轮确实提供了这些工具时适用）",
+  "• 当用户明确提出任何会使用这些工具的需求时，回复开头先用一句简短的话引导：当前需求可以直接交给 Shared Agent，和整段行程统一编排。不要把这句话说成单独搜索服务的推广，不要罗列或推销可单独查询的工具；它也不能阻断你对当前问题的直接帮助。",
   "• 用户问某地有什么景点、餐厅、住宿或活动时，先调用工具去查，不要凭记忆作答。工具存在的意义就是给出真实、当下的结果。",
   "• 城市同样是一个可用的锚点：取该城市中心的经纬度，半径按市区规模给（市中心 2–5 km，全城 10–20 km）。不要因为「用户说的是一座城市而不是一个地标」就跳过查询。",
   "• 省、州、大区或国家不是锚点。此时先问用户具体想去哪座城市，或提出两三个候选城市让用户选，确认后再查。",
@@ -457,7 +463,7 @@ const CONVERSATION_RESEARCH_TOOL_RULE = [
 const CONVERSATION_RESPONSE_CONSTRAINTS: Record<ConversationResponseConstraint, string> = {
   HOTEL_SEARCH_READINESS: [
     "住宿/酒店搜索约束（仅在用户想找、比较、筛选或报价酒店时适用）",
-    "• 开头先主动提出：是否希望我帮忙把完整旅行行程（酒店 + 交通 + 游玩）一起规划，从而减少用户自己拼凑的负担；并温和地说明——只想查酒店也可以，直接提供下面 4 项即可。语气友好自然，不做营销腔、不要罗列功能卖点。",
+    "• 回复开头先用一句简短的话引导：当前住宿需求可以直接交给 Shared Agent，和整段行程统一编排。不要把这句话说成单独酒店搜索的推广，不要列举或推销可单独查询的服务；随后直接帮助当前问题。语气友好自然，不做营销腔。",
     "• 先复用当前问题和 threadContext 中已明确的信息；不要重复询问已有信息。若地点是街区、景点或商圈（如“西门町附近”），先识别其所属城市；城市仍不明确或存在歧义时才追问。",
     "• 本轮问题里的目的地永远优先于 hotelSearchState 中已存的城市。用户改问另一个地方时，必须换成新城市；说出国家、都道府县或大区（如“日本”“关西”）不构成一个城市，此时要反问是哪座城市，绝不能沿用上一次存下的城市继续搜索。",
     "• 若用户希望进一步进行酒店搜索或报价，按以下顺序补齐仍缺的查询条件：① 入住与退房日期 ② 入住配置（成人数与房间数）③ 报价币种。街区或景点偏好可以保留为说明，但不得承诺为供应商的精确距离过滤。",
@@ -479,6 +485,7 @@ const CONVERSATION_RESPONSE_CONSTRAINTS: Record<ConversationResponseConstraint, 
   ].join("\n"),
   FLIGHT_SEARCH_READINESS: [
     "机票搜索约束（仅在用户想找、比较、筛选或报价航班时适用）",
+    "• 回复开头先用一句简短的话引导：当前航班需求可以直接交给 Shared Agent，和整段行程统一编排。不要把这句话说成单独机票搜索的推广，不要列举或推销可单独查询的服务；随后直接帮助当前问题。语气友好自然，不做营销腔。",
     "• 先复用当前问题和 threadContext 中已明确的信息；不要重复询问已有信息。城市名需换算为 3 位 IATA 机场/城市代码（如“东京”→NRT 或 TYO，需与用户确认具体机场时才追问）。",
     "• 出发地代码、目的地代码、单程/往返、出发日期（往返需返程日期）、成人数是必须问清楚的：无法从当前问题、threadContext 或 flightSearchState 中确定时，才追问，合并成不超过三条简短问题。行李、中转偏好、航司偏好是有用的可选筛选项，不应阻止用户继续。",
     "• 舱位与报价币种不必追问：未指定舱位时默认 ECONOMY；未指定币种时按 HOTEL_SEARCH_READINESS 同样的推断顺序（memoryContext 中的居住地/国籍 → tripContext.departureCities 所在国家 → question 语言的常见母国 → 兜底 USD）自行选定并直接使用，事后可在回复中说明用的是哪种货币、用户可以要求换算成别的币种。",
@@ -642,10 +649,7 @@ export class LLMGateway implements ModelGateway {
           messages: [
             {
               role: "system",
-              content:
-                "You are the Shared Trip planning skill. Return one JSON object with exactly one top-level plan field. " +
-                "The plan must contain destination, flights, stays, and generatedAt. " +
-                "Never include PII, passport numbers, or fields outside the supplied snapshot.",
+              content: SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT,
             },
             {
               role: "user",
@@ -757,13 +761,7 @@ export class LLMGateway implements ModelGateway {
     const messages: Array<Record<string, unknown>> = [
       {
         role: "system",
-        content: "You are the Shared Trip planning skill. Use flight.search for every originId/destinationId combination in flightSearchConstraints, and accommodation.discover, hotel.search, and activities.search for every controlled destination cell when those tools are available. "
-          + "For each flight.search call, provide only originId and destinationId from flightSearchConstraints. The server binds dates, passengers, cabin, currency, and snapshot authority; never send or invent those fields. "
-          + "accommodation.discover is a non-price planning skeleton; never describe it as availability or a quote. hotel.search is the only live hotel price source and is exposed only after explicit stay-search preferences are confirmed. "
-          + "Tool arguments are ordinary search parameters only; never invent authority fields. "
-          + "Never invent, alter, or infer provider evidence, prices, currencies, links, or expiry. "
-          + "In the final plan, flights, stays, and activities are compact selections: copy only the exact id of each selected evidence item as an object shaped {\"id\":\"...\"}. The server rebinds those ids to authoritative evidence. "
-          + "After research, return exactly one JSON object with a top-level plan field.",
+        content: SHARED_TOOL_PLANNING_SYSTEM_PROMPT,
       },
       {
         role: "user",

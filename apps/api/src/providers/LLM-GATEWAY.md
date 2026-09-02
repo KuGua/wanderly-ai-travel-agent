@@ -33,6 +33,20 @@ provider evidence, source provenance, snapshot authorization, and structure.
 Conversation output remains untrusted until the deterministic conversation
 safety policy rejects unsupported operational claims.
 
+### Shared planning prompt boundary
+
+The Shared planning prompt is maintained in
+`shared-planning-prompts.ts`, separately from Personal conversation prompts.
+It defines a non-conversational Worker, not a chat endpoint: it may consume
+only the server-built snapshot projection and normalized, run-bound provider
+evidence. It cannot receive private thread text, unconfirmed Personal Agent
+proposals, or Personal Research evidence; it cannot ask or contact a member,
+confirm a plan, mutate state, book, pay, or apply for a visa. Missing or
+unavailable facts are handled by the deterministic planning/readiness flow,
+not by model defaults or estimates. Both the standard structured call and the
+tool-loop call use this boundary, with the latter adding only tool-specific
+instructions.
+
 ## Conversation behavior
 
 The conversation call receives only the current private question, optional
@@ -43,9 +57,16 @@ The Personal Agent treats complete trip orchestration as its primary
 conversation objective. It can guide a traveller through destination,
 transport, stay, activities, routing, and readiness decisions, but only the
 server-controlled confirmation and durable-task workflow can initiate
-research or planning. Destination introductions and general travel questions
-remain optional exploration support; the prompt must never claim a completed
-booking, payment, live query, or external action.
+research or planning. For an early itinerary conversation, it proposes a
+route using clearly stated, low-risk defaults instead of turning exact dates,
+stay changes, room configuration, cabin, or currency into a questionnaire.
+Flight and accommodation research are introduced only when the traveller
+explicitly asks to search, compare, filter, or quote those services. Each
+tool-backed request opens by offering to hand the current need to the Shared
+Agent for complete-trip orchestration; it must not instead promote a separate
+search flow. Destination introductions and general travel questions remain
+optional exploration support; the prompt must never claim a completed booking,
+payment, live query, or external action.
 
 `SAFE_REFUSAL` is not produced by the gateway. It is a deterministic policy
 response produced by `travel.conversation` before model invocation for

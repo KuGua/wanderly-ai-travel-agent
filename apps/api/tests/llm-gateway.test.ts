@@ -4,6 +4,7 @@ import { agentRuns } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { LLMGateway, ModelGatewayError } from "../src/providers/llm-gateway.js";
 import { __setModelGatewayForTests, createModelGateway } from "../src/providers/gateway-factory.js";
+import { SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT } from "../src/providers/shared-planning-prompts.js";
 import { createRequestContext } from "../src/utils/context.js";
 
 vi.mock("openai", () => ({
@@ -88,6 +89,24 @@ describe("LLM gateway", () => {
     expect(runs.length).toBeGreaterThan(0);
     expect(runs[0].status).toBe("SUCCESS");
     expect(runs[0].tokens).toEqual({ prompt: 12, completion: 5, total: 17 });
+  });
+
+  it("uses the non-conversational Shared planning boundary prompt", async () => {
+    const parse = vi.fn().mockResolvedValue({
+      choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+    });
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "openai", modelName: "gpt-4o-mini", promptVersion: "1.1.0",
+      ctx: createRequestContext(), client: { chat: { completions: { parse } } }, maxRetries: 0,
+    });
+
+    await gateway.generateStructuredPlan({ destination: "Tokyo", flights: [], stays: [], memberPreferences: {} });
+
+    const messages = parse.mock.calls[0][0].messages as Array<Record<string, unknown>>;
+    expect(messages[0]).toEqual({ role: "system", content: SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT });
+    expect(SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT).toContain("not a user-facing assistant");
+    expect(SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT).toContain("private conversations");
+    expect(SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT).toContain("cannot confirm a plan");
   });
 
   it("loads the configured OpenAI client when no test client is injected", async () => {

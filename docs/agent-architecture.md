@@ -80,6 +80,12 @@ Shared Trip Agent（仅共享 Skills）
 6. Shared Agent 只能消费 snapshot，不能回读成员私有存储；
 7. memory projection 仅限当前 Trip；个人事实、Trip memory、授权或事实有效期变化均须在生成新 projection 前使依赖 plan/confirmations `STALE`。
 
+### Shared Agent 的系统 Prompt 边界
+
+Shared Agent 不向用户开放聊天入口；成员只与各自的 Personal Agent 和受控表单/UI 交互。但这不表示 Shared Agent 接收 Personal Agent 的全部内容：Personal Agent 只能生成字段目录内、待成员确认的候选。服务端在确认、字段级 consent 与 snapshot 创建后，才将最小结构化 projection 注入 Shared Worker；Worker 另通过受限工具取得 run-bound provider evidence。
+
+因此 Shared system prompt 必须把自己定义为非对话式规划 Worker：只使用服务器提供的 snapshot/evidence，永不读取或转述私聊、未确认候选或 Personal Research evidence；不能追问、联系成员、推断缺失事实、改变状态或执行确认/预订/支付/签证申请。缺失条件由服务端返回的结构化 readiness gap 和 Personal/UI 流程收集；provider 不可用则为 `UNAVAILABLE`，绝不由模型默认值、估价或示范日期填补。
+
 ## 3. Skill Architecture
 
 地面 POI、导航与 mobility 的实现级契约以 [全球 POI 与地面出行实施规范](ground-mobility-implementation.md) 为准；本节仅描述它们在现有 Agent 边界中的位置。
