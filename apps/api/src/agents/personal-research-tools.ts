@@ -32,13 +32,14 @@ import { requiresOwnerConfirmation } from "./personal-research-tool-policy.js";
 const DATE = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" } as const;
 
 /**
- * `navigation.route` is absent on purpose. Its draft takes two trip-place
- * UUIDs, and nothing in the conversation context carries them, so the model
- * has no way to obtain an id it could pass — the tool could only ever fail.
- * It becomes offerable once place ids reach the prompt.
- *
  * `hotel.search` is absent because it is being taken through the shared
  * research path. `mobility.search` has no supplier credentials.
+ *
+ * `navigation.route` was absent for a different reason: its draft took two
+ * trip-place UUIDs and nothing in a conversation carries them, so the tool
+ * could only ever fail. The draft now also accepts two points, which is the
+ * form a conversation can supply, and only that form is advertised here — an
+ * id the model cannot know is not worth asking it for.
  */
 export const PERSONAL_RESEARCH_TOOLS: readonly ModelToolDefinition[] = Object.freeze([
   {
@@ -108,6 +109,38 @@ export const PERSONAL_RESEARCH_TOOLS: readonly ModelToolDefinition[] = Object.fr
     },
   },
   {
+    name: "navigation.route",
+    description:
+      "Measure the route between two points — how far apart they are and how long the journey takes, "
+      + "driving, walking or cycling. Give each end its coordinates and the name the traveller used for it. "
+      + "Returns distance and duration only: no turn-by-turn directions, no live traffic, no departure times.",
+    parameters: {
+      type: "object", additionalProperties: false,
+      required: ["origin", "destination", "mode"],
+      properties: {
+        origin: {
+          type: "object", additionalProperties: false,
+          required: ["latitude", "longitude", "label"],
+          properties: {
+            latitude: { type: "number", minimum: -90, maximum: 90 },
+            longitude: { type: "number", minimum: -180, maximum: 180 },
+            label: { type: "string", minLength: 1, maxLength: 80, description: "What the traveller called this place" },
+          },
+        },
+        destination: {
+          type: "object", additionalProperties: false,
+          required: ["latitude", "longitude", "label"],
+          properties: {
+            latitude: { type: "number", minimum: -90, maximum: 90 },
+            longitude: { type: "number", minimum: -180, maximum: 180 },
+            label: { type: "string", minLength: 1, maxLength: 80, description: "What the traveller called this place" },
+          },
+        },
+        mode: { type: "string", enum: ["driving", "walking", "cycling"] },
+      },
+    },
+  },
+  {
     name: "flight.search",
     description:
       "Search live flight offers between two airports. Returns how many offers and the price range. "
@@ -134,6 +167,7 @@ const DRAFT_KIND: Record<string, string> = {
   "places.search": "PLACES_SEARCH",
   "accommodation.discovery": "ACCOMMODATION_DISCOVERY",
   "activities.search": "ACTIVITIES_SEARCH",
+  "navigation.route": "NAVIGATION_ROUTE",
   "flight.search": "FLIGHT_SEARCH",
 };
 
