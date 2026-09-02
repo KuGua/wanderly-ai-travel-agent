@@ -127,9 +127,6 @@ describe("tripDetailsResponseSchema — pinnedSession on the trip object", () =>
     destinationCandidates: ["Tokyo"],
     travelDateStart: "2026-10-01",
     travelDateEnd: "2026-10-08",
-    // Required, not optional, on the detail schema: the route builds its `trip`
-    // by spreading the row, so a real response always carries it.
-    travelDays: 8,
     archivedAt: null,
     archiveReason: null,
     createdAt: "2026-09-01T00:00:00.000Z",

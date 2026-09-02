@@ -137,6 +137,7 @@ export async function runResearch(params: {
       try {
         coverage = await researchCoverageForSnapshot({
           snapshotId: run.snapshotId,
+          tripId: run.tripId,
           agentTaskRunId: run.id,
           departureCities,
           destinationCandidates,

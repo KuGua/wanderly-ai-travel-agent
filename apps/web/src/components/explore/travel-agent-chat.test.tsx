@@ -450,33 +450,21 @@ describe("TravelAgentChat durable streaming flow", () => {
     scrollTop.mockRestore();
   });
 
-  // The collapsed composer is the open panel's composer one state earlier, and
-  // both float in the cosmic scene, so they take the same deep-space material.
-  // Giving this one the paper card made opening the chat read as a jump
-  // between two different products.
-  it("uses the cosmic surface for the collapsed composer", async () => {
+  it("uses the shared comic surfaces for the collapsed and open conversation", async () => {
     renderChat(createApi(), { initiallyOpen: false });
 
     const collapsedComposer = screen.getByRole("form", { name: "Start a conversation with Wanderly Agent" });
-    expect(collapsedComposer).toHaveClass("wanderly-cosmos-surface", "wanderly-r-lg", "wanderly-shadow");
-    expect(collapsedComposer).not.toHaveClass("bg-card", "wanderly-edge");
-  });
-
-  // The open panel floats inside `.wanderly-cosmos`, where the design system
-  // rules out a white card: it takes the deep-space panel, and everything it
-  // contains takes the deep-space surface rather than `bg-card` on paper.
-  it("uses the cosmic surfaces for the open conversation", async () => {
-    renderChat(createApi(), { initiallyOpen: false });
+    expect(collapsedComposer).toHaveClass("wanderly-edge", "wanderly-r-lg", "wanderly-shadow", "bg-card");
 
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Wanderly Agent conversation" });
-    expect(dialog).toHaveClass("wanderly-cosmos-chat", "wanderly-cosmos-panel", "wanderly-r-lg");
-    expect(dialog).not.toHaveClass("bg-sidebar", "wanderly-edge");
-
-    const composerBox = screen.getByRole("textbox", { name: "Message Wanderly Agent" }).parentElement;
-    expect(composerBox).toHaveClass("wanderly-cosmos-surface", "wanderly-r-md", "wanderly-shadow-sm");
-    expect(composerBox).not.toHaveClass("bg-card");
+    expect(dialog).toHaveClass("wanderly-edge", "wanderly-r-lg", "wanderly-shadow-lg");
+    expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" }).parentElement).toHaveClass(
+      "wanderly-edge",
+      "wanderly-r-md",
+      "wanderly-shadow-sm",
+    );
   });
 
   it("calls onThreadInvalidated when the server returns 404 from getOwnerConversation", async () => {

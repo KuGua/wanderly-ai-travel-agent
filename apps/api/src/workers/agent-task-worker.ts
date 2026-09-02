@@ -1,7 +1,7 @@
 import { SkillError } from "../agents/errors.js";
 import { context as otelContext, SpanKind, trace as otelTrace } from "@opentelemetry/api";
 import { metrics } from "../observability/metrics.js";
-import { logSafeRuntimeEvent } from "../observability/telemetry.js";
+import { logSafeRuntimeEvent, pinoInstance } from "../observability/telemetry.js";
 import {
   getTracer,
   parseTraceparent,
@@ -247,6 +247,21 @@ export async function processNextAgentTask(): Promise<boolean> {
         outcome: "failure", attempt: run.generationAttempt, errorCode: classified.code,
         relatedRunId: run.id,
       });
+      // The classified code alone says a task failed and nothing about why:
+      // INTERNAL covers every unclassified throw in planning, and chasing one
+      // meant adding a temporary probe and reproducing it. The class and the
+      // throw site are developer-authored strings, so they are safe to keep;
+      // a message can quote input, so it is capped rather than trusted, and
+      // never becomes a metric label.
+      pinoInstance.warn({
+        component: "agent-task-worker",
+        runId: run.id,
+        operation: run.operation,
+        errorCode: classified.code,
+        errorClass: (error as Error)?.name ?? typeof error,
+        errorMessage: String((error as Error)?.message ?? error).slice(0, 300),
+        throwSite: String((error as Error)?.stack ?? "").split("\n")[1]?.trim().slice(0, 200),
+      }, "Durable task failed");
       const outcome = await failOrRetryTask({
         run,
         leaseToken,

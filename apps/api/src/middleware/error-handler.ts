@@ -58,6 +58,13 @@ export async function errorHandler(error: FastifyError, request: FastifyRequest,
         : isApiError
           ? error.logCategory ?? "API_REJECTED"
           : "REQUEST_REJECTED",
+      // A 4xx with a category and no reason says a request was refused and
+      // nothing about what was wrong with it, which turns every rejection into
+      // a reproduce-and-bisect exercise. The class and the throw site are
+      // developer-authored; the message can quote input, so it is capped.
+      errorClass: error.name,
+      errorMessage: String(error.message ?? "").slice(0, 300),
+      throwSite: String(error.stack ?? "").split("\n")[1]?.trim().slice(0, 200),
     }, "Request rejected");
   }
 

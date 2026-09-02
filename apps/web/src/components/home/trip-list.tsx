@@ -1,12 +1,11 @@
 "use client";
 
-import { ArrowRight, CalendarDays, MapPin, Trash2, UsersRound } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowRight, CalendarDays, MapPin, UsersRound } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
-import { useState } from "react";
 
 import { Link } from "@/i18n/navigation";
 import type { TripSummary } from "@/lib/api/contracts";
-import { useDeleteTrip } from "@/lib/query/hooks";
+import { useUpdateTripArchive } from "@/lib/query/hooks";
 
 const artStyles = [
   "from-[var(--w-info)] to-[var(--w-highlight)]",
@@ -15,23 +14,6 @@ const artStyles = [
   "from-[var(--w-highlight)] to-[var(--w-fog)]",
   "from-[var(--w-primary)] to-[var(--w-moss)]",
 ] as const;
-
-/**
- * Picks a card's tilt and gradient from the trip's own id rather than its
- * position in the list.
- *
- * Keyed by position, deleting a card restyled every card after it: they each
- * inherited the look of the one before, so the gap appeared at the end of the
- * list instead of where the deletion happened, and it read as though the wrong
- * trip had been removed. A trip's id does not move, so neither does its card.
- */
-function styleSeed(tripId: string): number {
-  let hash = 0;
-  for (let index = 0; index < tripId.length; index += 1) {
-    hash = (hash * 31 + tripId.charCodeAt(index)) >>> 0;
-  }
-  return hash;
-}
 
 type StatusStyle = { bg: string; text: string };
 
@@ -63,27 +45,22 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
 
   return (
     <div className="grid gap-[15px] sm:grid-cols-2 xl:grid-cols-3">
-      {trips.map((trip) => {
+      {trips.map((trip, index) => {
         const style = STATUS_STYLES[trip.status];
-        const seed = styleSeed(trip.id);
         return (
           <article
             key={trip.id}
-            className={`group relative flex min-h-[245px] flex-col overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow wanderly-press wanderly-press-lg ${
-              seed % 3 === 1 ? "wanderly-tilt-a" : seed % 3 === 2 ? "wanderly-tilt-b" : ""
+            className={`group flex min-h-[245px] flex-col overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow wanderly-press wanderly-press-lg ${
+              index % 3 === 1 ? "wanderly-tilt-a" : index % 3 === 2 ? "wanderly-tilt-b" : ""
             }`}
           >
             <div
-              className={`relative h-[87px] shrink-0 overflow-hidden border-b-2 border-[var(--w-ink)] bg-gradient-to-br ${artStyles[seed % artStyles.length]}`}
+              className={`relative h-[87px] shrink-0 overflow-hidden border-b-2 border-[var(--w-ink)] bg-gradient-to-br ${artStyles[index % artStyles.length]}`}
               aria-hidden="true"
             >
               <span className="absolute -right-8 -top-[68px] size-[125px] rounded-full border-2 border-[var(--w-ink)]/65" />
               <span className="absolute bottom-[-23px] left-[6%] h-[35px] w-[90%] -rotate-[5deg] rounded-[50%] border border-dashed border-[var(--w-ink)]/70" />
             </div>
-            {/* Creator-only, matching the API: a member who wants out of a
-                shared trip is leaving it, not destroying it for everyone. Sits
-                over the artwork so it never crowds the trip's own details. */}
-            {trip.role === "CREATOR" ? <DeleteTripControl trip={trip} t={t} /> : null}
             <div className="flex flex-1 flex-col p-4">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="text-[19px] font-bold tracking-[-0.035em]">{trip.name}</h3>
@@ -123,13 +100,19 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
                     ? t("trip.membersRoleOrganizer")
                     : t("trip.membersRoleMember")}
                 </span>
-                <Link
-                  href={`/trips/${trip.id}` as "/trips/[tripId]"}
-                  className="inline-flex min-h-11 items-center gap-1 font-black text-[var(--w-ink)] wanderly-underline hover:decoration-[var(--w-ink)]"
-                >
-                  {trip.status === "DRAFT" ? t("trip.draft.continueCta") : t("trip.open")}
-                  <ArrowRight aria-hidden="true" className="size-3.5" />
-                </Link>
+                <span className="flex items-center gap-3">
+                  {/* Creator-only, matching the API: a member losing a shared
+                      trip from their list is a different decision from the
+                      organiser putting it away. */}
+                  {trip.role === "CREATOR" ? <ArchiveToggle trip={trip} t={t} /> : null}
+                  <Link
+                    href={`/trips/${trip.id}` as "/trips/[tripId]"}
+                    className="inline-flex min-h-11 items-center gap-1 font-black text-[var(--w-ink)] wanderly-underline hover:decoration-[var(--w-ink)]"
+                  >
+                    {trip.status === "DRAFT" ? t("trip.draft.continueCta") : t("trip.open")}
+                    <ArrowRight aria-hidden="true" className="size-3.5" />
+                  </Link>
+                </span>
               </div>
             </div>
           </article>
@@ -140,51 +123,36 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
 }
 
 /**
- * Deletes a trip, behind an in-place confirmation.
+ * Put a trip away, or bring it back.
  *
- * This one is not reversible — the itinerary, the private conversations and
- * the research behind them all go — so the first click only arms it. The
- * confirm step is deliberately part of the card rather than a modal: the
- * traveller can see which trip they are about to lose while deciding.
+ * No confirmation step: archiving destroys nothing and the Archived tab keeps
+ * the trip one click from returning, so a prompt would cost every deliberate
+ * use to protect against a mis-click that is already undoable.
+ *
+ * Only an explicit `archiveReason` of `USER_ARCHIVED` offers to restore. A
+ * trip shown as archived because its dates elapsed was never put away by
+ * anyone, so there is nothing for this button to undo.
  */
-function DeleteTripControl({ trip, t }: { trip: TripSummary; t: Translator }) {
-  const [armed, setArmed] = useState(false);
-  const remove = useDeleteTrip(trip.id);
+function ArchiveToggle({ trip, t }: { trip: TripSummary; t: Translator }) {
+  const archive = useUpdateTripArchive(trip.id);
+  const userArchived = trip.archiveReason === "USER_ARCHIVED";
+  const label = userArchived ? t("trip.restore") : t("trip.archive");
+  const Icon = userArchived ? ArchiveRestore : Archive;
 
-  if (!armed) {
-    return (
-      <button
-        type="button"
-        onClick={() => setArmed(true)}
-        aria-label={t("trip.delete", { name: trip.name })}
-        title={t("trip.delete", { name: trip.name })}
-        className="absolute left-2 top-2 grid size-8 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-      >
-        <Trash2 aria-hidden="true" className="size-4" />
-      </button>
-    );
-  }
+  if (trip.archivedAt && !userArchived) return null;
 
   return (
-    <div role="group" aria-label={t("trip.deleteConfirmTitle")} className="absolute left-2 top-2 flex items-center gap-1.5 bg-card px-2 py-1.5 wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs">
-      <span className="text-[11px] font-bold text-[var(--w-ink)]">{t("trip.deleteConfirmTitle")}</span>
-      <button
-        type="button"
-        onClick={() => remove.mutate()}
-        disabled={remove.isPending}
-        className="min-h-8 rounded-full bg-destructive px-2 text-[11px] font-black text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
-      >
-        {remove.isPending ? t("trip.deleting") : t("trip.deleteConfirm")}
-      </button>
-      <button
-        type="button"
-        onClick={() => setArmed(false)}
-        disabled={remove.isPending}
-        className="min-h-8 rounded-full px-2 text-[11px] font-black text-[var(--w-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-      >
-        {t("trip.deleteCancel")}
-      </button>
-    </div>
+    <button
+      type="button"
+      onClick={() => archive.mutate(!userArchived)}
+      disabled={archive.isPending}
+      aria-label={label}
+      title={label}
+      className="inline-flex min-h-11 items-center gap-1 font-black text-muted-foreground hover:text-[var(--w-ink)] disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+    >
+      <Icon aria-hidden="true" className="size-3.5" />
+      {label}
+    </button>
   );
 }
 

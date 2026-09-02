@@ -745,24 +745,16 @@ export function TravelAgentChat({
   }
 
   const rowClass = docked ? "mx-auto mb-[18px] max-w-[640px]" : "mb-4";
-  // Bubbles and inline cards keep the same illustrated shape in both modes,
-  // but not the same fill: the docked Trip workspace sits on paper, while the
-  // floating Explore panel sits in the cosmic scene, where a white card is
-  // ruled out (docs/prototype-design-system.md). `wanderly-cosmos-surface` is
-  // that card's deep-space counterpart, so only fill and outline differ.
-  const surfaceClass = docked
-    ? "bg-card text-[var(--w-ink)] wanderly-edge"
-    : "wanderly-cosmos-surface";
   const userBubbleClass = "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm";
-  const agentBubbleClass = `group/msg relative max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`;
-  const actionCardClass = `px-3.5 py-3 text-sm ${surfaceClass} wanderly-r-md wanderly-shadow-sm`;
+  const agentBubbleClass = "group/msg relative max-w-[86%] bg-card px-3.5 py-3 text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm";
+  // Keep inline action cards on the same illustrated surface in both the
+  // floating Explore chat and the docked Trip workspace conversation.
+  const actionCardClass = "bg-card px-3.5 py-3 text-sm text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm";
   const actionPrimaryClass = "min-h-10 px-3 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-50";
-  const actionSecondaryClass = docked
-    ? "min-h-10 bg-[var(--w-mist)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"
-    : "min-h-10 px-3 text-xs font-extrabold wanderly-cosmos-control wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50";
+  const actionSecondaryClass = "min-h-10 bg-[var(--w-mist)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50";
 
   const agentLabel = (
-    <div className={`mb-1.5 flex items-center gap-2.5 text-xs font-black ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
+    <div className={`mb-1.5 flex items-center gap-2.5 text-xs font-black ${docked ? "text-[var(--w-ink)]" : "text-white"}`}>
       <span aria-hidden="true" className="grid size-[23px] place-items-center bg-[var(--w-highlight)] text-[10px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">W</span>
       {t("agentName")}
     </div>
@@ -884,11 +876,11 @@ export function TravelAgentChat({
   if (!open) {
     return (
       <>
-        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-20 right-4 z-40 px-3 py-1.5 text-[11px] font-extrabold wanderly-cosmos-control wanderly-r-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
+        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-20 right-4 z-40 bg-card px-3 py-1.5 text-[11px] font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
         <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
-        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 p-1.5 pl-4 wanderly-cosmos-surface wanderly-r-lg wanderly-shadow sm:left-[94px] sm:right-3 sm:w-auto sm:translate-x-0 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)]" aria-label={t("startAria")}>
+        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 bg-card p-1.5 pl-4 text-[var(--w-ink)] wanderly-edge wanderly-r-lg wanderly-shadow sm:left-[94px] sm:right-3 sm:w-auto sm:translate-x-0 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)]" aria-label={t("startAria")}>
           <Sparkles aria-hidden="true" className="size-4 shrink-0 text-primary" />
-          <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--w-fog)] placeholder:text-[var(--w-space-muted)] focus:outline-none disabled:opacity-60" />
+          <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--w-ink)] placeholder:text-[var(--w-muted)] focus:outline-none disabled:opacity-60" />
           {submitButton}
         </form>
       </>
@@ -896,30 +888,28 @@ export function TravelAgentChat({
   }
 
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : "wanderly-cosmos-chat absolute inset-x-3 bottom-3 z-50 flex h-[60dvh] min-h-[300px] flex-col overflow-hidden text-[var(--w-fog)] wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
-      {/* The panel paints its own deep-space ground, so the inner column stays
-          transparent rather than laying a second surface over it. */}
-      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : "absolute inset-x-3 bottom-3 z-50 flex h-[60dvh] min-h-[300px] flex-col overflow-hidden bg-sidebar wanderly-edge wanderly-r-lg wanderly-shadow-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
+      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-sidebar"}`}>
         {/* Two controls at the two edges, and nothing between them competing for
             the eye: put the conversation away on the left, open it in the trip
             planner on the right. The agent names itself on every reply, so the
             header repeating the name and the icon was saying it twice. */}
         {docked ? null : (
-        <header className="flex items-center gap-2.5 border-b-2 border-[var(--w-space-line)] px-3 pb-2 pt-3">
-          <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press"><ChevronDown aria-hidden="true" className="size-4" /></button>
+        <header className="flex items-center gap-2.5 border-b-2 border-[var(--w-ink)] bg-sidebar px-3 pb-2 pt-3">
+          <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-8 shrink-0 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press"><ChevronDown aria-hidden="true" className="size-4" /></button>
           <div className="min-w-0 flex-1" />
           {/* Icon-only, matching the collapse and trip-planner controls either
               side of it. The label stays as the accessible name and tooltip, so
               the control keeps its meaning for a screen reader and on hover. */}
-          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} aria-label={t("startNewExploration")} title={t("startNewExploration")} className="grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"><Plus aria-hidden="true" className="size-4" /></button> : null}
+          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} aria-label={t("startNewExploration")} title={t("startNewExploration")} className="grid size-8 shrink-0 place-items-center bg-card text-primary wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"><Plus aria-hidden="true" className="size-4" /></button> : null}
           {tripId && effectiveThreadId ? (
             <Link
               href={`/trips/${tripId}?thread=${effectiveThreadId}` as "/trips/[tripId]"}
               aria-label={t("goToTripPlanner")}
-              className="group relative grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press"
+              className="group relative grid size-8 shrink-0 place-items-center bg-card text-primary wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press"
             >
               <ArrowRight aria-hidden="true" className="size-4" />
-              <span role="tooltip" className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-10 w-max px-2 py-1 text-[11px] font-semibold opacity-0 wanderly-cosmos-surface wanderly-r-xs wanderly-shadow-xs transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+              <span role="tooltip" className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-10 w-max bg-card px-2 py-1 text-[11px] font-semibold text-[var(--w-ink)] opacity-0 wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
                 {t("goToTripPlanner")}
               </span>
             </Link>
@@ -929,13 +919,13 @@ export function TravelAgentChat({
 
         <div ref={panelScrollRef} className={docked
           ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-4 pt-6"
-          : "flex-1 overflow-y-auto px-5 py-5"} aria-live="polite">
+          : "flex-1 overflow-y-auto bg-sidebar px-5 py-5"} aria-live="polite">
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
             <div className={rowClass}>
               {agentLabel}
-              <div className={`max-w-[86%] px-3.5 py-3 text-sm leading-[1.45] ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
+              <div className="max-w-[86%] bg-card px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm">
                 <p className="font-bold text-primary">{t("introTitle")}</p>
                 <p className="mt-1 text-muted-foreground">{t("introBody")}</p>
               </div>
@@ -967,7 +957,7 @@ export function TravelAgentChat({
           {activeRunId ? (
             <article data-role="ASSISTANT" data-streaming="true" className={rowClass}>
               {agentLabel}
-              <div className={`max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
+              <div className="max-w-[86%] bg-card px-3.5 py-3 text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm">
               {streamState.tools.length > 0 ? <ToolActivityList items={streamState.tools} /> : null}
               {streamState.text ? (
                 <ChatMarkdown content={streamState.text} />
@@ -981,7 +971,7 @@ export function TravelAgentChat({
                   </span>
                   {t("sending")}
                 </p>
-                <button type="button" onClick={stopActiveRun} disabled={cancelRun.isPending} className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-card px-3 py-1 text-xs font-bold text-primary disabled:opacity-50">
+                <button type="button" onClick={stopActiveRun} disabled={cancelRun.isPending} className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-white px-3 py-1 text-xs font-bold text-primary disabled:opacity-50">
                   <Square aria-hidden="true" className="size-3 fill-current" />{t("stop")}
                 </button>
               </div>
@@ -993,7 +983,7 @@ export function TravelAgentChat({
               <p className="font-bold">{errorMessage(visibleError, t)}</p>
               {pendingTurn && isRetryable(visibleError)
                 && !(visibleError instanceof AgentRunFailure && !isRetryableFailure(visibleError))
-                ? <button type="button" onClick={retryPendingTurn} disabled={isSending} className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1.5 text-xs font-bold text-destructive shadow-sm disabled:opacity-50"><RotateCw aria-hidden="true" className="size-3.5" />{t("retry")}</button> : null}
+                ? <button type="button" onClick={retryPendingTurn} disabled={isSending} className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-destructive shadow-sm disabled:opacity-50"><RotateCw aria-hidden="true" className="size-3.5" />{t("retry")}</button> : null}
             </div>
           ) : null}
           {briefProposal && tripId ? (
@@ -1113,7 +1103,7 @@ export function TravelAgentChat({
               style={{ position: "fixed", left: highlight.x, top: Math.max(highlight.y - 44, 8), transform: "translateX(-50%)", zIndex: 60 }}
               className={docked
                 ? "px-3 py-1.5 text-[11px] font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action"
-                : "rounded-full bg-primary px-3 py-1.5 text-[11px] font-bold text-[var(--w-ink)] shadow-md"}
+                : "rounded-full bg-primary px-3 py-1.5 text-[11px] font-bold text-white shadow-md"}
             >
               {rememberState?.status === "saving" ? t("rememberSaving") : t("rememberHighlight")}
             </button>
@@ -1142,9 +1132,9 @@ export function TravelAgentChat({
         </div>
       </div>
 
-      <form onSubmit={submitMessage} className={docked ? "border-t-2 border-[var(--w-ink)] bg-background px-[clamp(16px,3vw,34px)] pb-[18px] pt-3" : "border-t-2 border-[var(--w-space-line)] px-3 pb-3 pt-2"}>
-        {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className={`mb-1.5 flex h-6 max-w-full items-center px-2.5 text-[10px] font-extrabold wanderly-r-xs wanderly-press ${docked ? "bg-[var(--w-mist)] text-primary wanderly-edge-thin" : "wanderly-cosmos-control"}`}><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
-        <div className={`${docked ? "mx-auto max-w-[640px]" : ""} flex min-h-14 items-center gap-2 p-1.5 pl-4 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
+      <form onSubmit={submitMessage} className={docked ? "border-t-2 border-[var(--w-ink)] bg-background px-[clamp(16px,3vw,34px)] pb-[18px] pt-3" : "border-t-2 border-[var(--w-ink)] bg-sidebar px-3 pb-3 pt-2"}>
+        {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className="mb-1.5 flex h-6 max-w-full items-center bg-[var(--w-mist)] px-2.5 text-[10px] font-extrabold text-primary wanderly-edge-thin wanderly-r-xs wanderly-press"><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
+        <div className={`${docked ? "mx-auto max-w-[640px]" : ""} flex min-h-14 items-center gap-2 bg-card p-1.5 pl-4 wanderly-edge wanderly-r-md wanderly-shadow-sm`}>
           <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
           {submitButton}
         </div>
@@ -1183,8 +1173,8 @@ function FlightPreferenceOptions({
   };
 }) {
   const chipClass = (selected: boolean) => `min-h-8 px-2.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:opacity-50 ${selected
-    ? "bg-primary text-[var(--w-ink)]"
-    : "border border-primary/20 bg-card text-primary hover:bg-secondary"}`;
+    ? "bg-primary text-white"
+    : "border border-primary/20 bg-white text-primary hover:bg-secondary"}`;
   return (
     <div className="mt-3 grid gap-3">
       <fieldset disabled={disabled}>
@@ -1233,7 +1223,7 @@ function ThreadStatus({ status, onRetry, compact = false }: { status: ChatThread
   if (status === "ready" || status === "idle") return null;
   const message = status === "preparing" ? t("preparingPrivateChat") : t("privateChatUnavailable");
   return (
-    <div role="status" data-wanderly-avoid={compact ? "" : undefined} className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold wanderly-cosmos-panel wanderly-r-xs sm:left-[94px] landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "bg-card p-3 text-sm text-muted-foreground wanderly-edge-thin wanderly-r-sm wanderly-shadow-xs"}>
+    <div role="status" data-wanderly-avoid={compact ? "" : undefined} className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 bg-card px-3 py-1.5 text-[11px] font-semibold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs sm:left-[94px] landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "bg-card p-3 text-sm text-muted-foreground wanderly-edge-thin wanderly-r-sm wanderly-shadow-xs"}>
       <span>{message}</span>
       {status === "error" && onRetry ? <button type="button" onClick={onRetry} className="font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30">{t("retryPrivateChat")}</button> : null}
     </div>
@@ -1253,7 +1243,7 @@ function CopyButton({ text }: { text: string }) {
       type="button"
       onClick={copy}
       aria-label="Copy"
-      className="absolute -bottom-1 right-2 grid size-7 place-items-center rounded-lg border border-transparent bg-transparent text-muted-foreground/0 transition group-hover/msg:border-border group-hover/msg:bg-card group-hover/msg:text-muted-foreground group-hover/msg:shadow-sm focus-visible:border-border focus-visible:bg-card focus-visible:text-muted-foreground focus-visible:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+      className="absolute -bottom-1 right-2 grid size-7 place-items-center rounded-lg border border-transparent bg-transparent text-muted-foreground/0 transition group-hover/msg:border-border group-hover/msg:bg-white group-hover/msg:text-muted-foreground group-hover/msg:shadow-sm focus-visible:border-border focus-visible:bg-white focus-visible:text-muted-foreground focus-visible:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
     >
       {copied ? <Check aria-hidden="true" className="size-3.5 text-primary" /> : <Copy aria-hidden="true" className="size-3.5" />}
     </button>
@@ -1418,6 +1408,8 @@ class AgentRunFailure extends Error {
 
 /** Whether trying the same thing again could plausibly give a different answer. */
 function isRetryableFailure(error: AgentRunFailure): boolean {
+  // RATE_LIMITED is absent on purpose: the quota does not come back because
+  // someone pressed a button again.
   return error.errorCode === null
     || ["NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "INTERNAL"].includes(error.errorCode);
 }
@@ -1425,6 +1417,7 @@ function isRetryableFailure(error: AgentRunFailure): boolean {
 function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
   if (error instanceof AgentRunFailure) {
     const planning = error.operation !== "CONVERSATION";
+    if (error.errorCode === "RATE_LIMITED") return planning ? t("planningRateLimited") : t("providerUnavailable");
     if (error.errorCode === "PLANNING_DATA_UNAVAILABLE") return t("planningDataUnavailable");
     if (error.errorCode === "POLICY_DENIED") return t("planningNotAllowed");
     if (error.errorCode === "SEARCH_PREFERENCES_STALE") return t("planningPreferencesChanged");

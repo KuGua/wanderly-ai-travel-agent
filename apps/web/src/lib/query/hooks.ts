@@ -343,18 +343,22 @@ export function useUpdateTripTitle(tripId: string) {
   });
 }
 
-/** Permanently deletes a trip. Not reversible; the caller confirms first. */
-export function useDeleteTrip(tripId: string) {
+/**
+ * Archive or restore a trip. Archiving is reversible and destroys nothing, so
+ * the only recovery this needs is re-fetching the lists it moved the trip
+ * between.
+ */
+export function useUpdateTripArchive(tripId: string) {
   const api = useTravelApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => {
-      if (!api.deleteTrip) throw new Error("Deleting a trip is unavailable");
-      return api.deleteTrip(tripId);
+    mutationFn: (archived: boolean) => {
+      if (!api.updateTripArchive) throw new Error("Archiving is unavailable");
+      return api.updateTripArchive(tripId, { archived });
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: tripKeys.all });
-      void queryClient.removeQueries({ queryKey: tripKeys.detail(tripId) });
+      void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
     },
   });
 }

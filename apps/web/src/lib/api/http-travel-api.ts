@@ -30,6 +30,8 @@ import {
   updateMemoryFactInputSchema,
   tripActivationRequestSchema,
   tripActivationResponseSchema,
+  updateTripArchiveInputSchema,
+  updateTripArchiveResponseSchema,
   updateTripTitleInputSchema,
   updateTripTitleResponseSchema,
   updateDraftTripBriefInputSchema,
@@ -95,6 +97,7 @@ import {
   type CreateTripThreadInput,
   type ExplorationStartRequest,
   type TripActivationRequest,
+  type UpdateTripArchiveInput,
   type UpdateTripTitleInput,
   type UpdateDraftTripBriefInput,
   type TripSearchPreferencesInput,
@@ -420,9 +423,11 @@ export class HttpTravelApi implements TravelApi {
     });
   }
 
-  async deleteTrip(tripId: string) {
-    // 204 No Content: nothing to parse, so the schema is a passthrough.
-    await this.client.request("/trips/" + encodeURIComponent(tripId), z.unknown(), { method: "DELETE" });
+  updateTripArchive(tripId: string, input: UpdateTripArchiveInput) {
+    const body = updateTripArchiveInputSchema.parse(input);
+    return this.client.request("/trips/" + encodeURIComponent(tripId) + "/archive", updateTripArchiveResponseSchema, {
+      method: "PATCH", body: JSON.stringify(body),
+    });
   }
 
   updateDraftTripBrief(tripId: string, input: UpdateDraftTripBriefInput) {

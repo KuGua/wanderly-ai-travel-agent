@@ -34,14 +34,14 @@ const statusLabel: Record<TripPinnedSession["status"], string> = {
 };
 
 const statusTone: Record<TripPinnedSession["status"], string> = {
-  QUEUED: "bg-muted text-slate-700 border-slate-200",
+  QUEUED: "bg-slate-100 text-slate-700 border-slate-200",
   RUNNING: "bg-sky-100 text-sky-800 border-sky-200",
   CANCEL_REQUESTED: "bg-amber-100 text-amber-800 border-amber-200",
   COMPLETED: "bg-emerald-100 text-emerald-800 border-emerald-200",
   COMPLETED_WITH_GAPS: "bg-amber-100 text-amber-900 border-amber-200",
   FAILED: "bg-rose-100 text-rose-800 border-rose-200",
-  CANCELLED: "bg-muted text-slate-700 border-slate-200",
-  STALE: "bg-muted text-slate-700 border-slate-200",
+  CANCELLED: "bg-slate-100 text-slate-700 border-slate-200",
+  STALE: "bg-slate-100 text-slate-700 border-slate-200",
 };
 
 const operationLabel: Record<TripPinnedSession["operation"], string> = {
@@ -58,7 +58,7 @@ export const PinnedResultCard: FC<PinnedResultCardProps> = ({ tripId, pinned }) 
     : "";
   return (
     <div
-      className="rounded-xl border border-slate-200 bg-card p-4 shadow-sm"
+      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
       data-testid="pinned-result-card"
       data-run-id={pinned.agentTaskRunId}
     >

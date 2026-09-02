@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
 import postgres from "postgres";
 import { runMigrations } from "../src/db/migrate.js";
 
@@ -13,52 +13,27 @@ function buildConnectionString(): string {
   return `postgres://${user}:${password}@${host}:${port}/${database}`;
 }
 
-/**
- * Each test gets its own empty schema to migrate into.
- *
- * This used to drop `schema_migrations` on the shared test schema and replay
- * every migration over it, which had two costs. The replay ran against a
- * schema already full of other files' rows, so any migration that adds a CHECK
- * constraint failed validating that leftover data — and because it also
- * re-ran the early migrations, `0023`'s `DROP TYPE ... CASCADE` silently took
- * `research_route_selections.mode` and two foreign keys with it, leaving the
- * shared schema permanently short of a column no later migration would
- * restore. Tests downstream then grew workarounds for the wreckage.
- *
- * A scratch schema gives the replay what it actually wants — a clean database
- * — and keeps it from reaching anything else.
- */
-async function withScratchSchema<T>(run: (conn: string) => Promise<T>): Promise<T> {
-  const schema = `migrate_${randomUUID().replace(/-/g, "")}_test`;
-  const base = new URL(buildConnectionString());
-  base.searchParams.delete("options");
-  const admin = postgres(base.toString(), { max: 1 });
-  try {
-    await admin.unsafe(`CREATE SCHEMA "${schema}"`);
-    const scoped = new URL(base);
-    scoped.searchParams.set("options", `-csearch_path=${schema}`);
-    return await run(scoped.toString());
-  } finally {
-    try {
-      await admin.unsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-    } finally {
-      await admin.end({ timeout: 5 });
-    }
-  }
-}
-
 describe("migration runner", () => {
+  beforeEach(async () => {
+    const conn = buildConnectionString();
+    const client = postgres(conn, { max: 1 });
+    try {
+      await client`DROP TABLE IF EXISTS schema_migrations`;
+    } finally {
+      await client.end({ timeout: 5 });
+    }
+  });
+
   it("applies all migrations on first run and is idempotent on the second", async () => {
-    await withScratchSchema(async conn => {
-      const first = await runMigrations(conn);
-      expect(first.length).toBeGreaterThanOrEqual(4);
-      const second = await runMigrations(conn);
-      expect(second).toEqual([]);
-    });
+    const conn = buildConnectionString();
+    const first = await runMigrations(conn);
+    expect(first.length).toBeGreaterThanOrEqual(4);
+    const second = await runMigrations(conn);
+    expect(second).toEqual([]);
   });
 
   it("normalizes legacy browser-authored SYSTEM messages before enforcing final constraints", async () => {
-    await withScratchSchema(async conn => {
+    const conn = buildConnectionString();
     await runMigrations(conn);
     const client = postgres(conn, { max: 1 });
     const externalId = `migration-user-${randomUUID()}`;
@@ -169,10 +144,11 @@ describe("migration runner", () => {
 
       expect(await runMigrations(conn)).toEqual([]);
     } finally {
-      // The scratch schema is dropped either way; this only releases the
-      // connection so the pool does not carry it for the rest of the run.
+      if (threadId) await client`DELETE FROM chat_threads WHERE id = ${threadId}`;
+      if (userId) await client`DELETE FROM trip_members WHERE user_id = ${userId}`;
+      if (userId) await client`DELETE FROM shared_trips WHERE created_by = ${userId}`;
+      if (userId) await client`DELETE FROM users WHERE id = ${userId}`;
       await client.end({ timeout: 5 });
     }
-    });
   });
 });

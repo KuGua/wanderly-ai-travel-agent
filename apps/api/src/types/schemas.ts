@@ -442,6 +442,7 @@ export const agentRunPhaseSchema = z.enum([
 export const agentRunErrorCodeSchema = z.enum([
   "NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "SCHEMA_PARSE",
   "TOOL_PROTOCOL",
+  "RATE_LIMITED",
   "POLICY_DENIED", "SEARCH_PREFERENCES_STALE", "PLANNING_DATA_UNAVAILABLE",
   "UNKNOWN_SKILL", "TOOL_CALL_MAX_TURNS", "CANCELLED", "EXPIRED", "RETRY_EXHAUSTED", "INTERNAL",
 ]);
@@ -1453,6 +1454,25 @@ export const updateTripTitleResponseSchema = z.object({
     name: z.string(),
     nameSource: z.literal("MANUAL"),
     titleLocale: z.null(),
+    updatedAt: z.string().datetime(),
+  }).strict(),
+});
+
+/**
+ * Archiving hides a trip from the working list without destroying anything —
+ * the itinerary, conversations, evidence and audit trail all stay, and
+ * `archived: false` puts it back. `DATE_ELAPSED` is derived, not chosen, so
+ * the request body only ever carries the user's own intent.
+ */
+export const updateTripArchiveRequestSchema = z.object({
+  archived: z.boolean(),
+}).strict();
+
+export const updateTripArchiveResponseSchema = z.object({
+  trip: z.object({
+    id: uuidSchema,
+    archivedAt: z.string().datetime().nullable(),
+    archiveReason: z.enum(["USER_ARCHIVED", "DATE_ELAPSED"]).nullable(),
     updatedAt: z.string().datetime(),
   }).strict(),
 });

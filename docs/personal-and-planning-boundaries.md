@@ -33,7 +33,6 @@ Personal 是当前用户自己的私密对话入口，不是独立的旅行预�
 
 它不能：
 
-- 在用户没有亲自提出查找/比较/筛选/报价机票或住宿时，主动把对话导向供应商搜索、代为收集查询条件或抛出搜索确认按钮。`DRAFT` 阶段由 `selectResponseConstraints` 确定性地不注入搜索 readiness 约束来保证这一点；用户明确要求时不受阻断；
 - 生成逐日行程、路线、住哪里、换酒店、交通安排或供应商比较；
 - 把私聊原文、Profile 或未确认偏好直接交给规划任务；
 - 自行创建 snapshot、计划、预订、付款、签证申请或不可逆外部操作；
@@ -123,8 +122,6 @@ Shared 是内部的非对话规划能力，不直接与用户聊天。它只读�
 | 领域 | 位置 |
 |---|---|
 | 私密对话边界与文案规则 | `apps/api/src/providers/llm-gateway.ts` |
-| 每轮注入哪些搜索 readiness 约束 | `apps/api/src/tasks/handlers/conversation-task-handler.ts` 的 `selectResponseConstraints` |
-| 简报候选抽取的取值来源规则 | `apps/api/src/providers/llm-gateway.ts` 的 `TRIP_BRIEF_EXTRACTION_SYSTEM_PROMPT` |
 | 简报候选提取 | `apps/api/src/services/trip-brief-proposal-service.ts` |
 | DRAFT / PLANNING handoff gate | `apps/api/src/tasks/handlers/conversation-task-handler.ts` 的 `shouldExtractConversationHandoff` |
 | 确认 brief 与开始规划 | `apps/api/src/routes/trips.ts` |
@@ -134,8 +131,7 @@ Shared 是内部的非对话规划能力，不直接与用户聊天。它只读�
 
 ## 8. 当前限制
 
-- 对话卡会提取明确日期与时长，也接受「助手把口语日期解析成具体日期、用户随后明确追认」这一路径（取值必须逐字来自本轮助手回复）。但人数、货币、酒店星级等偏好还没有全部成为同一张简报卡的持久字段；这些仍走各自受控的搜索偏好/约束确认流程。
-- 追认路径只看本轮：用户在第 N 轮接受了第 N−1 轮的提议、而第 N 轮回复没有重述该取值时，抽取器看不到它，简报仍需用户在卡片上补。
+- 对话卡目前会提取明确日期与时长，但复杂自然语言日期、人数、货币、酒店星级等偏好还没有全部成为同一张简报卡的持久字段；这些仍走各自受控的搜索偏好/约束确认流程。
 - 单人首轮规划的初始 flight 条件是 MVP 默认值，后续应将用户在对话中已明确给出的币种、人数、舱位等条件无损带入确认卡与持久偏好。
 - 不得因为上述限制而回退到“Personal 代为编排每日行程”或“自然语言确认自动提交”的行为。
 

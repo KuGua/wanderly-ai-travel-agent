@@ -331,13 +331,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           surface="TRIP_WORKSPACE"
           threadId={activeThread?.id ?? null}
           threadStatus={chatThreadStatus}
-          // The chat writes the trip's auto title when the traveller confirms
-          // a brief or starts shared planning, and the server can only write
-          // the language it is told. Without this the workspace fell back to
-          // the prop default and named a Chinese traveller's trip
-          // "新加坡 Trip Planner｜4 Days" — half-translated, because the
-          // destination came from their own words and the rest did not.
-          titleLocale={locale === "zh" ? "zh" : "en"}
           tripId={tripId}
           onThreadInvalidated={() => threadsQuery.refetch()}
         />

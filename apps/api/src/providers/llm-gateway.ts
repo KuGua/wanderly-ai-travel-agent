@@ -22,7 +22,7 @@ import type { ConversationPlace } from "../types/schemas.js";
 import type { PersonalTripContext } from "../skills/personal/personal-trip-context-schema.js";
 import { recordAgentRun, type AgentRunTokens } from "../observability/agent-runs.js";
 import { metrics, type MetricProvider } from "../observability/metrics.js";
-import { logSafeRuntimeEvent } from "../observability/telemetry.js";
+import { logSafeRuntimeEvent, pinoInstance} from "../observability/telemetry.js";
 import {
   TRACEPARENT_HEADER,
   TRACESTATE_HEADER,
@@ -120,21 +120,14 @@ const geminiTripBriefExtractionSchema = z.union([z.null(), tripBriefProposalFiel
 
 const TRIP_BRIEF_EXTRACTION_SYSTEM_PROMPT = [
   "You are a strict, conservative extractor for a private trip-planning assistant.",
-  "Given the owner's latest message, the assistant's reply, and the trip's currently known brief, decide whether the owner has SETTLED a NEW or CHANGED departure city/cities, destination candidate(s), exact travel start/end date, or trip length in days for this specific trip.",
-  "A value counts as settled by the owner in either of two ways, and in no other way:",
-  "  (a) the owner stated it themselves in this turn; or",
-  "  (b) the assistant proposed a concrete value in `assistantReply` for this turn AND the owner's message in this turn accepts it (for example \"确认\", \"日期确认\", \"没问题\", \"yes\", \"that works\", \"confirmed\").",
-  "Rule (b) exists because the owner routinely gives a date the way people speak — \"国庆节\", \"the first week of October\" — the assistant resolves it to calendar dates, and the owner says \"日期确认\". That is the owner settling the date, and it must reach the brief.",
+  "Given the owner's latest message, the assistant's reply, and the trip's currently known brief, decide whether the owner explicitly stated a NEW or CHANGED departure city/cities, destination candidate(s), exact travel start/end date, or trip length in days for this specific trip.",
   "Rules:",
-  "- Extract only what the owner settled under (a) or (b). Never infer, guess, or fill in from general knowledge.",
-  "- Under (b), take the value verbatim from `assistantReply`. Never take an assistant value the owner did not accept, and never take one that is absent from `assistantReply` — including anything you would have to carry over from an earlier turn you cannot see.",
-  "- An owner message that answers only part of what the assistant proposed accepts only that part. Do not treat a partial acceptance as accepting the rest.",
-  "- A question, a correction, or a counter-proposal from the owner is not an acceptance.",
+  "- Only extract information the owner explicitly stated in this turn. Never infer, guess, or fill in from general knowledge.",
   "- If a field's value already matches the currently known brief (no real change), omit that field.",
-  "- If nothing new or changed was settled, respond with a null proposal.",
+  "- If nothing new or changed was stated, respond with a null proposal.",
   "- Departure cities are 1-3 short place names; destination candidates are 1-5 short place names.",
-  "- Dates must be exact calendar dates in YYYY-MM-DD format. A vague phrase from the owner alone (\"next month\") is not enough; the same phrase resolved to concrete dates in `assistantReply` and then accepted by the owner under (b) is.",
-  "- If the settled information is a trip length (e.g. \"about 5 days\") without exact dates, use travelDays instead of the date fields.",
+  "- Dates must be exact calendar dates in YYYY-MM-DD format; omit a date field unless the owner gave a concrete, resolvable date (a vague relative phrase like \"next month\" is not enough).",
+  "- If the owner instead states a trip length (e.g. \"about 5 days\") without exact dates, use travelDays instead of the date fields.",
   "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
 ].join("\n");
 
@@ -152,14 +145,47 @@ function hashOutput(output: unknown): string {
 }
 
 function classifyError(err: unknown): string {
+  // The classified code is all that reaches the logs, and "UPSTREAM_5XX" says
+  // the provider refused without saying what it objected to — which for a
+  // tool-calling request is usually the request, not the provider. The class
+  // and status are provider diagnostics; the message is capped because an
+  // error body can quote the request back.
+  if (err && !(err instanceof ModelGatewayError)) {
+    try {
+      pinoInstance.warn({
+        component: "llm-gateway",
+        errorClass: (err as Error)?.name ?? typeof err,
+        httpStatus: (err as { status?: number })?.status
+          ?? (err as { response?: { status?: number } })?.response?.status,
+        errorMessage: String((err as Error)?.message ?? err).slice(0, 400),
+      }, "Model call failed");
+    } catch {
+      // Diagnostics must never replace the error being classified.
+    }
+  }
   if (!err) return "UNKNOWN";
   if (err instanceof ModelGatewayError) return err.code;
   if ((err as { name?: string }).name === "AbortError") return "TIMEOUT";
+  // Status first, because reading it out of the message text is guesswork that
+  // has already been wrong: a 429 quota error whose body says
+  // "limit: 25000" matched the 5xx pattern on the "500" inside that number, so
+  // an exhausted quota was reported as a provider outage and retried against a
+  // limit that would not lift.
+  const status = (err as { status?: number })?.status
+    ?? (err as { response?: { status?: number } })?.response?.status;
+  if (typeof status === "number") {
+    if (status === 429) return "RATE_LIMITED";
+    if (status >= 500) return "UPSTREAM_5XX";
+    if (status >= 400) return "UPSTREAM_FAILURE";
+  }
   const message = (err as Error).message ?? "";
   if (/timeout/i.test(message)) return "TIMEOUT";
   if (/parse|schema/i.test(message)) return "SCHEMA_PARSE";
   if (/network|fetch|ENOTFOUND|ECONNRESET/i.test(message)) return "NETWORK";
-  if (/5\d{2}/.test(message)) return "UPSTREAM_5XX";
+  if (/quota|rate limit|too many requests/i.test(message)) return "RATE_LIMITED";
+  // Anchored so it reads an HTTP status at the start of a message rather than
+  // any three digits anywhere in it.
+  if (/^\s*5\d{2}\b/.test(message)) return "UPSTREAM_5XX";
   return "UPSTREAM_FAILURE";
 }
 
@@ -171,6 +197,9 @@ function classifyError(err: unknown): string {
  * flipping the flag.
  */
 function isRetryableUpstreamError(code: string): boolean {
+  // RATE_LIMITED is deliberately absent: a quota that is spent does not refill
+  // inside a retry window, so retrying spends the caller's patience and the
+  // remaining budget to arrive at the same answer.
   return code === "UPSTREAM_5XX" || code === "UPSTREAM_FAILURE" || code === "NETWORK" || code === "TIMEOUT";
 }
 

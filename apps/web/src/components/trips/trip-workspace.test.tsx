@@ -196,39 +196,6 @@ describe("TripWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Bob/ })).not.toBeInTheDocument();
   });
 
-  it("writes the trip's auto title in the language the traveller is reading", async () => {
-    // The server can only localize the title it is told to localize. This
-    // call site once passed nothing and inherited the "en" default, which
-    // named a Chinese traveller's trip half in English.
-    vi.spyOn(navigationStub, "useSearchParams")
-      .mockReturnValue(new URLSearchParams(`thread=${DEFAULT_THREAD_ID}`));
-    const trip = buildTripResponse("DRAFT");
-    const api = createApi({
-      getTrip: vi.fn().mockResolvedValue({
-        ...trip,
-        trip: { ...trip.trip, pendingBriefProposal: { destinationCandidates: ["新加坡"], travelDays: 4 } },
-      }),
-      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
-      updateDraftTripBrief: vi.fn().mockResolvedValue({
-        trip: {
-          id: TRIP_ID, name: "新加坡行程规划｜4天", nameSource: "AUTO", status: "DRAFT",
-          departureCities: [], destinationCandidates: ["新加坡"],
-          travelDateStart: null, travelDateEnd: null, travelDays: 4,
-          updatedAt: "2026-09-03T10:00:00.000Z",
-        },
-      }),
-    });
-    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api, locale: "zh" });
-
-    fireEvent.click(await screen.findByRole("button", { name: "确认更新" }));
-
-    await waitFor(() => {
-      expect(api.updateDraftTripBrief).toHaveBeenCalledWith(TRIP_ID, expect.objectContaining({
-        titleLocale: "zh",
-      }));
-    });
-  });
-
   it("tells the traveller a thread is coming while the list loads, and stops once it arrives", async () => {
     // Unlike the exploration surface, the workspace is always on its way to a
     // thread, so "preparing" here is a true statement — and it must clear.

@@ -28,17 +28,8 @@ beforeAll(async () => {
   // Per docs/trip-scoped-private-threads-implementation.md §1.1 every
   // chat thread must belong to a Trip and the creator must be an active
   // member.  Provision a Trip for the alice test user once per suite.
-  // Provision alice rather than assume her: nothing seeds this user, so the
-  // suite was relying on trip-default-thread.test.ts having created her — a
-  // file that sorts *after* this one. On a database that already carried her
-  // from an earlier run it passed; on a fresh one, as in CI, it failed here
-  // before the first assertion.
-  const [inserted] = await db.insert(users)
-    .values({ externalId: "alice", displayName: "Alice" })
-    .onConflictDoNothing({ target: users.externalId })
-    .returning();
-  const alice = inserted
-    ?? (await db.select().from(users).where(eq(users.externalId, "alice")).limit(1))[0]!;
+  const [alice] = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
+  if (!alice) throw new Error("alice test user not provisioned");
   const provisioned = await provisionTripAndMember({ ownerUserId: alice.id });
   tripId = provisioned.tripId;
 });

@@ -283,13 +283,15 @@ export async function acceptPlanningTask(params: {
   const hotelProvider = params.hotelProvider === undefined
     ? resolvePersistedHotelProviderName()
     : params.hotelProvider;
-  const quoteAuthorization = hotelProvider === "nuitee_connect"
-    ? await loadActiveQuoteNationality({ tripId: params.tripId, memberId: params.userId })
-    : null;
-  if (hotelProvider === "nuitee_connect" && !quoteAuthorization) {
-    throw new ApiError(422, "Unprocessable Entity", "A confirmed Nuitee hotel quote nationality is required");
-  }
   const accept = async (tx: Tx) => {
+    // Inside the transaction, so a grant the caller made in this same
+    // transaction is visible. Activation does exactly that.
+    const quoteAuthorization = hotelProvider === "nuitee_connect"
+      ? await loadActiveQuoteNationality({ tripId: params.tripId, memberId: params.userId, tx })
+      : null;
+    if (hotelProvider === "nuitee_connect" && !quoteAuthorization) {
+      throw new ApiError(422, "Unprocessable Entity", "A confirmed Nuitee hotel quote nationality is required");
+    }
     const [active] = await tx.select({ id: agentTaskRuns.id }).from(agentTaskRuns).where(and(
       eq(agentTaskRuns.tripId, params.tripId),
       inArray(agentTaskRuns.status, ["QUEUED", "RUNNING", "CANCEL_REQUESTED"]),
@@ -380,13 +382,19 @@ export async function acceptResearchTask(params: {
   const hotelProvider = params.hotelProvider === undefined
     ? resolvePersistedHotelProviderName()
     : params.hotelProvider;
-  const quoteAuthorization = hotelProvider === "nuitee_connect"
-    ? await loadActiveQuoteNationality({ tripId: params.tripId, memberId: params.userId })
-    : null;
-  if (hotelProvider === "nuitee_connect" && !quoteAuthorization) {
-    throw new ApiError(422, "Unprocessable Entity", "A confirmed Nuitee hotel quote nationality is required");
-  }
   const accept = async (tx: Tx) => {
+    // Read inside the transaction, so a grant the caller made in this same
+    // transaction is visible. Trip activation grants the quote nationality and
+    // accepts the planning task together; reading through `db` looked outside
+    // that transaction, found nothing, and refused the task as unauthorized
+    // for a trip that had just been authorized — then rolled the grant back
+    // with it, so the next attempt failed identically.
+    const quoteAuthorization = hotelProvider === "nuitee_connect"
+      ? await loadActiveQuoteNationality({ tripId: params.tripId, memberId: params.userId, tx })
+      : null;
+    if (hotelProvider === "nuitee_connect" && !quoteAuthorization) {
+      throw new ApiError(422, "Unprocessable Entity", "A confirmed Nuitee hotel quote nationality is required");
+    }
     // Idempotency: the partial unique index `(tripId, requestId)` makes a
     // second insert a hard error. Catch the constraint violation and return
     // the existing envelope so the route stays a pure 202 responder.

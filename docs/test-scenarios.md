@@ -864,13 +864,11 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 3. Submit an invalid or reverse date range.
 4. As Bob, attempt `PATCH /trips/:tripId/title`; then rename as Alice and inspect audit data.
 5. Activate with `travelDateStart` and `travelDays` only (no `travelDateEnd`) — both English and Chinese locales.
-6. With the UI in Chinese, confirm a brief proposal card and then start shared planning **from the Trip workspace**, not from Explore.
 
 **Expected outcomes:**
 
 - The first title is `Tokyo · Bangkok Trip Planner｜7 Days`; the Chinese title uses `行程规划` and no day suffix when dates are incomplete.
 - The `travelDays`-only activation derives `travelDateEnd` from `travelDateStart + travelDays - 1` and the resulting title carries the day suffix (`｜3 Days` / `｜3天`).
-- Both surfaces that can write a title — Explore and the Trip workspace — send the reader's own locale, so a Chinese session never produces a half-English title such as `新加坡 Trip Planner｜4 Days`. The client prop defaults to `en`, so this is asserted per call site rather than assumed.
 - The title never reflects private chat text, profiles or inferred facts, and no LLM call is made.
 - Invalid calendar dates and reverse ranges are rejected; no title is fabricated from them.
 - Only the creator may manually rename. The change sets `name_source=MANUAL`; the audit event records the source but never title text.
@@ -1572,28 +1570,6 @@ depending on a provider-specific `finish_reason`.
 | Privacy | `tests/personal-research/privacy.test.ts` *(待补)* | Shared trip-member 不见 Personal evidence；navigation 不含票价；places 不写 `trip_places`；raw payload 不入库 |
 | Cancel | `tests/personal-research/cancel.test.ts` *(待补)* | QUEUED 取消无 provider 调用；double-cancel 幂等 |
 | Web 组件 | `apps/web/tests/personal-research/flight-input-card.test.tsx` *(待补)* | IATA 校验 / 日期校验 / saveAnswers 调用 |
-
-### TS-DRAFT-PERSONAL-RESEARCH-7 — DRAFT 不得主推供应商搜索
-
-**Starting conditions:** 一个 `DRAFT` Trip 的 owner 在自己的私有 thread 中对话；`PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED` 与 `MODEL_GATEWAY_TOOL_CALLING_ENABLED` 均为 `true`，`flight.search` 与 `hotel.search` 均在 capability allow-list 内。
-
-1. owner 只表达整段旅行意图（例如「我想要带我女朋友国庆节的时候去新加坡玩4天」），没有提出查找、比较、筛选或报价机票/住宿。本轮 system prompt **不得**包含 `HOTEL_SEARCH_READINESS` 或 `FLIGHT_SEARCH_READINESS`；不得产生 `conversation_flight_search_states` / `conversation_hotel_search_states` 行；不得写 `PERSONAL_RESEARCH_TOOL_DISPATCH` audit；回复走 brief 归纳路径而不是搜索确认按钮。
-2. `flight.search` 与 `hotel.search` 的 tool definition 仍然注册。owner 明确要求查询时（DRAFT Personal Research §1「不能以尚未完整规划为由阻断用户已经明确要求的查询」），模型可在同一轮自行发起调用；调用成功持久化 search state 后，**下一轮**起该 capability 的 readiness 契约恢复注入。
-3. owner 本轮显式确认（`确认搜索机票` / `确认搜索酒店` / 未点名的 `确认搜索`）时，对应 capability 的契约当轮即注入；点名的确认不得让另一 capability 的契约进入 prompt。
-4. Trip 状态为 `PLANNING` / `STALE` / `CONFIRMED` / `BOOKED` / `CANCELLED` 时，行为与本次改动前一致：只要对应 tool 已注册，契约照常注入。
-5. 任一 capability 的 tool 未注册（feature flag 关闭或 capability 未开放）时，其契约不得进入 prompt——该契约几乎全部是调用该 tool 的指令。
-
-**自动化：** `apps/api/tests/conversation-response-constraints.test.ts`；`apps/api/tests/conversation-safety.test.ts` 覆盖 Skill 侧默认不附加契约与按 worker 选择透传。
-
-### TS-DRAFT-PERSONAL-RESEARCH-8 — 助手提议、用户追认的行程事实必须进入简报
-
-**Starting conditions:** 同上；Trip 为 `DRAFT`，brief 仍缺出发日期。
-
-1. owner 用口语给出日期（「国庆节」「the first week of October」），助手在本轮回复中把它解析成具体日历日期，owner 在下一轮回复「日期确认」「确认」「没问题」之类的接受语。该日期**必须**作为 `tripBriefProposal` 产出，写入待确认的行程简报卡。
-2. 取值只能逐字取自本轮 `assistantReply`；owner 未接受的助手取值、以及本轮 `assistantReply` 中不存在的取值，一律不得提取。
-3. owner 只接受助手提议中的一部分时，只提取该部分；owner 的提问、纠正或反提议不算接受。
-4. owner 单方面的模糊表述（仅「下个月」，助手未解析或 owner 未接受）仍不得提取。
-5. 回归目标：日期不得只落在 `conversation_*_search_states` 而 `shared_trips.travel_date_start` 为空——那会让 `POST /trips/:tripId/activate` 无法创建 snapshot 与 `PROPOSE_PLAN` task，Trip 卡在无法规划的 `PLANNING`。
 
 ## 已实施：成员私有对话候选交接 Shared Agent
 

@@ -9,92 +9,65 @@
 --
 -- IF NOT EXISTS / DO $$ 保证幂等；失败重跑不会脏化状态。
 
--- 这里原本是「先 DROP ... CASCADE 再重建」。那个写法在首次执行时没问题，
--- 但重放时恰恰相反：类型此时已经存在，于是 CASCADE 会把所有依赖它的列一并
--- 删掉——包括**后续迁移**建的列。0041 的 research_route_selections.mode 就是
--- 这样消失的，而 0041 用的是 CREATE TABLE IF NOT EXISTS，表还在就整段跳过，
--- 列再也补不回来；同理 DROP TABLE trip_places CASCADE 会静默删掉该表指向
--- trip_places 的两个外键。
---
--- 这些 DROP 本来也是多余的：迁移执行器把每个文件包在事务里（migrate.ts 的
--- client.begin），部分失败会整体回滚，不存在需要清理的半成品状态。改成守卫
--- 式创建后，本文件才真正满足开头注释所声称的幂等。
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type
-    WHERE typname = 'trip_place_visibility'
-      AND typnamespace = current_schema()::regnamespace
-  ) THEN
-    CREATE TYPE trip_place_visibility AS ENUM (
-      'OWNER_PRIVATE',
-      'TEAM_VISIBLE',
-      'ORCHESTRATOR_CONFIDENTIAL'
-    );
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'trip_place_visibility') THEN
+    DROP TYPE IF EXISTS trip_place_visibility CASCADE;
   END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type
-    WHERE typname = 'trip_place_status'
-      AND typnamespace = current_schema()::regnamespace
-  ) THEN
-    CREATE TYPE trip_place_status AS ENUM (
-      'PROPOSED',
-      'ACTIVE',
-      'REVOKED'
-    );
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'trip_place_status') THEN
+    DROP TYPE IF EXISTS trip_place_status CASCADE;
   END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type
-    WHERE typname = 'trip_place_kind'
-      AND typnamespace = current_schema()::regnamespace
-  ) THEN
-    CREATE TYPE trip_place_kind AS ENUM (
-      'ATTRACTION',
-      'HOTEL',
-      'RESTAURANT',
-      'TRANSPORT_HUB',
-      'OTHER'
-    );
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'trip_place_kind') THEN
+    DROP TYPE IF EXISTS trip_place_kind CASCADE;
   END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type
-    WHERE typname = 'navigation_route_mode'
-      AND typnamespace = current_schema()::regnamespace
-  ) THEN
-    CREATE TYPE navigation_route_mode AS ENUM (
-      'WALK',
-      'DRIVE',
-      'CYCLE'
-    );
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'navigation_route_mode') THEN
+    DROP TYPE IF EXISTS navigation_route_mode CASCADE;
   END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type
-    WHERE typname = 'research_result_status'
-      AND typnamespace = current_schema()::regnamespace
-  ) THEN
-    CREATE TYPE research_result_status AS ENUM (
-      'COMPLETE',
-      'COMPLETED_WITH_GAPS'
-    );
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'research_result_status') THEN
+    DROP TYPE IF EXISTS research_result_status CASCADE;
   END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_type
-    WHERE typname = 'mobility_service_type'
-      AND typnamespace = current_schema()::regnamespace
-  ) THEN
-    CREATE TYPE mobility_service_type AS ENUM (
-      'TAXI',
-      'TRANSFER',
-      'CHARTER',
-      'RENTAL'
-    );
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'mobility_service_type') THEN
+    DROP TYPE IF EXISTS mobility_service_type CASCADE;
   END IF;
 END $$;
+
+CREATE TYPE trip_place_visibility AS ENUM (
+  'OWNER_PRIVATE',
+  'TEAM_VISIBLE',
+  'ORCHESTRATOR_CONFIDENTIAL'
+);
+
+CREATE TYPE trip_place_status AS ENUM (
+  'PROPOSED',
+  'ACTIVE',
+  'REVOKED'
+);
+
+CREATE TYPE trip_place_kind AS ENUM (
+  'ATTRACTION',
+  'HOTEL',
+  'RESTAURANT',
+  'TRANSPORT_HUB',
+  'OTHER'
+);
+
+CREATE TYPE navigation_route_mode AS ENUM (
+  'WALK',
+  'DRIVE',
+  'CYCLE'
+);
+
+CREATE TYPE research_result_status AS ENUM (
+  'COMPLETE',
+  'COMPLETED_WITH_GAPS'
+);
+
+CREATE TYPE mobility_service_type AS ENUM (
+  'TAXI',
+  'TRANSFER',
+  'CHARTER',
+  'RENTAL'
+);
 
 -- 扩展已有 enum（spec §4.3：task 可终止为 COMPLETED_WITH_GAPS；阶段 5 mobility 审计）
 ALTER TYPE plan_status ADD VALUE IF NOT EXISTS 'PROPOSED';
@@ -119,7 +92,9 @@ ALTER TYPE audit_action ADD VALUE IF NOT EXISTS 'RESEARCH_RESULT_RECORDED';
 -- POI 服务端权威引用。坐标仅存 longitude/latitude，不进 telemetry/audit/log；
 -- OWNER_PRIVATE place 永不进入 Shared snapshot（见 spec §4.1）。
 
-CREATE TABLE IF NOT EXISTS trip_places (
+DROP TABLE IF EXISTS trip_places CASCADE;
+
+CREATE TABLE trip_places (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   trip_id              UUID NOT NULL REFERENCES shared_trips(id) ON DELETE CASCADE,
   owner_user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -148,17 +123,17 @@ CREATE TABLE IF NOT EXISTS trip_places (
 
 -- 每条 trip 内每个 (display_name, kind, source) 同一时间最多一行 ACTIVE。
 -- REVOKED 行保留审计但不阻塞同名复用。
-CREATE UNIQUE INDEX IF NOT EXISTS trip_places_active_unique
+CREATE UNIQUE INDEX trip_places_active_unique
   ON trip_places (trip_id, display_name, kind, source)
   WHERE status = 'ACTIVE';
 
-CREATE INDEX IF NOT EXISTS trip_places_trip_status_idx
+CREATE INDEX trip_places_trip_status_idx
   ON trip_places (trip_id, status);
 
-CREATE INDEX IF NOT EXISTS trip_places_trip_visibility_idx
+CREATE INDEX trip_places_trip_visibility_idx
   ON trip_places (trip_id, visibility);
 
-CREATE INDEX IF NOT EXISTS trip_places_run_idx
+CREATE INDEX trip_places_run_idx
   ON trip_places (created_from_run_id)
   WHERE created_from_run_id IS NOT NULL;
 
@@ -166,7 +141,9 @@ CREATE INDEX IF NOT EXISTS trip_places_run_idx
 -- 服务端权威路线证据。geometry 是受保护的 Trip 数据，默认不进 LLM/日志/trace/audit。
 -- 仅以 snapshotId + bound 进入授权 Trip UI 的 DTO。
 
-CREATE TABLE IF NOT EXISTS navigation_route_evidence (
+DROP TABLE IF EXISTS navigation_route_evidence CASCADE;
+
+CREATE TABLE navigation_route_evidence (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   search_run_id        UUID NOT NULL REFERENCES provider_search_runs(id) ON DELETE CASCADE,
   snapshot_id          UUID NOT NULL REFERENCES constraint_snapshots(id) ON DELETE CASCADE,
@@ -186,20 +163,22 @@ CREATE TABLE IF NOT EXISTS navigation_route_evidence (
     CHECK (origin_place_id <> destination_place_id)
 );
 
-CREATE INDEX IF NOT EXISTS navigation_route_evidence_snapshot_idx
+CREATE INDEX navigation_route_evidence_snapshot_idx
   ON navigation_route_evidence (snapshot_id, trip_id);
 
-CREATE INDEX IF NOT EXISTS navigation_route_evidence_pair_idx
+CREATE INDEX navigation_route_evidence_pair_idx
   ON navigation_route_evidence (origin_place_id, destination_place_id, mode);
 
-CREATE INDEX IF NOT EXISTS navigation_route_evidence_refresh_idx
+CREATE INDEX navigation_route_evidence_refresh_idx
   ON navigation_route_evidence (refresh_after);
 
 -- ─── planning_research_results ──────────────────────────────────────────────
 -- 任务终止时的安全 RESEARCH_SUMMARY（spec §4.2）。它不是 itinerary_plan，
 -- 不携带 adoption/confirmation/booking authority。
 
-CREATE TABLE IF NOT EXISTS planning_research_results (
+DROP TABLE IF EXISTS planning_research_results CASCADE;
+
+CREATE TABLE planning_research_results (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   trip_id              UUID NOT NULL REFERENCES shared_trips(id) ON DELETE CASCADE,
   snapshot_id          UUID NOT NULL REFERENCES constraint_snapshots(id) ON DELETE CASCADE,
@@ -212,8 +191,8 @@ CREATE TABLE IF NOT EXISTS planning_research_results (
     UNIQUE (agent_task_run_id)
 );
 
-CREATE INDEX IF NOT EXISTS planning_research_results_trip_snapshot_idx
+CREATE INDEX planning_research_results_trip_snapshot_idx
   ON planning_research_results (trip_id, snapshot_id);
 
-CREATE INDEX IF NOT EXISTS planning_research_results_status_idx
+CREATE INDEX planning_research_results_status_idx
   ON planning_research_results (trip_id, status);
