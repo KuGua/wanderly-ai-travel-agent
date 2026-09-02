@@ -47,6 +47,17 @@ export const CONVERSATION_MEMORY_MAX_FACTS = 16;
  */
 export const CONVERSATION_FREE_TEXT_BUDGET_CHARS = 2_000;
 
+/**
+ * How many notes may ride along, whatever the budget allows.
+ *
+ * The character budget alone is not a count, and the Skill's input schema
+ * bounds the array it all arrives in. Twenty short notes fit inside 2,000
+ * characters easily, so without this the two limits disagreed and the whole
+ * turn failed its input validation — which the traveller saw as a reply that
+ * never came.
+ */
+export const CONVERSATION_MEMORY_MAX_NOTES = 20;
+
 export async function buildConversationMemoryContext(
   ownerUserId: string,
 ): Promise<ConversationMemoryFact[]> {
@@ -75,6 +86,7 @@ export async function buildConversationMemoryContext(
   const notes: ConversationMemoryFact[] = [];
   let spent = 0;
   for (const memory of await listFreeTextMemories(ownerUserId)) {
+    if (notes.length >= CONVERSATION_MEMORY_MAX_NOTES) break;
     if (spent + memory.content.length > CONVERSATION_FREE_TEXT_BUDGET_CHARS) continue;
     spent += memory.content.length;
     notes.push({ field: "note", value: memory.content, category: "PREFERENCE", source: "HIGHLIGHT" });

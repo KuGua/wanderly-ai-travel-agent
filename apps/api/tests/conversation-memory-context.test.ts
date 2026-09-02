@@ -6,8 +6,10 @@ import { auditEvents, preferenceFacts, userProfiles, users } from "../src/db/sch
 import { replaceFact } from "../src/services/preference-fact-service.js";
 import {
   CONVERSATION_MEMORY_MAX_FACTS,
+  CONVERSATION_MEMORY_MAX_NOTES,
   buildConversationMemoryContext,
 } from "../src/services/conversation-memory-context.js";
+import { travelConversationInputSchema } from "../src/skills/personal/travel-conversation-skill.js";
 
 const ctx = { correlationId: "00000000-0000-4000-8000-0000000000cc", actorUserId: undefined } as never;
 
