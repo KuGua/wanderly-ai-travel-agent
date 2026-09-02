@@ -510,9 +510,14 @@ export function TravelAgentChat({
   function confirmFlightSearch() {
     if (isSending) return;
     // The server's confirmation gate reads the literal phrase from the user
-    // message (see `conversation-task-handler.ts`'s `userConfirmed` regex) —
+    // message (see `conversation-task-handler.ts`'s `CONFIRMATION_PATTERN`) —
     // sending it here is what actually authorizes the metered provider call.
-    void sendTurn({ requestId: crypto.randomUUID(), question: "确认搜索" });
+    //
+    // It names flights. The bare "确认搜索" authorised whichever search the
+    // model then chose, and in a thread that had also discussed hotels the
+    // hotel readiness rule won: pressing this button ran a hotel search. A
+    // button means one search, so it says which.
+    void sendTurn({ requestId: crypto.randomUUID(), question: "确认搜索机票" });
   }
 
   function cancelFlightSearch() {
@@ -662,7 +667,14 @@ export function TravelAgentChat({
               </div>
             </section>
           ) : null}
-          {pendingFlightConfirmation ? (
+          {/* Only once the turn is over. The tool settles mid-reply, so the
+              card used to slide in under a half-written answer and then sit
+              there through the next turn's "thinking…" — pressing Search left
+              it on screen while the search it had just authorised ran.
+              `activeRunId` clears when the run completes, so this both waits
+              for the answer to finish and takes the card away the moment the
+              traveller acts on it. */}
+          {pendingFlightConfirmation && !isSending ? (
             <section aria-label={t("flightConfirmTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <p className="font-bold text-primary">{t("flightConfirmTitle")}</p>
               <div className="mt-3 flex gap-2">
@@ -692,7 +704,10 @@ export function TravelAgentChat({
               />
             </div>
           ) : null}
-          {activeRunId ? (
+          {/* A research run has stages; an ordinary chat turn has none, and
+              this was rendering "研究运行 #… / 等待阶段…" under every reply for
+              a run that was never going to report a stage. */}
+          {activeRunId && (researchStages.length > 0 || researchOutcome) ? (
             <div className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}>
               <ResearchRunCard
                 runId={activeRunId}

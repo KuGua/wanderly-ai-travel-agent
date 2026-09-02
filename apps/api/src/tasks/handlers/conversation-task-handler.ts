@@ -163,6 +163,38 @@ function conversationToolDispatchEnabled(capability: PersonalResearchOperationCa
 }
 
 /**
+ * A standalone confirmation at either end of a complete query — "…，CNY。确认
+ * 搜索" and "CNY 确认搜索" both count — but never an embedded fragment such as
+ * "如何确认搜索条件". A bare "确认" is included: the buttons send more, but a
+ * person answering the model's own "请确认" naturally types just that.
+ */
+export const CONFIRMATION_PATTERN = /(?:^|[\s，,。.!！？])(?:确认搜索(?:机票|酒店)?|确认|yes[\s,.]+(?:search|please|go)|go ahead|execute search|执行搜索|开始搜索|继续搜索|search now|do it|ok\s+search|please search)(?=$|[\s，,。.!！？])/i;
+
+/**
+ * The capability a confirmation names, or `null` when it names none.
+ *
+ * `null` keeps the behaviour a typed "确认搜索" has always had: the model
+ * chooses, because the traveller did not say. Only a confirmation that names
+ * a capability narrows to it — which is what the buttons now send, so a
+ * button cannot authorise a search other than its own.
+ */
+export function confirmedCapabilityFrom(question: string): "flight.search" | "hotel.search" | null {
+  if (/确认搜索机票|confirm flight search/i.test(question)) return "flight.search";
+  if (/确认搜索酒店|confirm hotel search/i.test(question)) return "hotel.search";
+  return null;
+}
+
+/** Whether a dispatcher may treat this turn as authorised for its own capability. */
+export function confirmedFor(
+  capability: "flight.search" | "hotel.search",
+  userConfirmed: boolean,
+  confirmedCapability: "flight.search" | "hotel.search" | null,
+): boolean {
+  if (!userConfirmed) return false;
+  return confirmedCapability === null || confirmedCapability === capability;
+}
+
+/**
  * Canonicalises an object so the hash is order-stable. Mirrors the helper
  * in `apps/api/src/agents/skill-registry.ts:20`. Duplicated locally so the
  * worker does not need to import the registry just for one helper.
@@ -498,9 +530,14 @@ export async function handleConversationTask(params: {
   // Read at check time, after the tools have run. A snapshot taken here
   // would always be false.
   toolContext.isEvidenceBacked = () => evidenceDispatched;
-  toolContext.userConfirmed = /(?:^|[\s，,。.!！？])(?:确认搜索|确认|yes[\s,.]+(?:search|please|go)|go ahead|execute search|执行搜索|开始搜索|继续搜索|search now|do it|ok\s+search|please search)(?=$|[\s，,。.!！？])/i.test(
-    input.question,
-  );
+  toolContext.userConfirmed = CONFIRMATION_PATTERN.test(input.question);
+  // Which search the traveller authorised, when they said. A confirm button
+  // means one specific search, and sending it as the bare phrase left the
+  // model to guess which: in a thread that had also discussed hotels, the
+  // hotel readiness rule won and pressing "search flights" ran a hotel
+  // search instead. Naming the capability makes the button's authority as
+  // narrow as the button is.
+  const confirmedCapability = confirmedCapabilityFrom(input.question);
   toolContext.hotelSearchState = hotelSearchState ? {
     ...hotelSearchState.draft,
     confirmed: hotelSearchState.confirmed,
@@ -543,14 +580,14 @@ export async function handleConversationTask(params: {
     ctx: params.ctx,
     signal: execution.signal,
     traceparent: params.ctx.traceparent,
-    userConfirmed: toolContext.userConfirmed,
+    userConfirmed: confirmedFor("hotel.search", toolContext.userConfirmed === true, confirmedCapability),
   }));
   registerToolDispatch("flight.search", FLIGHT_SEARCH_TOOL, buildFlightSearchDispatcher({
     run: params.run,
     ctx: params.ctx,
     signal: execution.signal,
     traceparent: params.ctx.traceparent,
-    userConfirmed: toolContext.userConfirmed,
+    userConfirmed: confirmedFor("flight.search", toolContext.userConfirmed === true, confirmedCapability),
   }));
   // Research capabilities (places / accommodation discovery / activities)
   // route through a separate, generic dispatcher — same loop, separate
@@ -570,7 +607,10 @@ export async function handleConversationTask(params: {
       // The same server-side detection the hotel route uses. Read here rather
       // than trusted from the model: a metered call must wait for a person,
       // and the model asking for permission is not the person giving it.
-      userConfirmed: toolContext.userConfirmed === true,
+      //
+      // A confirmation naming flights or a hotel is not permission to spend
+      // an activities-search quota, so a named capability withholds it here.
+      userConfirmed: toolContext.userConfirmed === true && confirmedCapability === null,
       ownerUserId: params.run.createdByUserId,
       tripId: params.run.tripId,
       threadId: params.run.threadId,

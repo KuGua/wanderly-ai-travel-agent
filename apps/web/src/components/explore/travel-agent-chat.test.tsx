@@ -163,16 +163,20 @@ describe("TravelAgentChat durable streaming flow", () => {
     fireEvent.click(confirmButton);
 
     await waitFor(() => {
-      expect(submitConversationTurn).toHaveBeenLastCalledWith(THREAD_ID, expect.objectContaining({ question: "确认搜索" }));
+      // Names flights. The bare "确认搜索" authorised whichever search the
+      // model then picked, and in a thread that had also discussed hotels it
+      // picked the hotel one — this button ran a hotel search.
+      expect(submitConversationTurn).toHaveBeenLastCalledWith(THREAD_ID, expect.objectContaining({ question: "确认搜索机票" }));
     });
   });
 
   it("still shows the confirm button when the SSE stream drops the tool.settled event, via the polled agent-run fallback", async () => {
     // A dropped/reconnected stream (routine over a LAN Wi-Fi hop) never
     // re-delivers a one-shot SSE event. `useAgentRun` polls regardless, so
-    // the button should still appear once that poll reports it.
+    // the button should still appear once that poll reports it — after the
+    // turn finishes, which is when the card is allowed to appear at all.
     const api = createApi({
-      getAgentRun: vi.fn().mockResolvedValue({ ...run("RUNNING"), pendingFlightConfirmation: true }),
+      getAgentRun: vi.fn().mockResolvedValue({ ...run("COMPLETED"), pendingFlightConfirmation: true }),
       subscribeAgentRun: vi.fn().mockImplementation(async (_runId: string, signal: AbortSignal, onEvent: (e: unknown) => void) => {
         onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
         await untilAborted(signal);
@@ -183,6 +187,43 @@ describe("TravelAgentChat durable streaming flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     await screen.findByRole("button", { name: "Search" });
+  });
+
+  it("waits for the reply to finish before offering to run the search", async () => {
+    // The tool settles mid-reply. The card used to slide in under a
+    // half-written answer, which reads as the assistant interrupting itself.
+    const api = createApi({
+      getAgentRun: vi.fn().mockResolvedValue({ ...run("RUNNING"), pendingFlightConfirmation: true }),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId: string, signal: AbortSignal, onEvent: (e: unknown) => void) => {
+        onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+        onEvent({ event: "tool.settled", runId: RUN_ID, generationAttempt: 1, capability: "flight.search", outcome: "NEEDS_CONFIRMATION" });
+        await untilAborted(signal);
+      }),
+    });
+    renderChat(api);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "SIN to NRT, one way, 2026-09-25, 1 adult" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(api.subscribeAgentRun).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Search" })).not.toBeInTheDocument();
+  });
+
+  it("does not render a research run card for an ordinary chat turn", async () => {
+    // A research run reports stages; a chat turn never does, and this was
+    // showing "研究运行 #… / 等待阶段…" under every reply for a run that had
+    // no stage to report.
+    const api = createApi({
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId: string, signal: AbortSignal, onEvent: (e: unknown) => void) => {
+        onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+        await untilAborted(signal);
+      }),
+    });
+    renderChat(api);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Where should I go?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(api.subscribeAgentRun).toHaveBeenCalled());
+    expect(screen.queryByTestId("research-run-card")).not.toBeInTheDocument();
   });
 
   it("settles the newest run of a tool, so a second call does not stop the first from spinning", async () => {
