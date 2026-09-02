@@ -681,6 +681,29 @@
  * Country pin on the workspace mini globe. Cities inside one country are
  * merged upstream, so each pin carries a country name rather than a city.
  */
+/* Sits at the midpoint of a dashed route leg, rotated to that leg's bearing.
+   Inert on purpose: the pins stay the only thing you can click on the preview. */
+.wanderly-route-plane {
+  display: grid;
+  place-items: center;
+  width: 19px;
+  height: 19px;
+  border: 2px solid var(--w-ink);
+  border-radius: 50%;
+  background: var(--w-white, #fff);
+  color: var(--w-ink);
+  pointer-events: none;
+}
+
+.wanderly-route-plane > span {
+  display: grid;
+  place-items: center;
+}
+
+.wanderly-route-plane svg {
+  display: block;
+}
+
 .wanderly-mini-pin {
   position: relative;
   width: 11px;

@@ -657,6 +657,11 @@
         "MEMBER": "Member"
       },
       "openPinAria": "View {name} on the full map",
+      "destinationsEdit": "Edit destinations",
+      "destinationsEditLabel": "Destinations, separated by commas",
+      "destinationsPlaceholder": "Tokyo, Kyoto",
+      "destinationsSaveError": "Could not save the destinations. Please retry.",
+      "routeLegAria": "Route from {from} to {to}",
       "mobility": {
         "title": "Mobility offers",
         "attribution": "Pricing via Amadeus Transfer",

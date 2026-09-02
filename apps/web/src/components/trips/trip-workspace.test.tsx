@@ -414,4 +414,66 @@ describe("TripWorkspace", () => {
     // Sanity: only one Default entry; the rail does not list other trip-mates' threads.
     expect(screen.getAllByRole("button", { name: /Default/ })).toHaveLength(1);
   });
+
+  it("keeps the overview to where the trip starts and ends", async () => {
+    // Members and Status were duplicating what the Members panel and the
+    // status pill above them already say; the overview is the route now.
+    const api = createApi({
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    const overview = (await screen.findByText("Trip overview")).closest("section")!;
+    expect(within(overview).getByText("Departure")).toBeInTheDocument();
+    expect(within(overview).getByText("Candidate destinations")).toBeInTheDocument();
+    expect(within(overview).queryByText("Status")).not.toBeInTheDocument();
+    expect(within(overview).queryByText("Members")).not.toBeInTheDocument();
+  });
+
+  it("lets the creator correct the destinations a draft picked up", async () => {
+    // They arrive from the model's reading of a sentence or from a pin on the
+    // globe, so the traveller needs to fix them without another chat turn.
+    const trip = buildTripResponse("DRAFT");
+    const updateDraftTripBrief = vi.fn().mockResolvedValue({
+      trip: {
+        id: TRIP_ID, name: "New York", nameSource: "AUTO", status: "DRAFT",
+        departureCities: ["Singapore"], destinationCandidates: ["New York"],
+        travelDateStart: null, travelDateEnd: null, travelDays: 15,
+        updatedAt: "2026-09-03T10:00:00.000Z",
+      },
+    });
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue({
+        ...trip,
+        trip: { ...trip.trip, departureCities: ["Singapore"], destinationCandidates: ["New York Fun"] },
+      }),
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+      updateDraftTripBrief,
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit destinations" }));
+    fireEvent.change(screen.getByRole("textbox", { name: /Destinations, separated by commas/ }), {
+      target: { value: "New York, Boston" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(updateDraftTripBrief).toHaveBeenCalledWith(TRIP_ID, {
+      destinationCandidates: ["New York", "Boston"],
+      replaceDestinationCandidates: true,
+      titleLocale: "en",
+    }));
+  });
+
+  it("offers no destination edit once the trip has left DRAFT", async () => {
+    // The draft-brief route refuses anything past DRAFT, so an affordance
+    // there would only ever produce a failed save.
+    const api = createApi({
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    expect(await screen.findByText("Trip overview")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit destinations" })).not.toBeInTheDocument();
+  });
 });

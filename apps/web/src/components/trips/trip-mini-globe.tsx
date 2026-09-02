@@ -11,6 +11,13 @@ import { solidifyGlobeStyle } from "@/components/explore/map-surface-style";
 
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 
+const ROUTE_SOURCE_ID = "wanderly-route";
+const ROUTE_LAYER_ID = "wanderly-route-line";
+/** Mirrors `--w-ink` in globals.css; MapLibre cannot read CSS variables. */
+const ROUTE_INK = "#1d1d1b";
+/** Points north so the marker's rotation is the leg's bearing, nothing else. */
+const PLANE_SVG = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="currentColor"><path d="M12 2.6c.6 0 1.05.5 1.05 1.15v5.4l7.2 4.2c.28.16.45.47.45.8v1.2c0 .4-.37.68-.75.57l-6.9-2v3.9l1.9 1.45c.19.14.3.37.3.61v.93c0 .34-.32.58-.64.49L12 20.5l-2.61.8c-.32.09-.64-.15-.64-.49v-.93c0-.24.11-.47.3-.61l1.9-1.45v-3.9l-6.9 2c-.38.11-.75-.17-.75-.57v-1.2c0-.33.17-.64.45-.8l7.2-4.2v-5.4c0-.64.45-1.15 1.05-1.15Z"/></svg>';
+
 /** One marker on the mini globe: a country plus the places rolled into it. */
 export type CountryPin = {
   key: string;
@@ -106,6 +113,57 @@ export function groupResolvedPlacesByCountry(
   return [...merged.values()];
 }
 
+/** One dashed hop between two consecutive pins, plus where to sit the plane. */
+export type RouteLeg = {
+  key: string;
+  from: [number, number];
+  to: [number, number];
+  midpoint: [number, number];
+  /** Clockwise from north, matching the direction the leg is drawn on screen. */
+  bearingDeg: number;
+  fromName: string;
+  toName: string;
+};
+
+/** Web Mercator y. The legs are drawn as straight lines in this space, so the
+ *  plane has to take its angle from it too or it points off the line. */
+function mercatorY(latitude: number): number {
+  const clamped = Math.max(-85.05, Math.min(85.05, latitude));
+  return Math.log(Math.tan(Math.PI / 4 + toRadians(clamped) / 2));
+}
+
+/**
+ * Chains the pins into legs in the order they were given — departure first,
+ * then each destination.
+ *
+ * The second endpoint is unwrapped to within 180° of the first so a
+ * Singapore → New York hop crosses the antimeridian instead of drawing itself
+ * backwards across the whole map.
+ */
+export function routeLegs(pins: CountryPin[]): RouteLeg[] {
+  const legs: RouteLeg[] = [];
+  for (let index = 0; index + 1 < pins.length; index += 1) {
+    const start = pins[index];
+    const end = pins[index + 1];
+    const from: [number, number] = [...start.coordinates];
+    let lon = end.coordinates[0];
+    while (lon - from[0] > 180) lon -= 360;
+    while (lon - from[0] < -180) lon += 360;
+    const to: [number, number] = [lon, end.coordinates[1]];
+    const midpoint: [number, number] = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2];
+    const dx = to[0] - from[0];
+    const dy = mercatorY(to[1]) - mercatorY(from[1]);
+    const bearingDeg = dx === 0 && dy === 0 ? 0 : (Math.atan2(dx, dy) * 180) / Math.PI;
+    legs.push({
+      key: `${start.key}->${end.key}`,
+      from, to, midpoint, bearingDeg,
+      fromName: start.name,
+      toName: end.name,
+    });
+  }
+  return legs;
+}
+
 /** Camera that frames every pin, falling back to a whole-globe view. */
 export function framingCamera(pins: CountryPin[]): { center: [number, number]; zoom: number } {
   if (pins.length === 0) return { center: [10, 20], zoom: 0.1 };
@@ -153,6 +211,7 @@ export function TripMiniGlobe({ places, fallbackLabel, tripId, threadId }: { pla
   const router = useRouter();
   const t = useTranslations("trips.workspace");
   const openPinLabel = t("openPinAria", { name: "{name}" });
+  const routeLegLabel = t("routeLegAria", { from: "{from}", to: "{to}" });
   const travelApi = useOptionalTravelApi();
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -225,6 +284,64 @@ export function TripMiniGlobe({ places, fallbackLabel, tripId, threadId }: { pla
         });
         mapRef.current = map;
 
+        // The route is decoration over the pins, so it is added once the style
+        // is live and never blocks them: a failure here leaves the pins alone.
+        const legs = routeLegs(pins);
+        if (legs.length > 0) {
+          const paintRoute = () => {
+            if (!active || !map || map.getSource(ROUTE_SOURCE_ID)) return;
+            try {
+              map.addSource(ROUTE_SOURCE_ID, {
+                type: "geojson",
+                data: {
+                  type: "FeatureCollection",
+                  features: legs.map((leg) => ({
+                    type: "Feature" as const,
+                    properties: {},
+                    geometry: { type: "LineString" as const, coordinates: [leg.from, leg.to] },
+                  })),
+                },
+              });
+              map.addLayer({
+                id: ROUTE_LAYER_ID,
+                type: "line",
+                source: ROUTE_SOURCE_ID,
+                layout: { "line-cap": "round", "line-join": "round" },
+                paint: {
+                  // MapLibre paints on a canvas and never resolves CSS custom
+                  // properties, so the ink colour is repeated as a literal.
+                  "line-color": ROUTE_INK,
+                  "line-width": 1.4,
+                  "line-opacity": 0.75,
+                  "line-dasharray": [2.5, 2.5],
+                },
+              });
+            } catch {
+              // A style that rejects the layer just means no route drawn.
+            }
+          };
+          if (map.isStyleLoaded()) paintRoute();
+          else map.once("load", paintRoute);
+
+          for (const leg of legs) {
+            const plane = document.createElement("span");
+            plane.className = "wanderly-route-plane";
+            plane.setAttribute("role", "img");
+            plane.setAttribute("aria-label", routeLegLabel
+              .replace("{from}", leg.fromName).replace("{to}", leg.toName));
+            // The rotation goes on an inner span, never on the marker element
+            // itself: MapLibre owns that element's `transform` for positioning
+            // and would overwrite anything set here.
+            const nose = document.createElement("span");
+            nose.style.transform = `rotate(${leg.bearingDeg}deg)`;
+            nose.innerHTML = PLANE_SVG;
+            plane.append(nose);
+            markers.push(new maplibregl.Marker({ element: plane, anchor: "center" })
+              .setLngLat(leg.midpoint)
+              .addTo(map));
+          }
+        }
+
         for (const pin of pins) {
           // The pin is the only interactive thing on this preview; the map
           // itself stays inert. Clicking opens the full globe framed on that
@@ -271,7 +388,7 @@ export function TripMiniGlobe({ places, fallbackLabel, tripId, threadId }: { pla
       }
       mapRef.current = null;
     };
-  }, [openPinLabel, pins, router, threadId, tripId]);
+  }, [openPinLabel, pins, routeLegLabel, router, threadId, tripId]);
 
   return (
     <div className="relative h-[150px] overflow-hidden bg-[var(--w-space)]">

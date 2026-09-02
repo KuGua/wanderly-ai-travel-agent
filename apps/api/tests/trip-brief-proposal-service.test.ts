@@ -79,4 +79,21 @@ describe("the §9 acceptance sentence", () => {
     expect(proposal?.destinationCandidates).toEqual(["Kyoto"]);
     expect(proposal?.departureCities).toBeUndefined();
   });
+
+  it("splits 从A去B when the duration is stated later in the sentence", () => {
+    // The reported turn: the departure field showed the whole route and the
+    // destination kept its 玩, because the departure pattern only stopped at
+    // 走 or punctuation and the destination only shed 玩 when a duration
+    // followed it immediately.
+    expect(proposeTripBriefFromTurn("我想从新加坡去纽约玩，帮我规划两人，15天的行程")).toEqual({
+      departureCities: ["新加坡"],
+      destinationCandidates: ["纽约"],
+      travelDays: 15,
+    });
+  });
+
+  it("keeps reading 从A到B and 从A飞B as a route", () => {
+    expect(proposeTripBriefFromTurn("从北京到成都")?.departureCities).toEqual(["北京"]);
+    expect(proposeTripBriefFromTurn("从广州飞曼谷")?.departureCities).toEqual(["广州"]);
+  });
 });

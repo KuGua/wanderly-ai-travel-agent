@@ -657,6 +657,11 @@
         "MEMBER": "成员"
       },
       "openPinAria": "在完整地图中查看 {name}",
+      "destinationsEdit": "编辑目的地",
+      "destinationsEditLabel": "目的地，用逗号分隔",
+      "destinationsPlaceholder": "东京，京都",
+      "destinationsSaveError": "目的地保存失败，请重试。",
+      "routeLegAria": "从 {from} 到 {to} 的航线",
       "mobility": {
         "title": "出行报价",
         "attribution": "由 Amadeus Transfer 提供报价",

@@ -98,7 +98,11 @@ function routeWithoutVerb(question: string): { from: string; to: string } | null
 
 function extractDestination(question: string): string | undefined {
   const english = question.match(/\b(?:go|going|travel|travelling|traveling|visit|visiting|head|heading)\s+to\s+([A-Za-z][A-Za-z .'-]{0,63}?)(?=\s+(?:for\s+)?[1-9]\d{0,2}\s+days?\b|[,.!?]|$)/iu);
-  const chinese = question.match(/(?:去|前往|想去|目的地(?:是|为)?)\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*(?:玩|待|住|旅行)?\s*[1-9]\d{0,2}\s*天|[，。！？]|$)/u);
+  // The activity verb terminates the destination whether or not a duration
+  // follows it. It used to appear only inside the duration branch, so "去纽约玩，
+  // 帮我规划15天" — where the 玩 is separated from its 天 by the rest of the
+  // sentence — ran past it to the comma and proposed 纽约玩 as the city.
+  const chinese = question.match(/(?:去|前往|想去|目的地(?:是|为)?)\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*(?:玩|待|住|旅行)?\s*[1-9]\d{0,2}\s*天|\s*(?:玩|待|住|旅行)|[，。！？]|$)/u);
   const value = (english?.[1] ?? chinese?.[1] ?? routeWithoutVerb(question)?.to)
     ?.trim().replace(/\s+/g, " ");
   return value && value.length <= 64 ? value : undefined;
@@ -114,7 +118,11 @@ function extractDeparture(question: string): string | undefined {
   // only has to cover "上海出发" — the 从 people leave out in speech.
   const chinese = question.match(/从\s*([\p{Script=Han}A-Za-z][^\s，。！？从]{0,63}?)\s*(?=出发|起飞)/u)
     ?? question.match(/(?:^|[，。！？\s])(?!从)([\p{Script=Han}A-Za-z][^\s，。！？从]{0,63}?)\s*(?=出发|起飞)/u)
-    ?? question.match(/从\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*走|[，。！？]|$)/u);
+    // A destination marker ends the departure city just as surely as 走 does.
+    // Without them "我想从新加坡去纽约玩，…" ran to the comma and proposed the
+    // whole route — 新加坡去纽约玩 — as the departure city, which then also put
+    // the destination into the departure field on the brief card.
+    ?? question.match(/从\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*(?:走|去|到|往|飞)|[，。！？]|$)/u);
   const value = (english?.[1] ?? chinese?.[1] ?? routeWithoutVerb(question)?.from)
     ?.trim().replace(/\s+/g, " ");
   if (!value || value.length > 64) return undefined;
