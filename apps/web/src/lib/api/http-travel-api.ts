@@ -12,7 +12,9 @@ import {
   explorationStartResponseSchema,
   ownerConversationResponseSchema,
   memoryFactSchema,
+  memoryNotesResponseSchema,
   profileMemoryResponseSchema,
+  rememberHighlightResponseSchema,
   researchResultSchema,
   researchCommandRequestSchema,
   researchCommandAcceptedResponseSchema,
@@ -129,6 +131,21 @@ export class HttpTravelApi implements TravelApi {
       method: "PUT",
       body: JSON.stringify(body),
     });
+  }
+
+  rememberHighlight(input: { highlight: string; sourceThreadId?: string | null; sourceMessageId?: string | null }) {
+    return this.client.request("/profiles/me/memory/highlights", rememberHighlightResponseSchema, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  getMemoryNotes() {
+    return this.client.request("/profiles/me/memory/notes", memoryNotesResponseSchema);
+  }
+
+  async deleteMemoryNote(noteId: string) {
+    await this.client.request(`/profiles/me/memory/notes/${noteId}`, z.unknown(), { method: "DELETE" });
   }
 
   getProfileMemory() {

@@ -309,7 +309,14 @@
           "UNAVAILABLE": "无结果",
           "NEEDS_CONFIRMATION": "待确认"
         }
-      }
+      },
+      "rememberHighlight": "记住这点",
+      "rememberSaving": "保存中…",
+      "rememberedField": "已记住，之后的建议会考虑这一点。",
+      "rememberedNote": "已按你的原话记住，还可以再存 {remaining} 条。",
+      "rememberTooLong": "这段有 {length} 个字符。最多可记住 {limit} 个字符，换一段短一点的试试。",
+      "rememberListFull": "自由记忆已存满 {limit} 条，删掉一条再来。",
+      "rememberFailed": "这次没能保存。"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",

@@ -309,7 +309,14 @@
           "UNAVAILABLE": "Nothing found",
           "NEEDS_CONFIRMATION": "Needs your OK"
         }
-      }
+      },
+      "rememberHighlight": "Remember this",
+      "rememberSaving": "Saving…",
+      "rememberedField": "Remembered — it will shape what I suggest.",
+      "rememberedNote": "Remembered in your words. {remaining} slots left.",
+      "rememberTooLong": "That is {length} characters. Highlights up to {limit} can be remembered — try a shorter selection.",
+      "rememberListFull": "You have {limit} saved notes. Remove one to make room.",
+      "rememberFailed": "Could not save that just now."
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",

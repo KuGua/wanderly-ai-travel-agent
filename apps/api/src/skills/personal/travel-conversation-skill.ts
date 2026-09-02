@@ -58,7 +58,7 @@ const memoryContextFactSchema = z.object({
   field: z.string().min(1).max(64),
   value: z.unknown(),
   category: z.enum(["PREFERENCE", "CONSTRAINT"]),
-  source: z.enum(["PROFILE_FORM", "PROPOSAL_CONFIRMATION"]),
+  source: z.enum(["PROFILE_FORM", "PROPOSAL_CONFIRMATION", "HIGHLIGHT"]),
 }).strict();
 
 /**
@@ -84,7 +84,12 @@ export const travelConversationInputSchema = z.object({
   question: z.string().trim().min(1).max(4000),
   place: conversationPlaceSchema.optional(),
   intent: conversationIntentSchema.optional(),
-  memoryContext: z.array(memoryContextFactSchema).max(16).default([]),
+  // Typed catalogue facts plus the traveller's own highlighted notes, which
+  // share one array. Sized as the sum of both caps in
+  // `conversation-memory-context.ts`: when this was 16 — the typed cap alone —
+  // adding notes pushed a real profile past it and every turn failed input
+  // validation, which reads as a reply that never comes.
+  memoryContext: z.array(memoryContextFactSchema).max(36).default([]),
   researchEvidence: z.array(researchEvidenceOfferSchema).max(12).default([]),
   // Server-derived minimal Trip context, attached by the worker after
   // membership re-verification.  Optional so existing tests / non-trip

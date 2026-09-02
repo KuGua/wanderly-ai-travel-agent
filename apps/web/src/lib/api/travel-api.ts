@@ -86,6 +86,13 @@ import type {
 export interface TravelApi {
   getMyProfile(): Promise<ProfileResponse>;
   updateMyProfile(input: UpdateProfileInput): Promise<UpdateProfileResponse>;
+  rememberHighlight(input: {
+    highlight: string;
+    sourceThreadId?: string | null;
+    sourceMessageId?: string | null;
+  }): Promise<import("./contracts").RememberHighlightResponse>;
+  getMemoryNotes(): Promise<import("./contracts").MemoryNotesResponse>;
+  deleteMemoryNote(noteId: string): Promise<void>;
   getProfileMemory(): Promise<ProfileMemoryResponse>;
   updateMemoryFact(factId: string, input: UpdateMemoryFactInput): Promise<MemoryFact>;
   deleteMemoryFact(factId: string): Promise<void>;

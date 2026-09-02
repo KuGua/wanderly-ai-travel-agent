@@ -978,6 +978,26 @@ export const profileMemoryResponseSchema = z.object({
 
 export const updateMemoryFactInputSchema = z.object({ value: z.unknown() }).strict();
 
+/**
+ * What happened to a highlight. Every branch is an answer the traveller sees,
+ * including the refusals — a highlight past the limit is told so, not cut.
+ */
+export const rememberHighlightResponseSchema = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("REMEMBERED_FIELD"), fieldKey: z.string(), value: z.unknown(), highlightMaxChars: z.number() }),
+  z.object({ outcome: z.literal("REMEMBERED_NOTE"), memoryId: z.string(), remaining: z.number(), highlightMaxChars: z.number() }),
+  z.object({ outcome: z.literal("TOO_LONG"), length: z.number(), limit: z.number(), highlightMaxChars: z.number() }),
+  z.object({ outcome: z.literal("LIST_FULL"), limit: z.number(), highlightMaxChars: z.number() }),
+  z.object({ outcome: z.literal("EMPTY"), highlightMaxChars: z.number() }),
+]);
+
+export const memoryNotesResponseSchema = z.object({
+  notes: z.array(z.object({
+    id: z.string(),
+    content: z.string(),
+    createdAt: z.string(),
+  })),
+});
+
 export const resolveProposalResponseSchema = z.object({
   status: z.enum(["PENDING", "CONFIRMED", "DISMISSED", "EXPIRED"]),
   factId: z.string().uuid().nullable().optional(),
@@ -987,6 +1007,8 @@ export type MemoryFact = z.infer<typeof memoryFactSchema>;
 export type MemorySuggestion = z.infer<typeof memorySuggestionSchema>;
 export type ProfileMemoryResponse = z.infer<typeof profileMemoryResponseSchema>;
 export type UpdateMemoryFactInput = z.infer<typeof updateMemoryFactInputSchema>;
+export type RememberHighlightResponse = z.infer<typeof rememberHighlightResponseSchema>;
+export type MemoryNotesResponse = z.infer<typeof memoryNotesResponseSchema>;
 export type ResolveProposalResponse = z.infer<typeof resolveProposalResponseSchema>;
 
 // ─── Trip-scoped memory ──────────────────────────────────────────────────────

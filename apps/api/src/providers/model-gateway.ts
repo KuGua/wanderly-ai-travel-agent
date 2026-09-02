@@ -34,7 +34,7 @@ export interface ConversationMemoryFact {
   field: string;
   value: unknown;
   category: "PREFERENCE" | "CONSTRAINT";
-  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION";
+  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION" | "HIGHLIGHT";
 }
 
 export interface ThreadContextMessage {
@@ -235,6 +235,20 @@ export interface ModelGateway {
    * short of a positive extraction (including any provider failure) — this
    * must never fail or delay the conversation turn it accompanies.
    */
+  /**
+   * Turns a sentence the traveller highlighted into one catalogue field, or
+   * `null` when it says nothing the catalogue can hold. Returning `null` is a
+   * normal answer, not a failure: "京都真美" is worth keeping and is not a
+   * preference about anything the schema models.
+   */
+  extractHighlightMemory?(params: {
+    highlight: string;
+    /** Field keys and their allowed shapes, so the model cannot invent one. */
+    catalogue: Array<{ fieldKey: string; description: string }>;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<{ fieldKey: string; value: unknown } | null>;
+
   extractTripBriefProposal?(params: {
     question: string;
     replyContent: string;

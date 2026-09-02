@@ -22,6 +22,13 @@ import {
   listSurfaceableProposals,
 } from "../services/memory-proposal-service.js";
 import { memoryFieldDefinition } from "../memory/memory-field-catalog.js";
+import { userProfiles } from "../db/schema.js";
+import { rememberHighlight } from "../services/memory-highlight-service.js";
+import {
+  FREE_TEXT_MEMORY_MAX_CHARS,
+  deleteFreeTextMemory,
+  listFreeTextMemories,
+} from "../services/free-text-memory-service.js";
 
 /**
  * Personal long-term memory API (docs/long-term-memory-implementation.md §5.3).
@@ -230,4 +237,62 @@ export async function profileMemoryRoutes(app: FastifyInstance) {
       return { status: result.proposal.status };
     },
   );
+
+  // ─── POST /profiles/me/memory/highlights ─────────────────────────────────
+  // A sentence the traveller highlighted. Kept as a catalogue field when it
+  // says something the schema models, and as their own words when it does
+  // not — see `memory-highlight-service.ts` for why both exist.
+  app.post("/profiles/me/memory/highlights", async (request, reply) => {
+    const ctx = createRequestContext(
+      request.user.id, request.correlationId, request.traceId,
+      request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
+    );
+    const body = z.object({
+      // Bounded here as well as in the service: the body cap keeps a
+      // megabyte of pasted text from reaching a model call at all.
+      highlight: z.string().trim().min(1).max(4000),
+      sourceThreadId: z.string().uuid().nullable().optional(),
+      sourceMessageId: z.string().uuid().nullable().optional(),
+    }).strict().parse(request.body);
+
+    const [profile] = await db.select({ id: userProfiles.id }).from(userProfiles)
+      .where(eq(userProfiles.userId, request.user.id)).limit(1);
+    if (!profile) throw new ApiError(404, "Not Found", "Profile not found");
+
+    const result = await rememberHighlight({
+      ctx,
+      userId: request.user.id,
+      profileId: profile.id,
+      highlight: body.highlight,
+      sourceThreadId: body.sourceThreadId ?? null,
+      sourceMessageId: body.sourceMessageId ?? null,
+    });
+    // A refusal is a normal answer the UI shows the traveller, not an error.
+    return reply.code(result.outcome === "REMEMBERED_FIELD" || result.outcome === "REMEMBERED_NOTE" ? 201 : 200)
+      .send({ ...result, highlightMaxChars: FREE_TEXT_MEMORY_MAX_CHARS });
+  });
+
+  // ─── GET /profiles/me/memory/notes ───────────────────────────────────────
+  app.get("/profiles/me/memory/notes", async (request) => {
+    const notes = await listFreeTextMemories(request.user.id);
+    return {
+      notes: notes.map((note) => ({
+        id: note.id,
+        content: note.content,
+        createdAt: note.createdAt.toISOString(),
+      })),
+    };
+  });
+
+  // ─── DELETE /profiles/me/memory/notes/:noteId ────────────────────────────
+  app.delete<{ Params: { noteId: string } }>("/profiles/me/memory/notes/:noteId", async (request, reply) => {
+    const ctx = createRequestContext(
+      request.user.id, request.correlationId, request.traceId,
+      request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
+    );
+    const { noteId } = z.object({ noteId: z.string().uuid() }).parse(request.params);
+    const deleted = await deleteFreeTextMemory({ ctx, userId: request.user.id, memoryId: noteId });
+    if (!deleted) throw new ApiError(404, "Not Found", "Note not found");
+    return reply.code(204).send();
+  });
 }
