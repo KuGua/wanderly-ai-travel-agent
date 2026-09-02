@@ -121,6 +121,21 @@ DRAFT | PLANNING | CONFIRMED | BOOKED | CANCELLED | STALE
 3. 使用独立、稳定的 conversation `requestId` 调用既有 turn endpoint，并复用既有 Worker/SSE 流程。
 4. start 成功但 turn 失败时保留 Trip/thread；后续重试不得重新 start。start 超时用同一 `startRequestId` 重试。
 
+### 4.2.1 线程状态与提示语
+
+Explore 的线程是懒创建的，因此「还没有线程」是常态而非等待。Session 的四个状态与聊天界面的 `ChatThreadStatus` 一一对应，不得合并：
+
+| Session (`ExplorationSessionStatus`) | `ChatThreadStatus` | 界面 |
+|---|---|---|
+| `idle`（尚未发送首条消息） | `idle` | 不渲染任何横幅；输入框可用，其 placeholder 已在邀请输入 |
+| `starting`（start 请求进行中） | `preparing` | “正在准备你的私人对话…” |
+| `ready` + 有 `threadId` | `ready` | 不渲染横幅 |
+| `error` | `error` | “私人对话暂不可用。” + 重试（复用同一 `startRequestId`） |
+
+`idle` 与 `preparing` 曾被合并，导致探索页在用户发出第一条消息之前一直显示「正在准备」——描述了一件没有任何人开始的工作。判断标准是横幅必须描述真实进行中的动作。
+
+Trip workspace 是另一回事：它要么已有线程，要么正在拉取线程列表或自动创建默认线程，因此不存在 `idle`，全部等待期都如实报告为 `preparing`。该页显式传入 `threadStatus`，不依赖 `TravelAgentChat` 的默认值——组件本身无法区分「还没有线程」和「线程正在路上」，只有发起方知道。
+
 ### 4.3 激活正式规划
 
 新增 `POST /api/v1/trips/:tripId/activate`，仅 creator 可调用，提交 name、出发地、2–5 候选地及可选日期。事务内校验 Draft、写完整 brief、状态变为 `PLANNING` 并记录 `TRIP_ACTIVATE`。Draft 上 invitation、consent、planning/replan、confirmation、booking 返回 `409` + `TRIP_NOT_ACTIVE`，无副作用。

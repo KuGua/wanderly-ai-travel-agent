@@ -5,7 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { TravelAgentChat } from "@/components/explore/travel-agent-chat";
+import { TravelAgentChat, type ChatThreadStatus } from "@/components/explore/travel-agent-chat";
 import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
 import { ResearchGapBanner } from "@/components/trips/research-gap-banner";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
@@ -64,6 +64,23 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     if (!queryThreadId) return null;
     return threads.find((thread) => thread.id === queryThreadId) ?? null;
   }, [queryThreadId, threads]);
+
+  /**
+   * Unlike the exploration surface, the workspace never rests without a
+   * thread: it either has one, is fetching the list, or is auto-provisioning
+   * the default below. So every non-ready, non-failed state here really is
+   * work in flight and is reported as `preparing`.
+   *
+   * Passed explicitly rather than left to the chat's own default, which
+   * cannot tell "no thread yet" from "thread on its way".
+   */
+  const chatThreadStatus = useMemo<ChatThreadStatus>(() => {
+    if (activeThread) return "ready";
+    // The rail already renders this failure in full; the chat panel only
+    // needs to stop claiming a thread is coming.
+    if (threadsQuery.isError) return "error";
+    return "preparing";
+  }, [activeThread, threadsQuery.isError]);
 
   const liveThreads = useMemo(() => threads.filter((thread) => !thread.archivedAt), [threads]);
   const archivedThreads = useMemo(() => threads.filter((thread) => thread.archivedAt), [threads]);
@@ -313,6 +330,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           variant="docked"
           surface="TRIP_WORKSPACE"
           threadId={activeThread?.id ?? null}
+          threadStatus={chatThreadStatus}
           tripId={tripId}
           onThreadInvalidated={() => threadsQuery.refetch()}
         />

@@ -196,6 +196,28 @@ describe("TripWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Bob/ })).not.toBeInTheDocument();
   });
 
+  it("tells the traveller a thread is coming while the list loads, and stops once it arrives", async () => {
+    // Unlike the exploration surface, the workspace is always on its way to a
+    // thread, so "preparing" here is a true statement — and it must clear.
+    vi.spyOn(navigationStub, "useSearchParams")
+      .mockReturnValue(new URLSearchParams(`thread=${DEFAULT_THREAD_ID}`));
+    let release: (value: { threads: ReturnType<typeof buildThread>[] }) => void = () => {};
+    const api = createApi({
+      getTripThreads: vi.fn().mockReturnValue(new Promise((resolve) => {
+        release = resolve;
+      })),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    expect(await screen.findByText("Preparing your private chat…")).toBeInTheDocument();
+
+    release({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Preparing your private chat…")).not.toBeInTheDocument();
+    });
+  });
+
   it("hands the active private thread to the full-map route", async () => {
     vi.spyOn(navigationStub, "useSearchParams")
       .mockReturnValue(new URLSearchParams(`thread=${DEFAULT_THREAD_ID}`));

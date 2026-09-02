@@ -54,7 +54,11 @@ export function ExploreChatHost({
     }
     if (session.status === "error") return "error";
     if (session.status === "ready" && session.threadId) return "ready";
-    return "preparing";
+    // Only `starting` is real work. A session that has never been started is
+    // idle: the exploration thread is provisioned by the first Send, so
+    // reporting "preparing" before then promises work nobody has begun.
+    if (session.status === "starting") return "preparing";
+    return "idle";
   }, [handoffThreadIsOwned, handoffThreads.isPending, session, tripConversationHandoff]);
 
   const ensureThread = useCallback(async () => {

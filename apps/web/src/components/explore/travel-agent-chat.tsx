@@ -65,7 +65,16 @@ const EMPTY_FLIGHT_PREFERENCE_DRAFT: FlightPreferenceDraft = {
   currency: null,
 };
 
-export type ChatThreadStatus = "preparing" | "ready" | "error";
+/**
+ * What the private thread behind this chat is doing.
+ *
+ * `idle` and `preparing` are deliberately separate. The exploration surface
+ * provisions its thread lazily — nothing is created until the first Send — so
+ * "no thread yet" is the resting state, not work in progress. Folding the two
+ * together made the composer sit under a permanent "Preparing your private
+ * chat…" banner that described work nobody had started.
+ */
+export type ChatThreadStatus = "idle" | "preparing" | "ready" | "error";
 
 type TravelAgentChatProps = {
   open?: boolean;
@@ -152,7 +161,10 @@ export function TravelAgentChat({
   const t = useTranslations("explore.chat");
   const docked = variant === "docked";
   const effectiveThreadId = controlledThreadId;
-  const resolvedThreadStatus = threadStatus ?? (effectiveThreadId ? "ready" : "preparing");
+  // Absent an explicit status, a missing thread means "none yet", not "one is
+  // being built": only the owner of the provisioning request knows which, and
+  // it tells us through `threadStatus`.
+  const resolvedThreadStatus = threadStatus ?? (effectiveThreadId ? "ready" : "idle");
   // Quick orchestration — read the server-managed pinned session for the
   // current trip. Renders above the messages (only when not actively
   // handling a research intent draft). The card is read-only in MVP.
@@ -863,9 +875,7 @@ export function TravelAgentChat({
     return (
       <>
         <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-20 right-4 z-40 bg-card px-3 py-1.5 text-[11px] font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
-        {resolvedThreadStatus !== "ready" ? (
-          <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
-        ) : null}
+        <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
         <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 bg-card p-1.5 pl-4 text-[var(--w-ink)] wanderly-edge wanderly-r-lg wanderly-shadow sm:left-[94px] sm:right-3 sm:w-auto sm:translate-x-0 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)]" aria-label={t("startAria")}>
           <Sparkles aria-hidden="true" className="size-4 shrink-0 text-primary" />
           <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--w-ink)] placeholder:text-[var(--w-muted)] focus:outline-none disabled:opacity-60" />
@@ -903,7 +913,7 @@ export function TravelAgentChat({
         <div ref={panelScrollRef} className={docked
           ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-4 pt-6"
           : "flex-1 overflow-y-auto bg-sidebar px-5 py-5"} aria-live="polite">
-          {resolvedThreadStatus !== "ready" ? <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} /> : null}
+          <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
             <div className={rowClass}>
@@ -1192,8 +1202,16 @@ function FlightPreferenceOptions({
   );
 }
 
+/**
+ * The thread banner, and the only place that decides whether there is
+ * anything worth saying. `ready` needs no banner, and neither does `idle`:
+ * the composer's own placeholder already invites the first message, so a
+ * standing notice there would just occupy the corner of the map saying
+ * nothing.
+ */
 function ThreadStatus({ status, onRetry, compact = false }: { status: ChatThreadStatus; onRetry?: () => void; compact?: boolean }) {
   const t = useTranslations("explore.chat");
+  if (status === "ready" || status === "idle") return null;
   const message = status === "preparing" ? t("preparingPrivateChat") : t("privateChatUnavailable");
   return (
     <div role="status" data-wanderly-avoid={compact ? "" : undefined} className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 bg-card px-3 py-1.5 text-[11px] font-semibold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs sm:left-[94px] landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "bg-card p-3 text-sm text-muted-foreground wanderly-edge-thin wanderly-r-sm wanderly-shadow-xs"}>

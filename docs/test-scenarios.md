@@ -827,6 +827,29 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Resizing changes only local layout. It neither writes browser-persisted business state nor changes the Trip, snapshot, preference, task or plan. The desktop bounds preserve a minimum usable width for all three panes.
 - Mobile/tablet keeps the existing explicit inspector open/close behavior.
 
+### TS-EXPLORE-TRIP-1b — Report the private thread's real state, and only that
+
+**Stories:** H1a, H1
+**Objective:** Verify the chat's thread banner describes what is actually happening. Because Explore provisions its thread lazily, "no thread yet" is a resting state and must not be reported as work in progress; the Trip workspace, which is always on its way to a thread, must still report the wait.
+
+**Starting conditions:** Alice is authenticated. The exploration start endpoint and the Trip threads endpoint can each be held in flight and failed on demand.
+
+**Steps:**
+
+1. Open `/home` and, without sending anything, browse the map, open and close the chat panel, and inspect both the collapsed composer and the expanded conversation panel.
+2. Submit the first message while holding the start response, then release it successfully.
+3. Repeat step 2 but fail the start response.
+4. Open a Trip workspace at `/trips/:tripId?thread=:threadId` while holding the threads response, then release it.
+5. Fail the threads response for the same workspace.
+
+**Expected outcomes:**
+
+- Before the first submitted message, no thread banner is rendered on either the collapsed or the expanded Explore surface, and the composer stays enabled. The absence is the point: nothing is being prepared, so nothing may claim to be.
+- While the start request is in flight, "Preparing your private chat…" is shown; it disappears when the thread becomes available.
+- A failed start shows "Private chat is unavailable." with a working Retry, and Retry reuses the original start request ID.
+- In the Trip workspace the preparing banner is shown for the whole wait — list fetch and default-thread auto-provisioning alike — and clears once a thread is active. This surface never renders the idle state, because it never rests without a thread.
+- A failed threads fetch stops the workspace claiming a thread is coming; the thread rail remains the place the failure is reported in full, and the banner is not duplicated as a second error.
+
 ### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields only
 
 **Stories:** H1, H2

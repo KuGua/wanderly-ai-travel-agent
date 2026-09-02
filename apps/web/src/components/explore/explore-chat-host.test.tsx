@@ -78,7 +78,7 @@ function makeApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("ExploreChatHost exploration provisioning", () => {
-  it("renders the chat in preparing state on first paint without calling any provisioning endpoint", () => {
+  it("renders the chat idle on first paint, claiming no work, and calls no provisioning endpoint", () => {
     const api = makeApi();
     renderWithIntl(<ExploreChatHost />, { api });
 
@@ -86,10 +86,42 @@ describe("ExploreChatHost exploration provisioning", () => {
     // The input is enabled on first paint: the host has a provisioner,
     // so the user's first Send triggers `POST /explorations/start`.
     expect(screen.getByRole("textbox", { name: "Ask Wanderly" })).not.toBeDisabled();
-    expect(screen.getByText("Preparing your private chat…")).toBeInTheDocument();
+    // Nothing is being prepared until that first Send, so the banner that
+    // says otherwise must not be on screen — it used to sit here forever.
+    expect(screen.queryByText("Preparing your private chat…")).not.toBeInTheDocument();
     expect(api.startExploration).not.toHaveBeenCalled();
     expect(api.getTrips).not.toHaveBeenCalled();
     expect(api.getOrCreateDefaultTripThread).not.toHaveBeenCalled();
+  });
+
+  it("shows the preparing banner only while the first send's start request is in flight", async () => {
+    let release: (value: ExplorationStartResponse) => void = () => {};
+    const pending = new Promise<ExplorationStartResponse>((resolve) => {
+      release = resolve;
+    });
+    const api = makeApi({ startExploration: vi.fn().mockReturnValue(pending) });
+    renderWithIntl(<ExploreChatHost />, { api });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Ask Wanderly" }), {
+      target: { value: "Tell me about Tokyo" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+      await Promise.resolve();
+    });
+
+    // A thread really is being provisioned now, so the banner is honest.
+    expect(await screen.findByText("Preparing your private chat…")).toBeInTheDocument();
+
+    await act(async () => {
+      release(DRAFT_RESPONSE);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Preparing your private chat…")).not.toBeInTheDocument();
+    });
   });
 
   it("accepts a DRAFT start response, then submits the first turn without fetching trips", async () => {
