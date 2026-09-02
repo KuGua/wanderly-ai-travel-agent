@@ -22,7 +22,7 @@
  *     tsx scripts/sync-migrations-ledger.ts
  */
 import postgres from "postgres";
-import { readdir, readFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
