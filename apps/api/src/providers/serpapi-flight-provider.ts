@@ -52,7 +52,15 @@ export class SerpApiFlightProvider implements FlightProvider {
     try {
       const tripType = params.tripType ?? "ROUND_TRIP";
       if (tripType === "ROUND_TRIP" && !params.dateEnd) return this.unavailable("SEARCH_CONSTRAINTS_INCOMPLETE", start);
-      const response = await this.request(params, tripType);
+      // Resolved once and reused below: the itinerary-route check has to
+      // compare against what was actually asked of the supplier, not the
+      // original metro code — Google Flights' own response for `NRT` legs
+      // never carries `TYO`, so comparing against the unresolved code threw
+      // "route does not match" on every real offer and turned a working
+      // search back into a false NO_RESULTS.
+      const resolvedOrigin = resolveGoogleFlightsLocationId(params.origin);
+      const resolvedDestination = resolveGoogleFlightsLocationId(params.destination);
+      const response = await this.request(params, tripType, resolvedOrigin, resolvedDestination);
       if (response.status === 429) return this.unavailable("RATE_LIMITED", start);
       if (response.status === 401 || response.status === 403) return this.unavailable("PROVIDER_NOT_APPROVED", start);
       if (response.status >= 500) return this.unavailable("UPSTREAM_FAILURE", start);
@@ -72,8 +80,8 @@ export class SerpApiFlightProvider implements FlightProvider {
           return [normalizeOffer(parsed.data, itinerary.data, index, {
             queryId,
             capturedAt,
-            origin: params.origin,
-            destination: params.destination,
+            origin: resolvedOrigin,
+            destination: resolvedDestination,
             adults: params.adults ?? 1,
             cabin: params.cabin ?? "ECONOMY",
             currency: params.currency ?? "USD",
@@ -91,12 +99,17 @@ export class SerpApiFlightProvider implements FlightProvider {
     }
   }
 
-  private async request(params: FlightSearchParams, tripType: "ONE_WAY" | "ROUND_TRIP"): Promise<Response> {
+  private async request(
+    params: FlightSearchParams,
+    tripType: "ONE_WAY" | "ROUND_TRIP",
+    resolvedOrigin: string,
+    resolvedDestination: string,
+  ): Promise<Response> {
     const query = new URLSearchParams({
       engine: "google_flights",
       api_key: this.options.apiKey,
-      departure_id: params.origin,
-      arrival_id: params.destination,
+      departure_id: resolvedOrigin,
+      arrival_id: resolvedDestination,
       outbound_date: params.dateStart,
       type: tripType === "ROUND_TRIP" ? "1" : "2",
       travel_class: String(mapCabin(params.cabin)),
@@ -124,6 +137,29 @@ export class SerpApiFlightProvider implements FlightProvider {
     metrics.inc("flight_provider_requests_total", { outcome: outcome === "LIVE" ? "live" : "unavailable", provider: "serpapi", error_category: errorCategory });
     metrics.observe("flight_provider_latency_ms", Date.now() - start, { provider: "serpapi", outcome: outcome === "LIVE" ? "live" : "unavailable" });
   }
+}
+
+/**
+ * Google Flights' `departure_id`/`arrival_id` mostly reject the IATA
+ * "metropolitan area" code for a multi-airport city — confirmed by calling
+ * the supplier directly with `arrival_id=TYO`, `LON`, `NYC`, `PAR`, `BJS`:
+ * each came back `search_metadata.status: "Success"` with zero flights and
+ * "Google Flights hasn't returned any results for this query", which this
+ * adapter cannot tell apart from a route that genuinely has none. The same
+ * routes against a specific airport in that city returned real itineraries.
+ * Rewriting the well-known ones to their primary airport turns a false
+ * NO_RESULTS into a real answer; a traveller who wants a different airport
+ * in the same city can still ask for it by its own code.
+ */
+const METRO_CODE_TO_PRIMARY_AIRPORT: Record<string, string> = {
+  TYO: "NRT", OSA: "KIX", SEL: "ICN", BJS: "PEK",
+  LON: "LHR", PAR: "CDG", NYC: "JFK", CHI: "ORD", WAS: "IAD",
+  MOW: "SVO", ROM: "FCO", MIL: "MXP", STO: "ARN",
+  BUE: "EZE", RIO: "GIG", SAO: "GRU",
+};
+
+function resolveGoogleFlightsLocationId(code: string): string {
+  return METRO_CODE_TO_PRIMARY_AIRPORT[code.toUpperCase()] ?? code;
 }
 
 function mapCabin(cabin: FlightSearchParams["cabin"]): 1 | 2 | 3 | 4 {

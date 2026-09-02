@@ -66,6 +66,45 @@ describe("SerpApiFlightProvider", () => {
     }
   });
 
+  it("rewrites a multi-airport metro code to its primary airport before asking the supplier", async () => {
+    // Confirmed directly against the live supplier: `arrival_id=TYO` (and
+    // LON/NYC/PAR/BJS) comes back `status: "Success"` with zero flights and
+    // "Google Flights hasn't returned any results for this query" — a false
+    // NO_RESULTS this adapter cannot tell apart from a route that genuinely
+    // has none. The same query against a specific airport in that city
+    // returns real itineraries, so the metro code is rewritten before the
+    // request goes out rather than sent as the traveller/model gave it.
+    let requestedUrl = "";
+    await provider(async (input) => {
+      requestedUrl = String(input);
+      return new Response(JSON.stringify(validPayload), { status: 200 });
+    }).searchFlights({ ...request, origin: "BJS", destination: "TYO" });
+
+    const url = new URL(requestedUrl);
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({
+      departure_id: "PEK", arrival_id: "NRT",
+    });
+  });
+
+  it("does not discard the rewritten airport's own real offers as a route mismatch", async () => {
+    // The itinerary-route check compares the supplier's returned airport
+    // against what was actually requested. Comparing it against the
+    // traveller's original metro code instead — `TYO`, never returned by a
+    // supplier whose response legitimately carries `NRT` — threw "route does
+    // not match" on every real offer and silently produced NO_RESULTS for a
+    // route that, per the rewritten request, genuinely had offers.
+    const payloadToTyo = structuredClone(validPayload);
+    payloadToTyo.best_flights[0]!.flights[0]!.arrival_airport.id = "NRT";
+    const result = await provider(async () => new Response(JSON.stringify(payloadToTyo), { status: 200 }))
+      .searchFlights({ ...request, destination: "TYO" });
+
+    expect(result.outcome).toBe("LIVE");
+    if (result.outcome === "LIVE") {
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({ destination: "NRT" });
+    }
+  });
+
   it("preserves provider seconds while normalizing minute-precision local times", async () => {
     const payloadWithSeconds = structuredClone(validPayload);
     payloadWithSeconds.best_flights[0].flights[0].departure_airport.time = "2026-10-01 08:00:45";
