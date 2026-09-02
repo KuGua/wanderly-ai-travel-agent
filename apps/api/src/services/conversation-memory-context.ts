@@ -16,6 +16,23 @@
  * them to a third-party model on every conversation turn is a wider
  * exposure than storing them, so this builder takes the narrow reading.
  * Widening it later is a one-line change; un-sending them is not.
+ *
+ * ## What this module does NOT read — and what that means for testing it
+ *
+ * There are two memory channels, and only one of them reaches a conversation:
+ *
+ *   `preference_facts`     confirmed, owner-owned, never decays  → read here
+ *   `memory_proposals`     behaviour-derived, ACT-R scored       → NOT read here
+ *
+ * The whole ACT-R contest — which value is winning, by how much, whether a new
+ * habit has overtaken an old one — is invisible to the agent until the owner
+ * confirms a proposal and it becomes a fact. A proposal that is comfortably the
+ * leader still changes nothing about what the model is told.
+ *
+ * So the answerable question in a chat box is never "which proposal is
+ * dominant"; it is "after confirming, did the new value replace the old one".
+ * Reading proposal tables while testing recall leads to the opposite conclusion
+ * from the truth, which has cost real debugging time.
  */
 import { memoryFieldDefinition } from "../memory/memory-field-catalog.js";
 import { metrics } from "../observability/metrics.js";

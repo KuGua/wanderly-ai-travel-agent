@@ -884,6 +884,15 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   placeSourceType: varchar("place_source_type", { length: 16 }),
   intent: text("intent"),
   /**
+   * Which surface the traveller typed this turn on: the exploration globe or a
+   * trip workspace. Nothing about the trip can tell these apart — a trip
+   * created from the globe is listed and openable straight away — so the turn
+   * has to carry it. Long-term memory extraction reads it to stay out of
+   * exploration; NULL (an older row, or a client that does not send it) reads
+   * as exploration, so the failure direction is remembering nothing.
+   */
+  conversationSurface: varchar("conversation_surface", { length: 32 }),
+  /**
    * Personal Research Intent Routing — Phase 0/1.
    * Non-executable persisted draft (kind + capabilities + readiness gaps only).
    * Validation: Zod `persistedResearchIntentDraftSchema`. Never carries

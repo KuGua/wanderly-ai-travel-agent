@@ -9,9 +9,17 @@ import type { MemoryFact, MemorySuggestion } from "@/lib/api/contracts";
 import {
   useConfirmMemoryProposal,
   useDeleteMemoryFact,
+  useDeleteMemoryNote,
   useDismissMemoryProposal,
+  useMemoryNotes,
   useProfileMemory,
 } from "@/lib/query/hooks";
+
+/**
+ * The cap the server enforces on free-text notes. Shown so a full list explains
+ * itself rather than silently refusing the next highlight.
+ */
+const FREE_TEXT_MEMORY_MAX_ENTRIES = 20;
 
 /**
  * Profile memory: what the assistant has remembered, and what it would like to
@@ -122,7 +130,70 @@ export function ProfileMemory() {
           ))}
         </ul>
       )}
+
+      <MemoryNotes />
     </section>
+  );
+}
+
+/**
+ * Free-text notes: what a highlight became when the extractor could not fit it
+ * to a catalogue field. They are listed apart from typed facts because that is
+ * what they are — the owner's own words, kept verbatim, and the only control
+ * that matters for them is being able to take one back.
+ */
+function MemoryNotes() {
+  const t = useTranslations("profile.memory");
+  const notesQuery = useMemoryNotes();
+  const deleteNote = useDeleteMemoryNote();
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  // A failure here must not take the facts above down with it.
+  if (notesQuery.isPending || notesQuery.isError) return null;
+
+  const notes = notesQuery.data.notes;
+
+  return (
+    <div className="mt-8">
+      <h3 className="text-base font-bold tracking-[-0.02em]">{t("notesHeading")}</h3>
+      <p className="mt-1 max-w-2xl text-sm text-[var(--w-muted)]">{t("notesBody")}</p>
+
+      {notes.length === 0 ? (
+        <p className="mt-3 text-sm text-[var(--w-muted)]">{t("notesEmpty")}</p>
+      ) : (
+        <>
+          <ul className="mt-3 grid gap-2.5" role="list" aria-label={t("notesAriaLabel")}>
+            {notes.map((note) => (
+              <li
+                key={note.id}
+                className="flex items-start justify-between gap-3 bg-card p-4 wanderly-edge wanderly-r-md wanderly-shadow-sm"
+              >
+                <p className="min-w-0 break-words text-sm">{note.content}</p>
+                <button
+                  type="button"
+                  aria-label={t("notesDeleteAria")}
+                  disabled={busyId === note.id}
+                  onClick={async () => {
+                    setBusyId(note.id);
+                    try {
+                      await deleteNote.mutateAsync(note.id);
+                    } finally {
+                      setBusyId(null);
+                    }
+                  }}
+                  className="grid size-9 shrink-0 place-items-center bg-card text-[var(--w-ink)] disabled:opacity-50 wanderly-edge-thin wanderly-r-xs wanderly-press"
+                >
+                  <Trash2 aria-hidden="true" className="size-4" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] text-[var(--w-muted)]">
+            {t("notesCount", { count: notes.length, max: FREE_TEXT_MEMORY_MAX_ENTRIES })}
+          </p>
+        </>
+      )}
+    </div>
   );
 }
 

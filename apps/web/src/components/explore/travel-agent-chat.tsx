@@ -78,6 +78,13 @@ type TravelAgentChatProps = {
    */
   variant?: "floating" | "docked";
   /**
+   * Which surface this chat is. Stamped on every turn so the server can keep
+   * exploration out of long-term memory — turning the globe and asking about a
+   * city is browsing, not stating how you travel. Defaults to EXPLORE so a
+   * caller that forgets it errs toward remembering nothing.
+   */
+  surface?: "EXPLORE" | "TRIP_WORKSPACE";
+  /**
    * Controlled threadId. Required: callers must always provision the
    * thread via a Trip-scoped endpoint (e.g. `POST /trips/:tripId/threads/default`)
    * so the server-derived trip binding is honored across refreshes.
@@ -130,6 +137,7 @@ export function TravelAgentChat({
   onOpen = () => {},
   onDismiss = () => {},
   variant = "floating",
+  surface = "EXPLORE",
   threadId: controlledThreadId,
   threadStatus,
   onRetryThread,
@@ -294,7 +302,12 @@ export function TravelAgentChat({
           activeThreadId = provisioned.threadId;
         }
 
-        const response = await submitTurn.mutateAsync({ threadId: activeThreadId, input: turn });
+        const response = await submitTurn.mutateAsync({
+          threadId: activeThreadId,
+          // Stamped here rather than at each call site so the confirm and
+          // cancel buttons carry it too, not just typed messages.
+          input: { ...turn, surface },
+        });
         setSessionThreadId(activeThreadId);
         setSessionMessages((current) => mergeMessages(current, [response.userMessage]));
         setStreamState(emptyStreamState());
@@ -316,6 +329,7 @@ export function TravelAgentChat({
       onEnsureThreadForFirstSend,
       clearLocalSessionState,
       onThreadInvalidated,
+      surface,
     ],
   );
 

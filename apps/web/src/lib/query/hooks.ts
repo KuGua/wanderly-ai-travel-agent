@@ -69,6 +69,30 @@ export function useUpdateMemoryFact() {
     api.updateMemoryFact(factId, { value }));
 }
 
+/**
+ * Free-text notes are a separate list from typed facts: they come from a
+ * highlight the extractor could not fit to a catalogue field, so they have no
+ * field key to group under and are capped by count rather than by schema.
+ */
+export function useMemoryNotes() {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: profileKeys.memoryNotes,
+    queryFn: () => api.getMemoryNotes(),
+  });
+}
+
+export function useDeleteMemoryNote() {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (noteId: string) => api.deleteMemoryNote(noteId),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: profileKeys.memoryNotes });
+    },
+  });
+}
+
 export function useDeleteMemoryFact() {
   const api = useTravelApi();
   return useMemoryMutation((factId: string) => api.deleteMemoryFact(factId));

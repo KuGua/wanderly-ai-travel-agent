@@ -396,11 +396,19 @@ export const conversationPlaceSchema = z.object({
 
 export const conversationIntentSchema = z.enum(["auto_intro", "user_typed"]);
 
+/**
+ * Where the traveller was when they typed. Narrowing only: it can keep a turn
+ * out of long-term memory, never authorize anything, so a client that omits or
+ * forges it cannot make the server remember more than it otherwise would.
+ */
+export const conversationSurfaceSchema = z.enum(["EXPLORE", "TRIP_WORKSPACE"]);
+
 export const conversationTurnRequestSchema = z.object({
   requestId: uuidSchema,
   question: z.string().trim().min(1).max(4000),
   place: conversationPlaceSchema.optional(),
   intent: conversationIntentSchema.optional(),
+  surface: conversationSurfaceSchema.optional(),
 }).strict();
 
 export const ownerConversationMessageSchema = z.object({

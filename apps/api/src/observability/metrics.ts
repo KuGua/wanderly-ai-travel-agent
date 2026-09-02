@@ -261,6 +261,11 @@ metrics.registerCounter("ui_diagnostic_events_total", "Authenticated, content-fr
 // field keys, values, observation dates, trip ids and activation are all
 // forbidden as labels — they would be high-cardinality and, worse, would leak
 // what the product remembers about a person.
+metrics.registerCounter(
+  "memory_observation_skipped_total",
+  "Confirmed constraints that produced no memory observation, by bounded reason.",
+  { reason: ["not_in_catalog", "value_not_an_object", "value_shape_mismatch"] },
+);
 metrics.registerCounter("memory_proposals_total", "Behaviour-derived memory proposals by bounded outcome.", {
   outcome: ["created", "aggregated", "duplicate_episode", "in_cooldown", "rejected"],
   source: ["behavior_aggregation"],
