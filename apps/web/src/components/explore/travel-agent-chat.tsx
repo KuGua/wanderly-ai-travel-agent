@@ -385,6 +385,18 @@ export function TravelAgentChat({
     }
   }, [activeRunId, agentRun.data?.status, api, effectiveThreadId]);
 
+  // Backstop for the confirm button: `useAgentRun` already polls this run
+  // every 1.5s regardless of the SSE stream's health, so a dropped or
+  // reconnected stream — routine over a LAN Wi-Fi hop, and this one has no
+  // replay — still surfaces the pending confirmation once the next poll
+  // lands, instead of leaving the button permanently missing.
+  useEffect(() => {
+    if (agentRun.data?.pendingFlightConfirmation) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPendingFlightConfirmation(true);
+    }
+  }, [agentRun.data?.pendingFlightConfirmation]);
+
   const messages = useMemo(
     () => mergeMessages(conversation.data?.messages ?? [], sessionMessages),
     [conversation.data?.messages, sessionMessages],

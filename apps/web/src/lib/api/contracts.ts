@@ -297,6 +297,13 @@ export const agentRunResponseSchema = z.object({
   // researchSetupSession was removed with the conversational setup pipeline.
   // LLM-driven tool calling (Phase 4) emits state via chat history +
   // personal_research_evidence, not via this DTO.
+  /**
+   * Whether this thread has an unconfirmed `flight.search` draft. Backs the
+   * confirm/cancel button off this already-polled resource, not just the
+   * one-shot `tool.settled` SSE event — a dropped/reconnected stream never
+   * re-delivers that event, which otherwise leaves the button never showing.
+   */
+  pendingFlightConfirmation: z.boolean().optional(),
 });
 
 // researchSetupSessionResponseSchema, researchSetupSessionEnvelopeSchema,

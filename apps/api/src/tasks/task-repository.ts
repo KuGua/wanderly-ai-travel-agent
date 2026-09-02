@@ -16,6 +16,7 @@ import { ApiError } from "../middleware/error-handler.js";
 import { resolveConversationPlace } from "../policy/conversation-safety.js";
 import { recordAudit } from "../services/audit-service.js";
 import { requireOwnedTripThread } from "../services/chat-thread-service.js";
+import { loadConversationFlightSearchState } from "../services/conversation-flight-search-state-service.js";
 import { claimIdempotency } from "../services/idempotency-service.js";
 import {
   agentRunErrorCodeSchema,
@@ -838,7 +839,28 @@ export async function getAuthorizedAgentRun(runId: string, userId: string): Prom
   await requireRunAccess(run, userId);
   // Setup session projection removed with the conversational setup pipeline
   // (migration 0049). The LLM tool loop (Phase 4) surfaces state via chat.
-  return toRunResponse(run);
+  return {
+    ...toRunResponse(run),
+    pendingFlightConfirmation: await isFlightSearchAwaitingConfirmation(run),
+  };
+}
+
+/**
+ * Whether this thread has a flight-search draft the owner has not yet
+ * confirmed. Backs the chat UI's confirm/cancel button off this polled,
+ * durable row rather than the one-shot `tool.settled` SSE event alone — a
+ * dropped or reconnected stream (routine over a LAN Wi-Fi hop) never
+ * re-delivers that event, and `GET /agent-runs/:runId` is already polled
+ * as the run-status fallback regardless of stream health.
+ */
+async function isFlightSearchAwaitingConfirmation(run: AgentTaskRow): Promise<boolean> {
+  if (run.operation !== "CONVERSATION" || !run.threadId || !run.tripId) return false;
+  const state = await loadConversationFlightSearchState({
+    threadId: run.threadId,
+    tripId: run.tripId,
+    ownerUserId: run.createdByUserId,
+  });
+  return state !== null && !state.confirmed;
 }
 
 /**

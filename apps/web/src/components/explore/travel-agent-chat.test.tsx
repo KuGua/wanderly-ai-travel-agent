@@ -167,6 +167,24 @@ describe("TravelAgentChat durable streaming flow", () => {
     });
   });
 
+  it("still shows the confirm button when the SSE stream drops the tool.settled event, via the polled agent-run fallback", async () => {
+    // A dropped/reconnected stream (routine over a LAN Wi-Fi hop) never
+    // re-delivers a one-shot SSE event. `useAgentRun` polls regardless, so
+    // the button should still appear once that poll reports it.
+    const api = createApi({
+      getAgentRun: vi.fn().mockResolvedValue({ ...run("RUNNING"), pendingFlightConfirmation: true }),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId: string, signal: AbortSignal, onEvent: (e: unknown) => void) => {
+        onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+        await untilAborted(signal);
+      }),
+    });
+    renderChat(api);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "SIN to NRT, one way, 2026-09-25, 1 adult" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await screen.findByRole("button", { name: "Search" });
+  });
+
   it("settles the newest run of a tool, so a second call does not stop the first from spinning", async () => {
     // The same tool may legitimately run twice in one reply with different
     // arguments; settling the oldest would leave the wrong row running.

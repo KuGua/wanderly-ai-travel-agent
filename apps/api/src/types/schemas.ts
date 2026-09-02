@@ -509,6 +509,16 @@ export const agentRunResponseSchema = z.object({
   researchIntentState: z.enum(["PROPOSED", "DISMISSED", "CONFIRMED", "SUPERSEDED"]).nullable(),
   // researchSetupSession was removed with the conversational setup pipeline
   // (migration 0049). State now lives in chat history + personal_research_evidence.
+  /**
+   * Whether this thread has a `flight.search` draft the owner has not yet
+   * confirmed. Only `getAuthorizedAgentRun` computes this (other builders of
+   * this DTO — planning-run reads, the cancel route's early return — leave
+   * it absent, which the client treats as false); it exists so the chat
+   * UI's confirm/cancel button survives a dropped or reconnected SSE stream
+   * by re-deriving from this already-polled resource instead of relying
+   * solely on the one-shot `tool.settled` event.
+   */
+  pendingFlightConfirmation: z.boolean().optional(),
 });
 
 const streamBaseSchema = z.object({
