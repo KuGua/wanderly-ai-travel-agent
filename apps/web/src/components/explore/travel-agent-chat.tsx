@@ -476,11 +476,16 @@ export function TravelAgentChat({
         setActiveRunId(null);
         clearStoredActiveRunId();
         setStreamState(emptyStreamState());
-        if (status === "FAILED") setRequestError(new Error("Agent run failed"));
+        if (status === "FAILED") {
+          setRequestError(new AgentRunFailure(
+            agentRun.data?.operation ?? "CONVERSATION",
+            agentRun.data?.errorCode ?? null,
+          ));
+        }
       }, 0);
       return () => window.clearTimeout(clearTerminalRun);
     }
-  }, [activeRunId, agentRun.data?.status, api, effectiveThreadId]);
+  }, [activeRunId, agentRun.data?.status, agentRun.data?.operation, agentRun.data?.errorCode, api, effectiveThreadId]);
 
   // Backstop for the confirm panel: `useAgentRun` polls this run every 1.5s
   // regardless of the SSE stream's health, so a dropped or reconnected
@@ -973,7 +978,9 @@ export function TravelAgentChat({
           {visibleError ? (
             <div role="alert" className={`${rowClass} rounded-[16px] border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive`}>
               <p className="font-bold">{errorMessage(visibleError, t)}</p>
-              {pendingTurn && isRetryable(visibleError) ? <button type="button" onClick={retryPendingTurn} disabled={isSending} className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-destructive shadow-sm disabled:opacity-50"><RotateCw aria-hidden="true" className="size-3.5" />{t("retry")}</button> : null}
+              {pendingTurn && isRetryable(visibleError)
+                && !(visibleError instanceof AgentRunFailure && !isRetryableFailure(visibleError))
+                ? <button type="button" onClick={retryPendingTurn} disabled={isSending} className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-destructive shadow-sm disabled:opacity-50"><RotateCw aria-hidden="true" className="size-3.5" />{t("retry")}</button> : null}
             </div>
           ) : null}
           {briefProposal && tripId ? (
@@ -1379,7 +1386,40 @@ function describeBriefProposal(
   return lines;
 }
 
+/**
+ * A durable task that finished FAILED, carrying enough to say which one and
+ * why. Before this the UI reported every run failure as "the message could not
+ * be sent", which was wrong three ways at once: the message had been sent and
+ * stored, the failure came from planning twenty seconds later, and the advice
+ * to try again described something that would fail identically every time.
+ */
+class AgentRunFailure extends Error {
+  constructor(
+    readonly operation: string,
+    readonly errorCode: string | null,
+  ) {
+    super(`Agent run failed (${operation}${errorCode ? `: ${errorCode}` : ""})`);
+    this.name = "AgentRunFailure";
+  }
+}
+
+/** Whether trying the same thing again could plausibly give a different answer. */
+function isRetryableFailure(error: AgentRunFailure): boolean {
+  return error.errorCode === null
+    || ["NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "INTERNAL"].includes(error.errorCode);
+}
+
 function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
+  if (error instanceof AgentRunFailure) {
+    const planning = error.operation !== "CONVERSATION";
+    if (error.errorCode === "PLANNING_DATA_UNAVAILABLE") return t("planningDataUnavailable");
+    if (error.errorCode === "POLICY_DENIED") return t("planningNotAllowed");
+    if (error.errorCode === "SEARCH_PREFERENCES_STALE") return t("planningPreferencesChanged");
+    if (["NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT"].includes(error.errorCode ?? "")) {
+      return planning ? t("planningProviderUnavailable") : t("providerUnavailable");
+    }
+    return planning ? t("planningFailed") : t("genericError");
+  }
   if (error instanceof TravelApiError) {
     if (error.statusCode === null) return t("networkError");
     if (error.statusCode === 401 || error.statusCode === 403) return t("authenticationRequired");
