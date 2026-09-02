@@ -147,6 +147,21 @@ export function TravelAgentChat({
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([]);
+  /**
+   * Which thread the buffer above belongs to.
+   *
+   * The buffer holds messages this tab sent or restored, merged over what the
+   * server returns so a reply appears without waiting for a refetch. Nothing
+   * cleared it when the thread changed, so opening a new thread rendered the
+   * previous one's conversation inside it: the database held two messages and
+   * the screen showed a dozen. Worse than cosmetic — the server builds the
+   * model's context from the real thread, so the traveller could ask about a
+   * flight that was on their screen and nowhere in the assistant's context.
+   *
+   * Compared rather than cleared on a change: a cleanup effect renders the
+   * stale messages once before it runs.
+   */
+  const [sessionThreadId, setSessionThreadId] = useState<string | null>(null);
   const [refusalMessageIds, setRefusalMessageIds] = useState<Set<string>>(new Set());
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
   const [requestError, setRequestError] = useState<unknown>(null);
@@ -190,6 +205,7 @@ export function TravelAgentChat({
   const clearLocalSessionState = useCallback(() => {
     clearStoredActiveRunId();
     setSessionMessages([]);
+    setSessionThreadId(null);
     setRefusalMessageIds(new Set());
     setPendingTurn(null);
     setActiveRunId(null);
@@ -235,6 +251,7 @@ export function TravelAgentChat({
         }
 
         const response = await submitTurn.mutateAsync({ threadId: activeThreadId, input: turn });
+        setSessionThreadId(activeThreadId);
         setSessionMessages((current) => mergeMessages(current, [response.userMessage]));
         setStreamState(emptyStreamState());
         setActiveRunId(response.runId);
@@ -369,6 +386,7 @@ export function TravelAgentChat({
       let active = true;
       void api.getOwnerConversation(effectiveThreadId).then((restored) => {
         if (active) {
+          setSessionThreadId(effectiveThreadId);
           setSessionMessages((current) => mergeMessages(current, restored.messages));
         }
       }).finally(() => {
@@ -412,8 +430,11 @@ export function TravelAgentChat({
   }, [agentRun.data?.pendingFlightConfirmation]);
 
   const messages = useMemo(
-    () => mergeMessages(conversation.data?.messages ?? [], sessionMessages),
-    [conversation.data?.messages, sessionMessages],
+    () => mergeMessages(
+      conversation.data?.messages ?? [],
+      sessionThreadId === effectiveThreadId ? sessionMessages : [],
+    ),
+    [conversation.data?.messages, sessionMessages, sessionThreadId, effectiveThreadId],
   );
   const visibleError = requestError ?? (
     conversation.error instanceof TravelApiError && conversation.error.statusCode !== 404
