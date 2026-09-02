@@ -9,10 +9,16 @@ export type TripBriefProposal = {
 
 /** Extracts only explicit, current-turn facts; never history or a persisted question. */
 export function proposeTripBriefFromTurn(question: string, place?: ConversationPlace): TripBriefProposal | null {
-  const travelDays = extractDays(question);
-  const destination = place?.name.trim() || extractDestination(question);
-  const departure = extractDeparture(question);
-  const travelDateStart = extractDate(question);
+  // Chinese durations are written in Chinese numerals far more often than in
+  // digits — "玩三天", not "玩3天". Normalizing first means every pattern below
+  // reads one alphabet instead of two, and fixes the duration and the
+  // destination together: the destination pattern ends at the duration, so a
+  // duration it cannot see is a duration the destination swallows whole.
+  const text = normalizeChineseNumerals(question);
+  const travelDays = extractDays(text);
+  const destination = place?.name.trim() || extractDestination(text);
+  const departure = extractDeparture(text);
+  const travelDateStart = extractDate(text);
   if (!departure && !destination && !travelDateStart && travelDays === undefined) return null;
   return {
     ...(departure ? { departureCities: [departure] } : {}),
@@ -22,28 +28,103 @@ export function proposeTripBriefFromTurn(question: string, place?: ConversationP
   };
 }
 
+const CHINESE_DIGITS: Record<string, number> = {
+  〇: 0, 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9,
+};
+
+/**
+ * Rewrites Chinese numerals 1–99 as digits, but only where a counter word makes
+ * the intent unambiguous.
+ *
+ * The guard matters more than the arithmetic: "三" is a number in "三天" and a
+ * syllable in "三亚". Requiring the counter keeps place names intact — rewriting
+ * them would turn a destination into nonsense, which is worse than missing a
+ * duration.
+ */
+function normalizeChineseNumerals(text: string): string {
+  return text.replace(/[〇零一二两三四五六七八九十]+(?=\s*[天晚夜日号月人位个])/gu, (run) => {
+    const tenIndex = run.indexOf("十");
+    if (tenIndex === -1) {
+      // A bare run of digits: 三 → 3. Multi-digit runs like 二〇 are read
+      // positionally, which is how years are written.
+      let value = 0;
+      for (const char of run) {
+        const digit = CHINESE_DIGITS[char];
+        if (digit === undefined) return run;
+        value = value * 10 + digit;
+      }
+      return String(value);
+    }
+    // 十 = 10, 十五 = 15, 三十 = 30, 三十五 = 35.
+    const head = run.slice(0, tenIndex);
+    const tail = run.slice(tenIndex + 1);
+    if (head.length > 1 || tail.length > 1) return run;
+    const tens = head === "" ? 1 : CHINESE_DIGITS[head];
+    const ones = tail === "" ? 0 : CHINESE_DIGITS[tail];
+    if (tens === undefined || ones === undefined) return run;
+    return String(tens * 10 + ones);
+  });
+}
+
 function extractDays(question: string): number | undefined {
   const match = question.match(/(?:\bfor\s+)?([1-9]\d{0,2})\s*(?:days?\b|天)/iu);
   const days = match ? Number(match[1]) : NaN;
   return days >= 1 && days <= 365 ? days : undefined;
 }
 
+/**
+ * "Shanghai to Suzhou" — a route written without a verb, which the verb-led
+ * patterns below cannot see. Only read at the very start of the turn, and only
+ * when the left side is not itself a travel verb, so "go to Suzhou" keeps its
+ * existing reading instead of proposing "go" as a departure city.
+ */
+const ROUTE_WITHOUT_VERB =
+  /^\s*([A-Za-z][A-Za-z .'-]{0,63}?)\s+to\s+([A-Za-z][A-Za-z .'-]{0,63}?)(?=\s+(?:on|for|in|from|around|next|this)\b|[,.!?]|$)/iu;
+/**
+ * Checked against the LAST word of the left side, not the whole of it: "I want
+ * to go to Kyoto" otherwise proposes "I want" as a departure city.
+ */
+const NOT_A_PLACE = /^(?:go|going|travel|travelling|traveling|visit|visiting|head|heading|fly|flying|get|getting|want|wants|wanted|like|would|plan|planning|hoping|hope|need|i|we|they|he|she|it|you|trip|trips|flight|flights|way|how|take|taking)$/i;
+
+function routeWithoutVerb(question: string): { from: string; to: string } | null {
+  const match = question.match(ROUTE_WITHOUT_VERB);
+  if (!match) return null;
+  const from = match[1].trim();
+  const to = match[2].trim();
+  const lastWord = from.split(/\s+/).at(-1) ?? "";
+  if (!from || !to || NOT_A_PLACE.test(lastWord)) return null;
+  return { from, to };
+}
+
 function extractDestination(question: string): string | undefined {
   const english = question.match(/\b(?:go|going|travel|travelling|traveling|visit|visiting|head|heading)\s+to\s+([A-Za-z][A-Za-z .'-]{0,63}?)(?=\s+(?:for\s+)?[1-9]\d{0,2}\s+days?\b|[,.!?]|$)/iu);
   const chinese = question.match(/(?:去|前往|想去|目的地(?:是|为)?)\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*(?:玩|待|住|旅行)?\s*[1-9]\d{0,2}\s*天|[，。！？]|$)/u);
-  const value = (english?.[1] ?? chinese?.[1])?.trim().replace(/\s+/g, " ");
+  const value = (english?.[1] ?? chinese?.[1] ?? routeWithoutVerb(question)?.to)
+    ?.trim().replace(/\s+/g, " ");
   return value && value.length <= 64 ? value : undefined;
 }
 
 function extractDeparture(question: string): string | undefined {
   const english = question.match(/\bfrom\s+([A-Za-z][A-Za-z .'-]{0,63}?)(?=\s+(?:to|for|on)\b|[,.!?]|$)/iu);
-  const chinese = question.match(/从\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*(?:出发|走)|[，。！？]|$)/u);
-  const value = (english?.[1] ?? chinese?.[1])?.trim().replace(/\s+/g, " ");
+  // "从上海出发" and the equally common "上海出发" — the 从 is optional in
+  // speech, and requiring it silently dropped the departure city from the
+  // acceptance case in docs/personal-and-planning-boundaries.md §9.
+  // 从 is a boundary, never part of the city: "我从上海出发" must yield 上海.
+  // The 从-led form is tried first so it wins over the bare form, which then
+  // only has to cover "上海出发" — the 从 people leave out in speech.
+  const chinese = question.match(/从\s*([\p{Script=Han}A-Za-z][^\s，。！？从]{0,63}?)\s*(?=出发|起飞)/u)
+    ?? question.match(/(?:^|[，。！？\s])(?!从)([\p{Script=Han}A-Za-z][^\s，。！？从]{0,63}?)\s*(?=出发|起飞)/u)
+    ?? question.match(/从\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*走|[，。！？]|$)/u);
+  const value = (english?.[1] ?? chinese?.[1] ?? routeWithoutVerb(question)?.from)
+    ?.trim().replace(/\s+/g, " ");
   return value && value.length <= 64 ? value : undefined;
 }
 
 /** Recognises explicit month/day input; relative wording is never made into a date fact. */
 function extractDate(question: string): string | undefined {
+  // An explicit ISO date is already the answer; no month-name table needed.
+  const iso = question.match(/\b(20\d{2})-(1[0-2]|0[1-9])-(3[01]|[12]\d|0[1-9])\b/u);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
   const chinese = question.match(/(?:(20\d{2})\s*年\s*)?(1[0-2]|0?[1-9])\s*月\s*(3[01]|[12]\d|0?[1-9])\s*(?:日|号)?/u);
   const english = question.match(/\b(?:on\s+)?(?:(20\d{2})\s+)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(3[01]|[12]\d|[1-9])\b/iu);
   if (!chinese && !english) return undefined;
