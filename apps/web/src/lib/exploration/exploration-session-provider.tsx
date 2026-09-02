@@ -167,12 +167,8 @@ function ExplorationSessionBoundary({ children }: { children: ReactNode }) {
       startInFlightRef.current = inFlight;
     }
 
-    try {
-      const response = await inFlight;
-      return { tripId: response.trip.id, threadId: response.defaultThread.id };
-    } catch {
-      return { tripId: "", threadId: "" };
-    }
+    const response = await inFlight;
+    return { tripId: response.trip.id, threadId: response.defaultThread.id };
   }, [mutation, queryClient]);
 
   const reset = useCallback(() => {
