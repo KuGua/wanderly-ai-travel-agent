@@ -2,7 +2,7 @@
 
 import { ArrowUp, Check, Copy, LoaderCircle, MessageCircle, RotateCw, Sparkles, Square, X } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
@@ -93,6 +93,22 @@ type TravelAgentChatProps = {
   tripId?: string | null;
   titleLocale?: "en" | "zh";
 };
+
+/**
+ * Whether this Enter is finishing a word rather than a message.
+ *
+ * Typing "sgd" with a Chinese IME active leaves the letters uncommitted until
+ * Enter lands them. That Enter reached the form and sent the draft
+ * mid-sentence — the traveller pressed a key meaning "keep what I typed" and
+ * the message went out.
+ *
+ * `isComposing` is the standard signal. `keyCode === 229` is the older one
+ * some engines still send while a composition is open, and costs nothing to
+ * check: 229 is never a real key.
+ */
+function isComposingKey(event: ReactKeyboardEvent<HTMLTextAreaElement>): boolean {
+  return event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
+}
 
 export function TravelAgentChat({
   open = true,
@@ -655,7 +671,7 @@ export function TravelAgentChat({
       <form onSubmit={submitMessage} className={docked ? "border-t-2 border-[var(--w-ink)] bg-background px-[clamp(16px,3vw,34px)] pb-[18px] pt-3" : "bg-white px-3 pb-3 pt-2"}>
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className="mb-1.5 flex h-5 max-w-full items-center rounded-full border border-white/80 bg-[#dff3ed]/90 px-2.5 text-[10px] font-bold text-primary shadow-sm backdrop-blur hover:bg-[#d2eee6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
         <div className={docked ? "mx-auto flex min-h-14 max-w-[640px] items-center gap-2 bg-card p-1.5 pl-4 wanderly-edge wanderly-r-md wanderly-shadow-sm" : "wanderly-liquid-glass flex min-h-14 items-end gap-2 rounded-[20px] p-1.5 pl-4"}>
-          <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
+          <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
           {submitButton}
         </div>
         {docked ? <p className="mx-auto mt-[7px] max-w-[640px] text-[11px] text-[var(--w-ink)] opacity-75">{t("composerNote")}</p> : null}
