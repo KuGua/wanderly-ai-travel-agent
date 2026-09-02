@@ -46,6 +46,9 @@ import type {
   AdoptionVoteResponse,
   AdoptionVoteListResponse,
   TripPlansListResponse,
+  ConstraintHandoffBatchResponse,
+  ConstraintHandoffConfirmRequest,
+  ConstraintHandoffConfirmResponse,
   TripPlacesResponse,
   PlaceCandidateSearchRequest,
   PlaceCandidateSearchResponse,
@@ -150,6 +153,14 @@ export interface TravelApi {
   castAdoptionVote?(planId: string, input: CastAdoptionVoteRequest, options?: { idempotencyKey?: string }): Promise<AdoptionVoteResponse>;
   listAdoptionVotes?(planId: string): Promise<AdoptionVoteListResponse>;
   listTripPlans?(tripId: string): Promise<TripPlansListResponse>;
+
+  // ── Member conversation handoff (Phase 6) ─────────────────────────────────
+  // Candidate batch read + batch confirm. The candidate card pulls
+  // `getConstraintHandoffBatch`; the confirm action submits the trimmed
+  // payload (proposalId + visibility + strength per row) so the server
+  // remains the only authority on what becomes a fact.
+  getConstraintHandoffBatch?(tripId: string, batchId: string): Promise<ConstraintHandoffBatchResponse>;
+  confirmConstraintHandoffBatch?(tripId: string, batchId: string, input: ConstraintHandoffConfirmRequest, options?: { idempotencyKey?: string }): Promise<ConstraintHandoffConfirmResponse>;
 
   // ── Global POI & ground mobility (Phase 2) ──────────────────────────────────
   // Optional methods to preserve Phase-5 style incremental adoption. The web

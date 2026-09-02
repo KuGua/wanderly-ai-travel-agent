@@ -767,7 +767,19 @@
     "dismissProposal": "忽略",
     "saveFact": "保存",
     "revokeFact": "撤销",
-    "residualInferenceAck": "我了解残余推断风险"
+    "residualInferenceAck": "我了解残余推断风险",
+    "handoffHeading": "对话候选交接",
+    "handoffBody": "Personal Agent 从你的私聊抽取了以下非敏感候选。勾选确认后将原子写入事实并接受最新共享方案任务——UI 不会暴露手动重规划入口。",
+    "handoffLoading": "加载候选中…",
+    "handoffLoadError": "候选加载失败，请重试。",
+    "handoffVisibility": "可见性",
+    "handoffStrength": "强度",
+    "handoffConfirm": "确认并生成共享方案",
+    "handoffConfirming": "提交中…",
+    "handoffDismiss": "稍后处理",
+    "handoffConfirmError": "确认失败：{message}",
+    "handoffAllConfirmed": "本批次 {count} 条已确认。",
+    "handoffPending": "本批次 {pending} 条待你处理。"
   },
   "login": {
     "heading": "登录",

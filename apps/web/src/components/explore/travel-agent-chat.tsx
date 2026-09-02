@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
 import { ResearchRunCard } from "@/components/trips/personal-research/research-run-card";
 import { PinnedResultCard } from "@/components/trips/personal-research/pinned-result-card";
+import { ConversationHandoffCard } from "@/components/trips/personal-research/conversation-handoff-card";
 
 import type {
   AgentStreamEvent,
@@ -22,7 +23,7 @@ import { FlightOfferCard } from "@/components/trips/flight-offer-card";
 import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
 import { TravelApiError } from "@/lib/api/errors";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
-import { useAgentRun, useCancelAgentRun, useOwnerConversation, useSubmitConversationTurn, useTripPin } from "@/lib/query/hooks";
+import { useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTripPin } from "@/lib/query/hooks";
 import { useTravelApi } from "@/lib/query/provider";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
@@ -141,6 +142,12 @@ export function TravelAgentChat({
   // survives past the streaming run (unlike `streamState.tools`) so it is
   // still there once the assistant's "please confirm" reply has settled.
   const [pendingFlightConfirmation, setPendingFlightConfirmation] = useState(false);
+  // Member conversation handoff — a fresh candidate batch arrives via SSE
+  // (`conversation.handoff_ready`). We keep only the latest batchId; older
+  // ones are cleared once the actor confirms or dismisses. Nothing is
+  // persisted to localStorage / Zustand.
+  const [handoffBatchId, setHandoffBatchId] = useState<string | null>(null);
+  const [handoffDismissed, setHandoffDismissed] = useState(false);
   const [researchStages, setResearchStages] = useState<
     Array<Extract<AgentStreamEvent, { event: "research.stage" }>>
   >([]);
@@ -171,6 +178,8 @@ export function TravelAgentChat({
     setRequestError(null);
     setBriefProposal(null);
     setPendingFlightConfirmation(false);
+    setHandoffBatchId(null);
+    setHandoffDismissed(false);
   }, []);
 
   useEffect(() => {
@@ -283,6 +292,13 @@ export function TravelAgentChat({
       if (event.event === "trip.brief_proposed") setBriefProposal(event.proposal);
       if (event.event === "tool.settled" && event.capability === "flight.search" && event.outcome === "NEEDS_CONFIRMATION") {
         setPendingFlightConfirmation(true);
+      }
+      if (event.event === "conversation.handoff_ready") {
+        // Replace any previous card — the latest batch is the only one the
+        // member can act on, and the worker has already invalidated earlier
+        // candidate_versions server-side via the unique partial index.
+        setHandoffBatchId(event.batchId);
+        setHandoffDismissed(false);
       }
       if (event.event === "research.stage") {
         setResearchStages((current) => [...current, event]);
@@ -614,6 +630,16 @@ export function TravelAgentChat({
               <PinnedResultCard tripId={tripId} pinned={pinnedSession} />
             </div>
           ) : null}
+          {tripId && handoffBatchId && !handoffDismissed ? (
+            <div className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}>
+              <HandoffCardHost
+                tripId={tripId}
+                batchId={handoffBatchId}
+                onConfirmed={() => { setHandoffBatchId(null); setHandoffDismissed(false); }}
+                onDismissed={() => setHandoffDismissed(true)}
+              />
+            </div>
+          ) : null}
           {activeRunId ? (
             <div className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"}`}>
               <ResearchRunCard
@@ -809,4 +835,51 @@ function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
     if (error.statusCode === 404) return t("threadMissing");
   }
   return t("genericError");
+}
+
+/**
+ * Member conversation handoff host.
+ *
+ * The chat receives a `batchId` from the SSE event. We pull the batch via
+ * React Query; the card itself does the selection UI and the confirm call.
+ * On confirm or dismiss we drop the host so the message flow returns to
+ * normal; the server-side mutation has already invalidated the affected
+ * query keys (constraints / plans).
+ */
+function HandoffCardHost({
+  tripId,
+  batchId,
+  onConfirmed,
+  onDismissed,
+}: {
+  tripId: string;
+  batchId: string;
+  onConfirmed: () => void;
+  onDismissed: () => void;
+}) {
+  const t = useTranslations("trips.workspace");
+  const batch = useConstraintHandoffBatch(tripId, batchId);
+  if (batch.isLoading) {
+    return (
+      <div data-testid="handoff-card-loading" className="rounded-[18px] border border-border bg-card/60 p-3 text-xs text-muted-foreground">
+        {t("handoffLoading")}
+      </div>
+    );
+  }
+  if (batch.error) {
+    return (
+      <div role="alert" data-testid="handoff-card-error" className="rounded-[18px] border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive">
+        {t("handoffLoadError")}
+      </div>
+    );
+  }
+  if (!batch.data) return null;
+  return (
+    <ConversationHandoffCard
+      tripId={tripId}
+      batch={batch.data}
+      onConfirmed={onConfirmed}
+      onDismissed={onDismissed}
+    />
+  );
 }

@@ -30,6 +30,8 @@ export const UI_ACTIONS = [
   // Phase 2 — Real-provider acknowledgement (flight / hotel / etc.)
   "research.real_provider_acknowledged",
   "research.real_provider_declined",
+  // Phase 6 / Member conversation handoff
+  "conversation.handoff_confirm",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 

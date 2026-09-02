@@ -10,6 +10,8 @@ import {
   proposeConstraint,
   dismissConstraintProposal,
   confirmConstraintProposal,
+  confirmConstraintHandoffBatch,
+  listConversationHandoffBatch,
   revokeConstraintFact,
   upsertConstraintFactDirect,
   listFactsForMembers,
@@ -17,6 +19,11 @@ import {
   listProposalsForOwner,
   ConstraintProposalServiceError,
 } from "../services/constraint-proposal-service.js";
+import {
+  constraintHandoffConfirmRequestSchema,
+  constraintHandoffBatchResponseSchema,
+  uuidSchema,
+} from "../types/schemas.js";
 import {
   castVote,
   getVoteSummary,
@@ -30,11 +37,11 @@ import {
   castAdoptionVoteRequestSchema,
   tripConstraintProposalSchema,
   tripConstraintFactSchema,
-  uuidSchema,
 } from "../types/schemas.js";
 
 const tripIdParamsSchema = z.object({ tripId: uuidSchema }).strict();
 const proposalIdParamsSchema = z.object({ tripId: uuidSchema, proposalId: uuidSchema }).strict();
+const batchIdParamsSchema = z.object({ tripId: uuidSchema, batchId: uuidSchema }).strict();
 const factIdParamsSchema = z.object({ tripId: uuidSchema, factId: uuidSchema }).strict();
 const planIdParamsSchema = z.object({ planId: uuidSchema }).strict();
 
@@ -309,5 +316,58 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
     const { planId } = planIdParamsSchema.parse(request.params);
     const result = await getVoteSummary({ planId, userId: request.user.id });
     return adoptionVoteListResponseSchema.parse(result);
+  });
+
+  // ─── GET /trips/:tripId/constraint-handoffs/:batchId ─────────────────────
+  // Spec §5.3: member-private read of a candidate batch. Only the candidate
+  // owner (i.e. the caller) may read it; cross-user / cross-trip / missing
+  // batch all return 403/404.
+  app.get("/trips/:tripId/constraint-handoffs/:batchId", async (request) => {
+    const { tripId, batchId } = batchIdParamsSchema.parse(request.params);
+    await requireActiveTrip(tripId, "constraint_read");
+    try {
+      const out = await listConversationHandoffBatch({
+        tripId,
+        batchId,
+        actorUserId: request.user.id,
+      });
+      return constraintHandoffBatchResponseSchema.parse(out);
+    } catch (err) {
+      if (err instanceof ConstraintProposalServiceError) {
+        throw new ApiError(err.statusCode, err.name, err.message);
+      }
+      throw err;
+    }
+  });
+
+  // ─── POST /trips/:tripId/constraint-handoffs/:batchId/confirm ────────────
+  // Spec §5.2: atomic batch confirm. The service handles the
+  // FOR UPDATE + triple-equality + catalog + consent + stale + snapshot +
+  // PLAN/REPLAN accept transaction. The route only validates the input
+  // shape and surfaces typed errors.
+  app.post("/trips/:tripId/constraint-handoffs/:batchId/confirm", async (request) => {
+    const { tripId, batchId } = batchIdParamsSchema.parse(request.params);
+    const ctx = buildCtx(request, request.user.id);
+    const idempotencyKey = idempotencyHeaderSchema.parse(request.headers["idempotency-key"]);
+    const body = constraintHandoffConfirmRequestSchema.parse(request.body);
+    await requireActiveTrip(tripId, "constraint_confirm");
+    try {
+      const out = await confirmConstraintHandoffBatch({
+        ctx,
+        tripId,
+        batchId,
+        actorUserId: request.user.id,
+        requestId: body.requestId,
+        candidateVersion: body.candidateVersion,
+        selections: body.selections,
+        idempotencyKey,
+      });
+      return out;
+    } catch (err) {
+      if (err instanceof ConstraintProposalServiceError) {
+        throw new ApiError(err.statusCode, err.name, err.message);
+      }
+      throw err;
+    }
   });
 }

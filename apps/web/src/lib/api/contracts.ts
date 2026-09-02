@@ -774,6 +774,13 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
       "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "STALE",
     ]),
   }).strict(),
+  // Member conversation handoff (docs/member-conversation-handoff-implementation.md §5).
+  streamBaseSchema.extend({
+    event: z.literal("conversation.handoff_ready"),
+    batchId: z.string().uuid(),
+    candidateVersion: z.number().int().positive(),
+    fieldKeys: z.array(z.string().min(1).max(64)).max(8),
+  }).strict(),
 ]);
 
 // ─── Personal Trip Research command (Phase 6 / docs §4) ───────────────────
@@ -1062,6 +1069,10 @@ export const tripConstraintProposalSchema = z.object({
   proposedVisibility: constraintVisibilitySchema,
   sourceKind: constraintProposalSourceKindSchema,
   status: constraintProposalStatusSchema,
+  batchId: z.string().uuid().nullable(),
+  originThreadId: z.string().uuid().nullable(),
+  originRunId: z.string().uuid().nullable(),
+  candidateVersion: z.number().int().positive(),
   createdAt: z.string().datetime(),
   resolvedAt: z.string().datetime().nullable(),
 }).strict();
@@ -1121,6 +1132,43 @@ export const upsertTripConstraintFactRequestSchema = z.object({
 export const castAdoptionVoteRequestSchema = z.object({
   decision: planAdoptionDecisionSchema,
 }).strict();
+
+// ─── Member conversation handoff (docs/member-conversation-handoff-implementation.md §5) ───
+//
+// Mirrors the server schemas in `apps/api/src/types/schemas.ts`. The candidate
+// card consumes the read DTO; the confirm mutation submits only `proposalId`
+// + `visibility` + `strength` (no value, no userId, no threadId, no snapshot,
+// no provider argument) so the server remains the only authority on what
+// becomes a fact and what becomes a Shared plan.
+
+export const constraintHandoffBatchResponseSchema = z.object({
+  tripId: z.string().uuid(),
+  batchId: z.string().uuid(),
+  candidateVersion: z.number().int().positive(),
+  batch: z.array(tripConstraintProposalSchema),
+  residualInferenceWarnings: z.array(z.string()),
+}).strict();
+
+export const constraintHandoffConfirmRequestSchema = z.object({
+  requestId: z.string().uuid(),
+  candidateVersion: z.number().int().positive(),
+  selections: z.array(z.object({
+    proposalId: z.string().uuid(),
+    visibility: constraintVisibilitySchema,
+    strength: constraintStrengthSchema,
+  }).strict()).min(1).max(8),
+}).strict();
+
+export const constraintHandoffConfirmResponseSchema = z.object({
+  runId: z.string().uuid(),
+  snapshotId: z.string().uuid(),
+  operation: z.enum(["PLAN", "REPLAN"]),
+  status: z.literal("QUEUED"),
+}).strict();
+
+export type ConstraintHandoffBatchResponse = z.infer<typeof constraintHandoffBatchResponseSchema>;
+export type ConstraintHandoffConfirmRequest = z.infer<typeof constraintHandoffConfirmRequestSchema>;
+export type ConstraintHandoffConfirmResponse = z.infer<typeof constraintHandoffConfirmResponseSchema>;
 
 export const adoptionVoteResponseSchema = z.object({
   planId: z.string().uuid(),

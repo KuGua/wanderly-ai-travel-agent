@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { db } from "../db/database.js";
 import {
   tripConstraintProposals,
@@ -9,6 +9,8 @@ import {
   tripSearchPreferences,
   tripStaySearchPreferences,
   consentGrants,
+  chatThreads,
+  itineraryPlans,
 } from "../db/schema.js";
 import { enqueueMemoryObservation } from "./memory-observation-bridge.js";
 import { recordAudit } from "./audit-service.js";
@@ -20,7 +22,11 @@ import {
 import { stalePlansAndConfirmationsForTrip } from "./consent-service.js";
 import { acceptPlanningTask } from "../tasks/task-repository.js";
 import { createConstraintSnapshot } from "./planning-service.js";
-import { CONSTRAINT_FIELD_CATALOG, parseConstraintField } from "../policy/constraint-field-catalog.js";
+import {
+  CONSTRAINT_FIELD_CATALOG,
+  parseConstraintField,
+  requiresResidualInferenceWarning,
+} from "../policy/constraint-field-catalog.js";
 import { metrics } from "../observability/metrics.js";
 import type { RequestContext } from "../utils/context.js";
 import type {
@@ -882,4 +888,492 @@ export async function listFactsForOwner(params: {
     eq(tripConstraintFacts.status, "ACTIVE"),
   ));
   return rows;
+}
+
+/**
+ * Member conversation handoff — batch confirm
+ * (docs/member-conversation-handoff-implementation.md §5.2)
+ *
+ * 任一当前 active Trip member 在自己的私有 thread 看到 candidate card 后，
+ * 一次性勾选若干条并提交。服务端做以下事，全部在同一个 DB 事务里：
+ *   1. FOR UPDATE 锁 Trip、该 batch 全部 proposals、相关 ACTIVE facts。
+ *   2. FOR UPDATE 锁 chat_threads(origin_thread_id)，验证 actor = thread owner、
+ *      thread.trip_id = 本 trip。
+ *   3. 验证 candidate_version 一致；逐项校验 status=PENDING、catalog、
+ *      visibility/strength、profile-derived 字段 consent。
+ *   4. 对选中项：写 ACTIVE fact (revision+1，旧 ACTIVE → SUPERSEDED)、
+ *      proposal → CONFIRMED；未选中项保持 PENDING。
+ *   5. 若存在 ACTIVE/PROPOSED plan/confirmations/votes，调
+ *      stalePlansAndConfirmationsForTrip。
+ *   6. 创建 immutable constraint_snapshot。
+ *   7. 接受 PLAN（无当前 plan）或 REPLAN（有当前 plan）durable task。
+ *   8. value-free audit + outbox + metrics。
+ *
+ * 同 requestId 重复提交由 `idempotencyKeyFor("handoff_confirm", ...)` 守护；
+ * 并发与 race 由事务 + lease guard + snapshot manifest guard 拦截。
+ */
+export async function confirmConstraintHandoffBatch(params: {
+  ctx: RequestContext;
+  tripId: string;
+  batchId: string;
+  actorUserId: string;
+  requestId: string;
+  candidateVersion: number;
+  selections: Array<{
+    proposalId: string;
+    visibility: ConstraintVisibility;
+    strength: ConstraintStrength;
+  }>;
+  idempotencyKey: string;
+}): Promise<{
+  runId: string;
+  snapshotId: string;
+  operation: "PLAN" | "REPLAN";
+}> {
+  const requestKey = ensureRequestKey(params.idempotencyKey);
+  const fullKey = `trip_constraint_handoff:handoff_confirm:${params.tripId}:${params.actorUserId}:${requestKey}`;
+
+  const replay = await loadIdempotencyResult(fullKey);
+  if (replay?.resultPayload) {
+    const payload = replay.resultPayload as Record<string, unknown>;
+    if (
+      typeof payload.runId === "string"
+      && typeof payload.snapshotId === "string"
+      && (payload.operation === "PLAN" || payload.operation === "REPLAN")
+    ) {
+      return { runId: payload.runId, snapshotId: payload.snapshotId, operation: payload.operation };
+    }
+  }
+
+  return db.transaction(async (tx) => {
+    const claim = await claimIdempotency(tx, { key: fullKey, entityType: "trip_constraint_handoff" });
+    if (!claim) {
+      const again = await loadIdempotencyResult(fullKey);
+      if (again?.resultPayload) {
+        const payload = again.resultPayload as Record<string, unknown>;
+        if (
+          typeof payload.runId === "string"
+          && typeof payload.snapshotId === "string"
+          && (payload.operation === "PLAN" || payload.operation === "REPLAN")
+        ) {
+          return { runId: payload.runId, snapshotId: payload.snapshotId, operation: payload.operation };
+        }
+      }
+      throw new ConstraintProposalServiceError(
+        "INVALID_IDEMPOTENCY_KEY",
+        "Idempotency record missing result payload — concurrent caller is in flight",
+      );
+    }
+
+    // 1. Lock Trip; verify it is plannable; lock the batch's proposals.
+    const [trip] = await tx.select().from(sharedTrips)
+      .where(eq(sharedTrips.id, params.tripId))
+      .for("update")
+      .limit(1);
+    if (!trip) {
+      throw new ConstraintProposalServiceError("TRIP_NOT_FOUND", `Trip ${params.tripId} not found`);
+    }
+
+    // 2. Actor must be an active member of this trip (was: owner-only).
+    const [actorMembership] = await tx.select({ userId: tripMembers.userId })
+      .from(tripMembers)
+      .where(and(
+        eq(tripMembers.tripId, params.tripId),
+        eq(tripMembers.userId, params.actorUserId),
+      ))
+      .limit(1);
+    if (!actorMembership) {
+      throw new ConstraintProposalServiceError(
+        "FORBIDDEN",
+        "Caller must be an active member of the trip",
+      );
+    }
+
+    // 3. Lock the batch proposals; verify they share trip + actor + batchId.
+    const proposals = await tx.select().from(tripConstraintProposals)
+      .where(and(
+        eq(tripConstraintProposals.tripId, params.tripId),
+        eq(tripConstraintProposals.batchId, params.batchId),
+      ))
+      .for("update");
+    if (proposals.length === 0) {
+      throw new ConstraintProposalServiceError(
+        "PROPOSAL_NOT_FOUND",
+        `Batch ${params.batchId} not found on trip ${params.tripId}`,
+      );
+    }
+    if (proposals.some((p) => p.ownerUserId !== params.actorUserId)) {
+      // Actor is not the candidate owner → cross-member fail closed.
+      throw new ConstraintProposalServiceError(
+        "FORBIDDEN",
+        "Some candidates in this batch are not owned by the caller",
+      );
+    }
+    if (proposals.some((p) => p.candidateVersion !== params.candidateVersion)) {
+      throw new ConstraintProposalServiceError(
+        "PROPOSAL_NOT_FOUND",
+        `Candidate version ${params.candidateVersion} does not match the persisted batch`,
+      );
+    }
+    if (proposals.some((p) => p.status !== "PENDING")) {
+      throw new ConstraintProposalServiceError(
+        "PROPOSAL_NOT_PENDING",
+        "One or more candidates in this batch are already resolved",
+      );
+    }
+    if (proposals.some((p) => p.sourceKind !== "PERSONAL_AGENT")) {
+      // OWNER_FORM proposals do not travel through the batch flow.
+      throw new ConstraintProposalServiceError(
+        "PROPOSAL_NOT_FOUND",
+        "This batch contains non-PERSONAL_AGENT candidates",
+      );
+    }
+
+    // 4. Lock the chat_threads row referenced by the batch and verify the
+    //    ownership + trip invariant that "actor == thread owner == candidate
+    //    owner" holds. DB CHECK covers the row; we re-verify in code so the
+    //    rejection is a clean 403/409, not a constraint violation.
+    const originThreadIds = Array.from(new Set(proposals.map((p) => p.originThreadId).filter((id): id is string => Boolean(id))));
+    if (originThreadIds.length === 0) {
+      throw new ConstraintProposalServiceError(
+        "PROPOSAL_NOT_FOUND",
+        "Candidates in this batch are missing origin_thread_id",
+      );
+    }
+    if (originThreadIds.length > 1) {
+      throw new ConstraintProposalServiceError(
+        "PROPOSAL_NOT_FOUND",
+        "Batch spans more than one origin thread",
+      );
+    }
+    const [originThread] = await tx.select().from(chatThreads)
+      .where(eq(chatThreads.id, originThreadIds[0]))
+      .for("update")
+      .limit(1);
+    if (!originThread) {
+      throw new ConstraintProposalServiceError(
+        "PROPOSAL_NOT_FOUND",
+        "Origin thread no longer exists",
+      );
+    }
+    if (originThread.ownerUserId !== params.actorUserId) {
+      throw new ConstraintProposalServiceError(
+        "FORBIDDEN",
+        "Origin thread is not owned by the caller",
+      );
+    }
+    if (originThread.tripId !== params.tripId) {
+      throw new ConstraintProposalServiceError(
+        "FORBIDDEN",
+        "Origin thread is bound to a different trip",
+      );
+    }
+
+    // 5. Validate each selection against the catalog + consent + visibility.
+    if (params.selections.length === 0) {
+      throw new ConstraintProposalServiceError(
+        "PROPOSAL_NOT_FOUND",
+        "At least one candidate must be selected for handoff confirmation",
+      );
+    }
+    const selectedIds = new Set(params.selections.map((s) => s.proposalId));
+    if (selectedIds.size !== params.selections.length) {
+      throw new ConstraintProposalServiceError(
+        "PROPOSAL_NOT_FOUND",
+        "Duplicate proposalId in selections",
+      );
+    }
+    const matchedSelections = params.selections.filter((s) =>
+      proposals.some((p) => p.id === s.proposalId),
+    );
+    if (matchedSelections.length !== params.selections.length) {
+      throw new ConstraintProposalServiceError(
+        "PROPOSAL_NOT_FOUND",
+        "One or more selections refer to a proposal outside this batch",
+      );
+    }
+    const selectedProposals = proposals.filter((p) => selectedIds.has(p.id));
+
+    for (const proposal of selectedProposals) {
+      const selection = params.selections.find((s) => s.proposalId === proposal.id)!;
+      try {
+        parseConstraintField({
+          fieldKey: proposal.fieldKey,
+          value: proposal.valueJson,
+          visibility: selection.visibility,
+          strength: selection.strength,
+        });
+      } catch {
+        throw new ConstraintProposalServiceError(
+          "VALUE_INVALID",
+          `Catalog rejected candidate "${proposal.id}" for field "${proposal.fieldKey}"`,
+        );
+      }
+      await requireFieldConsent(tx, {
+        tripId: params.tripId,
+        userId: params.actorUserId,
+        fieldKey: proposal.fieldKey,
+        sourceKind: proposal.sourceKind,
+      });
+    }
+
+    // 6. Write ACTIVE fact (revision+1) for each selection; supersede old
+    //    ACTIVE rows; mark proposals CONFIRMED.
+    const writtenFactIds: string[] = [];
+    for (const proposal of selectedProposals) {
+      const selection = params.selections.find((s) => s.proposalId === proposal.id)!;
+      const [latestFact] = await tx.select({ revision: tripConstraintFacts.revision })
+        .from(tripConstraintFacts)
+        .where(and(
+          eq(tripConstraintFacts.tripId, params.tripId),
+          eq(tripConstraintFacts.ownerUserId, params.actorUserId),
+          eq(tripConstraintFacts.fieldKey, proposal.fieldKey),
+          eq(tripConstraintFacts.status, "ACTIVE"),
+        ))
+        .orderBy(sql`${tripConstraintFacts.revision} DESC`)
+        .limit(1);
+      const nextRevision = (latestFact?.revision ?? 0) + 1;
+      if (latestFact) {
+        await tx.update(tripConstraintFacts)
+          .set({ status: "SUPERSEDED", supersededAt: new Date() })
+          .where(and(
+            eq(tripConstraintFacts.tripId, params.tripId),
+            eq(tripConstraintFacts.ownerUserId, params.actorUserId),
+            eq(tripConstraintFacts.fieldKey, proposal.fieldKey),
+            eq(tripConstraintFacts.status, "ACTIVE"),
+          ));
+      }
+      const valueHash = hashValue(proposal.valueJson);
+      const [fact] = await tx.insert(tripConstraintFacts).values({
+        tripId: params.tripId,
+        ownerUserId: params.actorUserId,
+        fieldKey: proposal.fieldKey,
+        valueJson: proposal.valueJson as Record<string, unknown>,
+        valueHash,
+        strength: selection.strength,
+        visibility: selection.visibility,
+        revision: nextRevision,
+        sourceProposalId: proposal.id,
+        status: "ACTIVE",
+      }).returning({ id: tripConstraintFacts.id });
+      writtenFactIds.push(fact.id);
+    }
+
+    if (selectedProposals.length > 0) {
+      await tx.update(tripConstraintProposals)
+        .set({ status: "CONFIRMED", resolvedAt: new Date() })
+        .where(and(
+          eq(tripConstraintProposals.batchId, params.batchId),
+          inArray(tripConstraintProposals.id, selectedProposals.map((p) => p.id)),
+          eq(tripConstraintProposals.status, "PENDING"),
+        ));
+    }
+
+    // 7. Stale cascade: any ACTIVE/PROPOSED plan, confirmation, vote is now
+    //    referencing stale facts. We must supersede them before we accept
+    //    the new plan/replan so the durable task starts from a clean slate.
+    const [existingPlan] = await tx.select({ id: itineraryPlans.id, status: itineraryPlans.status })
+      .from(itineraryPlans)
+      .where(and(
+        eq(itineraryPlans.tripId, params.tripId),
+        inArray(itineraryPlans.status, ["PROPOSED", "ACTIVE", "STALE"]),
+      ))
+      .orderBy(desc(itineraryPlans.version))
+      .limit(1);
+    const operation: "PLAN" | "REPLAN" = existingPlan ? "REPLAN" : "PLAN";
+
+    if (existingPlan) {
+      await stalePlansAndConfirmationsForTrip(tx, {
+        tripId: params.tripId,
+        reason: `trip_constraint_handoff_confirmed:${params.batchId}`,
+      });
+    }
+
+    // 8. Create the immutable snapshot (re-uses the existing builder).
+    const requiredMembers = await tx.select({ userId: tripMembers.userId })
+      .from(tripMembers)
+      .where(and(eq(tripMembers.tripId, params.tripId), eq(tripMembers.isRequired, true)));
+    if (requiredMembers.length === 0) {
+      throw new ConstraintProposalServiceError(
+        "FORBIDDEN",
+        "A replan requires at least one required trip member",
+      );
+    }
+    const [preference] = await tx.select({ version: tripSearchPreferences.version })
+      .from(tripSearchPreferences)
+      .where(eq(tripSearchPreferences.tripId, params.tripId))
+      .orderBy(desc(tripSearchPreferences.version))
+      .limit(1);
+    if (!preference) {
+      throw new ConstraintProposalServiceError(
+        "FORBIDDEN",
+        "Confirmed flight search preferences are required before changing shared constraints",
+      );
+    }
+    const [stayPreference] = process.env.PLAN_ENABLE_HOTEL === "true"
+      ? await tx.select({ version: tripStaySearchPreferences.version }).from(tripStaySearchPreferences)
+        .where(eq(tripStaySearchPreferences.tripId, params.tripId)).orderBy(desc(tripStaySearchPreferences.version)).limit(1)
+      : [];
+    if (process.env.PLAN_ENABLE_HOTEL === "true" && !stayPreference) {
+      throw new ConstraintProposalServiceError(
+        "FORBIDDEN",
+        "Confirmed stay search preferences are required before changing shared constraints",
+      );
+    }
+
+    const snapshotId = await createConstraintSnapshot({
+      tripId: params.tripId,
+      memberIds: requiredMembers.map((m) => m.userId),
+      departureCities: trip.departureCities as string[],
+      destinationCandidates: trip.destinationCandidates as string[],
+      travelDateStart: trip.travelDateStart ?? undefined,
+      travelDateEnd: trip.travelDateEnd ?? undefined,
+      tx,
+    });
+
+    // 9. Accept the durable plan/replan task in the same transaction.
+    const accepted = await acceptPlanningTask({
+      ctx: params.ctx,
+      tripId: params.tripId,
+      userId: params.actorUserId,
+      snapshotId,
+      flightSearchPreferencesVersion: preference.version,
+      staySearchPreferencesVersion: stayPreference?.version,
+      operation,
+      requestId: stableUuidFromRequestKey(params.requestId),
+      tx,
+    });
+
+    // 10. Value-free audit + metrics.
+    await recordAudit({
+      ctx: params.ctx,
+      action: "MEMBER_CONVERSATION_HANDOFF_CONFIRMED",
+      actorUserId: params.actorUserId,
+      tripId: params.tripId,
+      summary: {
+        batchId: params.batchId,
+        candidateVersion: params.candidateVersion,
+        selectionCount: params.selections.length,
+        operation,
+        factIds: writtenFactIds,
+      },
+      tx,
+    });
+    metrics.inc("trip_constraint_mutation_total", {
+      operation: "handoff_confirm",
+      visibility: "mixed",
+      strength: "mixed",
+      result: "success",
+    });
+    metrics.inc("conversation_handoff_confirm_total", { operation: operation.toLowerCase(), result: "success" });
+    metrics.inc("plan_replan_total", {
+      trigger: "conversation_handoff",
+      result: "enqueued",
+    });
+
+    await completeIdempotency(tx, fullKey, "trip_constraint_handoff", accepted.runId, {
+      runId: accepted.runId,
+      snapshotId,
+      operation,
+    });
+
+    return { runId: accepted.runId, snapshotId, operation };
+  });
+}
+
+/**
+ * Member-private batch read. Returns the batch's proposals and a list of
+ * residual-inference warning tokens the UI must surface before the member
+ * confirms any ORCHESTRATOR_CONFIDENTIAL selection. The caller must be the
+ * candidate owner; otherwise this fails closed.
+ */
+export async function listConversationHandoffBatch(params: {
+  tripId: string;
+  batchId: string;
+  actorUserId: string;
+}): Promise<{
+  tripId: string;
+  batchId: string;
+  candidateVersion: number;
+  batch: Array<{
+    id: string;
+    fieldKey: string;
+    valueJson: unknown;
+    strength: ConstraintStrength;
+    proposedVisibility: ConstraintVisibility;
+    sourceKind: "PERSONAL_AGENT";
+    status: "PENDING" | "CONFIRMED" | "DISMISSED";
+    candidateVersion: number;
+  }>;
+  residualInferenceWarnings: string[];
+}> {
+  const rows = await db.select({
+    id: tripConstraintProposals.id,
+    ownerUserId: tripConstraintProposals.ownerUserId,
+    fieldKey: tripConstraintProposals.fieldKey,
+    valueJson: tripConstraintProposals.valueJson,
+    strength: tripConstraintProposals.strength,
+    proposedVisibility: tripConstraintProposals.proposedVisibility,
+    sourceKind: tripConstraintProposals.sourceKind,
+    status: tripConstraintProposals.status,
+    candidateVersion: tripConstraintProposals.candidateVersion,
+  }).from(tripConstraintProposals).where(and(
+    eq(tripConstraintProposals.tripId, params.tripId),
+    eq(tripConstraintProposals.batchId, params.batchId),
+  ));
+  if (rows.length === 0) {
+    throw new ConstraintProposalServiceError(
+      "PROPOSAL_NOT_FOUND",
+      `Batch ${params.batchId} not found on trip ${params.tripId}`,
+    );
+  }
+  if (rows.some((r) => r.ownerUserId !== params.actorUserId)) {
+    throw new ConstraintProposalServiceError(
+      "FORBIDDEN",
+      "Batch contains candidates not owned by the caller",
+    );
+  }
+  if (rows.some((r) => r.sourceKind !== "PERSONAL_AGENT")) {
+    throw new ConstraintProposalServiceError(
+      "PROPOSAL_NOT_FOUND",
+      "Batch contains non-PERSONAL_AGENT candidates",
+    );
+  }
+  const candidateVersion = rows[0].candidateVersion;
+  if (rows.some((r) => r.candidateVersion !== candidateVersion)) {
+    throw new ConstraintProposalServiceError(
+      "PROPOSAL_NOT_FOUND",
+      "Batch contains mixed candidate versions",
+    );
+  }
+
+  const residualInferenceWarnings: string[] = [];
+  for (const row of rows) {
+    const token = requiresResidualInferenceWarning(row.fieldKey as keyof typeof CONSTRAINT_FIELD_CATALOG);
+    if (token && !residualInferenceWarnings.includes(token)) residualInferenceWarnings.push(token);
+  }
+
+  return {
+    tripId: params.tripId,
+    batchId: params.batchId,
+    candidateVersion,
+    batch: rows.map((row) => ({
+      id: row.id,
+      fieldKey: row.fieldKey,
+      valueJson: row.valueJson,
+      strength: row.strength,
+      proposedVisibility: row.proposedVisibility,
+      sourceKind: "PERSONAL_AGENT" as const,
+      // The batch lifecycle is PENDING → CONFIRMED | DISMISSED. A row that
+      // somehow sits at REVOKED cannot happen at read time, but we narrow
+      // here so the DTO is honest about what is exposed to the private UI.
+      status: (["CONFIRMED", "PENDING", "DISMISSED"] as const).includes(
+        row.status as "CONFIRMED" | "PENDING" | "DISMISSED",
+      )
+        ? (row.status as "CONFIRMED" | "PENDING" | "DISMISSED")
+        : "PENDING",
+      candidateVersion: row.candidateVersion,
+    })),
+    residualInferenceWarnings,
+  };
 }

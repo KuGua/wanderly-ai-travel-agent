@@ -767,7 +767,19 @@
     "dismissProposal": "Dismiss",
     "saveFact": "Save",
     "revokeFact": "Revoke",
-    "residualInferenceAck": "I understand the residual inference risk"
+    "residualInferenceAck": "I understand the residual inference risk",
+    "handoffHeading": "Conversation candidate handoff",
+    "handoffBody": "Personal Agent extracted these non-sensitive candidates from your private thread. Confirming will atomically write the facts and accept a fresh shared-plan task — there is no manual replan action in the UI.",
+    "handoffLoading": "Loading candidates…",
+    "handoffLoadError": "Failed to load candidates. Please retry.",
+    "handoffVisibility": "Visibility",
+    "handoffStrength": "Strength",
+    "handoffConfirm": "Confirm and generate shared plan",
+    "handoffConfirming": "Submitting…",
+    "handoffDismiss": "Later",
+    "handoffConfirmError": "Confirm failed: {message}",
+    "handoffAllConfirmed": "All {count} entries in this batch have been confirmed.",
+    "handoffPending": "{pending} entries still need your decision."
   },
   "login": {
     "heading": "Sign in",

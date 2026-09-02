@@ -62,6 +62,10 @@ import {
   adoptionVoteListResponseSchema,
   confirmProposalResponseSchema,
   upsertFactResponseSchema,
+  // ── Member conversation handoff (Phase 6) ─────────────────────────────
+  constraintHandoffBatchResponseSchema,
+  constraintHandoffConfirmRequestSchema,
+  constraintHandoffConfirmResponseSchema,
   // ── Global POI & ground mobility (Phase 2) ──────────────────────────────────
   tripPlacesResponseSchema,
   placeCandidateSearchRequestSchema,
@@ -98,6 +102,8 @@ import {
   type ConfirmTripConstraintProposalRequest,
   type UpsertTripConstraintFactRequest,
   type CastAdoptionVoteRequest,
+  type ConstraintHandoffBatchResponse,
+  type ConstraintHandoffConfirmRequest,
   type ResearchCommandRequest,
   type ResearchCommandAcceptedResponse,
   type LatestResearchResultResponse,
@@ -450,6 +456,31 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request(
       `/trips/${encodeURIComponent(tripId)}/constraint-proposals/${encodeURIComponent(proposalId)}/confirm`,
       confirmProposalResponseSchema,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        ...withIdempotencyKey(options?.idempotencyKey),
+      },
+    );
+  }
+
+  getConstraintHandoffBatch(tripId: string, batchId: string) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/constraint-handoffs/${encodeURIComponent(batchId)}`,
+      constraintHandoffBatchResponseSchema,
+    );
+  }
+
+  confirmConstraintHandoffBatch(
+    tripId: string,
+    batchId: string,
+    input: ConstraintHandoffConfirmRequest,
+    options?: { idempotencyKey?: string },
+  ) {
+    const body = constraintHandoffConfirmRequestSchema.parse(input);
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/constraint-handoffs/${encodeURIComponent(batchId)}/confirm`,
+      constraintHandoffConfirmResponseSchema,
       {
         method: "POST",
         body: JSON.stringify(body),

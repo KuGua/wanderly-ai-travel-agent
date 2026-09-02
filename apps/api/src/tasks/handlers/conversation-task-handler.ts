@@ -31,6 +31,7 @@ import {
   travelConversationOutputSchema,
 } from "../../skills/personal/travel-conversation-skill.js";
 import { personalTripContextSchema, type PersonalTripContext } from "../../skills/personal/personal-trip-context-schema.js";
+import { extractConversationHandoffBatch } from "../../services/conversation-handoff-extraction-service.js";
 import type { AgentStreamEvent } from "../../types/schemas.js";
 import { personalResearchHotelDraftSchema, personalResearchFlightDraftSchema } from "../../types/schemas.js";
 import type { ModelToolDefinition, ModelToolDispatcher, TripBriefProposal } from "../../providers/model-gateway.js";
@@ -664,6 +665,46 @@ export async function handleConversationTask(params: {
   if (gate.rawText === parsed.content) await gate.flush();
   if (parsed.responseMode !== "MODEL" || tripContext.tripStatus !== "DRAFT") return parsed;
   const tripBriefProposal = proposeTripBriefFromTurn(turnInput.question, turnInput.place);
+
+  // Phase 6 / member conversation handoff — fire-and-forget candidate
+  // extraction. The skill registry's timeout / catalog validation handles
+  // safety; failures here never affect the conversation reply. On a
+  // successful extraction we publish a single bounded `handoff_ready` SSE
+  // event with the batchId so the chat UI can pull and render the
+  // member-private candidate card (docs/member-conversation-handoff-implementation.md §5).
+  try {
+    const extraction = await extractConversationHandoffBatch({
+      ctx: params.ctx,
+      run: params.run,
+      currentTurnQuestion: turnInput.question,
+      tripBrief: {
+        departureCities: tripContext.departureCities,
+        destinationCandidates: tripContext.destinationCandidates,
+        ...(tripContext.travelDateStart && tripContext.travelDateEnd
+          ? { travelDateWindow: { start: tripContext.travelDateStart, end: tripContext.travelDateEnd } }
+          : {}),
+      },
+      ownerProfileHints: input.tripContext && "ownerProfileHints" in input.tripContext
+        ? (input.tripContext as { ownerProfileHints?: { interests?: string[]; accommodationStyle?: string; noRedEye?: boolean; budgetMaxUsd?: number } }).ownerProfileHints
+        : undefined,
+      signal: params.signal,
+    });
+    if (extraction) {
+      await publishAgentStreamEvent({
+        event: "conversation.handoff_ready",
+        runId: params.run.id,
+        generationAttempt: params.run.generationAttempt,
+        batchId: extraction.batchId,
+        candidateVersion: extraction.candidateVersion,
+        fieldKeys: extraction.fieldKeys,
+        traceparent: params.ctx.traceparent,
+      });
+    }
+  } catch {
+    // extractConversationHandoffBatch swallows its own errors; the catch is a
+    // belt-and-braces guard against a future refactor that throws.
+  }
+
   return travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
 }
 

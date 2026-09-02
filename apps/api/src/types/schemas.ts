@@ -1230,6 +1230,15 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     code: agentRunErrorCodeSchema,
     retryable: z.boolean(),
   }).strict(),
+  // Member conversation handoff (docs/member-conversation-handoff-implementation.md §5).
+  // Fired when the conversation worker persisted a fresh candidate batch to
+  // trip_constraint_proposals; the chat UI fetches and renders the card.
+  streamBaseSchema.extend({
+    event: z.literal("conversation.handoff_ready"),
+    batchId: uuidSchema,
+    candidateVersion: z.number().int().positive(),
+    fieldKeys: z.array(z.string().min(1).max(64)).max(8),
+  }).strict(),
   researchStageEventSchema,
   researchIntentExtractedEventSchema,
   researchIntentDismissedEventSchema,
@@ -1475,6 +1484,10 @@ export const tripConstraintProposalSchema = z.object({
   proposedVisibility: constraintVisibilitySchema,
   sourceKind: tripConstraintProposalSourceKindSchema,
   status: constraintProposalStatusSchema,
+  batchId: uuidSchema.nullable(),
+  originThreadId: uuidSchema.nullable(),
+  originRunId: uuidSchema.nullable(),
+  candidateVersion: z.number().int().positive(),
   createdAt: z.string().datetime(),
   resolvedAt: z.string().datetime().nullable(),
 }).strict();
@@ -1619,6 +1632,36 @@ export const castAdoptionVoteRequestSchema = z.object({
   idempotencyKey: uuidSchema.optional(),
 }).strict();
 
+// ─── Member conversation handoff (docs/member-conversation-handoff-implementation.md §5.2) ───
+// 严格不接受 value、userId、threadId、snapshotId、planId、provider 参数或任意 JSON。
+// 成员只能在 UI 中取消单项选择，最终值只来自已持久化的 proposal。
+const constraintHandoffSelectionSchema = z.object({
+  proposalId: uuidSchema,
+  visibility: constraintVisibilitySchema,
+  strength: constraintStrengthSchema,
+}).strict();
+
+export const constraintHandoffConfirmRequestSchema = z.object({
+  requestId: uuidSchema,
+  candidateVersion: z.number().int().positive(),
+  selections: z.array(constraintHandoffSelectionSchema).min(1).max(8),
+}).strict();
+
+export const constraintHandoffConfirmResponseSchema = z.object({
+  runId: uuidSchema,
+  snapshotId: uuidSchema,
+  operation: z.enum(["PLAN", "REPLAN"]),
+  status: z.literal("QUEUED"),
+}).strict();
+
+export const constraintHandoffBatchResponseSchema = z.object({
+  tripId: uuidSchema,
+  batchId: uuidSchema,
+  candidateVersion: z.number().int().positive(),
+  batch: z.array(tripConstraintProposalSchema),
+  residualInferenceWarnings: z.array(z.string()),
+}).strict();
+
 export type ConstraintVisibility = z.infer<typeof constraintVisibilitySchema>;
 export type ConstraintStrength = z.infer<typeof constraintStrengthSchema>;
 export type ConstraintProposalStatus = z.infer<typeof constraintProposalStatusSchema>;
@@ -1639,3 +1682,6 @@ export type CreateTripConstraintProposalRequest = z.infer<typeof createTripConst
 export type ConfirmTripConstraintProposalRequest = z.infer<typeof confirmTripConstraintProposalRequestSchema>;
 export type UpsertTripConstraintFactRequest = z.infer<typeof upsertTripConstraintFactRequestSchema>;
 export type CastAdoptionVoteRequest = z.infer<typeof castAdoptionVoteRequestSchema>;
+export type ConstraintHandoffConfirmRequest = z.infer<typeof constraintHandoffConfirmRequestSchema>;
+export type ConstraintHandoffConfirmResponse = z.infer<typeof constraintHandoffConfirmResponseSchema>;
+export type ConstraintHandoffBatchResponse = z.infer<typeof constraintHandoffBatchResponseSchema>;

@@ -512,10 +512,27 @@ metrics.registerCounter(
   "trip_constraint_mutation_total",
   "Trip constraint proposal/fact mutations by operation, visibility, strength, and outcome.",
   {
-    operation: ["propose", "confirm", "dismiss", "upsert", "revoke"],
-    visibility: ["team_visible", "orchestrator_confidential", "n_a"],
-    strength: ["hard", "soft", "n_a"],
+    operation: ["propose", "confirm", "dismiss", "upsert", "revoke", "handoff_confirm"],
+    visibility: ["team_visible", "orchestrator_confidential", "mixed", "n_a"],
+    strength: ["hard", "soft", "mixed", "n_a"],
     result: ["success", "replay", "conflict", "catalog_invalid"],
+  },
+);
+
+metrics.registerCounter(
+  "conversation_handoff_candidate_batch_total",
+  "Member conversation candidate batches produced by Personal Agent (Phase 6 handoff).",
+  {
+    result: ["extracted", "catalog_invalid", "extraction_failed", "empty"],
+  },
+);
+
+metrics.registerCounter(
+  "conversation_handoff_confirm_total",
+  "Member conversation handoff confirmations by accepted durable task operation and outcome.",
+  {
+    operation: ["plan", "replan"],
+    result: ["success", "rejected", "stale", "conflict"],
   },
 );
 
@@ -637,7 +654,7 @@ metrics.registerCounter(
   "plan_replan_total",
   "Auto REPLAN enqueues by trigger and outcome.",
   {
-    trigger: ["trip_constraint_confirmed", "trip_constraint_revoked", "trip_constraint_upsert", "consent", "change_event"],
+    trigger: ["trip_constraint_confirmed", "trip_constraint_revoked", "trip_constraint_upsert", "consent", "change_event", "conversation_handoff"],
     result: ["enqueued", "superseded", "missing_snapshot"],
   },
 );

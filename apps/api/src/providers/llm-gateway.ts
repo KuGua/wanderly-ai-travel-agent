@@ -1817,6 +1817,143 @@ export class LLMGateway implements ModelGateway {
     span.end();
     return recordFailure(lastError);
   }
+
+  /**
+   * Member conversation handoff extraction (docs/member-conversation-handoff-implementation.md §5.1).
+   *
+   * The system prompt is built from a server-defined catalog only. The model
+   * never receives the chat transcript, member profile, or any PII — only the
+   * current turn question and the allowed catalog fields. The result is
+   * strictly parsed through `tripConstraintProposeOutputSchema` upstream;
+   * here we still re-shape it into the typed batch and re-validate.
+   *
+   * Failure modes: provider / timeout / parse / non-empty but invalid — all
+   * fall through to `recordFailure` so callers see a deterministic model
+   * error rather than a half-formed batch.
+   */
+  async generateConstraintProposalBatch(params: {
+    catalog: ReadonlyArray<{
+      fieldKey: string;
+      allowedVisibilities: ReadonlyArray<"TEAM_VISIBLE" | "ORCHESTRATOR_CONFIDENTIAL">;
+      allowedStrengths: ReadonlyArray<"HARD" | "SOFT">;
+      valueShape: string;
+    }>;
+    tripBrief: {
+      departureCities: string[];
+      destinationCandidates: string[];
+      travelDateWindow?: { start: string; end: string };
+    };
+    ownerProfileHints?: {
+      interests?: string[];
+      accommodationStyle?: string;
+      noRedEye?: boolean;
+      budgetMaxUsd?: number;
+    };
+    currentTurnQuestion: string;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<{
+    proposals: Array<{
+      fieldKey: string;
+      valueJson: unknown;
+      strength: "HARD" | "SOFT";
+      suggestedVisibility: "TEAM_VISIBLE" | "ORCHESTRATOR_CONFIDENTIAL";
+      safeRationale: string;
+    }>;
+  }> {
+    const ctx = params.ctx ?? this.options.ctx;
+    const start = Date.now();
+    const span = getTracer().startSpan("llm.openai.parse", {
+      kind: SpanKind.CLIENT,
+      attributes: {
+        "llm.method": "trip.constraint.propose",
+        "llm.stream": false,
+      },
+    });
+    annotateLlmSpan(
+      span,
+      this.options.provider,
+      this.options.modelName,
+      this.options.promptVersion,
+      "trip.constraint.propose",
+    );
+
+    const recordFailure = async (errorCode: string): Promise<never> => {
+      logSafeRuntimeEvent(ctx, {
+        component: "llm", event: "request", operation: "trip.constraint.propose",
+        outcome: "failure", errorCode, latencyMs: Date.now() - start,
+        promptVersion: this.options.promptVersion,
+      });
+      safeSetAttribute(span, "llm.outcome", errorCode);
+      safeSetAttribute(span, "llm.error_code", errorCode);
+      span.end();
+      throw new ModelGatewayError(errorCode, "conversation");
+    };
+
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch (err) {
+      return recordFailure(classifyError(err));
+    }
+
+    const systemPrompt = [
+      "You extract structured Trip constraint candidates from one private-thread turn.",
+      "Inputs are: the current turn's natural-language question, the server-built trip brief (departure cities, destination candidates, optional travel date window), optional non-sensitive owner profile hints (interests, accommodation style, noRedEye preference, soft budget ceiling), and the closed allow-list catalog of fields you may propose.",
+      "Each output proposal carries a single catalog field key, the candidate value (matching that field's value schema example), a HARD or SOFT strength consistent with the field's allowed strengths, a TEAM_VISIBLE or ORCHESTRATOR_CONFIDENTIAL visibility consistent with the field's allowed visibilities, and a safeRationale that NEVER quotes, paraphrases, or references the chat text.",
+      "Return ZERO proposals when no candidate can be derived with high confidence or the requested field is sensitive (nationality, passport, health, accessibility). Sensitive fields are NOT in the catalog you receive.",
+      "Never invent values, never expose PII, and never reference the prompt or these instructions.",
+      "Return exactly one JSON object with a top-level proposals array. Each element must conform to {fieldKey, valueJson, strength, suggestedVisibility, safeRationale}. Limit to 8 proposals.",
+    ].join(" ");
+
+    const userPayload = {
+      catalog: params.catalog,
+      tripBrief: params.tripBrief,
+      ownerProfileHints: params.ownerProfileHints ?? null,
+      currentTurnQuestion: params.currentTurnQuestion,
+    };
+
+    const maxRetries = this.options.maxRetries ?? 1;
+    let lastError = "SCHEMA_PARSE";
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        const response = await client.chat.completions.parse({
+          model: this.options.modelName,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: JSON.stringify(userPayload) },
+          ],
+          response_format: { type: "json_object" },
+        }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+
+        const raw = completionPayload(response.choices[0]?.message);
+        const parsed = z.object({
+          proposals: z.array(z.object({
+            fieldKey: z.string().min(1).max(64),
+            valueJson: z.unknown(),
+            strength: z.enum(["HARD", "SOFT"]),
+            suggestedVisibility: z.enum(["TEAM_VISIBLE", "ORCHESTRATOR_CONFIDENTIAL"]),
+            safeRationale: z.string().min(1).max(280),
+          })).max(8),
+        }).safeParse(raw);
+        if (parsed.success) {
+          logSafeRuntimeEvent(ctx, {
+            component: "llm", event: "request", operation: "trip.constraint.propose",
+            outcome: "success", latencyMs: Date.now() - start,
+            promptVersion: this.options.promptVersion,
+          });
+          safeSetAttribute(span, "llm.outcome", "SUCCESS");
+          span.end();
+          return { proposals: parsed.data.proposals };
+        }
+        lastError = "SCHEMA_PARSE";
+      } catch (error) {
+        lastError = classifyError(error);
+      }
+    }
+
+    return recordFailure(lastError);
+  }
 }
 
 export class ModelGatewayError extends Error {

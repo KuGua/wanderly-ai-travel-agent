@@ -89,19 +89,32 @@ export async function handlePlanningTask(params: {
 
   if (params.signal.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
 
-  const resultPlanId = await generatePlan({
-    ctx: params.ctx,
-    tripId: run.tripId,
-    snapshotId: run.snapshotId,
-    destination: candidates[0],
-    memberIds: [],
-    agentTaskRunId: run.id,
-    flightSearchPreferencesVersion: run.flightSearchPreferencesVersion,
-    staySearchPreferencesVersion: run.staySearchPreferencesVersion ?? undefined,
-    signal: params.signal,
-    leaseToken: params.leaseToken,
-    outputMode: "PROPOSED",
-  });
+  // Phase 6 / member conversation handoff — generate one PROPOSED plan per
+  // destination candidate (was: `candidates[0]` only — see
+  // docs/member-conversation-handoff-implementation.md §6). All plans share
+  // the same snapshot / preference versions; the validator still runs
+  // identically per plan so the deterministic evidence match holds. The
+  // adoption vote (PROPOSED → ACTIVE) and the chain through
+  // `replacedByPlanId` continue to live in `activateProposedPlan`, which is
+  // unchanged.
+  let previousPlanId: string | null = null;
+  for (const destination of candidates) {
+    const resultPlanId = await generatePlan({
+      ctx: params.ctx,
+      tripId: run.tripId,
+      snapshotId: run.snapshotId,
+      destination,
+      memberIds: [],
+      agentTaskRunId: run.id,
+      flightSearchPreferencesVersion: run.flightSearchPreferencesVersion,
+      staySearchPreferencesVersion: run.staySearchPreferencesVersion ?? undefined,
+      signal: params.signal,
+      leaseToken: params.leaseToken,
+      outputMode: "PROPOSED",
+    });
+    previousPlanId = resultPlanId;
+  }
+  const resultPlanId = previousPlanId!;
 
   // Final stale-snapshot guard. Re-reading the projection manifest guarantees
   // a confirmation/revoke that landed between snapshot build and finalization

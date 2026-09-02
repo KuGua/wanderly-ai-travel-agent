@@ -498,6 +498,43 @@ export function useTripPlans(tripId: string) {
   });
 }
 
+// ── Member conversation handoff (Phase 6) ────────────────────────────────────
+//
+// Read-only fetch of the actor's own candidate batch; the worker decides
+// whether to surface a card based on the returned DTO. No batchId is held in
+// localStorage / Zustand — every visit re-fetches by batchId so a stale
+// pointer cannot resurrect a card after the batch has been resolved.
+
+export function useConstraintHandoffBatch(tripId: string | null, batchId: string | null) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: teamOrchestrationKeys.handoff(tripId ?? "_", batchId ?? "_"),
+    queryFn: () => api.getConstraintHandoffBatch!(tripId!, batchId!),
+    enabled: !!api.getConstraintHandoffBatch && !!tripId && !!batchId,
+  });
+}
+
+export function useConfirmConstraintHandoffBatch(tripId: string | null, batchId: string | null) {
+  const api = useTravelApi();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      requestId: string;
+      candidateVersion: number;
+      selections: Array<{ proposalId: string; visibility: "TEAM_VISIBLE" | "ORCHESTRATOR_CONFIDENTIAL"; strength: "HARD" | "SOFT" }>;
+    }) => api.confirmConstraintHandoffBatch!(tripId!, batchId!, input, {
+      idempotencyKey: input.requestId,
+    }),
+    onSuccess: () => {
+      if (!tripId) return;
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsOwner(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsMembers(tripId) });
+      qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+      if (batchId) qc.invalidateQueries({ queryKey: teamOrchestrationKeys.handoff(tripId, batchId) });
+    },
+  });
+}
+
 export function usePlanAdoptionVotes(planId: string) {
   const api = useTravelApi();
   return useQuery({

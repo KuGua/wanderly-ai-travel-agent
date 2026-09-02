@@ -55,6 +55,10 @@ export type AuditAction =
   | "RESEARCH_COMPLETED"
   // Long-term memory (docs/long-term-memory-implementation.md section 7):
   | "MEMORY_PROPOSAL_CREATE" | "MEMORY_PROPOSAL_CONFIRM" | "MEMORY_PROPOSAL_DISMISS"
+  // Member conversation handoff (docs/member-conversation-handoff-implementation.md §10):
+  | "MEMBER_CONVERSATION_CANDIDATES_CREATED"
+  | "MEMBER_CONVERSATION_HANDOFF_CONFIRMED"
+  | "MEMBER_CONVERSATION_HANDOFF_REJECTED"
   | "PREFERENCE_FACT_UPDATE" | "PREFERENCE_FACT_DELETE"
   | "TRIP_MEMORY_UPDATE" | "TRIP_MEMORY_DELETE"
   | "MEMORY_PROJECTION_CREATE" | "MEMORY_INVALIDATION"

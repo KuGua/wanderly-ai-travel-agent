@@ -56,6 +56,8 @@ export const teamOrchestrationKeys = {
     ["team-orchestration", tripId, "plans"] as const,
   votes: (planId: string) =>
     ["team-orchestration", "votes", planId] as const,
+  handoff: (tripId: string, batchId: string) =>
+    ["team-orchestration", tripId, "handoff", batchId] as const,
 };
 
 // ── Phase 6 / Personal Trip Orchestrator ────────────────────────────────────

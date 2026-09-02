@@ -149,6 +149,11 @@ export const auditActionEnum = pgEnum("audit_action", [
   // Hotel provider switching (docs/nuitee-serpapi-hotel-provider-switching-implementation.md §5):
   "HOTEL_PROVIDER_GRANTED", "HOTEL_PROVIDER_REVOKED", "HOTEL_PROVIDER_SWITCH_BLOCKED",
   // Personal Research setup pipeline values removed in 0049.
+  // Member conversation handoff (docs/member-conversation-handoff-implementation.md §10,
+  // added via 0056_conversation_constraint_handoff.sql):
+  "MEMBER_CONVERSATION_CANDIDATES_CREATED",
+  "MEMBER_CONVERSATION_HANDOFF_CONFIRMED",
+  "MEMBER_CONVERSATION_HANDOFF_REJECTED",
   // Quick orchestration (proactive-intro enqueue kept):
   "PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED",
   // LLM-driven Personal Research tool dispatch (added via 0049):
@@ -966,6 +971,10 @@ export const locationIntroductionCache = pgTable("location_introduction_cache", 
 // ─── Team Agent 协作编排 Phase 1+2 (doc: docs/team-agent-orchestration-implementation.md) ──
 // Drizzle 镜像；migration 文件 0021/0022 已定义结构与索引。
 
+// Phase: member conversation handoff (spec docs/member-conversation-handoff-implementation.md §4.1).
+// Legacy rows keep batchId / originThreadId / originRunId = NULL with candidateVersion = 1; only
+// PERSONAL_AGENT source rows are required to carry the origin trio. The origin consistency
+// CHECK lives in migration 0056.
 export const tripConstraintProposals = pgTable("trip_constraint_proposals", {
   id: uuid("id").primaryKey().defaultRandom(),
   tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
@@ -977,6 +986,10 @@ export const tripConstraintProposals = pgTable("trip_constraint_proposals", {
   proposedVisibility: constraintVisibilityEnum("proposed_visibility").notNull(),
   sourceKind: varchar("source_kind", { length: 16 }).notNull().$type<"PERSONAL_AGENT" | "OWNER_FORM">(),
   status: constraintProposalStatusEnum("status").notNull().default("PENDING"),
+  batchId: uuid("batch_id"),
+  originThreadId: uuid("origin_thread_id").references(() => chatThreads.id, { onDelete: "set null" }),
+  originRunId: uuid("origin_run_id").references(() => agentTaskRuns.id, { onDelete: "set null" }),
+  candidateVersion: integer("candidate_version").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 }, (table) => ({
@@ -985,6 +998,15 @@ export const tripConstraintProposals = pgTable("trip_constraint_proposals", {
     .where(sql`status = 'PENDING'`),
   tripOwnerStatusIdx: index("trip_constraint_proposals_trip_owner_idx")
     .on(table.tripId, table.ownerUserId, table.status),
+  batchVersionUnique: uniqueIndex("trip_constraint_proposals_batch_version_unique")
+    .on(table.tripId, table.batchId, table.candidateVersion)
+    .where(sql`batch_id IS NOT NULL`),
+  batchIdx: index("trip_constraint_proposals_batch_idx")
+    .on(table.batchId)
+    .where(sql`batch_id IS NOT NULL`),
+  originThreadIdx: index("trip_constraint_proposals_origin_thread_idx")
+    .on(table.originThreadId)
+    .where(sql`origin_thread_id IS NOT NULL`),
 }));
 
 export const tripConstraintFacts = pgTable("trip_constraint_facts", {

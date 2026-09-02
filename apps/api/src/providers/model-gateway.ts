@@ -265,6 +265,47 @@ export interface ModelGateway {
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<LocationIntroductionResult>;
+
+  /**
+   * Member conversation handoff (docs/member-conversation-handoff-implementation.md §5.1):
+   * extract a catalog-bounded candidate batch from one private-thread turn.
+   * The model receives only the server-built bounded context and the field
+   * catalog; it never sees chat transcript or PII. The returned envelope is
+   * validated against `tripConstraintProposeOutputSchema` upstream of any
+   * persistence, so an implementation may return either pre-parsed rows or
+   * a raw string the caller parses through the same schema.
+   */
+  generateConstraintProposalBatch?(params: {
+    catalog: ReadonlyArray<{
+      fieldKey: string;
+      allowedVisibilities: ReadonlyArray<"TEAM_VISIBLE" | "ORCHESTRATOR_CONFIDENTIAL">;
+      allowedStrengths: ReadonlyArray<"HARD" | "SOFT">;
+      /** Server-authored one-line description of the field's value shape. */
+      valueShape: string;
+    }>;
+    tripBrief: {
+      departureCities: string[];
+      destinationCandidates: string[];
+      travelDateWindow?: { start: string; end: string };
+    };
+    ownerProfileHints?: {
+      interests?: string[];
+      accommodationStyle?: string;
+      noRedEye?: boolean;
+      budgetMaxUsd?: number;
+    };
+    currentTurnQuestion: string;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<{
+    proposals: Array<{
+      fieldKey: string;
+      valueJson: unknown;
+      strength: "HARD" | "SOFT";
+      suggestedVisibility: "TEAM_VISIBLE" | "ORCHESTRATOR_CONFIDENTIAL";
+      safeRationale: string;
+    }>;
+  }>;
 }
 
 /** Narrow, versioned conversation behaviours; add values deliberately. */
