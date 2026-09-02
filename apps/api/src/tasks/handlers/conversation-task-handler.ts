@@ -489,10 +489,15 @@ export async function handleConversationTask(params: {
   // confirmation at either end of a complete natural-language query (for
   // example “...，CNY。确认搜索” and “CNY 确认搜索”), but does not treat an
   // embedded phrase such as “如何确认搜索条件” as authorization.
+  //
+  // A bare “确认” is included: the flight/hotel confirm button sends the
+  // full “确认搜索”, but a person replying to the model's own “请确认”
+  // prompt by hand naturally just types “确认” — the word-boundary anchors
+  // still keep it from matching an embedded fragment like “确认搜索条件”.
   // Read at check time, after the tools have run. A snapshot taken here
   // would always be false.
   toolContext.isEvidenceBacked = () => evidenceDispatched;
-  toolContext.userConfirmed = /(?:^|[\s，,。.!！？])(?:确认搜索|yes[\s,.]+(?:search|please|go)|go ahead|execute search|执行搜索|开始搜索|继续搜索|search now|do it|ok\s+search|please search)(?=$|[\s，,。.!！？])/i.test(
+  toolContext.userConfirmed = /(?:^|[\s，,。.!！？])(?:确认搜索|确认|yes[\s,.]+(?:search|please|go)|go ahead|execute search|执行搜索|开始搜索|继续搜索|search now|do it|ok\s+search|please search)(?=$|[\s，,。.!！？])/i.test(
     input.question,
   );
   toolContext.hotelSearchState = hotelSearchState ? {

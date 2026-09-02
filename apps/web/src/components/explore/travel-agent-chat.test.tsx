@@ -134,6 +134,39 @@ describe("TravelAgentChat durable streaming flow", () => {
     });
   });
 
+  it("shows a persistent confirm/cancel button when flight.search needs confirmation, and clicking confirm sends the phrase the server expects", async () => {
+    // The assistant already has every field it needs but won't spend the
+    // metered provider call without a person's say-so. A person should
+    // never have to type "确认搜索" themselves — the button does that.
+    const submitConversationTurn = vi.fn().mockImplementation(async (_threadId, input) => accepted(input.question));
+    const api = createApi({
+      submitConversationTurn,
+      getAgentRun: vi.fn().mockResolvedValue(run("COMPLETED")),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId: string, signal: AbortSignal, onEvent: (e: unknown) => void) => {
+        onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+        onEvent({ event: "tool.settled", runId: RUN_ID, generationAttempt: 1, capability: "flight.search", outcome: "NEEDS_CONFIRMATION" });
+        onEvent({ event: "turn.completed", runId: RUN_ID, generationAttempt: 1 });
+        await untilAborted(signal);
+      }),
+    });
+    renderChat(api);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "SIN to NRT, one way, 2026-09-25, 1 adult" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    const confirmButton = await screen.findByRole("button", { name: "Search" });
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+
+    // The run finishing (assistant's "please confirm" reply lands) is what
+    // clears `isSending` and makes the button clickable, same as real usage.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).not.toBeDisabled());
+
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(submitConversationTurn).toHaveBeenLastCalledWith(THREAD_ID, expect.objectContaining({ question: "确认搜索" }));
+    });
+  });
+
   it("settles the newest run of a tool, so a second call does not stop the first from spinning", async () => {
     // The same tool may legitimately run twice in one reply with different
     // arguments; settling the oldest would leave the wrong row running.
