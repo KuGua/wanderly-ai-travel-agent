@@ -34,6 +34,11 @@ runs **before** any insert. Rejection propagates as
   These summaries include only `proposalId`/`factId` opaque ids, field category
   (catalog-derived label, never the value), visibility enum, strength enum, and
   revision; `valueJson` is intentionally excluded.
+- Member conversation handoff: `MEMBER_CONVERSATION_CANDIDATES_CREATED`,
+  `MEMBER_CONVERSATION_HANDOFF_CONFIRMED`,
+  `MEMBER_CONVERSATION_HANDOFF_REJECTED`. Summaries contain only bounded
+  field categories, candidate version, selection count and operation/result;
+  they never contain private-thread text, candidate values, batch IDs or fact IDs.
 - Flight search: `FLIGHT_SEARCH_REQUESTED`, `FLIGHT_SEARCH_COMPLETED`, `FLIGHT_SEARCH_UNAVAILABLE`; summaries contain only provider, bounded outcome/error code, and safe correlation identifiers, never raw provider payloads.
 - Flight offer freshness (`flight-offer-freshness-service.ts`, spec §6.2): `FLIGHT_OFFER_EXPIRED`, recorded when confirmation or booking rejects a selected flight offer as expired, missing a verifiable expiry, or sourced from a provider (SerpAPI, FlightAPI) that cannot supply one; adoption (`PROPOSED → ACTIVE`) does not check freshness and never records this action; summary contains only provider, the bounded reason, and the server-observed expiry/server-time comparison, never provider payloads.
 - Activities search: `ACTIVITIES_SEARCH_REQUESTED`, `ACTIVITIES_SEARCH_COMPLETED`, `ACTIVITIES_SEARCH_UNAVAILABLE`; summaries contain only the bounded provider/outcome/error category and never activity titles, MCP payloads, prices or links.
@@ -129,6 +134,8 @@ safe task/capability/status identifiers, never the confirmed request input.
 - `NAVIGATION_ROUTE_REQUESTED`, `NAVIGATION_ROUTE_COMPLETED`, `NAVIGATION_ROUTE_UNAVAILABLE`
 - `MOBILITY_OFFER_REQUESTED`, `MOBILITY_OFFER_COMPLETED`, `MOBILITY_OFFER_UNAVAILABLE`
 - `TRIP_PLACE_PROPOSED`, `TRIP_PLACE_ADOPTED`, `TRIP_PLACE_REVOKED`
+- `MEMBER_CONVERSATION_CANDIDATES_CREATED`, `MEMBER_CONVERSATION_HANDOFF_CONFIRMED`,
+  `MEMBER_CONVERSATION_HANDOFF_REJECTED`
 - `RESEARCH_RESULT_RECORDED`
 - `RESEARCH_COMMAND_ACCEPTED`, `RESEARCH_COMMAND_REJECTED`, `RESEARCH_COMPLETED`
 - `CONFIRMATION_SET`

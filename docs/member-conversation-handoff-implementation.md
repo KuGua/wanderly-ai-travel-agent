@@ -1,6 +1,6 @@
 # 成员对话候选到 Shared Agent 交接实施规范
 
-**状态：** 已批准，待实施  
+**状态：** 已实施；`0057_fix_conversation_handoff_batch_invariants.sql` 与 `0058_allow_terminal_handoff_provenance_redaction.sql` 修复批次版本、成员读取与私聊删除不变量。
 **事实来源：** `TECH_STACK.md`、`docs/PRD.md`、`docs/backlog.md`、`docs/test-scenarios.md`。本文件定义成员私有对话到 Shared Agent 的交接实现，并取代旧 Team Agent 文档中“owner-only / 人工结构化录入”的交互约定；不改变既有 DRAFT Personal Research 的私有 provider 查询边界。
 
 ## 1. 固定决策与不变量
@@ -75,7 +75,7 @@ member-owned private thread
 
 `conversation-task-handler.ts` 在完成普通对话回复后，仅对 active Trip member 的同 owner thread 调用 `trip.constraint.propose`。输入只包含服务端构建的 bounded context、当前 Trip brief 与允许的非敏感 Profile hints。模型输出必须满足 strict Zod，再以 `parseConstraintField` 校验。
 
-有效候选以 `source_kind='PERSONAL_AGENT'`、同一 `batch_id` 写入 `trip_constraint_proposals`；低置信度、缺失值、字段不在目录中或校验失败时不写候选，只在私聊中追问。生成候选不得调用 provider、snapshot、Shared Skill 或 plan service。
+有效候选以 `source_kind='PERSONAL_AGENT'`、同一 `batch_id` 写入 `trip_constraint_proposals`；仅在 `PLANNING` 或 `STALE` Trip 的普通模型对话完成后抽取。`DRAFT` 只允许私有探索，终态 Trip 不抽取交接候选。一个新 batch 的所有候选使用同一个 batch-level `candidate_version = 1`；`batch_id` 为新 UUID，不能覆盖其他 batch。低置信度、缺失值、字段不在目录中或校验失败时不写候选，只在私聊中追问。生成候选不得调用 provider、snapshot、Shared Skill 或 plan service。
 
 ### 5.2 成员批量确认
 
@@ -110,7 +110,7 @@ member-owned private thread
 
 ### 5.3 读取接口
 
-新增 member-private read：`GET /trips/:tripId/constraint-handoffs/:batchId`，仅 batch 中 candidate 的 `owner_user_id`（即该成员本人）可读取。成员共享 workspace 继续只使用既有 `GET /trips/:tripId/constraints` 的 `TEAM_VISIBLE` DTO；不得新增 confidential candidate 或 snapshot read API。
+新增 member-private read：`GET /trips/:tripId/constraint-handoffs/:batchId`，仅仍是当前 Trip member、且为 batch candidate `owner_user_id` 的成员本人可读取。成员移除后读取与确认均 fail closed。成员共享 workspace 继续只使用既有 `GET /trips/:tripId/constraints` 的 `TEAM_VISIBLE` DTO；不得新增 confidential candidate 或 snapshot read API。
 
 ## 6. Shared 编排与状态管理
 
@@ -128,7 +128,7 @@ member-owned private thread
 
 在 `TravelAgentChat` 内展示 member-private candidate card：字段名、规范化候选值、强度、visibility 选择、缺口、残余推断提示与“确认并生成共享方案”按钮。不得展示原始模型理由、其他成员候选、snapshot 或 provider authority。
 
-确认成功后：关闭/标记已确认候选卡，订阅或轮询 run 的安全阶段，invalidate trip/constraints/plans/agent-run query keys。浏览器不在 Zustand、localStorage 或 sessionStorage 保存候选值、授权、snapshot 或任务真相。
+确认成功后：关闭/标记已确认候选卡，订阅或轮询 run 的安全阶段，invalidate trip/constraints/plans/agent-run query keys。卡片可逐项取消选择；“稍后处理”只隐藏当前浏览器卡片，不改变服务端 `PENDING` 状态。删除私有 thread 时服务端必须先将该 thread 的 `PENDING` handoff candidates 标为 `DISMISSED`，再删除正文；终态 proposal 的 origin FK 可被清空，不能阻断私聊删除。浏览器不在 Zustand、localStorage 或 sessionStorage 保存候选值、授权、snapshot 或任务真相。
 
 Shared workspace 保留 proposal plan、adoption vote、ACTIVE/STALE 比较与 booking confirmation；移除人工 `OWNER_FORM` 和显式 replan CTA。
 

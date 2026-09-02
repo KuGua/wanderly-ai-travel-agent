@@ -60,7 +60,7 @@ Amazon RDS for PostgreSQL
 
 `DRAFT` 仅允许私有探索对话、creator 编辑 brief、创建者向受邀者发送邀请（受邀者只能看到最小行程名与 `DRAFT` 状态，不可读取创建者私有对话或未确认的探索内容），但禁止授权、创建 snapshot、planning/replan、确认或 booking。只有 creator 显式“开始规划”且 brief 满足正式约束后，服务端才将其激活为 `PLANNING`。实现细节见 [探索会话与 Trip 生命周期实施方案](docs/exploration-trip-lifecycle-implementation.md)。
 
-**成员对话交接演进（已批准，待实施）：** 任一 active Trip member 可在自己拥有的私有 thread 中让 Personal Agent 生成字段目录允许的非敏感候选，并在对话卡中明确确认后交给 Shared Agent。该交接不共享原文、不替代 consent、不允许代替其他成员确认；服务端仍将确认结果写为 immutable Trip facts/snapshot，并在已有方案时自动 stale/replan。实施合同见 [成员对话候选到 Shared Agent 交接实施规范](docs/member-conversation-handoff-implementation.md)。DRAFT Personal Research 的 owner-only provider 查询保持独立的私有结果边界。
+**成员对话交接：** 任一 `PLANNING`/`STALE` Trip 的 active member 可在自己拥有的私有 thread 中让 Personal Agent 生成字段目录允许的非敏感候选，并在对话卡中明确确认后交给 Shared Agent。该交接不共享原文、不替代 consent、不允许代替其他成员确认；服务端仍将确认结果写为 immutable Trip facts/snapshot，并在已有方案时自动 stale/replan。候选以新 UUID batch 聚合，`candidate_version` 是整批一致的乐观并发值；成员移除后不能读取或确认自己的旧 batch，删除私聊会使待确认候选 `DISMISSED` 后再擦除正文。实施合同见 [成员对话候选到 Shared Agent 交接实施规范](docs/member-conversation-handoff-implementation.md)。DRAFT Personal Research 的 owner-only provider 查询保持独立的私有结果边界。
 
 ## 3. 为什么不用 SQLite 作主数据库
 

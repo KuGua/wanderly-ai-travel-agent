@@ -1119,7 +1119,6 @@ export async function confirmConstraintHandoffBatch(params: {
 
     // 6. Write ACTIVE fact (revision+1) for each selection; supersede old
     //    ACTIVE rows; mark proposals CONFIRMED.
-    const writtenFactIds: string[] = [];
     for (const proposal of selectedProposals) {
       const selection = params.selections.find((s) => s.proposalId === proposal.id)!;
       const [latestFact] = await tx.select({ revision: tripConstraintFacts.revision })
@@ -1144,7 +1143,7 @@ export async function confirmConstraintHandoffBatch(params: {
           ));
       }
       const valueHash = hashValue(proposal.valueJson);
-      const [fact] = await tx.insert(tripConstraintFacts).values({
+      await tx.insert(tripConstraintFacts).values({
         tripId: params.tripId,
         ownerUserId: params.actorUserId,
         fieldKey: proposal.fieldKey,
@@ -1155,8 +1154,7 @@ export async function confirmConstraintHandoffBatch(params: {
         revision: nextRevision,
         sourceProposalId: proposal.id,
         status: "ACTIVE",
-      }).returning({ id: tripConstraintFacts.id });
-      writtenFactIds.push(fact.id);
+      });
     }
 
     if (selectedProposals.length > 0) {
@@ -1251,11 +1249,10 @@ export async function confirmConstraintHandoffBatch(params: {
       actorUserId: params.actorUserId,
       tripId: params.tripId,
       summary: {
-        batchId: params.batchId,
         candidateVersion: params.candidateVersion,
         selectionCount: params.selections.length,
         operation,
-        factIds: writtenFactIds,
+        fieldCategory: selectedProposals.map((proposal) => proposal.fieldKey).sort(),
       },
       tx,
     });
@@ -1307,6 +1304,22 @@ export async function listConversationHandoffBatch(params: {
   }>;
   residualInferenceWarnings: string[];
 }> {
+  // A former member must not retain access to a trip-scoped handoff merely
+  // because they originally owned the private candidate. Confirmation already
+  // enforced this; reads must enforce the same boundary.
+  const [membership] = await db.select({ userId: tripMembers.userId })
+    .from(tripMembers)
+    .where(and(
+      eq(tripMembers.tripId, params.tripId),
+      eq(tripMembers.userId, params.actorUserId),
+    ))
+    .limit(1);
+  if (!membership) {
+    throw new ConstraintProposalServiceError(
+      "FORBIDDEN",
+      "Caller must be an active member of the trip",
+    );
+  }
   const rows = await db.select({
     id: tripConstraintProposals.id,
     ownerUserId: tripConstraintProposals.ownerUserId,

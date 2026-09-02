@@ -77,6 +77,21 @@ export function ConversationHandoffCard({
     });
   };
 
+  const toggleSelection = (proposal: (typeof batch.batch)[number]) => {
+    setSelections((current) => {
+      const next = new Map(current);
+      if (next.has(proposal.id)) {
+        next.delete(proposal.id);
+      } else {
+        next.set(proposal.id, {
+          visibility: proposal.proposedVisibility,
+          strength: proposal.strength,
+        });
+      }
+      return next;
+    });
+  };
+
   const submit = () => {
     if (selections.size === 0) return;
     const payload = {
@@ -117,7 +132,6 @@ export function ConversationHandoffCard({
       <ul className="mt-3 grid gap-2">
         {pending.map((proposal) => {
           const choice = selections.get(proposal.id);
-          if (!choice) return null;
           return (
             <li
               key={proposal.id}
@@ -127,13 +141,22 @@ export function ConversationHandoffCard({
               className="rounded-md border border-border bg-card/60 p-2"
             >
               <div className="flex items-center justify-between gap-2">
+                <label className="flex items-center gap-1 text-xs font-medium">
+                  <input
+                    type="checkbox"
+                    data-testid="handoff-select-checkbox"
+                    checked={Boolean(choice)}
+                    onChange={() => toggleSelection(proposal)}
+                  />
+                  {t("handoffSelect")}
+                </label>
                 <span className="font-mono text-xs text-muted-foreground">{proposal.fieldKey}</span>
                 <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{proposal.status}</span>
               </div>
               <pre className="mt-1 max-h-24 overflow-auto rounded bg-muted/40 p-2 text-xs">
                 {JSON.stringify(proposal.valueJson, null, 2)}
               </pre>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              {choice ? <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                 <label className="flex items-center gap-1">
                   {t("handoffVisibility")}:
                   <select
@@ -158,7 +181,7 @@ export function ConversationHandoffCard({
                     <option value="SOFT">SOFT</option>
                   </select>
                 </label>
-              </div>
+              </div> : null}
             </li>
           );
         })}

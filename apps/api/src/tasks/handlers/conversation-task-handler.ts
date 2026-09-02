@@ -663,8 +663,18 @@ export async function handleConversationTask(params: {
     throw new Error("Final conversation safety validation failed");
   }
   if (gate.rawText === parsed.content) await gate.flush();
-  if (parsed.responseMode !== "MODEL" || tripContext.tripStatus !== "DRAFT") return parsed;
-  const tripBriefProposal = proposeTripBriefFromTurn(turnInput.question, turnInput.place);
+  // Draft brief extraction is private exploration behaviour. It remains
+  // independent from the Shared handoff lifecycle below.
+  const tripBriefProposal = parsed.responseMode === "MODEL" && tripContext.tripStatus === "DRAFT"
+    ? proposeTripBriefFromTurn(turnInput.question, turnInput.place)
+    : undefined;
+  // Shared handoff is a collaboration command. Draft trips are private
+  // exploration only; completed/cancelled trips must not create fresh shared
+  // constraints. PLANNING and STALE are the two states that can safely accept
+  // a new snapshot-backed PLAN/REPLAN.
+  if (!shouldExtractConversationHandoff(parsed.responseMode, tripContext.tripStatus)) {
+    return travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
+  }
 
   // Phase 6 / member conversation handoff — fire-and-forget candidate
   // extraction. The skill registry's timeout / catalog validation handles
@@ -706,6 +716,14 @@ export async function handleConversationTask(params: {
   }
 
   return travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
+}
+
+/** Kept pure so the lifecycle boundary is directly regression-testable. */
+export function shouldExtractConversationHandoff(
+  responseMode: "MODEL" | "SAFE_REFUSAL" | "FALLBACK",
+  tripStatus: PersonalTripContext["tripStatus"],
+): boolean {
+  return responseMode === "MODEL" && (tripStatus === "PLANNING" || tripStatus === "STALE");
 }
 
 /**

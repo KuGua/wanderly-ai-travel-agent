@@ -58,10 +58,9 @@ function hashValue(value: unknown): string {
  * raced in between. Returns the batch metadata the worker needs to render
  * the candidate card and the API needs to fetch by `batchId`.
  *
- * The `candidateVersion` always starts at 1 for a new batch; the unique index
- * `trip_constraint_proposals_batch_version_unique` is what blocks two
- * concurrent writers from inserting duplicate `(batch_id, candidate_version)`
- * rows for the same trip.
+ * The `candidateVersion` is a batch-level optimistic-concurrency value. A
+ * newly extracted batch starts at 1 and every row carries that same value;
+ * `batch_id` is freshly generated, so no writer can overwrite another batch.
  */
 async function persistBatch(params: {
   tx: Tx;
@@ -80,9 +79,8 @@ async function persistBatch(params: {
 }): Promise<{ proposalIds: string[]; fieldKeys: string[] }> {
   const proposalIds: string[] = [];
   const fieldKeys: string[] = [];
-  for (let index = 0; index < params.proposals.length; index += 1) {
-    const proposal = params.proposals[index];
-    const candidateVersion = index + 1;
+  const candidateVersion = 1;
+  for (const proposal of params.proposals) {
     const valueHash = hashValue(proposal.valueJson);
     const [inserted] = await params.tx.insert(tripConstraintProposals).values({
       tripId: params.tripId,
@@ -249,8 +247,7 @@ export async function extractConversationHandoffBatch(params: {
     actorUserId: params.run.createdByUserId,
     tripId: params.run.tripId,
     summary: {
-      batchId,
-      candidateVersion: writeResult.proposalIds.length,
+      candidateVersion: 1,
       fieldCategory: writeResult.fieldKeys.slice().sort(),
       sourceKind: "PERSONAL_AGENT",
     },
@@ -259,7 +256,7 @@ export async function extractConversationHandoffBatch(params: {
 
   return {
     batchId,
-    candidateVersion: writeResult.proposalIds.length,
+    candidateVersion: 1,
     proposalIds: writeResult.proposalIds,
     fieldKeys: writeResult.fieldKeys,
   };

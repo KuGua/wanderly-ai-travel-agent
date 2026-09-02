@@ -973,8 +973,9 @@ export const locationIntroductionCache = pgTable("location_introduction_cache", 
 
 // Phase: member conversation handoff (spec docs/member-conversation-handoff-implementation.md §4.1).
 // Legacy rows keep batchId / originThreadId / originRunId = NULL with candidateVersion = 1; only
-// PERSONAL_AGENT source rows are required to carry the origin trio. The origin consistency
-// CHECK lives in migration 0056.
+// PENDING PERSONAL_AGENT rows carry the origin trio so they can be confirmed
+// safely. Terminal rows may have provenance redacted when their private
+// source thread is deleted (migrations 0057/0058).
 export const tripConstraintProposals = pgTable("trip_constraint_proposals", {
   id: uuid("id").primaryKey().defaultRandom(),
   tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
@@ -998,9 +999,9 @@ export const tripConstraintProposals = pgTable("trip_constraint_proposals", {
     .where(sql`status = 'PENDING'`),
   tripOwnerStatusIdx: index("trip_constraint_proposals_trip_owner_idx")
     .on(table.tripId, table.ownerUserId, table.status),
-  batchVersionUnique: uniqueIndex("trip_constraint_proposals_batch_version_unique")
-    .on(table.tripId, table.batchId, table.candidateVersion)
-    .where(sql`batch_id IS NOT NULL`),
+  batchFieldUnique: uniqueIndex("trip_constraint_proposals_batch_field_unique")
+    .on(table.tripId, table.batchId, table.fieldKey)
+    .where(sql`batch_id IS NOT NULL AND source_kind = 'PERSONAL_AGENT'`),
   batchIdx: index("trip_constraint_proposals_batch_idx")
     .on(table.batchId)
     .where(sql`batch_id IS NOT NULL`),

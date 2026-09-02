@@ -1,8 +1,8 @@
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
 import { db } from "../db/database.js";
-import { chatThreads, chatMessages } from "../db/schema.js";
+import { chatThreads, chatMessages, tripConstraintProposals } from "../db/schema.js";
 import { recordAudit } from "../services/audit-service.js";
 import { createRequestContext } from "../utils/context.js";
 import { getOwnerConversation } from "../services/chat-conversation-service.js";
@@ -167,6 +167,15 @@ export async function chatThreadRoutes(app: FastifyInstance) {
     await db.transaction(async (tx) => {
       const thread = await requireOwnedTripThread(tx, threadId, request.user.id);
 
+      // A PENDING handoff requires its private-thread provenance to remain
+      // confirmable. Deleting that thread explicitly dismisses those pending
+      // candidates before FK SET NULL redacts terminal provenance links.
+      await tx.update(tripConstraintProposals)
+        .set({ status: "DISMISSED", resolvedAt: new Date() })
+        .where(and(
+          eq(tripConstraintProposals.originThreadId, threadId),
+          eq(tripConstraintProposals.status, "PENDING"),
+        ));
       await tx.delete(chatMessages).where(eq(chatMessages.threadId, threadId));
       await tx.delete(chatThreads).where(eq(chatThreads.id, threadId));
 

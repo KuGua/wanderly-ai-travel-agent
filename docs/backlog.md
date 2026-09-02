@@ -88,6 +88,7 @@
 5. Existing plans, confirmations and adoption votes become `STALE` when a confirmed handoff changes inputs. The UI does not expose a manual replan action, but the server continues automatic replan.
 6. Shared Agent receives only the fresh snapshot and current-run evidence. It cannot read candidate batches, private conversation or Personal Research evidence. Plan adoption and booking confirmation remain separate gates.
 7. See [成员对话候选到 Shared Agent 交接实施规范](member-conversation-handoff-implementation.md) for API, migration, rollout and test requirements.
+8. Handoff extraction is available only after Trip activation (`PLANNING`/`STALE`), never from `DRAFT`; a former member cannot read or confirm an old candidate batch, and deleting the source private thread dismisses its pending candidates before transcript deletion.
 
 ### S6 — Approved: DRAFT Personal Research handoff（未实施）
 

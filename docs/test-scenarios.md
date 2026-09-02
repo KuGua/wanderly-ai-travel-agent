@@ -1490,7 +1490,7 @@ depending on a provider-specific `finish_reason`.
 | Cancel | `tests/personal-research/cancel.test.ts` *(待补)* | QUEUED 取消无 provider 调用；double-cancel 幂等 |
 | Web 组件 | `apps/web/tests/personal-research/flight-input-card.test.tsx` *(待补)* | IATA 校验 / 日期校验 / saveAnswers 调用 |
 
-## 已批准、待实施：成员私有对话候选交接 Shared Agent
+## 已实施：成员私有对话候选交接 Shared Agent
 
 > 本节是 [成员对话候选到 Shared Agent 交接实施规范](member-conversation-handoff-implementation.md) 的验收矩阵。其范围是非敏感 Trip constraint 的成员对话交接；DRAFT Personal Research 的私有 provider 查询测试继续适用。
 
@@ -1501,12 +1501,17 @@ depending on a provider-specific `finish_reason`.
 1. Bob 在自己的 thread 中表达 `no_red_eye` 和 `travel_pace`，Personal Agent 生成 Bob-owned candidate batch；Bob 确认后返回 `202` 的 Shared planning run。
 2. Alice 请求读取、confirm、dismiss 或更新 Bob batch 中的 proposal；Chen 使用自己的 thread ID 尝试确认 Bob batch；已离开 Trip 的 Bob 重试 confirm。
 3. Bob 以相同 `requestId` 并发提交两次 confirm；确认完成后再用旧 candidate version 提交。
+4. 在同一个 batch 中生成 `no_red_eye` 与 `travel_pace` 两条候选；读取 batch 后只选择第一条确认。
+5. 将 Bob 从 Trip membership 移除后，分别读取和确认他的旧 batch；另创建一个 `DRAFT` Trip 对话和一个 `PLANNING` Trip 对话，比较是否产生 handoff SSE。
+6. 删除含有 `PENDING` handoff candidates 的 Bob private thread。
 
 **Expected:**
 
 - Bob 可完成交接，无需 creator 权限；其他三种跨成员/离开情形均 fail closed（403/409），且不写 fact/snapshot/task。
 - 同一 request 只创建一组 facts、一个 snapshot 和一个 PLAN/REPLAN task；旧 version 不得覆盖新候选。
 - audit/trace 可关联 actor、trip、run，但不记录聊天文本、值或 user ID 作为 metric label。
+- 同一 batch 的全部候选返回同一个 `candidate_version`，多候选读取、部分选择确认均可用；新 batch 不会覆盖旧 batch。
+- 已移除成员的读取和确认均 fail closed；`DRAFT` 对话不发 handoff SSE，`PLANNING`/`STALE` 对话才可发出。删除私聊先将待确认候选置为 `DISMISSED`，随后正文和 thread 可删除，终态候选不保留可用的 thread/run provenance。
 
 ### TS-CONVERSATION-HANDOFF-2 — 候选与敏感字段边界
 

@@ -37,6 +37,7 @@ import {
 } from "../../src/services/constraint-proposal-service.js";
 import { createRequestContext } from "../../src/utils/context.js";
 import { isTestDatabaseAvailable } from "./helpers";
+import { shouldExtractConversationHandoff } from "../../src/tasks/handlers/conversation-task-handler.js";
 
 let dbUp = false;
 let aliceId = "";
@@ -166,6 +167,15 @@ async function seedPENDINGBatch(params: {
 const runOrSkip = (cond: boolean) => (cond ? describe : describe.skip);
 
 runOrSkip(true)("TS-CONVERSATION-HANDOFF-1 — any active member can confirm their batch", () => {
+  it("extracts only after Trip activation, never from a DRAFT conversation", () => {
+    expect(shouldExtractConversationHandoff("MODEL", "DRAFT")).toBe(false);
+    expect(shouldExtractConversationHandoff("MODEL", "PLANNING")).toBe(true);
+    expect(shouldExtractConversationHandoff("MODEL", "STALE")).toBe(true);
+    expect(shouldExtractConversationHandoff("MODEL", "CONFIRMED")).toBe(false);
+    expect(shouldExtractConversationHandoff("SAFE_REFUSAL", "PLANNING")).toBe(false);
+    expect(shouldExtractConversationHandoff("FALLBACK", "PLANNING")).toBe(false);
+  });
+
   it("Bob (non-creator) can confirm his own batch", async () => {
     if (!dbUp) return;
     const { tripId } = await provisionTripWithTwoMembers();
@@ -226,6 +236,71 @@ runOrSkip(true)("TS-CONVERSATION-HANDOFF-1 — any active member can confirm the
       await expect(listConversationHandoffBatch({
         tripId, batchId, actorUserId: aliceId,
       })).rejects.toBeInstanceOf(ConstraintProposalServiceError);
+    } finally {
+      await cleanup(tripId);
+    }
+  });
+
+  it("keeps every candidate in a multi-candidate batch on one batch version", async () => {
+    if (!dbUp) return;
+    const { tripId } = await provisionTripWithTwoMembers();
+    try {
+      const { threadId } = await provisionThread(tripId, bobId);
+      const runId = randomUUID();
+      const { batchId, proposalId } = await seedPENDINGBatch({ tripId, threadId, runId, ownerId: bobId });
+      await db.insert(tripConstraintProposals).values({
+        tripId, ownerUserId: bobId, fieldKey: "travel_pace",
+        valueJson: { pace: "relaxed" }, valueHash: "second-candidate-hash",
+        strength: "SOFT", proposedVisibility: "TEAM_VISIBLE", sourceKind: "PERSONAL_AGENT",
+        batchId, originThreadId: threadId, originRunId: runId, candidateVersion: 1,
+      });
+
+      const listed = await listConversationHandoffBatch({ tripId, batchId, actorUserId: bobId });
+      expect(listed.candidateVersion).toBe(1);
+      expect(listed.batch).toHaveLength(2);
+      await expect(confirmConstraintHandoffBatch({
+        ctx: createRequestContext(bobId), tripId, batchId, actorUserId: bobId,
+        requestId: randomUUID(), candidateVersion: 1,
+        selections: [{ proposalId, visibility: "TEAM_VISIBLE", strength: "HARD" }],
+        idempotencyKey: `handoff-multi-${batchId}`,
+      })).resolves.toMatchObject({ operation: "PLAN" });
+    } finally {
+      await cleanup(tripId);
+    }
+  });
+
+  it("rejects a former member reading their own batch", async () => {
+    if (!dbUp) return;
+    const { tripId } = await provisionTripWithTwoMembers();
+    try {
+      const { threadId } = await provisionThread(tripId, bobId);
+      const { batchId } = await seedPENDINGBatch({ tripId, threadId, runId: randomUUID(), ownerId: bobId });
+      await db.delete(tripMembers).where(sql`${tripMembers.tripId} = ${tripId} AND ${tripMembers.userId} = ${bobId}`);
+      await expect(listConversationHandoffBatch({ tripId, batchId, actorUserId: bobId }))
+        .rejects.toBeInstanceOf(ConstraintProposalServiceError);
+    } finally {
+      await cleanup(tripId);
+    }
+  });
+
+  it("allows deleting a source thread after its pending handoff is dismissed", async () => {
+    if (!dbUp) return;
+    const { tripId } = await provisionTripWithTwoMembers();
+    try {
+      const { threadId } = await provisionThread(tripId, bobId);
+      const { batchId } = await seedPENDINGBatch({ tripId, threadId, runId: randomUUID(), ownerId: bobId });
+      await db.update(tripConstraintProposals)
+        .set({ status: "DISMISSED", resolvedAt: new Date() })
+        .where(eq(tripConstraintProposals.batchId, batchId));
+      await db.delete(chatMessages).where(eq(chatMessages.threadId, threadId));
+      await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
+
+      const [proposal] = await db.select({
+        originThreadId: tripConstraintProposals.originThreadId,
+        originRunId: tripConstraintProposals.originRunId,
+        status: tripConstraintProposals.status,
+      }).from(tripConstraintProposals).where(eq(tripConstraintProposals.batchId, batchId));
+      expect(proposal).toMatchObject({ status: "DISMISSED", originThreadId: null, originRunId: null });
     } finally {
       await cleanup(tripId);
     }

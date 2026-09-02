@@ -103,6 +103,12 @@ describe("ConversationHandoffCard", () => {
     expect(calledInput.selections[0].proposalId).toBe(PROPOSAL_ID);
   });
 
+  it("allows a member to remove a candidate from the handoff selection", () => {
+    wrap(<ConversationHandoffCard tripId={TRIP_ID} batch={SAMPLE_BATCH} />);
+    fireEvent.click(screen.getByTestId("handoff-select-checkbox"));
+    expect(screen.getByTestId("handoff-confirm-button")).toBeDisabled();
+  });
+
   it("fires onDismissed when the user defers the batch", () => {
     const onDismissed = vi.fn();
     wrap(<ConversationHandoffCard tripId={TRIP_ID} batch={SAMPLE_BATCH} onDismissed={onDismissed} />);

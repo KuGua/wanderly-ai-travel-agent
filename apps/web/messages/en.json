@@ -770,6 +770,7 @@
     "residualInferenceAck": "I understand the residual inference risk",
     "handoffHeading": "Conversation candidate handoff",
     "handoffBody": "Personal Agent extracted these non-sensitive candidates from your private thread. Confirming will atomically write the facts and accept a fresh shared-plan task — there is no manual replan action in the UI.",
+    "handoffSelect": "Handoff this item",
     "handoffLoading": "Loading candidates…",
     "handoffLoadError": "Failed to load candidates. Please retry.",
     "handoffVisibility": "Visibility",
