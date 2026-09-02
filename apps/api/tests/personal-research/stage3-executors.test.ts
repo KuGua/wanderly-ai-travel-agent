@@ -31,6 +31,8 @@ const mockCreateAmadeusTransfer = vi.fn(() => ({
 
 vi.mock("../../src/providers/live-provider-factory.js", () => ({
   createOrsPlace: () => mockCreateOrsPlace(),
+  // Preferred over ORS by the executor; null here keeps these cases on ORS.
+  createOpenTripMapPlace: () => null,
   createOrsNavigation: () => mockCreateOrsNavigation(),
   createAmadeusTransfer: () => mockCreateAmadeusTransfer(),
 }));

@@ -204,3 +204,82 @@ describe("OrsPlaceProvider", () => {
     await provider.searchPlaces({ destination, keyword: "hotel", category: "HOTEL", snapshotId: "11111111-1111-4111-8111-111111111111" });
   });
 });
+
+describe("OrsPlaceProvider: which question is being asked", () => {
+  function feature(name: string, distance?: number) {
+    return {
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [139.7967, 35.7148] },
+      properties: { name, confidence: 0.9, ...(distance === undefined ? {} : { distance }) },
+    };
+  }
+  function collection(...features: ReturnType<typeof feature>[]) {
+    return jsonResponse(200, { type: "FeatureCollection", features });
+  }
+
+  it("asks what is nearby, rather than searching for the category name", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string | URL) => {
+      calls.push(String(url));
+      return collection(feature("Sensō Ji", 0.011));
+    });
+    const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
+    const result = await provider.searchPlaces({
+      destination, keyword: "", category: "ATTRACTION", radiusMeters: 1500,
+      snapshotId: "11111111-1111-4111-8111-111111111111",
+    });
+
+    expect(calls[0]).toContain("/geocode/reverse");
+    expect(calls[0]).toContain("boundary.circle.radius=1.5");
+    expect(calls[0]).not.toContain("text=");
+    expect(result.outcome).toBe("LIVE");
+    if (result.outcome === "LIVE") expect(result.data[0].displayName).toBe("Sensō Ji");
+  });
+
+  it("keeps a stated radius as a bound, not a preference", async () => {
+    // ORS answers past the circle it was given; a place outside the radius is
+    // a wrong answer however well its name matches.
+    const fetchImpl = vi.fn(async () => collection(feature("Far Ramen", 3.2), feature("Near Ramen", 0.4)));
+    const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
+    const result = await provider.searchPlaces({
+      destination, keyword: "ramen", category: "RESTAURANT", radiusMeters: 1000,
+      snapshotId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(result.outcome).toBe("LIVE");
+    if (result.outcome === "LIVE") {
+      expect(result.data.map((candidate) => candidate.displayName)).toEqual(["Near Ramen"]);
+      expect(result.data[0].distanceKm).toBe(0.4);
+    }
+  });
+
+  it("answers a keyword that matches nothing with what is actually around the point", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string | URL) => {
+      calls.push(String(url));
+      return calls.length === 1 ? collection() : collection(feature("Asakusa Shrine", 0.07));
+    });
+    const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
+    const result = await provider.searchPlaces({
+      destination, keyword: "景点", category: "ATTRACTION", radiusMeters: 1500,
+      snapshotId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(calls[0]).toContain("/geocode/search");
+    expect(calls[1]).toContain("/geocode/reverse");
+    expect(result.outcome).toBe("LIVE");
+  });
+
+  it("does not offer a neighbour to a caller that asked where a named place is", async () => {
+    // No radius means place adoption, where the answer has to be the place
+    // that was named — anything else gets adopted as somewhere it is not.
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string | URL) => { calls.push(String(url)); return collection(); });
+    const provider = new OrsPlaceProvider({ ...baseOptions, fetchImpl });
+    const result = await provider.searchPlaces({
+      destination, keyword: "Hotel Gajoen", category: "HOTEL",
+      snapshotId: "11111111-1111-4111-8111-111111111111",
+    });
+    expect(calls).toHaveLength(1);
+    expect(result.outcome).toBe("UNAVAILABLE");
+    if (result.outcome === "UNAVAILABLE") expect(result.reason).toBe("NO_RESULTS");
+  });
+});

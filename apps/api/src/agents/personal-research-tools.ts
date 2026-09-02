@@ -24,10 +24,7 @@ import { tripMembers } from "../db/schema.js";
 import type { ModelToolDefinition, ModelToolDispatcher } from "../providers/model-gateway.js";
 import { logSafeRuntimeEvent } from "../observability/telemetry.js";
 import { recordAudit } from "../services/audit-service.js";
-import { executePersonalAccommodationDiscovery } from "../services/personal-research-executors/accommodation.js";
-import { executePersonalActivitiesSearch } from "../services/personal-research-executors/activities.js";
-import { executePersonalFlightSearch } from "../services/personal-research-executors/flight.js";
-import { executePersonalPlacesSearch } from "../services/personal-research-executors/places.js";
+import { executePersonalResearch } from "../services/personal-research-service.js";
 import { personalResearchOwnerDraftSchema } from "../types/schemas.js";
 import type { RequestContext } from "../utils/context.js";
 import { requiresOwnerConfirmation } from "./personal-research-tool-policy.js";
@@ -47,19 +44,24 @@ export const PERSONAL_RESEARCH_TOOLS: readonly ModelToolDefinition[] = Object.fr
   {
     name: "places.search",
     description:
-      "Find real places near a point — attractions, restaurants, hotels, transport hubs. "
-      + "Returns candidate names and categories, not prices or availability.",
+      "Find real places within a radius of a point — attractions, restaurants, hotels, transport hubs. "
+      + "Returns names and how far away they are, not prices or availability. "
+      + "Results are strictly inside radiusMeters, so widen it and call again if nothing comes back. "
+      + "Pass the traveller's own words as `keyword` when they named a kind of place (\"ramen\", \"onsen\"); "
+      + "leave it null when they only asked what is nearby.",
     parameters: {
       type: "object", additionalProperties: false,
-      // `category` and `limit` are nullable in the draft, not optional: the
-      // key has to be present even when its value is null. Advertising them as
-      // optional made the model omit them and the draft reject the call.
-      required: ["latitude", "longitude", "radiusMeters", "category", "limit"],
+      // `category`, `keyword` and `limit` are nullable in the draft, not
+      // optional: the key has to be present even when its value is null.
+      // Advertising them as optional made the model omit them and the draft
+      // reject the call.
+      required: ["latitude", "longitude", "radiusMeters", "category", "keyword", "limit"],
       properties: {
         latitude: { type: "number", minimum: -90, maximum: 90 },
         longitude: { type: "number", minimum: -180, maximum: 180 },
         radiusMeters: { type: "integer", minimum: 100, maximum: 50000 },
         category: { type: ["string", "null"], enum: ["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER", null] },
+        keyword: { type: ["string", "null"], minLength: 1, maxLength: 64 },
         limit: { type: ["integer", "null"], minimum: 1, maximum: 50 },
       },
     },
@@ -197,15 +199,21 @@ export function createPersonalResearchDispatcher(
 
     let result: unknown;
     try {
-      const executed = await runExecutor(call.name, { run, draft: draft.data, signal: context.signal });
+      // Through the persisting entry point, not the bare executor. Calling the
+      // executor directly ran the search and then dropped what it found: no
+      // `personal_research_evidence` row, so the answer had no provenance, the
+      // TTL never applied, and the next turn in the same thread could not read
+      // back what this one had just looked up. The traveller saw an agent that
+      // forgot a supplier answer the moment it finished speaking.
+      const executed = await executePersonalResearch({ run, draft: draft.data, signal: context.signal });
       // Signals to the turn that a supplier actually answered, which is what
       // lets the output safety filter admit prices and availability. Only a
       // real provider round trip counts: a refusal, a confirmation prompt or
       // an unavailable result would otherwise license the model to state
       // figures nothing produced.
-      result = (executed as { outcome?: unknown })?.outcome === "AVAILABLE"
-        ? { ...(executed as Record<string, unknown>), providerDispatched: true }
-        : executed;
+      result = executed.outcome === "AVAILABLE"
+        ? { ...executed.summary, providerDispatched: true }
+        : executed.summary;
     } catch (error) {
       result = unavailable((error as { name?: string })?.name === "AbortError" ? "UPSTREAM_TIMEOUT" : "UPSTREAM_FAILURE");
     }
@@ -234,24 +242,6 @@ export function createPersonalResearchDispatcher(
 
     return result;
   };
-}
-
-async function runExecutor(
-  name: string,
-  args: { run: never; draft: unknown; signal: AbortSignal },
-): Promise<unknown> {
-  switch (name) {
-    case "places.search":
-      return await executePersonalPlacesSearch(args as never);
-    case "accommodation.discovery":
-      return await executePersonalAccommodationDiscovery(args as never);
-    case "activities.search":
-      return await executePersonalActivitiesSearch(args as never);
-    case "flight.search":
-      return await executePersonalFlightSearch(args as never);
-    default:
-      return unavailable("UNKNOWN_TOOL");
-  }
 }
 
 function unavailable(reason: string) {

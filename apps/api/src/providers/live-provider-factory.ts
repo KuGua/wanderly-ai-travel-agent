@@ -32,6 +32,10 @@ import {
   OpenTripMapAccommodationProvider,
   readOpenTripMapAccommodationConfiguration,
 } from "./opentripmap-accommodation-provider.js";
+import {
+  OpenTripMapPlaceProvider,
+  readOpenTripMapPlaceConfiguration,
+} from "./opentripmap-place-provider.js";
 import { db } from "../db/database.js";
 import { agentTaskRuns } from "../db/schema.js";
 import { eq } from "drizzle-orm";
@@ -280,6 +284,16 @@ export function createActivitiesProvider(): ActivitiesProvider {
 export function createOrsPlace(): PlaceSearchProvider {
   const configuration = readOrsPlaceConfiguration();
   return configuration ? new OrsPlaceProvider(configuration) : new UnavailablePlaceProvider();
+}
+
+/**
+ * The source for "what is around this point", which is not the same question
+ * as "where is the place called X" — see the note on `OpenTripMapPlaceProvider`.
+ * Null when OpenTripMap is not configured, so the caller keeps geocoding.
+ */
+export function createOpenTripMapPlace(): PlaceSearchProvider | null {
+  const configuration = readOpenTripMapPlaceConfiguration();
+  return configuration ? new OpenTripMapPlaceProvider(configuration) : null;
 }
 
 export function createOrsNavigation(): NavigationProvider {
