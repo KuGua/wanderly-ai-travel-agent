@@ -27,11 +27,12 @@ import { useTravelApi } from "./provider";
 import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys, invitationKeys, personalOrchestrationKeys } from "./keys";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 
-export function useMyProfile() {
+export function useMyProfile({ enabled = true }: { enabled?: boolean } = {}) {
   const api = useTravelApi();
   return useQuery({
     queryKey: profileKeys.me,
     queryFn: () => api.getMyProfile(),
+    enabled,
   });
 }
 
@@ -136,11 +137,12 @@ export function useDeleteTripMemory(tripId: string) {
   return useTripMemoryMutation(tripId, (factId: string) => api.deleteTripMemory(tripId, factId));
 }
 
-export function useTrips() {
+export function useTrips({ enabled = true }: { enabled?: boolean } = {}) {
   const api = useTravelApi();
   return useQuery({
     queryKey: tripKeys.list,
     queryFn: () => api.getTrips(),
+    enabled,
   });
 }
 

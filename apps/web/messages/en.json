@@ -94,6 +94,13 @@
     },
     "errorStateProfileUnavailable": "Profile unavailable",
     "errorStateTripsUnavailable": "Trips unavailable",
+    "signInRequired": {
+      "profileTitle": "Your travel profile is ready when you are",
+      "profileBody": "Keep your preferences in one private place. Sign in to pick up where you left off.",
+      "tripsTitle": "Your trips are waiting for you",
+      "tripsBody": "Only you can see your plans and their progress. Sign in to continue planning.",
+      "action": "Sign in"
+    },
     "profile": {
       "kicker": "Private by default",
       "heading": "Profile snapshot",

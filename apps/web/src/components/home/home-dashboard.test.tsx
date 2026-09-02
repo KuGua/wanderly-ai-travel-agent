@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TravelApi } from "@/lib/api";
 import type { TripsResponse } from "@/lib/api/contracts";
+import { AuthContext } from "@/lib/auth/auth-provider";
 import { renderWithIntl } from "@/test/render";
 
 const { routerPush } = vi.hoisted(() => ({ routerPush: vi.fn() }));
@@ -40,11 +41,31 @@ const planningTrip = {
   status: "PLANNING" as const,
 };
 
+const signedInAuth = {
+  status: "SIGNED_IN" as const,
+  user: { username: "traveler" },
+  error: null,
+  busy: false,
+  sessionRevision: 0,
+  getAccessToken: vi.fn().mockResolvedValue("access-token"),
+  signIn: vi.fn().mockResolvedValue(true),
+  signOut: vi.fn().mockResolvedValue(true),
+};
+
 function makeApi(trips: TripsResponse["trips"]): TravelApi {
   return {
     getMyProfile: vi.fn().mockResolvedValue({ profile: null }),
     getTrips: vi.fn().mockResolvedValue({ trips }),
   } as unknown as TravelApi;
+}
+
+function renderAuthenticatedDashboard(api: TravelApi) {
+  return renderWithIntl(
+    <AuthContext.Provider value={signedInAuth}>
+      <HomeDashboard />
+    </AuthContext.Provider>,
+    { api },
+  );
 }
 
 afterEach(() => {
@@ -74,7 +95,7 @@ describe("HomeDashboard", () => {
       startExploration,
     } as unknown as TravelApi;
 
-    renderWithIntl(<HomeDashboard />, { api });
+    renderAuthenticatedDashboard(api);
     fireEvent.click(screen.getByRole("button", { name: "New trip" }));
 
     await waitFor(() => expect(startExploration).toHaveBeenCalledTimes(1));
@@ -83,7 +104,7 @@ describe("HomeDashboard", () => {
   });
 
   it("shows an unarchived Draft in the default active list and prioritizes it for continuation", async () => {
-    renderWithIntl(<HomeDashboard />, { api: makeApi([planningTrip, draftTrip]) });
+    renderAuthenticatedDashboard(makeApi([planningTrip, draftTrip]));
 
     await waitFor(() => {
       expect(screen.getAllByRole("heading", { name: "Taipei exploration" })).toHaveLength(2);
@@ -105,7 +126,7 @@ describe("HomeDashboard", () => {
       archivedAt: "2026-08-30T01:00:00.000Z",
       archiveReason: "USER_ARCHIVED" as const,
     };
-    renderWithIntl(<HomeDashboard />, { api: makeApi([draftTrip, archivedDraft]) });
+    renderAuthenticatedDashboard(makeApi([draftTrip, archivedDraft]));
 
     await waitFor(() => {
       expect(screen.getAllByRole("heading", { name: "Taipei exploration" })).toHaveLength(2);
@@ -116,5 +137,30 @@ describe("HomeDashboard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Archived1" }));
     expect(screen.getByText("Archived Taipei exploration")).toBeInTheDocument();
+  });
+
+  it("asks a signed-out visitor to sign in instead of requesting private Home data", () => {
+    const api = makeApi([]);
+    renderWithIntl(
+      <AuthContext.Provider value={{
+        status: "SIGNED_OUT",
+        user: null,
+        error: null,
+        busy: false,
+        sessionRevision: 0,
+        getAccessToken: vi.fn().mockResolvedValue(null),
+        signIn: vi.fn().mockResolvedValue(false),
+        signOut: vi.fn().mockResolvedValue(true),
+      }}>
+        <HomeDashboard />
+      </AuthContext.Provider>,
+      { api },
+    );
+
+    expect(screen.getByRole("heading", { name: "Your travel profile is ready when you are" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your trips are waiting for you" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Sign in" })).toHaveLength(2);
+    expect(api.getMyProfile).not.toHaveBeenCalled();
+    expect(api.getTrips).not.toHaveBeenCalled();
   });
 });

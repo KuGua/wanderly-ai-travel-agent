@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Heart, MapPinned, Search, Settings2 } from "lucide-react";
+import { ArrowRight, Heart, LockKeyhole, MapPinned, Search, Settings2 } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { Link, useRouter } from "@/i18n/navigation";
 import { useMyProfile, useTrips } from "@/lib/query/hooks";
 import { useTravelApi } from "@/lib/query/provider";
 import { tripKeys } from "@/lib/query/keys";
+import { useOptionalAuth } from "@/lib/auth/auth-provider";
 import type { TripSummary } from "@/lib/api/contracts";
 
 import { TripList } from "./trip-list";
@@ -44,8 +45,13 @@ function isArchivedTrip(trip: TripSummary): boolean {
 export function HomeDashboard() {
   const tHome = useTranslations("home");
   const tCommon = useTranslations("common");
-  const profileQuery = useMyProfile();
-  const tripsQuery = useTrips();
+  const auth = useOptionalAuth();
+  // Private Home data must fail closed when the app-level AuthProvider is
+  // unavailable as well as when it reports a signed-out session.
+  const isAuthenticated = auth?.status === "SIGNED_IN" || auth?.status === "LOCAL_DEV";
+  const isCheckingSession = auth?.status === "CHECKING";
+  const profileQuery = useMyProfile({ enabled: isAuthenticated });
+  const tripsQuery = useTrips({ enabled: isAuthenticated });
   const api = useTravelApi();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -187,11 +193,12 @@ export function HomeDashboard() {
             <Settings2 aria-hidden="true" className="size-4" /> {tHome("profile.edit")}
           </Link>
         </div>
-        {profileQuery.isPending ? <LoadingState label={tCommon("loadingProfile")} /> : null}
-        {profileQuery.isError ? (
+        {isCheckingSession || (isAuthenticated && profileQuery.isPending) ? <LoadingState label={tCommon("loadingProfile")} /> : null}
+        {!isCheckingSession && !isAuthenticated ? <PrivateDataSignInRequired subject="profile" /> : null}
+        {isAuthenticated && profileQuery.isError ? (
           <ErrorState error={profileQuery.error} title={tHome("errorStateProfileUnavailable")} />
         ) : null}
-        {profileQuery.data?.profile ? (
+        {isAuthenticated && profileQuery.data?.profile ? (
           <div className="grid gap-0.5 overflow-hidden bg-[var(--w-ink)] wanderly-edge wanderly-r-lg wanderly-shadow sm:grid-cols-3">
             <SummaryItem
               icon={MapPinned}
@@ -220,7 +227,7 @@ export function HomeDashboard() {
             />
           </div>
         ) : null}
-        {profileQuery.data?.profile === null ? (
+        {isAuthenticated && profileQuery.data?.profile === null ? (
           <div className="border-2 border-dashed border-[var(--w-ink)] bg-card p-7 wanderly-r-lg">
             <h3 className="font-bold">{tHome("profile.emptyTitle")}</h3>
             <p className="mt-2 text-sm text-muted-foreground">{tHome("profile.emptyBody")}</p>
@@ -346,13 +353,41 @@ export function HomeDashboard() {
             {tHome("trips.showing", { count: filteredTrips.length })}
           </span>
         </div>
-        {tripsQuery.isPending ? <LoadingState label={tCommon("loadingTrips")} /> : null}
-        {tripsQuery.isError ? (
+        {isCheckingSession || (isAuthenticated && tripsQuery.isPending) ? <LoadingState label={tCommon("loadingTrips")} /> : null}
+        {!isCheckingSession && !isAuthenticated ? <PrivateDataSignInRequired subject="trips" /> : null}
+        {isAuthenticated && tripsQuery.isError ? (
           <ErrorState error={tripsQuery.error} title={tHome("errorStateTripsUnavailable")} />
         ) : null}
-        {tripsQuery.data ? <TripList trips={filteredTrips} /> : null}
+        {isAuthenticated && tripsQuery.data ? <TripList trips={filteredTrips} /> : null}
       </section>
     </main>
+  );
+}
+
+function PrivateDataSignInRequired({ subject }: { subject: "profile" | "trips" }) {
+  const tHome = useTranslations("home");
+  const isProfile = subject === "profile";
+  const title = tHome(isProfile ? "signInRequired.profileTitle" : "signInRequired.tripsTitle");
+  const body = tHome(isProfile ? "signInRequired.profileBody" : "signInRequired.tripsBody");
+
+  return (
+    <section className="w-full border-2 border-dashed border-[var(--w-ink)]/55 bg-[var(--w-mist)] p-5 wanderly-r-lg sm:px-6" aria-label={title}>
+      <div className="flex min-h-[108px] flex-col justify-between gap-4 sm:flex-row sm:items-center sm:gap-8">
+        <div className="flex min-w-0 max-w-2xl items-start gap-3">
+          <LockKeyhole aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div>
+            <h3 className="text-base font-bold tracking-[-0.025em]">{title}</h3>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">{body}</p>
+          </div>
+        </div>
+        <Link
+          href="/login"
+          className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start bg-[var(--w-fog)] px-3 text-sm font-bold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-sm wanderly-press hover:bg-[var(--w-highlight)] hover:wanderly-shadow-xs focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30 sm:self-auto"
+        >
+          {tHome("signInRequired.action")} <ArrowRight aria-hidden="true" className="size-4" />
+        </Link>
+      </div>
+    </section>
   );
 }
 

@@ -94,6 +94,13 @@
     },
     "errorStateProfileUnavailable": "资料加载失败",
     "errorStateTripsUnavailable": "行程加载失败",
+    "signInRequired": {
+      "profileTitle": "登录后，继续完善你的旅行偏好",
+      "profileBody": "把常用偏好留在只属于你的空间里，随时接着上次的进度继续规划。",
+      "tripsTitle": "登录后，继续你的行程规划",
+      "tripsBody": "行程进度和方案仅对你可见。登录后即可查看并继续安排。",
+      "action": "去登录"
+    },
     "profile": {
       "kicker": "默认私密",
       "heading": "资料快照",
