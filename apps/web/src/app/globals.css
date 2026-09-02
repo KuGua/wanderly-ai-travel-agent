@@ -71,8 +71,20 @@
   /* Deep-space variants; the cosmic map reassigns the same palette. */
   --w-space: color-mix(in srgb, var(--w-primary), #000 72%);
   --w-space-mid: color-mix(in srgb, var(--w-primary), #000 47%);
-  --w-space-panel: color-mix(in srgb, var(--w-primary), transparent 7%);
+  /*
+   * Overlay fills lean on --info instead of on black. Mixing a fill toward
+   * #000 drains its chroma, and the panels then read as dead grey boxes,
+   * which is the wrong note for a product about going places. Mixing toward
+   * the info blue keeps them dark enough for fog text while the blue stays
+   * visible. They are also genuinely translucent, so the globe and the star
+   * field carry through the panel rather than being walled off by it.
+   */
+  --w-space-tint: color-mix(in srgb, var(--w-primary), var(--w-info) 26%);
+  --w-space-panel: color-mix(in srgb, var(--w-space-tint), transparent 22%);
   --w-space-line: color-mix(in srgb, var(--w-fog), transparent 35%);
+  /* Content resting on a panel: deeper than the panel, same blue family. */
+  --w-space-surface: color-mix(in srgb, color-mix(in srgb, var(--w-space-tint), #000 34%), transparent 12%);
+  --w-space-muted: color-mix(in srgb, var(--w-fog), transparent 34%);
 
   --background: var(--w-page);
   --foreground: var(--w-ink);
@@ -321,6 +333,8 @@
   border: 2px solid var(--w-space-line);
   background: var(--w-space-panel);
   color: var(--w-fog);
+  backdrop-filter: blur(18px) saturate(1.2) brightness(0.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2) brightness(0.5);
   box-shadow:
     4px 4px 0 var(--w-ink),
     0 18px 40px color-mix(in srgb, var(--w-space), transparent 20%);
@@ -337,6 +351,82 @@
   border-color: var(--w-fog);
   background: var(--w-highlight);
   color: var(--w-ink);
+}
+
+/* A disabled control must not promise the highlight it will not give. */
+.wanderly-cosmos-control:disabled:hover {
+  border-color: var(--w-space-line);
+  background: color-mix(in srgb, var(--w-space-mid), transparent 4%);
+  color: var(--w-fog);
+}
+
+/*
+ * Content resting *inside* a cosmic panel — a message bubble, an inline
+ * action card, the composer box. `--w-space-surface` is a step darker than
+ * the panel it sits on, so the two separate without a white card appearing
+ * in the scene.
+ */
+.wanderly-cosmos-surface {
+  border: 2px solid var(--w-space-line);
+  background: var(--w-space-surface);
+  color: var(--w-fog);
+  backdrop-filter: blur(10px) saturate(1.15) brightness(0.65);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15) brightness(0.65);
+}
+
+/*
+ * Without the blur these fills are only tints, so opacity has to go back up
+ * or the text loses its background. Support for the query is uneven, and the
+ * fallback must be safe on its own.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  .wanderly-cosmos-panel,
+  .wanderly-cosmos-surface,
+  .wanderly-cosmos-control {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .wanderly-cosmos-panel { background: var(--w-space-tint); }
+  .wanderly-cosmos-surface { background: color-mix(in srgb, var(--w-space-tint), #000 34%); }
+}
+
+/*
+ * Floating Explore conversation.
+ *
+ * The panel is a cosmic overlay, so its interior has to read as deep space
+ * too. Re-pointing the shadcn aliases here does that for the nested cards
+ * this stylesheet never names — `bg-card`, `text-muted-foreground`,
+ * `border-border` all resolve to the deep-space palette inside the panel —
+ * instead of forcing every one of them to become mode-aware in TSX. The
+ * same component docks into the light Trip workspace, which is why the swap
+ * lives on this class rather than on the component's base styles.
+ *
+ * `--w-ink` is deliberately NOT reassigned: in space the hard offset shadow
+ * is still ink, and only the outlines turn fog. The rule below does that
+ * directly so the shadow is left alone.
+ */
+.wanderly-cosmos-chat {
+  --background: transparent;
+  --foreground: var(--w-fog);
+  --card: var(--w-space-surface);
+  --card-foreground: var(--w-fog);
+  --popover: var(--w-space-surface);
+  --popover-foreground: var(--w-fog);
+  --muted: var(--w-space-mid);
+  --muted-foreground: var(--w-space-muted);
+  --secondary: var(--w-space-mid);
+  --secondary-foreground: var(--w-fog);
+  --border: var(--w-space-line);
+  --input: var(--w-space-line);
+  --ring: var(--w-fog);
+  /* The paper red drops below AA on deep space; lift it, keep the hue. */
+  --destructive: oklch(0.72 0.17 25);
+}
+
+.wanderly-cosmos-chat .wanderly-edge,
+.wanderly-cosmos-chat .wanderly-edge-thin {
+  border-color: var(--w-space-line);
 }
 
 .wanderly-cosmos .maplibregl-ctrl-group {
