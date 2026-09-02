@@ -144,8 +144,11 @@
         "budget": "经济型",
         "luxury": "豪华型"
       },
-      "archive": "归档",
-      "restore": "恢复"
+      "delete": "删除{name}",
+      "deleteConfirmTitle": "确定永久删除？",
+      "deleteConfirm": "删除",
+      "deleteCancel": "保留",
+      "deleting": "正在删除…"
     },
     "fixtures": {
       "tripName": "亚洲之旅"

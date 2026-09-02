@@ -908,16 +908,6 @@ export const updateTripTitleResponseSchema = z.object({
   }).strict(),
 });
 
-/** Archiving hides a trip from the working list; nothing it owns is deleted. */
-export const updateTripArchiveInputSchema = z.object({ archived: z.boolean() }).strict();
-export const updateTripArchiveResponseSchema = z.object({
-  trip: z.object({
-    id: z.string().uuid(),
-    archivedAt: z.string().datetime().nullable(),
-    archiveReason: z.enum(["USER_ARCHIVED", "DATE_ELAPSED"]).nullable(),
-    updatedAt: z.string().datetime(),
-  }).strict(),
-});
 
 export const locationReferenceInputSchema = z.object({
   latitude: z.number().finite().min(-90).max(90),
@@ -1110,8 +1100,6 @@ export type TripActivationRequest = z.infer<typeof tripActivationRequestSchema>;
 export type TripActivationResponse = z.infer<typeof tripActivationResponseSchema>;
 export type UpdateTripTitleInput = z.infer<typeof updateTripTitleInputSchema>;
 export type UpdateTripTitleResponse = z.infer<typeof updateTripTitleResponseSchema>;
-export type UpdateTripArchiveInput = z.infer<typeof updateTripArchiveInputSchema>;
-export type UpdateTripArchiveResponse = z.infer<typeof updateTripArchiveResponseSchema>;
 export type UpdateDraftTripBriefInput = z.infer<typeof updateDraftTripBriefInputSchema>;
 export type UpdateDraftTripBriefResponse = z.infer<typeof updateDraftTripBriefResponseSchema>;
 export type Thread = z.infer<typeof threadSchema>;

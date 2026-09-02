@@ -144,8 +144,11 @@
         "budget": "Budget",
         "luxury": "Luxury"
       },
-      "archive": "Archive",
-      "restore": "Restore"
+      "delete": "Delete {name}",
+      "deleteConfirmTitle": "Delete for good?",
+      "deleteConfirm": "Delete",
+      "deleteCancel": "Keep",
+      "deleting": "Deleting…"
     },
     "fixtures": {
       "tripName": "Asia Trip"

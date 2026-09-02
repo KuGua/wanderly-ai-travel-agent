@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { TravelApi } from "@/lib/api";
@@ -27,10 +27,8 @@ function trip(overrides: Partial<TripSummary> = {}): TripSummary {
   };
 }
 
-function apiWithArchive(updateTripArchive = vi.fn().mockResolvedValue({
-  trip: { id: TRIP_ID, archivedAt: null, archiveReason: null, updatedAt: "2026-09-02T10:00:00.000Z" },
-})) {
-  return { updateTripArchive } as unknown as TravelApi;
+function apiWithDelete(deleteTrip = vi.fn().mockResolvedValue(undefined)) {
+  return { deleteTrip } as unknown as TravelApi;
 }
 
 // `globals` is off in vitest.config.mts, so Testing Library's automatic
@@ -45,49 +43,65 @@ describe("TripList", () => {
     expect(screen.getByText(/Trip creation is a later slice/)).toBeInTheDocument();
   });
 
-  it("lets the creator archive a trip", async () => {
-    const updateTripArchive = vi.fn().mockResolvedValue({
-      trip: { id: TRIP_ID, archivedAt: "2026-09-02T10:00:00.000Z", archiveReason: "USER_ARCHIVED", updatedAt: "2026-09-02T10:00:00.000Z" },
-    });
-    renderWithIntl(<TripList trips={[trip()]} />, { api: apiWithArchive(updateTripArchive) });
+  it("does not delete on the first click — it asks first", async () => {
+    // The delete is not reversible, so a single mis-click must not reach the
+    // API. The first click only arms the confirmation.
+    const deleteTrip = vi.fn().mockResolvedValue(undefined);
+    renderWithIntl(<TripList trips={[trip()]} />, { api: apiWithDelete(deleteTrip) });
 
-    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Tokyo trip" }));
 
-    await waitFor(() => expect(updateTripArchive).toHaveBeenCalledWith(TRIP_ID, { archived: true }));
+    expect(deleteTrip).not.toHaveBeenCalled();
+    expect(await screen.findByRole("group", { name: "Delete for good?" })).toBeInTheDocument();
   });
 
-  it("offers to restore a trip the traveller archived", async () => {
-    const updateTripArchive = vi.fn().mockResolvedValue({
-      trip: { id: TRIP_ID, archivedAt: null, archiveReason: null, updatedAt: "2026-09-02T10:00:00.000Z" },
-    });
-    renderWithIntl(
-      <TripList trips={[trip({ archivedAt: "2026-09-01T10:00:00.000Z", archiveReason: "USER_ARCHIVED" })]} />,
-      { api: apiWithArchive(updateTripArchive) },
-    );
+  it("deletes once the confirmation is taken", async () => {
+    const deleteTrip = vi.fn().mockResolvedValue(undefined);
+    renderWithIntl(<TripList trips={[trip()]} />, { api: apiWithDelete(deleteTrip) });
 
-    fireEvent.click(screen.getByRole("button", { name: "Restore" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Tokyo trip" }));
+    const confirm = await screen.findByRole("group", { name: "Delete for good?" });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Delete" }));
 
-    await waitFor(() => expect(updateTripArchive).toHaveBeenCalledWith(TRIP_ID, { archived: false }));
+    await waitFor(() => expect(deleteTrip).toHaveBeenCalledWith(TRIP_ID));
   });
 
-  it("offers nothing to undo when the dates merely elapsed", () => {
-    // `DATE_ELAPSED` is derived on read, not an action anyone took, so there
-    // is no user decision here for a restore button to reverse.
-    renderWithIntl(
-      <TripList trips={[trip({ archivedAt: "2026-09-01T10:00:00.000Z", archiveReason: "DATE_ELAPSED" })]} />,
-      { api: apiWithArchive() },
-    );
+  it("backs out without deleting when the confirmation is declined", async () => {
+    const deleteTrip = vi.fn().mockResolvedValue(undefined);
+    renderWithIntl(<TripList trips={[trip()]} />, { api: apiWithDelete(deleteTrip) });
 
-    expect(screen.queryByRole("button", { name: "Restore" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Delete Tokyo trip" }));
+    const confirm = await screen.findByRole("group", { name: "Delete for good?" });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Keep" }));
+
+    expect(deleteTrip).not.toHaveBeenCalled();
+    expect(await screen.findByRole("button", { name: "Delete Tokyo trip" })).toBeInTheDocument();
   });
 
-  it("hides archiving from a member who did not create the trip", () => {
-    // Matches the API, which is creator-only: a member leaving a shared trip
-    // is a different decision from the organiser putting it away.
-    renderWithIntl(<TripList trips={[trip({ role: "MEMBER" })]} />, { api: apiWithArchive() });
+  it("hides deleting from a member who did not create the trip", () => {
+    // Matches the API, which is creator-only: a member who wants out of a
+    // shared trip is leaving it, not destroying it for everyone else.
+    renderWithIntl(<TripList trips={[trip({ role: "MEMBER" })]} />, { api: apiWithDelete() });
 
-    expect(screen.queryByRole("button", { name: "Archive" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Delete/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Open/ })).toBeInTheDocument();
+  });
+
+  it("keeps each card's look tied to its own trip, not its position", () => {
+    // Styling once came from the array index, so deleting a card restyled
+    // every card after it and the gap appeared to open in the wrong place.
+    const second = "22222222-2222-4222-8222-222222222222";
+    const before = renderWithIntl(
+      <TripList trips={[trip(), trip({ id: second, name: "Kyoto trip" })]} />,
+      { api: apiWithDelete() },
+    );
+    const kyotoBefore = before.container.querySelectorAll("article")[1]!.className;
+    cleanup();
+
+    const after = renderWithIntl(
+      <TripList trips={[trip({ id: second, name: "Kyoto trip" })]} />,
+      { api: apiWithDelete() },
+    );
+    expect(after.container.querySelectorAll("article")[0]!.className).toBe(kyotoBefore);
   });
 });
