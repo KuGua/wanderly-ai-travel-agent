@@ -31,7 +31,6 @@ afterEach(() => {
 });
 
 function ChatHarness({
-  tripId,
   controlledThreadId = THREAD_ID,
   initiallyOpen = true,
   selectedPlace = null,
@@ -41,7 +40,6 @@ function ChatHarness({
   onThreadInvalidated,
 }: {
   controlledThreadId?: string | null;
-  tripId?: string | null;
   initiallyOpen?: boolean;
   selectedPlace?: { place: ConversationPlace; context: string } | null;
   tripId?: string | null;
@@ -59,8 +57,7 @@ function ChatHarness({
       tripId={tripId}
       onThreadInvalidated={onThreadInvalidated}
       selectedPlace={selectedPlace}
-      tripId={tripId}
-      onStartNewExploration={onStartNewExploration}
+            onStartNewExploration={onStartNewExploration}
       onConversationText={onConversationText}
     />
   );
