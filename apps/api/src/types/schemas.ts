@@ -829,14 +829,54 @@ const personalResearchPlacesDraftSchema = z.object({
   limit: z.number().int().min(1).max(50).nullable(),
 }).strict();
 
+/**
+ * A route endpoint given as a point on the map, with the name the traveller
+ * used for it.
+ *
+ * The label is carried so the answer can say what it is a route between.
+ * "3.4 km, 42 minutes" is not an answer to "从京都站到清水寺要多久" unless it
+ * says which two places it measured.
+ */
+const routeEndpointSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  label: z.string().trim().min(1).max(80),
+}).strict();
+
+/**
+ * Two ways to name the ends of a route, and a route needs exactly one of them.
+ *
+ * Trip-place ids are what the plan uses, and they stay: adopting a route
+ * between two places already in the itinerary is the durable operation this
+ * capability was built for. But nothing in a conversation carries those ids —
+ * the whole database holds two trip-place rows — so a traveller asking "从京都
+ * 站到清水寺怎么走" could not be answered at all, and the capability was left
+ * out of the model's tools entirely because it could only ever fail.
+ * Coordinates are the form a conversation can actually supply.
+ */
 const personalResearchNavigationRouteDraftSchema = z.object({
   kind: z.literal("NAVIGATION_ROUTE"),
-  originPlaceId: z.string().uuid(),
-  destinationPlaceId: z.string().uuid(),
+  originPlaceId: z.string().uuid().nullable().default(null),
+  destinationPlaceId: z.string().uuid().nullable().default(null),
+  origin: routeEndpointSchema.nullable().default(null),
+  destination: routeEndpointSchema.nullable().default(null),
   mode: z.enum(["driving", "walking", "cycling"]),
 }).strict().superRefine((draft, ctx) => {
-  if (draft.originPlaceId === draft.destinationPlaceId) {
+  const byId = draft.originPlaceId !== null && draft.destinationPlaceId !== null;
+  const byPoint = draft.origin !== null && draft.destination !== null;
+  if (byId === byPoint) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["origin"],
+      message: "give either both place ids or both coordinates, not a mixture and not neither",
+    });
+  }
+  if (byId && draft.originPlaceId === draft.destinationPlaceId) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["destinationPlaceId"], message: "origin and destination must differ" });
+  }
+  if (byPoint && draft.origin!.latitude === draft.destination!.latitude
+    && draft.origin!.longitude === draft.destination!.longitude) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["destination"], message: "origin and destination must differ" });
   }
 });
 
@@ -986,6 +1026,9 @@ export const personalResearchNavigationRouteEvidenceSummarySchema = z.object({
   distanceMeters: z.number().nonnegative(),
   durationSeconds: z.number().nonnegative(),
   mode: z.enum(["driving", "walking", "cycling"]),
+  // What the route runs between. A distance with no ends is not an answer.
+  origin: z.string().trim().max(80).nullable().default(null),
+  destination: z.string().trim().max(80).nullable().default(null),
 }).strict();
 export const personalResearchMobilityEvidenceSummarySchema = z.object({
   offerCount: z.number().int().nonnegative(),

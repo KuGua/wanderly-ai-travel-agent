@@ -15,6 +15,7 @@ const DRAFT_KIND: Record<string, string> = {
   "places.search": "PLACES_SEARCH",
   "accommodation.discovery": "ACCOMMODATION_DISCOVERY",
   "activities.search": "ACTIVITIES_SEARCH",
+  "navigation.route": "NAVIGATION_ROUTE",
   "flight.search": "FLIGHT_SEARCH",
 };
 
@@ -26,6 +27,11 @@ const SAMPLE: Record<string, Record<string, unknown>> = {
     checkIn: "2026-10-01", checkOut: "2026-10-04", occupancy: { adults: 2, rooms: 1 },
   },
   "activities.search": { destinationCode: "Tokyo", startDate: "2026-10-01", endDate: "2026-10-05", category: null, limit: 10 },
+  "navigation.route": {
+    origin: { latitude: 34.9858, longitude: 135.7588, label: "京都站" },
+    destination: { latitude: 34.9949, longitude: 135.7850, label: "清水寺" },
+    mode: "walking",
+  },
   "flight.search": {
     originId: "PVG", destinationId: "NRT", tripType: "ROUND_TRIP",
     departureDate: "2026-10-01", returnDate: "2026-10-08", adults: 1, cabin: "ECONOMY", currency: "USD",
@@ -150,10 +156,16 @@ describe("evidence signal", () => {
 });
 
 describe("tools deliberately withheld", () => {
-  it("does not offer navigation.route", () => {
-    // Its draft takes two trip-place UUIDs and nothing in the conversation
-    // context carries them, so the model could only ever call it wrongly.
-    expect(PERSONAL_RESEARCH_TOOLS.map((tool) => tool.name)).not.toContain("navigation.route");
+  it("asks for a route by its two points, never by an id the model cannot know", () => {
+    // The draft still takes trip-place UUIDs, for a route between two places
+    // already in the plan. Nothing in a conversation carries those ids, so
+    // advertising them is how the tool used to be uncallable; only the
+    // coordinate form is offered.
+    const navigation = PERSONAL_RESEARCH_TOOLS.find((tool) => tool.name === "navigation.route");
+    expect(navigation).toBeDefined();
+    const properties = Object.keys((navigation!.parameters as { properties: Record<string, unknown> }).properties);
+    expect(properties).toEqual(["origin", "destination", "mode"]);
+    expect(JSON.stringify(navigation)).not.toContain("PlaceId");
   });
 
   it("does not offer mobility.search", () => {

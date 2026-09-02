@@ -25,10 +25,16 @@ import type {
 import type { PersonalResearchEvidenceSummary } from "../../types/domain.js";
 import type { AgentTaskRow } from "../../tasks/task-repository.js";
 
+type RouteEndpoint = { latitude: number; longitude: number; label: string };
+
 export type PersonalResearchNavigationRouteDraft = {
   kind: "NAVIGATION_ROUTE";
-  originPlaceId: string;
-  destinationPlaceId: string;
+  /** Set together, for a route between two places already in the plan. */
+  originPlaceId: string | null;
+  destinationPlaceId: string | null;
+  /** Set together, for a route between two points a conversation named. */
+  origin: RouteEndpoint | null;
+  destination: RouteEndpoint | null;
   mode: "driving" | "walking" | "cycling";
 };
 
@@ -42,12 +48,24 @@ export async function executePersonalNavigationRoute(params: {
   // Place ids identify rows in this system; the routing supplier takes
   // coordinates, so they are resolved here rather than handed to the
   // adapter, which has no database access and no notion of a trip place.
-  const coordinates = await resolveEndpointCoordinates(params);
+  // Nullish, not `!== null`: a draft written before this field existed omits
+  // it entirely, and `undefined !== null` was true — so the point branch ran
+  // for a place-id route and read a latitude off nothing.
+  const coordinates = params.draft.origin != null && params.draft.destination != null
+    ? {
+      origin: { latitude: params.draft.origin.latitude, longitude: params.draft.origin.longitude },
+      destination: { latitude: params.draft.destination.latitude, longitude: params.draft.destination.longitude },
+    }
+    : await resolveEndpointCoordinates(params);
   if (coordinates === null) return unavailableSummary("SEARCH_CONSTRAINTS_INCOMPLETE");
 
   const input = {
-    originPlaceId: params.draft.originPlaceId,
-    destinationPlaceId: params.draft.destinationPlaceId,
+    // The routing supplier never sees these; they travel with the request so
+    // a route between two plan places stays traceable to them. A route
+    // between two named points has no row to point at, so it carries the
+    // point itself.
+    originPlaceId: params.draft.originPlaceId ?? pointReference(params.draft.origin ?? null),
+    destinationPlaceId: params.draft.destinationPlaceId ?? pointReference(params.draft.destination ?? null),
     originCoordinate: coordinates.origin,
     destinationCoordinate: coordinates.destination,
     // Normalize Personal mode spelling (driving / walking / cycling) to the
@@ -78,6 +96,10 @@ export async function executePersonalNavigationRoute(params: {
       distanceMeters: route.distanceMeters,
       durationSeconds: route.durationSeconds,
       mode: params.draft.mode,
+      // The traveller's own names for the ends, when they gave them. A
+      // distance and a duration say nothing without them.
+      origin: params.draft.origin?.label ?? null,
+      destination: params.draft.destination?.label ?? null,
     },
   };
 }
@@ -140,7 +162,8 @@ async function resolveEndpointCoordinates(params: {
   run: AgentTaskRow;
   draft: PersonalResearchNavigationRouteDraft;
 }): Promise<{ origin: RouteCoordinate; destination: RouteCoordinate } | null> {
-  if (!params.run.tripId) return null;
+  const { originPlaceId, destinationPlaceId } = params.draft;
+  if (!params.run.tripId || originPlaceId == null || destinationPlaceId == null) return null;
   const rows = await db.select({
     id: tripPlaces.id,
     ownerUserId: tripPlaces.ownerUserId,
@@ -150,14 +173,21 @@ async function resolveEndpointCoordinates(params: {
   }).from(tripPlaces).where(and(
     eq(tripPlaces.tripId, params.run.tripId),
     eq(tripPlaces.status, "ACTIVE"),
-    inArray(tripPlaces.id, [params.draft.originPlaceId, params.draft.destinationPlaceId]),
+    inArray(tripPlaces.id, [originPlaceId, destinationPlaceId]),
   ));
 
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const origin = toCoordinate(byId.get(params.draft.originPlaceId), params.run.createdByUserId);
-  const destination = toCoordinate(byId.get(params.draft.destinationPlaceId), params.run.createdByUserId);
+  const origin = toCoordinate(byId.get(originPlaceId), params.run.createdByUserId);
+  const destination = toCoordinate(byId.get(destinationPlaceId), params.run.createdByUserId);
   if (origin === null || destination === null) return null;
   return { origin, destination };
+}
+
+/** A stand-in identifier for an endpoint that is a point rather than a row. */
+function pointReference(endpoint: RouteEndpoint | null): string {
+  return endpoint === null
+    ? "unknown"
+    : `point:${endpoint.latitude.toFixed(5)},${endpoint.longitude.toFixed(5)}`;
 }
 
 function toCoordinate(
