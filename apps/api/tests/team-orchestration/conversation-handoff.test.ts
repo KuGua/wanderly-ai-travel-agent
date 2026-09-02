@@ -168,12 +168,22 @@ const runOrSkip = (cond: boolean) => (cond ? describe : describe.skip);
 
 runOrSkip(true)("TS-CONVERSATION-HANDOFF-1 — any active member can confirm their batch", () => {
   it("extracts only after Trip activation, never from a DRAFT conversation", () => {
-    expect(shouldExtractConversationHandoff("MODEL", "DRAFT")).toBe(false);
-    expect(shouldExtractConversationHandoff("MODEL", "PLANNING")).toBe(true);
-    expect(shouldExtractConversationHandoff("MODEL", "STALE")).toBe(true);
-    expect(shouldExtractConversationHandoff("MODEL", "CONFIRMED")).toBe(false);
-    expect(shouldExtractConversationHandoff("SAFE_REFUSAL", "PLANNING")).toBe(false);
-    expect(shouldExtractConversationHandoff("FALLBACK", "PLANNING")).toBe(false);
+    const W = "TRIP_WORKSPACE";
+    expect(shouldExtractConversationHandoff("MODEL", "DRAFT", W)).toBe(false);
+    expect(shouldExtractConversationHandoff("MODEL", "PLANNING", W)).toBe(true);
+    expect(shouldExtractConversationHandoff("MODEL", "STALE", W)).toBe(true);
+    expect(shouldExtractConversationHandoff("MODEL", "CONFIRMED", W)).toBe(false);
+    expect(shouldExtractConversationHandoff("SAFE_REFUSAL", "PLANNING", W)).toBe(false);
+    expect(shouldExtractConversationHandoff("FALLBACK", "PLANNING", W)).toBe(false);
+  });
+
+  it("extracts nothing from exploration, whatever the trip status says", () => {
+    // The surface gate was added after the case above was written, and it can
+    // only narrow: an absent or unrecognised surface reads as exploration, so
+    // an old client fails towards forgetting rather than over-remembering.
+    expect(shouldExtractConversationHandoff("MODEL", "PLANNING", "GLOBE")).toBe(false);
+    expect(shouldExtractConversationHandoff("MODEL", "PLANNING", null)).toBe(false);
+    expect(shouldExtractConversationHandoff("MODEL", "PLANNING", undefined)).toBe(false);
   });
 
   it("Bob (non-creator) can confirm his own batch", async () => {
