@@ -492,6 +492,29 @@ export function TravelAgentChat({
     setPendingFlightConfirmation(pending);
   }, [agentRun.data?.pendingFlightConfirmation]);
 
+  // The trip carries the unconfirmed brief too, and unlike the run it is still
+  // there after a reload or on another device. This is the copy that makes the
+  // card dependable; the run and the notification are just faster.
+  useEffect(() => {
+    const proposed = trip.data?.trip.pendingBriefProposal;
+    if (!proposed) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBriefProposal((current) => ({ ...current, ...proposed }));
+  }, [trip.data?.trip.pendingBriefProposal]);
+
+  // Same reason as the confirmation above: `trip.brief_proposed` is published
+  // once and never replayed, so a client that finishes subscribing after the
+  // worker published it — which is what happens on a fast turn — never learns
+  // the brief exists. The run carries it, and the run is already polled.
+  // Merged rather than replaced so a brief built across several turns keeps
+  // the fields earlier turns contributed.
+  useEffect(() => {
+    const proposed = agentRun.data?.tripBriefProposal;
+    if (!proposed) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBriefProposal((current) => ({ ...current, ...proposed }));
+  }, [agentRun.data?.tripBriefProposal]);
+
   // The classifier is server-owned. Only its explicit flight-preference gap
   // can open this card; a phrase that merely mentions a flight cannot cause a
   // durable preference form to appear or be written against a trip.
@@ -1319,8 +1342,14 @@ function describeBriefProposal(
   if (proposal.travelDateStart && proposal.travelDateEnd) {
     lines.push(t("briefProposalDateRange", { start: proposal.travelDateStart, end: proposal.travelDateEnd }));
   } else if (proposal.travelDateStart) {
-    lines.push(t("briefProposalDateRange", { start: proposal.travelDateStart, end: t("briefProposalDatePending") }));
-  } else if (proposal.travelDays) {
+    // Its own sentence rather than a range with a placeholder end: composing
+    // one produced "2026-12-26 to to be set from trip duration".
+    lines.push(t("briefProposalDateStart", { start: proposal.travelDateStart }));
+  }
+  // Always its own line. A traveller who gave both a date and a duration was
+  // shown only the date, so the card could not be checked against what they
+  // actually said — which is the one job it has.
+  if (proposal.travelDays) {
     lines.push(t("briefProposalDays", { days: proposal.travelDays }));
   }
   return lines;

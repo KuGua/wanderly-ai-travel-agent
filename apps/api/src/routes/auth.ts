@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto
 import { eq, or } from "drizzle-orm";
 
 import { db } from "../db/database.js";
-import { users } from "../db/schema.js";
+import { users, userProfiles } from "../db/schema.js";
 import { REMEMBERED_TOKEN_EXPIRY_SECONDS, signJwt, verifyJwt } from "../utils/jwt.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { passwordResetEmailConfigured, sendPasswordResetCode } from "../services/password-reset-email.js";
@@ -104,13 +104,27 @@ export async function authRoutes(app: FastifyInstance) {
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-    const [user] = await db.insert(users).values({
-      externalId: `custom:${username}`,
-      displayName: username,
-      username,
-      email,
-      passwordHash,
-    }).returning({ id: users.id });
+    // The profile row is created with the account, in one transaction. It used
+    // to be left out, and the consequences were not obvious: `GET /profiles/me`
+    // returned null, the Travel preference page had nothing to edit, and the
+    // traveller could never record a nationality — which in turn meant hotel
+    // quotes could never be authorized and their trips could not be planned.
+    // Every account made through this route hit that.
+    //
+    // The row is empty. It is a place to put preferences, not a claim that any
+    // were stated: nothing here is projected into memory, because the user has
+    // not said anything yet.
+    const user = await db.transaction(async (tx) => {
+      const [created] = await tx.insert(users).values({
+        externalId: `custom:${username}`,
+        displayName: username,
+        username,
+        email,
+        passwordHash,
+      }).returning({ id: users.id });
+      await tx.insert(userProfiles).values({ userId: created.id });
+      return created;
+    });
 
     const token = signJwt({ sub: user.id, username, email });
 

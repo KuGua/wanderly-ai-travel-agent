@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
+import { grantQuoteNationality } from "../services/stay-search-provider-authorization.js";
 import {
   agentTaskRuns,
   sharedTrips,
@@ -11,6 +12,7 @@ import {
   itineraryPlans,
   memberConfirmations,
   consentGrants,
+  userProfiles,
 } from "../db/schema.js";
 import {
   createTripSchema,
@@ -348,6 +350,7 @@ export async function tripRoutes(app: FastifyInstance) {
         travelDateStart: body.travelDateStart ?? null,
         travelDateEnd: derivedTravelDateEnd ?? null,
         travelDays: body.travelDays ?? trip.travelDays,
+        pendingBriefProposal: null,
         status: "PLANNING",
         updatedAt: new Date(),
       }).where(eq(sharedTrips.id, tripId));
@@ -375,6 +378,29 @@ export async function tripRoutes(app: FastifyInstance) {
       // PLANNING: each required member must still confirm their own inputs.
       let planningRun: { runId: string; snapshotId: string } | undefined;
       if (requiredMembers.length === 1 && body.travelDateStart && derivedTravelDateEnd) {
+        // Hotel quotes need a guest nationality, and until now nothing granted
+        // one: the endpoint existed but no screen called it, so every trip made
+        // through the product had none. The stay search then never returned
+        // LIVE, the destination was recorded as uncovered, and the whole run
+        // refused to synthesize a plan — with nothing on screen saying why.
+        //
+        // The value comes from the traveller's own profile, or from what they
+        // were asked for on the card when their profile has none. It is never
+        // guessed and never defaulted, and pressing "Start planning" is the
+        // consent, exactly as it already is for the flight conditions (§3.2).
+        // Granted inside this transaction so a trip is never left PLANNING and
+        // unauthorized.
+        const [creatorProfile] = await tx.select({ nationality: userProfiles.nationality })
+          .from(userProfiles).where(eq(userProfiles.userId, request.user.id)).limit(1);
+        const quoteNationality = body.guestNationality ?? creatorProfile?.nationality ?? null;
+        if (quoteNationality) {
+          await grantQuoteNationality({
+            tripId,
+            memberId: request.user.id,
+            value: quoteNationality,
+            tx,
+          });
+        }
         const preferences = await saveConfirmedSearchPreferences({
           ctx,
           tripId,
@@ -596,6 +622,8 @@ export async function tripRoutes(app: FastifyInstance) {
       await tx.update(sharedTrips).set({
         departureCities: nextDepartures, destinationCandidates: nextDestinations,
         travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays,
+        // The candidate has become a fact; the card has nothing left to offer.
+        pendingBriefProposal: null,
         ...(trip.nameSource === "AUTO" ? { name: autoTitle, titleLocale: body.titleLocale } : {}), updatedAt: now,
       }).where(eq(sharedTrips.id, tripId));
       await recordAudit({ ctx, action: "TRIP_DRAFT_BRIEF_UPDATE", actorUserId: request.user.id, tripId, summary: { source: body.replaceDestinationCandidates ? "creator_brief_editor" : "conversation_confirmation", changedFields: [ ...(body.departureCities ? ["departureCities"] : []), ...(body.destinationCandidates ? ["destinationCandidates"] : []), ...(body.travelDateStart !== undefined ? ["travelDateStart"] : []), ...(body.travelDateEnd !== undefined ? ["travelDateEnd"] : []), ...(body.travelDays !== undefined ? ["travelDays"] : []) ] }, tx });

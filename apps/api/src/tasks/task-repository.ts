@@ -1573,6 +1573,7 @@ function toRunResponse(
     errorCode: run.errorCode,
     assistantMessageId: run.assistantMessageId,
     resultPlanId: run.resultPlanId,
+    tripBriefProposal: (run.tripBriefProposal ?? null) as AgentRunResponse["tripBriefProposal"],
     researchIntentDraft: draft,
     researchIntentState: run.researchIntentState === "SUPERSEDED" ? null : run.researchIntentState,
   });

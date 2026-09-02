@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { users } from "../src/db/schema.js";
+import { users, userProfiles } from "../src/db/schema.js";
 
 const username = `local_${Math.random().toString(36).slice(2, 10)}`;
 const email = `${username}@example.test`;
@@ -70,5 +70,39 @@ describe("custom-local authentication", () => {
       payload: { username, password: "Password1A" },
     });
     expect(response.statusCode).toBe(403);
+  });
+
+  /**
+   * A registered account with no profile row could never record a nationality,
+   * and without one hotel quotes cannot be authorized and the trip cannot be
+   * planned. The row is created with the account so that path does not exist.
+   */
+  it("creates the traveller's profile row alongside the account", async () => {
+    const probe = `local_${Math.random().toString(36).slice(2, 10)}`;
+    const register = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/register",
+      headers: { origin: allowedOrigin },
+      payload: {
+        username: probe, email: `${probe}@example.test`,
+        password: "Password1A", confirmPassword: "Password1A",
+      },
+    });
+    expect(register.statusCode).toBe(201);
+    const { token, user } = register.json() as { token: string; user: { id: string } };
+
+    const profile = await app.inject({
+      method: "GET",
+      url: "/api/v1/profiles/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(profile.statusCode).toBe(200);
+    // Present but empty — somewhere to put preferences, not a claim any were stated.
+    const body = profile.json() as { profile: { nationality: string | null } | null };
+    expect(body.profile).not.toBeNull();
+    expect(body.profile?.nationality).toBeNull();
+
+    await db.delete(userProfiles).where(eq(userProfiles.userId, user.id));
+    await db.delete(users).where(eq(users.id, user.id));
   });
 });

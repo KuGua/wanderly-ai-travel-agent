@@ -31,7 +31,7 @@ const datePattern = /^\d{4}-\d{2}-\d{2}$/;
  * messages come from the active locale's `validation.*` keys.
  */
 export const profileFormSchema = z.object({
-  nationality: z.string().max(64, "Use 64 characters or fewer"),
+  nationality: z.string().trim().min(1, "Required").max(64, "Use 64 characters or fewer"),
   dateOfBirth: z.union([z.literal(""), z.string().regex(datePattern, "Use YYYY-MM-DD")]),
   interests: z.string(),
   accommodationStyle: z.enum(["", "city_center", "budget", "luxury"]),
@@ -52,7 +52,11 @@ type Translator = ReturnType<typeof useTranslations>;
 
 export function makeProfileFormSchema(t: Translator) {
   return z.object({
-    nationality: z.string().max(64, t("validation.max64")),
+    // Required: hotel quotes are priced per nationality, and without one the
+    // stay search returns nothing, the destination counts as uncovered, and the
+    // whole trip is refused a plan. Asking here once is the only place this
+    // belongs — the planning card should not have to stop and ask.
+    nationality: z.string().trim().min(1, t("validation.required")).max(64, t("validation.max64")),
     dateOfBirth: z.union([z.literal(""), z.string().regex(datePattern, t("validation.datePattern"))]),
     interests: z.string(),
     accommodationStyle: z.enum(["", "city_center", "budget", "luxury"]),

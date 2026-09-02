@@ -234,6 +234,16 @@ export const tripDetailsResponseSchema = z.object({
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     pinnedSession: tripPinnedSessionSchema.nullable().optional(),
+    /**
+     * A brief extracted from conversation that the traveller has not confirmed
+     * yet. Never a trip fact — the confirmed values are the fields above.
+     */
+    pendingBriefProposal: z.object({
+      departureCities: z.array(z.string()).optional(),
+      destinationCandidates: z.array(z.string()).optional(),
+      travelDateStart: dateStr.optional(),
+      travelDays: z.number().int().min(1).max(365).optional(),
+    }).nullable().optional(),
   }),
   callerRole: tripRoleSchema,
   members: z.array(tripMemberSchema),
@@ -462,6 +472,19 @@ export const agentRunResponseSchema = z.object({
   errorCode: agentRunErrorCodeSchema.nullable(),
   assistantMessageId: uuidSchema.nullable(),
   resultPlanId: uuidSchema.nullable(),
+  /**
+   * The unconfirmed trip brief this turn extracted, if any. Read from the run
+   * for the same reason `pendingFlightConfirmation` is: the one-shot
+   * `trip.brief_proposed` notification is never re-delivered, so a client that
+   * subscribes late, reloads, or moves between the globe and the trip
+   * workspace would otherwise lose the confirmation card entirely.
+   */
+  tripBriefProposal: z.object({
+    departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
+    destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+    travelDateStart: dateStr.optional(),
+    travelDays: z.number().int().min(1).max(365).optional(),
+  }).strict().nullable().optional(),
   /**
    * Personal Research Intent Routing — Phase 0/1.
    * Owner-safe DTO for the persisted research-intent draft. Surfaced only
@@ -1392,6 +1415,13 @@ export const tripActivationRequestSchema = z.object({
   travelDateEnd: dateStr.nullable().optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
+  /**
+   * Nationality to quote hotel prices against, sent only when the traveller
+   * had to be asked for it because their profile has none. When the profile
+   * has one, the server uses that and this is absent — the client never
+   * echoes a value it read from the profile back at us.
+   */
+  guestNationality: z.string().regex(/^[A-Za-z]{2}$/).optional(),
 }).strict();
 
 export const updateDraftTripBriefRequestSchema = z.object({

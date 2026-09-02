@@ -7,6 +7,9 @@ import {
   parseTraceparent,
   safeSetAttribute,
 } from "../observability/tracing.js";
+import { eq, sql } from "drizzle-orm";
+import { db } from "../db/database.js";
+import { agentTaskRuns, sharedTrips } from "../db/schema.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import { handleConversationTask, publishPhase } from "../tasks/handlers/conversation-task-handler.js";
 import { handlePlanningTask } from "../tasks/handlers/planning-task-handler.js";
@@ -176,6 +179,23 @@ export async function processNextAgentTask(): Promise<boolean> {
         responseMode: output.responseMode,
       });
       if (output.tripBriefProposal) {
+        // Persist before publishing: the notification can be missed, the row
+        // cannot. The client rebuilds the card from the run it already polls.
+        await db.update(agentTaskRuns)
+          .set({ tripBriefProposal: output.tripBriefProposal })
+          .where(eq(agentTaskRuns.id, run.id));
+        // Also on the trip, where it survives a reload and a device change.
+        // Merged, because a brief is often given across several turns and the
+        // card is a running review of all of them.
+        if (run.tripId) {
+          await db.update(sharedTrips)
+            .set({
+              pendingBriefProposal: sql`coalesce(${sharedTrips.pendingBriefProposal}, '{}'::jsonb) || ${
+                JSON.stringify(output.tripBriefProposal)
+              }::jsonb`,
+            })
+            .where(eq(sharedTrips.id, run.tripId));
+        }
         await publishAgentStreamEvent({
           event: "trip.brief_proposed",
           runId: run.id,

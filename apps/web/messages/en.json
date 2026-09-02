@@ -164,7 +164,7 @@
     "fields": {
       "departureCity": "Departure city",
       "nationality": "Nationality",
-      "nationalityHint": "Private; not shared in this slice.",
+      "nationalityHint": "Required — hotel prices are quoted per nationality, and a trip cannot be planned without it. Private; not shared in this slice.",
       "dateOfBirth": "Date of birth",
       "dateOfBirthHint": "YYYY-MM-DD",
       "dateOfBirthPlaceholder": "YYYY-MM-DD",
@@ -193,13 +193,14 @@
     "savedToast": "Profile saved. Your private snapshot is up to date.",
     "saveErrorSuffix": "Your form input has been kept.",
     "emptyTitle": "No travel preference profile exists yet",
-    "emptyBody": "The confirmed API Slice supports GET and PUT for existing Profiles. Creating a new Profile requires a separate confirmed contract, so no data has been fabricated or saved locally.",
+    "emptyBody": "Add your travel preference to get started — we could not find one for this account.",
     "emptyAction": "Return to Explore",
     "validation": {
       "max64": "Use 64 characters or fewer",
       "datePattern": "Use YYYY-MM-DD",
       "datesList": "Use YYYY-MM-DD dates separated by commas",
-      "wholeNumber": "Enter a whole number"
+      "wholeNumber": "Enter a whole number",
+      "required": "Required"
     },
     "fixtures": {
       "displayName": "Traveler"
@@ -297,9 +298,13 @@
       "composerNote": "Enter to send · Shift + Enter for a new line · This thread is private to you and scoped to this trip.",
       "briefProposalTitle": "Update trip brief?",
       "briefProposalBody": "Destination: {destination} · Duration: {days}",
+      "briefProposalDeparture": "Leaving from {cities}",
+      "briefProposalDestinations": "Going to {destinations}",
+      "briefProposalDays": "{days} days",
       "briefProposalNoDestination": "not specified",
       "briefProposalNoDays": "not specified",
       "briefProposalDateRange": "Dates: {start} to {end}",
+      "briefProposalDateStart": "Leaving {start}",
       "briefProposalDatePending": "to be set from trip duration",
       "briefProposalConfirm": "Confirm update",
       "briefProposalSaving": "Saving…",
