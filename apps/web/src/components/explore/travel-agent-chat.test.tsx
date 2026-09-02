@@ -438,6 +438,23 @@ describe("TravelAgentChat durable streaming flow", () => {
     scrollTop.mockRestore();
   });
 
+  it("uses the shared comic surfaces for the collapsed and open conversation", async () => {
+    renderChat(createApi(), { initiallyOpen: false });
+
+    const collapsedComposer = screen.getByRole("form", { name: "Start a conversation with Wanderly Agent" });
+    expect(collapsedComposer).toHaveClass("wanderly-edge", "wanderly-r-lg", "wanderly-shadow", "bg-card");
+
+    fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Wanderly Agent conversation" });
+    expect(dialog).toHaveClass("wanderly-edge", "wanderly-r-lg", "wanderly-shadow-lg");
+    expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" }).parentElement).toHaveClass(
+      "wanderly-edge",
+      "wanderly-r-md",
+      "wanderly-shadow-sm",
+    );
+  });
+
   it("calls onThreadInvalidated when the server returns 404 from getOwnerConversation", async () => {
     const onInvalidated = vi.fn();
     const api = createApi({

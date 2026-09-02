@@ -439,7 +439,7 @@ describe("ExploreMapPage private inspirations", () => {
     expect(screen.getByRole("heading", { name: "Pinned place 1" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
-    fireEvent.click(screen.getByRole("button", { name: "Close conversation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse conversation" }));
     expect(screen.queryByRole("heading", { name: "Pinned place 1" })).not.toBeInTheDocument();
   });
 
@@ -523,6 +523,9 @@ describe("ExploreMapPage private inspirations", () => {
     });
 
     const viewButton = await screen.findByRole("button", { name: /View this inspiration/i });
+    const previewCard = screen.getByRole("heading", { name: "Pinned place 1" }).closest("aside");
+    expect(previewCard).toHaveClass("wanderly-edge", "wanderly-r-lg", "wanderly-shadow-lg");
+    expect(viewButton).toHaveClass("wanderly-edge", "wanderly-r-md", "wanderly-shadow-sm");
     fireEvent.click(viewButton);
 
     expect(await screen.findByRole("dialog", { name: "Wanderly Agent conversation" })).toBeInTheDocument();
