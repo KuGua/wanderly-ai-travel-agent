@@ -152,6 +152,13 @@ export interface AccommodationDiscoveryProvider {
   discoverAccommodations(params: {
     destination: DestinationReference;
     limit: number;
+    /**
+     * How far around the point to look. Absent, the provider falls back to
+     * its configured default — which is what happened to every caller that
+     * had a radius and no way to pass it: the traveller asked about one
+     * neighbourhood and was answered from ten kilometres of city.
+     */
+    radiusMeters?: number;
     signal?: AbortSignal;
   }): Promise<ProviderResult<AccommodationProviderItem[]>>;
 }

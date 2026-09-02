@@ -6,9 +6,10 @@
  * discovery persistence layer) and projects the result to the bounded
  * `personalResearchAccommodationEvidenceSummarySchema` shape.
  *
- * The summary exposes only the candidate COUNT and the bounding box of
- * the search — never per-candidate coordinates, price, popularity tier,
- * or any field that could seed the Shared `trip_places` table. The owner
+ * The summary names the candidates and says how far each is from the search
+ * point — never their coordinates, price, popularity tier, or any field that
+ * could seed the Shared `trip_places` table. A distance is relative to a
+ * point the owner already chose, so it locates nothing on its own. The owner
  * may manually adopt suggestions through the Shared adopt endpoint.
  *
  * Source: docs/draft-personal-research-implementation.md §3.5 stage 2.
@@ -70,6 +71,10 @@ export async function executePersonalAccommodationDiscovery(params: {
   const input = {
     destination,
     limit: 20,
+    // Otherwise the summary reports the radius the traveller asked for while
+    // the search actually used the deployment default — a claim about scope
+    // that was not true of the results underneath it.
+    radiusMeters: params.draft.radiusMeters,
     signal: params.signal,
   };
 
@@ -111,7 +116,12 @@ export async function executePersonalAccommodationDiscovery(params: {
       items: items.slice(0, PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).map((item) => ({
         label: item.name,
         price: null,
-        detail: item.kind,
+        // "hotel · 400 m" rather than the supplier's own taxonomy key. Whether
+        // a place is in the neighbourhood asked about or across the city is
+        // most of what makes a discovery result useful, and `other_hotels`
+        // was never written for a person to read.
+        detail: [readableKind(item.kind), formatDistance(item.distanceMeters)]
+          .filter((part): part is string => part !== null).join(" · ") || null,
       })),
       candidateCount: items.length,
       topCategory,
@@ -120,6 +130,17 @@ export async function executePersonalAccommodationDiscovery(params: {
       checkOut: params.draft.checkOut,
     },
   };
+}
+
+/** OpenTripMap taxonomy keys read as prose: `other_hotels` → `other hotels`. */
+function readableKind(kind: string): string | null {
+  const readable = kind.replace(/_/g, " ").trim();
+  return readable.length > 0 ? readable : null;
+}
+
+function formatDistance(distanceMeters: number | null): string | null {
+  if (distanceMeters === null || !Number.isFinite(distanceMeters)) return null;
+  return distanceMeters < 1_000 ? `${Math.round(distanceMeters)} m` : `${(distanceMeters / 1000).toFixed(1)} km`;
 }
 
 type UnavailableCode =

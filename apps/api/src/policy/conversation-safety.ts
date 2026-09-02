@@ -107,6 +107,11 @@ export interface OperationalRequestOptions extends OperationalClaimOptions {
 
 export function requestsUnsupportedOperationalFacts(question: string, opts?: OperationalRequestOptions): boolean {
   const text = normalizePolicyText(question);
+  // Saying you do not want prices is not asking for them. "我不要价格，就想
+  // 知道那边住宿密度和类型" was refused for mentioning price — the traveller
+  // ruled the topic out in the same breath and was told the chat cannot
+  // discuss it.
+  const pricedText = withoutDeclinedPrice(text);
   const userConfirmed = opts?.userConfirmed === true;
 
   if (hasAnyTerm(text, VISA_TERMS)) return true;
@@ -117,10 +122,10 @@ export function requestsUnsupportedOperationalFacts(question: string, opts?: Ope
 
   if (!userConfirmed) {
     if (
-      hasAnyTerm(text, PRICE_TERMS)
-      && (hasAnyTerm(text, [...LIVE_TERMS, ...TRAVEL_INVENTORY_TERMS]) || hasTerm(text, "how much") || hasTerm(text, "多少钱"))
+      hasAnyTerm(pricedText, PRICE_TERMS)
+      && (hasAnyTerm(text, [...LIVE_TERMS, ...TRAVEL_INVENTORY_TERMS]) || hasTerm(pricedText, "how much") || hasTerm(pricedText, "多少钱"))
     ) return true;
-    if (hasTerm(text, "how much") && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
+    if (hasTerm(pricedText, "how much") && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
     if (hasTerm(text, "exchange rate") && hasAnyTerm(text, LIVE_TERMS)) return true;
 
     if (hasAnyTerm(text, AVAILABILITY_TERMS) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
@@ -225,6 +230,21 @@ export function safeConversationFallback(): ConversationReply {
     content: "I can't reach the conversation model right now — please try again in a moment.",
     responseMode: "FALLBACK",
   };
+}
+
+/**
+ * Price wording the traveller has just ruled out, removed before the price
+ * rules read the question.
+ *
+ * Deliberately narrow. The refusal has to end its clause — normalization has
+ * already turned punctuation into spaces, so "我不要价格 就想知道密度" strips
+ * and "不要价格太高的酒店" does not, because that one really is about price.
+ */
+const DECLINED_PRICE_PATTERN =
+  /(?:不要|不用|不需要|无需|不看|不问|不关心|先不谈|暂时不要)\s?(?:价格|报价|价位|多少钱)(?=\s|$)|(?:no|without|not|dont|don t|do not)\s(?:need\s|want\s|asking\sabout\s)?(?:price|prices|quote|quotes|pricing)(?=\s|$)/gu;
+
+function withoutDeclinedPrice(text: string): string {
+  return text.replace(DECLINED_PRICE_PATTERN, " ").replace(/\s+/g, " ").trim();
 }
 
 function normalizePolicyText(value: string): string {
