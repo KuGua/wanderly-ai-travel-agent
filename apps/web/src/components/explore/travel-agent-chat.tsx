@@ -746,7 +746,14 @@ export function TravelAgentChat({
     </div>
   );
 
+  // Only inside a trip. The card asks how this trip should differ from the
+  // traveller's usual preferences, which is not a question the globe is
+  // entitled to ask: someone turning it and typing a city is looking around,
+  // and a DRAFT trip exists at that moment only because the first message
+  // created one. Asking there interrupts browsing with a form about a trip the
+  // traveller has not decided to take.
   useEffect(() => {
+    if (surface !== "TRIP_WORKSPACE") return;
     if (!tripId || !api.getPreferenceCard) return;
     let active = true;
     void api.getPreferenceCard(tripId)
@@ -754,7 +761,7 @@ export function TravelAgentChat({
       // A card that cannot be fetched is not worth failing the chat over.
       .catch(() => undefined);
     return () => { active = false; };
-  }, [tripId, api]);
+  }, [tripId, api, surface]);
 
   /**
    * Typing past the card is an answer too.
