@@ -143,6 +143,18 @@ export type PersonalResearchToolContext = {
   tripId: string;
   threadId: string;
   runId: string;
+  /**
+   * Whether the traveller authorised a metered search on this turn, detected
+   * server-side from their own words.
+   *
+   * Without it a capability that needs confirmation could never run. Every
+   * call answered NEEDS_CONFIRMATION, including the one right after the
+   * traveller said yes, so `activities.search` sat in a loop asking
+   * permission it had already been given — and the model, handed the same
+   * answer twice, reported that it had found activities it had never looked
+   * for.
+   */
+  userConfirmed: boolean;
   signal: AbortSignal;
 };
 
@@ -179,7 +191,7 @@ export function createPersonalResearchDispatcher(
     )).limit(1);
     if (!membership) return unavailable("NOT_ALLOWED");
 
-    if (requiresOwnerConfirmation(capability)) {
+    if (requiresOwnerConfirmation(capability) && !context.userConfirmed) {
       // Not executed, and deliberately not an error. The model is told the
       // call is ready and needs a person's word, so it can put the request to
       // the traveller in its own reply instead of reporting a failure.
