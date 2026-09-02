@@ -184,11 +184,15 @@ describe("0047 + 0048 + 0049 — DRAFT Personal Research schema", () => {
     `;
     const idxNames = indexes.map((i) => i.indexname);
     expect(idxNames).toContain("personal_research_evidence_pkey");
-    expect(idxNames).toContain("personal_research_evidence_run_capability_unique");
-    expect(idxNames).toContain("personal_research_evidence_run_owner_unique");
+    expect(idxNames).toContain("personal_research_evidence_run_search_unique");
+    // 0056 dropped both of 0049's unique indexes. `(run_id, owner_user_id)`
+    // meant to say a run has one owner and ended up saying a run has one row;
+    // `(run_id, capability)` meant retry idempotency and stopped a turn from
+    // asking the same capability two different questions.
+    expect(idxNames).not.toContain("personal_research_evidence_run_owner_unique");
   });
 
-  it("personal_research_evidence_run_capability_unique rejects duplicate (run_id, capability)", async () => {
+  it("personal_research_evidence_run_search_unique rejects the same search twice on one run", async () => {
     const tripId = "00000000-0000-0000-0000-000000000030";
     const threadId = "00000000-0000-0000-0000-000000000031";
     const ownerId = "00000000-0000-0000-0000-000000000032";
@@ -220,5 +224,19 @@ describe("0047 + 0048 + 0049 — DRAFT Personal Research schema", () => {
       INSERT INTO personal_research_evidence (run_id, trip_id, thread_id, owner_user_id, capability, outcome, provider_name, source, result_json)
       VALUES (${runId}::text::uuid, ${tripId}::text::uuid, ${threadId}::text::uuid, ${ownerId}::text::uuid, 'flight.search', 'AVAILABLE', 'amadeus', 'amadeus', '{}'::jsonb)
     `).rejects.toThrow(/duplicate key value violates unique constraint/);
+
+    // …but a different search on the same run is a different row. A turn
+    // where the traveller asks "附近有什么餐厅吗？有什么好玩的景点吗" is two
+    // `places.search` calls, and the second used to fail to insert, be
+    // reported to the model as a supplier failure, and come back to the
+    // traveller as "供应商目前无法返回实时列表".
+    await cleanup`
+      INSERT INTO personal_research_evidence (run_id, trip_id, thread_id, owner_user_id, capability, outcome, provider_name, source, result_json, request_fingerprint)
+      VALUES (${runId}::text::uuid, ${tripId}::text::uuid, ${threadId}::text::uuid, ${ownerId}::text::uuid, 'flight.search', 'AVAILABLE', 'amadeus', 'amadeus', '{}'::jsonb, 'other-query')
+    `;
+    const rows = await cleanup<{ count: string }[]>`
+      SELECT count(*)::text AS count FROM personal_research_evidence WHERE run_id = ${runId}::text::uuid
+    `;
+    expect(rows[0].count).toBe("2");
   });
 });
