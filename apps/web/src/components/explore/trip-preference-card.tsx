@@ -10,17 +10,28 @@ import type { PreferenceCardField } from "@/lib/api/contracts";
  * profile is right for *this* trip, before the assistant plans anything around
  * the wrong assumption.
  *
- * Deliberately unlike everything around it. The chat is drawn with a hard
- * edge, an uneven radius and a black offset shadow; this is a card lying on
- * top of that — square, borderless, a shadow you can barely see, and a paper
- * grain fine enough to read as texture rather than pattern. It should feel
- * handed to you, not built into the page.
- *
- * The grain is one inline SVG turbulence, so it costs no request and cannot
- * fail to load. Kept under 4% opacity: any more and it reads as noise.
+ * Read as a piece of white paper: square corners, a thin 1.5px ink outline
+ * and a heavier black offset shadow. The grain runs coarser (`0.6`) and
+ * slightly louder (`0.09`) than the chat's other cards so the texture reads
+ * as fibre rather than noise, and the silhouette gets 1–2px triangular
+ * notches on the left and right edges via clip-path so the outline reads as
+ * torn rather than machine-cut. Stays inside the wanderly surface palette
+ * — no new colour tokens, no new visual language.
  */
 const PAPER_GRAIN =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)' opacity='0.35'/%3E%3C/svg%3E\")";
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.6' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)' opacity='0.35'/%3E%3C/svg%3E\")";
+
+/**
+ * Four 1.5px-deep triangular notches on each of the left and right edges so
+ * the silhouette reads as torn rather than machine-cut. Top, bottom and the
+ * two vertical corners stay square. calc() in polygon values is supported by
+ * every browser the rest of the stack targets; if a legacy engine ever shows
+ * up it falls back to a perfectly rectangular clip, which is also fine.
+ */
+const ROUGH_EDGE = "polygon(0% 0%, 100% 0%, 100% 18%, calc(100% - 1.5px) 20%, 100% 22%, 100% 40%, calc(100% - 1.5px) 42%, 100% 44%, 100% 60%, calc(100% - 1.5px) 62%, 100% 64%, 100% 80%, calc(100% - 1.5px) 82%, 100% 84%, 100% 100%, 0% 100%, 0% 84%, 1.5px 82%, 0% 80%, 0% 64%, 1.5px 62%, 0% 60%, 0% 44%, 1.5px 42%, 0% 40%, 0% 22%, 1.5px 20%, 0% 18%, 0% 0%)";
+
+const inputFieldClass =
+  "w-full bg-[var(--w-mist)] px-2 py-1 text-sm text-[var(--w-ink)] outline-none wanderly-edge-thin wanderly-r-xs focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
 
 /**
  * The catalogue key is a storage name; a card is read by a person. Falls back
@@ -42,6 +53,10 @@ function displayValue(value: unknown, unset: string): string {
   return String(value);
 }
 
+function isUnset(value: unknown): boolean {
+  return value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0);
+}
+
 export function TripPreferenceCard({
   fields,
   saving,
@@ -59,6 +74,12 @@ export function TripPreferenceCard({
   const valueOf = (field: PreferenceCardField) =>
     Object.hasOwn(draft, field.fieldKey) ? draft[field.fieldKey] : field.value;
 
+  // Only count the changes the traveller actually made — touching the field
+  // back to its inherited value should not count as an adjustment.
+  const adjustedCount = fields.filter(
+    (field) => Object.hasOwn(draft, field.fieldKey) && draft[field.fieldKey] !== field.value,
+  ).length;
+
   function submit() {
     // Only what the traveller actually changed. Writing every field would
     // pin the whole set to this trip, and a later profile edit would stop
@@ -73,49 +94,54 @@ export function TripPreferenceCard({
     <section
       data-testid="trip-preference-card"
       aria-label={t("prefCardTitle")}
-      className="relative mx-auto mb-[18px] w-full max-w-[420px] bg-[var(--w-paper,#FBFAF7)] px-6 py-5 text-[var(--w-ink)]"
-      style={{ boxShadow: "0 1px 2px rgba(20,24,28,.05), 0 8px 24px -12px rgba(20,24,28,.14)" }}
+      className="relative mx-auto mb-[18px] w-full max-w-[420px] bg-card px-6 py-5 text-sm text-[var(--w-ink)] rounded-none wanderly-edge-thin wanderly-shadow -rotate-[0.3deg]"
+      style={{ clipPath: ROUGH_EDGE }}
     >
-      {/* Grain sits above the ground and below the text, and takes no clicks. */}
+      {/* Grain sits above the ground and below the text, and takes no clicks.
+          `mix-blend-overlay` lets the neutral grayscale noise read as paper
+          texture in both light and dark mode. */}
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 mix-blend-multiply"
-        style={{ backgroundImage: PAPER_GRAIN, opacity: 0.035 }}
+        className="pointer-events-none absolute inset-0 mix-blend-overlay"
+        style={{ backgroundImage: PAPER_GRAIN, opacity: 0.09 }}
       />
 
       <div className="relative flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-[15px] font-bold leading-tight">{t("prefCardTitle")}</h3>
-          <p className="mt-1.5 max-w-[34ch] text-[11.5px] leading-[1.55] text-[var(--w-ink)]/55">
-            {t("prefCardIntro")}
-          </p>
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-extrabold leading-tight">{t("prefCardTitle")}</h3>
+          <p className="mt-1.5 max-w-[34ch] text-xs leading-snug text-muted-foreground">{t("prefCardIntro")}</p>
         </div>
         <button
           type="button"
           onClick={() => setEditing((current) => !current)}
-          className="shrink-0 text-[11px] font-bold text-[var(--w-ink)]/50 underline-offset-4 hover:text-[var(--w-ink)] hover:underline"
+          aria-pressed={editing}
+          className="min-h-10 shrink-0 px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press"
         >
           {editing ? t("prefCardDone") : t("prefCardEdit")}
         </button>
       </div>
 
-      <dl className="relative mt-4 flex flex-col">
+      <dl className="relative mt-3 flex flex-col">
         {fields.map((field) => {
           const current = valueOf(field);
           const changed = Object.hasOwn(draft, field.fieldKey) && draft[field.fieldKey] !== field.value;
+          const unset = isUnset(current);
           return (
-            <div key={field.fieldKey} className="flex items-baseline gap-3 border-t border-[var(--w-ink)]/8 py-2.5 first:border-t-0">
-              <dt className="w-[8.5rem] shrink-0 text-[12px] font-semibold text-[var(--w-ink)]/50">
+            <div
+              key={field.fieldKey}
+              className="flex items-baseline gap-3 border-t border-border py-2.5 first:border-t-0"
+            >
+              <dt className="w-[7rem] shrink-0 text-xs font-bold text-foreground">
                 {labelFor(fieldLabel, field.fieldKey)}
               </dt>
-              <dd className="min-w-0 flex-1 text-[13px]">
+              <dd className="min-w-0 flex-1 text-sm">
                 {editing ? (
                   field.options ? (
                     <select
                       aria-label={field.fieldKey}
                       value={typeof current === "string" ? current : ""}
                       onChange={(event) => setDraft((d) => ({ ...d, [field.fieldKey]: event.target.value }))}
-                      className="w-full bg-transparent py-0.5 text-[13px] text-[var(--w-ink)] outline-none"
+                      className={inputFieldClass}
                     >
                       <option value="">{t("prefCardUnset")}</option>
                       {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
@@ -126,6 +152,7 @@ export function TripPreferenceCard({
                       type="checkbox"
                       checked={current === true}
                       onChange={(event) => setDraft((d) => ({ ...d, [field.fieldKey]: event.target.checked }))}
+                      className="size-4 accent-primary"
                     />
                   ) : (
                     <input
@@ -138,34 +165,44 @@ export function TripPreferenceCard({
                           ? event.target.value.split(/[、,]/).map((part) => part.trim()).filter(Boolean)
                           : event.target.value,
                       }))}
-                      className="w-full bg-transparent py-0.5 text-[13px] text-[var(--w-ink)] outline-none"
+                      className={inputFieldClass}
                     />
                   )
                 ) : (
-                  <span className={current === null || current === undefined || current === "" ? "text-[var(--w-ink)]/35" : undefined}>
+                  <span className={unset ? "text-muted-foreground/70" : undefined}>
                     {displayValue(current, t("prefCardUnset"))}
                   </span>
                 )}
+                {!editing && changed ? (
+                  <span className="ml-2 inline-flex items-center bg-primary px-1.5 py-px text-[10px] font-extrabold uppercase tracking-wider text-[var(--w-ink)]">
+                    {t("prefCardAdjusted")}
+                  </span>
+                ) : null}
               </dd>
-              <span className="shrink-0 text-[10px] text-[var(--w-ink)]/35">
-                {changed || !field.inherited ? t("prefCardAdjusted") : t("prefCardInherited")}
-              </span>
             </div>
           );
         })}
       </dl>
 
-      <p className="relative mt-4 text-center text-[10.5px] leading-[1.5] text-[var(--w-ink)]/40">
-        {t("prefCardReopenHint")}
+      <p className="relative mt-3 text-xs leading-snug text-muted-foreground">
+        {adjustedCount === 0
+          ? t("prefCardInherited")
+          : `${adjustedCount} · ${t("prefCardAdjusted")}`}
       </p>
 
-      <div className="relative mt-3 flex justify-center">
+      {!editing ? (
+        <p className="relative mt-2 text-[11px] leading-snug text-muted-foreground/80">
+          {t("prefCardReopenHint")}
+        </p>
+      ) : null}
+
+      <div className="relative mt-4 flex justify-end">
         <button
           type="button"
           data-testid="trip-preference-submit"
           disabled={saving}
           onClick={submit}
-          className="min-h-9 rounded-none bg-[var(--w-ink)] px-7 text-[12px] font-bold text-[var(--w-paper,#FBFAF7)] disabled:opacity-45"
+          className="min-h-11 shrink-0 px-7 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action"
         >
           {saving ? t("prefCardSaving") : t("prefCardSubmit")}
         </button>
