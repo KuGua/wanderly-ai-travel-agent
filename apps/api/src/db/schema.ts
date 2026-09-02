@@ -1239,10 +1239,14 @@ export const personalResearchEvidence = pgTable("personal_research_evidence", {
   capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   resultJson: jsonb("result_json").$type<Record<string, unknown>>().notNull(),
+  // Hash of the canonicalised draft: what was searched, so a retry of the
+  // same search collapses onto one row while two different searches in the
+  // same turn both keep theirs. See migration 0056.
+  requestFingerprint: text("request_fingerprint").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
-  runCapabilityUnique: uniqueIndex("personal_research_evidence_run_capability_unique")
-    .on(table.runId, table.capability),
+  runSearchUnique: uniqueIndex("personal_research_evidence_run_search_unique")
+    .on(table.runId, table.capability, table.requestFingerprint),
   tripCreatedIdx: index("personal_research_evidence_trip_created_idx")
     .on(table.tripId, table.createdAt),
   ownerCreatedIdx: index("personal_research_evidence_owner_created_idx")

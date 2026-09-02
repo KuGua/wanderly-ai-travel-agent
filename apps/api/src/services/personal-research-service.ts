@@ -16,6 +16,8 @@
  * Source: docs/draft-personal-research-implementation.md §3.2.
  */
 
+import { createHash } from "node:crypto";
+
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "../db/database.js";
 import {
@@ -102,10 +104,16 @@ export async function executePersonalResearch(params: {
   signal: AbortSignal;
 }): Promise<PersonalResearchExecutorResult> {
   const capability = capabilityForDraft(params.draft);
+  // What was searched, so a retried task collapses onto its own row while a
+  // second, different search in the same turn keeps its own. A conversation
+  // turn is one run and can legitimately ask twice — "附近有什么餐厅吗？有什
+  // 么好玩的景点吗" is two `places.search` calls with different arguments.
+  const fingerprint = createHash("sha256").update(canonicalizeDraft(params.draft)).digest("hex");
   if (!isPersonalResearchCapabilityAllowed(capability)) {
     return persistUnavailability({
       run: params.run,
       capability,
+      fingerprint,
       errorCode: "PROVIDER_NOT_APPROVED",
     });
   }
@@ -115,6 +123,7 @@ export async function executePersonalResearch(params: {
     return persistAvailability({
       run: params.run,
       capability,
+      fingerprint,
       summary,
     });
   } catch (err) {
@@ -122,9 +131,20 @@ export async function executePersonalResearch(params: {
     return persistUnavailability({
       run: params.run,
       capability,
+      fingerprint,
       errorCode,
     });
   }
+}
+
+/** Order-stable so the same search hashes the same however the model spelled it. */
+function canonicalizeDraft(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonicalizeDraft).join(",")}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entryValue]) => entryValue !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${canonicalizeDraft(entryValue)}`).join(",")}}`;
 }
 
 async function dispatchCapability(params: {
@@ -186,6 +206,7 @@ function mapExecutorErrorToUnavailableCode(err: unknown): UnavailableErrorCode {
 async function persistAvailability(params: {
   run: AgentTaskRow;
   capability: PersonalResearchOperationCapability;
+  fingerprint: string;
   summary: PersonalResearchEvidenceSummary;
 }): Promise<PersonalResearchExecutorResult> {
   if (params.run.tripId === null || params.run.threadId === null) {
@@ -211,6 +232,18 @@ async function persistAvailability(params: {
     source: SOURCE_BY_CAPABILITY[params.capability],
     expiresAt: outcome === "AVAILABLE" ? computeExpiresAt() : null,
     resultJson: params.summary as unknown as Record<string, unknown>,
+    requestFingerprint: params.fingerprint,
+  }).onConflictDoUpdate({
+    // A retried task researching the same thing refreshes its row rather than
+    // failing the insert. Throwing here surfaced to the model as a supplier
+    // failure, which is a lie about a search that had in fact succeeded.
+    target: [personalResearchEvidence.runId, personalResearchEvidence.capability, personalResearchEvidence.requestFingerprint],
+    set: {
+      outcome,
+      capturedAt: new Date(),
+      expiresAt: outcome === "AVAILABLE" ? computeExpiresAt() : null,
+      resultJson: params.summary as unknown as Record<string, unknown>,
+    },
   }).returning({ id: personalResearchEvidence.id });
   return {
     evidenceId: row.id,
@@ -222,6 +255,7 @@ async function persistAvailability(params: {
 async function persistUnavailability(params: {
   run: AgentTaskRow;
   capability: PersonalResearchOperationCapability;
+  fingerprint: string;
   errorCode: UnavailableErrorCode;
 }): Promise<PersonalResearchExecutorResult> {
   if (params.run.tripId === null || params.run.threadId === null) {
@@ -242,6 +276,10 @@ async function persistUnavailability(params: {
     source: SOURCE_BY_CAPABILITY[params.capability],
     expiresAt: null,
     resultJson: summary as unknown as Record<string, unknown>,
+    requestFingerprint: params.fingerprint,
+  }).onConflictDoUpdate({
+    target: [personalResearchEvidence.runId, personalResearchEvidence.capability, personalResearchEvidence.requestFingerprint],
+    set: { outcome: "UNAVAILABLE", capturedAt: new Date(), expiresAt: null, resultJson: summary as unknown as Record<string, unknown> },
   }).returning({ id: personalResearchEvidence.id });
   return {
     evidenceId: row.id,
