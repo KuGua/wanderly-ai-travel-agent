@@ -6,6 +6,10 @@ import { db } from "../db/database.js";
 import { grantQuoteNationality } from "../services/stay-search-provider-authorization.js";
 import {
   agentTaskRuns,
+  auditEvents,
+  bookingExecutions,
+  chatMessages,
+  chatThreads,
   sharedTrips,
   tripMembers,
   users,
@@ -22,8 +26,6 @@ import {
   tripActivationResponseSchema,
   updateDraftTripBriefRequestSchema,
   updateDraftTripBriefResponseSchema,
-  updateTripArchiveRequestSchema,
-  updateTripArchiveResponseSchema,
   updateTripTitleRequestSchema,
   updateTripTitleResponseSchema,
   tripDetailsResponseSchema,
@@ -515,70 +517,74 @@ export async function tripRoutes(app: FastifyInstance) {
     });
   });
 
-  // Archive is this product's "delete": the trip leaves the working list and
-  // joins the Archived tab, and everything it owns — itinerary, private
-  // threads, provider evidence, audit trail — is left intact so the decision
-  // stays reversible. A trip can also be *shown* as archived because its
-  // dates have passed (`DATE_ELAPSED`, derived on read); only the explicit
-  // user action is persisted here, so un-archiving never has to guess which
-  // of the two put it there.
-  app.patch("/trips/:tripId/archive", {
+  // A real delete, not a hide. The traveller asked for the trip to be gone,
+  // so everything it owns goes with it: itinerary, private threads and their
+  // messages, provider evidence, sandbox bookings, member rows. Most of that
+  // leaves through ON DELETE CASCADE; the three exceptions are handled here.
+  //
+  // `chat_threads.trip_id` is NOT NULL behind an ON DELETE SET NULL foreign
+  // key, so letting the cascade reach it raises a not-null violation and the
+  // delete fails outright — the threads are removed first instead.
+  // `booking_executions` blocks with NO ACTION and is sandbox-only (§10.8
+  // forbids real booking), so it is removed rather than preserved.
+  // `audit_events` also blocks, but its `trip_id` is nullable: the rows stay
+  // and lose only the reference, so the history of what was done survives the
+  // trip it was done to.
+  //
+  // Archiving remains, for a different moment: a plan the members confirmed
+  // is finished, not unwanted.
+  app.delete("/trips/:tripId", {
     schema: {
-      description: "Archive or restore a trip. Creator-only; reversible and non-destructive.",
+      description: "Permanently delete a trip and everything it owns. Creator-only; not reversible.",
       tags: ["trips"],
       params: toJsonSchema(tripIdParamSchema),
-      body: toJsonSchema(updateTripArchiveRequestSchema),
       response: {
-        200: toJsonSchema(updateTripArchiveResponseSchema),
+        204: { type: "null", description: "Trip deleted." },
         403: toJsonSchema(errorResponseSchema),
         404: toJsonSchema(errorResponseSchema),
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const { tripId } = tripIdParamSchema.parse(request.params);
-    const body = updateTripArchiveRequestSchema.parse(request.body);
     const ctx = createRequestContext(
       request.user.id, request.correlationId, request.traceId,
       request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
 
-    const result = await db.transaction(async (tx) => {
+    await db.transaction(async (tx) => {
       const [trip] = await tx.select().from(sharedTrips)
         .where(eq(sharedTrips.id, tripId)).for("update").limit(1);
       if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
-      // Only the creator, matching who may rename or invite. A member losing
-      // a shared trip from their list because someone else tidied up is a
-      // different decision from leaving it, and this route is not that.
+      // Creator-only, matching rename and invite. A member who wants out of a
+      // shared trip is leaving it, not destroying it for everyone else.
       if (trip.createdBy !== request.user.id) {
-        throw new ApiError(403, "Forbidden", "Only the creator may archive the trip");
+        throw new ApiError(403, "Forbidden", "Only the creator may delete the trip");
       }
 
-      const now = new Date();
-      const archivedAt = body.archived ? (trip.archivedAt ?? now) : null;
-      await tx.update(sharedTrips).set({
-        archivedAt,
-        archiveReason: body.archived ? "USER_ARCHIVED" : null,
-        updatedAt: now,
-      }).where(eq(sharedTrips.id, tripId));
+      // Recorded before the rows go, and deliberately without `tripId`: the
+      // column is about to point at nothing. The id lives in the summary so
+      // the event is still traceable.
       await recordAudit({
         ctx,
-        action: body.archived ? "TRIP_ARCHIVE" : "TRIP_UNARCHIVE",
+        action: "TRIP_DELETE",
         actorUserId: request.user.id,
-        tripId,
-        summary: { reason: body.archived ? "USER_ARCHIVED" : null },
+        summary: { tripId, status: trip.status },
         tx,
       });
-      return { archivedAt, updatedAt: now };
+
+      const threads = await tx.select({ id: chatThreads.id }).from(chatThreads)
+        .where(eq(chatThreads.tripId, tripId));
+      if (threads.length > 0) {
+        const threadIds = threads.map((thread) => thread.id);
+        await tx.delete(chatMessages).where(inArray(chatMessages.threadId, threadIds));
+        await tx.delete(chatThreads).where(inArray(chatThreads.id, threadIds));
+      }
+      await tx.delete(bookingExecutions).where(eq(bookingExecutions.tripId, tripId));
+      await tx.update(auditEvents).set({ tripId: null }).where(eq(auditEvents.tripId, tripId));
+      await tx.delete(sharedTrips).where(eq(sharedTrips.id, tripId));
     });
 
-    return updateTripArchiveResponseSchema.parse({
-      trip: {
-        id: tripId,
-        archivedAt: result.archivedAt?.toISOString() ?? null,
-        archiveReason: body.archived ? "USER_ARCHIVED" : null,
-        updatedAt: result.updatedAt.toISOString(),
-      },
-    });
+    return reply.code(204).send();
   });
 
   app.patch("/trips/:tripId/draft-brief", {
