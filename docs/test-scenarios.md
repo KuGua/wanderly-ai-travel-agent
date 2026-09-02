@@ -1466,6 +1466,18 @@ depending on a provider-specific `finish_reason`.
 - The turn does not produce `SAFE_REFUSAL`; it saves or summarizes the typed readiness state and asks for the required explicit confirmation where applicable.
 - If a genuine safety refusal is required, the completed SSE event includes `responseMode: SAFE_REFUSAL`; the Chinese UI displays the localized verification marker next to the persisted assistant message.
 
+### TS-EXPLORE-PRIVATE-CHAT-AUTH-1 — 首次私聊创建的认证失败可诊断
+
+**Objective:** Home 首次发送创建私有 Draft Trip / thread 时，不能把认证失败伪装为普通发送失败。
+
+**Steps:** 在 `custom-local` 模式下移除或使浏览器 bearer token 失效，然后从 Home 发送首条消息。
+
+**Expected outcomes:**
+
+- `POST /explorations/start` 返回 `401`；不创建 Trip、thread、消息或 Agent task。
+- UI 保留私人对话不可用状态，并显示“需要登录”的具体原因；不得显示网络错误或继续将消息标记为已发送。
+- 点击重试只以同一 idempotency key 再次尝试创建；用户完成登录后可安全重试。
+
 ### TS-CONVERSATIONAL-FLIGHT-PREFERENCES-1 — 机票偏好对话选项卡
 
 **Objective:** 在私有对话中补充机票偏好，而不因选择本身调用实时供应商。
