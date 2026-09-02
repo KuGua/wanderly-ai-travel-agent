@@ -62,14 +62,30 @@ export type ActivationTrace = {
 };
 
 /**
- * Whole days between `observedOn` and `now`, floored at 1.
+ * Whole UTC days between `observedOn` and `now`, floored at 1.
+ *
+ * Both instants are collapsed to their UTC calendar day before subtracting,
+ * which is the only reading that matches where the numbers come from:
+ * `memory_observations.observed_on` is a DATE, so it is already a calendar day
+ * pinned to UTC midnight, and comparing it against a wall clock made every age
+ * carry the time of day. That produced an unstable gate — the same evidence
+ * scored 0.526 at 00:00 UTC and 0.386 by 23:00, so a user with exactly the
+ * documented minimum evidence saw a suggestion in the morning and nothing in
+ * the afternoon, with nothing about their evidence having changed.
+ *
+ * Aligning both sides costs the sub-day resolution the input never had, and
+ * makes the policy's own worked examples true of the real read path.
  *
  * A future date means clock skew between the writer and the reader, not a real
  * observation ahead of us; it normalizes to the floor rather than producing a
  * negative age that would flip the sign of the exponent.
  */
 export function ageInDays(observedOn: Date, now: Date): number {
-  const elapsedMs = now.getTime() - observedOn.getTime();
+  const observedDay = Date.UTC(
+    observedOn.getUTCFullYear(), observedOn.getUTCMonth(), observedOn.getUTCDate(),
+  );
+  const nowDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const elapsedMs = nowDay - observedDay;
   if (!Number.isFinite(elapsedMs)) {
     throw new MemoryActivationError("Observation date is not a valid instant");
   }

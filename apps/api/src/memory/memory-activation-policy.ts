@@ -50,27 +50,19 @@ export const MEMORY_ACTIVATION_POLICY_V1: MemoryActivationPolicy = Object.freeze
   // observations therefore means three separate trips, and `observationCount`,
   // `distinctEpisodeCount` and `distinctTripCount` move together.
   //
-  // Three sits close to tau = 0.50, but closer than the arithmetic alone
-  // suggests. Whole-day ages 1/15/30 give B = 0.526 and 1/30/30 give B = 0.475,
-  // which is where "three is exactly right" came from — but no read ever sees
-  // whole-day ages. `observed_on` stores a DATE (UTC midnight) and activation
-  // compares it against *now*, so every observation is 0 to 1 day older than
-  // its nominal age and B lands below the hand-computed figure. Measured on the
-  // real read path those same ages give B = 0.526 only in the first instant of
-  // the UTC day, and fall away as the day advances: 0.501 at 03:00, 0.493 at
-  // 04:00, 0.386 by 23:00.
+  // Three also sits exactly where it should against tau = 0.50. Evidence
+  // spread across the window clears it (ages 1/15/30 give B = 0.526) while
+  // evidence bunched at the old end does not (ages 1/30/30 give B = 0.475).
   //
-  // So the gate is not merely stricter than the figure above — it is not a fixed
-  // gate at all. A user sitting exactly on the minimum evidence gets a
-  // suggestion if they ask before ~03:00 UTC and gets nothing if they ask after,
-  // with no change in their evidence. To clear tau at any hour, the middle
-  // observation has to be within about 4 days rather than 15.
-  //
-  // Whether to move tau, floor the ages to whole days, or accept it is a product
-  // call (spec §3.6) and is deliberately left open here.
-  //
-  // `tests/memory-activation.test.ts` pins the real-read-path values so a future
-  // change to tau, d, or the age arithmetic has to face them.
+  // Those two figures are whole-day arithmetic, and for a while the read path
+  // did not produce them: `observed_on` is a DATE (UTC midnight) while
+  // activation compared it against the wall clock, so every age carried the
+  // time of day. The same minimum-evidence user then measured 0.526 at 00:00
+  // UTC and 0.386 by 23:00 — a suggestion in the morning and nothing in the
+  // afternoon, with their evidence unchanged. `ageInDays` now collapses both
+  // sides to their UTC calendar day, which is the resolution the stored data
+  // always had, so these numbers hold at every hour.
+  // `tests/memory-activation.test.ts` pins that.
   //
   // A fourth observation would demand four distinct trips, which almost no
   // user reaches, and the suggestion would never surface at all.

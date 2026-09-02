@@ -292,63 +292,61 @@ describe("policy resolution", () => {
 });
 
 /**
- * The gate as it actually behaves at read time.
+ * The gate at read time, after ages were aligned to whole UTC days.
  *
- * `memory_observations.observed_on` is a DATE, so every observation is pinned to
- * UTC midnight, while activation compares it against the wall clock. Each age is
- * therefore its nominal value plus however far the day has advanced — and for a
- * user sitting exactly on the minimum evidence, that is the difference between
- * seeing a suggestion and not. These pin the behaviour so a change to tau, to d,
- * or to the age arithmetic has to face it.
+ * `memory_observations.observed_on` is a DATE, so it was always a calendar day;
+ * activation used to compare it against the wall clock, which made every age
+ * carry the time of day and gave the same evidence a different answer depending
+ * on the hour: 0.526 at 00:00 UTC, 0.386 by 23:00. These pin the fix — the
+ * reading is stable across the day, and the policy's worked examples are finally
+ * true of the real read path.
  */
 describe("the minimum-evidence user at read time", () => {
   const TAU = MEMORY_ACTIVATION_POLICY_V1.activationThreshold; // 0.50
   /** What a DATE column yields: the UTC midnight `days` before the read's day. */
   const storedDate = (days: number) => new Date(Date.UTC(2026, 0, 1 - days, 0, 0, 0, 0));
-  const readAt = (hourUtc: number) => new Date(Date.UTC(2026, 0, 1, hourUtc, 0, 0, 0));
+  const readAt = (hourUtc: number, minute = 0) =>
+    new Date(Date.UTC(2026, 0, 1, hourUtc, minute, 0, 0));
   /** Three observations, three trips, span just over 30 days — the documented floor. */
   const minimumEvidence = {
     observationCount: 3,
     firstObservedOn: storedDate(30),
     recentObservedOn: [storedDate(1), storedDate(15), storedDate(30)],
   };
-  const bAt = (hourUtc: number) =>
-    computeActivation(minimumEvidence, { decay: D, recentDepth: K, now: readAt(hourUtc) }).activation;
+  const bAt = (hourUtc: number, minute = 0) =>
+    computeActivation(minimumEvidence, { decay: D, recentDepth: K, now: readAt(hourUtc, minute) })
+      .activation;
 
-  it("matches the hand-computed 0.526 only at the instant of UTC midnight", () => {
-    expect(bAt(0)).toBeCloseTo(0.526, 3);
-    expect(bAt(0)).toBeGreaterThan(TAU);
-  });
-
-  it("gives the same user a different answer depending on the hour they ask", () => {
-    // Same evidence, same policy — only the clock moved.
-    expect(bAt(3)).toBeGreaterThan(TAU);  // 0.5006 — surfaces
-    expect(bAt(4)).toBeLessThan(TAU);     // 0.4929 — does not
-  });
-
-  it("decays monotonically across the day, ending well short of tau", () => {
-    const readings = [0, 4, 8, 12, 18, 23].map(bAt);
-    for (let i = 1; i < readings.length; i += 1) {
-      expect(readings[i]).toBeLessThan(readings[i - 1]);
+  it("reads the same at every hour of the day", () => {
+    const midnight = bAt(0);
+    for (const [hour, minute] of [[0, 1], [4, 30], [12, 0], [18, 45], [23, 59]] as const) {
+      expect(bAt(hour, minute)).toBe(midnight);
     }
-    expect(readings.at(-1)).toBeLessThan(0.39);
   });
 
-  it("clears tau all day only once the middle observation is recent enough", () => {
-    const withMiddleAt = (middleDays: number, hourUtc: number) =>
-      computeActivation(
-        {
-          observationCount: 3,
-          firstObservedOn: storedDate(30),
-          recentObservedOn: [storedDate(1), storedDate(middleDays), storedDate(30)],
-        },
-        { decay: D, recentDepth: K, now: readAt(hourUtc) },
-      ).activation;
+  it("matches the policy's worked example, and clears tau all day", () => {
+    expect(bAt(0)).toBeCloseTo(0.526, 3);
+    expect(bAt(23)).toBeCloseTo(0.526, 3);
+    expect(bAt(23)).toBeGreaterThan(TAU);
+  });
 
-    // Late in the UTC day — the worst moment to ask — the middle observation has
-    // to be within about 4 days for the suggestion to hold up.
-    expect(withMiddleAt(15, 23)).toBeLessThan(TAU);
-    expect(withMiddleAt(5, 23)).toBeLessThan(TAU);
-    expect(withMiddleAt(4, 23)).toBeGreaterThan(TAU);
+  it("still refuses evidence bunched at the old end, at any hour", () => {
+    const bunched = {
+      observationCount: 3,
+      firstObservedOn: storedDate(30),
+      recentObservedOn: [storedDate(1), storedDate(30), storedDate(30)],
+    };
+    for (const hour of [0, 12, 23]) {
+      const { activation } = computeActivation(
+        bunched, { decay: D, recentDepth: K, now: readAt(hour) },
+      );
+      expect(activation).toBeCloseTo(0.475, 3);
+      expect(activation).toBeLessThan(TAU);
+    }
+  });
+
+  it("treats an observation made earlier today as one day old, not a fraction", () => {
+    const madeToday = new Date(Date.UTC(2026, 0, 1, 0, 0, 0, 0));
+    expect(ageInDays(madeToday, readAt(23, 59))).toBe(MINIMUM_AGE_DAYS);
   });
 });
