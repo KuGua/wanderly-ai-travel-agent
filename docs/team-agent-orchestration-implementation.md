@@ -1,6 +1,6 @@
 # Team Agent 协作编排实施规范
 
-**状态：** 实施中；核心约束 mutation、replan 与 adoption 状态机已落地。模型最小投影、成员安全 vote read 与首个 HARD evaluator 已进入实现；Personal Agent 候选生成、完整 Web 接入和 E2E 仍按第 9 节推进。
+**状态：** 实施中；核心约束 mutation、replan 与 adoption 状态机已落地。成员私有对话候选的 batch 生成、确认交接与 Web 接入改按 [成员对话候选到 Shared Agent 交接实施规范](member-conversation-handoff-implementation.md) 实施；该规范取代本文中 owner-only / 人工 form 交互的后续实现约定。
 **范围：** 多成员 Personal Agent 向 Shared Trip Agent 的结构化交接、私密约束、自动重规划和方案采用投票。
 **事实来源：** `TECH_STACK.md`、`docs/PRD.md`、`docs/backlog.md`、`docs/test-scenarios.md`、`docs/agent-architecture.md` 与本文件。若本文件与旧的长期记忆实施细节冲突，以本文件为准。
 

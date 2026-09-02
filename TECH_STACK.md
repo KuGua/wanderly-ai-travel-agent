@@ -60,7 +60,7 @@ Amazon RDS for PostgreSQL
 
 `DRAFT` 仅允许私有探索对话、creator 编辑 brief、创建者向受邀者发送邀请（受邀者只能看到最小行程名与 `DRAFT` 状态，不可读取创建者私有对话或未确认的探索内容），但禁止授权、创建 snapshot、planning/replan、确认或 booking。只有 creator 显式“开始规划”且 brief 满足正式约束后，服务端才将其激活为 `PLANNING`。实现细节见 [探索会话与 Trip 生命周期实施方案](docs/exploration-trip-lifecycle-implementation.md)。
 
-**已批准、尚未实现的演进：** [DRAFT Personal Research 到 Shared Planning 实施规范](docs/draft-personal-research-implementation.md) 会在保持 TripID 与 `chat_threads` 绑定不变的前提下，为 owner-only Personal Agent 增加经确认的 DRAFT research。该规范不是当前运行时行为；实现前仍按本段 fail closed，不能仅通过提示词、前端或 Shared feature flag 放开 provider 调用。
+**成员对话交接演进（已批准，待实施）：** 任一 active Trip member 可在自己拥有的私有 thread 中让 Personal Agent 生成字段目录允许的非敏感候选，并在对话卡中明确确认后交给 Shared Agent。该交接不共享原文、不替代 consent、不允许代替其他成员确认；服务端仍将确认结果写为 immutable Trip facts/snapshot，并在已有方案时自动 stale/replan。实施合同见 [成员对话候选到 Shared Agent 交接实施规范](docs/member-conversation-handoff-implementation.md)。DRAFT Personal Research 的 owner-only provider 查询保持独立的私有结果边界。
 
 ## 3. 为什么不用 SQLite 作主数据库
 
@@ -102,7 +102,7 @@ Agent 不能自行跨越以下边界：
 
 ### Team Agent 结构化交接与方案采用
 
-Personal Agent 只能把私有输入转化为 owner 确认的、字段目录允许的 Trip constraint proposal；不能向 Shared Agent 发送原文消息、自动确认或自动共享。确认的事实是当前 Trip 的 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL` 约束，并带 `HARD`/`SOFT` 强度。前者向所有 active members 与 Shared Agent 展示；后者只进入服务端 snapshot projection 和本次 Shared planning prompt，不出现在其他成员的 API/UI、plan explanation 或遥测。它仍可能从方案结果被间接推断，确认 UI 必须提示该限制。
+任一 active member 的 Personal Agent 只能把该成员私有输入转化为字段目录允许的 Trip constraint proposal；不能向 Shared Agent 发送原文消息、自动确认或代替其他成员确认。成员在自己拥有的 thread 中确认候选后，确认事实才成为当前 Trip 的 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL` 约束，并带 `HARD`/`SOFT` 强度。前者向所有 active members 与 Shared Agent 展示；后者只进入服务端 snapshot projection 和本次 Shared planning prompt，不出现在其他成员的 API/UI、plan explanation 或遥测。它仍可能从方案结果被间接推断，确认 UI 必须提示该限制。
 
 任一 projection 源变化须在同一事务中将旧 ACTIVE plan 与 confirmations 标记为 `STALE` 并自动 enqueue `REPLAN`。新 run 只能生成 `PROPOSED` plan；全体 required members 投票 `ACCEPT` 后才能成为 `ACTIVE`。任一 `NEEDS_CHANGES` 阻止采用。旧方案仅供比较，永不恢复为可确认或可预订状态；`ACTIVE` 后仍须通过既有全员 booking confirmation。完整实施契约见 [Team Agent 协作编排实施规范](docs/team-agent-orchestration-implementation.md)。
 

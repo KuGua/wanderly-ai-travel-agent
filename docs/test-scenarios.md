@@ -1462,3 +1462,66 @@ depending on a provider-specific `finish_reason`.
 | Privacy | `tests/personal-research/privacy.test.ts` *(待补)* | Shared trip-member 不见 Personal evidence；navigation 不含票价；places 不写 `trip_places`；raw payload 不入库 |
 | Cancel | `tests/personal-research/cancel.test.ts` *(待补)* | QUEUED 取消无 provider 调用；double-cancel 幂等 |
 | Web 组件 | `apps/web/tests/personal-research/flight-input-card.test.tsx` *(待补)* | IATA 校验 / 日期校验 / saveAnswers 调用 |
+
+## 已批准、待实施：成员私有对话候选交接 Shared Agent
+
+> 本节是 [成员对话候选到 Shared Agent 交接实施规范](member-conversation-handoff-implementation.md) 的验收矩阵。其范围是非敏感 Trip constraint 的成员对话交接；DRAFT Personal Research 的私有 provider 查询测试继续适用。
+
+### TS-CONVERSATION-HANDOFF-1 — 任意成员与私有归属
+
+**Starting conditions:** 一个 `PLANNING` Team Trip 有 creator Alice 和 active members Bob、Chen；Bob 与 Chen 各自拥有绑定该 Trip 的 private thread。
+
+1. Bob 在自己的 thread 中表达 `no_red_eye` 和 `travel_pace`，Personal Agent 生成 Bob-owned candidate batch；Bob 确认后返回 `202` 的 Shared planning run。
+2. Alice 请求读取、confirm、dismiss 或更新 Bob batch 中的 proposal；Chen 使用自己的 thread ID 尝试确认 Bob batch；已离开 Trip 的 Bob 重试 confirm。
+3. Bob 以相同 `requestId` 并发提交两次 confirm；确认完成后再用旧 candidate version 提交。
+
+**Expected:**
+
+- Bob 可完成交接，无需 creator 权限；其他三种跨成员/离开情形均 fail closed（403/409），且不写 fact/snapshot/task。
+- 同一 request 只创建一组 facts、一个 snapshot 和一个 PLAN/REPLAN task；旧 version 不得覆盖新候选。
+- audit/trace 可关联 actor、trip、run，但不记录聊天文本、值或 user ID 作为 metric label。
+
+### TS-CONVERSATION-HANDOFF-2 — 候选与敏感字段边界
+
+1. 对话分别给出合法 `no_red_eye`、`interests` 候选，未知字段和 `nationality`、passport、health、accessibility 候选。
+2. 将模型输出伪造为任意 JSON、超出字段目录的 HARD strength，或包含私聊原文的 rationale。
+3. 确认合法 batch，然后查询 Shared member API、snapshot DTO、plan explanation、SSE、audit、log/trace fixture 和 metric labels。
+
+**Expected:**
+
+- 仅允许目录中的非敏感字段作为 `PENDING` candidate；异常或敏感字段只触发澄清/表单引导，不写 proposal/fact。
+- Shared Agent 只接收确认后的最小 projection；私聊、候选 rationale 与 confidential 值不出现在任何公开或遥测路径。
+- `ORCHESTRATOR_CONFIDENTIAL` 确认必须有残余推断提示；其他成员只可见 `TEAM_VISIBLE` facts。
+
+### TS-CONVERSATION-HANDOFF-3 — 原子交接与自动最新方案
+
+1. 无现有 plan 时确认一个合法 batch；检查 accepted operation。
+2. 在已有 ACTIVE plan、confirmations 和 adoption votes 时确认另一个成员 batch；检查 mutation transaction 与 worker finalization。
+3. 在 snapshot 创建后、Worker 持有 lease 时撤回 consent 或确认新 batch；随后尝试让旧 run 写入 plan。
+
+**Expected:**
+
+- 首次交接接受 `PLAN`；已有方案的交接原子 stale ACTIVE/PROPOSED plan、confirmations、votes 和在途结果，并接受一个 `REPLAN`。
+- UI 仅显示“生成最新共享方案”，没有手动 replan CTA；旧方案只能比较，不能恢复或预订。
+- snapshot manifest/lease guard 阻止旧 run 激活或覆盖新 plan；新 Shared Worker 重新取 provider evidence，绝不重用 Personal Research evidence。
+
+### TS-CONVERSATION-HANDOFF-4 — Shared 方案与确认门
+
+1. 对一个 batch 交接后的 Team Trip 执行 Shared Worker，验证每个 destination candidate 的 research coverage；模拟一个 provider 缺失。
+2. 在 `PROPOSED` plan 上只由部分成员投 ACCEPT，或由一位成员投 NEEDS_CHANGES；尝试 booking sandbox。
+3. 所有 required members adoption 后，再缺少一个 booking confirmation 时尝试 sandbox。
+
+**Expected:**
+
+- Shared plan 覆盖全部配置候选；provider gap 是来源化 `UNAVAILABLE`/`COMPLETED_WITH_GAPS`，没有 fixture fallback。
+- 交接确认不会直接激活方案；仅全员 adoption 将 plan 变为 ACTIVE，只有全员既有 booking confirmation 才允许 sandbox。
+
+### 自动化映射
+
+| 类别 | 建议测试文件 | 覆盖 |
+| --- | --- | --- |
+| Migration/schema | `apps/api/tests/migrations/conversation-handoff.test.ts` | batch/origin/version、legacy compatibility、索引与约束。 |
+| Service/route | `apps/api/tests/team-orchestration/conversation-handoff.test.ts` | 任意 active member、cross-member/thread/trip 拒绝、idempotency、stale/PLAN/REPLAN。 |
+| Extraction | `apps/api/tests/skills/trip-constraint-propose.test.ts` | catalog strictness、敏感字段拒绝、无原文持久化。 |
+| Worker | `apps/api/tests/team-orchestration/conversation-handoff-worker.test.ts` | snapshot manifest、全候选 coverage、late lease finalization。 |
+| Web/E2E | `apps/web/src/components/trips/conversation-handoff-card.test.tsx` | 私有候选卡、visibility、确认恢复、无手动 replan UI。 |

@@ -7,7 +7,7 @@
 
 本 MVP 让每位旅行者拥有一个可控的 Personal Travel Agent：用户通过私有对话维护自己的旅行偏好和资料，并可在显式激活的单人 Trip 中发起个人旅行研究与规划。多人行程由同一受控编排核心在成员明确授权本次信息后协调航班、酒店、地面交通，以及按成员国籍区分的 visa/entry readiness 待办。
 
-> **已批准、待实现的下一阶段：** DRAFT Personal Research 保持每个 Personal Session 均绑定 Trip，并让 owner 在明确确认后进行 owner-only 的真实查询；只有显式激活、授权和 snapshot 后才进入 Shared Planning。现有 MVP 仍要求激活后研究，详细迁移合同见 [DRAFT Personal Research 到 Shared Planning 实施规范](draft-personal-research-implementation.md)。
+> **已批准、待实现的成员交接路径：** 任一 active Trip member 可在自己拥有的私有对话中确认 Personal Agent 生成的非敏感结构化候选，并以最小授权投影进入 Shared Planning；不共享对话原文，不允许代替其他成员确认。人工结构化录入和手动 Shared replan UI 被移除，但服务端 consent、snapshot、stale 与自动 replan 保留。详细合同见 [成员对话候选到 Shared Agent 交接实施规范](member-conversation-handoff-implementation.md)。
 
 系统在价格或计划变化后重新编排，并在每位成员明确确认后调用 sandbox/已批准的 booking orchestration 工具。系统不自动扣款、不承诺真实全球预订、不提供法律意见或签证代办。
 
@@ -117,7 +117,7 @@ flowchart LR
 4. 每个成员在加入时可逐项选择共享本次的偏好、预算上限、出发限制和国籍/旅行证件相关数据；国籍共享须有单独确认。
 5. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
 6. 成员更新授权或本次约束时，当前方案标记为过期并触发重算前确认。
-7. Team memory 仅属于当前 Trip。Personal Agent 只可生成待 owner 确认的结构化约束提案，不能自动共享。已确认约束可选择 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL`：后者只供服务端 Shared Agent 编排，不向同行展示具体值或归属，但用户须知方案结果可能间接反映该约束。Shared Agent 只能读取服务端按当前 consent 构建的最小化 memory projection，不能直接读取成员的 Profile、个人长期记忆或私有对话；任何投影来源变更均使依赖方案过期。
+7. Team memory 仅属于当前 Trip。任一 active member 的 Personal Agent 只可在该成员自己的私有 thread 中生成待其确认的结构化约束候选，不能自动共享或代替其他成员确认。已确认约束可选择 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL`：后者只供服务端 Shared Agent 编排，不向同行展示具体值或归属，但用户须知方案结果可能间接反映该约束。Shared Agent 只能读取服务端按当前 consent 构建的最小化 memory projection，不能直接读取成员的 Profile、个人长期记忆或私有对话；任何投影来源变更均使依赖方案过期。
 
 ### FR-3 端到端行程编排
 
@@ -128,7 +128,7 @@ flowchart LR
 5. Planning/replan 运行期间可实时显示安全阶段状态（例如 snapshot、research、validation、persistence），但不得向客户端发送内部推理、原始 prompt、未验证模型输出、未持久化 provider 结果或未授权 snapshot 数据；最终 plan 仅在验证并持久化后展示。
 6. Activities 工具与 Flight 工具相互独立：拥有独立的 typed port、覆盖矩阵、stale 触发器和 evidence 写入；同一 PLAN/REPLAN durable task 内作为并列子阶段，各自拥有独立的并发与失败语义。失败不取消其他 research，但只能形成安全的 `RESEARCH_UNAVAILABLE` 摘要；活动 provider 的 booking link 不得在 MVP 中展示、持久化或透传。
 7. 住宿能力分两层：OpenTripMap discovery 只显示名称、类别、位置、距离、来源和 `© OpenStreetMap contributors` 归因，不代表实时价格、库存或可预订性；酒店 quote 默认使用 Nuitee Connect / LiteAPI Rates，SerpApi Google Hotels 保留为服务端显式可切换来源。每个 task 只使用接受时持久化的一家 provider，禁止自动 fallback 或混合报价。每个价格 offer 显示总价、每晚价、来源、采集时间和有效期；税费或强制费用不完整时固定提示“可能另计”。Nuitee quote 还须由用户显式确认 provider-only `guestNationality`，不得从 Profile 自动推断或暴露给模型/同行。模型可在私有对话询问缺失的房间/住客/币种信息，但仅能创建待用户确认的住宿搜索偏好提案。无 live supplier 数据时为 `RESEARCH_UNAVAILABLE`，不得使用 sandbox、fixture 或模型生成报价。
-8. Personal Agent 生成的约束提案必须由 owner 确认后才能进入本次 Shared snapshot；约束区分 HARD 与 SOFT，HARD 冲突必须返回阻塞/调整请求，SOFT 约束只能影响候选排序。
+8. Personal Agent 生成的约束候选必须由所属 active member 在自己的私有 thread 中确认后才能进入本次 Shared snapshot；人工结构化录入和手动 Shared replan 不是该路径的前置条件。约束区分 HARD 与 SOFT，HARD 冲突必须返回阻塞/调整请求，SOFT 约束只能影响候选排序；国籍、证件、健康与无障碍数据仍仅能通过专用表单和 consent 写入。
 
 ### FR-4 签证/入境准备
 
