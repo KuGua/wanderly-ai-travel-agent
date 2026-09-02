@@ -1155,6 +1155,26 @@ export async function confirmConstraintHandoffBatch(params: {
         sourceProposalId: proposal.id,
         status: "ACTIVE",
       });
+
+      // Long-term memory takes its evidence from the same act the single
+      // proposal path does: the owner accepting a constraint the agent
+      // proposed for them (docs/long-term-memory-implementation.md §3.2).
+      //
+      // The single-proposal path had this and the batch path did not, and the
+      // batch path is the one with a UI. So every confirmation a real
+      // traveller could make was invisible to memory: the whole
+      // behaviour-derived channel — observations, activation, proposals —
+      // had nothing to run on, and the only memory anyone ever had came from
+      // the profile form.
+      //
+      // Queued rather than aggregated here so memory can never fail the
+      // confirmation, and skipped silently for fields memory does not model.
+      await enqueueMemoryObservation(tx, {
+        ownerUserId: params.actorUserId,
+        tripId: params.tripId,
+        constraintFieldKey: proposal.fieldKey,
+        valueJson: proposal.valueJson,
+      });
     }
 
     if (selectedProposals.length > 0) {
