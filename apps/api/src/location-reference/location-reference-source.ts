@@ -13,6 +13,7 @@
  */
 
 import { locationReferenceResponseSchema } from "../types/schemas.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type { LocationReference } from "./location-reference-resolver.js";
 import { getLocationReferenceResolver } from "./location-reference-resolver.js";
 
@@ -164,12 +165,15 @@ class SidecarLocationReferenceSource implements LocationReferenceSource {
     }
 
     try {
-      const response = await fetch(`${this.config.url.replace(/\/$/, "")}/resolve`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ latitude, longitude }),
-        signal: controller.signal,
-      });
+      const response = await observeExternalProviderFetch(
+        { provider: "location_reference", operation: "location.resolve", method: "POST" },
+        () => fetch(`${this.config.url.replace(/\/$/, "")}/resolve`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ latitude, longitude }),
+          signal: controller.signal,
+        }),
+      );
       if (!response.ok) {
         throw new LocationReferenceSourceError(
           response.status >= 500 ? "UNAVAILABLE" : "SCHEMA_DRIFT",

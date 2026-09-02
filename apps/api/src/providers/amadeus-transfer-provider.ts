@@ -5,6 +5,7 @@ import type {
   ProviderResult,
 } from "./types.js";
 import { metrics } from "../observability/metrics.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import { amadeusTransferResponseSchema, type AmadeusTransferResponse } from "./amadeus-transfer-schemas.js";
 
 export interface AmadeusTransferProviderOptions {
@@ -147,7 +148,14 @@ export class AmadeusTransferProvider implements MobilityOfferProvider {
     const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const headers = new Headers(init.headers);
     if (token) headers.set("Authorization", `Bearer ${token}`);
-    return this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers, signal: composed });
+    return observeExternalProviderFetch(
+      {
+        provider: "amadeus",
+        operation: path.startsWith("/v1/security/") ? "oauth.token" : "mobility.search",
+        method: init.method === "POST" ? "POST" : "GET",
+      },
+      () => this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers, signal: composed }),
+    );
   }
 
   private unavailable(

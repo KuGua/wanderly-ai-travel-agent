@@ -302,6 +302,19 @@ is installed as the active span in `app.ts#onRequest`, so the LLM span
 becomes a child of the inbound HTTP server span by default; background
 callers that have no active span fall back to `ctx.traceparent`.
 
+### External provider HTTP trace sites
+
+Every actual outbound HTTP attempt from a travel-provider adapter and the
+optional location-reference sidecar is wrapped by
+`observability/external-provider.ts`. It opens an `external.provider.*`
+`SpanKind.CLIENT` span and emits matching local `external_provider_call`
+records. The bounded attributes are provider name, operation, HTTP method and
+status, outcome, transport error category, latency and optional response byte
+count. The wrapper accepts no URL, headers, credentials, request body,
+response body or exception text, so provider-specific implementations cannot
+accidentally add those values to local logs or Tempo. Retried requests are
+separate spans in the same active trace.
+
 ### Durable Worker trace continuity
 
 The Durable Worker is a separate ECS Fargate process; the HTTP request that

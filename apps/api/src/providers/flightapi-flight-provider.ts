@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FlightOffer } from "../types/domain.js";
 import { metrics } from "../observability/metrics.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type { FlightProvider, FlightSearchParams, ProviderResult } from "./types.js";
 import { flightApiFlightSearchResponseSchema, type FlightApiFlightSearchResponse } from "./flightapi-flight-schemas.js";
 
@@ -82,7 +83,10 @@ export class FlightApiProvider implements FlightProvider {
     const timeout = AbortSignal.timeout(this.options.timeoutMs);
     const combinedSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const encodedPath = pathParts.map((part) => encodeURIComponent(part ?? "")).join("/");
-    return this.fetchImpl(`${FLIGHT_API_BASE_URL}/${encodedPath}`, { method: "GET", signal: combinedSignal });
+    return observeExternalProviderFetch(
+      { provider: "flightapi", operation: "flight.search", method: "GET" },
+      () => this.fetchImpl(`${FLIGHT_API_BASE_URL}/${encodedPath}`, { method: "GET", signal: combinedSignal }),
+    );
   }
 
   private unavailable(reason: Extract<ProviderResult<FlightOffer[]>, { outcome: "UNAVAILABLE" }>["reason"], start: number): ProviderResult<FlightOffer[]> {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FlightOffer, FlightOfferExpiryProvenance } from "../types/domain.js";
 import { metrics } from "../observability/metrics.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type { FlightProvider, FlightSearchParams, ProviderResult } from "./types.js";
 import { amadeusFlightOffersResponseSchema, amadeusTokenSchema } from "./amadeus-flight-schemas.js";
 
@@ -106,7 +107,14 @@ export class AmadeusFlightProvider implements FlightProvider {
   private async request(path: string, init: RequestInit & { signal?: AbortSignal }): Promise<Response> {
     const timeout = AbortSignal.timeout(this.options.timeoutMs);
     const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
-    return this.fetchImpl(`${AMADEUS_BASE_URL[this.options.environment]}${path}`, { ...init, signal });
+    return observeExternalProviderFetch(
+      {
+        provider: "amadeus",
+        operation: path.startsWith("/v1/security/") ? "oauth.token" : "flight.search",
+        method: init.method === "POST" ? "POST" : "GET",
+      },
+      () => this.fetchImpl(`${AMADEUS_BASE_URL[this.options.environment]}${path}`, { ...init, signal }),
+    );
   }
 
   private unavailable(reason: Extract<ProviderResult<FlightOffer[]>, { outcome: "UNAVAILABLE" }> ["reason"], start: number): ProviderResult<FlightOffer[]> {

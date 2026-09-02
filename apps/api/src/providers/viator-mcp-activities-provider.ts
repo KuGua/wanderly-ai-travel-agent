@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { metrics } from "../observability/metrics.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type {
   ActivitiesProvider,
   ActivitiesSearchParams,
@@ -97,13 +98,15 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
     else params.signal?.addEventListener("abort", abortFromCaller, { once: true });
     const timeout = setTimeout(() => controller.abort(new DOMException("Timed out", "AbortError")), this.options.timeoutMs);
     try {
-      const response = await this.fetchImpl(this.options.endpoint, {
-        method: "POST",
-        headers: {
-          accept: "application/json, text/event-stream",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
+      const response = await observeExternalProviderFetch(
+        { provider: "viator_mcp", operation: "activities.search", method: "POST" },
+        () => this.fetchImpl(this.options.endpoint, {
+          method: "POST",
+          headers: {
+            accept: "application/json, text/event-stream",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
           jsonrpc: "2.0",
           id: randomUUID(),
           method: "tools/call",
@@ -121,9 +124,10 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
               sessionId: randomUUID(),
             },
           },
+          }),
+          signal: controller.signal,
         }),
-        signal: controller.signal,
-      });
+      );
       if (response.status === 429) return {
         outcome: "UNAVAILABLE",
         reason: "RATE_LIMITED",

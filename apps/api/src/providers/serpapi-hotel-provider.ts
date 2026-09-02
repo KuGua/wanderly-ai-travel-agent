@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { metrics } from "../observability/metrics.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type { HotelProvider, HotelProviderItem, HotelSearchParams, ProviderResult } from "./types.js";
 import { serpApiHotelResponseSchema } from "./serpapi-hotel-schemas.js";
 
@@ -80,7 +81,10 @@ export class SerpApiHotelProvider implements HotelProvider {
 
     const timeout = AbortSignal.timeout(this.options.timeoutMs);
     const signal = params.signal ? AbortSignal.any([params.signal, timeout]) : timeout;
-    const response = await this.fetchImpl(url, { headers: { accept: "application/json" }, signal });
+    const response = await observeExternalProviderFetch(
+      { provider: "serpapi", operation: "hotel.search", method: "GET" },
+      () => this.fetchImpl(url, { headers: { accept: "application/json" }, signal }),
+    );
     if (response.status === 401 || response.status === 403) return { outcome: "UNAVAILABLE", reason: "PROVIDER_NOT_APPROVED" };
     if (response.status === 429) return { outcome: "UNAVAILABLE", reason: "RATE_LIMITED" };
     if (response.status >= 500) return { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };

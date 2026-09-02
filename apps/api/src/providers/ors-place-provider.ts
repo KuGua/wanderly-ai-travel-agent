@@ -6,6 +6,7 @@ import type {
 } from "./types.js";
 import type { DestinationReference } from "../types/domain.js";
 import { metrics } from "../observability/metrics.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import { orsGeocodingResponseSchema, type OrsGeocodingResponse } from "./ors-place-schemas.js";
 
 export interface OrsPlaceProviderOptions {
@@ -117,7 +118,10 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
   private async request(path: string, signal?: AbortSignal): Promise<Response> {
     const timeout = AbortSignal.timeout(this.options.timeoutMs);
     const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    return this.fetchImpl(`${this.options.baseUrl}${path}`, { signal: composed });
+    return observeExternalProviderFetch(
+      { provider: "openrouteservice", operation: "place.search", method: "GET" },
+      () => this.fetchImpl(`${this.options.baseUrl}${path}`, { signal: composed }),
+    );
   }
 
   private unavailable(
