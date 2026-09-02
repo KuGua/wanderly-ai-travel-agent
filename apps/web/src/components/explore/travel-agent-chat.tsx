@@ -1464,7 +1464,9 @@ function HandoffCardHost({
   onConfirmed: () => void;
   onDismissed: () => void;
 }) {
-  const t = useTranslations("trips.workspace");
+  // Same as conversation-handoff-card: the `handoff*` strings are under
+  // `teamOrchestration`; `trips.workspace` has none of them.
+  const t = useTranslations("teamOrchestration");
   const batch = useConstraintHandoffBatch(tripId, batchId);
   if (batch.isLoading) {
     return (

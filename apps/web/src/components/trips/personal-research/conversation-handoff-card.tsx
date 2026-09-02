@@ -44,7 +44,10 @@ export function ConversationHandoffCard({
   onConfirmed?: () => void;
   onDismissed?: () => void;
 }) {
-  const t = useTranslations("trips.workspace");
+  // The handoff strings live under `teamOrchestration`, not `trips.workspace` —
+  // that namespace has no `handoff*` key at all, so every label in this card
+  // was rendering as its own key path.
+  const t = useTranslations("teamOrchestration");
   const [selections, setSelections] = useState<Map<string, { visibility: ConstraintVisibility; strength: ConstraintStrength }>>(() => {
     const initial = new Map<string, { visibility: ConstraintVisibility; strength: ConstraintStrength }>();
     for (const proposal of batch.batch) {

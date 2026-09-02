@@ -48,9 +48,16 @@ export type PersonalResearchOperationCapability = (typeof PERSONAL_RESEARCH_OPER
  * Capabilities whose typed draft, executor, provider contract, authorization
  * tests, and UI cards have all landed in this milestone. Stage 1 only opens
  * `flight.search`; the rest stay closed until each is independently unblocked
- * by its prerequisite per spec §3.5. Hotel search is intentionally executed
- * through the snapshot-bound Shared RESEARCH path; do not add `hotel.search`
- * here.
+ * by its prerequisite per spec §3.5.
+ *
+ * This used to end with "Hotel search is intentionally executed through the
+ * snapshot-bound Shared RESEARCH path; do not add `hotel.search` here", which
+ * contradicted the very next line — `hotel.search` has been in this list since
+ * the file was written, and it is load-bearing: there is a personal hotel
+ * executor (`personal-research-executors/hotel.ts`) covered by
+ * `tests/personal-research/hotel-executor.test.ts`. Hotel runs through the
+ * Shared RESEARCH path *as well*; the sentence read as a prohibition on the
+ * personal path, so it is removed rather than left to be obeyed by mistake.
  */
 export const PERSONAL_RESEARCH_ALLOWED_CAPABILITIES = [
   "flight.search",
