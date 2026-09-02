@@ -18,17 +18,6 @@ import { personalTripContextSchema } from "./personal-trip-context-schema.js";
 import type { ConversationResponseConstraint } from "../../providers/model-gateway.js";
 
 /**
- * This is a capability-level behaviour contract, not a canned hotel reply.
- * The model activates it only when the current conversation is about lodging;
- * it must reuse the actual question and trusted thread context to decide what
- * is already known and what to ask next.
- */
-const TRAVEL_CONVERSATION_RESPONSE_CONSTRAINTS: readonly ConversationResponseConstraint[] = [
-  "HOTEL_SEARCH_READINESS",
-  "FLIGHT_SEARCH_READINESS",
-];
-
-/**
  * Server-built same-thread context assembled by
  * `apps/api/src/services/conversation-context-service.ts`. The Skill MUST
  * NOT accept a browser-supplied history — any field carrying the same
@@ -142,6 +131,21 @@ export interface TravelConversationToolContext {
   tools?: import("../../providers/model-gateway.js").ModelToolDefinition[];
   dispatchTool?: import("../../providers/model-gateway.js").ModelToolDispatcher;
   /**
+   * Which search-readiness contracts to append to the system prompt for THIS
+   * turn. The worker chooses them (`selectResponseConstraints`); an omitted
+   * or empty list means the turn carries none.
+   *
+   * This was a module constant holding both, so every turn carried ~3.6k
+   * characters of imperative "必须调用 hotel.search" detail — over six times
+   * the base prompt's planning-priority text, and last in the prompt. A
+   * traveller who said only "国庆带女朋友去新加坡玩4天" was answered with
+   * airport codes, room counts and two search-confirmation buttons; the trip
+   * brief never received its dates, so the handoff to planning could not
+   * happen at all. Omitting the contract weakens no boundary: the base prose
+   * still governs, and every safety rule lives outside these two blocks.
+   */
+  responseConstraints?: readonly ConversationResponseConstraint[];
+  /**
    * Whether a supplier answered during this turn.
    *
    * A getter, not a value: the tools run inside the gateway call below, so at
@@ -181,7 +185,7 @@ export async function executeTravelConversation(
           memoryContext: input.memoryContext,
           researchEvidence: input.researchEvidence,
           intent: input.intent,
-          responseConstraints: TRAVEL_CONVERSATION_RESPONSE_CONSTRAINTS,
+          responseConstraints: toolContext.responseConstraints ?? [],
           tripContext: input.tripContext,
           hotelSearchState: toolContext.hotelSearchState,
           flightSearchState: toolContext.flightSearchState,
@@ -198,7 +202,7 @@ export async function executeTravelConversation(
           memoryContext: input.memoryContext,
           researchEvidence: input.researchEvidence,
           intent: input.intent,
-          responseConstraints: TRAVEL_CONVERSATION_RESPONSE_CONSTRAINTS,
+          responseConstraints: toolContext.responseConstraints ?? [],
           tripContext: input.tripContext,
           hotelSearchState: toolContext.hotelSearchState,
           flightSearchState: toolContext.flightSearchState,

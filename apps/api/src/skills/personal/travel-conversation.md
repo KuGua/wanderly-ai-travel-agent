@@ -150,6 +150,32 @@ search and asks the owner to reply with an explicit "确认搜索". Without a
 UI button to press, the message acts as a verbal confirmation step in
 prose; the next turn re-enters the same loop.
 
+### When each readiness constraint is attached
+
+The Skill attaches none of its own. The conversation worker chooses them per
+turn in `selectResponseConstraints`
+(`apps/api/src/tasks/handlers/conversation-task-handler.ts`) and passes them
+through `TravelConversationToolContext.responseConstraints`; the registry path,
+which hands the model no tools, therefore carries none.
+
+A constraint is attached when its tool is registered for the turn, and in
+`DRAFT` only when the traveller has already engaged that capability — a
+persisted `conversation_{hotel,flight}_search_states` row, or an explicit
+confirmation in the same turn. Both were previously attached unconditionally,
+roughly 3.6k characters of "必须调用 `hotel.search`" against 569 characters of
+planning-priority text in the base prompt, and last in the prompt: a traveller
+who only described a trip was answered with airport codes, room counts and two
+search-confirmation buttons, while the trip brief's dates stayed empty and the
+trip could never be activated.
+
+This gates the prompt only. The tools stay registered in `DRAFT`, because
+[DRAFT Personal Research §1](../../../../docs/draft-personal-research-implementation.md)
+requires that a query the owner explicitly asked for is not blocked for being
+"not fully planned yet" — the model reaches such a search under the base
+prompt's own priority 2, and the state it persists brings the full constraint
+back on the next turn. Behaviour outside `DRAFT` is unchanged. Acceptance:
+`TS-DRAFT-PERSONAL-RESEARCH-7` in `docs/test-scenarios.md`.
+
 The `HOTEL_SEARCH_READINESS` and `FLIGHT_SEARCH_READINESS` constraints are
 behavioural rules, not canned replies: when a user asks for areas, routes or
 trade-offs, the model may reuse stated context and suggest which search

@@ -7,7 +7,7 @@ import {
   resolveConversationPlace,
 } from "../src/policy/conversation-safety.js";
 import { __setModelGatewayForTests } from "../src/providers/gateway-factory.js";
-import { travelConversationSkill } from "../src/skills/personal/travel-conversation-skill.js";
+import { executeTravelConversation, travelConversationSkill } from "../src/skills/personal/travel-conversation-skill.js";
 import { createRequestContext } from "../src/utils/context.js";
 import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
 import {
@@ -175,7 +175,12 @@ describe("conversation operational fact boundary", () => {
     expect(generateConversationReply).toHaveBeenCalledOnce();
   });
 
-  it("attaches the hotel-readiness behaviour when the conversation Skill is used directly", async () => {
+  it("attaches no search-readiness behaviour of its own", async () => {
+    // The Skill used to hold both contracts in a module constant, so every
+    // turn carried them whatever it was about. They are the worker's choice
+    // now (`selectResponseConstraints`), and the registry path this exercises
+    // hands the model no tools at all — so there is nothing for a contract
+    // that is almost entirely tool-calling instructions to attach to.
     const generateConversationReply = vi.fn().mockResolvedValue({
       content: "请告诉我入住日期、退房日期、入住人数与房间数。",
       responseMode: "MODEL",
@@ -185,7 +190,31 @@ describe("conversation operational fact boundary", () => {
     await invokeConversation("请帮我找西门町附近的酒店");
 
     expect(generateConversationReply).toHaveBeenCalledWith(expect.objectContaining({
-      responseConstraints: ["HOTEL_SEARCH_READINESS", "FLIGHT_SEARCH_READINESS"],
+      responseConstraints: [],
+    }));
+  });
+
+  it("forwards exactly the contracts the worker chose for the turn", async () => {
+    const generateConversationReply = vi.fn().mockResolvedValue({
+      content: "请告诉我入住日期、退房日期、入住人数与房间数。",
+      responseMode: "MODEL",
+    });
+    __setModelGatewayForTests(buildGateway(generateConversationReply));
+
+    await executeTravelConversation({
+      ctx: createRequestContext(),
+      policyGate: new DefaultPolicyGate("personal"),
+    }, {
+      question: "请帮我找西门町附近的酒店",
+      threadContext: [],
+      memoryContext: [],
+      researchEvidence: [],
+    }, new AbortController().signal, undefined, {
+      responseConstraints: ["HOTEL_SEARCH_READINESS"],
+    });
+
+    expect(generateConversationReply).toHaveBeenCalledWith(expect.objectContaining({
+      responseConstraints: ["HOTEL_SEARCH_READINESS"],
     }));
   });
 });

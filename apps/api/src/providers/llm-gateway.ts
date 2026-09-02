@@ -120,14 +120,21 @@ const geminiTripBriefExtractionSchema = z.union([z.null(), tripBriefProposalFiel
 
 const TRIP_BRIEF_EXTRACTION_SYSTEM_PROMPT = [
   "You are a strict, conservative extractor for a private trip-planning assistant.",
-  "Given the owner's latest message, the assistant's reply, and the trip's currently known brief, decide whether the owner explicitly stated a NEW or CHANGED departure city/cities, destination candidate(s), exact travel start/end date, or trip length in days for this specific trip.",
+  "Given the owner's latest message, the assistant's reply, and the trip's currently known brief, decide whether the owner has SETTLED a NEW or CHANGED departure city/cities, destination candidate(s), exact travel start/end date, or trip length in days for this specific trip.",
+  "A value counts as settled by the owner in either of two ways, and in no other way:",
+  "  (a) the owner stated it themselves in this turn; or",
+  "  (b) the assistant proposed a concrete value in `assistantReply` for this turn AND the owner's message in this turn accepts it (for example \"确认\", \"日期确认\", \"没问题\", \"yes\", \"that works\", \"confirmed\").",
+  "Rule (b) exists because the owner routinely gives a date the way people speak — \"国庆节\", \"the first week of October\" — the assistant resolves it to calendar dates, and the owner says \"日期确认\". That is the owner settling the date, and it must reach the brief.",
   "Rules:",
-  "- Only extract information the owner explicitly stated in this turn. Never infer, guess, or fill in from general knowledge.",
+  "- Extract only what the owner settled under (a) or (b). Never infer, guess, or fill in from general knowledge.",
+  "- Under (b), take the value verbatim from `assistantReply`. Never take an assistant value the owner did not accept, and never take one that is absent from `assistantReply` — including anything you would have to carry over from an earlier turn you cannot see.",
+  "- An owner message that answers only part of what the assistant proposed accepts only that part. Do not treat a partial acceptance as accepting the rest.",
+  "- A question, a correction, or a counter-proposal from the owner is not an acceptance.",
   "- If a field's value already matches the currently known brief (no real change), omit that field.",
-  "- If nothing new or changed was stated, respond with a null proposal.",
+  "- If nothing new or changed was settled, respond with a null proposal.",
   "- Departure cities are 1-3 short place names; destination candidates are 1-5 short place names.",
-  "- Dates must be exact calendar dates in YYYY-MM-DD format; omit a date field unless the owner gave a concrete, resolvable date (a vague relative phrase like \"next month\" is not enough).",
-  "- If the owner instead states a trip length (e.g. \"about 5 days\") without exact dates, use travelDays instead of the date fields.",
+  "- Dates must be exact calendar dates in YYYY-MM-DD format. A vague phrase from the owner alone (\"next month\") is not enough; the same phrase resolved to concrete dates in `assistantReply` and then accepted by the owner under (b) is.",
+  "- If the settled information is a trip length (e.g. \"about 5 days\") without exact dates, use travelDays instead of the date fields.",
   "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
 ].join("\n");
 

@@ -34,7 +34,7 @@ import { personalTripContextSchema, type PersonalTripContext } from "../../skill
 import { extractConversationHandoffBatch } from "../../services/conversation-handoff-extraction-service.js";
 import type { AgentStreamEvent } from "../../types/schemas.js";
 import { personalResearchHotelDraftSchema, personalResearchFlightDraftSchema } from "../../types/schemas.js";
-import type { ModelToolDefinition, ModelToolDispatcher, TripBriefProposal } from "../../providers/model-gateway.js";
+import type { ConversationResponseConstraint, ModelToolDefinition, ModelToolDispatcher, TripBriefProposal } from "../../providers/model-gateway.js";
 import type { PersonalResearchOperationCapability } from "../../config/personal-research-allowed-capabilities.js";
 import type { RequestContext } from "../../utils/context.js";
 import { agentTaskConfig } from "../config.js";
@@ -192,6 +192,60 @@ export function confirmedFor(
 ): boolean {
   if (!userConfirmed) return false;
   return confirmedCapability === null || confirmedCapability === capability;
+}
+
+/**
+ * Which search-readiness contracts belong in THIS turn's system prompt.
+ *
+ * Two rules, in order.
+ *
+ * A contract is only injected when its tool is actually registered for the
+ * turn. Roughly all of each block is instructions for calling that tool —
+ * "[Phase 4 — 服务端状态与强制工具调用] … 必须调用 `hotel.search`". Handing
+ * those to a model that has no such tool is not merely noise; it is an
+ * instruction it cannot carry out.
+ *
+ * In `DRAFT` a contract additionally requires that the traveller has already
+ * engaged that capability — a persisted search state for it, or a
+ * confirmation in this very turn. `DRAFT` is the phase whose designated next
+ * step is completing the trip brief and pressing "开始规划", and these two
+ * blocks were overriding it: a plain "国庆带女朋友去新加坡玩4天" produced four
+ * turns of airport codes and room counts, two speculative tool calls, and a
+ * pair of search-confirmation buttons, while the brief's own dates stayed
+ * empty so the trip could never be activated.
+ *
+ * This gates the prompt, never the tools: `docs/draft-personal-research-implementation.md`
+ * §1 requires that a query the owner explicitly asked for is not blocked for
+ * being "not fully planned yet". The tools stay registered in `DRAFT`, so a
+ * traveller who does ask for a search still gets one — the model reaches it
+ * under the base prompt's own priority 2 ("只有当用户亲自明确提出…才收集其受控
+ * 查询条件"), and from the next turn on the persisted state brings the full
+ * contract back. Nothing here decides what may be claimed or spent; the
+ * safety boundary, the confirmation gate and the capability allow-list are
+ * all elsewhere and all unchanged.
+ */
+export function selectResponseConstraints(params: {
+  tripStatus: PersonalTripContext["tripStatus"];
+  registeredTools: readonly string[];
+  hotelSearchStateExists: boolean;
+  flightSearchStateExists: boolean;
+  userConfirmed: boolean;
+  confirmedCapability: "flight.search" | "hotel.search" | null;
+}): ConversationResponseConstraint[] {
+  const engaged: Record<"hotel.search" | "flight.search", boolean> = {
+    "hotel.search": params.hotelSearchStateExists
+      || confirmedFor("hotel.search", params.userConfirmed, params.confirmedCapability),
+    "flight.search": params.flightSearchStateExists
+      || confirmedFor("flight.search", params.userConfirmed, params.confirmedCapability),
+  };
+  const contracts = [
+    ["hotel.search", "HOTEL_SEARCH_READINESS"],
+    ["flight.search", "FLIGHT_SEARCH_READINESS"],
+  ] as const;
+  return contracts
+    .filter(([capability]) => params.registeredTools.includes(capability))
+    .filter(([capability]) => params.tripStatus !== "DRAFT" || engaged[capability])
+    .map(([, constraint]) => constraint);
 }
 
 /**
@@ -517,6 +571,7 @@ export async function handleConversationTask(params: {
     dispatchTool?: ModelToolDispatcher;
     isEvidenceBacked?: () => boolean;
     userConfirmed?: boolean;
+    responseConstraints?: readonly ConversationResponseConstraint[];
     hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
     flightSearchState?: import("../../providers/model-gateway.js").ConversationFlightSearchState | null;
   } = {};
@@ -678,6 +733,14 @@ export async function handleConversationTask(params: {
       return explainToolFailure(withoutInternalFields(await dispatch(call)));
     };
   }
+  toolContext.responseConstraints = selectResponseConstraints({
+    tripStatus: tripContext.tripStatus,
+    registeredTools: tools.map((tool) => tool.name),
+    hotelSearchStateExists: hotelSearchState !== null,
+    flightSearchStateExists: flightSearchState !== null,
+    userConfirmed: toolContext.userConfirmed === true,
+    confirmedCapability,
+  });
 
   const gate = new SafeConversationDeltaGate(
     params.run,
