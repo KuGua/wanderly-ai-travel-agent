@@ -38,6 +38,7 @@ function ChatHarness({
   onStartNewExploration,
   onConversationText,
   onThreadInvalidated,
+  surface,
 }: {
   controlledThreadId?: string | null;
   initiallyOpen?: boolean;
@@ -46,6 +47,8 @@ function ChatHarness({
   onStartNewExploration?: () => void;
   onConversationText?: (text: string) => void;
   onThreadInvalidated?: () => void;
+  /** Defaults to the globe, like the component does. */
+  surface?: "EXPLORE" | "TRIP_WORKSPACE";
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   return (
@@ -56,6 +59,7 @@ function ChatHarness({
       threadId={controlledThreadId}
       tripId={tripId}
       onThreadInvalidated={onThreadInvalidated}
+      {...(surface ? { surface } : {})}
       selectedPlace={selectedPlace}
             onStartNewExploration={onStartNewExploration}
       onConversationText={onConversationText}
@@ -645,6 +649,10 @@ function untilAborted(signal: AbortSignal) {
   return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
 }
 
+/**
+ * The card only belongs inside a trip, so these mount the workspace surface.
+ * On the globe it must not appear at all — the case below the block.
+ */
 describe("the trip's preference card", () => {
   const card = {
     show: true,
@@ -661,7 +669,7 @@ describe("the trip's preference card", () => {
       getPreferenceCard: vi.fn().mockResolvedValue(card),
       resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: ["trip_pace"] }),
     });
-    renderChat(api, { tripId: TRIP_ID });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
     fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
     fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
@@ -679,7 +687,7 @@ describe("the trip's preference card", () => {
       getPreferenceCard: vi.fn().mockResolvedValue(card),
       resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: [] }),
     });
-    renderChat(api, { tripId: TRIP_ID });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
     fireEvent.click(await screen.findByTestId("trip-preference-submit"));
 
@@ -695,7 +703,7 @@ describe("the trip's preference card", () => {
       getPreferenceCard: vi.fn().mockResolvedValue(card),
       resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: [] }),
     });
-    renderChat(api, { tripId: TRIP_ID });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
     await screen.findByTestId("trip-preference-card");
 
     fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Where should I go?" } });
@@ -717,7 +725,7 @@ describe("the trip's preference card", () => {
         .mockResolvedValueOnce({ ...card, show: false })
         .mockResolvedValue(adjusted),
     });
-    renderChat(api, { tripId: TRIP_ID });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
     await waitFor(() => expect(api.getPreferenceCard).toHaveBeenCalled());
     expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument();
 
@@ -732,10 +740,33 @@ describe("the trip's preference card", () => {
 
   it("stays away once the member has been asked", async () => {
     const api = createApi({ getPreferenceCard: vi.fn().mockResolvedValue({ show: false, fields: card.fields }) });
-    renderChat(api, { tripId: TRIP_ID });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
     await waitFor(() => expect(api.getPreferenceCard).toHaveBeenCalled());
     expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument();
+  });
+});
+
+describe("the preference card and the globe", () => {
+  it("does not put the card in front of someone who is still browsing", async () => {
+    const card = {
+      show: true,
+      fields: [{ key: "trip_pace", value: null, source: "PROFILE" as const, options: ["relaxed", "packed"] }],
+    };
+    const api = {
+      ...createApi(),
+      getPreferenceCard: vi.fn().mockResolvedValue(card),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: [] }),
+    } as unknown as TravelApi;
+    // The globe: a DRAFT trip exists here only because the first message made
+    // one, so a form about "this trip" is an interruption, not a question.
+    renderChat(api, { tripId: TRIP_ID });
+
+    await waitFor(() => expect(screen.getByPlaceholderText(/Ask about your next trip/i)).toBeInTheDocument());
+    expect(screen.queryByRole("heading", { name: /Preferences for this trip/i })).not.toBeInTheDocument();
+    // And it is not consumed either — the trip's planner still gets its turn.
+    expect(api.getPreferenceCard).not.toHaveBeenCalled();
+    expect(api.resolvePreferenceCard).not.toHaveBeenCalled();
   });
 });
 
