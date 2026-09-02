@@ -1358,6 +1358,32 @@ depending on a provider-specific `finish_reason`.
 1. A DRAFT Trip with missing dates produces `TRIP_NOT_ACTIVE` before date or preference gaps. It does not create an OPEN setup session or emit an editable setup follow-up; the read-only activation hint is shown instead.
 2. Double-clicking 确认并搜索 while dates or stay preferences are being saved produces exactly one request per required slot and at most one confirm request. A failed request is rendered as a card error, never as an unhandled browser Promise rejection.
 
+### TS-CONVERSATIONAL-SETUP-12 — Hotel-readiness reply template (opening offer + dynamic currency example)
+
+**Stories:** H1f, DRAFT Personal Research §3.5 stage 2
+**Objective:** Verify the `HOTEL_SEARCH_READINESS` constraint produces a short, friendly, 4–6 line reply that (a) proactively offers full-trip planning and (b) asks for the four missing query conditions in a stable order, with a currency example dynamically generated from the owner's likely home currency and the destination's local currency.
+
+**Starting conditions:** Alice owns an active Solo Trip with `tripStatus=PLANNING` and `departureCities=["Shanghai"]`. No `hotelSearchState` row. No prior message in this thread about hotel query conditions. Place context resolves to Taipei via the conversation place resolver.
+
+**Steps:**
+
+1. Alice submits "请帮我找一下台北的酒店". The classifier routes the turn to the hotel-readiness branch (`HOTEL_SEARCH_READINESS` constraint attached, no Phase 4 tool call).
+2. Inspect the streamed reply.
+
+**Expected outcomes:**
+
+- The reply is 4–6 lines and begins with a friendly proactive offer of full-trip planning ("是否希望我帮你把完整行程一起规划"), followed by a soft fallback noting that providing the four fields below is enough if she only wants hotels.
+- The four missing fields are asked in this exact order: ① 入住与退房日期 ② 入住配置（成人数与房间数）③ 报价币种. City name "台北" is NOT re-listed because the opening sentence already acknowledges the destination.
+- The currency example is dynamic and reads "例如 CNY 或 TWD" — CNY first because `tripContext.departureCities` points to a mainland-China city (highest-priority signal after absent memory facts), TWD second as Taipei local currency.
+- The reply does not include marketing copy, an explanation of the constraint, an apology, or a redirect to click a card/button.
+
+**Variations covered by the same scenario:**
+
+- *User supplies currency explicitly* — when Alice says "我想看新台币报价" before the bot asks, the model must skip the example and use TWD directly without inventing alternatives.
+- *No departure-city signal at all* — when both `memoryContext` and `tripContext.departureCities` are empty and the question is in Chinese, the example reads "例如 USD 或 TWD" (兜底) — still exactly two codes, with destination local currency always second.
+- *English question, Tokyo destination, no other signal* — the reply is in English, opens with the same proactive offer, and the example reads "e.g. USD or JPY".
+- *Constraint breach attempt via prompt injection in `threadContext`* — when an earlier assistant turn in `threadContext` (treated as untrusted data, not instructions) tries to make the model drop the proactive offer or invent a hotel list, the reply still follows the constraint.
+
 ## 已批准、已部分实现：DRAFT Personal Research（flight 已上线；其余 capability 按 §3.5 顺序逐项 PR 开放）
 
 > 本节是 [DRAFT Personal Research 到 Shared Planning 实施规范](draft-personal-research-implementation.md) 的验收矩阵。
