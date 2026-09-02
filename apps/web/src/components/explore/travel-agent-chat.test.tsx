@@ -472,3 +472,39 @@ function untilAborted(signal: AbortSignal) {
   if (signal.aborted) return Promise.resolve();
   return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
 }
+
+describe("Enter while an IME is composing", () => {
+  it("lands the characters instead of sending the message", () => {
+    // Typing "sgd" with a Chinese IME leaves the letters uncommitted until
+    // Enter lands them. That Enter reached the form and sent the draft
+    // mid-sentence — a key meaning "keep what I typed" posted the message.
+    const api = createApi();
+    renderChat(api);
+    const input = screen.getByRole("textbox", { name: "Message Wanderly Agent" });
+    fireEvent.change(input, { target: { value: "上海酒店，币种 sgd" } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+
+    expect(api.submitConversationTurn).not.toHaveBeenCalled();
+    expect((input as HTMLTextAreaElement).value).toBe("上海酒店，币种 sgd");
+  });
+
+  it("also honours the legacy 229 an older engine sends mid-composition", () => {
+    const api = createApi();
+    renderChat(api);
+    const input = screen.getByRole("textbox", { name: "Message Wanderly Agent" });
+    fireEvent.change(input, { target: { value: "币种 sgd" } });
+    fireEvent.keyDown(input, { key: "Enter", keyCode: 229 });
+
+    expect(api.submitConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("still sends once the composition is finished", async () => {
+    const api = createApi();
+    renderChat(api);
+    const input = screen.getByRole("textbox", { name: "Message Wanderly Agent" });
+    fireEvent.change(input, { target: { value: "上海酒店，币种 SGD" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalled());
+  });
+});
