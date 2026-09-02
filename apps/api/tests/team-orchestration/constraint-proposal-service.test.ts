@@ -36,8 +36,15 @@ let alice: { id: string };
 
 beforeAll(async () => {
   await db.select().from(itineraryPlans).limit(1);
-  const [a] = await db.select({ id: users.id }).from(users).where(eq(users.externalId, "alice")).limit(1);
-  if (!a) throw new Error("test user alice must be seeded");
+  // Provision alice rather than require her: nothing seeds this user, so this
+  // file was relying on whichever other file happened to create her running
+  // first. On a database that starts without her it failed at collection.
+  const [inserted] = await db.insert(users)
+    .values({ externalId: "alice", displayName: "Alice" })
+    .onConflictDoNothing({ target: users.externalId })
+    .returning({ id: users.id });
+  const a = inserted
+    ?? (await db.select({ id: users.id }).from(users).where(eq(users.externalId, "alice")).limit(1))[0]!;
   alice = { id: a.id };
 });
 
