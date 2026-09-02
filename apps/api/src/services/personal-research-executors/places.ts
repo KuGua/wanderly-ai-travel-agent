@@ -21,6 +21,7 @@ import type {
   PersonalResearchEvidenceSummary,
 } from "../../types/domain.js";
 import type { AgentTaskRow } from "../../tasks/task-repository.js";
+import { PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT } from "../../types/schemas.js";
 
 export type PersonalResearchPlacesDraft = {
   kind: "PLACES_SEARCH";
@@ -82,6 +83,15 @@ export async function executePersonalPlacesSearch(params: {
     outcome: "AVAILABLE",
     capability: "places.search",
     places: {
+      // The place names. A count and a category list could not answer
+      // "which restaurants", which is the whole question.
+      items: candidates.slice(0, PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).map((candidate) => ({
+        label: candidate.displayName,
+        // Geocoding returns no prices, and inventing a null-priced item is
+        // more honest than implying one exists.
+        price: null,
+        detail: candidate.kind,
+      })),
       candidateCount: candidates.length,
       categories,
       radiusMeters: params.draft.radiusMeters,

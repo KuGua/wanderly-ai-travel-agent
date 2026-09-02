@@ -34,6 +34,16 @@ const BOOKING_STATUS_TERMS = [
   // Chinese: booking-status verbs.
   "已订", "已确认", "待确认", "取消", "退订", "改签",
 ];
+/**
+ * Phrases that describe what a rate allows, not what an order is doing.
+ * Only consulted for an evidence-backed reply, where the wording came from
+ * the supplier's own cancellation policy.
+ */
+const CANCELLATION_POLICY_TERMS = [
+  "free cancellation", "non-refundable", "nonrefundable", "refundable",
+  "cancellation policy", "cancellation until", "cancel by", "cancel before",
+  "免费取消", "可免费取消", "不可退款", "不可退订", "可退款", "可取消", "退订政策",
+];
 const FLIGHT_STATUS_TERMS = [
   "status", "delayed", "delay", "late", "cancelled", "canceled", "on time", "departure gate", "arrival gate",
   // Chinese: flight on-time / disruption terms.
@@ -177,8 +187,17 @@ export function containsUnsupportedOperationalClaim(content: string, opts?: Oper
     if (hasAnyTerm(text, AVAILABILITY_TERMS) && hasAnyTerm(text, TRAVEL_INVENTORY_TERMS)) return true;
   }
 
+  // Booking status means the state of a reservation the traveller holds. A
+  // rate's cancellation terms are a property of the offer — "free
+  // cancellation until the 30th", "non-refundable" — and describing one is
+  // not claiming an order exists. Evidence-backed replies quote those terms
+  // verbatim from the supplier, so the rule needs the traveller's own
+  // booking in view, not merely the word "cancel" anywhere in the answer.
+  const mentionsCancellationTerms = evidenceBacked
+    && hasAnyTerm(text, CANCELLATION_POLICY_TERMS);
   if (
-    hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations", "已订", "已确认", "待确认", "取消"])
+    !mentionsCancellationTerms
+    && hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations", "已订", "已确认", "待确认", "取消"])
     && hasAnyTerm(text, BOOKING_STATUS_TERMS)
   ) return true;
 

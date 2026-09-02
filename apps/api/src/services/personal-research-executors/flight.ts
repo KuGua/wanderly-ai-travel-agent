@@ -17,6 +17,7 @@ import { createFlightProvider } from "../../providers/live-provider-factory.js";
 import type { ProviderResult } from "../../providers/types.js";
 import type { FlightOffer, PersonalResearchEvidenceSummary } from "../../types/domain.js";
 import type { AgentTaskRow } from "../../tasks/task-repository.js";
+import { PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT } from "../../types/schemas.js";
 
 export type PersonalResearchFlightDraft = {
   kind: "FLIGHT_SEARCH";
@@ -77,6 +78,13 @@ export async function executePersonalFlightSearch(params: {
     outcome: "AVAILABLE",
     capability: "flight.search",
     flight: {
+      // The offers themselves, not just how many there were. A count told
+      // the model nothing it could answer with, so it answered from memory.
+      items: sorted.slice(0, PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).map((offer) => ({
+        label: `${offer.origin} → ${offer.destination}`,
+        price: { amount: offer.totalPrice, currency: offer.currency, unit: "TOTAL" as const },
+        detail: [offer.cabin, `${offer.segments.length} 段`].join(" · "),
+      })),
       offerCount: offers.length,
       currency: params.draft.currency,
       originIata: params.draft.originId,
