@@ -444,6 +444,7 @@ const CONVERSATION_RESEARCH_TOOL_RULE = [
   "• `keyword` 传用户自己的说法（如「拉面」「书店」「onsen」）；用户只是问「附近有什么」时传 null，不要把类别名当关键词。",
   "• 工具查到的结果与你自己的知识必须区分开：只有工具返回过的条目可以说成是「查到的」。你自己补充的建议要让用户看得出那是建议，不是查询结果。",
   "• 工具返回 NO_RESULTS 时不要说「那里没有」，如实说这次没查到，并可以提出扩大范围或换个说法再查一次。",
+  "• 工具返回失败（`outcome` 为 UNAVAILABLE）时，只转述结果里的 `reason` 字段所说的内容。**不得推测失败原因**——不得说是日期太远、供应商不支持某年份、超出查询范围、季节未开放之类你无从得知的理由。你只知道这次没成功，把这一点如实说出来，并说明用户可以怎么做。",
 ].join("\n");
 
 /**
@@ -475,13 +476,47 @@ const CONVERSATION_RESPONSE_CONSTRAINTS: Record<ConversationResponseConstraint, 
   ].join("\n"),
 };
 
+/**
+ * The moment the conversation is happening at.
+ *
+ * The prompt never said, so the model answered from its training data and
+ * believed it was 2024. Told "12月20到25号" it stored a check-in of
+ * 2024-12-20 — a date in the past — and when the traveller corrected it to
+ * 2026 it replied that 2026 was "超出当前的查询范围", a limit that does not
+ * exist. Every relative date a traveller uses ("下个月", "明年春天", "国庆")
+ * is unanswerable without this.
+ *
+ * The instant is given in UTC and the local date is left open. We do not know
+ * where the traveller is, and a UTC date alone is wrong for eight hours a day
+ * in Beijing and six in Los Angeles — long enough that "今天" and "明天" land
+ * on the wrong day for anyone asking early in their morning or late in their
+ * evening. Naming the hour lets the model see it is near a boundary, and the
+ * traveller's own wording settles which side they are on.
+ */
+export function currentDateRule(now: Date): string {
+  const instant = now.toISOString();
+  const date = instant.slice(0, 10);
+  const time = instant.slice(11, 16);
+  return [
+    "",
+    "当前时间（不可违反）",
+    `• 现在是 ${date} ${time} UTC。所有相对日期（「下个月」「明年春天」「国庆」「下周末」）都以此为基准计算。`,
+    "• 不得依据训练数据推测今天是哪一年。用户给出的年份一律以用户为准。",
+    "• 用户只说月日没说年份时，取今天之后最近的那一次；不要默认写成过去的年份。",
+    "• 用户所在时区未知，其本地日期可能比上面的 UTC 日期早一天或晚一天。用户说「今天」「明天」时以用户的说法为准，不要拿 UTC 日期去纠正用户；只有在用户没有给出日期、需要你自己推算时才使用上面的基准。",
+    "• 不存在「日期太远因此查不了」这类限制。除非工具自己这样报告，否则不得以日期范围为由拒绝查询。",
+  ].join("\n");
+}
+
 function buildConversationSystemPrompt(params: {
   base: string;
   responseConstraints?: readonly ConversationResponseConstraint[];
+  /** Injectable so a test pins a date rather than following the clock. */
+  now?: Date;
 }): string {
   const constraints = [...new Set(params.responseConstraints ?? [])]
     .map((constraint) => CONVERSATION_RESPONSE_CONSTRAINTS[constraint]);
-  return constraints.length === 0 ? params.base : [params.base, ...constraints].join("\n\n");
+  return [params.base + currentDateRule(params.now ?? new Date()), ...constraints].join("\n\n");
 }
 
 // Joined with a newline so each section keeps the blank line that separates it

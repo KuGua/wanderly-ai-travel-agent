@@ -42,6 +42,7 @@ import {
   toolSettledEventSchema,
 } from "../../types/schemas.js";
 import {
+  explainToolFailure,
   PERSONAL_RESEARCH_TOOLS,
   createPersonalResearchDispatcher,
 } from "../../agents/personal-research-tools.js";
@@ -389,7 +390,8 @@ export async function handleConversationTask(params: {
         evidenceDispatched = true;
       }
       await publishToolEvent(params.run, { phase: "settled", name: call.name, ...settledSummary(settled) }, params.ctx.traceparent);
-      return withoutInternalFields(settled);
+      // Both routes: bookkeeping out, a reason a person can read in.
+      return explainToolFailure(withoutInternalFields(settled));
     };
 
     const runDispatch = async (call: Parameters<ModelToolDispatcher>[0]) => {

@@ -213,9 +213,9 @@ export function createPersonalResearchDispatcher(
       // figures nothing produced.
       result = executed.outcome === "AVAILABLE"
         ? { ...executed.summary, providerDispatched: true }
-        : executed.summary;
+        : explainToolFailure(executed.summary);
     } catch (error) {
-      result = unavailable((error as { name?: string })?.name === "AbortError" ? "UPSTREAM_TIMEOUT" : "UPSTREAM_FAILURE");
+      result = explainToolFailure(unavailable((error as { name?: string })?.name === "AbortError" ? "UPSTREAM_TIMEOUT" : "UPSTREAM_FAILURE"));
     }
 
     try {
@@ -246,4 +246,40 @@ export function createPersonalResearchDispatcher(
 
 function unavailable(reason: string) {
   return { outcome: "UNAVAILABLE", reason } as const;
+}
+
+/**
+ * What a failure code means, in words the model can pass on.
+ *
+ * A bare `SEARCH_CONSTRAINTS_INCOMPLETE` told the model only that something
+ * went wrong, so it supplied a cause of its own: that the supplier "暂时不支持
+ * 查询 2026 年的远期房源". No such limit exists. The real reason was a missing
+ * per-trip supplier authorisation, and the traveller spent three turns
+ * adjusting dates that were never the problem.
+ */
+const UNAVAILABLE_EXPLANATION: Record<string, string> = {
+  NOT_CONFIGURED: "这项查询的供应商在本环境没有配置，这次查不了。",
+  PROVIDER_NOT_APPROVED: "这项能力当前未开放。",
+  SEARCH_CONSTRAINTS_INCOMPLETE: "服务端缺少发起这次查询所需的前置条件（例如该行程还没有完成供应商授权）。与日期或城市无关。",
+  NO_RESULTS: "供应商这次没有返回结果。可以换个范围、日期或说法再试。",
+  RATE_LIMITED: "供应商限流了，稍后可以再试。",
+  UPSTREAM_TIMEOUT: "供应商这次没有及时响应。",
+  UPSTREAM_FAILURE: "供应商这次调用失败了。",
+  INVALID_PROVIDER_RESPONSE: "供应商返回的内容无法解析。",
+  DUPLICATE_CALL: "本轮已经用同样的条件查过一次了。",
+  INVALID_ARGUMENTS: "调用参数不符合这个工具的要求。",
+  NOT_ALLOWED: "当前不允许调用这项能力。",
+  UNKNOWN_TOOL: "没有这个工具。",
+};
+
+/** Attaches the plain-language reason to a failed result, leaving others as they are. */
+export function explainToolFailure(result: unknown): unknown {
+  if (result === null || typeof result !== "object") return result;
+  const value = result as Record<string, unknown>;
+  if (value.outcome !== "UNAVAILABLE") return result;
+  const code = typeof value.reason === "string"
+    ? value.reason
+    : (value.summary as { errorCode?: unknown } | undefined)?.errorCode;
+  const explanation = typeof code === "string" ? UNAVAILABLE_EXPLANATION[code] : undefined;
+  return explanation === undefined ? result : { ...value, reason: explanation, reasonCode: code };
 }
