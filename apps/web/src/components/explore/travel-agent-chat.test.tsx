@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -659,6 +659,49 @@ describe("the trip's preference card", () => {
 
     await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(TRIP_ID, []));
     await waitFor(() => expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument());
+  });
+
+  it("takes typing past it as an answer and gets out of the way", async () => {
+    // Reading it, deciding the profile is right and just asking a question
+    // says so as clearly as pressing the button. Leaving the card up would
+    // make the traveller dismiss something they had already moved past.
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(card),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: [] }),
+    });
+    renderChat(api, { tripId: TRIP_ID });
+    await screen.findByTestId("trip-preference-card");
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Where should I go?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument());
+    expect(api.resolvePreferenceCard).toHaveBeenCalledWith(TRIP_ID, []);
+  });
+
+  it("comes back on the phrase its own hint gives, showing what applies now", async () => {
+    // After an adjustment that is the trip's value, not the profile's — which
+    // is the whole point of asking again from another thread.
+    const adjusted = {
+      show: false,
+      fields: [{ ...card.fields[0], value: "packed", inherited: false }, card.fields[1]],
+    };
+    const api = createApi({
+      getPreferenceCard: vi.fn()
+        .mockResolvedValueOnce({ ...card, show: false })
+        .mockResolvedValue(adjusted),
+    });
+    renderChat(api, { tripId: TRIP_ID });
+    await waitFor(() => expect(api.getPreferenceCard).toHaveBeenCalled());
+    expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "trip preferences" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    const reopened = await screen.findByTestId("trip-preference-card");
+    expect(within(reopened).getByText("packed")).toBeInTheDocument();
+    // The phrase opens a card; it is not a question for the model.
+    expect(api.submitConversationTurn).not.toHaveBeenCalled();
   });
 
   it("stays away once the member has been asked", async () => {

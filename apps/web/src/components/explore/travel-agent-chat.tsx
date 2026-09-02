@@ -531,6 +531,15 @@ export function TravelAgentChat({
     const question = draft.trim();
     if (!question || inputDisabled) return;
 
+    // Answered here rather than sent: there is nothing for the model to do
+    // with a request to open a card.
+    if (opensPreferenceCard(question)) {
+      setDraft("");
+      void reopenPreferenceCard();
+      return;
+    }
+    dismissPreferenceCardOnSend();
+
     const turn: PendingTurn = {
       requestId: crypto.randomUUID(),
       question,
@@ -722,6 +731,22 @@ export function TravelAgentChat({
     return () => { active = false; };
   }, [tripId, api]);
 
+  /**
+   * Typing past the card is an answer too.
+   *
+   * Someone who reads it, decides their profile is right and just asks their
+   * question has said so as clearly as if they had pressed the button. Leaving
+   * the card up would make them dismiss something they had already moved past.
+   * Recorded as no adjustments, so the trip keeps inheriting.
+   */
+  function dismissPreferenceCardOnSend() {
+    if (!preferenceCard) return;
+    setPreferenceCard(null);
+    if (tripId && api.resolvePreferenceCard) {
+      void api.resolvePreferenceCard(tripId, []).catch(() => undefined);
+    }
+  }
+
   async function resolvePreferences(adjustments: Array<{ fieldKey: string; value: unknown }>) {
     if (!tripId || !api.resolvePreferenceCard) return;
     setSavingPreferences(true);
@@ -771,6 +796,27 @@ export function TravelAgentChat({
     }
     setHighlight(null);
     window.getSelection()?.removeAllRanges();
+  }
+
+  /**
+   * The phrase the card's own hint tells the traveller to type. Matched on the
+   * whole message so it cannot fire inside a real question, and answered here
+   * rather than sent: there is nothing for the model to do with it.
+   */
+  function opensPreferenceCard(text: string): boolean {
+    return text.trim().toLowerCase() === t("prefCardTrigger").toLowerCase();
+  }
+
+  async function reopenPreferenceCard() {
+    if (!tripId || !api.getPreferenceCard) return;
+    try {
+      // Whatever applies now, which after an adjustment is the trip's value
+      // and not the profile's. `show` is about the first offer; asking for it
+      // is its own reason to see it.
+      setPreferenceCard(await api.getPreferenceCard(tripId));
+    } catch {
+      // Nothing to show is better than an error where a card was expected.
+    }
   }
 
   const submitButton = (

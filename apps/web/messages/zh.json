@@ -362,7 +362,9 @@
         "trip_pace": "行程节奏",
         "budget_max_usd": "预算上限",
         "departure_city": "出发地"
-      }
+      },
+      "prefCardReopenHint": "之后随时输入「调整本次行程偏好」，都可以重新打开这张卡片。",
+      "prefCardTrigger": "调整本次行程偏好"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",
