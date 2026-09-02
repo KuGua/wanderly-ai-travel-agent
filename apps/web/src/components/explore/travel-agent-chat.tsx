@@ -1,9 +1,8 @@
 "use client";
 
-import { ArrowRight, ArrowUp, Check, ChevronDown, Copy, LoaderCircle, MessageCircle, RotateCw, Sparkles, Square } from "lucide-react";
+import { ArrowRight, ArrowUp, Check, ChevronDown, Copy, LoaderCircle, RotateCw, Sparkles, Square } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
 import { ResearchRunCard } from "@/components/trips/personal-research/research-run-card";
@@ -168,7 +167,6 @@ export function TravelAgentChat({
     && resolvedThreadStatus !== "error";
 
   const [draft, setDraft] = useState("");
-  const [expanded, setExpanded] = useState(false);
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([]);
   /**
    * Which thread the buffer above belongs to.
@@ -598,7 +596,6 @@ export function TravelAgentChat({
   }
 
   function collapseConversation() {
-    setExpanded(false);
     onDismiss();
   }
 
@@ -876,13 +873,17 @@ export function TravelAgentChat({
   }
 
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} data-expanded={expanded ? "true" : "false"} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : `flex flex-col overflow-hidden bg-sidebar transition-[inset,height,width,border-radius] duration-300 ${expanded ? "fixed inset-0 z-[100] h-dvh rounded-none" : "absolute inset-x-3 bottom-3 z-50 h-[60dvh] min-h-[300px] wanderly-edge wanderly-r-lg wanderly-shadow-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}`}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : "absolute inset-x-3 bottom-3 z-50 flex h-[60dvh] min-h-[300px] flex-col overflow-hidden bg-sidebar wanderly-edge wanderly-r-lg wanderly-shadow-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
       <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-sidebar"}`}>
+        {/* Two controls at the two edges, and nothing between them competing for
+            the eye: put the conversation away on the left, open it in the trip
+            planner on the right. The agent names itself on every reply, so the
+            header repeating the name and the icon was saying it twice. */}
         {docked ? null : (
-        <header className="relative flex items-center gap-2.5 border-b-2 border-[var(--w-ink)] bg-sidebar px-3 pb-2 pt-3">
-          <button type="button" onClick={() => setExpanded((current) => !current)} aria-label={expanded ? t("collapse") : t("expand")} className="absolute left-1/2 top-1 -translate-x-1/2 bg-card px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press">{expanded ? t("collapse") : t("expand")}</button>
-          <span className="grid size-7 place-items-center bg-[var(--w-info)] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs"><MessageCircle aria-hidden="true" className="size-4" /></span>
-          <p className="min-w-0 flex-1 text-sm font-black tracking-[-0.025em] text-white">{t("agentName")}</p>
+        <header className="flex items-center gap-2.5 border-b-2 border-[var(--w-ink)] bg-sidebar px-3 pb-2 pt-3">
+          <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-8 shrink-0 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press"><ChevronDown aria-hidden="true" className="size-4" /></button>
+          <div className="min-w-0 flex-1" />
+          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} className="shrink-0 bg-card px-2.5 py-1 text-[10px] font-extrabold text-primary wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50">{t("startNewExploration")}</button> : null}
           {tripId && effectiveThreadId ? (
             <Link
               href={`/trips/${tripId}?thread=${effectiveThreadId}` as "/trips/[tripId]"}
@@ -895,8 +896,6 @@ export function TravelAgentChat({
               </span>
             </Link>
           ) : null}
-          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} className="bg-card px-2.5 py-1 text-[10px] font-extrabold text-primary wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50">{t("startNewExploration")}</button> : null}
-          <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-7 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press"><ChevronDown aria-hidden="true" className="size-4" /></button>
         </header>
         )}
 
@@ -1124,7 +1123,7 @@ export function TravelAgentChat({
     </aside>
   );
 
-  return expanded && !docked && typeof document !== "undefined" ? createPortal(conversationPanel, document.body) : conversationPanel;
+  return conversationPanel;
 }
 
 function isFlightPreferenceComplete(draft: FlightPreferenceDraft): draft is Required<FlightPreferenceDraft> {
