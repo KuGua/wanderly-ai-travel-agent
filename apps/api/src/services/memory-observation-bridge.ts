@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 
 import { db } from "../db/database.js";
 import { outboxEvents } from "../db/schema.js";
+import { metrics } from "../observability/metrics.js";
+import { pinoInstance } from "../observability/telemetry.js";
 import { hashProposedValue } from "./memory-proposal-service.js";
 
 /**
@@ -59,13 +61,62 @@ export function memoryObservationFor(
   constraintFieldKey: string,
   valueJson: unknown,
 ): MemoryObservationCandidate | null {
+  const outcome = explainMemoryObservation(constraintFieldKey, valueJson);
+  return outcome.candidate;
+}
+
+/**
+ * Why a confirmed constraint produced no observation.
+ *
+ * `not_in_catalog` is the designed no-op — most constraints are deliberately
+ * not habits. The other two mean a *caller* got the shape wrong: the field is
+ * one we track, but the value did not arrive the way the mapping reads it.
+ * That is a bug in the writer, and before this was instrumented it looked
+ * exactly like success (see docs — a seed passing `"relaxed"` instead of
+ * `{ pace: "relaxed" }` wrote nothing, threw nothing, and logged nothing).
+ */
+export type MemoryObservationSkipReason =
+  | "not_in_catalog"
+  | "value_not_an_object"
+  | "value_shape_mismatch";
+
+export function explainMemoryObservation(
+  constraintFieldKey: string,
+  valueJson: unknown,
+): { candidate: MemoryObservationCandidate | null; skipReason: MemoryObservationSkipReason | null } {
   const mapping = CONSTRAINT_TO_MEMORY[constraintFieldKey];
-  if (!mapping) return null;
-  if (!valueJson || typeof valueJson !== "object" || Array.isArray(valueJson)) return null;
+  if (!mapping) return { candidate: null, skipReason: "not_in_catalog" };
+  if (!valueJson || typeof valueJson !== "object" || Array.isArray(valueJson)) {
+    return { candidate: null, skipReason: "value_not_an_object" };
+  }
 
   const value = mapping.read(valueJson as Record<string, unknown>);
-  if (value === undefined || value === null) return null;
-  return { fieldKey: mapping.fieldKey, value };
+  if (value === undefined || value === null) {
+    return { candidate: null, skipReason: "value_shape_mismatch" };
+  }
+  return { candidate: { fieldKey: mapping.fieldKey, value }, skipReason: null };
+}
+
+/**
+ * Reports a skip without ever disturbing the caller.
+ *
+ * This runs inside the confirmation transaction, so it must not throw: an
+ * unregistered metric label would otherwise turn a diagnostic into a failed
+ * confirmation. The field key is a catalog key, never a user value, so it is
+ * safe to log; the value itself is never touched.
+ */
+function reportObservationSkip(constraintFieldKey: string, reason: MemoryObservationSkipReason): void {
+  try {
+    metrics.inc("memory_observation_skipped_total", { reason });
+    if (reason !== "not_in_catalog") {
+      pinoInstance.warn(
+        { runtime_event: { component: "memory", event: "observation_skipped", reason, constraintFieldKey } },
+        "Confirmed constraint produced no memory observation",
+      );
+    }
+  } catch {
+    // Diagnostics must never fail a confirmation the member is waiting on.
+  }
 }
 
 /**
@@ -116,8 +167,11 @@ export async function enqueueMemoryObservation(tx: Tx, input: {
   valueJson: unknown;
   observedAt?: Date;
 }): Promise<MemoryObservationPayload | null> {
-  const candidate = memoryObservationFor(input.constraintFieldKey, input.valueJson);
-  if (!candidate) return null;
+  const { candidate, skipReason } = explainMemoryObservation(input.constraintFieldKey, input.valueJson);
+  if (!candidate) {
+    reportObservationSkip(input.constraintFieldKey, skipReason ?? "not_in_catalog");
+    return null;
+  }
 
   const payload: MemoryObservationPayload = {
     userId: input.ownerUserId,

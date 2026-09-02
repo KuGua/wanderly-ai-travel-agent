@@ -2,6 +2,7 @@ export const profileKeys = {
   all: ["profile"] as const,
   me: ["profile", "me"] as const,
   memory: ["profile", "me", "memory"] as const,
+  memoryNotes: ["profile", "me", "memory", "notes"] as const,
 };
 
 export const tripKeys = {

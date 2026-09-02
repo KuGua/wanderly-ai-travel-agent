@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  explainMemoryObservation,
   memoryEpisodeId,
   memoryObservationFor,
   parseMemoryObservationPayload,
@@ -95,5 +96,36 @@ describe("parseMemoryObservationPayload", () => {
     }
     expect(parseMemoryObservationPayload(null)).toBeNull();
     expect(parseMemoryObservationPayload("nope")).toBeNull();
+  });
+});
+
+/**
+ * The three skip reasons exist so a caller that got the value shape wrong is
+ * distinguishable from the designed no-op. Before this, a seed passing
+ * `"relaxed"` where `{ pace: "relaxed" }` was required wrote nothing, threw
+ * nothing and logged nothing — indistinguishable from success.
+ */
+describe("explainMemoryObservation", () => {
+  it("names the designed no-op for a field the memory catalog does not track", () => {
+    expect(explainMemoryObservation("budget_max", { amount: 100 }))
+      .toEqual({ candidate: null, skipReason: "not_in_catalog" });
+  });
+
+  it("separates a caller passing a bare value from a tracked field", () => {
+    expect(explainMemoryObservation("travel_pace", "relaxed"))
+      .toEqual({ candidate: null, skipReason: "value_not_an_object" });
+    expect(explainMemoryObservation("travel_pace", ["relaxed"]))
+      .toEqual({ candidate: null, skipReason: "value_not_an_object" });
+  });
+
+  it("separates a right-shaped object whose key the mapping does not read", () => {
+    expect(explainMemoryObservation("travel_pace", { tempo: "relaxed" }))
+      .toEqual({ candidate: null, skipReason: "value_shape_mismatch" });
+  });
+
+  it("reports no skip reason on the path that produces an observation", () => {
+    const outcome = explainMemoryObservation("travel_pace", { pace: "relaxed" });
+    expect(outcome.skipReason).toBeNull();
+    expect(outcome.candidate).toEqual({ fieldKey: "trip_pace", value: "relaxed" });
   });
 });

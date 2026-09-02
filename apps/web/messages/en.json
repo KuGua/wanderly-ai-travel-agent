@@ -223,6 +223,12 @@
       "sourceStated": "You set this",
       "sourceConfirmed": "You confirmed this",
       "deleteAria": "Delete this memory",
+      "notesHeading": "Notes you asked me to keep",
+      "notesBody": "Things you highlighted that didn't fit a field above. Delete any of them and I stop using it.",
+      "notesAriaLabel": "Saved notes",
+      "notesDeleteAria": "Delete this note",
+      "notesEmpty": "Nothing yet. Highlight anything in a reply and choose Remember this.",
+      "notesCount": "{count} of {max} kept",
       "fields": {
         "trip_pace": "Trip pace",
         "accommodation_style": "Accommodation style",
