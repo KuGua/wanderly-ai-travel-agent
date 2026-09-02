@@ -71,6 +71,18 @@ CREATE INDEX IF NOT EXISTS trip_constraint_proposals_origin_thread_idx
 -- ─── audit_action enum 扩展 ───────────────────────────────────────────────
 -- 三个新动作（docs/member-conversation-handoff-implementation.md §10）。
 -- DO 块内 idempotent 检查，避免重复运行迁移时 ALTER TYPE 报错。
+-- The existence check must name the schema this migration is running in.
+-- Without it `WHERE t.typname = 'audit_action'` matches every schema that has
+-- one, and this database has two: `public` and the `travelagent_test` schema
+-- the suite migrates separately. Once the test schema had the values, the
+-- guard reported them present and `public` never got them — so
+-- `recordAudit({ action: 'MEMBER_CONVERSATION_CANDIDATES_CREATED' })` failed
+-- its insert on every conversation turn, the handoff extraction swallowed the
+-- error as designed, and the feature produced no candidate ever, with nothing
+-- in the logs and a counter that stayed at zero.
+--
+-- `::regtype` resolves against the current `search_path`, which is the schema
+-- the rest of this migration is writing to.
 DO $$
 DECLARE action TEXT;
 BEGIN
@@ -82,8 +94,7 @@ BEGIN
   LOOP
     IF NOT EXISTS (
       SELECT 1 FROM pg_enum e
-      JOIN pg_type t ON t.oid = e.enumtypid
-      WHERE t.typname = 'audit_action' AND e.enumlabel = action
+      WHERE e.enumtypid = 'audit_action'::regtype AND e.enumlabel = action
     ) THEN
       EXECUTE format('ALTER TYPE audit_action ADD VALUE %L', action);
     END IF;
