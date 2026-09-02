@@ -19,7 +19,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "../db/database.js";
 import {
-  agentTaskRuns,
   personalResearchEvidence,
 } from "../db/schema.js";
 import { isPersonalResearchCapabilityAllowed, type PersonalResearchOperationCapability } from "../config/personal-research-allowed-capabilities.js";

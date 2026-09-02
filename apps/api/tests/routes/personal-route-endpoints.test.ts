@@ -29,7 +29,6 @@ import { authHeaders, verifyTestAccessToken } from "../helpers/auth.js";
 
 let app: FastifyInstance;
 let aliceId: string;
-let bobId: string;
 let tripId: string;
 
 beforeAll(async () => {
@@ -39,13 +38,11 @@ beforeAll(async () => {
   const [alice] = await db.insert(users).values({
     externalId: "alice-route", displayName: "Alice",
   }).onConflictDoNothing({ target: users.externalId }).returning();
-  const [bob] = await db.insert(users).values({
+  await db.insert(users).values({
     externalId: "bob-route", displayName: "Bob",
-  }).onConflictDoNothing({ target: users.externalId }).returning();
+  }).onConflictDoNothing({ target: users.externalId });
   const aliceRow = alice ?? (await db.select().from(users).where(eq(users.externalId, "alice-route")).limit(1))[0];
-  const bobRow = bob ?? (await db.select().from(users).where(eq(users.externalId, "bob-route")).limit(1))[0];
   aliceId = aliceRow!.id;
-  bobId = bobRow!.id;
 
   const [trip] = await db.insert(sharedTrips).values({
     name: `route-test-${randomUUID()}`,

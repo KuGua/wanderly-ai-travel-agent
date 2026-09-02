@@ -421,7 +421,7 @@ export async function tripRoutes(app: FastifyInstance) {
       } else {
         metrics.inc("personal_research_proactive_intro_total", { outcome: "skipped_team" });
       }
-    } catch (err) {
+    } catch {
       metrics.inc("personal_research_proactive_intro_total", { outcome: "failure" });
     }
 

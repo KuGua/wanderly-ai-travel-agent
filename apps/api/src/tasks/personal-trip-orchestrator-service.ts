@@ -634,7 +634,7 @@ export async function pinSessionIfTerminal(params: {
       metrics.inc("pin_write_total", { path: "orchestrator", outcome: "skipped" });
     }
     return { written };
-  } catch (err) {
+  } catch {
     metrics.inc("pin_write_total", { path: "orchestrator", outcome: "failure" });
     return { written: false };
   }

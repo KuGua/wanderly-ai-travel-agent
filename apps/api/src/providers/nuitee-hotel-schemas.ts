@@ -23,12 +23,6 @@ export const nuiteeErrorSchema = z.object({
   message: z.string().optional(),
 }).strict();
 
-const nuiteeCancellationPolicySchema = z.object({
-  type: z.string().optional(),
-  description: z.string().max(2_000).nullable().optional(),
-  cancelDeadlineIso: z.string().datetime({ offset: true }).nullable().optional(),
-}).passthrough();
-
 const nuiteeMoneySchema = z.object({
   amount: moneyAmountSchema,
   currency: z.string().length(3),

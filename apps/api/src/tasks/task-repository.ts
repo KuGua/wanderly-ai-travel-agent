@@ -1555,15 +1555,6 @@ function toRunResponse(
   });
 }
 
-function toIsoDate(value: string | Date): string {
-  if (typeof value === "string") {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
-    const parsed = new Date(value);
-    return parsed.toISOString().slice(0, 10);
-  }
-  return value.toISOString().slice(0, 10);
-}
-
 function placeColumns(place: ConversationPlace | undefined) {
   return place ? {
     placeSourceId: place.sourceId ?? null,

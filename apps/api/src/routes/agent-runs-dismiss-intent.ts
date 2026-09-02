@@ -23,7 +23,7 @@
  * §7 Phase 2.
  */
 
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 
 import { db } from "../db/database.js";

@@ -25,7 +25,6 @@ import {
   adoptRouteEndpoint,
   listAdoptedRouteEndpoints,
   proposeRouteEndpoints,
-  type RouteEndpointCandidate,
 } from "../services/personal-route-place-proposal-service.js";
 import { evaluateReadiness } from "../services/personal-research-readiness-service.js";
 import { createRequestContext } from "../utils/context.js";
