@@ -532,6 +532,39 @@ function untilAborted(signal: AbortSignal) {
   return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
 }
 
+describe("one thread's messages stay in that thread", () => {
+  it("does not render the previous thread's conversation inside a new one", async () => {
+    // The database held two messages and the screen showed a dozen. The
+    // server builds the model's context from the real thread, so the
+    // traveller could ask about a flight that was on their screen and
+    // nowhere in the assistant's context.
+    function ThreadSwitcher() {
+      const [id, setId] = useState<string>(THREAD_ID);
+      return (
+        <>
+          <button type="button" onClick={() => setId("99999999-9999-4999-8999-999999999999")}>switch thread</button>
+          <ChatHarness controlledThreadId={id} />
+        </>
+      );
+    }
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({ thread: thread(), messages: [] }),
+    });
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(REQUEST_ID);
+    renderWithIntl(<ThreadSwitcher />, { api });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "first thread question" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await screen.findByText("first thread question");
+
+    fireEvent.click(screen.getByRole("button", { name: "switch thread" }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("first thread question")).not.toBeInTheDocument();
+    });
+  });
+});
+
 describe("Enter while an IME is composing", () => {
   it("lands the characters instead of sending the message", () => {
     // Typing "sgd" with a Chinese IME leaves the letters uncommitted until
