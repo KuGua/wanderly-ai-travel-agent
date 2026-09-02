@@ -143,6 +143,8 @@ export const auditActionEnum = pgEnum("audit_action", [
   "RESEARCH_COMPLETED",
   // Long-term memory (docs/long-term-memory-implementation.md section 7):
   "MEMORY_PROPOSAL_CREATE", "MEMORY_PROPOSAL_CONFIRM", "MEMORY_PROPOSAL_DISMISS",
+  // Free-text memories (migration 0059).
+  "FREE_TEXT_MEMORY_CREATE", "FREE_TEXT_MEMORY_DELETE",
   "PREFERENCE_FACT_UPDATE", "PREFERENCE_FACT_DELETE",
   "TRIP_MEMORY_UPDATE", "TRIP_MEMORY_DELETE",
   "MEMORY_PROJECTION_CREATE", "MEMORY_INVALIDATION",
@@ -750,6 +752,23 @@ export const chatMessages = pgTable("chat_messages", {
  * use the exact fields the owner previously reviewed instead of relying on
  * the model to reconstruct them from transcript context.
  */
+/**
+ * Free-text memories — the fallback for a highlight the catalogue cannot
+ * express. See migration 0059 for why these live apart from
+ * `preference_facts`. Bounds (20 rows, 500 characters) are enforced in
+ * `free-text-memory-service.ts` so the traveller is told, not truncated.
+ */
+export const freeTextMemories = pgTable("free_text_memories", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  content: text("content").notNull(),
+  sourceThreadId: uuid("source_thread_id").references(() => chatThreads.id, { onDelete: "set null" }),
+  sourceMessageId: uuid("source_message_id").references(() => chatMessages.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  userCreatedIdx: index("free_text_memories_user_created_idx").on(table.userId, table.createdAt),
+}));
+
 export const conversationHotelSearchStates = pgTable("conversation_hotel_search_states", {
   threadId: uuid("thread_id").primaryKey().references(() => chatThreads.id, { onDelete: "cascade" }),
   tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
