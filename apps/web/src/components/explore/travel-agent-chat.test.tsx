@@ -103,6 +103,9 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     saveTripMemoryOverride: vi.fn(),
     saveTripMemoryGroupDecision: vi.fn(),
     deleteTripMemory: vi.fn(),
+    rememberHighlight: vi.fn(),
+    getMemoryNotes: vi.fn().mockResolvedValue({ notes: [] }),
+    deleteMemoryNote: vi.fn(),
     ...overrides,
   };
 }
@@ -531,6 +534,78 @@ function untilAborted(signal: AbortSignal) {
   if (signal.aborted) return Promise.resolve();
   return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
 }
+
+describe("highlighting something worth remembering", () => {
+  /**
+   * jsdom's Selection cannot be produced by a drag, so this stands in for what
+   * the browser hands the handler afterwards: some text and where it sits.
+   */
+  function selectInside(text: string | null) {
+    vi.spyOn(window, "getSelection").mockReturnValue({
+      toString: () => text ?? "",
+      rangeCount: text ? 1 : 0,
+      getRangeAt: () => ({ getBoundingClientRect: () => ({ left: 100, top: 200, width: 40 }) }),
+      removeAllRanges: () => undefined,
+    } as unknown as Selection);
+  }
+
+  it("offers to remember a selection, and reports what became of it", async () => {
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [{ id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT", content: "京都的町屋很适合你", sequence: 1, createdAt: CREATED_AT }],
+      }),
+      rememberHighlight: vi.fn().mockResolvedValue({
+        outcome: "REMEMBERED_NOTE", memoryId: "note-1", remaining: 19, highlightMaxChars: 500,
+      }),
+    });
+    renderChat(api);
+    const bubble = await screen.findByText("京都的町屋很适合你");
+    selectInside("町屋");
+    fireEvent.mouseUp(bubble);
+
+    fireEvent.click(await screen.findByTestId("remember-highlight"));
+
+    await waitFor(() => expect(api.rememberHighlight).toHaveBeenCalledWith(
+      expect.objectContaining({ highlight: "町屋", sourceMessageId: ASSISTANT_MESSAGE_ID }),
+    ));
+    expect(await screen.findByTestId("remember-result")).toHaveTextContent("19");
+  });
+
+  it("tells the traveller when a highlight is too long instead of cutting it", async () => {
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [{ id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT", content: "很长的一段", sequence: 1, createdAt: CREATED_AT }],
+      }),
+      rememberHighlight: vi.fn().mockResolvedValue({
+        outcome: "TOO_LONG", length: 720, limit: 500, highlightMaxChars: 500,
+      }),
+    });
+    renderChat(api);
+    const bubble = await screen.findByText("很长的一段");
+    selectInside("很长的一段");
+    fireEvent.mouseUp(bubble);
+    fireEvent.click(await screen.findByTestId("remember-highlight"));
+
+    expect(await screen.findByTestId("remember-result")).toHaveTextContent("720");
+  });
+
+  it("shows nothing to remember when the selection is empty", async () => {
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [{ id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT", content: "普通回复", sequence: 1, createdAt: CREATED_AT }],
+      }),
+    });
+    renderChat(api);
+    const bubble = await screen.findByText("普通回复");
+    selectInside(null);
+    fireEvent.mouseUp(bubble);
+
+    expect(screen.queryByTestId("remember-highlight")).not.toBeInTheDocument();
+  });
+});
 
 describe("one thread's messages stay in that thread", () => {
   it("does not render the previous thread's conversation inside a new one", async () => {

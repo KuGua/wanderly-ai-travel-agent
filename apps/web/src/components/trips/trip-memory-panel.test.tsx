@@ -53,6 +53,9 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     saveTripMemoryOverride: vi.fn().mockResolvedValue(fact()),
     saveTripMemoryGroupDecision: vi.fn().mockResolvedValue(fact({ kind: "GROUP_DECISION" })),
     deleteTripMemory: vi.fn().mockResolvedValue(undefined),
+    rememberHighlight: vi.fn(),
+    getMemoryNotes: vi.fn().mockResolvedValue({ notes: [] }),
+    deleteMemoryNote: vi.fn(),
     ...overrides,
   } as TravelApi;
 }
