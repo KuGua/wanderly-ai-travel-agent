@@ -13,22 +13,12 @@ import type { PreferenceCardField } from "@/lib/api/contracts";
  * Read as a piece of white paper: square corners, a thin 1.5px ink outline
  * and a heavier black offset shadow. The grain runs coarser (`0.6`) and
  * slightly louder (`0.09`) than the chat's other cards so the texture reads
- * as fibre rather than noise, and the silhouette gets 1–2px triangular
- * notches on the left and right edges via clip-path so the outline reads as
- * torn rather than machine-cut. Stays inside the wanderly surface palette
- * — no new colour tokens, no new visual language.
+ * as fibre rather than noise. The sheet itself keeps its sharp silhouette;
+ * only the final lower-right tip lifts into a shallow shaded paper flap. The
+ * decorative layer stays beneath content, so controls remain unaffected.
  */
 const PAPER_GRAIN =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.6' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)' opacity='0.35'/%3E%3C/svg%3E\")";
-
-/**
- * Four 1.5px-deep triangular notches on each of the left and right edges so
- * the silhouette reads as torn rather than machine-cut. Top, bottom and the
- * two vertical corners stay square. calc() in polygon values is supported by
- * every browser the rest of the stack targets; if a legacy engine ever shows
- * up it falls back to a perfectly rectangular clip, which is also fine.
- */
-const ROUGH_EDGE = "polygon(0% 0%, 100% 0%, 100% 18%, calc(100% - 1.5px) 20%, 100% 22%, 100% 40%, calc(100% - 1.5px) 42%, 100% 44%, 100% 60%, calc(100% - 1.5px) 62%, 100% 64%, 100% 80%, calc(100% - 1.5px) 82%, 100% 84%, 100% 100%, 0% 100%, 0% 84%, 1.5px 82%, 0% 80%, 0% 64%, 1.5px 62%, 0% 60%, 0% 44%, 1.5px 42%, 0% 40%, 0% 22%, 1.5px 20%, 0% 18%, 0% 0%)";
 
 const inputFieldClass =
   "w-full bg-[var(--w-mist)] px-2 py-1 text-sm text-[var(--w-ink)] outline-none wanderly-edge-thin wanderly-r-xs focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60";
@@ -94,19 +84,41 @@ export function TripPreferenceCard({
     <section
       data-testid="trip-preference-card"
       aria-label={t("prefCardTitle")}
-      className="relative mx-auto mb-[18px] w-full max-w-[420px] bg-card px-6 py-5 text-sm text-[var(--w-ink)] rounded-none wanderly-edge-thin wanderly-shadow -rotate-[0.3deg]"
-      style={{ clipPath: ROUGH_EDGE }}
+      className="relative isolate mx-auto mb-[18px] w-full max-w-[420px] bg-card px-6 py-5 text-sm text-[var(--w-ink)] rounded-none wanderly-edge-thin wanderly-shadow -rotate-[0.3deg]"
     >
       {/* Grain sits above the ground and below the text, and takes no clicks.
           `mix-blend-overlay` lets the neutral grayscale noise read as paper
           texture in both light and dark mode. */}
       <span
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 mix-blend-overlay"
+        className="pointer-events-none absolute inset-0 z-[1] mix-blend-overlay"
         style={{ backgroundImage: PAPER_GRAIN, opacity: 0.09 }}
       />
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 64 64"
+        className="pointer-events-none absolute -bottom-px -right-px z-[1] size-16"
+        style={{ transform: "perspective(180px) rotateX(-10deg) rotateZ(-2deg)", transformOrigin: "bottom right" }}
+      >
+        <defs>
+          <linearGradient id="trip-preference-tip-under" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0" stopColor="color-mix(in srgb, var(--w-fog), var(--w-ink) 22%)" />
+            <stop offset="0.46" stopColor="var(--w-fog)" />
+            <stop offset="0.78" stopColor="var(--w-white)" />
+            <stop offset="1" stopColor="var(--w-mist)" />
+          </linearGradient>
+          <filter id="trip-preference-tip-shadow" x="-25%" y="-25%" width="150%" height="150%">
+            <feGaussianBlur stdDeviation="2.1" />
+          </filter>
+        </defs>
+        {/* A short shadow grounds only the physically raised tip. */}
+        <path d="M17 61C37 58 53 43 60 19C57 43 43 58 17 61Z" transform="translate(2 3)" fill="var(--w-ink)" fillOpacity="0.17" filter="url(#trip-preference-tip-shadow)" />
+        {/* The leaf-like underside is attached to the final corner of this sheet. */}
+        <path d="M4 60C27 56 49 36 60 5C57 31 43 51 16 58C10 59 6 60 4 60Z" fill="url(#trip-preference-tip-under)" />
+        <path d="M7 59C29 54 47 36 58 10" fill="none" stroke="var(--w-white)" strokeOpacity="0.64" strokeWidth="1.1" />
+      </svg>
 
-      <div className="relative flex items-start justify-between gap-3">
+      <div className="relative z-[2] flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-[15px] font-extrabold leading-tight">{t("prefCardTitle")}</h3>
           <p className="mt-1.5 max-w-[34ch] text-xs leading-snug text-muted-foreground">{t("prefCardIntro")}</p>
@@ -121,7 +133,7 @@ export function TripPreferenceCard({
         </button>
       </div>
 
-      <dl className="relative mt-3 flex flex-col">
+      <dl className="relative z-[2] mt-3 flex flex-col">
         {fields.map((field) => {
           const current = valueOf(field);
           const changed = Object.hasOwn(draft, field.fieldKey) && draft[field.fieldKey] !== field.value;
@@ -184,19 +196,19 @@ export function TripPreferenceCard({
         })}
       </dl>
 
-      <p className="relative mt-3 text-xs leading-snug text-muted-foreground">
+      <p className="relative z-[2] mt-3 text-xs leading-snug text-muted-foreground">
         {adjustedCount === 0
           ? t("prefCardInherited")
           : `${adjustedCount} · ${t("prefCardAdjusted")}`}
       </p>
 
       {!editing ? (
-        <p className="relative mt-2 text-[11px] leading-snug text-muted-foreground/80">
+        <p className="relative z-[2] mt-2 text-[11px] leading-snug text-muted-foreground/80">
           {t("prefCardReopenHint")}
         </p>
       ) : null}
 
-      <div className="relative mt-4 flex justify-end">
+      <div className="relative z-[2] mt-4 mr-24 flex justify-end">
         <button
           type="button"
           data-testid="trip-preference-submit"
