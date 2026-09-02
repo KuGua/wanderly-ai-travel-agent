@@ -10,6 +10,8 @@ import { __resetRegistryForTests, registerSkill } from "../../src/agents/skill-r
 import { db } from "../../src/db/database.js";
 import {
   agentTaskRuns,
+  chatMessages,
+  chatThreads,
   constraintSnapshots,
   itineraryPlans,
   planningResearchResults,
@@ -17,6 +19,7 @@ import {
   tripMembers,
   tripSearchPreferences,
   tripStaySearchPreferences,
+  researchRouteSelections,
   tripPlaces,
   users,
 } from "../../src/db/schema.js";
@@ -230,12 +233,41 @@ describe("personal-trip-orchestrator-service", () => {
   it("invokes navigation and mobility Shared skills when two routable places exist", async () => {
     registerStubSkill("navigation.route", { outcome: "LIVE" });
     registerStubSkill("mobility.search", { outcome: "LIVE" });
-    await db.insert(tripPlaces).values([
+    const places = await db.insert(tripPlaces).values([
       { tripId, ownerUserId: ownerId, visibility: "TEAM_VISIBLE", status: "ACTIVE", kind: "ATTRACTION", displayName: "Tokyo Station", source: "test" },
       { tripId, ownerUserId: ownerId, visibility: "TEAM_VISIBLE", status: "ACTIVE", kind: "ATTRACTION", displayName: "Senso-ji", source: "test" },
-    ]);
-    await db.update(agentTaskRuns).set({ requestedCapabilities: ["navigation", "mobility"] })
-      .where(eq(agentTaskRuns.id, runId));
+    ]).returning({ id: tripPlaces.id });
+    // Both capabilities now refuse to guess which two places to route between:
+    // they read the owner's confirmed selection (`research_route_selections`,
+    // written by PUT /agent-runs/:runId/route-selection) and report
+    // SEARCH_CONSTRAINTS_INCOMPLETE without one. The run must also name the
+    // intent it came from, since that is the key the selection is stored under.
+    const intentRunId = randomUUID();
+    // A CONVERSATION run must name its thread and user message
+    // (`agent_task_runs_operation_refs_check`), so both are seeded here purely
+    // to satisfy that; no conversation is exercised.
+    const intentThreadId = randomUUID();
+    const intentMessageId = randomUUID();
+    await db.insert(chatThreads).values({
+      id: intentThreadId, ownerUserId: ownerId, tripId, scope: "TRIP", title: "route selection seed",
+    });
+    await db.insert(chatMessages).values({
+      id: intentMessageId, threadId: intentThreadId, senderUserId: ownerId, role: "USER", body: "seed",
+    });
+    await db.insert(agentTaskRuns).values({
+      id: intentRunId, tripId, threadId: intentThreadId, userMessageId: intentMessageId,
+      requestId: randomUUID(), operation: "CONVERSATION",
+      status: "COMPLETED", createdByUserId: ownerId, generationAttempt: 0,
+      expiresAt: new Date(Date.now() + 60_000), nextAttemptAt: new Date(),
+    });
+    await db.insert(researchRouteSelections).values({
+      intentRunId, tripId, ownerUserId: ownerId,
+      originPlaceId: places[0]!.id, destinationPlaceId: places[1]!.id, mode: "WALK",
+    });
+    await db.update(agentTaskRuns).set({
+      requestedCapabilities: ["navigation", "mobility"],
+      originatingIntentRunId: intentRunId,
+    }).where(eq(agentTaskRuns.id, runId));
 
     const result = await runResearch({
       ctx: makeRunArgs(), run: await makeRunRow(), signal: new AbortController().signal,

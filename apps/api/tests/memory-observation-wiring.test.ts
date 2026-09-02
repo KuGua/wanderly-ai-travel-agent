@@ -6,7 +6,7 @@
  * what does *not* become evidence as much as what does.
  */
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
@@ -15,6 +15,8 @@ import { db } from "../src/db/database.js";
 import {
   agentTaskRuns,
   auditEvents,
+  chatMessages,
+  chatThreads,
   constraintSnapshots,
   consentGrants,
   tripSearchPreferences,
@@ -28,10 +30,7 @@ import {
   userProfiles,
   users,
 } from "../src/db/schema.js";
-import {
-  confirmConstraintProposal,
-  proposeConstraint,
-} from "../src/services/constraint-proposal-service.js";
+import { confirmConstraintProposal } from "../src/services/constraint-proposal-service.js";
 import { listPendingProposals } from "../src/services/memory-proposal-service.js";
 import { MEMORY_OBSERVATION_EVENT_TYPE } from "../src/services/memory-observation-bridge.js";
 import {
@@ -83,11 +82,55 @@ afterEach(async () => {
     await db.delete(constraintSnapshots).where(inArray(constraintSnapshots.tripId, trips));
     await db.delete(tripConstraintFacts).where(inArray(tripConstraintFacts.tripId, trips));
     await db.delete(tripConstraintProposals).where(inArray(tripConstraintProposals.tripId, trips));
+    // After the proposals, whose origin_thread_id references these rows.
+    await db.delete(chatMessages).where(inArray(chatMessages.threadId,
+      db.select({ id: chatThreads.id }).from(chatThreads).where(inArray(chatThreads.tripId, trips))));
+    await db.delete(chatThreads).where(inArray(chatThreads.tripId, trips));
     await db.delete(consentGrants).where(inArray(consentGrants.tripId, trips));
     await db.delete(tripSearchPreferences).where(inArray(tripSearchPreferences.tripId, trips));
     trips.length = 0;
   }
 });
+
+/**
+ * Writes one PENDING agent-derived proposal with the provenance the schema
+ * requires, mirroring `conversation-handoff-extraction-service`.
+ */
+async function insertAgentProposal(params: {
+  tripId: string;
+  fieldKey: string;
+  valueJson: unknown;
+}): Promise<string> {
+  const threadId = randomUUID();
+  const runId = randomUUID();
+  const userMessageId = randomUUID();
+  await db.insert(chatThreads).values({
+    id: threadId, ownerUserId: ownerId, tripId: params.tripId, scope: "TRIP", title: "memory observation seed",
+  });
+  await db.insert(chatMessages).values({
+    id: userMessageId, threadId, senderUserId: ownerId, role: "USER", body: "seed",
+  });
+  await db.insert(agentTaskRuns).values({
+    id: runId, tripId: params.tripId, threadId, userMessageId, requestId: randomUUID(),
+    operation: "CONVERSATION", status: "COMPLETED", createdByUserId: ownerId, generationAttempt: 0,
+    expiresAt: new Date(Date.now() + 60_000), nextAttemptAt: new Date(),
+  });
+  const [row] = await db.insert(tripConstraintProposals).values({
+    tripId: params.tripId,
+    ownerUserId: ownerId,
+    fieldKey: params.fieldKey,
+    valueJson: params.valueJson as Record<string, unknown>,
+    valueHash: createHash("sha256").update(JSON.stringify(params.valueJson)).digest("hex"),
+    strength: "SOFT",
+    proposedVisibility: "ORCHESTRATOR_CONFIDENTIAL",
+    sourceKind: "PERSONAL_AGENT",
+    batchId: randomUUID(),
+    originThreadId: threadId,
+    originRunId: runId,
+    candidateVersion: 1,
+  }).returning({ id: tripConstraintProposals.id });
+  return row!.id;
+}
 
 /** Proposes a constraint and confirms it, the way the agent and member do. */
 async function proposeAndConfirm(input: {
@@ -113,17 +156,13 @@ async function proposeAndConfirm(input: {
     });
   }
 
-  const { proposalId } = await proposeConstraint({
-    ctx, tripId, ownerUserId: ownerId,
-    envelope: {
-      fieldKey: input.fieldKey,
-      valueJson: input.valueJson,
-      strength: "SOFT",
-      proposedVisibility: "ORCHESTRATOR_CONFIDENTIAL",
-      sourceKind: "PERSONAL_AGENT",
-    },
-    idempotencyKey: `propose-${tripId}-${input.fieldKey}-${Math.random().toString(36).slice(2)}`,
-  });
+  // Inserted the way the handoff service writes it, rather than through
+  // `proposeConstraint`: a PENDING `PERSONAL_AGENT` row must carry the thread
+  // and run it was extracted from (`trip_constraint_proposals_origin_consistency`,
+  // migration 0058), and `proposeConstraint` has no parameter for that — in
+  // production it only ever writes `OWNER_FORM`. The FK rows below exist only
+  // to satisfy that provenance; no agent task is exercised here.
+  const proposalId = await insertAgentProposal({ tripId, fieldKey: input.fieldKey, valueJson: input.valueJson });
 
   await confirmConstraintProposal({
     ctx, tripId, proposalId, ownerUserId: ownerId,
