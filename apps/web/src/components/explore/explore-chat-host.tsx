@@ -69,7 +69,10 @@ export function ExploreChatHost({
   const retryProvisioning = useCallback(() => {
     // Keep the original request id. The server may have completed the first
     // request after the browser observed a transport failure.
-    void startIfNeeded();
+    // The chat itself surfaces the first-send failure. A standalone Retry has
+    // no caller awaiting it, so consume its rejection after the session state
+    // has been updated to avoid an unhandled promise in the browser.
+    void startIfNeeded().catch(() => undefined);
   }, [startIfNeeded]);
 
   const handleInvalidated = useCallback(() => {

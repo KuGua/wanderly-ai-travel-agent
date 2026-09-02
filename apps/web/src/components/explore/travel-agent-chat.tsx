@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, ArrowUp, Check, ChevronDown, Copy, LoaderCircle, RotateCw, Sparkles, Square } from "lucide-react";
+import { ArrowRight, ArrowUp, Check, ChevronDown, Copy, LoaderCircle, Plus, RotateCw, Sparkles, Square } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -898,7 +898,10 @@ export function TravelAgentChat({
         <header className="flex items-center gap-2.5 border-b-2 border-[var(--w-ink)] bg-sidebar px-3 pb-2 pt-3">
           <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-8 shrink-0 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press"><ChevronDown aria-hidden="true" className="size-4" /></button>
           <div className="min-w-0 flex-1" />
-          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} className="shrink-0 bg-card px-2.5 py-1 text-[10px] font-extrabold text-primary wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50">{t("startNewExploration")}</button> : null}
+          {/* Icon-only, matching the collapse and trip-planner controls either
+              side of it. The label stays as the accessible name and tooltip, so
+              the control keeps its meaning for a screen reader and on hover. */}
+          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} aria-label={t("startNewExploration")} title={t("startNewExploration")} className="grid size-8 shrink-0 place-items-center bg-card text-primary wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"><Plus aria-hidden="true" className="size-4" /></button> : null}
           {tripId && effectiveThreadId ? (
             <Link
               href={`/trips/${tripId}?thread=${effectiveThreadId}` as "/trips/[tripId]"}

@@ -3,6 +3,7 @@ import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ExplorationStartResponse, TravelApi } from "@/lib/api";
+import { TravelApiError } from "@/lib/api/errors";
 import { renderWithIntl } from "@/test/render";
 import { ExploreChatHost } from "./explore-chat-host";
 
@@ -233,6 +234,23 @@ describe("ExploreChatHost exploration provisioning", () => {
 
     expect(await screen.findByText("Private chat is unavailable.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(api.submitConversationTurn).not.toHaveBeenCalled();
+  });
+
+  it("shows the authentication reason when creating the first private chat is rejected", async () => {
+    const api = makeApi({
+      startExploration: vi.fn().mockRejectedValue(new TravelApiError("sign in", 401, "Unauthorized", null)),
+    });
+    renderWithIntl(<ExploreChatHost open />, { api });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Hi" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText("Sign-in is required before private chat can contact the Agent.")).toBeInTheDocument();
     expect(api.submitConversationTurn).not.toHaveBeenCalled();
   });
 
