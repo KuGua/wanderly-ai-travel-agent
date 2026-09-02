@@ -1016,6 +1016,9 @@ export const rememberHighlightResponseSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("REMEMBERED_NOTE"), memoryId: z.string(), remaining: z.number(), highlightMaxChars: z.number() }),
   z.object({ outcome: z.literal("TOO_LONG"), length: z.number(), limit: z.number(), highlightMaxChars: z.number() }),
   z.object({ outcome: z.literal("LIST_FULL"), limit: z.number(), highlightMaxChars: z.number() }),
+  // Refused rather than kept: these fields are withheld from the model, and a
+  // note would have carried them into every turn.
+  z.object({ outcome: z.literal("SENSITIVE_FIELD"), fieldKey: z.string(), highlightMaxChars: z.number() }),
   z.object({ outcome: z.literal("EMPTY"), highlightMaxChars: z.number() }),
 ]);
 

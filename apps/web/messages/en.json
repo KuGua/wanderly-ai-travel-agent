@@ -363,6 +363,7 @@
       "rememberedNote": "Remembered in your words. {remaining} slots left.",
       "rememberTooLong": "That is {length} characters. Highlights up to {limit} can be remembered — try a shorter selection.",
       "rememberListFull": "You have {limit} saved notes. Remove one to make room.",
+      "rememberSensitive": "Passport, date-of-birth and accessibility details are not kept as notes — add them in Travel preference, where they are never sent to the model.",
       "rememberFailed": "Could not save that just now.",
       "prefCardTitle": "Preferences for this trip",
       "prefCardIntro": "Carried over from your travel preference. Change anything that should be different here — other trips keep what they have.",

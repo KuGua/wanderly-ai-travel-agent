@@ -835,6 +835,7 @@ export function TravelAgentChat({
         : result.outcome === "REMEMBERED_NOTE" ? t("rememberedNote", { remaining: result.remaining })
         : result.outcome === "TOO_LONG" ? t("rememberTooLong", { length: result.length, limit: result.limit })
         : result.outcome === "LIST_FULL" ? t("rememberListFull", { limit: result.limit })
+        : result.outcome === "SENSITIVE_FIELD" ? t("rememberSensitive")
         : t("rememberFailed");
       setRememberState({ status: "done", message });
     } catch {

@@ -363,6 +363,7 @@
       "rememberedNote": "已按你的原话记住，还可以再存 {remaining} 条。",
       "rememberTooLong": "这段有 {length} 个字符。最多可记住 {limit} 个字符，换一段短一点的试试。",
       "rememberListFull": "自由记忆已存满 {limit} 条，删掉一条再来。",
+      "rememberSensitive": "护照/国籍、出生日期、无障碍需要不会存成备忘——请填在「旅行偏好」里，那里不会被送给模型。",
       "rememberFailed": "这次没能保存。",
       "prefCardTitle": "本次行程的偏好",
       "prefCardIntro": "沿用你的旅行偏好。这次要不一样的地方改掉即可——别的行程不受影响。",

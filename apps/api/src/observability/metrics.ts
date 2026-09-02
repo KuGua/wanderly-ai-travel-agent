@@ -380,7 +380,7 @@ metrics.registerCounter(
 metrics.registerCounter(
   "memory_highlight_outcomes_total",
   "What became of a highlight: a catalogue field, the traveller's own words, or a refusal.",
-  { outcome: ["field", "note", "too_long", "list_full", "empty"] },
+  { outcome: ["field", "note", "too_long", "list_full", "sensitive_field", "empty"] },
 );
 metrics.registerCounter(
   "free_text_memory_writes_total",
