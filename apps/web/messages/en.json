@@ -362,7 +362,9 @@
         "trip_pace": "Pace",
         "budget_max_usd": "Budget ceiling",
         "departure_city": "Departing from"
-      }
+      },
+      "prefCardReopenHint": "You can reopen this any time by typing “trip preferences”.",
+      "prefCardTrigger": "trip preferences"
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",

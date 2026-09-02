@@ -155,7 +155,11 @@ export function TripPreferenceCard({
         })}
       </dl>
 
-      <div className="relative mt-5 flex justify-center">
+      <p className="relative mt-4 text-center text-[10.5px] leading-[1.5] text-[var(--w-ink)]/40">
+        {t("prefCardReopenHint")}
+      </p>
+
+      <div className="relative mt-3 flex justify-center">
         <button
           type="button"
           data-testid="trip-preference-submit"
