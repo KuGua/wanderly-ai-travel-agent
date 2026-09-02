@@ -283,6 +283,9 @@
       "briefProposalConfirm": "Confirm update",
       "briefProposalSaving": "Saving…",
       "briefProposalIgnore": "Ignore",
+      "flightConfirmTitle": "Ready to search for flights — run it now?",
+      "flightConfirmButton": "Search",
+      "flightCancelButton": "Cancel",
       "tools": {
         "heading": "Lookups for this reply",
         "capability": {

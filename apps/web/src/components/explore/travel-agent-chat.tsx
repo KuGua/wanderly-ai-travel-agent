@@ -135,6 +135,12 @@ export function TravelAgentChat({
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
   const [briefProposal, setBriefProposal] = useState<Extract<AgentStreamEvent, { event: "trip.brief_proposed" }>["proposal"] | null>(null);
   const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
+  // The assistant already has every field it needs for a flight search but
+  // won't spend the metered provider call without a person's say-so. Rather
+  // than have the user type "确认搜索", a persistent button does it — it
+  // survives past the streaming run (unlike `streamState.tools`) so it is
+  // still there once the assistant's "please confirm" reply has settled.
+  const [pendingFlightConfirmation, setPendingFlightConfirmation] = useState(false);
   const [researchStages, setResearchStages] = useState<
     Array<Extract<AgentStreamEvent, { event: "research.stage" }>>
   >([]);
@@ -164,6 +170,7 @@ export function TravelAgentChat({
     setStreamState(emptyStreamState());
     setRequestError(null);
     setBriefProposal(null);
+    setPendingFlightConfirmation(false);
   }, []);
 
   useEffect(() => {
@@ -177,6 +184,9 @@ export function TravelAgentChat({
   const sendTurn = useCallback(
     async (turn: PendingTurn) => {
       setRequestError(null);
+      // Any new turn — typed or via the confirm/cancel buttons below —
+      // supersedes whatever the previous turn was waiting on.
+      setPendingFlightConfirmation(false);
       try {
         let activeThreadId = effectiveThreadId;
         if (!activeThreadId) {
@@ -271,6 +281,9 @@ export function TravelAgentChat({
     const controller = new AbortController();
     void api.subscribeAgentRun(activeRunId, controller.signal, (event) => {
       if (event.event === "trip.brief_proposed") setBriefProposal(event.proposal);
+      if (event.event === "tool.settled" && event.capability === "flight.search" && event.outcome === "NEEDS_CONFIRMATION") {
+        setPendingFlightConfirmation(true);
+      }
       if (event.event === "research.stage") {
         setResearchStages((current) => [...current, event]);
         if (event.stage === "COMPLETED"
@@ -442,6 +455,19 @@ export function TravelAgentChat({
     }
   }
 
+  function confirmFlightSearch() {
+    if (isSending) return;
+    // The server's confirmation gate reads the literal phrase from the user
+    // message (see `conversation-task-handler.ts`'s `userConfirmed` regex) —
+    // sending it here is what actually authorizes the metered provider call.
+    void sendTurn({ requestId: crypto.randomUUID(), question: "确认搜索" });
+  }
+
+  function cancelFlightSearch() {
+    if (isSending) return;
+    void sendTurn({ requestId: crypto.randomUUID(), question: "取消这次机票搜索" });
+  }
+
   const rowClass = docked ? "mx-auto mb-[18px] max-w-[640px]" : "";
   const userBubbleClass = docked
     ? "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
@@ -565,6 +591,15 @@ export function TravelAgentChat({
               <div className="mt-3 flex gap-2">
                 <button type="button" onClick={() => void confirmBriefProposal()} disabled={isConfirmingBrief} className="min-h-11 rounded-full bg-primary px-3 text-xs font-bold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{isConfirmingBrief ? t("briefProposalSaving") : t("briefProposalConfirm")}</button>
                 <button type="button" onClick={() => setBriefProposal(null)} disabled={isConfirmingBrief} className="min-h-11 rounded-full border border-primary/20 px-3 text-xs font-bold text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{t("briefProposalIgnore")}</button>
+              </div>
+            </section>
+          ) : null}
+          {pendingFlightConfirmation ? (
+            <section aria-label={t("flightConfirmTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} rounded-[18px] border border-primary/20 bg-white p-3 text-sm shadow-sm`}>
+              <p className="font-bold text-primary">{t("flightConfirmTitle")}</p>
+              <div className="mt-3 flex gap-2">
+                <button type="button" onClick={confirmFlightSearch} disabled={isSending} className="min-h-11 rounded-full bg-primary px-3 text-xs font-bold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{t("flightConfirmButton")}</button>
+                <button type="button" onClick={cancelFlightSearch} disabled={isSending} className="min-h-11 rounded-full border border-primary/20 px-3 text-xs font-bold text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{t("flightCancelButton")}</button>
               </div>
             </section>
           ) : null}

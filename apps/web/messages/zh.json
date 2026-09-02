@@ -283,6 +283,9 @@
       "briefProposalConfirm": "确认更新",
       "briefProposalSaving": "正在保存…",
       "briefProposalIgnore": "忽略",
+      "flightConfirmTitle": "机票信息已收集齐全，是否立即查询？",
+      "flightConfirmButton": "查询",
+      "flightCancelButton": "取消",
       "tools": {
         "heading": "本次查询",
         "capability": {
