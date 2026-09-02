@@ -11,7 +11,6 @@ import { ResearchGapBanner } from "@/components/trips/research-gap-banner";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link, useRouter } from "@/i18n/navigation";
 import {
-  useActivateTrip,
   useCreateTripThread,
   useGetOrCreateDefaultTripThread,
   useResearchResult,
@@ -42,11 +41,9 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const createThread = useCreateTripThread(tripId);
   const ensureDefault = useGetOrCreateDefaultTripThread(tripId);
   const updateTitle = useUpdateTripTitle(tripId);
-  const activate = useActivateTrip(tripId);
   const [editingTitle, setEditingTitle] = useState(false);
   const [manualTitle, setManualTitle] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [activationError, setActivationError] = useState(false);
 
   const autoProvisionAttemptedRef = useRef(false);
 
@@ -173,26 +170,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const departureLabel = trip.departureCities.length > 0
     ? trip.departureCities.join(" · ")
     : t("header.datesUnknown");
-  const canActivateDraft = trip.status === "DRAFT"
-    && trip.departureCities.length >= 1
-    && trip.destinationCandidates.length >= (members.length > 1 ? 2 : 1)
-    && trip.destinationCandidates.length <= (members.length > 1 ? 3 : 5);
-
-  async function activateDraft() {
-    if (!canActivateDraft || activate.isPending) return;
-    setActivationError(false);
-    try {
-      await activate.mutateAsync({
-        departureCities: trip.departureCities,
-        destinationCandidates: trip.destinationCandidates,
-        travelDateStart: trip.travelDateStart,
-        travelDateEnd: trip.travelDateEnd,
-        titleLocale: locale === "zh" ? "zh" : "en",
-      });
-    } catch {
-      setActivationError(true);
-    }
-  }
 
   // Every place the selected plan touches; the globe merges these onto countries.
   const globePlaces = [...trip.departureCities, ...trip.destinationCandidates];
@@ -405,15 +382,6 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                 {trip.status === "DRAFT" && callerRole === "CREATOR" ? (
                   <div className="mt-3">
                     <p className="text-[11px] leading-4 text-muted-foreground">{t("workspace.draftActivationHint")}</p>
-                    <button
-                      type="button"
-                      disabled={!canActivateDraft || activate.isPending}
-                      onClick={() => void activateDraft()}
-                      className="mt-2 inline-flex min-h-10 w-full items-center justify-center bg-[var(--w-highlight)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-sm wanderly-press disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {activate.isPending ? tCommon("loadingTrips") : t("workspace.activateDraft")}
-                    </button>
-                    {activationError ? <p role="alert" className="mt-2 text-[11px] text-destructive">{t("workspace.activateDraftError")}</p> : null}
                   </div>
                 ) : null}
               </div>

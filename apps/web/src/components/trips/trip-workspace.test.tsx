@@ -132,17 +132,11 @@ describe("TripWorkspace", () => {
     expect(screen.getByRole("button", { name: "New thread" })).toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Activate draft trip" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Invite teammates" })).toHaveAttribute("href", `/trips/${TRIP_ID}/invite`);
-    fireEvent.click(screen.getByRole("button", { name: "Start planning" }));
-    await waitFor(() => expect(api.activateTrip).toHaveBeenCalledWith(TRIP_ID, {
-      departureCities: ["San Francisco"],
-      destinationCandidates: ["Tokyo", "Kyoto"],
-      travelDateStart: "2026-09-10",
-      travelDateEnd: "2026-09-20",
-      titleLocale: "en",
-    }));
+    // The overview card no longer carries an activation CTA.
+    expect(screen.queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
   });
 
-  it("keeps Start planning disabled for a team Draft outside the two-to-three destination range", async () => {
+  it("shows no activation CTA on a team Draft, whatever its destination count", async () => {
     const draft = buildTripResponse("DRAFT");
     draft.trip.destinationCandidates = ["Tokyo", "Kyoto", "Osaka", "Nara"];
     draft.members.push({
@@ -155,7 +149,8 @@ describe("TripWorkspace", () => {
     const api = createApi({ getTrip: vi.fn().mockResolvedValue(draft) });
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
 
-    expect(await screen.findByRole("button", { name: "Start planning" })).toBeDisabled();
+    expect(await screen.findByRole("link", { name: "Invite teammates" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
   });
 
   it("auto-provisions a default thread when none exists", async () => {

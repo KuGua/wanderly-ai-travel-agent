@@ -150,6 +150,7 @@ export function TravelAgentChat({
   const [requestError, setRequestError] = useState<unknown>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
+  const [pendingFlightConfirmation, setPendingFlightConfirmation] = useState(false);
   const [briefProposal, setBriefProposal] = useState<Extract<AgentStreamEvent, { event: "trip.brief_proposed" }>["proposal"] | null>(null);
   const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
   // The assistant already has every field it needs for a flight search but
@@ -157,7 +158,6 @@ export function TravelAgentChat({
   // than have the user type "确认搜索", a persistent button does it — it
   // survives past the streaming run (unlike `streamState.tools`) so it is
   // still there once the assistant's "please confirm" reply has settled.
-  const [pendingFlightConfirmation, setPendingFlightConfirmation] = useState(false);
   // Member conversation handoff — a fresh candidate batch arrives via SSE
   // (`conversation.handoff_ready`). We keep only the latest batchId; older
   // ones are cleared once the actor confirms or dismisses. Nothing is
@@ -385,16 +385,24 @@ export function TravelAgentChat({
     }
   }, [activeRunId, agentRun.data?.status, api, effectiveThreadId]);
 
-  // Backstop for the confirm button: `useAgentRun` already polls this run
-  // every 1.5s regardless of the SSE stream's health, so a dropped or
-  // reconnected stream — routine over a LAN Wi-Fi hop, and this one has no
-  // replay — still surfaces the pending confirmation once the next poll
-  // lands, instead of leaving the button permanently missing.
+  // Backstop for the confirm panel: `useAgentRun` polls this run every 1.5s
+  // regardless of the SSE stream's health, so a dropped or reconnected
+  // stream — routine over a LAN Wi-Fi hop, and this one has no replay —
+  // still surfaces the pending confirmation once the next poll lands.
+  //
+  // `undefined` and `false` are not the same answer. A completed run is
+  // cleared from `activeRunId`, so there is nothing left to poll and the
+  // panel has to stay on its own — that is the normal case, the model asks
+  // and then the turn ends. But this used to latch on true and never come
+  // down, so a traveller who typed 确认搜索 instead of clicking got their
+  // flights and kept the card, asking whether to run a search whose results
+  // were on screen above it. A run that says it is no longer waiting is
+  // answering the question, and is taken at its word.
   useEffect(() => {
-    if (agentRun.data?.pendingFlightConfirmation) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPendingFlightConfirmation(true);
-    }
+    const pending = agentRun.data?.pendingFlightConfirmation;
+    if (pending === undefined) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPendingFlightConfirmation(pending);
   }, [agentRun.data?.pendingFlightConfirmation]);
 
   const messages = useMemo(
@@ -519,6 +527,22 @@ export function TravelAgentChat({
   const agentBubbleClass = docked
     ? "group/msg relative max-w-[86%] bg-card px-3.5 py-3 text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
     : "group/msg relative max-w-[86%] rounded-[20px] rounded-tl-[6px] bg-[#e2f3ee] px-4 py-3 text-foreground";
+  // The two inline action cards — a brief proposal and a flight confirmation
+  // — were styled for the undocked chat and kept those classes inside the
+  // docked one, where everything else is drawn with the wanderly edge, its
+  // uneven radius and its hard offset shadow. A soft-shadowed rounded box on
+  // a hardcoded white also ignored the theme. They now follow the agent
+  // bubble they sit beside.
+  const actionCardClass = docked
+    ? "bg-card px-3.5 py-3 text-sm text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
+    : "rounded-[18px] border border-primary/20 bg-card p-3 text-sm shadow-sm";
+  const actionPrimaryClass = docked
+    ? "min-h-10 px-3 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-50"
+    : "min-h-11 rounded-full bg-primary px-3 text-xs font-bold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30";
+  const actionSecondaryClass = docked
+    ? "min-h-10 bg-[var(--w-mist)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"
+    : "min-h-11 rounded-full border border-primary/20 px-3 text-xs font-bold text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30";
+
   const agentLabel = docked ? (
     <div className="mb-1.5 flex items-center gap-2.5 text-xs font-black text-[var(--w-ink)]">
       <span aria-hidden="true" className="grid size-[23px] place-items-center bg-[var(--w-highlight)] text-[10px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">W</span>
@@ -627,23 +651,23 @@ export function TravelAgentChat({
             </div>
           ) : null}
           {briefProposal && tripId ? (
-            <section aria-label={t("briefProposalTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} rounded-[18px] border border-primary/20 bg-white p-3 text-sm shadow-sm`}>
+            <section aria-label={t("briefProposalTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <p className="font-bold text-primary">{t("briefProposalTitle")}</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">
                 {describeBriefProposal(briefProposal, t).map((line) => <li key={line}>{line}</li>)}
               </ul>
               <div className="mt-3 flex gap-2">
-                <button type="button" onClick={() => void confirmBriefProposal()} disabled={isConfirmingBrief} className="min-h-11 rounded-full bg-primary px-3 text-xs font-bold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{isConfirmingBrief ? t("briefProposalSaving") : t("briefProposalConfirm")}</button>
-                <button type="button" onClick={() => setBriefProposal(null)} disabled={isConfirmingBrief} className="min-h-11 rounded-full border border-primary/20 px-3 text-xs font-bold text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{t("briefProposalIgnore")}</button>
+                <button type="button" onClick={() => void confirmBriefProposal()} disabled={isConfirmingBrief} className={actionPrimaryClass}>{isConfirmingBrief ? t("briefProposalSaving") : t("briefProposalConfirm")}</button>
+                <button type="button" onClick={() => setBriefProposal(null)} disabled={isConfirmingBrief} className={actionSecondaryClass}>{t("briefProposalIgnore")}</button>
               </div>
             </section>
           ) : null}
           {pendingFlightConfirmation ? (
-            <section aria-label={t("flightConfirmTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} rounded-[18px] border border-primary/20 bg-white p-3 text-sm shadow-sm`}>
+            <section aria-label={t("flightConfirmTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <p className="font-bold text-primary">{t("flightConfirmTitle")}</p>
               <div className="mt-3 flex gap-2">
-                <button type="button" onClick={confirmFlightSearch} disabled={isSending} className="min-h-11 rounded-full bg-primary px-3 text-xs font-bold text-white disabled:opacity-50 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{t("flightConfirmButton")}</button>
-                <button type="button" onClick={cancelFlightSearch} disabled={isSending} className="min-h-11 rounded-full border border-primary/20 px-3 text-xs font-bold text-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-primary/30">{t("flightCancelButton")}</button>
+                <button type="button" onClick={confirmFlightSearch} disabled={isSending} className={actionPrimaryClass}>{t("flightConfirmButton")}</button>
+                <button type="button" onClick={cancelFlightSearch} disabled={isSending} className={actionSecondaryClass}>{t("flightCancelButton")}</button>
               </div>
             </section>
           ) : null}
