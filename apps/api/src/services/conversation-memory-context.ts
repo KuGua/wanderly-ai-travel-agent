@@ -20,13 +20,14 @@
 import { memoryFieldDefinition } from "../memory/memory-field-catalog.js";
 import { metrics } from "../observability/metrics.js";
 import { listFreeTextMemories } from "./free-text-memory-service.js";
+import { listOverridesForOwner } from "./trip-memory-service.js";
 import { listActiveFacts } from "./preference-fact-service.js";
 
 export type ConversationMemoryFact = {
   field: string;
   value: unknown;
   category: "PREFERENCE" | "CONSTRAINT";
-  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION" | "HIGHLIGHT";
+  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION" | "HIGHLIGHT" | "TRIP_OVERRIDE";
 };
 
 /**
@@ -58,8 +59,27 @@ export const CONVERSATION_FREE_TEXT_BUDGET_CHARS = 2_000;
  */
 export const CONVERSATION_MEMORY_MAX_NOTES = 20;
 
+/**
+ * Long-term memory as this trip sees it.
+ *
+ * Two layers, and the trip is the one that wins. A traveller's profile is the
+ * baseline that holds everywhere — relaxed pacing, ramen, jazz. A trip may
+ * disagree with it: the same person wants Beijing packed and Shanghai
+ * unhurried, and saying so about Beijing must not change what Shanghai
+ * inherits. `trip_constraint_facts` already scopes an override to one trip by
+ * construction; what was missing is that the conversation never read them, so
+ * an adjustment a traveller made for a trip was invisible in that trip's chat.
+ *
+ * Overriding rather than merging: a field carries one value here. Sending both
+ * would put "relaxed" and "packed" in front of the model at once and leave it
+ * to guess, which is not a thing to leave to a guess.
+ *
+ * `tripId` is optional because the same builder serves chat that is not bound
+ * to a trip, where there is nothing to override with.
+ */
 export async function buildConversationMemoryContext(
   ownerUserId: string,
+  tripId?: string | null,
 ): Promise<ConversationMemoryFact[]> {
   const facts = await listActiveFacts(ownerUserId);
 
@@ -76,9 +96,24 @@ export async function buildConversationMemoryContext(
       source: fact.source,
     }));
 
+  // The trip's own values replace the profile's for the fields it sets.
+  const overrides = tripId ? await loadTripOverrides(ownerUserId, tripId) : new Map<string, unknown>();
+  const merged = eligible.map((fact) => (
+    overrides.has(fact.field)
+      ? { ...fact, value: overrides.get(fact.field), source: "TRIP_OVERRIDE" as const }
+      : fact
+  ));
+  // A trip may also set a field the profile never did.
+  for (const [field, value] of overrides) {
+    if (merged.some((fact) => fact.field === field)) continue;
+    const definition = memoryFieldDefinition(field);
+    if (!definition || definition.sensitivity !== "STANDARD") continue;
+    merged.push({ field, value, category: definition.category, source: "TRIP_OVERRIDE" });
+  }
+
   // Stable order so an unchanged memory produces an unchanged prompt.
-  eligible.sort((a, b) => a.field.localeCompare(b.field));
-  const items = eligible.slice(0, CONVERSATION_MEMORY_MAX_FACTS);
+  merged.sort((a, b) => a.field.localeCompare(b.field));
+  const items = merged.slice(0, CONVERSATION_MEMORY_MAX_FACTS);
 
   // Free text rides after the typed fields, newest first, until the budget
   // runs out. A `field` of `note` keeps the shape one thing for the prompt
@@ -99,4 +134,20 @@ export async function buildConversationMemoryContext(
   metrics.inc("conversation_memory_context_facts", undefined, all.length);
 
   return all;
+}
+
+/**
+ * The trip's overrides as field → value.
+ *
+ * A membership that has lapsed since the turn was queued makes this empty
+ * rather than failing the turn: the traveller still gets their profile, which
+ * is what they would have had before ever opening the trip.
+ */
+async function loadTripOverrides(ownerUserId: string, tripId: string): Promise<Map<string, unknown>> {
+  try {
+    const overrides = await listOverridesForOwner(tripId, ownerUserId);
+    return new Map(overrides.map((override) => [override.fieldKey, override.value]));
+  } catch {
+    return new Map();
+  }
 }

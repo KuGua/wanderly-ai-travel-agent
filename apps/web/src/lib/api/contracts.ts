@@ -990,6 +990,24 @@ export const rememberHighlightResponseSchema = z.discriminatedUnion("outcome", [
   z.object({ outcome: z.literal("EMPTY"), highlightMaxChars: z.number() }),
 ]);
 
+export const preferenceCardFieldSchema = z.object({
+  fieldKey: z.string(),
+  category: z.enum(["PREFERENCE", "CONSTRAINT"]),
+  value: z.unknown(),
+  /** Whether this value came from the profile rather than this trip. */
+  inherited: z.boolean(),
+  options: z.array(z.string()).nullable(),
+});
+
+export const preferenceCardSchema = z.object({
+  show: z.boolean(),
+  fields: z.array(preferenceCardFieldSchema),
+});
+
+export const preferenceCardResolveResponseSchema = z.object({
+  applied: z.array(z.string()),
+});
+
 export const memoryNotesResponseSchema = z.object({
   notes: z.array(z.object({
     id: z.string(),
@@ -1009,6 +1027,8 @@ export type ProfileMemoryResponse = z.infer<typeof profileMemoryResponseSchema>;
 export type UpdateMemoryFactInput = z.infer<typeof updateMemoryFactInputSchema>;
 export type RememberHighlightResponse = z.infer<typeof rememberHighlightResponseSchema>;
 export type MemoryNotesResponse = z.infer<typeof memoryNotesResponseSchema>;
+export type PreferenceCard = z.infer<typeof preferenceCardSchema>;
+export type PreferenceCardField = z.infer<typeof preferenceCardFieldSchema>;
 export type ResolveProposalResponse = z.infer<typeof resolveProposalResponseSchema>;
 
 // ─── Trip-scoped memory ──────────────────────────────────────────────────────

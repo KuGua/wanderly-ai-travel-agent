@@ -2,8 +2,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
 
 import { db } from "../src/db/database.js";
-import { auditEvents, preferenceFacts, userProfiles, users } from "../src/db/schema.js";
+import { auditEvents, preferenceFacts, sharedTrips, tripConstraintFacts, tripMembers, userProfiles, users } from "../src/db/schema.js";
 import { replaceFact } from "../src/services/preference-fact-service.js";
+import { saveOverride } from "../src/services/trip-memory-service.js";
 import {
   CONVERSATION_MEMORY_MAX_FACTS,
   CONVERSATION_MEMORY_MAX_NOTES,
@@ -38,8 +39,28 @@ async function ensureProfile(userId: string, name: string): Promise<string> {
   return existing!.id;
 }
 
+async function makeTrip(name: string): Promise<string> {
+  const [trip] = await db.insert(sharedTrips).values({
+    name: `ctx-${name}-${Date.now()}`, createdBy: ownerId,
+    departureCities: ["Shanghai"], destinationCandidates: [name],
+  }).returning();
+  await db.insert(tripMembers).values({ tripId: trip.id, userId: ownerId, role: "CREATOR" });
+  tripIds.push(trip.id);
+  return trip.id;
+}
+
+let tripIds: string[] = [];
+
 async function cleanup() {
   const ids = [ownerId, otherId].filter(Boolean);
+  if (tripIds.length > 0) {
+    // Facts and membership only. The trip rows are referenced by audit
+    // events and search preferences; leaving them is cheaper than chasing
+    // every foreign key, and their names are unique per run.
+    await db.delete(tripConstraintFacts).where(inArray(tripConstraintFacts.tripId, tripIds));
+    await db.delete(tripMembers).where(inArray(tripMembers.tripId, tripIds));
+    tripIds = [];
+  }
   if (ids.length === 0) return;
   await db.delete(preferenceFacts).where(inArray(preferenceFacts.userId, ids));
   await db.delete(auditEvents).where(inArray(auditEvents.actorUserId, ids));
@@ -119,6 +140,59 @@ describe("what long-term memory hands the model", () => {
 
   it("returns nothing at all for a traveller who has told it nothing", async () => {
     expect(await buildConversationMemoryContext(ownerId)).toEqual([]);
+  });
+
+  it("lets a trip disagree with the profile without changing what other trips inherit", async () => {
+    // The same traveller wants Beijing packed and Shanghai unhurried. Saying
+    // so about Beijing must leave Shanghai alone — `trip_constraint_facts`
+    // scopes an override to one trip by construction; what was missing was
+    // that the conversation never read them at all.
+    await replaceFact({ ctx, userId: ownerId, profileId: ownerProfileId, fieldKey: "trip_pace", value: "relaxed", path: "PROFILE_FORM" });
+    const beijing = await makeTrip("Beijing");
+    const shanghai = await makeTrip("Shanghai");
+    await saveOverride({ ctx, tripId: beijing, userId: ownerId, fieldKey: "trip_pace", value: "packed" });
+
+    const inBeijing = await buildConversationMemoryContext(ownerId, beijing);
+    const inShanghai = await buildConversationMemoryContext(ownerId, shanghai);
+    const noTrip = await buildConversationMemoryContext(ownerId);
+
+    expect(inBeijing.find((fact) => fact.field === "trip_pace")).toEqual({
+      field: "trip_pace", value: "packed", category: "PREFERENCE", source: "TRIP_OVERRIDE",
+    });
+    expect(inShanghai.find((fact) => fact.field === "trip_pace")?.value).toBe("relaxed");
+    expect(noTrip.find((fact) => fact.field === "trip_pace")?.value).toBe("relaxed");
+  });
+
+  it("shows one value per field, never the profile's and the trip's together", async () => {
+    // Both in front of the model would leave it to guess which applies.
+    await replaceFact({ ctx, userId: ownerId, profileId: ownerProfileId, fieldKey: "trip_pace", value: "relaxed", path: "PROFILE_FORM" });
+    const trip = await makeTrip("Kyoto");
+    await saveOverride({ ctx, tripId: trip, userId: ownerId, fieldKey: "trip_pace", value: "packed" });
+
+    const paces = (await buildConversationMemoryContext(ownerId, trip)).filter((fact) => fact.field === "trip_pace");
+    expect(paces).toHaveLength(1);
+  });
+
+  it("carries a trip-only field the profile never set", async () => {
+    const trip = await makeTrip("Osaka");
+    await saveOverride({ ctx, tripId: trip, userId: ownerId, fieldKey: "accommodation_style", value: "budget" });
+
+    expect((await buildConversationMemoryContext(ownerId, trip))
+      .find((fact) => fact.field === "accommodation_style")?.value).toBe("budget");
+  });
+
+  it("never builds a context the Skill will refuse", () => {
+    // The two caps live in different files and share one array. When the
+    // Skill's bound was the typed cap alone, adding notes pushed a real
+    // profile past it and every turn failed input validation — which the
+    // traveller saw as a reply that never came.
+    const built = Array.from(
+      { length: CONVERSATION_MEMORY_MAX_FACTS + CONVERSATION_MEMORY_MAX_NOTES },
+      () => ({ field: "note", value: "x", category: "PREFERENCE" as const, source: "HIGHLIGHT" as const }),
+    );
+    expect(travelConversationInputSchema.safeParse({
+      question: "anything", memoryContext: built, threadContext: [],
+    }).success).toBe(true);
   });
 
   it("caps the prompt budget", async () => {

@@ -345,7 +345,24 @@
       "rememberedNote": "Remembered in your words. {remaining} slots left.",
       "rememberTooLong": "That is {length} characters. Highlights up to {limit} can be remembered — try a shorter selection.",
       "rememberListFull": "You have {limit} saved notes. Remove one to make room.",
-      "rememberFailed": "Could not save that just now."
+      "rememberFailed": "Could not save that just now.",
+      "prefCardTitle": "Preferences for this trip",
+      "prefCardIntro": "Carried over from your travel preference. Change anything that should be different here — other trips keep what they have.",
+      "prefCardEdit": "Edit",
+      "prefCardDone": "Done",
+      "prefCardSubmit": "Use these",
+      "prefCardInherited": "From your profile",
+      "prefCardAdjusted": "Set for this trip",
+      "prefCardUnset": "Not set",
+      "prefCardSaving": "Saving…",
+      "prefCardField": {
+        "accommodation_style": "Where you stay",
+        "no_red_eye": "Avoid red-eyes",
+        "interests": "Interests",
+        "trip_pace": "Pace",
+        "budget_max_usd": "Budget ceiling",
+        "departure_city": "Departing from"
+      }
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",

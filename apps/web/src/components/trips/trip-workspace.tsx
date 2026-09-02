@@ -347,7 +347,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
 
         <div className="min-h-0 overflow-y-auto p-3">
           <div className="grid gap-[11px]">
-            <section className="overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow">
+            <section aria-label={t("workspace.overviewWindow")} className="overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow">
               <div className="flex items-center justify-between gap-[7px] border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] px-2.5 py-2.5">
                 <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
                   <span aria-hidden="true" className="grid size-[21px] place-items-center bg-[var(--w-highlight)] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">◎</span>
