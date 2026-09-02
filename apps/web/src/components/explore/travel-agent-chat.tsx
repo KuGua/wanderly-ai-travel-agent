@@ -325,7 +325,12 @@ export function TravelAgentChat({
     if (!activeRunId) return;
     const controller = new AbortController();
     void api.subscribeAgentRun(activeRunId, controller.signal, (event) => {
-      if (event.event === "trip.brief_proposed") setBriefProposal(event.proposal);
+      if (event.event === "trip.brief_proposed") {
+        // A traveller often supplies the brief across several turns (city and
+        // duration first, departure/date next). Keep the unconfirmed card as
+        // an accumulating review, rather than discarding earlier fields.
+        setBriefProposal((current) => ({ ...current, ...event.proposal }));
+      }
       if (event.event === "turn.completed" && event.responseMode === "SAFE_REFUSAL" && event.assistantMessageId) {
         setRefusalMessageIds((current) => new Set(current).add(event.assistantMessageId!));
       }
@@ -546,7 +551,13 @@ export function TravelAgentChat({
         destinationCandidates: currentTrip.destinationCandidates,
         travelDateStart: currentTrip.travelDateStart,
         travelDateEnd: currentTrip.travelDateEnd,
+        travelDays: currentTrip.travelDays ?? undefined,
         titleLocale,
+      }).then((result) => {
+        if (result.planningRun) {
+          setActiveRunId(result.planningRun.runId);
+          storeActiveRunId(result.planningRun.runId);
+        }
       });
       await trip.refetch();
     } catch (error) {
@@ -558,7 +569,9 @@ export function TravelAgentChat({
 
   const canStartSharedPlanning = trip.data?.trip.status === "DRAFT"
     && trip.data.trip.departureCities.length > 0
-    && trip.data.trip.destinationCandidates.length > 0;
+    && trip.data.trip.destinationCandidates.length > 0
+    && Boolean(trip.data.trip.travelDateStart)
+    && Boolean(trip.data.trip.travelDateEnd || trip.data.trip.travelDays);
 
   function confirmFlightSearch() {
     if (isSending) return;
@@ -951,6 +964,8 @@ function describeBriefProposal(
   if (proposal.destinationCandidates?.length) lines.push(t("briefProposalDestinations", { destinations: proposal.destinationCandidates.join(" · ") }));
   if (proposal.travelDateStart && proposal.travelDateEnd) {
     lines.push(t("briefProposalDateRange", { start: proposal.travelDateStart, end: proposal.travelDateEnd }));
+  } else if (proposal.travelDateStart) {
+    lines.push(t("briefProposalDateRange", { start: proposal.travelDateStart, end: t("briefProposalDatePending") }));
   } else if (proposal.travelDays) {
     lines.push(t("briefProposalDays", { days: proposal.travelDays }));
   }

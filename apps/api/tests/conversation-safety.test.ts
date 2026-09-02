@@ -90,14 +90,15 @@ describe("conversation operational fact boundary", () => {
     expect(generateConversationReply).not.toHaveBeenCalled();
   });
 
-  it("localizes a Chinese SAFE_REFUSAL and retains the Shared-Agent next step", async () => {
+  it("localizes a Chinese SAFE_REFUSAL without exposing internal role names", async () => {
     const generateConversationReply = vi.fn();
     __setModelGatewayForTests(buildGateway(generateConversationReply));
 
     const result = await invokeConversation("日本签证需要什么？");
 
     expect(result).toMatchObject({ responseMode: "SAFE_REFUSAL" });
-    expect(result.content).toContain("Shared Agent");
+    expect(result.content).toContain("确认行程信息后即可");
+    expect(result.content).not.toContain("Agent");
     expect(result.content).toContain("查询条件已收到");
     expect(generateConversationReply).not.toHaveBeenCalled();
   });

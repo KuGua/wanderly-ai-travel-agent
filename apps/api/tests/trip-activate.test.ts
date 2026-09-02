@@ -113,15 +113,40 @@ describe("Trip activation", () => {
     expect(body.trip.destinationCandidates).toEqual(validBrief.destinationCandidates);
     expect(body.trip.travelDateStart).toBe(validBrief.travelDateStart);
     expect(body.trip.travelDateEnd).toBe(validBrief.travelDateEnd);
+    expect(body.planningRun).toMatchObject({ runId: expect.any(String), snapshotId: expect.any(String) });
 
     const [persisted] = await db.select().from(sharedTrips)
       .where(eq(sharedTrips.id, draftId)).limit(1);
     expect(persisted.status).toBe("PLANNING");
 
+    const [queuedRun] = await db.select().from(agentTaskRuns)
+      .where(eq(agentTaskRuns.tripId, draftId)).limit(1);
+    expect(queuedRun).toMatchObject({ operation: "RESEARCH", status: "QUEUED", researchMode: "PROPOSE_PLAN" });
+
     const audits = await db.select().from(auditEvents)
       .where(eq(auditEvents.tripId, draftId));
     const actions = audits.map((row) => row.action);
     expect(actions).toContain("TRIP_ACTIVATE");
+  });
+
+  it("starts the first solo planning task from a confirmed date and duration", async () => {
+    const draftId = await createDraftFor(aliceId, "alice");
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/activate`,
+      headers: authHeaders("alice"),
+      payload: {
+        departureCities: ["Shanghai"],
+        destinationCandidates: ["Suzhou"],
+        travelDateStart: "2026-12-10",
+        travelDays: 3,
+        titleLocale: "en",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().trip.travelDateEnd).toBe("2026-12-12");
+    expect(res.json().planningRun).toMatchObject({ runId: expect.any(String), snapshotId: expect.any(String) });
   });
 
   it("rejects activation by a non-creator with 403", async () => {

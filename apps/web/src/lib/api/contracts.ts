@@ -122,6 +122,7 @@ export const tripDetailSchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateSchema.nullable(),
   travelDateEnd: dateSchema.nullable(),
+  travelDays: z.number().int().nullable().optional(),
   archivedAt: z.string().datetime().nullable().optional(),
   archiveReason: tripArchiveReasonSchema.nullable().optional(),
   createdAt: z.string().datetime(),
@@ -848,9 +849,10 @@ export const explorationStartResponseSchema = z.object({
 // departure city, two to five destinations).
 export const tripActivationRequestSchema = z.object({
   departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3),
-  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(2).max(5),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5),
   travelDateStart: dateSchema.nullable().optional(),
   travelDateEnd: dateSchema.nullable().optional(),
+  travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
 }).strict();
 
@@ -866,6 +868,7 @@ export const tripActivationResponseSchema = z.object({
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   }).strict(),
+  planningRun: z.object({ runId: z.string().uuid(), snapshotId: z.string().uuid() }).strict().optional(),
 });
 
 export const updateTripTitleInputSchema = z.object({ name: z.string().trim().min(1).max(256) }).strict();

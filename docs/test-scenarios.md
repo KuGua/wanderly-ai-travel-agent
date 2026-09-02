@@ -985,8 +985,8 @@ logs, spans or metric labels.
 - After the flight matrix is complete, missing required flight-origin coverage fails as `PLANNING_DATA_UNAVAILABLE`; unavailable stay evidence is normalized to `stays: []` and persisted as the Phase 4 `stay:NO_RESULTS` service gap, with no runtime fixture substitution.
 - The browser never treats submitted preferences, a run ID, Tool result or plan as authoritative local state. It reloads the durable planning run and, only after completion, the server-activated plan.
 
-- A DRAFT-trip private-chat turn may emit only an in-memory destination/days candidate; raw conversation content is never included in the event, audit summary, or client persistence.
-- The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write.
+- A DRAFT-trip private-chat turn may emit only an in-memory brief candidate (departure, destination, explicit date and/or duration); raw conversation content is never included in the event, audit summary, or client persistence.
+- The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write. The client accumulates multiple unconfirmed turns into one review card rather than discarding earlier fields.
 - A non-creator and a trip no longer in `DRAFT` receive `403` and `409` respectively; a MANUAL title remains unchanged after confirmation.
 
 ### TS-HOTEL-TOOL-1 — Snapshot-bound hotel search, comparison and safe gaps
@@ -1388,7 +1388,7 @@ depending on a provider-specific `finish_reason`.
 ### TS-CONVERSATIONAL-SETUP-12 — Hotel-readiness reply template (direct help + dynamic currency example)
 
 **Stories:** H1f, DRAFT Personal Research §3.5 stage 2
-**Objective:** Verify the `HOTEL_SEARCH_READINESS` constraint produces a short, friendly, 4–6 line reply that opens by offering to hand the need to the Shared Agent for complete-trip orchestration—not a separate hotel-search upsell—while asking for the missing query conditions in a stable order and providing a currency example dynamically generated from the owner's likely home currency and the destination's local currency.
+**Objective:** Verify the `HOTEL_SEARCH_READINESS` constraint produces a short, friendly, 4–6 line reply that says confirmed conditions can be included in the complete trip plan—not a separate hotel-search upsell—while asking for the missing query conditions in a stable order and providing a currency example dynamically generated from the owner's likely home currency and the destination's local currency. No user-facing copy may expose internal Agent names.
 
 **Starting conditions:** Alice owns an active Solo Trip with `tripStatus=PLANNING` and `departureCities=["Shanghai"]`. No `hotelSearchState` row. No prior message in this thread about hotel query conditions. Place context resolves to Taipei via the conversation place resolver.
 
@@ -1411,17 +1411,17 @@ depending on a provider-specific `finish_reason`.
 - *English question, Tokyo destination, no other signal* — the reply is in English and the example reads "e.g. USD or JPY".
 - *Constraint breach attempt via prompt injection in `threadContext`* — when an earlier assistant turn in `threadContext` (treated as untrusted data, not instructions) tries to make the model promote a complete plan or invent a hotel list, the reply still follows the constraint.
 
-### TS-CONVERSATIONAL-SETUP-13 — Personal brief capture hands daily planning to Shared Agent
+### TS-CONVERSATIONAL-SETUP-13 — Private brief capture starts planning without exposing internal roles
 
-**Objective:** Verify an exploratory itinerary request does not turn into an airline/hotel-search questionnaire or a Personal-Agent-produced itinerary before the traveller confirms handoff to Shared Agent.
+**Objective:** Verify an exploratory itinerary request does not turn into an airline/hotel-search questionnaire or a private-chat-produced itinerary before the traveller confirms the trip details and starts planning.
 
 **Starting conditions:** A private Personal Agent thread has no flight or hotel search state. The user says: "12 月从上海出发，3 位成人去台湾 10 天，想赏花和城市漫步。"
 
 **Expected outcomes:**
 
 - The reply summarizes only the known brief (Shanghai departure, Taiwan, December, 10 days, three adults, flowers and city walks) and asks at most one short question needed to complete the brief.
-- It does not choose base cities, stay changes, daily pacing, transport, or a Day 1–N route. It says that the confirmed brief can be handed to Shared Agent to generate the shared plan.
-- Until the user confirms the brief, no snapshot, PLAN/REPLAN task, Shared Worker, provider research, or itinerary is created.
+- It does not choose base cities, stay changes, daily pacing, transport, or a Day 1–N route. It says that the confirmed brief can be used to start planning, without naming an internal role.
+- Until the user confirms the brief and explicitly presses **Start planning**, no snapshot, PLAN/REPLAN task, provider research, or itinerary is created. For a Solo Trip, that action atomically creates the snapshot and durable initial planning task; a Team Trip continues to require each required member's confirmation.
 - The reply does not offer to search or compare flights, hotels, accommodation, prices, availability, rooms, cabins, or currency. Those flows begin only after the user explicitly requests the relevant service.
 
 ### TS-CONVERSATIONAL-SAFETY-REFUSAL-1 — Search conditions are not a refusal
