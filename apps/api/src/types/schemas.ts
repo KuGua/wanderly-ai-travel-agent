@@ -1405,6 +1405,13 @@ export const tripActivationRequestSchema = z.object({
   travelDateEnd: dateStr.nullable().optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
+  /**
+   * Nationality to quote hotel prices against, sent only when the traveller
+   * had to be asked for it because their profile has none. When the profile
+   * has one, the server uses that and this is absent — the client never
+   * echoes a value it read from the profile back at us.
+   */
+  guestNationality: z.string().regex(/^[A-Za-z]{2}$/).optional(),
 }).strict();
 
 export const updateDraftTripBriefRequestSchema = z.object({

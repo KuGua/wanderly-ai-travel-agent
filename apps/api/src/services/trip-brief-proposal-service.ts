@@ -117,7 +117,13 @@ function extractDeparture(question: string): string | undefined {
     ?? question.match(/从\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*走|[，。！？]|$)/u);
   const value = (english?.[1] ?? chinese?.[1] ?? routeWithoutVerb(question)?.from)
     ?.trim().replace(/\s+/g, " ");
-  return value && value.length <= 64 ? value : undefined;
+  if (!value || value.length > 64) return undefined;
+  // "就按 12 月 10 日出发" ends in 出发 too, and the bare form happily read the
+  // 日 before it as a city. A departure city never contains a digit or a date
+  // unit, and is never one character long in the phrasings this reads.
+  if (/[0-9\u5e74\u6708\u65e5\u53f7\u5929]/u.test(value)) return undefined;
+  if ([...value].length < 2) return undefined;
+  return value;
 }
 
 /** Recognises explicit month/day input; relative wording is never made into a date fact. */

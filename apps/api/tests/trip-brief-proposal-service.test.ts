@@ -52,6 +52,14 @@ describe("the §9 acceptance sentence", () => {
     });
   });
 
+  it("does not read a date fragment as a departure city", () => {
+    // "就按 12 月 10 日出发" ends in 出发 as well; the bare form read the 日.
+    expect(proposeTripBriefFromTurn("就按 12 月 10 日出发，一个人")).toEqual({
+      travelDateStart: "2026-12-10",
+    });
+    expect(proposeTripBriefFromTurn("12月10日出发")?.departureCities).toBeUndefined();
+  });
+
   it("accepts a departure city written without 从", () => {
     expect(proposeTripBriefFromTurn("上海出发去杭州")?.departureCities).toEqual(["上海"]);
     expect(proposeTripBriefFromTurn("从上海出发去杭州")?.departureCities).toEqual(["上海"]);

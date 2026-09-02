@@ -45,6 +45,13 @@ export async function grantQuoteNationality(params: {
   memberId: string;
   value: string;
   expiresAt?: Date;
+  /**
+   * Run inside the caller's transaction instead of opening one. Trip
+   * activation needs the authorization and the snapshot to commit together —
+   * a trip that is PLANNING but unauthorized cannot be planned, and nothing
+   * in the UI would say why.
+   */
+  tx?: Parameters<Parameters<typeof db.transaction>[0]>[0];
 }): Promise<{ id: string; version: number }> {
   const value = normalizeNationality(params.value);
   let ciphertext: string;
@@ -53,7 +60,7 @@ export async function grantQuoteNationality(params: {
   } catch {
     throw new ApiError(503, "Service Unavailable", "Hotel quote authorization encryption is not configured");
   }
-  return db.transaction(async (tx) => {
+  const run = async (tx: Parameters<Parameters<typeof db.transaction>[0]>[0]) => {
     // Read the current max version for this tuple so the new row strictly
     // supersedes any prior ACTIVE row, instead of resetting to 1 and
     // forcing retry-based planners to compare on identity only.
@@ -108,7 +115,8 @@ export async function grantQuoteNationality(params: {
       tx,
     });
     return { id: row.id, version: row.version };
-  });
+  };
+  return params.tx ? run(params.tx) : db.transaction(run);
 }
 
 /**
