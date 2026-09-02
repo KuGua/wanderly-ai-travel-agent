@@ -121,6 +121,17 @@ DRAFT | PLANNING | CONFIRMED | BOOKED | CANCELLED | STALE
 3. 使用独立、稳定的 conversation `requestId` 调用既有 turn endpoint，并复用既有 Worker/SSE 流程。
 4. start 成功但 turn 失败时保留 Trip/thread；后续重试不得重新 start。start 超时用同一 `startRequestId` 重试。
 
+### 4.2.0 自动标题的语言由调用方提供
+
+`buildTripTitle` 只拼接 brief 里的显式字段，语言完全取决于请求里的 `titleLocale`；服务端不猜测。因此**每一个会写标题的前端调用点都必须显式传入当前界面语言**，包括：
+
+- `PATCH /trips/:tripId/draft-brief`（用户在对话里确认 brief 卡片）；
+- `POST /trips/:tripId/activate`（用户点「开始规划」）。
+
+这两个命令都由 `TravelAgentChat` 发出，而它有**两个挂载点**：探索页的 `ExploreChatHost` 和行程工作台的 `TripWorkspace`。`titleLocale` 的 prop 默认值是 `"en"`，所以漏传不会报错，只会静默产出英文标题——2026-09-03 前 `TripWorkspace` 正是漏传方，中文用户在工作台确认 brief 后得到 `新加坡 Trip Planner｜4 Days`：目的地来自用户自己的话，其余是默认语言。新增挂载点时必须一并传入。
+
+> 已知缺口（尚未修复）：`POST /explorations/start` 的请求体只有 `requestId`，草稿行名固定写入 `"Trip Planner"` / `titleLocale: "en"`。在确认第一份 brief 之前，中文用户的行程列表里全是英文占位名。修复需要为该 DTO 增加 locale 字段。
+
 ### 4.2.1 线程状态与提示语
 
 Explore 的线程是懒创建的，因此「还没有线程」是常态而非等待。Session 的四个状态与聊天界面的 `ChatThreadStatus` 一一对应，不得合并：
