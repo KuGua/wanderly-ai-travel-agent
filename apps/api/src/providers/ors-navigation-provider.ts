@@ -6,6 +6,7 @@ import type {
   RouteCoordinate,
 } from "./types.js";
 import { metrics } from "../observability/metrics.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import {
   ORS_DIRECTIONS_PROFILE,
   orsDirectionsResponseSchema,
@@ -130,16 +131,19 @@ export class OrsNavigationProvider implements NavigationProvider {
     // The key moves to a header with the switch to POST: ORS accepts
     // `api_key` only as a query parameter, and a credential does not belong
     // in a URL that proxies and access logs retain.
-    return this.fetchImpl(`${this.options.baseUrl}${path}`, {
-      method: "POST",
-      headers: {
-        Authorization: this.options.apiKey,
-        "content-type": "application/json",
-        accept: "application/geo+json",
-      },
-      body: JSON.stringify(body),
-      signal: composed,
-    });
+    return observeExternalProviderFetch(
+      { provider: "openrouteservice", operation: "navigation.route", method: "POST" },
+      () => this.fetchImpl(`${this.options.baseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: this.options.apiKey,
+          "content-type": "application/json",
+          accept: "application/geo+json",
+        },
+        body: JSON.stringify(body),
+        signal: composed,
+      }),
+    );
   }
 
   private unavailable(

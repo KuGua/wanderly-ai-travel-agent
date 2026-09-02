@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FlightOffer } from "../types/domain.js";
 import { metrics } from "../observability/metrics.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type { FlightProvider, FlightSearchParams, ProviderResult } from "./types.js";
 import { serpApiFlightSearchResponseSchema, serpApiItinerarySchema, type SerpApiFlightSearchResponse, type SerpApiItinerary } from "./serpapi-flight-schemas.js";
 
@@ -107,7 +108,10 @@ export class SerpApiFlightProvider implements FlightProvider {
     if (tripType === "ROUND_TRIP") query.set("return_date", params.dateEnd);
     const timeout = AbortSignal.timeout(this.options.timeoutMs);
     const signal = params.signal ? AbortSignal.any([params.signal, timeout]) : timeout;
-    return this.fetchImpl(`${SERPAPI_SEARCH_URL}?${query}`, { method: "GET", signal });
+    return observeExternalProviderFetch(
+      { provider: "serpapi", operation: "flight.search", method: "GET" },
+      () => this.fetchImpl(`${SERPAPI_SEARCH_URL}?${query}`, { method: "GET", signal }),
+    );
   }
 
   private unavailable(reason: Extract<ProviderResult<FlightOffer[]>, { outcome: "UNAVAILABLE" }>["reason"], start: number): ProviderResult<FlightOffer[]> {

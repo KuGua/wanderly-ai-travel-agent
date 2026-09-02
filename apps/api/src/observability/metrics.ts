@@ -343,6 +343,15 @@ metrics.registerCounter("flight_provider_requests_total", "Flight provider reque
   provider: ["amadeus", "flightapi", "serpapi"],
   error_category: ["none", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "no_results", "provider_not_approved", "search_constraints_incomplete"],
 });
+metrics.registerCounter("external_provider_http_calls_total", "Outbound provider HTTP calls by bounded provider, operation, and transport result.", {
+  provider: ["amadeus", "flightapi", "nuitee_connect", "openrouteservice", "opentripmap", "serpapi", "viator_mcp", "location_reference"],
+  operation: ["flight.search", "hotel.search", "accommodation.discover", "place.search", "navigation.route", "mobility.search", "activities.search", "oauth.token", "location.resolve"],
+  outcome: ["success", "failure"],
+});
+metrics.registerHistogram("external_provider_http_latency_ms", "Outbound provider HTTP transport latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000, 30_000], {
+  provider: ["amadeus", "flightapi", "nuitee_connect", "openrouteservice", "opentripmap", "serpapi", "viator_mcp", "location_reference"],
+  operation: ["flight.search", "hotel.search", "accommodation.discover", "place.search", "navigation.route", "mobility.search", "activities.search", "oauth.token", "location.resolve"],
+});
 metrics.registerHistogram("flight_provider_latency_ms", "Flight provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
   provider: ["amadeus", "flightapi", "serpapi"],
   outcome: ["live", "unavailable"],

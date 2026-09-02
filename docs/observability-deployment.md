@@ -63,6 +63,17 @@ Get-Content .\runtime\api-$(Get-Date -Format yyyy-MM-dd).ndjson -Wait |
   Select-String '"runtime_event"'
 ```
 
+Outbound provider HTTP calls use the separate `external_provider_call` field.
+It records only the catalogued provider/operation, method, phase, HTTP status,
+duration, and optional `Content-Length` response size. It deliberately omits
+the URL, API key, query/body, raw response and supplier error text. To watch
+them locally:
+
+```powershell
+Get-Content .\runtime\worker-$(Get-Date -Format yyyy-MM-dd).ndjson -Wait |
+  Select-String '"external_provider_call"'
+```
+
 ### Bring up
 
 ```bash
@@ -129,6 +140,7 @@ Local dev does **not** run Mimir. The API exposes its registry on the
 curl -s http://127.0.0.1:3000/metrics | head -20
 curl -s http://127.0.0.1:3000/metrics | grep ^agent_skill_runs_total
 curl -s http://127.0.0.1:3000/metrics | grep ^agent_task_duration_ms
+curl -s http://127.0.0.1:3000/metrics | grep ^external_provider_http_
 ```
 
 The dashboard's "Counters" panel documents these snippets in markdown.

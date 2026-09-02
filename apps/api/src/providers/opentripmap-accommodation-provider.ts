@@ -1,4 +1,5 @@
 import { metrics } from "../observability/metrics.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type {
   AccommodationDiscoveryProvider,
   AccommodationProviderItem,
@@ -76,7 +77,10 @@ export class OpenTripMapAccommodationProvider implements AccommodationDiscoveryP
 
       const timeout = AbortSignal.timeout(this.options.timeoutMs);
       const signal = params.signal ? AbortSignal.any([params.signal, timeout]) : timeout;
-      const response = await this.fetchImpl(url, { headers: { accept: "application/json" }, signal });
+      const response = await observeExternalProviderFetch(
+        { provider: "opentripmap", operation: "accommodation.discover", method: "GET" },
+        () => this.fetchImpl(url, { headers: { accept: "application/json" }, signal }),
+      );
       if (response.status === 401 || response.status === 403) return this.record({ outcome: "UNAVAILABLE", reason: "PROVIDER_NOT_APPROVED" }, startedAt);
       if (response.status === 429) return this.record({ outcome: "UNAVAILABLE", reason: "RATE_LIMITED" }, startedAt);
       if (response.status >= 500) return this.record({ outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" }, startedAt);

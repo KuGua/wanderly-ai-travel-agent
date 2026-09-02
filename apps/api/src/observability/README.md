@@ -137,6 +137,23 @@ emits a `started` record and one terminal record carrying `providerStatus`,
 and raw provider error never reach this layer — they stay inside the
 provider adapter.
 
+### External provider HTTP boundary
+
+`external-provider.ts` wraps every current outbound travel-provider request
+(Amadeus, FlightAPI, Nuitee, SerpApi, OpenTripMap, openrouteservice and Viator
+MCP), plus the local location-reference sidecar. Each request produces an
+`external_provider_call` record at `started` and `completed`, and an
+`external.provider.*` client span. A retry therefore appears as another
+start/completion pair in the same trace. The only emitted fields are the
+bounded `provider`, `operation`, HTTP method, outcome, HTTP status, duration,
+and an optional `Content-Length` response size. Network and abort failures are
+classified as `network` or `timeout`; exception text is never emitted.
+
+The metrics are `external_provider_http_calls_total{provider,operation,outcome}`
+and `external_provider_http_latency_ms{provider,operation}`. Neither accepts
+URL, supplier IDs, request/response content, credentials, trip identifiers nor
+other high-cardinality fields as a label or span attribute.
+
 ## Distributed tracing
 
 ### Bootstrap (`tracing.ts`)
@@ -217,6 +234,7 @@ allow-list and the `docs/agent-architecture.md` trace map.
 | `http.*` | `app.ts` `onRequest`/`preHandler`/`onResponse` | `http.method`, `http.route`, `http.status_code`, `http.target`, `net.peer.ip`, `app.correlation_id` |
 | `db.*` | `tasks/task-repository.ts` hot-spots | `db.system` (=`"postgresql"`), `db.operation` (`INSERT`/`SELECT`/`UPDATE`), `db.sql.table` (=`"agent_task_runs"`), `db.outcome` (`success`/`failure`/`duplicate`/`empty`) |
 | `llm.*` | `providers/llm-gateway.ts` (3 sites) | `llm.system` (=`"openai-compatible"`), `llm.provider` (∈ openai/gemini/openai-compatible), `llm.model.name`, `llm.model.prompt_version`, `llm.method` (plan.comparison / travel.conversation), `llm.stream` (bool), `llm.skill.name`, `llm.outcome` (`success`/error code), `llm.error_code`, `llm.tokens.{prompt,completion,total}` |
+| `external.provider.*` | `observability/external-provider.ts`, called by all travel-provider adapters and the location sidecar | `provider.name`, `provider.operation`, `http.request.method`, `http.response.status_code`, `provider.outcome`, `provider.error_code`, `provider.latency_ms`, `provider.response_bytes`; all values are bounded/safe metadata |
 | `trip.constraint.*` | (Phase 2+) `services/constraint-proposal-service.ts`, `services/constraint-fact-service.ts` mutation transactions | `trip.constraint.operation` ∈ `["propose","confirm","dismiss","replace","revoke"]`, `trip.constraint.visibility` ∈ `["TEAM_VISIBLE","ORCHESTRATOR_CONFIDENTIAL"]`, `trip.constraint.strength` ∈ `["HARD","SOFT"]`, `trip.constraint.field_category` (one of the catalog field groups, never the value), `trip.constraint.outcome` ∈ `["success","conflict","stale"]`. **Never** include `fieldKey` raw values — use the catalog-derived category label only. |
 | `snapshot.projection.*` | (Phase 1+) `services/memory-projection-builder.ts`, `services/planning-service.ts#createConstraintSnapshot` | `snapshot.projection.schema_version` (=`2`), `snapshot.projection.confidential_count` (low-cardinality bucket: `0`/`1-2`/`3+`), `snapshot.projection.team_visible_count` (same buckets), `snapshot.projection.outcome` ∈ `["built","superseded","projection_invalid"]`. **Never** include member userIds, aliases, fact values, or source IDs. |
 | `plan.adoption.*` | (Phase 4+) `services/plan-adoption-service.ts#castVote`, `#tallyVotes` | `plan.adoption.decision` ∈ `["ACCEPT","NEEDS_CHANGES"]`, `plan.adoption.required_count` (bucket `1`/`2`/`3`/`4+`), `plan.adoption.received_count` (same buckets), `plan.adoption.outcome` ∈ `["pending","accepted","blocked","invalid"]`. **Never** include vote owner ids, plan data, fact values. |

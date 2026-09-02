@@ -12,6 +12,7 @@ import {
   type LocalLogDescriptor,
 } from "../src/observability/telemetry.js";
 import { MetricLabelError, metrics } from "../src/observability/metrics.js";
+import { observeExternalProviderFetch } from "../src/observability/external-provider.js";
 
 afterEach(() => {
   metrics.reset();
@@ -104,6 +105,30 @@ function write(stream: NodeJS.WritableStream, line: string): Promise<void> {
 }
 
 describe("bounded metrics", () => {
+  it("records only bounded metadata for outbound provider HTTP calls", async () => {
+    const response = await observeExternalProviderFetch(
+      { provider: "nuitee_connect", operation: "hotel.search", method: "POST" },
+      async () => new Response("private provider response", {
+        status: 200,
+        headers: { "content-length": "25" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const rendered = metrics.render();
+    expect(rendered).toContain('external_provider_http_calls_total{operation="hotel.search",outcome="success",provider="nuitee_connect"} 1');
+    expect(rendered).not.toContain("private provider response");
+  });
+
+  it("classifies an aborted outbound call without retaining the exception text", async () => {
+    await expect(observeExternalProviderFetch(
+      { provider: "openrouteservice", operation: "place.search", method: "GET" },
+      async () => { throw new DOMException("private upstream response", "AbortError"); },
+    )).rejects.toThrow("private upstream response");
+
+    expect(metrics.render()).toContain('external_provider_http_calls_total{operation="place.search",outcome="failure",provider="openrouteservice"} 1');
+  });
+
   it("emits only expected bounded callback and model-provider labels", () => {
     metrics.inc("callback_verifications_total", { callbackResult: "valid" });
     metrics.observe("llm_request_latency_ms", 125, { provider: "gemini", outcome: "success" });

@@ -918,6 +918,33 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Startup retains the newest seven calendar days for its own role and deletes only older files matching that role/date pattern. Legacy or another role's files are not deleted.
 - Rotation remains a local Pino behavior and never changes redaction, prompt/private-data exclusions, OTLP export or product state.
 
+### TS-EXTERNAL-PROVIDER-TELEMETRY-1 — Safe outbound HTTP observability
+
+**Objective:** Verify each configured external Provider call is visible in
+local diagnostics, traces and metrics without exposing request or response
+content.
+
+**Starting conditions:** Start API and Worker with local NDJSON enabled; use a
+mock Nuitee, SerpApi, Amadeus, FlightAPI, OpenTripMap, openrouteservice or
+Viator response with an HTTP status and a response body containing distinctive
+private-looking text.
+
+1. Run the applicable tool once with a successful provider response, then once
+   with an HTTP failure and once with an aborted request.
+2. Inspect the matching `external_provider_call` NDJSON records and Tempo
+   trace by `trace_id`.
+3. Inspect `/metrics` for `external_provider_http_calls_total` and
+   `external_provider_http_latency_ms`.
+
+**Expected:** Every actual outbound HTTP attempt has `started` and `completed`
+records and an `external.provider.*` client span with only bounded provider,
+operation, method, HTTP status/outcome, duration and optional response size.
+Retries appear as separate attempts in the same trace. HTTP failure is
+observable; aborted requests classify as `timeout`; network failures classify
+as `network`. URLs, API keys, headers, guest nationality, coordinates,
+request/response bodies, supplier IDs and raw error text do not appear in
+logs, spans or metric labels.
+
 - Profile memory is explicit, editable, deletable and private by default.
 - Shared workspace never shows unapproved Profile/private-chat fields.
 - Flight/Stay/Ground and Visa outputs use one consent snapshot and show source/time or demo label.

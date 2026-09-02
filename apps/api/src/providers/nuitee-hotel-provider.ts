@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { metrics } from "../observability/metrics.js";
+import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type {
   HotelProvider,
   HotelProviderItem,
@@ -129,16 +130,19 @@ export class NuiteeHotelProvider implements HotelProvider {
     const signal = params.signal ? AbortSignal.any([params.signal, timeout]) : timeout;
     // NOTE: deliberately never logs the URL, body, or API key. The fetch
     // call's `signal` is the only side-channel a debug build could observe.
-    const response = await this.fetchImpl(url, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-        "x-api-key": this.options.apiKey,
-      },
-      body,
-      signal,
-    });
+    const response = await observeExternalProviderFetch(
+      { provider: "nuitee_connect", operation: "hotel.search", method: "POST" },
+      () => this.fetchImpl(url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          "x-api-key": this.options.apiKey,
+        },
+        body,
+        signal,
+      }),
+    );
     if (response.status === 401 || response.status === 403) return { outcome: "UNAVAILABLE", reason: "PROVIDER_NOT_APPROVED" };
     if (response.status === 429) return { outcome: "UNAVAILABLE", reason: "RATE_LIMITED" };
     if (response.status >= 500) return { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };
