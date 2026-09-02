@@ -497,11 +497,12 @@ Runnable coverage: add `apps/api/tests/services/personal-research-intent-classif
 3. 在同一城市范围再次点击，然后在聊天框中输入一个主要城市/首都名称。
 4. 从地点详情打开私有灵感管理器，分别查看所选图钉周围 50 km 与全部标记。
 5. 手动勾选多个私有灵感并执行批量删除；从详情执行单点删除，然后刷新页面。
-6. 在全球、区域和本地缩放级别，确认国家、省/州和城市按层级显示；分别关闭三个图层。
-7. 打开一个地点抽屉后，确认三个图层开关仍可见并可操作。
+6. 在全球、区域和本地缩放级别，确认国家、省/州和城市按层级显示；地图不显示图层控制面板。
+7. 打开一个地点抽屉后，确认地图不会显示图层控制面板，且默认地理标注仍按缩放级别显示。
 8. 点击国家、城市或省/州名称，再点击空白地图位置。
 9. 从全球缩放逐步放大到区域缩放，检查陆地与海洋材质和地图标签。
 10. 在未登录、未配置 Cognito 的浏览器会话中点击一个陆地点，并连续提交超过 30 次同一地点参考请求。
+11. 在 Home 聊天框发送第一条消息后，点击“前往行程规划继续对话”。
 
 **Expected outcomes:**
 
@@ -519,13 +520,14 @@ Runnable coverage: add `apps/api/tests/services/personal-research-intent-classif
 - 空白区域只能保存私有灵感或请求后续加入候选；不改变共享约束、方案或确认状态。
 - 点击时的 zoom band 决定新私有灵感的粒度：远景为国家，中景为省/州，近景为城市。手动图钉始终使用用户实际点击的经纬度；国家、省/州名称中心数据和服务端城市参考只负责识别、命名及去重，不得把手动图钉移动到首都或行政中心。图钉创建后粒度与实体不随之后的缩放升级、降级或聚合。相同层级、相同规范实体的第二次点击以最新点击坐标替换旧图钉，并通过 `role="status"` 提示已更新；不同层级允许共存，例如“中国”“浙江”“杭州”可以同时存在。区、县、街道和街区不得成为地图 pin。
 - 聊天中的明确城市名称使用版本化页面城市目录识别；命中后创建同样的会话内图钉，地球移动到该城市，且不得把文本命中提升为旅行事实。若聊天命中已有城市，必须保持聊天框打开并只把地球转到现有图钉，不重复显示手动地图点击使用的“已标记”提示。拉丁字母城市名必须保留专名大小写，避免把普通词误判成地点。
+- 首条聊天消息创建的 `DRAFT` Trip 与默认私有 thread 成功返回后，聊天框显示 Trip Planner 跳转入口；链接必须使用该响应中的 Trip ID 和 thread ID。跳转后的工作台加载同一 thread 的既有消息，且不得创建第二个 Trip 或 thread。
 - 多个私有灵感在缩放和移动地图时保持绑定各自归一后的经纬坐标；管理器默认不打开、不预选标记，单独删除只移除目标标记，批量删除只移除已勾选标记。
 - `Within 50 km` 明确表示以所选图钉为中心的 50 km 半径，不得把距离范围伪装为城市边界。离线位置参考仅能来自版本化、来源化的专用 resolver；不得从地图 tile、地图标签、Natural Earth SVG overlay 或模型推断。
 - 原型刷新后临时标记消失；生产实现必须将任何持久化操作交由服务端授权模型处理。
 - 国家、省/州、城市名称按与点击粒度相同的 zoom band 分层显示。点击名称或其周边地图区域都创建该层级的会话内私有灵感，不会创建共享约束、方案、价格、库存、签证或预订结论。
-- 如果配置的 style 缺少兼容的 OpenMapTiles source 或缺失任一必需图层，行政区/城市开关**保持可见但被禁用**，附 `role="status"` caption 说明缺失项（缺 source 或 `missing layers:` 列表）；地图保留原有候选入口和故障回退；不静默隐藏，不报错或伪造地图数据。开发者可在 dev 模式下通过 `window.__wanderlyMap.readiness` 观察 5 种 readiness（loading / ready-supported / ready-style-unsupported-source / ready-style-missing-layers / unavailable-network）。
-- 地图就绪生命周期分两阶段（mounting → ready）：MapLibre 6.6 的 globe projection 必须写入传给 `new Map()` 的 style JSON，`style.load` 是 style 兼容性检查和图层控件的唯一就绪前置；不得在 style 创建前或 `style.load` 后调用 `setProjection()`。OpenMapTiles 的 `sourcedata` 只作为开发诊断，慢 TileJSON 或 PBF 不得触发 `unavailable-network`。只有 style 总超时、初始化异常或 style ready 前的 map error 才显示 globe error 回退。dev 模式下 `window.__wanderlyMap.stage` 实时反映当前阶段。
-- 地图 ready 后，国家边界位于 provider style stack 顶层：即使 Liberty 的 fill/road layer 重排，全球缩放仍可看到本地 Natural Earth 共享 mesh 与独立九段线。关闭 Countries 时必须同时隐藏国家线、九段线与洲/国家名称；zoom 2.6 起显示首都、zoom 2.8 起显示重要城市、zoom 4.2 起显示省州名称。SVG 标签必须在 MapLibre `render` 帧内同步重投影并随 resize 更新，平移或缩放时不得落后 WebGL 地球（标签位置只能直接写入 DOM，不得经由 React state 提交，否则会慢一帧并出现漂移）；必须剔除背半球并进行屏幕碰撞去重；已离开候选集但尚未卸载的标签节点必须当帧隐藏，不得停留在过期位置。切换对应图层后标签即时消失。视觉边界和标签不参与地点匹配、反向地理编码或旅行事实；位置参考只能使用专用、版本化的离线 resolver 数据。
+- 如果配置的 style 缺少兼容的 OpenMapTiles source 或缺失任一必需图层，地图保留原有候选入口和故障回退；不报错或伪造地图数据。开发者可在 dev 模式下通过 `window.__wanderlyMap.readiness` 观察 5 种 readiness（loading / ready-supported / ready-style-unsupported-source / ready-style-missing-layers / unavailable-network）。
+- 地图就绪生命周期分两阶段（mounting → ready）：MapLibre 6.6 的 globe projection 必须写入传给 `new Map()` 的 style JSON，`style.load` 是 style 兼容性检查的唯一就绪前置；不得在 style 创建前或 `style.load` 后调用 `setProjection()`。OpenMapTiles 的 `sourcedata` 只作为开发诊断，慢 TileJSON 或 PBF 不得触发 `unavailable-network`。只有 style 总超时、初始化异常或 style ready 前的 map error 才显示 globe error 回退。dev 模式下 `window.__wanderlyMap.stage` 实时反映当前阶段。
+- 地图 ready 后，国家边界位于 provider style stack 顶层：即使 Liberty 的 fill/road layer 重排，全球缩放仍可看到本地 Natural Earth 共享 mesh 与独立九段线。国家边界和地理标签默认保持显示；zoom 2.6 起显示首都、zoom 2.8 起显示重要城市、zoom 4.2 起显示省州名称。SVG 标签必须在 MapLibre `render` 帧内同步重投影并随 resize 更新，平移或缩放时不得落后 WebGL 地球（标签位置只能直接写入 DOM，不得经由 React state 提交，否则会慢一帧并出现漂移）；必须剔除背半球并进行屏幕碰撞去重；已离开候选集但尚未卸载的标签节点必须当帧隐藏，不得停留在过期位置。视觉边界和标签不参与地点匹配、反向地理编码或旅行事实；位置参考只能使用专用、版本化的离线 resolver 数据。
 - 国界构建必须仅在构建期读取 Natural Earth 10m，并从同一个 TopoJSON topology 输出三档共享 mesh；同一时刻前端只绘制当前 zoom 的一档，任意共享边界只出现一次。首屏只请求 LOD-0 与本地九段线，LOD-0 gzip 不得超过 200 KB；LOD-1/2 仅在进入对应 zoom 后请求。浏览器与 `build-geography-labels.mjs` 对 `geo.datav.aliyun.com` 的请求必须为 0。每一档必须在 MapLibre `render` 帧内同步更新、在半球边缘裁剪相交线段并随 resize 更新，旋转时不得落后 WebGL 地球或因顶点跨越背面而抖动。获取失败应保留既有地图和无障碍地点入口。
 - 地球表面必须保持实体不透明：默认首屏可渐进加载 GEBCO `GEBCO_LATEST` WMS 的陆地与海底地势，但在其返回前 Natural Earth 与实色水面必须持续可见，不得出现白色、透明或方块状缺失地表。GEBCO source 必须使用 1024 逻辑 tile size 与相应的低一级 source minzoom，以限制公共 WMS 的并发请求且不阻塞默认 globe。zoom 更高时继续保留最后可用层级而非淡出为蓝底。GEBCO 未返回或失败时，Natural Earth 必须持续可见（包括高 zoom 的 overzoom）且不阻塞缩放。道路、标签和行政边界仍需在 relief 之上可读。必须显示 GEBCO attribution 与”不用于航海”限制；不得将地势像素解释成路线、天气、价格、签证或安全结论。
 - 本地 SVG 国界、九段线与地名覆盖层必须按当前 MapLibre globe 的屏幕地平线轮廓裁剪，不能只按页面矩形裁剪。旋转、缩放、跨日期变更线或高纬度视图下，任何边界、九段线、文字或标记均不得显示在球体轮廓之外，或让背半球内容穿透到前景。地名必须在锚点接近地平线、或整个文字包围框不能留在球内时隐藏；若无法计算有效轮廓则 fail-closed 隐藏 SVG 覆盖层。裁剪路径与位置必须在 `render` 帧内更新，不能通过 React state 造成一帧滞后。
@@ -790,7 +792,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 1. Open `/home`, browse the map, click several locations, open and close chat, then inspect `shared_trips`, `chat_threads`, idempotency and audit rows.
 2. Submit the first message. Force a client retry, a double-click and two concurrent start requests with the same start request ID; then accept the first conversation turn.
 3. Simulate start success followed by turn rejection/network loss; retry the start and the conversation command.
-4. Navigate client-side `/home → /projects → /profile → /home`; submit another message. Then perform a full browser reload and open `/home` in a new tab before submitting messages there.
+4. Navigate client-side `/home → /projects → /profile → /home`; submit another message. From the Draft workspace, open the mini-globe or full-map control, then open the Home chat history and continue the same thread; return through the Home Trip Planner link. Then perform a full browser reload and open bare `/home` in a new tab before submitting messages there.
 5. Open the Draft from `/projects`; verify it uses the same project workspace as a `PLANNING` trip, retains the private thread, and does not show a separate brief form. Confirm a complete brief in the private conversation, then use the workspace activation control.
 6. Attempt invitation, consent, planning, confirmation and booking both before and after activation.
 7. Repeat with Alice logged out and Bob logged in before returning to `/home`.
@@ -801,6 +803,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - One start request ID yields exactly one `DRAFT` Trip, one creator membership and one owner-only default `TRIP` thread, even under concurrent retry. The browser must accept the `201`/`200` response with `trip.status = DRAFT`, then submit the first turn to `POST /api/v1/threads/:threadId/turns` and receive `202`. Audit summaries contain IDs/status only, never the question or map data.
 - The first task derives the created thread's `trip_id`; start success plus turn failure/retry cannot create another Trip.
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
+- The explicit Trip Workspace → Home map handoff carries the current Trip/thread IDs but is not authorization: Home must re-query the caller's own Trip threads before rendering the history or accepting a turn. A matching, authorized handoff shows the same private messages in Home and Trip Planner and returns to the same `?thread=` route; missing, malformed, cross-Trip or unauthorized IDs show no prior messages and never create a replacement Trip/thread.
 - An unarchived, non-expired `DRAFT` owned by the authenticated member appears in the default `/projects` active list immediately after its creation, contributes to the active count, and is labelled as a draft needing completion. A Draft explicitly archived by the user, or one whose end date has elapsed, is excluded from that default list.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
 - Draft commands for consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. Draft invitation creation and acceptance are explicitly allowed: the creator can copy an email-bound invitation link, the invitee sees a minimal summary (trip name, `DRAFT` status, expiry and "joining grants only a blank private thread"), and accepting adds the invitee as a member while still hiding the creator's private conversation. Cancelled or archived trips reject both new invitations and acceptance with `409 TRIP_NOT_INVITABLE`. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control and the creator-authored draft brief editor, both of which are required to reach `PLANNING`. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
@@ -1434,6 +1437,22 @@ depending on a provider-specific `finish_reason`.
 
 - The turn does not produce `SAFE_REFUSAL`; it saves or summarizes the typed readiness state and asks for the required explicit confirmation where applicable.
 - If a genuine safety refusal is required, the completed SSE event includes `responseMode: SAFE_REFUSAL`; the Chinese UI displays the localized verification marker next to the persisted assistant message.
+
+### TS-CONVERSATIONAL-FLIGHT-PREFERENCES-1 — 机票偏好对话选项卡
+
+**Objective:** 在私有对话中补充机票偏好，而不因选择本身调用实时供应商。
+
+**Steps:**
+
+1. 服务端对当前 owner 的 conversation run 分类为包含 `flight`，并返回 `FLIGHT_PREFERENCES_MISSING`。
+2. 在卡片中选择往返、成人数量、舱位和报价币种；不点击保存。
+3. 点击保存，再更改成人数量并再次保存。
+
+**Expected outcomes:**
+
+- 非 flight 分类或未返回该 missing code 时不显示卡片；不能由聊天文本自行触发。
+- 仅点击选项不会创建 preference version、使 plan 失效或调用 provider。保存后才以当前 trip membership 授权写入一条新的 search-preferences version；后一次保存是最新有效版本。
+- 保存本身不是 provider 搜索确认；日期仍由 trip brief / 对话确认，实时机票搜索继续需要独立的明确确认。
 
 ## 已批准、已部分实现：DRAFT Personal Research（flight 已上线；其余 capability 按 §3.5 顺序逐项 PR 开放）
 

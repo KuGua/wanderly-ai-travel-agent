@@ -148,7 +148,7 @@ async function loadGlobeStyle(): Promise<StyleSpecification> {
  * — no scroll, drag or keyboard camera — so it reads as a preview of the
  * selected plan rather than a second map to operate.
  */
-export function TripMiniGlobe({ places, fallbackLabel, tripId }: { places: string[]; fallbackLabel: string; tripId: string }) {
+export function TripMiniGlobe({ places, fallbackLabel, tripId, threadId }: { places: string[]; fallbackLabel: string; tripId: string; threadId: string | null }) {
   const locale = useLocale();
   const router = useRouter();
   const t = useTranslations("trips.workspace");
@@ -243,6 +243,7 @@ export function TripMiniGlobe({ places, fallbackLabel, tripId }: { places: strin
               focusZoom: "3.4",
               focusLabel: pin.name,
               fromTrip: tripId,
+              ...(threadId ? { thread: threadId } : {}),
             });
             router.push(`/home?${params.toString()}` as Parameters<typeof router.push>[0]);
           });
@@ -270,7 +271,7 @@ export function TripMiniGlobe({ places, fallbackLabel, tripId }: { places: strin
       }
       mapRef.current = null;
     };
-  }, [openPinLabel, pins, router, tripId]);
+  }, [openPinLabel, pins, router, threadId, tripId]);
 
   return (
     <div className="relative h-[150px] overflow-hidden bg-[var(--w-space)]">

@@ -1,16 +1,18 @@
 /**
- * Rewrites `.env`'s `HOST` and `LOCAL_DEV_ALLOWED_ORIGINS` to this machine's
- * current LAN IPv4 address.
+ * Rewrites `.env`'s `LOCAL_DEV_ALLOWED_ORIGINS` to include this machine's
+ * current LAN IPv4 address, so another device on the same network can load
+ * the web app and have its API calls pass the CORS allow-list.
  *
- * `AUTH_MODE=custom-local` requires `HOST` to be a real, currently-owned
- * private address (see `assertLocalDevServerHost` — it deliberately refuses
- * `0.0.0.0`, so the server can't be made to silently accept traffic on
- * every interface). A laptop's address changes every time it joins a new
- * Wi-Fi network, so the old one just stops being reachable — the server
- * keeps listening on an address it no longer owns. Run this after
- * switching networks, then restart the API server and worker.
+ * `HOST` is left alone: it should stay `0.0.0.0` so the API serves loopback
+ * and the LAN address at once. Binding a single LAN address instead left
+ * `localhost` with nothing listening, and every localhost URL failed at the
+ * network layer with "Failed to fetch" while the LAN URL worked.
  *
- *   npx tsx scripts/update-lan-host.ts
+ * The allow-list still needs the current address because CORS matches an
+ * exact origin, and a laptop's address changes on every new Wi-Fi network.
+ * Run this after switching networks, then restart the API server.
+ *
+ *   npm run update-lan-host
  */
 import { networkInterfaces } from "node:os";
 import { readFile, writeFile } from "node:fs/promises";
@@ -37,18 +39,16 @@ async function main() {
   const ip = currentLanIPv4();
   const env = await readFile(envPath, "utf8");
 
-  const withHost = env.replace(/^HOST=.*$/m, `HOST=${ip}`);
-  if (withHost === env) throw new Error("No HOST= line found in .env — expected one to already exist");
-
-  const withOrigins = withHost.replace(
+  const withOrigins = env.replace(
     /^LOCAL_DEV_ALLOWED_ORIGINS=.*$/m,
     `LOCAL_DEV_ALLOWED_ORIGINS=http://localhost:3001,http://127.0.0.1:3001,http://${ip}:3001`,
   );
-  if (withOrigins === withHost) throw new Error("No LOCAL_DEV_ALLOWED_ORIGINS= line found in .env — expected one to already exist");
+  if (withOrigins === env) throw new Error("No LOCAL_DEV_ALLOWED_ORIGINS= line found in .env — expected one to already exist");
 
   await writeFile(envPath, withOrigins);
-  console.log(`[update-lan-host] .env now points at ${ip}`);
-  console.log(`[update-lan-host] restart the API server and worker, then open http://${ip}:3001 on any device on this network`);
+  console.log(`[update-lan-host] allowed browser origins now include ${ip}`);
+  console.log(`[update-lan-host] restart the API server, then open http://${ip}:3001 from another device on this network`);
+  console.log("[update-lan-host] http://localhost:3001 keeps working on this machine either way");
 }
 
 main().catch((err) => {

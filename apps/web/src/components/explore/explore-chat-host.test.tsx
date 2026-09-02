@@ -135,6 +135,54 @@ describe("ExploreChatHost exploration provisioning", () => {
     expect(api.submitConversationTurn).toHaveBeenCalledTimes(2);
   });
 
+  it("restores a server-authorized Trip thread handed off from the planner without starting an exploration", async () => {
+    const api = makeApi({
+      getTripThreads: vi.fn().mockResolvedValue({
+        threads: [{
+          id: THREAD_ID,
+          ownerUserId: "22222222-2222-4222-8222-222222222222",
+          tripId: TRIP_ID,
+          scope: "TRIP",
+          isDefault: true,
+          title: "Trip Planner",
+          createdAt: CREATED_AT,
+          archivedAt: null,
+        }],
+      }),
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: {
+          id: THREAD_ID,
+          ownerUserId: "22222222-2222-4222-8222-222222222222",
+          tripId: TRIP_ID,
+          scope: "TRIP",
+          isDefault: true,
+          title: "Trip Planner",
+          createdAt: CREATED_AT,
+          archivedAt: null,
+        },
+        messages: [{
+          id: "33333333-3333-4333-8333-333333333333",
+          role: "USER",
+          content: "Continue this private conversation",
+          sequence: 1,
+          createdAt: CREATED_AT,
+        }],
+      }),
+    });
+    renderWithIntl(
+      <ExploreChatHost
+        open
+        tripConversationHandoff={{ tripId: TRIP_ID, threadId: THREAD_ID }}
+      />,
+      { api },
+    );
+
+    expect(await screen.findByText("Continue this private conversation")).toBeInTheDocument();
+    expect(api.getTripThreads).toHaveBeenCalledWith(TRIP_ID);
+    expect(api.getOwnerConversation).toHaveBeenCalledWith(THREAD_ID);
+    expect(api.startExploration).not.toHaveBeenCalled();
+  });
+
   it("surfaces the retry CTA when the exploration start fails", async () => {
     const api = makeApi({
       startExploration: vi.fn().mockRejectedValue(new Error("boom")),

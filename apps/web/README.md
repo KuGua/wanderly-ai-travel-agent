@@ -27,15 +27,16 @@ Copy `.env.example` to `.env.local`. Until Cognito is available, the team's
 recommended local baseline is the loopback-only `local-dev` mode:
 
 ```bash
-NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
 NEXT_PUBLIC_AUTH_MODE=local-dev
 NEXT_PUBLIC_MAP_STYLE_URL=https://tiles.openfreemap.org/styles/liberty
 ```
 
-- The Web app calls Fastify at `${NEXT_PUBLIC_API_BASE_URL}/api/v1`. `local-dev`
-  requires a loopback API URL. `custom-local` may use an exact RFC1918 IPv4 API
-  URL for a short-lived trusted-LAN test when that Web Origin is listed in the
-  API's `LOCAL_DEV_ALLOWED_ORIGINS`; the browser still sends no user ID.
+- When `NEXT_PUBLIC_API_BASE_URL` is unset, the Web app calls Fastify at the
+  same hostname as the page on port `3000`; this is the recommended local and
+  trusted-LAN baseline. Set it only for a fixed deployed API origin. `local-dev`
+  requires a loopback API URL. `custom-local` may use the matching RFC1918 IPv4
+  address for a short-lived trusted-LAN test when that Web Origin is listed in
+  the API's `LOCAL_DEV_ALLOWED_ORIGINS`; the browser still sends no user ID.
 - When Cognito is available, set `NEXT_PUBLIC_AUTH_MODE=cognito` and configure
   `NEXT_PUBLIC_COGNITO_USER_POOL_ID` / `NEXT_PUBLIC_COGNITO_CLIENT_ID`. The app
   client must be public and match the API configuration. The offline map

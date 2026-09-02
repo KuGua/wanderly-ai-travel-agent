@@ -71,7 +71,6 @@ MODEL_GATEWAY_MODEL=gemini-3.1-flash-lite
 
 # apps/web/.env.local
 NEXT_PUBLIC_AUTH_MODE=custom-local
-NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
 ```
 
 `LOCAL_DEV_ALLOWED_ORIGINS` is a comma-separated allow-list of exact browser
@@ -83,11 +82,11 @@ its API base URL must use the same private LAN address. Do not add public,
 tunnel or deployed URLs, and never use `local-dev` on LAN.
 
 To use one `custom-local` API from both this computer and a trusted LAN device,
-bind the API to its private IPv4 address, allow both browser Origins, and set
-the Web API URL to that one private IPv4 API address. For example,
+bind the API to its private IPv4 address and allow both browser Origins. Leave
+`NEXT_PUBLIC_API_BASE_URL` unset so each browser follows the hostname it used
+to open the Web app (on API port `3000`). For example,
 `LOCAL_DEV_ALLOWED_ORIGINS=http://localhost:3001,http://10.91.182.185:3001`
-and `NEXT_PUBLIC_API_BASE_URL=http://10.91.182.185:3000` allow both entry URLs;
-`NEXT_PUBLIC_API_BASE_URL` is one URL, not a comma-separated list.
+allows both entry URLs without making a LAN device call its own `localhost`.
 
 The key belongs only in ignored `apps/api/.env`. Never put it in
 `apps/web/.env.local`, any `NEXT_PUBLIC_*` variable, source code, tests, logs or
@@ -116,7 +115,6 @@ JWT_SECRET=<unique-local-secret-at-least-32-characters>
 
 # apps/web/.env.local
 NEXT_PUBLIC_AUTH_MODE=custom-local
-NEXT_PUBLIC_API_BASE_URL=http://10.91.182.185:3000
 ```
 
 Restart both processes. Start Next.js so it listens on the LAN interface:

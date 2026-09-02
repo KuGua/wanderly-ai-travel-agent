@@ -190,6 +190,20 @@ describe("TripWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Bob/ })).not.toBeInTheDocument();
   });
 
+  it("hands the active private thread to the full-map route", async () => {
+    vi.spyOn(navigationStub, "useSearchParams")
+      .mockReturnValue(new URLSearchParams(`thread=${DEFAULT_THREAD_ID}`));
+    const api = createApi({
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    expect(await screen.findByRole("link", { name: "Open in full map" })).toHaveAttribute(
+      "href",
+      `/home?fromTrip=${TRIP_ID}&thread=${DEFAULT_THREAD_ID}`,
+    );
+  });
+
   it("keeps hotel-search follow-up inside the chat rather than rendering a setup card", async () => {
     // The workspace reads the active thread out of `?thread=`, and the send
     // button stays disabled without one. Selecting a thread in the rail goes
