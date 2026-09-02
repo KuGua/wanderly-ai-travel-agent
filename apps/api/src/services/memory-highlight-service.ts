@@ -13,6 +13,7 @@
  * the traveller's profile, which is worse than keeping the sentence verbatim.
  */
 import { MEMORY_FIELD_CATALOG, memoryFieldDefinition } from "../memory/memory-field-catalog.js";
+import { metrics } from "../observability/metrics.js";
 import { modelGateway } from "../providers/gateway-factory.js";
 import type { RequestContext } from "../utils/context.js";
 import {
@@ -49,6 +50,25 @@ function describeSchema(fieldKey: string): string {
   return String(shape.typeName ?? "见字段定义").replace(/^Zod/, "").toLowerCase();
 }
 
+/**
+ * Which way a highlight went.
+ *
+ * Free-text notes are the fallback and are capped at twenty, so the ratio is
+ * the thing to watch: travellers filling that cap regularly would say the nine
+ * field catalogue is too narrow or extraction misses too often, and only this
+ * distinguishes the two. Raising the cap without knowing which would answer
+ * neither.
+ */
+function recordOutcome(outcome: HighlightOutcome): HighlightOutcome {
+  const label = outcome.outcome === "REMEMBERED_FIELD" ? "field"
+    : outcome.outcome === "REMEMBERED_NOTE" ? "note"
+    : outcome.outcome === "TOO_LONG" ? "too_long"
+    : outcome.outcome === "LIST_FULL" ? "list_full"
+    : "empty";
+  metrics.inc("memory_highlight_outcomes_total", { outcome: label });
+  return outcome;
+}
+
 export async function rememberHighlight(params: {
   ctx: RequestContext;
   userId: string;
@@ -59,11 +79,11 @@ export async function rememberHighlight(params: {
   signal?: AbortSignal;
 }): Promise<HighlightOutcome> {
   const highlight = params.highlight.trim();
-  if (highlight.length === 0) return { outcome: "EMPTY" };
+  if (highlight.length === 0) return recordOutcome({ outcome: "EMPTY" });
   // Checked before the model call: refusing a 600-character highlight should
   // not cost a round trip, and the answer is the same either way.
   if (highlight.length > FREE_TEXT_MEMORY_MAX_CHARS) {
-    return { outcome: "TOO_LONG", length: highlight.length, limit: FREE_TEXT_MEMORY_MAX_CHARS };
+    return recordOutcome({ outcome: "TOO_LONG", length: highlight.length, limit: FREE_TEXT_MEMORY_MAX_CHARS });
   }
 
   const extracted = await tryExtract(highlight, params.ctx, params.signal);
@@ -78,7 +98,7 @@ export async function rememberHighlight(params: {
         path: "PROPOSAL_CONFIRMATION",
         confirmedAt: new Date(),
       });
-      return { outcome: "REMEMBERED_FIELD", fieldKey: extracted.fieldKey, value: extracted.value };
+      return recordOutcome({ outcome: "REMEMBERED_FIELD", fieldKey: extracted.fieldKey, value: extracted.value });
     } catch {
       // The catalogue rejected the value the model produced. Falling through
       // keeps the highlight rather than losing it to a failed guess.
@@ -93,10 +113,10 @@ export async function rememberHighlight(params: {
     sourceMessageId: params.sourceMessageId ?? null,
   });
   switch (saved.outcome) {
-    case "SAVED": return { outcome: "REMEMBERED_NOTE", memoryId: saved.memory.id, remaining: saved.remaining };
-    case "TOO_LONG": return { outcome: "TOO_LONG", length: saved.length, limit: saved.limit };
-    case "LIST_FULL": return { outcome: "LIST_FULL", limit: saved.limit };
-    case "EMPTY": return { outcome: "EMPTY" };
+    case "SAVED": return recordOutcome({ outcome: "REMEMBERED_NOTE", memoryId: saved.memory.id, remaining: saved.remaining });
+    case "TOO_LONG": return recordOutcome({ outcome: "TOO_LONG", length: saved.length, limit: saved.limit });
+    case "LIST_FULL": return recordOutcome({ outcome: "LIST_FULL", limit: saved.limit });
+    case "EMPTY": return recordOutcome({ outcome: "EMPTY" });
   }
 }
 
