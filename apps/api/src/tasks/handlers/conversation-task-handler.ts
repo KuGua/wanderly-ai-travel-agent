@@ -561,6 +561,10 @@ export async function handleConversationTask(params: {
   ) {
     const researchDispatch = createPersonalResearchDispatcher({
       ctx: params.ctx,
+      // The same server-side detection the hotel route uses. Read here rather
+      // than trusted from the model: a metered call must wait for a person,
+      // and the model asking for permission is not the person giving it.
+      userConfirmed: toolContext.userConfirmed === true,
       ownerUserId: params.run.createdByUserId,
       tripId: params.run.tripId,
       threadId: params.run.threadId,

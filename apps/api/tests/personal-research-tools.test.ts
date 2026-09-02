@@ -114,6 +114,7 @@ describe("evidence signal", () => {
     tripId: "00000000-0000-0000-0000-000000000003",
     threadId: "00000000-0000-0000-0000-000000000004",
     runId: "00000000-0000-0000-0000-000000000001",
+    userConfirmed: false,
     signal: new AbortController().signal,
   };
 
@@ -167,6 +168,7 @@ describe("dispatcher", () => {
     tripId: "00000000-0000-0000-0000-000000000003",
     threadId: "00000000-0000-0000-0000-000000000004",
     runId: "00000000-0000-0000-0000-000000000001",
+    userConfirmed: false,
     signal: new AbortController().signal,
   };
 
@@ -202,6 +204,30 @@ describe("dispatcher", () => {
     };
     expect(result.outcome).toBe("NEEDS_CONFIRMATION");
     expect(result.capability).toBe("flight.search");
+    vi.doUnmock("../src/db/database.js");
+    vi.resetModules();
+  });
+
+  it("runs it once the traveller has said yes", async () => {
+    // Holding is only half the contract. Without the confirmation reaching
+    // this dispatcher, every call answered NEEDS_CONFIRMATION including the
+    // one right after the traveller agreed, so a metered capability could
+    // never run at all — and the model, handed the same answer twice,
+    // reported finding activities it had never looked for.
+    vi.resetModules();
+    vi.doMock("../src/db/database.js", () => ({
+      db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [{ userId: base.ownerUserId }] }) }) }) },
+    }));
+    const executed = vi.fn(async () => ({ evidenceId: "e", outcome: "UNAVAILABLE" as const, summary: { outcome: "UNAVAILABLE" as const, summary: { errorCode: "NO_RESULTS" as const } } }));
+    vi.doMock("../src/services/personal-research-service.js", () => ({ executePersonalResearch: executed }));
+    const { createPersonalResearchDispatcher } = await import("../src/agents/personal-research-tools.js");
+    const dispatch = createPersonalResearchDispatcher({ ...base, userConfirmed: true });
+    const result = await dispatch({ id: "1", name: "flight.search", arguments: SAMPLE["flight.search"] }) as {
+      outcome: string;
+    };
+    expect(executed).toHaveBeenCalledOnce();
+    expect(result.outcome).not.toBe("NEEDS_CONFIRMATION");
+    vi.doUnmock("../src/services/personal-research-service.js");
     vi.doUnmock("../src/db/database.js");
     vi.resetModules();
   });
