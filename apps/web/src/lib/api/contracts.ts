@@ -122,6 +122,7 @@ export const tripDetailSchema = z.object({
   destinationCandidates: z.array(z.string()),
   travelDateStart: dateSchema.nullable(),
   travelDateEnd: dateSchema.nullable(),
+  travelDays: z.number().int().nullable().optional(),
   archivedAt: z.string().datetime().nullable().optional(),
   archiveReason: tripArchiveReasonSchema.nullable().optional(),
   createdAt: z.string().datetime(),
@@ -848,9 +849,10 @@ export const explorationStartResponseSchema = z.object({
 // departure city, two to five destinations).
 export const tripActivationRequestSchema = z.object({
   departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3),
-  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(2).max(5),
+  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5),
   travelDateStart: dateSchema.nullable().optional(),
   travelDateEnd: dateSchema.nullable().optional(),
+  travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
 }).strict();
 
@@ -866,6 +868,7 @@ export const tripActivationResponseSchema = z.object({
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   }).strict(),
+  planningRun: z.object({ runId: z.string().uuid(), snapshotId: z.string().uuid() }).strict().optional(),
 });
 
 export const updateTripTitleInputSchema = z.object({ name: z.string().trim().min(1).max(256) }).strict();
@@ -975,6 +978,26 @@ export const profileMemoryResponseSchema = z.object({
 
 export const updateMemoryFactInputSchema = z.object({ value: z.unknown() }).strict();
 
+/**
+ * What happened to a highlight. Every branch is an answer the traveller sees,
+ * including the refusals — a highlight past the limit is told so, not cut.
+ */
+export const rememberHighlightResponseSchema = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("REMEMBERED_FIELD"), fieldKey: z.string(), value: z.unknown(), highlightMaxChars: z.number() }),
+  z.object({ outcome: z.literal("REMEMBERED_NOTE"), memoryId: z.string(), remaining: z.number(), highlightMaxChars: z.number() }),
+  z.object({ outcome: z.literal("TOO_LONG"), length: z.number(), limit: z.number(), highlightMaxChars: z.number() }),
+  z.object({ outcome: z.literal("LIST_FULL"), limit: z.number(), highlightMaxChars: z.number() }),
+  z.object({ outcome: z.literal("EMPTY"), highlightMaxChars: z.number() }),
+]);
+
+export const memoryNotesResponseSchema = z.object({
+  notes: z.array(z.object({
+    id: z.string(),
+    content: z.string(),
+    createdAt: z.string(),
+  })),
+});
+
 export const resolveProposalResponseSchema = z.object({
   status: z.enum(["PENDING", "CONFIRMED", "DISMISSED", "EXPIRED"]),
   factId: z.string().uuid().nullable().optional(),
@@ -984,6 +1007,8 @@ export type MemoryFact = z.infer<typeof memoryFactSchema>;
 export type MemorySuggestion = z.infer<typeof memorySuggestionSchema>;
 export type ProfileMemoryResponse = z.infer<typeof profileMemoryResponseSchema>;
 export type UpdateMemoryFactInput = z.infer<typeof updateMemoryFactInputSchema>;
+export type RememberHighlightResponse = z.infer<typeof rememberHighlightResponseSchema>;
+export type MemoryNotesResponse = z.infer<typeof memoryNotesResponseSchema>;
 export type ResolveProposalResponse = z.infer<typeof resolveProposalResponseSchema>;
 
 // ─── Trip-scoped memory ──────────────────────────────────────────────────────

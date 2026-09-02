@@ -228,6 +228,7 @@ export const tripDetailsResponseSchema = z.object({
     destinationCandidates: z.array(z.string()),
     travelDateStart: dateStr.nullable(),
     travelDateEnd: dateStr.nullable(),
+    travelDays: z.number().int().nullable(),
     archivedAt: z.string().datetime().nullable(),
     archiveReason: tripArchiveReasonSchema.nullable(),
     createdAt: z.string().datetime(),
@@ -1227,6 +1228,7 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     proposal: z.object({
       departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
       destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+      travelDateStart: dateStr.optional(),
       travelDays: z.number().int().min(1).max(365).optional(),
     }).strict(),
   }).strict(),
@@ -1380,6 +1382,7 @@ export const tripActivationRequestSchema = z.object({
   destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5),
   travelDateStart: dateStr.nullable().optional(),
   travelDateEnd: dateStr.nullable().optional(),
+  travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
 }).strict();
 
@@ -1428,6 +1431,7 @@ export const tripActivationResponseSchema = z.object({
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   }).strict(),
+  planningRun: z.object({ runId: uuidSchema, snapshotId: uuidSchema }).strict().optional(),
 });
 
 export function toJsonSchema(schema: z.ZodType) {

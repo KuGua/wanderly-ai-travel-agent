@@ -91,8 +91,9 @@ describe("conversational ModelGateway", () => {
     const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
     expect(messages[0]).toMatchObject({ role: "system" });
     expect(messages[0]?.content).toContain("住宿/酒店搜索约束");
-    expect(messages[0]?.content).toContain("当前住宿需求可以直接交给 Shared Agent");
+    expect(messages[0]?.content).toContain("当前住宿条件确认后会纳入完整行程方案");
     expect(messages[0]?.content).toContain("不要把这句话说成单独酒店搜索的推广");
+    expect(messages[0]?.content).not.toContain("Shared Agent");
     expect(messages[1]?.content).not.toContain("HOTEL_SEARCH_READINESS");
   });
 
@@ -115,12 +116,13 @@ describe("conversational ModelGateway", () => {
     expect(messages[0]?.content).toContain("完整行程编排优先级");
     expect(messages[0]?.content).toContain("不得把单独搜索包装成推荐路径");
     expect(messages[0]?.content).toContain("不要生成 Day 1–N");
-    expect(messages[0]?.content).toContain("确认后可交给 Shared Agent 生成共享方案");
+    expect(messages[0]?.content).toContain("确认行程信息后即可开始规划");
+    expect(messages[0]?.content).not.toContain("Shared Agent");
     expect(messages[0]?.content).toContain("不得声称已经完成预订、支付、实时查询或任何外部操作");
     expect(messages[0]?.content).toContain("目的地介绍和一般旅行问答是辅助用户探索与决策的能力");
   });
 
-  it("uses the Shared Agent orchestration lead for a flight-tool request", async () => {
+  it("keeps internal orchestration names out of a flight-tool request", async () => {
     const parse = vi.fn().mockResolvedValue({
       choices: [{ message: {
         parsed: null,
@@ -136,8 +138,9 @@ describe("conversational ModelGateway", () => {
     });
 
     const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
-    expect(messages[0]?.content).toContain("当前航班需求可以直接交给 Shared Agent");
+    expect(messages[0]?.content).toContain("当前航班条件确认后会纳入完整行程方案");
     expect(messages[0]?.content).toContain("不要把这句话说成单独机票搜索的推广");
+    expect(messages[0]?.content).not.toContain("Shared Agent");
   });
 
   it("normalizes Gemini's root-level content response", async () => {

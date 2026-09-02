@@ -163,6 +163,16 @@ export function TravelAgentChat({
    * stale messages once before it runs.
    */
   const [sessionThreadId, setSessionThreadId] = useState<string | null>(null);
+  /**
+   * A selection inside an assistant message, and where it sits, so the
+   * "remember this" control can be put next to it.
+   *
+   * Held only while the selection exists: the browser clears it on the next
+   * click, and a stale button offering to remember text nobody has selected
+   * would remember the wrong thing.
+   */
+  const [highlight, setHighlight] = useState<{ text: string; x: number; y: number; messageId: string } | null>(null);
+  const [rememberState, setRememberState] = useState<{ status: "saving" | "done"; message?: string } | null>(null);
   const [refusalMessageIds, setRefusalMessageIds] = useState<Set<string>>(new Set());
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
   const [requestError, setRequestError] = useState<unknown>(null);
@@ -326,7 +336,12 @@ export function TravelAgentChat({
     if (!activeRunId) return;
     const controller = new AbortController();
     void api.subscribeAgentRun(activeRunId, controller.signal, (event) => {
-      if (event.event === "trip.brief_proposed") setBriefProposal(event.proposal);
+      if (event.event === "trip.brief_proposed") {
+        // A traveller often supplies the brief across several turns (city and
+        // duration first, departure/date next). Keep the unconfirmed card as
+        // an accumulating review, rather than discarding earlier fields.
+        setBriefProposal((current) => ({ ...current, ...event.proposal }));
+      }
       if (event.event === "turn.completed" && event.responseMode === "SAFE_REFUSAL" && event.assistantMessageId) {
         setRefusalMessageIds((current) => new Set(current).add(event.assistantMessageId!));
       }
@@ -547,7 +562,13 @@ export function TravelAgentChat({
         destinationCandidates: currentTrip.destinationCandidates,
         travelDateStart: currentTrip.travelDateStart,
         travelDateEnd: currentTrip.travelDateEnd,
+        travelDays: currentTrip.travelDays ?? undefined,
         titleLocale,
+      }).then((result) => {
+        if (result.planningRun) {
+          setActiveRunId(result.planningRun.runId);
+          storeActiveRunId(result.planningRun.runId);
+        }
       });
       await trip.refetch();
     } catch (error) {
@@ -559,7 +580,9 @@ export function TravelAgentChat({
 
   const canStartSharedPlanning = trip.data?.trip.status === "DRAFT"
     && trip.data.trip.departureCities.length > 0
-    && trip.data.trip.destinationCandidates.length > 0;
+    && trip.data.trip.destinationCandidates.length > 0
+    && Boolean(trip.data.trip.travelDateStart)
+    && Boolean(trip.data.trip.travelDateEnd || trip.data.trip.travelDays);
 
   function confirmFlightSearch() {
     if (isSending) return;
@@ -608,6 +631,43 @@ export function TravelAgentChat({
       {t("agentName")}
     </div>
   ) : null;
+
+  function captureHighlight(messageId: string) {
+    const selection = window.getSelection();
+    const text = selection?.toString().trim() ?? "";
+    if (!selection || text.length === 0 || selection.rangeCount === 0) {
+      setHighlight(null);
+      return;
+    }
+    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    setHighlight({ text, x: rect.left + rect.width / 2, y: rect.top, messageId });
+    setRememberState(null);
+  }
+
+  async function rememberSelection() {
+    if (!highlight || !api.rememberHighlight) return;
+    const selected = highlight;
+    setRememberState({ status: "saving" });
+    try {
+      const result = await api.rememberHighlight({
+        highlight: selected.text,
+        sourceThreadId: effectiveThreadId ?? null,
+        sourceMessageId: selected.messageId,
+      });
+      // Every branch is an answer worth showing, including the refusals: a
+      // highlight past the limit is told so rather than quietly cut.
+      const message = result.outcome === "REMEMBERED_FIELD" ? t("rememberedField")
+        : result.outcome === "REMEMBERED_NOTE" ? t("rememberedNote", { remaining: result.remaining })
+        : result.outcome === "TOO_LONG" ? t("rememberTooLong", { length: result.length, limit: result.limit })
+        : result.outcome === "LIST_FULL" ? t("rememberListFull", { limit: result.limit })
+        : t("rememberFailed");
+      setRememberState({ status: "done", message });
+    } catch {
+      setRememberState({ status: "done", message: t("rememberFailed") });
+    }
+    setHighlight(null);
+    window.getSelection()?.removeAllRanges();
+  }
 
   const submitButton = (
     <button type="submit" aria-label={t("sendAria")} disabled={inputDisabled} className={docked
@@ -681,7 +741,11 @@ export function TravelAgentChat({
               ) : (
                 <>
                   {agentLabel}
-                  <div className={agentBubbleClass}>
+                  <div
+                    className={agentBubbleClass}
+                    onMouseUp={() => captureHighlight(message.id)}
+                    onTouchEnd={() => captureHighlight(message.id)}
+                  >
                     <ChatMarkdown content={message.content} />
                     <CopyButton text={message.content} />
                   </div>
@@ -778,6 +842,33 @@ export function TravelAgentChat({
                 onDismissed={() => setHandoffDismissed(true)}
               />
             </div>
+          ) : null}
+          {/* Sits at the selection, not in the flow: it has to be reachable
+              without clicking anywhere else, because clicking clears the
+              selection it is about to act on. `onMouseDown` + preventDefault
+              keeps the selection alive long enough for the click. */}
+          {highlight ? (
+            <button
+              type="button"
+              data-testid="remember-highlight"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => void rememberSelection()}
+              style={{ position: "fixed", left: highlight.x, top: Math.max(highlight.y - 44, 8), transform: "translateX(-50%)", zIndex: 60 }}
+              className={docked
+                ? "px-3 py-1.5 text-[11px] font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action"
+                : "rounded-full bg-primary px-3 py-1.5 text-[11px] font-bold text-white shadow-md"}
+            >
+              {rememberState?.status === "saving" ? t("rememberSaving") : t("rememberHighlight")}
+            </button>
+          ) : null}
+          {rememberState?.status === "done" && rememberState.message ? (
+            <p
+              role="status"
+              data-testid="remember-result"
+              className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} text-xs font-semibold text-muted-foreground`}
+            >
+              {rememberState.message}
+            </p>
           ) : null}
           {/* A research run has stages; an ordinary chat turn has none, and
               this was rendering "研究运行 #… / 等待阶段…" under every reply for
@@ -964,6 +1055,8 @@ function describeBriefProposal(
   if (proposal.destinationCandidates?.length) lines.push(t("briefProposalDestinations", { destinations: proposal.destinationCandidates.join(" · ") }));
   if (proposal.travelDateStart && proposal.travelDateEnd) {
     lines.push(t("briefProposalDateRange", { start: proposal.travelDateStart, end: proposal.travelDateEnd }));
+  } else if (proposal.travelDateStart) {
+    lines.push(t("briefProposalDateRange", { start: proposal.travelDateStart, end: t("briefProposalDatePending") }));
   } else if (proposal.travelDays) {
     lines.push(t("briefProposalDays", { days: proposal.travelDays }));
   }

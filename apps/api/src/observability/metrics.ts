@@ -372,6 +372,11 @@ metrics.registerCounter(
   "Hotel rates dropped for sitting in a different city from the one searched.",
   { provider: ["nuitee_connect", "serpapi"], outcome: ["partial", "all_elsewhere", "empty"] },
 );
+metrics.registerCounter(
+  "free_text_memory_writes_total",
+  "Free-text memory writes by outcome (highlight fallback).",
+  { result: ["saved", "too_long", "list_full"] },
+);
 metrics.registerCounter("place_provider_requests_total", "Place provider requests by bounded outcome.", {
   outcome: ["live", "unavailable"],
   provider: ["openrouteservice", "opentripmap"],

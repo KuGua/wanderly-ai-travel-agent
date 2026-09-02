@@ -53,14 +53,14 @@ The conversation call receives only the current private question, optional
 minimal place context, and bounded safe/redacted recall. A valid structured
 reply is returned with `responseMode: "MODEL"`.
 
-The Personal Agent clarifies, summarizes, and obtains confirmation for the
+The private conversation assistant clarifies, summarizes, and obtains confirmation for the
 owner's private trip brief and constraints. It must not create a daily
 itinerary, route, base-city/stay plan, transport plan, or supplier comparison:
-those are Shared Agent outputs after the confirmed snapshot enters the durable
+those are planning-workflow outputs after the confirmed snapshot enters the durable
 planning workflow. Flight and accommodation research are introduced only when
 the traveller explicitly asks to search, compare, filter, or quote those
-services. Each tool-backed request opens by offering to hand the current need
-to the Shared Agent for complete-trip orchestration; it must not instead
+services. Each tool-backed request explains that confirmed conditions can be
+included in the complete trip plan; it must not instead
 promote a separate search flow. Destination introductions and general travel
 questions remain optional exploration support; the prompt must never claim a
 completed booking, payment, live query, or external action.

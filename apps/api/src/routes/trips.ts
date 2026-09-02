@@ -34,13 +34,23 @@ import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { loadAndAssertTripModeForBrief } from "../services/trip-mode-service.js";
 import { getOrCreateDefaultThread } from "../services/trip-invitation-service.js";
-import { agentTaskConfig } from "../tasks/config.js";
 import { metrics } from "../observability/metrics.js";
+import { createConstraintSnapshot } from "../services/planning-service.js";
+import { acceptResearchTask } from "../tasks/task-repository.js";
+import { saveConfirmedSearchPreferences } from "../services/flight-search-preferences-service.js";
 
 const tripIdParamSchema = z.object({ tripId: z.string().uuid() }).strict();
 
 const DEFAULT_PAGE_LIMIT = 20;
 const MAX_PAGE_LIMIT = 100;
+const INITIAL_PLAN_CAPABILITIES = ["flight", "accommodation", "activities", "places", "readiness"] as const;
+
+function deriveInclusiveEndDate(start?: string | null, days?: number): string | undefined {
+  if (!start || !days) return undefined;
+  const [year, month, day] = start.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days - 1));
+  return date.toISOString().slice(0, 10);
+}
 
 type TripListRow = {
   id: string;
@@ -288,14 +298,19 @@ export async function tripRoutes(app: FastifyInstance) {
       || (body.travelDateStart && body.travelDateEnd && body.travelDateEnd < body.travelDateStart)) {
       throw new ApiError(400, "Bad Request", "Travel dates must be valid calendar dates with an end date on or after the start date");
     }
+    const derivedTravelDateEnd = body.travelDateEnd ?? deriveInclusiveEndDate(body.travelDateStart, body.travelDays);
+    if (body.travelDateStart && !derivedTravelDateEnd) {
+      throw new ApiError(422, "Unprocessable Entity", "A travel duration or end date is required to start planning");
+    }
     const generatedTitle = buildTripTitle({
       destinationCandidates: body.destinationCandidates,
       travelDateStart: body.travelDateStart,
-      travelDateEnd: body.travelDateEnd,
+      travelDateEnd: derivedTravelDateEnd,
+      travelDays: body.travelDays,
       locale: body.titleLocale,
     });
 
-    await db.transaction(async (tx) => {
+    const activated = await db.transaction(async (tx) => {
       const [trip] = await tx.select().from(sharedTrips)
         .where(eq(sharedTrips.id, tripId))
         .for("update")
@@ -329,7 +344,8 @@ export async function tripRoutes(app: FastifyInstance) {
         departureCities: body.departureCities,
         destinationCandidates: body.destinationCandidates,
         travelDateStart: body.travelDateStart ?? null,
-        travelDateEnd: body.travelDateEnd ?? null,
+        travelDateEnd: derivedTravelDateEnd ?? null,
+        travelDays: body.travelDays ?? trip.travelDays,
         status: "PLANNING",
         updatedAt: new Date(),
       }).where(eq(sharedTrips.id, tripId));
@@ -347,6 +363,53 @@ export async function tripRoutes(app: FastifyInstance) {
         },
         tx,
       });
+
+      const requiredMembers = await tx.select({ userId: tripMembers.userId })
+        .from(tripMembers)
+        .where(and(eq(tripMembers.tripId, tripId), eq(tripMembers.isRequired, true)));
+      // Solo activation is the owner's explicit confirmation of the reviewed
+      // brief. It can therefore create the initial authorized snapshot and
+      // durable plan task atomically. Team trips deliberately stop at
+      // PLANNING: each required member must still confirm their own inputs.
+      let planningRun: { runId: string; snapshotId: string } | undefined;
+      if (requiredMembers.length === 1 && body.travelDateStart && derivedTravelDateEnd) {
+        const preferences = await saveConfirmedSearchPreferences({
+          ctx,
+          tripId,
+          confirmedBy: request.user.id,
+          input: {
+            tripType: "ROUND_TRIP",
+            currency: "CNY",
+            adults: 1,
+            cabin: "ECONOMY",
+            offerFreshnessMinutes: 60,
+          },
+          tx,
+        });
+        const snapshotId = await createConstraintSnapshot({
+          tripId,
+          memberIds: requiredMembers.map((member) => member.userId),
+          departureCities: body.departureCities,
+          destinationCandidates: body.destinationCandidates,
+          travelDateStart: body.travelDateStart,
+          travelDateEnd: derivedTravelDateEnd,
+          tx,
+        });
+        const accepted = await acceptResearchTask({
+          ctx,
+          tripId,
+          userId: request.user.id,
+          snapshotId,
+          flightSearchPreferencesVersion: preferences.version,
+          outputMode: "PROPOSE_PLAN",
+          requestedCapabilities: INITIAL_PLAN_CAPABILITIES,
+          hotelProvider: null,
+          requestId: request.clientRequestId ?? randomUUID(),
+          tx,
+        });
+        planningRun = { runId: accepted.runId, snapshotId };
+      }
+      return { planningRun };
     });
 
     metrics.inc("trip_activation_total", { result: "success" });
@@ -355,74 +418,6 @@ export async function tripRoutes(app: FastifyInstance) {
       .where(eq(sharedTrips.id, tripId)).limit(1);
     if (!trip) {
       throw new ApiError(500, "Internal Server Error", "Trip vanished after activate");
-    }
-
-    // Activation hands the trip into the shared lifecycle. A new Personal
-    // prompt here would make it look as though the private agent still owns
-    // itinerary planning, so the legacy proactive branch is intentionally
-    // suppressed after the DRAFT → PLANNING transition.
-    try {
-      const requiredMembers = await db.select({ count: count() })
-        .from(tripMembers)
-        .where(and(
-          eq(tripMembers.tripId, trip.id),
-          eq(tripMembers.isRequired, true),
-        ));
-      const memberCount = Number(requiredMembers[0]?.count ?? 0);
-      if (memberCount === 1 && trip.status === "DRAFT") {
-        const threadId = await db.transaction(async (tx) =>
-          getOrCreateDefaultThread(tx, {
-            ownerUserId: trip.createdBy,
-            tripId: trip.id,
-          }),
-        );
-        const introRunId = randomUUID();
-        const expiresAt = new Date(Date.now() + agentTaskConfig.queueTtlSeconds * 1000);
-        await db.insert(agentTaskRuns).values({
-          id: introRunId,
-          operation: "CONVERSATION",
-          status: "QUEUED",
-          createdByUserId: trip.createdBy,
-          threadId,
-          tripId: trip.id,
-          requestId: randomUUID(),
-          expiresAt,
-          traceContext: ctx.traceparent
-            ? {
-                traceparent: ctx.traceparent,
-                ...(ctx.tracestate ? { tracestate: ctx.tracestate } : {}),
-                correlationId: ctx.correlationId,
-              }
-            : null,
-          // The proactive intro branch in handleConversationTask reads
-          // this flag and short-circuits before loading any user
-          // message or LLM context. Shape mirrors the existing
-          // PersistedResearchIntentDraft.
-          researchIntentDraft: {
-            schemaVersion: 1,
-            kind: "RESEARCH_ONLY",
-            requestedCapabilities: [],
-            classifierVersion: "proactive_intro_v1",
-            readiness: "NEEDS_SETUP",
-            proactiveIntro: true,
-            blockers: [],
-            warnings: [],
-            missing: [],
-          },
-        });
-        await recordAudit({
-          ctx,
-          action: "PERSONAL_RESEARCH_PROACTIVE_INTRO_ENQUEUED",
-          actorUserId: trip.createdBy,
-          tripId: trip.id,
-          summary: { runId: introRunId },
-        });
-        metrics.inc("personal_research_proactive_intro_total", { outcome: "enqueued" });
-      } else {
-        metrics.inc("personal_research_proactive_intro_total", { outcome: "skipped_team" });
-      }
-    } catch {
-      metrics.inc("personal_research_proactive_intro_total", { outcome: "failure" });
     }
 
     return reply.code(200).send(tripActivationResponseSchema.parse({
@@ -437,6 +432,7 @@ export async function tripRoutes(app: FastifyInstance) {
         createdAt: trip.createdAt.toISOString(),
         updatedAt: trip.updatedAt.toISOString(),
       },
+      ...(activated.planningRun ? { planningRun: activated.planningRun } : {}),
     }));
   });
 
