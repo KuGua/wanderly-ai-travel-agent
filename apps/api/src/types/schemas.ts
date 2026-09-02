@@ -234,6 +234,16 @@ export const tripDetailsResponseSchema = z.object({
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     pinnedSession: tripPinnedSessionSchema.nullable().optional(),
+    /**
+     * A brief extracted from conversation that the traveller has not confirmed
+     * yet. Never a trip fact — the confirmed values are the fields above.
+     */
+    pendingBriefProposal: z.object({
+      departureCities: z.array(z.string()).optional(),
+      destinationCandidates: z.array(z.string()).optional(),
+      travelDateStart: dateStr.optional(),
+      travelDays: z.number().int().min(1).max(365).optional(),
+    }).nullable().optional(),
   }),
   callerRole: tripRoleSchema,
   members: z.array(tripMemberSchema),

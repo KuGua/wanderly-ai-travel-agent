@@ -350,6 +350,7 @@ export async function tripRoutes(app: FastifyInstance) {
         travelDateStart: body.travelDateStart ?? null,
         travelDateEnd: derivedTravelDateEnd ?? null,
         travelDays: body.travelDays ?? trip.travelDays,
+        pendingBriefProposal: null,
         status: "PLANNING",
         updatedAt: new Date(),
       }).where(eq(sharedTrips.id, tripId));
@@ -621,6 +622,8 @@ export async function tripRoutes(app: FastifyInstance) {
       await tx.update(sharedTrips).set({
         departureCities: nextDepartures, destinationCandidates: nextDestinations,
         travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays,
+        // The candidate has become a fact; the card has nothing left to offer.
+        pendingBriefProposal: null,
         ...(trip.nameSource === "AUTO" ? { name: autoTitle, titleLocale: body.titleLocale } : {}), updatedAt: now,
       }).where(eq(sharedTrips.id, tripId));
       await recordAudit({ ctx, action: "TRIP_DRAFT_BRIEF_UPDATE", actorUserId: request.user.id, tripId, summary: { source: body.replaceDestinationCandidates ? "creator_brief_editor" : "conversation_confirmation", changedFields: [ ...(body.departureCities ? ["departureCities"] : []), ...(body.destinationCandidates ? ["destinationCandidates"] : []), ...(body.travelDateStart !== undefined ? ["travelDateStart"] : []), ...(body.travelDateEnd !== undefined ? ["travelDateEnd"] : []), ...(body.travelDays !== undefined ? ["travelDays"] : []) ] }, tx });

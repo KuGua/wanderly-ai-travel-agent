@@ -128,6 +128,13 @@ export const tripDetailSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   pinnedSession: tripPinnedSessionSchema.nullable().optional(),
+  /** Extracted from conversation, not yet confirmed. Never a trip fact. */
+  pendingBriefProposal: z.object({
+    departureCities: z.array(z.string()).optional(),
+    destinationCandidates: z.array(z.string()).optional(),
+    travelDateStart: z.string().optional(),
+    travelDays: z.number().optional(),
+  }).nullable().optional(),
 });
 
 export const tripMemberSchema = z.object({

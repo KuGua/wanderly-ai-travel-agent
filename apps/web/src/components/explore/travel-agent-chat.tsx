@@ -492,6 +492,16 @@ export function TravelAgentChat({
     setPendingFlightConfirmation(pending);
   }, [agentRun.data?.pendingFlightConfirmation]);
 
+  // The trip carries the unconfirmed brief too, and unlike the run it is still
+  // there after a reload or on another device. This is the copy that makes the
+  // card dependable; the run and the notification are just faster.
+  useEffect(() => {
+    const proposed = trip.data?.trip.pendingBriefProposal;
+    if (!proposed) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBriefProposal((current) => ({ ...current, ...proposed }));
+  }, [trip.data?.trip.pendingBriefProposal]);
+
   // Same reason as the confirmation above: `trip.brief_proposed` is published
   // once and never replayed, so a client that finishes subscribing after the
   // worker published it — which is what happens on a fast turn — never learns

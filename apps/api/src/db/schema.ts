@@ -335,6 +335,14 @@ export const memoryProposals = pgTable("memory_proposals", {
 // ─── Shared Trips ───────────────────────────────────────────────────────────
 
 export const sharedTrips = pgTable("shared_trips", {
+  /**
+   * The brief extracted from conversation but not yet confirmed. A candidate,
+   * never a fact: it is cleared the moment the traveller confirms or ignores,
+   * and the confirmed values live in the columns below. Kept on the trip
+   * because that is what it describes — on a run it disappeared the moment the
+   * run stopped being polled, which is any reload.
+   */
+  pendingBriefProposal: jsonb("pending_brief_proposal"),
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 256 }).notNull(),
   nameSource: varchar("name_source", { length: 16 }).$type<"AUTO" | "MANUAL">().default("MANUAL").notNull(),
