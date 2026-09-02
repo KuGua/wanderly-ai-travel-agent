@@ -49,15 +49,22 @@ export class OpenTripMapAccommodationProvider implements AccommodationDiscoveryP
   async discoverAccommodations(params: {
     destination: Parameters<AccommodationDiscoveryProvider["discoverAccommodations"]>[0]["destination"];
     limit: number;
+    radiusMeters?: number;
     signal?: AbortSignal;
   }): Promise<ProviderResult<AccommodationProviderItem[]>> {
     const startedAt = Date.now();
     if (!Number.isInteger(params.limit) || params.limit < 1) {
       return this.record({ outcome: "UNAVAILABLE", reason: "SEARCH_CONSTRAINTS_INCOMPLETE" }, startedAt);
     }
+    // The caller's radius when it has one; the configured default otherwise.
+    // Bounded by the same limits the configuration is bounded by, so a caller
+    // cannot widen the search past what the deployment allows.
+    const radiusMeters = params.radiusMeters === undefined
+      ? this.options.radiusMeters
+      : Math.min(Math.max(Math.round(params.radiusMeters), 1_000), 50_000);
     try {
       const url = new URL(`${this.options.baseUrl}/en/places/radius`);
-      url.searchParams.set("radius", String(this.options.radiusMeters));
+      url.searchParams.set("radius", String(radiusMeters));
       url.searchParams.set("lon", String(params.destination.longitude));
       url.searchParams.set("lat", String(params.destination.latitude));
       // OpenTripMap's public taxonomy intentionally spells this collection
@@ -87,7 +94,7 @@ export class OpenTripMapAccommodationProvider implements AccommodationDiscoveryP
           place.point.lat,
           place.point.lon,
         );
-        if (distanceMeters > this.options.radiusMeters) return [];
+        if (distanceMeters > radiusMeters) return [];
         return [{
           providerPlaceId: place.xid,
           name,

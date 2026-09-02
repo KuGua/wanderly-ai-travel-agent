@@ -76,7 +76,7 @@ describe("personalResearchOwnerDraftSchema (discriminated union, 7 kinds)", () =
       { kind: "HOTEL_SEARCH", cityCode: "TYO", checkIn: "2026-12-01", checkOut: "2026-12-08", occupancy: { adults: 2, rooms: 1 }, currency: "USD" },
       { kind: "ACCOMMODATION_DISCOVERY", latitude: 35.68, longitude: 139.69, radiusMeters: 5000, checkIn: "2026-12-01", checkOut: "2026-12-08", occupancy: { adults: 2, rooms: 1 } },
       { kind: "ACTIVITIES_SEARCH", destinationCode: "TYO", startDate: "2026-12-01", endDate: "2026-12-08", category: null, limit: 20 },
-      { kind: "PLACES_SEARCH", latitude: 35.68, longitude: 139.69, radiusMeters: 5000, category: "ATTRACTION", limit: 20 },
+      { kind: "PLACES_SEARCH", keyword: null, latitude: 35.68, longitude: 139.69, radiusMeters: 5000, category: "ATTRACTION", limit: 20 },
       { kind: "NAVIGATION_ROUTE", originPlaceId: VALID_UUID_V4_B, destinationPlaceId: VALID_UUID_V4_C, mode: "driving" },
       { kind: "MOBILITY_SEARCH", originPlaceId: VALID_UUID_V4_B, destinationPlaceId: VALID_UUID_V4_C, transferDateTime: "2026-12-01T08:00:00.000Z", passengers: 2, currency: "USD" },
     ];

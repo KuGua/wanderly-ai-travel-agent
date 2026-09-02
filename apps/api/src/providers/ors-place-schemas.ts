@@ -27,6 +27,10 @@ export const orsFeaturePropertiesSchema = z.object({
   region_a: z.string().optional(),
   locality: z.string().optional(),
   confidence: z.number().min(0).max(1).optional(),
+  // Kilometres from the search point. ORS sets it on reverse lookups and on
+  // point-biased searches; it is `passthrough()`-visible either way, but is
+  // modelled here because the product reads it rather than merely forwards it.
+  distance: z.number().nonnegative().optional(),
   match_type: z.string().optional(),
 }).passthrough();
 

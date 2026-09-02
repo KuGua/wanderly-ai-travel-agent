@@ -48,6 +48,7 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
     destination: DestinationReference;
     keyword: string;
     category: "ATTRACTION" | "HOTEL" | "RESTAURANT" | "TRANSPORT_HUB" | "OTHER";
+    radiusMeters?: number;
     snapshotId: string;
     runId?: string;
     signal?: AbortSignal;
@@ -55,49 +56,46 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
     const start = Date.now();
     const capturedAt = this.now().toISOString();
     try {
-      const layer = categoryToLayer(params.category);
-      // `size` is bounded to PLACE_MAX_RESULTS by the service layer; the
-      // provider never sees a request larger than that.
-      const query = new URLSearchParams({
-        api_key: this.options.apiKey,
-        text: params.keyword,
-        layers: layer,
-        size: "5",
-      });
-      // ORS rejects an empty `boundary.country` with 400 rather than
-      // ignoring it. Callers that anchor a search on coordinates alone have
-      // no country to give, so the filter is only applied when there is one.
-      if (params.destination.countryCode.trim().length > 0) {
-        query.set("boundary.country", params.destination.countryCode);
-      }
-      // Bias results toward the destination itself. Without this a
-      // coordinate-anchored search is a plain global text lookup, which is
-      // not what a caller passing a point and a radius is asking for.
-      if (Number.isFinite(params.destination.latitude) && Number.isFinite(params.destination.longitude)) {
-        query.set("focus.point.lat", String(params.destination.latitude));
-        query.set("focus.point.lon", String(params.destination.longitude));
-      }
-      const response = await this.request(`/geocode/search?${query.toString()}`, params.signal);
-      if (response.status === 429) return this.unavailable("RATE_LIMITED", start);
-      if (response.status >= 500) return this.unavailable("UPSTREAM_FAILURE", start);
-      if (!response.ok) return this.unavailable("UPSTREAM_FAILURE", start);
-      let payload: OrsGeocodingResponse;
-      try {
-        const parsed = orsGeocodingResponseSchema.safeParse(await response.json());
-        if (!parsed.success) return this.unavailable("INVALID_PROVIDER_RESPONSE", start);
-        payload = parsed.data;
-      } catch {
-        return this.unavailable("INVALID_PROVIDER_RESPONSE", start);
-      }
-      const candidates: NormalizedPlaceCandidate[] = [];
-      for (const feature of payload.features) {
-        const normalized = normalizeFeature(
-          feature, params.category, capturedAt, params.destination.countryCode,
+      const anchored = Number.isFinite(params.destination.latitude)
+        && Number.isFinite(params.destination.longitude);
+      const radiusKm = params.radiusMeters !== undefined
+        ? Math.min(Math.max(params.radiusMeters, 100), 50_000) / 1000
+        : null;
+      const text = searchTextFor(params.keyword, params.category);
+
+      // Two questions, two endpoints. "What is near this point" is a reverse
+      // lookup; "where is the nearest ramen" is a text search bounded to a
+      // circle. Answering the first with the second is what produced venues
+      // literally named "Attraction" and "Mane Attraction" — the category
+      // word was being handed to a geocoder as the thing to find, so it
+      // matched names rather than kinds, and any place whose name contained
+      // the word outranked the temple the traveller was standing next to.
+      const useReverse = anchored && text === null;
+      let outcome = await this.fetchCandidates(
+        useReverse
+          ? this.reversePath(params, radiusKm)
+          : this.searchPath(params, text ?? params.category, radiusKm, anchored),
+        params, capturedAt, radiusKm,
+      );
+      if (outcome.kind === "error") return this.unavailable(outcome.reason, start);
+
+      // A geocoder indexes names, so a keyword naming a kind rather than a
+      // place — "景点", "sightseeing", even "temple" in a district that spells
+      // it differently — legitimately matches nothing. Reporting NO_RESULTS
+      // there says "there is nothing near you", which is both false and the
+      // least useful thing to say. What is actually around the point is a
+      // real answer to the question that was asked.
+      // Only for a caller that gave a radius. That is what distinguishes
+      // "what is around this point" from "find me the place called X" — and
+      // adopting a nearby neighbour as the place someone searched for by name
+      // would be a wrong answer rather than a helpful one.
+      if (outcome.candidates.length === 0 && !useReverse && anchored && radiusKm !== null) {
+        const nearby = await this.fetchCandidates(
+          this.reversePath(params, radiusKm), params, capturedAt, radiusKm,
         );
-        if (!normalized) continue;
-        candidates.push(normalized);
-        if (candidates.length >= 5) break;
+        if (nearby.kind === "ok") outcome = nearby;
       }
+      const candidates = outcome.candidates;
       if (candidates.length === 0) {
         return this.unavailable("NO_RESULTS", start);
       }
@@ -112,6 +110,97 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
       if ((error as { name?: string }).name === "AbortError") return this.unavailable("UPSTREAM_TIMEOUT", start);
       return this.unavailable("UPSTREAM_FAILURE", start);
     }
+  }
+
+  /** One request, parsed and normalized, or the reason it could not be. */
+  private async fetchCandidates(
+    path: string,
+    params: {
+      destination: DestinationReference;
+      category: NormalizedPlaceCandidate["kind"];
+      signal?: AbortSignal;
+    },
+    capturedAt: string,
+    radiusKm: number | null,
+  ): Promise<
+    | { kind: "ok"; candidates: NormalizedPlaceCandidate[] }
+    | { kind: "error"; reason: "RATE_LIMITED" | "UPSTREAM_FAILURE" | "INVALID_PROVIDER_RESPONSE" }
+  > {
+    const response = await this.request(path, params.signal);
+    if (response.status === 429) return { kind: "error", reason: "RATE_LIMITED" };
+    if (!response.ok) return { kind: "error", reason: "UPSTREAM_FAILURE" };
+    let payload: OrsGeocodingResponse;
+    try {
+      const parsed = orsGeocodingResponseSchema.safeParse(await response.json());
+      if (!parsed.success) return { kind: "error", reason: "INVALID_PROVIDER_RESPONSE" };
+      payload = parsed.data;
+    } catch {
+      return { kind: "error", reason: "INVALID_PROVIDER_RESPONSE" };
+    }
+    const candidates: NormalizedPlaceCandidate[] = [];
+    for (const feature of payload.features) {
+      const normalized = normalizeFeature(
+        feature, params.category, capturedAt, params.destination.countryCode,
+      );
+      if (!normalized) continue;
+      // ORS treats the circle as a strong bias rather than a hard bound, so
+      // it will still answer 1.7 km out for a 1.5 km request. A radius the
+      // caller stated is a constraint, not a preference; a place outside it
+      // is a wrong answer however good the name match.
+      if (radiusKm !== null && Number.isFinite(normalized.distanceKm) && (normalized.distanceKm as number) > radiusKm) continue;
+      candidates.push(normalized);
+      if (candidates.length >= PLACE_RESULT_LIMIT) break;
+    }
+    return { kind: "ok", candidates };
+  }
+
+  /** What is actually around this point, nearest first. */
+  private reversePath(
+    params: { destination: DestinationReference; category: NormalizedPlaceCandidate["kind"] },
+    radiusKm: number | null,
+  ): string {
+    const query = new URLSearchParams({
+      api_key: this.options.apiKey,
+      "point.lat": String(params.destination.latitude),
+      "point.lon": String(params.destination.longitude),
+      layers: categoryToLayer(params.category),
+      size: String(PLACE_RESULT_LIMIT),
+    });
+    if (radiusKm !== null) query.set("boundary.circle.radius", String(radiusKm));
+    return `/geocode/reverse?${query.toString()}`;
+  }
+
+  /** Where the nearest match for these words is. */
+  private searchPath(
+    params: { destination: DestinationReference; category: NormalizedPlaceCandidate["kind"] },
+    text: string,
+    radiusKm: number | null,
+    anchored: boolean,
+  ): string {
+    const query = new URLSearchParams({
+      api_key: this.options.apiKey,
+      text,
+      layers: categoryToLayer(params.category),
+      size: String(PLACE_RESULT_LIMIT),
+    });
+    // ORS rejects an empty `boundary.country` with 400 rather than
+    // ignoring it. Callers that anchor a search on coordinates alone have
+    // no country to give, so the filter is only applied when there is one.
+    if (params.destination.countryCode.trim().length > 0) {
+      query.set("boundary.country", params.destination.countryCode);
+    }
+    if (anchored) {
+      // `focus.point` only ranks; `boundary.circle` is what keeps a global
+      // name match from being returned as a neighbour.
+      query.set("focus.point.lat", String(params.destination.latitude));
+      query.set("focus.point.lon", String(params.destination.longitude));
+      if (radiusKm !== null) {
+        query.set("boundary.circle.lat", String(params.destination.latitude));
+        query.set("boundary.circle.lon", String(params.destination.longitude));
+        query.set("boundary.circle.radius", String(radiusKm));
+      }
+    }
+    return `/geocode/search?${query.toString()}`;
   }
 
   private async request(path: string, signal?: AbortSignal): Promise<Response> {
@@ -139,6 +228,31 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
       provider: "openrouteservice",
       outcome: outcome === "LIVE" ? "live" : "unavailable",
     });
+  }
+}
+
+const PLACE_RESULT_LIMIT = 10;
+
+/**
+ * The words to search for, or `null` when there are none worth searching and
+ * the question is better answered by looking around the point instead.
+ *
+ * "restaurant", "hotel" and "station" appear in the names of the things they
+ * describe, so bounded to a circle they find them. "attraction" does not —
+ * nothing near Sensō-ji is called that, and unbounded it returned a hair
+ * salon named "Mane Attraction" three time zones away. So a category with no
+ * usable word falls through to the reverse lookup, which needs no words.
+ */
+function searchTextFor(keyword: string, category: NormalizedPlaceCandidate["kind"]): string | null {
+  const stated = keyword.trim();
+  // The executor used to pass the category name here as if it were the
+  // traveller's words; anything that still does is treated as no keyword.
+  if (stated.length > 0 && stated.toUpperCase() !== category) return stated;
+  switch (category) {
+    case "RESTAURANT": return "restaurant";
+    case "HOTEL": return "hotel";
+    case "TRANSPORT_HUB": return "station";
+    default: return null;
   }
 }
 
@@ -185,6 +299,9 @@ function normalizeFeature(
     longitude,
     latitude,
     confidence,
+    // ORS reports this on reverse lookups and on searches biased by a point;
+    // it is what lets a reply say "200 m away" instead of just naming a place.
+    distanceKm: typeof props.distance === "number" ? props.distance : null,
     // Low-confidence, ambiguous or out-of-country candidates require user
     // confirmation before being adopted into a TripPlace.
     needsUserConfirmation: confidence < 0.5,

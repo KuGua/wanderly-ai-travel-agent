@@ -192,21 +192,30 @@ async function persistAvailability(params: {
   if (params.run.tripId === null || params.run.threadId === null) {
     throw new Error("Personal research run is missing trip/thread binding");
   }
+  // An executor reports a provider that answered with nothing the same way it
+  // reports one that answered: by returning, not by throwing. So the row's
+  // outcome has to come from the summary rather than from having reached this
+  // branch — stamping "AVAILABLE" over a summary that says UNAVAILABLE gave
+  // the column and the payload two different stories, and every reader that
+  // trusts the column (`readPersonalResearchEvidence`, and the routes above
+  // it) believed the one that was wrong. A result nothing produced also has
+  // nothing to expire, so it carries no TTL either.
+  const outcome = params.summary.outcome === "UNAVAILABLE" ? "UNAVAILABLE" : "AVAILABLE";
   const [row] = await db.insert(personalResearchEvidence).values({
     runId: params.run.id,
     tripId: params.run.tripId,
     threadId: params.run.threadId,
     ownerUserId: params.run.createdByUserId,
     capability: params.capability,
-    outcome: "AVAILABLE",
+    outcome,
     providerName: PROVIDER_NAME_BY_CAPABILITY[params.capability],
     source: SOURCE_BY_CAPABILITY[params.capability],
-    expiresAt: computeExpiresAt(),
+    expiresAt: outcome === "AVAILABLE" ? computeExpiresAt() : null,
     resultJson: params.summary as unknown as Record<string, unknown>,
   }).returning({ id: personalResearchEvidence.id });
   return {
     evidenceId: row.id,
-    outcome: "AVAILABLE",
+    outcome,
     summary: params.summary,
   };
 }

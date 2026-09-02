@@ -358,13 +358,18 @@ metrics.registerCounter("flight_offer_staleness_total", "Selected flight offers 
 // Global POI & ground mobility (docs/ground-mobility-implementation.md §7).
 // All label sets are bounded enums; identifiers (trip_id / run_id /
 // place_id / route_id) live only in trace/log correlation context.
-metrics.registerCounter("place_provider_requests_total", "ORS Place provider requests by bounded outcome.", {
+metrics.registerCounter(
+  "hotel_provider_city_mismatch_total",
+  "Hotel rates dropped for sitting in a different city from the one searched.",
+  { provider: ["nuitee_connect", "serpapi"], outcome: ["partial", "all_elsewhere", "empty"] },
+);
+metrics.registerCounter("place_provider_requests_total", "Place provider requests by bounded outcome.", {
   outcome: ["live", "unavailable"],
-  provider: ["openrouteservice"],
+  provider: ["openrouteservice", "opentripmap"],
   error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved"],
 });
-metrics.registerHistogram("place_provider_latency_ms", "ORS Place provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
-  provider: ["openrouteservice"],
+metrics.registerHistogram("place_provider_latency_ms", "Place provider latency in milliseconds.", [100, 250, 500, 1_000, 2_000, 5_000, 8_000, 15_000], {
+  provider: ["openrouteservice", "opentripmap"],
   outcome: ["live", "unavailable"],
 });
 metrics.registerCounter("place_search_tool_invocations_total", "places.search skill execution outcomes.", {

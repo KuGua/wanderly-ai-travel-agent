@@ -71,6 +71,8 @@ export async function executePersonalActivitiesSearch(params: {
   return {
     outcome: "AVAILABLE",
     capability: "activities.search",
+    supplier: result.source,
+    capturedAt: result.capturedAt,
     activities: {
       // Titles and per-person prices. The band alone could not name a single
       // thing to do.

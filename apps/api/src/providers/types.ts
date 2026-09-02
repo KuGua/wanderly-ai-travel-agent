@@ -128,8 +128,20 @@ export interface VisaProvider {
 export interface PlaceSearchProvider {
   searchPlaces(params: {
     destination: DestinationReference;
+    /**
+     * What the traveller is actually looking for, in their own words —
+     * "ramen", "onsen", "拉面". Empty when they only asked what is nearby,
+     * which is a different question and takes a different ORS endpoint.
+     */
     keyword: string;
     category: "ATTRACTION" | "HOTEL" | "RESTAURANT" | "TRANSPORT_HUB" | "OTHER";
+    /**
+     * How far from the point to look. Without it a search anchored on
+     * coordinates was a global text lookup that merely leaned toward the
+     * destination, so "within 500 m of Sensō-ji" could answer with a venue
+     * on another continent that happened to match the words.
+     */
+    radiusMeters?: number;
     snapshotId: string;
     runId?: string;
     signal?: AbortSignal;
@@ -140,6 +152,13 @@ export interface AccommodationDiscoveryProvider {
   discoverAccommodations(params: {
     destination: DestinationReference;
     limit: number;
+    /**
+     * How far around the point to look. Absent, the provider falls back to
+     * its configured default — which is what happened to every caller that
+     * had a radius and no way to pass it: the traveller asked about one
+     * neighbourhood and was answered from ten kilometres of city.
+     */
+    radiusMeters?: number;
     signal?: AbortSignal;
   }): Promise<ProviderResult<AccommodationProviderItem[]>>;
 }
@@ -235,6 +254,8 @@ export interface NormalizedPlaceCandidate {
   longitude: number;
   latitude: number;
   confidence: number;
+  /** Straight-line distance from the search point, when the search had one. */
+  distanceKm: number | null;
   needsUserConfirmation: boolean;
   source: string;
   capturedAt: string;

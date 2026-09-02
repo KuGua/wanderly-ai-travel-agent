@@ -34,6 +34,11 @@ export interface NuiteeHotelProviderOptions {
   apiKey: string;
   timeoutMs: number;
   maxRetries: number;
+  /**
+   * Drop rates for properties the directory places in a different city from
+   * the one that was searched. On by default; see `matchesRequestedCity`.
+   */
+  cityMatch: boolean;
   baseUrl?: string;
   fetchImpl?: typeof fetch;
   now?: () => Date;
@@ -62,6 +67,7 @@ export function readNuiteeHotelConfiguration(
     apiKey,
     timeoutMs: boundedInteger(env.NUITEE_HOTEL_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, 500, 30_000, "NUITEE_HOTEL_TIMEOUT_MS"),
     maxRetries: boundedInteger(env.NUITEE_HOTEL_MAX_RETRIES, DEFAULT_MAX_RETRIES, 0, 2, "NUITEE_HOTEL_MAX_RETRIES"),
+    cityMatch: (env.NUITEE_HOTEL_CITY_MATCH ?? "true").trim().toLowerCase() !== "false",
     ...(env.NUITEE_BASE_URL?.trim() ? { baseUrl: env.NUITEE_BASE_URL.trim() } : {}),
   };
 }
@@ -150,10 +156,16 @@ export class NuiteeHotelProvider implements HotelProvider {
     // Hotel names are not on the rated entries — they live in the sibling
     // `hotels[]` directory, in a different order, joined by id. An entry with
     // no directory match is skipped rather than shown without a name.
-    const directory = new Map<string, string>();
+    const directory = new Map<string, { name: string; cityName: string | null; countryCode: string | null }>();
     for (const raw of parsed.data.hotels ?? []) {
       const entry = nuiteeHotelDirectorySchema.safeParse(raw);
-      if (entry.success) directory.set(entry.data.id, entry.data.name);
+      if (entry.success) {
+        directory.set(entry.data.id, {
+          name: entry.data.name,
+          cityName: entry.data.city_name ?? null,
+          countryCode: entry.data.country_code ?? null,
+        });
+      }
     }
 
     const hotels = parsed.data.data ?? [];
@@ -162,14 +174,25 @@ export class NuiteeHotelProvider implements HotelProvider {
     const capturedAt = this.now().toISOString();
     const nights = daysBetween(params.checkIn, params.checkOut);
     const offers: HotelProviderItem[] = [];
+    let elsewhere = 0;
     for (const rawHotel of hotels) {
       // Validated per hotel so one malformed entry cannot discard the page.
       const parsedHotel = nuiteeRatedHotelEntrySchema.safeParse(rawHotel);
       if (!parsedHotel.success) continue;
       const hotel = parsedHotel.data;
 
-      const propertyName = directory.get(hotel.hotelId);
-      if (!propertyName) continue;
+      const listing = directory.get(hotel.hotelId);
+      if (!listing) continue;
+      // Nuitee answers a search for Kyoto with hotels in Tokyo and Hiroshima —
+      // the sandbox returns a fixed pool, and a production account can still
+      // widen a city to its region. Naming those as the city that was asked
+      // for is a wrong answer stated confidently, which is worse than finding
+      // nothing, so a property the directory puts somewhere else is dropped.
+      if (this.options.cityMatch && !matchesRequestedCity(listing, params.destination)) {
+        elsewhere += 1;
+        continue;
+      }
+      const propertyName = listing.name;
 
       // `maxRatesPerHotel: 1` is requested, but the response can still
       // contain more than one rate if the upstream contract drifts; the
@@ -219,7 +242,18 @@ export class NuiteeHotelProvider implements HotelProvider {
       });
       if (offers.length >= MAX_RESULTS_RETURNED) break;
     }
-    if (offers.length === 0) return { outcome: "UNAVAILABLE", reason: "NO_RESULTS" };
+    if (offers.length === 0) {
+      // Distinguished from an empty page so the difference is visible in the
+      // metric: the supplier had rates, all of them somewhere else.
+      metrics.inc("hotel_provider_city_mismatch_total", {
+        provider: this.providerName,
+        outcome: elsewhere > 0 ? "all_elsewhere" : "empty",
+      });
+      return { outcome: "UNAVAILABLE", reason: "NO_RESULTS" };
+    }
+    if (elsewhere > 0) {
+      metrics.inc("hotel_provider_city_mismatch_total", { provider: this.providerName, outcome: "partial" });
+    }
     return { outcome: "LIVE", data: offers, source: SOURCE, capturedAt };
   }
 
@@ -328,4 +362,40 @@ function boundedInteger(raw: string | undefined, fallback: number, min: number, 
   const value = raw === undefined || raw.trim() === "" ? fallback : Number(raw);
   if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${name} must be an integer from ${min} to ${max}`);
   return value;
+}
+
+/**
+ * Whether the directory places this property in the city that was searched.
+ *
+ * Compared on the name because that is what the directory carries — no
+ * coordinates, so no distance filter of the kind the SerpApi adapter uses.
+ * The destination side is already canonical (the location resolver turns both
+ * "京都" and "Kyoto" into "Kyoto"), so the normalisation here only has to
+ * absorb case, accents and punctuation.
+ *
+ * Silence is not a mismatch. A directory entry with no city, or a search with
+ * no resolved city name, is kept: dropping on missing data would turn a thin
+ * response into an empty one.
+ */
+function matchesRequestedCity(
+  listing: { cityName: string | null; countryCode: string | null },
+  destination: { cityName: string; countryCode: string },
+): boolean {
+  const wantedCountry = normalizeForCityMatch(destination.countryCode);
+  const listedCountry = normalizeForCityMatch(listing.countryCode ?? "");
+  if (wantedCountry && listedCountry && wantedCountry !== listedCountry) return false;
+
+  const wanted = normalizeForCityMatch(destination.cityName);
+  const listed = normalizeForCityMatch(listing.cityName ?? "");
+  if (!wanted || !listed) return true;
+  // "New York" against "New York City", either way round.
+  return wanted === listed || wanted.startsWith(listed) || listed.startsWith(wanted);
+}
+
+function normalizeForCityMatch(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "");
 }

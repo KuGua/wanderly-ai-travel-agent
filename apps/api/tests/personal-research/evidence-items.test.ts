@@ -16,6 +16,8 @@ const signal = new AbortController().signal;
 const mockPlace = vi.fn();
 vi.mock("../../src/providers/live-provider-factory.js", () => ({
   createOrsPlace: () => ({ searchPlaces: mockPlace }),
+  // Preferred over ORS by the executor; null here keeps these cases on ORS.
+  createOpenTripMapPlace: () => null,
 }));
 
 const { executePersonalPlacesSearch } = await import(

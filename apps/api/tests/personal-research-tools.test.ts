@@ -20,7 +20,7 @@ const DRAFT_KIND: Record<string, string> = {
 
 /** A minimal valid argument object for each tool, per its own JSON Schema. */
 const SAMPLE: Record<string, Record<string, unknown>> = {
-  "places.search": { latitude: 35.68, longitude: 139.69, radiusMeters: 1500, category: null, limit: null },
+  "places.search": { latitude: 35.68, longitude: 139.69, radiusMeters: 1500, category: null, keyword: null, limit: null },
   "accommodation.discovery": {
     latitude: 35.68, longitude: 139.69, radiusMeters: 2000,
     checkIn: "2026-10-01", checkOut: "2026-10-04", occupancy: { adults: 2, rooms: 1 },

@@ -14,7 +14,7 @@
  * §3.5 stage 3.
  */
 
-import { createOrsPlace } from "../../providers/live-provider-factory.js";
+import { createOpenTripMapPlace, createOrsPlace } from "../../providers/live-provider-factory.js";
 import type { NormalizedPlaceCandidate } from "../../providers/types.js";
 import type {
   DestinationReference,
@@ -29,6 +29,7 @@ export type PersonalResearchPlacesDraft = {
   longitude: number;
   radiusMeters: number;
   category: "ATTRACTION" | "HOTEL" | "RESTAURANT" | "TRANSPORT_HUB" | "OTHER" | null;
+  keyword: string | null;
   limit: number | null;
 };
 
@@ -40,7 +41,6 @@ export async function executePersonalPlacesSearch(params: {
   if (params.run.tripId === null) {
     throw new Error("Personal places run is missing trip binding");
   }
-  const provider = createOrsPlace();
   const effectiveCategory: "ATTRACTION" | "HOTEL" | "RESTAURANT" | "TRANSPORT_HUB" | "OTHER" =
     params.draft.category ?? "OTHER";
 
@@ -57,19 +57,37 @@ export async function executePersonalPlacesSearch(params: {
 
   const input = {
     destination,
-    keyword: effectiveCategory,
+    // The traveller's words, not the category name. Passing the category here
+    // asked a geocoder to find a place *called* "ATTRACTION"; the adapter now
+    // treats a keyword equal to the category as no keyword and looks around
+    // the point instead, but sending the right thing is the actual fix.
+    keyword: params.draft.keyword ?? "",
     category: effectiveCategory,
+    // Carried through so the radius the caller stated bounds the search
+    // rather than merely being echoed back in the summary.
+    radiusMeters: params.draft.radiusMeters,
     snapshotId: "",
     runId: params.run.id,
     signal: params.signal,
   };
 
+  // OpenTripMap knows places by kind and by how notable they are, which is
+  // what "what is worth seeing near here" needs. ORS is a geocoder and stays
+  // as the fallback for wherever OpenTripMap has no coverage — losing the
+  // search entirely would be worse than a coarser answer.
+  const providers = [createOpenTripMapPlace(), createOrsPlace()]
+    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null);
+
   let result: { outcome: "LIVE"; data: NormalizedPlaceCandidate[]; source: string; capturedAt: string }
-    | { outcome: "UNAVAILABLE"; reason: string };
-  try {
-    result = await provider.searchPlaces(input);
-  } catch (err) {
-    return unavailableSummaryFromError(err);
+    | { outcome: "UNAVAILABLE"; reason: string } = { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
+  for (const provider of providers) {
+    try {
+      result = await provider.searchPlaces(input);
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return unavailableSummaryFromError(err);
+      result = { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };
+    }
+    if (result.outcome === "LIVE") break;
   }
 
   if (result.outcome === "UNAVAILABLE") {
@@ -82,6 +100,8 @@ export async function executePersonalPlacesSearch(params: {
   return {
     outcome: "AVAILABLE",
     capability: "places.search",
+    supplier: result.source,
+    capturedAt: result.capturedAt,
     places: {
       // The place names. A count and a category list could not answer
       // "which restaurants", which is the whole question.
@@ -90,13 +110,25 @@ export async function executePersonalPlacesSearch(params: {
         // Geocoding returns no prices, and inventing a null-priced item is
         // more honest than implying one exists.
         price: null,
-        detail: candidate.kind,
+        // How far it is, when the provider said. A list of names alone cannot
+        // answer "is it walkable from here", which is most of why someone
+        // asks what is nearby.
+        detail: Number.isFinite(candidate.distanceKm)
+          ? `${candidate.kind} · ${formatDistance(candidate.distanceKm as number)}`
+          : candidate.kind,
       })),
       candidateCount: candidates.length,
       categories,
       radiusMeters: params.draft.radiusMeters,
     },
   };
+}
+
+/** Metres below a kilometre, so "300 m" does not read as "0.3 km". */
+function formatDistance(distanceKm: number): string {
+  return distanceKm < 1
+    ? `${Math.round(distanceKm * 1000)} m`
+    : `${distanceKm.toFixed(1)} km`;
 }
 
 function dedupe<T>(items: T[]): T[] {

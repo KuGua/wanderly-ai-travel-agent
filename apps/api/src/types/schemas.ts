@@ -816,6 +816,16 @@ const personalResearchPlacesDraftSchema = z.object({
   longitude: z.number().min(-180).max(180),
   radiusMeters: z.number().int().min(100).max(50_000),
   category: z.enum(["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER"]).nullable(),
+  /**
+   * What the traveller asked for in their own words — "ramen", "onsen",
+   * "書店". Null when they only asked what is nearby.
+   *
+   * Without this the draft could express "restaurants near here" but not
+   * "ramen near here", so the executor filled the gap by searching for the
+   * category name itself, which is a kind and not a name and matched almost
+   * nothing real.
+   */
+  keyword: z.string().trim().min(1).max(64).nullable(),
   limit: z.number().int().min(1).max(50).nullable(),
 }).strict();
 
@@ -1001,6 +1011,19 @@ export const personalResearchEvidenceSummarySchema = z.discriminatedUnion("outco
   z.object({
     outcome: z.literal("AVAILABLE"),
     capability: personalResearchOperationCapabilitySchema,
+    /**
+     * Who answered, in the supplier's own name, and when.
+     *
+     * The reply is asked to say where a figure came from, and the summary
+     * gave it nothing to say it with — so it cited the tool, telling the
+     * traveller the prices came from "hotel.search". A citation has to name
+     * something outside this system or it verifies nothing.
+     *
+     * Optional because an executor whose provider reports no source should
+     * leave it absent rather than invent one.
+     */
+    supplier: z.string().trim().min(1).max(120).optional(),
+    capturedAt: z.string().datetime().optional(),
     flight: personalResearchFlightEvidenceSummarySchema.optional(),
     hotel: personalResearchHotelEvidenceSummarySchema.optional(),
     accommodation: personalResearchAccommodationEvidenceSummarySchema.optional(),
