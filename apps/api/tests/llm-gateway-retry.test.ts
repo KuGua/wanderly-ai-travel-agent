@@ -24,7 +24,11 @@ function buildClient(behavior: "ok" | "schema-bad" | "5xx" | "5xx-then-ok" | "pa
         parse: async () => {
           client.parseCalls += 1;
           if (behavior === "5xx" || (behavior === "5xx-then-ok" && client.parseCalls === 1)) {
-            throw new Error("upstream returned 502 Bad Gateway");
+            // Carries `status`, the way the SDK's own errors do. The classifier
+            // used to accept a "502" anywhere in the message, which also read a
+            // 429 whose body quoted a 5xx back as a server error; it now trusts
+            // `status` first. A stub without one was testing the loose path.
+            throw Object.assign(new Error("upstream returned 502 Bad Gateway"), { status: 502 });
           }
           if (behavior === "parse-then-ok") {
             if (client.parseCalls === 1) {
