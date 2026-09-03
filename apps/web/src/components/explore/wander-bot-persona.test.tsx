@@ -165,6 +165,7 @@ describe("啥子's seven-click flip game", () => {
     await clickSeven(bot);
     expect(await screen.findByRole("dialog", { name: "抓住啥子" })).toBeInTheDocument();
     expect(document.documentElement.classList.contains("wanderly-flip")).toBe(true);
+    expect(bot.dataset.game).toBe("flip");
   });
 
   it("catching 啥子 ends the game and rights the screen", async () => {
