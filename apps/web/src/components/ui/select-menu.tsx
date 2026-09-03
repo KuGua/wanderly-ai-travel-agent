@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib/utils";
@@ -54,6 +54,8 @@ export function SelectMenu<T extends string>({
   // 44px tile at the bottom of the left rail, where opening downward ran past
   // the viewport and right-aligning pushed it off the left edge entirely.
   const [placement, setPlacement] = useState<{ up: boolean; shiftX: number }>({ up: false, shiftX: 0 });
+  // What the transform is applying right now, readable during measurement.
+  const shiftXRef = useRef(0);
 
   // Opening decides which option is active, so no effect has to sync it back.
   const openMenu = useCallback(() => {
@@ -94,9 +96,17 @@ export function SelectMenu<T extends string>({
     const spaceBelow = window.innerHeight - triggerRect.bottom;
     const spaceAbove = triggerRect.top;
     const up = spaceBelow < listRect.height + margin && spaceAbove > spaceBelow;
+    // `listRect` already carries the previous shift, because the transform is
+    // still applied when this runs. Measuring it as-is made each reopen add a
+    // fresh correction on top of the old one, so the second open drifted and
+    // the third drifted further. Subtract what is currently applied to get
+    // back to where the list actually sits.
+    const naturalLeft = listRect.left - shiftXRef.current;
+    const naturalRight = listRect.right - shiftXRef.current;
     let shiftX = 0;
-    if (listRect.left < margin) shiftX = margin - listRect.left;
-    else if (listRect.right > window.innerWidth - margin) shiftX = window.innerWidth - margin - listRect.right;
+    if (naturalLeft < margin) shiftX = margin - naturalLeft;
+    else if (naturalRight > window.innerWidth - margin) shiftX = window.innerWidth - margin - naturalRight;
+    shiftXRef.current = shiftX;
     setPlacement({ up, shiftX });
   }, [open]);
 
@@ -208,11 +218,14 @@ export function SelectMenu<T extends string>({
                 onPointerEnter={() => setActiveIndex(index)}
                 onClick={() => commit(index)}
                 className={cn(
-                  "flex cursor-pointer items-center gap-2 whitespace-nowrap px-3 py-2 text-sm wanderly-r-sm",
+                  "cursor-pointer whitespace-nowrap px-3 py-2 text-sm wanderly-r-sm",
+                  // Selection is carried by weight as well as the highlight, so
+                  // it does not rest on colour alone; `aria-selected` above is
+                  // what a screen reader reads.
+                  isSelected && "font-semibold",
                   index === activeIndex && "bg-[var(--w-highlight)]",
                 )}
               >
-                <Check aria-hidden="true" className={cn("size-4 shrink-0", !isSelected && "opacity-0")} />
                 {option.label}
               </li>
             );
