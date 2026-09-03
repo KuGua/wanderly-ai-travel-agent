@@ -581,6 +581,25 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
   });
 
+  it("clears the pointer when the stored run belongs to somebody else", async () => {
+    // Two people signing in on the same browser: the storage key is not scoped
+    // per user, so the previous traveller's run id outlives their sign-out.
+    // Reading it back answers 403, not 404, and only 404 used to clear it — so
+    // the chat polled a stranger's run forever, stuck on "Wanderly is
+    // thinking…" with the composer disabled behind it.
+    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    const api = createApi({
+      getAgentRun: vi.fn().mockRejectedValue(
+        new TravelApiError("forbidden", 403, "Not authorized for this Agent run", null),
+      ),
+    });
+    renderChat(api, { initiallyOpen: true });
+
+    await waitFor(() => expect(localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY)).toBeNull());
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
+  });
+
   it("restores a running durable run after mount without submitting another turn", async () => {
     localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
     const api = createApi();

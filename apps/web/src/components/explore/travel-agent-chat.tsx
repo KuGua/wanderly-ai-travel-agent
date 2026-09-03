@@ -458,10 +458,19 @@ export function TravelAgentChat({
   }, [activeRunId, api, refetchAgentRun]);
 
   useEffect(() => {
-    if (
-      !activeRunId ||
-      !(agentRun.error instanceof TravelApiError && agentRun.error.statusCode === 404)
-    ) {
+    // 404 is the run being gone; 403 is it belonging to somebody else. Both
+    // mean the pointer this browser kept is not one the current viewer can
+    // follow, and the second happens the moment two people sign in on the
+    // same browser — the key is not scoped per user, so the previous
+    // traveller's run id survives the sign-out.
+    //
+    // Only 404 used to clear it, so a switched account polled a stranger's
+    // run forever: `isSending` stays true while `activeRunId` is set, which
+    // left the composer disabled under "Wanderly is thinking…" that could
+    // never finish.
+    const unusable = agentRun.error instanceof TravelApiError
+      && (agentRun.error.statusCode === 404 || agentRun.error.statusCode === 403);
+    if (!activeRunId || !unusable) {
       return;
     }
     const staleRun = window.setTimeout(() => {
