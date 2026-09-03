@@ -39,6 +39,7 @@ function ChatHarness({
   onConversationText,
   onThreadInvalidated,
   surface,
+  variant,
 }: {
   controlledThreadId?: string | null;
   initiallyOpen?: boolean;
@@ -49,6 +50,7 @@ function ChatHarness({
   onThreadInvalidated?: () => void;
   /** Defaults to the globe, like the component does. */
   surface?: "EXPLORE" | "TRIP_WORKSPACE";
+  variant?: "floating" | "docked";
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   return (
@@ -60,6 +62,7 @@ function ChatHarness({
       tripId={tripId}
       onThreadInvalidated={onThreadInvalidated}
       {...(surface ? { surface } : {})}
+      {...(variant ? { variant } : {})}
       selectedPlace={selectedPlace}
             onStartNewExploration={onStartNewExploration}
       onConversationText={onConversationText}
@@ -135,6 +138,14 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("TravelAgentChat durable streaming flow", () => {
+  it("keeps the docked composer elevated outside the message viewport", () => {
+    renderChat(createApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
+
+    expect(screen.getByTestId("docked-chat-composer")).toHaveClass("mb-5", "relative", "z-10");
+    expect(screen.getByTestId("docked-chat-composer")).not.toHaveClass("border-2", "wanderly-shadow");
+    expect(screen.queryByText("Enter to send · Shift + Enter for a new line · This thread is private to you and scoped to this trip.")).not.toBeInTheDocument();
+  });
+
   it("links an exploration chat to its bound Trip Planner thread", () => {
     renderChat(createApi(), { tripId: TRIP_ID });
 
@@ -741,6 +752,17 @@ describe("the trip's preference card", () => {
       { fieldKey: "interests", category: "PREFERENCE" as const, value: ["ramen"], inherited: true, options: null, kind: "list" as const },
     ],
   };
+
+  it("renders card actions as underlined links with directional affordances", async () => {
+    const api = createApi({ getPreferenceCard: vi.fn().mockResolvedValue(card) });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const preferenceCard = await screen.findByTestId("trip-preference-card");
+    expect(preferenceCard).not.toHaveClass("wanderly-shadow");
+    expect(screen.getByRole("button", { name: "Edit" })).toHaveClass("underline");
+    expect(screen.getByTestId("trip-preference-submit")).toHaveClass("underline");
+    expect(preferenceCard.querySelectorAll("svg[aria-hidden='true']")).toHaveLength(2);
+  });
 
   it("submits only what the traveller changed", async () => {
     // Writing every field would pin the whole set to this trip, and a later

@@ -13,6 +13,34 @@
 - 航班涨价/售罄、成员日期/出发地变化、visa 来源不确定 fixture；
 - sandbox orchestration 成功、失败、重复及乱序回调。
 
+## Web layout regression
+
+### TS-W1 — Trip workspace keeps the preference card and composer readable
+
+**Objective:** Verify the trip workspace does not apply decorative rotation to
+the preference card, and keeps the private-chat composer visually elevated
+without clipping it at the message viewport boundary.
+
+**Steps:**
+
+1. Open a trip-private thread whose preference card is available.
+2. Inspect the preference card at desktop and narrow workspace widths.
+3. Scroll the conversation to its last message and focus the composer.
+
+**Expected outcomes:**
+
+- The preference card is horizontally aligned; no CSS rotation is applied.
+- Only the input control is bordered and elevated; no redundant outer composer
+  card or helper copy is rendered. It has a visible bottom inset and no
+  horizontal overflow or clipping.
+- Preference-card actions render as underlined text links with a directional
+  icon, retain a visible keyboard focus indicator, and place the submit action
+  at the card's lower-right edge.
+- The preference card uses its thin border and paper grain for hierarchy; it
+  has neither a folded corner nor a full-card hard offset shadow.
+- The message list remains scrollable and leaves enough bottom space for its
+  final content to stay reachable while the composer is visible.
+
 ## HERO 测试
 
 ### TS-H0 — Authenticate with Cognito and list only member trips

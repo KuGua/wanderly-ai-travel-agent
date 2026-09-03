@@ -951,7 +951,7 @@ export function TravelAgentChat({
   }
 
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : "wanderly-cosmos-chat absolute inset-x-3 bottom-3 z-50 flex h-[60dvh] min-h-[300px] flex-col overflow-hidden text-[var(--w-fog)] wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-visible bg-background" : "wanderly-cosmos-chat absolute inset-x-3 bottom-3 z-50 flex h-[60dvh] min-h-[300px] flex-col overflow-hidden text-[var(--w-fog)] wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
       {/* The panel paints its own deep-space ground, so the inner column stays
           transparent rather than laying a second surface over it. */}
       <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>
@@ -983,7 +983,7 @@ export function TravelAgentChat({
         )}
 
         <div ref={panelScrollRef} className={docked
-          ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-4 pt-6"
+          ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6"
           : "flex-1 overflow-y-auto px-5 py-5"} aria-live="polite">
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
@@ -1244,13 +1244,12 @@ export function TravelAgentChat({
         </div>
       </div>
 
-      <form onSubmit={submitMessage} className={docked ? "border-t-2 border-[var(--w-ink)] bg-background px-[clamp(16px,3vw,34px)] pb-[18px] pt-3" : "border-t-2 border-[var(--w-space-line)] px-3 pb-3 pt-2"}>
+      <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5" : "border-t-2 border-[var(--w-space-line)] px-3 pb-3 pt-2"}>
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className={`mb-1.5 flex h-6 max-w-full items-center px-2.5 text-[10px] font-extrabold wanderly-r-xs wanderly-press ${docked ? "bg-[var(--w-mist)] text-primary wanderly-edge-thin" : "wanderly-cosmos-control"}`}><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
         <div className={`${docked ? "mx-auto max-w-[640px]" : ""} flex min-h-14 items-center gap-2 p-1.5 pl-4 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
           <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
           {submitButton}
         </div>
-        {docked ? <p className="mx-auto mt-[7px] max-w-[640px] text-[11px] text-[var(--w-ink)] opacity-75">{t("composerNote")}</p> : null}
       </form>
     </aside>
   );
