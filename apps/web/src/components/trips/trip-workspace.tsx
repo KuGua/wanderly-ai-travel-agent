@@ -15,8 +15,8 @@ import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import {
   useCreateTripThread,
   useGetOrCreateDefaultTripThread,
+  useLatestResearchResult,
   useLatestPlanningRun,
-  useResearchResult,
   useTrip,
   useTripPlans,
   useTripThreads,
@@ -613,9 +613,9 @@ function formatThreadTime(locale: string, iso: string): string {
 }
 
 function ResearchGapBannerWrapper({ tripId }: { tripId: string }) {
-  const research = useResearchResult(tripId);
+  const research = useLatestResearchResult(tripId);
   if (!research.data || research.isLoading) return null;
-  return <ResearchGapBanner result={research.data} />;
+  return <ResearchGapBanner result={research.data.result} />;
 }
 
 /** Accepts either separator so a list pasted from the card round-trips. */

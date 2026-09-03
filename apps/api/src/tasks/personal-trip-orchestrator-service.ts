@@ -152,7 +152,7 @@ export async function runResearch(params: {
       }
       if (coverage.missingDestinations.length > 0) {
         for (const dest of coverage.missingDestinations) {
-          gaps.push({ capability: "flight", code: "NO_RESULTS", destinationId: dest });
+          gaps.push({ capability: "stay", code: "NO_RESULTS", destinationId: dest });
         }
       }
     }
@@ -211,22 +211,43 @@ export async function runResearch(params: {
         { code: "POLICY_DENIED" },
       );
     }
-    if (coverage.missingDestinations.length > 0) {
-      // Spec §10.6 — refuse to synthesize a plan when destinations lack stay
-      // coverage; the model would be flying blind on those branches.
-      throw Object.assign(
-        new Error(`Research uncovered all required candidates: ${coverage.missingDestinations.join(", ")}`),
-        { code: "PLANNING_DATA_UNAVAILABLE" },
-      );
+    // Research completeness and commercial authority are separate gates.
+    // An unavailable cell is a visible gap, not a failed run; however we must
+    // not synthesize a plan for a destination that has neither a LIVE flight
+    // nor any accommodation coverage. Such a run persists a safe summary with
+    // no plan/booking authority.
+    const uncoveredStays = new Set(coverage.missingDestinations);
+    const eligibleDestinations = destinationCandidates.filter((destination) =>
+      !uncoveredStays.has(destination)
+      && coverage.allFlights.some((flight) => flight.destination === destination),
+    );
+    if (eligibleDestinations.length === 0) {
+      for (const destination of destinationCandidates) {
+        if (!coverage.allFlights.some((flight) => flight.destination === destination)) {
+          gaps.push({ capability: "flight", code: "NO_RESULTS", destinationId: destination });
+        }
+      }
+      const researchResultId = await recordPlanningResearchResult({
+        ctx: params.ctx,
+        tripId: run.tripId,
+        snapshotId: run.snapshotId,
+        agentTaskRunId: run.id,
+        status: "COMPLETED_WITH_GAPS",
+        serviceGaps: dedupeGaps(gaps).slice(0, 32),
+      });
+      metrics.inc("research_stage_total", { stage: "completed", outcome: "success" });
+      return { outcome: "COMPLETED_WITH_GAPS", researchResultId };
     }
 
-    // Pick a primary destination deterministically (the model still ranks).
+    // Pick a primary eligible destination deterministically (the model still
+    // ranks within the evidence it is allowed to cite).
     const counts = new Map<string, number>();
     for (const flight of coverage.allFlights) {
+      if (!eligibleDestinations.includes(flight.destination)) continue;
       counts.set(flight.destination, (counts.get(flight.destination) ?? 0) + 1);
     }
     const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d);
-    const recommended = sorted[0] ?? destinationCandidates[0];
+    const recommended = sorted[0] ?? eligibleDestinations[0];
 
     const initialHash = hashProjectionManifest(snapshot.authorizedData);
 
@@ -325,6 +346,16 @@ export async function runResearch(params: {
 
   const outcome: ResearchRunOutcome = status === "COMPLETE" ? "COMPLETED" : "COMPLETED_WITH_GAPS";
   return { outcome, researchResultId };
+}
+
+function dedupeGaps(gaps: ReadonlyArray<ServiceGap>): ServiceGap[] {
+  const seen = new Set<string>();
+  return gaps.filter((gap) => {
+    const key = `${gap.capability}:${gap.code}:${gap.destinationId ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 interface InvokeCapabilityArgs {

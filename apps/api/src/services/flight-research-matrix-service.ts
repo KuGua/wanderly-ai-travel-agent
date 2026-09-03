@@ -16,9 +16,10 @@ export type FlightResearchCell = {
 };
 
 /**
- * A final flight-aware plan requires fresh, grounded LIVE evidence for every
- * authorized origin × destination pair. An attempted but unavailable search is
- * auditable but is not sufficient to synthesize or persist a final plan.
+ * Research completeness answers only whether every authorized
+ * origin × destination cell was attempted. An explicit UNAVAILABLE outcome is
+ * auditable coverage and later becomes a service gap; only MISSING means the
+ * planner failed to run a required search.
  */
 export async function evaluateFlightResearchCompleteness(params: {
   snapshotId: string;
@@ -43,7 +44,21 @@ export async function evaluateFlightResearchCompleteness(params: {
       ? "LIVE" : matching.some((run) => run.outcome === "UNAVAILABLE") ? "UNAVAILABLE" : "MISSING";
     return { originId, destinationId, outcome };
   }));
-  return { complete: cells.every((cell) => cell.outcome === "LIVE"), cells };
+  return { complete: cells.every((cell) => cell.outcome !== "MISSING"), cells };
+}
+
+/**
+ * Commercial evidence is a separate gate from research completeness. A plan
+ * may tolerate individual unavailable cells, but it must not recommend a
+ * destination for which no controlled flight search produced LIVE evidence.
+ */
+export function hasCommercialFlightAuthority(
+  cells: ReadonlyArray<FlightResearchCell>,
+  destinationId: string,
+): boolean {
+  return cells.some((cell) =>
+    cell.destinationId === destinationId && cell.outcome === "LIVE",
+  );
 }
 
 /**

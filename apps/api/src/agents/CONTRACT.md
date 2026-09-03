@@ -119,7 +119,7 @@ Defined in `policy-gate.ts:9-13`:
 | --- | --- |
 | `personal` | `profile:read`, `profile:write:propose`, `consent:read`, `chat:read` |
 | `shared` | `snapshot:read`, `plan:write:propose`, `readiness:read`, `flight:search`, `hotel:search`, `accommodation:discover`, `activities:search`, `places:search`, `places:adopt`, `navigation:route`, `mobility:search` |
-| `review` | `snapshot:read`, `plan:write:propose` |
+| `review` | `snapshot:read` |
 | `public-content` | none |
 
 Any Skill whose `allowedTools` contains a value not in its agent kind's list

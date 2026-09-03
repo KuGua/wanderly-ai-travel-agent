@@ -108,7 +108,7 @@ function sortedCapabilities(gaps: ReadonlyArray<{ capability: string }>): string
 
 /**
  * Reduce a list of gaps into a stable, model-safe DTO. The web client
- * receives this through `/api/v1/trips/{tripId}/research-results` and renders
+ * receives this through `/api/v1/trips/{tripId}/research/latest` and renders
  * the `RESEARCH_SUMMARY` banner.
  */
 export function toResearchResultDto(row: {

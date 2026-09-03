@@ -696,15 +696,6 @@ export function useTripPlaces(tripId: string) {
   });
 }
 
-export function useResearchResult(tripId: string, agentTaskRunId?: string) {
-  const api = useTravelApi();
-  return useQuery({
-    queryKey: [...tripKeys.researchResults(tripId), agentTaskRunId ?? "latest"],
-    queryFn: () => api.getResearchResult!(tripId, agentTaskRunId),
-    enabled: !!api.getResearchResult,
-  });
-}
-
 // ── Phase 6 / Personal Trip Orchestrator ────────────────────────────────────
 export function useLatestResearchResult(tripId: string) {
   const api = useTravelApi();
@@ -724,7 +715,6 @@ export function useConfirmResearchCommand(tripId: string) {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: personalOrchestrationKeys.researchLatest(tripId) });
       qc.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
-      qc.invalidateQueries({ queryKey: tripKeys.researchResults(tripId) });
       void vars; // keep TS happy
     },
   });

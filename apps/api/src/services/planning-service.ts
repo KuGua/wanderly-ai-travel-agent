@@ -59,7 +59,7 @@ import { hotelSearchModelArgumentsSchema } from "./hotel-search-service.js";
 import { accommodationDiscoveryModelArgumentsSchema } from "./accommodation-discovery-service.js";
 import { loadCurrentConfirmedSearchPreferences } from "./flight-search-preferences-service.js";
 import { loadCurrentStaySearchPreferences } from "./stay-search-preferences-service.js";
-import { evaluateFlightResearchCompleteness, flightMatrixToGaps, FlightResearchIncompleteError } from "./flight-research-matrix-service.js";
+import { evaluateFlightResearchCompleteness, flightMatrixToGaps, FlightResearchIncompleteError, hasCommercialFlightAuthority } from "./flight-research-matrix-service.js";
 import {
   activitiesMatrixToGaps,
   evaluateActivitiesResearchCompleteness,
@@ -218,10 +218,11 @@ async function hasAccommodationCoverage(params: {
  * Spec §6.1 / §10.6 — research coverage matrix.
  *
  * Iterates the full cartesian of `{origin ∈ departureCities} × {destination ∈ destinationCandidates}`,
- * plus one stay/ground query per destination. UNAVAILABLE outcomes are persisted
- * as `provider_search_runs` rows and contribute to `missingDestinations`. The
- * handler uses the result to gate `generatePlan` — never running the model until
- * every configured candidate has either LIVE or UNAVAILABLE coverage.
+ * plus one stay query per destination. Flight LIVE and UNAVAILABLE outcomes are
+ * persisted as `provider_search_runs`; `missingDestinations` tracks failed stay
+ * coverage. The handler uses both surfaces to gate `generatePlan` — never
+ * running the model until every flight cell was attempted and at least one
+ * destination has commercial flight authority plus stay coverage.
  *
  * Concurrency: `Promise.allSettled` here is safe; providers are isolated and
  * per-cell deadlines are not enforced at this layer. Production deployment
@@ -274,7 +275,20 @@ export async function researchCoverageForSnapshot(params: {
               errorCode: null,
             });
           }
-          return; // UNAVAILABLE → not added to flights, recorded as missing
+          return; // UNAVAILABLE → no offer, but the attempted cell is durable
+        }
+        if (params.agentTaskRunId) {
+          await db.insert(providerSearchRuns).values({
+            snapshotId: params.snapshotId,
+            agentTaskRunId: params.agentTaskRunId,
+            category: "flight",
+            providerName: result.source,
+            originId: origin.slice(0, 16),
+            destinationId: destination.slice(0, 128),
+            requestFingerprint: randomUUID(),
+            outcome: "LIVE",
+            errorCode: null,
+          });
         }
         evaluatedDestinations.add(destination);
         allFlights.push(...result.data);
@@ -906,6 +920,9 @@ export async function generatePlan(params: {
             departureCities: snapshot.departureCities as string[], destinationCandidates: snapshot.destinationCandidates as string[],
           });
           if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
+          if (!hasCommercialFlightAuthority(matrix.cells, params.destination)) {
+            throw new PlanningDataUnavailableError([`flight-authority:${params.destination}`]);
+          }
           // Re-check usable flight coverage before accepting final synthesis.
           // Stay unavailability is intentionally a Phase 4 service gap and is
           // represented as an empty selection, never a runtime fixture.
@@ -1122,6 +1139,9 @@ export async function generatePlan(params: {
       // auditable gap rather than a fatal condition. MISSING cells (the
       // planner never even tried) still hard-fail the round.
       if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
+      if (!hasCommercialFlightAuthority(matrix.cells, params.destination)) {
+        throw new PlanningDataUnavailableError([`flight-authority:${params.destination}`]);
+      }
       if (hotelEnabled) {
         const hotelMatrix = await evaluateHotelResearchCompleteness({
           snapshotId: params.snapshotId,
