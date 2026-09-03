@@ -26,6 +26,10 @@ describe("zoom-aware pin selection", () => {
   it("maps zoom bands to country, province/state, and city clicks", () => {
     expect(pinGranularityForZoom(2.25)).toBe("country");
     expect(pinGranularityForZoom(4.5)).toBe("region");
+    // Cities start at 5.5 (lowered from 6.5): a click just below stays a
+    // region, and 5.5 up resolves to a city.
+    expect(pinGranularityForZoom(5.4)).toBe("region");
+    expect(pinGranularityForZoom(5.5)).toBe("city");
     expect(pinGranularityForZoom(6.5)).toBe("city");
   });
 
