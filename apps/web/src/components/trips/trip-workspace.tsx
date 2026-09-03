@@ -318,7 +318,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   };
 
   return (
-    <main className="grid h-[calc(100dvh-62px)] min-h-[620px] grid-cols-1 overflow-hidden bg-background sm:h-dvh md:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)] xl:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)_minmax(280px,0.9fr)]">
+    <main className="grid h-[calc(100dvh-62px)] min-h-[620px] grid-cols-1 overflow-x-hidden bg-background sm:h-dvh md:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)] xl:grid-cols-[minmax(220px,0.82fr)_minmax(420px,1.55fr)_minmax(280px,0.9fr)]">
       <aside className="relative hidden min-h-0 min-w-0 flex-col border-r-2 border-[var(--w-ink)] bg-background md:flex" aria-label={t("threads.heading")}>
         <header className="flex h-[66px] shrink-0 items-center justify-between gap-2 border-b-2 border-[var(--w-ink)] px-4">
           {editingTitle ? (

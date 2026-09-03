@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 
@@ -129,7 +130,7 @@ export function TripPreferenceCard({
     <section
       data-testid="trip-preference-card"
       aria-label={t("prefCardTitle")}
-      className="relative isolate mx-auto mb-[18px] w-full max-w-[420px] bg-card px-6 py-5 text-sm text-[var(--w-ink)] rounded-none wanderly-edge-thin wanderly-shadow -rotate-[0.3deg]"
+      className="relative isolate mx-auto mb-[18px] w-full max-w-[420px] bg-card px-6 py-5 text-sm text-[var(--w-ink)] rounded-none wanderly-edge-thin"
     >
       {/* Grain sits above the ground and below the text, and takes no clicks.
           `mix-blend-overlay` lets the neutral grayscale noise read as paper
@@ -172,9 +173,10 @@ export function TripPreferenceCard({
           type="button"
           onClick={() => setEditing((current) => !current)}
           aria-pressed={editing}
-          className="min-h-10 shrink-0 px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press"
+          className="inline-flex min-h-11 shrink-0 items-center gap-1 text-xs font-extrabold text-[var(--w-ink)] underline decoration-2 underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
         >
           {editing ? t("prefCardDone") : t("prefCardEdit")}
+          <ArrowRight aria-hidden="true" className="size-3.5" />
         </button>
       </div>
 
@@ -263,15 +265,16 @@ export function TripPreferenceCard({
         </p>
       ) : null}
 
-      <div className="relative z-[2] mt-4 mr-24 flex justify-end">
+      <div className="relative z-[2] mt-4 flex justify-end">
         <button
           type="button"
           data-testid="trip-preference-submit"
           disabled={saving}
           onClick={submit}
-          className="min-h-11 shrink-0 px-7 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action"
+          className="inline-flex min-h-11 items-center gap-1 text-xs font-extrabold text-[var(--w-ink)] underline decoration-2 underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? t("prefCardSaving") : t("prefCardSubmit")}
+          <ArrowRight aria-hidden="true" className="size-3.5" />
         </button>
       </div>
     </section>

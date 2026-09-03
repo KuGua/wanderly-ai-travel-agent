@@ -94,6 +94,39 @@ Git. Each teammate may use their own Google AI Studio key. If the team shares a
 key, transfer it privately through the team's approved secret-sharing channel,
 never through Git, chat screenshots or committed documentation.
 
+## Live tool credentials
+
+The checked-in `apps/api/.env.example` keeps every external credential blank.
+The local `.env` selects one provider per mutually exclusive capability and
+enables the provider capabilities, but an adapter remains fail-closed until its required
+credential is present. The current local baseline selects SerpApi for flights,
+Nuitee for priced hotels, OpenRouteService for place/directions,
+OpenTripMap for nearby places and non-price accommodation discovery, and Viator
+MCP for activities.
+
+| Capability | Required variable(s) | Notes |
+| --- | --- | --- |
+| Model planning and tool calling | `MODEL_GATEWAY_API_KEY` | Required for all model-backed plans and conversations. The selected provider/model must match the key. |
+| Flights | `SERPAPI_API_KEY` | The local baseline selects `FLIGHT_PROVIDER=serpapi`. |
+| Transfers (optional) | `AMADEUS_CLIENT_ID`, `AMADEUS_CLIENT_SECRET` | Transfers use Amadeus; local development uses `AMADEUS_ENVIRONMENT=test`. |
+| Places and directions | `ORS_API_KEY` | One OpenRouteService key enables both tools. |
+| Nearby places and accommodation discovery | `OPENTRIPMAP_API_KEY` | This is not priced inventory or availability. |
+| Hotel quotes | `NUITEE_API_KEY` | Nuitee also requires per-user nationality authorization before a quote request. |
+| Activities | none | The currently integrated Viator MCP endpoint does not use an API key. |
+
+`FLIGHT_PROVIDER` can instead be set to `flightapi` with
+`FLIGHTAPI_API_KEY`, or to `amadeus` with `AMADEUS_CLIENT_ID` and
+`AMADEUS_CLIENT_SECRET`. For hotels, set
+`HOTEL_PROVIDER=serpapi`, `SERPAPI_HOTEL_ENABLED=true`, and
+`SERPAPI_HOTEL_API_KEY` to use SerpApi instead of Nuitee. Do not enable two
+providers for the same capability: selection is intentionally deterministic.
+All listed values are server-only; restart the API and Worker after changing
+them. Until a required credential is entered, the relevant tool reports
+`UNAVAILABLE/NOT_CONFIGURED` and never uses demo or fixture data.
+Set `MODEL_GATEWAY_TOOL_CALLING_ENABLED=true` and
+`PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true` only after configuring the
+model gateway; both are intentionally disabled in the current local setup.
+
 `AUTH_MODE=local-dev` does not disable authorization and does not let the
 browser fabricate a token or user ID. The backend supplies one fixed,
 development-only, server-owned identity while all normal ownership and
