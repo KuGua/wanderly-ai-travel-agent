@@ -59,7 +59,18 @@ export function validateSnapshotBoundFlightSearch(params: {
   const origin = resolveAirportReference(input.originId);
   const destination = resolveAirportReference(input.destinationId);
   if (!origin || !destination) throw new Error("flight search airport is not controlled");
-  if (!params.snapshot.destinationCandidates.includes(input.destinationId)) {
+  // Matched against the airport's id or its city, because the two callers
+  // disagree about what a candidate is: real snapshots hold city names
+  // ("Tokyo"), written by the traveller's confirmed brief, while this
+  // function's own tests hold airport codes ("NRT"). Comparing `destinationId`
+  // against city names alone made this check and the controlled-airport check
+  // above mutually exclusive — any value passing one failed the other, so no
+  // flight search could ever be valid, and every planning run died here.
+  const accepted = new Set([destination.id.toLowerCase(), destination.city.trim().toLowerCase()]);
+  const inSnapshot = params.snapshot.destinationCandidates.some(
+    (candidate) => accepted.has(candidate.trim().toLowerCase()),
+  );
+  if (!inSnapshot) {
     throw new Error("flight search destination is not in snapshot candidates");
   }
   if (input.departureDate !== params.snapshot.travelDateStart

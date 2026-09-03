@@ -137,11 +137,20 @@ export async function buildConversationMemoryContext(
   // rule; the source says where it came from.
   const notes: ConversationMemoryFact[] = [];
   let spent = 0;
+  let dropped = 0;
   for (const memory of await listFreeTextMemories(ownerUserId)) {
-    if (notes.length >= CONVERSATION_MEMORY_MAX_NOTES) break;
-    if (spent + memory.content.length > CONVERSATION_FREE_TEXT_BUDGET_CHARS) continue;
+    if (notes.length >= CONVERSATION_MEMORY_MAX_NOTES) { dropped += 1; continue; }
+    if (spent + memory.content.length > CONVERSATION_FREE_TEXT_BUDGET_CHARS) { dropped += 1; continue; }
     spent += memory.content.length;
     notes.push({ field: "note", value: memory.content, category: "PREFERENCE", source: "HIGHLIGHT" });
+  }
+  // Twenty notes may be kept and each may run to 500 characters, so 10,000
+  // characters can be stored against a 2,000-character budget: a traveller can
+  // hold twenty notes while only four reach the model, and nothing anywhere
+  // says so. Counting it is the least that should be true before deciding
+  // whether to raise the budget, rank the notes, or tell them.
+  if (dropped > 0) {
+    metrics.inc("conversation_memory_notes_dropped_total", undefined, dropped);
   }
 
   const all = [...items, ...notes];

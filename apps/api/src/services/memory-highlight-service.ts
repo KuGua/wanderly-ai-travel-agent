@@ -15,6 +15,7 @@
 import { MEMORY_FIELD_CATALOG, memoryFieldDefinition } from "../memory/memory-field-catalog.js";
 import { metrics } from "../observability/metrics.js";
 import { modelGateway } from "../providers/gateway-factory.js";
+import { sensitiveHighlightCategory, type SensitiveHighlightCategory } from "../memory/sensitive-highlight.js";
 import type { RequestContext } from "../utils/context.js";
 import {
   FREE_TEXT_MEMORY_MAX_CHARS,
@@ -28,6 +29,8 @@ export type HighlightOutcome =
   | { outcome: "REMEMBERED_NOTE"; memoryId: string; remaining: number }
   | { outcome: "TOO_LONG"; length: number; limit: number }
   | { outcome: "LIST_FULL"; limit: number }
+  /** Carries a field the profile form owns; refused rather than kept as a note. */
+  | { outcome: "SENSITIVE_FIELD"; fieldKey: SensitiveHighlightCategory }
   | { outcome: "EMPTY" };
 
 /** Only fields the profile form does not own, so a highlight cannot set nationality. */
@@ -64,6 +67,7 @@ function recordOutcome(outcome: HighlightOutcome): HighlightOutcome {
     : outcome.outcome === "REMEMBERED_NOTE" ? "note"
     : outcome.outcome === "TOO_LONG" ? "too_long"
     : outcome.outcome === "LIST_FULL" ? "list_full"
+    : outcome.outcome === "SENSITIVE_FIELD" ? "sensitive_field"
     : "empty";
   metrics.inc("memory_highlight_outcomes_total", { outcome: label });
   return outcome;
@@ -84,6 +88,17 @@ export async function rememberHighlight(params: {
   // not cost a round trip, and the answer is the same either way.
   if (highlight.length > FREE_TEXT_MEMORY_MAX_CHARS) {
     return recordOutcome({ outcome: "TOO_LONG", length: highlight.length, limit: FREE_TEXT_MEMORY_MAX_CHARS });
+  }
+
+  // Checked before the model call and before any storage. These three fields
+  // are withheld from the conversation on purpose, and typed extraction cannot
+  // reach them — which used to mean the sentence fell through to a free-text
+  // note, and notes go into the prompt on every turn. Refusing and saying
+  // where the field belongs keeps the traveller able to record it without
+  // routing it through the model.
+  const sensitive = sensitiveHighlightCategory(highlight);
+  if (sensitive) {
+    return recordOutcome({ outcome: "SENSITIVE_FIELD", fieldKey: sensitive });
   }
 
   const extracted = await tryExtract(highlight, params.ctx, params.signal);

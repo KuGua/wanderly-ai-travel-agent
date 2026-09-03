@@ -170,9 +170,18 @@ export async function loadActiveQuoteNationality(params: {
   tripId: string;
   memberId: string;
   now?: Date;
+  /**
+   * Read inside the caller's transaction. Trip activation grants the
+   * authorization and accepts the planning task in one transaction, and the
+   * accept has to see the grant it just made — reading through `db` instead
+   * looked outside the transaction, found nothing, and refused the task with
+   * "a confirmed Nuitee hotel quote nationality is required" for a trip that
+   * had just been given one.
+   */
+  tx?: Parameters<Parameters<typeof db.transaction>[0]>[0];
 }): Promise<{ id: string; version: number; nationality: string } | null> {
   const now = params.now ?? new Date();
-  const [row] = await db.select().from(staySearchProviderAuthorizations).where(and(
+  const [row] = await (params.tx ?? db).select().from(staySearchProviderAuthorizations).where(and(
     eq(staySearchProviderAuthorizations.tripId, params.tripId),
     eq(staySearchProviderAuthorizations.memberId, params.memberId),
     eq(staySearchProviderAuthorizations.providerName, "nuitee_connect"),
