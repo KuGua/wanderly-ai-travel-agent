@@ -211,6 +211,31 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(explore).not.toHaveClass("wanderly-cosmos-control");
   });
 
+  it("explains a destination-resolution rejection without dropping the proposal", async () => {
+    const updateDraftTripBrief = vi.fn().mockRejectedValue(
+      new TravelApiError("DESTINATION_UNRESOLVED: use an unambiguous supported city name", 422, "Unprocessable Entity", null),
+    );
+    const api = createApi({
+      updateDraftTripBrief,
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "trip.brief_proposed",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          proposal: { destinationCandidates: ["Suzhou"] },
+        });
+        await untilAborted(signal);
+      }),
+    });
+
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
+    await submitFromCapsule("Go to Suzhou");
+    fireEvent.click(await screen.findByRole("button", { name: "Save Suzhou to this trip" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("We couldn't verify that destination.");
+    expect(screen.getByText("Set Suzhou as the destination?")).toBeInTheDocument();
+  });
+
   it("renders the empty-thread introduction as a centred session slogan, not an agent message", async () => {
     renderChat(createApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
 

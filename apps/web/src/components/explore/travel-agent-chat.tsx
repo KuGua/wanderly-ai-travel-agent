@@ -1637,6 +1637,7 @@ function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
   }
   if (error instanceof TravelApiError) {
     if (error.statusCode === null) return t("networkError");
+    if (error.message.startsWith("DESTINATION_UNRESOLVED:")) return t("destinationUnresolved");
     if (error.statusCode === 401 || error.statusCode === 403) return t("authenticationRequired");
     if (error.statusCode === 502 || error.statusCode === 504) return t("providerUnavailable");
     if (error.statusCode === 404) return t("threadMissing");

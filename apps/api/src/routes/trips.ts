@@ -45,6 +45,7 @@ import { metrics } from "../observability/metrics.js";
 import { createConstraintSnapshot } from "../services/planning-service.js";
 import { acceptResearchTask } from "../tasks/task-repository.js";
 import { saveConfirmedSearchPreferences } from "../services/flight-search-preferences-service.js";
+import { normalizeBriefDestinations } from "../services/trip-brief-proposal-service.js";
 
 const tripIdParamSchema = z.object({ tripId: z.string().uuid() }).strict();
 
@@ -614,7 +615,7 @@ export async function tripRoutes(app: FastifyInstance) {
       description: "Apply a creator-confirmed private-chat update or creator-authored brief edit to a DRAFT trip.",
       tags: ["trips"], params: toJsonSchema(tripIdParamSchema),
       body: toJsonSchema(updateDraftTripBriefRequestSchema),
-      response: { 200: toJsonSchema(updateDraftTripBriefResponseSchema), 403: toJsonSchema(errorResponseSchema), 404: toJsonSchema(errorResponseSchema), 409: toJsonSchema(errorResponseSchema) },
+      response: { 200: toJsonSchema(updateDraftTripBriefResponseSchema), 403: toJsonSchema(errorResponseSchema), 404: toJsonSchema(errorResponseSchema), 409: toJsonSchema(errorResponseSchema), 422: toJsonSchema(errorResponseSchema) },
     },
   }, async (request) => {
     const { tripId } = tripIdParamSchema.parse(request.params);
@@ -626,7 +627,15 @@ export async function tripRoutes(app: FastifyInstance) {
       if (trip.status !== "DRAFT") throw new ApiError(409, "Conflict", "TRIP_NOT_DRAFT: trip brief can no longer be updated from chat");
       if (trip.createdBy !== request.user.id) throw new ApiError(403, "Forbidden", "Only the creator may confirm a draft brief update");
 
-      const added = body.destinationCandidates ?? [];
+      const submittedDestinations = body.destinationCandidates === undefined
+        ? undefined
+        : normalizeBriefDestinations(body.destinationCandidates);
+      if (submittedDestinations === null) {
+        metrics.inc("trip_brief_destination_resolution_total", { result: "unresolved" });
+        throw new ApiError(422, "Unprocessable Entity", "DESTINATION_UNRESOLVED: use an unambiguous supported city name");
+      }
+      if (submittedDestinations) metrics.inc("trip_brief_destination_resolution_total", { result: "accepted" });
+      const added = submittedDestinations ?? [];
       const nextDestinations = body.replaceDestinationCandidates
         ? [...added]
         : [...(trip.destinationCandidates as string[])];

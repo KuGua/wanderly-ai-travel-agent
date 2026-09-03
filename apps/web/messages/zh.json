@@ -277,6 +277,7 @@
       "networkError": "暂时无法连接旅行服务。请检查网络后重试。",
       "conversationBusy": "上一条消息仍在创建中。请稍等片刻后重试。",
       "requestInvalid": "这条消息暂时无法被接受。请刷新对话后重试。",
+      "destinationUnresolved": "无法确认这个目的地。请使用受支持的城市名，或从地图中选择地点。",
       "prefCardSaveFailed": "偏好保存失败，请检查后重试。",
       "prefCardSaved": "已保存到本次行程。",
       "genericError": "消息发送失败，请重试。",

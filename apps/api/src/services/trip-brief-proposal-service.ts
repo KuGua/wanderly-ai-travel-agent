@@ -1,11 +1,31 @@
 import type { ConversationPlace } from "../types/schemas.js";
+import { getLocationReferenceResolver } from "../location-reference/location-reference-resolver.js";
 
 export type TripBriefProposal = {
   departureCities?: string[];
   destinationCandidates?: string[];
   travelDateStart?: string;
+  travelDateEnd?: string;
   travelDays?: number;
 };
+
+/**
+ * Combines verified owner text with the narrow scheduling facts that a model
+ * may return after the owner accepts a same-turn assistant suggestion. Model
+ * output is deliberately unable to create a place or departure fact.
+ */
+export function mergeTripBriefProposal(
+  direct: TripBriefProposal | null,
+  assistantAcceptance: TripBriefProposal | undefined,
+): TripBriefProposal | undefined {
+  const schedulingOnly = assistantAcceptance ? {
+    ...(assistantAcceptance.travelDateStart ? { travelDateStart: assistantAcceptance.travelDateStart } : {}),
+    ...(assistantAcceptance.travelDateEnd ? { travelDateEnd: assistantAcceptance.travelDateEnd } : {}),
+    ...(assistantAcceptance.travelDays !== undefined ? { travelDays: assistantAcceptance.travelDays } : {}),
+  } : {};
+  const merged = { ...schedulingOnly, ...direct };
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
 
 /** Extracts only explicit, current-turn facts; never history or a persisted question. */
 export function proposeTripBriefFromTurn(question: string, place?: ConversationPlace): TripBriefProposal | null {
@@ -16,7 +36,13 @@ export function proposeTripBriefFromTurn(question: string, place?: ConversationP
   // duration it cannot see is a duration the destination swallows whole.
   const text = normalizeChineseNumerals(question);
   const travelDays = extractDays(text);
-  const destination = place?.name.trim() || extractDestination(text);
+  // A conversational noun is not a destination until the server can resolve
+  // it to one unambiguous city. In particular this keeps pronouns ("me") and
+  // prose fragments from reaching the review card merely because they followed
+  // the word "to". The canonical city label is also what the draft-brief
+  // write boundary persists, so the preview cannot promise a different place
+  // from the one planning later receives.
+  const destination = resolveBriefDestination(place?.name.trim() || extractDestination(text));
   const departure = extractDeparture(text);
   const travelDateStart = extractDate(text);
   if (!departure && !destination && !travelDateStart && travelDays === undefined) return null;
@@ -92,8 +118,51 @@ function routeWithoutVerb(question: string): { from: string; to: string } | null
   const from = match[1].trim();
   const to = match[2].trim();
   const lastWord = from.split(/\s+/).at(-1) ?? "";
-  if (!from || !to || NOT_A_PLACE.test(lastWord)) return null;
+  // A bare "A to B" is intentionally supported for itinerary notation, but
+  // only when *both* sides are known places. Without this check, ordinary
+  // English such as "Introduce Shanghai to me" becomes a fabricated route.
+  if (!from || !to || NOT_A_PLACE.test(lastWord)
+    || !resolveBriefDestination(from) || !resolveBriefDestination(to)) return null;
   return { from, to };
+}
+
+/**
+ * Converts a user-facing city spelling to the server-owned canonical city
+ * label. `null` is a normal, fail-closed result for unknown or ambiguous
+ * text; callers must not substitute a model or browser value.
+ */
+export function resolveBriefDestination(value: string | undefined): string | undefined {
+  const candidate = value?.trim();
+  if (!candidate) return undefined;
+  try {
+    const reference = getLocationReferenceResolver().resolveDestinationReference({
+      destinationId: candidate,
+      cityName: candidate,
+    });
+    return reference?.cityName;
+  } catch {
+    // The reference dataset is an allow-list, never an availability
+    // dependency for chat. If it cannot load, decline the proposal rather
+    // than failing the whole conversation or accepting unverified text.
+    return undefined;
+  }
+}
+
+/**
+ * Final write-boundary normalizer for draft-brief destination input.
+ * Every submitted candidate must resolve, including values supplied by a
+ * stale client or a caller that did not originate from the conversation UI.
+ */
+export function normalizeBriefDestinations(candidates: string[]): string[] | null {
+  const normalized: string[] = [];
+  for (const candidate of candidates) {
+    const resolved = resolveBriefDestination(candidate);
+    if (!resolved) return null;
+    if (!normalized.some((existing) => existing.localeCompare(resolved, undefined, { sensitivity: "accent" }) === 0)) {
+      normalized.push(resolved);
+    }
+  }
+  return normalized;
 }
 
 function extractDestination(question: string): string | undefined {

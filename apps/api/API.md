@@ -39,6 +39,15 @@ Authorization: Bearer <cognito-access-token>
 The `x-correlation-id` response header always matches `correlationId` in an
 error response body. Request validation failures use `400 Bad Request`.
 
+### Draft brief destination validation
+
+`PATCH /api/v1/trips/:tripId/draft-brief` accepts destination candidates only
+when each supplied city resolves uniquely through the server location-reference
+dataset. Accepted localized spellings are stored as the canonical city name.
+An unknown, ambiguous, or non-place value returns `422 DESTINATION_UNRESOLVED`;
+the trip brief and its pending proposal are left unchanged. This endpoint never
+uses a browser label, assistant reply, or free-text fallback as a destination.
+
 ---
 
 ## Custom account recovery

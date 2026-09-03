@@ -1032,6 +1032,29 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Only the creator may manually rename. The change sets `name_source=MANUAL`; the audit event records the source but never title text.
 - Bob cannot submit through, view, or restore Alice's old session identifiers.
 
+### TS-EXPLORE-TRIP-3 — Destination brief proposals require explicit, resolvable cities
+
+**Stories:** H1
+**Objective:** Verify that private conversation can suggest a destination only when the owner explicitly sets a city that the server can resolve unambiguously.
+
+**Starting conditions:** Alice owns a `DRAFT` Trip. The server location-reference dataset is available and contains Shanghai and Suzhou. No destination proposal is pending.
+
+**Steps:**
+
+1. Send `Introduce Shanghai to me`, `Tell me about Tokyo`, and `Is Paris expensive?` in separate private turns.
+2. Send `from Singapore to Shanghai` and inspect the private brief proposal card.
+3. Submit `me`, an unknown city, and an ambiguous city directly to `PATCH /trips/:tripId/draft-brief` as Alice.
+4. Submit a supported localized city spelling such as `上海` through the same endpoint.
+5. Make the location-reference resolver unavailable, then send an otherwise explicit destination request.
+
+**Expected outcomes:**
+
+- The discussion turns create no `tripBriefProposal`, no `pendingBriefProposal`, and no destination card; assistant prose mentioning a city does not itself become a trip fact.
+- The route proposal names server-normalized cities and appears only after both route endpoints resolve uniquely.
+- Each invalid PATCH returns `422 DESTINATION_UNRESOLVED`; the existing brief, title and pending proposal remain unchanged.
+- A supported localized spelling is persisted as its canonical city name. No browser label, LLM output, fixture or free-text fallback substitutes for a failed resolution.
+- Resolver failure fails closed: no destination proposal is emitted and no trip fact is written. Telemetry records only the bounded resolution result, never the conversation text or city value.
+
 ### TS-OTEL-2 — Worker continuity after durable boundary
 
 **Stories:** P3

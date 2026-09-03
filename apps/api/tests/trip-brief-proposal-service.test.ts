@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { proposeTripBriefFromTurn } from "../src/services/trip-brief-proposal-service.js";
+import { mergeTripBriefProposal, normalizeBriefDestinations, proposeTripBriefFromTurn } from "../src/services/trip-brief-proposal-service.js";
 
 describe("proposeTripBriefFromTurn", () => {
   it("extracts explicit English destination and duration", () => {
@@ -10,6 +10,9 @@ describe("proposeTripBriefFromTurn", () => {
   });
   it("does not create a candidate from unrelated text", () => {
     expect(proposeTripBriefFromTurn("What food should I try?")).toBeNull();
+  });
+  it("does not turn an English explanation request into an itinerary route", () => {
+    expect(proposeTripBriefFromTurn("Introduce Shanghai to me")).toBeNull();
   });
   it("extracts an explicit Chinese departure city without treating it as a route plan", () => {
     expect(proposeTripBriefFromTurn("从上海走")).toEqual({ departureCities: ["上海"] });
@@ -31,7 +34,7 @@ describe("the §9 acceptance sentence", () => {
   it("reads all four facts the confirmation card is supposed to show", () => {
     expect(proposeTripBriefFromTurn("上海出发，12月10日左右去苏州玩三天")).toEqual({
       departureCities: ["上海"],
-      destinationCandidates: ["苏州"],
+      destinationCandidates: ["Suzhou"],
       travelDateStart: "2026-12-10",
       travelDays: 3,
     });
@@ -47,7 +50,7 @@ describe("the §9 acceptance sentence", () => {
   it("leaves a numeral that is part of a place name alone", () => {
     // 三亚 must not become 3亚.
     expect(proposeTripBriefFromTurn("去三亚待十天")).toEqual({
-      destinationCandidates: ["三亚"],
+      destinationCandidates: ["Sanya"],
       travelDays: 10,
     });
   });
@@ -85,9 +88,9 @@ describe("the §9 acceptance sentence", () => {
     // destination kept its 玩, because the departure pattern only stopped at
     // 走 or punctuation and the destination only shed 玩 when a duration
     // followed it immediately.
-    expect(proposeTripBriefFromTurn("我想从新加坡去纽约玩，帮我规划两人，15天的行程")).toEqual({
+    expect(proposeTripBriefFromTurn("我想从新加坡去北京玩，帮我规划两人，15天的行程")).toEqual({
       departureCities: ["新加坡"],
-      destinationCandidates: ["纽约"],
+      destinationCandidates: ["Beijing"],
       travelDays: 15,
     });
   });
@@ -95,5 +98,35 @@ describe("the §9 acceptance sentence", () => {
   it("keeps reading 从A到B and 从A飞B as a route", () => {
     expect(proposeTripBriefFromTurn("从北京到成都")?.departureCities).toEqual(["北京"]);
     expect(proposeTripBriefFromTurn("从广州飞曼谷")?.departureCities).toEqual(["广州"]);
+  });
+});
+
+describe("normalizeBriefDestinations", () => {
+  it("writes canonical city names only", () => {
+    expect(normalizeBriefDestinations(["上海"])).toEqual(["Shanghai"]);
+  });
+
+  it("fails closed for a pronoun or an unknown place", () => {
+    expect(normalizeBriefDestinations(["me"])).toBeNull();
+    expect(normalizeBriefDestinations(["Not a real city"])).toBeNull();
+  });
+});
+
+describe("mergeTripBriefProposal", () => {
+  it("keeps only scheduling facts from the model extraction", () => {
+    expect(mergeTripBriefProposal(null, {
+      departureCities: ["Forged departure"],
+      destinationCandidates: ["Forged destination"],
+      travelDateStart: "2026-12-10",
+      travelDateEnd: "2026-12-14",
+      travelDays: 5,
+    })).toEqual({ travelDateStart: "2026-12-10", travelDateEnd: "2026-12-14", travelDays: 5 });
+  });
+
+  it("gives an explicit owner statement precedence over model scheduling", () => {
+    expect(mergeTripBriefProposal(
+      { destinationCandidates: ["Shanghai"], travelDays: 3 },
+      { travelDays: 5 },
+    )).toEqual({ destinationCandidates: ["Shanghai"], travelDays: 3 });
   });
 });

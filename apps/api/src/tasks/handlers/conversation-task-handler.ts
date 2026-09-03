@@ -16,7 +16,7 @@ import {
 import { buildConversationContext } from "../../services/conversation-context-service.js";
 import { buildConversationMemoryContext } from "../../services/conversation-memory-context.js";
 import { loadLatestResearchEvidence } from "../../services/research-evidence-service.js";
-import { proposeTripBriefFromTurn } from "../../services/trip-brief-proposal-service.js";
+import { mergeTripBriefProposal, proposeTripBriefFromTurn } from "../../services/trip-brief-proposal-service.js";
 import { executePersonalResearch } from "../../services/personal-research-service.js";
 import {
   loadConversationHotelSearchState,
@@ -843,7 +843,16 @@ export async function handleConversationTask(params: {
   // Draft brief extraction is private exploration behaviour. It remains
   // independent from the Shared handoff lifecycle below.
   const tripBriefProposal = parsed.responseMode === "MODEL" && tripContext.tripStatus === "DRAFT"
-    ? proposeTripBriefFromTurn(turnInput.question, turnInput.place)
+    ? mergeTripBriefProposal(
+      // Direct owner statements are parsed conservatively and destination
+      // values have already passed server-owned place resolution.
+      proposeTripBriefFromTurn(turnInput.question, turnInput.place),
+      // The model extractor is retained only for an owner accepting a
+      // concrete date/duration the assistant resolved in this same turn.
+      // It can never introduce a destination, departure, or other free-text
+      // trip fact from a reply.
+      parsedReply.tripBriefProposal,
+    )
     : undefined;
   // Shared handoff is a collaboration command. Draft trips are private
   // exploration only; completed/cancelled trips must not create fresh shared

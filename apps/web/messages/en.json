@@ -277,6 +277,7 @@
       "networkError": "The travel service could not be reached. Check the connection and try again.",
       "conversationBusy": "Your previous message is still being accepted. Please wait a moment, then retry.",
       "requestInvalid": "This message could not be accepted. Refresh the conversation and try again.",
+      "destinationUnresolved": "We couldn't verify that destination. Please use a supported city name or choose it on the map.",
       "prefCardSaveFailed": "Those preferences could not be saved. Please check them and try again.",
       "prefCardSaved": "Saved for this trip.",
       "genericError": "The message could not be sent. Please try again.",

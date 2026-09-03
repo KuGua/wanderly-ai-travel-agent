@@ -32,6 +32,7 @@
 9. A submitted Personal Agent question is persisted with a durable task before streaming begins. Browser close, refresh, network loss and SSE disconnect do not cancel it; only an explicit Stop requests cancellation. The task is lease-recoverable and an ASSISTANT message is persisted only after final safety validation succeeds.
 10. Repeated, non-sensitive behavior may create a user-visible, expiring Profile suggestion, but only a user confirmation may create or replace a stable preference fact. Suggestions never enter a snapshot or shared view.
 11. Nationality, travel documents, date of birth, health and accessibility data are form-only: no conversation or behavior extraction path may create a proposal for them.
+12. A DRAFT destination proposal is emitted only for an owner’s explicit current-turn trip statement or a server-verified map place. Every proposed and creator-confirmed destination resolves to one server-owned `DestinationReference`; prose questions, assistant-only mentions, pronouns, unknown and ambiguous labels fail closed without changing the existing brief.
 
 ### H1a — Start and resume an exploration-scoped private Trip
 
