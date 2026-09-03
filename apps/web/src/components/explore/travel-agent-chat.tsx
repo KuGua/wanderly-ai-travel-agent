@@ -998,12 +998,17 @@ export function TravelAgentChat({
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
-            <div className={rowClass}>
-              {agentLabel}
-              <div className={`max-w-[86%] px-3.5 py-3 text-sm leading-[1.45] ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
-                <p className="font-bold text-primary">{t("introTitle")}</p>
-                <p className="mt-1 text-muted-foreground">{t("introBody")}</p>
+            <div className={docked ? "mx-auto flex max-w-[640px] flex-col items-start pb-4 pt-1 text-left" : "mb-4 flex flex-col items-start text-left"}>
+              <div aria-hidden="true" className={`mb-2 flex items-center gap-2 ${docked ? "text-primary" : "text-[var(--w-highlight)]"}`}>
+                <Sparkles className="size-3.5" />
+                <span className="h-px w-8 bg-current opacity-70" />
               </div>
+              <p className="max-w-[36rem] text-balance text-base font-bold leading-snug tracking-[-0.025em] text-primary sm:text-lg">
+                {t("introTitle")}
+              </p>
+              <p className={`mt-2 max-w-[36rem] text-pretty text-[13px] leading-5 ${docked ? "text-muted-foreground" : "text-[var(--w-fog)]"}`}>
+                {t("introBody")}
+              </p>
             </div>
           ) : null}
           {messages.map((message) => (

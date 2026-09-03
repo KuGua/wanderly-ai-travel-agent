@@ -60,6 +60,9 @@ without clipping it at the message viewport boundary.
   the compact inspector drawer retains its own full bottom boundary.
 - The message list remains scrollable and leaves enough bottom space for its
   final content to stay reachable while the composer is visible.
+- Before the first message, the introductory copy is a compact, left-aligned
+  16–18px title-scale session slogan with a small decorative spark-and-rule motif,
+  without an Agent label, avatar, message-card border, or message shadow.
 - On wide workspaces, shift the complete docked chat group (messages, agent
   label, and composer) by the same 4px rightward offset so its centre is
   measured from the chat panel's left edge to the Trip overview card's left

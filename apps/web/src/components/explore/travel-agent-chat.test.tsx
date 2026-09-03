@@ -142,6 +142,16 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("TravelAgentChat durable streaming flow", () => {
+  it("renders the empty-thread introduction as a centred session slogan, not an agent message", async () => {
+    renderChat(createApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
+
+    const title = await screen.findByText(/Let's plan somewhere memorable/);
+    expect(title).toHaveClass("text-balance", "text-base", "sm:text-lg", "font-bold", "text-primary");
+    expect(title.parentElement).toHaveClass("items-start", "text-left", "max-w-[640px]");
+    expect(title.parentElement).not.toHaveClass("wanderly-edge", "wanderly-shadow");
+    expect(screen.queryByText("Wanderly Agent")).not.toBeInTheDocument();
+  });
+
   it("keeps the docked conversation as one visually centred group above its elevated composer", () => {
     renderChat(createApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
 
