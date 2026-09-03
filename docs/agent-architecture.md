@@ -82,7 +82,7 @@ Shared Trip Agent（仅共享 Skills）
 
 ### Shared Agent 的系统 Prompt 边界
 
-Shared Agent 不向用户开放聊天入口；成员只与各自的 Personal Agent 和受控表单/UI 交互。但这不表示 Shared Agent 接收 Personal Agent 的全部内容：Personal Agent 只能生成字段目录内、待成员确认的候选。服务端在确认、字段级 consent 与 snapshot 创建后，才将最小结构化 projection 注入 Shared Worker；Worker 另通过受限工具取得 run-bound provider evidence。
+Shared Agent 不向用户开放聊天入口；成员只与各自的 Personal Agent 和受控表单/UI 交互。它的输出经服务端校验持久化后，在 Trip workspace 的置顶**只读共享方案面**上对 trip 内全体 active member 展示（见 [共享方案面实施规范](shared-plan-surface-implementation.md)）；该面只渲染 member-scoped 读接口返回的结构化结果，不接受任何成员输入，因此不构成聊天入口。但这不表示 Shared Agent 接收 Personal Agent 的全部内容：Personal Agent 只能生成字段目录内、待成员确认的候选。服务端在确认、字段级 consent 与 snapshot 创建后，才将最小结构化 projection 注入 Shared Worker；Worker 另通过受限工具取得 run-bound provider evidence。
 
 因此 Shared system prompt 必须把自己定义为非对话式规划 Worker：只使用服务器提供的 snapshot/evidence，永不读取或转述私聊、未确认候选或 Personal Research evidence；不能追问、联系成员、推断缺失事实、改变状态或执行确认/预订/支付/签证申请。缺失条件由服务端返回的结构化 readiness gap 和 Personal/UI 流程收集；provider 不可用则为 `UNAVAILABLE`，绝不由模型默认值、估价或示范日期填补。
 

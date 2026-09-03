@@ -128,7 +128,7 @@ member-owned private thread
 
 在 `TravelAgentChat` 内展示 member-private candidate card：字段名、规范化候选值、强度、visibility 选择、缺口、残余推断提示与“确认并生成共享方案”按钮。不得展示原始模型理由、其他成员候选、snapshot 或 provider authority。
 
-确认成功后：关闭/标记已确认候选卡，订阅或轮询 run 的安全阶段，invalidate trip/constraints/plans/agent-run query keys。卡片可逐项取消选择；“稍后处理”只隐藏当前浏览器卡片，不改变服务端 `PENDING` 状态。删除私有 thread 时服务端必须先将该 thread 的 `PENDING` handoff candidates 标为 `DISMISSED`，再删除正文；终态 proposal 的 origin FK 可被清空，不能阻断私聊删除。浏览器不在 Zustand、localStorage 或 sessionStorage 保存候选值、授权、snapshot 或任务真相。
+确认成功后：关闭/标记已确认候选卡，订阅或轮询 run 的安全阶段，invalidate trip/constraints/plans/agent-run query keys。确认响应中的 `runId` 与 `operation` 必须上抛给 Trip workspace，由置顶的只读共享方案面接管展示，不得在候选卡内丢弃；仅确认本次交接的成员会在该 run 到达终态时被自动切换到共享方案面，其他成员只收到未读标记。契约见 [共享方案面实施规范](shared-plan-surface-implementation.md)。卡片可逐项取消选择；“稍后处理”只隐藏当前浏览器卡片，不改变服务端 `PENDING` 状态。删除私有 thread 时服务端必须先将该 thread 的 `PENDING` handoff candidates 标为 `DISMISSED`，再删除正文；终态 proposal 的 origin FK 可被清空，不能阻断私聊删除。浏览器不在 Zustand、localStorage 或 sessionStorage 保存候选值、授权、snapshot 或任务真相。
 
 Shared workspace 保留 proposal plan、adoption vote、ACTIVE/STALE 比较与 booking confirmation；移除人工 `OWNER_FORM` 和显式 replan CTA。
 

@@ -432,6 +432,34 @@ Runnable coverage: add `apps/api/tests/services/personal-research-intent-classif
 - A single `NEEDS_CHANGES` blocks activation; exactly one current `ACTIVE` plan is created only after all required members accept. Existing booking confirmation is still required after activation.
 - Revocation stales the proposal/votes/run and cannot leave a confidential value in a future snapshot or activate a plan.
 
+### TS-SHARED-SURFACE-1 — Broadcast the Shared Agent result to every member without opening a group chat
+
+**Stories:** H3b, H2, H3, H5, S1
+**Objective:** Verify the pinned shared plan surface is visible to every active member, renders only allow-listed shared data, never pre-empts another member's private conversation, and adds no write path.
+**Starting conditions:** Trip with Alice, Bob and Chen as required members; confirmed flight search preferences exist; Bob has an unsent draft typed into his own private thread.
+
+**Steps:**
+
+1. Open `/trips/:tripId?view=shared` as each of Alice, Bob, Chen, and as a non-member.
+2. Alice confirms a candidate batch in her private thread; capture the confirm response, Alice's view transition, and Bob's view/rail while the run is `QUEUED` → `RUNNING` → terminal.
+3. While the run is active, capture every request Bob's browser issues and inspect the rendered tree, `localStorage` and the `GET /trips/:tripId` payload for all three members.
+4. After the run completes, inspect the rendered plan cards for a candidate whose stay/hotel/activity provider returned `UNAVAILABLE`, and for an offer whose `expiresAt` has passed.
+5. Alice and Bob vote `ACCEPT`, Chen votes `NEEDS_CHANGES`; re-submit Alice's vote with the same idempotency key; then Chen votes `ACCEPT`.
+6. Remove Chen from the Trip and reload his surface. Disable `localStorage` in Bob's browser and reload. Interrupt Bob's SSE connection mid-run.
+7. Attempt to find any input, send, comment or mention control on the surface, and any manual replan action.
+
+**Expected outcomes:**
+
+- The pinned entry appears for every active member, including when the Trip has no plan yet (empty state). The non-member receives `403` and no plan, constraint or run field is rendered.
+- Alice is switched to the surface only when her run reaches a terminal state. Bob's rail shows an unread marker while his centre pane stays on his private thread and his unsent draft survives.
+- Bob's rendered tree and `localStorage` contain no plan content, constraint value, snapshot, vote authority, run authority, owner-only constraints, pending brief proposal, research intent draft, personal research evidence, model rationale or conversation text. `localStorage` holds only the unread marker.
+- `GET /trips/:tripId` returns `pinnedSession: null` for members other than the pinned run's creator, and the full DTO for its creator.
+- The surface names no member as the trigger of the run and shows no `ORCHESTRATOR_CONFIDENTIAL` value or attribution.
+- Every price renders with its currency, source and captured time; the expired offer is marked expired; the missing capability renders an explicit `UNAVAILABLE` gap and is never substituted from another candidate or an earlier run.
+- One `NEEDS_CHANGES` blocks activation; the repeated vote with the same idempotency key creates no second vote; exactly one `ACTIVE` plan appears after all required members accept; `STALE` cards expose no vote or booking control.
+- Chen's post-removal reload fails closed with the shared unauthorized message and clears the data area. Bob's surface renders correctly with `localStorage` unavailable (unread marker treated as 0) and recovers plan state by polling after the SSE interruption.
+- No input, send, comment, mention or manual replan control exists anywhere on the surface; no shared `chat_thread` or `chat_messages` row is created by any step.
+
 ### TS-H6 — Confirm and run booking orchestration sandbox
 
 **Stories:** H6  

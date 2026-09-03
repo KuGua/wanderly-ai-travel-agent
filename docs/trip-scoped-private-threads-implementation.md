@@ -266,6 +266,7 @@ type PersonalTripContext = {
 
 - Workspace 可展示 Trip 成员安全 presentation data，但 thread rail 仅展示当前用户自己的 title、createdAt/default status。
 - 不展示其他成员的 thread 数、标题、时间、是否活跃、run 状态或任何消息。
+- Thread rail 顶部另有一个**非 thread** 的置顶条目"共享方案"，指向 trip 内全体成员可见的只读共享方案面（`?view=shared`）。它不是 `chat_threads` 行、没有 owner、不可写入，也不改变本文的 thread 私有性不变量；其数据只来自 member-scoped 的 plan / run / `TEAM_VISIBLE` 约束读接口。契约见 [共享方案面实施规范](shared-plan-surface-implementation.md)。
 - 所有 UI 错误使用已有统一 API error handling；`403` 显示“无权限或成员资格已失效”，不泄露具体 thread 或 invitation 状态。
 
 ## 9. 实施阶段与依赖

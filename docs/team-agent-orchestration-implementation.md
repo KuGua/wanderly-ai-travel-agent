@@ -1,6 +1,6 @@
 # Team Agent 协作编排实施规范
 
-**状态：** 实施中；核心约束 mutation、replan 与 adoption 状态机已落地。成员私有对话候选的 batch 生成、确认交接与 Web 接入改按 [成员对话候选到 Shared Agent 交接实施规范](member-conversation-handoff-implementation.md) 实施；该规范取代本文中 owner-only / 人工 form 交互的后续实现约定。
+**状态：** 实施中；核心约束 mutation、replan 与 adoption 状态机已落地，**§7 的 Web 层（成员约束面板、方案比较视图、adoption vote 控件）尚未落地** —— 服务端 `GET /trips/:tripId/plans`、`GET /planning/:tripId/run/latest` 与 adoption vote 路由均已 member-scoped 可用，但前端无挂载点，Shared Agent 的输出对用户不可见。该缺口按 [共享方案面实施规范](shared-plan-surface-implementation.md) 补齐。成员私有对话候选的 batch 生成、确认交接与 Web 接入改按 [成员对话候选到 Shared Agent 交接实施规范](member-conversation-handoff-implementation.md) 实施；该规范取代本文中 owner-only / 人工 form 交互的后续实现约定。
 **范围：** 多成员 Personal Agent 向 Shared Trip Agent 的结构化交接、私密约束、自动重规划和方案采用投票。
 **事实来源：** `TECH_STACK.md`、`docs/PRD.md`、`docs/backlog.md`、`docs/test-scenarios.md`、`docs/agent-architecture.md` 与本文件。若本文件与旧的长期记忆实施细节冲突，以本文件为准。
 
@@ -234,6 +234,8 @@ Add to the Trip workspace:
 5. Query invalidation after every accepted command for trip, constraints, plans, votes and agent-run keys. SSE only updates safe phase/status; all results rehydrate from REST.
 
 No raw snapshot, confidential fact, model rationale, message history or vote authority may be placed in browser storage or a global client store.
+
+**实施归属：** 第 1 项由 [成员对话候选到 Shared Agent 交接实施规范](member-conversation-handoff-implementation.md) 实现（成员私聊内的候选卡）。第 2–5 项由 [共享方案面实施规范](shared-plan-surface-implementation.md) 实现：它们统一落在 Trip workspace 对话侧栏顶部的一个**只读、trip 内全体 active member 可见**的共享方案面上，而不是分散到 inspector。该面不接受任何成员写入的消息，不创建共享 `chat_thread`，因此不构成 `docs/PRD.md` 非目标中的原生群聊，也不为 Shared Agent 开放聊天入口。
 
 ## 8. Observability, security, and deletion
 

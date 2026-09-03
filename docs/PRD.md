@@ -119,6 +119,7 @@ flowchart LR
 5. Shared Workspace 只显示成员已授权的字段；其他成员不可读到未授权 Profile、私聊或历史反馈。
 6. 成员更新授权或本次约束时，当前方案标记为过期并触发重算前确认。
 7. Team memory 仅属于当前 Trip。任一 active member 的 Personal Agent 只可在该成员自己的私有 thread 中生成待其确认的结构化约束候选，不能自动共享或代替其他成员确认。已确认约束可选择 `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL`：后者只供服务端 Shared Agent 编排，不向同行展示具体值或归属，但用户须知方案结果可能间接反映该约束。Shared Agent 只能读取服务端按当前 consent 构建的最小化 memory projection，不能直接读取成员的 Profile、个人长期记忆或私有对话；任何投影来源变更均使依赖方案过期。
+8. Shared Agent 的输出必须有一个 trip 内全体 active member 可见的落点。Trip workspace 的对话侧栏顶部固定一个**只读共享方案面**，展示当前规划运行的安全阶段、`PROPOSED`/`ACTIVE`/`STALE` 方案版本链、每项结果的来源与采集时间、`TEAM_VISIBLE` 约束和 adoption vote 入口。该面不接受任何成员写入的消息、不提供输入框、不创建共享对话线程，也不显示是哪位成员触发了本次规划；它是共享结果的广播面，不是原生群聊，也不构成 Shared Agent 的用户聊天入口。私有对话线程仍严格 owner-only。详见 [共享方案面实施规范](shared-plan-surface-implementation.md)。
 
 ### FR-3 端到端行程编排
 

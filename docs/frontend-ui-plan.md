@@ -43,6 +43,8 @@
 
 优先实现 `/home`、`/trips/[tripId]` 和 `/trips/[tripId]/plans/[planId]`，它们覆盖演示中的主要决策点。
 
+**MVP 路由收敛：** `/trips/[tripId]/plans/[planId]`、`/trips/[tripId]/replan/[planId]` 与 `/trips/[tripId]/confirm/[planId]` 三个候选比较/差异/确认页在当前 MVP 中不单独实现。它们的职责合并进 `/trips/[tripId]?view=shared` —— Trip workspace 对话侧栏顶部的置顶**只读共享方案面**，对 trip 内全体 active member 可见，承载规划运行的安全阶段、`PROPOSED`/`ACTIVE`/`STALE` 方案版本链、来源与采集时间、`TEAM_VISIBLE` 约束和 adoption vote。该视图与既有 `?thread=<uuid>` 私有对话互斥，且不接受任何成员写入。契约见 [共享方案面实施规范](shared-plan-surface-implementation.md)。
+
 ## 3. 首页策略：行程控制台 + 探索地图
 
 首页不应在“热门目的地”和“当前旅行计划”之间二选一。采用双层信息架构：用户先看到不能错过的行程行动，再探索下一段旅行。这样既保留旅行产品应有的发现感，也不会把已过期方案、授权或确认任务藏进地图中。

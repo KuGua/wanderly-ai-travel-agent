@@ -90,6 +90,22 @@
 7. See [成员对话候选到 Shared Agent 交接实施规范](member-conversation-handoff-implementation.md) for API, migration, rollout and test requirements.
 8. Handoff extraction is available only after Trip activation (`PLANNING`/`STALE`), never from `DRAFT`; a former member cannot read or confirm an old candidate batch, and deleting the source private thread dismisses its pending candidates before transcript deletion.
 
+### H3b — See the Shared Agent's result as a trip-wide read-only surface
+
+**Story:** As any active Trip member, I want the Shared Trip Agent's output to appear in a pinned, trip-wide place I can open at any time, so that I can see what was planned, why it changed, and what I still have to vote on — without asking the member who triggered it.
+
+**Acceptance criteria:**
+
+1. The Trip workspace thread rail shows a pinned "shared plan" entry above the caller's private threads. It is always present, even before any plan exists, and is visible to every active member of the Trip.
+2. The surface is read-only. It has no message input, creates no shared `chat_thread` or `chat_messages`, and gives the Shared Agent no user-facing chat entry point. Private threads remain owner-only.
+3. It renders only: the safe lifecycle of the latest `PLAN`/`REPLAN` run, `PROPOSED`/`ACTIVE`/`STALE` plans with their version chain and stale reason, per-item source and captured time, `TEAM_VISIBLE` constraints, and adoption vote state. It never renders owner-only constraints, pending brief proposals, research intent drafts, personal research evidence, model rationale or any conversation text.
+4. It does not disclose which member triggered a planning run, and it never shows `ORCHESTRATOR_CONFIDENTIAL` values or member attribution.
+5. Every price appears with its currency, source and captured time; an expired offer is marked expired; a missing provider capability is shown as an explicit `UNAVAILABLE` gap and is never substituted.
+6. Only the member who triggered a run is switched to the surface automatically, and only once that run reaches a terminal state. Other members get an unread marker; their current private conversation is never pre-empted.
+7. Adoption vote controls are visibly distinct from booking confirmation, state that an old plan cannot be restored, and are absent on `STALE` plans. There is no manual replan action.
+8. Authorization is entirely server-side and unchanged: a removed member fails closed on every read. The browser stores no plan content, constraint value, snapshot, vote authority or run authority — only an unread marker.
+9. See [共享方案面实施规范](shared-plan-surface-implementation.md) for module disposition, interface contracts, phases and test requirements. It implements items 2–5 of `team-agent-orchestration-implementation.md` §7.
+
 ### S6 — Approved: DRAFT Personal Research handoff（未实施）
 
 **Story:** As a Trip owner, I want to explicitly run a real, private research query before my trip brief is complete, so that I can explore options without creating a shared plan prematurely.
