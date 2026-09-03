@@ -54,6 +54,13 @@ type SourceEventDiagnostic = {
 };
 
 const SINGAPORE: [number, number] = [103.8198, 1.3521];
+/**
+ * Gap between retried location lookups. The endpoint allows 30 a minute, so
+ * two seconds apart leaves room for the pins the traveller is creating by
+ * hand while the backlog drains behind them.
+ */
+const RETRY_SPACING_MS = 2_000;
+
 const MAP_STYLE_URL = process.env.NEXT_PUBLIC_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
 const NEARBY_RADIUS_KM = 50;
 const DEFAULT_GEOGRAPHY_VISIBILITY: GeographyVisibility = { countries: true, regions: true, cities: true };
@@ -243,6 +250,10 @@ export function ExploreMapPage() {
     try {
       const locationReference = await travelApi.getLocationReference({
         latitude: inspiration.coordinates[1], longitude: inspiration.coordinates[0],
+        // The reference names the country and region shown beside the pin, so
+        // a Chinese reader was being handed "Inner Mongol · China" next to a
+        // map already labelled 内蒙古自治区.
+        language: locale,
       });
       const centers = locationReference.outcome === "REFERENCE"
         ? await loadAdministrativeCenters(locale).catch(() => [])
@@ -318,22 +329,53 @@ export function ExploreMapPage() {
     }
   }, [locale, showMapNotice, t, travelApi]);
 
+  /**
+   * Retries unlabelled pins one at a time.
+   *
+   * This used to fire every outstanding pin at once, on mount and again on
+   * every window focus. The endpoint allows thirty requests a minute, so a
+   * board with more pins than that answered 429 to the rest — and the retry
+   * meant to heal them re-sent the whole backlog in a single tick, keeping
+   * them unlabelled for good. A traveller with 47 pins saw "Pinned place 31"
+   * upward stay nameless however often they came back.
+   *
+   * Draining one at a time keeps the burst under the limit and lets the
+   * backlog finish across a few passes instead of failing wholesale.
+   */
   useEffect(() => {
     if (!travelApi) return;
-    const retryUnavailableReferences = () => {
-      inspirationsRef.current
-        .filter((inspiration) => inspiration.locationReferenceStatus === "unavailable")
-        .forEach((inspiration) => {
-          if (retriedLocationReferenceIdsRef.current.has(inspiration.id)) return;
+    let draining = false;
+    let stopped = false;
+    let timer: number | undefined;
+
+    const drain = async () => {
+      if (draining || stopped) return;
+      draining = true;
+      try {
+        for (const inspiration of inspirationsRef.current.filter(
+          (item) => item.locationReferenceStatus === "unavailable",
+        )) {
+          if (stopped) return;
+          if (retriedLocationReferenceIdsRef.current.has(inspiration.id)) continue;
           retriedLocationReferenceIdsRef.current.add(inspiration.id);
-          void attachLocationReference(inspiration);
-        });
+          await attachLocationReference(inspiration);
+          // Paced rather than parallel: the point is to stay under the
+          // window, not to finish fastest.
+          await new Promise((resolve) => { timer = window.setTimeout(resolve, RETRY_SPACING_MS); });
+        }
+      } finally {
+        draining = false;
+      }
     };
-    const initialRetry = window.setTimeout(retryUnavailableReferences, 750);
-    window.addEventListener("focus", retryUnavailableReferences);
+
+    const initialRetry = window.setTimeout(() => void drain(), 750);
+    const onFocus = () => void drain();
+    window.addEventListener("focus", onFocus);
     return () => {
+      stopped = true;
       window.clearTimeout(initialRetry);
-      window.removeEventListener("focus", retryUnavailableReferences);
+      if (timer !== undefined) window.clearTimeout(timer);
+      window.removeEventListener("focus", onFocus);
     };
   }, [attachLocationReference, travelApi]);
 

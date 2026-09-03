@@ -242,6 +242,8 @@ export function TripMiniGlobe({ places, fallbackLabel, tripId, threadId }: { pla
             const reference = await travelApi.getLocationReference({
               latitude: entry.city.coordinates[1],
               longitude: entry.city.coordinates[0],
+              // The pin is labelled with the country this returns.
+              language: locale,
             });
             if (reference.outcome !== "REFERENCE") return { ...entry, country: null };
             return { ...entry, country: { name: reference.country, code: reference.countryCode } };

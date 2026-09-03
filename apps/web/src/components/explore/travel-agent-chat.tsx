@@ -1102,9 +1102,12 @@ export function TravelAgentChat({
                to list are in the reply directly above it. */
             <section
               aria-label={t("briefProposalTitle")}
-              className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${
+              /* Narrower than the conversation and centred in it: a question
+                 addressed to the reader, not another line of the transcript
+                 running the full width beside it. */
+              className={`mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[360px] ${
                 docked
-                  ? "border-y border-[var(--w-line)] bg-[var(--w-mist)]/70 wanderly-shadow-xs"
+                  ? "border-y border-[var(--w-line)] bg-[var(--w-white)]/75 wanderly-shadow-xs"
                   : "wanderly-cosmos-choices"
               }`}
             >

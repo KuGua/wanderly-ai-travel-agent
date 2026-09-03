@@ -8,6 +8,10 @@ export const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 export const locationReferenceRequestSchema = z.object({
   latitude: z.number().finite().min(-90).max(90),
   longitude: z.number().finite().min(-180).max(180),
+  // Picks which of the names the dataset already carries comes back. It
+  // cannot change *which* place is resolved — the geometry decides that — so
+  // an absent or unknown value simply keeps the English labels.
+  language: z.string().trim().min(2).max(16).optional(),
 }).strict();
 
 const locationReferenceBaseSchema = z.object({

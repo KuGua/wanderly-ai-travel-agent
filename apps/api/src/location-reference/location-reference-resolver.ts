@@ -38,7 +38,7 @@ type CountryFeature = {
   geometry: { type: "Polygon" | "MultiPolygon"; coordinates: Position[][] | Position[][][] };
 };
 type Admin1Feature = {
-  properties: { name?: string; iso_3166_2?: string; iso_a2?: string };
+  properties: { name?: string; name_zh?: string; iso_3166_2?: string; iso_a2?: string };
   bbox?: [number, number, number, number];
   geometry: { type: "Polygon" | "MultiPolygon"; coordinates: Position[][] | Position[][][] };
 };
@@ -121,7 +121,14 @@ export class LocationReferenceResolver {
     }
   }
 
-  resolve(latitude: number, longitude: number): LocationReference {
+  /**
+   * `language` picks which name the dataset already carries, nothing more —
+   * the geometry decides *which* place, and only its label changes. Anything
+   * other than Chinese keeps the English names, and a place with no Chinese
+   * entry keeps its English one rather than blanking.
+   */
+  resolve(latitude: number, longitude: number, language?: string): LocationReference {
+    const zh = language?.toLowerCase().startsWith("zh") ?? false;
     const country = this.countries.find((feature) => containsCoordinate(feature, longitude, latitude))
       ?? nearestCountryWithinTolerance(this.countries, longitude, latitude);
     if (!country?.properties.ADMIN) return this.noReference();
@@ -134,9 +141,12 @@ export class LocationReferenceResolver {
     const cityReference = city && city.distanceKm <= MAX_CITY_DISTANCE_KM ? city : null;
     return {
       outcome: "REFERENCE",
-      country: country.properties.ADMIN,
+      country: (zh ? country.properties.NAME_ZH : undefined)
+        ?? country.properties.ADMIN,
       countryCode,
-      admin1: region?.properties.name ?? null,
+      admin1: (zh ? region?.properties.name_zh : undefined)
+        ?? region?.properties.name
+        ?? null,
       admin1Code: region?.properties.iso_3166_2 ?? null,
       nearestCity: cityReference?.name ?? null,
       nearestCityCoordinates: cityReference

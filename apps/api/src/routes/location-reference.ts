@@ -24,9 +24,9 @@ export async function locationReferenceRoutes(app: FastifyInstance) {
       metrics.inc("location_reference_requests_total", { outcome: "rate_limited" });
       throw new ApiError(429, "Too Many Requests", "Too many location reference requests. Please try again in a minute.", "LOCATION_REFERENCE_RATE_LIMITED");
     }
-    const { latitude, longitude } = locationReferenceRequestSchema.parse(request.body);
+    const { latitude, longitude, language } = locationReferenceRequestSchema.parse(request.body);
     try {
-      const reference = await source.resolve(latitude, longitude);
+      const reference = await source.resolve(latitude, longitude, language ? { language } : undefined);
       metrics.inc("location_reference_requests_total", { outcome: reference.outcome === "REFERENCE" ? "reference" : "no_reference" });
       const response = reference.outcome === "REFERENCE"
         ? {

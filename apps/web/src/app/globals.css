@@ -388,11 +388,17 @@
 .wanderly-cosmos-choices {
   border-top: 1.5px solid var(--w-space-line);
   border-bottom: 1.5px solid var(--w-space-line);
-  background: var(--w-space-surface);
+  /*
+   * A veil of fog rather than the surface fill: sharing that fill with the
+   * reply bubbles made the choices read as one more thing said, when they are
+   * the thing being asked. Lighter than what it sits on, so it lifts instead
+   * of sinking, and the shadow is what separates it rather than an outline.
+   */
+  background: color-mix(in srgb, var(--w-fog), transparent 88%);
   color: var(--w-fog);
-  backdrop-filter: blur(10px) saturate(1.15) brightness(0.65);
-  -webkit-backdrop-filter: blur(10px) saturate(1.15) brightness(0.65);
-  box-shadow: 0 10px 26px color-mix(in srgb, var(--w-space), transparent 45%);
+  backdrop-filter: blur(10px) saturate(1.15);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15);
+  box-shadow: 0 12px 28px color-mix(in srgb, var(--w-space), transparent 40%);
 }
 
 .wanderly-cosmos-choices .wanderly-cosmos-choice + .wanderly-cosmos-choice {
@@ -419,7 +425,7 @@
 
   .wanderly-cosmos-panel { background: var(--w-space-tint); }
   .wanderly-cosmos-surface { background: color-mix(in srgb, var(--w-space-tint), #000 34%); }
-  .wanderly-cosmos-choices { background: color-mix(in srgb, var(--w-space-tint), #000 34%); }
+  .wanderly-cosmos-choices { background: color-mix(in srgb, var(--w-space-tint), var(--w-fog) 16%); }
 }
 
 /*

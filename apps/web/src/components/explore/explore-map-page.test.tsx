@@ -408,7 +408,11 @@ describe("ExploreMapPage private inspirations", () => {
     await waitFor(() => expect(api.getLocationReference).toHaveBeenCalledTimes(2));
 
     act(() => window.dispatchEvent(new Event("focus")));
-    await waitFor(() => expect(api.getLocationReference).toHaveBeenCalledTimes(4));
+    // Retries are drained one at a time rather than fired together, so the
+    // second lands a beat after the first — a burst is what used to push a
+    // large board past the endpoint's per-minute limit and keep every pin
+    // after the thirtieth nameless.
+    await waitFor(() => expect(api.getLocationReference).toHaveBeenCalledTimes(4), { timeout: 4000 });
     expect(await screen.findByRole("heading", { name: "Shanghai" })).toBeInTheDocument();
     expect(mapMock.removedMarkers).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Manage pins" }));

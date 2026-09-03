@@ -115,4 +115,45 @@ describe("LocationReferenceResolver", () => {
     expect(chinaResolver.resolve(31.30408, 120.59538)).toMatchObject({ nearestCity: "Suzhou" });
   });
 
+
+  it("answers in the reader's language where the dataset has one", () => {
+    // The map tiles were already labelling 内蒙古自治区 while the reference
+    // beside the pin read "Inner Mongol · China": the names were in the data
+    // all along, indexed for alias lookup and never returned.
+    const bilingual = new LocationReferenceResolver([
+      {
+        properties: { ADMIN: "China", ISO_A2: "CN", NAME_EN: "China", NAME_ZH: "中华人民共和国" },
+        geometry: { type: "Polygon", coordinates: [[[100, 30], [120, 30], [120, 50], [100, 50], [100, 30]]] },
+      },
+    ], [], [
+      {
+        properties: { name: "Inner Mongol", name_zh: "内蒙古自治区", iso_3166_2: "CN-NM", iso_a2: "CN" },
+        geometry: { type: "Polygon", coordinates: [[[105, 38], [115, 38], [115, 45], [105, 45], [105, 38]]] },
+      },
+    ], { version: "test.1", checkedAt: "2026-08-25T00:00:00.000Z" });
+
+    expect(bilingual.resolve(41, 110)).toMatchObject({ admin1: "Inner Mongol", country: "China" });
+    expect(bilingual.resolve(41, 110, "zh")).toMatchObject({ admin1: "内蒙古自治区", country: "中华人民共和国" });
+    // Region locales count as Chinese; anything else keeps the English names.
+    expect(bilingual.resolve(41, 110, "zh-CN")).toMatchObject({ admin1: "内蒙古自治区" });
+    expect(bilingual.resolve(41, 110, "fr")).toMatchObject({ admin1: "Inner Mongol", country: "China" });
+  });
+
+  it("keeps the English name when the dataset carries no translation", () => {
+    // Falling through to an empty label would be worse than an English one.
+    const partial = new LocationReferenceResolver([
+      {
+        properties: { ADMIN: "Testland", ISO_A2: "TL" },
+        geometry: { type: "Polygon", coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] },
+      },
+    ], [], [
+      {
+        properties: { name: "North Province", iso_3166_2: "TL-N", iso_a2: "TL" },
+        geometry: { type: "Polygon", coordinates: [[[1, 1], [9, 1], [9, 9], [1, 9], [1, 1]]] },
+      },
+    ], { version: "test.1", checkedAt: "2026-08-25T00:00:00.000Z" });
+
+    expect(partial.resolve(5, 5, "zh")).toMatchObject({ admin1: "North Province", country: "Testland" });
+  });
+
 });

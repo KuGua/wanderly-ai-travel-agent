@@ -914,6 +914,8 @@ export const updateTripTitleResponseSchema = z.object({
 export const locationReferenceInputSchema = z.object({
   latitude: z.number().finite().min(-90).max(90),
   longitude: z.number().finite().min(-180).max(180),
+  /** Which of the dataset's names to return; the place resolved is the same. */
+  language: z.string().trim().min(2).max(16).optional(),
 }).strict();
 
 const locationReferenceBaseSchema = z.object({

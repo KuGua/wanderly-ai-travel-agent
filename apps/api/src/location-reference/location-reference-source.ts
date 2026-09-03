@@ -52,7 +52,7 @@ export interface LocationReferenceSource {
   resolve(
     latitude: number,
     longitude: number,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; language?: string },
   ): Promise<LocationReference>;
   /** Mode string used to select this implementation; surfaced for logging/tests. */
   readonly mode: LocationReferenceMode;
@@ -85,14 +85,18 @@ class InProcessLocationReferenceSource implements LocationReferenceSource {
     }
   }
 
-  async resolve(latitude: number, longitude: number): Promise<LocationReference> {
+  async resolve(
+    latitude: number,
+    longitude: number,
+    options?: { signal?: AbortSignal; language?: string },
+  ): Promise<LocationReference> {
     // `getLocationReferenceResolver` is lazy; the first call performs the
     // ~70 MB JSON parse. Wrapping in a microtask yields once so the contract
     // matches the sidecar/disabled implementations.
     return new Promise((resolvePromise, rejectPromise) => {
       setImmediate(() => {
         try {
-          const result = getLocationReferenceResolver().resolve(latitude, longitude);
+          const result = getLocationReferenceResolver().resolve(latitude, longitude, options?.language);
           resolvePromise(result);
         } catch (error) {
           rejectPromise(error);
@@ -154,7 +158,7 @@ class SidecarLocationReferenceSource implements LocationReferenceSource {
   async resolve(
     latitude: number,
     longitude: number,
-    options?: { signal?: AbortSignal },
+    options?: { signal?: AbortSignal; language?: string },
   ): Promise<LocationReference> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.timeoutMs);
