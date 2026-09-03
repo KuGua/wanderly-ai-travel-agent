@@ -11,6 +11,7 @@ describe("ShaziFlipGame style contract", () => {
     ".wanderly-flip-game",
     ".wanderly-flip-decor",
     ".wanderly-flip-hud",
+    ".wanderly-flip-virtual-cursor",
     ".wanderly-flip-shazi",
   ])("keeps %s explicitly styled", (selector) => {
     expect(globalStyles).toContain(selector);
@@ -19,5 +20,6 @@ describe("ShaziFlipGame style contract", () => {
   it("keeps the game above the app and able to catch the pointer", () => {
     expect(globalStyles).toMatch(/\.wanderly-flip-game\s*{[^}]*position:\s*fixed/);
     expect(globalStyles).toMatch(/\.wanderly-flip-shazi\s*{[^}]*pointer-events:\s*auto/);
+    expect(globalStyles).toContain("html.wanderly-flip-pointer-inverted");
   });
 });
