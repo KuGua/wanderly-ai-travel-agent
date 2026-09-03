@@ -1690,3 +1690,132 @@ depending on a provider-specific `finish_reason`.
 | Extraction | `apps/api/tests/skills/trip-constraint-propose.test.ts` | catalog strictness、敏感字段拒绝、无原文持久化。 |
 | Worker | `apps/api/tests/team-orchestration/conversation-handoff-worker.test.ts` | snapshot manifest、全候选 coverage、late lease finalization。 |
 | Web/E2E | `apps/web/src/components/trips/conversation-handoff-card.test.tsx` | 私有候选卡、visibility、确认恢复、无手动 replan UI。 |
+
+### TS-SHARED-SURFACE-PHASE-0 — Close the `pinnedSession` cross-member leak
+
+**Stories:** §10.1 (API regression)
+**Objective:** Verify `GET /trips/:tripId` no longer surfaces another member's
+`research_intent_draft` payload via `pinnedSession`, and that the confirm
+response shape stays aligned with the Zod contract.
+
+**Starting conditions:** Disposable test DB; Alice, Bob, and Carol
+provisioned. Alice's `agent_task_runs` row carries a non-null
+`research_intent_draft` (CONVERSATION with `thread_id`, `trip_id`,
+`user_message_id`). The trip's `pinned_session_id` points at that run.
+
+**Steps:**
+
+1. `GET /trips/:tripId` as Alice — record the response body.
+2. `GET /trips/:tripId` as Bob (active member) — record the response body.
+3. `GET /trips/:tripId` as Carol (non-member) — record the status code.
+4. Drop the trip's `pinned_session_id` to null. Repeat steps 1 and 2 as Alice
+   and Bob; both must now return `pinnedSession: null`.
+5. `POST /trips/:tripId/constraint-handoffs/:batchId/confirm` as Bob with a
+   valid payload. Decode the response shape; it must contain
+   `{ runId, snapshotId, operation: "PLAN" | "REPLAN", status: "QUEUED" }`.
+
+**Expected outcomes:**
+
+- Alice sees the populated `pinnedSession` DTO with her draft
+  `destinationCandidates` intact.
+- Bob receives `pinnedSession: null` — the cross-member leak is closed.
+- Carol receives `403` — the upstream membership gate holds.
+- A trip with no pinned run returns `pinnedSession: null` to every member.
+- Confirm response shape exactly matches `constraintHandoffConfirmResponseSchema`;
+  any drift surfaces immediately rather than as a runtime mismatch.
+
+**Coverage:** `apps/api/tests/trip-pinned-session-ownership.test.ts`.
+
+### TS-SHARED-SURFACE-PHASE-1 — Rail + read-only skeleton (minimum shippable)
+
+**Stories:** §10.2 4/7/8/12/16
+**Objective:** Verify the trip-scoped read-only view is reachable from the
+rail, that `?view=shared` and `?thread=<uuid>` are mutually exclusive, and
+that non-members see no plan/constraint/run data.
+
+**Starting conditions:** A trip with one active thread.
+
+**Steps:**
+
+1. Open `/trips/:tripId` and confirm the rail shows the "Shared plan"
+   pinned entry above the "New thread" button.
+2. Click the entry; verify URL becomes `?view=shared`, the middle pane
+   renders the empty state when no plans exist, and `localStorage`
+   remains untouched.
+3. From the empty state, pick a private thread; verify URL drops
+   `view=shared` and adds `?thread=<uuid>`.
+4. From the thread URL, click "Shared plan" again; verify `?thread=` is
+   cleared.
+5. Manually edit the URL to `?view=shared&thread=<unknown-uuid>` and
+   reload. Verify the workspace does NOT bounce to a default thread
+   (the §7.1 skip-thread-fallback rule holds).
+7. Visit `/trips/:tripId?view=shared` as a non-member; verify a 403-styled
+   alert and no rendered plan / constraint / run field.
+8. Disable `localStorage` (`Object.defineProperty(window, 'localStorage',
+   ...)`) and reload `?view=shared`; verify the view still renders and
+   no script error is thrown.
+9. Inspect every text node on the surface for member names or "by
+   <member>" attribution; assert none are present.
+
+**Expected outcomes:**
+
+- Rail entry always visible, even with zero plans.
+- `?view=shared` and `?thread=<uuid>` are strictly exclusive; setting
+  either clears the other.
+- Unknown-thread fallback effect does NOT fire when `view=shared` is
+  active, so refresh cannot bounce the user out.
+- Non-member gets 403 with no plan / constraint / run data rendered.
+- `localStorage` unavailability never blocks render.
+- No member names or trigger attribution appear on the surface.
+
+**Coverage:** `apps/web/src/components/trips/trip-workspace.test.tsx`,
+`shared-plan-view.test.tsx`, `shared-plan-read-state.test.ts`.
+
+### TS-SHARED-SURFACE-PHASE-3 — Voting, version trail, constraints panel
+
+**Stories:** §10.2 9/10/11/14/15
+**Objective:** Verify the per-destination proposal card renders the
+allow-listed data sources only, gaps render explicitly, expired offers
+are marked, and votes are scoped to PROPOSED plans.
+
+**Starting conditions:** A trip with one PROPOSED plan (with `flights`,
+no `stays`/`hotels`/`activities`), one ACTIVE plan, one STALE plan. Alice,
+Bob, Chen are required members; no member has voted yet.
+
+**Steps:**
+
+1. Visit `?view=shared`; verify three plan cards render with status
+   badges PROPOSED / ACTIVE / STALE.
+2. Inspect the PROPOSED card: confirm `flights` group renders origin,
+   segments, total price + currency, source, capturedAt. Confirm no
+   vote block on ACTIVE or STALE.
+3. Confirm the PROPOSED card shows an explicit `UNAVAILABLE` marker for
+   stays / hotels / activities.
+4. Find an offer whose `expiresAt` has passed; confirm the inline
+   "Offer expired" marker renders.
+5. Send `publicExplanationTokens: ["SATISFIES_ALL_PRIVATE_CONSTRAINTS"]`;
+   confirm localized copy renders. Add `"UNKNOWN_TOKEN_42"`; confirm
+   the unknown token does NOT appear in the DOM.
+6. Click ACCEPT on the PROPOSED card as Alice; confirm the mutation
+   fires with `{ decision: "ACCEPT" }` and the votes query refreshes.
+7. Re-submit the same vote with the same idempotency key; confirm no
+   second vote row is created.
+8. Bob votes `NEEDS_CHANGES`; confirm the vote block continues to render
+   (`hasBlocker` flag) but no `ACTIVE` plan appears.
+
+**Expected outcomes:**
+
+- Cards render only `ListedPlan[]` + `teamVisibleFacts`; component prop
+  types reject `constraintsOwner`/`pendingBriefProposal`/`tripBriefProposal`
+  /`researchIntentDraft`/`chat_messages` at compile time.
+- Missing capabilities render `UNAVAILABLE` markers; they are not
+  replaced by other candidates or earlier runs.
+- Expired offers show an inline destructive marker.
+- Unknown `publicExplanationTokens` are silently dropped (no raw token
+  in the DOM).
+- Idempotent vote submission is deduped server-side.
+- `NEEDS_CHANGES` blocks transition to ACTIVE; the card continues to
+  show vote controls; no booking control is present.
+
+**Coverage:** `apps/web/src/components/trips/shared-plan/plan-proposal-card.test.tsx`,
+`plan-version-trail.tsx`, `team-constraints-panel.tsx`.

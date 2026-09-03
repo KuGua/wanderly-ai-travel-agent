@@ -159,7 +159,11 @@ function FlightLine({ offer }: { offer: FlightOffer }) {
       <span className="ml-auto text-[12px] font-bold">{priceLabel}</span>
       <span className="text-[10px] text-muted-foreground">{offer.source ?? "—"} · {formatTimestamp(offer.capturedAt)}</span>
       {expired ? (
-        <span role="status" className="ml-1 inline-flex items-center bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold text-destructive wanderly-edge-thin wanderly-r-xs">
+        <span
+          role="status"
+          data-testid="plan-offer-expired"
+          className="ml-1 inline-flex items-center bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold text-destructive wanderly-edge-thin wanderly-r-xs"
+        >
           {t("offerExpired")}
         </span>
       ) : null}
@@ -215,7 +219,11 @@ function StayLine({ offer }: { offer: StayOffer | HotelOffer }) {
       <span className="ml-auto font-bold">{priceLabel}</span>
       <span className="text-[10px] text-muted-foreground">{offer.source ?? "—"} · {formatTimestamp(offer.capturedAt)}</span>
       {expired ? (
-        <span role="status" className="ml-1 inline-flex items-center bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold text-destructive wanderly-edge-thin wanderly-r-xs">
+        <span
+          role="status"
+          data-testid="plan-offer-expired"
+          className="ml-1 inline-flex items-center bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold text-destructive wanderly-edge-thin wanderly-r-xs"
+        >
           {t("offerExpired")}
         </span>
       ) : null}
