@@ -227,6 +227,24 @@ export function TravelAgentChat({
    * would remember the wrong thing.
    */
   const [highlight, setHighlight] = useState<{ text: string; x: number; y: number; messageId: string } | null>(null);
+  // The "remember this" bubble used to linger — it only cleared on a fresh
+  // selection or on saving, so tapping the composer left it floating over the
+  // input. While it is up, the next press anywhere but the bubble itself
+  // dismisses it at once.
+  useEffect(() => {
+    if (!highlight) return;
+    const onDown = (event: PointerEvent) => {
+      if ((event.target as HTMLElement | null)?.closest('[data-testid="remember-highlight"]')) return;
+      setHighlight(null);
+    };
+    // Next tick: the pointerup that made the selection must not immediately
+    // arm a handler that the same gesture then trips.
+    const arm = window.setTimeout(() => document.addEventListener("pointerdown", onDown), 0);
+    return () => {
+      window.clearTimeout(arm);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [highlight]);
   /**
    * The trip's preference card, shown once per member per trip. `null` once
    * answered or when the server says this member has already been asked.
@@ -807,6 +825,7 @@ export function TravelAgentChat({
   }
 
   const rowClass = docked ? "mx-auto mb-[18px] max-w-[640px]" : "mb-2.5";
+  const userRowClass = docked ? rowClass : "mb-[17px]";
   // Bubbles and inline cards keep the same illustrated shape in both modes,
   // but not the same fill: the docked Trip workspace sits on paper, while the
   // floating Explore panel sits in the cosmic scene, where a white card is
@@ -817,17 +836,17 @@ export function TravelAgentChat({
     : "wanderly-cosmos-surface";
   const userBubbleClass = docked
     ? "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
-    : "ml-auto w-fit max-w-[86%] bg-[var(--w-info)] px-3.5 py-2 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md";
+    : "ml-auto w-fit max-w-[86%] bg-[var(--w-bot-outline)] px-3.5 py-2 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md";
   // On the globe, assistant replies sit directly on the conversation ground:
   // the panel is already a readable surface, so wrapping every answer in a
   // second framed card makes the narrow column feel dense. The Trip workspace
   // keeps its illustrated card treatment because it lives on a paper surface.
   const agentBubbleClass = docked
     ? `group/msg relative max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`
-    : "group/msg relative max-w-[86%] py-1 text-[var(--w-fog)]";
+    : "group/msg relative max-w-[86%] py-1 text-justify text-[var(--w-fog)]";
   const streamingAgentClass = docked
     ? `max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`
-    : "max-w-[86%] py-1 text-[var(--w-fog)]";
+    : "max-w-[86%] py-1 text-justify text-[var(--w-fog)]";
   // The destination now names the action instead of sitting in a list above
   // it, so the option reads as the decision rather than as a record change.
   // Absent — the model proposed only dates, say — the label stays generic
@@ -989,7 +1008,7 @@ export function TravelAgentChat({
   const submitButton = (
     <button type="submit" aria-label={t("sendAria")} disabled={inputDisabled} className={docked
       ? "grid size-11 shrink-0 place-items-center disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action"
-      : "grid size-11 shrink-0 place-items-center disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action"}>
+      : "grid size-11 shrink-0 place-items-center disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-bot-action"}>
       {isSending ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : <ArrowUp aria-hidden="true" className="size-5" />}
     </button>
   );
@@ -1060,7 +1079,7 @@ export function TravelAgentChat({
             </div>
           ) : null}
           {messages.map((message) => (
-            <article key={message.id} data-role={message.role} className={rowClass}>
+            <article key={message.id} data-role={message.role} className={message.role === "USER" ? userRowClass : rowClass}>
               {message.role === "USER" ? (
                 <div className={userBubbleClass}>
                   <p>{message.content}</p>
@@ -1081,7 +1100,7 @@ export function TravelAgentChat({
               {refusalMessageIds.has(message.id) ? <p className="mt-2 text-[10px] font-black uppercase tracking-[0.1em] text-primary">{t("verificationRequired")}</p> : null}
             </article>
           ))}
-          {pendingTurn ? <p ref={pendingTurnAnchorRef} data-role="USER" data-pending="true" className={`${rowClass} ${userBubbleClass} opacity-80`}>{pendingTurn.question}</p> : null}
+          {pendingTurn ? <p ref={pendingTurnAnchorRef} data-role="USER" data-pending="true" className={`${userRowClass} ${userBubbleClass} opacity-80`}>{pendingTurn.question}</p> : null}
           {activeRunId ? (
             <article data-role="ASSISTANT" data-streaming="true" className={rowClass}>
               {agentLabel}
@@ -1123,7 +1142,7 @@ export function TravelAgentChat({
               /* The globe uses one compact decision row. The workspace keeps
                  the narrower centred card because it is part of the planner. */
               className={onGlobe
-                ? "mb-2 w-full"
+                ? "mb-2 w-full -translate-y-[3px]"
                 : `mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[380px]`}
             >
               <div className={onGlobe ? "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-1" : undefined}>
@@ -1138,7 +1157,7 @@ export function TravelAgentChat({
                     onClick={() => void confirmBriefProposal()}
                     disabled={isConfirmingBrief}
                     className={onGlobe
-                      ? "bg-transparent px-0 py-1 text-xs font-extrabold text-[var(--w-highlight)] underline decoration-1 underline-offset-4 transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-highlight)] disabled:opacity-50"
+                      ? "bg-transparent px-0 py-1 text-xs font-extrabold text-[var(--w-bot-outline)] underline decoration-1 underline-offset-4 transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-highlight)] disabled:opacity-50"
                       : `${actionPrimaryClass} w-full px-3 py-2.5 text-left`}
                   >
                     {briefPrimaryLabel}
@@ -1281,8 +1300,8 @@ export function TravelAgentChat({
               onClick={() => void rememberSelection()}
               style={{ position: "fixed", left: highlight.x, top: Math.max(highlight.y - 44, 8), transform: "translateX(-50%)", zIndex: 60 }}
               className={docked
-                ? "px-3 py-1.5 text-[11px] font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action"
-                : "rounded-full bg-primary px-3 py-1.5 text-[11px] font-bold text-[var(--w-ink)] shadow-md"}
+                ? "flex h-6 items-center px-3 text-[11px] font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action"
+                : "flex h-6 items-center px-3 text-[11px] font-bold text-[var(--w-fog)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-remember-highlight transition-colors"}
             >
               {rememberState?.status === "saving" ? t("rememberSaving") : t("rememberHighlight")}
             </button>

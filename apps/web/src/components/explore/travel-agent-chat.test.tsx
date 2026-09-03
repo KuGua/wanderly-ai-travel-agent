@@ -170,12 +170,17 @@ describe("TravelAgentChat durable streaming flow", () => {
     const answer = await screen.findByText("A direct answer about Indonesia.");
     const reply = answer.closest("article")?.querySelector(".chat-markdown")?.parentElement;
     expect(screen.queryByText("Wanderly Agent")).not.toBeInTheDocument();
-    expect(reply).toHaveClass("max-w-[86%]", "py-1", "text-[var(--w-fog)]");
+    expect(reply).toHaveClass("max-w-[86%]", "py-1", "text-justify", "text-[var(--w-fog)]");
     expect(reply).not.toHaveClass("wanderly-cosmos-surface", "wanderly-edge", "wanderly-shadow-sm");
 
     const question = screen.getByText("A short question.").parentElement;
-    expect(question).toHaveClass("ml-auto", "w-fit", "max-w-[86%]", "py-2");
+    expect(question).toHaveClass("ml-auto", "w-fit", "max-w-[86%]", "py-2", "bg-[var(--w-bot-outline)]");
     expect(question).not.toHaveClass("wanderly-shadow-sm");
+    expect(question?.closest("article")).toHaveClass("mb-[17px]");
+
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect(send).toHaveClass("wanderly-bot-action");
+    expect(send).not.toHaveClass("wanderly-action");
   });
 
   it("lays out the globe destination decision as one compact unfilled row", async () => {
@@ -196,10 +201,11 @@ describe("TravelAgentChat durable streaming flow", () => {
 
     const question = await screen.findByText("Set Suzhou as the destination?");
     expect(question.parentElement).toHaveClass("grid-cols-[minmax(0,1fr)_auto_auto]", "py-1");
+    expect(question.closest("section")).toHaveClass("-translate-y-[3px]");
 
     const plan = screen.getByRole("button", { name: "Plan trip" });
     const explore = screen.getByRole("button", { name: "Keep exploring" });
-    expect(plan).toHaveClass("bg-transparent", "px-0", "py-1");
+    expect(plan).toHaveClass("bg-transparent", "px-0", "py-1", "text-[var(--w-bot-outline)]");
     expect(explore).toHaveClass("bg-transparent", "px-0", "py-1");
     expect(plan).not.toHaveClass("wanderly-shadow-xs", "wanderly-action");
     expect(explore).not.toHaveClass("wanderly-cosmos-control");
@@ -1150,7 +1156,11 @@ describe("highlighting something worth remembering", () => {
     selectInside("町屋");
     fireEvent.mouseUp(bubble);
 
-    fireEvent.click(await screen.findByTestId("remember-highlight"));
+    const rememberButton = await screen.findByTestId("remember-highlight");
+    expect(rememberButton).toHaveClass("wanderly-r-xs", "wanderly-remember-highlight", "text-[var(--w-fog)]");
+    expect(rememberButton).not.toHaveClass("hover:bg-[var(--w-bot-outline)]");
+    expect(rememberButton).not.toHaveClass("rounded-full");
+    fireEvent.click(rememberButton);
 
     await waitFor(() => expect(api.rememberHighlight).toHaveBeenCalledWith(
       expect.objectContaining({ highlight: "町屋", sourceMessageId: ASSISTANT_MESSAGE_ID }),
