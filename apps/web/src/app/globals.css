@@ -67,6 +67,10 @@
   --w-page: color-mix(in srgb, var(--w-fog), var(--w-white) 74%);
   --w-line: color-mix(in srgb, var(--w-fog), var(--w-white) 38%);
   --w-mist: color-mix(in srgb, var(--w-fog), var(--w-white) 62%);
+  /* A panel that reads as recessed rather than outlined: the page ground taken
+     10% toward the ink, which is enough to register as a distinct area without
+     becoming a second colour. */
+  --w-sunken: color-mix(in srgb, var(--w-page), var(--w-ink) 10%);
 
   /* Deep-space variants; the cosmic map reassigns the same palette. */
   --w-space: color-mix(in srgb, var(--w-primary), #000 72%);
