@@ -242,6 +242,9 @@ export const tripDetailsResponseSchema = z.object({
       departureCities: z.array(z.string()).optional(),
       destinationCandidates: z.array(z.string()).optional(),
       travelDateStart: dateStr.optional(),
+      // Not strict here, so an end date was silently stripped rather than
+      // rejected — the card just never showed one.
+      travelDateEnd: dateStr.optional(),
       travelDays: z.number().int().min(1).max(365).optional(),
     }).nullable().optional(),
   }),
@@ -484,6 +487,12 @@ export const agentRunResponseSchema = z.object({
     departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
     destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
     travelDateStart: dateStr.optional(),
+    // The extraction prompt asks the model for this alongside the start date,
+    // and the draft-brief route accepts it, but it was missing here — and this
+    // object is `.strict()`. So any turn where the model returned an end date
+    // made `GET /agent-runs/:runId` fail validating its own response, 400 on
+    // every poll, which the chat reported as a message that could not be sent.
+    travelDateEnd: dateStr.optional(),
     travelDays: z.number().int().min(1).max(365).optional(),
   }).strict().nullable().optional(),
   /**

@@ -28,6 +28,10 @@ import {
   chatThreads,
   chatMessages,
   auditEvents,
+  providerOffers,
+  providerSearchRuns,
+  itineraryPlans,
+  visaReadinessChecks,
 } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
@@ -73,6 +77,15 @@ beforeEach(async () => {
   //   3. `audit_events` — references `shared_trips.id`.
   //   4. `shared_trips` — cascades to `agent_task_runs`, leaving the
   //      pinned_session_id reference cleared.
+  //   0. Everything hanging off `constraint_snapshots`, which `shared_trips`
+  //      cascades into. Those references are NO ACTION, not CASCADE, so a row
+  //      any other test file left behind blocks the wipe below with a foreign
+  //      key violation — and this cleanup is global, not scoped to the trips
+  //      this file creates.
+  await db.delete(providerOffers);
+  await db.delete(providerSearchRuns);
+  await db.delete(visaReadinessChecks);
+  await db.delete(itineraryPlans);
   await db.delete(chatThreads);
   await db.delete(tripMembers);
   await db.delete(auditEvents);

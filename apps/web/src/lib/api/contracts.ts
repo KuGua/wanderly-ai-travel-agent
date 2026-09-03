@@ -133,6 +133,7 @@ export const tripDetailSchema = z.object({
     departureCities: z.array(z.string()).optional(),
     destinationCandidates: z.array(z.string()).optional(),
     travelDateStart: z.string().optional(),
+    travelDateEnd: z.string().optional(),
     travelDays: z.number().optional(),
   }).nullable().optional(),
 });
@@ -260,6 +261,7 @@ export const agentRunResponseSchema = z.object({
     departureCities: z.array(z.string()).optional(),
     destinationCandidates: z.array(z.string()).optional(),
     travelDateStart: z.string().optional(),
+    travelDateEnd: z.string().optional(),
     travelDays: z.number().optional(),
   }).nullable().optional(),
   /**
