@@ -1239,3 +1239,36 @@ html.wanderly-flip .wanderly-flip-game {
     right: 0.5rem;
   }
 }
+
+/* ── 啥子 on-the-hour reset flash ── */
+.wanderly-bot-reset {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+  color: var(--w-ink, #1d1d1b);
+  animation: wanderly-bot-reset-in 200ms ease-out;
+}
+.wanderly-bot-reset svg {
+  width: 40px;
+  height: 40px;
+}
+.wanderly-bot-reset span {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+@keyframes wanderly-bot-reset-in {
+  from { opacity: 0; transform: translate(-50%, 6px) scale(0.7); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wanderly-bot-reset { animation: none; }
+}
