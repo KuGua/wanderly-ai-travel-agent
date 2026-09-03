@@ -758,6 +758,10 @@ describe("the trip's preference card", () => {
       { fieldKey: "no_red_eye", value: true },
       { fieldKey: "budget_max_usd", value: 2500 },
     ]));
+    // The card is done and goes, but silence there reads exactly like the
+    // failure it used to be — so it says what happened on the way out.
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved for this trip.");
+    expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument();
   });
 
   it("keeps the card up when the save is refused, so the answer can be corrected", async () => {

@@ -225,6 +225,7 @@ export function TravelAgentChat({
   const [preferenceCard, setPreferenceCard] = useState<import("@/lib/api/contracts").PreferenceCard | null>(null);
   const [savingPreferences, setSavingPreferences] = useState(false);
   const [preferenceSaveFailed, setPreferenceSaveFailed] = useState(false);
+  const [preferenceSaved, setPreferenceSaved] = useState(false);
   const [rememberState, setRememberState] = useState<{ status: "saving" | "done"; message?: string } | null>(null);
   const [refusalMessageIds, setRefusalMessageIds] = useState<Set<string>>(new Set());
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
@@ -819,9 +820,14 @@ export function TravelAgentChat({
   async function resolvePreferences(adjustments: Array<{ fieldKey: string; value: unknown }>) {
     if (!tripId || !api.resolvePreferenceCard) return;
     setPreferenceSaveFailed(false);
+    setPreferenceSaved(false);
     setSavingPreferences(true);
     try {
       await api.resolvePreferenceCard(tripId, adjustments);
+      // The card is meant to go once it is answered, but going *silently*
+      // reads exactly like the failure it used to be: the traveller fills it
+      // in, it vanishes, and nothing says whether anything was kept.
+      if (adjustments.length > 0) setPreferenceSaved(true);
     } catch {
       // Dismissing is the common answer and must not be blocked by a failed
       // write; the server will offer the card again next time if it did not
@@ -895,6 +901,7 @@ export function TravelAgentChat({
   }
 
   async function reopenPreferenceCard() {
+    setPreferenceSaved(false);
     if (!tripId || !api.getPreferenceCard) return;
     try {
       // Whatever applies now, which after an adjustment is the trip's value
@@ -1146,6 +1153,11 @@ export function TravelAgentChat({
           {preferenceSaveFailed ? (
             <p role="alert" className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} rounded-[18px] border border-destructive/20 bg-destructive/5 p-3 text-xs font-bold text-destructive`}>
               {t("prefCardSaveFailed")}
+            </p>
+          ) : null}
+          {preferenceSaved ? (
+            <p role="status" className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} text-xs font-semibold text-primary`}>
+              {t("prefCardSaved")}
             </p>
           ) : null}
           {/* Sits at the selection, not in the flow: it has to be reachable

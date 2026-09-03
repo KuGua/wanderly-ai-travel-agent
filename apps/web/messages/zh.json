@@ -286,6 +286,7 @@
       "conversationBusy": "上一条消息仍在创建中。请稍等片刻后重试。",
       "requestInvalid": "这条消息暂时无法被接受。请刷新对话后重试。",
       "prefCardSaveFailed": "偏好保存失败，请检查后重试。",
+      "prefCardSaved": "已保存到本次行程。",
       "genericError": "消息发送失败，请重试。",
       "planningFailed": "Wanderly 没能完成方案。你的行程没有任何改动。",
       "planningRateLimited": "Wanderly 目前的规划额度已用尽。你的行程没有任何改动，稍后再试。",
