@@ -700,6 +700,14 @@ export async function tripRoutes(app: FastifyInstance) {
     // must not block the rest of the trip detail (owner can still browse
     // without the pinned card). The DTO is `.nullable()` so a missing pin
     // returns cleanly.
+    //
+    // Owner-only: the `destinationCandidates` projection is sourced from
+    // `agent_task_runs.research_intent_draft`, which is written by the
+    // owner-only personal-research CAS path. Other active members must
+    // never see another member's draft. We gate the projection on
+    // `pinnedRun.createdByUserId === request.user.id` and fall back to
+    // `null` for everyone else (docs/shared-plan-surface-implementation.md
+    // §3.2 M1).
     let pinnedSession: unknown = null;
     if (trip?.pinnedSessionId) {
       try {
@@ -707,13 +715,14 @@ export async function tripRoutes(app: FastifyInstance) {
           id: agentTaskRuns.id,
           operation: agentTaskRuns.operation,
           status: agentTaskRuns.status,
+          createdByUserId: agentTaskRuns.createdByUserId,
           destinationCandidates: agentTaskRuns.researchIntentDraft,
           createdAt: agentTaskRuns.createdAt,
         })
           .from(agentTaskRuns)
           .where(eq(agentTaskRuns.id, trip.pinnedSessionId))
           .limit(1);
-        if (pinnedRun) {
+        if (pinnedRun && pinnedRun.createdByUserId === request.user.id) {
           pinnedSession = {
             agentTaskRunId: pinnedRun.id,
             operation: pinnedRun.operation,

@@ -21,6 +21,7 @@ import {
 } from "../services/constraint-proposal-service.js";
 import {
   constraintHandoffConfirmRequestSchema,
+  constraintHandoffConfirmResponseSchema,
   constraintHandoffBatchResponseSchema,
   uuidSchema,
 } from "../types/schemas.js";
@@ -362,7 +363,12 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
         selections: body.selections,
         idempotencyKey,
       });
-      return out;
+      // Strict contract enforcement on the wire — the service already
+      // returns the DTO shape, but re-parsing here means any drift (a new
+      // field added server-side, an old field accidentally removed) is
+      // surfaced immediately rather than as a runtime mismatch the next
+      // time a Phase-2 client expects `{ runId, operation }`.
+      return constraintHandoffConfirmResponseSchema.parse(out);
     } catch (err) {
       if (err instanceof ConstraintProposalServiceError) {
         throw new ApiError(err.statusCode, err.name, err.message);

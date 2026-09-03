@@ -548,6 +548,72 @@
       "threadSubtitle": "仅你可见的私人对话",
       "currentBadge": "当前"
     },
+    "sharedPlan": {
+      "railTitle": "共享方案",
+      "railSubtitle": "所有活跃成员可见",
+      "headerTitle": "共享方案",
+      "headerSubtitle": "只读视图，所有活跃成员可见",
+      "empty": {
+        "title": "暂无共享方案",
+        "body": "当成员在私人对话中确认了团队的共同出行约束后，团队方案会出现在这里，供所有人查看与投票。",
+        "backToThread": "回到我的对话"
+      },
+      "status": {
+        "queued": "已排队 — 等待规划器",
+        "researching": "正在研究方案…",
+        "persisting": "正在保存方案…",
+        "retrying": "因暂时性失败正在重试…",
+        "completed": "方案已就绪",
+        "failed": "本次运行未产出方案",
+        "cancelled": "本次运行已取消",
+        "lastUpdated": "最后更新于 {value}"
+      },
+      "plan": {
+        "statusBadge": {
+          "DRAFT": "草稿",
+          "PROPOSED": "待投票",
+          "ACTIVE": "已生效",
+          "STALE": "已失效",
+          "SUPERSEDED": "已替代"
+        },
+        "version": "v{value}",
+        "generatedAt": "生成于 {value}",
+        "flights": "航班",
+        "stays": "住宿",
+        "hotels": "酒店",
+        "activities": "活动",
+        "unavailable": "本次运行未采集到该能力的可验证数据",
+        "offerExpired": "报价已过期",
+        "constraintCount": "{count, plural, =0 {} other {已引用 # 项团队约束}}",
+        "explanation": {
+          "SATISFIES_ALL_PRIVATE_CONSTRAINTS": "本方案已考虑所有成员共享的约束。",
+          "MISSING_PRIVATE_FLIGHT_PREFERENCE": "未提供航班偏好 — 已按最优可用选项展示。",
+          "MISSING_PRIVATE_HOTEL_PREFERENCE": "未提供酒店偏好 — 已按最优可用选项展示。"
+        }
+      },
+      "vote": {
+        "accept": "接受",
+        "needsChanges": "需要修改",
+        "tally": "{accepted} / {required} 票",
+        "blocked": "至少一位成员请求修改 — 投票被阻止",
+        "notBooking": "本投票不是预订",
+        "noRestore": "投票不可撤销 — 旧方案仅供查阅",
+        "casting": "正在记录你的投票…",
+        "error": "投票失败：{message}"
+      },
+      "constraints": {
+        "heading": "团队约束（所有人可见）",
+        "empty": "尚未达成任何团队约束。",
+        "strength": {
+          "HARD": "必须",
+          "SOFT": "可协商"
+        }
+      },
+      "error": {
+        "forbidden": "你已无法访问本行程的共享方案。",
+        "generic": "无法加载共享方案。"
+      }
+    },
     "hotel": {
       "card": {
         "totalLabel": "总价",

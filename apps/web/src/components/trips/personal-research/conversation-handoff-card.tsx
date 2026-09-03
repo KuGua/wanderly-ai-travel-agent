@@ -3,6 +3,7 @@ import { useTranslations } from "next-intl";
 
 import type {
   ConstraintHandoffBatchResponse,
+  ConstraintHandoffConfirmResponse,
   ConstraintStrength,
   ConstraintVisibility,
 } from "@/lib/api/contracts";
@@ -41,7 +42,13 @@ export function ConversationHandoffCard({
 }: {
   tripId: string;
   batch: ConstraintHandoffBatchResponse;
-  onConfirmed?: () => void;
+  /**
+   * Fired with the server response (`{ runId, snapshotId, operation,
+   * status }`) once the confirm mutation succeeds. Phase 2 surfaces
+   * this to the workspace so it can auto-switch the triggering member
+   * to the shared view when the run reaches a terminal status.
+   */
+  onConfirmed?: (result: ConstraintHandoffConfirmResponse) => void;
   onDismissed?: () => void;
 }) {
   // The handoff strings live under `teamOrchestration`, not `trips.workspace` —
@@ -107,7 +114,7 @@ export function ConversationHandoffCard({
       })),
     };
     recordUiDiagnostic("conversation.handoff_confirm");
-    mutation.mutate(payload, { onSuccess: () => onConfirmed?.() });
+    mutation.mutate(payload, { onSuccess: (result) => onConfirmed?.(result) });
   };
 
   return (

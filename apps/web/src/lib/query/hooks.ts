@@ -359,15 +359,31 @@ export function useDeleteTrip(tripId: string) {
   });
 }
 
-export function useLatestPlanningRun(tripId: string) {
+/**
+ * The latest PLAN/REPLAN run for a trip.
+ *
+ * Polling cadence (§6.2 in docs/shared-plan-surface-implementation.md):
+ *   - No active run (terminal status or no run yet): refetch every 60s so
+ *     non-trigger members discover a fresh run without manual refresh.
+ *   - Active run (`QUEUED | RUNNING | CANCEL_REQUESTED`): refetch every
+ *     1.5s while the workspace is mounted.
+ *
+ * `enabled` defaults to true; the workspace toggles it off when the user
+ * is on the private-chat tab and on again when they return to the shared
+ * view. Disabling polling is a UI preference — the query key still
+ * receives manual `invalidateQueries` from SSE event handlers, so an
+ * SSE-derived status change still updates the UI even with `enabled=false`.
+ */
+export function useLatestPlanningRun(tripId: string, { enabled = true }: { enabled?: boolean } = {}) {
   const api = useTravelApi();
   return useQuery({
     queryKey: tripKeys.planningRun(tripId),
     queryFn: () => api.getLatestPlanningRun(tripId),
     retry: false,
+    enabled,
     refetchInterval: (query) => {
       const status = query.state.data?.run?.status;
-      return status === "QUEUED" || status === "RUNNING" || status === "CANCEL_REQUESTED" ? 1_500 : false;
+      return status === "QUEUED" || status === "RUNNING" || status === "CANCEL_REQUESTED" ? 1_500 : 60_000;
     },
   });
 }
@@ -535,9 +551,59 @@ export function useTripPlans(tripId: string) {
   const api = useTravelApi();
   return useQuery({
     queryKey: teamOrchestrationKeys.plans(tripId),
-    queryFn: () => api.listTripPlans!(tripId),
-    enabled: !!api.listTripPlans,
+    queryFn: () => api.listTripPlans(tripId),
+    // Shared Plan Surface is the on-screen view — three retries on 5xx
+    // would leave the user staring at the loading card for seconds.
+    // Match the convention of `useLatestPlanningRun` and surface the
+    // error state immediately.
+    retry: false,
   });
+}
+
+// ─── Shared Plan Surface (Phase 2) ───────────────────────────────────────────
+
+/**
+ * Combined read for the shared plan surface.
+ *
+ * Aggregates the four member-scoped endpoints into one place so the
+ * view doesn't need to coordinate four separate loading / error states.
+ * The raw hooks are still exported for callers that want a single
+ * concern; this just removes a layer of prop wiring.
+ *
+ * Polling cadence (docs/shared-plan-surface-implementation.md §6.2):
+ *   - No run, no plans → nothing to poll.
+ *   - Active run (`QUEUED | RUNNING | CANCEL_REQUESTED`) → plans
+ *     refetch every 5s so a freshly-completed run surfaces without
+ *     waiting for the next SSE event. `useLatestPlanningRun` already
+ *     runs at 60s baseline + 1.5s while active, so the run itself is
+ *     covered there.
+ *   - Otherwise → plans polling disabled; SSE / mutation invalidation
+ *     is the refresh path.
+ */
+export function useSharedPlanFeed(tripId: string, { enabled = true }: { enabled?: boolean } = {}) {
+  const api = useTravelApi();
+  const runQuery = useLatestPlanningRun(tripId, { enabled });
+  const plansQuery = useTripPlans(tripId);
+  const constraintsQuery = useTripConstraintsForMembers(tripId);
+  void api; // preserved for callers that compose new hooks off this one.
+  void enabled; // explicit, in case future wiring needs to gate it.
+
+  const runData = runQuery.data?.run ?? null;
+  const isActiveRun = runData !== null
+    && (runData.status === "QUEUED"
+      || runData.status === "RUNNING"
+      || runData.status === "CANCEL_REQUESTED");
+
+  return {
+    run: runData,
+    plans: plansQuery.data ?? null,
+    constraints: constraintsQuery.data?.teamVisibleFacts ?? [],
+    isBusy: runQuery.isFetching || plansQuery.isFetching || constraintsQuery.isFetching,
+    activeRun: isActiveRun,
+    runError: runQuery.error ?? null,
+    plansError: plansQuery.error ?? null,
+    constraintsError: constraintsQuery.error ?? null,
+  } as const;
 }
 
 // ── Member conversation handoff (Phase 6) ────────────────────────────────────
@@ -556,6 +622,16 @@ export function useConstraintHandoffBatch(tripId: string | null, batchId: string
   });
 }
 
+/**
+ * Confirm a member handoff batch. The response carries `{ runId,
+ * snapshotId, operation, status }` and is what Phase 2 surfaces to the
+ * workspace via the chat card's `onConfirmed` callback so the triggering
+ * user can be auto-switched to the shared view when the run reaches a
+ * terminal status.
+ *
+ * `useMutation`'s `mutateAsync(payload)` already returns the parsed
+ * response — callers should `await` it rather than chain an `onSuccess`.
+ */
 export function useConfirmConstraintHandoffBatch(tripId: string | null, batchId: string | null) {
   const api = useTravelApi();
   const qc = useQueryClient();
@@ -564,14 +640,24 @@ export function useConfirmConstraintHandoffBatch(tripId: string | null, batchId:
       requestId: string;
       candidateVersion: number;
       selections: Array<{ proposalId: string; visibility: "TEAM_VISIBLE" | "ORCHESTRATOR_CONFIDENTIAL"; strength: "HARD" | "SOFT" }>;
-    }) => api.confirmConstraintHandoffBatch!(tripId!, batchId!, input, {
-      idempotencyKey: input.requestId,
-    }),
+    }) => {
+      if (!api.confirmConstraintHandoffBatch) {
+        throw new Error("confirmConstraintHandoffBatch is not implemented by this transport");
+      }
+      return api.confirmConstraintHandoffBatch(tripId!, batchId!, input, {
+        idempotencyKey: input.requestId,
+      });
+    },
     onSuccess: () => {
       if (!tripId) return;
       qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsOwner(tripId) });
       qc.invalidateQueries({ queryKey: teamOrchestrationKeys.constraintsMembers(tripId) });
       qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
+      // A fresh PLAN/REPLAN run is the server-authoritative answer to
+      // "what is the latest planning run for this trip?"; any non-trigger
+      // member polling `useLatestPlanningRun` should pick it up at the
+      // next 60s tick (or immediately if they have SSE open).
+      qc.invalidateQueries({ queryKey: tripKeys.planningRun(tripId) });
       if (batchId) qc.invalidateQueries({ queryKey: teamOrchestrationKeys.handoff(tripId, batchId) });
     },
   });
@@ -581,8 +667,7 @@ export function usePlanAdoptionVotes(planId: string) {
   const api = useTravelApi();
   return useQuery({
     queryKey: teamOrchestrationKeys.votes(planId),
-    queryFn: () => api.listAdoptionVotes!(planId),
-    enabled: !!api.listAdoptionVotes,
+    queryFn: () => api.listAdoptionVotes(planId),
   });
 }
 
@@ -591,7 +676,7 @@ export function useCastAdoptionVote(tripId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (params: { planId: string; input: CastAdoptionVoteRequest }) =>
-      api.castAdoptionVote!(params.planId, params.input),
+      api.castAdoptionVote(params.planId, params.input),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: teamOrchestrationKeys.votes(vars.planId) });
       qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });

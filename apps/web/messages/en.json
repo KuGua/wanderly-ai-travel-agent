@@ -548,6 +548,72 @@
       "threadSubtitle": "Private thread, visible only to you",
       "currentBadge": "Current"
     },
+    "sharedPlan": {
+      "railTitle": "Shared plan",
+      "railSubtitle": "Visible to every active member",
+      "headerTitle": "Shared plan",
+      "headerSubtitle": "Read-only view, visible to every active member",
+      "empty": {
+        "title": "No shared plan yet",
+        "body": "When a member confirms shared trip constraints in their private chat, the team-wide plan will appear here for everyone to review and vote on.",
+        "backToThread": "Back to my conversation"
+      },
+      "status": {
+        "queued": "Queued — waiting for the planner",
+        "researching": "Researching options…",
+        "persisting": "Saving the plan…",
+        "retrying": "Retrying after a transient failure…",
+        "completed": "Plan is ready",
+        "failed": "This run did not produce a plan",
+        "cancelled": "This run was cancelled",
+        "lastUpdated": "Last updated {value}"
+      },
+      "plan": {
+        "statusBadge": {
+          "DRAFT": "Draft",
+          "PROPOSED": "Proposed",
+          "ACTIVE": "Active",
+          "STALE": "Stale",
+          "SUPERSEDED": "Superseded"
+        },
+        "version": "v{value}",
+        "generatedAt": "Generated {value}",
+        "flights": "Flights",
+        "stays": "Stays",
+        "hotels": "Hotels",
+        "activities": "Activities",
+        "unavailable": "This capability returned was not collected in this run",
+        "offerExpired": "Offer expired",
+        "constraintCount": "{count, plural, =0 {} one {Cited 1 team constraint} other {Cited # team constraints}}",
+        "explanation": {
+          "SATISFIES_ALL_PRIVATE_CONSTRAINTS": "All member-shared constraints were considered in this plan.",
+          "MISSING_PRIVATE_FLIGHT_PREFERENCE": "No flight preference was supplied — best-effort choice shown.",
+          "MISSING_PRIVATE_HOTEL_PREFERENCE": "No hotel preference was supplied — best-effort choice shown."
+        }
+      },
+      "vote": {
+        "accept": "Accept",
+        "needsChanges": "Need changes",
+        "tally": "{accepted} of {required} required votes",
+        "blocked": "At least one member requested changes — voting is blocked",
+        "notBooking": "This vote is not a booking",
+        "noRestore": "Voting cannot be undone — older plans are kept for reference only",
+        "casting": "Recording your vote…",
+        "error": "Vote failed: {message}"
+      },
+      "constraints": {
+        "heading": "Team constraints (visible to everyone)",
+        "empty": "No team constraints have been agreed yet.",
+        "strength": {
+          "HARD": "Required",
+          "SOFT": "Nice-to-have"
+        }
+      },
+      "error": {
+        "forbidden": "You no longer have access to this trip's shared plan.",
+        "generic": "We could not load the shared plan."
+      }
+    },
     "hotel": {
       "card": {
         "totalLabel": "Total",

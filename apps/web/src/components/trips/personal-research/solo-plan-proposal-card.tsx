@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
  * Phase 6 / Personal Trip Orchestrator — solo plan proposal card.
  *
  * Mirrors `ProposalAdoptionCard` in `team-orchestration/TeamOrchestrationPanel.tsx`
+ * (removed in Phase 3 — the same data now drives
+ * `plan-proposal-card.tsx` in `shared-plan/`).
  * but with a single ACCEPT button. The team path uses
  * `castAdoptionVote(decision: "ACCEPT")`; this path uses
  * `acceptSoloPlan` which writes the owner's `member_confirmations` row in

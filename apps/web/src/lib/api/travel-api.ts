@@ -161,9 +161,13 @@ export interface TravelApi {
   revokeConstraintFact?(tripId: string, factId: string, options?: { idempotencyKey?: string }): Promise<UpsertFactResponse>;
   listConstraintsForMembers?(tripId: string): Promise<TripConstraintsResponse>;
   listConstraintsForOwner?(tripId: string): Promise<TripConstraintsOwnerResponse>;
-  castAdoptionVote?(planId: string, input: CastAdoptionVoteRequest, options?: { idempotencyKey?: string }): Promise<AdoptionVoteResponse>;
-  listAdoptionVotes?(planId: string): Promise<AdoptionVoteListResponse>;
-  listTripPlans?(tripId: string): Promise<TripPlansListResponse>;
+  // Shared Plan Surface (Phase 5) — required. The shared view hard-depends
+  // on these three; making them optional invites a silent empty state when
+  // a partial mock forgets to stub them. Bump the whole interface up to
+  // required so the dependency is visible at compile time. docs/shared-plan-surface-implementation.md §3.2 M2.
+  castAdoptionVote(planId: string, input: CastAdoptionVoteRequest, options?: { idempotencyKey?: string }): Promise<AdoptionVoteResponse>;
+  listAdoptionVotes(planId: string): Promise<AdoptionVoteListResponse>;
+  listTripPlans(tripId: string): Promise<TripPlansListResponse>;
 
   // ── Member conversation handoff (Phase 6) ─────────────────────────────────
   // Candidate batch read + batch confirm. The candidate card pulls

@@ -115,6 +115,24 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: [] }),
     getMemoryNotes: vi.fn().mockResolvedValue({ notes: [] }),
     deleteMemoryNote: vi.fn(),
+    // Shared Plan Surface (Phase 1) — required on TravelApi since the
+    // shared view hard-depends on them. TripWorkspace mounts the shared
+    // view via `?view=shared`; tests that don't exercise that branch
+    // get a benign empty mock.
+    listTripPlans: vi.fn().mockResolvedValue({ tripId: "00000000-0000-4000-8000-000000000000", proposed: [], active: [], stale: [] }),
+    listAdoptionVotes: vi.fn().mockResolvedValue({
+      planId: "00000000-0000-4000-8000-000000000000",
+      votesAccepted: 0,
+      votesRequired: 0,
+      hasBlocker: false,
+      currentUserDecision: null,
+    }),
+    castAdoptionVote: vi.fn().mockResolvedValue({
+      planId: "00000000-0000-4000-8000-000000000000",
+      outcome: "CAST" as const,
+      votesAccepted: 0,
+      votesRequired: 0,
+    }),
     ...overrides,
   };
 }

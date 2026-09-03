@@ -32,6 +32,11 @@ export const UI_ACTIONS = [
   "research.real_provider_declined",
   // Phase 6 / Member conversation handoff
   "conversation.handoff_confirm",
+  // Shared Plan Surface (Phase 4) — must match the server's `actions`
+ // allow-list (apps/api/src/routes/ui-diagnostics.ts) or the request is
+ // rejected with 422.
+ "shared_plan.view_open",
+ "shared_plan.vote_cast",
 ] as const;
 export type UiAction = (typeof UI_ACTIONS)[number];
 
