@@ -182,12 +182,15 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const datesLabel = trip.travelDateStart && trip.travelDateEnd
     ? t("header.datesRange", { start: trip.travelDateStart, end: trip.travelDateEnd })
     : t("header.datesUnknown");
+  // Both used to fall back to the *dates* string, so an empty departure and an
+  // empty destination list each read "Dates not set" — under headings that say
+  // nothing about dates.
   const destinationsLabel = trip.destinationCandidates.length > 0
     ? trip.destinationCandidates.join(" · ")
-    : t("header.datesUnknown");
+    : t("header.placeUnknown");
   const departureLabel = trip.departureCities.length > 0
     ? trip.departureCities.join(" · ")
-    : t("header.datesUnknown");
+    : t("header.placeUnknown");
 
   // Every place the selected plan touches; the globe merges these onto countries.
   const globePlaces = [...trip.departureCities, ...trip.destinationCandidates];

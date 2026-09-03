@@ -285,6 +285,7 @@
       "networkError": "The travel service could not be reached. Check the connection and try again.",
       "conversationBusy": "Your previous message is still being accepted. Please wait a moment, then retry.",
       "requestInvalid": "This message could not be accepted. Refresh the conversation and try again.",
+      "prefCardSaveFailed": "Those preferences could not be saved. Please check them and try again.",
       "genericError": "The message could not be sent. Please try again.",
       "planningFailed": "Wanderly could not finish building the plan. Nothing about your trip was changed.",
       "planningRateLimited": "Wanderly has used up its planning quota for now. Nothing about your trip was changed; try again later.",
@@ -521,6 +522,7 @@
       "dates": "Travel dates",
       "datesRange": "{start} – {end}",
       "datesUnknown": "Dates not set",
+      "placeUnknown": "Not set",
       "destinations": "Candidate destinations",
       "members": "{count, plural, =0 {No members yet} =1 {1 member} other {# members}}",
       "departure": "Departure"

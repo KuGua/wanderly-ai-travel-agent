@@ -210,6 +210,7 @@ export function TravelAgentChat({
    */
   const [preferenceCard, setPreferenceCard] = useState<import("@/lib/api/contracts").PreferenceCard | null>(null);
   const [savingPreferences, setSavingPreferences] = useState(false);
+  const [preferenceSaveFailed, setPreferenceSaveFailed] = useState(false);
   const [rememberState, setRememberState] = useState<{ status: "saving" | "done"; message?: string } | null>(null);
   const [refusalMessageIds, setRefusalMessageIds] = useState<Set<string>>(new Set());
   const [pendingTurn, setPendingTurn] = useState<PendingTurn | null>(null);
@@ -803,16 +804,23 @@ export function TravelAgentChat({
 
   async function resolvePreferences(adjustments: Array<{ fieldKey: string; value: unknown }>) {
     if (!tripId || !api.resolvePreferenceCard) return;
+    setPreferenceSaveFailed(false);
+    setPreferenceSaveFailed(false);
     setSavingPreferences(true);
     try {
       await api.resolvePreferenceCard(tripId, adjustments);
-    } catch (error) {
+    } catch {
       // Dismissing is the common answer and must not be blocked by a failed
       // write; the server will offer the card again next time if it did not
       // record this. But a save the traveller actually made is different —
       // swallowing that is how a rejected `interests` stayed invisible while
       // the card kept reappearing and the model never saw the answer.
-      if (adjustments.length > 0) setRequestError(error);
+      //
+      // Reported as its own message rather than through `setRequestError`:
+      // that path words every failure as one about the message just sent, so
+      // a rejected preference read as "This message could not be accepted"
+      // next to a chat the traveller had not typed in.
+      if (adjustments.length > 0) setPreferenceSaveFailed(true);
     }
     setSavingPreferences(false);
     setPreferenceCard(null);
@@ -1103,6 +1111,11 @@ export function TravelAgentChat({
               saving={savingPreferences}
               onSubmit={(adjustments) => void resolvePreferences(adjustments)}
             />
+          ) : null}
+          {preferenceSaveFailed ? (
+            <p role="alert" className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} rounded-[18px] border border-destructive/20 bg-destructive/5 p-3 text-xs font-bold text-destructive`}>
+              {t("prefCardSaveFailed")}
+            </p>
           ) : null}
           {/* Sits at the selection, not in the flow: it has to be reachable
               without clicking anywhere else, because clicking clears the
