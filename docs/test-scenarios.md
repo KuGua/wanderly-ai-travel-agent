@@ -1819,3 +1819,177 @@ Bob, Chen are required members; no member has voted yet.
 
 **Coverage:** `apps/web/src/components/trips/shared-plan/plan-proposal-card.test.tsx`,
 `plan-version-trail.tsx`, `team-constraints-panel.tsx`.
+
+---
+
+## 已批准、待实施：规划器韧性与有界反思
+
+**实施契约：** [规划器韧性与有界反思实施规范](planner-resilience-and-reflection-implementation.md)
+**Stories:** `docs/backlog.md` S2 §7–§9
+
+### TS-PLANNER-RESILIENCE-1 — 门禁分离：一格不可用不终结整轮
+
+**Objective:** Verify an attempted-but-unavailable capability degrades to a
+recorded gap while a never-searched cell stays a hard failure.
+
+**Starting conditions:** A trip with two departure cities and two destination
+candidates, all four flight cells resolvable to controlled airports. A
+test-only flight provider double returns `LIVE` for three cells and
+`UNAVAILABLE / UPSTREAM_FAILURE` for the fourth.
+
+**Steps:**
+
+1. Run a `PROPOSE_PLAN` task to completion.
+2. Read `itinerary_plans`, `planning_research_results` and `agent_task_runs`.
+3. Re-run with the provider double returning `LIVE` for three cells and never
+   being called for the fourth (simulating a tool loop that skipped it).
+
+**Expected outcomes:**
+
+- Run 1 persists a `PROPOSED` plan; `planning_research_results.status =
+  COMPLETED_WITH_GAPS` with exactly one `{capability:"flight",
+  code:"UPSTREAM_FAILURE", destinationId}` gap; task status
+  `COMPLETED_WITH_GAPS`; `result_plan_id` is the new plan.
+- Run 2 fails with `FlightResearchIncompleteError` → `error_code =
+  PLANNING_DATA_UNAVAILABLE`, `retryable = false`, and writes no plan row.
+- `planning_gate_total{gate="research_completeness"}` records both outcomes.
+
+### TS-PLANNER-RESILIENCE-2 — 零商业证据的目的地只产出 research summary
+
+**Objective:** Verify a destination with no live commercial evidence yields a
+summary that carries no booking authority.
+
+**Starting conditions:** All flight cells for the recommended destination
+return `UNAVAILABLE`; accommodation discovery returns `LIVE`.
+
+**Steps:**
+
+1. Run a `PROPOSE_PLAN` task to completion.
+2. Attempt an adoption vote against the run's result.
+3. Attempt a confirmation and a booking-sandbox submission.
+
+**Expected outcomes:**
+
+- No `itinerary_plans` row is written for this run; no existing plan changes
+  status.
+- `planning_research_results` holds `status = COMPLETED_WITH_GAPS` and
+  `result_plan_id = NULL`; `agent_task_runs.status = COMPLETED_WITH_GAPS`
+  with `error_code = NULL`.
+- `provider_offers` / `source_evidence` gathered during the run are still
+  persisted — the run found real things and must not discard them.
+- Adoption, confirmation and booking all refuse: there is no `PROPOSED` plan
+  to act on. No path turns a research summary into bookable state.
+- `GET /trips/:tripId/research/latest` returns the summary with its gaps to
+  every active member; the web renders the `resultPlanId === null` branch and
+  never the generic failure copy.
+
+### TS-PLANNER-RESILIENCE-3 — Provider 重试与配额语义
+
+**Objective:** Verify transient failures retry once, quota failures use their
+own clock, and deterministic failures never retry.
+
+**Steps:**
+
+1. Provider double fails once with `UPSTREAM_TIMEOUT`, then returns `LIVE`.
+2. Provider double returns `RATE_LIMITED`.
+3. Provider double returns `NO_RESULTS`.
+4. Cancel the task (or expire its lease) while a provider call is in flight.
+
+**Expected outcomes:**
+
+- Case 1 returns `LIVE` after exactly one retry;
+  `provider_retry_total{outcome="recovered"}` +1.
+- Case 2 waits `rateLimitedMs` (not exponential backoff) before its retry and
+  counts against `maxAttempts`.
+- Case 3 performs no retry.
+- Case 4 performs no retry: cancellation and lease loss are not capability
+  unavailability.
+
+### TS-PLANNER-RESILIENCE-4 — 有写副作用的 Skill 不可声明 retry
+
+**Objective:** Verify the registration-time invariant.
+
+**Steps:** Register a skill declaring `retry` whose `allowedTools` contains a
+write scope (`plan:write:propose`, `bookings`, place adoption).
+
+**Expected outcomes:** `registerSkill` throws `SkillError("POLICY_DENIED")`.
+`places.adopt` remains registered without a retry policy. Read-only search
+skills register normally.
+
+### TS-PLANNER-RESILIENCE-5 — 任务重试续期，但有生命周期上限
+
+**Steps:**
+
+1. Force a retryable failure on a task whose `expires_at` is close.
+2. Force repeated retryable failures past `AGENT_TASK_MAX_LIFETIME_SECONDS`.
+
+**Expected outcomes:**
+
+- Case 1 requeues with `expires_at` extended; the reaper does not mark it
+  `EXPIRED` before the next attempt runs.
+- Case 2 never extends `expires_at` beyond `created_at +
+  maxLifetimeSeconds`; the task terminates instead of being renewed forever.
+
+### TS-PLANNER-RESILIENCE-6 — 慢 provider 不再被报成模型故障
+
+**Objective:** Regression for `docs/shared-agent-findings.md` #32.
+
+**Starting conditions:** A private thread turn that triggers a hotel search;
+the hotel provider double sleeps long enough to exhaust the tool budget while
+the model budget remains available.
+
+**Expected outcomes:**
+
+- The search result is persisted in `personal_research_evidence` as today.
+- Further tool calls in the same turn return `UNAVAILABLE /
+  UPSTREAM_TIMEOUT`; the turn is not aborted.
+- The model still generates its reply inside its own budget.
+- If the model call itself fails while evidence exists, the persisted
+  ASSISTANT message renders the stored evidence (capability, count, provider,
+  `captured_at`) from a deterministic template and never says the model was
+  unreachable. The template contains no model-generated text and no field
+  that was not captured.
+- `conversation_budget_exhausted_total{budget="tool"}` +1.
+
+### TS-PLANNER-RESILIENCE-7 — 有界 repair
+
+**Steps:**
+
+1. Force the plan output validator to fail once, then accept.
+2. Force it to fail more times than `MODEL_GATEWAY_PLAN_REPAIR_BUDGET`.
+3. Force a `CommercialAuthorityMissingError`.
+
+**Expected outcomes:**
+
+- Case 1 succeeds after one repair; `plan_repair_total{outcome="repaired"}`
+  +1; the tool-turn counter is unchanged by the repair iteration.
+- Case 2 throws the original error unchanged; `outcome="exhausted"`.
+- Case 3 produces no critique and no repair — it takes the research-summary
+  branch of TS-PLANNER-RESILIENCE-2.
+- Repair never activates a plan, relaxes a HARD constraint, or changes a gate
+  outcome.
+
+### TS-PLANNER-RESILIENCE-8 — critique 的隐私边界
+
+**Objective:** Verify the critique returned to the model discloses nothing
+beyond stable codes and field paths.
+
+**Steps:** Trigger each `PlanCritiqueCode` with a snapshot containing
+recognizable confidential constraint values and a model output containing
+recognizable invented values.
+
+**Expected outcomes:**
+
+- The rendered critique message contains no snapshot value, no
+  `ORCHESTRATOR_CONFIDENTIAL` content, no model-authored value and no
+  provider raw payload — only stable codes, field paths and fixed templates.
+- An error that cannot be safely reduced yields `null` and is rethrown rather
+  than being paraphrased into the prompt.
+- Nothing from the critique reaches audit summaries, metric labels or trace
+  attributes.
+
+**Coverage（待实施）:** `apps/api/tests/planning-gates.test.ts`,
+`apps/api/tests/resilience-policy.test.ts`,
+`apps/api/tests/plan-critique.test.ts`,
+`apps/api/tests/conversation-turn-budget.test.ts`,
+`apps/web/src/components/explore/travel-agent-chat.test.tsx`.

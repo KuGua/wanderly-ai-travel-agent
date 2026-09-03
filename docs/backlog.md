@@ -263,6 +263,11 @@
 4. Visa uncertainty has an official-verification action and never permits automatic application/booking.
 5. Error state cannot create confirmation, orchestration, charge or booking.
 6. Only explicit user cancellation stops upstream generation. Browser disconnect leaves the durable task running; network/5xx failures may retry at most twice, while policy/schema/authorization/data failures do not retry. Every terminal path preserves the submitted private USER message exactly once and never persists partial ASSISTANT output that has not passed final safety policy.
+7. One unavailable provider degrades that capability, not the run. A capability that was attempted and returned `UNAVAILABLE` becomes a recorded `service_gap` and the task terminates as `COMPLETED_WITH_GAPS`; only a capability that was never searched is a hard, non-retryable failure. A destination with zero live commercial evidence yields a research summary carrying no booking authority instead of a plan, and that summary can never be adopted, confirmed or sent to the booking sandbox.
+8. A slow provider never gets reported as a model failure. Provider time and model time are separate budgets within one turn; when evidence was retrieved but the model reply failed, the user is shown what was actually retrieved rather than a connection error.
+9. Deterministic validation failures may be returned to the model as a structured critique within a bounded repair budget that cannot consume the tool-call budget. Repair never relaxes a hard constraint, changes a gate outcome or introduces a fact the validators rejected.
+
+**实施契约：** [规划器韧性与有界反思实施规范](planner-resilience-and-reflection-implementation.md)。
 
 ## 5. PRODUCT-LATER
 
@@ -282,3 +287,9 @@
 4. H5: stale-aware replan tasks, consent-revocation suppression and verified final diff.
 5. H6 + P2: retain synchronous controlled booking action; no booking side effect is streamed or queued by this platform.
 6. S1 + S2: multi-Worker race, lease-expiry, disconnect, cancellation, retry, privacy and regression coverage as release gates.
+7. S2 §7–§9（规划器韧性与有界反思，见对应实施规范 §10）：
+   **P0** 门禁语义拆分（研究完整性 / 商业依据）+ research-summary 分支 + review scope 收窄 + web 文案；
+   **P1** 统一韧性策略、Skill retry 契约、7 个 adapter 接入、任务续期；
+   **P2** 对话回合的 provider / model 预算拆分；
+   **P3** 确定性 critic 与有界 repair、整轮墙钟。
+   P0 必须最先合并——在「一格 `UNAVAILABLE` 即整轮失败」的门禁下，P1 的重试与 P3 的 repair 都无法体现效果。
