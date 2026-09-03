@@ -153,7 +153,7 @@ export function ProfileForm({
 
       <section className="bg-card p-4 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-5" aria-labelledby="travel-basics-heading">
         <SectionHeading id="travel-basics-heading" title={t("sectionBasicsTitle")} description={t("sectionBasicsDescription")} />
-        <div className="mt-3 grid gap-x-3 gap-y-3 sm:grid-cols-2">
+        <div className="mt-3 grid gap-x-3 gap-y-[6.5px] sm:grid-cols-2">
           <Field id="departure-city" label={t("fields.departureCity")} error={errors.departureCity?.message}>
             <input id="departure-city" {...register("departureCity")} className={inputClass(Boolean(errors.departureCity))} autoComplete="address-level2" />
           </Field>
@@ -168,10 +168,9 @@ export function ProfileForm({
 
       <section className="bg-card p-4 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-5" aria-labelledby="preferences-heading">
         <SectionHeading id="preferences-heading" title={t("sectionPrefsTitle")} description={t("sectionPrefsDescription")} />
-        <div className="mt-3 grid gap-x-3 gap-y-3 sm:grid-cols-2">
-          <Field id="interests" label={t("fields.interests")} error={errors.interests?.message}>
-            <input id="interests" {...register("interests")} className={inputClass(Boolean(errors.interests))} placeholder={t("fields.interestsPlaceholder")} />
-          </Field>
+        <div className="mt-3 grid gap-x-3 gap-y-2 sm:grid-cols-[2fr_3fr]">
+          {/* Left column, 2 of 5: the three short controls. */}
+          <div className="flex flex-col gap-2">
           <Field id="accommodation-style" label={t("fields.accommodationStyle")} error={errors.accommodationStyle?.message}>
             <Controller
               control={control}
@@ -192,26 +191,27 @@ export function ProfileForm({
               )}
             />
           </Field>
-          {/* Budget and the red-eye toggle share this cell. The toggle is
-              pushed to the bottom of the row, so its lower edge meets the
-              textarea's rather than starting a fourth band under a half-empty
-              column. */}
-          <div className="row-span-3 grid grid-rows-subgrid gap-1 text-sm font-medium">
-            <label htmlFor="budget-max-usd" className="self-end">{t("fields.budgetMaxUsd")}</label>
-            <div className="flex flex-col gap-3">
-              <input id="budget-max-usd" {...register("budgetMaxUsd")} className={inputClass(Boolean(errors.budgetMaxUsd))} inputMode="numeric" />
-              <label className="mt-auto flex min-h-11 items-center gap-3 bg-card px-4 py-3 wanderly-edge wanderly-r-md wanderly-shadow-sm">
-                <input type="checkbox" {...register("noRedEye")} className="size-5 accent-[var(--w-highlight)] wanderly-edge-thin wanderly-r-xs" />
-                <span className="font-medium">{t("fields.noRedEyeLabel")}</span>
-              </label>
-            </div>
-            <div className="self-start text-xs">
-              {errors.budgetMaxUsd?.message ? <span className="text-destructive">{errors.budgetMaxUsd.message}</span> : null}
+          <Field id="budget-max-usd" label={t("fields.budgetMaxUsd")} error={errors.budgetMaxUsd?.message}>
+            <input id="budget-max-usd" {...register("budgetMaxUsd")} className={inputClass(Boolean(errors.budgetMaxUsd))} inputMode="numeric" />
+          </Field>
+          <label className="flex min-h-11 items-center gap-3 bg-card px-4 py-3 wanderly-edge wanderly-r-md">
+            <input type="checkbox" {...register("noRedEye")} className="size-5 accent-[var(--w-highlight)] wanderly-edge-thin wanderly-r-xs" />
+            <span className="text-sm font-medium">{t("fields.noRedEyeLabel")}</span>
+          </label>
+          </div>
+
+          {/* Right column, 3 of 5. The textarea takes the leftover height so
+              both columns finish on the same line. */}
+          <div className="flex flex-col gap-2">
+            <Field id="interests" label={t("fields.interests")} error={errors.interests?.message}>
+              <input id="interests" {...register("interests")} className={inputClass(Boolean(errors.interests))} placeholder={t("fields.interestsPlaceholder")} />
+            </Field>
+            <div className="flex flex-1 flex-col gap-1 text-sm font-medium">
+              <label htmlFor="mobility-notes">{t("fields.mobilityNotes")}</label>
+              <textarea id="mobility-notes" {...register("mobilityNotes")} className={cn(inputClass(Boolean(errors.mobilityNotes)), "min-h-24 flex-1 py-3")} placeholder={t("fields.mobilityNotesHint")} />
+              {errors.mobilityNotes?.message ? <span className="text-xs text-destructive">{errors.mobilityNotes.message}</span> : null}
             </div>
           </div>
-          <Field id="mobility-notes" label={t("fields.mobilityNotes")} error={errors.mobilityNotes?.message}>
-            <textarea id="mobility-notes" {...register("mobilityNotes")} className={cn(inputClass(Boolean(errors.mobilityNotes)), "min-h-28 py-3")} placeholder={t("fields.mobilityNotesHint")} />
-          </Field>
         </div>
       </section>
 
