@@ -6,6 +6,7 @@ import type {
   ProviderResult,
 } from "./types.js";
 import { openTripMapAccommodationResponseSchema } from "./opentripmap-accommodation-schemas.js";
+import { executeWithPolicy, getResiliencePolicyForSkill } from "../config/resilience-policy.js";
 
 const DEFAULT_BASE_URL = "https://api.opentripmap.com/0.1";
 const SOURCE = "OpenTripMap" as const;
@@ -75,12 +76,21 @@ export class OpenTripMapAccommodationProvider implements AccommodationDiscoveryP
       url.searchParams.set("format", "json");
       url.searchParams.set("apikey", this.options.apiKey);
 
-      const timeout = AbortSignal.timeout(this.options.timeoutMs);
-      const signal = params.signal ? AbortSignal.any([params.signal, timeout]) : timeout;
-      const response = await observeExternalProviderFetch(
-        { provider: "opentripmap", operation: "accommodation.discover", method: "GET" },
-        () => this.fetchImpl(url, { headers: { accept: "application/json" }, signal }),
-      );
+      const policy = getResiliencePolicyForSkill("accommodation.discover");
+      // P1-B: transient upstream failures (5xx, 429) now retry under the
+      // unified resilience-policy loop.
+      const response = await executeWithPolicy(policy, async (perAttemptSignal) => {
+        const r = await observeExternalProviderFetch(
+          { provider: "opentripmap", operation: "accommodation.discover", method: "GET" },
+          () => this.fetchImpl(url, { headers: { accept: "application/json" }, signal: perAttemptSignal }),
+        );
+        if (r.status === 429 || r.status >= 500) {
+          const err = new Error(`OpenTripMap transient ${r.status}`);
+          (err as { status?: number }).status = r.status;
+          throw err;
+        }
+        return r;
+      }, params.signal);
       if (response.status === 401 || response.status === 403) return this.record({ outcome: "UNAVAILABLE", reason: "PROVIDER_NOT_APPROVED" }, startedAt);
       if (response.status === 429) return this.record({ outcome: "UNAVAILABLE", reason: "RATE_LIMITED" }, startedAt);
       if (response.status >= 500) return this.record({ outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" }, startedAt);
@@ -115,7 +125,14 @@ export class OpenTripMapAccommodationProvider implements AccommodationDiscoveryP
       if (data.length === 0) return this.record({ outcome: "UNAVAILABLE", reason: "NO_RESULTS" }, startedAt);
       return this.record({ outcome: "LIVE", data, source: SOURCE, capturedAt }, startedAt);
     } catch (error) {
-      const reason = (error as { name?: string }).name === "AbortError" ? "UPSTREAM_TIMEOUT" : "UPSTREAM_FAILURE";
+      // P1-B: `executeWithPolicy` re-throws a transient-status error after
+      // exhausting the retry budget; map it to the typed reason.
+      const status = (error as { status?: number }).status;
+      let reason: "UPSTREAM_TIMEOUT" | "UPSTREAM_FAILURE" | "RATE_LIMITED";
+      if (status === 429) reason = "RATE_LIMITED";
+      else if (typeof status === "number" && status >= 500) reason = "UPSTREAM_FAILURE";
+      else if ((error as { name?: string }).name === "AbortError") reason = "UPSTREAM_TIMEOUT";
+      else reason = "UPSTREAM_FAILURE";
       return this.record({ outcome: "UNAVAILABLE", reason }, startedAt);
     }
   }

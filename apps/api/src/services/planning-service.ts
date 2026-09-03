@@ -72,6 +72,8 @@ import {
   AccommodationResearchIncompleteError,
 } from "./accommodation-research-matrix-service.js";
 import { recordAudit } from "./audit-service.js";
+import { serviceGapSchema, RECORD_RESEARCH_RESULT_MAX_GAPS } from "./planning-research-result-service.js";
+import { toCritiques } from "./plan-critique.js";
 import type { RequestContext } from "../utils/context.js";
 import type { AccommodationEvidence, ActivityEvidence, FlightOffer, StayOffer, HotelOffer, ServiceGap } from "../types/domain.js";
 import { bindPlanSelectionsToEvidence } from "./plan-evidence-binding.js";
@@ -126,6 +128,259 @@ export class PlanningDataUnavailableError extends Error {
   constructor(readonly missing: string[]) {
     super(`Planning data unavailable: ${missing.join(", ")}`);
     this.name = "PlanningDataUnavailableError";
+  }
+}
+
+/**
+ * Outcome of `generatePlan`. Per §1.3 of the planner-resilience design, a
+ * destination with no commercial flight authority does NOT produce a plan —
+ * it produces a research summary instead. The discriminator lets callers
+ * branch on the two cases without inspecting a nullable `resultPlanId`.
+ */
+export type PlanSynthesisOutcome =
+  | { readonly outcome: "PLAN"; readonly planId: string; readonly gaps: ReadonlyArray<ServiceGap> }
+  | { readonly outcome: "RESEARCH_SUMMARY"; readonly researchResultId: string; readonly gaps: ReadonlyArray<ServiceGap>; readonly reason: "NO_COMMERCIAL_FLIGHT_AUTHORITY" };
+
+/**
+ * Re-evaluate every research matrix on the supplied transaction and merge
+ * the per-capability gaps with tool-failure gaps + provider-coverage gaps.
+ * Every gap is run through `serviceGapSchema.strict()`; invalid entries are
+ * dropped with a `gaps_dropped` runtime event, and the row is capped at
+ * `RECORD_RESEARCH_RESULT_MAX_GAPS` (32) with a `gaps_truncated` event.
+ *
+ * Shared between the plan branch and the research-summary branch so that
+ * gap accounting is identical regardless of which way Gate B tips the run.
+ */
+async function evaluateAndValidateServiceGaps(params: {
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0];
+  ctx: RequestContext;
+  snapshotId: string;
+  agentTaskRunId: string;
+  snapshot: { departureCities: string[]; destinationCandidates: string[] };
+  allFlights: FlightOffer[];
+  allStays: StayOffer[];
+  toolFailureGaps: Array<{ capability: string; code: string }>;
+  activitiesEnabled: boolean;
+  hotelEnabled: boolean;
+  accommodationDiscoveryEnabled: boolean;
+}): Promise<{ gaps: ServiceGap[]; status: "COMPLETED_WITH_GAPS" | "COMPLETE" }> {
+  let flightMatrixGaps: ReturnType<typeof flightMatrixToGaps> = [];
+  let activityMatrixGaps: ReturnType<typeof activitiesMatrixToGaps> = [];
+  let hotelMatrixGaps: ReturnType<typeof hotelMatrixToGaps> = [];
+  let accommodationMatrixGaps: ReturnType<typeof accommodationMatrixToGaps> = [];
+  const finalMatrix = await evaluateFlightResearchCompleteness({
+    snapshotId: params.snapshotId,
+    agentTaskRunId: params.agentTaskRunId,
+    departureCities: params.snapshot.departureCities,
+    destinationCandidates: params.snapshot.destinationCandidates,
+    client: params.tx,
+  });
+  flightMatrixGaps = flightMatrixToGaps(finalMatrix.cells);
+  if (params.activitiesEnabled) {
+    const finalActivitiesMatrix = await evaluateActivitiesResearchCompleteness({
+      snapshotId: params.snapshotId,
+      agentTaskRunId: params.agentTaskRunId,
+      destinationCandidates: params.snapshot.destinationCandidates,
+      client: params.tx,
+    });
+    activityMatrixGaps = activitiesMatrixToGaps(finalActivitiesMatrix.cells);
+  }
+  if (params.hotelEnabled) {
+    const finalHotelMatrix = await evaluateHotelResearchCompleteness({
+      snapshotId: params.snapshotId,
+      agentTaskRunId: params.agentTaskRunId,
+      destinationCandidates: params.snapshot.destinationCandidates,
+      client: params.tx,
+    });
+    hotelMatrixGaps = hotelMatrixToGaps(finalHotelMatrix.cells);
+  }
+  if (params.accommodationDiscoveryEnabled) {
+    const finalAccommodationMatrix = await evaluateAccommodationResearchCompleteness({
+      snapshotId: params.snapshotId,
+      agentTaskRunId: params.agentTaskRunId,
+      destinationCandidates: params.snapshot.destinationCandidates,
+      client: params.tx,
+    });
+    accommodationMatrixGaps = accommodationMatrixToGaps(finalAccommodationMatrix.cells);
+  }
+  const { gaps: capabilityGaps } = summarizeProviderGaps({
+    requiredOrigins: params.snapshot.departureCities,
+    flights: params.allFlights,
+    stays: params.allStays,
+  });
+  const allServiceGaps: ServiceGap[] = [
+    ...params.toolFailureGaps.map((g) => ({
+      capability: g.capability as ServiceGap["capability"],
+      code: g.code as ServiceGap["code"],
+    })),
+    ...flightMatrixGaps.map((g) => ({
+      capability: g.capability,
+      code: g.code,
+      destinationId: g.destinationId,
+    })),
+    ...activityMatrixGaps,
+    ...hotelMatrixGaps,
+    ...accommodationMatrixGaps,
+    ...capabilityGaps.map((g) => ({ capability: g.capability, code: g.code })),
+  ];
+  const validatedGaps: ServiceGap[] = [];
+  let droppedInvalidCount = 0;
+  for (const gap of allServiceGaps) {
+    const parsed = serviceGapSchema.safeParse(gap);
+    if (parsed.success) {
+      validatedGaps.push(parsed.data);
+    } else {
+      droppedInvalidCount += 1;
+    }
+  }
+  if (droppedInvalidCount > 0) {
+    logSafeRuntimeEvent(params.ctx, {
+      component: "planner",
+      event: "gaps_dropped",
+      operation: "validate_service_gaps",
+      outcome: "failure",
+      errorCode: "INVALID_SERVICE_GAP",
+    });
+  }
+  let serviceGapsJson: ServiceGap[];
+  if (validatedGaps.length > RECORD_RESEARCH_RESULT_MAX_GAPS) {
+    serviceGapsJson = validatedGaps.slice(0, RECORD_RESEARCH_RESULT_MAX_GAPS);
+    logSafeRuntimeEvent(params.ctx, {
+      component: "planner",
+      event: "gaps_truncated",
+      operation: "cap_service_gaps",
+      itemCount: validatedGaps.length,
+    });
+  } else {
+    serviceGapsJson = validatedGaps;
+  }
+  return {
+    gaps: serviceGapsJson,
+    status: serviceGapsJson.length > 0 ? "COMPLETED_WITH_GAPS" : "COMPLETE",
+  };
+}
+
+/**
+ * Persist a research summary for a destination that failed Gate B. Runs in
+ * a single transaction: re-evaluate every research matrix to capture the
+ * actual evidence state, write the bounded gap set into
+ * `planning_research_results` (`status = COMPLETED_WITH_GAPS`,
+ * `result_plan_id = NULL`), emit the `RESEARCH_RESULT_RECORDED` audit, and
+ * lease-guard-update `agent_task_runs` to `COMPLETED_WITH_GAPS`. Does NOT
+ * write `itinerary_plans` — a research summary carries no plan authority.
+ *
+ * The lease-guard update matches the plan-branch terminal write so the
+ * worker treats this as a successful run, not a failure.
+ */
+async function persistResearchSummary(params: {
+  ctx: RequestContext;
+  tripId: string;
+  snapshotId: string;
+  agentTaskRunId: string;
+  leaseToken: string;
+  reason: "NO_COMMERCIAL_FLIGHT_AUTHORITY";
+  toolFailureGaps: Array<{ capability: string; code: string }>;
+  snapshotFields: { departureCities: string[]; destinationCandidates: string[] };
+  allFlights: FlightOffer[];
+  allStays: StayOffer[];
+  activitiesEnabled: boolean;
+  hotelEnabled: boolean;
+  accommodationDiscoveryEnabled: boolean;
+}): Promise<PlanSynthesisOutcome> {
+  const result = await db.transaction(async (tx) => {
+    const { gaps, status } = await evaluateAndValidateServiceGaps({
+      tx,
+      ctx: params.ctx,
+      snapshotId: params.snapshotId,
+      agentTaskRunId: params.agentTaskRunId,
+      snapshot: params.snapshotFields,
+      allFlights: params.allFlights,
+      allStays: params.allStays,
+      toolFailureGaps: params.toolFailureGaps,
+      activitiesEnabled: params.activitiesEnabled,
+      hotelEnabled: params.hotelEnabled,
+      accommodationDiscoveryEnabled: params.accommodationDiscoveryEnabled,
+    });
+    const serviceGapsForDb = gaps as unknown as Record<string, unknown>[];
+    const [inserted] = await tx.insert(planningResearchResults).values({
+      tripId: params.tripId,
+      snapshotId: params.snapshotId,
+      agentTaskRunId: params.agentTaskRunId,
+      status,
+      serviceGaps: serviceGapsForDb,
+      resultPlanId: null,
+    }).onConflictDoUpdate({
+      target: planningResearchResults.agentTaskRunId,
+      set: {
+        status,
+        serviceGaps: serviceGapsForDb,
+        resultPlanId: null,
+      },
+    }).returning({ id: planningResearchResults.id });
+    await recordAudit({
+      ctx: params.ctx,
+      action: "RESEARCH_RESULT_RECORDED",
+      tripId: params.tripId,
+      summary: {
+        status,
+        gapCount: gaps.length,
+        capabilities: [...new Set(gaps.map((g) => g.capability))].sort(),
+      },
+      tx,
+    });
+    // `agent_task_runs.status` uses a different enum than
+    // `planning_research_results.status` — COMPLETE maps to COMPLETED.
+    const taskTerminalStatus = status === "COMPLETED_WITH_GAPS" ? "COMPLETED_WITH_GAPS" : "COMPLETED";
+    const [completed] = await tx.update(agentTaskRuns).set({
+      status: taskTerminalStatus,
+      resultPlanId: null,
+      leaseToken: null,
+      leaseExpiresAt: null,
+      finishedAt: new Date(),
+      updatedAt: new Date(),
+      errorCode: null,
+    }).where(and(
+      eq(agentTaskRuns.id, params.agentTaskRunId),
+      eq(agentTaskRuns.leaseToken, params.leaseToken),
+      eq(agentTaskRuns.status, "RUNNING"),
+      gt(agentTaskRuns.leaseExpiresAt, new Date()),
+    )).returning();
+    if (!completed) throw new Error("Planning task lost finalization lease");
+    return { researchResultId: inserted.id, gaps, status };
+  });
+  logSafeRuntimeEvent(params.ctx, {
+    component: "planner",
+    event: "gate",
+    operation: "research_summary",
+    outcome: "failure",
+    errorCode: params.reason,
+  });
+  return {
+    outcome: "RESEARCH_SUMMARY",
+    researchResultId: result.researchResultId,
+    gaps: result.gaps,
+    reason: params.reason,
+  };
+}
+
+/**
+ * Control-flow signal for Gate B in §1.3 of the planner-resilience design.
+ *
+ * Research completeness says the tool loop covered every cell, but commercial
+ * authority requires at least one LIVE cell on the destination we are about to
+ * synthesize for. When it is missing we cannot produce a plan; the planner
+ * switches to a research-summary branch instead. This class MUST be caught
+ * inside `generatePlan` — it is not a worker-visible failure mode.
+ */
+export class CommercialAuthorityMissingError extends Error {
+  readonly code = "PLANNING_DATA_UNAVAILABLE";
+
+  constructor(
+    readonly capability: "flight",
+    readonly destinationId: string,
+  ) {
+    super(`No commercial authority for capability "${capability}" on destination "${destinationId}"`);
+    this.name = "CommercialAuthorityMissingError";
   }
 }
 
@@ -672,7 +927,7 @@ export async function generatePlan(params: {
    */
   outputMode?: "PROPOSED" | "ACTIVATE";
   coverage?: CoverageResearchResult;
-}, dependencies: PlanningDependencies = resolvePlanningDependencies()): Promise<string> {
+}, dependencies: PlanningDependencies = resolvePlanningDependencies()): Promise<PlanSynthesisOutcome> {
   // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
     .where(eq(constraintSnapshots.id, params.snapshotId))
@@ -759,6 +1014,7 @@ export async function generatePlan(params: {
   /** Tool calls that already failed, keyed by name and arguments. */
   const failedToolCalls = new Map<string, { outcome: "UNAVAILABLE"; capability: string; reason: string; message: string }>();
   let candidatePlanData: Record<string, unknown>;
+  try {
   if (params.agentTaskRunId && params.flightSearchPreferencesVersion) {
     const dispatchPlanningTool = async (call: { name: string; arguments: unknown }) => {
         const snapshotContext = {
@@ -906,6 +1162,19 @@ export async function generatePlan(params: {
       stays: allStays,
       memberPreferences,
       maxTurns: Number(process.env.MODEL_GATEWAY_TOOL_CALLING_MAX_TURNS ?? 8), signal: params.signal, ctx: params.ctx,
+      // P3 (planner-resilience §6): hand the gateway a critic so that when
+      // either `beforeFinal` (Gate A / Gate B) or the final structural check
+      // throws, the gateway can re-emit a deterministic system message and
+      // give the model one bounded repair iteration. The critic returns
+      // `null` for errors it cannot safely describe (e.g. our own
+      // `CommercialAuthorityMissingError`, which is a Gate-B branch signal —
+      // not a fixable output defect) so the original error propagates and
+      // `generatePlan` can switch to the research-summary branch instead.
+      repairBudget: Number(process.env.MODEL_GATEWAY_PLAN_REPAIR_BUDGET ?? 2),
+      onValidationFailure: (error: unknown) => {
+        if (error instanceof CommercialAuthorityMissingError) return null;
+        return toCritiques(error);
+      },
       beforeFinal: async () => {
         // Both gates below exist to stop the model finalizing while it could
         // still have searched. When no controlled airport serves one of the
@@ -920,8 +1189,14 @@ export async function generatePlan(params: {
             departureCities: snapshot.departureCities as string[], destinationCandidates: snapshot.destinationCandidates as string[],
           });
           if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
+          // Gate B — commercial authority. Completeness (above) only checks
+          // the loop covered every cell; we additionally need at least one
+          // LIVE cell on the destination we are about to synthesize a plan
+          // for. Without it, the run falls into the research-summary branch
+          // (§1.3 of the planner-resilience design) and never produces a
+          // PROPOSED plan.
           if (!hasCommercialFlightAuthority(matrix.cells, params.destination)) {
-            throw new PlanningDataUnavailableError([`flight-authority:${params.destination}`]);
+            throw new CommercialAuthorityMissingError("flight", params.destination);
           }
           // Re-check usable flight coverage before accepting final synthesis.
           // Stay unavailability is intentionally a Phase 4 service gap and is
@@ -1077,6 +1352,44 @@ export async function generatePlan(params: {
   } else {
     validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights, stays: allStays });
     candidatePlanData = await dependencies.modelGateway.generateStructuredPlan({ destination: params.destination, flights: allFlights, stays: allStays, memberPreferences, ctx: params.ctx, signal: params.signal });
+  }
+
+  // Per §1.3 of the planner-resilience design, a destination that fails Gate B
+  // (no commercial flight authority) must produce a research summary, not a
+  // plan. The discriminator has already thrown `CommercialAuthorityMissingError`
+  // from inside `beforeFinal`; we catch it here at the planning-service boundary
+  // and route to the research-summary branch — leaving the plan branch only for
+  // destinations that survived both gates.
+  } catch (error) {
+    if (error instanceof CommercialAuthorityMissingError) {
+      if (!params.agentTaskRunId || !params.leaseToken) {
+        // No durable run to write a summary for — rethrow so the worker surfaces
+        // the failure (matches the pre-P0 path which also had no run guard).
+        throw error;
+      }
+      return await persistResearchSummary({
+        ctx: params.ctx,
+        tripId: params.tripId,
+        snapshotId: params.snapshotId,
+        agentTaskRunId: params.agentTaskRunId,
+        leaseToken: params.leaseToken,
+        reason: "NO_COMMERCIAL_FLIGHT_AUTHORITY",
+        toolFailureGaps: toolFailureGaps.map((g) => ({
+          capability: g.capability,
+          code: g.code,
+        })),
+        snapshotFields: {
+          departureCities: snapshot.departureCities as string[],
+          destinationCandidates: snapshot.destinationCandidates as string[],
+        },
+        allFlights,
+        allStays,
+        activitiesEnabled,
+        hotelEnabled,
+        accommodationDiscoveryEnabled,
+      });
+    }
+    throw error;
   }
 
   if (params.agentTaskRunId) {
@@ -1260,81 +1573,54 @@ export async function generatePlan(params: {
     });
 
     // Phase 4 — record the service outcome matrix on the same transaction.
-    // UNAVAILABLE evidence becomes a `service_gaps` row; the task terminator
-    // becomes `COMPLETED_WITH_GAPS` rather than `COMPLETED`.
-    let flightMatrixGaps: ReturnType<typeof flightMatrixToGaps> = [];
-    let activityMatrixGaps: ReturnType<typeof activitiesMatrixToGaps> = [];
-    let hotelMatrixGaps: ReturnType<typeof hotelMatrixToGaps> = [];
-    let accommodationMatrixGaps: ReturnType<typeof accommodationMatrixToGaps> = [];
+    // Re-evaluate every research matrix against `tx` so the gap set reflects
+    // the final state of `provider_search_runs`, then validate and cap via
+    // the shared helper. UNAVAILABLE evidence becomes a `service_gaps` row;
+    // the task terminator becomes `COMPLETED_WITH_GAPS` rather than
+    // `COMPLETED`. The helper is the same one `persistResearchSummary` uses,
+    // so plan-side and research-summary-side gap accounting cannot drift.
+    let validatedServiceGaps: ServiceGap[] = [];
+    let researchStatus: "COMPLETED_WITH_GAPS" | "COMPLETE" = "COMPLETE";
     if (params.agentTaskRunId) {
-      const finalMatrix = await evaluateFlightResearchCompleteness({
+      const evaluated = await evaluateAndValidateServiceGaps({
+        tx,
+        ctx: params.ctx,
         snapshotId: params.snapshotId,
         agentTaskRunId: params.agentTaskRunId,
-        departureCities: snapshot.departureCities as string[],
-        destinationCandidates: snapshot.destinationCandidates as string[],
-        client: tx,
+        snapshot: {
+          departureCities: snapshot.departureCities as string[],
+          destinationCandidates: snapshot.destinationCandidates as string[],
+        },
+        allFlights,
+        allStays,
+        toolFailureGaps: toolFailureGaps.map((g) => ({
+          capability: g.capability,
+          code: g.code,
+        })),
+        activitiesEnabled,
+        hotelEnabled,
+        accommodationDiscoveryEnabled,
       });
-      flightMatrixGaps = flightMatrixToGaps(finalMatrix.cells);
-      if (activitiesEnabled) {
-        const finalActivitiesMatrix = await evaluateActivitiesResearchCompleteness({
-          snapshotId: params.snapshotId,
-          agentTaskRunId: params.agentTaskRunId,
-          destinationCandidates: snapshot.destinationCandidates as string[],
-          client: tx,
-        });
-        activityMatrixGaps = activitiesMatrixToGaps(finalActivitiesMatrix.cells);
-      }
-      if (hotelEnabled) {
-        const finalHotelMatrix = await evaluateHotelResearchCompleteness({ snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId, destinationCandidates: snapshot.destinationCandidates as string[], client: tx });
-        hotelMatrixGaps = hotelMatrixToGaps(finalHotelMatrix.cells);
-      }
-      if (accommodationDiscoveryEnabled) {
-        const finalAccommodationMatrix = await evaluateAccommodationResearchCompleteness({
-          snapshotId: params.snapshotId,
-          agentTaskRunId: params.agentTaskRunId,
-          destinationCandidates: snapshot.destinationCandidates as string[],
-          client: tx,
-        });
-        accommodationMatrixGaps = accommodationMatrixToGaps(finalAccommodationMatrix.cells);
-      }
+      validatedServiceGaps = evaluated.gaps;
+      researchStatus = evaluated.status;
     }
-    const { gaps: capabilityGaps } = summarizeProviderGaps({
-      requiredOrigins: snapshot.departureCities as string[],
-      flights: allFlights,
-      stays: allStays,
-    });
-    const allServiceGaps: ServiceGap[] = [
-      ...toolFailureGaps.map((g) => ({
-        capability: g.capability as ServiceGap["capability"],
-        code: g.code as ServiceGap["code"],
-      })),
-      ...flightMatrixGaps.map((g) => ({
-        capability: g.capability,
-        code: g.code,
-        destinationId: g.destinationId,
-      })),
-      ...activityMatrixGaps,
-      ...hotelMatrixGaps,
-      ...accommodationMatrixGaps,
-      ...capabilityGaps.map((g) => ({ capability: g.capability, code: g.code })),
-    ];
-    // For the Phase 4 MVP we keep the matrix surface small: any UNAVAILABLE
-    // cell flips the task status to `COMPLETED_WITH_GAPS`.
-    const researchStatus = allServiceGaps.length > 0 ? "COMPLETED_WITH_GAPS" : "COMPLETE";
-    const serviceGapsJson = allServiceGaps as unknown as Record<string, unknown>[];
     if (params.agentTaskRunId) {
+      // Drizzle's jsonb column expects `Record<string, unknown>[]`; we cast
+      // here at the boundary only after `serviceGapSchema.strict()` has
+      // validated every element (see `evaluateAndValidateServiceGaps`).
+      const serviceGapsForDb = validatedServiceGaps as unknown as Record<string, unknown>[];
       await tx.insert(planningResearchResults).values({
         tripId: params.tripId,
         snapshotId: params.snapshotId,
         agentTaskRunId: params.agentTaskRunId,
         status: researchStatus,
-        serviceGaps: serviceGapsJson,
+        serviceGaps: serviceGapsForDb,
         resultPlanId: plan.id,
       }).onConflictDoUpdate({
         target: planningResearchResults.agentTaskRunId,
         set: {
           status: researchStatus,
-          serviceGaps: serviceGapsJson,
+          serviceGaps: serviceGapsForDb,
           resultPlanId: plan.id,
         },
       });
@@ -1344,8 +1630,8 @@ export async function generatePlan(params: {
         tripId: params.tripId,
         summary: {
           status: researchStatus,
-          gapCount: allServiceGaps.length,
-          capabilities: [...new Set(allServiceGaps.map((g) => g.capability))].sort(),
+          gapCount: validatedServiceGaps.length,
+          capabilities: [...new Set(validatedServiceGaps.map((g) => g.capability))].sort(),
         },
         tx,
       });
@@ -1363,10 +1649,10 @@ export async function generatePlan(params: {
       if (!completed) throw new Error("Planning task lost finalization lease");
     }
 
-    return plan.id;
+    return { planId: plan.id, gaps: validatedServiceGaps };
   });
 
-  return planId;
+  return { outcome: "PLAN", planId: planId.planId, gaps: planId.gaps };
 }
 
 /**

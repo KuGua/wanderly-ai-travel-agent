@@ -270,22 +270,30 @@ expiresAt: new Date(Math.min(
 
 ### 5.1 预算模型
 
+实现为扩展既有的 `createTurnDeadline`（`conversation-task-handler.ts`），而不是新建模块——它已经拥有暂停语义、硬上限与可注入时钟，唯一缺的是工具聚合预算：
+
 ```ts
-interface TurnBudget {
-  readonly modelBudgetMs: number;   // CONVERSATION_MODEL_BUDGET_MS，默认 15000
-  readonly toolBudgetMs: number;    // CONVERSATION_TOOL_BUDGET_MS，默认 20000
-  readonly turnDeadlineMs: number;  // CONVERSATION_TURN_DEADLINE_MS，默认 40000
-  consumeTool(ms: number): void;
-  remainingToolMs(): number;
-  modelSignal(): AbortSignal;       // 每次模型调用独立的 model 时钟
+createTurnDeadline(params: {
+  modelBudgetMs: number;      // = travelConversationSkill.timeoutMs（15000）
+  toolBudgetMs?: number;      // CONVERSATION_TOOL_BUDGET_MS，默认 20000
+  hardCapMs?: number;         // CONVERSATION_TURN_HARD_CAP_MS，默认 120000
+  onAbort: (reason: string) => void;
+  isAborted: () => boolean;
+  now?: () => number;
+}): {
+  withPausedModelBudget: <T>(run: () => Promise<T>) => Promise<T>;
+  isToolBudgetExhausted: () => boolean;
+  clear: () => void;
 }
 ```
 
-规则：
+三个时钟及其规则：
 
-- 工具调用消耗 tool 预算；tool 预算耗尽时，后续工具调用**返回 `UNAVAILABLE / UPSTREAM_TIMEOUT`，不 abort 整个回合**——这与 `planning-service.ts:1023` 起的既有 tool 失败纪律一致；
-- 模型调用只受 model 时钟约束，不因慢 provider 提前被掐；
-- `turnDeadlineMs` 是回合硬顶，超出即中止并按 `TIMEOUT` 处理。
+- **model 时钟**：`withPausedModelBudget` 在每次 tool dispatch 期间暂停它，慢 provider 花的是自己的时间，不是模型的。跨多次暂停累计消耗，不会重置。
+- **tool 预算**：暂停窗口本身就是 dispatch 窗口，因此它同时是计量单位——**不再单独调用 `consumeTool`，否则同一次调用会被记两遍**。dispatch 抛错也照常计费：失败得慢的 provider 一样花掉了时间。耗尽后 `dispatchTool` **返回 `UNAVAILABLE / TOOL_BUDGET_EXHAUSTED`，不 abort 任何东西**——与 `planning-service.ts` 的 `dispatchPlanningTool` 同一纪律。
+- **硬上限**：纯墙钟，永不暂停，保证一个永不应答的 provider 也拖不住回合。
+
+回合的两个时钟与 task abort 桥接都属于本回合，必须在 `finally` 中 `clear()` 并摘除监听器；成功路径同样要走这一步。
 
 ### 5.2 有证据但无回复的降级
 
@@ -399,10 +407,9 @@ MODEL_GATEWAY_PLAN_REPAIR_BUDGET=2
 PLANNING_RUN_DEADLINE_MS=180000
 # 任务自 created_at 起的生命周期上限，防止重试无限续期
 AGENT_TASK_MAX_LIFETIME_SECONDS=900
-# 对话回合预算：模型时钟与 provider 时钟分离
-CONVERSATION_MODEL_BUDGET_MS=15000
+# 对话回合的工具聚合预算。model 时钟沿用 Skill 的 timeoutMs，硬上限沿用
+# CONVERSATION_TURN_HARD_CAP_MS 常量，两者都不新增环境变量。
 CONVERSATION_TOOL_BUDGET_MS=20000
-CONVERSATION_TURN_DEADLINE_MS=40000
 # Provider 重试次数（1 = 单次重试；0 = 不重试）
 AMADEUS_FLIGHT_MAX_RETRIES=1
 SERPAPI_FLIGHT_MAX_RETRIES=1

@@ -613,6 +613,10 @@ function formatThreadTime(locale: string, iso: string): string {
 }
 
 function ResearchGapBannerWrapper({ tripId }: { tripId: string }) {
+  // Post-P0 (planner-resilience §8.2): the workspace now reads from
+  // `/trips/:tripId/research/latest` (the only route that exists). The
+  // historical `/research-results` endpoint and its dead hook were deleted;
+  // see `docs/planner-resilience-and-reflection-implementation.md` §12.3.
   const research = useLatestResearchResult(tripId);
   if (!research.data || research.isLoading) return null;
   return <ResearchGapBanner result={research.data.result} />;

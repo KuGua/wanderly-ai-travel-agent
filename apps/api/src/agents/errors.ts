@@ -12,7 +12,13 @@ export type SkillErrorCode =
   | "SNAPSHOT_REQUIRED"
   | "POLICY_DENIED"
   | "SEARCH_PREFERENCES_STALE"
-  | "UPSTREAM_FAILURE";
+  | "UPSTREAM_FAILURE"
+  /**
+   * P1-A: a provider refused further calls because the quota is exhausted.
+   * The retry loop treats this specially — exponential backoff only burns
+   * quota faster — and uses `SkillRetryPolicy.rateLimitedDelayMs` instead.
+   */
+  | "RATE_LIMITED";
 
 export const SKILL_ERROR_STATUS: Record<SkillErrorCode, number> = {
   UNKNOWN_SKILL: 404,
@@ -29,6 +35,7 @@ export const SKILL_ERROR_STATUS: Record<SkillErrorCode, number> = {
   POLICY_DENIED: 403,
   SEARCH_PREFERENCES_STALE: 409,
   UPSTREAM_FAILURE: 502,
+  RATE_LIMITED: 429,
 };
 
 export interface SkillViolation {

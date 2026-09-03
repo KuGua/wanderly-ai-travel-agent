@@ -1500,7 +1500,6 @@ export type ProviderUnavailableCode = z.infer<typeof providerUnavailableCodeSche
 export type ServiceGap = z.infer<typeof serviceGapSchema>;
 export type ResearchResultStatus = z.infer<typeof researchResultStatusSchema>;
 export type ResearchResult = z.infer<typeof researchResultSchema>;
-
 // Note: `personalResearchCapabilitySchema` / `personalResearchKindSchema` /
 // `personalResearchIntentSchema` are declared above the `agentStreamEventSchema`
 // discriminated union (so the SSE member can reference them). The remaining

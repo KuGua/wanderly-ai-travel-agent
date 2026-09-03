@@ -6,11 +6,17 @@ describe("the conversation turn deadline", () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  const deadline = (aborts: string[], modelBudgetMs = 15_000, hardCapMs = 120_000) => {
+  const deadline = (
+    aborts: string[],
+    modelBudgetMs = 15_000,
+    hardCapMs = 120_000,
+    toolBudgetMs?: number,
+  ) => {
     let aborted = false;
     return createTurnDeadline({
       modelBudgetMs,
       hardCapMs,
+      ...(toolBudgetMs === undefined ? {} : { toolBudgetMs }),
       onAbort: (reason) => {
         aborted = true;
         aborts.push(reason);
@@ -80,5 +86,52 @@ describe("the conversation turn deadline", () => {
     turn.clear();
     await vi.advanceTimersByTimeAsync(200_000);
     expect(aborts).toEqual([]);
+  });
+
+  it("does not meter tools when no tool budget was given", async () => {
+    const aborts: string[] = [];
+    const turn = deadline(aborts);
+    await turn.withPausedModelBudget(async () => {
+      await vi.advanceTimersByTimeAsync(90_000);
+    });
+    expect(turn.isToolBudgetExhausted()).toBe(false);
+    turn.clear();
+  });
+
+  it("charges each paused window to the tool budget and reports exhaustion", async () => {
+    // Pausing the model clock keeps a slow supplier from stealing the reply
+    // window, but on its own it bounds nothing: suppliers can keep pausing
+    // until the hard cap. The aggregate budget is what stops that.
+    const aborts: string[] = [];
+    const turn = deadline(aborts, 15_000, 120_000, 20_000);
+
+    await turn.withPausedModelBudget(async () => {
+      await vi.advanceTimersByTimeAsync(12_000);
+    });
+    expect(turn.isToolBudgetExhausted()).toBe(false);
+
+    await turn.withPausedModelBudget(async () => {
+      await vi.advanceTimersByTimeAsync(9_000);
+    });
+    expect(turn.isToolBudgetExhausted()).toBe(true);
+    // Exhaustion is a dispatch signal, never an abort — the model must still
+    // get to answer with the evidence the first calls did return.
+    expect(aborts).toEqual([]);
+
+    turn.clear();
+  });
+
+  it("charges a dispatch that threw, because the time was still spent", async () => {
+    const aborts: string[] = [];
+    const turn = deadline(aborts, 15_000, 120_000, 5_000);
+
+    await expect(turn.withPausedModelBudget(async () => {
+      await vi.advanceTimersByTimeAsync(6_000);
+      throw new Error("supplier failed slowly");
+    })).rejects.toThrow("supplier failed slowly");
+
+    expect(turn.isToolBudgetExhausted()).toBe(true);
+    expect(aborts).toEqual([]);
+    turn.clear();
   });
 });

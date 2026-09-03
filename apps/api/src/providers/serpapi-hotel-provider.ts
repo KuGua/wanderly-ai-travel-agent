@@ -4,6 +4,7 @@ import { metrics } from "../observability/metrics.js";
 import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type { HotelProvider, HotelProviderItem, HotelSearchParams, ProviderResult } from "./types.js";
 import { serpApiHotelResponseSchema } from "./serpapi-hotel-schemas.js";
+import { executeWithPolicy, getResiliencePolicyForSkill } from "../config/resilience-policy.js";
 
 export interface SerpApiHotelProviderOptions {
   apiKey: string;
@@ -47,15 +48,31 @@ export class SerpApiHotelProvider implements HotelProvider {
 
   async searchHotels(params: HotelSearchParams): Promise<ProviderResult<HotelProviderItem[]>> {
     const startedAt = Date.now();
+    // P1-B: existing retry loop is now policy-driven — same behavioural shape,
+    // but `maxAttempts`, `retryOn`, and backoff come from one place. The
+    // `SERPAPI_HOTEL_MAX_RETRIES` env override still wins (the
+    // `readSerpApiHotelConfiguration` builder keeps the existing option
+    // surface for rollout).
+    const policy = getResiliencePolicyForSkill("hotel.search");
     let last: ProviderResult<HotelProviderItem[]> = { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };
-    for (let attempt = 0; attempt <= this.options.maxRetries; attempt += 1) {
-      last = await this.attempt(params).catch((error: unknown) => ({
-        outcome: "UNAVAILABLE" as const,
-        reason: (error as { name?: string }).name === "AbortError"
-          ? "UPSTREAM_TIMEOUT" as const
-          : "UPSTREAM_FAILURE" as const,
-      }));
-      if (last.outcome === "LIVE" || !isRetryable(last.reason) || attempt === this.options.maxRetries) break;
+    try {
+      last = await executeWithPolicy(policy, async () => {
+        const result = await this.attempt(params);
+        if (result.outcome === "LIVE") return result;
+        // Throw the typed result on a retryable reason so the outer
+        // catch can recover `outcome` + `reason` without losing the
+        // typed classification.
+        if (policy.retryOn.includes(result.reason)) throw result;
+        return result;
+      }, params.signal);
+    } catch (err) {
+      if (err && typeof err === "object" && "outcome" in err) {
+        last = err as ProviderResult<HotelProviderItem[]>;
+      } else if ((err as { name?: string })?.name === "AbortError") {
+        last = { outcome: "UNAVAILABLE", reason: "UPSTREAM_TIMEOUT" };
+      } else {
+        last = { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };
+      }
     }
     return this.record(last, startedAt);
   }
@@ -159,9 +176,6 @@ function mapProviderError(message: string): UnavailableReason {
   return "UPSTREAM_FAILURE";
 }
 
-function isRetryable(reason: UnavailableReason): boolean {
-  return reason === "UPSTREAM_FAILURE" || reason === "UPSTREAM_TIMEOUT";
-}
 
 async function readBoundedJson(response: Response): Promise<unknown> {
   const text = await response.text();

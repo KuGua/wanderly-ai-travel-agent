@@ -141,7 +141,7 @@ export async function processNextAgentTask(): Promise<boolean> {
         await publishPhase(run, "RESEARCHING", traceparent);
         const planId = await handlePlanningTask({ run, ctx, signal: abortController.signal, leaseToken });
         await publishPhase(run, "PERSISTING", traceparent);
-        await publishAgentStreamEvent({ event: "turn.completed", runId: run.id, generationAttempt: run.generationAttempt, resultPlanId: planId, traceparent });
+        await publishAgentStreamEvent({ event: "turn.completed", runId: run.id, generationAttempt: run.generationAttempt, resultPlanId: planId ?? undefined, traceparent });
         metrics.inc("agent_task_outcomes_total", { operation: run.operation.toLowerCase(), outcome: "completed" });
         logSafeRuntimeEvent(ctx, {
           component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "success",

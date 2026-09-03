@@ -23,6 +23,12 @@ const resolvedAgentTaskConfig = {
   // characters, with an upper sequence boundary pinned at task acceptance.
   conversationContextMaxTurns: positiveInteger("CONVERSATION_CONTEXT_MAX_TURNS", 8, 1, 12),
   conversationContextMaxChars: positiveInteger("CONVERSATION_CONTEXT_MAX_CHARS", 12_000, 1, 20_000),
+  // Aggregate wall clock one conversation turn may spend inside tool dispatch,
+  // metered by `createTurnDeadline`'s paused windows. Exhausting it aborts
+  // nothing — `dispatchTool` answers a structured UNAVAILABLE so the model
+  // still replies. See §5.1 of
+  // docs/planner-resilience-and-reflection-implementation.md.
+  conversationToolBudgetMs: positiveInteger("CONVERSATION_TOOL_BUDGET_MS", 20_000, 1_000, 120_000),
 } as const;
 
 if (resolvedAgentTaskConfig.leaseRenewSeconds >= resolvedAgentTaskConfig.leaseSeconds) {

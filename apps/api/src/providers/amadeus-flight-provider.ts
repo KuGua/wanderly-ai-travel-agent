@@ -4,6 +4,7 @@ import { metrics } from "../observability/metrics.js";
 import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type { FlightProvider, FlightSearchParams, ProviderResult } from "./types.js";
 import { amadeusFlightOffersResponseSchema, amadeusTokenSchema } from "./amadeus-flight-schemas.js";
+import { executeWithPolicy, getResiliencePolicyForSkill } from "../config/resilience-policy.js";
 
 export type AmadeusEnvironment = "disabled" | "test" | "production";
 
@@ -82,6 +83,13 @@ export class AmadeusFlightProvider implements FlightProvider {
       this.record("LIVE", start);
       return { outcome: "LIVE", data: offers, source: "Amadeus Flight Offers Search", capturedAt };
     } catch (error) {
+      // P1-B: `executeWithPolicy` exhausts its retry budget on transient
+      // upstream statuses by re-throwing an error that carries `.status`.
+      // Map those back to the typed reason so callers / tests see the same
+      // surface as pre-P1-B.
+      const status = (error as { status?: number }).status;
+      if (status === 429) return this.unavailable("RATE_LIMITED", start);
+      if (typeof status === "number" && status >= 500) return this.unavailable("UPSTREAM_FAILURE", start);
       if ((error as { name?: string }).name === "AbortError") return this.unavailable("UPSTREAM_TIMEOUT", start);
       return this.unavailable("UPSTREAM_FAILURE", start);
     }
@@ -105,16 +113,29 @@ export class AmadeusFlightProvider implements FlightProvider {
   }
 
   private async request(path: string, init: RequestInit & { signal?: AbortSignal }): Promise<Response> {
-    const timeout = AbortSignal.timeout(this.options.timeoutMs);
-    const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
-    return observeExternalProviderFetch(
-      {
-        provider: "amadeus",
-        operation: path.startsWith("/v1/security/") ? "oauth.token" : "flight.search",
-        method: init.method === "POST" ? "POST" : "GET",
-      },
-      () => this.fetchImpl(`${AMADEUS_BASE_URL[this.options.environment]}${path}`, { ...init, signal }),
-    );
+    const policy = getResiliencePolicyForSkill("flight.search");
+    // P1-B: transient upstream failures now go through the unified
+    // resilience-policy loop. Each attempt gets a fresh per-attempt
+    // timeout; the caller's signal is merged so cancellation short-
+    // circuits the retry. Non-transient responses (4xx other than 429) are
+    // returned verbatim; the caller maps them to `UNAVAILABLE` reasons.
+    return executeWithPolicy(policy, async (perAttemptSignal) => {
+      const response = await observeExternalProviderFetch(
+        {
+          provider: "amadeus",
+          operation: path.startsWith("/v1/security/") ? "oauth.token" : "flight.search",
+          method: init.method === "POST" ? "POST" : "GET",
+        },
+        () => this.fetchImpl(`${AMADEUS_BASE_URL[this.options.environment]}${path}`, { ...init, signal: perAttemptSignal }),
+      );
+      // Throw on transient statuses so `executeWithPolicy` retries them.
+      if (response.status === 429 || response.status >= 500) {
+        const err = new Error(`Amadeus transient ${response.status}`);
+        (err as { status?: number }).status = response.status;
+        throw err;
+      }
+      return response;
+    }, init.signal);
   }
 
   private unavailable(reason: Extract<ProviderResult<FlightOffer[]>, { outcome: "UNAVAILABLE" }> ["reason"], start: number): ProviderResult<FlightOffer[]> {

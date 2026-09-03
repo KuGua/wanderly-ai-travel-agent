@@ -37,6 +37,12 @@ const DEFAULT_POLICY: AgentScopePolicy = {
     "navigation:route",
     "mobility:search",
   ],
+  // Per docs/agent-architecture.md §3 + §5, the review agent is a read-only
+  // critic. It must never write plans; when the `PlanReviewSkill` lands it
+  // will inherit this scope. The previous `"plan:write:propose"` entry was
+  // a dormant over-permission that `apps/api/src/skills/REVIEW.md` mirrored
+  // and that `npm run docs:verify` pinned against the source — both are
+  // narrowed here in lockstep (see §3.4 of the planner-resilience design).
   review: ["snapshot:read"],
   // S4: public-content agents run the cached location-introduction skill
   // and have no access to Profile/Trip/thread/snapshot data. Empty by
@@ -53,6 +59,21 @@ export class DefaultPolicyGate implements PolicyGate {
     if (offending) {
       throw new Error(`Scope ${offending} is not allowed for ${this.agentKind}`);
     }
+  }
+
+  /**
+   * Single source of truth for "is this scope a write". Used by both this
+   * gate and by `apps/api/src/agents/skill-registry.ts` (P1-A) to refuse
+   * `skill.retry` declarations on side-effecting skills at registration
+   * time. A scope counts as a write if it equals the `bookings` root or
+   * ends with `:write` / `:write:propose` / `:adopt` (the last catches
+   * `places:adopt`, the only mutable POI scope in the registry).
+   */
+  static isWriteScope(scope: SkillScope): boolean {
+    return scope === "bookings"
+      || scope === "places:adopt"
+      || scope.endsWith(":write")
+      || scope.endsWith(":write:propose");
   }
 
   /**

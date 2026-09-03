@@ -22,7 +22,7 @@ export async function handlePlanningTask(params: {
   ctx: RequestContext;
   signal: AbortSignal;
   leaseToken: string;
-}): Promise<string> {
+}): Promise<string | null> {
   const { run } = params;
 
   // PERSONAL_RESEARCH (added via 0047a) is dispatched through the same
@@ -97,35 +97,74 @@ export async function handlePlanningTask(params: {
   // adoption vote (PROPOSED → ACTIVE) and the chain through
   // `replacedByPlanId` continue to live in `activateProposedPlan`, which is
   // unchanged.
-  let previousPlanId: string | null = null;
+  let firstPlanId: string | null = null;
+  let threwInLoop = false;
+  // P3 (planner-resilience §6.4): an outer wall-clock cap on the whole run.
+  // Fires before `expires_at` would, so wall-clock overruns read as TIMEOUT
+  // (recoverable) instead of EXPIRED (reaper-induced, opaque). Merged with
+  // the caller-provided signal so lease-loss / cancellation still short-
+  // circuit the run. Default 180s reads `PLANNING_RUN_DEADLINE_MS`.
+  const planningRunDeadlineMs = Number(process.env.PLANNING_RUN_DEADLINE_MS ?? 180_000);
+  const runDeadlineController = new AbortController();
+  const planningRunSignal = AbortSignal.any([params.signal, runDeadlineController.signal]);
+  const runDeadlineTimer = setTimeout(() => {
+    runDeadlineController.abort(new Error("Planning run deadline exceeded"));
+  }, planningRunDeadlineMs);
+  try {
   for (const destination of candidates) {
-    const resultPlanId = await generatePlan({
-      ctx: params.ctx,
-      tripId: run.tripId,
-      snapshotId: run.snapshotId,
-      destination,
-      memberIds: [],
-      agentTaskRunId: run.id,
-      flightSearchPreferencesVersion: run.flightSearchPreferencesVersion,
-      staySearchPreferencesVersion: run.staySearchPreferencesVersion ?? undefined,
-      signal: params.signal,
-      leaseToken: params.leaseToken,
-      outputMode: "PROPOSED",
-    });
-    previousPlanId = resultPlanId;
+    try {
+      const synthesis = await generatePlan({
+        ctx: params.ctx,
+        tripId: run.tripId,
+        snapshotId: run.snapshotId,
+        destination,
+        memberIds: [],
+        agentTaskRunId: run.id,
+        flightSearchPreferencesVersion: run.flightSearchPreferencesVersion,
+        staySearchPreferencesVersion: run.staySearchPreferencesVersion ?? undefined,
+        signal: planningRunSignal,
+        leaseToken: params.leaseToken,
+        outputMode: "PROPOSED",
+      });
+      // Per §3.2 of the planner-resilience design, the first destination whose
+      // synthesis yields a PLAN wins. A RESEARCH_SUMMARY needs nothing here:
+      // `generatePlan` already wrote its own `planning_research_results` row
+      // and terminated the task inside the same transaction, so there is no id
+      // for this loop to carry — it only decides which plan the run returns.
+      if (synthesis.outcome === "PLAN" && firstPlanId === null) {
+        firstPlanId = synthesis.planId;
+      }
+    } catch (err) {
+      // Genuine data-availability failures (MISSING cells, provider coverage
+      // gap) still bubble — those are the run-terminating cases the planner
+      // cannot degrade further. Gate B's RESEARCH_SUMMARY path is handled
+      // above and does NOT throw.
+      threwInLoop = true;
+      throw err;
+    }
   }
-  const resultPlanId = previousPlanId!;
+  } finally {
+    clearTimeout(runDeadlineTimer);
+  }
+  if (threwInLoop && firstPlanId === null) {
+    // Surface the original failure; nothing to update on the manifest guard.
+    // (unreachable — throw above rethrows — kept for clarity)
+  }
+  const resultPlanId = firstPlanId;
 
   // Final stale-snapshot guard. Re-reading the projection manifest guarantees
   // a confirmation/revoke that landed between snapshot build and finalization
   // invalidates the proposal (spec §1.7, §5.3). Shared helper from
-  // `services/snapshot-manifest-guard.ts` so RESEARCH and PLAN/REPLAN stay in lockstep.
+  // `services/snapshot-manifest-guard.ts` so RESEARCH and PLAN/REPLAN stay in
+  // lockstep. Skip the itinerary_plans write when no plan was produced —
+  // every destination in this run landed in the research-summary branch.
   await assertSnapshotManifestStable(run.snapshotId, initialManifestHash).catch(async (err) => {
     if ((err as { code?: string }).code !== "STALE_SNAPSHOT_GUARD") throw err;
-    // Supersede this run as STALE; the latest REPLAN from the mutation wins.
-    await db.update(itineraryPlans)
-      .set({ status: "STALE", staleReason: "snapshot_manifest_superseded", supersededAt: new Date() })
-      .where(and(eq(itineraryPlans.id, resultPlanId), eq(itineraryPlans.status, "PROPOSED")));
+    if (resultPlanId) {
+      await db.update(itineraryPlans)
+        .set({ status: "STALE", staleReason: "snapshot_manifest_superseded", supersededAt: new Date() })
+        .where(and(eq(itineraryPlans.id, resultPlanId), eq(itineraryPlans.status, "PROPOSED")));
+    }
     await db.update(tripConstraintFacts)
       .set({})
       .where(eq(tripConstraintFacts.tripId, run.tripId!));

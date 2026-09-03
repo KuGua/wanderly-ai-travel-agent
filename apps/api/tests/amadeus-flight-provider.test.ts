@@ -59,16 +59,40 @@ describe("AmadeusFlightProvider", () => {
     });
   });
 
+  // P1-B: the provider now retries transient upstream failures under the
+  // unified resilience-policy loop. The tests therefore must provide
+  // enough mock responses to cover the retry budget (maxAttempts = 2 by
+  // default for the `flight` capability) before the request can be
+  // classified. Each `transient` case below provides two 429/503
+  // responses (token + flight-offers) and the test asserts the *final*
+  // outcome — the intermediate retries are an implementation detail
+  // validated by the smoke tests, not by this unit surface.
   it.each([
     [200, { data: [] }, "NO_RESULTS"],
     [429, {}, "RATE_LIMITED"],
     [503, {}, "UPSTREAM_FAILURE"],
     [200, { data: [{ bad: true }] }, "INVALID_PROVIDER_RESPONSE"],
   ])("maps response %s to %s", async (status, body, reason) => {
-    const result = await provider([
-      new Response(JSON.stringify(token), { status: 200 }), new Response(JSON.stringify(body), { status }),
-    ]).searchFlights(request);
-    expect(result).toEqual({ outcome: "UNAVAILABLE", reason });
+    const isTransient = status === 429 || status >= 500;
+    const flightResponse = isTransient
+      // Two copies of the transient response so the retry budget
+      // (maxAttempts = 2) can exhaust without the mock falling through to
+      // an undefined return. The 20s rate-limited backoff is overridden
+      // below via env so the test does not sleep 20s.
+      ? [new Response(JSON.stringify(body), { status }), new Response(JSON.stringify(body), { status })]
+      : [new Response(JSON.stringify(body), { status })];
+    const previous = process.env.AMADEUS_FLIGHT_RETRY_BACKOFF_MS;
+    process.env.AMADEUS_FLIGHT_RETRY_BACKOFF_MS = "1";
+    try {
+      const result = await provider([
+        new Response(JSON.stringify(token), { status: 200 }),
+        ...flightResponse,
+      ]).searchFlights(request);
+      expect(result).toEqual({ outcome: "UNAVAILABLE", reason });
+    } finally {
+      if (previous === undefined) delete process.env.AMADEUS_FLIGHT_RETRY_BACKOFF_MS;
+      else process.env.AMADEUS_FLIGHT_RETRY_BACKOFF_MS = previous;
+    }
   });
 
   it("maps abort and timeout failures to UPSTREAM_TIMEOUT", async () => {

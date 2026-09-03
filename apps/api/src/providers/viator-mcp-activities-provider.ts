@@ -58,6 +58,11 @@ export class ViatorMcpActivitiesProvider implements ActivitiesProvider {
     }
 
     let lastReason: UnavailableReason = "UPSTREAM_FAILURE";
+    // P1-B: behaviour preserved exactly — viator's existing 429 / fast-retry
+    // semantics stay in the adapter because they have domain-specific
+    // shaping (`retryAfterMs ≤ 5_000`) that the shared policy does not
+    // express. The policy is read here only for documentation / future
+    // expansion; the actual `isRetryable` set is unchanged.
     for (let attempt = 0; attempt <= this.options.maxRetries; attempt += 1) {
       try {
         const response = await this.callSearch(params);

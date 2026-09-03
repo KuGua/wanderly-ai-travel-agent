@@ -3,6 +3,7 @@ import type { FlightOffer } from "../types/domain.js";
 import { metrics } from "../observability/metrics.js";
 import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import type { FlightProvider, FlightSearchParams, ProviderResult } from "./types.js";
+import { executeWithPolicy, getResiliencePolicyForSkill } from "../config/resilience-policy.js";
 import { flightApiFlightSearchResponseSchema, type FlightApiFlightSearchResponse } from "./flightapi-flight-schemas.js";
 
 export interface FlightApiProviderOptions {
@@ -74,19 +75,34 @@ export class FlightApiProvider implements FlightProvider {
       this.record("LIVE", start);
       return { outcome: "LIVE", data: offers, source: SOURCE, capturedAt };
     } catch (error) {
+      // P1-B: `executeWithPolicy` re-throws a transient-status error after
+      // exhausting the retry budget; map it to the typed reason.
+      const status = (error as { status?: number }).status;
+      if (status === 429) return this.unavailable("RATE_LIMITED", start);
+      if (typeof status === "number" && status >= 500) return this.unavailable("UPSTREAM_FAILURE", start);
       if ((error as { name?: string }).name === "AbortError") return this.unavailable("UPSTREAM_TIMEOUT", start);
       return this.unavailable("INVALID_PROVIDER_RESPONSE", start);
     }
   }
 
   private async request(pathParts: Array<string | undefined>, signal?: AbortSignal): Promise<Response> {
-    const timeout = AbortSignal.timeout(this.options.timeoutMs);
-    const combinedSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    const policy = getResiliencePolicyForSkill("flight.search");
     const encodedPath = pathParts.map((part) => encodeURIComponent(part ?? "")).join("/");
-    return observeExternalProviderFetch(
-      { provider: "flightapi", operation: "flight.search", method: "GET" },
-      () => this.fetchImpl(`${FLIGHT_API_BASE_URL}/${encodedPath}`, { method: "GET", signal: combinedSignal }),
-    );
+    // P1-B: transient upstream failures (5xx, 429) now retry under the
+    // unified resilience-policy loop. Per-attempt timeouts are owned by
+    // the policy; the caller's signal is merged for lease-loss / cancel.
+    return executeWithPolicy(policy, async (perAttemptSignal) => {
+      const response = await observeExternalProviderFetch(
+        { provider: "flightapi", operation: "flight.search", method: "GET" },
+        () => this.fetchImpl(`${FLIGHT_API_BASE_URL}/${encodedPath}`, { method: "GET", signal: perAttemptSignal }),
+      );
+      if (response.status === 429 || response.status >= 500) {
+        const err = new Error(`FlightAPI transient ${response.status}`);
+        (err as { status?: number }).status = response.status;
+        throw err;
+      }
+      return response;
+    }, signal);
   }
 
   private unavailable(reason: Extract<ProviderResult<FlightOffer[]>, { outcome: "UNAVAILABLE" }>["reason"], start: number): ProviderResult<FlightOffer[]> {

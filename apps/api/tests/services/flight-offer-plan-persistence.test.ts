@@ -67,13 +67,15 @@ describe("generatePlan — flight offer persistence carries freshness fields", (
       travelDateEnd: "2026-09-08",
     });
 
-    const planId = await generatePlan({
+    const outcome = await generatePlan({
       ctx: createRequestContext(userId),
       tripId,
       snapshotId,
       destination: "Tokyo",
       memberIds: [userId],
     }, testPlanningDependencies);
+    if (outcome.outcome !== "PLAN") throw new Error(`expected PLAN outcome, got ${outcome.outcome}`);
+    const planId = outcome.planId;
 
     const [offer] = await db.select().from(providerOffers).where(and(
       eq(providerOffers.planId, planId),

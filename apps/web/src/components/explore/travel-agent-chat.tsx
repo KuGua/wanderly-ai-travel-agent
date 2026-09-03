@@ -1212,6 +1212,29 @@ export function TravelAgentChat({
                 stages={researchStages}
                 outcome={researchOutcome}
               />
+              {/* Post-P0 (planner-resilience §3.5): when the run finishes with a
+                  plan but with capability gaps, or finishes with no plan at all
+                  (research-summary branch), surface that explicitly in the chat
+                  rather than letting the user infer it from `resultPlanId`. */}
+              {(() => {
+                const run = agentRun.data;
+                if (!run || run.status === "RUNNING" || run.status === "QUEUED") return null;
+                if (run.status === "COMPLETED_WITH_GAPS" && run.resultPlanId !== null) {
+                  return (
+                    <p role="status" className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {t("planningCompletedWithGaps", { gaps: t("planningCompletedWithGaps.detail") })}
+                    </p>
+                  );
+                }
+                if (run.status === "COMPLETED_WITH_GAPS" && run.resultPlanId === null) {
+                  return (
+                    <p role="status" className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {t("planningResearchSummaryOnly", { reason: t("planningResearchSummaryOnly.reasonFlight") })}
+                    </p>
+                  );
+                }
+                return null;
+              })()}
             </div>
           ) : null}
         </div>
@@ -1506,6 +1529,7 @@ function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
     if (error.errorCode === "PLANNING_DATA_UNAVAILABLE") return t("planningDataUnavailable");
     if (error.errorCode === "POLICY_DENIED") return t("planningNotAllowed");
     if (error.errorCode === "SEARCH_PREFERENCES_STALE") return t("planningPreferencesChanged");
+    if (error.errorCode === "TOOL_CALL_MAX_TURNS") return t("planningToolBudgetExhausted");
     if (["NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT"].includes(error.errorCode ?? "")) {
       return planning ? t("planningProviderUnavailable") : t("providerUnavailable");
     }
