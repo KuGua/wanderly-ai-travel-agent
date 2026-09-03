@@ -430,3 +430,28 @@ describe("cancellation terms are not booking status", () => {
     )).toBe(true);
   });
 });
+
+describe("a currency code is not a flight number", () => {
+  // Found by an intermittent refusal: an evidence-backed hotel summary was
+  // replaced by "this chat cannot claim live prices…" — after the supplier
+  // call had already run and returned. The trigger was phrasing, not facts.
+  const offers = (price: string) =>
+    `Dotonbori Hotel：${price}，不可取消。RIHGA Royal Osaka：约 865 CNY/晚，可免费取消至 12 月 23 日。`;
+
+  it("does not refuse a hotel summary because the price leads with the currency", () => {
+    expect(containsUnsupportedOperationalClaim(offers("CNY 691/晚"), { evidenceBacked: true })).toBe(false);
+  });
+
+  it("gives the same verdict whichever way the model writes the amount", () => {
+    expect(containsUnsupportedOperationalClaim(offers("CNY 691/晚"), { evidenceBacked: true }))
+      .toBe(containsUnsupportedOperationalClaim(offers("约 691 CNY/晚"), { evidenceBacked: true }));
+  });
+
+  it("still refuses a real flight-status claim carrying a designator", () => {
+    expect(containsUnsupportedOperationalClaim("NH 842 今天延误了。", { evidenceBacked: true })).toBe(true);
+  });
+
+  it("still refuses a flight-status claim that names flights in words", () => {
+    expect(containsUnsupportedOperationalClaim("你的航班已取消。", { evidenceBacked: true })).toBe(true);
+  });
+});
