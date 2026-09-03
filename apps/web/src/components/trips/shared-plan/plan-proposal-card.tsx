@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 
 import type { ListedPlan } from "@/lib/api/contracts";
+import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import {
   useCastAdoptionVote,
   usePlanAdoptionVotes,
@@ -306,7 +307,10 @@ function VoteBlock({ planId, tripId }: { planId: string; tripId: string }) {
         <button
           type="button"
           disabled={cast.isPending}
-          onClick={() => cast.mutate({ planId, input: { decision: "ACCEPT" } })}
+          onClick={() => {
+            recordUiDiagnostic("shared_plan.vote_cast");
+            cast.mutate({ planId, input: { decision: "ACCEPT" } });
+          }}
           aria-pressed={tally.currentUserDecision === "ACCEPT"}
           className="min-h-10 px-3 text-xs font-extrabold wanderly-edge wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action"
         >
@@ -315,7 +319,10 @@ function VoteBlock({ planId, tripId }: { planId: string; tripId: string }) {
         <button
           type="button"
           disabled={cast.isPending}
-          onClick={() => cast.mutate({ planId, input: { decision: "NEEDS_CHANGES" } })}
+          onClick={() => {
+            recordUiDiagnostic("shared_plan.vote_cast");
+            cast.mutate({ planId, input: { decision: "NEEDS_CHANGES" } });
+          }}
           aria-pressed={tally.currentUserDecision === "NEEDS_CHANGES"}
           className="min-h-10 bg-[var(--w-mist)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge wanderly-r-xs wanderly-press"
         >

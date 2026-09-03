@@ -11,17 +11,20 @@ import { SharedPlanView } from "@/components/trips/shared-plan/shared-plan-view"
 import { ResearchGapBanner } from "@/components/trips/research-gap-banner";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link, useRouter } from "@/i18n/navigation";
+import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import {
   useCreateTripThread,
   useGetOrCreateDefaultTripThread,
   useLatestPlanningRun,
   useResearchResult,
   useTrip,
+  useTripPlans,
   useTripThreads,
   useUpdateDraftTripBrief,
   useUpdateTripTitle,
 } from "@/lib/query/hooks";
 import { TravelApiError } from "@/lib/api/errors";
+import { readLastSeenVersion } from "@/lib/trips/shared-plan-read-state";
 
 const DEFAULT_THREAD_QUERY = "thread";
 const SHARED_VIEW_QUERY = "view";
@@ -45,6 +48,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
 
   const tripQuery = useTrip(tripId);
   const threadsQuery = useTripThreads(tripId);
+  const plansQuery = useTripPlans(tripId);
   const createThread = useCreateTripThread(tripId);
   const ensureDefault = useGetOrCreateDefaultTripThread(tripId);
   const updateTitle = useUpdateTripTitle(tripId);
@@ -90,7 +94,24 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   }, [activeThread, threadsQuery.isError]);
 
   const liveThreads = useMemo(() => threads.filter((thread) => !thread.archivedAt), [threads]);
-  const archivedThreads = useMemo(() => threads.filter((thread) => thread.archivedAt), [threads]);
+  const archivedThreads = useMemo(() => threads.filter((thread) => !!thread.archivedAt), [threads]);
+
+  // Phase 4 — unread badge on the rail pinned entry. Computed here (above
+  // the early returns) so the hooks order stays stable for the rest of
+  // the render. The badge reads the same `plansQuery` already mounted by
+  // the shared view, so this introduces no extra HTTP request.
+  const hasUnreadSharedPlan = useMemo(() => {
+    const plans = plansQuery.data;
+    if (!plans) return false;
+    const maxVersion = Math.max(
+      0,
+      ...plans.proposed.map((p) => p.version),
+      ...plans.active.map((p) => p.version),
+      ...plans.stale.map((p) => p.version),
+    );
+    if (maxVersion === 0) return false;
+    return maxVersion > readLastSeenVersion(tripId);
+  }, [plansQuery.data, tripId]);
 
   // Auto-provision: when the threads list is loaded and empty, get or
   // create the caller's default scratchpad in a single round trip.
@@ -158,6 +179,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   // the `thread=` query parameter (spec §1.9): setting one clears the
   // other, so a refresh cannot land the user in a half-selected state.
   const handleSelectSharedView = useCallback(() => {
+    recordUiDiagnostic("shared_plan.view_open");
     const params = new URLSearchParams(searchParams.toString());
     params.delete(DEFAULT_THREAD_QUERY);
     params.set(SHARED_VIEW_QUERY, SHARED_VIEW_VALUE);
@@ -250,6 +272,10 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     ? trip.departureCities.join(" · ")
     : t("header.datesUnknown");
 
+  // Phase 4 — unread badge on the rail pinned entry. The computation is
+  // hoisted to the top of the render (above the early returns) so the
+  // hooks order stays stable; see the early definition for details.
+
   // Every place the selected plan touches; the globe merges these onto countries.
   const globePlaces = [...trip.departureCities, ...trip.destinationCandidates];
 
@@ -336,7 +362,9 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
         {/* Pinned shared-plan entry — Phase 1 of
             docs/shared-plan-surface-implementation.md §7.1. Always
             visible so the trip-scoped read-only view is discoverable
-            even when no plan exists yet (empty state lands here). */}
+            even when no plan exists yet (empty state lands here). The
+            unread dot is the Phase 4 (§7.5) badge; the button label is
+            unchanged for sighted users. */}
         <button
           type="button"
           aria-current={querySharedView ? "page" : undefined}
@@ -346,6 +374,13 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
         >
           <b className="block truncate pr-[42px] text-[13px] font-bold">{tShared("railTitle")}</b>
           <span className="block truncate text-xs">{tShared("railSubtitle")}</span>
+          {hasUnreadSharedPlan ? (
+            <span
+              aria-label="Unread shared plan update"
+              data-testid="shared-plan-unread"
+              className="absolute right-2 top-2 inline-flex size-[10px] rounded-full bg-[var(--w-highlight)]"
+            />
+          ) : null}
         </button>
 
         <p className="mx-4 mb-2 mt-[18px] text-[11px] font-black uppercase tracking-[0.09em] wanderly-underline">{t("threads.sectionLabel")}</p>

@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { TravelApiError } from "@/lib/api/errors";
 import { useSharedPlanFeed, useTripPlans } from "@/lib/query/hooks";
+import { readLastSeenVersion, writeLastSeenVersion } from "@/lib/trips/shared-plan-read-state";
 import { PlanProposalCard } from "./plan-proposal-card";
 import { PlanVersionTrail } from "./plan-version-trail";
 import { SharedPlanStatusBar } from "./shared-plan-status-bar";
@@ -70,6 +71,17 @@ export function SharedPlanView({ tripId }: { tripId: string }) {
     ? [...data.proposed, ...data.active, ...data.stale]
     : [];
   const empty = allPlans.length === 0;
+
+  // Phase 4 — acknowledge the pointer for the rail unread badge. We only
+  // write when we are about to render plans (§7.2.c) so the empty state
+  // doesn't accidentally clear a future "first plan" badge; the pointer
+  // helper itself enforces the "never decreases" invariant.
+  if (!empty) {
+    const maxVersion = allPlans.reduce((acc, p) => Math.max(p.version, acc), 0);
+    if (maxVersion > readLastSeenVersion(tripId)) {
+      writeLastSeenVersion(tripId, maxVersion);
+    }
+  }
 
   // State a — empty. No manual-replan button (§6 forbidden); only a pointer
   // back to the caller's private thread where plans are born.

@@ -8,9 +8,26 @@ import { safeSetAttribute } from "../observability/tracing.js";
 import { createRequestContext } from "../utils/context.js";
 import { errorResponseSchema, toJsonSchema } from "../types/schemas.js";
 
+// The server-side allow-list MUST stay in lockstep with the client's
+// `UI_ACTIONS` in `apps/web/src/lib/observability/ui-diagnostics.ts`:
+// any client-declared action that is not also present here is rejected
+// with 422 by the Zod enum. When the client adds a new event, add the
+// string here in the same commit.
 const actions = [
   "frontend.runtime", "profile.save", "trip.activate", "trip.thread_create", "conversation.submit",
   "agent.run_cancel", "invitation.accept", "invitation.decline", "plan.confirm", "booking.confirm",
+  // Phase 6 / Personal Trip Orchestrator
+  "research.command_confirm", "research.command_reject", "research.stage_view", "research.intent_dismiss",
+  // Personal Research Setup Sessions (§9) — kept for parity with the
+  // historical client allow-list, even though those flows are no longer
+  // wired client-side after migration 0049.
+  "setup.session_open", "setup.field_update", "setup.confirm", "setup.cancel", "setup.followup_received",
+  // Phase 2 — Real-provider acknowledgement (flight / hotel / etc.)
+  "research.real_provider_acknowledged", "research.real_provider_declined",
+  // Phase 6 / Member conversation handoff
+  "conversation.handoff_confirm",
+  // Shared Plan Surface (Phase 4)
+  "shared_plan.view_open", "shared_plan.vote_cast",
 ] as const;
 const screens = ["home", "explore", "projects", "trip", "profile", "login", "register", "forgot_password", "unknown"] as const;
 const errorCategories = [
