@@ -31,15 +31,19 @@ export type PreferenceCardField = {
   /** The values the field accepts, when it is a closed set. */
   options: string[] | null;
   /**
-   * Whether the field holds a list rather than a single value.
+   * What kind of value the field holds, so the card can render the right
+   * control and send the right type.
    *
    * The card used to infer this from the value it was showing, which is null
-   * for anything not set yet — so a first-time `interests` was sent as the raw
-   * string the traveller typed, the catalogue rejected it against
-   * `z.array(z.string())`, and the whole resolve failed. That took the card's
-   * "seen" marker down with it, so the answer was lost and the card came back.
+   * for everything not set yet. So the first time anyone filled in a field
+   * they got a text box and sent a string: `interests` wants an array,
+   * `no_red_eye` a boolean, `budget_max_usd` a number. Each was rejected by
+   * the catalogue, and because the rejection throws before
+   * `resolvePreferenceCard` records the card as seen, the answer was lost
+   * *and* the card came back. Only the two enums and the one genuine string
+   * field ever saved — which is exactly what the stored data shows.
    */
-  multiValue: boolean;
+  kind: "enum" | "list" | "boolean" | "number" | "text";
 };
 
 export type PreferenceCard = {
@@ -66,8 +70,13 @@ function optionsFor(fieldKey: string): string[] | null {
 }
 
 /** Asked of the schema, which is the only thing that actually knows. */
-function isMultiValue(fieldKey: string): boolean {
-  return memoryFieldDefinition(fieldKey)?.schema instanceof z.ZodArray;
+function kindOf(fieldKey: string): PreferenceCardField["kind"] {
+  const schema = memoryFieldDefinition(fieldKey)?.schema;
+  if (optionsFor(fieldKey)) return "enum";
+  if (schema instanceof z.ZodArray) return "list";
+  if (schema instanceof z.ZodBoolean) return "boolean";
+  if (schema instanceof z.ZodNumber) return "number";
+  return "text";
 }
 
 export async function readPreferenceCard(params: {
@@ -96,7 +105,7 @@ export async function readPreferenceCard(params: {
       value: overridden ? overrideByField.get(definition.key) : profileByField.get(definition.key) ?? null,
       inherited: !overridden,
       options: optionsFor(definition.key),
-      multiValue: isMultiValue(definition.key),
+      kind: kindOf(definition.key),
     };
   });
 

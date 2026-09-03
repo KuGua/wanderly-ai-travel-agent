@@ -819,7 +819,6 @@ export function TravelAgentChat({
   async function resolvePreferences(adjustments: Array<{ fieldKey: string; value: unknown }>) {
     if (!tripId || !api.resolvePreferenceCard) return;
     setPreferenceSaveFailed(false);
-    setPreferenceSaveFailed(false);
     setSavingPreferences(true);
     try {
       await api.resolvePreferenceCard(tripId, adjustments);
@@ -827,14 +826,22 @@ export function TravelAgentChat({
       // Dismissing is the common answer and must not be blocked by a failed
       // write; the server will offer the card again next time if it did not
       // record this. But a save the traveller actually made is different —
-      // swallowing that is how a rejected `interests` stayed invisible while
+      // swallowing that is how a rejected preference stayed invisible while
       // the card kept reappearing and the model never saw the answer.
       //
       // Reported as its own message rather than through `setRequestError`:
       // that path words every failure as one about the message just sent, so
       // a rejected preference read as "This message could not be accepted"
       // next to a chat the traveller had not typed in.
-      if (adjustments.length > 0) setPreferenceSaveFailed(true);
+      //
+      // The card stays up. Clearing it on a rejection left the traveller with
+      // a red line and nothing to correct — their answer gone and no way to
+      // put it back.
+      if (adjustments.length > 0) {
+        setPreferenceSaveFailed(true);
+        setSavingPreferences(false);
+        return;
+      }
     }
     setSavingPreferences(false);
     setPreferenceCard(null);

@@ -684,8 +684,8 @@ describe("the trip's preference card", () => {
   const card = {
     show: true,
     fields: [
-      { fieldKey: "trip_pace", category: "PREFERENCE" as const, value: "relaxed", inherited: true, options: ["relaxed", "balanced", "packed"], multiValue: false },
-      { fieldKey: "interests", category: "PREFERENCE" as const, value: ["ramen"], inherited: true, options: null, multiValue: true },
+      { fieldKey: "trip_pace", category: "PREFERENCE" as const, value: "relaxed", inherited: true, options: ["relaxed", "balanced", "packed"], kind: "enum" as const },
+      { fieldKey: "interests", category: "PREFERENCE" as const, value: ["ramen"], inherited: true, options: null, kind: "list" as const },
     ],
   };
 
@@ -715,7 +715,7 @@ describe("the trip's preference card", () => {
     // was lost and the card came back on the next visit.
     const unsetInterests = {
       show: true,
-      fields: [{ ...card.fields[1], value: null, multiValue: true }],
+      fields: [{ ...card.fields[1], value: null }],
     };
     const api = createApi({
       getPreferenceCard: vi.fn().mockResolvedValue(unsetInterests),
@@ -730,6 +730,51 @@ describe("the trip's preference card", () => {
     await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(
       TRIP_ID, [{ fieldKey: "interests", value: ["historical sites", "museums"] }],
     ));
+  });
+
+  it("sends a boolean field as a boolean and a number field as a number", async () => {
+    // Both are null until first set, so inferring the control from the value
+    // gave them a text box: `no_red_eye` went up as a string and the server
+    // answered 422 "Memory field rejected (INVALID_VALUE): no_red_eye".
+    const typed = {
+      show: true,
+      fields: [
+        { fieldKey: "no_red_eye", category: "PREFERENCE" as const, value: null, inherited: true, options: null, kind: "boolean" as const },
+        { fieldKey: "budget_max_usd", category: "PREFERENCE" as const, value: null, inherited: true, options: null, kind: "number" as const },
+      ],
+    };
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(typed),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: ["no_red_eye", "budget_max_usd"] }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByLabelText("no_red_eye"));
+    fireEvent.change(screen.getByLabelText("budget_max_usd"), { target: { value: "2500" } });
+    fireEvent.click(screen.getByTestId("trip-preference-submit"));
+
+    await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(TRIP_ID, [
+      { fieldKey: "no_red_eye", value: true },
+      { fieldKey: "budget_max_usd", value: 2500 },
+    ]));
+  });
+
+  it("keeps the card up when the save is refused, so the answer can be corrected", async () => {
+    // Clearing it on a rejection left a red line and nothing to edit: the
+    // traveller's answer was gone with no way to put it back.
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(card),
+      resolvePreferenceCard: vi.fn().mockRejectedValue(new Error("422")),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
+    fireEvent.click(screen.getByTestId("trip-preference-submit"));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/could not be saved/);
+    expect(screen.getByTestId("trip-preference-card")).toBeInTheDocument();
   });
 
   it("treats closing without a change as an answer, and writes no override", async () => {

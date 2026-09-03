@@ -64,6 +64,26 @@ function optionLabel(
   return translate.has(option) ? translate(option) : option.replace(/_/g, " ");
 }
 
+/**
+ * Turns what was typed into the type the catalogue validates against.
+ *
+ * An empty box means "leave it unset" rather than an empty string or a NaN,
+ * and a number that has not finished being typed ("1", then "12") stays a
+ * number rather than becoming NaN and failing the save.
+ */
+function parseByKind(kind: PreferenceCardField["kind"], typed: string): unknown {
+  const trimmed = typed.trim();
+  if (kind === "list") {
+    return trimmed.split(/[、,，]/).map((part) => part.trim()).filter(Boolean);
+  }
+  if (kind === "number") {
+    if (trimmed === "") return null;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return typed;
+}
+
 function isUnset(value: unknown): boolean {
   return value === null || value === undefined || value === "" || (Array.isArray(value) && value.length === 0);
 }
@@ -185,7 +205,7 @@ export function TripPreferenceCard({
                         <option key={option} value={option}>{optionLabel(option, optionLabels)}</option>
                       ))}
                     </select>
-                  ) : typeof field.value === "boolean" ? (
+                  ) : field.kind === "boolean" ? (
                     <input
                       aria-label={field.fieldKey}
                       type="checkbox"
@@ -196,20 +216,19 @@ export function TripPreferenceCard({
                   ) : (
                     <input
                       aria-label={field.fieldKey}
-                      type="text"
+                      type={field.kind === "number" ? "number" : "text"}
+                      inputMode={field.kind === "number" ? "numeric" : undefined}
                       value={Array.isArray(current) ? current.join("、") : String(current ?? "")}
+                      // Keyed off the field's declared kind, not the value on
+                      // screen. Every field is null until it is first set, so
+                      // reading the value sent a plain string for all of them:
+                      // `interests` wants an array and `budget_max_usd` a
+                      // number, and each rejection failed the whole save —
+                      // taking the card's "seen" marker, and the answer, with
+                      // it.
                       onChange={(event) => setDraft((d) => ({
                         ...d,
-                        // Keyed off the field's declared shape, not the value
-                        // on screen. `interests` is a list whose value is null
-                        // until it is first set, so reading the value sent the
-                        // raw typed string, the catalogue rejected it against
-                        // `z.array(z.string())`, and the failed save took the
-                        // card's "seen" marker with it — losing the answer and
-                        // bringing the card back on the next visit.
-                        [field.fieldKey]: field.multiValue
-                          ? event.target.value.split(/[、,，]/).map((part) => part.trim()).filter(Boolean)
-                          : event.target.value,
+                        [field.fieldKey]: parseByKind(field.kind, event.target.value),
                       }))}
                       className={inputFieldClass}
                     />
