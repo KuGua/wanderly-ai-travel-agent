@@ -806,10 +806,13 @@ export function TravelAgentChat({
     setSavingPreferences(true);
     try {
       await api.resolvePreferenceCard(tripId, adjustments);
-    } catch {
+    } catch (error) {
       // Dismissing is the common answer and must not be blocked by a failed
       // write; the server will offer the card again next time if it did not
-      // record this.
+      // record this. But a save the traveller actually made is different —
+      // swallowing that is how a rejected `interests` stayed invisible while
+      // the card kept reappearing and the model never saw the answer.
+      if (adjustments.length > 0) setRequestError(error);
     }
     setSavingPreferences(false);
     setPreferenceCard(null);

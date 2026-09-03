@@ -669,8 +669,8 @@ describe("the trip's preference card", () => {
   const card = {
     show: true,
     fields: [
-      { fieldKey: "trip_pace", category: "PREFERENCE" as const, value: "relaxed", inherited: true, options: ["relaxed", "balanced", "packed"] },
-      { fieldKey: "interests", category: "PREFERENCE" as const, value: ["ramen"], inherited: true, options: null },
+      { fieldKey: "trip_pace", category: "PREFERENCE" as const, value: "relaxed", inherited: true, options: ["relaxed", "balanced", "packed"], multiValue: false },
+      { fieldKey: "interests", category: "PREFERENCE" as const, value: ["ramen"], inherited: true, options: null, multiValue: true },
     ],
   };
 
@@ -689,6 +689,31 @@ describe("the trip's preference card", () => {
 
     await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(
       TRIP_ID, [{ fieldKey: "trip_pace", value: "packed" }],
+    ));
+  });
+
+  it("sends a list field as a list the first time it is filled in", async () => {
+    // The shape used to be guessed from the value on screen, which is null
+    // until the field is first set. So a first `interests` went up as the raw
+    // typed string, the catalogue rejected it against `z.array(z.string())`,
+    // and the failed save also skipped the card's "seen" marker — the answer
+    // was lost and the card came back on the next visit.
+    const unsetInterests = {
+      show: true,
+      fields: [{ ...card.fields[1], value: null, multiValue: true }],
+    };
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(unsetInterests),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: ["interests"] }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("interests"), { target: { value: "historical sites, museums" } });
+    fireEvent.click(screen.getByTestId("trip-preference-submit"));
+
+    await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(
+      TRIP_ID, [{ fieldKey: "interests", value: ["historical sites", "museums"] }],
     ));
   });
 
@@ -745,7 +770,9 @@ describe("the trip's preference card", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     const reopened = await screen.findByTestId("trip-preference-card");
-    expect(within(reopened).getByText("packed")).toBeInTheDocument();
+    // Rendered as its label, not the stored token: the card used to show the
+    // traveller `packed` (and `city_center`) verbatim.
+    expect(within(reopened).getByText("Packed")).toBeInTheDocument();
     // The phrase opens a card; it is not a question for the model.
     expect(api.submitConversationTurn).not.toHaveBeenCalled();
   });

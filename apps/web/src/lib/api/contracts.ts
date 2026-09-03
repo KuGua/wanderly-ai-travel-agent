@@ -1019,6 +1019,8 @@ export const preferenceCardFieldSchema = z.object({
   /** Whether this value came from the profile rather than this trip. */
   inherited: z.boolean(),
   options: z.array(z.string()).nullable(),
+  /** The field holds a list. Defaulted so an older server still parses. */
+  multiValue: z.boolean().default(false),
 });
 
 export const preferenceCardSchema = z.object({

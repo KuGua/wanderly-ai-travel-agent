@@ -12,6 +12,7 @@
  * which is nagging rather than offering.
  */
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 
 import { db } from "../db/database.js";
 import { tripPreferenceCardViews } from "../db/schema.js";
@@ -29,6 +30,16 @@ export type PreferenceCardField = {
   inherited: boolean;
   /** The values the field accepts, when it is a closed set. */
   options: string[] | null;
+  /**
+   * Whether the field holds a list rather than a single value.
+   *
+   * The card used to infer this from the value it was showing, which is null
+   * for anything not set yet — so a first-time `interests` was sent as the raw
+   * string the traveller typed, the catalogue rejected it against
+   * `z.array(z.string())`, and the whole resolve failed. That took the card's
+   * "seen" marker down with it, so the answer was lost and the card came back.
+   */
+  multiValue: boolean;
 };
 
 export type PreferenceCard = {
@@ -52,6 +63,11 @@ function optionsFor(fieldKey: string): string[] | null {
   const definition = memoryFieldDefinition(fieldKey);
   const options = (definition?.schema as unknown as { options?: unknown }).options;
   return Array.isArray(options) ? (options as string[]) : null;
+}
+
+/** Asked of the schema, which is the only thing that actually knows. */
+function isMultiValue(fieldKey: string): boolean {
+  return memoryFieldDefinition(fieldKey)?.schema instanceof z.ZodArray;
 }
 
 export async function readPreferenceCard(params: {
@@ -80,6 +96,7 @@ export async function readPreferenceCard(params: {
       value: overridden ? overrideByField.get(definition.key) : profileByField.get(definition.key) ?? null,
       inherited: !overridden,
       options: optionsFor(definition.key),
+      multiValue: isMultiValue(definition.key),
     };
   });
 

@@ -36,11 +36,32 @@ function labelFor(translate: (key: string) => string, fieldKey: string): string 
   }
 }
 
-function displayValue(value: unknown, unset: string): string {
+function displayValue(
+  value: unknown,
+  unset: string,
+  optionLabel?: (option: string) => string,
+): string {
   if (value === null || value === undefined || value === "") return unset;
   if (Array.isArray(value)) return value.join("、");
   if (typeof value === "boolean") return value ? "✓" : "—";
+  // A closed-set value is a stored token, not prose: without this the card
+  // showed the traveller `city_center` where it means "City center".
+  if (optionLabel && typeof value === "string") return optionLabel(value);
   return String(value);
+}
+
+/**
+ * Turns a stored option token into the label the profile form already uses for
+ * it. Falls back to the humanised token so an option added to the catalogue
+ * before its label still reads as words rather than breaking the card.
+ */
+function optionLabel(
+  option: string,
+  translate: ReturnType<typeof useTranslations>,
+): string {
+  // `t()` does not throw on a missing message — it returns a placeholder and
+  // logs — so the fallback has to be chosen by asking first.
+  return translate.has(option) ? translate(option) : option.replace(/_/g, " ");
 }
 
 function isUnset(value: unknown): boolean {
@@ -58,6 +79,10 @@ export function TripPreferenceCard({
 }): ReactNode {
   const t = useTranslations("explore.chat");
   const fieldLabel = useTranslations("explore.chat.prefCardField");
+  // One namespace already carries every closed-set option this card can show
+  // — both the stay styles and the pace values — so reuse it rather than
+  // restate the labels or guess a namespace per field.
+  const optionLabels = useTranslations("trips.memory.values");
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
 
@@ -156,7 +181,9 @@ export function TripPreferenceCard({
                       className={inputFieldClass}
                     >
                       <option value="">{t("prefCardUnset")}</option>
-                      {field.options.map((option) => <option key={option} value={option}>{option}</option>)}
+                      {field.options.map((option) => (
+                        <option key={option} value={option}>{optionLabel(option, optionLabels)}</option>
+                      ))}
                     </select>
                   ) : typeof field.value === "boolean" ? (
                     <input
@@ -173,8 +200,15 @@ export function TripPreferenceCard({
                       value={Array.isArray(current) ? current.join("、") : String(current ?? "")}
                       onChange={(event) => setDraft((d) => ({
                         ...d,
-                        [field.fieldKey]: Array.isArray(field.value)
-                          ? event.target.value.split(/[、,]/).map((part) => part.trim()).filter(Boolean)
+                        // Keyed off the field's declared shape, not the value
+                        // on screen. `interests` is a list whose value is null
+                        // until it is first set, so reading the value sent the
+                        // raw typed string, the catalogue rejected it against
+                        // `z.array(z.string())`, and the failed save took the
+                        // card's "seen" marker with it — losing the answer and
+                        // bringing the card back on the next visit.
+                        [field.fieldKey]: field.multiValue
+                          ? event.target.value.split(/[、,，]/).map((part) => part.trim()).filter(Boolean)
                           : event.target.value,
                       }))}
                       className={inputFieldClass}
@@ -182,7 +216,9 @@ export function TripPreferenceCard({
                   )
                 ) : (
                   <span className={unset ? "text-muted-foreground/70" : undefined}>
-                    {displayValue(current, t("prefCardUnset"))}
+                    {displayValue(current, t("prefCardUnset"), field.options
+                      ? (option) => optionLabel(option, optionLabels)
+                      : undefined)}
                   </span>
                 )}
                 {!editing && changed ? (
