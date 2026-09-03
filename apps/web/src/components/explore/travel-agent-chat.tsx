@@ -999,14 +999,14 @@ export function TravelAgentChat({
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
             <div className={docked ? "mx-auto flex max-w-[640px] flex-col items-start pb-4 pt-1 text-left" : "mb-4 flex flex-col items-start text-left"}>
-              <div aria-hidden="true" className={`mb-2 flex items-center gap-2 ${docked ? "text-primary" : "text-[var(--w-highlight)]"}`}>
-                <Sparkles className="size-3.5" />
-                <span className="h-px w-8 bg-current opacity-70" />
+              <div aria-hidden="true" className={`mb-2 flex items-center gap-2 ${docked ? "text-muted-foreground" : "text-[var(--w-fog)]"}`}>
+                <Sparkles className="size-3" />
+                <span className="h-px w-7 bg-current opacity-70" />
               </div>
-              <p className="max-w-[36rem] text-balance text-base font-bold leading-snug tracking-[-0.025em] text-primary sm:text-lg">
+              <p className="max-w-[36rem] text-balance text-sm font-bold leading-snug tracking-[-0.02em] text-[var(--w-ink)] sm:text-base">
                 {t("introTitle")}
               </p>
-              <p className={`mt-2 max-w-[36rem] text-pretty text-[13px] leading-5 ${docked ? "text-muted-foreground" : "text-[var(--w-fog)]"}`}>
+              <p className={`mt-2 max-w-[36rem] text-pretty text-[12px] leading-5 ${docked ? "text-muted-foreground" : "text-[var(--w-fog)]"}`}>
                 {t("introBody")}
               </p>
             </div>

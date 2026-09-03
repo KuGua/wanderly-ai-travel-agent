@@ -146,7 +146,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     renderChat(createApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
 
     const title = await screen.findByText(/Let's plan somewhere memorable/);
-    expect(title).toHaveClass("text-balance", "text-base", "sm:text-lg", "font-bold", "text-primary");
+    expect(title).toHaveClass("text-balance", "text-sm", "sm:text-base", "font-bold", "text-[var(--w-ink)]");
     expect(title.parentElement).toHaveClass("items-start", "text-left", "max-w-[640px]");
     expect(title.parentElement).not.toHaveClass("wanderly-edge", "wanderly-shadow");
     expect(screen.queryByText("Wanderly Agent")).not.toBeInTheDocument();
