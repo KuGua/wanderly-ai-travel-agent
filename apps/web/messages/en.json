@@ -176,8 +176,7 @@
       "budgetMaxUsd": "Maximum budget (USD)",
       "mobilityNotes": "Mobility notes",
       "mobilityNotesHint": "Do not include document numbers.",
-      "noRedEyeLabel": "Avoid red-eye flights",
-      "noRedEyeHint": "Treat overnight departures as a stable preference."
+      "noRedEyeLabel": "Avoid red-eye flights"
     },
     "accommodation": {
       "notSet": "Not set",

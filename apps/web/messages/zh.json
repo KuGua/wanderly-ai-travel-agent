@@ -176,8 +176,7 @@
       "budgetMaxUsd": "最高预算（美元）",
       "mobilityNotes": "出行便利说明",
       "mobilityNotesHint": "请勿填写证件号码。",
-      "noRedEyeLabel": "避免红眼航班",
-      "noRedEyeHint": "将过夜出发视为稳定偏好。"
+      "noRedEyeLabel": "避免红眼航班"
     },
     "accommodation": {
       "notSet": "未设置",

@@ -192,26 +192,32 @@ export function ProfileForm({
               )}
             />
           </Field>
-          <Field id="budget-max-usd" label={t("fields.budgetMaxUsd")} error={errors.budgetMaxUsd?.message}>
-            <input id="budget-max-usd" {...register("budgetMaxUsd")} className={inputClass(Boolean(errors.budgetMaxUsd))} inputMode="numeric" />
-          </Field>
-          <Field id="mobility-notes" label={t("fields.mobilityNotes")} hint={t("fields.mobilityNotesHint")} error={errors.mobilityNotes?.message}>
-            <textarea id="mobility-notes" {...register("mobilityNotes")} className={cn(inputClass(Boolean(errors.mobilityNotes)), "min-h-28 py-3")} />
+          {/* Budget and the red-eye toggle share this cell. The toggle is
+              pushed to the bottom of the row, so its lower edge meets the
+              textarea's rather than starting a fourth band under a half-empty
+              column. */}
+          <div className="row-span-3 grid grid-rows-subgrid gap-1 text-sm font-medium">
+            <label htmlFor="budget-max-usd" className="self-end">{t("fields.budgetMaxUsd")}</label>
+            <div className="flex flex-col gap-3">
+              <input id="budget-max-usd" {...register("budgetMaxUsd")} className={inputClass(Boolean(errors.budgetMaxUsd))} inputMode="numeric" />
+              <label className="mt-auto flex min-h-11 items-center gap-3 bg-card px-4 py-3 wanderly-edge wanderly-r-md wanderly-shadow-sm">
+                <input type="checkbox" {...register("noRedEye")} className="size-5 accent-[var(--w-highlight)] wanderly-edge-thin wanderly-r-xs" />
+                <span className="font-medium">{t("fields.noRedEyeLabel")}</span>
+              </label>
+            </div>
+            <div className="self-start text-xs">
+              {errors.budgetMaxUsd?.message ? <span className="text-destructive">{errors.budgetMaxUsd.message}</span> : null}
+            </div>
+          </div>
+          <Field id="mobility-notes" label={t("fields.mobilityNotes")} error={errors.mobilityNotes?.message}>
+            <textarea id="mobility-notes" {...register("mobilityNotes")} className={cn(inputClass(Boolean(errors.mobilityNotes)), "min-h-28 py-3")} placeholder={t("fields.mobilityNotesHint")} />
           </Field>
         </div>
-        <label className="mt-3 flex min-h-11 items-center gap-3 bg-card px-4 py-3 wanderly-edge wanderly-r-md wanderly-shadow-sm">
-          <input type="checkbox" {...register("noRedEye")} className="size-5 accent-[var(--w-highlight)] wanderly-edge-thin wanderly-r-xs" />
-          <span>
-            <span className="block font-medium">{t("fields.noRedEyeLabel")}</span>
-            <span className="block text-sm text-muted-foreground">{t("fields.noRedEyeHint")}</span>
-          </span>
-        </label>
       </section>
 
-      {/* The button alone, held at the form's bottom-right. The surrounding
-          card and its note were a full-width bar that read as a third section
-          competing with the two real ones. */}
-      <div className="sticky bottom-4 z-10 flex justify-end">
+      {/* The button alone, at the form's bottom-right. Not sticky: it used to
+          ride the scroll and slide over the content below. */}
+      <div className="flex justify-end">
         <Button type="submit" size="lg" className="min-h-11 px-5 wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action" disabled={isSaving || !isDirty}>
           <Save aria-hidden="true" />
           {isSaving ? t("saving") : t("save")}
@@ -260,7 +266,10 @@ function Field({ id, label, hint, error, children }: { id: string; label: string
   return (
     <div className="row-span-3 grid grid-rows-subgrid gap-1 text-sm font-medium">
       <label htmlFor={id} className="self-end">{label}</label>
-      <div className="self-start">{children}</div>
+      {/* flex, not a plain block: a textarea is inline-level, so a block
+          wrapper leaves a few pixels of baseline gap under it — enough to
+          push the control opposite it out of alignment. */}
+      <div className="flex flex-col self-start">{children}</div>
       <div className="self-start text-xs">
         {error ? <span className="text-destructive">{error}</span> : hint ? <span className="font-normal text-muted-foreground">{hint}</span> : null}
       </div>
