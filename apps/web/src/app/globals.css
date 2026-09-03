@@ -491,6 +491,24 @@
   background: var(--w-white);
 }
 
+/* A persona drawn as artwork rather than in CSS: the box only carries the
+   image, so none of robo's outline, fill or radius applies. */
+.wanderly-bot-body--sprite {
+  width: var(--bot-w);
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.wanderly-bot-sprite {
+  width: 100%;
+  height: auto;
+  display: block;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
 .wanderly-bot-eye {
   width: 3px;
   height: calc(var(--bot-h) / 4.4);

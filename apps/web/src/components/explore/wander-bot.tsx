@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { GestureReader, pressWasClick } from "./bot-gestures";
+import { BotPersona, ShaziSprite } from "./bot-personas";
+
 /*
  * Wander-bot: a small outlined companion that floats over the cosmic map.
  *
@@ -47,7 +50,16 @@ type Props = {
   obstructed?: boolean;
   /** Place name for the speech cloud, e.g. "上海". */
   speechPlace?: string | null;
+  /**
+   * Source of the persona-switch roll. Injectable so a test can pin it —
+   * a 17% chance is otherwise untestable without running the click hundreds
+   * of times and hoping.
+   */
+  random?: () => number;
 };
+
+/** How often clicking robo turns it into 啥子. */
+export const SHAZI_SWITCH_CHANCE = 0.17;
 
 type Bounds = { left: number; top: number; right: number; bottom: number };
 
@@ -129,7 +141,7 @@ export function resolveAgainstObstacles(
   return point;
 }
 
-export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstructed = false, speechPlace = null }: Props) {
+export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstructed = false, speechPlace = null, random = Math.random }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const positionRef = useRef<Point | null>(null);
@@ -138,6 +150,17 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
 
   const [settled, setSettled] = useState(false);
   const [dragging, setDragging] = useState(false);
+  /**
+   * Session-only on purpose: a reload always comes back as robo, so nobody can
+   * end up stuck as 啥子 with no idea how they got there. The 17% surprise is
+   * worth having precisely because it is a chance encounter.
+   */
+  const [persona, setPersona] = useState<BotPersona>("robo");
+  /** Gestures only 啥子 answers; robo settles its single click immediately. */
+  const gesturesRef = useRef(new GestureReader());
+  const gestureTimerRef = useRef(0);
+  const pressRef = useRef<{ x: number; y: number; at: number } | null>(null);
+  const pumpRef = useRef<() => void>(() => {});
   const [perched, setPerched] = useState(false);
   const [cloudBelow, setCloudBelow] = useState(false);
 
@@ -333,6 +356,35 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     };
   }, [lookAt, settled]);
 
+  /**
+   * One click on the bot. robo settles immediately; 啥子 buffers into a run.
+   *
+   * robo can settle now because it has exactly one gesture. Dropping the old
+   * ten-click trigger is what made that safe — with nothing else counting
+   * clicks on robo, an immediate roll can never cut a run short.
+   */
+  const onBotClick = useCallback((at: number) => {
+    if (persona === "robo") {
+      if (random() < SHAZI_SWITCH_CHANCE) setPersona("shazi");
+      return;
+    }
+    gesturesRef.current.leftClick(at);
+    pumpRef.current();
+  }, [persona, random]);
+
+  /**
+   * Right-click belongs to 啥子. It opens a menu rather than acting, which is
+   * what lets the reader hold it for a moment to see whether a second click
+   * follows: a harmless, reversible menu can afford the wait, and without it
+   * the double-click could never be reached.
+   */
+  const onContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (persona !== "shazi") return;
+    event.preventDefault();
+    gesturesRef.current.rightClick(event.timeStamp);
+    pumpRef.current();
+  }, [persona]);
+
   /** Dragging: the bot stays wherever it is dropped. */
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const node = rootRef.current;
@@ -341,6 +393,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     const grabOffset = { x: event.clientX - box.left, y: event.clientY - box.top };
 
     node.setPointerCapture(event.pointerId);
+    pressRef.current = { x: event.clientX, y: event.clientY, at: event.timeStamp };
     draggingRef.current = true;
     setDragging(true);
 
@@ -356,11 +409,19 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       ));
     };
 
-    const onUp = () => {
+    const onUp = (upEvent: PointerEvent) => {
       draggingRef.current = false;
       setDragging(false);
       const dropped = positionRef.current;
       if (dropped) settleWithGlide(dropped);
+      const press = pressRef.current;
+      pressRef.current = null;
+      if (press && pressWasClick({
+        movedPx: Math.hypot(upEvent.clientX - press.x, upEvent.clientY - press.y),
+        heldMs: upEvent.timeStamp - press.at,
+      })) {
+        onBotClick(upEvent.timeStamp);
+      }
       node.releasePointerCapture?.(event.pointerId);
       node.removeEventListener("pointermove", onMove);
       node.removeEventListener("pointerup", onUp);
@@ -370,7 +431,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     node.addEventListener("pointermove", onMove);
     node.addEventListener("pointerup", onUp);
     node.addEventListener("pointercancel", onUp);
-  }, [applyPosition, bounds, settleWithGlide]);
+  }, [applyPosition, bounds, onBotClick, settleWithGlide]);
 
   /*
    * When the chat panel expands, a bot standing inside the region it covers is
@@ -429,6 +490,36 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
   }, [applyPosition, bounds, obstructed, refreshPerched, settlePosition]);
 
   // Keep the bot on screen, and re-check its perch, when the window resizes.
+  /*
+   * One timer for every pending gesture, rearmed after each drain. A run of
+   * clicks resolves only once the traveller stops clicking, so nothing here
+   * polls — the reader says when the next window closes.
+   */
+  useEffect(() => {
+    pumpRef.current = () => {
+      window.clearTimeout(gestureTimerRef.current);
+      const due = gesturesRef.current.nextDueAt();
+      if (due === null) return;
+      gestureTimerRef.current = window.setTimeout(() => {
+        for (const gesture of gesturesRef.current.drain(performance.now())) {
+          // 啥子 → robo. The rest of the eggs plug in here as they are
+          // specified; an unhandled gesture is deliberately a no-op rather
+          // than a guess at what it should do.
+          if (gesture.kind === "rightDoubleClick") setPersona("robo");
+        }
+        pumpRef.current();
+      }, Math.max(0, due - performance.now()));
+    };
+    return () => window.clearTimeout(gestureTimerRef.current);
+  }, []);
+
+  /* A persona change abandons whatever run was in flight: the clicks were
+   * aimed at the character that just left. */
+  useEffect(() => {
+    gesturesRef.current.reset();
+    window.clearTimeout(gestureTimerRef.current);
+  }, [persona]);
+
   useEffect(() => {
     const onResize = () => {
       const node = rootRef.current;
@@ -451,6 +542,8 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       data-settled={settled ? "true" : "false"}
       data-cloud={cloudBelow ? "below" : "above"}
       onPointerDown={onPointerDown}
+      onContextMenu={onContextMenu}
+      data-persona={persona}
       role="presentation"
       style={{
         // Exposed as variables so the CSS keeps the golden-ratio relationships.
@@ -465,15 +558,23 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
         </div>
       ) : null}
 
-      <div ref={bodyRef} className="wanderly-bot-body">
-        <span className="wanderly-bot-eye" />
-        <span className="wanderly-bot-eye" />
-      </div>
+      {persona === "shazi" ? (
+        <div ref={bodyRef} className="wanderly-bot-body wanderly-bot-body--sprite">
+          <ShaziSprite onMissing={() => setPersona("robo")} />
+        </div>
+      ) : (
+        <>
+          <div ref={bodyRef} className="wanderly-bot-body">
+            <span className="wanderly-bot-eye" />
+            <span className="wanderly-bot-eye" />
+          </div>
 
-      <div className="wanderly-bot-legs">
-        <span className="wanderly-bot-leg" />
-        <span className="wanderly-bot-leg" />
-      </div>
+          <div className="wanderly-bot-legs">
+            <span className="wanderly-bot-leg" />
+            <span className="wanderly-bot-leg" />
+          </div>
+        </>
+      )}
     </div>
   );
 }
