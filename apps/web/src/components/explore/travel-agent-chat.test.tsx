@@ -217,6 +217,59 @@ describe("TravelAgentChat durable streaming flow", () => {
     });
   });
 
+  it("keeps a completed reply when the traveller switches surface mid-run", async () => {
+    // Switching surface (the globe's "Back to trip") remounts the chat while
+    // the run is still going. Whichever instance sees COMPLETED first clears
+    // the stored run pointer, so the instance that mounts afterwards has
+    // nothing left to poll — and the conversation it fetched used to land only
+    // in the departing instance's own state. The reply died with it, and the
+    // new surface showed the question with no answer under it.
+    let conversationCalls = 0;
+    const withReply = {
+      thread: thread(),
+      messages: [
+        { id: USER_MESSAGE_ID, role: "USER" as const, content: "best month for Kanazawa?", sequence: 1, createdAt: CREATED_AT },
+        { id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT" as const, content: "April for the cherry blossom.", sequence: 2, createdAt: CREATED_AT },
+      ],
+    };
+    const api = createApi({
+      submitConversationTurn: vi.fn().mockImplementation(async (_t, input) => accepted(input.question)),
+      getAgentRun: vi.fn().mockResolvedValue(run("COMPLETED")),
+      // The first read is the initial mount, before the turn exists. Every
+      // later read has the reply — as the server does.
+      getOwnerConversation: vi.fn().mockImplementation(async () => {
+        conversationCalls += 1;
+        return conversationCalls === 1 ? { thread: thread(), messages: [] } : withReply;
+      }),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_id: string, signal: AbortSignal) => {
+        await untilAborted(signal);
+      }),
+    });
+
+    function SurfaceSwitcher() {
+      const [surface, setSurface] = useState("globe");
+      return (
+        <>
+          <button type="button" onClick={() => setSurface("workspace")}>Back to trip</button>
+          {/* A new key is a new instance, sharing one QueryClient — exactly
+              what a surface switch does. */}
+          <ChatHarness key={surface} controlledThreadId={THREAD_ID} initiallyOpen tripId={TRIP_ID} />
+        </>
+      );
+    }
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(REQUEST_ID);
+    renderWithIntl(<SurfaceSwitcher />, { api });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "best month for Kanazawa?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await screen.findByText("April for the cherry blossom.");
+
+    // Switch surface. The new instance must render the reply from the shared
+    // cache — its own query is still inside staleTime, so nothing refetches.
+    fireEvent.click(screen.getByRole("button", { name: "Back to trip" }));
+    expect(await screen.findByText("April for the cherry blossom.")).toBeInTheDocument();
+  });
+
   it("offers flight preference chips only for a server-classified flight gap, and saves the latest explicit choice without searching", async () => {
     const saveTripSearchPreferences = vi.fn().mockResolvedValue({});
     const api = createApi({

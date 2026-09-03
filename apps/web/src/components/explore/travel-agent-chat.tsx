@@ -22,6 +22,9 @@ import type {
 } from "@/lib/api/contracts";
 import { FlightOfferCard } from "@/components/trips/flight-offer-card";
 import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
+import { useQueryClient } from "@tanstack/react-query";
+
+import { threadKeys } from "@/lib/query/keys";
 import { TravelApiError } from "@/lib/api/errors";
 import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { useTravelApi } from "@/lib/query/provider";
@@ -268,6 +271,7 @@ export function TravelAgentChat({
 
   const api = useTravelApi();
   const conversation = useOwnerConversation(effectiveThreadId);
+  const queryClient = useQueryClient();
   const agentRun = useAgentRun(activeRunId);
   const refetchAgentRun = agentRun.refetch;
   const cancelRun = useCancelAgentRun();
@@ -474,6 +478,17 @@ export function TravelAgentChat({
     if (status === "COMPLETED" && effectiveThreadId) {
       let active = true;
       void api.getOwnerConversation(effectiveThreadId).then((restored) => {
+        // Into the SHARED cache first, and unconditionally — this must land
+        // even when `active` is false, i.e. when this instance is already
+        // unmounting. Switching surface mid-run (the globe's "Back to trip",
+        // say) races: whichever chat instance sees COMPLETED first clears the
+        // stored run pointer, so the instance that mounts afterwards has
+        // nothing left to poll. Writing only to local state meant the reply
+        // died with the instance that fetched it, and the new surface showed
+        // the question with no answer under it until something unrelated
+        // refetched — measured at ~26s. The cache outlives both instances, so
+        // the surviving one renders the reply immediately.
+        queryClient.setQueryData(threadKeys.conversation(effectiveThreadId), restored);
         if (active) {
           setSessionThreadId(effectiveThreadId);
           setSessionMessages((current) => mergeMessages(current, restored.messages));
@@ -501,7 +516,7 @@ export function TravelAgentChat({
       }, 0);
       return () => window.clearTimeout(clearTerminalRun);
     }
-  }, [activeRunId, agentRun.data?.status, agentRun.data?.operation, agentRun.data?.errorCode, api, effectiveThreadId]);
+  }, [activeRunId, agentRun.data?.status, agentRun.data?.operation, agentRun.data?.errorCode, api, effectiveThreadId, queryClient]);
 
   // Backstop for the confirm panel: `useAgentRun` polls this run every 1.5s
   // regardless of the SSE stream's health, so a dropped or reconnected
