@@ -835,6 +835,11 @@ html.wanderly-flip body {
   transform-origin: 50vw 50vh;
 }
 
+html.wanderly-flip-pointer-inverted,
+html.wanderly-flip-pointer-inverted * {
+  cursor: none !important;
+}
+
 .wanderly-flip-game {
   position: fixed;
   inset: 0;
@@ -843,7 +848,7 @@ html.wanderly-flip body {
   background:
     radial-gradient(circle at center, rgb(246 189 96 / 12%), transparent 42%),
     rgb(8 47 63 / 12%);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 html.wanderly-flip .wanderly-flip-game {
@@ -903,6 +908,17 @@ html.wanderly-flip .wanderly-flip-game {
   white-space: nowrap;
 }
 
+.wanderly-flip-virtual-cursor {
+  position: absolute;
+  z-index: 4;
+  width: 28px;
+  height: 34px;
+  overflow: visible;
+  translate: -3px -3px;
+  filter: drop-shadow(2px 3px 0 rgb(8 47 63 / 35%));
+  pointer-events: none;
+}
+
 .wanderly-flip-shazi {
   position: absolute;
   z-index: 3;
@@ -914,7 +930,7 @@ html.wanderly-flip .wanderly-flip-game {
   cursor: crosshair;
   pointer-events: auto;
   translate: -50% -50%;
-  transition: left 180ms cubic-bezier(0.2, 0.75, 0.35, 1), top 180ms cubic-bezier(0.2, 0.75, 0.35, 1), scale 120ms ease;
+  transition: left 75ms cubic-bezier(0.2, 0.75, 0.35, 1), top 75ms cubic-bezier(0.2, 0.75, 0.35, 1), scale 80ms ease;
   filter: drop-shadow(8px 10px 0 rgb(8 47 63 / 30%));
 }
 
