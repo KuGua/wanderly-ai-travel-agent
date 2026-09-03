@@ -552,6 +552,10 @@ export const agentRunResponseSchema = z.object({
    * solely on the one-shot `tool.settled` event.
    */
   pendingFlightConfirmation: z.boolean().optional(),
+  /** The same, for an unconfirmed hotel-search draft. Separate from the
+   * flight flag because a thread can be waiting on both at once, and a
+   * button must authorise exactly one search. */
+  pendingHotelConfirmation: z.boolean().optional(),
 });
 
 const streamBaseSchema = z.object({

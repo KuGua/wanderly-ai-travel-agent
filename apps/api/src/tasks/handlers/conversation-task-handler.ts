@@ -10,6 +10,7 @@ import { metrics } from "../../observability/metrics.js";
 import { isPersonalResearchCapabilityAllowed } from "../../config/personal-research-allowed-capabilities.js";
 import {
   containsUnsupportedOperationalClaim,
+  evidenceBackedConversationFallback,
 } from "../../policy/conversation-safety.js";
 import { buildConversationContext } from "../../services/conversation-context-service.js";
 import { buildConversationMemoryContext } from "../../services/conversation-memory-context.js";
@@ -555,11 +556,21 @@ export async function handleConversationTask(params: {
   const abortFromTask = () => execution.abort(params.signal.reason);
   if (params.signal.aborted) abortFromTask();
   else params.signal.addEventListener("abort", abortFromTask, { once: true });
-  const timeout = setTimeout(() => {
-    const error = new Error("Conversation Skill timed out");
-    error.name = "AbortError";
-    execution.abort(error);
-  }, travelConversationSkill.timeoutMs);
+  // The Skill's timeout is a budget for *model* time, not for wall clock. A
+  // tool-calling turn spends most of its wall clock inside a live supplier — a
+  // hotel search runs 10s+ on its own — so charging that to the same 15s budget
+  // aborted the turn while the search was still in flight: the offers were
+  // fetched and persisted, the cards rendered, and the traveller was told the
+  // model was unreachable.
+  const { withPausedModelBudget, clear: clearTurnDeadline } = createTurnDeadline({
+    modelBudgetMs: travelConversationSkill.timeoutMs,
+    onAbort: (reason) => {
+      const error = new Error(reason);
+      error.name = "AbortError";
+      execution.abort(error);
+    },
+    isAborted: () => execution.signal.aborted,
+  });
 
   // Phase 4: build tool context per-capability, from the rollout flag AND
   // the capability allow-list. Each capability is independent — one being
@@ -617,7 +628,7 @@ export async function handleConversationTask(params: {
     tools.push(tool);
     dispatchers.set(tool.name, async (call) => {
       await publishToolEvent(params.run, { phase: "started", name: call.name }, params.ctx.traceparent);
-      const result = await baseDispatch(call);
+      const result = await withPausedModelBudget(() => baseDispatch(call));
       // A readiness save/confirmation prompt is not evidence. Only the
       // server-side provider branch may unlock grounded price/inventory prose.
       // Sticky: a later CONFIRMATION_REQUIRED call in the same turn must not
@@ -688,7 +699,7 @@ export async function handleConversationTask(params: {
           // Answered rather than thrown: the model has to learn it already
           // ran this exact search.
           ? { outcome: "UNAVAILABLE", reason: "DUPLICATE_CALL" }
-          : await researchDispatch(call);
+          : await withPausedModelBudget(() => researchDispatch(call));
         if ((result as { providerDispatched?: unknown })?.providerDispatched === true) {
           evidenceDispatched = true;
         }
@@ -755,12 +766,21 @@ export async function handleConversationTask(params: {
       policyGate: new DefaultPolicyGate("personal"),
     }, input, execution.signal, (delta) => gate.push(delta), toolContext);
   } finally {
-    clearTimeout(timeout);
+    clearTurnDeadline();
     params.signal.removeEventListener("abort", abortFromTask);
   }
 
   await publishPhase(params.run, "VALIDATING", params.ctx.traceparent);
-  const parsed = travelConversationOutputSchema.parse(output);
+  const parsedReply = travelConversationOutputSchema.parse(output);
+  // A tool ran, its results are saved and already on screen as offer cards, and
+  // only the summarising model call failed. The generic "I can't reach the
+  // model" line contradicts those cards, so name what actually happened.
+  const parsed = parsedReply.responseMode === "FALLBACK" && evidenceDispatched
+    ? travelConversationOutputSchema.parse({
+      ...parsedReply,
+      content: evidenceBackedConversationFallback().content,
+    })
+    : parsedReply;
   if (
     parsed.responseMode === "MODEL"
     && containsUnsupportedOperationalClaim(parsed.content, { evidenceBacked: evidenceDispatched })
@@ -1103,3 +1123,65 @@ async function handleProactiveIntro(params: {
     traceparent: params.ctx.traceparent,
   });
 }
+
+/**
+ * The deadline for one conversation turn, split into two clocks.
+ *
+ * `modelBudgetMs` is the Skill's timeout, and it measures *model* time only:
+ * `withPausedModelBudget` stops it for exactly as long as a tool dispatch runs,
+ * so a slow supplier spends its own latency rather than the model's. Without
+ * that split a hotel search — 10s+ inside Nuitee — consumed most of the 15s
+ * budget and the turn was aborted mid-summary, discarding offers that had
+ * already been fetched and persisted.
+ *
+ * `hardCapMs` is plain wall clock and is never paused, so a supplier that never
+ * answers still cannot hold a turn open indefinitely.
+ */
+export function createTurnDeadline(params: {
+  modelBudgetMs: number;
+  onAbort: (reason: string) => void;
+  isAborted: () => boolean;
+  hardCapMs?: number;
+  now?: () => number;
+}): { withPausedModelBudget: <T>(run: () => Promise<T>) => Promise<T>; clear: () => void } {
+  const now = params.now ?? Date.now;
+  let remainingMs = params.modelBudgetMs;
+  let startedAt = now();
+  let timer: ReturnType<typeof setTimeout> | undefined = setTimeout(
+    () => params.onAbort("Conversation Skill timed out"),
+    remainingMs,
+  );
+  const hardCapTimer = setTimeout(
+    () => params.onAbort("Conversation turn exceeded its hard cap"),
+    params.hardCapMs ?? CONVERSATION_TURN_HARD_CAP_MS,
+  );
+  return {
+    withPausedModelBudget: async <T>(run: () => Promise<T>): Promise<T> => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = undefined;
+        remainingMs -= now() - startedAt;
+      }
+      try {
+        return await run();
+      } finally {
+        // An already-aborted turn gets no fresh timer: rearming one would fire
+        // a second abort against a signal that has already settled.
+        if (!timer && !params.isAborted()) {
+          startedAt = now();
+          timer = setTimeout(
+            () => params.onAbort("Conversation Skill timed out"),
+            Math.max(remainingMs, 0),
+          );
+        }
+      }
+    },
+    clear: () => {
+      if (timer) clearTimeout(timer);
+      timer = undefined;
+      clearTimeout(hardCapTimer);
+    },
+  };
+}
+
+export const CONVERSATION_TURN_HARD_CAP_MS = 120_000;

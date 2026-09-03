@@ -193,6 +193,22 @@ export function safeConversationFallback(): ConversationReply {
   };
 }
 
+/**
+ * The degradation notice for a turn whose tools DID run. Only the summarising
+ * model call failed, so the search itself completed and its results are already
+ * persisted and rendered as offer cards. Reusing the generic "can't reach the
+ * model" line here contradicts the cards sitting next to it on screen and hides
+ * work that actually succeeded. Same safety boundary as above: it points at the
+ * results without making any price / inventory claim of its own.
+ */
+export function evidenceBackedConversationFallback(): ConversationReply {
+  return {
+    content:
+      "Your search finished and the results below are saved, but I couldn't write the summary just now — please ask again if you'd like me to walk through them.",
+    responseMode: "FALLBACK",
+  };
+}
+
 function normalizePolicyText(value: string): string {
   // NFKC collapses variant kanji + half-width digits into canonical form.
   // Chinese / Japanese terms are matched by substring (see `hasTerm`) so we

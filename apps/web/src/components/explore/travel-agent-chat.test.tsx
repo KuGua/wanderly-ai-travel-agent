@@ -217,6 +217,39 @@ describe("TravelAgentChat durable streaming flow", () => {
     });
   });
 
+  it("shows the same confirm/cancel button when hotel.search needs confirmation, naming hotels", async () => {
+    // Hotels are CONFIRMED in `TOOL_INVOCATION_MODE` for the same reason
+    // flights are — a metered commercial supplier — but only the flight
+    // listener existed, so authorising a hotel search meant typing the exact
+    // phrase by hand.
+    const submitConversationTurn = vi.fn().mockImplementation(async (_threadId, input) => accepted(input.question));
+    const api = createApi({
+      submitConversationTurn,
+      getAgentRun: vi.fn().mockResolvedValue(run("COMPLETED")),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId: string, signal: AbortSignal, onEvent: (e: unknown) => void) => {
+        onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+        onEvent({ event: "tool.settled", runId: RUN_ID, generationAttempt: 1, capability: "hotel.search", outcome: "NEEDS_CONFIRMATION" });
+        onEvent({ event: "turn.completed", runId: RUN_ID, generationAttempt: 1 });
+        await untilAborted(signal);
+      }),
+    });
+    renderChat(api);
+    fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: "Tokyo, 2026-12-18 to 2026-12-21, 1 room 1 adult, CNY" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    const confirmButton = await screen.findByRole("button", { name: "Search" });
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Send message" })).not.toBeDisabled());
+
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      // Names hotels: a thread can await both confirmations at once, and the
+      // bare phrase let the model pick which search it authorised.
+      expect(submitConversationTurn).toHaveBeenLastCalledWith(THREAD_ID, expect.objectContaining({ question: "确认搜索酒店" }));
+    });
+  });
+
   it("offers flight preference chips only for a server-classified flight gap, and saves the latest explicit choice without searching", async () => {
     const saveTripSearchPreferences = vi.fn().mockResolvedValue({});
     const api = createApi({

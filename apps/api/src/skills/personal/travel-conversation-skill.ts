@@ -1,3 +1,4 @@
+import { pinoInstance } from "../../observability/telemetry.js";
 import { z } from "zod";
 
 import type { Skill, SkillContext } from "../../agents/contracts.js";
@@ -224,6 +225,16 @@ export async function executeTravelConversation(
       evidenceBacked: toolContext.isEvidenceBacked?.() === true,
     })
   ) {
+    // Diagnostic only: a refusal here discards a reply the model actually
+    // produced, and when a metered tool has already run it also discards
+    // results the traveller has paid for. Knowing which of the two rules
+    // tripped — evidence not counted, or the wording itself — is the
+    // difference between a config bug and a copy bug.
+    pinoInstance.warn({
+      event: "conversation.output_refused",
+      evidenceBacked: toolContext.isEvidenceBacked?.() === true,
+      contentSample: reply.content.slice(0, 300),
+    }, "Conversation reply refused by the output safety check");
     return safeConversationRefusal(input.question);
   }
 
