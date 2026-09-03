@@ -7,6 +7,7 @@ import { GestureReader, pressWasClick } from "./bot-gestures";
 import { BotPersona, ShaziSprite } from "./bot-personas";
 import { ShaziCursorVomit, type CursorOffset } from "./shazi-cursor-vomit";
 import { ShaziFlipGame } from "./shazi-flip-game";
+import { ShaziHourlyReset } from "./shazi-hourly-reset";
 
 /*
  * Wander-bot: a small outlined companion that floats over the cosmic map.
@@ -695,6 +696,10 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
         <div className="wanderly-bot-cloud">
           <span>{speechPlace}…?</span>
         </div>
+      ) : null}
+
+      {persona === "shazi" ? (
+        <ShaziHourlyReset onReset={() => setPersona("robo")} />
       ) : null}
 
       {persona === "shazi" && quitMenuOpen ? (
