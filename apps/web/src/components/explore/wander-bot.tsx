@@ -1,6 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+import { GestureReader, pressWasClick } from "./bot-gestures";
+import { BotPersona, ShaziSprite } from "./bot-personas";
+import { ShaziCursorVomit, type CursorOffset } from "./shazi-cursor-vomit";
+import { ShaziFlipGame } from "./shazi-flip-game";
 
 /*
  * Wander-bot: a small outlined companion that floats over the cosmic map.
@@ -47,7 +53,36 @@ type Props = {
   obstructed?: boolean;
   /** Place name for the speech cloud, e.g. "上海". */
   speechPlace?: string | null;
+  /**
+   * Source of the persona-switch roll. Injectable so a test can pin it —
+   * a 17% chance is otherwise untestable without running the click hundreds
+   * of times and hoping.
+   */
+  random?: () => number;
 };
+
+/** How often clicking robo turns it into 啥子. */
+export const SHAZI_SWITCH_CHANCE = 0.17;
+
+/**
+ * Where 啥子's "退出" opens. A fixed value from the easter-egg table, not a URL
+ * from any tool result. Opened in a new tab with noopener/noreferrer so a run
+ * in progress on this page is never thrown away, and so the opened page gets
+ * no handle back to this one.
+ */
+export const SHAZI_QUIT_LINK =
+  "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=RDdQw4w9WgXcQ&start_radio=1";
+
+/** Click 啥子 this many times to start the flip game. */
+export const CLICK_COUNT_FLIP_GAME = 7;
+/** No re-trigger for this long after the flip game runs. */
+export const FLIP_GAME_COOLDOWN_MS = 20 * 60_000;
+/** Three clicks make 啥子 swallow and return the pointer. */
+export const CLICK_COUNT_CURSOR_VOMIT = 3;
+/** No re-trigger for this long after the cursor-vomit egg runs. */
+export const CURSOR_VOMIT_COOLDOWN_MS = 60_000;
+/** What every cooling-down egg shows, in the speech cloud. */
+export const COOLDOWN_LINE = "少年的脸红胜过一切💗";
 
 type Bounds = { left: number; top: number; right: number; bottom: number };
 
@@ -129,15 +164,41 @@ export function resolveAgainstObstacles(
   return point;
 }
 
-export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstructed = false, speechPlace = null }: Props) {
+export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstructed = false, speechPlace = null, random = Math.random }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const positionRef = useRef<Point | null>(null);
   const draggingRef = useRef(false);
   const launchFrameRef = useRef(0);
 
   const [settled, setSettled] = useState(false);
   const [dragging, setDragging] = useState(false);
+  /**
+   * Session-only on purpose: a reload always comes back as robo, so nobody can
+   * end up stuck as 啥子 with no idea how they got there. The 17% surprise is
+   * worth having precisely because it is a chance encounter.
+   */
+  const [persona, setPersona] = useState<BotPersona>("robo");
+  /** 啥子's right-click menu. A lone right-click opens it; "退出" leaves. */
+  const [quitMenuOpen, setQuitMenuOpen] = useState(false);
+  /** The seven-click flip game is running. */
+  const [flipGameOpen, setFlipGameOpen] = useState(false);
+  /** A one-shot line in the speech cloud, e.g. the cooldown message. */
+  const [flashLine, setFlashLine] = useState<string | null>(null);
+  const flashTimerRef = useRef(0);
+  // When the flip game last ran, to hold its cooldown. -Infinity, not 0:
+  // performance.now() starts near zero, so 0 would read as "just played" and
+  // keep the game in cooldown from the very first trigger.
+  const flipPlayedAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const cursorVomitPlayedAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const latestPointerRef = useRef<Point | null>(null);
+  const [cursorVomitTarget, setCursorVomitTarget] = useState<CursorOffset | null>(null);
+  /** Gestures only 啥子 answers; robo settles its single click immediately. */
+  const gesturesRef = useRef(new GestureReader());
+  const gestureTimerRef = useRef(0);
+  const pressRef = useRef<{ x: number; y: number; at: number } | null>(null);
+  const pumpRef = useRef<() => void>(() => {});
   const [perched, setPerched] = useState(false);
   const [cloudBelow, setCloudBelow] = useState(false);
 
@@ -248,6 +309,29 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
   // Opening position: sitting at the composer's top-left corner, mirroring it
   // rather than landing on the status chips that sit directly above it.
   useEffect(() => {
+    const rememberPointer = (event: PointerEvent) => {
+      latestPointerRef.current = { x: event.clientX, y: event.clientY };
+    };
+    window.addEventListener("pointermove", rememberPointer, { passive: true });
+    return () => window.removeEventListener("pointermove", rememberPointer);
+  }, []);
+
+  const startCursorVomit = useCallback(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const box = root.getBoundingClientRect();
+    const pointer = latestPointerRef.current ?? {
+      x: box.left + box.width / 2,
+      y: box.top + box.height / 2,
+    };
+    // The mouth in the source artwork is centred at roughly 54% / 54%.
+    setCursorVomitTarget({
+      x: pointer.x - (box.left + box.width * 0.54),
+      y: pointer.y - (box.top + box.height * 0.54),
+    });
+  }, []);
+
+  useEffect(() => {
     const node = rootRef.current;
     if (!node || positionRef.current) return;
 
@@ -333,6 +417,52 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     };
   }, [lookAt, settled]);
 
+  /** Shows a one-shot line in the speech cloud, cleared after a beat. */
+  const flashCloud = useCallback((line: string) => {
+    window.clearTimeout(flashTimerRef.current);
+    setFlashLine(line);
+    flashTimerRef.current = window.setTimeout(() => setFlashLine(null), 2600);
+  }, []);
+  useEffect(() => () => window.clearTimeout(flashTimerRef.current), []);
+
+  /** Ends the flip game: rights the screen and opens its cooldown. */
+  const onFlipGameExit = useCallback(() => {
+    flipPlayedAtRef.current = performance.now();
+    setFlipGameOpen(false);
+  }, []);
+
+  /**
+   * One click on the bot. robo settles immediately; 啥子 buffers into a run.
+   *
+   * robo can settle now because it has exactly one gesture. Dropping the old
+   * ten-click trigger is what made that safe — with nothing else counting
+   * clicks on robo, an immediate roll can never cut a run short.
+   */
+  const onBotClick = useCallback((at: number) => {
+    if (persona === "robo") {
+      if (random() < SHAZI_SWITCH_CHANCE) setPersona("shazi");
+      return;
+    }
+    gesturesRef.current.leftClick(at);
+    pumpRef.current();
+  }, [persona, random]);
+
+  /**
+   * Right-click belongs to 啥子. It opens a menu rather than acting, which is
+   * what lets the reader hold it for a moment to see whether a second click
+   * follows: a harmless, reversible menu can afford the wait, and without it
+   * the double-click could never be reached.
+   */
+  const onContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (persona !== "shazi") return;
+    event.preventDefault();
+    // performance.now(), not event.timeStamp: the pump measures its windows on
+    // the performance clock, and a synthetic event's timeStamp can be a
+    // different origin or NaN, which quietly breaks the pairing math.
+    gesturesRef.current.rightClick(performance.now());
+    pumpRef.current();
+  }, [persona]);
+
   /** Dragging: the bot stays wherever it is dropped. */
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     const node = rootRef.current;
@@ -341,6 +471,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     const grabOffset = { x: event.clientX - box.left, y: event.clientY - box.top };
 
     node.setPointerCapture(event.pointerId);
+    pressRef.current = { x: event.clientX, y: event.clientY, at: performance.now() };
     draggingRef.current = true;
     setDragging(true);
 
@@ -356,11 +487,19 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       ));
     };
 
-    const onUp = () => {
+    const onUp = (upEvent: PointerEvent) => {
       draggingRef.current = false;
       setDragging(false);
       const dropped = positionRef.current;
       if (dropped) settleWithGlide(dropped);
+      const press = pressRef.current;
+      pressRef.current = null;
+      if (press && pressWasClick({
+        movedPx: Math.hypot(upEvent.clientX - press.x, upEvent.clientY - press.y),
+        heldMs: performance.now() - press.at,
+      })) {
+        onBotClick(performance.now());
+      }
       node.releasePointerCapture?.(event.pointerId);
       node.removeEventListener("pointermove", onMove);
       node.removeEventListener("pointerup", onUp);
@@ -370,7 +509,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     node.addEventListener("pointermove", onMove);
     node.addEventListener("pointerup", onUp);
     node.addEventListener("pointercancel", onUp);
-  }, [applyPosition, bounds, settleWithGlide]);
+  }, [applyPosition, bounds, onBotClick, settleWithGlide]);
 
   /*
    * When the chat panel expands, a bot standing inside the region it covers is
@@ -429,6 +568,57 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
   }, [applyPosition, bounds, obstructed, refreshPerched, settlePosition]);
 
   // Keep the bot on screen, and re-check its perch, when the window resizes.
+  /*
+   * One timer for every pending gesture, rearmed after each drain. A run of
+   * clicks resolves only once the traveller stops clicking, so nothing here
+   * polls — the reader says when the next window closes.
+   */
+  useEffect(() => {
+    pumpRef.current = () => {
+      window.clearTimeout(gestureTimerRef.current);
+      const due = gesturesRef.current.nextDueAt();
+      if (due === null) return;
+      gestureTimerRef.current = window.setTimeout(() => {
+        for (const gesture of gesturesRef.current.drain(performance.now())) {
+          // A lone right-click raises the menu; a double takes 啥子 back to
+          // robo. The rest of the eggs plug in here as they are specified; an
+          // unhandled gesture is deliberately a no-op rather than a guess.
+          if (gesture.kind === "rightClick") setQuitMenuOpen(true);
+          if (gesture.kind === "rightDoubleClick") setPersona("robo");
+          if (gesture.kind === "clickRun" && gesture.count === CLICK_COUNT_CURSOR_VOMIT) {
+            if (performance.now() - cursorVomitPlayedAtRef.current < CURSOR_VOMIT_COOLDOWN_MS) {
+              flashCloud(COOLDOWN_LINE);
+            } else {
+              cursorVomitPlayedAtRef.current = performance.now();
+              startCursorVomit();
+            }
+          }
+          if (gesture.kind === "clickRun" && gesture.count === CLICK_COUNT_FLIP_GAME) {
+            // Cooldown: within the window, the egg holds and 啥子 just blushes
+            // instead — every cooling egg shows the same line.
+            if (performance.now() - flipPlayedAtRef.current < FLIP_GAME_COOLDOWN_MS) {
+              flashCloud(COOLDOWN_LINE);
+            } else {
+              setFlipGameOpen(true);
+            }
+          }
+        }
+        pumpRef.current();
+      }, Math.max(0, due - performance.now()));
+    };
+    return () => window.clearTimeout(gestureTimerRef.current);
+  }, [flashCloud, startCursorVomit]);
+
+  /* A persona change abandons whatever run was in flight: the clicks were
+   * aimed at the character that just left. The menu belongs to 啥子, so it
+   * closes with the change too. */
+  useEffect(() => {
+    gesturesRef.current.reset();
+    window.clearTimeout(gestureTimerRef.current);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setQuitMenuOpen(false);
+  }, [persona]);
+
   useEffect(() => {
     const onResize = () => {
       const node = rootRef.current;
@@ -442,7 +632,41 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     return () => window.removeEventListener("resize", onResize);
   }, [refreshCloudSide, refreshPerched, settlePosition]);
 
+  /*
+   * The menu is dismissable: a press anywhere outside it closes it, so a
+   * right-click that was a mistake costs nothing. Escape closes it too, the
+   * same escape hatch the full-screen eggs will use.
+   */
+  useEffect(() => {
+    if (!quitMenuOpen) return;
+    const onDown = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setQuitMenuOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setQuitMenuOpen(false);
+    };
+    // Next tick: the same press that opened the menu must not close it.
+    const arm = window.setTimeout(() => {
+      window.addEventListener("pointerdown", onDown);
+      window.addEventListener("keydown", onKey);
+    }, 0);
+    return () => {
+      window.clearTimeout(arm);
+      window.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [quitMenuOpen]);
+
+  /** Leaves for the easter-egg link in a new tab, then closes the menu. */
+  const onQuit = useCallback(() => {
+    setQuitMenuOpen(false);
+    window.open(SHAZI_QUIT_LINK, "_blank", "noopener,noreferrer");
+  }, []);
+
+  const finishCursorVomit = useCallback(() => setCursorVomitTarget(null), []);
+
   return (
+    <>
     <div
       ref={rootRef}
       className="wanderly-bot"
@@ -450,7 +674,10 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       data-dragging={dragging ? "true" : "false"}
       data-settled={settled ? "true" : "false"}
       data-cloud={cloudBelow ? "below" : "above"}
+      data-effect={cursorVomitTarget ? "cursor-vomit" : undefined}
       onPointerDown={onPointerDown}
+      onContextMenu={onContextMenu}
+      data-persona={persona}
       role="presentation"
       style={{
         // Exposed as variables so the CSS keeps the golden-ratio relationships.
@@ -459,21 +686,57 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
         "--bot-leg": `${LEG_LENGTH}px`,
       } as React.CSSProperties}
     >
-      {speechPlace ? (
+      {flashLine ? (
+        <div className="wanderly-bot-cloud">
+          <span>{flashLine}</span>
+        </div>
+      ) : speechPlace ? (
         <div className="wanderly-bot-cloud">
           <span>{speechPlace}…?</span>
         </div>
       ) : null}
 
-      <div ref={bodyRef} className="wanderly-bot-body">
-        <span className="wanderly-bot-eye" />
-        <span className="wanderly-bot-eye" />
-      </div>
+      {persona === "shazi" && quitMenuOpen ? (
+        <div
+          ref={menuRef}
+          className="wanderly-bot-quit-menu"
+          // Inside the bot's own box, whose pointerdown starts a drag. Stop it
+          // so pressing the menu picks the item instead of dragging 啥子.
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button type="button" onClick={onQuit}>退出</button>
+        </div>
+      ) : null}
 
-      <div className="wanderly-bot-legs">
-        <span className="wanderly-bot-leg" />
-        <span className="wanderly-bot-leg" />
-      </div>
+      {persona === "shazi" ? (
+        <div ref={bodyRef} className="wanderly-bot-body wanderly-bot-body--sprite">
+          <ShaziSprite onMissing={() => setPersona("robo")} />
+          {cursorVomitTarget ? (
+            <ShaziCursorVomit
+              cursor={cursorVomitTarget}
+              onComplete={finishCursorVomit}
+            />
+          ) : null}
+        </div>
+      ) : (
+        <>
+          <div ref={bodyRef} className="wanderly-bot-body">
+            <span className="wanderly-bot-eye" />
+            <span className="wanderly-bot-eye" />
+          </div>
+
+          <div className="wanderly-bot-legs">
+            <span className="wanderly-bot-leg" />
+            <span className="wanderly-bot-leg" />
+          </div>
+        </>
+      )}
     </div>
+    {/* Portalled to the body so the full-screen flip is not caught inside the
+        bot's own transformed, fixed-positioned box. */}
+    {persona === "shazi" && flipGameOpen && typeof document !== "undefined"
+      ? createPortal(<ShaziFlipGame onExit={onFlipGameExit} />, document.body)
+      : null}
+    </>
   );
 }
