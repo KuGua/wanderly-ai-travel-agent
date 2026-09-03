@@ -946,7 +946,10 @@ export function ExploreMapPage() {
           <p className="mt-0.5 text-xs opacity-85">{focusHandoff?.label ?? t("startingFrom")}</p>
           </div>
         </div>
-        <div data-wanderly-avoid className="pointer-events-auto flex gap-2">
+        {/* Hidden while the chat is open: the translucent panel sits over this
+            top-right cluster, and the recenter/help controls bled through it —
+            reading as a doubled layer behind the panel's own header buttons. */}
+        <div data-wanderly-avoid className={`pointer-events-auto flex gap-2 ${chatOpen ? "hidden" : ""}`}>
           <button type="button" onClick={recenter} aria-label={t("recenterAriaLabel")} title={t("recenterTitle")} className="grid size-12 place-items-center wanderly-cosmos-control wanderly-r-sm wanderly-press">
             <LocateFixed aria-hidden="true" className="size-5" />
           </button>

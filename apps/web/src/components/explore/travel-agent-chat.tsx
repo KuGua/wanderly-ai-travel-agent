@@ -806,7 +806,7 @@ export function TravelAgentChat({
     setFlightPreferenceSaveError(null);
   }
 
-  const rowClass = docked ? "mx-auto mb-[18px] max-w-[640px]" : "mb-4";
+  const rowClass = docked ? "mx-auto mb-[18px] max-w-[640px]" : "mb-2.5";
   // Bubbles and inline cards keep the same illustrated shape in both modes,
   // but not the same fill: the docked Trip workspace sits on paper, while the
   // floating Explore panel sits in the cosmic scene, where a white card is
@@ -815,8 +815,19 @@ export function TravelAgentChat({
   const surfaceClass = docked
     ? "bg-card text-[var(--w-ink)] wanderly-edge"
     : "wanderly-cosmos-surface";
-  const userBubbleClass = "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm";
-  const agentBubbleClass = `group/msg relative max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`;
+  const userBubbleClass = docked
+    ? "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
+    : "ml-auto w-fit max-w-[86%] bg-[var(--w-info)] px-3.5 py-2 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md";
+  // On the globe, assistant replies sit directly on the conversation ground:
+  // the panel is already a readable surface, so wrapping every answer in a
+  // second framed card makes the narrow column feel dense. The Trip workspace
+  // keeps its illustrated card treatment because it lives on a paper surface.
+  const agentBubbleClass = docked
+    ? `group/msg relative max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`
+    : "group/msg relative max-w-[86%] py-1 text-[var(--w-fog)]";
+  const streamingAgentClass = docked
+    ? `max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`
+    : "max-w-[86%] py-1 text-[var(--w-fog)]";
   // The destination now names the action instead of sitting in a list above
   // it, so the option reads as the decision rather than as a record change.
   // Absent — the model proposed only dates, say — the label stays generic
@@ -824,6 +835,14 @@ export function TravelAgentChat({
   const briefDestination = briefProposal?.destinationCandidates?.length
     ? briefProposal.destinationCandidates.join(" · ")
     : null;
+  const briefPrimaryLabel = isConfirmingBrief
+    ? t(onGlobe ? "briefProposalOpening" : "briefProposalSaving")
+    : onGlobe
+      ? t("briefProposalPlanCompact")
+      : briefDestination
+        ? t("briefProposalSaveTitle", { destination: briefDestination })
+        : t("briefProposalSaveTitleNoDestination");
+  const briefSecondaryLabel = t(onGlobe ? "briefProposalExploreCompact" : "briefProposalKeepTitle");
 
   const actionCardClass = `px-3.5 py-3 text-sm ${surfaceClass} wanderly-r-md wanderly-shadow-sm`;
   const actionPrimaryClass = "min-h-10 px-3 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-50";
@@ -831,12 +850,12 @@ export function TravelAgentChat({
     ? "min-h-10 bg-[var(--w-mist)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"
     : "min-h-10 px-3 text-xs font-extrabold wanderly-cosmos-control wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50";
 
-  const agentLabel = (
+  const agentLabel = docked ? (
     <div className={`mb-1.5 flex items-center gap-2.5 text-xs font-black ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
       <span aria-hidden="true" className="grid size-[23px] place-items-center bg-[var(--w-highlight)] text-[10px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">W</span>
       {t("agentName")}
     </div>
-  );
+  ) : null;
 
   // Only inside a trip. The card asks how this trip should differ from the
   // traveller's usual preferences, which is not a question the globe is
@@ -1066,7 +1085,7 @@ export function TravelAgentChat({
           {activeRunId ? (
             <article data-role="ASSISTANT" data-streaming="true" className={rowClass}>
               {agentLabel}
-              <div className={`max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
+              <div className={streamingAgentClass}>
               {streamState.tools.length > 0 ? <ToolActivityList items={streamState.tools} /> : null}
               {streamState.text ? (
                 <ChatMarkdown content={streamState.text} />
@@ -1101,36 +1120,40 @@ export function TravelAgentChat({
                a way to decline it, not a symmetrical alternative. */
             <section
               aria-label={t("briefProposalTitle")}
-              /* Narrower than the conversation and centred in it: addressed to
-                 the reader rather than another line of the transcript. */
-              className={`mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[380px]`}
+              /* The globe uses one compact decision row. The workspace keeps
+                 the narrower centred card because it is part of the planner. */
+              className={onGlobe
+                ? "mb-2 w-full"
+                : `mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[380px]`}
             >
-              <p className={`mb-2 px-0.5 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
-                {briefDestination
-                  ? t("briefProposalQuestion", { destination: briefDestination })
-                  : t("briefProposalQuestionNoDestination")}
-              </p>
-              <div className="grid gap-2">
-                <button
-                  type="button"
-                  onClick={() => void confirmBriefProposal()}
-                  disabled={isConfirmingBrief}
-                  className={`${actionPrimaryClass} w-full px-3 py-2.5 text-left`}
-                >
-                  {isConfirmingBrief
-                    ? t(onGlobe ? "briefProposalOpening" : "briefProposalSaving")
-                    : briefDestination
-                      ? t(onGlobe ? "briefProposalPlanTitle" : "briefProposalSaveTitle", { destination: briefDestination })
-                      : t(onGlobe ? "briefProposalPlanTitleNoDestination" : "briefProposalSaveTitleNoDestination")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBriefProposal(null)}
-                  disabled={isConfirmingBrief}
-                  className={`${actionSecondaryClass} w-full px-3 py-2.5 text-left`}
-                >
-                  {t(onGlobe ? "briefProposalExploreTitle" : "briefProposalKeepTitle")}
-                </button>
+              <div className={onGlobe ? "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-1" : undefined}>
+                <p className={`${onGlobe ? "min-w-0 text-xs leading-4" : "mb-2 px-0.5 text-sm"} font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
+                  {briefDestination
+                    ? t("briefProposalQuestion", { destination: briefDestination })
+                    : t("briefProposalQuestionNoDestination")}
+                </p>
+                <div className={onGlobe ? "contents" : "grid gap-2"}>
+                  <button
+                    type="button"
+                    onClick={() => void confirmBriefProposal()}
+                    disabled={isConfirmingBrief}
+                    className={onGlobe
+                      ? "bg-transparent px-0 py-1 text-xs font-extrabold text-[var(--w-highlight)] underline decoration-1 underline-offset-4 transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-highlight)] disabled:opacity-50"
+                      : `${actionPrimaryClass} w-full px-3 py-2.5 text-left`}
+                  >
+                    {briefPrimaryLabel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBriefProposal(null)}
+                    disabled={isConfirmingBrief}
+                    className={onGlobe
+                      ? "bg-transparent px-0 py-1 text-xs font-extrabold text-[var(--w-fog)] underline decoration-1 underline-offset-4 transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-highlight)] disabled:opacity-50"
+                      : `${actionSecondaryClass} w-full px-3 py-2.5 text-left`}
+                  >
+                    {briefSecondaryLabel}
+                  </button>
+                </div>
               </div>
             </section>
           ) : null}

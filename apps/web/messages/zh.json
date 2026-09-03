@@ -384,6 +384,8 @@
       "prefCardTrigger": "调整本次行程偏好",
       "briefProposalPlanTitle": "开始规划去{destination}的行程",
       "briefProposalExploreTitle": "我想自行探索",
+      "briefProposalPlanCompact": "规划行程",
+      "briefProposalExploreCompact": "继续探索",
       "briefProposalOpening": "正在打开规划页…",
       "briefProposalSaveTitle": "把{destination}保存到这趟行程",
       "briefProposalKeepTitle": "先不改",
