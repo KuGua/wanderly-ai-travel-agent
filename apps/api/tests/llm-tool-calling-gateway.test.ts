@@ -30,6 +30,7 @@ describe("LLMGateway planning tools", () => {
     expect(SHARED_TOOL_PLANNING_SYSTEM_PROMPT).toContain("not a user-facing assistant");
     expect(SHARED_TOOL_PLANNING_SYSTEM_PROMPT).toContain("Personal Agent research");
     expect(SHARED_TOOL_PLANNING_SYSTEM_PROMPT).toContain("cannot contact a traveller");
+    expect(SHARED_TOOL_PLANNING_SYSTEM_PROMPT).toContain("do not request a second hotel-tool confirmation");
     expect(String(initialMessages[1]?.content)).toContain('"originIds":["SFO"]');
   });
 

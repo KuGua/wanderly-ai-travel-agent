@@ -12,7 +12,7 @@ The `AgentKind` literal `"review"` exists in the type system
 scope allow-list for it:
 
 ```ts
-review: ["snapshot:read", "plan:write:propose"]
+review: ["snapshot:read"]
 ```
 
 See [`../agents/policy-gate.ts`](../agents/policy-gate.ts) and
@@ -38,8 +38,8 @@ existing plan output without producing new authoritative state (similar to
 
 Neither of these is wired up today. When added, each must:
 - declare `agent: "review"`;
-- declare `allowedTools: ["snapshot:read", "plan:write:propose"]` (or a
-  subset);
+- declare `allowedTools: ["snapshot:read"]`;
+- remain read-only: review may critique a proposal but cannot write one;
 - export a Skill object that the appropriate agent file registers.
 
 ## Verification

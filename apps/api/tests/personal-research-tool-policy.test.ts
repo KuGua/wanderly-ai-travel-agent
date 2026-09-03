@@ -25,11 +25,11 @@ describe("tool invocation mode", () => {
     expect(requiresOwnerConfirmation("places.search")).toBe(false);
     expect(requiresOwnerConfirmation("navigation.route")).toBe(false);
     expect(requiresOwnerConfirmation("accommodation.discovery")).toBe(false);
+    expect(requiresOwnerConfirmation("hotel.search")).toBe(false);
   });
 
-  it("holds every metered supplier call for the owner", () => {
+  it("keeps explicit confirmation on the remaining gated suppliers", () => {
     expect(requiresOwnerConfirmation("flight.search")).toBe(true);
-    expect(requiresOwnerConfirmation("hotel.search")).toBe(true);
     expect(requiresOwnerConfirmation("activities.search")).toBe(true);
   });
 });

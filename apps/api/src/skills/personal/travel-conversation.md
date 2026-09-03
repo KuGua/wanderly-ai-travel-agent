@@ -81,23 +81,20 @@ emit `research.intent_extracted`. The model reuses same-thread facts and asks
 for only the missing city, dates, adult/room configuration and currency.
 
 When `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true`, a complete hotel
-query is first written to the private, server-owned
+query is written to the private, server-owned
 `conversation_hotel_search_states` row for the thread. The row contains only
-city code, dates, occupancy, currency, version and the current USER-message
-confirmation marker — never raw chat text, credentials, guest identity or a
-provider result. The model receives that typed state on later turns, so an
-explicit “确认搜索” can call `hotel.search` with `{}` and cannot depend on
-reconstructing values from transcript context. A field change replaces the
-stored query and clears the prior confirmation unless the same current turn
-contains a new explicit confirmation.
+city code, dates, occupancy, currency and version — never raw chat text,
+credentials, guest identity or a provider result. Legacy confirmation columns
+remain null. The model receives this typed state on later turns and does not
+need to reconstruct unchanged values from transcript context.
 
-Only an explicit confirmation bound by the server to the current USER message
-may reach Nuitee. Before that point the tool returns
-`CONFIRMATION_REQUIRED` after persisting the typed query; no provider request
-is made. A confirmed call dispatches against Nuitee, persists the bounded
-summary into `personal_research_evidence` (deduped by `(run_id, capability)`),
-and re-streams a grounded summary. The model does not emit a prose claim that
-the search has been made before the tool result arrives.
+Once all required fields are complete, the read-only sandbox lookup dispatches
+without a second confirmation card. It persists the bounded summary into
+`personal_research_evidence` (deduped by `(run_id, capability)`) and re-streams
+a grounded summary. This authority is search-only: it cannot book, pay, or
+supply provider-only identity fields. Nuitee quote-nationality authorization
+remains a separate explicit boundary. The model does not emit a prose claim
+that the search has been made before the tool result arrives.
 
 ## Flight-search readiness behaviour
 

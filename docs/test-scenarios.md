@@ -1339,24 +1339,24 @@ that a grant/revoke invalidates dependent plans.
 ## TS-CONVERSATION-HOTEL-TOOL-COMPAT — Gemini 流式酒店工具调用
 
 **Objective:** Verify that a Gemini OpenAI-compatible stream reliably
-persists a complete private hotel query, binds explicit owner confirmation on
-the server, and dispatches exactly one live `hotel.search` request without
+persists a complete private hotel query and dispatches exactly one live
+`hotel.search` request without a second confirmation step or
 depending on a provider-specific `finish_reason`.
 
 **Steps:**
 
-1. In one private thread submit a complete hotel query without confirmation.
+1. In one private thread submit a complete hotel query.
    Simulate a streamed `tool_calls` response terminated by `stop` and then a
    prose follow-up after the tool result.
-2. Verify that no provider request occurred, exactly one
+2. Verify that exactly one provider request occurred, exactly one
    `conversation_hotel_search_states` row holds city/date/occupancy/currency,
-   and its confirmation marker is null. The tool result is
-   `CONFIRMATION_REQUIRED`.
-3. Submit `确认搜索`; simulate a legacy streamed `function_call` envelope with
-   no finish marker and empty arguments. Verify the dispatcher reuses the
-   persisted fields, binds the current USER message as confirmation, invokes
-   the provider once, persists bounded evidence, and returns a grounded
-   second-stream response.
+   its legacy confirmation marker is null, bounded evidence is persisted, and
+   the second stream returns a grounded response. No hotel confirmation UI or
+   `CONFIRMATION_REQUIRED` result is produced.
+3. Submit an explicit refresh; simulate a legacy streamed `function_call`
+   envelope with no finish marker and the current city code. Verify the
+   dispatcher reuses the remaining persisted fields and executes the new turn
+   without interpreting it as booking/payment authority.
 4. Repeat with Gemini `tool_calls`, `finish_reason = stop`, and an opaque
    `extra_content.google.thought_signature`; verify the assistant tool-call
    message in the second request carries that opaque field unchanged. Repeat
@@ -1607,7 +1607,7 @@ depending on a provider-specific `finish_reason`.
 
 1. owner 只表达整段旅行意图（例如「我想要带我女朋友国庆节的时候去新加坡玩4天」），没有提出查找、比较、筛选或报价机票/住宿。本轮 system prompt **不得**包含 `HOTEL_SEARCH_READINESS` 或 `FLIGHT_SEARCH_READINESS`；不得产生 `conversation_flight_search_states` / `conversation_hotel_search_states` 行；不得写 `PERSONAL_RESEARCH_TOOL_DISPATCH` audit；回复走 brief 归纳路径而不是搜索确认按钮。
 2. `flight.search` 与 `hotel.search` 的 tool definition 仍然注册。owner 明确要求查询时（DRAFT Personal Research §1「不能以尚未完整规划为由阻断用户已经明确要求的查询」），模型可在同一轮自行发起调用；调用成功持久化 search state 后，**下一轮**起该 capability 的 readiness 契约恢复注入。
-3. owner 本轮显式确认（`确认搜索机票` / `确认搜索酒店` / 未点名的 `确认搜索`）时，对应 capability 的契约当轮即注入；点名的确认不得让另一 capability 的契约进入 prompt。
+3. owner 本轮显式确认机票搜索（`确认搜索机票` / 未点名的 `确认搜索`）时，机票契约当轮即注入；酒店搜索不需要确认，显式酒店查询由已注册 tool 和完整参数直接执行，且不得授权另一 capability。
 4. Trip 状态为 `PLANNING` / `STALE` / `CONFIRMED` / `BOOKED` / `CANCELLED` 时，行为与本次改动前一致：只要对应 tool 已注册，契约照常注入。
 5. 任一 capability 的 tool 未注册（feature flag 关闭或 capability 未开放）时，其契约不得进入 prompt——该契约几乎全部是调用该 tool 的指令。
 

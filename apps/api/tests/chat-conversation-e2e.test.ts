@@ -332,9 +332,9 @@ describe("durable owner-only Personal Agent conversation flow", () => {
     const firstRunIds: string[] = [];
     const evidenceRowsToCleanup: string[] = [];
     try {
-      // First confirmation: full draft, expect a fresh evidence row.
+      // A complete hotel request dispatches immediately; no confirmation turn.
       const first = await submitTurn(threadId, firstRequestId,
-        "请你帮我找一下台北车站周边的酒店，2026/9/15 - 9/20，3 人 2 间房，豪华型，CNY。确认搜索");
+        "请你帮我找一下台北车站周边的酒店，2026/9/15 - 9/20，3 人 2 间房，豪华型，CNY。");
       expect(first.statusCode).toBe(202);
       const firstRunId = (first.json() as AcceptedTurnResponse).runId;
       firstRunIds.push(firstRunId);
@@ -362,15 +362,13 @@ describe("durable owner-only Personal Agent conversation flow", () => {
         adults: 3,
         rooms: 2,
         currency: "CNY",
-        confirmedMessageId: expect.any(String),
-        confirmedAt: expect.any(Date),
+        confirmedMessageId: null,
+        confirmedAt: null,
       });
 
-      // Idempotency: a second confirmation in a new turn must not insert a
-      // new evidence row — the worker's dispatch closure probes the table
-      // before invoking the executor.
+      // A later explicit refresh may search again in its own durable turn.
       const second = await submitTurn(threadId, secondRequestId,
-        "确认搜索");
+        "请刷新一次刚才的酒店结果");
       expect(second.statusCode).toBe(202);
       const secondRunId = (second.json() as AcceptedTurnResponse).runId;
       firstRunIds.push(secondRunId);

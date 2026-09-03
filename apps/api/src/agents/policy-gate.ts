@@ -37,7 +37,7 @@ const DEFAULT_POLICY: AgentScopePolicy = {
     "navigation:route",
     "mobility:search",
   ],
-  review: ["snapshot:read", "plan:write:propose"],
+  review: ["snapshot:read"],
   // S4: public-content agents run the cached location-introduction skill
   // and have no access to Profile/Trip/thread/snapshot data. Empty by
   // design — they only call ModelGateway.generateLocationContent.

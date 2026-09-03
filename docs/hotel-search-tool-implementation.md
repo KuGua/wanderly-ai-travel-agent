@@ -5,6 +5,12 @@
 **范围：** 在现有 Shared PLAN/REPLAN durable task 中接入 provider-neutral `accommodation.discover` 与 `hotel.search`。前者用 OpenTripMap 建立无价格的住宿规划骨架；后者只在用户确认入住日期、房间、住客数和币种后，用 SerpApi 查询实时价格。
 **不在范围：** 真实预订、支付、供应商订单创建、供应商 booking/deep link 对 LLM 的透传、浏览器直连供应商、使用 fixture 或 sandbox 库存作为产品运行时数据。
 
+**2026-09-03 sandbox 调用策略：** “确认入住日期、房间、住客数和币种”指
+结构化住宿偏好已经由用户确认并版本化，不等同于每次 Tool 调用再确认一次。
+当前 sandbox 中，参数齐全的只读 `hotel.search` 自动执行，不显示第二个
+Search/Cancel 卡片；它仍不授予预订、支付或 provider-only 身份字段权限。
+Nuitee 报价国籍授权继续作为独立的显式边界。
+
 ## 1. 实施边界与完成标准
 
 ### 1.1 强制约束

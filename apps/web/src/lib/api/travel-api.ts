@@ -63,7 +63,6 @@ import type {
   TripMemoryFact,
   TripMemoryGroupResponse,
   TripMemoryOverridesResponse,
-  ResearchResult,
   RouteEvidenceList,
   NavigationRouteSearchRequest,
   NavigationRouteSearchResponse,
@@ -185,9 +184,6 @@ export interface TravelApi {
   proposeTripPlace?(tripId: string, input: ProposeTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
   adoptTripPlace?(tripId: string, input: AdoptTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
   revokeTripPlace?(tripId: string, input: RevokeTripPlaceRequest, options?: { idempotencyKey?: string }): Promise<TripPlaceActionResponse>;
-
-  // ── Phase 4 non-blocking research summary ────────────────────────────────────
-  getResearchResult?(tripId: string, agentTaskRunId?: string): Promise<ResearchResult>;
 
   // ── Phase 3 navigation route evidence ────────────────────────────────────────
   listRouteEvidence?(tripId: string, planId?: string): Promise<RouteEvidenceList>;

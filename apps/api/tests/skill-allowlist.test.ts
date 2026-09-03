@@ -80,4 +80,12 @@ describe("skill allow-list enforcement", () => {
 
     expect(result).toEqual({ ok: true });
   });
+
+  it("keeps review skills read-only", () => {
+    const reviewGate = new DefaultPolicyGate("review");
+    expect(() => reviewGate.requireScope(["snapshot:read"])).not.toThrow();
+    expect(() => reviewGate.requireScope(["plan:write:propose"])).toThrow(
+      "Scope plan:write:propose is not allowed for review",
+    );
+  });
 });

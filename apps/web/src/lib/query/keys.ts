@@ -25,8 +25,6 @@ export const tripKeys = {
     ["trips", tripId, "plans", planId, "route-evidence"] as const,
   mobilityOffers: (tripId: string) =>
     ["trips", tripId, "mobility-offers"] as const,
-  researchResults: (tripId: string) =>
-    ["trips", tripId, "research-results"] as const,
 };
 
 export const invitationKeys = {

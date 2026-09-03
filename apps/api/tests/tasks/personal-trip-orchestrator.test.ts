@@ -306,10 +306,10 @@ describe("personal-trip-orchestrator-service", () => {
     expect(row?.serviceGaps.some((g: { capability: string }) => g.capability === "flight")).toBe(true);
   });
 
-  it("PROPOSE_PLAN synthesizes a PROPOSED plan via generatePlan (test deps)", async () => {
-    // Phase 4 — when researchMode is PROPOSE_PLAN the orchestrator must call
-    // generatePlan and return its plan id; planning_research_results is NOT
-    // written (the planner already persisted the row).
+  it("PROPOSE_PLAN persists a summary instead of a plan when no destination has complete commercial coverage", async () => {
+    // The default test dependencies deliberately have no accommodation
+    // discovery provider. Even with a LIVE flight, that leaves no destination
+    // eligible for a commercially grounded plan.
     __setPlanningDependenciesForTests(testPlanningDependencies);
     // Stub flight.search with a synthetic FlightOffer so coverage has at
     // least one flight per origin × destination pair. The orchestrator
@@ -383,18 +383,22 @@ describe("personal-trip-orchestrator-service", () => {
       expect(v).toContain("flights");
       return;
     }
-    // If the validator were relaxed the path would set the plan id.
-    expect(result.outcome).toBe("COMPLETED");
-    expect(result.resultPlanId).toBeDefined();
+    expect(result.outcome).toBe("COMPLETED_WITH_GAPS");
+    expect(result.resultPlanId).toBeUndefined();
+    expect(result.researchResultId).toBeDefined();
 
     const [plan] = await db.select().from(itineraryPlans)
       .where(eq(itineraryPlans.tripId, tripId));
-    expect(plan?.status).toBe("PROPOSED");
+    expect(plan).toBeUndefined();
 
-    // PROPOSE_PLAN does NOT write a planning_research_results row.
+    // A summary is durable and explicitly carries no plan authority.
     const researchResults = await db.select().from(planningResearchResults)
       .where(eq(planningResearchResults.agentTaskRunId, runId));
-    expect(researchResults).toHaveLength(0);
+    expect(researchResults).toHaveLength(1);
+    expect(researchResults[0]).toMatchObject({
+      status: "COMPLETED_WITH_GAPS",
+      resultPlanId: null,
+    });
   });
 });
 

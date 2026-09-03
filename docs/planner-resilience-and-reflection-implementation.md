@@ -1,6 +1,6 @@
 # 规划器韧性与有界反思实施规范
 
-**状态：** 已批准，待实施
+**状态：** 已批准，分阶段实施中（P0 门禁、review scope 与 research-summary 读取面已于 2026-09-03 落地；P1–P4 仍待实施）
 **范围：** Shared/Personal 规划链路的门禁语义、provider 韧性策略、对话回合预算拆分，以及确定性 critic 驱动的有界 repair 循环。
 **事实来源：** `TECH_STACK.md`、`docs/PRD.md`、`docs/backlog.md`、`docs/test-scenarios.md`、`docs/agent-architecture.md` 与本文件。本文件与 `docs/agent-architecture.md` §5/§6 冲突时，以本文件为准；与 `TECH_STACK.md` 的 MVP 边界冲突时，以 `TECH_STACK.md` 为准。
 **不在范围内：** 自由 Agent-to-Agent 通信、常驻/自触发 Agent、向量库/RAG、Redis/Temporal/Step Functions、新的 provider 接入、真实支付或预订。
@@ -76,6 +76,12 @@ beforeFinal
 ---
 
 ## 3. 阶段 P0 — 门禁语义重构
+
+> **实施记录（2026-09-03）：** 航班矩阵已改为以 `MISSING` 判定研究不完整，
+> 并以独立 LIVE evidence 门禁判断目的地是否具备商业依据。Personal Trip
+> Orchestrator 在没有任何合格目的地时写入 plan-less research summary；review
+> scope 已收窄为只读；web 已删除不存在的 historical research-result 客户端路径，
+> 复用 `/research/latest`。本文件后续 P1–P4 的 retry、deadline 与 repair 工作尚未落地。
 
 ### 3.1 `flight-research-matrix-service.ts`
 
