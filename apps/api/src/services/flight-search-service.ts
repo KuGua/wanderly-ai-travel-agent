@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { db } from "../db/database.js";
 import { providerOffers, providerSearchRuns } from "../db/schema.js";
-import { resolveAirportReference } from "../location-reference/airport-reference.js";
+import { airportServesCity, resolveAirportReference } from "../location-reference/airport-reference.js";
 import type { FlightOffer } from "../types/domain.js";
 import type { FlightProvider, ProviderResult } from "../providers/types.js";
 import type { ConstraintSnapshotData } from "../types/domain.js";
@@ -66,9 +66,12 @@ export function validateSnapshotBoundFlightSearch(params: {
   // against city names alone made this check and the controlled-airport check
   // above mutually exclusive — any value passing one failed the other, so no
   // flight search could ever be valid, and every planning run died here.
-  const accepted = new Set([destination.id.toLowerCase(), destination.city.trim().toLowerCase()]);
+  // A candidate matches either as the airport id itself or as any spelling of
+  // the city that airport serves — the confirmed brief keeps whatever the
+  // traveller wrote, so "东京" and "Tokyo" both have to reach NRT.
   const inSnapshot = params.snapshot.destinationCandidates.some(
-    (candidate) => accepted.has(candidate.trim().toLowerCase()),
+    (candidate) => candidate.trim().toLowerCase() === destination.id.toLowerCase()
+      || airportServesCity(destination, candidate),
   );
   if (!inSnapshot) {
     throw new Error("flight search destination is not in snapshot candidates");
