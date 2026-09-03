@@ -36,8 +36,8 @@ without clipping it at the message viewport boundary.
 - Preference-card actions render as underlined text links with a directional
   icon, retain a visible keyboard focus indicator, and place the submit action
   at the card's lower-right edge.
-- The preference card uses its border and folded-corner detail for hierarchy;
-  it has no full-card hard offset shadow.
+- The preference card uses its thin border and paper grain for hierarchy; it
+  has neither a folded corner nor a full-card hard offset shadow.
 - The message list remains scrollable and leaves enough bottom space for its
   final content to stay reachable while the composer is visible.
 

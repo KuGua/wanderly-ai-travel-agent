@@ -11,12 +11,9 @@ import type { PreferenceCardField } from "@/lib/api/contracts";
  * profile is right for *this* trip, before the assistant plans anything around
  * the wrong assumption.
  *
- * Read as a piece of white paper: square corners, a thin 1.5px ink outline
- * and a heavier black offset shadow. The grain runs coarser (`0.6`) and
- * slightly louder (`0.09`) than the chat's other cards so the texture reads
- * as fibre rather than noise. The sheet itself keeps its sharp silhouette;
- * only the final lower-right tip lifts into a shallow shaded paper flap. The
- * decorative layer stays beneath content, so controls remain unaffected.
+ * Read as a piece of white paper: square corners and a thin 1.5px ink outline.
+ * The grain runs coarser (`0.6`) and slightly louder (`0.09`) than the chat's
+ * other cards so the texture reads as fibre rather than noise.
  */
 const PAPER_GRAIN =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.6' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)' opacity='0.35'/%3E%3C/svg%3E\")";
@@ -140,30 +137,6 @@ export function TripPreferenceCard({
         className="pointer-events-none absolute inset-0 z-[1] mix-blend-overlay"
         style={{ backgroundImage: PAPER_GRAIN, opacity: 0.09 }}
       />
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 64 64"
-        className="pointer-events-none absolute -bottom-px -right-px z-[1] size-16"
-        style={{ transform: "perspective(180px) rotateX(-10deg) rotateZ(-2deg)", transformOrigin: "bottom right" }}
-      >
-        <defs>
-          <linearGradient id="trip-preference-tip-under" x1="0" y1="1" x2="1" y2="0">
-            <stop offset="0" stopColor="color-mix(in srgb, var(--w-fog), var(--w-ink) 22%)" />
-            <stop offset="0.46" stopColor="var(--w-fog)" />
-            <stop offset="0.78" stopColor="var(--w-white)" />
-            <stop offset="1" stopColor="var(--w-mist)" />
-          </linearGradient>
-          <filter id="trip-preference-tip-shadow" x="-25%" y="-25%" width="150%" height="150%">
-            <feGaussianBlur stdDeviation="2.1" />
-          </filter>
-        </defs>
-        {/* A short shadow grounds only the physically raised tip. */}
-        <path d="M17 61C37 58 53 43 60 19C57 43 43 58 17 61Z" transform="translate(2 3)" fill="var(--w-ink)" fillOpacity="0.17" filter="url(#trip-preference-tip-shadow)" />
-        {/* The leaf-like underside is attached to the final corner of this sheet. */}
-        <path d="M4 60C27 56 49 36 60 5C57 31 43 51 16 58C10 59 6 60 4 60Z" fill="url(#trip-preference-tip-under)" />
-        <path d="M7 59C29 54 47 36 58 10" fill="none" stroke="var(--w-white)" strokeOpacity="0.64" strokeWidth="1.1" />
-      </svg>
-
       <div className="relative z-[2] flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-[15px] font-extrabold leading-tight">{t("prefCardTitle")}</h3>

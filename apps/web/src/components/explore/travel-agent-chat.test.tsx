@@ -761,7 +761,7 @@ describe("the trip's preference card", () => {
     expect(preferenceCard).not.toHaveClass("wanderly-shadow");
     expect(screen.getByRole("button", { name: "Edit" })).toHaveClass("underline");
     expect(screen.getByTestId("trip-preference-submit")).toHaveClass("underline");
-    expect(preferenceCard.querySelectorAll("button svg[aria-hidden='true']")).toHaveLength(2);
+    expect(preferenceCard.querySelectorAll("svg[aria-hidden='true']")).toHaveLength(2);
   });
 
   it("submits only what the traveller changed", async () => {
