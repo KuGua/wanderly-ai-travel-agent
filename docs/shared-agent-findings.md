@@ -219,7 +219,7 @@ SFO / PVG / NRT / SIN / LIS。除东京外我测过的每个目的地都没有�
 `personal_research_evidence` 落了 `flight.search / AVAILABLE / personal-flight-adapter`,
 带 provider 和检查时间。这条链路是好的。
 
-## #32 酒店搜到了真实价格，用户却被告知「连不上模型」 — 缺陷 — 未修
+## #32 酒店搜到了真实价格，用户却被告知「连不上模型」 — 缺陷 — 已修
 同一线程问酒店 → 打字确认 → 后台 `hotel.search / AVAILABLE`,
 `result_json` 里是 **Hilton Tokyo Hotel,1848.01 CNY 每晚,3 晚 Non-refundable**。
 而屏幕上是「I can't reach the conversation model right now」。
@@ -229,6 +229,23 @@ worker 日志:`Request was aborted.`
 结果整轮报成模型故障,用户什么都没看到。**
 turn 的截止时间没有把慢 provider 算进去。
 至少 fallback 文案应该说实话——搜索完成了,只是没能写成回复。
+
+**根因**:`conversation-task-handler` 用**一个** 15 秒的钟盖住整个工具循环
+(`travelConversationSkill.timeoutMs`)。酒店查询自己就要十几秒,钟一响
+`execution.abort()`,模型请求抛 `Request was aborted.`,网关把它归为可重试的
+上游故障,`sentAnyDelta` 为 false,于是走 `safeConversationFallback()`。
+
+**修法**(`fix/conversation-turn-deadline`):把一个钟拆成两个。
+Skill 的超时从此只计**模型时间**——两个工具分发包装器在 provider 跑的时候把它
+暂停,跑完再续上剩余额度(是续,不是重置,所以慢的一轮仍然有界)。另加一个
+**120 秒墙钟硬顶**,永不暂停,保证不应答的供应商也拖不住一轮。
+另外,工具已经产出证据时的 fallback 换成如实文案:搜索完成、结果已保存。
+回归测试 `apps/api/tests/conversation-turn-deadline.test.ts`(5 条)。
+
+**屏幕复验**:同一句「确认搜索酒店」,现在返回五家真实 Nuitee 报价
+(remm Roppongi 766.56 / Mercure Haneda 772.42 / the b ginza 784.20 /
+Mystays Premier Akasaka 914.83 / Citadines Shinjuku 1402.18 CNY 每晚),
+含取消政策、来源(Nuitee LiteAPI)与查询日期。整轮约 30 秒。
 
 ## #33 酒店没有确认按钮，机票有 — 缺陷 — 未修
 机票走到确认时出现「Ready to search for flights — run it now?」+ Search/Cancel 按钮;
