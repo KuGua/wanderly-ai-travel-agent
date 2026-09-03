@@ -511,6 +511,11 @@ html.wanderly-cursor-swallowed * {
   pointer-events: none;
 }
 
+.wanderly-bot[data-game="flip"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .shazi-cursor-vomit {
   position: absolute;
   inset: 0;
@@ -779,6 +784,144 @@ html.wanderly-cursor-swallowed * {
 
 @media (prefers-reduced-motion: reduce) {
   .wanderly-bot-quit-menu { animation: none; }
+}
+
+/*
+ * Seven-click flip game. The application turns upside down while the portal
+ * itself counter-rotates, keeping the game controls readable and hittable.
+ * Every game element is explicitly positioned: without this contract the
+ * mounted portal is present in the DOM but visually disappears into page flow.
+ */
+html.wanderly-flip body {
+  overflow: hidden;
+  transform: rotate(180deg);
+  transform-origin: 50vw 50vh;
+}
+
+.wanderly-flip-game {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center, rgb(246 189 96 / 12%), transparent 42%),
+    rgb(8 47 63 / 12%);
+  pointer-events: none;
+}
+
+html.wanderly-flip .wanderly-flip-game {
+  /* Counter the body's flip: the map stays inverted, the catch game does not. */
+  transform: rotate(180deg);
+  transform-origin: 50vw 50vh;
+}
+
+.wanderly-flip-decor {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.wanderly-flip-ring {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(72vw, 720px);
+  aspect-ratio: 1;
+  border: 12px solid rgb(112 190 180 / 40%);
+  border-radius: 50%;
+  box-shadow: 0 0 44px rgb(112 190 180 / 68%), inset 0 0 38px rgb(246 189 96 / 34%);
+  translate: -50% -50%;
+  animation: wanderly-flip-ring-pulse 2.4s ease-in-out infinite;
+}
+
+.wanderly-flip-ring--b {
+  width: min(46vw, 460px);
+  border-width: 7px;
+  animation-delay: -1.2s;
+}
+
+.wanderly-flip-mush {
+  position: absolute;
+  font-size: clamp(2rem, 6vw, 5rem);
+  filter: drop-shadow(4px 6px 0 rgb(8 47 63 / 35%));
+  animation: wanderly-flip-mush-bob 1.8s ease-in-out infinite alternate;
+}
+
+.wanderly-flip-hud {
+  position: absolute;
+  left: 50%;
+  top: max(1rem, env(safe-area-inset-top));
+  z-index: 2;
+  margin: 0;
+  padding: 0.65rem 1rem;
+  border: 2px solid var(--w-ink);
+  border-radius: 999px;
+  background: var(--w-white);
+  box-shadow: 4px 5px 0 var(--w-ink);
+  color: var(--w-ink);
+  font-size: 0.8rem;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  translate: -50% 0;
+  white-space: nowrap;
+}
+
+.wanderly-flip-shazi {
+  position: absolute;
+  z-index: 3;
+  width: clamp(76px, 10vw, 128px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: crosshair;
+  pointer-events: auto;
+  translate: -50% -50%;
+  transition: left 180ms cubic-bezier(0.2, 0.75, 0.35, 1), top 180ms cubic-bezier(0.2, 0.75, 0.35, 1), scale 120ms ease;
+  filter: drop-shadow(8px 10px 0 rgb(8 47 63 / 30%));
+}
+
+.wanderly-flip-shazi:hover,
+.wanderly-flip-shazi:focus-visible {
+  outline: none;
+  scale: 1.08;
+}
+
+.wanderly-flip-shazi:focus-visible {
+  filter: drop-shadow(0 0 12px var(--w-highlight)) drop-shadow(8px 10px 0 rgb(8 47 63 / 30%));
+}
+
+.wanderly-flip-shazi img {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+@keyframes wanderly-flip-ring-pulse {
+  0%, 100% { opacity: 0.35; scale: 0.84; rotate: 0deg; }
+  50% { opacity: 0.92; scale: 1.08; rotate: 10deg; }
+}
+
+@keyframes wanderly-flip-mush-bob {
+  from { translate: 0 -8px; rotate: -8deg; }
+  to { translate: 0 8px; rotate: 8deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.wanderly-flip body,
+  html.wanderly-flip .wanderly-flip-game {
+    transform: none;
+  }
+
+  .wanderly-flip-ring,
+  .wanderly-flip-mush {
+    animation: none;
+  }
+
+  .wanderly-flip-shazi {
+    transition: none;
+  }
 }
 
 .wanderly-bot-cloud {

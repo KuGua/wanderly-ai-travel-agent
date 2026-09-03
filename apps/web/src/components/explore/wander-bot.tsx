@@ -675,6 +675,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       data-settled={settled ? "true" : "false"}
       data-cloud={cloudBelow ? "below" : "above"}
       data-effect={cursorVomitTarget ? "cursor-vomit" : undefined}
+      data-game={flipGameOpen ? "flip" : undefined}
       onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
       data-persona={persona}
