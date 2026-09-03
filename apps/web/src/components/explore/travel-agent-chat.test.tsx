@@ -6,7 +6,11 @@ import type { AgentRun, ConversationPlace, ConversationTurnAcceptedResponse } fr
 import { TravelApiError } from "@/lib/api/errors";
 import type { TravelApi } from "@/lib/api";
 import { renderWithIntl } from "@/test/render";
+import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { CHAT_ACTIVE_RUN_STORAGE_KEY, TravelAgentChat } from "./travel-agent-chat";
+
+/** The pointer is per-viewer now, so the tests have to look where it lives. */
+const ACTIVE_RUN_KEY = () => viewerScopedKey(CHAT_ACTIVE_RUN_STORAGE_KEY);
 
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 const OWNER_ID = "22222222-2222-4222-8222-222222222222";
@@ -570,13 +574,13 @@ describe("TravelAgentChat durable streaming flow", () => {
   });
 
   it("clears a stale active-run pointer when its durable run can no longer be read", async () => {
-    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
     const api = createApi({
       getAgentRun: vi.fn().mockRejectedValue(new TravelApiError("missing", 404, "Not Found", null)),
     });
     renderChat(api, { initiallyOpen: true });
 
-    await waitFor(() => expect(localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY)).toBeNull());
+    await waitFor(() => expect(localStorage.getItem(ACTIVE_RUN_KEY())).toBeNull());
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
   });
@@ -587,7 +591,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     // Reading it back answers 403, not 404, and only 404 used to clear it — so
     // the chat polled a stranger's run forever, stuck on "Wanderly is
     // thinking…" with the composer disabled behind it.
-    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
     const api = createApi({
       getAgentRun: vi.fn().mockRejectedValue(
         new TravelApiError("forbidden", 403, "Not authorized for this Agent run", null),
@@ -595,13 +599,13 @@ describe("TravelAgentChat durable streaming flow", () => {
     });
     renderChat(api, { initiallyOpen: true });
 
-    await waitFor(() => expect(localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY)).toBeNull());
+    await waitFor(() => expect(localStorage.getItem(ACTIVE_RUN_KEY())).toBeNull());
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
   });
 
   it("restores a running durable run after mount without submitting another turn", async () => {
-    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
     const api = createApi();
 
     renderChat(api);
@@ -612,7 +616,7 @@ describe("TravelAgentChat durable streaming flow", () => {
   });
 
   it("clears a completed durable-run pointer after restoring persisted history", async () => {
-    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
     const api = createApi({
       getAgentRun: vi.fn().mockResolvedValue(run("COMPLETED")),
       getOwnerConversation: vi.fn().mockResolvedValue({
@@ -627,7 +631,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     renderChat(api);
 
     expect(await screen.findByText("Persisted answer")).toBeInTheDocument();
-    await waitFor(() => expect(localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY)).toBeNull());
+    await waitFor(() => expect(localStorage.getItem(ACTIVE_RUN_KEY())).toBeNull());
     expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
   });
 

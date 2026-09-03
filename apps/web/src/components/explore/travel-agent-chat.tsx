@@ -27,6 +27,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { threadKeys } from "@/lib/query/keys";
 import { TravelApiError } from "@/lib/api/errors";
 import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
+import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { useTravelApi } from "@/lib/query/provider";
 import { Link } from "@/i18n/navigation";
 
@@ -1370,17 +1371,26 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+/**
+ * Keyed by viewer: two accounts on one browser each get their own pointer,
+ * so signing in as someone else cannot hand you a run you are not allowed to
+ * read — which answers 403 and used to leave the chat wedged on "thinking".
+ */
+function activeRunKey(): string {
+  return viewerScopedKey(CHAT_ACTIVE_RUN_STORAGE_KEY);
+}
+
 function readStoredActiveRunId(): string | null {
   if (typeof window === "undefined") return null;
-  try { return window.localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY); } catch { return null; }
+  try { return window.localStorage.getItem(activeRunKey()); } catch { return null; }
 }
 
 function storeActiveRunId(runId: string) {
-  try { window.localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, runId); } catch { /* optional pointer */ }
+  try { window.localStorage.setItem(activeRunKey(), runId); } catch { /* optional pointer */ }
 }
 
 function clearStoredActiveRunId() {
-  try { window.localStorage.removeItem(CHAT_ACTIVE_RUN_STORAGE_KEY); } catch { /* optional pointer */ }
+  try { window.localStorage.removeItem(activeRunKey()); } catch { /* optional pointer */ }
 }
 
 function mergeMessages(current: ConversationMessage[], incoming: ConversationMessage[]) {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { clearViewerScopedStorage } from "./viewer-scoped-storage";
+import { clearViewerScopedStorage, viewerScopedKey } from "./viewer-scoped-storage";
 
 afterEach(() => {
   localStorage.clear();
@@ -47,5 +47,40 @@ describe("clearViewerScopedStorage", () => {
 
     const left = Object.keys(localStorage).filter((key) => key.startsWith("wanderly.sharedPlan."));
     expect(left).toEqual([]);
+  });
+});
+
+describe("viewerScopedKey", () => {
+  function signIn(username: string) {
+    localStorage.setItem("wanderly_auth_user", JSON.stringify({ username }));
+  }
+
+  it("gives two accounts on one browser separate slots", () => {
+    signIn("guolufei");
+    const forFirst = viewerScopedKey("wanderly.privateChatActiveRunId.v1");
+    signIn("mike");
+    const forSecond = viewerScopedKey("wanderly.privateChatActiveRunId.v1");
+
+    expect(forFirst).not.toBe(forSecond);
+  });
+
+  it("does not hand the next account the previous one's value", () => {
+    // The whole point: signing in as someone else must not surface a run id
+    // that answers 403, whether or not the first account signed out cleanly.
+    signIn("guolufei");
+    localStorage.setItem(viewerScopedKey("wanderly.privateChatActiveRunId.v1"), "guolufei-run");
+    signIn("mike");
+
+    expect(localStorage.getItem(viewerScopedKey("wanderly.privateChatActiveRunId.v1"))).toBeNull();
+  });
+
+  it("keeps a signed-out reader in a slot of their own", () => {
+    localStorage.removeItem("wanderly_auth_user");
+    expect(viewerScopedKey("k")).toBe("k@anon");
+  });
+
+  it("falls back to the shared slot rather than throwing on unreadable state", () => {
+    localStorage.setItem("wanderly_auth_user", "{not json");
+    expect(viewerScopedKey("k")).toBe("k@anon");
   });
 });
