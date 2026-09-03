@@ -283,9 +283,10 @@ describe("TripWorkspace", () => {
     expect(updateDraftTripBrief).not.toHaveBeenCalled();
   });
 
-  it("says what each way forward does before it is taken", async () => {
-    // In the workspace neither option leaves the page, so the wording must
-    // not promise a planner the traveller is already standing in.
+  it("names the destination in the action rather than listing it above", async () => {
+    // The facts used to sit in a bullet list over a generic "Confirm update".
+    // Putting the destination in the label is what lets the list go: the
+    // button now states the decision instead of describing a record change.
     const trip = buildTripResponse("DRAFT");
     const api = createApi({
       getTrip: vi.fn().mockResolvedValue({
@@ -296,8 +297,8 @@ describe("TripWorkspace", () => {
     });
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
 
-    expect(await screen.findByRole("button", { name: /Updates the brief on the right/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Changes nothing about the trip/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Save Indonesia to this trip" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Leave it as it is" })).toBeInTheDocument();
   });
 
   it("tells the traveller a thread is coming while the list loads, and stops once it arrives", async () => {

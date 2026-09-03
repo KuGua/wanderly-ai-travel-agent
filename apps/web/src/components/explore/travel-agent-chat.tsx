@@ -817,6 +817,14 @@ export function TravelAgentChat({
     : "wanderly-cosmos-surface";
   const userBubbleClass = "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm";
   const agentBubbleClass = `group/msg relative max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`;
+  // The destination now names the action instead of sitting in a list above
+  // it, so the option reads as the decision rather than as a record change.
+  // Absent — the model proposed only dates, say — the label stays generic
+  // rather than rendering an empty gap.
+  const briefDestination = briefProposal?.destinationCandidates?.length
+    ? briefProposal.destinationCandidates.join(" · ")
+    : null;
+
   const actionCardClass = `px-3.5 py-3 text-sm ${surfaceClass} wanderly-r-md wanderly-shadow-sm`;
   const actionPrimaryClass = "min-h-10 px-3 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-50";
   const actionSecondaryClass = docked
@@ -1088,44 +1096,42 @@ export function TravelAgentChat({
             </div>
           ) : null}
           {briefProposal && tripId ? (
-            <section aria-label={t("briefProposalTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
-              <p className="font-bold text-primary">{t("briefProposalTitle")}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{t("briefProposalIntro")}</p>
-              <ul className="mt-2 list-disc space-y-0.5 pl-4 text-muted-foreground">
-                {describeBriefProposal(briefProposal, t).map((line) => <li key={line}>{line}</li>)}
-              </ul>
-              {/* Two ways forward rather than "confirm / ignore": from the
-                  globe the real question is whether this is the trip, and
-                  "Ignore" answered a different one. Each option says what it
-                  does, because one of them leaves the map. */}
-              <div className="mt-3 grid gap-2">
+            /* Not a dialog: two ways forward, ruled apart. The bordered card
+               read as a form to fill in, when the only thing being asked is
+               which of these the traveller wants next — and the facts it used
+               to list are in the reply directly above it. */
+            <section
+              aria-label={t("briefProposalTitle")}
+              className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} border-y ${docked ? "border-[var(--w-line)]" : "border-white/15"}`}
+            >
+              {[
+                {
+                  key: "plan",
+                  label: briefDestination
+                    ? t(onGlobe ? "briefProposalPlanTitle" : "briefProposalSaveTitle", { destination: briefDestination })
+                    : t(onGlobe ? "briefProposalPlanTitleNoDestination" : "briefProposalSaveTitleNoDestination"),
+                  busy: t(onGlobe ? "briefProposalOpening" : "briefProposalSaving"),
+                  onClick: () => void confirmBriefProposal(),
+                },
+                {
+                  key: "explore",
+                  label: t(onGlobe ? "briefProposalExploreTitle" : "briefProposalKeepTitle"),
+                  busy: null,
+                  onClick: () => setBriefProposal(null),
+                },
+              ].map((option, index) => (
                 <button
+                  key={option.key}
                   type="button"
-                  onClick={() => void confirmBriefProposal()}
+                  onClick={option.onClick}
                   disabled={isConfirmingBrief}
-                  className={`${actionPrimaryClass} flex w-full flex-col items-start gap-0.5 py-2.5 text-left`}
+                  className={`block w-full px-1 py-2.5 text-left text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    index > 0 ? `border-t ${docked ? "border-[var(--w-line)]" : "border-white/15"}` : ""
+                  } ${docked ? "text-[var(--w-ink)] hover:bg-[var(--w-mist)]" : "text-[var(--w-fog)] hover:bg-white/10"}`}
                 >
-                  <span className="block">
-                    {isConfirmingBrief
-                      ? t(onGlobe ? "briefProposalOpening" : "briefProposalSaving")
-                      : t(onGlobe ? "briefProposalPlanTitle" : "briefProposalSaveTitle")}
-                  </span>
-                  <span className="block text-[11px] font-semibold opacity-80">
-                    {t(onGlobe ? "briefProposalPlanBody" : "briefProposalSaveBody")}
-                  </span>
+                  {isConfirmingBrief && option.busy ? option.busy : option.label}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setBriefProposal(null)}
-                  disabled={isConfirmingBrief}
-                  className={`${actionSecondaryClass} flex w-full flex-col items-start gap-0.5 py-2.5 text-left`}
-                >
-                  <span className="block">{t(onGlobe ? "briefProposalExploreTitle" : "briefProposalKeepTitle")}</span>
-                  <span className="block text-[11px] font-semibold opacity-75">
-                    {t(onGlobe ? "briefProposalExploreBody" : "briefProposalKeepBody")}
-                  </span>
-                </button>
-              </div>
+              ))}
             </section>
           ) : null}
           {canStartSharedPlanning && !briefProposal ? (
@@ -1547,40 +1553,6 @@ function ToolActivityList({ items }: { items: ToolActivity[] }) {
   );
 }
 
-function isRetryable(error: unknown) {
-  return !(error instanceof TravelApiError) || error.statusCode === null || [404, 500, 502, 504].includes(error.statusCode);
-}
-
-function describeBriefProposal(
-  proposal: Extract<AgentStreamEvent, { event: "trip.brief_proposed" }>["proposal"],
-  t: ReturnType<typeof useTranslations>,
-): string[] {
-  const lines: string[] = [];
-  if (proposal.departureCities?.length) lines.push(t("briefProposalDeparture", { cities: proposal.departureCities.join(" · ") }));
-  if (proposal.destinationCandidates?.length) lines.push(t("briefProposalDestinations", { destinations: proposal.destinationCandidates.join(" · ") }));
-  if (proposal.travelDateStart && proposal.travelDateEnd) {
-    lines.push(t("briefProposalDateRange", { start: proposal.travelDateStart, end: proposal.travelDateEnd }));
-  } else if (proposal.travelDateStart) {
-    // Its own sentence rather than a range with a placeholder end: composing
-    // one produced "2026-12-26 to to be set from trip duration".
-    lines.push(t("briefProposalDateStart", { start: proposal.travelDateStart }));
-  }
-  // Always its own line. A traveller who gave both a date and a duration was
-  // shown only the date, so the card could not be checked against what they
-  // actually said — which is the one job it has.
-  if (proposal.travelDays) {
-    lines.push(t("briefProposalDays", { days: proposal.travelDays }));
-  }
-  return lines;
-}
-
-/**
- * A durable task that finished FAILED, carrying enough to say which one and
- * why. Before this the UI reported every run failure as "the message could not
- * be sent", which was wrong three ways at once: the message had been sent and
- * stored, the failure came from planning twenty seconds later, and the advice
- * to try again described something that would fail identically every time.
- */
 class AgentRunFailure extends Error {
   constructor(
     readonly operation: string,
@@ -1591,7 +1563,10 @@ class AgentRunFailure extends Error {
   }
 }
 
-/** Whether trying the same thing again could plausibly give a different answer. */
+function isRetryable(error: unknown) {
+  return !(error instanceof TravelApiError) || error.statusCode === null || [404, 500, 502, 504].includes(error.statusCode);
+}
+
 function isRetryableFailure(error: AgentRunFailure): boolean {
   // RATE_LIMITED is absent on purpose: the quota does not come back because
   // someone pressed a button again.
