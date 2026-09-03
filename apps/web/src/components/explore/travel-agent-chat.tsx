@@ -843,6 +843,7 @@ export function TravelAgentChat({
         : result.outcome === "REMEMBERED_NOTE" ? t("rememberedNote", { remaining: result.remaining })
         : result.outcome === "TOO_LONG" ? t("rememberTooLong", { length: result.length, limit: result.limit })
         : result.outcome === "LIST_FULL" ? t("rememberListFull", { limit: result.limit })
+        : result.outcome === "SENSITIVE_FIELD" ? t("rememberSensitive")
         : t("rememberFailed");
       setRememberState({ status: "done", message });
     } catch {
@@ -1418,6 +1419,8 @@ class AgentRunFailure extends Error {
 
 /** Whether trying the same thing again could plausibly give a different answer. */
 function isRetryableFailure(error: AgentRunFailure): boolean {
+  // RATE_LIMITED is absent on purpose: the quota does not come back because
+  // someone pressed a button again.
   return error.errorCode === null
     || ["NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "INTERNAL"].includes(error.errorCode);
 }
@@ -1425,6 +1428,7 @@ function isRetryableFailure(error: AgentRunFailure): boolean {
 function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
   if (error instanceof AgentRunFailure) {
     const planning = error.operation !== "CONVERSATION";
+    if (error.errorCode === "RATE_LIMITED") return planning ? t("planningRateLimited") : t("providerUnavailable");
     if (error.errorCode === "PLANNING_DATA_UNAVAILABLE") return t("planningDataUnavailable");
     if (error.errorCode === "POLICY_DENIED") return t("planningNotAllowed");
     if (error.errorCode === "SEARCH_PREFERENCES_STALE") return t("planningPreferencesChanged");

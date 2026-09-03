@@ -22,7 +22,7 @@ import type { ConversationPlace } from "../types/schemas.js";
 import type { PersonalTripContext } from "../skills/personal/personal-trip-context-schema.js";
 import { recordAgentRun, type AgentRunTokens } from "../observability/agent-runs.js";
 import { metrics, type MetricProvider } from "../observability/metrics.js";
-import { logSafeRuntimeEvent } from "../observability/telemetry.js";
+import { logSafeRuntimeEvent, pinoInstance} from "../observability/telemetry.js";
 import {
   TRACEPARENT_HEADER,
   TRACESTATE_HEADER,
@@ -151,15 +151,72 @@ function hashOutput(output: unknown): string {
   return createHash("sha256").update(canonicalize(output)).digest("hex");
 }
 
+/**
+ * A tool result small enough to keep sending. Arrays are truncated to their
+ * first few entries with a count of what was dropped, so the model can still
+ * reason about how much was found without carrying all of it.
+ */
+export function boundToolResult(result: unknown, maxChars = 4000, maxItems = 5): string {
+  const trim = (value: unknown): unknown => {
+    if (Array.isArray(value)) {
+      const kept = value.slice(0, maxItems).map(trim);
+      return value.length > maxItems
+        ? [...kept, `…and ${value.length - maxItems} more (kept server-side)`]
+        : kept;
+    }
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, trim(v)]));
+    }
+    if (typeof value === "string" && value.length > 400) return `${value.slice(0, 400)}…`;
+    return value;
+  };
+  const trimmed = JSON.stringify(trim(result));
+  if (trimmed.length <= maxChars) return trimmed;
+  return `${trimmed.slice(0, maxChars)}…" (truncated)`;
+}
+
 function classifyError(err: unknown): string {
+  // The classified code is all that reaches the logs, and "UPSTREAM_5XX" says
+  // the provider refused without saying what it objected to — which for a
+  // tool-calling request is usually the request, not the provider. The class
+  // and status are provider diagnostics; the message is capped because an
+  // error body can quote the request back.
+  if (err && !(err instanceof ModelGatewayError)) {
+    try {
+      pinoInstance.warn({
+        component: "llm-gateway",
+        errorClass: (err as Error)?.name ?? typeof err,
+        httpStatus: (err as { status?: number })?.status
+          ?? (err as { response?: { status?: number } })?.response?.status,
+        errorMessage: String((err as Error)?.message ?? err).slice(0, 400),
+      }, "Model call failed");
+    } catch {
+      // Diagnostics must never replace the error being classified.
+    }
+  }
   if (!err) return "UNKNOWN";
   if (err instanceof ModelGatewayError) return err.code;
   if ((err as { name?: string }).name === "AbortError") return "TIMEOUT";
+  // Status first, because reading it out of the message text is guesswork that
+  // has already been wrong: a 429 quota error whose body says
+  // "limit: 25000" matched the 5xx pattern on the "500" inside that number, so
+  // an exhausted quota was reported as a provider outage and retried against a
+  // limit that would not lift.
+  const status = (err as { status?: number })?.status
+    ?? (err as { response?: { status?: number } })?.response?.status;
+  if (typeof status === "number") {
+    if (status === 429) return "RATE_LIMITED";
+    if (status >= 500) return "UPSTREAM_5XX";
+    if (status >= 400) return "UPSTREAM_FAILURE";
+  }
   const message = (err as Error).message ?? "";
   if (/timeout/i.test(message)) return "TIMEOUT";
   if (/parse|schema/i.test(message)) return "SCHEMA_PARSE";
   if (/network|fetch|ENOTFOUND|ECONNRESET/i.test(message)) return "NETWORK";
-  if (/5\d{2}/.test(message)) return "UPSTREAM_5XX";
+  if (/quota|rate limit|too many requests/i.test(message)) return "RATE_LIMITED";
+  // Anchored so it reads an HTTP status at the start of a message rather than
+  // any three digits anywhere in it.
+  if (/^\s*5\d{2}\b/.test(message)) return "UPSTREAM_5XX";
   return "UPSTREAM_FAILURE";
 }
 
@@ -171,11 +228,22 @@ function classifyError(err: unknown): string {
  * flipping the flag.
  */
 function isRetryableUpstreamError(code: string): boolean {
-  return code === "UPSTREAM_5XX" || code === "UPSTREAM_FAILURE" || code === "NETWORK" || code === "TIMEOUT";
+  // RATE_LIMITED is retryable, but on its own clock: the limits that produce it
+  // here are per-minute (requests, and input tokens), so the window does reopen
+  // — just not within the few hundred milliseconds the other codes back off
+  // for. `computeBackoffMs` gives it a longer wait.
+  return code === "UPSTREAM_5XX" || code === "UPSTREAM_FAILURE" || code === "NETWORK"
+    || code === "TIMEOUT" || code === "RATE_LIMITED";
 }
 
-function computeBackoffMs(attempt: number): number {
+function computeBackoffMs(attempt: number, code?: string): number {
   // `attempt` is 0-indexed on the *next* retry: attempt 0 → base*1, attempt 1 → base*2, etc.
+  // A rate limit waits out its window instead: retrying a per-minute cap after
+  // 250ms just spends another request against the same cap.
+  if (code === "RATE_LIMITED") {
+    const rateBase = Number(process.env.MODEL_GATEWAY_RATE_LIMIT_BACKOFF_MS ?? 20000);
+    return rateBase + Math.floor(Math.random() * 5000);
+  }
   const base = Number(process.env.MODEL_GATEWAY_BASE_BACKOFF_MS ?? 250);
   const cap = Number(process.env.MODEL_GATEWAY_MAX_BACKOFF_MS ?? 2000);
   const exp = Math.min(cap, base * 2 ** attempt);
@@ -745,7 +813,7 @@ export class LLMGateway implements ModelGateway {
         lastError = classifyError(err);
         recordRetryableError(this.options.provider, lastError);
         if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
-        await sleep(computeBackoffMs(attempt));
+        await sleep(computeBackoffMs(attempt, lastError));
       }
     }
 
@@ -980,7 +1048,14 @@ export class LLMGateway implements ModelGateway {
           });
           throw error;
         }
-        messages.push({ role: "tool", tool_call_id: id, content: JSON.stringify(result) });
+        // Bounded, because every result stays in the conversation for the rest
+        // of the loop and the next request carries all of them. A places or
+        // activities answer is a list of provider records; a handful of those
+        // pushed the request past the model's input limit, which came back as
+        // a 429 and read as "the provider is down". The model needs to know
+        // what a tool returned, not to re-read every field of it — the
+        // authoritative copy is in the database either way.
+        messages.push({ role: "tool", tool_call_id: id, content: boundToolResult(result) });
       }
       appendFlightProgress();
     }
@@ -1162,7 +1237,7 @@ export class LLMGateway implements ModelGateway {
         lastError = classifyError(err);
         recordRetryableError(this.options.provider, lastError);
         if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
-        await sleep(computeBackoffMs(attempt));
+        await sleep(computeBackoffMs(attempt, lastError));
       }
     }
 
@@ -1295,7 +1370,7 @@ export class LLMGateway implements ModelGateway {
         // retrying after text can concatenate replies in the UI.
         if (sentAnyDelta || toolCallStarted) break;
         if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
-        await sleep(computeBackoffMs(attempt));
+        await sleep(computeBackoffMs(attempt, lastError));
       }
     }
 

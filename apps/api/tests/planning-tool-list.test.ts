@@ -1,3 +1,4 @@
+import { boundToolResult } from "../src/providers/llm-gateway.js";
 import { describe, expect, it } from "vitest";
 import {
   PlanningDataUnavailableError,
@@ -72,5 +73,42 @@ describe("planning-service post-deprecation contracts", () => {
       }],
       stays: [],
     })).not.toThrow();
+  });
+});
+/**
+ * Every tool result stays in the conversation for the rest of the loop, so the
+ * request grows with each call. A few provider lists pushed it past the
+ * model's input limit, which came back as a 429 — reported, before the
+ * classifier was fixed, as a provider outage.
+ */
+describe("boundToolResult", () => {
+  it("keeps a small result exactly as it was", () => {
+    const result = { outcome: "LIVE", offers: [{ id: "a" }, { id: "b" }] };
+    expect(JSON.parse(boundToolResult(result))).toEqual(result);
+  });
+
+  it("truncates a long list and says how many were dropped", () => {
+    const offers = Array.from({ length: 40 }, (_, i) => ({ id: `offer-${i}` }));
+    const bounded = JSON.parse(boundToolResult({ outcome: "LIVE", offers })) as {
+      offers: unknown[];
+    };
+    expect(bounded.offers).toHaveLength(6);
+    expect(bounded.offers.at(-1)).toBe("…and 35 more (kept server-side)");
+  });
+
+  it("caps a single very long string rather than shipping the whole thing", () => {
+    const bounded = boundToolResult({ description: "x".repeat(5000) });
+    expect(bounded.length).toBeLessThan(1000);
+    expect(bounded).toContain("…");
+  });
+
+  it("stays under the character budget for a large nested result", () => {
+    const huge = {
+      outcome: "LIVE",
+      places: Array.from({ length: 200 }, (_, i) => ({
+        id: `p-${i}`, name: "n".repeat(200), blurb: "b".repeat(500),
+      })),
+    };
+    expect(boundToolResult(huge).length).toBeLessThanOrEqual(4100);
   });
 });

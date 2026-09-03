@@ -27,3 +27,23 @@ export function resolveAirportReference(id: string): AirportReference | null {
 export function isControlledIata(value: string): boolean {
   return /^[A-Z]{3}$/.test(value) && [...byId.values()].some((airport) => airport.iataCode === value);
 }
+
+/**
+ * Controlled airport ids serving these cities, in the order the cities were
+ * given. A city with no controlled airport contributes nothing — callers treat
+ * its absence as a flight gap rather than guessing a nearby code.
+ *
+ * Matching is on the reference's own city name, case-insensitively, because
+ * the snapshot stores whatever the traveller confirmed and the reference
+ * stores a canonical spelling.
+ */
+export function airportIdsForCities(cities: readonly string[]): string[] {
+  const ids: string[] = [];
+  for (const city of cities) {
+    const wanted = city.trim().toLowerCase();
+    for (const airport of AIRPORTS) {
+      if (airport.city.toLowerCase() === wanted && !ids.includes(airport.id)) ids.push(airport.id);
+    }
+  }
+  return ids;
+}

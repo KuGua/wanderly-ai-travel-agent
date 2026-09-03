@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
 import { grantQuoteNationality } from "../services/stay-search-provider-authorization.js";
+import { saveConfirmedStaySearchPreferences } from "../services/stay-search-preferences-service.js";
 import {
   agentTaskRuns,
   auditEvents,
@@ -416,6 +417,22 @@ export async function tripRoutes(app: FastifyInstance) {
           },
           tx,
         });
+        // Hotel search is on, and with it on the planner refuses to run without
+        // confirmed stay preferences — the same shape as the flight ones above.
+        // Activation wrote flights and not stays, so every run reached plan
+        // synthesis and threw `StaySearchPreferencesStaleError` there instead.
+        // These are the defaults the "Start planning" card already names: one
+        // room, one adult, CNY. The traveller can change them afterwards, and
+        // doing so goes through the existing stale/replan path.
+        const stayPreferences = process.env.PLAN_ENABLE_HOTEL === "true"
+          ? await saveConfirmedStaySearchPreferences({
+            ctx,
+            tripId,
+            confirmedBy: request.user.id,
+            input: { roomCount: 1, adultsPerRoom: [1], currency: "CNY" },
+            tx,
+          })
+          : null;
         const snapshotId = await createConstraintSnapshot({
           tripId,
           memberIds: requiredMembers.map((member) => member.userId),
@@ -433,7 +450,12 @@ export async function tripRoutes(app: FastifyInstance) {
           flightSearchPreferencesVersion: preferences.version,
           outputMode: "PROPOSE_PLAN",
           requestedCapabilities: INITIAL_PLAN_CAPABILITIES,
-          hotelProvider: null,
+          ...(stayPreferences ? { staySearchPreferencesVersion: stayPreferences.version } : {}),
+          // `null` pinned the run to "no hotel provider" while the capability
+          // itself was switched on, so the run asked for accommodation and was
+          // then told it had no provider for it. `undefined` lets the
+          // configured provider through.
+          hotelProvider: process.env.PLAN_ENABLE_HOTEL === "true" ? undefined : null,
           requestId: request.clientRequestId ?? randomUUID(),
           tx,
         });

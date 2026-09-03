@@ -47,6 +47,9 @@ import { validatePlanOutput } from "../policy/plan-output-validator.js";
 import { DefaultPolicyGate } from "../agents/policy-gate.js";
 import { SkillError } from "../agents/errors.js";
 import { invokeSkill } from "../agents/skill-registry.js";
+import { airportIdsForCities } from "../location-reference/airport-reference.js";
+import { logSafeRuntimeEvent, pinoInstance } from "../observability/telemetry.js";
+import { resolveTripDestinationReference } from "./destination-reference-service.js";
 import { flightSearchModelArgumentsSchema } from "./flight-search-service.js";
 import { activitiesSearchModelArgumentsSchema } from "./activities-search-service.js";
 import { placeSearchModelArgumentsSchema } from "./place-search-service.js";
@@ -140,6 +143,78 @@ export interface CoverageResearchResult {
 }
 
 /**
+ * Whether anything is known about where a traveller could stay at this
+ * destination, with a `provider_search_runs` row recording who was asked.
+ *
+ * This used to ask `stayProvider`, which is `UnavailableStayProvider` — the
+ * only implementation of that interface in the codebase, returning
+ * NOT_CONFIGURED unconditionally. Every destination was therefore recorded as
+ * uncovered on every run, and the caller refuses to synthesize when anything
+ * is uncovered, so no plan could ever be written. The database agreed: not one
+ * `itinerary_plans` row had ever existed.
+ *
+ * Coverage asks discovery, not quotes. The question here is "is this
+ * destination a blank?", and a list of real places to stay answers it; what a
+ * room costs is a different question, asked later by `hotel.search`, which has
+ * the occupancy, currency and decrypted quote nationality a price request
+ * needs. §10.6 still holds — a destination with no accommodation signal at all
+ * is still uncovered — but "no live room price" is not "nothing is known".
+ *
+ * Never throws. A provider that fails leaves the destination uncovered, which
+ * the caller records as a gap; it is not a reason to lose the run.
+ */
+async function hasAccommodationCoverage(params: {
+  deps: PlanningDependencies;
+  tripId: string;
+  destination: string;
+  snapshotId: string;
+  agentTaskRunId?: string;
+}): Promise<boolean> {
+  const recordRun = async (outcome: "LIVE" | "UNAVAILABLE") => {
+    if (!params.agentTaskRunId) return;
+    try {
+      await db.insert(providerSearchRuns).values({
+        snapshotId: params.snapshotId,
+        agentTaskRunId: params.agentTaskRunId,
+        category: "stay",
+        providerName: "accommodation_discovery",
+        destinationId: params.destination.slice(0, 128),
+        requestFingerprint: randomUUID(),
+        outcome,
+        errorCode: null,
+      });
+    } catch {
+      // Evidence bookkeeping must not decide whether a trip can be planned.
+    }
+  };
+
+  try {
+    // Adapters take a resolved `DestinationReference` with coordinates and
+    // deliberately have no overload that accepts a city name. Passing the
+    // string through a cast is how this first came back UNAVAILABLE for a city
+    // the same provider had just answered LIVE for through the tool loop.
+    const destination = await resolveTripDestinationReference({
+      tripId: params.tripId,
+      destinationId: params.destination,
+    });
+    if (destination) {
+      const found = await params.deps.accommodationDiscoveryProvider?.discoverAccommodations({
+        destination,
+        limit: 10,
+      });
+      if (found?.outcome === "LIVE" && found.data.length > 0) {
+        await recordRun("LIVE");
+        return true;
+      }
+    }
+  } catch {
+    // Falls through to the UNAVAILABLE record below.
+  }
+  await recordRun("UNAVAILABLE");
+  return false;
+}
+
+/**
  * Spec §6.1 / §10.6 — research coverage matrix.
  *
  * Iterates the full cartesian of `{origin ∈ departureCities} × {destination ∈ destinationCandidates}`,
@@ -154,6 +229,8 @@ export interface CoverageResearchResult {
  */
 export async function researchCoverageForSnapshot(params: {
   snapshotId: string;
+  /** Needed to resolve a destination name to the reference adapters require. */
+  tripId: string;
   agentTaskRunId?: string;
   departureCities: string[];
   destinationCandidates: string[];
@@ -213,16 +290,15 @@ export async function researchCoverageForSnapshot(params: {
   // pre-fetch.
   const staySettlements = await Promise.allSettled(
     params.destinationCandidates.map(async (destination) => {
-      const stayResult = await deps.stayProvider.searchStays({
+      const covered = await hasAccommodationCoverage({
+        deps,
+        tripId: params.tripId,
         destination,
-        checkIn: params.travelDateStart,
-        checkOut: params.travelDateEnd,
         snapshotId: params.snapshotId,
+        ...(params.agentTaskRunId ? { agentTaskRunId: params.agentTaskRunId } : {}),
       });
-      const stayLive = stayResult.outcome === "LIVE";
-      if (stayLive) allStays.push(...stayResult.data);
-      if (!stayLive) missingDestinations.add(destination);
-      else evaluatedDestinations.add(destination);
+      if (covered) evaluatedDestinations.add(destination);
+      else missingDestinations.add(destination);
     }),
   );
   void staySettlements;
@@ -649,124 +725,28 @@ export async function generatePlan(params: {
     allStays.push(...stayResult.data);
   }
 
+  // The flight tool takes controlled airport ids, and the snapshot holds city
+  // names. Nothing translated between them, so the model dutifully passed
+  // "Shanghai" and "Tokyo" and the search rejected them as uncontrolled — every
+  // flight cell failed, the matrix was never complete, and the run died before
+  // writing a plan. Resolving here and naming the ids in the tool schema means
+  // the model can only ask for airports that exist, and a city with no
+  // controlled airport is a flight gap stated up front instead of a failure
+  // discovered at the end.
+  const originAirports = airportIdsForCities(snapshot.departureCities as string[]);
+  const destinationAirports = airportIdsForCities(snapshot.destinationCandidates as string[]);
   const memberPreferences = buildPlanningModelProjection(snapshot.authorizedData);
+  /**
+   * Capabilities the tool loop could not deliver. Declared out here so they
+   * reach the plan's recorded gaps: a plan built while a tool was failing must
+   * say so, or it reads as complete when it is not.
+   */
+  const toolFailureGaps: Array<{ capability: string; code: string }> = [];
+  /** Tool calls that already failed, keyed by name and arguments. */
+  const failedToolCalls = new Map<string, { outcome: "UNAVAILABLE"; capability: string; reason: string; message: string }>();
   let candidatePlanData: Record<string, unknown>;
   if (params.agentTaskRunId && params.flightSearchPreferencesVersion) {
-    const toolGateway = dependencies.modelGateway.generateStructuredPlanWithTools;
-    if (!toolGateway) throw new PlanningDataUnavailableError(["tool_calling_not_supported"]);
-    const preferences = await loadCurrentConfirmedSearchPreferences({
-      tripId: params.tripId, version: params.flightSearchPreferencesVersion,
-    });
-    const stayPreferences = hotelEnabled
-      ? await loadCurrentStaySearchPreferences({ tripId: params.tripId, version: params.staySearchPreferencesVersion! })
-      : null;
-    candidatePlanData = await toolGateway.call(dependencies.modelGateway, {
-      destination: params.destination,
-      destinationCandidates: snapshot.destinationCandidates as string[],
-      flightSearchConstraints: {
-        originIds: snapshot.departureCities as string[],
-        destinationIds: snapshot.destinationCandidates as string[],
-        tripType: preferences.tripType as "ONE_WAY" | "ROUND_TRIP",
-        departureDate: snapshot.travelDateStart,
-        ...(preferences.tripType === "ROUND_TRIP" ? { returnDate: snapshot.travelDateEnd } : {}),
-        adults: preferences.adults,
-        cabin: preferences.cabin as "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST",
-        currency: preferences.currency,
-      },
-      stays: allStays,
-      memberPreferences,
-      maxTurns: Number(process.env.MODEL_GATEWAY_TOOL_CALLING_MAX_TURNS ?? 8), signal: params.signal, ctx: params.ctx,
-      beforeFinal: async () => {
-        const matrix = await evaluateFlightResearchCompleteness({
-          snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId!,
-          departureCities: snapshot.departureCities as string[], destinationCandidates: snapshot.destinationCandidates as string[],
-        });
-        if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
-        // Re-check usable flight coverage before accepting final synthesis.
-        // Stay unavailability is intentionally a Phase 4 service gap and is
-        // represented as an empty selection, never a runtime fixture.
-        validateProviderCoverage({
-          requiredOrigins: snapshot.departureCities,
-          flights: allFlights,
-          stays: allStays,
-        });
-        if (activitiesEnabled) {
-          const activitiesMatrix = await evaluateActivitiesResearchCompleteness({
-            snapshotId: params.snapshotId,
-            agentTaskRunId: params.agentTaskRunId!,
-            destinationCandidates: snapshot.destinationCandidates as string[],
-          });
-          if (!activitiesMatrix.complete) {
-            throw new ActivitiesResearchIncompleteError(activitiesMatrix.cells);
-          }
-        }
-        if (hotelEnabled) {
-          const hotelMatrix = await evaluateHotelResearchCompleteness({ snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId!, destinationCandidates: snapshot.destinationCandidates as string[] });
-          if (!hotelMatrix.complete) throw new HotelResearchIncompleteError(hotelMatrix.cells);
-        }
-        if (accommodationDiscoveryEnabled) {
-          const accommodationMatrix = await evaluateAccommodationResearchCompleteness({
-            snapshotId: params.snapshotId,
-            agentTaskRunId: params.agentTaskRunId!,
-            destinationCandidates: snapshot.destinationCandidates as string[],
-          });
-          if (!accommodationMatrix.complete) throw new AccommodationResearchIncompleteError(accommodationMatrix.cells);
-        }
-      },
-      tools: [
-        {
-          name: "flight.search", description: "Search normalized flights for one controlled origin and destination.",
-          parameters: { type: "object", additionalProperties: false, required: ["originId", "destinationId"], properties: {
-            originId: { type: "string" }, destinationId: { type: "string" },
-          } },
-        },
-        ...(activitiesEnabled ? [{
-          name: "activities.search",
-          description: "Search live activity evidence for one controlled destination.",
-          parameters: { type: "object", additionalProperties: false, required: ["destinationId", "locale"], properties: {
-            destinationId: { type: "string" },
-            theme: { type: "string", enum: ["CULTURE", "FOOD", "OUTDOOR", "FAMILY"] },
-            locale: { type: "string", enum: ["en", "zh"] },
-          } },
-        }] : []),
-        ...(placesEnabled ? [{
-          name: "places.search",
-          description: "Search normalized POI candidates for one destination keyword and category.",
-          parameters: { type: "object", additionalProperties: false, required: ["destinationId", "keyword", "category"], properties: {
-            destinationId: { type: "string", description: "Must be one of the snapshot's destinationCandidates." },
-            keyword: { type: "string", description: "Free-text search term; never include private profile data." },
-            category: { type: "string", enum: ["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER"] },
-          } },
-        }, {
-          name: "places.adopt",
-          description: "Promote a POI candidate into a trip place, or update/revoke an existing trip place.",
-          parameters: { type: "object", additionalProperties: false, required: ["action"], properties: {
-            action: { type: "string", enum: ["propose", "adopt", "revoke"] },
-            candidateId: { type: "string" },
-            placeId: { type: "string" },
-          } },
-        }] : []),
-        ...(navigationEnabled ? [{
-          name: "navigation.route",
-          description: "Compute a walking/driving/cycling route between two ACTIVE trip places.",
-          parameters: { type: "object", additionalProperties: false, required: ["originPlaceId", "destinationPlaceId", "mode"], properties: {
-            originPlaceId: { type: "string", description: "placeId of an ACTIVE trip place." },
-            destinationPlaceId: { type: "string", description: "placeId of a different ACTIVE trip place." },
-            mode: { type: "string", enum: ["WALK", "DRIVE", "CYCLE"] },
-          } },
-        }] : []),
-        ...(hotelEnabled ? [{
-          name: "hotel.search",
-          description: "Search live hotel evidence for one controlled destination. Dates, occupancy, and currency are server-derived.",
-          parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
-        }] : []),
-        ...(accommodationDiscoveryEnabled ? [{
-          name: "accommodation.discover",
-          description: "Discover non-price accommodation candidates near one controlled destination. This is not availability or a quote.",
-          parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
-        }] : []),
-      ],
-      dispatchTool: async (call) => {
+    const dispatchPlanningTool = async (call: { name: string; arguments: unknown }) => {
         const snapshotContext = {
           authorizedData: memberPreferences,
           departureCities: snapshot.departureCities as string[],
@@ -886,6 +866,195 @@ export async function generatePlan(params: {
           return result;
         }
         throw new Error("UNKNOWN_SKILL");
+    };
+
+    const toolGateway = dependencies.modelGateway.generateStructuredPlanWithTools;
+    if (!toolGateway) throw new PlanningDataUnavailableError(["tool_calling_not_supported"]);
+    const preferences = await loadCurrentConfirmedSearchPreferences({
+      tripId: params.tripId, version: params.flightSearchPreferencesVersion,
+    });
+    const stayPreferences = hotelEnabled
+      ? await loadCurrentStaySearchPreferences({ tripId: params.tripId, version: params.staySearchPreferencesVersion! })
+      : null;
+    candidatePlanData = await toolGateway.call(dependencies.modelGateway, {
+      destination: params.destination,
+      destinationCandidates: snapshot.destinationCandidates as string[],
+      flightSearchConstraints: {
+        originIds: snapshot.departureCities as string[],
+        destinationIds: snapshot.destinationCandidates as string[],
+        tripType: preferences.tripType as "ONE_WAY" | "ROUND_TRIP",
+        departureDate: snapshot.travelDateStart,
+        ...(preferences.tripType === "ROUND_TRIP" ? { returnDate: snapshot.travelDateEnd } : {}),
+        adults: preferences.adults,
+        cabin: preferences.cabin as "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST",
+        currency: preferences.currency,
+      },
+      stays: allStays,
+      memberPreferences,
+      maxTurns: Number(process.env.MODEL_GATEWAY_TOOL_CALLING_MAX_TURNS ?? 8), signal: params.signal, ctx: params.ctx,
+      beforeFinal: async () => {
+        // Both gates below exist to stop the model finalizing while it could
+        // still have searched. When no controlled airport serves one of the
+        // cities there is nothing left to search, so insisting on a complete
+        // flight matrix would refuse every plan for a route the reference list
+        // does not cover — which is most of them, the list holding five
+        // airports. That is a flight gap on the plan, not a failed run.
+        const flightsAreSearchable = originAirports.length > 0 && destinationAirports.length > 0;
+        if (flightsAreSearchable) {
+          const matrix = await evaluateFlightResearchCompleteness({
+            snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId!,
+            departureCities: snapshot.departureCities as string[], destinationCandidates: snapshot.destinationCandidates as string[],
+          });
+          if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
+          // Re-check usable flight coverage before accepting final synthesis.
+          // Stay unavailability is intentionally a Phase 4 service gap and is
+          // represented as an empty selection, never a runtime fixture.
+          validateProviderCoverage({
+            requiredOrigins: snapshot.departureCities,
+            flights: allFlights,
+            stays: allStays,
+          });
+        } else {
+          toolFailureGaps.push({ capability: "flight", code: "NOT_CONFIGURED" });
+        }
+        if (activitiesEnabled) {
+          const activitiesMatrix = await evaluateActivitiesResearchCompleteness({
+            snapshotId: params.snapshotId,
+            agentTaskRunId: params.agentTaskRunId!,
+            destinationCandidates: snapshot.destinationCandidates as string[],
+          });
+          if (!activitiesMatrix.complete) {
+            throw new ActivitiesResearchIncompleteError(activitiesMatrix.cells);
+          }
+        }
+        if (hotelEnabled) {
+          const hotelMatrix = await evaluateHotelResearchCompleteness({ snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId!, destinationCandidates: snapshot.destinationCandidates as string[] });
+          if (!hotelMatrix.complete) throw new HotelResearchIncompleteError(hotelMatrix.cells);
+        }
+        if (accommodationDiscoveryEnabled) {
+          const accommodationMatrix = await evaluateAccommodationResearchCompleteness({
+            snapshotId: params.snapshotId,
+            agentTaskRunId: params.agentTaskRunId!,
+            destinationCandidates: snapshot.destinationCandidates as string[],
+          });
+          if (!accommodationMatrix.complete) throw new AccommodationResearchIncompleteError(accommodationMatrix.cells);
+        }
+      },
+      tools: [
+        {
+          name: "flight.search",
+          // The allowed codes are named in the description rather than as a
+          // JSON-schema `enum`: the provider's OpenAI-compatible endpoint
+          // answered 5xx to every request carrying one, so the constraint that
+          // was meant to keep the model on valid airports stopped it planning
+          // at all. The server still rejects anything outside the list.
+          description: originAirports.length > 0 && destinationAirports.length > 0
+            ? `Search normalized flights between two controlled airports. originId must be one of: ${originAirports.join(", ")}. destinationId must be one of: ${destinationAirports.join(", ")}. Any other value is rejected.`
+            : "Unavailable for this trip: no controlled airport serves one of its cities. Do not call this tool.",
+          parameters: { type: "object", additionalProperties: false, required: ["originId", "destinationId"], properties: {
+            originId: { type: "string" }, destinationId: { type: "string" },
+          } },
+        },
+        ...(activitiesEnabled ? [{
+          name: "activities.search",
+          description: "Search live activity evidence for one controlled destination.",
+          parameters: { type: "object", additionalProperties: false, required: ["destinationId", "locale"], properties: {
+            destinationId: { type: "string" },
+            theme: { type: "string", enum: ["CULTURE", "FOOD", "OUTDOOR", "FAMILY"] },
+            locale: { type: "string", enum: ["en", "zh"] },
+          } },
+        }] : []),
+        ...(placesEnabled ? [{
+          name: "places.search",
+          description: "Search normalized POI candidates for one destination keyword and category.",
+          parameters: { type: "object", additionalProperties: false, required: ["destinationId", "keyword", "category"], properties: {
+            destinationId: { type: "string", description: "Must be one of the snapshot's destinationCandidates." },
+            keyword: { type: "string", description: "Free-text search term; never include private profile data." },
+            category: { type: "string", enum: ["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER"] },
+          } },
+        }, {
+          name: "places.adopt",
+          description: "Promote a POI candidate into a trip place, or update/revoke an existing trip place.",
+          parameters: { type: "object", additionalProperties: false, required: ["action"], properties: {
+            action: { type: "string", enum: ["propose", "adopt", "revoke"] },
+            candidateId: { type: "string" },
+            placeId: { type: "string" },
+          } },
+        }] : []),
+        ...(navigationEnabled ? [{
+          name: "navigation.route",
+          description: "Compute a walking/driving/cycling route between two ACTIVE trip places.",
+          parameters: { type: "object", additionalProperties: false, required: ["originPlaceId", "destinationPlaceId", "mode"], properties: {
+            originPlaceId: { type: "string", description: "placeId of an ACTIVE trip place." },
+            destinationPlaceId: { type: "string", description: "placeId of a different ACTIVE trip place." },
+            mode: { type: "string", enum: ["WALK", "DRIVE", "CYCLE"] },
+          } },
+        }] : []),
+        ...(hotelEnabled ? [{
+          name: "hotel.search",
+          description: "Search live hotel evidence for one controlled destination. Dates, occupancy, and currency are server-derived.",
+          parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
+        }] : []),
+        ...(accommodationDiscoveryEnabled ? [{
+          name: "accommodation.discover",
+          description: "Discover non-price accommodation candidates near one controlled destination. This is not availability or a quote.",
+          parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
+        }] : []),
+      ],
+      dispatchTool: async (call) => {
+        // A tool that fails must not end the run. The model asked for
+        // something it could not have — a flight between airports missing
+        // from the controlled reference list, a provider that is down — and
+        // the useful answer is to say so and let it plan what it still can.
+        // Throwing instead discarded every result the other tools had already
+        // returned and produced no plan at all, which is how a single
+        // uncontrolled airport meant no itinerary.
+        //
+        // Cancellation is different: that means this worker must stop, not
+        // that a capability is unavailable.
+        // A tool that has already failed for these exact arguments will fail
+        // the same way again. Answering from this record instead of re-running
+        // it stops the loop that made the model spend its whole turn budget
+        // retrying: it asked, got "unavailable", asked again, and hit the
+        // once-per-run guard, which read as another failure worth retrying.
+        const callKey = `${call.name}:${JSON.stringify(call.arguments ?? {})}`;
+        const alreadyFailed = failedToolCalls.get(callKey);
+        if (alreadyFailed) return alreadyFailed;
+        try {
+          return await dispatchPlanningTool(call);
+        } catch (error) {
+          if (params.signal?.aborted) throw error;
+          if (error instanceof Error && error.name === "AbortError") throw error;
+          const capability = call.name.split(".")[0] ?? "unknown";
+          const code = error instanceof SkillError ? error.code : "UPSTREAM_FAILURE";
+          toolFailureGaps.push({ capability, code });
+          logSafeRuntimeEvent(params.ctx, {
+            component: "planner", event: "tool", operation: call.name,
+            outcome: "failure", errorCode: String(code), toolContext: "planning",
+          });
+          // The code alone says a tool was refused and not what it was refused
+          // for, which is the difference between "the model asked for the wrong
+          // airport" and "the provider is down".
+          pinoInstance.warn({
+            component: "planning-tool-dispatch",
+            tool: call.name,
+            errorCode: String(code),
+            errorClass: (error as Error)?.name ?? typeof error,
+            errorMessage: String((error as Error)?.message ?? error).slice(0, 300),
+          }, "Planning tool failed");
+          const answer = {
+            outcome: "UNAVAILABLE" as const,
+            capability: call.name,
+            reason: String(code),
+            // Directive, because the model is deciding what to do next: an
+            // "unavailable" with no instruction reads as something to try
+            // again.
+            message: "This request cannot be answered and will not succeed if repeated. "
+              + "Do not call this tool with these arguments again. Continue planning with what you already have.",
+          };
+          failedToolCalls.set(callKey, answer);
+          return answer;
+        }
       },
     });
   } else {
@@ -1115,6 +1284,10 @@ export async function generatePlan(params: {
       stays: allStays,
     });
     const allServiceGaps: ServiceGap[] = [
+      ...toolFailureGaps.map((g) => ({
+        capability: g.capability as ServiceGap["capability"],
+        code: g.code as ServiceGap["code"],
+      })),
       ...flightMatrixGaps.map((g) => ({
         capability: g.capability,
         code: g.code,
