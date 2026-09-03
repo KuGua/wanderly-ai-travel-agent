@@ -288,6 +288,8 @@
       "prefCardSaveFailed": "Those preferences could not be saved. Please check them and try again.",
       "prefCardSaved": "Saved for this trip.",
       "genericError": "The message could not be sent. Please try again.",
+      "conversationFailed": "Wanderly could not finish this reply. Your message was saved, and nothing about your trip was changed.",
+      "conversationInternalError": "Wanderly hit an error on its own side and could not reply. Your message was saved, and nothing about your trip was changed — retrying will not clear this one.",
       "planningFailed": "Wanderly could not finish building the plan. Nothing about your trip was changed.",
       "planningRateLimited": "Wanderly has used up its planning quota for now. Nothing about your trip was changed; try again later.",
       "planningDataUnavailable": "Wanderly stopped before writing a plan: it could not get room prices for this destination, and it will not plan around a gap it cannot see. Anything it did find is kept.",

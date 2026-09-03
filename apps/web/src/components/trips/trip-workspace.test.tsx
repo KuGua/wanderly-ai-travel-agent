@@ -144,6 +144,18 @@ afterEach(() => {
 });
 
 describe("TripWorkspace", () => {
+  it("uses floating inspector cards without a desktop inspector frame", async () => {
+    const api = createApi({ getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }) });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    await screen.findByText("Trip overview");
+    const inspector = document.getElementById("trip-inspector")!;
+    expect(inspector).not.toHaveClass("border-l-2", "bg-[var(--w-mist)]");
+    expect(inspector).toHaveClass("bg-transparent", "max-xl:border-l-2", "max-xl:bg-[var(--w-mist)]");
+    expect(inspector.querySelector("header")).not.toHaveClass("border-b-2", "border-[var(--w-ink)]");
+    expect(inspector.querySelector("header")).toHaveClass("max-xl:border-b-2", "max-xl:border-[var(--w-ink)]", "xl:after:right-4");
+  });
+
   it("opens a draft in the same workspace used for active planning", async () => {
     const api = createApi({
       getTrip: vi.fn().mockResolvedValue(buildTripResponse("DRAFT")),

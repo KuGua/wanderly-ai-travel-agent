@@ -3,7 +3,7 @@ import { db } from "../src/db/database.js";
 import { agentRuns } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { LLMGateway, ModelGatewayError } from "../src/providers/llm-gateway.js";
-import { __setModelGatewayForTests, createModelGateway } from "../src/providers/gateway-factory.js";
+import { __setModelGatewayForTests, assertModelGatewayEnvironment, createModelGateway } from "../src/providers/gateway-factory.js";
 import { SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT } from "../src/providers/shared-planning-prompts.js";
 import { createRequestContext } from "../src/utils/context.js";
 
@@ -203,6 +203,48 @@ describe("LLM gateway", () => {
     delete process.env.MODEL_GATEWAY_MODEL;
 
     expect(() => createModelGateway()).toThrow("Model gateway gemini is not fully configured");
+
+    if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
+    else delete process.env.MODEL_GATEWAY_PROVIDER;
+    if (previous.key !== undefined) process.env.MODEL_GATEWAY_API_KEY = previous.key;
+    else delete process.env.MODEL_GATEWAY_API_KEY;
+    if (previous.model !== undefined) process.env.MODEL_GATEWAY_MODEL = previous.model;
+    else delete process.env.MODEL_GATEWAY_MODEL;
+  });
+
+  /**
+   * The startup gate exists because a blank credential used to be discovered
+   * once per user turn, inside a durable task, as an unclassified INTERNAL
+   * failure — the traveller saw "the message could not be sent" and the
+   * operator saw nothing. It names the variable, never its value.
+   */
+  it("startup assertion names the missing variable and never its value", () => {
+    const previous = {
+      provider: process.env.MODEL_GATEWAY_PROVIDER,
+      key: process.env.MODEL_GATEWAY_API_KEY,
+      model: process.env.MODEL_GATEWAY_MODEL,
+    };
+    process.env.MODEL_GATEWAY_PROVIDER = "gemini";
+    process.env.MODEL_GATEWAY_MODEL = "gemini-3.1-flash-lite";
+    // Exactly the shape that broke it: declared, but empty.
+    process.env.MODEL_GATEWAY_API_KEY = "";
+
+    expect(() => assertModelGatewayEnvironment()).toThrow(/MODEL_GATEWAY_API_KEY/);
+    // The precedence rule is the part nobody guesses, so the error carries it.
+    expect(() => assertModelGatewayEnvironment()).toThrow(/LAST occurrence/);
+
+    process.env.MODEL_GATEWAY_API_KEY = "test-gemini-key";
+    expect(() => assertModelGatewayEnvironment()).not.toThrow();
+    // A configured key must not be echoed back into a boot log.
+    process.env.MODEL_GATEWAY_MODEL = "";
+    let message = "";
+    try {
+      assertModelGatewayEnvironment();
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("MODEL_GATEWAY_MODEL");
+    expect(message).not.toContain("test-gemini-key");
 
     if (previous.provider !== undefined) process.env.MODEL_GATEWAY_PROVIDER = previous.provider;
     else delete process.env.MODEL_GATEWAY_PROVIDER;

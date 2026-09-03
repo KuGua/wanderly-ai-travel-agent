@@ -138,10 +138,11 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("TravelAgentChat durable streaming flow", () => {
-  it("keeps the docked composer elevated outside the message viewport", () => {
+  it("keeps the docked conversation as one visually centred group above its elevated composer", () => {
     renderChat(createApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
 
-    expect(screen.getByTestId("docked-chat-composer")).toHaveClass("mb-5", "relative", "z-10");
+    expect(screen.getByTestId("docked-chat-composer")).toHaveClass("mb-5", "relative", "z-10", "xl:translate-x-1");
+    expect(screen.getByTestId("docked-chat-composer")).not.toHaveClass("xl:translate-x-6", "xl:-translate-x-4");
     expect(screen.getByTestId("docked-chat-composer")).not.toHaveClass("border-2", "wanderly-shadow");
     expect(screen.queryByText("Enter to send · Shift + Enter for a new line · This thread is private to you and scoped to this trip.")).not.toBeInTheDocument();
   });
@@ -981,6 +982,45 @@ describe("when a durable run fails", () => {
     });
     expect(screen.queryByText(/message could not be sent/i)).not.toBeInTheDocument();
     // Retrying this changes nothing, so it is not offered.
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  /**
+   * A conversation run that dies on an unclassified server fault fell through
+   * to the same "could not be sent" copy. It reached a real traveller: a blank
+   * `MODEL_GATEWAY_API_KEY=` in a later `.env` block shadowed the real key, the
+   * worker threw ~60ms in, and the screen blamed the send and offered a retry
+   * that could never work. The message itself was accepted and stored — a run
+   * row exists at all only because it was.
+   */
+  it("does not blame the send when a conversation run fails on the server", async () => {
+    const api = {
+      ...createApi(),
+      getAgentRun: vi.fn().mockResolvedValue({
+        runId: RUN_ID,
+        operation: "CONVERSATION",
+        status: "FAILED",
+        errorCode: "INTERNAL",
+        generationAttempt: 0,
+        attemptCount: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        assistantMessageId: null,
+        resultPlanId: null,
+      }),
+    } as unknown as TravelApi;
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    await submitFromCapsule("请你帮我介绍一下 Melville Senior High School WA");
+
+    await waitFor(() => {
+      expect(screen.getByText(/hit an error on its own side/i)).toBeInTheDocument();
+    });
+    // All three of the old copy's claims were false: the message was stored,
+    // the failure came after it, and retrying repeats it exactly.
+    expect(screen.queryByText(/message could not be sent/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/your message was saved/i);
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
   });
 });

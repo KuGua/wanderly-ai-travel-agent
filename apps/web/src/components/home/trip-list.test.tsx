@@ -55,6 +55,22 @@ describe("TripList", () => {
     expect(await screen.findByRole("group", { name: "Delete for good?" })).toBeInTheDocument();
   });
 
+  it("places the destructive delete control at the card's top-right and reveals it on hover or focus", () => {
+    renderWithIntl(<TripList trips={[trip()]} />, { api: apiWithDelete() });
+
+    const control = screen.getByRole("button", { name: "Delete Tokyo trip" });
+    expect(control).toHaveClass(
+      "right-2",
+      "top-2",
+      "bg-destructive",
+      "text-white",
+      "opacity-0",
+      "group-hover:opacity-100",
+      "group-focus-within:opacity-100",
+    );
+    expect(control).not.toHaveClass("left-2");
+  });
+
   it("deletes once the confirmation is taken", async () => {
     const deleteTrip = vi.fn().mockResolvedValue(undefined);
     renderWithIntl(<TripList trips={[trip()]} />, { api: apiWithDelete(deleteTrip) });

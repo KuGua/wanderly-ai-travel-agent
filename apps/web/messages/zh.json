@@ -288,6 +288,8 @@
       "prefCardSaveFailed": "偏好保存失败，请检查后重试。",
       "prefCardSaved": "已保存到本次行程。",
       "genericError": "消息发送失败，请重试。",
+      "conversationFailed": "Wanderly 没能完成这一轮回复。你的消息已经保存，行程没有任何改动。",
+      "conversationInternalError": "Wanderly 这边出错了，没能回复。你的消息已经保存，行程也没有任何改动——这个问题不是重试能解决的。",
       "planningFailed": "Wanderly 没能完成方案。你的行程没有任何改动。",
       "planningRateLimited": "Wanderly 目前的规划额度已用尽。你的行程没有任何改动，稍后再试。",
       "planningDataUnavailable": "Wanderly 在写出方案前停下了：这个目的地的房价没能拿到，而它不会绕过一个自己看不见的缺口去编排行程。已经查到的内容都保留着。",

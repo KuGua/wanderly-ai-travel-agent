@@ -983,7 +983,7 @@ export function TravelAgentChat({
         )}
 
         <div ref={panelScrollRef} className={docked
-          ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6"
+          ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 xl:[&>*]:translate-x-1"
           : "flex-1 overflow-y-auto px-5 py-5"} aria-live="polite">
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
@@ -1240,7 +1240,7 @@ export function TravelAgentChat({
         </div>
       </div>
 
-      <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5" : "border-t-2 border-[var(--w-space-line)] px-3 pb-3 pt-2"}>
+      <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5 xl:translate-x-1" : "border-t-2 border-[var(--w-space-line)] px-3 pb-3 pt-2"}>
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className={`mb-1.5 flex h-6 max-w-full items-center px-2.5 text-[10px] font-extrabold wanderly-r-xs wanderly-press ${docked ? "bg-[var(--w-mist)] text-primary wanderly-edge-thin" : "wanderly-cosmos-control"}`}><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
         <div className={`${docked ? "mx-auto max-w-[640px]" : ""} flex min-h-14 items-center gap-2 p-1.5 pl-4 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
           <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
@@ -1532,7 +1532,13 @@ function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
     if (["NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT"].includes(error.errorCode ?? "")) {
       return planning ? t("planningProviderUnavailable") : t("providerUnavailable");
     }
-    return planning ? t("planningFailed") : t("genericError");
+    // `genericError` — "the message could not be sent" — is never true on this
+    // path. An AgentRunFailure means a run row exists, so the message was
+    // accepted and stored; whatever failed, failed after that. INTERNAL gets
+    // its own copy because it is a server-side fault the traveller cannot act
+    // on, and `isRetryableFailure` already withholds the Retry button for it.
+    if (error.errorCode === "INTERNAL") return planning ? t("planningFailed") : t("conversationInternalError");
+    return planning ? t("planningFailed") : t("conversationFailed");
   }
   if (error instanceof TravelApiError) {
     if (error.statusCode === null) return t("networkError");

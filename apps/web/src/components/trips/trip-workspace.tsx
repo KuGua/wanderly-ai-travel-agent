@@ -486,11 +486,11 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       <aside
         id="trip-inspector"
         aria-label={t("workspace.inspectorTitle")}
-        className={`relative grid min-h-0 min-w-0 grid-rows-[66px_minmax(0,1fr)_auto] border-l-2 border-[var(--w-ink)] bg-[var(--w-mist)] max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
+        className={`relative grid min-h-0 min-w-0 grid-rows-[66px_minmax(0,1fr)_auto] bg-transparent max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-30 max-xl:w-[min(360px,88vw)] max-xl:border-l-2 max-xl:border-[var(--w-ink)] max-xl:bg-[var(--w-mist)] max-xl:shadow-[-20px_0_50px_#102a4320] max-xl:transition-transform ${inspectorOpen ? "max-xl:translate-x-0" : "max-xl:translate-x-full"}`}
       >
-        {/* Deliberately untitled: the spec keeps a bar here purely so the
-            inspector's rule lines up with the history and chat headers. */}
-        <header className="flex h-[66px] items-center justify-end gap-2 border-b-2 border-[var(--w-ink)] px-3.5" aria-label={t("workspace.inspectorTitle")}>
+        {/* The desktop inspector is a group of floating cards. Its short
+            divider continues the centre header only through the invite action. */}
+        <header className="relative flex h-[66px] items-center justify-end gap-2 px-3.5 max-xl:border-b-2 max-xl:border-[var(--w-ink)] xl:px-4 xl:after:absolute xl:after:bottom-0 xl:after:left-0 xl:after:right-4 xl:after:h-[2px] xl:after:bg-[var(--w-ink)]" aria-label={t("workspace.inspectorTitle")}>
           {callerRole === "CREATOR" ? (
             <Link href={`/trips/${tripId}/invite`} className="inline-flex min-h-11 items-center justify-center gap-2 px-3 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30">
               <UserPlus aria-hidden="true" className="size-4" />
@@ -507,7 +507,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           </button>
         </header>
 
-        <div className="min-h-0 overflow-y-auto p-3">
+        <div className="min-h-0 overflow-y-auto p-3 xl:px-4 xl:py-4">
           <div className="grid gap-[11px]">
             <section aria-label={t("workspace.overviewWindow")} className="overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow">
               <div className="flex items-center justify-between gap-[7px] border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] px-2.5 py-2.5">
@@ -569,7 +569,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           </div>
         </div>
 
-        <section className="mx-3 mb-3 overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow" aria-label={t("workspace.mapWindow")}>
+        <section className="mx-3 mb-3 overflow-hidden bg-card wanderly-edge wanderly-r-md wanderly-shadow xl:mx-4 xl:mb-4" aria-label={t("workspace.mapWindow")}>
           <div className="flex items-center justify-between gap-[7px] border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] px-2.5 py-2.5">
             <div className="flex min-w-0 items-center gap-[7px] text-xs font-extrabold">
               <span aria-hidden="true" className="grid size-[21px] place-items-center bg-[var(--w-highlight)] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">◎</span>

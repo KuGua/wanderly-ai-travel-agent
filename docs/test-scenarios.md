@@ -15,6 +15,20 @@
 
 ## Web layout regression
 
+### TS-W0 — Trip-card destructive action stays discoverable without crowding content
+
+**Objective:** Verify a creator's destructive action does not compete with the
+trip artwork or metadata until the card is being interacted with.
+
+**Expected outcomes:**
+
+- The delete icon is positioned at the trip card's top-right and uses the
+  destructive red treatment.
+- At desktop widths it appears on card hover or when keyboard focus enters the
+  card; at narrow touch widths it remains available without hover.
+- It retains its accessible name and opens the existing explicit confirmation
+  step before any delete request is made.
+
 ### TS-W1 — Trip workspace keeps the preference card and composer readable
 
 **Objective:** Verify the trip workspace does not apply decorative rotation to
@@ -38,8 +52,71 @@ without clipping it at the message viewport boundary.
   at the card's lower-right edge.
 - The preference card uses its thin border and paper grain for hierarchy; it
   has neither a folded corner nor a full-card hard offset shadow.
+- On desktop, the workspace inspector has no enclosing panel background or
+  divider; its overview, member, and map cards float independently. The
+  narrow-screen inspector remains a bounded drawer with its own backdrop.
+- The workspace title and agent chip retain a bottom divider. On desktop, its
+  continuation in the inspector stops at the right edge of Invite teammates;
+  the compact inspector drawer retains its own full bottom boundary.
 - The message list remains scrollable and leaves enough bottom space for its
   final content to stay reachable while the composer is visible.
+- On wide workspaces, shift the complete docked chat group (messages, agent
+  label, and composer) by the same 4px rightward offset so its centre is
+  measured from the chat panel's left edge to the Trip overview card's left
+  edge. Do not alter the relative alignment or size of individual conversation
+  bubbles.
+
+## 模型网关配置与失败文案
+
+### TS-MG1 — 空的 `MODEL_GATEWAY_API_KEY` 在启动时被拒绝，而不是每一轮对话失败一次
+
+**Objective:** Verify a blank or shadowed model-gateway credential is a boot
+failure that names the variable, not a per-turn `INTERNAL` task failure that
+reaches the traveller as a send error.
+
+**Background:** `apps/api/.env` declared `MODEL_GATEWAY_API_KEY` twice — once
+with the real key, once empty inside a local activation block appended at the
+end of the file. dotenv gives the last occurrence precedence, so the credential
+resolved to `""`. Every conversation turn was accepted and stored, then failed
+about 60 ms later in the Worker with `Model gateway gemini is not fully
+configured`, classified `INTERNAL`.
+
+**Steps:**
+
+1. Set `MODEL_GATEWAY_PROVIDER=gemini` and `MODEL_GATEWAY_MODEL`, then declare
+   `MODEL_GATEWAY_API_KEY=` (empty) after a populated declaration of the same key.
+2. Start `apps/api` (`npm run dev`) and the Worker (`npm run worker:dev`).
+3. Restore a single populated declaration and start both again.
+
+**Expected outcomes:**
+
+- Both processes exit at startup. The error names `MODEL_GATEWAY_API_KEY` and
+  states that dotenv gives the last occurrence precedence.
+- No credential value appears in the error, logs, metrics or trace attributes.
+- With one populated declaration both processes start, and a conversation turn
+  reaches the model (`agent_runs` records a row for `travel.conversation`).
+
+### TS-MG2 — 对话 run 在服务端失败时，界面不谎称消息没发出去
+
+**Objective:** Verify a FAILED `CONVERSATION` run is reported as a failure that
+happened after the message was stored, and does not offer a useless retry.
+
+**Steps:**
+
+1. Send a message in a trip-private thread while the model gateway is
+   misconfigured (or otherwise force a `CONVERSATION` run to finish `FAILED`
+   with `errorCode=INTERNAL`).
+2. Read the alert rendered under the conversation.
+
+**Expected outcomes:**
+
+- The alert states the failure was on the server side and that the message was
+  saved; it never says the message could not be sent.
+- No Retry button is offered for `INTERNAL`; `isRetryableFailure` already
+  excludes it, and repeating the turn reproduces the same failure.
+- The user message remains in `chat_messages` and the thread transcript.
+- An unclassified conversation failure with no error code keeps the neutral
+  "could not finish this reply" copy plus its Retry affordance.
 
 ## HERO 测试
 
