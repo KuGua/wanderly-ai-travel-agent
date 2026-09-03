@@ -6,7 +6,11 @@ import type { AgentRun, ConversationPlace, ConversationTurnAcceptedResponse } fr
 import { TravelApiError } from "@/lib/api/errors";
 import type { TravelApi } from "@/lib/api";
 import { renderWithIntl } from "@/test/render";
+import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { CHAT_ACTIVE_RUN_STORAGE_KEY, TravelAgentChat } from "./travel-agent-chat";
+
+/** The pointer is per-viewer now, so the tests have to look where it lives. */
+const ACTIVE_RUN_KEY = () => viewerScopedKey(CHAT_ACTIVE_RUN_STORAGE_KEY);
 
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 const OWNER_ID = "22222222-2222-4222-8222-222222222222";
@@ -39,6 +43,7 @@ function ChatHarness({
   onConversationText,
   onThreadInvalidated,
   surface,
+  variant,
 }: {
   controlledThreadId?: string | null;
   initiallyOpen?: boolean;
@@ -49,6 +54,7 @@ function ChatHarness({
   onThreadInvalidated?: () => void;
   /** Defaults to the globe, like the component does. */
   surface?: "EXPLORE" | "TRIP_WORKSPACE";
+  variant?: "floating" | "docked";
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   return (
@@ -60,6 +66,7 @@ function ChatHarness({
       tripId={tripId}
       onThreadInvalidated={onThreadInvalidated}
       {...(surface ? { surface } : {})}
+      {...(variant ? { variant } : {})}
       selectedPlace={selectedPlace}
             onStartNewExploration={onStartNewExploration}
       onConversationText={onConversationText}
@@ -135,6 +142,25 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("TravelAgentChat durable streaming flow", () => {
+  it("renders the empty-thread introduction as a centred session slogan, not an agent message", async () => {
+    renderChat(createApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
+
+    const title = await screen.findByText(/Let's plan somewhere memorable/);
+    expect(title).toHaveClass("text-balance", "text-sm", "sm:text-base", "font-bold", "text-[var(--w-ink)]");
+    expect(title.parentElement).toHaveClass("items-start", "text-left", "max-w-[640px]");
+    expect(title.parentElement).not.toHaveClass("wanderly-edge", "wanderly-shadow");
+    expect(screen.queryByText("Wanderly Agent")).not.toBeInTheDocument();
+  });
+
+  it("keeps the docked conversation as one visually centred group above its elevated composer", () => {
+    renderChat(createApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
+
+    expect(screen.getByTestId("docked-chat-composer")).toHaveClass("mb-5", "relative", "z-10", "xl:translate-x-1");
+    expect(screen.getByTestId("docked-chat-composer")).not.toHaveClass("xl:translate-x-6", "xl:-translate-x-4");
+    expect(screen.getByTestId("docked-chat-composer")).not.toHaveClass("border-2", "wanderly-shadow");
+    expect(screen.queryByText("Enter to send · Shift + Enter for a new line · This thread is private to you and scoped to this trip.")).not.toBeInTheDocument();
+  });
+
   it("links an exploration chat to its bound Trip Planner thread", () => {
     renderChat(createApi(), { tripId: TRIP_ID });
 
@@ -558,19 +584,38 @@ describe("TravelAgentChat durable streaming flow", () => {
   });
 
   it("clears a stale active-run pointer when its durable run can no longer be read", async () => {
-    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
     const api = createApi({
       getAgentRun: vi.fn().mockRejectedValue(new TravelApiError("missing", 404, "Not Found", null)),
     });
     renderChat(api, { initiallyOpen: true });
 
-    await waitFor(() => expect(localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY)).toBeNull());
+    await waitFor(() => expect(localStorage.getItem(ACTIVE_RUN_KEY())).toBeNull());
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
+  });
+
+  it("clears the pointer when the stored run belongs to somebody else", async () => {
+    // Two people signing in on the same browser: the storage key is not scoped
+    // per user, so the previous traveller's run id outlives their sign-out.
+    // Reading it back answers 403, not 404, and only 404 used to clear it — so
+    // the chat polled a stranger's run forever, stuck on "Wanderly is
+    // thinking…" with the composer disabled behind it.
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
+    const api = createApi({
+      getAgentRun: vi.fn().mockRejectedValue(
+        new TravelApiError("forbidden", 403, "Not authorized for this Agent run", null),
+      ),
+    });
+    renderChat(api, { initiallyOpen: true });
+
+    await waitFor(() => expect(localStorage.getItem(ACTIVE_RUN_KEY())).toBeNull());
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
   });
 
   it("restores a running durable run after mount without submitting another turn", async () => {
-    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
     const api = createApi();
 
     renderChat(api);
@@ -581,7 +626,7 @@ describe("TravelAgentChat durable streaming flow", () => {
   });
 
   it("clears a completed durable-run pointer after restoring persisted history", async () => {
-    localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, RUN_ID);
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
     const api = createApi({
       getAgentRun: vi.fn().mockResolvedValue(run("COMPLETED")),
       getOwnerConversation: vi.fn().mockResolvedValue({
@@ -596,7 +641,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     renderChat(api);
 
     expect(await screen.findByText("Persisted answer")).toBeInTheDocument();
-    await waitFor(() => expect(localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY)).toBeNull());
+    await waitFor(() => expect(localStorage.getItem(ACTIVE_RUN_KEY())).toBeNull());
     expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
   });
 
@@ -741,6 +786,17 @@ describe("the trip's preference card", () => {
       { fieldKey: "interests", category: "PREFERENCE" as const, value: ["ramen"], inherited: true, options: null, kind: "list" as const },
     ],
   };
+
+  it("renders card actions as underlined links with directional affordances", async () => {
+    const api = createApi({ getPreferenceCard: vi.fn().mockResolvedValue(card) });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const preferenceCard = await screen.findByTestId("trip-preference-card");
+    expect(preferenceCard).not.toHaveClass("wanderly-shadow");
+    expect(screen.getByRole("button", { name: "Edit" })).toHaveClass("underline");
+    expect(screen.getByTestId("trip-preference-submit")).toHaveClass("underline");
+    expect(preferenceCard.querySelectorAll("svg[aria-hidden='true']")).toHaveLength(2);
+  });
 
   it("submits only what the traveller changed", async () => {
     // Writing every field would pin the whole set to this trip, and a later
@@ -959,6 +1015,45 @@ describe("when a durable run fails", () => {
     });
     expect(screen.queryByText(/message could not be sent/i)).not.toBeInTheDocument();
     // Retrying this changes nothing, so it is not offered.
+    expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
+  });
+
+  /**
+   * A conversation run that dies on an unclassified server fault fell through
+   * to the same "could not be sent" copy. It reached a real traveller: a blank
+   * `MODEL_GATEWAY_API_KEY=` in a later `.env` block shadowed the real key, the
+   * worker threw ~60ms in, and the screen blamed the send and offered a retry
+   * that could never work. The message itself was accepted and stored — a run
+   * row exists at all only because it was.
+   */
+  it("does not blame the send when a conversation run fails on the server", async () => {
+    const api = {
+      ...createApi(),
+      getAgentRun: vi.fn().mockResolvedValue({
+        runId: RUN_ID,
+        operation: "CONVERSATION",
+        status: "FAILED",
+        errorCode: "INTERNAL",
+        generationAttempt: 0,
+        attemptCount: 1,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        assistantMessageId: null,
+        resultPlanId: null,
+      }),
+    } as unknown as TravelApi;
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    await submitFromCapsule("请你帮我介绍一下 Melville Senior High School WA");
+
+    await waitFor(() => {
+      expect(screen.getByText(/hit an error on its own side/i)).toBeInTheDocument();
+    });
+    // All three of the old copy's claims were false: the message was stored,
+    // the failure came after it, and retrying repeats it exactly.
+    expect(screen.queryByText(/message could not be sent/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(/your message was saved/i);
     expect(screen.queryByRole("button", { name: /retry/i })).not.toBeInTheDocument();
   });
 });

@@ -13,8 +13,17 @@
  * content, constraint values, snapshots, run authority, or vote results.
  */
 
+import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
+
 export const SHARED_PLAN_LAST_SEEN_PREFIX = "wanderly.sharedPlan.lastSeen.";
-const SHARED_PLAN_LAST_SEEN_KEY = (tripId: string): string => `${SHARED_PLAN_LAST_SEEN_PREFIX}${tripId}`;
+/**
+ * Scoped to the viewer as well as the trip: "how far I have read" is a fact
+ * about a person, and two accounts on one browser were sharing the answer —
+ * so a traveller new to a trip inherited a read state for plans they had
+ * never opened, and saw no unread badge.
+ */
+const SHARED_PLAN_LAST_SEEN_KEY = (tripId: string): string =>
+  viewerScopedKey(`${SHARED_PLAN_LAST_SEEN_PREFIX}${tripId}`);
 
 /**
  * Returns the highest plan version the caller has acknowledged for the

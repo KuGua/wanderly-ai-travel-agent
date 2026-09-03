@@ -27,9 +27,8 @@ import {
   agentTaskRuns,
   chatThreads,
   chatMessages,
-  auditEvents,
 } from "../src/db/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 
 let app: FastifyInstance;
@@ -65,18 +64,16 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  // `chat_threads.trip_id` is NOT NULL with `ON DELETE SET NULL` (set by
-  // migration 0006, made non-null by 0012). To clear state we must delete
-  // dependents BEFORE `shared_trips`:
-  //   1. `chat_threads` — cascades to `chat_messages`.
-  //   2. `trip_members` — no cascade, must be explicit.
-  //   3. `audit_events` — references `shared_trips.id`.
-  //   4. `shared_trips` — cascades to `agent_task_runs`, leaving the
-  //      pinned_session_id reference cleared.
-  await db.delete(chatThreads);
-  await db.delete(tripMembers);
-  await db.delete(auditEvents);
-  await db.delete(sharedTrips);
+  // A global wipe, not one scoped to this file's fixtures — so it has to
+  // survive whatever any other test file left behind.
+  //
+  // Hand-ordering the deletes does not: `shared_trips.pinned_session_id`
+  // references `agent_task_runs` while `agent_task_runs.trip_id` references
+  // `shared_trips` back, so there is no order that satisfies both, and every
+  // new NO ACTION foreign key silently invalidates whatever order was chosen
+  // last. Postgres already resolves the graph for TRUNCATE CASCADE; this asks
+  // it to, and stays correct as the schema grows.
+  await db.execute(sql`TRUNCATE TABLE shared_trips CASCADE`);
 });
 
 /**

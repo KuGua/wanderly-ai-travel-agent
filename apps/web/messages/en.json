@@ -167,22 +167,16 @@
     "fields": {
       "departureCity": "Departure city",
       "nationality": "Nationality",
-      "nationalityHint": "Required — hotel prices are quoted per nationality, and a trip cannot be planned without it. Private; not shared in this slice.",
+      "nationalityPlaceholder": "Required",
       "dateOfBirth": "Date of birth",
-      "dateOfBirthHint": "YYYY-MM-DD",
       "dateOfBirthPlaceholder": "YYYY-MM-DD",
-      "availableDepartureDates": "Available departure dates",
-      "availableDepartureDatesHint": "Comma-separated YYYY-MM-DD dates",
-      "availableDepartureDatesPlaceholder": "2026-10-03, 2026-10-10",
       "interests": "Interests",
-      "interestsHint": "Comma-separated",
       "interestsPlaceholder": "art, museums, local food",
       "accommodationStyle": "Accommodation style",
       "budgetMaxUsd": "Maximum budget (USD)",
       "mobilityNotes": "Mobility notes",
       "mobilityNotesHint": "Do not include document numbers.",
-      "noRedEyeLabel": "Avoid red-eye flights",
-      "noRedEyeHint": "Treat overnight departures as a stable preference."
+      "noRedEyeLabel": "Avoid red-eye flights"
     },
     "accommodation": {
       "notSet": "Not set",
@@ -190,7 +184,6 @@
       "budget": "Budget",
       "luxury": "Luxury"
     },
-    "stickyNote": "Blank edited fields are preserved until the API supports clearing them.",
     "save": "Save Profile",
     "saving": "Saving…",
     "savedToast": "Profile saved. Your private snapshot is up to date.",
@@ -201,7 +194,6 @@
     "validation": {
       "max64": "Use 64 characters or fewer",
       "datePattern": "Use YYYY-MM-DD",
-      "datesList": "Use YYYY-MM-DD dates separated by commas",
       "wholeNumber": "Enter a whole number",
       "required": "Required"
     },
@@ -288,12 +280,24 @@
       "prefCardSaveFailed": "Those preferences could not be saved. Please check them and try again.",
       "prefCardSaved": "Saved for this trip.",
       "genericError": "The message could not be sent. Please try again.",
+      "conversationFailed": "Wanderly could not finish this reply. Your message was saved, and nothing about your trip was changed.",
+      "conversationInternalError": "Wanderly hit an error on its own side and could not reply. Your message was saved, and nothing about your trip was changed — retrying will not clear this one.",
       "planningFailed": "Wanderly could not finish building the plan. Nothing about your trip was changed.",
       "planningRateLimited": "Wanderly has used up its planning quota for now. Nothing about your trip was changed; try again later.",
       "planningDataUnavailable": "Wanderly stopped before writing a plan: it could not get room prices for this destination, and it will not plan around a gap it cannot see. Anything it did find is kept.",
       "planningNotAllowed": "Wanderly is not allowed to plan this trip right now — a permission or authorization it needs is missing.",
       "planningPreferencesChanged": "Your search preferences changed while Wanderly was planning, so it stopped. Start planning again to use the new ones.",
       "planningProviderUnavailable": "Wanderly could not reach a travel provider while planning. Nothing about your trip was changed.",
+      "planningCompletedWithGaps": {
+        "message": "Wanderly finished a plan with these gaps: {gaps}.",
+        "detail": "some travel providers could not be checked — see the trip workspace for the full list"
+      },
+      "planningResearchSummaryOnly": {
+        "message": "Wanderly could not write a plan this turn ({reason}), but kept what it found. See the trip workspace for details.",
+        "reasonFlight": "no flight evidence was available for the recommended destination"
+      },
+      "planningToolBudgetExhausted": "Wanderly ran out of time calling travel providers while planning. The plan was not changed; try again to let the next turn finish.",
+      "conversationEvidenceWithoutReply": "Wanderly gathered {capabilityCount, plural, one {# result} other {# results}} from {providerName} (captured {capturedAtTime}) but could not finish the reply.",
       "preparingPrivateChat": "Preparing your private chat…",
       "privateChatUnavailable": "Private chat is unavailable.",
       "retryPrivateChat": "Retry",
@@ -306,7 +310,7 @@
       "threadTitle": "Explore conversation",
       "threadTitleWithPlace": "Explore · {name}",
       "composerNote": "Enter to send · Shift + Enter for a new line · This thread is private to you and scoped to this trip.",
-      "briefProposalTitle": "Update trip brief?",
+      "briefProposalTitle": "Ready to plan this trip?",
       "briefProposalBody": "Destination: {destination} · Duration: {days}",
       "briefProposalDeparture": "Leaving from {cities}",
       "briefProposalDestinations": "Going to {destinations}",
@@ -388,7 +392,17 @@
         "departure_city": "Departing from"
       },
       "prefCardReopenHint": "You can reopen this any time by typing “trip preferences”.",
-      "prefCardTrigger": "trip preferences"
+      "prefCardTrigger": "trip preferences",
+      "briefProposalIntro": "Here is what I picked up. Pick one — nothing is saved until you do.",
+      "briefProposalPlanTitle": "Plan this destination",
+      "briefProposalPlanBody": "Saves it to your trip and opens the planner, where dates, flights and stays get worked out.",
+      "briefProposalExploreTitle": "Keep exploring",
+      "briefProposalExploreBody": "Changes nothing. Keep turning the globe and ask about anywhere else.",
+      "briefProposalOpening": "Opening the planner…",
+      "briefProposalSaveTitle": "Save this to the trip",
+      "briefProposalSaveBody": "Updates the brief on the right. You stay in this conversation.",
+      "briefProposalKeepTitle": "Leave it as it is",
+      "briefProposalKeepBody": "Changes nothing about the trip."
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",

@@ -2,6 +2,7 @@ import type { z } from "zod";
 import type { RequestContext } from "../utils/context.js";
 import type { ConstraintSnapshotData, PersonalResearchOperationCapability } from "../types/domain.js";
 import type { HotelProviderName, HotelProvider } from "../providers/types.js";
+import type { SkillErrorCode } from "./errors.js";
 
 export type AgentKind = "personal" | "shared" | "review" | "public-content";
 
@@ -182,6 +183,37 @@ export interface SkillContext {
   policyGate: PolicyGate;
 }
 
+/**
+ * Optional retry policy for an individual Skill invocation. Per
+ * `docs/planner-resilience-and-reflection-implementation.md` §4.2, retry only
+ * applies to side-effect-free read paths — the registry enforces that at
+ * registration time by inspecting `skill.allowedTools`. Absent (default) →
+ * single attempt with `skill.timeoutMs`, exactly matching pre-P1 behaviour.
+ */
+export interface SkillRetryPolicy {
+  /**
+   * Inclusive upper bound on total attempts (the original attempt counts
+   * as one). Range `1..3`. Values outside this range are rejected at
+   * registration time so adapters cannot accidentally opt in to unbounded
+   * retry loops.
+   */
+  readonly maxAttempts: number;
+  /**
+   * Subset of `SkillErrorCode` that warrants a retry. Anything not listed
+   * is treated as non-retryable: `INPUT_INVALID`, `OUTPUT_INVALID`,
+   * `POLICY_DENIED`, `TOOL_NOT_ALLOWED`, `SCHEMA_PARSE`, and caller-initiated
+   * aborts never retry — that distinction is the whole point of the field.
+   */
+  readonly retryOn: readonly SkillErrorCode[];
+  /** Base delay for non-rate-limit retries; doubled per attempt. */
+  readonly backoffBaseMs: number;
+  /**
+   * Fixed delay for `RATE_LIMITED` retries. Uses its own clock (no
+   * exponential backoff) per `isRetryableUpstreamError` discipline.
+   */
+  readonly rateLimitedDelayMs: number;
+}
+
 export interface Skill<I, O> {
   name: string;
   agent: AgentKind;
@@ -191,6 +223,14 @@ export interface Skill<I, O> {
   timeoutMs: number;
   needsConfirm: boolean;
   version: string;
+  /**
+   * Optional retry policy. Omit (or set `undefined`) for single-attempt
+   * execution — the default — which preserves pre-P1 behaviour exactly.
+   * The registry refuses to register a Skill that declares `retry` together
+   * with any write scope (see `DefaultPolicyGate.isWriteScope` and the
+   * registration-time guard in `skill-registry.ts`).
+   */
+  retry?: SkillRetryPolicy;
   handler: (ctx: SkillContext, input: I, signal: AbortSignal) => Promise<O>;
 }
 
@@ -199,5 +239,13 @@ export interface SkillInvocationRecord {
   version: string;
   outputHash: string;
   latencyMs: number;
+  /**
+   * Total attempts the registry took to produce this record (1 for
+   * single-attempt Skills, 2+ when `retry` is declared and at least one
+   * retry was attempted). Surfaced in `SKILL_INVOKE` audit summaries so
+   * observability can distinguish "succeeded first try" from "succeeded
+   * after a retry".
+   */
+  attempts: number;
   status: "SUCCESS" | "TIMEOUT" | "OUTPUT_INVALID";
 }

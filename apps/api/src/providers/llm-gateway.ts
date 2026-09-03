@@ -221,6 +221,16 @@ function classifyError(err: unknown): string {
 }
 
 /**
+ * Best-effort classification of an arbitrary repair-loop error for the
+ * `logSafeRuntimeEvent` payload. The repair loop never inspects this; the
+ * critic has already classified the error into a critique code.
+ */
+function errorCodeForRepair(err: unknown): string {
+  if (err instanceof ModelGatewayError) return err.code;
+  return classifyError(err);
+}
+
+/**
  * Whether `classifyError(err)` is a transient upstream failure worth retrying
  * with exponential backoff. `SCHEMA_PARSE` is the model misreading the schema,
  * so retrying would burn quota without changing the answer. `UNKNOWN` is
@@ -845,6 +855,23 @@ export class LLMGateway implements ModelGateway {
     dispatchTool: ModelToolDispatcher;
     beforeFinal?: () => Promise<void>;
     maxTurns: number;
+    /**
+     * P3 (planner-resilience §6): bounded repair budget on top of the
+     * convergence budget. Repair iterations increment `repairUsed`, not
+     * `turn`, so they never starve normal convergence. The effective upper
+     * bound is `maxTurns + repairBudget`; the default reads
+     * `MODEL_GATEWAY_PLAN_REPAIR_BUDGET` (defaults to 2).
+     */
+    repairBudget?: number;
+    /**
+     * Called after `beforeFinal` / final `safeParse` throws. Returning a
+     * non-empty critique array triggers one repair iteration that pushes
+     * the rendered critique back to the model. Returning `null` skips the
+     * repair loop and rethrows the original error verbatim — that is the
+     * correct behaviour for errors the critic cannot safely describe
+     * (e.g. `CommercialAuthorityMissingError`).
+     */
+    onValidationFailure?: (error: unknown) => readonly { code: string; fieldPaths: readonly string[]; hint: string }[] | null;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<Record<string, unknown>> {
@@ -921,7 +948,18 @@ export class LLMGateway implements ModelGateway {
         }),
       });
     };
-    for (let turn = 0; turn < params.maxTurns; turn += 1) {
+    // P3 (planner-resilience §6): bounded repair budget. `repairUsed` only
+    // increments on a repair iteration so the model's normal convergence
+    // budget is never consumed by re-expression attempts.
+    //
+    // Default reads `MODEL_GATEWAY_PLAN_REPAIR_BUDGET` (defaults to 2 in
+    // production via the env file) but the in-process default is `0` so
+    // tests that don't pass a budget keep their original convergence-only
+    // shape — the planner opt-in is via `params.repairBudget` or env.
+    const repairBudget = params.repairBudget ?? Number(process.env.MODEL_GATEWAY_PLAN_REPAIR_BUDGET ?? 0);
+    let repairUsed = 0;
+    const upperBound = params.maxTurns + repairBudget;
+    for (let turn = 0; turn < upperBound; turn += 1) {
       if (params.signal?.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
       const forceMissingFlightSearch = turn > 0
         && flightToolAvailable
@@ -968,32 +1006,69 @@ export class LLMGateway implements ModelGateway {
           appendFlightProgress();
           continue;
         }
-        await params.beforeFinal?.();
-        const completion = parsedCompletionSchema.safeParse(completionPayload({ parsed: null, content: message?.content }));
-        if (!completion.success) {
-          finalSchemaFailed = true;
-          // A provider may occasionally emit null optionals or an incomplete
-          // wrapper despite JSON mode. Keep the retry inside the same bounded
-          // Tool loop and disclose only schema paths back to the model — never
-          // raw provider evidence, private snapshot data, or error text.
+        // P3 repair branch. `beforeFinal` (the planner's gates) and the
+        // final `safeParse` (this gateway's structural check) are the two
+        // pre-commit validation points. When either throws, ask the
+        // caller-provided critic for a structured critique. If the critic
+        // returns one and we still have repair budget, push it as a system
+        // message and `continue` — the next loop iteration increments
+        // `repairUsed`, not `turn`.
+        try {
+          await params.beforeFinal?.();
+          const completion = parsedCompletionSchema.safeParse(completionPayload({ parsed: null, content: message?.content }));
+          if (!completion.success) {
+            finalSchemaFailed = true;
+            // Pre-existing schema retry — emit a structural fix-up prompt
+            // and let the next turn re-format. Counts against the convergence
+            // budget, not repair, because the model has not yet committed
+            // anything to a downstream validator.
+            messages.push({ ...message, role: "assistant", content: message?.content ?? null });
+            const issuePaths = [...new Set(completion.error.issues.map((issue) =>
+              issue.path.join(".") || "response",
+            ))].sort();
+            messages.push({
+              role: "system",
+              content: `The previous final JSON failed the required schema at: ${issuePaths.join(", ")}. Return a corrected JSON object with exactly one top-level plan key. Keep flights, stays, and activities compact by returning only {"id":"exact evidence id"} selection objects. Omit optional properties rather than setting them to null.`,
+            });
+            continue;
+          }
+          logSafeRuntimeEvent(ctx, {
+            component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "success",
+            latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,
+            outputHash: hashOutput(completion.data.plan),
+          });
+          return completion.data.plan;
+        } catch (error) {
+          // Rethrow caller-side aborts verbatim — they are not retryable.
+          if (params.signal?.aborted) throw params.signal.reason ?? error;
+          if (!params.onValidationFailure) throw error;
+          if (repairUsed >= repairBudget) {
+            logSafeRuntimeEvent(ctx, {
+              component: "llm", event: "repair", operation: "plan.comparison", outcome: "failure",
+              errorCode: errorCodeForRepair(error),
+            });
+            throw error;
+          }
+          const critiques = params.onValidationFailure(error);
+          if (!critiques || critiques.length === 0) throw error;
+          repairUsed += 1;
+          // Keep the partial assistant content (if any) so the model retains
+          // context, then push the deterministic critique as a system message.
           messages.push({ ...message, role: "assistant", content: message?.content ?? null });
-          const issuePaths = [...new Set(completion.error.issues.map((issue) =>
-            issue.path.join(".") || "response",
-          ))].sort();
+          const critiqueText = critiques
+            .map((c) => `[${c.code}] ${c.hint}${c.fieldPaths.length > 0 ? ` (paths: ${c.fieldPaths.join(", ")})` : ""}`)
+            .join(" | ");
           messages.push({
             role: "system",
-            content: `The previous final JSON failed the required schema at: ${issuePaths.join(", ")}. Return a corrected JSON object with exactly one top-level plan key. Keep flights, stays, and activities compact by returning only {"id":"exact evidence id"} selection objects. Omit optional properties rather than setting them to null.`,
+            content: `The plan failed deterministic validation. Apply this critique: ${critiqueText}. Re-emit the final plan JSON with the indicated fixes.`,
+          });
+          logSafeRuntimeEvent(ctx, {
+            component: "llm", event: "repair", operation: "plan.comparison", outcome: "success",
+            errorCode: errorCodeForRepair(error), attempt: repairUsed,
           });
           continue;
         }
-        logSafeRuntimeEvent(ctx, {
-          component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "success",
-          latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,
-          outputHash: hashOutput(completion.data.plan),
-        });
-        return completion.data.plan;
-      }
-      // Gemini 3 requires the complete model message, including opaque
+      }      // Gemini 3 requires the complete model message, including opaque
       // thought-signature metadata attached to a function call, to be sent
       // back unchanged on the next stateless turn. Reconstructing only the
       // OpenAI-standard fields can make the next Tool request fail with 400.

@@ -249,21 +249,50 @@ export async function runResearch(params: {
     const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d);
     const recommended = sorted[0] ?? eligibleDestinations[0];
 
+    // Per §3.3 of the planner-resilience design, only the *recommended*
+    // destination's missing stay coverage trips the hard refusal. Other
+    // candidates lacking stays are recorded as `service_gaps` so the user
+    // sees a real gap instead of an opaque whole-trip failure.
+    if (coverage.missingDestinations.includes(recommended)) {
+      throw Object.assign(
+        new Error(`Research uncovered the recommended destination: ${recommended}`),
+        { code: "PLANNING_DATA_UNAVAILABLE" },
+      );
+    }
+
     const initialHash = hashProjectionManifest(snapshot.authorizedData);
 
-    const resultPlanId = await generatePlan({
-      ctx: params.ctx,
-      tripId: run.tripId,
-      snapshotId: run.snapshotId,
-      destination: recommended,
-      memberIds: [],
-      agentTaskRunId: run.id,
-      flightSearchPreferencesVersion: run.flightSearchPreferencesVersion ?? undefined,
-      staySearchPreferencesVersion: run.staySearchPreferencesVersion ?? undefined,
-      signal: params.signal,
-      outputMode: "PROPOSED",
-      coverage,
-    }, params.providerOverride!);
+    // P3 (planner-resilience §6.4): outer wall-clock cap on the synthesis
+    // call. Merged with the caller-provided signal so lease-loss /
+    // cancellation still short-circuits. Default 180s reads
+    // `PLANNING_RUN_DEADLINE_MS`. Note: this only applies to the
+    // PROPOSE_PLAN synthesis call; coverage research above is bounded by
+    // the Worker lease / queue TTL.
+    const planningRunDeadlineMs = Number(process.env.PLANNING_RUN_DEADLINE_MS ?? 180_000);
+    const runDeadlineController = new AbortController();
+    const planningRunSignal = AbortSignal.any([params.signal, runDeadlineController.signal]);
+    const runDeadlineTimer = setTimeout(() => {
+      runDeadlineController.abort(new Error("Planning run deadline exceeded"));
+    }, planningRunDeadlineMs);
+
+    let synthesis;
+    try {
+      synthesis = await generatePlan({
+        ctx: params.ctx,
+        tripId: run.tripId,
+        snapshotId: run.snapshotId,
+        destination: recommended,
+        memberIds: [],
+        agentTaskRunId: run.id,
+        flightSearchPreferencesVersion: run.flightSearchPreferencesVersion ?? undefined,
+        staySearchPreferencesVersion: run.staySearchPreferencesVersion ?? undefined,
+        signal: planningRunSignal,
+        outputMode: "PROPOSED",
+        coverage,
+      }, params.providerOverride!);
+    } finally {
+      clearTimeout(runDeadlineTimer);
+    }
 
     // Final stale-snapshot guard (spec §1.7, §5.3) — re-reads the
     // projection manifest and rejects writes that landed after our copy.
@@ -280,6 +309,17 @@ export async function runResearch(params: {
       });
       throw err;
     }
+
+    // Per §1.3 of the planner-resilience design, the synthesis outcome is a
+    // discriminator: a destination with no commercial flight authority
+    // produces a research summary rather than a plan. We forward the summary
+    // to the caller without triggering solo auto-accept (no plan to adopt).
+    if (synthesis.outcome === "RESEARCH_SUMMARY") {
+      metrics.inc("research_stage_total", { stage: "completed", outcome: "research_summary" });
+      return { outcome: "COMPLETED_WITH_GAPS", researchResultId: synthesis.researchResultId };
+    }
+
+    const resultPlanId = synthesis.planId;
 
     // ─── 6.5 Solo auto-accept (Quick orchestration) ────────────────────────
     // The owner has already explicitly confirmed the research request via

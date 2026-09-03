@@ -8,6 +8,7 @@ import type { DestinationReference } from "../types/domain.js";
 import { metrics } from "../observability/metrics.js";
 import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import { orsGeocodingResponseSchema, type OrsGeocodingResponse } from "./ors-place-schemas.js";
+import { executeWithPolicy, getResiliencePolicyForSkill } from "../config/resilience-policy.js";
 
 export interface OrsPlaceProviderOptions {
   apiKey: string;
@@ -108,6 +109,11 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
         capturedAt,
       };
     } catch (error) {
+      // P1-B: `executeWithPolicy` re-throws a transient-status error after
+      // exhausting the retry budget; map it to the typed reason.
+      const status = (error as { status?: number }).status;
+      if (status === 429) return this.unavailable("RATE_LIMITED", start);
+      if (typeof status === "number" && status >= 500) return this.unavailable("UPSTREAM_FAILURE", start);
       if ((error as { name?: string }).name === "AbortError") return this.unavailable("UPSTREAM_TIMEOUT", start);
       return this.unavailable("UPSTREAM_FAILURE", start);
     }
@@ -205,12 +211,21 @@ export class OrsPlaceProvider implements PlaceSearchProvider {
   }
 
   private async request(path: string, signal?: AbortSignal): Promise<Response> {
-    const timeout = AbortSignal.timeout(this.options.timeoutMs);
-    const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    return observeExternalProviderFetch(
-      { provider: "openrouteservice", operation: "place.search", method: "GET" },
-      () => this.fetchImpl(`${this.options.baseUrl}${path}`, { signal: composed }),
-    );
+    const policy = getResiliencePolicyForSkill("places.search");
+    // P1-B: transient upstream failures (5xx, 429) now retry under the
+    // unified resilience-policy loop.
+    return executeWithPolicy(policy, async (perAttemptSignal) => {
+      const r = await observeExternalProviderFetch(
+        { provider: "openrouteservice", operation: "place.search", method: "GET" },
+        () => this.fetchImpl(`${this.options.baseUrl}${path}`, { signal: perAttemptSignal }),
+      );
+      if (r.status === 429 || r.status >= 500) {
+        const err = new Error(`ORS transient ${r.status}`);
+        (err as { status?: number }).status = r.status;
+        throw err;
+      }
+      return r;
+    }, signal);
   }
 
   private unavailable(

@@ -473,3 +473,37 @@ plan-less 的 research summary 有现成的读接口,不需要新端点。
 已删除不存在的 `getResearchResult` 客户端路径与重复 hook/query key；行程工作区
 改为复用 `GET /trips/:tripId/research/latest`，并把响应中的可空 `result` 交给
 既有 `ResearchGapBanner`。
+
+
+## G8 空的 `MODEL_GATEWAY_API_KEY` 把真实 key 覆盖掉 — 根因 — 已修（09-03）
+用户问「介绍一下 Melville Senior High School WA」，屏幕回「消息发送失败，请重试」。
+消息其实发送成功了：`chat_messages` 有那一行，`agent_task_runs` 有对应的
+CONVERSATION run，`started_at → finished_at` 只有 **60ms**，`error_code=INTERNAL`，
+而 `agent_runs` 当天一行都没有——模型根本没被调用。
+`runtime/worker-2026-09-03.ndjson` 给出确切原因：
+`Model gateway gemini is not fully configured`，抛在 `gateway-factory.ts:86`。
+
+`apps/api/.env` 里 `MODEL_GATEWAY_API_KEY` 声明了两次：上面一次是真实 key，
+下面「Local live-tool activation」块里一次是**空的**。那个块的注释本身就写着
+「This block is intentionally last: dotenv gives later entries precedence」——
+它确实生效了，只是这一行留空，于是把上面的凭据抹成了 `""`。
+09-02 13:59 的几轮对话还是 SUCCESS，说明 key 本身没问题，是之后编辑 `.env` 弄坏的。
+
+**修了三层：**
+1. `.env` 删掉那行空声明，原地留注释说明为什么不能在覆盖块里重复声明这个 key；
+   `.env.example` 同步写明 dotenv 的 last-wins 语义。
+2. 新增 `assertModelGatewayEnvironment()`，API 与 Worker 启动时各调用一次。
+   凭据缺失从「每轮对话失败一次、运维看不到任何信号」变成启动即失败并点名变量。
+   错误只出现变量名，不出现值。
+3. 前端 `errorMessage()` 对 `AgentRunFailure` 不再兜底到 `genericError`。
+   有 run 行就说明消息已被接受并落库，「消息发送失败」在这条路径上永远是假话。
+   `INTERNAL` 拿到专属文案（服务端故障、消息已保存、重试无用），其余未分类的
+   对话失败落到中性的 `conversationFailed`。
+
+这是 #13 的残留：当时按 errorCode 分支修了 `PLANNING_DATA_UNAVAILABLE` 等，
+但没管 `INTERNAL`——而 `INTERNAL` 恰好覆盖了所有「服务端配置坏了」这类必然失败。
+
+**未改**：`.env` 末尾 `MODEL_GATEWAY_TOOL_CALLING_ENABLED=false` 与
+`PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=false` 仍然生效（覆盖了上面的 `true`）。
+那是有注释说明的显式决定，且与本次故障无关——纯文本对话不需要工具调用。
+要恢复工具调用需单独决定。

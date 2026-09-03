@@ -4,6 +4,7 @@ import { initTracing, shutdownTracing } from "../observability/tracing.js";
 import { personalTravelAgent } from "../agents/personal-travel-agent.js";
 import { sharedTripAgent } from "../agents/shared-trip-agent.js";
 import { assertAuthModeEnvironment, resolveAuthMode } from "../middleware/auth-mode.js";
+import { assertModelGatewayEnvironment } from "../providers/gateway-factory.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import { logger } from "../utils/logger.js";
 import { processNextAgentTask } from "./agent-task-worker.js";
@@ -16,6 +17,11 @@ import { processNextMemoryObservation } from "./memory-observation-worker.js";
 await initTracing({ serviceName: "ai-travel-agent-worker" });
 
 assertAuthModeEnvironment(resolveAuthMode());
+// Every durable task ends in a model call, so a blank or shadowed credential
+// makes this process incapable of completing any work. Discovered per-turn it
+// is an unclassified INTERNAL failure with no operator-visible signal; asserted
+// here it names the missing variable at boot.
+assertModelGatewayEnvironment();
 // The Worker never calls the resolver. Force `disabled` mode so even an
 // accidental transitive call returns NO_REFERENCE without reading 70 MB of
 // GeoJSON into the Worker process. See `apps/api/src/location-reference/SIDECAR.md`.

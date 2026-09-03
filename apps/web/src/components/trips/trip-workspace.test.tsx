@@ -144,6 +144,18 @@ afterEach(() => {
 });
 
 describe("TripWorkspace", () => {
+  it("uses floating inspector cards without a desktop inspector frame", async () => {
+    const api = createApi({ getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }) });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    await screen.findByText("Trip overview");
+    const inspector = document.getElementById("trip-inspector")!;
+    expect(inspector).not.toHaveClass("border-l-2", "bg-[var(--w-mist)]");
+    expect(inspector).toHaveClass("bg-transparent", "max-xl:border-l-2", "max-xl:bg-[var(--w-mist)]");
+    expect(inspector.querySelector("header")).not.toHaveClass("border-b-2", "border-[var(--w-ink)]");
+    expect(inspector.querySelector("header")).toHaveClass("max-xl:border-b-2", "max-xl:border-[var(--w-ink)]", "xl:after:right-4");
+  });
+
   it("opens a draft in the same workspace used for active planning", async () => {
     const api = createApi({
       getTrip: vi.fn().mockResolvedValue(buildTripResponse("DRAFT")),
@@ -238,13 +250,54 @@ describe("TripWorkspace", () => {
     });
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api, locale: "zh" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "确认更新" }));
+    // The card offers two ways forward now; this is the one that saves.
+    fireEvent.click(await screen.findByRole("button", { name: /保存到这趟行程/ }));
 
     await waitFor(() => {
       expect(api.updateDraftTripBrief).toHaveBeenCalledWith(TRIP_ID, expect.objectContaining({
         titleLocale: "zh",
       }));
     });
+  });
+
+  it("leaves the brief alone when the traveller would rather keep looking", async () => {
+    // The second option is not "ignore this": it is a choice to stay where
+    // they are. Nothing may be written on the way out, or the trip quietly
+    // acquires a destination they declined.
+    const trip = buildTripResponse("DRAFT");
+    const updateDraftTripBrief = vi.fn();
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue({
+        ...trip,
+        trip: { ...trip.trip, pendingBriefProposal: { destinationCandidates: ["Indonesia"] } },
+      }),
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+      updateDraftTripBrief,
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    fireEvent.click(await screen.findByRole("button", { name: /Leave it as it is/ }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /Leave it as it is/ })).not.toBeInTheDocument());
+    expect(updateDraftTripBrief).not.toHaveBeenCalled();
+  });
+
+  it("says what each way forward does before it is taken", async () => {
+    // In the workspace neither option leaves the page, so the wording must
+    // not promise a planner the traveller is already standing in.
+    const trip = buildTripResponse("DRAFT");
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue({
+        ...trip,
+        trip: { ...trip.trip, pendingBriefProposal: { destinationCandidates: ["Indonesia"] } },
+      }),
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    expect(await screen.findByRole("button", { name: /Updates the brief on the right/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Changes nothing about the trip/ })).toBeInTheDocument();
   });
 
   it("tells the traveller a thread is coming while the list loads, and stops once it arrives", async () => {

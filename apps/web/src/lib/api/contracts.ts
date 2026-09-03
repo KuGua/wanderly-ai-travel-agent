@@ -133,6 +133,7 @@ export const tripDetailSchema = z.object({
     departureCities: z.array(z.string()).optional(),
     destinationCandidates: z.array(z.string()).optional(),
     travelDateStart: z.string().optional(),
+    travelDateEnd: z.string().optional(),
     travelDays: z.number().optional(),
   }).nullable().optional(),
 });
@@ -260,6 +261,7 @@ export const agentRunResponseSchema = z.object({
     departureCities: z.array(z.string()).optional(),
     destinationCandidates: z.array(z.string()).optional(),
     travelDateStart: z.string().optional(),
+    travelDateEnd: z.string().optional(),
     travelDays: z.number().optional(),
   }).nullable().optional(),
   /**
@@ -1498,7 +1500,6 @@ export type ProviderUnavailableCode = z.infer<typeof providerUnavailableCodeSche
 export type ServiceGap = z.infer<typeof serviceGapSchema>;
 export type ResearchResultStatus = z.infer<typeof researchResultStatusSchema>;
 export type ResearchResult = z.infer<typeof researchResultSchema>;
-
 // Note: `personalResearchCapabilitySchema` / `personalResearchKindSchema` /
 // `personalResearchIntentSchema` are declared above the `agentStreamEventSchema`
 // discriminated union (so the SSE member can reference them). The remaining

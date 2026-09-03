@@ -23,7 +23,8 @@ describe("ProfileForm", () => {
 
     expect(screen.getByLabelText("Nationality")).toHaveValue("");
     expect(screen.getByLabelText("Date of birth")).toHaveValue("");
-    expect(screen.getByLabelText("Available departure dates")).toHaveValue("");
+    // Available departure dates is no longer an editable field on this form.
+    expect(screen.queryByLabelText("Available departure dates")).toBeNull();
   });
 
   it("builds a strict partial mutation without read-only Profile fields", () => {

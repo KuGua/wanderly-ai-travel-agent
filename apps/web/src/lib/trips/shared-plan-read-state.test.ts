@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 
 import {
   readLastSeenVersion,
@@ -8,7 +9,7 @@ import {
 
 const TRIP_ID = "00000000-0000-4000-8000-000000000001";
 const OTHER_TRIP_ID = "00000000-0000-4000-8000-000000000002";
-const STORAGE_KEY = `${SHARED_PLAN_LAST_SEEN_PREFIX}${TRIP_ID}`;
+const STORAGE_KEY = viewerScopedKey(`${SHARED_PLAN_LAST_SEEN_PREFIX}${TRIP_ID}`);
 
 beforeEach(() => {
   window.localStorage.clear();

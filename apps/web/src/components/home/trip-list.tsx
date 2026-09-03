@@ -158,7 +158,7 @@ function DeleteTripControl({ trip, t }: { trip: TripSummary; t: Translator }) {
         onClick={() => setArmed(true)}
         aria-label={t("trip.delete", { name: trip.name })}
         title={t("trip.delete", { name: trip.name })}
-        className="absolute left-2 top-2 grid size-8 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        className="absolute right-2 top-2 z-10 grid size-11 place-items-center bg-destructive text-white opacity-0 pointer-events-none transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-sm:pointer-events-auto max-sm:opacity-100 wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50"
       >
         <Trash2 aria-hidden="true" className="size-4" />
       </button>
@@ -166,7 +166,7 @@ function DeleteTripControl({ trip, t }: { trip: TripSummary; t: Translator }) {
   }
 
   return (
-    <div role="group" aria-label={t("trip.deleteConfirmTitle")} className="absolute left-2 top-2 flex items-center gap-1.5 bg-card px-2 py-1.5 wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs">
+    <div role="group" aria-label={t("trip.deleteConfirmTitle")} className="absolute right-2 top-2 z-10 flex items-center gap-1.5 bg-card px-2 py-1.5 wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs">
       <span className="text-[11px] font-bold text-[var(--w-ink)]">{t("trip.deleteConfirmTitle")}</span>
       <button
         type="button"

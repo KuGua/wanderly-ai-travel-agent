@@ -16,8 +16,16 @@ import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 import { testPlanningDependencies } from "./helpers/planning.js";
 import { saveConfirmedSearchPreferences } from "../src/services/flight-search-preferences-service.js";
 
-function generatePlan(params: Parameters<typeof generatePlanWithDependencies>[0]) {
-  return generatePlanWithDependencies(params, testPlanningDependencies);
+async function generatePlan(params: Parameters<typeof generatePlanWithDependencies>[0]): Promise<string> {
+  const outcome = await generatePlanWithDependencies(params, testPlanningDependencies);
+  // Tests in this file pre-date the research-summary branch (P0-B of the
+  // planner-resilience design); they all assert on a plan id. If a future
+  // test exercises the no-commercial-authority path, change this to return
+  // the full `PlanSynthesisOutcome` and assert on `outcome.outcome`.
+  if (outcome.outcome !== "PLAN") {
+    throw new Error(`generatePlan expected PLAN outcome, got ${outcome.outcome}`);
+  }
+  return outcome.planId;
 }
 
 let aliceId: string;

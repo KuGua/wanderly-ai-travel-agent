@@ -9,6 +9,7 @@ import type {
   ProviderResult,
 } from "./types.js";
 import { nuiteeHotelDirectorySchema, nuiteeHotelRatesResponseSchema, nuiteeRatedHotelEntrySchema } from "./nuitee-hotel-schemas.js";
+import { executeWithPolicy, getResiliencePolicyForSkill } from "../config/resilience-policy.js";
 
 /**
  * Spec: docs/nuitee-serpapi-hotel-provider-switching-implementation.md §4.2
@@ -89,15 +90,38 @@ export class NuiteeHotelProvider implements HotelProvider {
     const validationFailure = this.validateRequestShape(params);
     if (validationFailure) return this.record({ outcome: "UNAVAILABLE", reason: validationFailure }, startedAt);
 
+    // P1-B: the existing retry loop is now policy-driven. `maxAttempts`,
+    // `retryOn` (transient + RATE_LIMITED), `backoff`, and `rateLimitedMs`
+    // all read from `getResiliencePolicyForSkill("hotel.search")` so a
+    // retry-budget change lives in one place rather than three.
+    const policy = getResiliencePolicyForSkill("hotel.search");
     let last: ProviderResult<HotelProviderItem[]> = { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };
-    for (let attempt = 0; attempt <= this.options.maxRetries; attempt += 1) {
-      last = await this.attempt(params).catch((error: unknown) => ({
-        outcome: "UNAVAILABLE" as const,
-        reason: (error as { name?: string }).name === "AbortError"
-          ? ("UPSTREAM_TIMEOUT" as const)
-          : ("UPSTREAM_FAILURE" as const),
-      }));
-      if (last.outcome === "LIVE" || !isRetryable(last.reason) || attempt === this.options.maxRetries) break;
+    try {
+      last = await executeWithPolicy(policy, async () => {
+        const result = await this.attempt(params);
+        if (result.outcome === "LIVE") return result;
+        // Throw the typed result itself on a retryable failure so the
+        // outer catch below can recover the typed `outcome` / `reason`
+        // rather than falling back to a generic `UPSTREAM_FAILURE`.
+        if (policy.retryOn.includes(result.reason)) throw result;
+        // Non-retryable: surface immediately, no second attempt.
+        return result;
+      }, params.signal);
+    } catch (err) {
+      // Three throw shapes are possible:
+      //  - a `ProviderResult` we re-threw because its reason was retryable
+      //    and the budget is exhausted — recover `outcome` + `reason`;
+      //  - an `AbortError` from the per-attempt timeout — classify as
+      //    `UPSTREAM_TIMEOUT`;
+      //  - anything else (network error, JSON parse, etc.) — classify as
+      //    `UPSTREAM_FAILURE`.
+      if (err && typeof err === "object" && "outcome" in err) {
+        last = err as ProviderResult<HotelProviderItem[]>;
+      } else if ((err as { name?: string })?.name === "AbortError") {
+        last = { outcome: "UNAVAILABLE", reason: "UPSTREAM_TIMEOUT" };
+      } else {
+        last = { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };
+      }
     }
     return this.record(last, startedAt);
   }
@@ -352,9 +376,6 @@ function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-function isRetryable(reason: UnavailableReason): boolean {
-  return reason === "UPSTREAM_FAILURE" || reason === "UPSTREAM_TIMEOUT";
-}
 
 async function readBoundedJson(response: Response): Promise<unknown> {
   const text = await response.text();

@@ -234,6 +234,27 @@ describe("agentRunResponseSchema — research intent fields (Phase 0/1)", () => 
     }
   });
 
+  it("accepts every field the extraction prompt asks the model for", () => {
+    // The prompt requests travelDateEnd alongside travelDateStart, but this
+    // object is `.strict()` and did not declare it. Any turn where the model
+    // returned an end date made this endpoint fail validating its own
+    // response — 400 on every poll, surfaced in the chat as a message that
+    // could not be sent.
+    const parsed = agentRunResponseSchema.parse({
+      ...baseRow,
+      researchIntentDraft: null,
+      researchIntentState: null,
+      tripBriefProposal: {
+        departureCities: ["Singapore"],
+        destinationCandidates: ["United States West Coast"],
+        travelDateStart: "2027-03-31",
+        travelDateEnd: "2027-04-14",
+        travelDays: 15,
+      },
+    });
+    expect(parsed.tripBriefProposal?.travelDateEnd).toBe("2027-04-14");
+  });
+
   // ─── Backward-compat sanity ────────────────────────────────────────────────
   it("still accepts an empty messageSequence / resultPlanId for CONVERSATION rows", () => {
     const parsed = agentRunResponseSchema.parse({

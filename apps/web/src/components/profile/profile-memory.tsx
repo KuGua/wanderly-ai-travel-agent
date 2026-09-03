@@ -70,7 +70,7 @@ export function ProfileMemory() {
   const currentByField = new Map(activeFacts.map((fact) => [fact.fieldKey, fact]));
 
   return (
-    <section className="mt-10" aria-labelledby="memory-heading">
+    <section className="mt-5" aria-labelledby="memory-heading">
       <div className="mb-3">
         <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
           {t("kicker")}
@@ -97,7 +97,7 @@ export function ProfileMemory() {
       ) : null}
 
       {activeFacts.length === 0 ? (
-        <div className="border-2 border-dashed border-[var(--w-ink)] bg-card p-6 text-center wanderly-r-lg">
+        <div className="border-2 border-dashed border-[var(--w-ink)] bg-card p-[9px] text-center wanderly-r-lg">
           <p className="font-bold">{t("emptyTitle")}</p>
           <p className="mt-1 text-sm text-[var(--w-muted)]">{t("emptyBody")}</p>
         </div>

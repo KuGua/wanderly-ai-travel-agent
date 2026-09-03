@@ -7,6 +7,7 @@ import type {
 import { metrics } from "../observability/metrics.js";
 import { observeExternalProviderFetch } from "../observability/external-provider.js";
 import { amadeusTransferResponseSchema, type AmadeusTransferResponse } from "./amadeus-transfer-schemas.js";
+import { executeWithPolicy, getResiliencePolicyForSkill } from "../config/resilience-policy.js";
 
 export interface AmadeusTransferProviderOptions {
   environment: "test" | "production";
@@ -120,6 +121,13 @@ export class AmadeusTransferProvider implements MobilityOfferProvider {
       this.record("LIVE", start);
       return { outcome: "LIVE", data: offers, source: AMADEUS_TRANSFER_ATTRIBUTION, capturedAt };
     } catch (error) {
+      // P1-B: `executeWithPolicy` re-throws a transient-status error after
+      // exhausting the retry budget. Map the attached `.status` back to
+      // the typed reason so callers / tests see the same surface as
+      // pre-P1-B.
+      const status = (error as { status?: number }).status;
+      if (status === 429) return this.unavailable("RATE_LIMITED", start);
+      if (typeof status === "number" && status >= 500) return this.unavailable("UPSTREAM_FAILURE", start);
       if ((error as { name?: string }).name === "AbortError") return this.unavailable("UPSTREAM_TIMEOUT", start);
       return this.unavailable("UPSTREAM_FAILURE", start);
     }
@@ -144,18 +152,27 @@ export class AmadeusTransferProvider implements MobilityOfferProvider {
   }
 
   private async request(path: string, token: string, signal?: AbortSignal, init: RequestInit = {}): Promise<Response> {
-    const timeout = AbortSignal.timeout(this.timeoutMs);
-    const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
     const headers = new Headers(init.headers);
     if (token) headers.set("Authorization", `Bearer ${token}`);
-    return observeExternalProviderFetch(
-      {
-        provider: "amadeus",
-        operation: path.startsWith("/v1/security/") ? "oauth.token" : "mobility.search",
-        method: init.method === "POST" ? "POST" : "GET",
-      },
-      () => this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers, signal: composed }),
-    );
+    const policy = getResiliencePolicyForSkill("mobility.search");
+    // P1-B: transient upstream failures (5xx, 429) now retry under the
+    // unified resilience-policy loop.
+    return executeWithPolicy(policy, async (perAttemptSignal) => {
+      const r = await observeExternalProviderFetch(
+        {
+          provider: "amadeus",
+          operation: path.startsWith("/v1/security/") ? "oauth.token" : "mobility.search",
+          method: init.method === "POST" ? "POST" : "GET",
+        },
+        () => this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers, signal: perAttemptSignal }),
+      );
+      if (r.status === 429 || r.status >= 500) {
+        const err = new Error(`Amadeus transfer transient ${r.status}`);
+        (err as { status?: number }).status = r.status;
+        throw err;
+      }
+      return r;
+    }, signal);
   }
 
   private unavailable(

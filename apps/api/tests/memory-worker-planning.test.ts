@@ -139,8 +139,10 @@ async function planTheWayTheWorkerDoes() {
 
 describe("Worker-shaped planning", () => {
   it("commits a plan when the Worker passes no member ids", async () => {
-    const planId = await planTheWayTheWorkerDoes();
-    expect(planId).toEqual(expect.any(String));
+    const outcome = await planTheWayTheWorkerDoes();
+    expect(outcome.outcome).toBe("PLAN");
+    if (outcome.outcome !== "PLAN") throw new Error("expected PLAN outcome");
+    expect(outcome.planId).toEqual(expect.any(String));
   });
 
   it("still rejects the run when memory actually changed mid-flight", async () => {

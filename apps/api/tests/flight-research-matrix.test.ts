@@ -72,9 +72,18 @@ describe("flight research matrix", () => {
     const unavailable = await evaluateFlightResearchCompleteness({
       snapshotId, agentTaskRunId: taskId, departureCities: ["SFO"], destinationCandidates: ["NRT"],
     });
+    // Post-P0 (planner-resilience §1.3): completeness is "did the loop cover
+    // every cell" — a UNAVAILABLE cell is still complete (we tried it). The
+    // cell's outcome records that no LIVE evidence was found, which is what
+    // Gate B (`hasCommercialFlightAuthority`) consumes downstream.
     expect(unavailable).toMatchObject({ complete: true, cells: [{ originId: "SFO", destinationId: "NRT", outcome: "UNAVAILABLE" }] });
     expect(hasCommercialFlightAuthority(unavailable.cells, "NRT")).toBe(false);
 
+    // Wrong-snapshot path: remove the UNAVAILABLE row for the original
+    // snapshot first so the cell is genuinely MISSING there, then insert a
+    // LIVE row under a different snapshot. The query against the original
+    // snapshot must report `complete: false` (MISSING).
+    await db.delete(providerSearchRuns).where(and(eq(providerSearchRuns.snapshotId, snapshotId)));
     const [otherSnapshot] = await db.insert(constraintSnapshots).values({
       tripId, version: 2, authorizedData: {}, departureCities: ["SFO"], destinationCandidates: ["NRT"],
     }).returning();
@@ -82,8 +91,8 @@ describe("flight research matrix", () => {
     const wrongSnapshot = await evaluateFlightResearchCompleteness({
       snapshotId, agentTaskRunId: taskId, departureCities: ["SFO"], destinationCandidates: ["NRT"],
     });
-    expect(wrongSnapshot.complete).toBe(true);
-    expect(hasCommercialFlightAuthority(wrongSnapshot.cells, "NRT")).toBe(false);
+    expect(wrongSnapshot.complete).toBe(false);
+    expect(wrongSnapshot.cells[0].outcome).toBe("MISSING");
     await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, otherSnapshot.id));
     await db.delete(constraintSnapshots).where(eq(constraintSnapshots.id, otherSnapshot.id));
   });
@@ -116,7 +125,7 @@ describe("flight research matrix", () => {
     expect(recovered).toMatchObject({ runId: otherTaskId, operation: "REPLAN", status: "COMPLETED" });
   });
 
-  it("re-checks research in the final transaction and records a late UNAVAILABLE cell as a gap", async () => {
+  it("re-checks the flight matrix in the final transaction and records UNAVAILABLE cells as gaps", async () => {
     const [planningSnapshot] = await db.insert(constraintSnapshots).values({
       tripId, version: 2, authorizedData: {}, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"],
       travelDateStart: "2026-10-10", travelDateEnd: "2026-10-17",
@@ -150,6 +159,7 @@ describe("flight research matrix", () => {
     }));
     let beforeFinalPassed = false;
     let matrixCompleteBeforeFinal = false;
+    let matrixCompleteAfterFinal = false;
     const dependencies: PlanningDependencies = {
       ...testPlanningDependencies,
       modelGateway: {
@@ -165,21 +175,49 @@ describe("flight research matrix", () => {
           matrixCompleteBeforeFinal = (await evaluateFlightResearchCompleteness({ snapshotId: planningSnapshot.id, agentTaskRunId: durableTaskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"] })).complete;
           await params.beforeFinal?.();
           beforeFinalPassed = true;
-          await db.update(providerSearchRuns).set({ outcome: "UNAVAILABLE", errorCode: "UPSTREAM_FAILURE" }).where(and(eq(providerSearchRuns.snapshotId, planningSnapshot.id), eq(providerSearchRuns.agentTaskRunId, durableTaskId), eq(providerSearchRuns.originId, "SFO"), eq(providerSearchRuns.destinationId, "NRT")));
+          // Simulate evidence rot after Gate B already passed: every cell flips
+          // to UNAVAILABLE. The plan must still be produced (cells are not
+          // MISSING), and the rotated cells surface as `service_gaps` on the
+          // research result so the run terminates as COMPLETED_WITH_GAPS.
+          await db.update(providerSearchRuns).set({ outcome: "UNAVAILABLE", errorCode: "UPSTREAM_FAILURE" }).where(and(eq(providerSearchRuns.snapshotId, planningSnapshot.id), eq(providerSearchRuns.agentTaskRunId, durableTaskId)));
+          matrixCompleteAfterFinal = (await evaluateFlightResearchCompleteness({ snapshotId: planningSnapshot.id, agentTaskRunId: durableTaskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"] })).complete;
           return { destination: "NRT", destinationCandidatesEvaluated: ["NRT"], flights, stays: params.stays, generatedAt: "2026-08-25T00:00:00.000Z" };
         },
       },
     };
 
-    const planId = await generatePlan({ ctx: createRequestContext(userId), tripId, snapshotId: planningSnapshot.id, destination: "NRT", memberIds: [], agentTaskRunId: durableTaskId, flightSearchPreferencesVersion: preference.version, leaseToken }, dependencies);
-    expect(planId).toBeTruthy();
+    // Post-P0: Gate A no longer fails on UNAVAILABLE cells (only on MISSING),
+    // so the run completes with a plan + a gap row for the rotated cell. The
+    // task terminator becomes `COMPLETED_WITH_GAPS`, not `FAILED`.
+    const synthesis = await generatePlan({ ctx: createRequestContext(userId), tripId, snapshotId: planningSnapshot.id, destination: "NRT", memberIds: [], agentTaskRunId: durableTaskId, flightSearchPreferencesVersion: preference.version, leaseToken }, dependencies);
+    expect(synthesis.outcome).toBe("PLAN");
+    if (synthesis.outcome !== "PLAN") throw new Error("expected PLAN outcome");
+    const planId = synthesis.planId;
+    expect(planId).toMatch(/[0-9a-f-]{36}/);
     expect(matrixCompleteBeforeFinal).toBe(true);
+    expect(matrixCompleteAfterFinal).toBe(true);
     expect(beforeFinalPassed).toBe(true);
     expect((await db.select().from(itineraryPlans).where(eq(itineraryPlans.snapshotId, planningSnapshot.id))).length).toBe(1);
     const [task] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, durableTaskId));
     expect(task.status).toBe("COMPLETED_WITH_GAPS");
+    expect(task.resultPlanId).toBe(planId);
+    const [result] = await db.select().from(planningResearchResults).where(eq(planningResearchResults.agentTaskRunId, durableTaskId));
+    expect(result.status).toBe("COMPLETED_WITH_GAPS");
+    const persistedGaps = (result.serviceGaps ?? []) as Array<{ capability: string; code: string; destinationId?: string }>;
+    // The two rotated flight cells must show up as `UPSTREAM_FAILURE` gaps
+    // with `destinationId = "NRT"`. Other capability gaps may also be
+    // present depending on the planner's intermediate state; we only assert
+    // that the flight cells are surfaced, not the exact total.
+    expect(persistedGaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ capability: "flight", code: "UPSTREAM_FAILURE", destinationId: "NRT" }),
+      ]),
+    );
+    expect(persistedGaps.filter((g) => g.capability === "flight" && g.code === "UPSTREAM_FAILURE")).toHaveLength(2);
     await db.delete(auditEvents).where(eq(auditEvents.tripId, tripId));
     await db.delete(planningResearchResults).where(eq(planningResearchResults.agentTaskRunId, durableTaskId));
+    await db.delete(itineraryPlans).where(eq(itineraryPlans.snapshotId, planningSnapshot.id));
+    await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, durableTaskId));
     await db.delete(providerOffers).where(eq(providerOffers.snapshotId, planningSnapshot.id));
     await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, planningSnapshot.id));
     await db.delete(itineraryPlans).where(eq(itineraryPlans.snapshotId, planningSnapshot.id));

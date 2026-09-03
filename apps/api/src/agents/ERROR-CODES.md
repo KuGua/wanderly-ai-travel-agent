@@ -32,7 +32,8 @@ type SkillErrorCode =
   | "SNAPSHOT_REQUIRED"
   | "POLICY_DENIED"
   | "SEARCH_PREFERENCES_STALE"
-  | "UPSTREAM_FAILURE";
+  | "UPSTREAM_FAILURE"
+  | "RATE_LIMITED";
 ```
 
 ## HTTP status mapping (`errors.ts:12-22`)
@@ -53,6 +54,7 @@ const SKILL_ERROR_STATUS: Record<SkillErrorCode, number> = {
   POLICY_DENIED: 403,
   SEARCH_PREFERENCES_STALE: 409,
   UPSTREAM_FAILURE: 502,
+  RATE_LIMITED: 429,
 };
 ```
 
@@ -100,6 +102,7 @@ the structured shape the validator emits).
 | `POLICY_DENIED` | Invalid `agent` kind value at registration. | Not a runtime/operational error path. |
 | `SEARCH_PREFERENCES_STALE` | `flight.search` execution context points to a missing, superseded, or changed confirmed preference version. | Terminal; create a fresh planning execution context. |
 | `UPSTREAM_FAILURE` | Other classified model/provider failure. | Durable conversation execution retries only within the server-owned task budget; production never substitutes mock text. |
+| `RATE_LIMITED` | Provider refused further calls because the quota is exhausted. P1-A: classified separately so the registry's retry loop uses `SkillRetryPolicy.rateLimitedDelayMs` (a self-clock) instead of exponential backoff, which would burn quota faster. | HTTP 429. |
 
 ## HTTP envelope (`error-handler.ts`)
 

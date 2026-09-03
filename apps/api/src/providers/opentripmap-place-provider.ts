@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { metrics } from "../observability/metrics.js";
 import type { DestinationReference } from "../types/domain.js";
 import { openTripMapAccommodationResponseSchema } from "./opentripmap-accommodation-schemas.js";
+import { executeWithPolicy, getResiliencePolicyForSkill } from "../config/resilience-policy.js";
 import type {
   NormalizedPlaceCandidate,
   PlaceSearchProvider,
@@ -177,7 +178,14 @@ export class OpenTripMapPlaceProvider implements PlaceSearchProvider {
         capturedAt,
       }, startedAt);
     } catch (error) {
-      const reason = (error as { name?: string }).name === "AbortError" ? "UPSTREAM_TIMEOUT" : "UPSTREAM_FAILURE";
+      // P1-B: `executeWithPolicy` re-throws a transient-status error after
+      // exhausting the retry budget; map it to the typed reason.
+      const status = (error as { status?: number }).status;
+      let reason: "UPSTREAM_TIMEOUT" | "UPSTREAM_FAILURE" | "RATE_LIMITED";
+      if (status === 429) reason = "RATE_LIMITED";
+      else if (typeof status === "number" && status >= 500) reason = "UPSTREAM_FAILURE";
+      else if ((error as { name?: string }).name === "AbortError") reason = "UPSTREAM_TIMEOUT";
+      else reason = "UPSTREAM_FAILURE";
       return this.record({ outcome: "UNAVAILABLE", reason }, startedAt);
     }
   }
@@ -199,9 +207,18 @@ export class OpenTripMapPlaceProvider implements PlaceSearchProvider {
     if (query.name !== undefined) url.searchParams.set("name", query.name);
     if (query.minRate !== undefined) url.searchParams.set("rate", String(query.minRate));
 
-    const timeout = AbortSignal.timeout(this.options.timeoutMs);
-    const composed = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    const response = await this.fetchImpl(url, { headers: { accept: "application/json" }, signal: composed });
+    const policy = getResiliencePolicyForSkill("places.search");
+    // P1-B: transient upstream failures (5xx, 429) now retry under the
+    // unified resilience-policy loop.
+    const response = await executeWithPolicy(policy, async (perAttemptSignal) => {
+      const r = await this.fetchImpl(url, { headers: { accept: "application/json" }, signal: perAttemptSignal });
+      if (r.status === 429 || r.status >= 500) {
+        const err = new Error(`OpenTripMap transient ${r.status}`);
+        (err as { status?: number }).status = r.status;
+        throw err;
+      }
+      return r;
+    }, signal);
     if (!response.ok) return null;
     const text = await response.text();
     if (text.length > 2_000_000) return null;

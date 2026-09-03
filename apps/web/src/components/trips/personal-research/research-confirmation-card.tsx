@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 
 import { useConfirmResearchCommand, useDismissResearchIntent } from "@/lib/query/hooks";
 import type {
@@ -94,8 +95,11 @@ export function ResearchConfirmationCard(props: ResearchConfirmationCardProps): 
     props.intent.requestedCapabilities as ResearchCapability[],
   );
   const needsRealProviderAck = realProviders.length > 0;
+  // Scoped to the viewer: this is an acknowledgement that the next search
+  // reaches real suppliers, and one traveller must not be able to give it on
+  // another's behalf by having used the same browser first.
   const realProviderKey = needsRealProviderAck
-    ? `research.realProviderAcked.${[...realProviders].sort().join("|")}`
+    ? viewerScopedKey(`research.realProviderAcked.${[...realProviders].sort().join("|")}`)
     : "";
   const [realProviderModalOpen, setRealProviderModalOpen] = useState(false);
 

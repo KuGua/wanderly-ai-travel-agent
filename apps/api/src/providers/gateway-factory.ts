@@ -83,9 +83,46 @@ function createConfiguredGateway(): ModelGateway {
   const provider = resolveProvider();
   const configuration = gatewayConfiguration(provider);
   if (!configuration?.apiKey || !configuration.modelName) {
-    throw new Error(`Model gateway ${provider} is not fully configured`);
+    throw new Error(`Model gateway ${provider} is not fully configured: ${missingGatewaySettings(provider, configuration).join(", ")}`);
   }
   return buildLLM(provider, configuration);
+}
+
+/** Which env vars the selected provider still needs. Never their values. */
+function missingGatewaySettings(
+  provider: GatewayProvider,
+  configuration: GatewayConfiguration | null,
+): string[] {
+  if (!configuration) return ["MODEL_GATEWAY_BASE_URL"];
+  const missing: string[] = [];
+  if (!configuration.apiKey) missing.push("MODEL_GATEWAY_API_KEY");
+  if (!configuration.modelName) missing.push("MODEL_GATEWAY_MODEL");
+  return missing.length ? missing : [`MODEL_GATEWAY_PROVIDER=${provider}`];
+}
+
+/**
+ * Startup gate for every process that makes model-backed requests.
+ *
+ * Without it a blank credential is discovered once per user turn, deep inside
+ * a durable task, where it surfaces as an unclassified `INTERNAL` failure long
+ * after the message was accepted and stored. That is what happened when an
+ * empty `MODEL_GATEWAY_API_KEY=` in a later `.env` block shadowed the real key
+ * set above it — dotenv gives the last occurrence precedence — and every
+ * conversation turn failed ~60ms in with no operator-visible signal.
+ *
+ * Failing at boot instead names the missing variables while someone is still
+ * looking at the terminal. It never logs a credential, only the var names.
+ */
+export function assertModelGatewayEnvironment(): void {
+  const provider = resolveProvider();
+  const configuration = gatewayConfiguration(provider);
+  if (!configuration?.apiKey || !configuration.modelName) {
+    throw new Error(
+      `Model gateway ${provider} is not fully configured: ${missingGatewaySettings(provider, configuration).join(", ")}. `
+      + "Set it in apps/api/.env (see .env.example). Note dotenv gives the LAST occurrence of a key precedence, "
+      + "so a later empty declaration silently blanks an earlier value.",
+    );
+  }
 }
 
 export function modelGateway(): ModelGateway {

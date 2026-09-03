@@ -7,6 +7,7 @@ import { db } from "../../db/database.js";
 import { personalResearchEvidence, sharedTrips, tripMembers } from "../../db/schema.js";
 import { ApiError } from "../../middleware/error-handler.js";
 import { metrics } from "../../observability/metrics.js";
+import { logSafeRuntimeEvent } from "../../observability/telemetry.js";
 import { isPersonalResearchCapabilityAllowed } from "../../config/personal-research-allowed-capabilities.js";
 import {
   containsUnsupportedOperationalClaim,
@@ -560,8 +561,16 @@ export async function handleConversationTask(params: {
   // aborted the turn while the search was still in flight: the offers were
   // fetched and persisted, the cards rendered, and the traveller was told the
   // model was unreachable.
-  const { withPausedModelBudget, clear: clearTurnDeadline } = createTurnDeadline({
+  //
+  // Pausing alone is not a bound, though: a chain of slow suppliers can hold a
+  // turn open until the hard cap while the model never runs short. So the
+  // paused windows are also metered against `toolBudgetMs` (§5.1 of the
+  // planner-resilience design). Exhausting that budget aborts nothing — the
+  // dispatcher below short-circuits with a structured UNAVAILABLE and the model
+  // still answers with what it already has.
+  const { withPausedModelBudget, isToolBudgetExhausted, clear: clearTurnDeadline } = createTurnDeadline({
     modelBudgetMs: travelConversationSkill.timeoutMs,
+    toolBudgetMs: agentTaskConfig.conversationToolBudgetMs,
     onAbort: (reason) => {
       const error = new Error(reason);
       error.name = "AbortError";
@@ -732,12 +741,22 @@ export async function handleConversationTask(params: {
   if (tools.length > 0) {
     toolContext.tools = tools;
     toolContext.dispatchTool = async (call) => {
+      // Post-P2: when the tool budget is exhausted, do NOT abort the model
+      // signal. Return a structured UNAVAILABLE answer so the model can
+      // keep talking. Matches the `dispatchPlanningTool` discipline in
+      // `services/planning-service.ts` (the planner never aborts the model
+      // either — it converts failures to gaps).
+      if (isToolBudgetExhausted()) {
+        return { outcome: "UNAVAILABLE", reason: "TOOL_BUDGET_EXHAUSTED" };
+      }
       const dispatch = dispatchers.get(call.name);
       // Answered rather than thrown. A model that invents a tool name gets
       // told so and can correct itself; throwing here used to end the turn.
       if (!dispatch) return { outcome: "UNAVAILABLE", reason: "UNKNOWN_TOOL" };
-      // Every route leaves through here, so this is where bookkeeping comes
-      // out and a reason a person can read goes in.
+      // Every route leaves through here, so this is where a reason a person
+      // can read goes in. The tool budget itself is charged inside
+      // `withPausedModelBudget`, which already brackets exactly the dispatch
+      // window — metering it again here would double-count every call.
       return explainToolFailure(withoutInternalFields(await dispatch(call)));
     };
   }
@@ -749,6 +768,12 @@ export async function handleConversationTask(params: {
     userConfirmed: toolContext.userConfirmed === true,
     confirmedCapability,
   });
+  // Post-P2 (§5.2): the safety gate asks `isEvidenceBacked()` once at the
+  // end of the turn. We expose both the *this-turn* dispatch flag and any
+  // *persisted* evidence the trip already has (hotel/flight only — the two
+  // capabilities that can produce one). The deterministic template path in
+  // step 2-2 reads the same predicate.
+  toolContext.isEvidenceBacked = () => evidenceDispatched;
 
   const gate = new SafeConversationDeltaGate(
     params.run,
@@ -762,7 +787,37 @@ export async function handleConversationTask(params: {
       ctx: params.ctx,
       policyGate: new DefaultPolicyGate("personal"),
     }, input, execution.signal, (delta) => gate.push(delta), toolContext);
+  } catch (err) {
+    // Post-P2 (§5.2): if the model call failed (timeout, network, anything)
+    // but the turn *did* capture persisted evidence, do NOT surface a model
+    // failure. Persist a deterministic assistant message that names what
+    // was gathered so the user knows the price search worked but the reply
+    // formatting did not. This closes finding #32 where a real hotel price
+    // was logged and the user was told "the model is down".
+    if (!evidenceDispatched) throw err;
+    const evidenceRows = evidence?.offers ?? [];
+    const providerNames = [...new Set(evidenceRows.map((row) => row.providerName))].filter(Boolean).join(", ");
+    const latestCapturedAt = evidenceRows
+      .map((row) => row.capturedAt)
+      .filter(Boolean)
+      .sort()
+      .at(-1) ?? new Date().toISOString();
+    const templateBody = evidenceRows.length === 0
+      ? "Wanderly captured search results but could not finish the reply."
+      : `Wanderly gathered ${evidenceRows.length} result${evidenceRows.length === 1 ? "" : "s"} from ${providerNames || "a travel provider"} (latest captured at ${latestCapturedAt}) but could not finish the reply.`;
+    logSafeRuntimeEvent(params.ctx, {
+      component: "worker", event: "evidence_without_reply",
+      operation: "conversation", outcome: "failure",
+      errorCode: err instanceof Error ? err.name : "INTERNAL",
+    });
+    output = travelConversationOutputSchema.parse({
+      content: templateBody,
+      responseMode: "FALLBACK",
+    });
   } finally {
+    // Both clocks and the task-abort bridge belong to this turn only. A turn
+    // that ends normally used to leave the model timer, the hard-cap timer and
+    // the abort listener behind; `finally` is the one path every outcome takes.
     clearTurnDeadline();
     params.signal.removeEventListener("abort", abortFromTask);
   }
@@ -1119,8 +1174,9 @@ async function handleProactiveIntro(params: {
   });
 }
 
+
 /**
- * The deadline for one conversation turn, split into two clocks.
+ * The deadline for one conversation turn, split into three clocks.
  *
  * `modelBudgetMs` is the Skill's timeout, and it measures *model* time only:
  * `withPausedModelBudget` stops it for exactly as long as a tool dispatch runs,
@@ -1129,19 +1185,35 @@ async function handleProactiveIntro(params: {
  * budget and the turn was aborted mid-summary, discarding offers that had
  * already been fetched and persisted.
  *
+ * `toolBudgetMs` is the aggregate of those paused windows. Pausing on its own
+ * bounds nothing: three slow suppliers in a row hold the turn open to the hard
+ * cap while the model never runs short. Exhausting this budget aborts nothing —
+ * `isToolBudgetExhausted()` lets the dispatcher answer a structured UNAVAILABLE
+ * so the model still replies with what it has, the same discipline
+ * `dispatchPlanningTool` follows in `services/planning-service.ts`.
+ *
  * `hardCapMs` is plain wall clock and is never paused, so a supplier that never
  * answers still cannot hold a turn open indefinitely.
+ *
+ * See §5.1 of docs/planner-resilience-and-reflection-implementation.md.
  */
 export function createTurnDeadline(params: {
   modelBudgetMs: number;
+  /** Aggregate tool time allowed per turn. Omitted → tools are not metered. */
+  toolBudgetMs?: number;
   onAbort: (reason: string) => void;
   isAborted: () => boolean;
   hardCapMs?: number;
   now?: () => number;
-}): { withPausedModelBudget: <T>(run: () => Promise<T>) => Promise<T>; clear: () => void } {
+}): {
+  withPausedModelBudget: <T>(run: () => Promise<T>) => Promise<T>;
+  isToolBudgetExhausted: () => boolean;
+  clear: () => void;
+} {
   const now = params.now ?? Date.now;
   let remainingMs = params.modelBudgetMs;
   let startedAt = now();
+  let remainingToolMs = params.toolBudgetMs ?? Number.POSITIVE_INFINITY;
   let timer: ReturnType<typeof setTimeout> | undefined = setTimeout(
     () => params.onAbort("Conversation Skill timed out"),
     remainingMs,
@@ -1152,14 +1224,19 @@ export function createTurnDeadline(params: {
   );
   return {
     withPausedModelBudget: async <T>(run: () => Promise<T>): Promise<T> => {
+      const pausedAt = now();
       if (timer) {
         clearTimeout(timer);
         timer = undefined;
-        remainingMs -= now() - startedAt;
+        remainingMs -= pausedAt - startedAt;
       }
       try {
         return await run();
       } finally {
+        // The paused window is exactly the dispatch window, so it is also the
+        // honest unit to charge the tool budget for. Charged even when the
+        // dispatch threw: a supplier that fails slowly still spent the time.
+        remainingToolMs = Math.max(0, remainingToolMs - Math.max(0, now() - pausedAt));
         // An already-aborted turn gets no fresh timer: rearming one would fire
         // a second abort against a signal that has already settled.
         if (!timer && !params.isAborted()) {
@@ -1171,6 +1248,7 @@ export function createTurnDeadline(params: {
         }
       }
     },
+    isToolBudgetExhausted: () => remainingToolMs <= 0,
     clear: () => {
       if (timer) clearTimeout(timer);
       timer = undefined;

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { clearViewerScopedStorage } from "./viewer-scoped-storage";
 
 import {
   CognitoChallengeRequiredError,
@@ -106,6 +107,10 @@ export function AuthProvider({ children, service: suppliedService }: {
     setError(null);
     try {
       await service.signOut();
+      // The query cache goes with `sessionRevision` below; these pointers live
+      // outside it and carry no user in their key, so they have to be dropped
+      // explicitly or the next traveller inherits them.
+      clearViewerScopedStorage();
       setUser(null);
       setStatus(service.localDevelopment ? "LOCAL_DEV" : service.localDevelopmentConfigurationInvalid ? "LOCAL_DEV_INVALID" : service.configured ? "SIGNED_OUT" : "UNCONFIGURED");
       setSessionRevision((current) => current + 1);

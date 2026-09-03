@@ -27,8 +27,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { threadKeys } from "@/lib/query/keys";
 import { TravelApiError } from "@/lib/api/errors";
 import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
+import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { useTravelApi } from "@/lib/query/provider";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
 type PendingTurn = ConversationTurnRequest;
@@ -175,6 +176,11 @@ export function TravelAgentChat({
   onSharedRunStarted,
 }: TravelAgentChatProps) {
   const t = useTranslations("explore.chat");
+  const router = useRouter();
+  // The same card serves the globe and the workspace, and only one of them
+  // has a planner to open — saying "opens the planner" to someone already
+  // standing in it is just wrong.
+  const onGlobe = surface !== "TRIP_WORKSPACE";
   const docked = variant === "docked";
   const effectiveThreadId = controlledThreadId;
   // Absent an explicit status, a missing thread means "none yet", not "one is
@@ -458,10 +464,19 @@ export function TravelAgentChat({
   }, [activeRunId, api, refetchAgentRun]);
 
   useEffect(() => {
-    if (
-      !activeRunId ||
-      !(agentRun.error instanceof TravelApiError && agentRun.error.statusCode === 404)
-    ) {
+    // 404 is the run being gone; 403 is it belonging to somebody else. Both
+    // mean the pointer this browser kept is not one the current viewer can
+    // follow, and the second happens the moment two people sign in on the
+    // same browser — the key is not scoped per user, so the previous
+    // traveller's run id survives the sign-out.
+    //
+    // Only 404 used to clear it, so a switched account polled a stranger's
+    // run forever: `isSending` stays true while `activeRunId` is set, which
+    // left the composer disabled under "Wanderly is thinking…" that could
+    // never finish.
+    const unusable = agentRun.error instanceof TravelApiError
+      && (agentRun.error.statusCode === 404 || agentRun.error.statusCode === 403);
+    if (!activeRunId || !unusable) {
       return;
     }
     const staleRun = window.setTimeout(() => {
@@ -681,9 +696,25 @@ export function TravelAgentChat({
       });
       await trip.refetch();
       setBriefProposal(null);
+      // Saving the destination and then leaving the traveller on the globe
+      // made them find the planner themselves, with no sign the answer had
+      // landed anywhere. Choosing to plan is choosing to go there, so the
+      // same click does. The thread comes along so the conversation they were
+      // just having is the one waiting for them.
+      if (onGlobe) {
+        router.push(
+          (effectiveThreadId
+            ? `/trips/${tripId}?thread=${effectiveThreadId}`
+            : `/trips/${tripId}`) as "/trips/[tripId]",
+        );
+      } else {
+        setIsConfirmingBrief(false);
+      }
     } catch (error) {
       setRequestError(error);
-    } finally {
+      // Only cleared here: on the way to the planner this component unmounts,
+      // and dropping the flag first would flash the button back to its resting
+      // label mid-navigation.
       setIsConfirmingBrief(false);
     }
   }
@@ -951,7 +982,7 @@ export function TravelAgentChat({
   }
 
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : "wanderly-cosmos-chat absolute inset-x-3 bottom-3 z-50 flex h-[60dvh] min-h-[300px] flex-col overflow-hidden text-[var(--w-fog)] wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-visible bg-background" : "wanderly-cosmos-chat absolute inset-x-3 bottom-3 z-50 flex h-[60dvh] min-h-[300px] flex-col overflow-hidden text-[var(--w-fog)] wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
       {/* The panel paints its own deep-space ground, so the inner column stays
           transparent rather than laying a second surface over it. */}
       <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>
@@ -983,17 +1014,22 @@ export function TravelAgentChat({
         )}
 
         <div ref={panelScrollRef} className={docked
-          ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-4 pt-6"
+          ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 xl:[&>*]:translate-x-1"
           : "flex-1 overflow-y-auto px-5 py-5"} aria-live="polite">
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
-            <div className={rowClass}>
-              {agentLabel}
-              <div className={`max-w-[86%] px-3.5 py-3 text-sm leading-[1.45] ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
-                <p className="font-bold text-primary">{t("introTitle")}</p>
-                <p className="mt-1 text-muted-foreground">{t("introBody")}</p>
+            <div className={docked ? "mx-auto flex max-w-[640px] flex-col items-start pb-4 pt-1 text-left" : "mb-4 flex flex-col items-start text-left"}>
+              <div aria-hidden="true" className={`mb-2 flex items-center gap-2 ${docked ? "text-muted-foreground" : "text-[var(--w-fog)]"}`}>
+                <Sparkles className="size-3" />
+                <span className="h-px w-7 bg-current opacity-70" />
               </div>
+              <p className="max-w-[36rem] text-balance text-sm font-bold leading-snug tracking-[-0.02em] text-[var(--w-ink)] sm:text-base">
+                {t("introTitle")}
+              </p>
+              <p className={`mt-2 max-w-[36rem] text-pretty text-[12px] leading-5 ${docked ? "text-muted-foreground" : "text-[var(--w-fog)]"}`}>
+                {t("introBody")}
+              </p>
             </div>
           ) : null}
           {messages.map((message) => (
@@ -1054,12 +1090,41 @@ export function TravelAgentChat({
           {briefProposal && tripId ? (
             <section aria-label={t("briefProposalTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <p className="font-bold text-primary">{t("briefProposalTitle")}</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">
+              <p className="mt-1 text-xs text-muted-foreground">{t("briefProposalIntro")}</p>
+              <ul className="mt-2 list-disc space-y-0.5 pl-4 text-muted-foreground">
                 {describeBriefProposal(briefProposal, t).map((line) => <li key={line}>{line}</li>)}
               </ul>
-              <div className="mt-3 flex gap-2">
-                <button type="button" onClick={() => void confirmBriefProposal()} disabled={isConfirmingBrief} className={actionPrimaryClass}>{isConfirmingBrief ? t("briefProposalSaving") : t("briefProposalConfirm")}</button>
-                <button type="button" onClick={() => setBriefProposal(null)} disabled={isConfirmingBrief} className={actionSecondaryClass}>{t("briefProposalIgnore")}</button>
+              {/* Two ways forward rather than "confirm / ignore": from the
+                  globe the real question is whether this is the trip, and
+                  "Ignore" answered a different one. Each option says what it
+                  does, because one of them leaves the map. */}
+              <div className="mt-3 grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => void confirmBriefProposal()}
+                  disabled={isConfirmingBrief}
+                  className={`${actionPrimaryClass} flex w-full flex-col items-start gap-0.5 py-2.5 text-left`}
+                >
+                  <span className="block">
+                    {isConfirmingBrief
+                      ? t(onGlobe ? "briefProposalOpening" : "briefProposalSaving")
+                      : t(onGlobe ? "briefProposalPlanTitle" : "briefProposalSaveTitle")}
+                  </span>
+                  <span className="block text-[11px] font-semibold opacity-80">
+                    {t(onGlobe ? "briefProposalPlanBody" : "briefProposalSaveBody")}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBriefProposal(null)}
+                  disabled={isConfirmingBrief}
+                  className={`${actionSecondaryClass} flex w-full flex-col items-start gap-0.5 py-2.5 text-left`}
+                >
+                  <span className="block">{t(onGlobe ? "briefProposalExploreTitle" : "briefProposalKeepTitle")}</span>
+                  <span className="block text-[11px] font-semibold opacity-75">
+                    {t(onGlobe ? "briefProposalExploreBody" : "briefProposalKeepBody")}
+                  </span>
+                </button>
               </div>
             </section>
           ) : null}
@@ -1212,18 +1277,44 @@ export function TravelAgentChat({
                 stages={researchStages}
                 outcome={researchOutcome}
               />
+              {/* Post-P0 (planner-resilience §3.5): when the run finishes with a
+                  plan but with capability gaps, or finishes with no plan at all
+                  (research-summary branch), surface that explicitly in the chat
+                  rather than letting the user infer it from `resultPlanId`. */}
+              {(() => {
+                const run = agentRun.data;
+                if (!run || run.status === "RUNNING" || run.status === "QUEUED") return null;
+                if (run.status === "COMPLETED_WITH_GAPS" && run.resultPlanId !== null) {
+                  return (
+                    <p role="status" className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {t("planningCompletedWithGaps.message", {
+                        gaps: t("planningCompletedWithGaps.detail"),
+                      })}
+                    </p>
+                  );
+                }
+                if (run.status === "COMPLETED_WITH_GAPS" && run.resultPlanId === null) {
+                  return (
+                    <p role="status" className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {t("planningResearchSummaryOnly.message", {
+                        reason: t("planningResearchSummaryOnly.reasonFlight"),
+                      })}
+                    </p>
+                  );
+                }
+                return null;
+              })()}
             </div>
           ) : null}
         </div>
       </div>
 
-      <form onSubmit={submitMessage} className={docked ? "border-t-2 border-[var(--w-ink)] bg-background px-[clamp(16px,3vw,34px)] pb-[18px] pt-3" : "border-t-2 border-[var(--w-space-line)] px-3 pb-3 pt-2"}>
+      <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5 xl:translate-x-1" : "border-t-2 border-[var(--w-space-line)] px-3 pb-3 pt-2"}>
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className={`mb-1.5 flex h-6 max-w-full items-center px-2.5 text-[10px] font-extrabold wanderly-r-xs wanderly-press ${docked ? "bg-[var(--w-mist)] text-primary wanderly-edge-thin" : "wanderly-cosmos-control"}`}><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
         <div className={`${docked ? "mx-auto max-w-[640px]" : ""} flex min-h-14 items-center gap-2 p-1.5 pl-4 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
           <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
           {submitButton}
         </div>
-        {docked ? <p className="mx-auto mt-[7px] max-w-[640px] text-[11px] text-[var(--w-ink)] opacity-75">{t("composerNote")}</p> : null}
       </form>
     </aside>
   );
@@ -1335,17 +1426,26 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+/**
+ * Keyed by viewer: two accounts on one browser each get their own pointer,
+ * so signing in as someone else cannot hand you a run you are not allowed to
+ * read — which answers 403 and used to leave the chat wedged on "thinking".
+ */
+function activeRunKey(): string {
+  return viewerScopedKey(CHAT_ACTIVE_RUN_STORAGE_KEY);
+}
+
 function readStoredActiveRunId(): string | null {
   if (typeof window === "undefined") return null;
-  try { return window.localStorage.getItem(CHAT_ACTIVE_RUN_STORAGE_KEY); } catch { return null; }
+  try { return window.localStorage.getItem(activeRunKey()); } catch { return null; }
 }
 
 function storeActiveRunId(runId: string) {
-  try { window.localStorage.setItem(CHAT_ACTIVE_RUN_STORAGE_KEY, runId); } catch { /* optional pointer */ }
+  try { window.localStorage.setItem(activeRunKey(), runId); } catch { /* optional pointer */ }
 }
 
 function clearStoredActiveRunId() {
-  try { window.localStorage.removeItem(CHAT_ACTIVE_RUN_STORAGE_KEY); } catch { /* optional pointer */ }
+  try { window.localStorage.removeItem(activeRunKey()); } catch { /* optional pointer */ }
 }
 
 function mergeMessages(current: ConversationMessage[], incoming: ConversationMessage[]) {
@@ -1506,10 +1606,17 @@ function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
     if (error.errorCode === "PLANNING_DATA_UNAVAILABLE") return t("planningDataUnavailable");
     if (error.errorCode === "POLICY_DENIED") return t("planningNotAllowed");
     if (error.errorCode === "SEARCH_PREFERENCES_STALE") return t("planningPreferencesChanged");
+    if (error.errorCode === "TOOL_CALL_MAX_TURNS") return t("planningToolBudgetExhausted");
     if (["NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT"].includes(error.errorCode ?? "")) {
       return planning ? t("planningProviderUnavailable") : t("providerUnavailable");
     }
-    return planning ? t("planningFailed") : t("genericError");
+    // `genericError` — "the message could not be sent" — is never true on this
+    // path. An AgentRunFailure means a run row exists, so the message was
+    // accepted and stored; whatever failed, failed after that. INTERNAL gets
+    // its own copy because it is a server-side fault the traveller cannot act
+    // on, and `isRetryableFailure` already withholds the Retry button for it.
+    if (error.errorCode === "INTERNAL") return planning ? t("planningFailed") : t("conversationInternalError");
+    return planning ? t("planningFailed") : t("conversationFailed");
   }
   if (error instanceof TravelApiError) {
     if (error.statusCode === null) return t("networkError");

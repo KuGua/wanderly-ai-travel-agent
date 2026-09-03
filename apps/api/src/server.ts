@@ -9,6 +9,7 @@ import {
   resolveAuthMode,
   resolveLocalDevAllowedOrigins,
 } from "./middleware/auth-mode.js";
+import { assertModelGatewayEnvironment } from "./providers/gateway-factory.js";
 import { logger } from "./utils/logger.js";
 
 // Tracing MUST be initialized before `buildApp()` so the SDK patches the
@@ -22,6 +23,10 @@ assertAuthModeEnvironment(AUTH_MODE);
 assertLocalDevServerHost(AUTH_MODE, HOST);
 assertCustomLocalJwtSecret(AUTH_MODE);
 if (AUTH_MODE === "local-dev" || AUTH_MODE === "custom-local") resolveLocalDevAllowedOrigins(undefined, AUTH_MODE);
+// `location.introduction` calls the gateway from a request handler, so a blank
+// credential here is a 500 per request rather than a boot failure. Same gate as
+// the Worker's, for the same reason.
+assertModelGatewayEnvironment();
 
 async function main() {
   const app = await buildApp();
