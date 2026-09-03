@@ -151,9 +151,13 @@ export function ProfileForm({
         </div>
       ) : null}
 
-      <section className="bg-card p-4 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-5" aria-labelledby="travel-basics-heading">
+      {/* One card. The two groups keep their own headings and landmarks; only
+          the surrounding boxes merged, with a hairline rule where the seam
+          used to be. */}
+      <div className="bg-card p-4 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-5">
+      <section aria-labelledby="travel-basics-heading">
         <SectionHeading id="travel-basics-heading" title={t("sectionBasicsTitle")} description={t("sectionBasicsDescription")} />
-        <div className="mt-3 grid gap-x-3 gap-y-[6.5px] sm:grid-cols-2">
+        <div className="mt-3 grid gap-x-3 gap-y-[6.5px] sm:grid-cols-3">
           <Field id="departure-city" label={t("fields.departureCity")} error={errors.departureCity?.message}>
             <input id="departure-city" {...register("departureCity")} className={inputClass(Boolean(errors.departureCity))} autoComplete="address-level2" />
           </Field>
@@ -166,7 +170,9 @@ export function ProfileForm({
         </div>
       </section>
 
-      <section className="bg-card p-4 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-5" aria-labelledby="preferences-heading">
+      <div className="my-4 border-t border-dashed border-[var(--w-ink)]/35" />
+
+      <section aria-labelledby="preferences-heading">
         <SectionHeading id="preferences-heading" title={t("sectionPrefsTitle")} description={t("sectionPrefsDescription")} />
         <div className="mt-3 grid gap-x-3 gap-y-2 sm:grid-cols-[2fr_3fr]">
           {/* Left column, 2 of 5: the three short controls. */}
@@ -214,19 +220,22 @@ export function ProfileForm({
           </div>
         </div>
       </section>
+      </div>
 
-      {/* The button alone, at the form's bottom-right. Not sticky: it used to
-          ride the scroll and slide over the content below. */}
-      <div className="flex justify-end">
+      {/* The button at the form's bottom-right, not sticky: it used to ride
+          the scroll and slide over the content below. The save status sits
+          beside it rather than in a reserved strip underneath — that strip was
+          blank almost always, and it was most of the gap before the next
+          section. */}
+      <div className="flex items-center justify-end gap-3">
+        <div aria-live="polite" className="text-sm">
+          {saved ? <p className="text-emerald-700">{t("savedToast")}</p> : null}
+          {errorMessage ? <p role="alert" className="text-destructive">{errorMessage}</p> : null}
+        </div>
         <Button type="submit" size="lg" className="min-h-11 px-5 wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action" disabled={isSaving || !isDirty}>
           <Save aria-hidden="true" />
           {isSaving ? t("saving") : t("save")}
         </Button>
-      </div>
-
-      <div aria-live="polite" className="min-h-6 text-sm">
-        {saved ? <p className="text-emerald-700">{t("savedToast")}</p> : null}
-        {errorMessage ? <p role="alert" className="text-destructive">{errorMessage}</p> : null}
       </div>
     </form>
   );

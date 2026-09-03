@@ -70,7 +70,7 @@ export function ProfileMemory() {
   const currentByField = new Map(activeFacts.map((fact) => [fact.fieldKey, fact]));
 
   return (
-    <section aria-labelledby="memory-heading">
+    <section className="mt-5" aria-labelledby="memory-heading">
       <div className="mb-3">
         <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
           {t("kicker")}
