@@ -247,14 +247,51 @@ Skill 的超时从此只计**模型时间**——两个工具分发包装器在 
 Mystays Premier Akasaka 914.83 / Citadines Shinjuku 1402.18 CNY 每晚),
 含取消政策、来源(Nuitee LiteAPI)与查询日期。整轮约 30 秒。
 
-## #33 酒店没有确认按钮，机票有 — 缺陷 — 未修
+## #33 酒店没有确认按钮，机票有 — 缺陷 — 已修
 机票走到确认时出现「Ready to search for flights — run it now?」+ Search/Cancel 按钮;
 酒店只在文字里问「请确认是否开始搜索?」,必须自己打出确认短语。
 `tool.settled` 只对 `capability === "flight.search"` 设 `pendingFlightConfirmation`,
 酒店没有对应分支。
 （这是 09-02 记过的「确认短语过于死板」的另一面:机票已经有按钮了,酒店还没有。）
 
-## #34 同一句确认短语，第二次被输入闸门拒了 — 待查
+**先确认了这条流程该不该存在。** 结论是该存在:`TOOL_INVOCATION_MODE` 把
+`hotel.search` 标为 `CONFIRMED`,因为它打的是商业供应商——Nuitee 的 Rates 受
+合同与 look-to-book 比率约束(`nuitee-serpapi-hotel-provider-switching-implementation.md`
+明写「不能将『免费』理解为无限制」),而同一槽位可切成按 credit 计费的 SerpApi。
+另外 `hotel-search-tool-implementation.md` 第 15 条独立要求住宿偏好必须用户
+显式确认后才版本化保存。所以要补的是按钮,不是拆掉闸门。
+
+**根因**:服务端一直是对称的——酒店和机票都返回 `CONFIRMATION_REQUIRED`,
+都在 `conversation-task-handler.ts` 统一映射成 `NEEDS_CONFIRMATION` 发出。
+差异只在前端一行:`travel-agent-chat.tsx` 的监听器写死了
+`event.capability === "flight.search"`。酒店提示词还反向强化了这点
+(第 553 行原文:工具返回后「再用散文请用户确认」),同时第 550 行禁止让用户点按钮,
+两条合起来把酒店钉死在打字确认上。
+
+**修法**:`pendingHotelConfirmation`(服务端按 `loadConversationHotelSearchState`
+推导,和机票同样跨刷新可恢复)+ 前端监听器、状态、按钮、中英文案;
+按钮送「确认搜索酒店」而不是裸「确认搜索」,因为一个线程可能同时等两个确认。
+提示词第 553 行改为指向按钮,第 550 行补上和机票相同的按钮例外。
+
+**屏幕复验**:大阪 12/26–12/28 一间房一人 CNY → 卡片
+「Ready to search for hotels — run it now?」+ Search / Cancel;
+点 Search 送出「确认搜索酒店」,返回五家真实报价
+(Dotonbori 691 / RIHGA Royal 865 / Osaka Excel Tokyu 909 /
+Miyako City Hommachi 989 / Monterey Grasmere 993 CNY 每晚)。
+
+
+## #34 同一句确认短语，第二次被拒 — 待查(已加诊断)
+**不是输入闸门。** 这次抓到了完整时序:工具在 13:57:46 成功
+(`hotel.search / AVAILABLE`),模型 stream `llm.outcome: success`、
+`tool_dispatched: true`,回复在 13:57:51 落库——却是那句安全拒绝。
+所以拦截发生在**模型回完之后**,是 `travel-conversation-skill.ts` 的输出侧
+`containsUnsupportedOperationalClaim`。紧接着同样一句「确认搜索酒店」重跑一次
+就正常返回了五家报价,**说明它对措辞敏感、间歇触发**。
+
+代价比 #32 更重:供应商调用已经付过了,结果被整段丢弃,用户只看到拒绝。
+
+已在拒绝点加有界诊断(`conversation.output_refused`,记 `evidenceBacked` 与
+300 字内容样本),下次复现即可分清是证据没被认还是文案踩词。
 03:43 的「确认搜索酒店」跑了工具;03:44 同样一句在 5 秒内返回安全拒答,
 来不及调任何 provider——说明是输入闸门拦的。
 推测:前一次确认已把待确认的搜索草稿消费掉,于是同一句话被当成一个
