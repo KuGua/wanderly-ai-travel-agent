@@ -154,11 +154,11 @@ export function ProfileForm({
       {/* One card. The two groups keep their own headings and landmarks; only
           the surrounding boxes merged, with a hairline rule where the seam
           used to be. */}
-      {/* overflow-hidden so the top half's ground is clipped to the card's
-          rounded corners; the padding moves onto each half, which is what lets
-          that ground run the full width instead of floating inside a margin. */}
-      <div className="overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow">
-      <section aria-labelledby="travel-basics-heading" className="bg-[var(--w-sunken)] p-4 sm:p-5">
+      {/* The padding sits on each half rather than on the card, so the rule
+          between them can run edge to edge — it is the upper half's own bottom
+          border, which puts it exactly on the seam. */}
+      <div className="bg-card wanderly-edge wanderly-r-lg wanderly-shadow">
+      <section aria-labelledby="travel-basics-heading" className="border-b border-dashed border-[var(--w-ink)]/35 p-4 sm:p-5">
         <SectionHeading id="travel-basics-heading" title={t("sectionBasicsTitle")} description={t("sectionBasicsDescription")} />
         <div className="mt-3 grid gap-x-3 gap-y-[6.5px] sm:grid-cols-3">
           <Field id="departure-city" label={t("fields.departureCity")} error={errors.departureCity?.message}>

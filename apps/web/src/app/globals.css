@@ -67,12 +67,6 @@
   --w-page: color-mix(in srgb, var(--w-fog), var(--w-white) 74%);
   --w-line: color-mix(in srgb, var(--w-fog), var(--w-white) 38%);
   --w-mist: color-mix(in srgb, var(--w-fog), var(--w-white) 62%);
-  --w-gold: #d9a441;
-  /* A deeper ground for one half of a panel — champagne rather than taupe.
-     Darkening the beige with ink got the value right and killed the colour:
-     ink is neutral, so the result drifted grey. A little gold separates the
-     half by hue instead, which lets it stay light. */
-  --w-sunken: color-mix(in srgb, color-mix(in srgb, var(--w-fog), var(--w-white) 25%), var(--w-gold) 9%);
 
   /* Deep-space variants; the cosmic map reassigns the same palette. */
   --w-space: color-mix(in srgb, var(--w-primary), #000 72%);
