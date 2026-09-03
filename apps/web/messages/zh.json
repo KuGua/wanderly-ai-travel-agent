@@ -544,6 +544,21 @@
       "threadSubtitle": "仅你可见的私人对话",
       "currentBadge": "当前"
     },
+    "sharedPlan": {
+      "railTitle": "共享方案",
+      "railSubtitle": "所有活跃成员可见",
+      "headerTitle": "共享方案",
+      "headerSubtitle": "只读视图，所有活跃成员可见",
+      "empty": {
+        "title": "暂无共享方案",
+        "body": "当成员在私人对话中确认了团队的共同出行约束后，团队方案会出现在这里，供所有人查看与投票。",
+        "backToThread": "回到我的对话"
+      },
+      "error": {
+        "forbidden": "你已无法访问本行程的共享方案。",
+        "generic": "无法加载共享方案。"
+      }
+    },
     "hotel": {
       "card": {
         "totalLabel": "总价",

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { TravelAgentChat, type ChatThreadStatus } from "@/components/explore/travel-agent-chat";
 import { TripMiniGlobe } from "@/components/trips/trip-mini-globe";
+import { SharedPlanView } from "@/components/trips/shared-plan/shared-plan-view";
 import { ResearchGapBanner } from "@/components/trips/research-gap-banner";
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import { Link, useRouter } from "@/i18n/navigation";
@@ -22,6 +23,8 @@ import {
 import { TravelApiError } from "@/lib/api/errors";
 
 const DEFAULT_THREAD_QUERY = "thread";
+const SHARED_VIEW_QUERY = "view";
+const SHARED_VIEW_VALUE = "shared";
 
 function isUnauthorizedOrRevoked(error: unknown): boolean {
   if (!(error instanceof TravelApiError)) return false;
@@ -32,10 +35,12 @@ function isUnauthorizedOrRevoked(error: unknown): boolean {
 export function TripWorkspace({ tripId }: { tripId: string }) {
   const t = useTranslations("trips");
   const tCommon = useTranslations("common");
+  const tShared = useTranslations("trips.sharedPlan");
   const locale = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryThreadId = searchParams.get(DEFAULT_THREAD_QUERY);
+  const querySharedView = searchParams.get(SHARED_VIEW_QUERY) === SHARED_VIEW_VALUE;
 
   const tripQuery = useTrip(tripId);
   const threadsQuery = useTripThreads(tripId);
@@ -113,9 +118,15 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   // If the URL points at a thread that is no longer in our list (it was
   // deleted or it belongs to a different trip), fall back to the most
   // recent default or first thread and patch the URL.
+  //
+  // Skip when the URL selects `view=shared`: the shared surface is
+  // intentionally thread-less (see docs/shared-plan-surface-implementation.md
+  // §1.1), so the fallback would otherwise bounce the user out of the
+  // shared view every time a thread disappears.
   useEffect(() => {
     if (!threadsQuery.data) return;
     if (membershipRevoked) return;
+    if (querySharedView) return;
     const knownIds = new Set(threads.map((thread) => thread.id));
     if (queryThreadId && knownIds.has(queryThreadId)) return;
     if (threads.length === 0) return;
@@ -123,7 +134,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     const params = new URLSearchParams(searchParams.toString());
     params.set(DEFAULT_THREAD_QUERY, fallback.id);
     router.replace(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.replace>[0]);
-  }, [threads, threadsQuery.data, queryThreadId, router, searchParams, tripId, membershipRevoked]);
+  }, [threads, threadsQuery.data, queryThreadId, querySharedView, router, searchParams, tripId, membershipRevoked]);
 
   // "New thread" opens a fresh session straight away — no title prompt.
   // The server-side title is auto-numbered so the rail stays readable.
@@ -134,12 +145,23 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
         title: t("threads.newThread.autoTitle", { index: threads.length + 1 }),
       });
       const params = new URLSearchParams(searchParams.toString());
+      params.delete(SHARED_VIEW_QUERY);
       params.set(DEFAULT_THREAD_QUERY, created.id);
       router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
     } catch {
       // surfaced through the threads query error state.
     }
   }, [createThread, router, searchParams, t, threads.length, tripId]);
+
+  // Select the shared plan surface in the rail. Mutually exclusive with
+  // the `thread=` query parameter (spec §1.9): setting one clears the
+  // other, so a refresh cannot land the user in a half-selected state.
+  const handleSelectSharedView = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete(DEFAULT_THREAD_QUERY);
+    params.set(SHARED_VIEW_QUERY, SHARED_VIEW_VALUE);
+    router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
+  }, [router, searchParams, tripId]);
 
   if (membershipRevoked) {
     return (
@@ -200,6 +222,9 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           type="button"
           onClick={() => {
             const params = new URLSearchParams(searchParams.toString());
+            // Picking a thread clears `view=shared`; the two are mutually
+            // exclusive (§1.9 / §7.1).
+            params.delete(SHARED_VIEW_QUERY);
             params.set(DEFAULT_THREAD_QUERY, thread.id);
             setInspectorOpen(false);
             router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
@@ -269,6 +294,21 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           {createThread.isPending ? t("threads.newThread.submitting") : t("threads.newThread.label")}
         </button>
 
+        {/* Pinned shared-plan entry — Phase 1 of
+            docs/shared-plan-surface-implementation.md §7.1. Always
+            visible so the trip-scoped read-only view is discoverable
+            even when no plan exists yet (empty state lands here). */}
+        <button
+          type="button"
+          aria-current={querySharedView ? "page" : undefined}
+          onClick={handleSelectSharedView}
+          data-testid="shared-plan-rail-item"
+          className={`relative mx-3 mb-1.5 mt-1 flex w-[calc(100%-1.5rem)] min-h-[64px] flex-col items-start gap-0.5 bg-card px-3 py-2 text-left text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-press ${querySharedView ? "bg-[var(--w-highlight)] wanderly-shadow" : "wanderly-shadow-sm hover:bg-[var(--w-mist)]"}`}
+        >
+          <b className="block truncate pr-[42px] text-[13px] font-bold">{tShared("railTitle")}</b>
+          <span className="block truncate text-xs">{tShared("railSubtitle")}</span>
+        </button>
+
         <p className="mx-4 mb-2 mt-[18px] text-[11px] font-black uppercase tracking-[0.09em] wanderly-underline">{t("threads.sectionLabel")}</p>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-2.5 pb-[18px]">
@@ -298,10 +338,21 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
       <section className="flex min-h-0 min-w-0 flex-col bg-background">
         <header className="flex h-[66px] shrink-0 items-center justify-between gap-2 border-b-2 border-[var(--w-ink)] px-[18px]">
           <div className="min-w-0">
-            <strong className="block truncate text-[15px] tracking-[-0.02em]">{activeThread?.title ?? trip.name}</strong>
-            <p className="truncate text-xs text-muted-foreground">
-              {trip.name} · {t("header.members", { count: members.length })}
-            </p>
+            {querySharedView ? (
+              <>
+                <strong className="block truncate text-[15px] tracking-[-0.02em]">{tShared("headerTitle")}</strong>
+                <p className="truncate text-xs text-muted-foreground">
+                  {tShared("headerSubtitle")} · {t("header.members", { count: members.length })}
+                </p>
+              </>
+            ) : (
+              <>
+                <strong className="block truncate text-[15px] tracking-[-0.02em]">{activeThread?.title ?? trip.name}</strong>
+                <p className="truncate text-xs text-muted-foreground">
+                  {trip.name} · {t("header.members", { count: members.length })}
+                </p>
+              </>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-[7px]">
             <span className="inline-flex items-center gap-1.5 bg-card px-2 py-1.5 text-xs font-bold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
@@ -327,21 +378,27 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           </div>
         </header>
 
-        <TravelAgentChat
-          variant="docked"
-          surface="TRIP_WORKSPACE"
-          threadId={activeThread?.id ?? null}
-          threadStatus={chatThreadStatus}
-          // The chat writes the trip's auto title when the traveller confirms
-          // a brief or starts shared planning, and the server can only write
-          // the language it is told. Without this the workspace fell back to
-          // the prop default and named a Chinese traveller's trip
-          // "新加坡 Trip Planner｜4 Days" — half-translated, because the
-          // destination came from their own words and the rest did not.
-          titleLocale={locale === "zh" ? "zh" : "en"}
-          tripId={tripId}
-          onThreadInvalidated={() => threadsQuery.refetch()}
-        />
+        {querySharedView ? (
+          <div className="min-h-0 flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-6 pt-4">
+            <SharedPlanView tripId={tripId} />
+          </div>
+        ) : (
+          <TravelAgentChat
+            variant="docked"
+            surface="TRIP_WORKSPACE"
+            threadId={activeThread?.id ?? null}
+            threadStatus={chatThreadStatus}
+            // The chat writes the trip's auto title when the traveller confirms
+            // a brief or starts shared planning, and the server can only write
+            // the language it is told. Without this the workspace fell back to
+            // the prop default and named a Chinese traveller's trip
+            // "新加坡 Trip Planner｜4 Days" — half-translated, because the
+            // destination came from their own words and the rest did not.
+            titleLocale={locale === "zh" ? "zh" : "en"}
+            tripId={tripId}
+            onThreadInvalidated={() => threadsQuery.refetch()}
+          />
+        )}
       </section>
 
       {inspectorOpen ? (

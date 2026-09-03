@@ -359,15 +359,31 @@ export function useDeleteTrip(tripId: string) {
   });
 }
 
-export function useLatestPlanningRun(tripId: string) {
+/**
+ * The latest PLAN/REPLAN run for a trip.
+ *
+ * Polling cadence (§6.2 in docs/shared-plan-surface-implementation.md):
+ *   - No active run (terminal status or no run yet): refetch every 60s so
+ *     non-trigger members discover a fresh run without manual refresh.
+ *   - Active run (`QUEUED | RUNNING | CANCEL_REQUESTED`): refetch every
+ *     1.5s while the workspace is mounted.
+ *
+ * `enabled` defaults to true; the workspace toggles it off when the user
+ * is on the private-chat tab and on again when they return to the shared
+ * view. Disabling polling is a UI preference — the query key still
+ * receives manual `invalidateQueries` from SSE event handlers, so an
+ * SSE-derived status change still updates the UI even with `enabled=false`.
+ */
+export function useLatestPlanningRun(tripId: string, { enabled = true }: { enabled?: boolean } = {}) {
   const api = useTravelApi();
   return useQuery({
     queryKey: tripKeys.planningRun(tripId),
     queryFn: () => api.getLatestPlanningRun(tripId),
     retry: false,
+    enabled,
     refetchInterval: (query) => {
       const status = query.state.data?.run?.status;
-      return status === "QUEUED" || status === "RUNNING" || status === "CANCEL_REQUESTED" ? 1_500 : false;
+      return status === "QUEUED" || status === "RUNNING" || status === "CANCEL_REQUESTED" ? 1_500 : 60_000;
     },
   });
 }
@@ -535,8 +551,12 @@ export function useTripPlans(tripId: string) {
   const api = useTravelApi();
   return useQuery({
     queryKey: teamOrchestrationKeys.plans(tripId),
-    queryFn: () => api.listTripPlans!(tripId),
-    enabled: !!api.listTripPlans,
+    queryFn: () => api.listTripPlans(tripId),
+    // Shared Plan Surface is the on-screen view — three retries on 5xx
+    // would leave the user staring at the loading card for seconds.
+    // Match the convention of `useLatestPlanningRun` and surface the
+    // error state immediately.
+    retry: false,
   });
 }
 
@@ -581,8 +601,7 @@ export function usePlanAdoptionVotes(planId: string) {
   const api = useTravelApi();
   return useQuery({
     queryKey: teamOrchestrationKeys.votes(planId),
-    queryFn: () => api.listAdoptionVotes!(planId),
-    enabled: !!api.listAdoptionVotes,
+    queryFn: () => api.listAdoptionVotes(planId),
   });
 }
 
@@ -591,7 +610,7 @@ export function useCastAdoptionVote(tripId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (params: { planId: string; input: CastAdoptionVoteRequest }) =>
-      api.castAdoptionVote!(params.planId, params.input),
+      api.castAdoptionVote(params.planId, params.input),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: teamOrchestrationKeys.votes(vars.planId) });
       qc.invalidateQueries({ queryKey: teamOrchestrationKeys.plans(tripId) });
