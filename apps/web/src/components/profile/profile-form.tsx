@@ -1,15 +1,16 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Save, ShieldCheck } from "lucide-react";
+import { Save } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo } from "react";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
 
 import type { Profile, UpdateProfileInput } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
 import { Button } from "@/components/ui/button";
+import { SelectMenu } from "@/components/ui/select-menu";
 import { cn } from "@/lib/utils";
 
 const KNOWN_STATUS_KEYS = new Set([
@@ -38,10 +39,6 @@ export const profileFormSchema = z.object({
   budgetMaxUsd: z.union([z.literal(""), z.string().regex(/^\d+$/, "Enter a whole number")]),
   noRedEye: z.boolean(),
   mobilityNotes: z.string(),
-  availableDepartureDates: z.string().refine(
-    (value) => splitList(value).every((date) => datePattern.test(date)),
-    "Use YYYY-MM-DD dates separated by commas",
-  ),
   departureCity: z.string().max(64, "Use 64 characters or fewer"),
 });
 
@@ -63,10 +60,6 @@ export function makeProfileFormSchema(t: Translator) {
     budgetMaxUsd: z.union([z.literal(""), z.string().regex(/^\d+$/, t("validation.wholeNumber"))]),
     noRedEye: z.boolean(),
     mobilityNotes: z.string(),
-    availableDepartureDates: z.string().refine(
-      (value) => splitList(value).every((date) => datePattern.test(date)),
-      t("validation.datesList"),
-    ),
     departureCity: z.string().max(64, t("validation.max64")),
   });
 }
@@ -80,7 +73,6 @@ export function profileToFormValues(profile: Profile): ProfileFormValues {
     budgetMaxUsd: profile.budgetMaxUsd?.toString() ?? "",
     noRedEye: profile.noRedEye ?? false,
     mobilityNotes: profile.mobilityNotes ?? "",
-    availableDepartureDates: profile.availableDepartureDates?.join(", ") ?? "",
     departureCity: profile.departureCity ?? "",
   };
 }
@@ -98,9 +90,6 @@ export function toUpdateProfileInput(
   if (dirtyFields.budgetMaxUsd && values.budgetMaxUsd) input.budgetMaxUsd = Number(values.budgetMaxUsd);
   if (dirtyFields.noRedEye) input.noRedEye = values.noRedEye;
   if (dirtyFields.mobilityNotes && values.mobilityNotes.trim()) input.mobilityNotes = values.mobilityNotes.trim();
-  if (dirtyFields.availableDepartureDates && splitList(values.availableDepartureDates).length) {
-    input.availableDepartureDates = splitList(values.availableDepartureDates);
-  }
   if (dirtyFields.departureCity && values.departureCity.trim()) input.departureCity = values.departureCity.trim();
 
   return input;
@@ -124,6 +113,7 @@ export function ProfileForm({
   const schema = useMemo(() => makeProfileFormSchema(t), [t]);
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { dirtyFields, errors, isDirty },
@@ -153,7 +143,7 @@ export function ProfileForm({
     : null;
 
   return (
-    <form onSubmit={handleSubmit(submit, focusErrors)} noValidate className="space-y-8">
+    <form onSubmit={handleSubmit(submit, focusErrors)} noValidate className="space-y-4">
       {Object.keys(errors).length > 0 ? (
         <div id="profile-error-summary" tabIndex={-1} role="alert" className="border-2 border-destructive bg-destructive/5 p-4 outline-none wanderly-r-md focus-visible:ring-4 focus-visible:ring-destructive/20">
           <p className="font-semibold">{t("errorSummaryTitle")}</p>
@@ -161,37 +151,46 @@ export function ProfileForm({
         </div>
       ) : null}
 
-      <section className="bg-card p-5 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-7" aria-labelledby="travel-basics-heading">
+      <section className="bg-card p-4 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-5" aria-labelledby="travel-basics-heading">
         <SectionHeading id="travel-basics-heading" title={t("sectionBasicsTitle")} description={t("sectionBasicsDescription")} />
-        <div className="mt-6 grid gap-5 sm:grid-cols-2">
+        <div className="mt-3 grid gap-x-3 gap-y-3 sm:grid-cols-2">
           <Field id="departure-city" label={t("fields.departureCity")} error={errors.departureCity?.message}>
             <input id="departure-city" {...register("departureCity")} className={inputClass(Boolean(errors.departureCity))} autoComplete="address-level2" />
           </Field>
-          <Field id="nationality" label={t("fields.nationality")} hint={t("fields.nationalityHint")} error={errors.nationality?.message}>
-            <input id="nationality" {...register("nationality")} className={inputClass(Boolean(errors.nationality))} autoComplete="country-name" />
+          <Field id="nationality" label={t("fields.nationality")} error={errors.nationality?.message}>
+            <input id="nationality" {...register("nationality")} className={inputClass(Boolean(errors.nationality))} placeholder={t("fields.nationalityPlaceholder")} autoComplete="country-name" />
           </Field>
-          <Field id="date-of-birth" label={t("fields.dateOfBirth")} hint={t("fields.dateOfBirthHint")} error={errors.dateOfBirth?.message}>
+          <Field id="date-of-birth" label={t("fields.dateOfBirth")} error={errors.dateOfBirth?.message}>
             <input id="date-of-birth" {...register("dateOfBirth")} className={inputClass(Boolean(errors.dateOfBirth))} placeholder={t("fields.dateOfBirthPlaceholder")} inputMode="numeric" />
-          </Field>
-          <Field id="available-departure-dates" label={t("fields.availableDepartureDates")} hint={t("fields.availableDepartureDatesHint")} error={errors.availableDepartureDates?.message}>
-            <input id="available-departure-dates" {...register("availableDepartureDates")} className={inputClass(Boolean(errors.availableDepartureDates))} placeholder={t("fields.availableDepartureDatesPlaceholder")} />
           </Field>
         </div>
       </section>
 
-      <section className="bg-card p-5 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-7" aria-labelledby="preferences-heading">
+      <section className="bg-card p-4 wanderly-edge wanderly-r-lg wanderly-shadow sm:p-5" aria-labelledby="preferences-heading">
         <SectionHeading id="preferences-heading" title={t("sectionPrefsTitle")} description={t("sectionPrefsDescription")} />
-        <div className="mt-6 grid gap-5 sm:grid-cols-2">
-          <Field id="interests" label={t("fields.interests")} hint={t("fields.interestsHint")} error={errors.interests?.message}>
+        <div className="mt-3 grid gap-x-3 gap-y-3 sm:grid-cols-2">
+          <Field id="interests" label={t("fields.interests")} error={errors.interests?.message}>
             <input id="interests" {...register("interests")} className={inputClass(Boolean(errors.interests))} placeholder={t("fields.interestsPlaceholder")} />
           </Field>
           <Field id="accommodation-style" label={t("fields.accommodationStyle")} error={errors.accommodationStyle?.message}>
-            <select id="accommodation-style" {...register("accommodationStyle")} className={inputClass(Boolean(errors.accommodationStyle))}>
-              <option value="">{t("accommodation.notSet")}</option>
-              <option value="city_center">{t("accommodation.city_center")}</option>
-              <option value="budget">{t("accommodation.budget")}</option>
-              <option value="luxury">{t("accommodation.luxury")}</option>
-            </select>
+            <Controller
+              control={control}
+              name="accommodationStyle"
+              render={({ field }) => (
+                <SelectMenu
+                  id="accommodation-style"
+                  value={field.value}
+                  onChange={field.onChange}
+                  invalid={Boolean(errors.accommodationStyle)}
+                  options={[
+                    { value: "", label: t("accommodation.notSet") },
+                    { value: "city_center", label: t("accommodation.city_center") },
+                    { value: "budget", label: t("accommodation.budget") },
+                    { value: "luxury", label: t("accommodation.luxury") },
+                  ]}
+                />
+              )}
+            />
           </Field>
           <Field id="budget-max-usd" label={t("fields.budgetMaxUsd")} error={errors.budgetMaxUsd?.message}>
             <input id="budget-max-usd" {...register("budgetMaxUsd")} className={inputClass(Boolean(errors.budgetMaxUsd))} inputMode="numeric" />
@@ -200,7 +199,7 @@ export function ProfileForm({
             <textarea id="mobility-notes" {...register("mobilityNotes")} className={cn(inputClass(Boolean(errors.mobilityNotes)), "min-h-28 py-3")} />
           </Field>
         </div>
-        <label className="mt-6 flex min-h-11 items-center gap-3 bg-card px-4 py-3 wanderly-edge wanderly-r-md wanderly-shadow-sm">
+        <label className="mt-3 flex min-h-11 items-center gap-3 bg-card px-4 py-3 wanderly-edge wanderly-r-md wanderly-shadow-sm">
           <input type="checkbox" {...register("noRedEye")} className="size-5 accent-[var(--w-highlight)] wanderly-edge-thin wanderly-r-xs" />
           <span>
             <span className="block font-medium">{t("fields.noRedEyeLabel")}</span>
@@ -209,12 +208,11 @@ export function ProfileForm({
         </label>
       </section>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-card p-4 wanderly-edge wanderly-r-lg wanderly-shadow sm:sticky sm:bottom-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <ShieldCheck aria-hidden="true" className="size-4 text-[var(--w-ink)]" />
-          {t("stickyNote")}
-        </div>
-        <Button type="submit" size="lg" className="min-h-11 px-5 wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action" disabled={isSaving || !isDirty}>
+      {/* The button alone, held at the form's bottom-right. The surrounding
+          card and its note were a full-width bar that read as a third section
+          competing with the two real ones. */}
+      <div className="sticky bottom-4 z-10 flex justify-end">
+        <Button type="submit" size="lg" className="min-h-11 px-5 wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action" disabled={isSaving || !isDirty}>
           <Save aria-hidden="true" />
           {isSaving ? t("saving") : t("save")}
         </Button>
@@ -249,15 +247,23 @@ function splitList(value: string) {
 }
 
 function SectionHeading({ id, title, description }: { id: string; title: string; description: string }) {
-  return <div><h2 id={id} className="text-xl font-semibold">{title}</h2><p className="mt-2 max-w-2xl text-sm text-muted-foreground">{description}</p></div>;
+  return <div><h2 id={id} className="text-xl font-semibold">{title}</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p></div>;
 }
 
 function Field({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string; children: React.ReactNode }) {
+  // Three subgrid rows — label, control, hint — so every control in a row
+  // starts at the same line no matter how long its neighbour's hint runs.
+  // Before this the cell stretched to the tallest sibling and the control
+  // stretched with it, which is why a field with no hint sat lower and taller
+  // than the two-line one beside it. `self-start` keeps a control at its own
+  // height, so a tall textarea never inflates the input opposite it.
   return (
-    <div className="grid gap-2 text-sm font-medium">
-      <label htmlFor={id}>{label}</label>
-      {children}
-      {error ? <span className="text-xs text-destructive">{error}</span> : hint ? <span className="text-xs font-normal text-muted-foreground">{hint}</span> : null}
+    <div className="row-span-3 grid grid-rows-subgrid gap-1 text-sm font-medium">
+      <label htmlFor={id} className="self-end">{label}</label>
+      <div className="self-start">{children}</div>
+      <div className="self-start text-xs">
+        {error ? <span className="text-destructive">{error}</span> : hint ? <span className="font-normal text-muted-foreground">{hint}</span> : null}
+      </div>
     </div>
   );
 }

@@ -167,15 +167,10 @@
     "fields": {
       "departureCity": "Departure city",
       "nationality": "Nationality",
-      "nationalityHint": "Required — hotel prices are quoted per nationality, and a trip cannot be planned without it. Private; not shared in this slice.",
+      "nationalityPlaceholder": "Required",
       "dateOfBirth": "Date of birth",
-      "dateOfBirthHint": "YYYY-MM-DD",
       "dateOfBirthPlaceholder": "YYYY-MM-DD",
-      "availableDepartureDates": "Available departure dates",
-      "availableDepartureDatesHint": "Comma-separated YYYY-MM-DD dates",
-      "availableDepartureDatesPlaceholder": "2026-10-03, 2026-10-10",
       "interests": "Interests",
-      "interestsHint": "Comma-separated",
       "interestsPlaceholder": "art, museums, local food",
       "accommodationStyle": "Accommodation style",
       "budgetMaxUsd": "Maximum budget (USD)",
@@ -190,7 +185,6 @@
       "budget": "Budget",
       "luxury": "Luxury"
     },
-    "stickyNote": "Blank edited fields are preserved until the API supports clearing them.",
     "save": "Save Profile",
     "saving": "Saving…",
     "savedToast": "Profile saved. Your private snapshot is up to date.",
@@ -201,7 +195,6 @@
     "validation": {
       "max64": "Use 64 characters or fewer",
       "datePattern": "Use YYYY-MM-DD",
-      "datesList": "Use YYYY-MM-DD dates separated by commas",
       "wholeNumber": "Enter a whole number",
       "required": "Required"
     },

@@ -167,15 +167,10 @@
     "fields": {
       "departureCity": "出发城市",
       "nationality": "国籍",
-      "nationalityHint": "必填——酒店报价按国籍区分，缺了它这趟行程无法规划。私密，本切片内不共享。",
+      "nationalityPlaceholder": "必填",
       "dateOfBirth": "出生日期",
-      "dateOfBirthHint": "YYYY-MM-DD",
       "dateOfBirthPlaceholder": "YYYY-MM-DD",
-      "availableDepartureDates": "可选出发日期",
-      "availableDepartureDatesHint": "以逗号分隔的 YYYY-MM-DD 日期",
-      "availableDepartureDatesPlaceholder": "2026-10-03, 2026-10-10",
       "interests": "兴趣",
-      "interestsHint": "以逗号分隔",
       "interestsPlaceholder": "art, museums, local food",
       "accommodationStyle": "住宿风格",
       "budgetMaxUsd": "最高预算（美元）",
@@ -190,7 +185,6 @@
       "budget": "经济型",
       "luxury": "豪华型"
     },
-    "stickyNote": "在接口支持清空之前，已编辑的空白字段会被保留。",
     "save": "保存资料",
     "saving": "保存中…",
     "savedToast": "资料已保存。您的私人快照已更新。",
@@ -201,7 +195,6 @@
     "validation": {
       "max64": "请使用不超过 64 个字符",
       "datePattern": "请使用 YYYY-MM-DD 格式",
-      "datesList": "请使用以逗号分隔的 YYYY-MM-DD 日期",
       "wholeNumber": "请输入整数",
       "required": "必填"
     },
