@@ -100,7 +100,7 @@ Skill = 输入 Zod schema
       + 允许的 typed tools
       + 输出 Zod schema
       + 审计事件
-      + timeout / retry / fallback 规则
+      + timeout / retry / fallback 规则（`Skill.timeoutMs` + 可选 `Skill.retry`）
       + 是否需要用户确认
 ~~~
 
@@ -192,6 +192,19 @@ Plan-and-Execute 必须有最大步数、总 deadline、每步 schema 校验和�
 
 PlanReviewSkill 是一次受限 review pass，而不是反复自我批评、重试和调用工具的自治 Reflective Agent。它不应显著拉长 Hero Demo，也不能覆盖硬性校验结果。
 
+### 反思的落地形态：确定性 critic + 有界 repair
+
+本仓库采用的反思能力**不是**模型自评，而是「确定性校验器产出结构化 critique → 回灌模型 → 有限 repair 预算」。这一形态的先例已存在于 `providers/llm-gateway.ts` 的 tool loop：最终 JSON schema 校验失败时，代码把失败的 issue path（仅路径，不回显值）塞回消息并继续同一个有界循环，而不是终止 run。
+
+该模式推广到 coverage / policy / evidence 校验后的约束：
+
+- critique 只含稳定 code、字段路径与固定模板文案，永不回显模型值或 snapshot 私密内容；无法安全降解的错误不进入 repair，按原错误抛出；
+- repair 预算独立于 tool 预算，二者互不侵占；
+- repair 不改变任何门禁结论，也不放宽 HARD 约束——它只让模型重新表达一次输出；
+- 数据缺失类失败（例如某目的地零 LIVE 航班证据）不产生 critique，它走 research summary 分支，而不是让模型再试一次。
+
+实施契约见 [规划器韧性与有界反思实施规范](planner-resilience-and-reflection-implementation.md)。
+
 ## 6. 执行、失败恢复与控制平面
 
 ### 必须保留确定性控制的状态转换
@@ -218,8 +231,9 @@ profile / consent / constraint / provider change
 
 | 边界 | 规则 |
 |---|---|
-| Travel provider | 单调用 deadline；只对瞬态失败做有限 retry；失败、无数据或不可信时返回 `UNAVAILABLE`，不返回替代数据。 |
-| Model / Skill 执行 | 限制最大步骤、输出大小和总 deadline；只对传输/限流错误做一次 retry。schema/policy failure 不扩大 prompt 重试，而是安全失败。 |
+| Travel provider | 单调用 deadline；只对瞬态失败做有限 retry；`RATE_LIMITED` 使用自有时钟而非指数退避；失败、无数据或不可信时返回 `UNAVAILABLE`，不返回替代数据。参数集中在 `config/resilience-policy.ts`。 |
+| Model / Skill 执行 | 限制最大步骤、输出大小和总 deadline；只对传输/限流错误做一次 retry。声明 `retry` 的 Skill 不得持有任何写 scope（注册期强制）；调用方取消永不重试。schema/policy failure 不扩大 prompt 重试，而是产出确定性 critique 并消耗有界 repair 预算。 |
+| 能力门禁 | 「研究完整性」与「商业依据」是两个独立门禁。已尝试但 `UNAVAILABLE` 的能力降级为 `service_gap` 并以 `COMPLETED_WITH_GAPS` 完成；只有从未被搜索（`MISSING`）才是不可重试的硬失败。零商业证据的目的地产出不带 authority 的 research summary，不产出 plan。 |
 | Plan comparison | 模型失败时降级为确定性候选列表和 evidence 摘要；不得生成未经验证的解释或事实。 |
 | Idempotency / callback | 副作用前原子 claim；callback 必须独立认证、关联预期 booking execution，并按 provider event ID 去重；late callback 不覆盖终态。 |
 | 恢复 | timeout/failed run 保留安全 step outcome；下一次触发从新 snapshot 开始，不恢复使用旧 snapshot 的半完成 plan。 |

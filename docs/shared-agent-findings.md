@@ -32,7 +32,7 @@ web 从不调用它。产品创建的每个行程都缺这行授权。
 按「按下开始规划即是同意」处理,与文档 §3.2 对机票初始条件的做法一致。
 注意:这是必要条件,不是充分条件——见 #11。
 
-## #5 一个 provider 没授权就整轮不出方案 — 待定 — 未决
+## #5 一个 provider 没授权就整轮不出方案 — 待定 — 已决（见 G1）
 `planning-service.ts:224` 住宿非 LIVE 即把目的地记为 missing,
 `personal-trip-orchestrator-service.ts:213` 据此拒绝合成。
 文档 §10.6 说不给盲飞分支出方案是刻意的,但是否该退化成 gap 而非整轮失败,
@@ -68,7 +68,7 @@ Profile requires a separate confirmed contract」。GET/PUT 只支持已存在�
 0063 把 brief 挂在 run 上,解决了「订阅太晚」,但 run 一旦不再被轮询(刷新、换设备)
 卡片又没了。0065 改挂在 trip 上——brief 描述的是行程不是某一轮。确认或激活时清空。
 
-## #11 首轮规划刻意不带 hotel，而 hotel 决定了能不能出方案 — 根因 — 未决
+## #11 首轮规划刻意不带 hotel，而 hotel 决定了能不能出方案 — 根因 — 已决（见 G1）
 `routes/trips.ts` 激活时显式传 `hotelProvider: null`,不写住宿搜索偏好,
 文档 §6 也明说「当前首轮完整规划不自动带入 hotel capability」——这是刻意的。
 但 `planning-service.ts:224` 用**住宿是否 LIVE** 决定目的地算不算被覆盖,
@@ -82,7 +82,10 @@ Profile requires a separate confirmed contract」。GET/PUT 只支持已存在�
 这条航线显然有航班。不是「无此航线」,是航班 provider 本身没出结果。
 和 #11 独立。
 
-## #13 规划失败后屏幕说的是假话 — 缺陷 — 未修
+**09-03 补充**:根因仍未查,但 G1 之后它不再终结整轮——这一格会降级为 `service_gap`,
+其余能力照常出方案。查明 provider 为什么不出结果仍是独立的一条。
+
+## #13 规划失败后屏幕说的是假话 — 缺陷 — 已修（复核 09-03）
 点 Start planning,转约二十秒,整块变成一行红字:
 
 > **The message could not be sent. Please try again.**
@@ -94,6 +97,14 @@ Profile requires a separate confirmed contract」。GET/PUT 只支持已存在�
 
 真实用户会以为「app 坏了/网不好」然后再点一次。
 这是 #11 在用户那一侧的表现:每一次「开始规划」都必然走到这行红字。
+
+**复核(09-03)**:这条记录已经过期。`travel-agent-chat.tsx:1464` 起已按 errorCode 分支,
+`PLANNING_DATA_UNAVAILABLE`、`RATE_LIMITED`、`POLICY_DENIED`、`SEARCH_PREFERENCES_STALE`
+各有专门文案,且对重试无意义的 code 不再显示 Retry 按钮;
+`travel-agent-chat.test.tsx:829` 是这条修复的回归测试。
+**剩余**:`TOOL_CALL_MAX_TURNS` 没有专属文案,落进通用的 `planningFailed`;
+`planningDataUnavailable` 的文案专指「房价没能拿到」,与 G1 之后的语义不再匹配。
+两条都在 [规划器韧性与有界反思实施规范](planner-resilience-and-reflection-implementation.md) §3.5。
 
 ## #14 全屏模式随 expand 按钮一起删除 — 记录 — 09-03
 头部清理时,expand 是全屏的唯一入口。只删按钮会留下谁都到不了的
@@ -242,3 +253,67 @@ turn 的截止时间没有把慢 provider 算进去。
 来不及调任何 provider——说明是输入闸门拦的。
 推测:前一次确认已把待确认的搜索草稿消费掉,于是同一句话被当成一个
 关于酒店价格的裸提问而拒绝。需要确认。
+
+---
+# 第五轮：intended-vs-implemented 走查（09-03，读代码而非读屏幕）
+
+方法与前四轮不同:这一轮以 `docs/` 记录的意图为准绳,逐条到代码里找执行点。
+凡文档说了一件事、代码做了另一件事,且差异跨越了信任、成本、数据或状态边界的,记一条。
+落地方案见 [规划器韧性与有界反思实施规范](planner-resilience-and-reflection-implementation.md)。
+
+## G1 航班矩阵的「完成」定义和其余四个能力相反 — 根因 — 待实施
+`flight-research-matrix-service.ts:46` 用 `every(c => c.outcome === "LIVE")`,
+而 hotel(`:36`)、activities(`:49`)、accommodation(`:41`)、navigation(`:60`)
+都是 `every(c => c.outcome !== "MISSING")`。
+
+后果链条:任意一格航班 `UNAVAILABLE` → `beforeFinal` 抛 `FlightResearchIncompleteError`
+→ `PLANNING_DATA_UNAVAILABLE` → `agent-task-worker.ts:311` 判定**不可重试** → 整轮 FAILED,
+一版方案都不写。**这就是 #12 为什么会升级成 #13。**
+
+这是回归而不是设计,证据在同一个文件里:第 55 行的 `flightMatrixToGaps()`
+专门把 `UNAVAILABLE` 单元格翻成 `service_gaps`,注释写着「MISSING 单元格不在这里出现」。
+它在 `planning-service.ts:1257` 被调用,而那行在持久化事务里——只有 `beforeFinal`
+通过才到得了。**一个专为「航班不可用也要出方案」写的函数,被上游门禁变成了死代码。**
+
+决定:拆成两个门禁。研究完整性对齐成 `!== MISSING`;新增按目的地判定的商业依据门禁,
+零 LIVE 证据的目的地不产出 plan 而产出 research summary。#5 与 #11 一并按此结案。
+
+## G2 Skill 契约里没有 retry/fallback — 缺陷 — 待实施
+`docs/agent-architecture.md` §3 明写 Skill = `... + timeout / retry / fallback 规则`。
+实际 `agents/contracts.ts:185` 的 `Skill<I,O>` 只有 `timeoutMs`,
+`skill-registry.ts` 也只 race 一个 timeout。
+后果:韧性策略散落在每个 adapter 里,无法统一治理,也无法阻止有写副作用的 Skill 被重试。
+
+## G3 11 个 provider 只有 3 个有重试 — 缺口 — 待实施
+有 `maxRetries`:nuitee-hotel、serpapi-hotel、viator-mcp-activities。
+只有 timeout 没有重试:**amadeus-flight、serpapi-flight、flightapi-flight**、
+ors-place、ors-navigation、opentripmap×2、amadeus-transfer。
+
+三个航班 adapter 一个都没有重试,而航班恰好是 G1 里唯一「不可用即全轮失败」的能力。
+**最脆弱的能力挂在最严格的门禁上。**
+
+## G4 一次对话的 15 秒同时覆盖模型和 provider — 缺陷 — 待实施（#32 的机制）
+`conversation-task-handler.ts:558` 用单个 `setTimeout(travelConversationSkill.timeoutMs)`
+罩住「建上下文 + 模型 + 工具调用 + 模型收尾」,而 15000ms 正好等于酒店 skill 自己的
+`timeoutMs`。**一次慢 provider 必然吃光整个回合预算。**
+这就是 #32 记录的那个现象的机制:价格查到了、落库了,然后同一个时钟把收尾的模型调用掐了。
+
+## G5 retry 不延长 run 的 TTL — 缺陷 — 待实施
+`expires_at = now + queueTtlSeconds` 在 accept 时写死(`task-repository.ts:148`),
+重试只改 `next_attempt_at`,到点被 reaper 标 `EXPIRED`(`:1152`)。
+现在还没炸,是因为重试少;一旦加了 provider 重试或 repair 轮次,这个 5 分钟天花板会先炸。
+
+## G6 review 的 policy scope 比文档宽 — 潜在越权 — 待实施
+文档说 PlanReviewSkill「仅软性审查;无 DB/tool write 权限」,
+而 `policy-gate.ts:40` 给 `review` 配了 `plan:write:propose`。
+目前没有 review skill 注册,所以是休眠的——**但这正是新增 reflection 时会踩到的那一格。**
+趁它还没有实现,零成本改掉。
+
+## G7 web 有客户端方法,API 没有对应路由 — 死代码 — 待清理
+`http-travel-api.ts:678` 的 `getResearchResult` 请求 `/trips/:tripId/research-results`,
+连同 `researchResultSchema`、`useResearchResult` hook 一整套都在,
+而 `apps/api/src/routes/` 下从来没有这个路由。
+按 run 读取历史 research result 这件事从未实现过。
+**注意区分**:`GET /trips/:tripId/research/latest` 是存在的(`routes/research.ts:214`),
+member-scoped、mode-agnostic、返回可空的 `resultPlanId`——
+plan-less 的 research summary 有现成的读接口,不需要新端点。

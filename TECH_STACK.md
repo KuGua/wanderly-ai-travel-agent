@@ -179,7 +179,7 @@ AWS AgentCore 的确支持多种框架，但这只能说明它是将来的可选
 
 | 风险 | 最小控制 |
 |---|---|
-| live API 不稳定 | 受控 `UNAVAILABLE` 状态、恢复操作和失败遥测；不创建 plan 或替代报价。 |
+| live API 不稳定 | 受控 `UNAVAILABLE` 状态、恢复操作和失败遥测；不创建替代报价。研究完整性与商业依据分为两个门禁：已尝试但不可用的能力降级为 `service_gap` 并以 `COMPLETED_WITH_GAPS` 完成，零商业证据的目的地只产出不带 authority 的 research summary，二者都不创建 plan 之外的事实。详见 [规划器韧性与有界反思实施规范](docs/planner-resilience-and-reflection-implementation.md)。 |
 | 三人多约束导致 demo 拖沓 | 预置 Profile、两出发地、最多三个候选、一个确定性变化事件；不允许自由目的地搜索。 |
 | 未授权信息泄露 | 服务器创建最小授权 snapshot；共享页面只读取其字段；测试跨用户读取与授权撤回。 |
 | LLM 或 AWS 服务变更 | ModelGateway；API/部署和 OpenAI-compatible provider 分离。 |
