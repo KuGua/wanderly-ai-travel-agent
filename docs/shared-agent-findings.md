@@ -156,9 +156,43 @@ Gemini 的配额错误里写着 "limit: 25000",其中含 "500" → 被判成 UPS
 改为优先按 HTTP 状态码分类,新增 `RATE_LIMITED` 且不重试(配额不会因为重试而回来)。
 前端也不再对它显示「请重试」。
 
-## #22 受控机场清单只有五个 — 数据缺口 — 未修
+## #22 受控机场清单只有五个 — 数据缺口 — 已修
 SFO / PVG / NRT / SIN / LIS。除东京外我测过的每个目的地都没有机场,
 所以航班能力对绝大多数行程根本不可用。这是 demo 夹具,不是真实参考数据。
+
+**修的时候发现这其实是两个缺陷叠在一起。** 查真实 snapshot:
+
+```sql
+select distinct jsonb_array_elements_text(destination_candidates::jsonb) from constraint_snapshots;
+-- 福冈 / Osaka / 扬州 / Tokyo / 京都 / Hiroshima / 大阪 / 东京 / Kyoto
+```
+
+城市名**中英文混杂**,而 `airportIdsForCities` 只做英文精确匹配。
+也就是说连东京都只在 brief 恰好存成 "Tokyo" 时才有机场,存成「东京」就没有。
+扩表如果不修匹配,新增的机场对中文行程一样不可见。
+
+**修法**:
+1. 清单从 5 条扩到 **183 条 / 55 个国家**(亚洲、欧洲、北美、南美、
+   大洋洲、中东、非洲的主要国际机场),一城多场按国际流量排序
+   (Tokyo → NRT, HND;London → LHR, LGW, STN;上海 → PVG, SHA)。
+2. 每个机场带 `cityAliases`,匹配走 `cityKey()`:大小写、空格、标点、
+   变音符号归一,CJK 原样通过。所以「东京」和 "Tokyo"、"São Paulo" 和
+   "sao paulo"、"Xi'an" 和 "xian" 都能对上。
+3. 同样的毛病在 `validateSnapshotBoundFlightSearch` 里还有一处——
+   snapshot 存「东京」而模型传 `NRT` 时对不上,改用新增的
+   `airportServesCity()`。
+
+工具描述是从 `airportIdsForCities` 派生的,所以模型看到的可选机场自动跟着变。
+
+**保持不变的设计**:没有机场的城市仍然返回空,由调用方报成航班缺口,
+**不猜邻近代码**。所以 Kyoto、扬州 依旧没有机场——京都实际走关西 KIX,
+但那是「某机场服务另一座城市」,不是别名,混进来会让
+`resolveAirportReference("KIX").city` 和 brief 里的城市对不上。
+要不要建这层「服务关系」是产品决定,留给 owner。
+
+回归测试 `apps/api/tests/airport-reference.test.ts` 10 条:id 唯一、
+IATA/国家码格式、中文城市解析与英文一致、一城多场顺序、去重、
+大小写/标点/变音符号、无机场城市返回空、非受控代码被拒、覆盖量下限。
 
 ## #23 免费额度是「每分钟」限制，不是当日用尽 — 部分可修 — 已缓解
 先看到 `input_token_count limit 25000`,后看到 `requests limit 15`——
