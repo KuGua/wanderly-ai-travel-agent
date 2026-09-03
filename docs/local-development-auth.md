@@ -123,9 +123,10 @@ providers for the same capability: selection is intentionally deterministic.
 All listed values are server-only; restart the API and Worker after changing
 them. Until a required credential is entered, the relevant tool reports
 `UNAVAILABLE/NOT_CONFIGURED` and never uses demo or fixture data.
-Set `MODEL_GATEWAY_TOOL_CALLING_ENABLED=true` and
-`PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true` only after configuring the
-model gateway; both are intentionally disabled in the current local setup.
+`MODEL_GATEWAY_TOOL_CALLING_ENABLED=true` and
+`PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true` enable model tool calls and
+personal-conversation tool dispatch respectively. Both require a configured
+model gateway and are enabled in the current local setup.
 
 `AUTH_MODE=local-dev` does not disable authorization and does not let the
 browser fabricate a token or user ID. The backend supplies one fixed,
