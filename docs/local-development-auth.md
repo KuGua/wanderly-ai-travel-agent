@@ -96,10 +96,11 @@ never through Git, chat screenshots or committed documentation.
 
 ## Live tool credentials
 
-The checked-in `apps/api/.env.example` keeps every external credential blank.
-The local `.env` selects one provider per mutually exclusive capability and
-enables the provider capabilities, but an adapter remains fail-closed until its required
-credential is present. The current local baseline selects SerpApi for flights,
+The checked-in `apps/api/.env.example` and the Git-ignored local `.env`
+declare every external credential with an empty value. The local configuration
+selects one provider per mutually exclusive capability and enables the provider
+capabilities, but an adapter remains fail-closed until its required credential
+is present. The current local baseline selects SerpApi for flights,
 Nuitee for priced hotels, OpenRouteService for place/directions,
 OpenTripMap for nearby places and non-price accommodation discovery, and Viator
 MCP for activities.
