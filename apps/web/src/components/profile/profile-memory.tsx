@@ -96,11 +96,8 @@ export function ProfileMemory() {
         </ul>
       ) : null}
 
-      {/* The dashed outline was doing the work of saying "this area is empty".
-          A recessed ground says the same thing without putting a second border
-          weight next to the card above it, and takes less height. */}
       {activeFacts.length === 0 ? (
-        <div className="bg-[var(--w-sunken)] p-[11px] text-center wanderly-r-lg">
+        <div className="border-2 border-dashed border-[var(--w-ink)] bg-card p-[9px] text-center wanderly-r-lg">
           <p className="font-bold">{t("emptyTitle")}</p>
           <p className="mt-1 text-sm text-[var(--w-muted)]">{t("emptyBody")}</p>
         </div>
