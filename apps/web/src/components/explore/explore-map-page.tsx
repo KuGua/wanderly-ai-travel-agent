@@ -768,8 +768,13 @@ export function ExploreMapPage() {
     if (!chatOpen) {
       if (chatCameraActiveRef.current) {
         if (preserveChatCameraOnCloseRef.current) {
+          // Clicking the same pin closes the chat but hands the globe straight
+          // to the pin card, so the left-shifted camera is kept rather than
+          // snapped back. But the padding is still applied — leave
+          // chatCameraActiveRef true so that dismissing the card (deleting the
+          // pin, i.e. selected → null) still runs the reset below. Clearing it
+          // here stranded the globe shifted left with nothing left to undo it.
           preserveChatCameraOnCloseRef.current = false;
-          chatCameraActiveRef.current = false;
           return;
         }
         map.easeTo({ padding: { top: 0, right: 0, bottom: 0, left: 0 }, duration: reducedMotion() ? 0 : 450 });

@@ -64,6 +64,8 @@
   --w-white: #fff;
   --w-ink: #1d1d1b;
   --w-muted: #414141;
+  /* Shared by robo's outline/limbs and the traveller's globe-chat bubble. */
+  --w-bot-outline: #8fa0b7;
   --w-page: color-mix(in srgb, var(--w-fog), var(--w-white) 74%);
   --w-line: color-mix(in srgb, var(--w-fog), var(--w-white) 38%);
   --w-mist: color-mix(in srgb, var(--w-fog), var(--w-white) 62%);
@@ -123,6 +125,17 @@
 
 ::selection {
   background: color-mix(in srgb, var(--w-highlight), transparent 45%);
+}
+
+/* In the globe chat, selecting a message underlines it in the traveller's own
+   bubble colour rather than filling it with the fluorescent highlight — it
+   reads as "marked to remember" without the block of colour. */
+.wanderly-cosmos-chat ::selection {
+  background: transparent;
+  text-decoration: underline;
+  text-decoration-color: var(--w-bot-outline);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
 }
 
 .dark {
@@ -261,6 +274,32 @@
   transform: none;
   box-shadow: 2px 2px 0 var(--w-ink);
   opacity: 0.55;
+}
+
+/* Globe-chat primary actions echo robo's blue-grey outline. */
+.wanderly-bot-action {
+  background-color: var(--w-bot-outline);
+  color: var(--w-ink);
+}
+
+.wanderly-bot-action:hover {
+  background-color: color-mix(in srgb, var(--w-bot-outline), var(--w-fog) 18%);
+  color: var(--w-ink);
+}
+
+/* Highlight-memory affordance adopts the pinned-place control on hover. */
+/* A deeper teal than the raw highlight: on the light translucent panel the
+   plain --w-highlight read minty, lighter than the same token on the dark nav.
+   Mixing toward ink lands it at the nav button's apparent depth. */
+.wanderly-remember-highlight {
+  background: color-mix(in srgb, var(--w-highlight), var(--w-ink) 20%);
+  border-color: var(--w-ink);
+}
+
+.wanderly-remember-highlight:hover {
+  border-color: var(--w-space-line);
+  background: color-mix(in srgb, var(--w-space-mid), transparent 4%);
+  color: var(--w-fog);
 }
 
 /* Underline accent used for eyebrows and section labels. */
@@ -453,7 +492,7 @@
   --bot-eye-x: 0px;
   --bot-eye-y: 0px;
   /* Outline and limbs share one blue-grey; the eyes are the only warm accent. */
-  --bot-line: #8fa0b7;
+  --bot-line: var(--w-bot-outline);
   --bot-eye: #ffbf00;
   position: fixed;
   z-index: 35;
