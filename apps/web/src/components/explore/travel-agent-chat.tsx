@@ -1102,7 +1102,11 @@ export function TravelAgentChat({
                to list are in the reply directly above it. */
             <section
               aria-label={t("briefProposalTitle")}
-              className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} border-y ${docked ? "border-[var(--w-line)]" : "border-white/15"}`}
+              className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${
+                docked
+                  ? "border-y border-[var(--w-line)] bg-[var(--w-mist)]/70 wanderly-shadow-xs"
+                  : "wanderly-cosmos-choices"
+              }`}
             >
               {[
                 {
@@ -1125,9 +1129,11 @@ export function TravelAgentChat({
                   type="button"
                   onClick={option.onClick}
                   disabled={isConfirmingBrief}
-                  className={`block w-full px-1 py-2.5 text-left text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                    index > 0 ? `border-t ${docked ? "border-[var(--w-line)]" : "border-white/15"}` : ""
-                  } ${docked ? "text-[var(--w-ink)] hover:bg-[var(--w-mist)]" : "text-[var(--w-fog)] hover:bg-white/10"}`}
+                  className={`wanderly-cosmos-choice block w-full px-3 py-2.5 text-left text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    docked
+                      ? `text-[var(--w-ink)] hover:bg-[var(--w-white)]/60 ${index > 0 ? "border-t border-[var(--w-line)]" : ""}`
+                      : "text-[var(--w-fog)]"
+                  }`}
                 >
                   {isConfirmingBrief && option.busy ? option.busy : option.label}
                 </button>
