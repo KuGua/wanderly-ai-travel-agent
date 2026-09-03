@@ -167,22 +167,16 @@
     "fields": {
       "departureCity": "出发城市",
       "nationality": "国籍",
-      "nationalityHint": "必填——酒店报价按国籍区分，缺了它这趟行程无法规划。私密，本切片内不共享。",
+      "nationalityPlaceholder": "必填",
       "dateOfBirth": "出生日期",
-      "dateOfBirthHint": "YYYY-MM-DD",
       "dateOfBirthPlaceholder": "YYYY-MM-DD",
-      "availableDepartureDates": "可选出发日期",
-      "availableDepartureDatesHint": "以逗号分隔的 YYYY-MM-DD 日期",
-      "availableDepartureDatesPlaceholder": "2026-10-03, 2026-10-10",
       "interests": "兴趣",
-      "interestsHint": "以逗号分隔",
       "interestsPlaceholder": "art, museums, local food",
       "accommodationStyle": "住宿风格",
       "budgetMaxUsd": "最高预算（美元）",
       "mobilityNotes": "出行便利说明",
       "mobilityNotesHint": "请勿填写证件号码。",
-      "noRedEyeLabel": "避免红眼航班",
-      "noRedEyeHint": "将过夜出发视为稳定偏好。"
+      "noRedEyeLabel": "避免红眼航班"
     },
     "accommodation": {
       "notSet": "未设置",
@@ -190,7 +184,6 @@
       "budget": "经济型",
       "luxury": "豪华型"
     },
-    "stickyNote": "在接口支持清空之前，已编辑的空白字段会被保留。",
     "save": "保存资料",
     "saving": "保存中…",
     "savedToast": "资料已保存。您的私人快照已更新。",
@@ -201,7 +194,6 @@
     "validation": {
       "max64": "请使用不超过 64 个字符",
       "datePattern": "请使用 YYYY-MM-DD 格式",
-      "datesList": "请使用以逗号分隔的 YYYY-MM-DD 日期",
       "wholeNumber": "请输入整数",
       "required": "必填"
     },
@@ -296,10 +288,14 @@
       "planningNotAllowed": "Wanderly 现在不被允许规划这趟行程——缺少它需要的某项授权或权限。",
       "planningPreferencesChanged": "规划过程中你的搜索偏好变了，所以它停了下来。重新点开始规划即可按新的偏好来。",
       "planningProviderUnavailable": "规划时没能连上某个供应商。你的行程没有任何改动。",
-      "planningCompletedWithGaps": "Wanderly 给出了一个方案，但有以下缺口：{gaps}。",
-      "planningCompletedWithGaps.detail": "部分供应商未能核验——完整列表见行程工作区",
-      "planningResearchSummaryOnly": "Wanderly 这一轮没法写出方案（{reason}），但已保留它查到的内容。详见行程工作区。",
-      "planningResearchSummaryOnly.reasonFlight": "推荐目的地没有可用的航班证据",
+      "planningCompletedWithGaps": {
+        "message": "Wanderly 给出了一个方案，但有以下缺口：{gaps}。",
+        "detail": "部分供应商未能核验——完整列表见行程工作区"
+      },
+      "planningResearchSummaryOnly": {
+        "message": "Wanderly 这一轮没法写出方案（{reason}），但已保留它查到的内容。详见行程工作区。",
+        "reasonFlight": "推荐目的地没有可用的航班证据"
+      },
       "planningToolBudgetExhausted": "规划过程中调用供应商的时间用完了。方案没有改动，再试一次让下一轮完成。",
       "conversationEvidenceWithoutReply": "Wanderly 从 {providerName} 拿到了 {capabilityCount, plural, other {# 条}}结果（采集于 {capturedAtTime}），但没能把回复写完。",
       "preparingPrivateChat": "正在准备你的私人对话…",

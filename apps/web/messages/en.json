@@ -167,22 +167,16 @@
     "fields": {
       "departureCity": "Departure city",
       "nationality": "Nationality",
-      "nationalityHint": "Required — hotel prices are quoted per nationality, and a trip cannot be planned without it. Private; not shared in this slice.",
+      "nationalityPlaceholder": "Required",
       "dateOfBirth": "Date of birth",
-      "dateOfBirthHint": "YYYY-MM-DD",
       "dateOfBirthPlaceholder": "YYYY-MM-DD",
-      "availableDepartureDates": "Available departure dates",
-      "availableDepartureDatesHint": "Comma-separated YYYY-MM-DD dates",
-      "availableDepartureDatesPlaceholder": "2026-10-03, 2026-10-10",
       "interests": "Interests",
-      "interestsHint": "Comma-separated",
       "interestsPlaceholder": "art, museums, local food",
       "accommodationStyle": "Accommodation style",
       "budgetMaxUsd": "Maximum budget (USD)",
       "mobilityNotes": "Mobility notes",
       "mobilityNotesHint": "Do not include document numbers.",
-      "noRedEyeLabel": "Avoid red-eye flights",
-      "noRedEyeHint": "Treat overnight departures as a stable preference."
+      "noRedEyeLabel": "Avoid red-eye flights"
     },
     "accommodation": {
       "notSet": "Not set",
@@ -190,7 +184,6 @@
       "budget": "Budget",
       "luxury": "Luxury"
     },
-    "stickyNote": "Blank edited fields are preserved until the API supports clearing them.",
     "save": "Save Profile",
     "saving": "Saving…",
     "savedToast": "Profile saved. Your private snapshot is up to date.",
@@ -201,7 +194,6 @@
     "validation": {
       "max64": "Use 64 characters or fewer",
       "datePattern": "Use YYYY-MM-DD",
-      "datesList": "Use YYYY-MM-DD dates separated by commas",
       "wholeNumber": "Enter a whole number",
       "required": "Required"
     },
@@ -296,10 +288,14 @@
       "planningNotAllowed": "Wanderly is not allowed to plan this trip right now — a permission or authorization it needs is missing.",
       "planningPreferencesChanged": "Your search preferences changed while Wanderly was planning, so it stopped. Start planning again to use the new ones.",
       "planningProviderUnavailable": "Wanderly could not reach a travel provider while planning. Nothing about your trip was changed.",
-      "planningCompletedWithGaps": "Wanderly finished a plan with these gaps: {gaps}.",
-      "planningCompletedWithGaps.detail": "some travel providers could not be checked — see the trip workspace for the full list",
-      "planningResearchSummaryOnly": "Wanderly could not write a plan this turn ({reason}), but kept what it found. See the trip workspace for details.",
-      "planningResearchSummaryOnly.reasonFlight": "no flight evidence was available for the recommended destination",
+      "planningCompletedWithGaps": {
+        "message": "Wanderly finished a plan with these gaps: {gaps}.",
+        "detail": "some travel providers could not be checked — see the trip workspace for the full list"
+      },
+      "planningResearchSummaryOnly": {
+        "message": "Wanderly could not write a plan this turn ({reason}), but kept what it found. See the trip workspace for details.",
+        "reasonFlight": "no flight evidence was available for the recommended destination"
+      },
       "planningToolBudgetExhausted": "Wanderly ran out of time calling travel providers while planning. The plan was not changed; try again to let the next turn finish.",
       "conversationEvidenceWithoutReply": "Wanderly gathered {capabilityCount, plural, one {# result} other {# results}} from {providerName} (captured {capturedAtTime}) but could not finish the reply.",
       "preparingPrivateChat": "Preparing your private chat…",

@@ -174,8 +174,8 @@ review: ["snapshot:read"],   // 移除 "plan:write:propose"
 | 键 | 动作 | 说明 |
 |---|---|---|
 | `planningDataUnavailable` | 改写 | 现文案专指「房价没能拿到」；Gate A 失败后它的语义是「研究没有覆盖到某条航线」 |
-| `planningCompletedWithGaps` | 新增 | `COMPLETED_WITH_GAPS` 且有 plan 时的横幅，按 `service_gaps` 的 capability 列出缺口 |
-| `planningResearchSummaryOnly` | 新增 | `result_plan_id = NULL` 时的横幅，说明查到了什么、为什么没有方案 |
+| `planningCompletedWithGaps.message` / `.detail` | 新增 | `COMPLETED_WITH_GAPS` 且有 plan 时的横幅，按 `service_gaps` 的 capability 列出缺口；必须使用嵌套对象，不能把 `.` 写进 JSON key |
+| `planningResearchSummaryOnly.message` / `.reasonFlight` | 新增 | `result_plan_id = NULL` 时的横幅，说明查到了什么、为什么没有方案；必须使用嵌套对象，不能把 `.` 写进 JSON key |
 | `planningToolBudgetExhausted` | 新增 | `TOOL_CALL_MAX_TURNS` 当前落入通用 `planningFailed` |
 
 `en.json` 与 `zh.json` 必须同批提交（`docs/i18n.md` 的 parity 要求）。

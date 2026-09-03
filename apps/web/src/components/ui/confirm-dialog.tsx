@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import type { ResearchCapability } from "@/lib/trips/personal-research-readiness-copy";
@@ -35,16 +35,16 @@ export interface ConfirmDialogProps {
 }
 
 export function ConfirmDialog(props: ConfirmDialogProps): ReactNode | null {
-  const [acknowledged, setAcknowledged] = useState(false);
-
-  // Reset acknowledgement when the dialog closes so a fresh open requires
-  // a fresh tick. (We deliberately do NOT persist across opens — the
-  // sessionStorage layer above the dialog decides whether to open at all.)
-  useEffect(() => {
-    if (!props.open) setAcknowledged(false);
-  }, [props.open]);
-
   if (!props.open) return null;
+
+  // Mount the stateful body only while open. Closing therefore unmounts the
+  // acknowledgement state, so reopening always starts unchecked without an
+  // effect that synchronously schedules a second render.
+  return <OpenConfirmDialog {...props} />;
+}
+
+function OpenConfirmDialog(props: ConfirmDialogProps): ReactNode {
+  const [acknowledged, setAcknowledged] = useState(false);
 
   function handleConfirm(): void {
     recordUiDiagnostic(props.diagnosticTag, {
