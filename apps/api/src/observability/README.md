@@ -65,6 +65,7 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `conversation_handoff_candidate_batch_total` | counter | result | `["extracted","catalog_invalid","extraction_failed","empty"]` |
 | `conversation_handoff_confirm_total` | counter | operation, result | operation ∈ `["plan","replan"]`; result ∈ `["success","rejected","stale","conflict"]` |
 | `conversation_memory_context_facts` | counter | — | — |
+| `conversation_memory_notes_dropped_total` | counter | — | — |
 | `conversation_memory_context_total` | counter | result | `["success","empty"]` |
 | `draft_command_rejected_total` | counter | operation | `["invitation","consent","planning","confirmation","booking","change_event","research"]` |
 | `exploration_start_total` | counter | result | `["created","cached","conflict","error"]` |
@@ -87,7 +88,7 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `location_introduction_requests_total` | counter | outcome | `["hit","miss","generating","unsupported","rate_limited","unavailable"]` |
 | `location_reference_requests_total` | counter | outcome | `["reference","no_reference","unavailable","rate_limited"]` |
 | `memory_fact_mutations_total` | counter | operation, source | operation ∈ `["replace","delete"]`; source ∈ `["profile_form","proposal_confirmation"]` |
-| `memory_highlight_outcomes_total` | counter | outcome | `["field","note","too_long","list_full","empty"]` |
+| `memory_highlight_outcomes_total` | counter | outcome | `["field","note","too_long","list_full","sensitive_field","empty"]` |
 | `memory_observation_skipped_total` | counter | reason | `["not_in_catalog","value_not_an_object","value_shape_mismatch"]` |
 | `memory_projection_build_total` | counter | result | `["built","empty","failed"]` |
 | `memory_proposal_resolutions_total` | counter | outcome | `["confirmed","dismissed","expired","already_resolved","not_found"]` |
