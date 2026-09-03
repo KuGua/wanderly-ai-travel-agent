@@ -220,7 +220,7 @@ export function GeographyLabelOverlay({
               strokeOpacity="0.94"
               strokeWidth={label.kind === "continent" ? 4 : 3}
               strokeLinejoin="round"
-              style={{ fontSize: "inherit", fontWeight: label.kind === "city" || label.kind === "region" ? 700 : 800, letterSpacing: label.kind === "continent" ? "0.08em" : undefined, paintOrder: "stroke" }}
+              style={{ fontFamily: "var(--font-sans)", fontSize: "inherit", fontWeight: label.kind === "city" || label.kind === "region" ? 700 : 800, letterSpacing: label.kind === "continent" ? "0.08em" : undefined, paintOrder: "stroke" }}
             >
               {label.name}
             </text>

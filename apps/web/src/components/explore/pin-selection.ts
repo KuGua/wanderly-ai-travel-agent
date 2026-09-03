@@ -1,7 +1,11 @@
 import type { LocationReferenceResponse } from "@/lib/api/contracts";
 
 export const REGION_SELECTION_MIN_ZOOM = 4.5;
-export const CITY_SELECTION_MIN_ZOOM = 6.5;
+// Cities appear — and a click resolves to a city rather than its region or
+// country — from this zoom up. It was 6.5, which meant a traveller had to zoom
+// in hard before any city showed or could be pinned; 5.5 gives cities their
+// own full zoom band above regions.
+export const CITY_SELECTION_MIN_ZOOM = 5.5;
 
 export type PinGranularity = "country" | "region" | "city";
 
