@@ -12,6 +12,7 @@ import { ConversationHandoffCard } from "@/components/trips/personal-research/co
 
 import type {
   AgentStreamEvent,
+  ConstraintHandoffConfirmResponse,
   ConversationFlightOffer,
   ConversationHotelOffer,
   ConversationMessage,
@@ -122,6 +123,18 @@ type TravelAgentChatProps = {
   onConversationText?: (text: string) => void;
   tripId?: string | null;
   titleLocale?: "en" | "zh";
+  /**
+   * Phase 2 — fired exactly when the member confirms a handoff batch and
+   * the server returns a fresh PLAN/REPLAN run. The workspace uses this
+   * to auto-switch the *triggering* member to the shared view once the
+   * run reaches a terminal status. Other members discover the same run
+   * via `useLatestPlanningRun`'s 60s polling — they are NOT auto-switched
+   * (§1.7).
+   *
+   * The chat calls this with `{ runId, operation }` only; the workspace
+   * owns the terminal-status decision and the URL navigation.
+   */
+  onSharedRunStarted?: (input: { runId: string; operation: "PLAN" | "REPLAN" }) => void;
 };
 
 /**
@@ -156,6 +169,7 @@ export function TravelAgentChat({
   onConversationText,
   tripId = null,
   titleLocale = "en",
+  onSharedRunStarted,
 }: TravelAgentChatProps) {
   const t = useTranslations("explore.chat");
   const docked = variant === "docked";
@@ -1088,7 +1102,17 @@ export function TravelAgentChat({
               <HandoffCardHost
                 tripId={tripId}
                 batchId={handoffBatchId}
-                onConfirmed={() => { setHandoffBatchId(null); setHandoffDismissed(false); }}
+                onConfirmed={(result) => {
+                  setHandoffBatchId(null);
+                  setHandoffDismissed(false);
+                  // Surface the new run to the workspace so it can decide
+                  // whether to auto-switch the triggering user to the shared
+                  // surface (only when the run is already terminal, §1.7).
+                  onSharedRunStarted?.({
+                    runId: result.runId,
+                    operation: result.operation,
+                  });
+                }}
                 onDismissed={() => setHandoffDismissed(true)}
               />
             </div>
@@ -1461,7 +1485,7 @@ function HandoffCardHost({
 }: {
   tripId: string;
   batchId: string;
-  onConfirmed: () => void;
+  onConfirmed: (result: ConstraintHandoffConfirmResponse) => void;
   onDismissed: () => void;
 }) {
   // Same as conversation-handoff-card: the `handoff*` strings are under

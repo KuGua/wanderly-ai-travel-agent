@@ -14,6 +14,7 @@ import { Link, useRouter } from "@/i18n/navigation";
 import {
   useCreateTripThread,
   useGetOrCreateDefaultTripThread,
+  useLatestPlanningRun,
   useResearchResult,
   useTrip,
   useTripThreads,
@@ -162,6 +163,44 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     params.set(SHARED_VIEW_QUERY, SHARED_VIEW_VALUE);
     router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
   }, [router, searchParams, tripId]);
+
+  // Phase 2 — auto-switch the triggering user to the shared view when
+  // the run they just kicked off reaches a terminal status. The decision
+  // belongs to the workspace (URL + state), not the chat card; the chat
+  // only announces that a run was queued.
+  //
+  // §1.7: only the triggering user is auto-switched; other members
+  // discover the same run via the rail's 60s polling / unread badge.
+  // §1.7 cont.: the switch is gated on the run reaching a terminal
+  // status — switching mid-run would pre-empt the chat input draft.
+  const latestRun = useLatestPlanningRun(tripId, { enabled: true });
+  const triggerRunIdRef = useRef<string | null>(null);
+  const handleSharedRunStarted = useCallback((input: { runId: string; operation: "PLAN" | "REPLAN" }) => {
+    triggerRunIdRef.current = input.runId;
+  }, []);
+  useEffect(() => {
+    const triggerId = triggerRunIdRef.current;
+    if (!triggerId) return;
+    if (querySharedView) {
+      // Already on the shared view; clear the latch so a later manual
+      // exit doesn't accidentally re-trigger the auto-switch.
+      triggerRunIdRef.current = null;
+      return;
+    }
+    const observed = latestRun.data?.run;
+    if (!observed || observed.runId !== triggerId) return;
+    const terminal = observed.status === "COMPLETED"
+      || observed.status === "COMPLETED_WITH_GAPS"
+      || observed.status === "FAILED"
+      || observed.status === "CANCELLED"
+      || observed.status === "STALE";
+    if (!terminal) return;
+    triggerRunIdRef.current = null;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete(DEFAULT_THREAD_QUERY);
+    params.set(SHARED_VIEW_QUERY, SHARED_VIEW_VALUE);
+    router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
+  }, [latestRun.data, querySharedView, router, searchParams, tripId]);
 
   if (membershipRevoked) {
     return (
@@ -397,6 +436,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             titleLocale={locale === "zh" ? "zh" : "en"}
             tripId={tripId}
             onThreadInvalidated={() => threadsQuery.refetch()}
+            onSharedRunStarted={handleSharedRunStarted}
           />
         )}
       </section>

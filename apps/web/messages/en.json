@@ -554,6 +554,16 @@
         "body": "When a member confirms shared trip constraints in their private chat, the team-wide plan will appear here for everyone to review and vote on.",
         "backToThread": "Back to my conversation"
       },
+      "status": {
+        "queued": "Queued — waiting for the planner",
+        "researching": "Researching options…",
+        "persisting": "Saving the plan…",
+        "retrying": "Retrying after a transient failure…",
+        "completed": "Plan is ready",
+        "failed": "This run did not produce a plan",
+        "cancelled": "This run was cancelled",
+        "lastUpdated": "Last updated {value}"
+      },
       "error": {
         "forbidden": "You no longer have access to this trip's shared plan.",
         "generic": "We could not load the shared plan."
