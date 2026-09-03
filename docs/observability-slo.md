@@ -30,11 +30,36 @@ and the latency surfaces documented in
 | `sli.api.latency` | HTTP request p95 latency | `http.request.duration_ms` (Tempo histogram derived from `http.*` spans) | Grafana Cloud |
 | `sli.api.errors` | Fraction of HTTP responses with status ≥ 500 | `http.response.status_class=5xx / total` | Tempo query |
 | `sli.api.success` | Fraction of HTTP responses with status < 500 | `1 - sli.api.errors` | Tempo query |
-| `sli.worker.success` | `agent_task_outcomes_total{outcome="completed"} / sum by(operation)` | `apps/api/src/observability/metrics.ts:218-225` | Prometheus query on `/metrics` |
-| `sli.worker.recovery` | `agent_task_recoveries_total / sum` bounded to 5% | `apps/api/src/observability/metrics.ts:222-225` | Prometheus query |
-| `sli.llm.errors` | `provider_fallback_total / (provider_fallback_total + llm_request_latency_ms_count)` | `apps/api/src/observability/metrics.ts:194-209` | Prometheus query |
-| `sli.plan.validation` | `plan_validation_failures_total / plan generated count` ≤ 1% | `apps/api/src/observability/metrics.ts:188-193` | Prometheus query |
-| `sli.booking.gate.denied` | `booking_gate_denials_total` alerted on rate > 5/min | `apps/api/src/observability/metrics.ts:202-205` | Prometheus query |
+| `sli.worker.success` | `agent_task_outcomes_total{outcome="completed"} / sum by(operation)` | `agent_task_outcomes_total` | Prometheus query on `/metrics` |
+| `sli.worker.recovery` | `agent_task_recoveries_total / sum` bounded to 5% | `agent_task_recoveries_total` | Prometheus query |
+| `sli.llm.errors` | `llm_request_errors_total / (llm_request_errors_total + llm_request_latency_ms_count)` | `llm_request_errors_total`, `llm_request_latency_ms` | Prometheus query |
+| `sli.plan.validation` | `plan_validation_failures_total / plan generated count` ≤ 1% | `plan_validation_failures_total` | Prometheus query |
+| `sli.booking.gate.denied` | `booking_gate_denials_total` alerted on rate > 5/min | `booking_gate_denials_total` | Prometheus query |
+
+Series are named, not line-referenced, because the names are the contract the
+dashboards and alert rules bind to. `MetricsRegistry.describe()` is the
+registry of record and `npm run docs:verify` fails when a name used here is
+not registered — see
+[`apps/api/src/observability/README.md`](../apps/api/src/observability/README.md#series).
+
+### Known collection gaps
+
+These SLIs are defined but **not yet computable in production**. They are
+listed so a reader does not mistake a permanently empty panel for a healthy
+service:
+
+- `sli.worker.success` and `sli.worker.recovery` read series that only the
+  Worker process increments, and the Worker
+  (`apps/api/src/workers/worker-main.ts`) runs no HTTP listener — nothing can
+  scrape its registry. The `/metrics` endpoint exists only on the API process.
+- Every Prometheus-sourced SLI here depends on something scraping or exporting
+  `/metrics`. The service exports **traces** over OTLP but has no metrics
+  exporter and no scrape target, so the in-process registry is discarded on
+  restart and never reaches Grafana Cloud.
+- `sli.api.latency`, `sli.api.errors` and `sli.api.success` are derived from
+  `http.*` spans, which production samples at 5% (see the sampling caveat
+  below). There is no `http_request_duration_ms` / `http_requests_total`
+  counter pair, so no unsampled source exists for the two API SLOs.
 
 ## SLO targets (30-day rolling windows)
 
@@ -70,7 +95,7 @@ the dev experience; the production dashboards live in Grafana Cloud):
    recovered/expired split; co-located with the
    `agent_task_duration_ms` histogram.
 3. **LLM gateway** — `llm_request_latency_ms` by provider and outcome,
-   plus `provider_fallback_total` by error_code.
+   plus `llm_request_errors_total` by `error_category` and `retryable`.
 
 ## Alert rules
 
@@ -80,7 +105,7 @@ the dev experience; the production dashboards live in Grafana Cloud):
 | API error rate spike | `sum(rate(http.response.status_class="5xx", 5m)) > 1` | critical | Slack + PagerDuty |
 | Worker task success collapsed | `sli.worker.success < 90% over 30m` | critical | Slack + PagerDuty |
 | Plan validation regression | `sli.plan.validation > 5% for 30 min` | critical | Slack |
-| Booking callback HMAC flood | `rate(callback_verifications_total{result="bad_signature", 1m) > 10` | critical | Slack + PagerDuty |
+| Booking callback HMAC flood | `rate(callback_verifications_total{callbackResult="bad_signature"}[1m]) > 10` | critical | Slack + PagerDuty |
 
 The rules live in Grafana Cloud "Alerting" — they reference the Prometheus
 metric names so the same rule survives a Grafana Cloud tier upgrade.
@@ -90,12 +115,12 @@ metric names so the same rule survives a Grafana Cloud tier upgrade.
 SLO dashboards do **not** include:
 
 - `userId`, `tripId`, `planId`, `bookingId`, `conversationId`,
-  `threadId` — high-cardinality labels forbidden by
-  `apps/api/src/observability/metrics.ts:30-37`;
+  `threadId` — high-cardinality labels rejected by `FORBIDDEN_LABEL_KEYS`
+  in `apps/api/src/observability/metrics.ts`;
 - PII paths — `passportNumber`, `nationality`, `dateOfBirth`,
-  `memberPreferences`, `prompt`, `question`, `body,
-  `message` — see
-  `apps/api/src/observability/tracing.ts:51-94`.
+  `memberPreferences`, `prompt`, `question`, `body`,
+  `message` — rejected by `FORBIDDEN_SPAN_ATTRIBUTE_KEYS` in
+  `apps/api/src/observability/tracing.ts`.
 
 When defining an alert, the rule expression uses
 low-cardinality bounded labels only. Free-form search across traces is

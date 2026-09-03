@@ -8,7 +8,7 @@ applies-to: [apps/api, apps/web, ECS Worker, App Runner, Grafana Cloud Free]
 
 This runbook covers the two ways traces, logs, and metrics land in the AI
 Travel Agent MVP. Both environments reuse the same OpenTelemetry SDK
-wiring installed by PR 1-4 (`apps/api/src/observability/tracing.ts:1-401`).
+wiring installed by PR 1-4 (`apps/api/src/observability/tracing.ts`).
 Only the destination differs.
 
 ## Architecture
@@ -147,7 +147,7 @@ The dashboard's "Counters" panel documents these snippets in markdown.
 
 ## Production (Grafana Cloud Free)
 
-The OTel SDK in `apps/api/src/observability/tracing.ts:1-401` reads four
+The OTel SDK in `apps/api/src/observability/tracing.ts` reads four
 environment variables to switch destinations:
 
 | Env var | Dev (compose) | Prod (Grafana Cloud Free) |
@@ -238,14 +238,17 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318 \
 ## Privacy invariants (local + prod)
 
 - **Span attributes** are gated by
-  `apps/api/src/observability/tracing.ts:51-94`. `safeSetAttribute` is
+  `FORBIDDEN_SPAN_ATTRIBUTE_KEYS` in `apps/api/src/observability/tracing.ts`.
+  `safeSetAttribute` is
   the only allowed write path; `tests/spans-forbidden-attributes.test.ts`
   statically asserts no production source file uses a forbidden key.
-- **Pino logs** redact 39 paths via
-  `apps/api/src/observability/telemetry.ts:6-46`; trace_id / span_id are
+- **Pino logs** redact 40 paths via
+  `LOGGER_REDACT_PATHS` in `apps/api/src/observability/telemetry.ts`;
+  trace_id / span_id are
   added AFTER the redact pass, so the bindings are never redacted.
 - **Metric labels** are bounded by
-  `apps/api/src/observability/metrics.ts:30-37`; high-cardinality
+  `FORBIDDEN_LABEL_KEYS` in `apps/api/src/observability/metrics.ts`;
+  high-cardinality
   identifiers are forbidden.
 - **Browser OTel** is deferred (per `apps/web/.env.example:22-25`); the
   trace starts on the API's inbound HTTP server span.

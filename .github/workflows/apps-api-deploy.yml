@@ -105,28 +105,62 @@ jobs:
           SERVICE_NAME="${{ inputs.worker_service_name }}"
           CLUSTER="${CLUSTER:-ai-travel-agent-cluster}"
           ENDPOINT="${{ inputs.grafana_cloud_otlp_endpoint }}"
+          TOKEN_SECRET="${{ inputs.grafana_cloud_api_token_secret }}"
 
-          # Render a task definition that wires the same four OTel env vars
-          # (and the bearer token from Secrets Manager). The current task
-          # definition is fetched as a starting point; we patch only the
-          # OTel-related fields so unrelated config stays untouched.
+          # Resolve the full Secrets Manager ARN, including the six-character
+          # suffix AWS appends. Doing it through the API also fails the deploy
+          # early when the secret is missing, instead of registering a task
+          # definition whose `valueFrom` can never resolve at container start.
+          TOKEN_SECRET_ARN="$(aws secretsmanager describe-secret \
+            --secret-id "${TOKEN_SECRET}" \
+            --region "${AWS_REGION}" \
+            --query 'ARN' \
+            --output text)"
+
+          # Render a task definition that wires the OTel env vars and the
+          # Grafana Cloud bearer token. The token is mandatory: without
+          # OTEL_EXPORTER_OTLP_HEADERS the Worker's OTLP exporter is
+          # unauthenticated, Grafana Cloud rejects every span with 401, and the
+          # Worker half of each durable-task trace silently disappears. The API
+          # receives the same header from App Runner's RuntimeConfigurationSecrets.
+          #
+          # The ECS *task execution role* needs secretsmanager:GetSecretValue on
+          # this ARN; a missing grant surfaces as a task that fails to start.
           CURRENT_TASK_DEF="$(aws ecs describe-task-definition \
             --task-definition "${SERVICE_NAME}" \
             --region "${AWS_REGION}" \
             --query 'taskDefinition' \
             --output json)"
 
-          # Patch the container environment to include the OTel exports.
-          PATCHED_TASK_DEF="$(echo "${CURRENT_TASK_DEF}" | jq --arg endpoint "${ENDPOINT}" '
-            .containerDefinitions |= map(
+          # Patch the container environment to include the OTel exports. Keys
+          # this workflow owns are stripped before being re-added, so a repeated
+          # deploy replaces them instead of appending duplicates — ECS rejects a
+          # container definition with duplicate environment or secret names.
+          PATCHED_TASK_DEF="$(echo "${CURRENT_TASK_DEF}" | jq \
+            --arg endpoint "${ENDPOINT}" \
+            --arg tokenArn "${TOKEN_SECRET_ARN}" '
+            ["OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL",
+             "OTEL_SERVICE_NAME", "OTEL_SDK_DISABLED",
+             "OTEL_TRACES_SAMPLER_ARG", "OTEL_LOG_LEVEL"] as $ownedEnv
+            | ["OTEL_EXPORTER_OTLP_HEADERS"] as $ownedSecrets
+            | .containerDefinitions |= map(
               if .name == "agent-worker" then
-                .environment = (.environment // []) + [
+                .environment = [
+                    (.environment // [])[]
+                    | select(.name as $n | $ownedEnv | index($n) | not)
+                  ] + [
                   { name: "OTEL_EXPORTER_OTLP_ENDPOINT", value: $endpoint },
                   { name: "OTEL_EXPORTER_OTLP_PROTOCOL", value: "http/protobuf" },
                   { name: "OTEL_SERVICE_NAME", value: "ai-travel-agent-worker" },
                   { name: "OTEL_SDK_DISABLED", value: "false" },
                   { name: "OTEL_TRACES_SAMPLER_ARG", value: "0.05" },
                   { name: "OTEL_LOG_LEVEL", value: "warn" }
+                ]
+                | .secrets = [
+                    (.secrets // [])[]
+                    | select(.name as $n | $ownedSecrets | index($n) | not)
+                  ] + [
+                  { name: "OTEL_EXPORTER_OTLP_HEADERS", valueFrom: $tokenArn }
                 ]
               else . end
             )

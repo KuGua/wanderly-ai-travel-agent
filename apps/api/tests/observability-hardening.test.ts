@@ -169,4 +169,30 @@ describe("bounded metrics", () => {
     expect(metrics.render()).not.toContain(identifier);
     expect(metrics.render()).not.toContain("arbitrary-model-name");
   });
+
+  it("describes every registered series so docs:verify can diff the registry", () => {
+    const described = metrics.describe();
+    const names = described.map(series => series.name);
+
+    // Sorted output keeps generated documentation diffs stable.
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+    expect(new Set(names).size).toBe(names.length);
+
+    // Every series `/metrics` can render must be describable, or the doc check
+    // would silently stop covering it.
+    const rendered = metrics.render()
+      .split("\n")
+      .filter(line => line.startsWith("# TYPE "))
+      .map(line => line.split(" ")[2]);
+    expect(new Set(rendered)).toEqual(new Set(names));
+
+    const callback = described.find(series => series.name === "callback_verifications_total");
+    expect(callback).toMatchObject({ type: "counter" });
+    expect(callback?.allowedLabels.callbackResult).toContain("bad_signature");
+    expect(callback?.buckets).toBeUndefined();
+
+    const latency = described.find(series => series.name === "llm_request_latency_ms");
+    expect(latency).toMatchObject({ type: "histogram" });
+    expect(latency?.buckets?.[0]).toBe(50);
+  });
 });

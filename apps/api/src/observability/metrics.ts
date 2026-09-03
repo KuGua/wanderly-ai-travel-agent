@@ -50,6 +50,16 @@ const FORBIDDEN_LABEL_KEYS = new Set([
 
 export type MetricProvider = "openai" | "gemini" | "openai-compatible";
 
+/** One registered series as reported by {@link MetricsRegistry.describe}. */
+export interface SeriesDescriptor {
+  name: string;
+  type: Series["type"];
+  help: string;
+  allowedLabels: AllowedLabels;
+  /** Upper bounds in the series' unit; histograms only. */
+  buckets?: readonly number[];
+}
+
 export class MetricLabelError extends Error {
   constructor(message: string) {
     super(message);
@@ -169,6 +179,27 @@ export class MetricsRegistry {
     }
     const key = this.validatedLabelKey(name, series, labels);
     series.values.set(key, value);
+  }
+
+  /**
+   * Read-only view of the registered series and their bounded label schema.
+   *
+   * The registry is the source of truth for what `/metrics` can ever emit, so
+   * `scripts/verify-docs.ts` reads this instead of regex-parsing the module: a
+   * renamed metric or a changed allow-list then fails CI rather than silently
+   * orphaning a dashboard panel or an alert rule. Sorted by name so generated
+   * documentation has a stable diff.
+   */
+  describe(): SeriesDescriptor[] {
+    return [...this.series.entries()]
+      .map(([name, series]) => ({
+        name,
+        type: series.type,
+        help: series.help,
+        allowedLabels: series.allowedLabels,
+        ...(series.type === "histogram" ? { buckets: [...series.buckets] } : {}),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   render(): string {

@@ -13,6 +13,11 @@
  *   4. Every Skill doc's "失败模式" table covers every error code the Skill
  *      can throw.
  *   5. src/skills/REVIEW.md exists and no Skill file declares `agent: "review"`.
+ *   6. The observability README's "### Series" table and the runtime
+ *      `MetricsRegistry.describe()` agree in both directions (names, type,
+ *      label keys, label values), and every series / PromQL selector named in
+ *      docs/observability-slo.md resolves to a registered series.
+ *   7. The README's stated `LOGGER_REDACT_PATHS` count matches the array.
  *
  * Exits 0 on success, 1 on any failure. No external dependencies.
  */
@@ -91,6 +96,15 @@ function deriveSkillNameFromPath(skillPath: string): string | null {
   const base = basename(skillPath).replace(/-skill\.ts$/, "");
   const parts = base.split("-");
   return parts.join(".");
+}
+
+/**
+ * Read a tracked Markdown file with line endings normalised. Windows
+ * checkouts leave CRLF in tracked docs, and every parser below matches on
+ * a bare newline.
+ */
+function readDoc(absolutePath: string): string {
+  return readFileSync(absolutePath, "utf8").replace(/\r\n/gu, "\n");
 }
 
 // --- Result accumulator ---
@@ -275,17 +289,9 @@ function checkFrameworkCoverage(
     }
   }
 
-  // LOGGER_REDACT_PATHS coverage (length matters more than values)
-  if (rel.endsWith("src/observability/README.md") || rel.includes("/LOG-REDACTION")) {
-    const redactPathsMatch = source.match(/LOGGER_REDACT_PATHS = \[([\s\S]*?)\]/);
-    if (redactPathsMatch) {
-      const pathCount = (redactPathsMatch[1].match(/"/g) ?? []).length / 2;
-      // The doc states 31 entries; assert the doc claims the same count.
-      if (!text.includes(`${pathCount} `) && !text.includes(`${pathCount}-`)) {
-        fail(rel, `LOGGER_REDACT_PATHS has ${pathCount} entries; doc does not state that count`);
-      }
-    }
-  }
+  // LOGGER_REDACT_PATHS coverage is asserted against the runtime array in
+  // checkRedactPathCount(); a regex over the source cannot count it correctly
+  // because several paths (e.g. `req.headers['x-api-key']`) contain `]`.
 }
 
 function checkFrameworkDocs(): void {
@@ -380,6 +386,189 @@ function checkReviewStub(): void {
   }
 }
 
+// --- Check 6: metric series docs match the runtime registry ---
+
+const OBSERVABILITY_README = join(SRC_ROOT, "observability", "README.md");
+const SLO_DOC = resolve(APPS_API_ROOT, "..", "..", "docs", "observability-slo.md");
+
+/** A row of the README "### Series" table. */
+interface DocumentedSeries {
+  name: string;
+  type: string;
+  labelKeys: string[];
+  /** Every double-quoted token in the "allowed values" cell. */
+  values: Set<string>;
+}
+
+/**
+ * Parse the "### Series" table. Returns null when the heading is absent, which
+ * is itself reported as a failure by the caller.
+ */
+function parseSeriesTable(text: string): DocumentedSeries[] | null {
+  const heading = text.indexOf("### Series\n");
+  if (heading === -1) return null;
+  const rows: DocumentedSeries[] = [];
+  for (const line of text.slice(heading).split(/\r?\n/)) {
+    if (!line.startsWith("| `")) {
+      // Stop at the first non-row line after the table has started.
+      if (rows.length > 0 && !line.startsWith("|")) break;
+      continue;
+    }
+    const cells = line.split("|").slice(1, -1).map(c => c.trim());
+    if (cells.length < 4) continue;
+    const name = cells[0].match(/^`([a-z][a-z0-9_]*)`$/)?.[1];
+    if (!name) continue;
+    rows.push({
+      name,
+      type: cells[1],
+      labelKeys: cells[2] === "—" ? [] : cells[2].split(",").map(k => k.trim()).filter(Boolean),
+      values: new Set(cells[3].match(/"([^"]*)"/g)?.map(v => v.slice(1, -1)) ?? []),
+    });
+  }
+  return rows;
+}
+
+/**
+ * The registry — not a regex over its source — is the authority. Both
+ * directions matter: an undocumented series means a reviewer cannot tell what
+ * `/metrics` may emit, and a documented-but-unregistered series means a
+ * dashboard panel or alert rule built from this doc binds to a name that will
+ * never produce a sample, which reads as "healthy" rather than "broken".
+ */
+async function checkMetricSeriesDocs(): Promise<void> {
+  const metricsModule = await import(
+    pathToFileURL(join(SRC_ROOT, "observability", "metrics.ts")).href
+  ) as { metrics: { describe(): Array<{ name: string; type: string; allowedLabels: Record<string, readonly string[]> }> } };
+  const registered = new Map(metricsModule.metrics.describe().map(s => [s.name, s]));
+
+  const readmeRel = relative(APPS_API_ROOT, OBSERVABILITY_README);
+  if (!existsSync(OBSERVABILITY_README)) {
+    fail(readmeRel, "observability README is missing");
+    return;
+  }
+  const documented = parseSeriesTable(readDoc(OBSERVABILITY_README));
+  if (documented === null) {
+    fail(readmeRel, "missing a '### Series' section documenting the metric registry");
+    return;
+  }
+
+  const documentedByName = new Map(documented.map(row => [row.name, row]));
+  for (const row of documented) {
+    if (!registered.has(row.name)) {
+      fail(readmeRel, `series table documents "${row.name}", which is not registered in metrics.ts`);
+    }
+  }
+  for (const [name, series] of registered) {
+    const row = documentedByName.get(name);
+    if (!row) {
+      fail(readmeRel, `metric "${name}" is registered but missing from the series table`);
+      continue;
+    }
+    if (row.type !== series.type) {
+      fail(readmeRel, `metric "${name}" is a ${series.type}; series table says ${row.type}`);
+    }
+    const expectedKeys = Object.keys(series.allowedLabels).sort();
+    const documentedKeys = [...row.labelKeys].sort();
+    if (expectedKeys.join(",") !== documentedKeys.join(",")) {
+      fail(
+        readmeRel,
+        `metric "${name}" labels are [${expectedKeys.join(", ")}]; series table says [${documentedKeys.join(", ")}]`,
+      );
+    }
+    const expectedValues = new Set(Object.values(series.allowedLabels).flat());
+    for (const value of expectedValues) {
+      if (!row.values.has(value)) {
+        fail(readmeRel, `metric "${name}" allows label value "${value}", which the series table omits`);
+      }
+    }
+    for (const value of row.values) {
+      if (!expectedValues.has(value)) {
+        fail(readmeRel, `series table lists label value "${value}" for "${name}", which the registry rejects`);
+      }
+    }
+  }
+
+  checkSloDocSeries(registered);
+}
+
+/**
+ * The SLO doc lives outside `src/`, so `checkFrameworkDocs` never sees it — yet
+ * it is where alert rules and dashboards are specified. Validate the metric
+ * names it binds to, plus the label selectors, since a stale label key silently
+ * matches nothing in PromQL.
+ */
+function checkSloDocSeries(
+  registered: Map<string, { type: string; allowedLabels: Record<string, readonly string[]> }>,
+): void {
+  const sloRel = relative(resolve(APPS_API_ROOT, "..", ".."), SLO_DOC).replace(/\\/gu, "/");
+  if (!existsSync(SLO_DOC)) {
+    fail(sloRel, "SLO doc is missing");
+    return;
+  }
+  const text = readDoc(SLO_DOC);
+
+  // Histograms also expose the derived `_count` / `_sum` / `_bucket` series.
+  const resolveSeries = (token: string) => {
+    if (registered.has(token)) return token;
+    const base = token.replace(/_(count|sum|bucket)$/u, "");
+    const series = registered.get(base);
+    return series && series.type === "histogram" ? base : null;
+  };
+
+  // (a) The "Source series" column of the SLI catalogue names series directly.
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith("| `sli.")) continue;
+    const cells = line.split("|").slice(1, -1).map(c => c.trim());
+    if (cells.length < 3) continue;
+    for (const match of cells[2].matchAll(/`([a-z][a-z0-9_]*)`/gu)) {
+      if (!resolveSeries(match[1])) {
+        fail(sloRel, `SLI source series "${match[1]}" is not registered in metrics.ts`);
+      }
+    }
+  }
+
+  // (b) Any PromQL selector, wherever it appears, must use a registered series
+  //     with allowed label keys and values.
+  for (const match of text.matchAll(/([a-z][a-z0-9_]*)\{([^}]*)\}/gu)) {
+    const [, token, selector] = match;
+    const name = resolveSeries(token);
+    if (!name) {
+      fail(sloRel, `PromQL selector references "${token}", which is not registered in metrics.ts`);
+      continue;
+    }
+    const allowedLabels = registered.get(name)!.allowedLabels;
+    for (const label of selector.matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*=\s*"([^"]*)"/gu)) {
+      const [, key, value] = label;
+      const allowed = allowedLabels[key];
+      if (!allowed) {
+        fail(
+          sloRel,
+          `PromQL selector on "${name}" filters by label "${key}"; allowed labels are [${Object.keys(allowedLabels).join(", ") || "none"}]`,
+        );
+        continue;
+      }
+      if (!allowed.includes(value)) {
+        fail(sloRel, `PromQL selector on "${name}" filters ${key}="${value}", which is outside the allow-list`);
+      }
+    }
+  }
+}
+
+// --- Check 7: redaction path count matches the runtime array ---
+
+async function checkRedactPathCount(): Promise<void> {
+  const telemetry = await import(
+    pathToFileURL(join(SRC_ROOT, "observability", "telemetry.ts")).href
+  ) as { LOGGER_REDACT_PATHS: readonly string[] };
+  const count = telemetry.LOGGER_REDACT_PATHS.length;
+  const readmeRel = relative(APPS_API_ROOT, OBSERVABILITY_README);
+  if (!existsSync(OBSERVABILITY_README)) return; // already reported
+  const text = readDoc(OBSERVABILITY_README);
+  if (!text.includes(`${count}-entry`)) {
+    fail(readmeRel, `LOGGER_REDACT_PATHS has ${count} entries; README does not state "${count}-entry"`);
+  }
+}
+
 // --- Main ---
 
 async function main(): Promise<void> {
@@ -388,6 +577,8 @@ async function main(): Promise<void> {
   checkFrameworkDocs();
   checkSkillFailureModes();
   checkReviewStub();
+  await checkMetricSeriesDocs();
+  await checkRedactPathCount();
 
   if (failures.length > 0) {
     console.error("docs:verify — FAILED\n");
