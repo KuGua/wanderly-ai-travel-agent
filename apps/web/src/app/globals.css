@@ -606,6 +606,46 @@
 }
 
 /* Speech cloud: place name, ellipsis, question mark. */
+/* 啥子's right-click menu. Sits to the right of the body, clear of the speech
+   cloud that flips above/below the head. */
+.wanderly-bot-quit-menu {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  pointer-events: auto;
+  animation: wanderly-bot-menu-in 140ms ease-out;
+}
+
+.wanderly-bot-quit-menu button {
+  padding: 4px 12px;
+  border: 2px solid var(--bot-line, #8fa0b7);
+  border-radius: 8px;
+  background: var(--w-white, #fff);
+  color: #141413;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.wanderly-bot-quit-menu button:hover,
+.wanderly-bot-quit-menu button:focus-visible {
+  background: var(--bot-line, #8fa0b7);
+  color: var(--w-white, #fff);
+  outline: none;
+}
+
+@keyframes wanderly-bot-menu-in {
+  from { opacity: 0; transform: translate(-4px, -50%); }
+  to { opacity: 1; transform: translate(0, -50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wanderly-bot-quit-menu { animation: none; }
+}
+
 .wanderly-bot-cloud {
   position: absolute;
   bottom: calc(100% + 9px);

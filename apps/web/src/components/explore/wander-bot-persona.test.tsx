@@ -1,7 +1,7 @@
-import { cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { SHAZI_SWITCH_CHANCE, WanderBot } from "./wander-bot";
+import { SHAZI_QUIT_LINK, SHAZI_SWITCH_CHANCE, WanderBot } from "./wander-bot";
 
 afterEach(cleanup);
 
@@ -79,5 +79,122 @@ describe("the way back", () => {
     expect(bot.dataset.persona).toBe("shazi");
     fireEvent.error(bot.querySelector("img")!);
     expect(bot.dataset.persona).toBe("robo");
+  });
+});
+
+describe("啥子's quit menu", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  function renderShazi() {
+    const bot = renderBot(() => 0);
+    clickBot(bot);
+    expect(bot.dataset.persona).toBe("shazi");
+    return bot;
+  }
+
+  it("opens the menu on a lone right-click and leaves in a new tab when 退出 is picked", async () => {
+    // A real 300ms window separates a single right-click from a double, so
+    // this waits it out rather than faking the clock.
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const bot = renderShazi();
+
+    fireEvent.contextMenu(bot);
+    const quit = await screen.findByRole("button", { name: "退出" });
+
+    fireEvent.click(quit);
+    expect(open).toHaveBeenCalledWith(SHAZI_QUIT_LINK, "_blank", "noopener,noreferrer");
+    // A new tab, so a run on this page is never thrown away.
+    expect(open.mock.calls[0][1]).toBe("_blank");
+  });
+
+  it("does not open the menu for robo — the egg belongs to 啥子", () => {
+    const bot = renderBot(() => 1);
+    fireEvent.contextMenu(bot);
+    expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
+  });
+
+  it("is dismissable: a press outside closes it without leaving", async () => {
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const bot = renderShazi();
+    fireEvent.contextMenu(bot);
+    await screen.findByRole("button", { name: "退出" });
+    // The outside-close listener arms a tick after the menu opens, so the
+    // press that opened it cannot also close it. Let that tick pass.
+    await new Promise((r) => setTimeout(r, 5));
+
+    fireEvent.pointerDown(document.body);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("closes on Escape", async () => {
+    const bot = renderShazi();
+    fireEvent.contextMenu(bot);
+    await screen.findByRole("button", { name: "退出" });
+    await new Promise((r) => setTimeout(r, 5));
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("button", { name: "退出" })).toBeNull();
+  });
+});
+
+describe("啥子's seven-click flip game", () => {
+  afterEach(() => {
+    document.documentElement.classList.remove("wanderly-flip");
+    vi.restoreAllMocks();
+  });
+
+  function toShazi() {
+    const bot = renderBot(() => 0);
+    clickBot(bot);
+    expect(bot.dataset.persona).toBe("shazi");
+    return bot;
+  }
+
+  // Seven clicks resolve as one clickRun(7); jsdom's timeStamp=0 does not
+  // matter here — the count simply accumulates.
+  async function clickSeven(bot: Element) {
+    for (let i = 0; i < 7; i++) clickBot(bot);
+    await new Promise((r) => setTimeout(r, 800));
+  }
+
+  it("starts the flip game on the seventh click and flips the page", async () => {
+    const bot = toShazi();
+    await clickSeven(bot);
+    expect(await screen.findByRole("dialog", { name: "抓住啥子" })).toBeInTheDocument();
+    expect(document.documentElement.classList.contains("wanderly-flip")).toBe(true);
+  });
+
+  it("catching 啥子 ends the game and rights the screen", async () => {
+    const bot = toShazi();
+    await clickSeven(bot);
+    await screen.findByRole("dialog", { name: "抓住啥子" });
+    fireEvent.click(screen.getByRole("button", { name: "啥子" }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("dialog", { name: "抓住啥子" })).toBeNull();
+    expect(document.documentElement.classList.contains("wanderly-flip")).toBe(false);
+  });
+
+  it("Escape exits the game", async () => {
+    const bot = toShazi();
+    await clickSeven(bot);
+    await screen.findByRole("dialog", { name: "抓住啥子" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByRole("dialog", { name: "抓住啥子" })).toBeNull();
+  });
+
+  it("within cooldown, a repeat blushes instead of re-opening the game", async () => {
+    const bot = toShazi();
+    await clickSeven(bot);
+    await screen.findByRole("dialog", { name: "抓住啥子" });
+    fireEvent.keyDown(window, { key: "Escape" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    await clickSeven(bot);
+    expect(screen.queryByRole("dialog", { name: "抓住啥子" })).toBeNull();
+    expect(await screen.findByText("少年的脸红胜过一切💗")).toBeInTheDocument();
   });
 });
