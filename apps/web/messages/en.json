@@ -388,7 +388,9 @@
       "briefProposalSaveTitle": "Save {destination} to this trip",
       "briefProposalKeepTitle": "Leave it as it is",
       "briefProposalPlanTitleNoDestination": "Start planning this trip",
-      "briefProposalSaveTitleNoDestination": "Save this to the trip"
+      "briefProposalSaveTitleNoDestination": "Save this to the trip",
+      "briefProposalQuestion": "Set {destination} as the destination?",
+      "briefProposalQuestionNoDestination": "Set this as the destination?"
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",

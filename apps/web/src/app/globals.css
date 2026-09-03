@@ -375,41 +375,6 @@
 }
 
 /*
- * A ruled group of choices resting on a cosmic panel.
- *
- * Same fill as `--surface`, so it sits a step below the panel and its text
- * has something to read against — over bare map the fog lettering had only
- * whatever happened to be underneath it. Ruled top and bottom with nothing
- * down the sides: the options are separated, not boxed, which keeps them
- * reading as two ways forward rather than as a form. The shadow is a soft
- * drop rather than the hard offset a card gets, since there is no outline
- * for a hard one to sit against.
- */
-.wanderly-cosmos-choices {
-  border-top: 1.5px solid var(--w-space-line);
-  border-bottom: 1.5px solid var(--w-space-line);
-  /*
-   * A veil of fog rather than the surface fill: sharing that fill with the
-   * reply bubbles made the choices read as one more thing said, when they are
-   * the thing being asked. Lighter than what it sits on, so it lifts instead
-   * of sinking, and the shadow is what separates it rather than an outline.
-   */
-  background: color-mix(in srgb, var(--w-fog), transparent 88%);
-  color: var(--w-fog);
-  backdrop-filter: blur(10px) saturate(1.15);
-  -webkit-backdrop-filter: blur(10px) saturate(1.15);
-  box-shadow: 0 12px 28px color-mix(in srgb, var(--w-space), transparent 40%);
-}
-
-.wanderly-cosmos-choices .wanderly-cosmos-choice + .wanderly-cosmos-choice {
-  border-top: 1.5px solid color-mix(in srgb, var(--w-space-line), transparent 45%);
-}
-
-.wanderly-cosmos-choice:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--w-highlight), transparent 82%);
-}
-
-/*
  * Without the blur these fills are only tints, so opacity has to go back up
  * or the text loses its background. Support for the query is uneven, and the
  * fallback must be safe on its own.
@@ -417,7 +382,6 @@
 @media (prefers-reduced-transparency: reduce) {
   .wanderly-cosmos-panel,
   .wanderly-cosmos-surface,
-  .wanderly-cosmos-choices,
   .wanderly-cosmos-control {
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -425,7 +389,6 @@
 
   .wanderly-cosmos-panel { background: var(--w-space-tint); }
   .wanderly-cosmos-surface { background: color-mix(in srgb, var(--w-space-tint), #000 34%); }
-  .wanderly-cosmos-choices { background: color-mix(in srgb, var(--w-space-tint), var(--w-fog) 16%); }
 }
 
 /*

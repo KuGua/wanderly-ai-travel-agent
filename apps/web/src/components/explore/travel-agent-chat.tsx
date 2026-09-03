@@ -1096,51 +1096,42 @@ export function TravelAgentChat({
             </div>
           ) : null}
           {briefProposal && tripId ? (
-            /* Not a dialog: two ways forward, ruled apart. The bordered card
-               read as a form to fill in, when the only thing being asked is
-               which of these the traveller wants next — and the facts it used
-               to list are in the reply directly above it. */
+            /* A question with two answers. The primary carries the weight
+               because one of them is the decision being invited; the other is
+               a way to decline it, not a symmetrical alternative. */
             <section
               aria-label={t("briefProposalTitle")}
-              /* Narrower than the conversation and centred in it: a question
-                 addressed to the reader, not another line of the transcript
-                 running the full width beside it. */
-              className={`mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[360px] ${
-                docked
-                  ? "border-y border-[var(--w-line)] bg-[var(--w-white)]/75 wanderly-shadow-xs"
-                  : "wanderly-cosmos-choices"
-              }`}
+              /* Narrower than the conversation and centred in it: addressed to
+                 the reader rather than another line of the transcript. */
+              className={`mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[380px]`}
             >
-              {[
-                {
-                  key: "plan",
-                  label: briefDestination
-                    ? t(onGlobe ? "briefProposalPlanTitle" : "briefProposalSaveTitle", { destination: briefDestination })
-                    : t(onGlobe ? "briefProposalPlanTitleNoDestination" : "briefProposalSaveTitleNoDestination"),
-                  busy: t(onGlobe ? "briefProposalOpening" : "briefProposalSaving"),
-                  onClick: () => void confirmBriefProposal(),
-                },
-                {
-                  key: "explore",
-                  label: t(onGlobe ? "briefProposalExploreTitle" : "briefProposalKeepTitle"),
-                  busy: null,
-                  onClick: () => setBriefProposal(null),
-                },
-              ].map((option, index) => (
+              <p className={`mb-2 px-0.5 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
+                {briefDestination
+                  ? t("briefProposalQuestion", { destination: briefDestination })
+                  : t("briefProposalQuestionNoDestination")}
+              </p>
+              <div className="grid gap-2">
                 <button
-                  key={option.key}
                   type="button"
-                  onClick={option.onClick}
+                  onClick={() => void confirmBriefProposal()}
                   disabled={isConfirmingBrief}
-                  className={`wanderly-cosmos-choice block w-full px-3 py-2.5 text-left text-sm font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                    docked
-                      ? `text-[var(--w-ink)] hover:bg-[var(--w-white)]/60 ${index > 0 ? "border-t border-[var(--w-line)]" : ""}`
-                      : "text-[var(--w-fog)]"
-                  }`}
+                  className={`${actionPrimaryClass} w-full px-3 py-2.5 text-left`}
                 >
-                  {isConfirmingBrief && option.busy ? option.busy : option.label}
+                  {isConfirmingBrief
+                    ? t(onGlobe ? "briefProposalOpening" : "briefProposalSaving")
+                    : briefDestination
+                      ? t(onGlobe ? "briefProposalPlanTitle" : "briefProposalSaveTitle", { destination: briefDestination })
+                      : t(onGlobe ? "briefProposalPlanTitleNoDestination" : "briefProposalSaveTitleNoDestination")}
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => setBriefProposal(null)}
+                  disabled={isConfirmingBrief}
+                  className={`${actionSecondaryClass} w-full px-3 py-2.5 text-left`}
+                >
+                  {t(onGlobe ? "briefProposalExploreTitle" : "briefProposalKeepTitle")}
+                </button>
+              </div>
             </section>
           ) : null}
           {canStartSharedPlanning && !briefProposal ? (

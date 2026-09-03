@@ -388,7 +388,9 @@
       "briefProposalSaveTitle": "把{destination}保存到这趟行程",
       "briefProposalKeepTitle": "先不改",
       "briefProposalPlanTitleNoDestination": "开始规划这趟行程",
-      "briefProposalSaveTitleNoDestination": "保存到这趟行程"
+      "briefProposalSaveTitleNoDestination": "保存到这趟行程",
+      "briefProposalQuestion": "你想将 {destination} 作为目的地吗？",
+      "briefProposalQuestionNoDestination": "你想将这里作为目的地吗？"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",
