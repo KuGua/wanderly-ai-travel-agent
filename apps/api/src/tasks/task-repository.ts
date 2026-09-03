@@ -17,7 +17,6 @@ import { resolveConversationPlace } from "../policy/conversation-safety.js";
 import { recordAudit } from "../services/audit-service.js";
 import { requireOwnedTripThread } from "../services/chat-thread-service.js";
 import { loadConversationFlightSearchState } from "../services/conversation-flight-search-state-service.js";
-import { loadConversationHotelSearchState } from "../services/conversation-hotel-search-state-service.js";
 import { claimIdempotency } from "../services/idempotency-service.js";
 import {
   agentRunErrorCodeSchema,
@@ -852,7 +851,6 @@ export async function getAuthorizedAgentRun(runId: string, userId: string): Prom
   return {
     ...toRunResponse(run),
     pendingFlightConfirmation: await isFlightSearchAwaitingConfirmation(run),
-    pendingHotelConfirmation: await isHotelSearchAwaitingConfirmation(run),
   };
 }
 
@@ -864,16 +862,6 @@ export async function getAuthorizedAgentRun(runId: string, userId: string): Prom
  * re-delivers that event, and `GET /agent-runs/:runId` is already polled
  * as the run-status fallback regardless of stream health.
  */
-async function isHotelSearchAwaitingConfirmation(run: AgentTaskRow): Promise<boolean> {
-  if (run.operation !== "CONVERSATION" || !run.threadId || !run.tripId) return false;
-  const state = await loadConversationHotelSearchState({
-    threadId: run.threadId,
-    tripId: run.tripId,
-    ownerUserId: run.createdByUserId,
-  });
-  return state !== null && !state.confirmed;
-}
-
 async function isFlightSearchAwaitingConfirmation(run: AgentTaskRow): Promise<boolean> {
   if (run.operation !== "CONVERSATION" || !run.threadId || !run.tripId) return false;
   const state = await loadConversationFlightSearchState({

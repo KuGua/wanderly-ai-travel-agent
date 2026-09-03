@@ -323,7 +323,6 @@ export const agentRunResponseSchema = z.object({
    * re-delivers that event, which otherwise leaves the button never showing.
    */
   pendingFlightConfirmation: z.boolean().optional(),
-  pendingHotelConfirmation: z.boolean().optional(),
 });
 
 // researchSetupSessionResponseSchema, researchSetupSessionEnvelopeSchema,

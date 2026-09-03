@@ -43,9 +43,11 @@ export async function loadConversationHotelSearchState(params: {
 }
 
 /**
- * Replaces the thread's complete typed query and binds an explicit owner
- * confirmation to the current USER message. The audit summary deliberately
- * records only field count/state, never hotel dates, city, occupancy or money.
+ * Replaces the thread's complete typed query. The legacy confirmation fields
+ * remain for backward-compatible rows, but sandbox hotel lookup does not set
+ * them because no per-call owner confirmation occurs. The audit summary
+ * deliberately records only field count/state, never hotel dates, city,
+ * occupancy or money.
  */
 export async function saveConversationHotelSearchState(params: {
   ctx: RequestContext;

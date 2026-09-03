@@ -233,7 +233,6 @@ export function TravelAgentChat({
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
   const [pendingFlightConfirmation, setPendingFlightConfirmation] = useState(false);
-  const [pendingHotelConfirmation, setPendingHotelConfirmation] = useState(false);
   // This is intentionally a local draft. Selecting a chip does not create a
   // preference version, invalidate a plan, or authorize a provider call; the
   // explicit Save button below is the sole durable write.
@@ -422,17 +421,6 @@ export function TravelAgentChat({
       if (event.event === "tool.settled" && event.capability === "flight.search" && event.outcome === "NEEDS_CONFIRMATION") {
         setPendingFlightConfirmation(true);
       }
-      // Hotels reach a commercial supplier on the same terms flights do —
-      // Nuitee's rates are bound by contract and a look-to-book ratio, and
-      // the same slot can be switched to SerpApi, which bills per credit — so
-      // hotel.search is CONFIRMED in `TOOL_INVOCATION_MODE` too. The server
-      // has always answered CONFIRMATION_REQUIRED for both and mapped both to
-      // NEEDS_CONFIRMATION; only this listener was flight-only, which left
-      // the hotel path with no way to authorise a search except typing the
-      // exact phrase by hand.
-      if (event.event === "tool.settled" && event.capability === "hotel.search" && event.outcome === "NEEDS_CONFIRMATION") {
-        setPendingHotelConfirmation(true);
-      }
       if (event.event === "conversation.handoff_ready") {
         // Replace any previous card — the latest batch is the only one the
         // member can act on, and the worker has already invalidated earlier
@@ -534,13 +522,6 @@ export function TravelAgentChat({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPendingFlightConfirmation(pending);
   }, [agentRun.data?.pendingFlightConfirmation]);
-
-  useEffect(() => {
-    const pending = agentRun.data?.pendingHotelConfirmation;
-    if (pending === undefined) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPendingHotelConfirmation(pending);
-  }, [agentRun.data?.pendingHotelConfirmation]);
 
   // The trip carries the unconfirmed brief too, and unlike the run it is still
   // there after a reload or on another device. This is the copy that makes the
@@ -741,19 +722,6 @@ export function TravelAgentChat({
   function cancelFlightSearch() {
     if (isSending) return;
     void sendTurn({ requestId: crypto.randomUUID(), question: "取消这次机票搜索" });
-  }
-
-  function confirmHotelSearch() {
-    if (isSending) return;
-    // Names hotels, for the same reason the flight button names flights: a
-    // thread can be waiting on both confirmations at once, and a bare
-    // "确认搜索" leaves the model to pick which search it authorised.
-    void sendTurn({ requestId: crypto.randomUUID(), question: "确认搜索酒店" });
-  }
-
-  function cancelHotelSearch() {
-    if (isSending) return;
-    void sendTurn({ requestId: crypto.randomUUID(), question: "取消这次酒店搜索" });
   }
 
   async function saveFlightPreferences() {
@@ -1141,15 +1109,6 @@ export function TravelAgentChat({
               <div className="mt-3 flex gap-2">
                 <button type="button" onClick={confirmFlightSearch} disabled={isSending} className={actionPrimaryClass}>{t("flightConfirmButton")}</button>
                 <button type="button" onClick={cancelFlightSearch} disabled={isSending} className={actionSecondaryClass}>{t("flightCancelButton")}</button>
-              </div>
-            </section>
-          ) : null}
-          {pendingHotelConfirmation && !isSending ? (
-            <section aria-label={t("hotelConfirmTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
-              <p className="font-bold text-primary">{t("hotelConfirmTitle")}</p>
-              <div className="mt-3 flex gap-2">
-                <button type="button" onClick={confirmHotelSearch} disabled={isSending} className={actionPrimaryClass}>{t("hotelConfirmButton")}</button>
-                <button type="button" onClick={cancelHotelSearch} disabled={isSending} className={actionSecondaryClass}>{t("hotelCancelButton")}</button>
               </div>
             </section>
           ) : null}

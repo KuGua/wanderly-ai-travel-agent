@@ -292,7 +292,7 @@ Skill 的超时从此只计**模型时间**——两个工具分发包装器在 
 Mystays Premier Akasaka 914.83 / Citadines Shinjuku 1402.18 CNY 每晚),
 含取消政策、来源(Nuitee LiteAPI)与查询日期。整轮约 30 秒。
 
-## #33 酒店没有确认按钮，机票有 — 缺陷 — 已修
+## #33 酒店没有确认按钮，机票有 — 原决定已被 sandbox 产品策略取代
 机票走到确认时出现「Ready to search for flights — run it now?」+ Search/Cancel 按钮;
 酒店只在文字里问「请确认是否开始搜索?」,必须自己打出确认短语。
 `tool.settled` 只对 `capability === "flight.search"` 设 `pendingFlightConfirmation`,
@@ -323,6 +323,13 @@ Mystays Premier Akasaka 914.83 / Citadines Shinjuku 1402.18 CNY 每晚),
 点 Search 送出「确认搜索酒店」,返回五家真实报价
 (Dotonbori 691 / RIHGA Royal 865 / Osaka Excel Tokyu 909 /
 Miyako City Hommachi 989 / Monterey Grasmere 993 CNY 每晚)。
+
+**2026-09-03 决策更新：** 当前产品运行在只读 sandbox；`hotel.search`
+不产生预订、付款或不可逆操作，并已有单 run 去重和 provider cache。因此
+`TOOL_INVOCATION_MODE` 改为 `AUTOMATIC`，完整参数到齐后直接搜索，前端酒店
+Search/Cancel 二次确认卡撤下。Shared planning 接受任务后同样不再要求额外的
+hotel tool confirmation。结构化住宿偏好的版本确认、Nuitee provider-only 报价
+国籍授权、provider 限额及所有 fail-closed 边界保持不变。
 
 
 ## #34 同一句确认短语，第二次被拒 — 缺陷 — 已修

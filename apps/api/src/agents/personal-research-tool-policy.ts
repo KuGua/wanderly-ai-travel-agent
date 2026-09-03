@@ -11,11 +11,10 @@ import type { PersonalResearchOperationCapability } from "../config/personal-res
 /**
  * Whether a capability may run on the model's own initiative.
  *
- * `AUTOMATIC` capabilities read public geographic data on quota that is free
- * or effectively unlimited, so a wasted call costs nothing a user would
- * notice. `CONFIRMED` capabilities reach commercial suppliers, and every call
- * spends a metered allowance — SerpApi bills 100 flight searches a month on
- * the free plan — so a person decides before it is spent.
+ * `AUTOMATIC` capabilities may run without a second per-call confirmation.
+ * That includes hotel search in the current sandbox: it is read-only, bounded,
+ * cached/deduplicated, and cannot book or pay. `CONFIRMED` capabilities retain
+ * an explicit spend/authority boundary where the product still requires one.
  *
  * This is about who authorizes the spend, not about how much the data is
  * trusted: both kinds return the same normalized evidence.
@@ -28,7 +27,7 @@ export const TOOL_INVOCATION_MODE: Record<PersonalResearchOperationCapability, T
   "accommodation.discovery": "AUTOMATIC",
   "activities.search": "CONFIRMED",
   "flight.search": "CONFIRMED",
-  "hotel.search": "CONFIRMED",
+  "hotel.search": "AUTOMATIC",
   "mobility.search": "CONFIRMED",
 });
 

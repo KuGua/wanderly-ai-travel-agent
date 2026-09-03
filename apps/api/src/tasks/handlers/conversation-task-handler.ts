@@ -301,7 +301,6 @@ function buildHotelSearchDispatcher(params: {
   ctx: RequestContext;
   signal: AbortSignal;
   traceparent?: string;
-  userConfirmed: boolean;
 }): ModelToolDispatcher {
   return async (call) => {
     if (call.name !== "hotel.search") {
@@ -311,9 +310,9 @@ function buildHotelSearchDispatcher(params: {
       ? call.arguments as Record<string, unknown>
       : null;
     if (!rawArguments) return { outcome: "INVALID_ARGUMENTS", code: "TOOL_ARGUMENTS_INVALID" };
-    // The tool intentionally has no JSON-schema required fields: a later
-    // explicit confirmation can invoke it with `{}` and the dispatcher will
-    // use the owner-reviewed state. Unknown fields are rejected before merge.
+    // Partial fields can reuse the server-owned thread state. Unknown fields
+    // are rejected before merge; a provider call still requires a complete,
+    // validated draft.
     const partial = hotelSearchToolArgumentsSchema.safeParse(rawArguments);
     if (!partial.success) return { outcome: "INVALID_ARGUMENTS", code: "TOOL_ARGUMENTS_INVALID" };
     if (!params.run.threadId || !params.run.tripId || !params.run.userMessageId) {
@@ -331,18 +330,17 @@ function buildHotelSearchDispatcher(params: {
     });
     if (!parsed.success) return { outcome: "NEEDS_FIELDS", code: "HOTEL_SEARCH_FIELDS_INCOMPLETE" };
     const draft = parsed.data;
-    const saved = await saveConversationHotelSearchState({
+    await saveConversationHotelSearchState({
       ctx: params.ctx,
       threadId: params.run.threadId,
       tripId: params.run.tripId,
       ownerUserId: params.run.createdByUserId,
       userMessageId: params.run.userMessageId,
       draft,
-      confirmed: params.userConfirmed,
+      // Hotel lookup is automatic in the sandbox. Keep the legacy columns
+      // unset rather than recording an owner confirmation that never occurred.
+      confirmed: false,
     });
-    if (!params.userConfirmed) {
-      return { outcome: "CONFIRMATION_REQUIRED", capability: "hotel.search", stateVersion: saved.version };
-    }
     const fingerprint = createHash("sha256")
       .update(canonicalizeForHash(draft))
       .digest("hex");
@@ -648,7 +646,6 @@ export async function handleConversationTask(params: {
     ctx: params.ctx,
     signal: execution.signal,
     traceparent: params.ctx.traceparent,
-    userConfirmed: confirmedFor("hotel.search", toolContext.userConfirmed === true, confirmedCapability),
   }));
   registerToolDispatch("flight.search", FLIGHT_SEARCH_TOOL, buildFlightSearchDispatcher({
     run: params.run,
@@ -1044,11 +1041,9 @@ function settledSummary(result: unknown): {
   outcome: string; reason?: string; currency?: unknown; flightOffers?: unknown; hotelOffers?: unknown;
 } {
   const rawOutcome = (result as { outcome?: unknown })?.outcome;
-  // The hotel/flight dispatchers' own readiness state uses `CONFIRMATION_REQUIRED`
-  // (matches their DRAFT Personal Research vocabulary); the SSE event's outcome
-  // enum uses `NEEDS_CONFIRMATION` (matches the generic research dispatcher's
-  // vocabulary). Same concept, different name — normalize rather than letting
-  // publishToolEvent's schema reject it and silently report "UNAVAILABLE".
+  // The flight dispatcher and generic confirmed tools use
+  // `CONFIRMATION_REQUIRED`; the SSE vocabulary is `NEEDS_CONFIRMATION`.
+  // Hotel search is automatic in the sandbox and never returns that outcome.
   const outcome = rawOutcome === "CONFIRMATION_REQUIRED" ? "NEEDS_CONFIRMATION" : rawOutcome;
   const reason = (result as { reason?: unknown })?.reason;
   const flight = (result as { flight?: { currency?: unknown; topOffers?: unknown } })?.flight;
