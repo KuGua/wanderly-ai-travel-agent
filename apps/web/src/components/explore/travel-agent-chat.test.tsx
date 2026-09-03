@@ -142,6 +142,69 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("TravelAgentChat durable streaming flow", () => {
+  it("shows globe replies as unframed text without repeating the agent badge", async () => {
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [
+          {
+            id: USER_MESSAGE_ID,
+            role: "USER",
+            content: "A short question.",
+            sequence: 1,
+            createdAt: CREATED_AT,
+          },
+          {
+            id: ASSISTANT_MESSAGE_ID,
+            role: "ASSISTANT",
+            content: "A direct answer about Indonesia.",
+            sequence: 2,
+            createdAt: CREATED_AT,
+          },
+        ],
+      }),
+    });
+
+    renderChat(api);
+
+    const answer = await screen.findByText("A direct answer about Indonesia.");
+    const reply = answer.closest("article")?.querySelector(".chat-markdown")?.parentElement;
+    expect(screen.queryByText("Wanderly Agent")).not.toBeInTheDocument();
+    expect(reply).toHaveClass("max-w-[86%]", "py-1", "text-[var(--w-fog)]");
+    expect(reply).not.toHaveClass("wanderly-cosmos-surface", "wanderly-edge", "wanderly-shadow-sm");
+
+    const question = screen.getByText("A short question.").parentElement;
+    expect(question).toHaveClass("ml-auto", "w-fit", "max-w-[86%]", "py-2");
+    expect(question).not.toHaveClass("wanderly-shadow-sm");
+  });
+
+  it("lays out the globe destination decision as one compact unfilled row", async () => {
+    const api = createApi({
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "trip.brief_proposed",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          proposal: { destinationCandidates: ["Suzhou"] },
+        });
+        await untilAborted(signal);
+      }),
+    });
+
+    renderChat(api, { tripId: TRIP_ID });
+    await submitFromCapsule("Tell me about Suzhou");
+
+    const question = await screen.findByText("Set Suzhou as the destination?");
+    expect(question.parentElement).toHaveClass("grid-cols-[minmax(0,1fr)_auto_auto]", "py-1");
+
+    const plan = screen.getByRole("button", { name: "Plan trip" });
+    const explore = screen.getByRole("button", { name: "Keep exploring" });
+    expect(plan).toHaveClass("bg-transparent", "px-0", "py-1");
+    expect(explore).toHaveClass("bg-transparent", "px-0", "py-1");
+    expect(plan).not.toHaveClass("wanderly-shadow-xs", "wanderly-action");
+    expect(explore).not.toHaveClass("wanderly-cosmos-control");
+  });
+
   it("renders the empty-thread introduction as a centred session slogan, not an agent message", async () => {
     renderChat(createApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
 

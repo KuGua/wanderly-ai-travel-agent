@@ -384,6 +384,8 @@
       "prefCardTrigger": "trip preferences",
       "briefProposalPlanTitle": "Plan a trip to {destination}",
       "briefProposalExploreTitle": "I'd rather keep exploring",
+      "briefProposalPlanCompact": "Plan trip",
+      "briefProposalExploreCompact": "Keep exploring",
       "briefProposalOpening": "Opening the planner…",
       "briefProposalSaveTitle": "Save {destination} to this trip",
       "briefProposalKeepTitle": "Leave it as it is",
