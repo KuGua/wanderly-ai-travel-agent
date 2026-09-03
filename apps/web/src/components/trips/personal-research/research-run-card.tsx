@@ -19,6 +19,8 @@ const STAGE_LABEL: Record<ResearchStageEvent["stage"], string> = {
  *
  * Streams `research.stage` events for an accepted command. Mirrors
  * `ProposalAdoptionCard` in `team-orchestration/TeamOrchestrationPanel.tsx`
+ * (removed in Phase 3 — the same data now drives
+ * `plan-proposal-card.tsx` in `shared-plan/`).
  * with bounded labels only.
  */
 export function ResearchRunCard({

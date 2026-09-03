@@ -564,6 +564,47 @@
         "cancelled": "本次运行已取消",
         "lastUpdated": "最后更新于 {value}"
       },
+      "plan": {
+        "statusBadge": {
+          "DRAFT": "草稿",
+          "PROPOSED": "待投票",
+          "ACTIVE": "已生效",
+          "STALE": "已失效",
+          "SUPERSEDED": "已替代"
+        },
+        "version": "v{value}",
+        "generatedAt": "生成于 {value}",
+        "flights": "航班",
+        "stays": "住宿",
+        "hotels": "酒店",
+        "activities": "活动",
+        "unavailable": "本次运行未采集到该能力的可验证数据",
+        "offerExpired": "报价已过期",
+        "constraintCount": "{count, plural, =0 {} other {已引用 # 项团队约束}}",
+        "explanation": {
+          "SATISFIES_ALL_PRIVATE_CONSTRAINTS": "本方案已考虑所有成员共享的约束。",
+          "MISSING_PRIVATE_FLIGHT_PREFERENCE": "未提供航班偏好 — 已按最优可用选项展示。",
+          "MISSING_PRIVATE_HOTEL_PREFERENCE": "未提供酒店偏好 — 已按最优可用选项展示。"
+        }
+      },
+      "vote": {
+        "accept": "接受",
+        "needsChanges": "需要修改",
+        "tally": "{accepted} / {required} 票",
+        "blocked": "至少一位成员请求修改 — 投票被阻止",
+        "notBooking": "本投票不是预订",
+        "noRestore": "投票不可撤销 — 旧方案仅供查阅",
+        "casting": "正在记录你的投票…",
+        "error": "投票失败：{message}"
+      },
+      "constraints": {
+        "heading": "团队约束（所有人可见）",
+        "empty": "尚未达成任何团队约束。",
+        "strength": {
+          "HARD": "必须",
+          "SOFT": "可协商"
+        }
+      },
       "error": {
         "forbidden": "你已无法访问本行程的共享方案。",
         "generic": "无法加载共享方案。"

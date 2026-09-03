@@ -98,16 +98,16 @@ describe("SharedPlanView — Phase 1 states", () => {
     expect(err.textContent).toContain("no longer have access");
   });
 
-  it("renders the proposed/active/stale stub list when plans exist (Phase 1 placeholder)", async () => {
+  it("renders the proposal card when a plan exists (Phase 3 placeholder)", async () => {
     const api = buildApi({
       listTripPlans: vi.fn().mockResolvedValue({
         tripId: TRIP_ID,
         proposed: [
           {
-            id: "00000000-0000-4000-8000-000000000010",
+            id: "00000000-0000-0000-4000-000000000010",
             version: 1,
             status: "PROPOSED",
-            snapshotId: "00000000-0000-4000-8000-000000000011",
+            snapshotId: "00000000-0000-0000-4000-000000000011",
             generatedAt: "2026-09-01T00:00:00.000Z",
             destination: "Tokyo",
             destinationCandidatesEvaluated: ["Tokyo"],
@@ -121,7 +121,7 @@ describe("SharedPlanView — Phase 1 states", () => {
       }),
     });
     const { findByTestId } = renderWithIntl(<SharedPlanView tripId={TRIP_ID} />, { api });
-    const row = await findByTestId("shared-plan-stub-proposed");
-    expect(row.textContent).toContain("Tokyo");
+    const card = await findByTestId("plan-proposal-card-00000000-0000-0000-4000-000000000010");
+    expect(card.textContent).toContain("Tokyo");
   });
 });
