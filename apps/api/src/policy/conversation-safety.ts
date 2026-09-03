@@ -237,7 +237,24 @@ function hasAnyTerm(text: string, terms: readonly string[]): boolean {
   return terms.some(term => hasTerm(text, term));
 }
 
+/**
+ * Three-letter currency codes have exactly the shape of a flight designator
+ * followed by a number, so "CNY 691" read as a flight reference. Paired with
+ * a hotel's own "不可取消" — which `FLIGHT_STATUS_TERMS` matches — that made
+ * the flight-status rule refuse an evidence-backed hotel summary that
+ * mentioned no flight at all. The same offers written "约 691 CNY/晚" passed,
+ * so identical answers succeeded or failed on the model's phrasing alone.
+ */
+const CURRENCY_CODES = [
+  "cny", "usd", "jpy", "eur", "gbp", "sgd", "hkd", "krw", "aud", "cad",
+  "twd", "thb", "myr", "nzd", "chf", "idr", "php", "vnd", "inr", "rub",
+];
+
 function hasFlightReference(text: string): boolean {
-  return hasAnyTerm(text, ["flight", "flights", "航班", "班机"])
-    || /\b[a-z]{2,3}\s?\d{1,4}\b/i.test(text);
+  if (hasAnyTerm(text, ["flight", "flights", "航班", "班机"])) return true;
+  // A real designator still counts: only the currency reading is excluded.
+  for (const match of text.matchAll(/\b([a-z]{2,3})\s?\d{1,4}\b/gi)) {
+    if (!CURRENCY_CODES.includes(match[1].toLowerCase())) return true;
+  }
+  return false;
 }
