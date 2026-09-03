@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { db } from "../src/db/database.js";
 import { agentRuns } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
@@ -66,6 +66,29 @@ describe("LLMGateway.generateLocationIntroduction", () => {
     expect(ours.status).toBe("SUCCESS");
     expect(JSON.stringify(ours)).not.toContain("Tokyo");
     expect(ours.outputHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("uses the caller-supplied locale for public cached prose, not the destination language", async () => {
+    const parse = vi.fn().mockResolvedValue({
+      choices: [{ message: { parsed: { content: VALID_CONTENT } } }],
+      usage: { prompt: 12, completion: 5, total: 17 },
+    });
+    const gateway = new LLMGateway({
+      apiKey: "test",
+      provider: "openai",
+      modelName: "gpt-4o-mini",
+      promptVersion: "1.0.0",
+      ctx: createRequestContext(),
+      client: { chat: { completions: { parse } } },
+      maxRetries: 0,
+    });
+
+    await gateway.generateLocationIntroduction({ locale: "zh", place: CATALOG_FIXTURE });
+
+    const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
+    expect(messages[0]?.content).toContain("Always write in the supplied `locale`");
+    expect(messages[0]?.content).toMatch(/Do not auto-switch to the\s+destination's local language/);
+    expect(messages[1]?.content).toContain('"locale":"zh"');
   });
 
   it("rejects forbidden content (today/current) and fails closed with POLICY_DENIED", async () => {

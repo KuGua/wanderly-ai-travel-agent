@@ -34,6 +34,12 @@ and invoked only through the Skill Registry with expected version `1.2.0`.
   total context is at most 20,000 chars; the builder enforces the stricter
   runtime turn/character budget.
 - Output: non-empty answer plus `MODEL | SAFE_REFUSAL`.
+- User-visible prose language: an explicit language/translation request in
+  the current turn wins; otherwise the reply uses that turn's dominant
+  language. Thread context, long-term memory, destination country and
+  provider evidence never select the reply language. This rule does not
+  apply to typed tool arguments, evidence, IDs or other machine-consumed
+  fields.
 - Allowed scope: `chat:read`; `hotel:search` and `flight:search` declared but
   **only dispatched, per capability, when the rollout flag
   `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=true` is on AND that specific
