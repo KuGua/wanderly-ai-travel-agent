@@ -21,10 +21,10 @@ export type BotPersona = "robo" | "shazi";
  */
 export const SHAZI_SPRITE_SRC = "/bot/shazi.png";
 
-/** Roughly the drawing's own aspect ratio, so the box matches the art. */
-const SHAZI_ASPECT = 1.12;
-
 export function ShaziSprite({ onMissing }: { onMissing?: () => void }) {
+  // Only the width is pinned (to the shared --bot-w); the height follows the
+  // file's own proportions. An assumed aspect ratio here stretched the
+  // drawing — the art decides its shape, not the code.
   return (
     // A hand-drawn character a few dozen pixels wide, sized by a CSS variable
     // and served from our own `public/`. next/image would add an optimizer
@@ -36,7 +36,6 @@ export function ShaziSprite({ onMissing }: { onMissing?: () => void }) {
       src={SHAZI_SPRITE_SRC}
       alt=""
       draggable={false}
-      style={{ height: `calc(var(--bot-w) * ${SHAZI_ASPECT})` }}
       // A missing or unreadable file must never leave a broken-image icon
       // sitting over the globe: the bot falls back to robo instead.
       onError={onMissing}
