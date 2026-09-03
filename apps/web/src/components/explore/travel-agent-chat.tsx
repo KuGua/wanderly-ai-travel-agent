@@ -1222,14 +1222,18 @@ export function TravelAgentChat({
                 if (run.status === "COMPLETED_WITH_GAPS" && run.resultPlanId !== null) {
                   return (
                     <p role="status" className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                      {t("planningCompletedWithGaps", { gaps: t("planningCompletedWithGaps.detail") })}
+                      {t("planningCompletedWithGaps.message", {
+                        gaps: t("planningCompletedWithGaps.detail"),
+                      })}
                     </p>
                   );
                 }
                 if (run.status === "COMPLETED_WITH_GAPS" && run.resultPlanId === null) {
                   return (
                     <p role="status" className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                      {t("planningResearchSummaryOnly", { reason: t("planningResearchSummaryOnly.reasonFlight") })}
+                      {t("planningResearchSummaryOnly.message", {
+                        reason: t("planningResearchSummaryOnly.reasonFlight"),
+                      })}
                     </p>
                   );
                 }

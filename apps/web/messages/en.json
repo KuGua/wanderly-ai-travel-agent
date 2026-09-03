@@ -286,10 +286,14 @@
       "planningNotAllowed": "Wanderly is not allowed to plan this trip right now — a permission or authorization it needs is missing.",
       "planningPreferencesChanged": "Your search preferences changed while Wanderly was planning, so it stopped. Start planning again to use the new ones.",
       "planningProviderUnavailable": "Wanderly could not reach a travel provider while planning. Nothing about your trip was changed.",
-      "planningCompletedWithGaps": "Wanderly finished a plan with these gaps: {gaps}.",
-      "planningCompletedWithGaps.detail": "some travel providers could not be checked — see the trip workspace for the full list",
-      "planningResearchSummaryOnly": "Wanderly could not write a plan this turn ({reason}), but kept what it found. See the trip workspace for details.",
-      "planningResearchSummaryOnly.reasonFlight": "no flight evidence was available for the recommended destination",
+      "planningCompletedWithGaps": {
+        "message": "Wanderly finished a plan with these gaps: {gaps}.",
+        "detail": "some travel providers could not be checked — see the trip workspace for the full list"
+      },
+      "planningResearchSummaryOnly": {
+        "message": "Wanderly could not write a plan this turn ({reason}), but kept what it found. See the trip workspace for details.",
+        "reasonFlight": "no flight evidence was available for the recommended destination"
+      },
       "planningToolBudgetExhausted": "Wanderly ran out of time calling travel providers while planning. The plan was not changed; try again to let the next turn finish.",
       "conversationEvidenceWithoutReply": "Wanderly gathered {capabilityCount, plural, one {# result} other {# results}} from {providerName} (captured {capturedAtTime}) but could not finish the reply.",
       "preparingPrivateChat": "Preparing your private chat…",
