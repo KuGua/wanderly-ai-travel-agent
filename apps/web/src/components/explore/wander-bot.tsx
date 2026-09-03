@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 
 import { GestureReader, pressWasClick } from "./bot-gestures";
 import { BotPersona, ShaziSprite } from "./bot-personas";
+import { ShaziCursorVomit, type CursorOffset } from "./shazi-cursor-vomit";
 import { ShaziFlipGame } from "./shazi-flip-game";
 
 /*
@@ -76,6 +77,10 @@ export const SHAZI_QUIT_LINK =
 export const CLICK_COUNT_FLIP_GAME = 7;
 /** No re-trigger for this long after the flip game runs. */
 export const FLIP_GAME_COOLDOWN_MS = 20 * 60_000;
+/** Three clicks make 啥子 swallow and return the pointer. */
+export const CLICK_COUNT_CURSOR_VOMIT = 3;
+/** No re-trigger for this long after the cursor-vomit egg runs. */
+export const CURSOR_VOMIT_COOLDOWN_MS = 60_000;
 /** What every cooling-down egg shows, in the speech cloud. */
 export const COOLDOWN_LINE = "少年的脸红胜过一切💗";
 
@@ -186,6 +191,9 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
   // performance.now() starts near zero, so 0 would read as "just played" and
   // keep the game in cooldown from the very first trigger.
   const flipPlayedAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const cursorVomitPlayedAtRef = useRef(Number.NEGATIVE_INFINITY);
+  const latestPointerRef = useRef<Point | null>(null);
+  const [cursorVomitTarget, setCursorVomitTarget] = useState<CursorOffset | null>(null);
   /** Gestures only 啥子 answers; robo settles its single click immediately. */
   const gesturesRef = useRef(new GestureReader());
   const gestureTimerRef = useRef(0);
@@ -300,6 +308,29 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
 
   // Opening position: sitting at the composer's top-left corner, mirroring it
   // rather than landing on the status chips that sit directly above it.
+  useEffect(() => {
+    const rememberPointer = (event: PointerEvent) => {
+      latestPointerRef.current = { x: event.clientX, y: event.clientY };
+    };
+    window.addEventListener("pointermove", rememberPointer, { passive: true });
+    return () => window.removeEventListener("pointermove", rememberPointer);
+  }, []);
+
+  const startCursorVomit = useCallback(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const box = root.getBoundingClientRect();
+    const pointer = latestPointerRef.current ?? {
+      x: box.left + box.width / 2,
+      y: box.top + box.height / 2,
+    };
+    // The mouth in the source artwork is centred at roughly 54% / 54%.
+    setCursorVomitTarget({
+      x: pointer.x - (box.left + box.width * 0.54),
+      y: pointer.y - (box.top + box.height * 0.54),
+    });
+  }, []);
+
   useEffect(() => {
     const node = rootRef.current;
     if (!node || positionRef.current) return;
@@ -554,6 +585,14 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
           // unhandled gesture is deliberately a no-op rather than a guess.
           if (gesture.kind === "rightClick") setQuitMenuOpen(true);
           if (gesture.kind === "rightDoubleClick") setPersona("robo");
+          if (gesture.kind === "clickRun" && gesture.count === CLICK_COUNT_CURSOR_VOMIT) {
+            if (performance.now() - cursorVomitPlayedAtRef.current < CURSOR_VOMIT_COOLDOWN_MS) {
+              flashCloud(COOLDOWN_LINE);
+            } else {
+              cursorVomitPlayedAtRef.current = performance.now();
+              startCursorVomit();
+            }
+          }
           if (gesture.kind === "clickRun" && gesture.count === CLICK_COUNT_FLIP_GAME) {
             // Cooldown: within the window, the egg holds and 啥子 just blushes
             // instead — every cooling egg shows the same line.
@@ -568,8 +607,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       }, Math.max(0, due - performance.now()));
     };
     return () => window.clearTimeout(gestureTimerRef.current);
-    // flashCloud is a stable useCallback; listed to satisfy the linter.
-  }, [flashCloud]);
+  }, [flashCloud, startCursorVomit]);
 
   /* A persona change abandons whatever run was in flight: the clicks were
    * aimed at the character that just left. The menu belongs to 啥子, so it
@@ -625,6 +663,8 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
     window.open(SHAZI_QUIT_LINK, "_blank", "noopener,noreferrer");
   }, []);
 
+  const finishCursorVomit = useCallback(() => setCursorVomitTarget(null), []);
+
   return (
     <>
     <div
@@ -634,6 +674,7 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       data-dragging={dragging ? "true" : "false"}
       data-settled={settled ? "true" : "false"}
       data-cloud={cloudBelow ? "below" : "above"}
+      data-effect={cursorVomitTarget ? "cursor-vomit" : undefined}
       onPointerDown={onPointerDown}
       onContextMenu={onContextMenu}
       data-persona={persona}
@@ -670,6 +711,12 @@ export function WanderBot({ lookAt = null, perchSelector, boundsSelector, obstru
       {persona === "shazi" ? (
         <div ref={bodyRef} className="wanderly-bot-body wanderly-bot-body--sprite">
           <ShaziSprite onMissing={() => setPersona("robo")} />
+          {cursorVomitTarget ? (
+            <ShaziCursorVomit
+              cursor={cursorVomitTarget}
+              onComplete={finishCursorVomit}
+            />
+          ) : null}
         </div>
       ) : (
         <>

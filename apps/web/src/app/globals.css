@@ -494,11 +494,146 @@
 /* A persona drawn as artwork rather than in CSS: the box only carries the
    image, so none of robo's outline, fill or radius applies. */
 .wanderly-bot-body--sprite {
+  position: relative;
   width: var(--bot-w);
   height: auto;
   border: 0;
   border-radius: 0;
   background: none;
+}
+
+html.wanderly-cursor-swallowed,
+html.wanderly-cursor-swallowed * {
+  cursor: none !important;
+}
+
+.wanderly-bot[data-effect="cursor-vomit"] {
+  pointer-events: none;
+}
+
+.shazi-cursor-vomit {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.shazi-mouth-eraser {
+  position: absolute;
+  z-index: 1;
+  left: 37%;
+  top: 47%;
+  width: 34%;
+  height: 20%;
+  border-radius: 48%;
+  background: #fff;
+}
+
+.shazi-mouth-layer,
+.shazi-eye-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+}
+
+.shazi-mouth-layer {
+  clip-path: polygon(36% 46%, 72% 46%, 72% 67%, 36% 67%);
+  filter: url("#shazi-remove-white");
+  transform-origin: 54% 55%;
+  animation: shazi-mouth-vomit 6.7s linear both;
+}
+
+.shazi-eye-backing,
+.shazi-eye-layer {
+  z-index: 3;
+  opacity: 0;
+  transform-origin: center;
+  animation: shazi-eye-spin 6.7s linear both;
+}
+
+.shazi-eye-backing {
+  position: absolute;
+  z-index: 2;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.shazi-eye-backing--left {
+  left: 19%;
+  top: 11%;
+  width: 21%;
+  height: 27%;
+  transform-origin: 50% 50%;
+}
+
+.shazi-eye-backing--right {
+  left: 66%;
+  top: 10%;
+  width: 22%;
+  height: 27%;
+  transform-origin: 50% 50%;
+}
+
+.shazi-eye-layer--left {
+  clip-path: polygon(15% 8%, 42% 8%, 42% 39%, 15% 39%);
+  filter: url("#shazi-remove-white");
+  transform-origin: 28.5% 23.5%;
+}
+
+.shazi-eye-layer--right {
+  clip-path: polygon(65% 8%, 91% 8%, 91% 39%, 65% 39%);
+  filter: url("#shazi-remove-white");
+  transform-origin: 78% 23.5%;
+}
+
+.shazi-vomited-cursor {
+  position: absolute;
+  z-index: 4;
+  left: 54%;
+  top: 55%;
+  width: 18px;
+  height: 22px;
+  overflow: visible;
+  opacity: 0;
+  filter: drop-shadow(1px 2px 0 rgb(0 0 0 / 20%));
+  animation: shazi-cursor-return 6.7s linear both;
+}
+
+.shazi-effect-filters {
+  position: absolute;
+  pointer-events: none;
+}
+
+@keyframes shazi-mouth-vomit {
+  0% { translate: 0 0; scale: 1; }
+  14.93% { translate: var(--shazi-cursor-x) var(--shazi-cursor-y); scale: 3; }
+  59.7% { translate: 0 0; scale: 1; }
+  89.55% { translate: 0 0; scale: 1; }
+  94% { translate: 0 0; scale: 7; }
+  100% { translate: 0 0; scale: 1; }
+}
+
+@keyframes shazi-eye-spin {
+  0%, 67.16% { opacity: 0; scale: 1; rotate: 0deg; }
+  67.17% { opacity: 1; scale: 1; rotate: 0deg; }
+  89.55% { opacity: 1; scale: 2; rotate: 360deg; }
+  89.56%, 100% { opacity: 0; scale: 1; rotate: 360deg; }
+}
+
+@keyframes shazi-cursor-return {
+  0%, 89.55% { opacity: 0; translate: 0 0; rotate: -18deg; scale: 0.25; }
+  89.56% { opacity: 1; translate: 0 0; rotate: -18deg; scale: 0.25; }
+  99% { opacity: 1; translate: var(--shazi-cursor-x) var(--shazi-cursor-y); rotate: 0deg; scale: 1; }
+  100% { opacity: 0; translate: var(--shazi-cursor-x) var(--shazi-cursor-y); rotate: 0deg; scale: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shazi-cursor-vomit { display: none; }
 }
 
 .wanderly-bot-sprite {
