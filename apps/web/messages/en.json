@@ -310,7 +310,7 @@
       "threadTitle": "Explore conversation",
       "threadTitleWithPlace": "Explore · {name}",
       "composerNote": "Enter to send · Shift + Enter for a new line · This thread is private to you and scoped to this trip.",
-      "briefProposalTitle": "Update trip brief?",
+      "briefProposalTitle": "Ready to plan this trip?",
       "briefProposalBody": "Destination: {destination} · Duration: {days}",
       "briefProposalDeparture": "Leaving from {cities}",
       "briefProposalDestinations": "Going to {destinations}",
@@ -392,7 +392,17 @@
         "departure_city": "Departing from"
       },
       "prefCardReopenHint": "You can reopen this any time by typing “trip preferences”.",
-      "prefCardTrigger": "trip preferences"
+      "prefCardTrigger": "trip preferences",
+      "briefProposalIntro": "Here is what I picked up. Pick one — nothing is saved until you do.",
+      "briefProposalPlanTitle": "Plan this destination",
+      "briefProposalPlanBody": "Saves it to your trip and opens the planner, where dates, flights and stays get worked out.",
+      "briefProposalExploreTitle": "Keep exploring",
+      "briefProposalExploreBody": "Changes nothing. Keep turning the globe and ask about anywhere else.",
+      "briefProposalOpening": "Opening the planner…",
+      "briefProposalSaveTitle": "Save this to the trip",
+      "briefProposalSaveBody": "Updates the brief on the right. You stay in this conversation.",
+      "briefProposalKeepTitle": "Leave it as it is",
+      "briefProposalKeepBody": "Changes nothing about the trip."
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",

@@ -310,7 +310,7 @@
       "threadTitle": "探索对话",
       "threadTitleWithPlace": "探索 · {name}",
       "composerNote": "Enter 发送 · Shift + Enter 换行 · 对话仅归属于本行程且仅你可见。",
-      "briefProposalTitle": "更新行程信息？",
+      "briefProposalTitle": "要开始规划这趟行程吗？",
       "briefProposalBody": "目的地：{destination} · 天数：{days}",
       "briefProposalDeparture": "从 {cities} 出发",
       "briefProposalDestinations": "去 {destinations}",
@@ -392,7 +392,17 @@
         "departure_city": "出发地"
       },
       "prefCardReopenHint": "之后随时输入「调整本次行程偏好」，都可以重新打开这张卡片。",
-      "prefCardTrigger": "调整本次行程偏好"
+      "prefCardTrigger": "调整本次行程偏好",
+      "briefProposalIntro": "这是我从对话里读到的信息。选一个——在你选之前什么都不会保存。",
+      "briefProposalPlanTitle": "就去这里，开始规划",
+      "briefProposalPlanBody": "把目的地存进行程并打开规划页，在那里安排日期、机票和住宿。",
+      "briefProposalExploreTitle": "我想自行探索",
+      "briefProposalExploreBody": "什么都不改。继续转动地球，随时问别的地方。",
+      "briefProposalOpening": "正在打开规划页…",
+      "briefProposalSaveTitle": "保存到这趟行程",
+      "briefProposalSaveBody": "更新右侧的行程信息，你会留在当前对话里。",
+      "briefProposalKeepTitle": "先不改",
+      "briefProposalKeepBody": "行程信息保持原样。"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",

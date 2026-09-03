@@ -29,7 +29,7 @@ import { TravelApiError } from "@/lib/api/errors";
 import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { useTravelApi } from "@/lib/query/provider";
-import { Link } from "@/i18n/navigation";
+import { Link, useRouter } from "@/i18n/navigation";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
 type PendingTurn = ConversationTurnRequest;
@@ -176,6 +176,11 @@ export function TravelAgentChat({
   onSharedRunStarted,
 }: TravelAgentChatProps) {
   const t = useTranslations("explore.chat");
+  const router = useRouter();
+  // The same card serves the globe and the workspace, and only one of them
+  // has a planner to open — saying "opens the planner" to someone already
+  // standing in it is just wrong.
+  const onGlobe = surface !== "TRIP_WORKSPACE";
   const docked = variant === "docked";
   const effectiveThreadId = controlledThreadId;
   // Absent an explicit status, a missing thread means "none yet", not "one is
@@ -691,9 +696,25 @@ export function TravelAgentChat({
       });
       await trip.refetch();
       setBriefProposal(null);
+      // Saving the destination and then leaving the traveller on the globe
+      // made them find the planner themselves, with no sign the answer had
+      // landed anywhere. Choosing to plan is choosing to go there, so the
+      // same click does. The thread comes along so the conversation they were
+      // just having is the one waiting for them.
+      if (onGlobe) {
+        router.push(
+          (effectiveThreadId
+            ? `/trips/${tripId}?thread=${effectiveThreadId}`
+            : `/trips/${tripId}`) as "/trips/[tripId]",
+        );
+      } else {
+        setIsConfirmingBrief(false);
+      }
     } catch (error) {
       setRequestError(error);
-    } finally {
+      // Only cleared here: on the way to the planner this component unmounts,
+      // and dropping the flag first would flash the button back to its resting
+      // label mid-navigation.
       setIsConfirmingBrief(false);
     }
   }
@@ -1069,12 +1090,41 @@ export function TravelAgentChat({
           {briefProposal && tripId ? (
             <section aria-label={t("briefProposalTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <p className="font-bold text-primary">{t("briefProposalTitle")}</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">
+              <p className="mt-1 text-xs text-muted-foreground">{t("briefProposalIntro")}</p>
+              <ul className="mt-2 list-disc space-y-0.5 pl-4 text-muted-foreground">
                 {describeBriefProposal(briefProposal, t).map((line) => <li key={line}>{line}</li>)}
               </ul>
-              <div className="mt-3 flex gap-2">
-                <button type="button" onClick={() => void confirmBriefProposal()} disabled={isConfirmingBrief} className={actionPrimaryClass}>{isConfirmingBrief ? t("briefProposalSaving") : t("briefProposalConfirm")}</button>
-                <button type="button" onClick={() => setBriefProposal(null)} disabled={isConfirmingBrief} className={actionSecondaryClass}>{t("briefProposalIgnore")}</button>
+              {/* Two ways forward rather than "confirm / ignore": from the
+                  globe the real question is whether this is the trip, and
+                  "Ignore" answered a different one. Each option says what it
+                  does, because one of them leaves the map. */}
+              <div className="mt-3 grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => void confirmBriefProposal()}
+                  disabled={isConfirmingBrief}
+                  className={`${actionPrimaryClass} flex w-full flex-col items-start gap-0.5 py-2.5 text-left`}
+                >
+                  <span className="block">
+                    {isConfirmingBrief
+                      ? t(onGlobe ? "briefProposalOpening" : "briefProposalSaving")
+                      : t(onGlobe ? "briefProposalPlanTitle" : "briefProposalSaveTitle")}
+                  </span>
+                  <span className="block text-[11px] font-semibold opacity-80">
+                    {t(onGlobe ? "briefProposalPlanBody" : "briefProposalSaveBody")}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBriefProposal(null)}
+                  disabled={isConfirmingBrief}
+                  className={`${actionSecondaryClass} flex w-full flex-col items-start gap-0.5 py-2.5 text-left`}
+                >
+                  <span className="block">{t(onGlobe ? "briefProposalExploreTitle" : "briefProposalKeepTitle")}</span>
+                  <span className="block text-[11px] font-semibold opacity-75">
+                    {t(onGlobe ? "briefProposalExploreBody" : "briefProposalKeepBody")}
+                  </span>
+                </button>
               </div>
             </section>
           ) : null}
