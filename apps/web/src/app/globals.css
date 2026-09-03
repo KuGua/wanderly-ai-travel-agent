@@ -67,12 +67,12 @@
   --w-page: color-mix(in srgb, var(--w-fog), var(--w-white) 74%);
   --w-line: color-mix(in srgb, var(--w-fog), var(--w-white) 38%);
   --w-mist: color-mix(in srgb, var(--w-fog), var(--w-white) 62%);
-  /* A deeper ground for one half of a panel. Built from the fog rather than
-     from the page, so the warm bias survives: mixing ink into the near-white
-     page darkens it correctly but flattens it to grey, because the page has
-     almost no colour left to carry. Fog keeps its red-over-blue lean through
-     the mix, so this lands about 10% darker and still reads beige. */
-  --w-sunken: color-mix(in srgb, var(--w-fog), var(--w-ink) 8%);
+  --w-gold: #d9a441;
+  /* A deeper ground for one half of a panel — champagne rather than taupe.
+     Darkening the beige with ink got the value right and killed the colour:
+     ink is neutral, so the result drifted grey. A little gold separates the
+     half by hue instead, which lets it stay light. */
+  --w-sunken: color-mix(in srgb, color-mix(in srgb, var(--w-fog), var(--w-white) 25%), var(--w-gold) 9%);
 
   /* Deep-space variants; the cosmic map reassigns the same palette. */
   --w-space: color-mix(in srgb, var(--w-primary), #000 72%);
