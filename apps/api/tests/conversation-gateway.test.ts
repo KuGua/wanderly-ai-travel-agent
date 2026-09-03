@@ -33,6 +33,11 @@ describe("conversational ModelGateway", () => {
       stream: true,
       stream_options: { include_usage: true },
     });
+    const messages = create.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
+    expect(messages[0]?.content).toContain("User-visible language (higher priority than history)");
+    expect(messages[0]?.content.match(/User-visible language \(higher priority than history\)/g)).toHaveLength(1);
+    expect(messages[0]?.content).toContain("If the traveller explicitly requests a translation or another language");
+    expect(messages[0]?.content).toContain("`threadContext`, `memoryContext`, destination country, and provider evidence");
     expect(recordAgentRun).toHaveBeenCalledWith(expect.objectContaining({
       skillName: "travel.conversation",
       status: "SUCCESS",
@@ -71,6 +76,9 @@ describe("conversational ModelGateway", () => {
     expect(JSON.stringify(recordAgentRun.mock.calls)).not.toContain("A bounded model answer.");
     expect(parse.mock.calls[0][0]).not.toHaveProperty("signal");
     expect(parse.mock.calls[0][1]).toHaveProperty("signal");
+    const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
+    expect(messages[0]?.content).toContain("User-visible language (higher priority than history)");
+    expect(messages[0]?.content.match(/User-visible language \(higher priority than history\)/g)).toHaveLength(1);
   });
 
   it("adds Skill-selected hotel readiness guidance without placing it in user content", async () => {
