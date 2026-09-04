@@ -71,6 +71,10 @@ Shared 是内部的非对话规划能力，不直接与用户聊天。它只读�
 - 从聊天提取的内容只是候选，不能直接写为行程事实。
 - 前端会合并跨轮次候选。例如先说“去苏州玩三天”，后说“从上海出发，12 月 10 日左右”，会合并成同一张卡而不会互相覆盖。
 - 用户点击“确认行程信息”才调用 `PATCH /trips/:tripId/draft-brief` 写入 `shared_trips`。
+- **候选日期必须自洽，否则整对丢弃。** 一份提案由两个互不知情的来源拼成：`proposeTripBriefFromTurn` 解析用户自己的话，模型抽取器只补用户在同一轮接受的调度值。二者都可能给日期，因此合并后必须过 `coherentBriefDates`：`travelDateEnd` 早于 `travelDateStart`、日期不在日历上、或日期已经过去时，剥掉日期字段并保留其余候选。同轮合并与跨轮合并（提案存活在 trip 上，可由多轮拼成）都走这道闸；结果计入 `trip_brief_proposal_dates_total{result}`。
+  该约束只作用于**候选**。创建者手工编辑 brief 是明确陈述而非推断，仅由路由自身校验。
+- 确认卡必须显示它将要写入的日期。2026-09-04 之前它只显示目的地，一份结束日期早于开始日期两年的提案因此在界面上与正常提案毫无区别，点击只会失败；排查见 [简报确认卡永远保存失败](investigations/2026-09-04-brief-proposal-date-year-drift.md)。
+- 路由拒绝日期时返回 `400` + `BRIEF_DATES_INVALID:`，与 `DESTINATION_UNRESOLVED:` 同一约定：前端必须能把它与普通的请求格式错误区分开，因为一份存在服务端的坏提案不会因为重发而改变。
 - “确认无误”“可以搜索”等自然语言不是开始完整规划的命令；开始规划必须通过清晰的 UI 动作，避免把酒店确认误当成整段旅行确认。
 
 ### 3.2 开始规划的原子语义
@@ -124,8 +128,10 @@ Shared 是内部的非对话规划能力，不直接与用户聊天。它只读�
 |---|---|
 | 私密对话边界与文案规则 | `apps/api/src/providers/llm-gateway.ts` |
 | 每轮注入哪些搜索 readiness 约束 | `apps/api/src/tasks/handlers/conversation-task-handler.ts` 的 `selectResponseConstraints` |
-| 简报候选抽取的取值来源规则 | `apps/api/src/providers/llm-gateway.ts` 的 `TRIP_BRIEF_EXTRACTION_SYSTEM_PROMPT` |
-| 简报候选提取 | `apps/api/src/services/trip-brief-proposal-service.ts` |
+| 简报候选抽取的取值来源规则 | `apps/api/src/providers/llm-gateway.ts` 的 `tripBriefExtractionSystemPrompt`（含 `currentDateRule` 的当前日期锚点） |
+| 简报候选提取与日期区间解析 | `apps/api/src/services/trip-brief-proposal-service.ts` 的 `proposeTripBriefFromTurn` / `extractDateRange` |
+| 候选日期自洽校验 | 同文件的 `coherentBriefDates`、`mergeTripBriefProposal`、`mergePendingBriefProposal` |
+| 候选提案落库（跨轮合并 + 行锁） | `apps/api/src/workers/agent-task-worker.ts` 的 `persistPendingBriefProposal` |
 | DRAFT / PLANNING handoff gate | `apps/api/src/tasks/handlers/conversation-task-handler.ts` 的 `shouldExtractConversationHandoff` |
 | 确认 brief 与开始规划 | `apps/api/src/routes/trips.ts` |
 | 前端确认卡、开始按钮与任务订阅 | `apps/web/src/components/explore/travel-agent-chat.tsx` |

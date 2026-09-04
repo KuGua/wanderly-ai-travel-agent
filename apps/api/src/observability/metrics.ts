@@ -400,6 +400,11 @@ metrics.registerCounter(
   "Draft-brief destination submissions by whether the catalogue could resolve them.",
   { result: ["accepted", "unresolved"] },
 );
+metrics.registerCounter(
+  "trip_brief_proposal_dates_total",
+  "Conversation-proposed brief dates by whether the pair held together on the way to the trip.",
+  { result: ["ok", "end_before_start", "in_past", "malformed"] },
+);
 
 // Every value `requireActiveTrip` is called with has to be listed, or the
 // rejection it is recording throws instead: `metrics.inc` refuses an

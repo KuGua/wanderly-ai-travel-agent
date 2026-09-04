@@ -850,7 +850,9 @@ export async function handleConversationTask(params: {
       // The model extractor is retained only for an owner accepting a
       // concrete date/duration the assistant resolved in this same turn.
       // It can never introduce a destination, departure, or other free-text
-      // trip fact from a reply.
+      // trip fact from a reply — nor a date that contradicts the one parsed
+      // above, which is how an end date two years before its start reached
+      // the card and made it unsavable.
       parsedReply.tripBriefProposal,
     )
     : undefined;

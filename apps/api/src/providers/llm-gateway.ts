@@ -119,7 +119,20 @@ const tripBriefExtractionSchema = z.object({
 const geminiTripBriefExtractionSchema = z.union([z.null(), tripBriefProposalFieldsSchema])
   .transform((proposal) => ({ proposal }));
 
-const TRIP_BRIEF_EXTRACTION_SYSTEM_PROMPT = [
+/**
+ * Built per call rather than held as a constant, because it carries the date.
+ *
+ * Without one, the extractor had only its training data to date a bare 月日
+ * against, and answered 2024 — so "10月1号到10月7号" reached the confirmation
+ * card as a start in 2026 and an end in 2024, and every click on it was a
+ * 400. `currentDateRule` is the same block the conversation model has been
+ * given since it made the identical mistake on a hotel check-in.
+ */
+export function tripBriefExtractionSystemPrompt(now: Date): string {
+  return [...TRIP_BRIEF_EXTRACTION_RULES, currentDateRule(now)].join("\n");
+}
+
+const TRIP_BRIEF_EXTRACTION_RULES = [
   "You are a strict, conservative extractor for a private trip-planning assistant.",
   "Given the owner's latest message, the assistant's reply, and the trip's currently known brief, decide whether the owner has SETTLED a NEW or CHANGED departure city/cities, destination candidate(s), exact travel start/end date, or trip length in days for this specific trip.",
   "A value counts as settled by the owner in either of two ways, and in no other way:",
@@ -136,8 +149,10 @@ const TRIP_BRIEF_EXTRACTION_SYSTEM_PROMPT = [
   "- Departure cities are 1-3 short place names; destination candidates are 1-5 short place names.",
   "- Dates must be exact calendar dates in YYYY-MM-DD format. A vague phrase from the owner alone (\"next month\") is not enough; the same phrase resolved to concrete dates in `assistantReply` and then accepted by the owner under (b) is.",
   "- If the settled information is a trip length (e.g. \"about 5 days\") without exact dates, use travelDays instead of the date fields.",
+  "- A month and day with no year takes the next such date after today, using the current time stated below. Never write a year that is already past.",
+  "- `travelDateEnd` must be the same date as or later than `travelDateStart`. If you cannot produce a pair that satisfies that, omit both date fields rather than emitting one you are unsure of.",
   "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
-].join("\n");
+];
 
 function canonicalize(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -1852,6 +1867,8 @@ export class LLMGateway implements ModelGateway {
     tripContext?: PersonalTripContext;
     signal?: AbortSignal;
     ctx?: RequestContext;
+    /** Injectable so a test pins a date rather than following the clock. */
+    now?: Date;
   }): Promise<TripBriefProposal | null> {
     const ctx = params.ctx ?? this.options.ctx;
     let client: OpenAIClientLike;
@@ -1864,7 +1881,7 @@ export class LLMGateway implements ModelGateway {
       const response = await client.chat.completions.parse({
         model: this.options.modelName,
         messages: [
-          { role: "system", content: TRIP_BRIEF_EXTRACTION_SYSTEM_PROMPT },
+          { role: "system", content: tripBriefExtractionSystemPrompt(params.now ?? new Date()) },
           {
             role: "user",
             content: JSON.stringify({

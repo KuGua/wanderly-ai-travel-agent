@@ -7,9 +7,13 @@ import {
   parseTraceparent,
   safeSetAttribute,
 } from "../observability/tracing.js";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "../db/database.js";
 import { agentTaskRuns, sharedTrips } from "../db/schema.js";
+import {
+  mergePendingBriefProposal,
+  type TripBriefProposal,
+} from "../services/trip-brief-proposal-service.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import { handleConversationTask, publishPhase } from "../tasks/handlers/conversation-task-handler.js";
 import { handlePlanningTask } from "../tasks/handlers/planning-task-handler.js";
@@ -60,6 +64,34 @@ function openWorkerRunSpan(run: AgentTaskRow, claimDurationMs: number) {
   );
   safeSetAttribute(span, "app.correlation_id", tc?.correlationId ?? run.requestId);
   return span;
+}
+
+/**
+ * Folds this turn's brief proposal into the one the trip already carries, and
+ * stores what survives the date-coherence guard.
+ *
+ * Read-modify-write under a row lock rather than the jsonb `||` this replaced:
+ * the merge has to be able to reject the combined pair, and `||` can only
+ * overwrite keys. Returns what was stored, or `null` when nothing was.
+ */
+async function persistPendingBriefProposal(
+  tripId: string,
+  incoming: TripBriefProposal,
+): Promise<TripBriefProposal | null> {
+  return db.transaction(async (tx) => {
+    const [trip] = await tx.select({ pending: sharedTrips.pendingBriefProposal })
+      .from(sharedTrips).where(eq(sharedTrips.id, tripId)).for("update").limit(1);
+    if (!trip) return null;
+    const { proposal, result } = mergePendingBriefProposal(
+      trip.pending as TripBriefProposal | null,
+      incoming,
+    );
+    metrics.inc("trip_brief_proposal_dates_total", { result });
+    await tx.update(sharedTrips)
+      .set({ pendingBriefProposal: proposal })
+      .where(eq(sharedTrips.id, tripId));
+    return proposal;
+  });
 }
 
 async function persistedPlanningOutcome(run: AgentTaskRow): Promise<TaskMetricOutcome> {
@@ -199,23 +231,25 @@ export async function processNextAgentTask(): Promise<boolean> {
           .where(eq(agentTaskRuns.id, run.id));
         // Also on the trip, where it survives a reload and a device change.
         // Merged, because a brief is often given across several turns and the
-        // card is a running review of all of them.
-        if (run.tripId) {
-          await db.update(sharedTrips)
-            .set({
-              pendingBriefProposal: sql`coalesce(${sharedTrips.pendingBriefProposal}, '{}'::jsonb) || ${
-                JSON.stringify(output.tripBriefProposal)
-              }::jsonb`,
-            })
-            .where(eq(sharedTrips.id, run.tripId));
+        // card is a running review of all of them — which is also why the
+        // merge happens here rather than in a jsonb `||`: a start date from
+        // one turn can meet an end date from another, and a pair that cannot
+        // be true has to be dropped before it becomes a card nobody can save.
+        const persisted = run.tripId
+          ? await persistPendingBriefProposal(run.tripId, output.tripBriefProposal)
+          : output.tripBriefProposal;
+        // The card is built from what was stored, never from what the turn
+        // proposed: publishing the unguarded value would put a date on screen
+        // that the trip does not have and the write boundary would refuse.
+        if (persisted) {
+          await publishAgentStreamEvent({
+            event: "trip.brief_proposed",
+            runId: run.id,
+            generationAttempt: run.generationAttempt,
+            proposal: persisted,
+            traceparent,
+          });
         }
-        await publishAgentStreamEvent({
-          event: "trip.brief_proposed",
-          runId: run.id,
-          generationAttempt: run.generationAttempt,
-          proposal: output.tripBriefProposal,
-          traceparent,
-        });
       }
       await publishAgentStreamEvent({
         event: "turn.completed",

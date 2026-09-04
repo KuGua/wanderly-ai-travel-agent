@@ -659,7 +659,11 @@ export async function tripRoutes(app: FastifyInstance) {
       if ((nextTravelDateStart && !isValidTripDate(nextTravelDateStart))
         || (nextTravelDateEnd && !isValidTripDate(nextTravelDateEnd))
         || (nextTravelDateStart && nextTravelDateEnd && nextTravelDateEnd < nextTravelDateStart)) {
-        throw new ApiError(400, "Bad Request", "Travel dates must be valid calendar dates with an end date on or after the start date");
+        // Coded like DESTINATION_UNRESOLVED above, because the client has to
+        // tell this apart from a malformed request: a stale card carrying an
+        // impossible date pair is not fixed by resending it, and the copy for
+        // the two cases says opposite things.
+        throw new ApiError(400, "Bad Request", "BRIEF_DATES_INVALID: travel dates must be valid calendar dates with an end date on or after the start date");
       }
       const nextDays = body.travelDays ?? trip.travelDays;
       const autoTitle = buildTripTitle({ destinationCandidates: nextDestinations, travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays, locale: body.titleLocale });

@@ -279,6 +279,7 @@
       "conversationBusy": "上一条消息仍在创建中。请稍等片刻后重试。",
       "requestInvalid": "这条消息暂时无法被接受。请刷新对话后重试。",
       "destinationUnresolved": "无法确认这个目的地。请使用受支持的城市名，或从地图中选择地点。",
+      "briefDatesInvalid": "这组出行日期无法使用（结束日期早于开始日期，或日期已经过去）。请在对话里重新说一次日期。",
       "prefCardSaveFailed": "偏好保存失败，请检查后重试。",
       "prefCardSaved": "已保存到本次行程。",
       "genericError": "消息发送失败，请重试。",

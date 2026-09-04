@@ -879,6 +879,11 @@ export function TravelAgentChat({
         ? t("briefProposalSaveTitle", { destination: briefDestination })
         : t("briefProposalSaveTitleNoDestination");
   const briefSecondaryLabel = t(onGlobe ? "briefProposalExploreCompact" : "briefProposalKeepTitle");
+  // The card used to name only the destination while carrying dates it never
+  // showed. A conversation once proposed an end date two years before its
+  // start, and the traveller had no way to see it — the button simply failed.
+  // What is about to be saved has to be legible before the click.
+  const briefDates = formatBriefDates(fmt, briefProposal);
 
   const actionCardClass = `px-3.5 py-3 text-sm ${surfaceClass} wanderly-r-md wanderly-shadow-sm`;
   const actionPrimaryClass = "min-h-10 px-3 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-50";
@@ -1191,6 +1196,11 @@ export function TravelAgentChat({
                   {briefDestination
                     ? t("briefProposalQuestion", { destination: briefDestination })
                     : t("briefProposalQuestionNoDestination")}
+                  {briefDates ? (
+                    <span className={`block font-semibold ${onGlobe ? "text-[10px] leading-4" : "mt-0.5 text-xs"} ${docked ? "text-muted-foreground" : "text-[var(--w-space-muted)]"}`}>
+                      {briefDates}
+                    </span>
+                  ) : null}
                 </p>
                 <div className={onGlobe ? "contents" : "grid grid-cols-2 gap-2"}>
                   <button
@@ -1646,6 +1656,26 @@ class AgentRunFailure extends Error {
   }
 }
 
+/**
+ * The travel dates the card is offering to save, as one readable line.
+ *
+ * Dates only — a duration without them is already carried by the trip title,
+ * and a start with no end is common mid-conversation and still worth showing.
+ * Parsed as UTC noon so a `YYYY-MM-DD` cannot slip a day in a negative-offset
+ * timezone.
+ */
+function formatBriefDates(
+  fmt: ReturnType<typeof useFormatter>,
+  proposal: { travelDateStart?: string; travelDateEnd?: string } | null,
+): string | null {
+  const start = proposal?.travelDateStart ? new Date(`${proposal.travelDateStart}T12:00:00Z`) : null;
+  const end = proposal?.travelDateEnd ? new Date(`${proposal.travelDateEnd}T12:00:00Z`) : null;
+  const day = { year: "numeric", month: "short", day: "numeric" } as const;
+  if (start && end) return fmt.dateTimeRange(start, end, day);
+  const single = start ?? end;
+  return single ? fmt.dateTime(single, day) : null;
+}
+
 function isRetryable(error: unknown) {
   return !(error instanceof TravelApiError) || error.statusCode === null || [404, 500, 502, 504].includes(error.statusCode);
 }
@@ -1679,6 +1709,10 @@ function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
   if (error instanceof TravelApiError) {
     if (error.statusCode === null) return t("networkError");
     if (error.message.startsWith("DESTINATION_UNRESOLVED:")) return t("destinationUnresolved");
+    // Ahead of the 400 branch below, which would otherwise tell the traveller
+    // to refresh — advice that cannot work, because the dates it is refusing
+    // are stored on the trip and come back unchanged.
+    if (error.message.startsWith("BRIEF_DATES_INVALID:")) return t("briefDatesInvalid");
     if (error.statusCode === 401 || error.statusCode === 403) return t("authenticationRequired");
     if (error.statusCode === 502 || error.statusCode === 504) return t("providerUnavailable");
     if (error.statusCode === 404) return t("threadMissing");

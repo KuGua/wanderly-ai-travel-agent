@@ -236,6 +236,62 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(screen.getByText("Set Suzhou as the destination?")).toBeInTheDocument();
   });
 
+  /**
+   * The card named only the destination while carrying dates it never showed,
+   * so a proposal whose end date was two years before its start looked exactly
+   * like a good one — until the button failed and said to refresh.
+   */
+  it("shows the travel dates it is offering to save", async () => {
+    const api = createApi({
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "trip.brief_proposed",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          proposal: { destinationCandidates: ["Suzhou"], travelDateStart: "2026-10-01", travelDateEnd: "2026-10-07" },
+        });
+        await untilAborted(signal);
+      }),
+    });
+
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
+    await submitFromCapsule("Go to Suzhou October 1 to 7");
+
+    // Intl collapses the shared month and year: "Oct 1 – 7, 2026".
+    expect(await screen.findByText(/Oct 1\s*.\s*7, 2026/)).toBeInTheDocument();
+  });
+
+  it("does not tell the traveller to refresh when the stored dates are the problem", async () => {
+    const updateDraftTripBrief = vi.fn().mockRejectedValue(
+      new TravelApiError(
+        "BRIEF_DATES_INVALID: travel dates must be valid calendar dates with an end date on or after the start date",
+        400,
+        "Bad Request",
+        null,
+      ),
+    );
+    const api = createApi({
+      updateDraftTripBrief,
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "trip.brief_proposed",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          proposal: { destinationCandidates: ["Suzhou"], travelDateStart: "2026-10-01", travelDateEnd: "2024-10-07" },
+        });
+        await untilAborted(signal);
+      }),
+    });
+
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
+    await submitFromCapsule("Go to Suzhou");
+    fireEvent.click(await screen.findByRole("button", { name: "Save Suzhou to this trip" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Those travel dates can't be used");
+    expect(alert).not.toHaveTextContent("Refresh");
+  });
+
   it("renders the empty-thread introduction as a centred session slogan, not an agent message", async () => {
     renderChat(createApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { currentDateRule } from "../src/providers/llm-gateway.js";
+import { currentDateRule, tripBriefExtractionSystemPrompt } from "../src/providers/llm-gateway.js";
 import { explainToolFailure } from "../src/agents/personal-research-tools.js";
 
 describe("the date the conversation is happening on", () => {
@@ -24,6 +24,30 @@ describe("the date the conversation is happening on", () => {
   it("rules out the date-range excuse the model invented for itself", () => {
     const rule = currentDateRule(new Date("2026-09-02T00:00:00Z"));
     expect(rule).toContain("不存在「日期太远因此查不了」");
+  });
+});
+
+/**
+ * The reply model was given the date; the brief extractor never was, and made
+ * the identical mistake one layer down — "10月1号到10月7号" came back with an
+ * end date in 2024, which the confirmation card could then never save.
+ */
+describe("the date the brief extractor is working from", () => {
+  it("states today, so a bare 月日 is not dated from training data", () => {
+    expect(tripBriefExtractionSystemPrompt(new Date("2026-09-04T13:26:00Z")))
+      .toContain("2026-09-04 13:26 UTC");
+  });
+
+  it("keeps the extraction rules it had", () => {
+    const prompt = tripBriefExtractionSystemPrompt(new Date("2026-09-04T13:26:00Z"));
+    expect(prompt).toContain("strict, conservative extractor");
+    expect(prompt).toContain("Never infer, guess, or fill in from general knowledge.");
+  });
+
+  it("refuses a past year and an end date before its start", () => {
+    const prompt = tripBriefExtractionSystemPrompt(new Date("2026-09-04T13:26:00Z"));
+    expect(prompt).toContain("Never write a year that is already past.");
+    expect(prompt).toContain("must be the same date as or later than `travelDateStart`");
   });
 });
 

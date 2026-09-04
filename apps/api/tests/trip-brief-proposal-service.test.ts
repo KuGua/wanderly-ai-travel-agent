@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { mergeTripBriefProposal, normalizeBriefDestinations, proposeTripBriefFromTurn } from "../src/services/trip-brief-proposal-service.js";
+import {
+  coherentBriefDates,
+  mergePendingBriefProposal,
+  mergeTripBriefProposal,
+  normalizeBriefDestinations,
+  proposeTripBriefFromTurn,
+} from "../src/services/trip-brief-proposal-service.js";
+
+/** The day the reported turn happened, so the year rollover is pinned. */
+const SEPTEMBER_2026 = new Date("2026-09-04T13:26:38Z");
 
 describe("proposeTripBriefFromTurn", () => {
   it("extracts explicit English destination and duration", () => {
@@ -128,5 +137,132 @@ describe("mergeTripBriefProposal", () => {
       { destinationCandidates: ["Shanghai"], travelDays: 3 },
       { travelDays: 5 },
     )).toEqual({ destinationCandidates: ["Shanghai"], travelDays: 3 });
+  });
+
+  /**
+   * The reported failure. The owner wrote both ends of the range; this file
+   * read the first and dated it 2026, the model supplied the second and dated
+   * it 2024, and nothing compared them. The card that resulted answered 400
+   * on every click, and refreshing could not help because the pair was stored
+   * on the trip.
+   */
+  it("drops a model end date that lands before the parsed start", () => {
+    expect(mergeTripBriefProposal(
+      { destinationCandidates: ["Shanghai"], travelDateStart: "2026-10-01" },
+      { travelDateEnd: "2024-10-07" },
+      SEPTEMBER_2026,
+    )).toEqual({ destinationCandidates: ["Shanghai"] });
+  });
+
+  it("keeps a model end date that agrees with the parsed start", () => {
+    expect(mergeTripBriefProposal(
+      { travelDateStart: "2026-10-01" },
+      { travelDateEnd: "2026-10-07" },
+      SEPTEMBER_2026,
+    )).toEqual({ travelDateStart: "2026-10-01", travelDateEnd: "2026-10-07" });
+  });
+});
+
+describe("the range the owner wrote themselves", () => {
+  it("reads both ends of 10月1号到10月7号, in the year that is still ahead", () => {
+    expect(proposeTripBriefFromTurn("我想要10月1号到10月7号去上海", undefined, SEPTEMBER_2026)).toEqual({
+      destinationCandidates: ["Shanghai"],
+      travelDateStart: "2026-10-01",
+      travelDateEnd: "2026-10-07",
+    });
+  });
+
+  it("carries the month across when the tail omits it", () => {
+    expect(proposeTripBriefFromTurn("10月1号到7号去上海", undefined, SEPTEMBER_2026)).toMatchObject({
+      travelDateStart: "2026-10-01",
+      travelDateEnd: "2026-10-07",
+    });
+  });
+
+  it("crosses into the next year when the range does", () => {
+    expect(proposeTripBriefFromTurn("12月28号到1月3号去东京", undefined, SEPTEMBER_2026)).toMatchObject({
+      travelDateStart: "2026-12-28",
+      travelDateEnd: "2027-01-03",
+    });
+  });
+
+  it("reads an English and an ISO range", () => {
+    expect(proposeTripBriefFromTurn("Going to Kyoto October 1 to October 7", undefined, SEPTEMBER_2026)).toMatchObject({
+      travelDateStart: "2026-10-01",
+      travelDateEnd: "2026-10-07",
+    });
+    expect(proposeTripBriefFromTurn("2026-10-01 to 2026-10-07 in Kyoto", undefined, SEPTEMBER_2026)).toMatchObject({
+      travelDateStart: "2026-10-01",
+      travelDateEnd: "2026-10-07",
+    });
+  });
+
+  it("keeps a lone date a lone date", () => {
+    const proposal = proposeTripBriefFromTurn("12月10号去苏州", undefined, SEPTEMBER_2026);
+    expect(proposal).toMatchObject({ travelDateStart: "2026-12-10" });
+    expect(proposal?.travelDateEnd).toBeUndefined();
+  });
+});
+
+describe("coherentBriefDates", () => {
+  it("passes a pair that holds together", () => {
+    const dates = { travelDateStart: "2026-10-01", travelDateEnd: "2026-10-07" };
+    expect(coherentBriefDates(dates, SEPTEMBER_2026)).toEqual({ proposal: dates, result: "ok" });
+  });
+
+  it("keeps the destination when it drops the dates", () => {
+    expect(coherentBriefDates(
+      { destinationCandidates: ["Shanghai"], travelDateStart: "2026-10-01", travelDateEnd: "2024-10-07" },
+      SEPTEMBER_2026,
+    )).toEqual({ proposal: { destinationCandidates: ["Shanghai"] }, result: "end_before_start" });
+  });
+
+  /**
+   * The other half of the same fault: this pair is internally consistent, so
+   * the write boundary accepted it and the trip was silently given travel
+   * dates two years in the past, titled 行程规划｜1天.
+   */
+  it("drops a pair that has already happened", () => {
+    expect(coherentBriefDates(
+      { travelDateStart: "2024-10-01", travelDateEnd: "2024-10-01" },
+      SEPTEMBER_2026,
+    )).toEqual({ proposal: {}, result: "in_past" });
+  });
+
+  it("drops a date that is not a date", () => {
+    expect(coherentBriefDates({ travelDateStart: "2026-02-30" }, SEPTEMBER_2026).result).toBe("malformed");
+  });
+
+  it("leaves a proposal with no dates alone", () => {
+    const proposal = { destinationCandidates: ["Shanghai"], travelDays: 3 };
+    expect(coherentBriefDates(proposal, SEPTEMBER_2026)).toEqual({ proposal, result: "ok" });
+  });
+});
+
+describe("mergePendingBriefProposal", () => {
+  it("folds a later turn into the proposal the trip is carrying", () => {
+    expect(mergePendingBriefProposal(
+      { destinationCandidates: ["Shanghai"] },
+      { travelDateStart: "2026-10-01", travelDateEnd: "2026-10-07" },
+      SEPTEMBER_2026,
+    )).toEqual({
+      proposal: { destinationCandidates: ["Shanghai"], travelDateStart: "2026-10-01", travelDateEnd: "2026-10-07" },
+      result: "ok",
+    });
+  });
+
+  it("refuses a pair assembled across two turns that cannot be true", () => {
+    // Neither turn was wrong on its own, which is exactly why the jsonb merge
+    // this replaced could not catch it.
+    expect(mergePendingBriefProposal(
+      { destinationCandidates: ["Shanghai"], travelDateStart: "2026-10-01" },
+      { travelDateEnd: "2024-10-07" },
+      SEPTEMBER_2026,
+    )).toEqual({ proposal: { destinationCandidates: ["Shanghai"] }, result: "end_before_start" });
+  });
+
+  it("clears the proposal when nothing survives", () => {
+    expect(mergePendingBriefProposal(null, { travelDateStart: "2024-10-01" }, SEPTEMBER_2026))
+      .toEqual({ proposal: null, result: "in_past" });
   });
 });

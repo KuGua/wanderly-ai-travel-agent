@@ -1,5 +1,6 @@
 import type { ConversationPlace } from "../types/schemas.js";
 import { getLocationReferenceResolver } from "../location-reference/location-reference-resolver.js";
+import { isValidTripDate } from "./trip-title-service.js";
 
 export type TripBriefProposal = {
   departureCities?: string[];
@@ -9,6 +10,44 @@ export type TripBriefProposal = {
   travelDays?: number;
 };
 
+/** Why a proposal's dates were kept or dropped. Doubles as a metric label. */
+export type BriefDateCoherence = "ok" | "end_before_start" | "in_past" | "malformed";
+
+/**
+ * Drops a date pair that cannot be true, keeping the rest of the proposal.
+ *
+ * A brief is assembled from two sources that never see each other: this file
+ * parses the owner's own words, and a model supplies only what the owner
+ * accepted from the assistant in the same turn. Neither validated the other,
+ * so "10月1号到10月7号" became a start of 2026-10-01 from here and an end of
+ * 2024-10-07 from the model — a card that answered 400 on every click, with
+ * no way for the traveller to correct it. The past-date case is the same
+ * fault landing on the other side of the write boundary: it validates, saves
+ * silently, and titles the trip "行程规划｜1天".
+ *
+ * Only proposals pass through here. A creator editing the brief by hand is a
+ * stated fact, not a guess, and is left to the route's own validation.
+ */
+export function coherentBriefDates(
+  proposal: TripBriefProposal,
+  now: Date = new Date(),
+): { proposal: TripBriefProposal; result: BriefDateCoherence } {
+  const { travelDateStart: start, travelDateEnd: end } = proposal;
+  if (!start && !end) return { proposal, result: "ok" };
+  const withoutDates = { ...proposal };
+  delete withoutDates.travelDateStart;
+  delete withoutDates.travelDateEnd;
+  const drop = (result: BriefDateCoherence) => ({ proposal: withoutDates, result });
+
+  if ((start && !isValidTripDate(start)) || (end && !isValidTripDate(end))) return drop("malformed");
+  // ISO dates compare correctly as strings, which is also how the route and
+  // the database order them.
+  if (start && end && end < start) return drop("end_before_start");
+  const today = now.toISOString().slice(0, 10);
+  if ((start ?? end)! < today) return drop("in_past");
+  return { proposal, result: "ok" };
+}
+
 /**
  * Combines verified owner text with the narrow scheduling facts that a model
  * may return after the owner accepts a same-turn assistant suggestion. Model
@@ -17,18 +56,43 @@ export type TripBriefProposal = {
 export function mergeTripBriefProposal(
   direct: TripBriefProposal | null,
   assistantAcceptance: TripBriefProposal | undefined,
+  now: Date = new Date(),
 ): TripBriefProposal | undefined {
   const schedulingOnly = assistantAcceptance ? {
     ...(assistantAcceptance.travelDateStart ? { travelDateStart: assistantAcceptance.travelDateStart } : {}),
     ...(assistantAcceptance.travelDateEnd ? { travelDateEnd: assistantAcceptance.travelDateEnd } : {}),
     ...(assistantAcceptance.travelDays !== undefined ? { travelDays: assistantAcceptance.travelDays } : {}),
   } : {};
-  const merged = { ...schedulingOnly, ...direct };
+  // Guarded after the merge, not before: the contradiction only exists once
+  // the two sources are side by side.
+  const { proposal: merged } = coherentBriefDates({ ...schedulingOnly, ...direct }, now);
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
+/**
+ * Folds this turn's proposal into the one the trip is already carrying.
+ *
+ * A brief is often given across several turns, so the card is a running
+ * review of all of them — but that also means a start date from one turn can
+ * meet an end date from another, and the pair has to hold together before it
+ * is persisted. Returns `null` when nothing survives, which the caller stores
+ * as a cleared proposal.
+ */
+export function mergePendingBriefProposal(
+  existing: TripBriefProposal | null | undefined,
+  incoming: TripBriefProposal,
+  now: Date = new Date(),
+): { proposal: TripBriefProposal | null; result: BriefDateCoherence } {
+  const { proposal, result } = coherentBriefDates({ ...existing, ...incoming }, now);
+  return { proposal: Object.keys(proposal).length > 0 ? proposal : null, result };
+}
+
 /** Extracts only explicit, current-turn facts; never history or a persisted question. */
-export function proposeTripBriefFromTurn(question: string, place?: ConversationPlace): TripBriefProposal | null {
+export function proposeTripBriefFromTurn(
+  question: string,
+  place?: ConversationPlace,
+  now: Date = new Date(),
+): TripBriefProposal | null {
   // Chinese durations are written in Chinese numerals far more often than in
   // digits — "玩三天", not "玩3天". Normalizing first means every pattern below
   // reads one alphabet instead of two, and fixes the duration and the
@@ -44,12 +108,13 @@ export function proposeTripBriefFromTurn(question: string, place?: ConversationP
   // from the one planning later receives.
   const destination = resolveBriefDestination(place?.name.trim() || extractDestination(text));
   const departure = extractDeparture(text);
-  const travelDateStart = extractDate(text);
-  if (!departure && !destination && !travelDateStart && travelDays === undefined) return null;
+  const dates = extractDateRange(text, now);
+  if (!departure && !destination && !dates && travelDays === undefined) return null;
   return {
     ...(departure ? { departureCities: [departure] } : {}),
     ...(destination ? { destinationCandidates: [destination] } : {}),
-    ...(travelDateStart ? { travelDateStart } : {}),
+    ...(dates ? { travelDateStart: dates.start } : {}),
+    ...(dates?.end ? { travelDateEnd: dates.end } : {}),
     ...(travelDays !== undefined ? { travelDays } : {}),
   };
 }
@@ -203,22 +268,135 @@ function extractDeparture(question: string): string | undefined {
   return value;
 }
 
-/** Recognises explicit month/day input; relative wording is never made into a date fact. */
-function extractDate(question: string): string | undefined {
+const MONTH_NAMES: Record<string, number> = {
+  january: 1, february: 2, march: 3, april: 4, may: 5, june: 6,
+  july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+};
+const MONTH_NAME_PATTERN = "January|February|March|April|May|June|July|August|September|October|November|December";
+/**
+ * What separates the two ends of a spoken range. A bare hyphen is included
+ * for "10月1号-7号"; the ISO pattern below requires whitespace around it so a
+ * hyphen inside `2026-10-01` is never read as the connector.
+ */
+const RANGE_CONNECTOR = "(?:到|至|–|—|~|～|-|\\bto\\b|\\btill\\b|\\bthrough\\b)";
+
+/** A month/day the text stated. `month` is absent in the tail of "10月1号到7号". */
+type DateParts = { year?: number; month?: number; day: number };
+
+const ISO_RANGE = new RegExp(
+  `\\b(20\\d{2})-(1[0-2]|0[1-9])-(3[01]|[12]\\d|0[1-9])\\b\\s*(?:到|至|–|—|~|～|\\s-\\s|\\bto\\b|\\btill\\b|\\bthrough\\b)\\s*\\b(20\\d{2})-(1[0-2]|0[1-9])-(3[01]|[12]\\d|0[1-9])\\b`,
+  "u",
+);
+const CHINESE_RANGE = new RegExp(
+  "(?:(20\\d{2})\\s*年\\s*)?(1[0-2]|0?[1-9])\\s*月\\s*(3[01]|[12]\\d|0?[1-9])\\s*(?:日|号)?"
+  + `\\s*${RANGE_CONNECTOR}\\s*`
+  + "(?:(20\\d{2})\\s*年\\s*)?(?:(1[0-2]|0?[1-9])\\s*月\\s*)?(3[01]|[12]\\d|0?[1-9])\\s*(?:日|号)",
+  "u",
+);
+const ENGLISH_RANGE = new RegExp(
+  `\\b(?:on\\s+)?(?:(20\\d{2})\\s+)?(${MONTH_NAME_PATTERN})\\s+(3[01]|[12]\\d|[1-9])\\b`
+  + `\\s*${RANGE_CONNECTOR}\\s*`
+  + `(?:(20\\d{2})\\s+)?(?:(${MONTH_NAME_PATTERN})\\s+)?(3[01]|[12]\\d|[1-9])\\b`,
+  "iu",
+);
+
+/**
+ * Recognises explicit month/day input, as one date or as a range; relative
+ * wording is never made into a date fact.
+ *
+ * The range half exists because the end date used to have only one possible
+ * source — a model with no idea what year it was, which answered 2024 to
+ * "10月1号到10月7号". When the owner writes both ends themselves, neither one
+ * should have to be guessed.
+ */
+function extractDateRange(question: string, now: Date): { start: string; end?: string } | undefined {
+  const range = matchDateRange(question);
+  if (range) {
+    const start = resolveDate(range.start, now);
+    // Both ends of a spoken range live in one stretch of time: the end takes
+    // the start's year unless that would put it first, which is how a New
+    // Year range ("12月28号到1月3号") crosses into the next year.
+    const end = start && resolveDate(
+      { month: range.start.month, ...range.end },
+      now,
+      start,
+    );
+    if (start) return { start, ...(end && end >= start ? { end } : {}) };
+  }
+  const single = matchSingleDate(question);
+  const start = single && resolveDate(single, now);
+  return start ? { start } : undefined;
+}
+
+function matchDateRange(question: string): { start: DateParts; end: DateParts } | undefined {
+  const iso = question.match(ISO_RANGE);
+  if (iso) {
+    return {
+      start: { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) },
+      end: { year: Number(iso[4]), month: Number(iso[5]), day: Number(iso[6]) },
+    };
+  }
+  const chinese = question.match(CHINESE_RANGE);
+  if (chinese) {
+    return {
+      start: { ...optionalYear(chinese[1]), month: Number(chinese[2]), day: Number(chinese[3]) },
+      end: {
+        ...optionalYear(chinese[4]),
+        ...(chinese[5] ? { month: Number(chinese[5]) } : {}),
+        day: Number(chinese[6]),
+      },
+    };
+  }
+  const english = question.match(ENGLISH_RANGE);
+  if (!english) return undefined;
+  return {
+    start: { ...optionalYear(english[1]), month: MONTH_NAMES[english[2].toLowerCase()], day: Number(english[3]) },
+    end: {
+      ...optionalYear(english[4]),
+      ...(english[5] ? { month: MONTH_NAMES[english[5].toLowerCase()] } : {}),
+      day: Number(english[6]),
+    },
+  };
+}
+
+function matchSingleDate(question: string): DateParts | undefined {
   // An explicit ISO date is already the answer; no month-name table needed.
   const iso = question.match(/\b(20\d{2})-(1[0-2]|0[1-9])-(3[01]|[12]\d|0[1-9])\b/u);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  if (iso) return { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) };
   const chinese = question.match(/(?:(20\d{2})\s*年\s*)?(1[0-2]|0?[1-9])\s*月\s*(3[01]|[12]\d|0?[1-9])\s*(?:日|号)?/u);
-  const english = question.match(/\b(?:on\s+)?(?:(20\d{2})\s+)?(January|February|March|April|May|June|July|August|September|October|November|December)\s+(3[01]|[12]\d|[1-9])\b/iu);
-  if (!chinese && !english) return undefined;
-  const months: Record<string, number> = { january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
-  const yearText = chinese?.[1] ?? english?.[1];
-  const month = chinese ? Number(chinese[2]) : months[english![2].toLowerCase()];
-  const day = chinese ? Number(chinese[3]) : Number(english![3]);
-  const now = new Date();
-  let year = yearText ? Number(yearText) : now.getUTCFullYear();
-  const candidate = new Date(Date.UTC(year, month - 1, day));
-  if (candidate.getUTCMonth() !== month - 1 || candidate.getUTCDate() !== day) return undefined;
-  if (!yearText && candidate < new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))) year += 1;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  if (chinese) return { ...optionalYear(chinese[1]), month: Number(chinese[2]), day: Number(chinese[3]) };
+  const english = question.match(new RegExp(`\\b(?:on\\s+)?(?:(20\\d{2})\\s+)?(${MONTH_NAME_PATTERN})\\s+(3[01]|[12]\\d|[1-9])\\b`, "iu"));
+  if (!english) return undefined;
+  return { ...optionalYear(english[1]), month: MONTH_NAMES[english[2].toLowerCase()], day: Number(english[3]) };
+}
+
+function optionalYear(text: string | undefined): { year?: number } {
+  return text ? { year: Number(text) } : {};
+}
+
+/**
+ * Turns stated parts into an ISO date. A year the owner did not give is the
+ * one that puts the date next in the future — never a past year, which is the
+ * answer a model reaches for when it has only its training data to go on.
+ *
+ * `notBefore` anchors the tail of a range to its own head rather than to today.
+ */
+function resolveDate(parts: DateParts, now: Date, notBefore?: string): string | undefined {
+  const { month, day } = parts;
+  if (month === undefined) return undefined;
+  const floor = notBefore ?? now.toISOString().slice(0, 10);
+  let year = parts.year ?? Number(floor.slice(0, 4));
+  const iso = (value: number) => `${value}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const real = (value: number) => {
+    const candidate = new Date(Date.UTC(value, month - 1, day));
+    return candidate.getUTCMonth() === month - 1 && candidate.getUTCDate() === day;
+  };
+  if (!real(year)) {
+    // 2月29日 in a year the owner did not choose is a leap day one year away,
+    // not an invalid date — try the rollover before rejecting it.
+    if (parts.year !== undefined || !real(year + 1)) return undefined;
+    return iso(year + 1);
+  }
+  if (parts.year === undefined && iso(year) < floor) year += 1;
+  return real(year) ? iso(year) : undefined;
 }
