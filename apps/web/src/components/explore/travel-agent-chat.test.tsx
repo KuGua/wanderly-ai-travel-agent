@@ -1019,8 +1019,30 @@ describe("the trip's preference card", () => {
     ]));
     // The card is done and goes, but silence there reads exactly like the
     // failure it used to be — so it says what happened on the way out.
-    expect(await screen.findByRole("status")).toHaveTextContent("Saved for this trip.");
+    // A second `role="status"` now appears for the follow-up turn in flight,
+    // so match the saved line rather than "the" status.
+    expect(await screen.findByText("Saved for this trip.")).toBeInTheDocument();
     expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument();
+  });
+
+  it("asks the assistant to pick the conversation back up once the card is answered", async () => {
+    // Answering the card used to end in silence: it wrote the overrides,
+    // closed, and nothing spoke. The turn carries `preferences_saved` so the
+    // prompt can tell this from something the traveller typed.
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(card),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: ["trip_pace"] }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
+    fireEvent.click(screen.getByTestId("trip-preference-submit"));
+
+    await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalledWith(
+      THREAD_ID,
+      expect.objectContaining({ intent: "preferences_saved" }),
+    ));
   });
 
   it("keeps the card up when the save is refused, so the answer can be corrected", async () => {

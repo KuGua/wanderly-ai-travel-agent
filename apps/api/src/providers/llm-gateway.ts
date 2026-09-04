@@ -383,12 +383,23 @@ const CONVERSATION_PROMPT_PROSE = [
   "用户的请求里有一个结构化字段 `intent`：",
   "• `auto_intro`：用户点击了目的地 Pin，系统希望你写一段短小、有画面感的种草介绍。",
   "• `user_typed`：用户在对话框里自己打了一段话，希望得到一般旅行问答回复。",
+  "• `preferences_saved`：用户刚在偏好卡片里确认了本次行程的偏好，没有打字提问。系统希望你主动接话，让用户知道你掌握了什么、接下来会怎么做。",
   "",
   "判断规则（按顺序）：",
   "1. 先执行上方的完整行程编排优先级。明确规划请求绝不能被 `auto_intro` 或介绍类措辞降级成单纯的种草文案。",
   "2. 如果 `intent === \"auto_intro\"` 且问题本身读起来像是对一个目的地的介绍/描述请求，使用下方的「种草介绍」规则。",
   "3. 如果 `intent === \"user_typed\"` 且用户实际只是在要求介绍一个目的地（例如手动输入 `Tell me about Kyoto` 或 `介绍一下京都`），同样使用「种草介绍」规则。",
-  "4. 其他所有情况使用「一般旅行问答」规则，并遵守上方对完整行程或单项需求的优先级。",
+  "4. 如果 `intent === \"preferences_saved\"`，使用下方的「偏好确认后的接话」规则。",
+  "5. 其他所有情况使用「一般旅行问答」规则，并遵守上方对完整行程或单项需求的优先级。",
+  "",
+  "=== 偏好确认后的接话 规则（Preferences Saved Prompt）===",
+  "用户刚确认完偏好卡片，屏幕上没有新问题等你回答。写**一段**话（通常 2–4 句，不要小标题、不要编号问卷），完成三件事：",
+  "1. 让用户看到你掌握了什么：只复述**会影响方案取舍**的那几项，用自己的话讲清它对行程意味着什么，而不是把字段名和取值念一遍。用户没提供的字段一个字都不要提。",
+  "2. 说明你打算怎么用它：把偏好落到具体的编排取向上（例如节奏、住宿区位、每个城市停留长度）。",
+  "3. 给一个明确的下一步。按下面两种情形二选一：",
+  "   • `memoryContext` 里已经有足够支撑方向的偏好：直接说可以开始规划，并顺带给出一到两句**具体的方向建议**让用户确认或纠正。不要再问已经知道的事。",
+  "   • `memoryContext` 基本为空：简短地问一到两个**真正会改变方案**的问题（通常是目的地或日期），并**同时给出一两个可选的方向示例**，让用户可以直接挑一个而不是从零描述。",
+  "绝对不要：把卡片里的字段列成清单回述；追问用户已经回答过的内容；抛出三条以上的问题；在这一轮里输出逐日行程。",
   "",
   "=== 种草介绍 规则（Travel Destination Introduction Prompt）===",
   "你是一位擅长旅游内容创作的编辑。你的任务是根据用户提供的城市、州/地区或国家，生成一段简短、有吸引力、有画面感的旅游目的地介绍。",
@@ -1176,7 +1187,7 @@ export class LLMGateway implements ModelGateway {
     threadContext: ThreadContextMessage[];
     memoryContext?: ConversationMemoryFact[];
     researchEvidence?: ResearchEvidenceOffer[];
-    intent?: "auto_intro" | "user_typed";
+    intent?: "auto_intro" | "user_typed" | "preferences_saved";
     responseConstraints?: readonly ConversationResponseConstraint[];
     tripContext?: PersonalTripContext;
     hotelSearchState?: ConversationHotelSearchState | null;
@@ -1358,7 +1369,7 @@ export class LLMGateway implements ModelGateway {
     threadContext: ThreadContextMessage[];
     memoryContext?: ConversationMemoryFact[];
     researchEvidence?: ResearchEvidenceOffer[];
-    intent?: "auto_intro" | "user_typed";
+    intent?: "auto_intro" | "user_typed" | "preferences_saved";
     responseConstraints?: readonly ConversationResponseConstraint[];
     tripContext?: PersonalTripContext;
     hotelSearchState?: ConversationHotelSearchState | null;
@@ -1498,7 +1509,7 @@ export class LLMGateway implements ModelGateway {
       threadContext: ThreadContextMessage[];
       memoryContext?: ConversationMemoryFact[];
       researchEvidence?: ResearchEvidenceOffer[];
-      intent?: "auto_intro" | "user_typed";
+      intent?: "auto_intro" | "user_typed" | "preferences_saved";
       responseConstraints?: readonly ConversationResponseConstraint[];
       tripContext?: PersonalTripContext;
       hotelSearchState?: ConversationHotelSearchState | null;

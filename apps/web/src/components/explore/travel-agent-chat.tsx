@@ -942,6 +942,20 @@ export function TravelAgentChat({
       // reads exactly like the failure it used to be: the traveller fills it
       // in, it vanishes, and nothing says whether anything was kept.
       if (adjustments.length > 0) setPreferenceSaved(true);
+      // Fires whether or not anything changed: pressing the button with the
+      // inherited values left alone is still an answer — "my profile is right
+      // for this trip" — and deserves the same pick-up. Typing past the card
+      // does not come through here, so that path is not answered twice.
+      // Answering the card used to end in silence — it wrote the overrides,
+      // closed, and nothing spoke, so there was no sign the answer had landed
+      // or what came next. This asks the assistant to pick the conversation
+      // back up; what it says comes from the memory the server just wrote,
+      // not from anything worded here.
+      void sendTurn({
+        requestId: crypto.randomUUID(),
+        question: t("prefCardTurnQuestion"),
+        intent: "preferences_saved",
+      });
     } catch {
       // Dismissing is the common answer and must not be blocked by a failed
       // write; the server will offer the card again next time if it did not

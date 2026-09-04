@@ -420,7 +420,13 @@ export const conversationPlaceSchema = z.object({
   sourceType: z.enum(["REFERENCE", "INSPIRATION"]),
 }).strict();
 
-export const conversationIntentSchema = z.enum(["auto_intro", "user_typed"]);
+/**
+ * `preferences_saved` is raised by the client, not typed by anyone: the
+ * traveller has just answered the trip's preference card, and the reply is
+ * meant to tell them what the assistant now holds and what happens next.
+ * Like `auto_intro` it narrows behaviour only — it authorises nothing.
+ */
+export const conversationIntentSchema = z.enum(["auto_intro", "user_typed", "preferences_saved"]);
 
 /**
  * Where the traveller was when they typed. Narrowing only: it can keep a turn

@@ -102,6 +102,36 @@ supply provider-only identity fields. Nuitee quote-nationality authorization
 remains a separate explicit boundary. The model does not emit a prose claim
 that the search has been made before the tool result arrives.
 
+## Preferences-saved follow-up
+
+Answering the trip's preference card used to end in silence: the card wrote
+the overrides, closed, and nothing spoke. The traveller had just told the
+assistant something and got nothing back, so there was no sign it had landed
+or what would happen next.
+
+The client now raises a turn with `intent: "preferences_saved"` once the card
+resolves. Like `auto_intro`, nobody typed it — it narrows behaviour and
+authorises nothing.
+
+The reply is one short paragraph, and the shape depends on what the server
+actually holds:
+
+- **`memoryContext` carries usable preferences.** Say what is now known — only
+  the parts that change the shape of a trip, in the model's own words rather
+  than as a list of field names — say how they will be used, then offer to
+  start planning with one or two concrete directions to confirm or correct.
+- **`memoryContext` is essentially empty.** Ask one or two questions that would
+  genuinely change the plan (usually destination or dates), and offer a couple
+  of example directions alongside them, so the traveller can pick rather than
+  describe from nothing.
+
+Never restate the card as a checklist, re-ask anything already answered, pose
+more than two questions, or emit a day-by-day itinerary in this turn.
+
+Nothing here is written in the client. What the reply says comes from
+`memoryContext` and the thread, so a field added to the catalogue is spoken
+about without touching this surface.
+
 ## Flight-search readiness behaviour
 
 Flight searches follow the identical private-conversation pattern as hotel
