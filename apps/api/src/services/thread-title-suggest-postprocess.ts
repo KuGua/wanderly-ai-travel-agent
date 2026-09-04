@@ -8,7 +8,14 @@
 
 const URL_OR_EMAIL_REGEX = /(https?:\/\/|\S+@\S+\.\S+)/u;
 const LONG_DIGIT_RUN_REGEX = /\d{6,}/u;
-const PRIVATE_USE_AREA_REGEX = /[\u{E0000}-\u{E0FFF}]/u;
+// U+E0000–U+E0FFF is the Tags block plus the Variation Selectors Supplement:
+// invisible code points that can carry hidden text inside a visible string.
+// Stripping them is a spoofing guard — it is not private-use filtering, which
+// this constant used to claim while matching none of the private use areas.
+const TAG_AND_VARIATION_REGEX = /[\u{E0000}-\u{E0FFF}]/gu;
+// The actual private use areas. Fonts render these as arbitrary or missing
+// glyphs, so they have no business in a rail title.
+const PRIVATE_USE_AREA_REGEX = /[\u{E000}-\u{F8FF}\u{F0000}-\u{FFFFD}\u{100000}-\u{10FFFD}]/gu;
 // Emoji-related property classes: pictographic + symbol blocks most common on
 // keyboards. We strip before truncation so the 40-char cap applies to the
 // final visible text, not to invisible code points.
@@ -41,9 +48,12 @@ export function postprocessThreadTitle(
   //    and the like) but keep printable space.
   const cleaned = lineFolded.replace(CONTROL_CHARS_REGEX, "");
 
-  // 2. Drop emoji and private-use-area code points.
+  // 3. Drop emoji, hidden tag/variation code points, and private-use glyphs.
+  //    All three patterns are global: without the `g` flag `replace` only
+  //    removes the first match, which left later occurrences in the title.
   const noEmoji = cleaned
     .replace(EMOJI_REGEX, "")
+    .replace(TAG_AND_VARIATION_REGEX, "")
     .replace(PRIVATE_USE_AREA_REGEX, "")
     .replace(WHITESPACE_RUN_REGEX, " ")
     .trim();
@@ -52,7 +62,7 @@ export function postprocessThreadTitle(
     return { ok: false, reason: "REJECTED" };
   }
 
-  // 3. Hard truncate to 40 code points (grapheme clusters approximate this
+  // 4. Hard truncate to 40 code points (grapheme clusters approximate this
   // well enough for the rail; we accept the small risk of a partial CJK
   // glyph rather than a complex segmenter dependency).
   const truncated = Array.from(noEmoji).slice(0, MAX_TITLE_CODE_POINTS).join("");
@@ -61,17 +71,17 @@ export function postprocessThreadTitle(
     return { ok: false, reason: "REJECTED" };
   }
 
-  // 4. Reject URLs and email addresses.
+  // 5. Reject URLs and email addresses.
   if (URL_OR_EMAIL_REGEX.test(truncated)) {
     return { ok: false, reason: "REJECTED" };
   }
 
-  // 5. Reject long digit runs (likely card / document / order numbers).
+  // 6. Reject long digit runs (likely card / document / order numbers).
   if (LONG_DIGIT_RUN_REGEX.test(truncated)) {
     return { ok: false, reason: "REJECTED" };
   }
 
-  // 6. Reject titles that echo or contain a source message verbatim — this
+  // 7. Reject titles that echo or contain a source message verbatim — this
   // would surface raw private content in the rail.
   for (const message of sourceMessages) {
     if (!message.text) continue;

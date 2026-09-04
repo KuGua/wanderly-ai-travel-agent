@@ -14,6 +14,7 @@ import { postprocessThreadTitle } from "../services/thread-title-suggest-postpro
 import { getOrCreateDefaultThread } from "../services/trip-invitation-service.js";
 import { createRequestContext } from "../utils/context.js";
 import { metrics } from "../observability/metrics.js";
+import { logSafeRuntimeEvent } from "../observability/telemetry.js";
 import { invokeSkill } from "../agents/skill-registry.js";
 import { SkillError } from "../agents/errors.js";
 import { DefaultPolicyGate } from "../agents/policy-gate.js";
@@ -120,10 +121,20 @@ export async function tripThreadRoutes(app: FastifyInstance) {
         titleSource = "MANUAL";
         titleLocale = null;
       } else {
-        // Count active (non-archived) threads for this (owner, trip) inside
-        // the same transaction. The default isolation level on Postgres
-        // makes the count + insert atomic; concurrent creates therefore
-        // observe different `n` values and produce distinct indexes.
+        // Serialize concurrent creates for this (owner, trip) pair before
+        // counting. Nothing sets an isolation level, so this runs READ
+        // COMMITTED: a plain `count(*)` takes no locks and cannot see a
+        // sibling transaction's uncommitted insert, so two tabs would both
+        // read the same `n` and both write "新对话 2". The advisory lock is
+        // transaction-scoped and released on commit or rollback.
+        //
+        // A unique index on (owner, trip, title) would also stop the
+        // collision, but at the cost of forbidding a traveller from naming
+        // two threads the same word — an implementation constraint leaking
+        // into the product. See §7.3 of the implementation spec.
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtext(${request.user.id}), hashtext(${tripId}))`,
+        );
         const [row] = await tx.select({ n: count() }).from(chatThreads)
           .where(and(
             eq(chatThreads.tripId, tripId),
@@ -161,8 +172,11 @@ export async function tripThreadRoutes(app: FastifyInstance) {
       return [inserted];
     });
 
+    // A caller-supplied title is a manual write even on the create path;
+    // labelling it "deterministic" would overstate how many titles the
+    // server actually generated.
     metrics.inc("thread_title_writes_total", {
-      source: "deterministic",
+      source: thread.titleSource === "MANUAL" ? "manual" : "deterministic",
       result: "applied",
     });
 
@@ -350,6 +364,7 @@ export async function tripThreadRoutes(app: FastifyInstance) {
       request.user.id, request.correlationId, request.traceId,
       request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
+    const startedAt = Date.now();
 
     const rows = await db.select()
       .from(chatThreads)
@@ -409,7 +424,18 @@ export async function tripThreadRoutes(app: FastifyInstance) {
     } catch (err) {
       const code = err instanceof SkillError ? err.code : "UPSTREAM_FAILURE";
       metrics.inc("thread_title_writes_total", { source: "llm", result: "unavailable" });
-      void code; // codes are surfaced via audit telemetry, not the user response
+      // The user-facing reason collapses every upstream failure into
+      // UNAVAILABLE, so the specific code only survives if it is logged here.
+      // Without it an operator cannot tell a TIMEOUT from a 5xx from invalid
+      // model output. No title text and no message text is logged.
+      logSafeRuntimeEvent(ctx, {
+        component: "llm",
+        event: "skill",
+        operation: "thread.title.suggest",
+        outcome: "failure",
+        errorCode: code,
+        latencyMs: Date.now() - startedAt,
+      });
       return reply.code(200).send(suggestThreadTitleResponseSchema.parse({
         thread: toThreadSummary(thread),
         applied: false,
@@ -421,6 +447,18 @@ export async function tripThreadRoutes(app: FastifyInstance) {
     const cleaned = postprocessThreadTitle(raw.title, truncated);
     if (!cleaned.ok) {
       metrics.inc("thread_title_writes_total", { source: "llm", result: "rejected" });
+      // A rejection means the model produced something the safety rules
+      // refused. That is worth an operator signal — a sustained rejection
+      // rate points at a prompt or model regression. The rejected candidate
+      // is deliberately not logged: it is derived from private conversation.
+      logSafeRuntimeEvent(ctx, {
+        component: "llm",
+        event: "skill",
+        operation: "thread.title.suggest",
+        outcome: "failure",
+        errorCode: "POSTPROCESS_REJECTED",
+        latencyMs: Date.now() - startedAt,
+      });
       return reply.code(200).send(suggestThreadTitleResponseSchema.parse({
         thread: toThreadSummary(thread),
         applied: false,
@@ -451,6 +489,13 @@ export async function tripThreadRoutes(app: FastifyInstance) {
     });
 
     metrics.inc("thread_title_writes_total", { source: "llm", result: "applied" });
+    logSafeRuntimeEvent(ctx, {
+      component: "llm",
+      event: "skill",
+      operation: "thread.title.suggest",
+      outcome: "success",
+      latencyMs: Date.now() - startedAt,
+    });
     return reply.code(200).send(suggestThreadTitleResponseSchema.parse({
       thread: toThreadSummary(updated),
       applied: true,
