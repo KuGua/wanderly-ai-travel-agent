@@ -132,6 +132,19 @@ describe("mergeTripBriefProposal", () => {
     })).toEqual({ travelDateStart: "2026-12-10", travelDateEnd: "2026-12-14", travelDays: 5 });
   });
 
+  it("does not turn a place the assistant merely suggested into the destination", () => {
+    // The reply that follows the preference card offers example directions —
+    // "Seoul or Osaka, or Bangkok if you want it slower". None of those is a
+    // decision, and none may raise the confirmation card. Only what the
+    // traveller typed or pinned can.
+    expect(mergeTripBriefProposal(null, { destinationCandidates: ["Bangkok", "Chiang Mai"] }))
+      .toBeUndefined();
+    expect(mergeTripBriefProposal(
+      { departureCities: ["Chengdu"] },
+      { destinationCandidates: ["Bangkok"] },
+    )).toEqual({ departureCities: ["Chengdu"] });
+  });
+
   it("gives an explicit owner statement precedence over model scheduling", () => {
     expect(mergeTripBriefProposal(
       { destinationCandidates: ["Shanghai"], travelDays: 3 },

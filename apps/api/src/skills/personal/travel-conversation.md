@@ -113,20 +113,31 @@ The client now raises a turn with `intent: "preferences_saved"` once the card
 resolves. Like `auto_intro`, nobody typed it — it narrows behaviour and
 authorises nothing.
 
-The reply is one short paragraph, and the shape depends on what the server
-actually holds:
+The reply is one short paragraph. What it asks for is decided by whether a
+missing field actually blocks planning — not by whether memory happens to
+hold it:
 
-- **`memoryContext` carries usable preferences.** Say what is now known — only
-  the parts that change the shape of a trip, in the model's own words rather
-  than as a list of field names — say how they will be used, then offer to
-  start planning with one or two concrete directions to confirm or correct.
-- **`memoryContext` is essentially empty.** Ask one or two questions that would
-  genuinely change the plan (usually destination or dates), and offer a couple
-  of example directions alongside them, so the traveller can pick rather than
-  describe from nothing.
+- **A destination is the one hard prerequisite.** Nothing can be laid out
+  without one, and it must never be assumed on the traveller's behalf. Missing,
+  the reply asks — and offers two or three concrete candidate directions chosen
+  against what *is* known (budget, pace, how far from the departure city), so
+  there is something to pick rather than a blank to fill. Dates are the same
+  kind of thing, loosened to a rough month or season.
+- **Budget, pace, stay style, red-eyes and the rest are not prerequisites.**
+  Unstated, they take an ordinary middle value and planning continues. The
+  reply may name the default it took and note it can be changed, but must not
+  ask about it.
+- **Destination already known.** Ask nothing. Say planning can start, and give
+  a concrete direction or two to confirm or correct.
 
-Never restate the card as a checklist, re-ask anything already answered, pose
-more than two questions, or emit a day-by-day itinerary in this turn.
+Never restate the card as a checklist, re-ask anything already answered, ask
+about a field that has a sensible default, pose more than two questions, or
+emit a day-by-day itinerary in this turn.
+
+A destination reaches the brief only from what the traveller typed or pinned:
+`mergeTripBriefProposal` keeps scheduling fields from the model's own
+extraction and drops everything else, so a place the assistant merely offered
+as an example cannot become the trip's destination.
 
 Nothing here is written in the client. What the reply says comes from
 `memoryContext` and the thread, so a field added to the catalogue is spoken
