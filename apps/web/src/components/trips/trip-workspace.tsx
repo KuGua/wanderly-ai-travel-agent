@@ -412,14 +412,31 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           <span className="mt-1 block truncate text-xs">
             {thread.isDefault ? t("threads.defaultSubtitle") : t("threads.threadSubtitle")}
           </span>
-          <time dateTime={thread.createdAt} className="mt-[7px] inline-block bg-[var(--w-fog)] px-1.5 py-0.5 text-[11px] font-extrabold wanderly-edge-thin wanderly-r-xs">
-            {formatThreadTime(locale, thread.createdAt)}
-          </time>
-          {selected ? (
-            <span className="absolute right-2 top-2.5 bg-card px-1.5 py-0.5 text-[10px] font-black wanderly-edge-thin wanderly-r-xs">
-              {t("threads.currentBadge")}
-            </span>
-          ) : null}
+          {/*
+           * The "current" badge sits with the timestamp rather than in the
+           * top-right corner it used to share with the menu trigger. Both
+           * claimed that corner with `absolute right-2 top-2`, so on the
+           * selected thread — always exactly one, and the one people are
+           * looking at — the opaque trigger was drawn straight over the badge
+           * and erased it.
+           *
+           * Reserving corner space for the badge instead would mean padding
+           * the title by a guessed width that changes with the locale
+           * ("Current" is nearly twice "当前"). Down here the row sizes itself,
+           * the corner has a single owner, and the badge keeps doing its real
+           * job: saying in words what the highlighted background says in
+           * colour alone.
+           */}
+          <span className="mt-[7px] flex flex-wrap items-center gap-1.5">
+            <time dateTime={thread.createdAt} className="inline-block bg-[var(--w-fog)] px-1.5 py-0.5 text-[11px] font-extrabold wanderly-edge-thin wanderly-r-xs">
+              {formatThreadTime(locale, thread.createdAt)}
+            </time>
+            {selected ? (
+              <span className="inline-block bg-card px-1.5 py-0.5 text-[10px] font-black wanderly-edge-thin wanderly-r-xs">
+                {t("threads.currentBadge")}
+              </span>
+            ) : null}
+          </span>
         </button>
         {!renaming ? (
           <button

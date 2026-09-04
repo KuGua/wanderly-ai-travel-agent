@@ -263,6 +263,7 @@ type PersonalTripContext = {
 - Home 的地图对话框继续沿用既有的收起输入条、打开与关闭交互；`ExploreChatHost` 只为该 UI 提供当前 Trip 的默认私有 thread，不得恢复浏览器本地 thread 创建或存储逻辑。Trip/default thread 尚在准备或失败时，对话入口必须保持可见且禁止发送，并分别显示准备状态或可重试错误。
 - `ExploreChatHost` 的包装层必须使用 `display: contents`，不得新增布局或定位容器；Home 地图 `main` 是历史 UI 的绝对定位上下文。
 - 新 thread 成功后只失效当前 Trip 的 thread list，并切换到服务端返回的 thread ID。
+- Thread rail 列表项的右上角只能有**一个**绝对定位元素——thread actions 触发器。「当前」badge 与该触发器曾各自使用 `absolute right-2 top-2` 占据同一个角，于是在选中项（永远恰好有一个，且正是用户在看的那一个）上被不透明的触发器完全覆盖。badge 现与时间戳同处底部一行，由该行自行排布。给 badge 在角上留位需要按 locale 猜测标题的右内边距（英文 `Current` 接近中文「当前」的两倍宽），因此不采用。该 badge 是选中态的文字线索，与高亮背景互为补充（避免仅以颜色传达状态），不得删除。
 
 ### 8.2 可见性规则
 

@@ -229,6 +229,34 @@ describe("TripWorkspace", () => {
     expect(screen.queryByRole("button", { name: /Bob/ })).not.toBeInTheDocument();
   });
 
+  it("gives the rail item's top-right corner a single owner", async () => {
+    // jsdom has no layout engine, so this asserts the invariant that the
+    // geometry depended on rather than the geometry itself: the "Current"
+    // badge and the thread-actions trigger both used to anchor themselves to
+    // `absolute right-2 top-2`, and on the selected thread the opaque trigger
+    // was painted straight over the badge.
+    vi.spyOn(navigationStub, "useSearchParams")
+      .mockReturnValue(new URLSearchParams(`thread=${DEFAULT_THREAD_ID}`));
+    const api = createApi({
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    const trigger = await screen.findByRole("button", { name: "Thread actions" });
+    const item = trigger.closest("li");
+    expect(item).not.toBeNull();
+
+    // Both are on screen at once — that was never the problem.
+    expect(within(item!).getByText("Current")).toBeInTheDocument();
+
+    const cornerAnchored = [...item!.querySelectorAll<HTMLElement>("*")].filter((el) =>
+      el.classList.contains("absolute")
+      && el.classList.contains("right-2")
+      && [...el.classList].some((name) => name.startsWith("top-2")));
+    expect(cornerAnchored).toHaveLength(1);
+    expect(cornerAnchored[0]).toBe(trigger);
+  });
+
   it("writes the trip's auto title in the language the traveller is reading", async () => {
     // The server can only localize the title it is told to localize. This
     // call site once passed nothing and inherited the "en" default, which
