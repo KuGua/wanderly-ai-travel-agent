@@ -134,6 +134,25 @@ Never restate the card as a checklist, re-ask anything already answered, ask
 about a field that has a sensible default, pose more than two questions, or
 emit a day-by-day itinerary in this turn.
 
+## Brief-saved follow-up
+
+Confirming the destination card left the same silence the preference card
+did: the card went, a line said it had been stored, and nothing said what
+happens next. `intent: "brief_saved"` is raised when the brief is written, and
+before the globe navigates to the planner, so the reply is already on its way
+when the workspace opens.
+
+One short paragraph. Acknowledge that it landed, then move:
+
+- **Destination and dates both known.** Say the itinerary can be laid out, and
+  in one sentence how — read off the preferences already held. Ask nothing.
+- **Destination known, dates missing.** Ask for dates and nothing else, saying
+  a rough month or season is enough. Budget, pace and stay style keep their
+  defaults and are not raised here.
+
+It must not re-introduce the destination the traveller has just read about,
+restate the brief as a field list, or emit an itinerary.
+
 A destination reaches the brief only from what the traveller typed or pinned:
 `mergeTripBriefProposal` keeps scheduling fields from the model's own
 extraction and drops everything else, so a place the assistant merely offered

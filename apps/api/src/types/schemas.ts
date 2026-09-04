@@ -426,7 +426,7 @@ export const conversationPlaceSchema = z.object({
  * meant to tell them what the assistant now holds and what happens next.
  * Like `auto_intro` it narrows behaviour only — it authorises nothing.
  */
-export const conversationIntentSchema = z.enum(["auto_intro", "user_typed", "preferences_saved"]);
+export const conversationIntentSchema = z.enum(["auto_intro", "user_typed", "preferences_saved", "brief_saved"]);
 
 /**
  * Where the traveller was when they typed. Narrowing only: it can keep a turn

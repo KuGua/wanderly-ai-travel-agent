@@ -727,6 +727,15 @@ export function TravelAgentChat({
       });
       await trip.refetch();
       setBriefProposal(null);
+      // Saving used to end the exchange: the card vanished, a line said it was
+      // stored, and nothing said what happens next — the same silence the
+      // preference card left. Raised before navigating so the reply is already
+      // on its way when the planner opens.
+      void sendTurn({
+        requestId: crypto.randomUUID(),
+        question: t("briefSavedTurnQuestion"),
+        intent: "brief_saved",
+      });
       // Saving the destination and then leaving the traveller on the globe
       // made them find the planner themselves, with no sign the answer had
       // landed anywhere. Choosing to plan is choosing to go there, so the

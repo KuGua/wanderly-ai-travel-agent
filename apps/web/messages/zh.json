@@ -396,7 +396,8 @@
       "briefProposalSaveTitleNoDestination": "保存到这趟行程",
       "briefProposalQuestion": "你想将 {destination} 作为目的地吗？",
       "briefProposalQuestionNoDestination": "你想将这里作为目的地吗？",
-      "prefCardTurnQuestion": "我刚确认了这趟行程的偏好。"
+      "prefCardTurnQuestion": "我刚确认了这趟行程的偏好。",
+      "briefSavedTurnQuestion": "我刚把这些信息存进了行程。"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",

@@ -396,7 +396,8 @@
       "briefProposalSaveTitleNoDestination": "Save this to the trip",
       "briefProposalQuestion": "Set {destination} as the destination?",
       "briefProposalQuestionNoDestination": "Set this as the destination?",
-      "prefCardTurnQuestion": "I've just confirmed my preferences for this trip."
+      "prefCardTurnQuestion": "I've just confirmed my preferences for this trip.",
+      "briefSavedTurnQuestion": "I've just saved this to the trip."
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",

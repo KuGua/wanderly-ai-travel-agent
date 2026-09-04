@@ -3,7 +3,7 @@ import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace, ConversationResponseMode } from "../types/schemas.js";
 import type { PersonalTripContext } from "../skills/personal/personal-trip-context-schema.js";
 
-export type ConversationIntent = "auto_intro" | "user_typed" | "preferences_saved";
+export type ConversationIntent = "auto_intro" | "user_typed" | "preferences_saved" | "brief_saved";
 
 /**
  * The only long-term-memory shape a shared planning model may receive.  Values

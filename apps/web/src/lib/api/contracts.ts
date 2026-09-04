@@ -230,7 +230,7 @@ export const conversationMessageSchema = z.object({
 
 export const conversationResponseModeSchema = z.enum(["MODEL", "SAFE_REFUSAL"]);
 
-export const conversationIntentSchema = z.enum(["auto_intro", "user_typed", "preferences_saved"]);
+export const conversationIntentSchema = z.enum(["auto_intro", "user_typed", "preferences_saved", "brief_saved"]);
 
 /** Where the traveller typed. Only ever narrows what the server remembers. */
 export const conversationSurfaceSchema = z.enum(["EXPLORE", "TRIP_WORKSPACE"]);

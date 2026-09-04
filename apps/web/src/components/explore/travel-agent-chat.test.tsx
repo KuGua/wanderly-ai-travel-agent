@@ -1045,6 +1045,46 @@ describe("the trip's preference card", () => {
     ));
   });
 
+  it("picks the conversation back up once the destination is saved", async () => {
+    // Saving used to end the exchange: the card went, a line said it was
+    // stored, and nothing said what happens next — the same silence the
+    // preference card left behind.
+    // The proposal rides on a run, so there has to be one to read it from.
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
+    const api = createApi({
+      getAgentRun: vi.fn().mockResolvedValue({
+        ...run("COMPLETED"),
+        tripBriefProposal: { destinationCandidates: ["Bangkok"] },
+      }),
+      updateDraftTripBrief: vi.fn().mockResolvedValue({
+        trip: {
+          id: TRIP_ID, name: "Bangkok", nameSource: "AUTO", status: "DRAFT",
+          departureCities: [], destinationCandidates: ["Bangkok"],
+          travelDateStart: null, travelDateEnd: null, travelDays: null,
+          updatedAt: "2026-09-05T10:00:00.000Z",
+        },
+      }),
+      getTrip: vi.fn().mockResolvedValue({
+        trip: {
+          id: TRIP_ID, name: "Bangkok", createdBy: OWNER_ID, status: "DRAFT",
+          departureCities: [], destinationCandidates: ["Bangkok"],
+          travelDateStart: null, travelDateEnd: null, travelDays: null,
+          createdAt: CREATED_AT, updatedAt: CREATED_AT,
+        },
+        callerRole: "CREATOR",
+        members: [],
+      }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    fireEvent.click(await screen.findByRole("button", { name: /Save Bangkok to this trip/ }));
+
+    await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalledWith(
+      THREAD_ID,
+      expect.objectContaining({ intent: "brief_saved" }),
+    ));
+  });
+
   it("keeps the card up when the save is refused, so the answer can be corrected", async () => {
     // Clearing it on a rejection left a red line and nothing to edit: the
     // traveller's answer was gone with no way to put it back.
