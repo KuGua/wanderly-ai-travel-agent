@@ -2,7 +2,7 @@
 
 import { FlaskConical, LoaderCircle, LogIn, LogOut, TriangleAlert, UserRound, X } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/lib/auth/auth-provider";
 
@@ -12,6 +12,24 @@ export function AccountAuthControl() {
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const accountMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    // Capture the press without cancelling it: the account popover closes
+    // before an outside control's click handler runs, while that control
+    // still receives its original action.
+    const closeOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && !accountMenuRef.current?.contains(target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointerDown, true);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointerDown, true);
+  }, [open]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -35,7 +53,7 @@ export function AccountAuthControl() {
 
   if (auth.status === "SIGNED_IN") {
     return (
-      <div className="relative">
+      <div ref={accountMenuRef} className="relative">
         <button type="button" onClick={() => setOpen((current) => !current)} title={t("signedInAs", { username: auth.user?.username ?? t("traveler") })} aria-label={t("accountMenu")} className="grid size-10 place-items-center border-[1.5px] border-[var(--w-ink)] bg-[var(--w-fog)] text-[var(--w-ink)] wanderly-r-sm wanderly-press hover:bg-[var(--w-highlight)] sm:size-11">
           <UserRound aria-hidden="true" className="size-5" />
         </button>

@@ -348,8 +348,10 @@ describe("TripWorkspace", () => {
     });
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
 
-    expect(await screen.findByRole("button", { name: "Save Indonesia to this trip" })).toBeInTheDocument();
+    const save = await screen.findByRole("button", { name: "Save Indonesia to this trip" });
+    expect(save).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Leave it as it is" })).toBeInTheDocument();
+    expect(save.parentElement).toHaveClass("grid-cols-2");
   });
 
   it("tells the traveller a thread is coming while the list loads, and stops once it arrives", async () => {

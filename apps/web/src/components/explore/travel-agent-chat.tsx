@@ -883,7 +883,7 @@ export function TravelAgentChat({
   const actionCardClass = `px-3.5 py-3 text-sm ${surfaceClass} wanderly-r-md wanderly-shadow-sm`;
   const actionPrimaryClass = "min-h-10 px-3 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-50";
   const actionSecondaryClass = docked
-    ? "min-h-10 bg-[var(--w-mist)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"
+    ? "min-h-10 bg-[var(--w-mist)] px-3 text-xs font-extrabold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"
     : "min-h-10 px-3 text-xs font-extrabold wanderly-cosmos-control wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50";
 
   const agentLabel = docked ? (
@@ -1192,14 +1192,14 @@ export function TravelAgentChat({
                     ? t("briefProposalQuestion", { destination: briefDestination })
                     : t("briefProposalQuestionNoDestination")}
                 </p>
-                <div className={onGlobe ? "contents" : "grid gap-2"}>
+                <div className={onGlobe ? "contents" : "grid grid-cols-2 gap-2"}>
                   <button
                     type="button"
                     onClick={() => void confirmBriefProposal()}
                     disabled={isConfirmingBrief}
                     className={onGlobe
                       ? "bg-transparent px-0 py-1 text-xs font-extrabold text-[var(--w-bot-outline)] underline decoration-1 underline-offset-4 transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-highlight)] disabled:opacity-50"
-                      : `${actionPrimaryClass} w-full px-3 py-2.5 text-left`}
+                      : `${actionPrimaryClass} min-w-0 px-3 py-2.5 text-left`}
                   >
                     {briefPrimaryLabel}
                   </button>
@@ -1209,7 +1209,7 @@ export function TravelAgentChat({
                     disabled={isConfirmingBrief}
                     className={onGlobe
                       ? "bg-transparent px-0 py-1 text-xs font-extrabold text-[var(--w-fog)] underline decoration-1 underline-offset-4 transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-highlight)] disabled:opacity-50"
-                      : `${actionSecondaryClass} w-full px-3 py-2.5 text-left`}
+                      : `${actionSecondaryClass} min-w-0 px-3 py-2.5 text-left`}
                   >
                     {briefSecondaryLabel}
                   </button>
