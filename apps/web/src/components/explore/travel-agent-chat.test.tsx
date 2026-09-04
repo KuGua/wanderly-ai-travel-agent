@@ -174,7 +174,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(reply).not.toHaveClass("wanderly-cosmos-surface", "wanderly-edge", "wanderly-shadow-sm");
 
     const question = screen.getByText("A short question.").parentElement;
-    expect(question).toHaveClass("ml-auto", "w-fit", "max-w-[86%]", "py-2", "bg-[var(--w-bot-outline)]");
+    expect(question).toHaveClass("wanderly-cosmos-user-bubble", "ml-auto", "w-fit", "max-w-[86%]", "py-2");
     expect(question).not.toHaveClass("wanderly-shadow-sm");
     expect(question?.closest("article")).toHaveClass("mb-[17px]");
 

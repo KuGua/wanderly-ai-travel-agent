@@ -848,7 +848,7 @@ export function TravelAgentChat({
     : "wanderly-cosmos-surface";
   const userBubbleClass = docked
     ? "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
-    : "ml-auto w-fit max-w-[86%] bg-[var(--w-bot-outline)] px-3.5 py-2 text-[15px] leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md";
+    : "wanderly-cosmos-user-bubble ml-auto w-fit max-w-[86%] px-3.5 py-2 text-[15px] leading-[1.45] text-[var(--w-fog)] wanderly-edge wanderly-r-md";
   // On the globe, assistant replies sit directly on the conversation ground:
   // the panel is already a readable surface, so wrapping every answer in a
   // second framed card makes the narrow column feel dense. The Trip workspace
@@ -1045,7 +1045,7 @@ export function TravelAgentChat({
   const submitButton = (
     <button type="submit" aria-label={t("sendAria")} disabled={inputDisabled} className={docked
       ? "grid size-11 shrink-0 place-items-center disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action"
-      : "grid size-11 shrink-0 place-items-center disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-bot-action"}>
+      : `grid ${open ? "size-10" : "size-11"} shrink-0 place-items-center disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-bot-action`}>
       {isSending ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : <ArrowUp aria-hidden="true" className="size-5" />}
     </button>
   );
@@ -1055,7 +1055,7 @@ export function TravelAgentChat({
       <>
         <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-20 right-4 z-40 px-3 py-1.5 text-[11px] font-extrabold wanderly-cosmos-control wanderly-r-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
         <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
-        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 p-1.5 pl-4 wanderly-cosmos-surface wanderly-r-lg wanderly-shadow sm:left-[94px] sm:right-3 sm:w-auto sm:translate-x-0 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)]" aria-label={t("startAria")}>
+        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="wanderly-cosmos-composer absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 p-1.5 pl-4 wanderly-cosmos-surface wanderly-r-lg wanderly-shadow sm:left-[94px] sm:right-3 sm:w-auto sm:translate-x-0 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)]" aria-label={t("startAria")}>
           <Sparkles aria-hidden="true" className="size-4 shrink-0 text-primary" />
           <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--w-fog)] placeholder:text-[var(--w-space-muted)] focus:outline-none disabled:opacity-60" />
           {submitButton}
@@ -1065,7 +1065,7 @@ export function TravelAgentChat({
   }
 
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-visible bg-background" : "wanderly-cosmos-chat absolute inset-x-3 bottom-3 z-50 flex h-[60dvh] min-h-[300px] flex-col overflow-hidden text-[var(--w-fog)] wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-visible bg-background" : "wanderly-cosmos-chat absolute inset-x-3 bottom-0 z-50 flex h-[calc(60dvh+0.75rem)] min-h-[300px] flex-col overflow-hidden text-[var(--w-fog)] wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-3 landscape:left-auto landscape:right-6 landscape:h-[calc(min(60vw,calc(100dvh-3rem),852px)+0.75rem)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
       {/* The panel paints its own deep-space ground, so the inner column stays
           transparent rather than laying a second surface over it. */}
       <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>
@@ -1075,17 +1075,17 @@ export function TravelAgentChat({
             header repeating the name and the icon was saying it twice. */}
         {docked ? null : (
         <header className="wanderly-cosmos-chat-header flex items-center gap-2.5 px-3 pb-2 pt-3">
-          <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press"><ChevronDown aria-hidden="true" className="size-4" /></button>
+          <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-8 shrink-0 translate-y-[3px] place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press"><ChevronDown aria-hidden="true" className="size-4" /></button>
           <div className="min-w-0 flex-1" />
           {/* Icon-only, matching the collapse and trip-planner controls either
               side of it. The label stays as the accessible name and tooltip, so
               the control keeps its meaning for a screen reader and on hover. */}
-          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} aria-label={t("startNewExploration")} title={t("startNewExploration")} className="grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"><Plus aria-hidden="true" className="size-4" /></button> : null}
+          {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} aria-label={t("startNewExploration")} title={t("startNewExploration")} className="grid size-8 shrink-0 translate-y-[3px] place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"><Plus aria-hidden="true" className="size-4" /></button> : null}
           {tripId && effectiveThreadId ? (
             <Link
               href={`/trips/${tripId}?thread=${effectiveThreadId}` as "/trips/[tripId]"}
               aria-label={t("goToTripPlanner")}
-              className="group relative grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press"
+              className="group relative grid size-8 shrink-0 translate-y-[3px] place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press"
             >
               <ArrowRight aria-hidden="true" className="size-4" />
               <span role="tooltip" className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-10 w-max px-2 py-1 text-[11px] font-semibold opacity-0 wanderly-cosmos-surface wanderly-r-xs wanderly-shadow-xs transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
@@ -1391,9 +1391,9 @@ export function TravelAgentChat({
         </div>
       </div>
 
-      <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5 xl:translate-x-1" : "mx-6 mb-3 mt-2"}>
+      <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5 xl:translate-x-1" : "mx-6 mt-2 -translate-y-3"}>
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className={`mb-1.5 flex h-6 max-w-full items-center px-2.5 text-[10px] font-extrabold wanderly-r-xs wanderly-press ${docked ? "bg-[var(--w-mist)] text-primary wanderly-edge-thin" : "wanderly-cosmos-control"}`}><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
-        <div className={`${docked ? "mx-auto max-w-[640px]" : ""} flex min-h-14 items-center gap-2 p-1.5 pl-4 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
+        <div className={`${docked ? "mx-auto max-w-[640px] min-h-14 p-1.5 pl-4" : "wanderly-cosmos-composer min-h-[52px] p-1 pl-3"} flex items-center gap-2 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
           <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
           {submitButton}
         </div>

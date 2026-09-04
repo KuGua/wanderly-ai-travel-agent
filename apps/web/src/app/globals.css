@@ -459,6 +459,128 @@
   --destructive: oklch(0.72 0.17 25);
 }
 
+/* The floating conversation should feel like a light pane over the globe,
+   rather than a second, heavy application window. Its two low-opacity colour
+   blooms pick up the map behind it while the blur preserves readable text. */
+.wanderly-cosmos-chat.wanderly-cosmos-panel {
+  border-color: color-mix(in srgb, var(--w-fog), transparent 58%);
+  background:
+    radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--w-info), transparent 72%), transparent 42%),
+    radial-gradient(circle at 8% 92%, color-mix(in srgb, var(--w-highlight), transparent 86%), transparent 46%),
+    color-mix(in srgb, var(--w-space-tint), transparent 32%);
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--w-space), transparent 58%),
+    0 2px 8px color-mix(in srgb, var(--w-ink), transparent 72%);
+  backdrop-filter: blur(22px) saturate(1.12) brightness(0.9);
+  -webkit-backdrop-filter: blur(22px) saturate(1.12) brightness(0.9);
+}
+
+/* Reusable glass surface for the globe composer in both closed and open
+   states. The outline is deliberately light: the surface should float, not
+   read as another boxed card inside the conversation. */
+.wanderly-cosmos-chat .wanderly-cosmos-composer,
+form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
+  border: 1px solid color-mix(in srgb, var(--w-fog), transparent 46%);
+  background:
+    linear-gradient(115deg, color-mix(in srgb, var(--w-fog), transparent 88%), transparent 42%),
+    color-mix(in srgb, var(--w-space-tint), transparent 28%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--w-fog), transparent 58%),
+    0 5px 14px color-mix(in srgb, var(--w-space), transparent 56%);
+  backdrop-filter: blur(18px) saturate(1.12);
+  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+}
+
+/* The traveller's words get the same translucent material, lightly tinted so
+   they remain distinguishable from the assistant's unboxed reply. */
+.wanderly-cosmos-user-bubble {
+  border: 1px solid color-mix(in srgb, var(--w-fog), transparent 48%);
+  background:
+    linear-gradient(120deg, color-mix(in srgb, var(--w-bot-outline), transparent 22%), color-mix(in srgb, var(--w-fog), transparent 88%)),
+    color-mix(in srgb, var(--w-space-tint), transparent 26%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--w-fog), transparent 60%),
+    0 4px 12px color-mix(in srgb, var(--w-space), transparent 66%);
+  backdrop-filter: blur(16px) saturate(1.1);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+}
+
+/* Simulated vertical glass tab: no native white gutter, just a thin pill with
+   a highlight rim and soft depth, sized by the browser to the scroll range. */
+.wanderly-cosmos-chat-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--w-info), var(--w-fog) 28%) transparent;
+}
+
+.wanderly-cosmos-chat-scroll::-webkit-scrollbar {
+  width: 9px;
+}
+
+.wanderly-cosmos-chat-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.wanderly-cosmos-chat-scroll::-webkit-scrollbar-thumb {
+  min-height: 56px;
+  border: 1px solid color-mix(in srgb, var(--w-fog), transparent 54%);
+  border-radius: 999px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--w-fog), transparent 36%), color-mix(in srgb, var(--w-info), transparent 18%));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--w-fog), transparent 42%), 0 2px 6px color-mix(in srgb, var(--w-space), transparent 38%);
+}
+
+.wanderly-cosmos-chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--w-fog), transparent 24%), color-mix(in srgb, var(--w-info), transparent 4%));
+}
+
+.wanderly-cosmos-chat-scroll::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--w-fog), transparent 12%), color-mix(in srgb, var(--w-info), var(--w-fog) 28%));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--w-white), transparent 22%), 0 2px 8px color-mix(in srgb, var(--w-space), transparent 26%);
+}
+
+/* Controls get the liquid treatment at their edge only — their hit targets
+   and labels remain conventional, so the glass never obscures an action. */
+.wanderly-cosmos .wanderly-cosmos-control {
+  border-color: color-mix(in srgb, var(--w-fog), transparent 44%);
+  background:
+    linear-gradient(130deg, color-mix(in srgb, var(--w-fog), transparent 82%), transparent 48%),
+    color-mix(in srgb, var(--w-space-tint), transparent 24%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--w-fog), transparent 48%),
+    0 3px 9px color-mix(in srgb, var(--w-space), transparent 48%);
+  backdrop-filter: blur(14px) saturate(1.12);
+  -webkit-backdrop-filter: blur(14px) saturate(1.12);
+}
+
+.wanderly-cosmos .wanderly-cosmos-control:hover,
+.wanderly-cosmos .wanderly-cosmos-control:active {
+  border-color: color-mix(in srgb, var(--w-fog), transparent 24%);
+  background:
+    linear-gradient(130deg, color-mix(in srgb, var(--w-fog), transparent 72%), transparent 48%),
+    color-mix(in srgb, var(--w-info), transparent 12%);
+  color: var(--w-ink);
+}
+
+.wanderly-cosmos .wanderly-bot-action {
+  border-color: color-mix(in srgb, var(--w-fog), transparent 44%);
+  background:
+    linear-gradient(130deg, color-mix(in srgb, var(--w-fog), transparent 82%), transparent 48%),
+    color-mix(in srgb, var(--w-bot-outline), transparent 12%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--w-fog), transparent 48%),
+    0 3px 9px color-mix(in srgb, var(--w-space), transparent 48%);
+  backdrop-filter: blur(14px) saturate(1.12);
+  -webkit-backdrop-filter: blur(14px) saturate(1.12);
+}
+
+.wanderly-cosmos .wanderly-bot-action:hover,
+.wanderly-cosmos .wanderly-bot-action:active {
+  border-color: color-mix(in srgb, var(--w-fog), transparent 24%);
+  background:
+    linear-gradient(130deg, color-mix(in srgb, var(--w-fog), transparent 66%), transparent 48%),
+    color-mix(in srgb, var(--w-bot-outline), var(--w-fog) 24%);
+  color: var(--w-ink);
+}
+
 .wanderly-cosmos-chat .wanderly-edge,
 .wanderly-cosmos-chat .wanderly-edge-thin {
   border-color: var(--w-space-line);
@@ -473,8 +595,8 @@
 }
 
 .wanderly-cosmos-chat-scroll {
-  mask-image: linear-gradient(to bottom, transparent 0, #000 3.25rem, #000 100%);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 3.25rem, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 2rem, #000 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 2rem, #000 100%);
 }
 
 .wanderly-cosmos .maplibregl-ctrl-group {
