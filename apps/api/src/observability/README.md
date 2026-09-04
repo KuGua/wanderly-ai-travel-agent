@@ -126,6 +126,7 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `thread_title_writes_total` | counter | source, result | source ∈ `["deterministic","llm","manual"]`; result ∈ `["applied","rejected","unavailable","no_material","manual_locked"]` |
 | `trip_constraint_mutation_total` | counter | operation, visibility, strength, result | operation ∈ `["propose","confirm","dismiss","upsert","revoke","handoff_confirm"]`; visibility ∈ `["team_visible","orchestrator_confidential","mixed","n_a"]`; strength ∈ `["hard","soft","mixed","n_a"]`; result ∈ `["success","replay","conflict","catalog_invalid"]` |
 | `trip_draft_brief_update_total` | counter | result | `["success"]` |
+| `trip_brief_destination_resolution_total` | counter | result | `["accepted","unresolved"]` |
 | `trip_invitation_rejected_total` | counter | reason | `["terminal_trip"]` |
 | `trip_place_actions_total` | counter | action, visibility | action ∈ `["proposed","adopted","revoked","stale_invalidated"]`; visibility ∈ `["owner_private","team_visible","orchestrator_confidential"]` |
 | `ui_diagnostic_events_total` | counter | action, outcome, error_category | action ∈ `["frontend.runtime","profile.save","trip.activate","trip.thread_create","conversation.submit","agent.run_cancel","invitation.accept","invitation.decline","plan.confirm","booking.confirm"]`; outcome ∈ `["success","failure"]`; error_category ∈ `["none","validation","network","http_4xx","http_5xx","timeout","aborted","invalid_response","render","unhandled"]` |
