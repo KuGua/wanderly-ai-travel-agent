@@ -8,9 +8,24 @@ describe("thread title postprocessing", () => {
       .toEqual({ ok: true, title: "hello world" });
   });
 
-  it("drops emoji and private-use-area code points", () => {
+  it("drops emoji and hidden tag code points", () => {
     expect(postprocessThreadTitle("Tokyo 🗼 tips \u{E0067}", []))
       .toEqual({ ok: true, title: "Tokyo tips" });
+  });
+
+  // The private use areas were never actually matched: the constant named
+  // for them covered U+E0000–U+E0FFF, which is the Tags block. A PUA glyph
+  // renders as tofu or as whatever the reader's font happens to map it to.
+  it("drops real private-use-area code points", () => {
+    expect(postprocessThreadTitle("Visa \u{E000}prep\u{F8FF}", []))
+      .toEqual({ ok: true, title: "Visa prep" });
+  });
+
+  // Every strip pattern must be global. Without the `g` flag `replace`
+  // removes only the first match and leaves the rest in the title.
+  it("drops every occurrence, not just the first", () => {
+    expect(postprocessThreadTitle("🗼a🗼b🗼c\u{E0067}d\u{E0067}e", []))
+      .toEqual({ ok: true, title: "abcde" });
   });
 
   it("rejects titles that become empty after stripping", () => {

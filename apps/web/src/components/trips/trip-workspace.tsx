@@ -32,6 +32,20 @@ const DEFAULT_THREAD_QUERY = "thread";
 const SHARED_VIEW_QUERY = "view";
 const SHARED_VIEW_VALUE = "shared";
 
+type AiNameReason = "MANUAL_LOCKED" | "NO_MATERIAL" | "REJECTED" | "UNAVAILABLE";
+
+// Spelled out rather than derived from the reason string. Case-converting
+// `MANUAL_LOCKED` produced `reasonManual_locked`, which does not exist in
+// messages/*.json — and `REJECTED`/`UNAVAILABLE` happened to convert
+// correctly, so half the reasons rendered and half raised a missing-key
+// error. A literal map lets the compiler check every arm.
+const AI_NAME_REASON_KEY: Record<AiNameReason, string> = {
+  MANUAL_LOCKED: "threads.aiName.reasonManualLocked",
+  NO_MATERIAL: "threads.aiName.reasonNoMaterial",
+  REJECTED: "threads.aiName.reasonRejected",
+  UNAVAILABLE: "threads.aiName.reasonUnavailable",
+};
+
 function isUnauthorizedOrRevoked(error: unknown): boolean {
   if (!(error instanceof TravelApiError)) return false;
   if (error.isUnauthorized) return true;
@@ -64,7 +78,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const [renamingFor, setRenamingFor] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [aiNameFeedback, setAiNameFeedback] = useState<
-    { threadId: string; reason: "MANUAL_LOCKED" | "NO_MATERIAL" | "REJECTED" | "UNAVAILABLE" } | null
+    { threadId: string; reason: AiNameReason } | null
   >(null);
 
   const autoProvisionAttemptedRef = useRef(false);
@@ -485,7 +499,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             role="status"
             className="mt-1 px-3 text-[11px] font-bold text-muted-foreground"
           >
-            {t(`threads.aiName.reason${feedback.reason.charAt(0)}${feedback.reason.slice(1).toLowerCase()}` as never)}
+            {t(AI_NAME_REASON_KEY[feedback.reason])}
           </p>
         ) : null}
       </li>

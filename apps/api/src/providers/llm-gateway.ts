@@ -2170,6 +2170,108 @@ export class LLMGateway implements ModelGateway {
 
     return recordFailure(lastError);
   }
+
+  /**
+   * Owner-triggered private thread title
+   * (docs/thread-title-lifecycle-implementation.md §9).
+   *
+   * The caller has already reduced the thread to at most three of the
+   * owner's own USER messages, truncated server-side. Nothing else about the
+   * owner, the trip or the assistant's replies reaches the model.
+   *
+   * The prompt asks for a safe title, but it does not enforce one: the route
+   * runs every result through `postprocessThreadTitle` before any write, and
+   * that module — not this prompt — is what keeps a URL, an ID number or a
+   * verbatim echo of the conversation out of the rail.
+   */
+  async generateThreadTitle(params: {
+    locale: "en" | "zh";
+    messages: ReadonlyArray<{ text: string }>;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<{ title: string }> {
+    const ctx = params.ctx ?? this.options.ctx;
+    const start = Date.now();
+    const span = getTracer().startSpan("llm.openai.parse", {
+      kind: SpanKind.CLIENT,
+      attributes: {
+        "llm.method": "thread.title.suggest",
+        "llm.stream": false,
+      },
+    });
+    annotateLlmSpan(
+      span,
+      this.options.provider,
+      this.options.modelName,
+      this.options.promptVersion,
+      "thread.title.suggest",
+    );
+
+    const recordFailure = (errorCode: string): never => {
+      logSafeRuntimeEvent(ctx, {
+        component: "llm", event: "request", operation: "thread.title.suggest",
+        outcome: "failure", errorCode, latencyMs: Date.now() - start,
+        promptVersion: this.options.promptVersion,
+      });
+      safeSetAttribute(span, "llm.outcome", errorCode);
+      safeSetAttribute(span, "llm.error_code", errorCode);
+      span.end();
+      throw new ModelGatewayError(errorCode, "conversation");
+    };
+
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch (err) {
+      return recordFailure(classifyError(err));
+    }
+
+    // There is no current question to infer a language from, so the
+    // server-validated locale is the sole authority
+    // (LLM-GATEWAY.md §User-visible language contract).
+    const language = params.locale === "zh" ? "Simplified Chinese" : "English";
+    const systemPrompt = [
+      "You name a private travel-planning conversation from its opening messages.",
+      `Write the title in ${language}, whatever language the messages are written in.`,
+      "Name the subject the traveller is working on — a destination, a task, a decision.",
+      "At most 40 characters. No quotation marks, no trailing punctuation, no emoji.",
+      "Never copy a message verbatim, and never include a URL, an email address, or any number longer than five digits.",
+      "Return exactly one JSON object of the form {\"title\": \"…\"}.",
+    ].join(" ");
+
+    const maxRetries = this.options.maxRetries ?? 1;
+    let lastError = "SCHEMA_PARSE";
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        const response = await client.chat.completions.parse({
+          model: this.options.modelName,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: JSON.stringify({ messages: params.messages.map(m => m.text) }) },
+          ],
+          response_format: { type: "json_object" },
+        }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+
+        const raw = completionPayload(response.choices[0]?.message);
+        const parsed = z.object({ title: z.string().min(1).max(40) }).safeParse(raw);
+        if (parsed.success) {
+          logSafeRuntimeEvent(ctx, {
+            component: "llm", event: "request", operation: "thread.title.suggest",
+            outcome: "success", latencyMs: Date.now() - start,
+            promptVersion: this.options.promptVersion,
+          });
+          safeSetAttribute(span, "llm.outcome", "SUCCESS");
+          span.end();
+          return { title: parsed.data.title };
+        }
+        lastError = "SCHEMA_PARSE";
+      } catch (error) {
+        lastError = classifyError(error);
+      }
+    }
+
+    return recordFailure(lastError);
+  }
 }
 
 export class ModelGatewayError extends Error {

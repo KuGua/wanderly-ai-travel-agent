@@ -585,10 +585,11 @@ Create a non-default thread in the trip. Caller must be a trip member.
 
 **Body**: `{ "title"?: "Hotel ideas", "locale"?: "en" | "zh" }`
 
-`title` is optional. When omitted the server numbers the thread inside the same
-transaction (`New chat 2` / `新对话 2`) and marks it `titleSource: "AUTO"`;
-clients must not compute titles themselves. When present the thread is created
-as `titleSource: "MANUAL"`. `locale` defaults to `"en"` and only selects the
+`title` is optional. When omitted the server takes an advisory lock on the
+(owner, trip) pair and numbers the thread inside the same transaction
+(`New chat 2` / `新对话 2`), marking it `titleSource: "AUTO"`; clients must not
+compute titles themselves. When present the thread is created as
+`titleSource: "MANUAL"`. `locale` defaults to `"en"` and only selects the
 language of a server-generated title.
 
 **Response**: `201 ThreadSummary`

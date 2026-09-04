@@ -242,7 +242,12 @@ Body（新）: { "title"?: string,          // 可选；缺省由服务端编号
 ```
 
 - `title` 存在 → `title_source='MANUAL'`、`title_locale=NULL`（保留既有直调客户端语义）。
-- `title` 缺省 → **在同一事务内**统计该 `(ownerUserId, tripId, archivedAt IS NULL)` 的 thread 数 `n`，写入 `buildIndexedThreadTitle(n + 1, locale)`、`title_source='AUTO'`、`title_locale=locale`。
+- `title` 缺省 → **在同一事务内、且先取到 advisory lock 之后**，统计该 `(ownerUserId, tripId, archivedAt IS NULL)` 的 thread 数 `n`，写入 `buildIndexedThreadTitle(n + 1, locale)`、`title_source='AUTO'`、`title_locale=locale`。
+
+> **并发正确性（必读）：** 仅仅"在同一事务内 count 再 insert"**不能**保证编号唯一。仓库未设置隔离级别，即 PostgreSQL 默认的 READ COMMITTED——两个并发事务的 `SELECT count(*)` 互相看不见对方未提交的 insert，会得到相同的 `n`。`count(*)` 不加锁。因此事务开头必须先执行
+> `SELECT pg_advisory_xact_lock(hashtext(<ownerUserId>), hashtext(<tripId>))`，
+> 把同一 (owner, trip) 的并发创建串行化；锁随事务结束自动释放。
+> 不采用 `(owner_user_id, trip_id, title)` 唯一索引：那会连带禁止用户把两个 thread 都手动命名为同一个词，把实现约束外溢成产品限制，还需要额外的冲突重试。
 
 ### 7.4 修改 `POST /explorations/start`
 
@@ -308,6 +313,8 @@ export function buildIndexedThreadTitle(index: number, locale: ThreadTitleLocale
 | `allowedTools` | `[]` | 不需要任何 scope；`DefaultPolicyGate` 的 personal 白名单无需改动 |
 | `timeoutMs` | `4000` | 用户在前台等待，比 `trip.constraint.propose` 的 1500ms 宽松；超时即 `UNAVAILABLE` |
 | `needsConfirm` | `false` | 触发动作本身即用户确认 |
+
+Skill 通过 `modelGateway().generateThreadTitle` 调用模型。**该方法在 `ModelGateway` 接口上是必需的，不得声明为可选**：可选时唯一的具体实现 `LLMGateway` 从未实现它，skill 的缺失守卫每次都命中，功能在所有环境恒返回 `UNAVAILABLE`，而编译不报错。测试 fake 不在 `tsconfig` 的 `include` 范围内，因此不受影响；skill 保留运行时守卫用于兜住注入的部分实现 gateway。
 
 **输入 schema（`.strict()`）**
 
@@ -460,14 +467,15 @@ metrics.registerCounter(
 
 | 条件 | 期望行为 |
 |---|---|
-| 非 owner 调用重命名或 AI 命名 | 403，不区分“不存在”与“无权限”，不泄露 thread 是否存在 |
+| 未知 threadId，或 threadId 不属于该 tripId | 404，与既有 `requireOwnedTripThreadRead` 的语义一致 |
+| threadId 存在于该 trip 但不属于调用者 | 403。两个状态码刻意保持可区分：thread id 是 UUID，猜测成本已足够高，而把「不存在」也回 403 会让 404 失去意义 |
 | 调用者已被移出 trip | 403（沿用现有的成员资格失效检查） |
 | `title_source='MANUAL'` 且未带 `overwriteManual` | `applied=false, reason=MANUAL_LOCKED`，不调用 gateway |
 | `title_source='MANUAL'` 且带 `overwriteManual: true` | 允许覆盖，写 `title_source='AUTO'` |
 | thread 无 USER 消息 | `applied=false, reason=NO_MATERIAL`，不调用 gateway，不产生 LLM 成本 |
 | LLM 超时 / 网络失败 / 输出不合 schema | `applied=false, reason=UNAVAILABLE`，标题不变 |
 | LLM 输出含 URL / 邮箱 / 长数字串 / 原文回显 | `applied=false, reason=REJECTED`，标题不变 |
-| 并发创建额外 thread（多标签页） | 服务端事务内计数，两个 thread 得到不同编号 |
+| 并发创建额外 thread（多标签页） | 事务开头对 `(ownerUserId, tripId)` 取 `pg_advisory_xact_lock` 后再计数插入，两个 thread 得到不同编号 |
 | 并发重命名同一 thread | `FOR UPDATE` 行锁串行化，后写入者胜出 |
 | 归档 thread | 不参与编号计数（`archived_at IS NULL` 过滤），标题不再变更 |
 | 删除 trip | `chat_threads` 随现有删除路径清理，无额外处理 |

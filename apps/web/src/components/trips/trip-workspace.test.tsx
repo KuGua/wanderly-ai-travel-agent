@@ -435,6 +435,49 @@ describe("TripWorkspace", () => {
     expect(screen.queryByPlaceholderText(/Visa prep/)).not.toBeInTheDocument();
   });
 
+  // Every `applied: false` reason must reach the traveller as prose. The
+  // first implementation built the message key by case-converting the reason,
+  // which silently worked for REJECTED/UNAVAILABLE and produced a missing key
+  // for the two underscored ones — so both halves are asserted here.
+  it.each([
+    ["MANUAL_LOCKED", "This thread was renamed by you. Confirm to let AI name it instead."],
+    ["NO_MATERIAL", "Send at least one message before asking AI to name this thread."],
+    ["REJECTED", "AI couldn't produce a safe title — try again or rename manually."],
+    ["UNAVAILABLE", "AI naming is temporarily unavailable — try again or rename manually."],
+  ] as const)("explains a refused AI naming attempt (%s) and keeps the title", async (reason, message) => {
+    const thread = buildThread(DEFAULT_THREAD_ID, "New chat 1", false);
+    const suggestThreadTitle = vi.fn().mockResolvedValue({ thread, applied: false, reason });
+    const api = createApi({
+      suggestThreadTitle,
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [thread] }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Thread actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Name with AI" }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    // The refusal is informational: the stored title is untouched.
+    expect(screen.getByRole("button", { name: /New chat 1/ })).toBeInTheDocument();
+  });
+
+  it("reports an AI naming request that fails outright as unavailable", async () => {
+    const thread = buildThread(DEFAULT_THREAD_ID, "New chat 1", false);
+    const api = createApi({
+      suggestThreadTitle: vi.fn().mockRejectedValue(new Error("network")),
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [thread] }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Thread actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Name with AI" }));
+
+    expect(
+      await screen.findByText("AI naming is temporarily unavailable — try again or rename manually."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /New chat 1/ })).toBeInTheDocument();
+  });
+
   it("lets the creator set a manual title", async () => {
     const updateTripTitle = vi.fn().mockResolvedValue({
       trip: { id: TRIP_ID, name: "Autumn escape", nameSource: "MANUAL", titleLocale: null, updatedAt: "2026-08-22T10:00:00.000Z" },
