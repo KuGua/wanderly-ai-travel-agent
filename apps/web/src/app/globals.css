@@ -655,11 +655,14 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
   --ring: var(--w-info);
   --paper-rule-height: 30px;
   --paper-writing-offset: 2px;
+  /* A restrained parchment cast picks up the globe's sand tones without
+     competing with its ocean-blue map or introducing a new brand colour. */
+  --paper-ground: color-mix(in srgb, var(--w-fog), #ead79a 14%);
   border: 0;
   isolation: isolate;
   border-radius: 8px;
   color: var(--w-ink);
-  background-color: color-mix(in srgb, var(--w-fog), var(--w-white) 58%);
+  background-color: var(--paper-ground);
   background-image:
     linear-gradient(96deg, color-mix(in srgb, var(--w-white), transparent 32%), transparent 39%, color-mix(in srgb, var(--w-moss), transparent 84%)),
     repeating-linear-gradient(0deg, color-mix(in srgb, var(--w-ink), transparent 97%) 0 1px, transparent 1px 4px),
@@ -778,7 +781,7 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
   position: absolute;
   bottom: calc(100% - 1px);
   left: 50%;
-  width: 16px;
+  width: 14.4px;
   height: 14px;
   transform: translateX(-50%);
   background: color-mix(in srgb, var(--w-space), var(--w-ink) 38%);
@@ -815,9 +818,11 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
   background-color: transparent;
   background-image:
     linear-gradient(to right, transparent 0 30px, color-mix(in srgb, var(--w-info), transparent 71%) 30px 31px, transparent 31px),
-    repeating-linear-gradient(to bottom, transparent 0 calc(var(--paper-rule-height) - 1px), color-mix(in srgb, var(--w-info), transparent 68%) calc(var(--paper-rule-height) - 1px) var(--paper-rule-height));
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='509' height='120' viewBox='0 0 509 120'%3E%3Cg fill='none' stroke='%23599db5' stroke-opacity='.38'%3E%3Cpath d='M0 29.5H133M136 29.5H378M382 29.5H509'/%3E%3Cpath d='M0 59.5H64M68 59.5H291M294 59.5H509'/%3E%3Cpath d='M0 89.5H207M211 89.5H447M450 89.5H509'/%3E%3Cpath d='M0 119.5H166M170 119.5H352M356 119.5H509'/%3E%3C/g%3E%3C/svg%3E");
   background-position: 0 24px;
-  background-attachment: local;
+  background-size: auto, 509px calc(var(--paper-rule-height) * 4);
+  background-repeat: repeat, repeat;
+  background-attachment: local, local;
   mask-image: none;
   -webkit-mask-image: none;
   scrollbar-color: color-mix(in srgb, var(--w-info), var(--w-fog) 38%) transparent;
@@ -924,7 +929,7 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
 .wanderly-paper-chat .wanderly-paper-composer,
 form[data-wanderly-perch="composer"].wanderly-paper-composer {
   border: 1px solid color-mix(in srgb, var(--w-bot-outline), transparent 54%);
-  background-color: color-mix(in srgb, var(--w-fog), var(--w-white) 54%);
+  background-color: color-mix(in srgb, var(--paper-ground, var(--w-fog)), var(--w-white) 30%);
   background-image:
     linear-gradient(to right, transparent 0 22px, color-mix(in srgb, var(--w-info), transparent 78%) 22px 23px, transparent 23px),
     repeating-linear-gradient(0deg, color-mix(in srgb, var(--w-ink), transparent 97%) 0 1px, transparent 1px 4px);
