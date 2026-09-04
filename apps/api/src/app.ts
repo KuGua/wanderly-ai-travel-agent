@@ -188,15 +188,25 @@ export async function buildApp(options: BuildAppOptions = {}) {
     ) {
       throw new ApiError(403, "Forbidden", "Local development writes require an allowed browser origin");
     }
-    if (isAuthenticationExempt(request.method, request.url)) {
-      return;
-    }
-    await authMiddleware(request);
   });
 
-  // Register CORS after request tracing. @fastify/cors completes successful
-  // preflight requests from its onRequest hook, so it must observe the trace
-  // context already initialized above.
+  // CORS is registered here, between the origin guards above and the
+  // authentication hook below, and the position is load-bearing at both ends.
+  //
+  // It must come *after* the guards: @fastify/cors answers a valid preflight
+  // from its own onRequest hook, so registering it earlier would let a
+  // disallowed origin's preflight end as a 204 before the guard can reject it.
+  //
+  // It must come *before* authentication. Fastify runs onRequest hooks in
+  // registration order, so a hook that replies short-circuits every hook after
+  // it — and an unauthenticated request replying 401 from a hook registered
+  // ahead of CORS produced a 401 with no `access-control-allow-origin` on it.
+  // The browser cannot read a response like that, so it reports an opaque
+  // network failure instead of the status: the web app saw `net::ERR_FAILED`
+  // where the server had plainly said "a valid bearer access token is
+  // required", and could neither show that nor act on it. Registering CORS
+  // first means the headers are on the reply before auth can reject it, so
+  // every 4xx the API returns stays readable to the page that asked for it.
   await app.register(fastifyCors, {
     origin: authMode === "local-dev" || authMode === "custom-local"
       ? (origin, callback) => callback(null, isAllowedLocalDevOrigin(origin, localDevAllowedOrigins))
@@ -204,6 +214,13 @@ export async function buildApp(options: BuildAppOptions = {}) {
     // Keep this allow-list aligned with the API's browser-facing routes.
     // In particular, creator-confirmed draft brief updates use PATCH.
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  });
+
+  app.addHook("onRequest", async (request) => {
+    if (isAuthenticationExempt(request.method, request.url)) {
+      return;
+    }
+    await authMiddleware(request);
   });
 
   app.addHook("preHandler", async (request) => {

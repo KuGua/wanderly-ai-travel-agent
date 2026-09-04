@@ -447,6 +447,28 @@ describe("ExploreMapPage private inspirations", () => {
     expect(screen.queryByRole("heading", { name: "Pinned place 1" })).not.toBeInTheDocument();
   });
 
+  // The terminal stands in the regolith, so the terrain is the ground of the
+  // scene in every state — not a collapsed-state decoration. Taking it away
+  // while the conversation is open left the monitor floating in space, and
+  // rebuilding its layer on each toggle re-rasterised the art over the
+  // turning globe. One layer, mounted once, never removed.
+  it("keeps the lunar terrain mounted through the whole chat cycle", async () => {
+    const api = createTravelApiForAutoAsk();
+    renderWithIntl(<ExploreMapPage />, { api });
+    await waitFor(() => expect(mapMock.handlers.get("click")).toBeTypeOf("function"));
+    fireSourcedata({ sourceId: "openmaptiles", isSourceLoaded: true });
+
+    const lunarLayer = document.querySelector(".wanderly-starfield--lunar");
+    expect(lunarLayer).toBeInTheDocument();
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Chat history" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
+    expect(document.querySelector(".wanderly-starfield--lunar")).toBe(lunarLayer);
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse conversation" }));
+    expect(document.querySelector(".wanderly-starfield--lunar")).toBe(lunarLayer);
+  });
+
   it("moves the globe into the uncovered landscape area without enlarging it", async () => {
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
       matches: query.includes("orientation: portrait") ? false : true,

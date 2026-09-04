@@ -179,8 +179,8 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(question?.closest("article")).toHaveClass("mb-[17px]");
 
     const send = screen.getByRole("button", { name: "Send message" });
-    expect(send).toHaveClass("wanderly-bot-action");
-    expect(send).not.toHaveClass("wanderly-action");
+    expect(send).toHaveClass("wanderly-crt-key");
+    expect(send).not.toHaveClass("wanderly-action", "wanderly-bot-action", "wanderly-r-md");
   });
 
   it("lays out the globe destination decision as one compact unfilled row", async () => {
@@ -694,33 +694,34 @@ describe("TravelAgentChat durable streaming flow", () => {
     scrollTop.mockRestore();
   });
 
-  // The collapsed composer is the open panel's composer one state earlier, and
-  // both float in the cosmic scene, so they take the same deep-space material.
-  // Giving this one the paper card made opening the chat read as a jump
-  // between two different products.
-  it("uses the cosmic surface for the collapsed composer", async () => {
+  // Collapsed and open are one terminal in two sizes, not two components: the
+  // same screen, showing only its prompt line before the conversation exists.
+  // Giving the collapsed state a deep-space card instead made opening the chat
+  // read as a jump between two different products.
+  it("shows the collapsed composer as the terminal's prompt line", async () => {
     renderChat(createApi(), { initiallyOpen: false });
 
     const collapsedComposer = screen.getByRole("form", { name: "Start a conversation with Wanderly Agent" });
-    expect(collapsedComposer).toHaveClass("wanderly-cosmos-surface", "wanderly-r-lg", "wanderly-shadow");
-    expect(collapsedComposer).not.toHaveClass("bg-card", "wanderly-edge");
+    expect(collapsedComposer).toHaveClass("wanderly-crt", "wanderly-crt--prompt");
+    expect(collapsedComposer).not.toHaveClass("wanderly-cosmos-surface", "wanderly-r-lg", "wanderly-shadow", "bg-card", "wanderly-edge");
+    expect(collapsedComposer.querySelector(".wanderly-crt-caret")).toBeInTheDocument();
   });
 
-  // The open panel floats inside `.wanderly-cosmos`, where the design system
-  // rules out a white card: it takes the deep-space panel, and everything it
-  // contains takes the deep-space surface rather than `bg-card` on paper.
-  it("uses the cosmic surfaces for the open conversation", async () => {
+  // Opening grows the same screen. The panel keeps `.wanderly-cosmos-chat` for
+  // the semantic aliases its nested cards read, but takes no deep-space panel
+  // of its own — the phosphor tube is the surface.
+  it("grows the same terminal for the open conversation", async () => {
     renderChat(createApi(), { initiallyOpen: false });
 
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Wanderly Agent conversation" });
-    expect(dialog).toHaveClass("wanderly-cosmos-chat", "wanderly-cosmos-panel", "wanderly-r-lg");
-    expect(dialog).not.toHaveClass("bg-sidebar", "wanderly-edge");
+    expect(dialog).toHaveClass("wanderly-cosmos-chat", "wanderly-crt");
+    expect(dialog).not.toHaveClass("wanderly-crt--prompt", "wanderly-cosmos-panel", "wanderly-r-lg", "bg-sidebar", "wanderly-edge");
 
     const composerBox = screen.getByRole("textbox", { name: "Message Wanderly Agent" }).parentElement;
-    expect(composerBox).toHaveClass("wanderly-cosmos-surface", "wanderly-r-md", "wanderly-shadow-sm");
-    expect(composerBox).not.toHaveClass("bg-card");
+    expect(composerBox).toHaveClass("wanderly-crt-input");
+    expect(composerBox).not.toHaveClass("wanderly-cosmos-surface", "wanderly-r-md", "wanderly-shadow-sm", "bg-card");
   });
 
   it("calls onThreadInvalidated when the server returns 404 from getOwnerConversation", async () => {

@@ -82,6 +82,11 @@ const DESKTOP_QUERY = "(min-width: 768px) and (pointer: fine)";
  * itself, which is exactly when that shows.
  */
 const DESKTOP_MIN_ZOOM = 2;
+const GLOBE_SPIN_DEGREES_PER_SECOND = 0.9;
+/* A frame this long means the tab was hidden or the main thread stalled.
+   Rotating by the whole gap would teleport the globe, so the frame is skipped
+   and the next one resumes from where the camera actually is. */
+const GLOBE_SPIN_MAX_FRAME_MS = 250;
 
 function isDesktopViewport(): boolean {
   return typeof window !== "undefined" && window.matchMedia(DESKTOP_QUERY).matches;
@@ -913,7 +918,7 @@ export function ExploreMapPage() {
         * where stars belong. Carried by the page instead, they landed on the
         * globe itself and read as specks on the map.
         */}
-      <div className="wanderly-starfield absolute inset-0 bg-[var(--w-space)]" aria-hidden="true" />
+      <div className="wanderly-starfield wanderly-starfield--lunar absolute inset-0 bg-[var(--w-space)]" aria-hidden="true" />
       <div className="absolute inset-0">
         <div ref={containerRef} className="size-full" aria-label={t("globeAriaLabel")} />
       </div>
@@ -959,10 +964,13 @@ export function ExploreMapPage() {
           <p className="mt-0.5 text-xs opacity-85">{focusHandoff?.label ?? t("startingFrom")}</p>
           </div>
         </div>
-        {/* Hidden while the chat is open: the translucent panel sits over this
-            top-right cluster, and the recenter/help controls bled through it —
-            reading as a doubled layer behind the panel's own header buttons. */}
-        <div data-wanderly-avoid className={`pointer-events-auto flex gap-2 ${chatOpen ? "hidden" : ""}`}>
+        {/* Stays through the whole chat cycle. These used to be hidden while
+            the conversation was open, because the old translucent full-width
+            panel lay over this cluster and the controls bled through it. The
+            terminal is opaque and stands in the bottom corner, so it never
+            reaches them — and taking recenter away mid-conversation removed
+            the one control that undoes a camera move the chat itself made. */}
+        <div data-wanderly-avoid className="pointer-events-auto flex gap-2">
           <button type="button" onClick={recenter} aria-label={t("recenterAriaLabel")} title={t("recenterTitle")} className="grid size-12 place-items-center wanderly-cosmos-control wanderly-r-sm wanderly-press">
             <LocateFixed aria-hidden="true" className="size-5" />
           </button>
@@ -1123,10 +1131,20 @@ function reducedMotion() {
 function startGlobeSpin(map: MapLibreMap, animRef: { current: number | null }) {
   stopGlobeSpin(animRef);
   if (reducedMotion()) return;
-  const spin = () => {
+  // One `setCenter` per frame, sized by the time the frame actually took.
+  // Throttling the camera instead makes the rotation itself the stutter; the
+  // jitter this used to hide belongs to the compositing path around the
+  // canvas, and is fixed there.
+  let previousFrame: number | null = null;
+  const spin = (timestamp: number) => {
     if (!map.getContainer().isConnected) return;
-    const center = map.getCenter();
-    map.setCenter([center.lng + 0.015, center.lat]);
+    const elapsed = previousFrame === null ? 0 : timestamp - previousFrame;
+    previousFrame = timestamp;
+    if (elapsed > 0 && elapsed <= GLOBE_SPIN_MAX_FRAME_MS) {
+      const center = map.getCenter();
+      const longitudeDelta = (GLOBE_SPIN_DEGREES_PER_SECOND * elapsed) / 1_000;
+      map.setCenter([center.lng + longitudeDelta, center.lat]);
+    }
     animRef.current = requestAnimationFrame(spin);
   };
   animRef.current = requestAnimationFrame(spin);

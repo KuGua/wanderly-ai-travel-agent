@@ -1078,7 +1078,7 @@ export function TravelAgentChat({
   const submitButton = (
     <button type="submit" aria-label={t("sendAria")} disabled={inputDisabled} className={docked
       ? "grid size-11 shrink-0 place-items-center disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action"
-      : "grid size-11 shrink-0 place-items-center disabled:cursor-not-allowed wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-bot-action"}>
+      : "wanderly-crt-key grid size-10 shrink-0 place-items-center disabled:cursor-not-allowed"}>
       {isSending ? <LoaderCircle aria-hidden="true" className="size-5 animate-spin motion-reduce:animate-none" /> : <ArrowUp aria-hidden="true" className="size-5" />}
     </button>
   );
@@ -1086,28 +1086,37 @@ export function TravelAgentChat({
   if (!open) {
     return (
       <>
-        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-20 right-4 z-40 px-3 py-1.5 text-[11px] font-extrabold wanderly-cosmos-control wanderly-r-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
+        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-[184px] right-4 z-40 px-3 py-1.5 text-[11px] font-extrabold wanderly-cosmos-control wanderly-r-xs wanderly-press md:right-10">{t("history")}</button>
         <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
-        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 p-1.5 pl-4 wanderly-cosmos-surface wanderly-r-lg wanderly-shadow sm:left-[94px] sm:right-3 sm:w-auto sm:translate-x-0 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)]" aria-label={t("startAria")}>
-          <Sparkles aria-hidden="true" className="size-4 shrink-0 text-primary" />
-          <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--w-fog)] placeholder:text-[var(--w-space-muted)] focus:outline-none disabled:opacity-60" />
+        {/* The collapsed state is the same terminal as the open one, showing
+            only its prompt line. Its bottom offset clears the legs so the
+            monitor stands in the regolith instead of floating over it. */}
+        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="wanderly-crt wanderly-crt--prompt absolute bottom-[88px] left-1/2 z-40 flex min-h-12 w-[min(calc(100%-4.5rem),430px)] -translate-x-1/2 items-center gap-2 px-3 py-1.5 md:left-auto md:right-10 md:w-[min(42vw,430px)] md:translate-x-0" aria-label={t("startAria")}>
+          <span aria-hidden="true" className="wanderly-crt-caret shrink-0 font-mono text-sm font-bold leading-none">&gt;</span>
+          <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold focus:outline-none disabled:opacity-60" />
           {submitButton}
         </form>
       </>
     );
   }
 
+  // On a desktop the screen is pinned top and bottom rather than given a
+  // height: it stands on the regolith at `bottom-88` and stops below the map's
+  // header controls, whose row ends at 72px. 112 leaves the casing — 14px of
+  // bezel and outline beyond the glass — a 26px gap under them. Expressing it
+  // as two offsets means it stays true on any viewport height instead of
+  // needing a `min()` of guesses per screen size.
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-visible bg-background" : "wanderly-cosmos-chat absolute inset-x-3 bottom-3 z-50 flex h-[60dvh] min-h-[300px] flex-col overflow-hidden text-[var(--w-fog)] wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:h-[min(60vw,calc(100dvh-3rem),852px)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
-      {/* The panel paints its own deep-space ground, so the inner column stays
-          transparent rather than laying a second surface over it. */}
-      <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : "wanderly-cosmos-chat wanderly-crt absolute bottom-[88px] left-1/2 z-50 flex h-[52dvh] min-h-[290px] w-[min(calc(100%-4.5rem),560px)] -translate-x-1/2 flex-col overflow-visible md:left-auto md:right-10 md:top-[112px] md:h-auto md:min-h-0 md:w-[min(42vw,560px)] md:translate-x-0"}>
+      {/* The open chat floats directly above the crater; only its input gains
+          a physical surface, so it does not read as a second dialogue box. */}
+      <div className={`relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>
         {/* Two controls at the two edges, and nothing between them competing for
             the eye: put the conversation away on the left, open it in the trip
             planner on the right. The agent names itself on every reply, so the
             header repeating the name and the icon was saying it twice. */}
         {docked ? null : (
-        <header className="flex items-center gap-2.5 border-b-2 border-[var(--w-space-line)] px-3 pb-2 pt-3">
+        <header className="flex items-center gap-2.5 px-3 pb-2 pt-3">
           <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press"><ChevronDown aria-hidden="true" className="size-4" /></button>
           <div className="min-w-0 flex-1" />
           {/* Icon-only, matching the collapse and trip-planner controls either
@@ -1431,9 +1440,10 @@ export function TravelAgentChat({
         </div>
       </div>
 
-      <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5 xl:translate-x-1" : "border-t-2 border-[var(--w-space-line)] px-3 pb-3 pt-2"}>
+      <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5 xl:translate-x-1" : "relative z-10 px-3 pb-3 pt-2"}>
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className={`mb-1.5 flex h-6 max-w-full items-center px-2.5 text-[10px] font-extrabold wanderly-r-xs wanderly-press ${docked ? "bg-[var(--w-mist)] text-primary wanderly-edge-thin" : "wanderly-cosmos-control"}`}><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
-        <div className={`${docked ? "mx-auto max-w-[640px]" : ""} flex min-h-14 items-center gap-2 p-1.5 pl-4 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
+        <div className={`${docked ? "mx-auto max-w-[640px]" : "wanderly-crt-input"} flex min-h-12 items-center gap-2 p-1.5 pl-3 ${docked ? `${surfaceClass} wanderly-r-md wanderly-shadow-sm` : ""}`}>
+          {docked ? null : <span aria-hidden="true" className="wanderly-crt-caret shrink-0 font-mono text-sm font-bold leading-none">&gt;</span>}
           <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
           {submitButton}
         </div>
@@ -1516,12 +1526,17 @@ function FlightPreferenceOptions({
  * standing notice there would just occupy the corner of the map saying
  * nothing.
  */
+// Compact placement stacks above the terminal, on the same right edge as the
+// history control. It used to sit at `bottom-20`, which the monitor and its
+// legs now cover — and this banner carries the Retry for a failed provision,
+// which is exactly the moment the composer disables itself. Hidden here, a
+// dead input was the only feedback the traveller got.
 function ThreadStatus({ status, onRetry, compact = false }: { status: ChatThreadStatus; onRetry?: () => void; compact?: boolean }) {
   const t = useTranslations("explore.chat");
   if (status === "ready" || status === "idle") return null;
   const message = status === "preparing" ? t("preparingPrivateChat") : t("privateChatUnavailable");
   return (
-    <div role="status" data-wanderly-avoid={compact ? "" : undefined} className={compact ? "absolute bottom-20 left-4 z-40 flex items-center gap-2 px-3 py-1.5 text-[11px] font-semibold wanderly-cosmos-panel wanderly-r-xs sm:left-[94px] landscape:bottom-24 landscape:left-auto landscape:right-[8.5rem]" : "bg-card p-3 text-sm text-muted-foreground wanderly-edge-thin wanderly-r-sm wanderly-shadow-xs"}>
+    <div role="status" data-wanderly-avoid={compact ? "" : undefined} className={compact ? "absolute bottom-[224px] right-4 z-40 flex max-w-[calc(100%-2rem)] items-center gap-2 px-3 py-1.5 text-[11px] font-semibold wanderly-cosmos-panel wanderly-r-xs md:right-10" : "bg-card p-3 text-sm text-muted-foreground wanderly-edge-thin wanderly-r-sm wanderly-shadow-xs"}>
       <span>{message}</span>
       {status === "error" && onRetry ? <button type="button" onClick={onRetry} className="font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30">{t("retryPrivateChat")}</button> : null}
     </div>

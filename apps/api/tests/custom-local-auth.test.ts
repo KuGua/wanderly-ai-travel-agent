@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { eq } from "drizzle-orm";
@@ -60,6 +62,26 @@ describe("custom-local authentication", () => {
       .from(users)
       .where(eq(users.externalId, `custom:${username}`));
     expect(matchingUsers).toEqual([{ id: registered.user.id }]);
+  });
+
+  /**
+   * A 401 the browser cannot read is a 401 nobody can act on. CORS is
+   * registered ahead of the authentication hook precisely so a rejection still
+   * carries the header; with the two the other way round, the web app received
+   * an opaque `net::ERR_FAILED` and could not tell "sign in again" apart from
+   * "the API is down" — the globe composer just went quiet and stayed disabled.
+   */
+  it("keeps CORS headers on an unauthenticated rejection so the browser can read the status", async () => {
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/explorations/start",
+      headers: { origin: allowedOrigin, "content-type": "application/json" },
+      // Deliberately no bearer token.
+      payload: { requestId: randomUUID() },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.headers["access-control-allow-origin"]).toBe(allowedOrigin);
   });
 
   it("rejects cross-origin custom-local login attempts", async () => {
