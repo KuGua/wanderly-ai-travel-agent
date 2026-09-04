@@ -227,22 +227,34 @@ export function TravelAgentChat({
    * would remember the wrong thing.
    */
   const [highlight, setHighlight] = useState<{ text: string; x: number; y: number; messageId: string } | null>(null);
-  // The "remember this" bubble used to linger — it only cleared on a fresh
-  // selection or on saving, so tapping the composer left it floating over the
-  // input. While it is up, the next press anywhere but the bubble itself
-  // dismisses it at once.
+  // The "remember this" bubble is tied to the live text selection — the same
+  // thing the underline draws. Binding both to one source of truth keeps them
+  // appearing and disappearing together: whenever the selection collapses (the
+  // underline goes), the bubble goes with it, so a click on the highlighted
+  // text can never leave one behind. A press outside also clears it at once,
+  // which the composer needed — tapping the input used to leave it floating.
   useEffect(() => {
     if (!highlight) return;
     const onDown = (event: PointerEvent) => {
       if ((event.target as HTMLElement | null)?.closest('[data-testid="remember-highlight"]')) return;
       setHighlight(null);
     };
-    // Next tick: the pointerup that made the selection must not immediately
-    // arm a handler that the same gesture then trips.
-    const arm = window.setTimeout(() => document.addEventListener("pointerdown", onDown), 0);
+    const onSelectionChange = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || selection.toString().trim().length === 0) {
+        setHighlight(null);
+      }
+    };
+    // Next tick: the pointerup/selection that raised the bubble must not
+    // immediately arm handlers that the same gesture then trips.
+    const arm = window.setTimeout(() => {
+      document.addEventListener("pointerdown", onDown);
+      document.addEventListener("selectionchange", onSelectionChange);
+    }, 0);
     return () => {
       window.clearTimeout(arm);
       document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("selectionchange", onSelectionChange);
     };
   }, [highlight]);
   /**
@@ -836,17 +848,17 @@ export function TravelAgentChat({
     : "wanderly-cosmos-surface";
   const userBubbleClass = docked
     ? "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
-    : "ml-auto w-fit max-w-[86%] bg-[var(--w-bot-outline)] px-3.5 py-2 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md";
+    : "ml-auto w-fit max-w-[86%] bg-[var(--w-bot-outline)] px-3.5 py-2 text-[15px] leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md";
   // On the globe, assistant replies sit directly on the conversation ground:
   // the panel is already a readable surface, so wrapping every answer in a
   // second framed card makes the narrow column feel dense. The Trip workspace
   // keeps its illustrated card treatment because it lives on a paper surface.
   const agentBubbleClass = docked
     ? `group/msg relative max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`
-    : "group/msg relative max-w-[86%] py-1 text-justify text-[var(--w-fog)]";
+    : "group/msg relative max-w-[86%] py-1 text-[17px] text-justify text-[var(--w-fog)]";
   const streamingAgentClass = docked
     ? `max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`
-    : "max-w-[86%] py-1 text-justify text-[var(--w-fog)]";
+    : "max-w-[86%] py-1 text-[17px] text-justify text-[var(--w-fog)]";
   // The destination now names the action instead of sitting in a list above
   // it, so the option reads as the decision rather than as a record change.
   // Absent — the model proposed only dates, say — the label stays generic
@@ -945,17 +957,42 @@ export function TravelAgentChat({
     setPreferenceCard(null);
   }
 
-  function captureHighlight(messageId: string) {
+  const captureHighlight = useCallback((messageId: string) => {
     const selection = window.getSelection();
     const text = selection?.toString().trim() ?? "";
     if (!selection || text.length === 0 || selection.rangeCount === 0) {
       setHighlight(null);
       return;
     }
-    const rect = selection.getRangeAt(0).getBoundingClientRect();
+    const range = selection.getRangeAt(0);
+    // Centre the button over the selected part of the FIRST line, not the whole
+    // selection box: getClientRects() gives one rect per line fragment, so its
+    // first rect is exactly what is selected on the opening line. The bounding
+    // box would centre on the full first line, drifting off a selection that
+    // starts mid-line.
+    const rects = range.getClientRects?.();
+    const rect = rects && rects.length > 0 ? rects[0] : range.getBoundingClientRect();
     setHighlight({ text, x: rect.left + rect.width / 2, y: rect.top, messageId });
     setRememberState(null);
-  }
+  }, []);
+
+  // A drag-select that ends with the pointer flung outside the message bubble
+  // releases on some other element, so the bubble's own mouseup never fires and
+  // the selection went unnoticed. Catch the release at the document instead and
+  // find which message the selection sits in, so where the pointer lands no
+  // longer matters — only what is selected.
+  useEffect(() => {
+    const onUp = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0 || selection.toString().trim().length === 0) return;
+      const container = selection.getRangeAt(0).commonAncestorContainer;
+      const el = container instanceof Element ? container : container.parentElement;
+      const messageId = el?.closest<HTMLElement>("[data-remember-message-id]")?.dataset.rememberMessageId;
+      if (messageId) captureHighlight(messageId);
+    };
+    document.addEventListener("pointerup", onUp);
+    return () => document.removeEventListener("pointerup", onUp);
+  }, [captureHighlight]);
 
   async function rememberSelection() {
     if (!highlight || !api.rememberHighlight) return;
@@ -1089,8 +1126,7 @@ export function TravelAgentChat({
                   {agentLabel}
                   <div
                     className={agentBubbleClass}
-                    onMouseUp={() => captureHighlight(message.id)}
-                    onTouchEnd={() => captureHighlight(message.id)}
+                    data-remember-message-id={message.id}
                   >
                     <ChatMarkdown content={message.content} />
                     <CopyButton text={message.content} />
@@ -1298,7 +1334,7 @@ export function TravelAgentChat({
               data-testid="remember-highlight"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => void rememberSelection()}
-              style={{ position: "fixed", left: highlight.x, top: Math.max(highlight.y - 44, 8), transform: "translateX(-50%)", zIndex: 60 }}
+              style={{ position: "fixed", left: highlight.x, top: Math.max(highlight.y - 36, 8), transform: "translateX(-50%)", zIndex: 60 }}
               className={docked
                 ? "flex h-6 items-center px-3 text-[11px] font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action"
                 : "flex h-6 items-center px-3 text-[11px] font-bold text-[var(--w-fog)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-remember-highlight transition-colors"}

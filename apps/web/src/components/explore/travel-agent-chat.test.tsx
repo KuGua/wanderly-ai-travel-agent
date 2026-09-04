@@ -1157,11 +1157,16 @@ describe("highlighting something worth remembering", () => {
    * jsdom's Selection cannot be produced by a drag, so this stands in for what
    * the browser hands the handler afterwards: some text and where it sits.
    */
-  function selectInside(text: string | null) {
+  function selectInside(text: string | null, container?: Node) {
     vi.spyOn(window, "getSelection").mockReturnValue({
       toString: () => text ?? "",
       rangeCount: text ? 1 : 0,
-      getRangeAt: () => ({ getBoundingClientRect: () => ({ left: 100, top: 200, width: 40 }) }),
+      getRangeAt: () => ({
+        getBoundingClientRect: () => ({ left: 100, top: 200, width: 40 }),
+        // Capture now happens at the document on pointerup and finds the
+        // message from the selection, so the selection must report where it is.
+        commonAncestorContainer: container ?? document.body,
+      }),
       removeAllRanges: () => undefined,
     } as unknown as Selection);
   }
@@ -1178,8 +1183,8 @@ describe("highlighting something worth remembering", () => {
     });
     renderChat(api);
     const bubble = await screen.findByText("京都的町屋很适合你");
-    selectInside("町屋");
-    fireEvent.mouseUp(bubble);
+    selectInside("町屋", bubble);
+    fireEvent.pointerUp(bubble);
 
     const rememberButton = await screen.findByTestId("remember-highlight");
     expect(rememberButton).toHaveClass("wanderly-r-xs", "wanderly-remember-highlight", "text-[var(--w-fog)]");
@@ -1205,8 +1210,8 @@ describe("highlighting something worth remembering", () => {
     });
     renderChat(api);
     const bubble = await screen.findByText("很长的一段");
-    selectInside("很长的一段");
-    fireEvent.mouseUp(bubble);
+    selectInside("很长的一段", bubble);
+    fireEvent.pointerUp(bubble);
     fireEvent.click(await screen.findByTestId("remember-highlight"));
 
     expect(await screen.findByTestId("remember-result")).toHaveTextContent("720");
@@ -1222,9 +1227,54 @@ describe("highlighting something worth remembering", () => {
     renderChat(api);
     const bubble = await screen.findByText("普通回复");
     selectInside(null);
-    fireEvent.mouseUp(bubble);
+    fireEvent.pointerUp(bubble);
 
     expect(screen.queryByTestId("remember-highlight")).not.toBeInTheDocument();
+  });
+
+  it("still offers to remember when the drag is released outside the bubble", async () => {
+    // Flinging the pointer off the message before letting go used to lose the
+    // selection: the release landed elsewhere, so the bubble's own handler
+    // never ran. Capture now happens at the document and finds the message
+    // from the selection, so where the pointer lands no longer matters.
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [{ id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT", content: "京都的町屋很适合你", sequence: 1, createdAt: CREATED_AT }],
+      }),
+    });
+    renderChat(api);
+    const bubble = await screen.findByText("京都的町屋很适合你");
+    // The selection sits in the message, but the pointer is released on the
+    // page far from it.
+    selectInside("町屋", bubble);
+    fireEvent.pointerUp(document.body);
+
+    expect(await screen.findByTestId("remember-highlight")).toBeInTheDocument();
+  });
+
+  it("clears the bubble the moment the selection empties, in step with the underline", async () => {
+    // The bubble and the underline both stand for the live selection. Binding
+    // them to it keeps them from desyncing: when the selection collapses (the
+    // underline goes), the bubble goes with it, rather than lingering.
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [{ id: ASSISTANT_MESSAGE_ID, role: "ASSISTANT", content: "京都的町屋很适合你", sequence: 1, createdAt: CREATED_AT }],
+      }),
+    });
+    renderChat(api);
+    const bubble = await screen.findByText("京都的町屋很适合你");
+    selectInside("町屋", bubble);
+    fireEvent.pointerUp(bubble);
+    await screen.findByTestId("remember-highlight");
+
+    // The selection collapses (a click on the text, a scroll, anything) — the
+    // underline would vanish, and the bubble must vanish with it.
+    selectInside(null);
+    document.dispatchEvent(new Event("selectionchange"));
+
+    await waitFor(() => expect(screen.queryByTestId("remember-highlight")).not.toBeInTheDocument());
   });
 });
 
