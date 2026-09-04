@@ -261,6 +261,22 @@ export class MetricsRegistry {
 
 export const metrics = new MetricsRegistry();
 
+// HTTP SLIs must not be inferred from sampled traces. These two series are
+// deliberately label-bounded and are emitted by Fastify's response hook.
+metrics.registerCounter("http_requests_total", "Completed HTTP requests by method and response status class.", {
+  method: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE", "OTHER"],
+  status_class: ["1xx", "2xx", "3xx", "4xx", "5xx"],
+});
+metrics.registerHistogram(
+  "http_request_duration_ms",
+  "Completed HTTP request duration in milliseconds by method and response status class.",
+  [10, 25, 50, 100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000],
+  {
+    method: ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE", "OTHER"],
+    status_class: ["1xx", "2xx", "3xx", "4xx", "5xx"],
+  },
+);
+
 metrics.registerCounter("agent_skill_runs_total", "Total skill invocations by bounded outcome.", {
   operation: ["profile", "consent", "research", "readiness", "planning", "review", "confirmation", "booking"],
   outcome: ["success", "failure", "rejected", "timeout"],

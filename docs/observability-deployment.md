@@ -19,7 +19,7 @@ Only the destination differs.
    app ──OTLP/HTTP──► tempo ──┐                App Runner ──OTLP/HTTPS──►
    worker ──OTLP/HTTP─┘      │                                        ┐
                               ▼                                        ▼
-                            Grafana :3001                    Grafana Cloud Free
+                            Grafana :3003                    Grafana Cloud Free
                               (Tempo + dashboard)          (Tempo + Loki + Mimir
                                                                 + Grafana + alerts)
 
@@ -97,7 +97,7 @@ This starts `postgres`, `app`, `worker`, `tempo`, and `grafana`. Ports:
 |---|---|---|
 | `app` (API) | `127.0.0.1:3000` | Standard API |
 | `tempo` (OTLP) | `127.0.0.1:4317` (gRPC), `127.0.0.1:4318` (HTTP) | Receives from `app` and `worker` |
-| `grafana` (UI) | `127.0.0.1:3001` | `admin` / `wanderly-dev` |
+| `grafana` (UI) | `127.0.0.1:3003` | `admin` / `wanderly-dev` |
 | `postgres` | `127.0.0.1:5432` | Standard local DB |
 
 ### Tear down
@@ -111,7 +111,7 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml down -v
 
 ### Inspect traces
 
-Open Grafana at `http://127.0.0.1:3001`, sign in with `admin` /
+Open Grafana at `http://127.0.0.1:3003`, sign in with `admin` /
 `wanderly-dev`, then go to "AI Travel Agent / Trace / Log / Metric
 correlation". Use the `trace_id` template variable (textbox at the top) to
 paste a trace id and the dashboard renders the matching Tempo trace.
@@ -123,8 +123,9 @@ containers already includes the `trace_id` field. Use the shell snippet
 documented in the dashboard's "Logs by trace_id" panel:
 
 ```bash
-# One container:
-docker logs app 2>&1 | jq 'select(.trace_id == "<id>")'
+# One Compose service:
+docker compose -f docker-compose.yml -f docker-compose.observability.yml \
+  logs --no-color app 2>&1 | jq 'select(.trace_id == "<id>")'
 
 # All services in the project:
 docker compose -f docker-compose.yml -f docker-compose.observability.yml \
@@ -142,6 +143,9 @@ curl -s http://127.0.0.1:3000/metrics | grep ^agent_skill_runs_total
 curl -s http://127.0.0.1:3000/metrics | grep ^agent_task_duration_ms
 curl -s http://127.0.0.1:3000/metrics | grep ^external_provider_http_
 ```
+
+The Worker exposes a separate registry only inside the Compose network at
+`http://worker:9464/metrics`; it is intentionally not published to the host.
 
 The dashboard's "Counters" panel documents these snippets in markdown.
 

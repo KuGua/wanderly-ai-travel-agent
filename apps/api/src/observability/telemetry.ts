@@ -173,10 +173,15 @@ export function createDailyRotatingLogStream(
 }
 
 function createLogStream(): pino.DestinationStream | NodeJS.WritableStream {
+  // Docker/container stdout is consumed by `docker compose logs`, CloudWatch,
+  // and JSON-aware collectors. It must remain JSON even when NODE_ENV is
+  // development; pretty output is reserved for an explicitly interactive
+  // host-run process.
+  const pretty = process.env.LOG_FORMAT === "pretty";
   const streams: pino.StreamEntry[] = [{
-    stream: process.env.NODE_ENV === "production"
-      ? pino.destination(1)
-      : pino.transport({ target: "pino-pretty", options: { colorize: true } }),
+    stream: pretty
+      ? pino.transport({ target: "pino-pretty", options: { colorize: true } })
+      : pino.destination(1),
   }];
   const localDescriptor = resolveLocalLogDescriptor();
   if (localDescriptor) {
@@ -323,6 +328,8 @@ declare module "fastify" {
      * context without having to walk the call stack.
      */
     _otelContext?: Context;
+    /** Monotonic request start time used for unsampled HTTP SLI metrics. */
+    observabilityStartedAt: number;
   }
 }
 

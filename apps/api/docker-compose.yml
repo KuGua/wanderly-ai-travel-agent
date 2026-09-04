@@ -39,6 +39,7 @@ services:
       # This is the local development stack. It intentionally supports the
       # loopback-only custom-local auth mode documented in .env.example.
       NODE_ENV: development
+      LOG_FORMAT: json
       HOST: 0.0.0.0
       LOCAL_DEV_CONTAINER: "true"
       # Lightweight default: safe local NDJSON logs are on; trace export is
@@ -54,6 +55,11 @@ services:
         condition: service_healthy
     volumes:
       - ./runtime:/app/apps/api/runtime
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
 
   worker:
     build:
@@ -73,6 +79,7 @@ services:
       DB_PASSWORD: travelagent
       DB_NAME: travelagent
       NODE_ENV: development
+      LOG_FORMAT: json
       OTEL_SERVICE_NAME: ai-travel-agent-worker
       OTEL_SDK_DISABLED: "true"
       OTEL_TRACES_EXPORTER: none
@@ -80,6 +87,9 @@ services:
       # Use a distinct filename from the API process: two processes must not
       # concurrently append to the same NDJSON diagnostic file.
       LOCAL_DEBUG_LOG_FILE: ${WORKER_LOCAL_DEBUG_LOG_FILE:-worker-runtime.ndjson}
+      # Not published to the host. A collector sidecar can scrape this port.
+      WORKER_METRICS_HOST: 0.0.0.0
+      WORKER_METRICS_PORT: "9464"
       # The worker never calls the resolver. Force `disabled` mode so even
       # if the in-process fallback path is reached, no 70 MB GeoJSON gets
       # loaded into this container.
@@ -91,6 +101,11 @@ services:
         condition: service_started
     volumes:
       - ./runtime:/app/apps/api/runtime
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:9464/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
 
   location-reference:
     # Dev-only sidecar for the ~70 MB GeoJSON resolver. Off by default

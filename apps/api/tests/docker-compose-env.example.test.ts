@@ -65,6 +65,9 @@ describe("docker-compose.env.example contract", () => {
     expect(compose).toContain("LOCAL_DEBUG_LOG_FILE: ${WORKER_LOCAL_DEBUG_LOG_FILE:-worker-runtime.ndjson}");
     expect((compose.match(/OTEL_SDK_DISABLED: "true"/g) ?? [])).toHaveLength(2);
     expect((compose.match(/OTEL_TRACES_EXPORTER: none/g) ?? [])).toHaveLength(2);
+    expect((compose.match(/LOG_FORMAT: json/g) ?? [])).toHaveLength(2);
+    expect(compose).toContain('WORKER_METRICS_PORT: "9464"');
+    expect(compose).toContain("127.0.0.1:9464/health");
   });
 
   it("uses the Tempo HTTP query port and avoids the Web app port for Grafana", () => {

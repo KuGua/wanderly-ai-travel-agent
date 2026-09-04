@@ -104,6 +104,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
 
   app.addHook("onRequest", async (request, reply) => {
+    request.observabilityStartedAt = performance.now();
     request.correlationId = request.id ?? randomUUID();
     request.clientRequestId = readClientRequestId(request);
     reply.header("x-correlation-id", request.correlationId);
@@ -206,6 +207,17 @@ export async function buildApp(options: BuildAppOptions = {}) {
   });
 
   app.addHook("onResponse", async (request, reply) => {
+    const statusClass = `${Math.floor(reply.statusCode / 100)}xx` as "1xx" | "2xx" | "3xx" | "4xx" | "5xx";
+    const method = metricMethod(request.method);
+    // `/metrics` is an introspection endpoint, not product traffic. Excluding
+    // it prevents polling from changing the SLI it is intended to expose.
+    if (request.url.split("?", 1)[0] !== "/metrics") {
+      metrics.inc("http_requests_total", { method, status_class: statusClass });
+      metrics.observe("http_request_duration_ms", performance.now() - request.observabilityStartedAt, {
+        method,
+        status_class: statusClass,
+      });
+    }
     const span = request._otelSpan;
     if (span) {
       const status = reply.statusCode;
@@ -265,6 +277,12 @@ function isAuthenticationExempt(method: string, url: string): boolean {
     || (method === "POST" && path === "/api/v1/explore/location-reference")
     || (method === "POST" && path === "/api/v1/explore/location-introductions")
     || path.startsWith("/api/v1/auth/");
+}
+
+function metricMethod(method: string): "GET" | "HEAD" | "OPTIONS" | "POST" | "PUT" | "PATCH" | "DELETE" | "OTHER" {
+  return ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"].includes(method)
+    ? method as "GET" | "HEAD" | "OPTIONS" | "POST" | "PUT" | "PATCH" | "DELETE"
+    : "OTHER";
 }
 
 function safeHttpTarget(url: string): string {

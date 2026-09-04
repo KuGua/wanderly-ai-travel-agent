@@ -10,6 +10,7 @@ import { logger } from "../utils/logger.js";
 import { processNextAgentTask } from "./agent-task-worker.js";
 import { createMemoryMaintenance } from "./memory-maintenance.js";
 import { processNextMemoryObservation } from "./memory-observation-worker.js";
+import { startWorkerMetricsServer, type WorkerMetricsServer } from "./metrics-server.js";
 
 // Tracing MUST be initialized before any agent module is required, so the
 // SDK can patch the modules they import transitively. Service name is
@@ -30,18 +31,22 @@ personalTravelAgent.register();
 sharedTripAgent.register();
 
 let stopping = false;
+let metricsServer: WorkerMetricsServer | null = null;
 const shutdown = async (signal: NodeJS.Signals) => {
   stopping = true;
   logger.info({ signal }, "Worker shutdown initiated");
+  await metricsServer?.close();
   await shutdownTracing();
 };
 process.once("SIGTERM", shutdown);
 process.once("SIGINT", shutdown);
 
 async function main() {
+  metricsServer = await startWorkerMetricsServer();
   logger.info({
     component: "agent-task-worker",
     concurrency: agentTaskConfig.workerConcurrency,
+    metricsPort: metricsServer.port,
   }, "Agent task Worker started");
   await Promise.all([
     ...Array.from(

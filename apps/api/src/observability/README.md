@@ -80,6 +80,8 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `hotel_provider_latency_ms` | histogram | provider, outcome | provider ∈ `["nuitee_connect","serpapi_google_hotels","unconfigured"]`; outcome ∈ `["live","unavailable"]`; buckets = `[100,250,500,1000,2000,5000,8000,10000,15000,30000]` |
 | `hotel_provider_requests_total` | counter | outcome, provider, error_category | outcome ∈ `["live","unavailable"]`; provider ∈ `["nuitee_connect","serpapi_google_hotels","unconfigured"]`; error_category ∈ `["none","not_configured","search_constraints_incomplete","no_results","rate_limited","upstream_timeout","upstream_failure","invalid_provider_response","provider_not_approved"]` |
 | `hotel_tool_invocations_total` | counter | outcome, provider, error_category | outcome ∈ `["live","unavailable"]`; provider ∈ `["nuitee_connect","serpapi_google_hotels","unconfigured"]`; error_category ∈ `["none","not_configured","search_constraints_incomplete","no_results","rate_limited","upstream_timeout","upstream_failure","invalid_provider_response","provider_not_approved"]` |
+| `http_request_duration_ms` | histogram | method, status_class | method ∈ `["GET","HEAD","OPTIONS","POST","PUT","PATCH","DELETE","OTHER"]`; status_class ∈ `["1xx","2xx","3xx","4xx","5xx"]`; buckets = `[10,25,50,100,250,500,1000,2000,5000,10000,30000]` |
+| `http_requests_total` | counter | method, status_class | method ∈ `["GET","HEAD","OPTIONS","POST","PUT","PATCH","DELETE","OTHER"]`; status_class ∈ `["1xx","2xx","3xx","4xx","5xx"]` |
 | `llm_request_errors_total` | counter | provider, error_category, retryable | provider ∈ `["openai","gemini","openai-compatible"]`; error_category ∈ `["upstream_5xx","upstream_failure","network","timeout","schema_parse","tool_protocol","unknown"]`; retryable ∈ `["true","false"]` |
 | `llm_request_latency_ms` | histogram | provider, outcome | provider ∈ `["openai","gemini","openai-compatible"]`; outcome ∈ `["success","failure"]`; buckets = `[50,100,250,500,1000,2000,5000,10000,30000]` |
 | `location_introduction_cache_entries` | gauge | status | `["ready","generating"]` |
@@ -135,11 +137,21 @@ series: `"openai" \| "gemini" \| "openai-compatible"`.
 `text/plain; version=0.0.4; charset=utf-8`. `metrics.reset()` clears all
 samples and is used by tests.
 
+The Worker has its own registry. `workers/metrics-server.ts` exposes it at
+`GET /metrics` and `GET /health` on `WORKER_METRICS_HOST` / `WORKER_METRICS_PORT`
+(default `127.0.0.1:9464`). Docker Compose binds it only inside the Compose
+network; a production collector must scrape it from the Worker task, never
+publish it through public ingress.
+
 ## Log redaction
 
 ### Pino paths (`LOGGER_REDACT_PATHS` in `telemetry.ts`)
 
 ### Local file fallback
+
+Container stdout is always JSON by default so `docker compose logs … | jq`
+remains parseable. Set `LOG_FORMAT=pretty` only for an interactive host-run
+process; the optional NDJSON sink remains JSON in both modes.
 
 When `LOCAL_DEBUG_LOG_FILE` is set to `auto` or a simple `.ndjson` filename,
 Pino writes the normal redacted stdout stream and a second, daily NDJSON stream

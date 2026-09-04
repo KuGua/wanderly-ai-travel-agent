@@ -27,8 +27,8 @@ and the latency surfaces documented in
 
 | ID | SLI | Source series | Computed by |
 |---|---|---|---|
-| `sli.api.latency` | HTTP request p95 latency | `http.request.duration_ms` (Tempo histogram derived from `http.*` spans) | Grafana Cloud |
-| `sli.api.errors` | Fraction of HTTP responses with status ≥ 500 | `http.response.status_class=5xx / total` | Tempo query |
+| `sli.api.latency` | HTTP request p95 latency | `http_request_duration_ms` | Prometheus query |
+| `sli.api.errors` | Fraction of HTTP responses with status ≥ 500 | `http_requests_total{status_class="5xx"} / sum(http_requests_total)` | Prometheus query |
 | `sli.api.success` | Fraction of HTTP responses with status < 500 | `1 - sli.api.errors` | Tempo query |
 | `sli.worker.success` | `agent_task_outcomes_total{outcome="completed"} / sum by(operation)` | `agent_task_outcomes_total` | Prometheus query on `/metrics` |
 | `sli.worker.recovery` | `agent_task_recoveries_total / sum` bounded to 5% | `agent_task_recoveries_total` | Prometheus query |
@@ -48,18 +48,17 @@ These SLIs are defined but **not yet computable in production**. They are
 listed so a reader does not mistake a permanently empty panel for a healthy
 service:
 
-- `sli.worker.success` and `sli.worker.recovery` read series that only the
-  Worker process increments, and the Worker
-  (`apps/api/src/workers/worker-main.ts`) runs no HTTP listener — nothing can
-  scrape its registry. The `/metrics` endpoint exists only on the API process.
+- `sli.worker.success` and `sli.worker.recovery` can now be rendered by the
+  Worker-local endpoint (`WORKER_METRICS_PORT`, default 9464), but no deployed
+  collector/scrape target is configured yet. The endpoint must remain task-
+  local and must not be published through public ingress.
 - Every Prometheus-sourced SLI here depends on something scraping or exporting
   `/metrics`. The service exports **traces** over OTLP but has no metrics
   exporter and no scrape target, so the in-process registry is discarded on
   restart and never reaches Grafana Cloud.
-- `sli.api.latency`, `sli.api.errors` and `sli.api.success` are derived from
-  `http.*` spans, which production samples at 5% (see the sampling caveat
-  below). There is no `http_request_duration_ms` / `http_requests_total`
-  counter pair, so no unsampled source exists for the two API SLOs.
+- The API now emits unsampled `http_requests_total` and
+  `http_request_duration_ms`; they remain process-local until a collector is
+  deployed. Trace-derived API panels remain diagnostic only.
 
 ## SLO targets (30-day rolling windows)
 
@@ -90,7 +89,7 @@ Three dashboards are required (the bundled `api-correlations.json` covers
 the dev experience; the production dashboards live in Grafana Cloud):
 
 1. **API overview** — request rate, error rate, p50/p95/p99 latency from
-   the `http.*` spans.
+   `http_requests_total` and `http_request_duration_ms`.
 2. **Worker outcomes** — `agent_task_outcomes_total` by outcome, plus the
    recovered/expired split; co-located with the
    `agent_task_duration_ms` histogram.
@@ -102,7 +101,7 @@ the dev experience; the production dashboards live in Grafana Cloud):
 | Alert | Condition | Severity | Notification channel |
 |---|---|---|---|
 | API p95 latency degraded | `sli.api.latency > 1000 ms for 10 min` | warning | Slack `#travel-agent-ops` |
-| API error rate spike | `sum(rate(http.response.status_class="5xx", 5m)) > 1` | critical | Slack + PagerDuty |
+| API error rate spike | `sum(rate(http_requests_total{status_class="5xx"}[5m])) > 1` | critical | Slack + PagerDuty |
 | Worker task success collapsed | `sli.worker.success < 90% over 30m` | critical | Slack + PagerDuty |
 | Plan validation regression | `sli.plan.validation > 5% for 30 min` | critical | Slack |
 | Booking callback HMAC flood | `rate(callback_verifications_total{callbackResult="bad_signature"}[1m]) > 10` | critical | Slack + PagerDuty |
