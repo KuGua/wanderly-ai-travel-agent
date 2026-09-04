@@ -176,9 +176,8 @@ describe("flight research matrix", () => {
           await params.beforeFinal?.();
           beforeFinalPassed = true;
           // Simulate evidence rot after Gate B already passed: every cell flips
-          // to UNAVAILABLE. The plan must still be produced (cells are not
-          // MISSING), and the rotated cells surface as `service_gaps` on the
-          // research result so the run terminates as COMPLETED_WITH_GAPS.
+          // to UNAVAILABLE. The final authority check must not persist a plan;
+          // it records the rotated cells as service gaps on a research summary.
           await db.update(providerSearchRuns).set({ outcome: "UNAVAILABLE", errorCode: "UPSTREAM_FAILURE" }).where(and(eq(providerSearchRuns.snapshotId, planningSnapshot.id), eq(providerSearchRuns.agentTaskRunId, durableTaskId)));
           matrixCompleteAfterFinal = (await evaluateFlightResearchCompleteness({ snapshotId: planningSnapshot.id, agentTaskRunId: durableTaskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"] })).complete;
           return { destination: "NRT", destinationCandidatesEvaluated: ["NRT"], flights, stays: params.stays, generatedAt: "2026-08-25T00:00:00.000Z" };
@@ -187,22 +186,21 @@ describe("flight research matrix", () => {
     };
 
     // Post-P0: Gate A no longer fails on UNAVAILABLE cells (only on MISSING),
-    // so the run completes with a plan + a gap row for the rotated cell. The
-    // task terminator becomes `COMPLETED_WITH_GAPS`, not `FAILED`.
+    // but Gate B still requires commercial authority. A final-transaction
+    // authority loss must produce a research summary with gaps, not a plan.
     const synthesis = await generatePlan({ ctx: createRequestContext(userId), tripId, snapshotId: planningSnapshot.id, destination: "NRT", memberIds: [], agentTaskRunId: durableTaskId, flightSearchPreferencesVersion: preference.version, leaseToken }, dependencies);
-    expect(synthesis.outcome).toBe("PLAN");
-    if (synthesis.outcome !== "PLAN") throw new Error("expected PLAN outcome");
-    const planId = synthesis.planId;
-    expect(planId).toMatch(/[0-9a-f-]{36}/);
+    expect(synthesis.outcome).toBe("RESEARCH_SUMMARY");
+    if (synthesis.outcome !== "RESEARCH_SUMMARY") throw new Error("expected RESEARCH_SUMMARY outcome");
     expect(matrixCompleteBeforeFinal).toBe(true);
     expect(matrixCompleteAfterFinal).toBe(true);
     expect(beforeFinalPassed).toBe(true);
-    expect((await db.select().from(itineraryPlans).where(eq(itineraryPlans.snapshotId, planningSnapshot.id))).length).toBe(1);
+    expect((await db.select().from(itineraryPlans).where(eq(itineraryPlans.snapshotId, planningSnapshot.id))).length).toBe(0);
     const [task] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, durableTaskId));
     expect(task.status).toBe("COMPLETED_WITH_GAPS");
-    expect(task.resultPlanId).toBe(planId);
+    expect(task.resultPlanId).toBeNull();
     const [result] = await db.select().from(planningResearchResults).where(eq(planningResearchResults.agentTaskRunId, durableTaskId));
     expect(result.status).toBe("COMPLETED_WITH_GAPS");
+    expect(result.id).toBe(synthesis.researchResultId);
     const persistedGaps = (result.serviceGaps ?? []) as Array<{ capability: string; code: string; destinationId?: string }>;
     // The two rotated flight cells must show up as `UPSTREAM_FAILURE` gaps
     // with `destinationId = "NRT"`. Other capability gaps may also be

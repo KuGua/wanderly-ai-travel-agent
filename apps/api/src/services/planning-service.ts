@@ -1421,7 +1421,9 @@ export async function generatePlan(params: {
   // Only validated output may cross the authoritative persistence boundary.
   // All four writes (plan, offers, evidence, audit) commit atomically; if
   // any one fails the validated plan is discarded.
-  const planId = await db.transaction(async (tx) => {
+  let planId: { planId: string; gaps: ServiceGap[] };
+  try {
+    planId = await db.transaction(async (tx) => {
     if (params.agentTaskRunId) {
       if (!params.leaseToken || !params.flightSearchPreferencesVersion || (hotelEnabled && !params.staySearchPreferencesVersion)) throw new Error("Planning task lease authority is incomplete");
       const [currentTask] = await tx.select().from(agentTaskRuns).where(and(
@@ -1453,7 +1455,7 @@ export async function generatePlan(params: {
       // planner never even tried) still hard-fail the round.
       if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
       if (!hasCommercialFlightAuthority(matrix.cells, params.destination)) {
-        throw new PlanningDataUnavailableError([`flight-authority:${params.destination}`]);
+        throw new CommercialAuthorityMissingError("flight", params.destination);
       }
       if (hotelEnabled) {
         const hotelMatrix = await evaluateHotelResearchCompleteness({
@@ -1649,8 +1651,32 @@ export async function generatePlan(params: {
       if (!completed) throw new Error("Planning task lost finalization lease");
     }
 
-    return { planId: plan.id, gaps: validatedServiceGaps };
-  });
+      return { planId: plan.id, gaps: validatedServiceGaps };
+    });
+  } catch (error) {
+    if (error instanceof CommercialAuthorityMissingError) {
+      if (!params.agentTaskRunId || !params.leaseToken) throw error;
+      return await persistResearchSummary({
+        ctx: params.ctx,
+        tripId: params.tripId,
+        snapshotId: params.snapshotId,
+        agentTaskRunId: params.agentTaskRunId,
+        leaseToken: params.leaseToken,
+        reason: "NO_COMMERCIAL_FLIGHT_AUTHORITY",
+        toolFailureGaps: toolFailureGaps.map((g) => ({ capability: g.capability, code: g.code })),
+        snapshotFields: {
+          departureCities: snapshot.departureCities as string[],
+          destinationCandidates: snapshot.destinationCandidates as string[],
+        },
+        allFlights,
+        allStays,
+        activitiesEnabled,
+        hotelEnabled,
+        accommodationDiscoveryEnabled,
+      });
+    }
+    throw error;
+  }
 
   return { outcome: "PLAN", planId: planId.planId, gaps: planId.gaps };
 }

@@ -54,6 +54,7 @@ describe("plan adoption — does not gate on flight offer freshness", () => {
         constraint_snapshots, itinerary_plans, trip_members, shared_trips
       RESTART IDENTITY CASCADE
     `);
+    await cleanup.unsafe("TRUNCATE TABLE shared_trips CASCADE");
     await cleanup`DELETE FROM users`;
 
     ownerId = (await db.insert(users).values({
