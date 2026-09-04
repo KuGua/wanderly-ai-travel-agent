@@ -376,7 +376,7 @@ Runnable coverage: `apps/api/tests/conversation-gateway.test.ts` and `apps/api/t
 - The two concurrent creations produce two distinct server-numbered titles; the browser sends no title.
 - Renaming sets `titleSource: "MANUAL"`; the first AI-naming attempt returns `applied: false, reason: "MANUAL_LOCKED"` and does not call the gateway; the confirmed-overwrite attempt succeeds and returns `titleSource: "AUTO"`.
 - The empty thread returns `NO_MATERIAL` without calling the gateway; the gateway outage returns `UNAVAILABLE`; each of the four bad model outputs returns `REJECTED`. In all cases the stored title is byte-identical to what it was before the request.
-- Bob receives `403` for read, rename and AI-name, and the response does not reveal whether the thread exists.
+- Bob receives `403` for read, rename and AI-name on a thread that exists in his trip but belongs to Alice, and `404` for a thread id that does not exist or belongs to another trip — the same two-code split the pre-existing `requireOwnedTripThreadRead` uses, so `404` keeps its meaning.
 - Exceeding the rate limit returns `429` and leaves the title unchanged.
 - No thread title appears in the shared plan surface, member list, invitation preview, logs, traces or metric labels. `CHAT_THREAD_TITLE_UPDATE` audit rows contain only `{ threadId, source }` and no title text. `thread_title_writes_total` carries only the bounded `source` / `result` labels.
 

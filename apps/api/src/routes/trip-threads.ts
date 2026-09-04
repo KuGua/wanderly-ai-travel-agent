@@ -214,8 +214,9 @@ export async function tripThreadRoutes(app: FastifyInstance) {
   // Owner-only manual rename. Mirrors the trip-title PATCH shape:
   // FOR UPDATE row lock, creator/owner check, write titleSource='MANUAL'
   // and titleLocale=NULL atomically, audit, response is the updated
-  // ThreadSummary. 403 intentionally does not distinguish "thread
-  // exists but you don't own it" from "thread does not exist" — see
+  // ThreadSummary. An unknown or wrong-trip thread id is 404 and a thread
+  // owned by someone else is 403 — the same two-code split the existing
+  // `requireOwnedTripThreadRead` uses, so 404 keeps its meaning. See
   // docs/thread-title-lifecycle-implementation.md §13.
   app.patch("/trips/:tripId/threads/:threadId/title", {
     schema: {
@@ -259,8 +260,10 @@ export async function tripThreadRoutes(app: FastifyInstance) {
         .where(eq(chatThreads.id, threadId))
         .for("update")
         .limit(1);
-      // Never distinguish "not in this trip" from "not yours": a 403 either
-      // way keeps the route from leaking which thread ids exist.
+      // Absent or bound to a different trip is 404; a thread that exists here
+      // but belongs to someone else is 403 below. Thread ids are UUIDs, so
+      // the two codes stay distinguishable rather than collapsing 404 into
+      // 403 and losing the "no such thread" signal.
       if (!thread || thread.tripId !== tripId) {
         throw new ApiError(404, "Not Found", "Thread not found");
       }
