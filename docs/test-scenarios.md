@@ -1091,28 +1091,29 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Only the creator may manually rename. The change sets `name_source=MANUAL`; the audit event records the source but never title text.
 - Bob cannot submit through, view, or restore Alice's old session identifiers.
 
-### TS-EXPLORE-TRIP-3 — Destination brief proposals require explicit, resolvable cities
+### TS-EXPLORE-TRIP-3 — Destination cues are user-only, resolvable and individually confirmed
 
 **Stories:** H1
-**Objective:** Verify that private conversation can suggest a destination only when the owner explicitly sets a city that the server can resolve unambiguously.
+**Objective:** Verify that the dedicated model proposes only current-USER-turn city destinations and that every candidate has an independent durable lifecycle.
 
 **Starting conditions:** Alice owns a `DRAFT` Trip. The server location-reference dataset is available and contains Shanghai and Suzhou. No destination proposal is pending.
 
 **Steps:**
 
-1. Send `Introduce Shanghai to me`, `Tell me about Tokyo`, and `Is Paris expensive?` in separate private turns.
-2. Send `from Singapore to Shanghai` and inspect the private brief proposal card.
-3. Submit `me`, an unknown city, and an ambiguous city directly to `PATCH /trips/:tripId/draft-brief` as Alice.
-4. Submit a supported localized city spelling such as `上海` through the same endpoint.
-5. Make the location-reference resolver unavailable, then send an otherwise explicit destination request.
+1. Send plain flight and hotel queries naming cities; then send `Set Tokyo as the destination and find a hotel`.
+2. Have the Assistant mention Shanghai while the USER says only `sounds good`; then have the USER explicitly name Shanghai.
+3. Send one turn naming Beijing, Shanghai and Chengdu; use both arrows, accept one and dismiss another.
+4. Refresh between actions and process the remaining city.
+5. Exercise dismissal recovery before 30 minutes, after one and two qualified mentions, and after 24 hours of silence.
+6. Make the model and location-reference resolver unavailable independently.
 
 **Expected outcomes:**
 
-- The discussion turns create no `tripBriefProposal`, no `pendingBriefProposal`, and no destination card; assistant prose mentioning a city does not itself become a trip fact.
-- The route proposal names server-normalized cities and appears only after both route endpoints resolve uniquely.
-- Each invalid PATCH returns `422 DESTINATION_UNRESOLVED`; the existing brief, title and pending proposal remain unchanged.
-- A supported localized spelling is persisted as its canonical city name. No browser label, LLM output, fixture or free-text fallback substitutes for a failed resolution.
-- Resolver failure fails closed: no destination proposal is emitted and no trip fact is written. Telemetry records only the bounded resolution result, never the conversation text or city value.
+- Plain flight/hotel queries and Assistant-only mentions create no Cue; the explicit set command shows Tokyo despite its hotel clause.
+- Every displayed label is a concrete canonical city. No `this` card, browser label or free-text fallback is possible.
+- Arrows only switch. Accepting/dismissing one removes only that candidate; REST recovery retains all remaining candidates until individually handled.
+- Suppression follows 30 minutes + two subsequent USER mentions, with a 24-hour silence reset. Agent text and retries never increment it.
+- Model/resolver failure produces no Cue and never fails or delays the conversation reply. Telemetry and audit contain IDs/counts only, never message text, city names or prompts.
 
 ### TS-OTEL-2 — Worker continuity after durable boundary
 

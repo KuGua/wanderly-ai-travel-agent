@@ -12,6 +12,7 @@ const METRIC_SKILLS = new Set([
   "profile.memory", "profile.change_proposal", "consent.explanation", "thread.recall", "travel.conversation", "trip.constraint.propose",
   "plan.comparison", "readiness.check", "flight.search", "hotel.search", "accommodation.discover", "activities.search",
   "places.search", "places.adopt", "navigation.route", "mobility.search",
+  "destination.cue.decide",
 ]);
 
 function metricSkillName(name: string): string {

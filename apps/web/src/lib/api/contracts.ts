@@ -112,7 +112,7 @@ export const createTripThreadInputSchema = z.object({
   // Server is the authority on auto-numbered titles; clients only supply a
   // `title` when they want a MANUAL row (legacy direct callers / tests).
   title: z.string().trim().min(1).max(256).optional(),
-  titleLocale: z.enum(["en", "zh"]).optional(),
+  locale: z.enum(["en", "zh"]).optional(),
 }).strict();
 
 export const renameThreadInputSchema = z.object({
@@ -267,9 +267,39 @@ export const conversationTurnAcceptedResponseSchema = z.object({
   userMessage: conversationMessageSchema.extend({ role: z.literal("USER") }),
 });
 
+export const destinationCueCandidateSchema = z.object({
+  id: z.string().uuid(),
+  displayName: z.string().min(1).max(128),
+  status: z.enum(["PENDING", "ACCEPTED", "DISMISSED", "SUPERSEDED"]),
+}).strict();
+
+export const destinationCueSchema = z.object({
+  id: z.string().uuid(),
+  version: z.number().int().positive(),
+  candidates: z.array(destinationCueCandidateSchema).min(1).max(5),
+}).strict();
+
+export const destinationCueActionInputSchema = z.object({
+  requestId: z.string().uuid(),
+  expectedVersion: z.number().int().positive(),
+  titleLocale: z.enum(["en", "zh"]).optional(),
+}).strict();
+
+export const destinationCueActionResponseSchema = z.object({
+  cue: destinationCueSchema.nullable(),
+  trip: z.object({
+    id: z.string().uuid(),
+    destinationCandidates: z.array(z.string()).max(5),
+    updatedAt: z.string().datetime(),
+  }).strict(),
+}).strict();
+
 export const ownerConversationResponseSchema = z.object({
   thread: threadSchema,
   messages: z.array(conversationMessageSchema),
+  // Optional during rolling deployment so a newer web build can still read
+  // the pre-cue conversation payload from an older API instance.
+  pendingDestinationCue: destinationCueSchema.nullable().optional(),
 });
 
 export const agentRunResponseSchema = z.object({
@@ -758,6 +788,10 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
       travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       travelDays: z.number().int().min(1).max(365).optional(),
     }).strict(),
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("destination.cue_ready"),
+    cue: destinationCueSchema,
   }).strict(),
   streamBaseSchema.extend({ event: z.literal("turn.cancelled") }).strict(),
   streamBaseSchema.extend({ event: z.literal("turn.stale"), code: agentRunErrorCodeSchema }).strict(),
@@ -1707,6 +1741,9 @@ export type MobilitySearchRequest = z.infer<typeof mobilitySearchRequestSchema>;
 export type MobilitySearchResponse = z.infer<typeof mobilitySearchResponseSchema>;
 export type MobilityOfferSelectionRequest = z.infer<typeof mobilityOfferSelectionRequestSchema>;
 export type MobilityOfferSelectionResponse = z.infer<typeof mobilityOfferSelectionResponseSchema>;
+export type DestinationCue = z.infer<typeof destinationCueSchema>;
+export type DestinationCueActionInput = z.infer<typeof destinationCueActionInputSchema>;
+export type DestinationCueActionResponse = z.infer<typeof destinationCueActionResponseSchema>;
 
 export type TripPlaceKind = z.infer<typeof tripPlaceKindSchema>;
 export type TripPlaceVisibility = z.infer<typeof tripPlaceVisibilitySchema>;

@@ -74,6 +74,21 @@ export interface TripBriefProposal {
   travelDays?: number;
 }
 
+export interface DestinationCueDecisionResult {
+  decision: {
+    disposition: "PROPOSE" | "DO_NOT_PROPOSE" | "AMBIGUOUS";
+    candidates: Array<{ mentionedText: string; ordinal: number }>;
+    reasonCode:
+      | "EXPLICIT_DESTINATION_COMMAND"
+      | "QUALIFIED_DESTINATION_MENTION"
+      | "FLIGHT_OR_HOTEL_QUERY"
+      | "NO_DESTINATION"
+      | "AMBIGUOUS_REFERENCE";
+  };
+  modelVersion: string;
+  promptVersion: string;
+}
+
 /** Typed, private, server-owned readiness state for the hotel tool. */
 export interface ConversationHotelSearchState {
   cityCode: string;
@@ -270,6 +285,19 @@ export interface ModelGateway {
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<TripBriefProposal | null>;
+
+  /**
+   * Best-effort owner-turn classifier for the destination confirmation cue.
+   * It receives only the current user message and already-confirmed city names:
+   * never assistant prose, transcript history or a selected globe place.
+   */
+  decideDestinationCue?(params: {
+    question: string;
+    currentDestinations: string[];
+    locale: "en" | "zh";
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<DestinationCueDecisionResult | null>;
 
   /**
    * S4: generate a single non-personalized short introduction for a

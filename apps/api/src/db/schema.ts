@@ -86,6 +86,12 @@ export const agentTaskStatusEnum = pgEnum("agent_task_status", [
 export const researchIntentStateEnum = pgEnum("research_intent_state", [
   "PROPOSED", "DISMISSED", "CONFIRMED", "SUPERSEDED",
 ]);
+export const destinationCueBatchStatusEnum = pgEnum("destination_cue_batch_status", [
+  "OPEN", "RESOLVED", "SUPERSEDED", "EXPIRED",
+]);
+export const destinationCueCandidateStatusEnum = pgEnum("destination_cue_candidate_status", [
+  "PENDING", "ACCEPTED", "DISMISSED", "SUPERSEDED",
+]);
 
 /**
  * Setup-scratchpad lifecycle (OPEN/CONFIRMED/CANCELLED/EXPIRED/SUPERSEDED)
@@ -109,6 +115,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "TRIP_INVITATION_CREATE", "TRIP_INVITATION_ACCEPT",
   "TRIP_INVITATION_REVOKE", "TRIP_INVITATION_DECLINE", "TRIP_DEFAULT_THREAD_PROVISION",
   "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE", "TRIP_DRAFT_BRIEF_UPDATE",
+  "DESTINATION_CUE_ACCEPT", "DESTINATION_CUE_DISMISS",
   // Archive is a reversible hide, not a delete (0061_trip_archive_audit_actions.sql).
   "TRIP_ARCHIVE", "TRIP_UNARCHIVE", "TRIP_DELETE",
   // Private thread title lifecycle (docs/thread-title-lifecycle-implementation.md §11.2,
@@ -998,6 +1005,62 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
   // inside the draft-insert transaction is O(1).
   threadDraftProposedIdx: index("agent_task_runs_thread_draft_proposed_idx")
     .on(table.threadId).where(sql`${table.researchIntentState} = 'PROPOSED' AND ${table.threadId} IS NOT NULL`),
+}));
+
+// Owner-only confirmation UI generated from one DRAFT conversation turn.
+// Unlike `shared_trips.pending_brief_proposal`, this state is scoped to the
+// private thread and therefore cannot be projected to other trip members.
+export const destinationCueBatches = pgTable("destination_cue_batches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceRunId: uuid("source_run_id").references(() => agentTaskRuns.id, { onDelete: "cascade" }).notNull().unique(),
+  threadId: uuid("thread_id").references(() => chatThreads.id, { onDelete: "cascade" }).notNull(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  status: destinationCueBatchStatusEnum("status").default("OPEN").notNull(),
+  modelVersion: varchar("model_version", { length: 128 }).notNull(),
+  promptVersion: varchar("prompt_version", { length: 64 }).notNull(),
+  version: integer("version").default(1).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  oneOpenPerThread: uniqueIndex("destination_cue_batches_one_open_per_thread")
+    .on(table.threadId).where(sql`${table.status} = 'OPEN'`),
+  ownerThreadIdx: index("destination_cue_batches_owner_thread_idx")
+    .on(table.ownerUserId, table.threadId, table.createdAt),
+}));
+
+export const destinationCueCandidates = pgTable("destination_cue_candidates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  batchId: uuid("batch_id").references(() => destinationCueBatches.id, { onDelete: "cascade" }).notNull(),
+  ordinal: integer("ordinal").notNull(),
+  canonicalCityName: varchar("canonical_city_name", { length: 128 }).notNull(),
+  countryCode: varchar("country_code", { length: 2 }).notNull(),
+  candidateKeyHash: varchar("candidate_key_hash", { length: 64 }).notNull(),
+  status: destinationCueCandidateStatusEnum("status").default("PENDING").notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  batchOrdinalUnique: uniqueIndex("destination_cue_candidates_batch_ordinal_unique")
+    .on(table.batchId, table.ordinal),
+  batchCandidateUnique: uniqueIndex("destination_cue_candidates_batch_key_unique")
+    .on(table.batchId, table.candidateKeyHash),
+  batchStatusIdx: index("destination_cue_candidates_batch_status_idx")
+    .on(table.batchId, table.status, table.ordinal),
+}));
+
+// A dismissal is specific to one owner, one draft trip and one canonical
+// destination. It records no message text or location coordinates.
+export const destinationCueSuppressions = pgTable("destination_cue_suppressions", {
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  candidateKeyHash: varchar("candidate_key_hash", { length: 64 }).notNull(),
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }).notNull(),
+  lastQualifiedMentionAt: timestamp("last_qualified_mention_at", { withTimezone: true }).notNull(),
+  qualifiedMentionCount: integer("qualified_mention_count").default(0).notNull(),
+  version: integer("version").default(1).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.ownerUserId, table.tripId, table.candidateKeyHash] }),
 }));
 
 // ─── Agent Runs (LLM gateway observability) ─────────────────────────────────

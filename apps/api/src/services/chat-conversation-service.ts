@@ -4,6 +4,7 @@ import { db } from "../db/database.js";
 import { chatMessages, chatThreads } from "../db/schema.js";
 import { ownerConversationResponseSchema } from "../types/schemas.js";
 import { requireOwnedTripThreadRead } from "./chat-thread-service.js";
+import { loadPendingDestinationCue } from "./destination-cue-service.js";
 
 type ChatThreadRow = typeof chatThreads.$inferSelect;
 
@@ -18,6 +19,7 @@ export async function getOwnerConversation(params: {
     .where(eq(chatMessages.threadId, params.threadId))
     .orderBy(desc(chatMessages.messageSequence))
     .limit(limit);
+  const pendingDestinationCue = await loadPendingDestinationCue(params);
 
   return ownerConversationResponseSchema.parse({
     thread: toThreadSummary(thread),
@@ -28,6 +30,7 @@ export async function getOwnerConversation(params: {
       sequence: row.messageSequence,
       createdAt: row.createdAt.toISOString(),
     })),
+    pendingDestinationCue,
   });
 }
 

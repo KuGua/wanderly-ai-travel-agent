@@ -16,6 +16,7 @@ import type {
   ModelToolDefinition,
   ModelToolDispatcher,
   TripBriefProposal,
+  DestinationCueDecisionResult,
   SharedPlanningMemoryInput,
 } from "./model-gateway.js";
 import type { RequestContext } from "../utils/context.js";
@@ -115,6 +116,28 @@ const tripBriefExtractionSchema = z.object({
   proposal: tripBriefProposalFieldsSchema.nullable(),
 }).strict();
 
+const destinationCueDecisionSchema = z.object({
+  disposition: z.enum(["PROPOSE", "DO_NOT_PROPOSE", "AMBIGUOUS"]),
+  candidates: z.array(z.object({
+    mentionedText: z.string().trim().min(1).max(128),
+    ordinal: z.number().int().min(0).max(4),
+  }).strict()).max(5),
+  reasonCode: z.enum([
+    "EXPLICIT_DESTINATION_COMMAND",
+    "QUALIFIED_DESTINATION_MENTION",
+    "FLIGHT_OR_HOTEL_QUERY",
+    "NO_DESTINATION",
+    "AMBIGUOUS_REFERENCE",
+  ]),
+}).strict().superRefine((value, ctx) => {
+  if (value.disposition === "PROPOSE" && value.candidates.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "PROPOSE requires candidates" });
+  }
+  if (value.disposition !== "PROPOSE" && value.candidates.length !== 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "non-PROPOSE decisions cannot carry candidates" });
+  }
+});
+
 // Same Gemini root-flattening quirk as geminiConversationCompletionSchema above.
 const geminiTripBriefExtractionSchema = z.union([z.null(), tripBriefProposalFieldsSchema])
   .transform((proposal) => ({ proposal }));
@@ -137,6 +160,20 @@ const TRIP_BRIEF_EXTRACTION_SYSTEM_PROMPT = [
   "- Dates must be exact calendar dates in YYYY-MM-DD format. A vague phrase from the owner alone (\"next month\") is not enough; the same phrase resolved to concrete dates in `assistantReply` and then accepted by the owner under (b) is.",
   "- If the settled information is a trip length (e.g. \"about 5 days\") without exact dates, use travelDays instead of the date fields.",
   "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
+].join("\n");
+
+const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v1";
+const DESTINATION_CUE_SYSTEM_PROMPT = [
+  "You classify ONLY the owner's current message for an owner-only destination confirmation cue.",
+  "Return exactly one JSON object with disposition, candidates, and reasonCode.",
+  "A candidate must be a city explicitly named by the owner as a possible trip destination.",
+  "Do not infer a city from assistant text, history, a map selection, airport, country, region, hotel, or flight.",
+  "A plain request to search, compare, or book flights, hotels, stays, or accommodation is DO_NOT_PROPOSE, even when route cities appear.",
+  "An explicit command to set/make a named city the destination is PROPOSE and overrides the flight/hotel exclusion in the same message.",
+  "Questions that genuinely consider visiting a named city may be PROPOSE. Incidental mentions are DO_NOT_PROPOSE.",
+  "Exclude cities already present in currentDestinations. Preserve textual order, use ordinal 0..4, and return at most five unique cities.",
+  "If a reference such as 'this', 'there', or 'the next place' cannot be resolved from the current message alone, return AMBIGUOUS with no candidates.",
+  "Allowed reasonCode values: EXPLICIT_DESTINATION_COMMAND, QUALIFIED_DESTINATION_MENTION, FLIGHT_OR_HOTEL_QUERY, NO_DESTINATION, AMBIGUOUS_REFERENCE.",
 ].join("\n");
 
 function canonicalize(value: unknown): string {
@@ -1892,6 +1929,48 @@ export class LLMGateway implements ModelGateway {
           : parsed;
       if (!normalized.success || !normalized.data.proposal) return null;
       return normalized.data.proposal;
+    } catch {
+      return null;
+    }
+  }
+
+  async decideDestinationCue(params: {
+    question: string;
+    currentDestinations: string[];
+    locale: "en" | "zh";
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<DestinationCueDecisionResult | null> {
+    const ctx = params.ctx ?? this.options.ctx;
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch {
+      return null;
+    }
+    try {
+      const response = await client.chat.completions.parse({
+        model: this.options.modelName,
+        messages: [
+          { role: "system", content: DESTINATION_CUE_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: JSON.stringify({
+              currentMessage: params.question,
+              currentDestinations: params.currentDestinations,
+              locale: params.locale,
+            }),
+          },
+        ],
+        response_format: { type: "json_object" },
+      }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+      const parsed = destinationCueDecisionSchema.safeParse(completionPayload(response.choices[0]?.message));
+      if (!parsed.success) return null;
+      return {
+        decision: parsed.data,
+        modelVersion: this.options.modelName,
+        promptVersion: DESTINATION_CUE_PROMPT_VERSION,
+      };
     } catch {
       return null;
     }

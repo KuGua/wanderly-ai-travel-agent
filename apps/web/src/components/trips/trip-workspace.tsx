@@ -191,7 +191,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     if (createThread.isPending) return;
     try {
       const created = await createThread.mutateAsync({
-        titleLocale: locale === "zh" ? "zh" : "en",
+        locale: locale === "zh" ? "zh" : "en",
       });
       const params = new URLSearchParams(searchParams.toString());
       params.delete(SHARED_VIEW_QUERY);

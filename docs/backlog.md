@@ -32,7 +32,7 @@
 9. A submitted Personal Agent question is persisted with a durable task before streaming begins. Browser close, refresh, network loss and SSE disconnect do not cancel it; only an explicit Stop requests cancellation. The task is lease-recoverable and an ASSISTANT message is persisted only after final safety validation succeeds.
 10. Repeated, non-sensitive behavior may create a user-visible, expiring Profile suggestion, but only a user confirmation may create or replace a stable preference fact. Suggestions never enter a snapshot or shared view.
 11. Nationality, travel documents, date of birth, health and accessibility data are form-only: no conversation or behavior extraction path may create a proposal for them.
-12. A DRAFT destination proposal is emitted only for an owner’s explicit current-turn trip statement or a server-verified map place. Every proposed and creator-confirmed destination resolves to one server-owned `DestinationReference`; prose questions, assistant-only mentions, pronouns, unknown and ambiguous labels fail closed without changing the existing brief.
+12. A DRAFT creator's Destination Cue is decided by a dedicated current-USER-turn model and resolved to a server-owned canonical city. Plain flight/hotel queries, assistant-only mentions, selected-map state, pronouns, unknown and ambiguous labels fail closed. Explicit set-destination commands override the flight/hotel exclusion. Cue batches are owner/thread-scoped, REST-recoverable, and every multi-city candidate is accepted or dismissed independently; arrows only switch candidates.
 
 ### H1a — Start and resume an exploration-scoped private Trip
 

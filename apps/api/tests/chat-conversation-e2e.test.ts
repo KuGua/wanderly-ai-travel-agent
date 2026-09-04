@@ -8,7 +8,7 @@ import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
 import { invokeSkill } from "../src/agents/skill-registry.js";
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { agentTaskRuns, auditEvents, chatMessages, chatThreads, conversationFlightSearchStates, conversationHotelSearchStates, idempotencyRecords, personalResearchEvidence, users } from "../src/db/schema.js";
+import { agentTaskRuns, auditEvents, chatMessages, chatThreads, conversationFlightSearchStates, conversationHotelSearchStates, idempotencyRecords, personalResearchEvidence, sharedTrips, users } from "../src/db/schema.js";
 import { __setModelGatewayForTests } from "../src/providers/gateway-factory.js";
 import { ModelGatewayError } from "../src/providers/llm-gateway.js";
 import type { ModelGateway } from "../src/providers/model-gateway.js";
@@ -50,6 +50,97 @@ afterAll(async () => {
 });
 
 describe("durable owner-only Personal Agent conversation flow", () => {
+  it("persists and restores a multi-city cue until every candidate is handled", async () => {
+    const provisioned = await provisionTripAndMember({ ownerUserId: aliceId, destinationCount: 0 });
+    await db.update(sharedTrips).set({ status: "DRAFT", nameSource: "AUTO", titleLocale: "en" })
+      .where(eq(sharedTrips.id, provisioned.tripId));
+    const gateway: ModelGateway = {
+      ...successfulConversationGateway,
+      async decideDestinationCue() {
+        return {
+          decision: {
+            disposition: "PROPOSE",
+            candidates: [
+              { mentionedText: "Tokyo", ordinal: 0 },
+              { mentionedText: "Kyoto", ordinal: 1 },
+            ],
+            reasonCode: "QUALIFIED_DESTINATION_MENTION",
+          },
+          modelVersion: "test-destination-model",
+          promptVersion: "destination-cue/v1",
+        };
+      },
+    };
+    __setModelGatewayForTests(gateway);
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/threads",
+      headers: { ...authHeaders("alice"), "content-type": "application/json" },
+      payload: { title: `Destination cue ${randomUUID()}`, tripId: provisioned.tripId },
+    });
+    expect(created.statusCode).toBe(201);
+    const threadId = (created.json() as { id: string }).id;
+    try {
+      const accepted = await submitTurn(threadId, randomUUID(), "I am considering Tokyo and Kyoto");
+      expect(accepted.statusCode).toBe(202);
+      expect(await processNextAgentTask()).toBe(true);
+
+      const restored = await app.inject({
+        method: "GET",
+        url: `/api/v1/threads/${threadId}/conversation`,
+        headers: authHeaders("alice"),
+      });
+      const cue = (restored.json() as { pendingDestinationCue: {
+        id: string;
+        version: number;
+        candidates: Array<{ id: string; displayName: string }>;
+      } }).pendingDestinationCue;
+      expect(cue.candidates.map((candidate) => candidate.displayName)).toEqual(["Tokyo", "Kyoto"]);
+
+      const acceptedCity = await app.inject({
+        method: "POST",
+        url: `/api/v1/threads/${threadId}/destination-cues/${cue.id}/candidates/${cue.candidates[0].id}/accept`,
+        headers: { ...authHeaders("alice"), "content-type": "application/json" },
+        payload: { requestId: randomUUID(), expectedVersion: cue.version, titleLocale: "en" },
+      });
+      expect(acceptedCity.statusCode).toBe(200);
+      const afterAccept = acceptedCity.json() as { cue: typeof cue; trip: { destinationCandidates: string[] } };
+      expect(afterAccept.trip.destinationCandidates).toEqual(["Tokyo"]);
+      expect(afterAccept.cue.candidates.map((candidate) => candidate.displayName)).toEqual(["Kyoto"]);
+
+      const dismissRequestId = randomUUID();
+      const dismissedCity = await app.inject({
+        method: "POST",
+        url: `/api/v1/threads/${threadId}/destination-cues/${cue.id}/candidates/${afterAccept.cue.candidates[0].id}/dismiss`,
+        headers: { ...authHeaders("alice"), "content-type": "application/json" },
+        payload: { requestId: dismissRequestId, expectedVersion: afterAccept.cue.version, titleLocale: "en" },
+      });
+      expect(dismissedCity.statusCode).toBe(200);
+      const dismissedBody = dismissedCity.json();
+      expect(dismissedBody).toMatchObject({ cue: null, trip: { destinationCandidates: ["Tokyo"] } });
+
+      const duplicateDismissal = await app.inject({
+        method: "POST",
+        url: `/api/v1/threads/${threadId}/destination-cues/${cue.id}/candidates/${afterAccept.cue.candidates[0].id}/dismiss`,
+        headers: { ...authHeaders("alice"), "content-type": "application/json" },
+        payload: { requestId: dismissRequestId, expectedVersion: afterAccept.cue.version, titleLocale: "en" },
+      });
+      expect(duplicateDismissal.statusCode).toBe(200);
+      expect(duplicateDismissal.json()).toEqual(dismissedBody);
+      const finalRestore = await app.inject({
+        method: "GET",
+        url: `/api/v1/threads/${threadId}/conversation`,
+        headers: authHeaders("alice"),
+      });
+      expect(finalRestore.json()).toMatchObject({ pendingDestinationCue: null });
+    } finally {
+      __setModelGatewayForTests(successfulConversationGateway);
+      await db.delete(auditEvents).where(eq(auditEvents.tripId, provisioned.tripId));
+      await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
+      await db.delete(sharedTrips).where(eq(sharedTrips.id, provisioned.tripId));
+    }
+  });
+
   it("accepts once, rejects concurrent work, completes in the Worker, and restores ordered owner history", async () => {
     const requestIds = [randomUUID(), randomUUID(), randomUUID()];
     const idempotencyKeys: string[] = [];

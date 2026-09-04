@@ -394,7 +394,16 @@
       "briefProposalPlanTitleNoDestination": "开始规划这趟行程",
       "briefProposalSaveTitleNoDestination": "保存到这趟行程",
       "briefProposalQuestion": "你想将 {destination} 作为目的地吗？",
-      "briefProposalQuestionNoDestination": "你想将这里作为目的地吗？"
+      "briefProposalQuestionNoDestination": "你想将这里作为目的地吗？",
+      "briefProposalDetailsQuestion": "要保存这些行程信息吗？",
+      "destinationCueTitle": "目的地确认",
+      "destinationCueQuestion": "要将 {destination} 设为目的地吗？",
+      "destinationCueNavigation": "切换目的地候选项",
+      "destinationCuePrevious": "上一个目的地",
+      "destinationCueNext": "下一个目的地",
+      "destinationCueAccept": "把 {destination} 保存到这趟行程",
+      "destinationCueDismiss": "先不设置",
+      "destinationCueSaving": "正在保存…"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",

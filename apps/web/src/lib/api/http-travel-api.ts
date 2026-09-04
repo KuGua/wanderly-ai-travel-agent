@@ -37,6 +37,8 @@ import {
   updateTripTitleResponseSchema,
   updateDraftTripBriefInputSchema,
   updateDraftTripBriefResponseSchema,
+  destinationCueActionInputSchema,
+  destinationCueActionResponseSchema,
   tripSearchPreferencesInputSchema,
   tripSearchPreferencesResponseSchema,
   planningTaskAcceptedResponseSchema,
@@ -455,6 +457,29 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request("/trips/" + encodeURIComponent(tripId) + "/draft-brief", updateDraftTripBriefResponseSchema, {
       method: "PATCH", body: JSON.stringify(body),
     });
+  }
+
+  acceptDestinationCue(threadId: string, cueId: string, candidateId: string, input: import("./contracts").DestinationCueActionInput) {
+    return this.destinationCueAction(threadId, cueId, candidateId, "accept", input);
+  }
+
+  dismissDestinationCue(threadId: string, cueId: string, candidateId: string, input: import("./contracts").DestinationCueActionInput) {
+    return this.destinationCueAction(threadId, cueId, candidateId, "dismiss", input);
+  }
+
+  private destinationCueAction(
+    threadId: string,
+    cueId: string,
+    candidateId: string,
+    action: "accept" | "dismiss",
+    input: import("./contracts").DestinationCueActionInput,
+  ) {
+    const body = destinationCueActionInputSchema.parse(input);
+    return this.client.request(
+      `/threads/${encodeURIComponent(threadId)}/destination-cues/${encodeURIComponent(cueId)}/candidates/${encodeURIComponent(candidateId)}/${action}`,
+      destinationCueActionResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
   }
 
   saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput) {
