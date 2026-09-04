@@ -227,6 +227,22 @@
 8. The first iteration covers hotel + flight + trip-level slots in an activated Solo Trip only. Budget preferences, activity preferences, multi-room types, and shared-trip conversational completion are explicit deferred scope.
 9. Missing codes outside the in-scope set (`HOTEL_PROVIDER_NOT_APPROVED`, `QUOTE_NATIONALITY_AUTHORIZATION_MISSING`, `TRIP_NOT_ACTIVE`, `DESTINATION_NOT_CONFIGURED`, `FLIGHT_PREFERENCES_MISSING` once flight widgets land) keep rendering the existing read-only `research-setup-card`; the conversational API is not invoked for them.
 
+### S7 — Name a private thread by what it is about
+
+**Story:** As a traveler with several private threads in one trip, I want each thread to carry a title that tells me what it is about, and to rename it myself, so that I can return to the right conversation without opening each one.
+
+**Acceptance criteria:**
+
+1. Server-created thread titles use the language carried by the request. `POST /explorations/start` and invitation acceptance no longer write a fixed English placeholder; `chat_threads` records `title_source` and `title_locale` alongside the title.
+2. `POST /trips/:tripId/threads` accepts an optional `title`. When omitted the server numbers the thread inside the same transaction, so two browser tabs creating a thread concurrently never produce the same name. The browser no longer computes thread titles.
+3. The owner can rename any of their own threads through `PATCH /trips/:tripId/threads/:threadId/title`. A fellow trip member gets `403` without learning whether the thread exists. Renaming sets `title_source = 'MANUAL'`, after which automatic naming never overwrites it unless the owner explicitly confirms an overwrite.
+4. The owner can explicitly ask the Personal Agent to name a thread from that thread's own earliest USER messages. Profile, Personal Note, long-term memory, other threads and assistant output are never sent. The call is rate limited per user.
+5. Every failure path leaves the stored title untouched and returns a readable reason: `MANUAL_LOCKED`, `NO_MATERIAL` (no user message yet, model not called), `REJECTED` (post-processing refused a URL, e-mail, long digit run, or verbatim echo of the conversation), `UNAVAILABLE` (gateway timeout or failure).
+6. Thread titles are owner-only data: absent from shared snapshots, the shared plan surface, member lists, invitation previews, logs, traces, audit summaries and metric labels. `CHAT_THREAD_TITLE_UPDATE` audit rows carry only `{ threadId, source }`.
+7. Background automatic naming is explicitly out of scope for this story; the promotion criteria are recorded in the implementation spec.
+
+实施合同见 [Thread 标题生命周期实施规范](thread-title-lifecycle-implementation.md)。
+
 ### P3 — Observe one owner request across API → DB → Worker → SSE
 
 **Story:** As a team operator, I want a single owner request to be traceable as one OTel trace across the API, the DB hot-spots, the durable Worker, and the SSE event stream, so that the Hero Demo and post-demo debugging show a complete end-to-end flow.

@@ -99,18 +99,23 @@ booking/visa conclusion.
 
 ### `POST /explorations/start`
 > Added with the Draft Trip lifecycle (see
-> [exploration-trip-lifecycle-implementation.md](../docs/exploration-trip-lifecycle-implementation.md)).
+> [exploration-trip-lifecycle-implementation.md](../../docs/exploration-trip-lifecycle-implementation.md)).
 >
 > Create a `DRAFT` Trip + creator membership + default private thread for
 > the authenticated user, all in a single database transaction. The body
-> carries only the client-generated `requestId` UUIDv4 used as the
-> per-user idempotency key. No place, profile, message body or nationality
-> crosses this boundary.
+> carries the client-generated `requestId` UUIDv4 used as the per-user
+> idempotency key, plus the UI `locale` that decides the language of the
+> server-generated draft trip name and default thread title. No place,
+> profile, message body or nationality crosses this boundary.
 
 **Body**:
 ```json
-{ "requestId": "uuid-v4" }
+{ "requestId": "uuid-v4", "locale": "zh" }
 ```
+
+`locale` is `"en" | "zh"` and defaults to `"en"`. It is the only language
+authority for the generated names on this path — there is no user question to
+infer from.
 
 **Response**:
 - `201 Created` on the first successful claim.
@@ -578,7 +583,13 @@ List the caller's own threads within the trip (server-filtered by `ownerUserId`)
 ### `POST /trips/:tripId/threads`
 Create a non-default thread in the trip. Caller must be a trip member.
 
-**Body**: `{ "title": "Hotel ideas" }`
+**Body**: `{ "title"?: "Hotel ideas", "locale"?: "en" | "zh" }`
+
+`title` is optional. When omitted the server numbers the thread inside the same
+transaction (`New chat 2` / `新对话 2`) and marks it `titleSource: "AUTO"`;
+clients must not compute titles themselves. When present the thread is created
+as `titleSource: "MANUAL"`. `locale` defaults to `"en"` and only selects the
+language of a server-generated title.
 
 **Response**: `201 ThreadSummary`
 
@@ -586,6 +597,60 @@ Create a non-default thread in the trip. Caller must be a trip member.
 Idempotent provision of the caller's per-trip default scratchpad (used by `TravelAgentChat` on Explore). Creates the row on first call, returns the existing one thereafter. Caller must be a trip member.
 
 **Response**: `200 ThreadSummary`
+
+### `PATCH /trips/:tripId/threads/:threadId/title`
+Rename one of the caller's own threads. Owner-only; a fellow trip member gets `403`.
+
+**Body**: `{ "title": "Visa prep" }` (trimmed, 1–80 characters)
+
+Sets `titleSource: "MANUAL"` and `titleLocale: null`. Once a thread is `MANUAL`,
+automatic naming never overwrites it unless the caller explicitly asks for an
+overwrite through the suggest endpoint below.
+
+**Response**: `200 ThreadSummary` · `403` non-owner or lapsed membership · `404` unknown thread
+
+### `POST /trips/:tripId/threads/:threadId/title/suggest`
+Owner-triggered LLM naming for one of the caller's own threads. Reads only the
+thread's own earliest USER messages; never profile, memory, other threads or
+assistant output. Rate limited per authenticated user.
+
+**Body**: `{ "requestId": "<uuid>", "locale": "en" | "zh", "overwriteManual"?: false }`
+
+**Response**:
+
+```json
+{ "thread": { "…ThreadSummary…" }, "applied": true }
+```
+
+```json
+{ "thread": { "…ThreadSummary…" }, "applied": false,
+  "reason": "MANUAL_LOCKED" | "NO_MATERIAL" | "REJECTED" | "UNAVAILABLE" }
+```
+
+Every failure path is fail-closed: the stored title is left untouched. `403`
+non-owner, `404` unknown thread, `429` over the rate limit.
+
+Contract and post-processing rules: [Thread 标题生命周期实施规范](../../docs/thread-title-lifecycle-implementation.md).
+
+### `ThreadSummary`
+
+```json
+{
+  "id": "uuid", "ownerUserId": "uuid", "tripId": "uuid",
+  "scope": "TRIP", "isDefault": true,
+  "title": "Trip planning",
+  "titleSource": "AUTO",
+  "titleLocale": "en",
+  "titleUpdatedAt": null,
+  "createdAt": "2026-09-04T01:48:38.413Z",
+  "archivedAt": null
+}
+```
+
+`titleSource` is `AUTO` (server-generated, deterministic or LLM) or `MANUAL`
+(owner-typed). `titleLocale` is the language authority used for an `AUTO` title
+and is `null` for `MANUAL` ones. Thread titles are owner-only data and never
+appear on any trip-wide surface.
 
 ---
 

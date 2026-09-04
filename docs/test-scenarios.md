@@ -353,6 +353,35 @@ Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 accep
 
 Runnable coverage: `apps/api/tests/conversation-gateway.test.ts` and `apps/api/tests/llm-gateway-location-introduction.test.ts`.
 
+### TS-H1b-TITLE — Own, localize and rename a private thread title without widening its scope
+
+**Stories:** H1, S7, S1
+**Objective:** Verify that thread titles are server-authoritative, correctly localized, owner-controlled, and that LLM-assisted naming fails closed without leaking private conversation content.
+
+**Starting conditions:** Alice uses the Chinese UI, is a member of one trip with a default thread and at least one extra thread. Bob is a fellow member of the same trip.
+
+**Steps:**
+
+1. Alice starts a new exploration and accepts a trip invitation, both with `locale: "zh"`; inspect the resulting default thread titles and `title_source` / `title_locale`.
+2. Alice opens two browser tabs on the same trip workspace and creates one extra thread in each, at the same time.
+3. Alice renames one thread; then triggers AI naming on it. Then she confirms the overwrite and triggers AI naming again.
+4. Alice triggers AI naming on a thread that has no USER message; on a thread with messages while the model gateway is unavailable; and on a thread where the model returns a title containing a URL, an e-mail address, a 9-digit number, and separately a verbatim copy of her first message.
+5. Bob attempts to read, rename and AI-name Alice's threads by their `threadId`.
+6. Alice exceeds the per-user rate limit for AI naming.
+7. Inspect the shared plan surface, member list, invitation preview, logs, traces, metric labels and audit summaries after all of the above.
+
+**Expected outcomes:**
+
+- Server-created titles are Chinese (`行程规划`), not the English placeholders `Trip Planner` / `Personal trip scratchpad`; they carry `titleSource: "AUTO"` and `titleLocale: "zh"`.
+- The two concurrent creations produce two distinct server-numbered titles; the browser sends no title.
+- Renaming sets `titleSource: "MANUAL"`; the first AI-naming attempt returns `applied: false, reason: "MANUAL_LOCKED"` and does not call the gateway; the confirmed-overwrite attempt succeeds and returns `titleSource: "AUTO"`.
+- The empty thread returns `NO_MATERIAL` without calling the gateway; the gateway outage returns `UNAVAILABLE`; each of the four bad model outputs returns `REJECTED`. In all cases the stored title is byte-identical to what it was before the request.
+- Bob receives `403` for read, rename and AI-name, and the response does not reveal whether the thread exists.
+- Exceeding the rate limit returns `429` and leaves the title unchanged.
+- No thread title appears in the shared plan surface, member list, invitation preview, logs, traces or metric labels. `CHAT_THREAD_TITLE_UPDATE` audit rows contain only `{ threadId, source }` and no title text. `thread_title_writes_total` carries only the bounded `source` / `result` labels.
+
+Runnable coverage: to be added with the implementation — backend unit tests for `thread-title-service.ts` and the seven post-processing rules, backend integration tests in `apps/api/tests/` for ownership, concurrency, the `MANUAL` lock, fail-closed paths and audit/metric shape, and `apps/web/src/components/trips/trip-workspace.test.tsx` for rail rendering, optimistic rename rollback and the four `applied: false` reasons. Contract: [Thread 标题生命周期实施规范](thread-title-lifecycle-implementation.md).
+
 ### TS-H1c — Stream a durable private Agent turn across disconnects
 
 **Stories:** H1, S1, S2

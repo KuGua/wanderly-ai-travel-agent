@@ -130,7 +130,7 @@ DRAFT | PLANNING | CONFIRMED | BOOKED | CANCELLED | STALE
 
 这两个命令都由 `TravelAgentChat` 发出，而它有**两个挂载点**：探索页的 `ExploreChatHost` 和行程工作台的 `TripWorkspace`。`titleLocale` 的 prop 默认值是 `"en"`，所以漏传不会报错，只会静默产出英文标题——2026-09-03 前 `TripWorkspace` 正是漏传方，中文用户在工作台确认 brief 后得到 `新加坡 Trip Planner｜4 Days`：目的地来自用户自己的话，其余是默认语言。新增挂载点时必须一并传入。
 
-> 已知缺口（尚未修复）：`POST /explorations/start` 的请求体只有 `requestId`，草稿行名固定写入 `"Trip Planner"` / `titleLocale: "en"`。在确认第一份 brief 之前，中文用户的行程列表里全是英文占位名。修复需要为该 DTO 增加 locale 字段。
+> 已知缺口（修复已排期，未实现）：`POST /explorations/start` 的请求体只有 `requestId`，草稿行名固定写入 `"Trip Planner"` / `titleLocale: "en"`，同一事务创建的 default thread 标题同样固定为英文 `"Trip Planner"`（`exploration-service.ts:107`）。在确认第一份 brief 之前，中文用户的行程列表与工作台 thread rail 里全是英文占位名。修复方案是为该 DTO 增加 `locale` 字段，并由服务端同时决定 draft trip 的 `titleLocale` 与 default thread 的 `title_locale`；实施合同见 [Thread 标题生命周期实施规范](thread-title-lifecycle-implementation.md) §7.4。
 
 ### 4.2.1 线程状态与提示语
 

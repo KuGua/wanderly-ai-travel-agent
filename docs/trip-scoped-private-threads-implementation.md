@@ -227,6 +227,8 @@ ACCEPTED / REVOKED / EXPIRED -------------------> terminal
 
 服务端固定 `ownerUserId = request.user.id`、`tripId = path param`、`scope = TRIP`、`isDefault = false`。
 
+`title` 现为可选字段：缺省时由服务端在同一事务内编号，客户端不得自行计算标题。thread 标题的完整生命周期——`title_source` / `title_locale` 语义、`PATCH …/title` 重命名、owner 显式触发的 LLM 命名、以及标题不得进入 audit / 日志 / metric 标签的约束——见 [Thread 标题生命周期实施规范](thread-title-lifecycle-implementation.md)。
+
 ### 6.3 Existing thread/run APIs
 
 保留 `GET /threads/:threadId/conversation`、`POST /threads/:threadId/turns`、`POST /threads/:threadId/messages`、`DELETE /threads/:threadId` 及 agent-run read/cancel/SSE API，但均使用新的 `requireOwnedTripThread`。
@@ -264,7 +266,7 @@ type PersonalTripContext = {
 
 ### 8.2 可见性规则
 
-- Workspace 可展示 Trip 成员安全 presentation data，但 thread rail 仅展示当前用户自己的 title、createdAt/default status。
+- Workspace 可展示 Trip 成员安全 presentation data，但 thread rail 仅展示当前用户自己的 title、createdAt/default status。thread 标题可由对话内容派生（见 [Thread 标题生命周期实施规范](thread-title-lifecycle-implementation.md)），因此它与消息正文同属 owner-only 数据：不得出现在共享方案面、成员列表、邀请预览或任何 `TEAM_VISIBLE` 投影中。
 - 不展示其他成员的 thread 数、标题、时间、是否活跃、run 状态或任何消息。
 - Thread rail 顶部另有一个**非 thread** 的置顶条目"共享方案"，指向 trip 内全体成员可见的只读共享方案面（`?view=shared`）。它不是 `chat_threads` 行、没有 owner、不可写入，也不改变本文的 thread 私有性不变量；其数据只来自 member-scoped 的 plan / run / `TEAM_VISIBLE` 约束读接口。契约见 [共享方案面实施规范](shared-plan-surface-implementation.md)。
 - 所有 UI 错误使用已有统一 API error handling；`403` 显示“无权限或成员资格已失效”，不泄露具体 thread 或 invitation 状态。
