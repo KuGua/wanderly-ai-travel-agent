@@ -39,4 +39,19 @@ describe("shouldExtractConversationHandoff", () => {
     // trip is DRAFT, and confirming a candidate writes one.
     expect(shouldExtractConversationHandoff("MODEL", "DRAFT", "TRIP_WORKSPACE")).toBe(false);
   });
+
+  it("never lets natural-language confirmation auto-activate a DRAFT trip", () => {
+    // Spec: DRAFT→PLANNING is owned exclusively by `POST /trips/:tripId/activate`,
+    // which the UI CTA calls. Natural-language phrases like "好的，开始吧" or
+    // "确认" must NOT trigger an extraction, a constraint snapshot, or a
+    // planning task. The handoff-surface gate is the runtime guard: even on a
+    // trip-workspace surface, DRAFT responses are short-circuited so nothing
+    // about the turn leaks into shared state.
+    expect(shouldExtractConversationHandoff("MODEL", "DRAFT", "TRIP_WORKSPACE")).toBe(false);
+    expect(shouldExtractConversationHandoff("MODEL", "DRAFT", "TRIP_WORKSPACE")).toBe(false);
+    // The status guard is independent of the reply shape — SAFE_REFUSAL and
+    // FALLBACK responses on DRAFT must also be a no-op for the handoff.
+    expect(shouldExtractConversationHandoff("SAFE_REFUSAL", "DRAFT", "TRIP_WORKSPACE")).toBe(false);
+    expect(shouldExtractConversationHandoff("FALLBACK", "DRAFT", "TRIP_WORKSPACE")).toBe(false);
+  });
 });

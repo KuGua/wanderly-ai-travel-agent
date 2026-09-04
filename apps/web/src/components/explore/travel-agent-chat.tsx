@@ -842,6 +842,22 @@ export function TravelAgentChat({
     && Boolean(trip.data.trip.travelDateStart)
     && Boolean(trip.data.trip.travelDateEnd || trip.data.trip.travelDays);
 
+  // Mirrors the server-side derivation in `loadPersonalTripContext`
+  // (apps/api/src/tasks/handlers/conversation-task-handler.ts). The two
+  // MUST stay byte-identical so the chat CTA and the conversation
+  // prompt cannot disagree about which slots are still empty. The UI
+  // never reads private conversation content into this list — only the
+  // existence of each required field — so the model has nothing extra
+  // to leak.
+  const missingFields = trip.data?.trip.status === "DRAFT"
+    ? [
+        ...(trip.data.trip.departureCities.length === 0 ? ["departure_city" as const] : []),
+        ...(trip.data.trip.destinationCandidates.length === 0 ? ["destination_city" as const] : []),
+        ...(!trip.data.trip.travelDateStart || !(trip.data.trip.travelDateEnd || trip.data.trip.travelDays)
+            ? ["travel_dates" as const] : []),
+      ]
+    : [];
+
   function confirmFlightSearch() {
     if (isSending) return;
     // The server's confirmation gate reads the literal phrase from the user
@@ -913,12 +929,13 @@ export function TravelAgentChat({
   // the panel is already a readable surface, so wrapping every answer in a
   // second framed card makes the narrow column feel dense. The Trip workspace
   // keeps its illustrated card treatment because it lives on a paper surface.
+  const terminalOutputClass = onGlobe ? "wanderly-terminal-output" : "";
   const agentBubbleClass = docked
     ? `group/msg relative max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`
-    : "group/msg relative max-w-[86%] py-1 text-[17px] text-justify text-[var(--w-fog)]";
+    : `group/msg relative max-w-[86%] py-1 text-[17px] text-justify text-[var(--w-fog)] ${terminalOutputClass}`;
   const streamingAgentClass = docked
     ? `max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`
-    : "max-w-[86%] py-1 text-[17px] text-justify text-[var(--w-fog)]";
+    : `relative max-w-[86%] py-1 text-[17px] text-justify text-[var(--w-fog)] ${terminalOutputClass}`;
   // The destination now names the action instead of sitting in a list above
   // it, so the option reads as the decision rather than as a record change.
   // Absent — the model proposed only dates, say — the label stays generic
@@ -1216,6 +1233,7 @@ export function TravelAgentChat({
                   <div
                     className={agentBubbleClass}
                     data-remember-message-id={message.id}
+                    data-terminal-output={onGlobe ? "true" : undefined}
                   >
                     <ChatMarkdown content={message.content} />
                     <CopyButton text={message.content} />
@@ -1229,7 +1247,7 @@ export function TravelAgentChat({
           {activeRunId ? (
             <article data-role="ASSISTANT" data-streaming="true" className={rowClass}>
               {agentLabel}
-              <div className={streamingAgentClass}>
+              <div className={streamingAgentClass} data-streaming="true" data-terminal-output={onGlobe ? "true" : undefined}>
               {streamState.tools.length > 0 ? <ToolActivityList items={streamState.tools} /> : null}
               {streamState.text ? (
                 <ChatMarkdown content={streamState.text} />
@@ -1346,12 +1364,37 @@ export function TravelAgentChat({
               </div>
             </section>
           ) : null}
-          {canStartSharedPlanning && !actionableBriefProposal && !destinationCue ? (
-            <section aria-label={t("startSharedPlanTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
-              <p className="font-bold text-primary">{t("startSharedPlanTitle")}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{t("startSharedPlanBody")}</p>
+          {!actionableBriefProposal && !destinationCue && trip.data?.trip.status === "DRAFT" ? (
+            <section aria-label={canStartSharedPlanning ? t("startSharedPlanTitle") : t("startSharedPlanNotReadyTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
+              <p className="font-bold text-primary">
+                {canStartSharedPlanning ? t("startSharedPlanTitle") : t("startSharedPlanNotReadyTitle")}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {canStartSharedPlanning
+                  ? t("startSharedPlanBody")
+                  : t("startSharedPlanNotReadyBody", {
+                      missing: missingFields
+                        .map((field) => t(`missingField.${field}`))
+                        .join(t("missingField.separator")),
+                    })}
+              </p>
               <div className="mt-3 flex gap-2">
-                <button type="button" onClick={() => void startSharedPlanning()} disabled={isStartingSharedPlan} className={actionPrimaryClass}>{isStartingSharedPlan ? t("startSharedPlanStarting") : t("startSharedPlanConfirm")}</button>
+                <button
+                  type="button"
+                  onClick={() => void startSharedPlanning()}
+                  disabled={!canStartSharedPlanning || isStartingSharedPlan}
+                  aria-disabled={!canStartSharedPlanning || isStartingSharedPlan}
+                  title={!canStartSharedPlanning
+                    ? t("startSharedPlanDisabledHint", {
+                        missing: missingFields
+                          .map((field) => t(`missingField.${field}`))
+                          .join(t("missingField.separator")),
+                      })
+                    : undefined}
+                  className={actionPrimaryClass}
+                >
+                  {isStartingSharedPlan ? t("startSharedPlanStarting") : t("startSharedPlanConfirm")}
+                </button>
               </div>
             </section>
           ) : null}

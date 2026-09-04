@@ -378,7 +378,7 @@ metrics.registerCounter(
   "LLM request attempt outcomes, by provider, error category and retryability.",
   {
     provider: ["openai", "gemini", "openai-compatible"],
-    error_category: ["upstream_5xx", "upstream_failure", "network", "timeout", "schema_parse", "tool_protocol", "unknown"],
+    error_category: ["upstream_5xx", "upstream_failure", "network", "timeout", "schema_parse", "tool_protocol", "rate_limited", "unknown"],
     retryable: ["true", "false"],
   },
 );
@@ -655,6 +655,21 @@ metrics.registerCounter(
   {
     source: ["deterministic", "llm", "manual"],
     result: ["applied", "rejected", "unavailable", "no_material", "manual_locked"],
+  },
+);
+
+// Trip title destination-label lifecycle (docs/trip-title-destination-label-implementation.md §10.1).
+// Same privacy discipline: the label text, trip id and user id are forbidden
+// as metric labels and live in trace/log context only.
+metrics.registerCounter(
+  "trip_title_writes_total",
+  "Trip title destination-label writes by bounded source and result.",
+  {
+    source: ["reference", "llm", "manual"],
+    result: [
+      "applied", "rejected", "unavailable", "no_material",
+      "manual_locked", "not_draft", "superseded", "rate_limited",
+    ],
   },
 );
 

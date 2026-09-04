@@ -173,6 +173,8 @@ describe("TravelAgentChat durable streaming flow", () => {
     const reply = answer.closest("article")?.querySelector(".chat-markdown")?.parentElement;
     expect(screen.queryByText("Wanderly Agent")).not.toBeInTheDocument();
     expect(reply).toHaveClass("max-w-[86%]", "py-1", "text-justify", "text-[var(--w-fog)]");
+    expect(reply).toHaveAttribute("data-terminal-output", "true");
+    expect(reply).toHaveClass("wanderly-terminal-output");
     expect(reply).not.toHaveClass("wanderly-cosmos-surface", "wanderly-edge", "wanderly-shadow-sm");
 
     const question = screen.getByText("A short question.").parentElement;
@@ -588,6 +590,8 @@ describe("TravelAgentChat durable streaming flow", () => {
     await submitFromCapsule("Tell me about Tokyo");
 
     expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
+    expect(document.querySelector('[data-streaming="true"] [data-terminal-output="true"]')).toHaveClass("wanderly-terminal-output");
+    expect(document.querySelector('[data-streaming="true"][data-terminal-output="true"]')).toHaveClass("wanderly-terminal-output");
     expect(screen.getByText("Tell me about Tokyo")).toBeInTheDocument();
     expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
       requestId: REQUEST_ID,
@@ -1462,5 +1466,121 @@ describe("Enter while an IME is composing", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalled());
+  });
+});
+
+/**
+ * DRAFT → Shared handoff CTA render conditions.
+ *
+ * Spec: the section must always render for DRAFT trips so the creator
+ * sees whether the brief is ready, *and* must list which slot is empty
+ * when it isn't. The CTA button must only be enabled when the brief is
+ * complete; natural language typed into the chat box must NOT trigger
+ * any activate call.
+ */
+describe("DRAFT → Shared handoff CTA", () => {
+  function draftTrip(overrides: Partial<{
+    status: "DRAFT";
+    departureCities: string[];
+    destinationCandidates: string[];
+    travelDateStart: string | null;
+    travelDateEnd: string | null;
+    travelDays: number | null;
+  }> = {}) {
+    return {
+      trip: {
+        id: TRIP_ID,
+        name: "Tokyo",
+        createdBy: OWNER_ID,
+        status: "DRAFT" as const,
+        departureCities: [],
+        destinationCandidates: ["Tokyo"],
+        travelDateStart: null,
+        travelDateEnd: null,
+        travelDays: null,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+        ...overrides,
+      },
+      callerRole: "CREATOR",
+      members: [],
+    };
+  }
+
+  it("renders the missing-departure explanation and disables the CTA when only the city is set", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(draftTrip({
+        departureCities: [],
+        destinationCandidates: ["Tokyo"],
+        travelDateStart: "2026-09-10",
+        travelDateEnd: "2026-09-15",
+      })),
+      activateTrip: vi.fn(),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const heading = await screen.findByText(/Trip details aren't complete yet/i);
+    expect(heading).toBeInTheDocument();
+    expect(screen.getByText(/departure city/i)).toBeInTheDocument();
+
+    const button = screen.getByRole("button", { name: "Start planning" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-disabled", "true");
+
+    fireEvent.click(button);
+    await waitFor(() => expect(api.activateTrip).not.toHaveBeenCalled());
+  });
+
+  it("renders the missing-dates explanation and disables the CTA when city + departure are set but dates are not", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(draftTrip({
+        departureCities: ["Shanghai"],
+        destinationCandidates: ["Tokyo"],
+        travelDateStart: null,
+        travelDateEnd: null,
+        travelDays: null,
+      })),
+      activateTrip: vi.fn(),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const heading = await screen.findByText(/Trip details aren't complete yet/i);
+    expect(heading).toBeInTheDocument();
+    expect(screen.getByText(/travel dates/i)).toBeInTheDocument();
+
+    const button = screen.getByRole("button", { name: "Start planning" });
+    expect(button).toBeDisabled();
+  });
+
+  it("renders the ready CTA and only fires activateTrip on explicit click", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(draftTrip({
+        departureCities: ["Shanghai"],
+        destinationCandidates: ["Tokyo"],
+        travelDateStart: "2026-09-10",
+        travelDateEnd: "2026-09-15",
+      })),
+      activateTrip: vi.fn().mockResolvedValue({
+        trip: draftTrip().trip,
+        planningRun: { runId: RUN_ID, status: "RUNNING" },
+      }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const heading = await screen.findByText(/Trip details are ready/i);
+    expect(heading).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Start planning" });
+    expect(button).not.toBeDisabled();
+
+    // Typing natural-language confirmation must NOT auto-activate.
+    const input = screen.getByRole("textbox", { name: "Message Wanderly Agent" });
+    fireEvent.change(input, { target: { value: "好的，开始吧" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalled());
+    expect(api.activateTrip).not.toHaveBeenCalled();
+
+    // Clicking the CTA is the only path to activation.
+    fireEvent.click(button);
+    await waitFor(() => expect(api.activateTrip).toHaveBeenCalledTimes(1));
   });
 });

@@ -21,6 +21,8 @@ import {
   mergeTripBriefProposal,
   proposeTripBriefFromTurn,
 } from "../../services/trip-brief-proposal-service.js";
+import { resolveTitleDestinationLabel } from "../../services/trip-title-destination-label.js";
+import { applyTitleDestinationLabel } from "../../services/trip-title-label-service.js";
 import { executePersonalResearch } from "../../services/personal-research-service.js";
 import {
   loadConversationHotelSearchState,
@@ -778,6 +780,12 @@ export async function handleConversationTask(params: {
       return explainToolFailure(withoutInternalFields(await dispatch(call)));
     };
   }
+  // Spec §7.2 / §D4: extract the chat-side candidate once and reuse it for
+  // the city-required constraint below and the label trigger point further
+  // down. The deterministic parser is cheap (pure regex on the owner's
+  // own text); calling it twice would be both wasted CPU and a hazard for
+  // divergent shape assumptions across the two use sites.
+  const chatExtractedCandidate = proposeTripBriefFromTurn(turnInput.question)?.destinationCandidates?.[0];
   toolContext.responseConstraints = [
     ...selectResponseConstraints({
       tripStatus: tripContext.tripStatus,
@@ -787,7 +795,12 @@ export async function handleConversationTask(params: {
       userConfirmed: toolContext.userConfirmed === true,
       confirmedCapability,
     }),
-    ...(isBriefDestinationCountry(turnInput.place?.name) ? ["DESTINATION_CITY_REQUIRED" as const] : []),
+    // Spec §7.2: extend the city-required prompt to chat text as well as
+    // map pickers. `chatExtractedCandidate` is computed once and reused by
+    // the label trigger point below.
+    ...(isBriefDestinationCountry(turnInput.place?.name)
+        || isBriefDestinationCountry(chatExtractedCandidate)
+      ? ["DESTINATION_CITY_REQUIRED" as const] : []),
   ];
   // Post-P2 (§5.2): the safety gate asks `isEvidenceBacked()` once at the
   // end of the turn. We expose both the *this-turn* dispatch flag and any
@@ -877,6 +890,40 @@ export async function handleConversationTask(params: {
       parsedReply.tripBriefProposal,
     )
     : undefined;
+  // Spec §7.1: derive a display-only destination label from this turn.
+  // The label is country/region only — never a city — and lives in
+  // shared_trips.title_destination_label, not in destinationCandidates or
+  // any planner input. Must run outside any DB transaction so the future
+  // P1 LLM call can keep this trigger point unchanged when the label
+  // source becomes LLM (D7). For now the call is fully deterministic and
+  // awaited inline; P1 will move it to fire-and-forget after migration.
+  if (tripContext.tripStatus === "DRAFT" && titleLocale) {
+    const candidate = turnInput.place?.name ?? chatExtractedCandidate;
+    if (candidate) {
+      const resolved = resolveTitleDestinationLabel({ candidate, locale: titleLocale });
+      if (resolved) {
+        await applyTitleDestinationLabel({
+          ctx: params.ctx,
+          tripId: tripContext.tripId,
+          label: resolved.label,
+          source: resolved.source,
+          locale: titleLocale,
+        }).catch((err) => {
+          // Fail-soft: a label write must never break the conversation
+          // reply. Log the error in trace context, keep the metric counter
+          // honest (no implicit "applied" claim), and let the conversation
+          // continue. AGENTS.md observability.
+          logSafeRuntimeEvent(params.ctx, {
+            component: "planner",
+            event: "apply_title_label",
+            operation: "trip.destination.label",
+            outcome: "failure",
+            errorCode: (err as Error)?.name ?? "UNKNOWN",
+          });
+        });
+      }
+    }
+  }
   // Shared handoff is a collaboration command. Draft trips are private
   // exploration only; completed/cancelled trips must not create fresh shared
   // constraints. PLANNING and STALE are the two states that can safely accept
@@ -996,6 +1043,28 @@ async function loadPersonalTripContext(tripId: string): Promise<{
     trip.status === "DRAFT" || trip.status === "PLANNING" || trip.status === "STALE"
       ? trip.status
       : "CONFIRMED";
+
+  // Mirrors the web client's `canStartSharedPlanning` predicate at
+  // apps/web/src/components/explore/travel-agent-chat.tsx — the
+  // Personal Agent must speak the same truth as the UI CTA. The flag
+  // never authorizes activation on its own; the only DRAFT→PLANNING
+  // write boundary is `POST /trips/:tripId/activate`, owned by the UI.
+  const canStartSharedPlanning =
+    tripStatus === "DRAFT"
+    && trip.departureCities.length > 0
+    && trip.destinationCandidates.length > 0
+    && Boolean(trip.travelDateStart)
+    && Boolean(trip.travelDateEnd || trip.travelDays);
+
+  const missingFields: PersonalTripContext["missingFields"] = [];
+  if (tripStatus === "DRAFT") {
+    if (trip.departureCities.length === 0) missingFields.push("departure_city");
+    if (trip.destinationCandidates.length === 0) missingFields.push("destination_city");
+    if (!trip.travelDateStart || !(trip.travelDateEnd || trip.travelDays)) {
+      missingFields.push("travel_dates");
+    }
+  }
+
   return { context: personalTripContextSchema.parse({
     tripId: trip.id,
     tripName: trip.name,
@@ -1005,6 +1074,8 @@ async function loadPersonalTripContext(tripId: string): Promise<{
     travelDays: trip.travelDays,
     departureCities: trip.departureCities,
     destinationCandidates: trip.destinationCandidates,
+    canStartSharedPlanning,
+    missingFields,
   }), titleLocale: trip.titleLocale };
 }
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LLMGateway, ModelGatewayError } from "../src/providers/llm-gateway.js";
 import { createRequestContext } from "../src/utils/context.js";
+import { metrics } from "../src/observability/metrics.js";
 
 const OLD_ENV = { ...process.env };
 
@@ -15,7 +16,7 @@ interface CapturingClient {
   createCalls: number;
 }
 
-function buildClient(behavior: "ok" | "schema-bad" | "5xx" | "5xx-then-ok" | "parse-then-ok"): CapturingClient {
+function buildClient(behavior: "ok" | "schema-bad" | "5xx" | "5xx-then-ok" | "parse-then-ok" | "429-then-ok" | "429-always"): CapturingClient {
   const client: CapturingClient = {
     parseCalls: 0,
     createCalls: 0,
@@ -29,6 +30,13 @@ function buildClient(behavior: "ok" | "schema-bad" | "5xx" | "5xx-then-ok" | "pa
             // 429 whose body quoted a 5xx back as a server error; it now trusts
             // `status` first. A stub without one was testing the loose path.
             throw Object.assign(new Error("upstream returned 502 Bad Gateway"), { status: 502 });
+          }
+          if ((behavior === "429-then-ok" && client.parseCalls === 1)
+              || behavior === "429-always") {
+            // 429 must classify to RATE_LIMITED via the status-based branch,
+            // then route through `toLlmMetricErrorCategory` → `rate_limited`
+            // label, NOT through `code.toLowerCase()`.
+            throw Object.assign(new Error("upstream returned 429 Too Many Requests"), { status: 429 });
           }
           if (behavior === "parse-then-ok") {
             if (client.parseCalls === 1) {
@@ -55,7 +63,7 @@ function buildClient(behavior: "ok" | "schema-bad" | "5xx" | "5xx-then-ok" | "pa
 
 describe("LLMGateway retry policy", () => {
   beforeEach(() => {
-    process.env = { ...OLD_ENV, NODE_ENV: "test", MODEL_GATEWAY_BASE_BACKOFF_MS: "10", MODEL_GATEWAY_MAX_BACKOFF_MS: "30" };
+    process.env = { ...OLD_ENV, NODE_ENV: "test", MODEL_GATEWAY_BASE_BACKOFF_MS: "10", MODEL_GATEWAY_MAX_BACKOFF_MS: "30", MODEL_GATEWAY_RATE_LIMIT_BACKOFF_MS: "10" };
   });
   afterEach(() => {
     process.env = { ...OLD_ENV };
@@ -125,5 +133,55 @@ describe("LLMGateway retry policy", () => {
     })).rejects.toMatchObject({ code: "UPSTREAM_5XX" });
     // 1 initial attempt + 2 retries = 3 parse calls.
     expect(client.parseCalls).toBe(3);
+  });
+
+  it("retries transient RATE_LIMITED (HTTP 429) and labels the metric as rate_limited without throwing MetricLabelError", async () => {
+    // Reset the registry so render() reflects only this test's increments.
+    metrics.reset();
+    const client = buildClient("429-then-ok");
+    const gateway = new LLMGateway({
+      apiKey: "test",
+      provider: "openai",
+      modelName: "gpt-4",
+      promptVersion: "1.0.0",
+      ctx: createRequestContext(),
+      client,
+    });
+    const result = await gateway.generateStructuredPlan({
+      destination: "tokyo",
+      flights: [],
+      stays: [],
+      memberPreferences: {},
+    });
+    expect(result.destination).toBe("tokyo");
+    expect(client.parseCalls).toBeGreaterThanOrEqual(2);
+    // The 429 path must have produced a `rate_limited` label, not crashed
+    // with MetricLabelError before reaching the retry/backoff branch.
+    const rendered = metrics.render();
+    expect(rendered).toContain('error_category="rate_limited"');
+    expect(rendered).toMatch(/retryable="true"/);
+  });
+
+  it("surfaces RATE_LIMITED via ModelGatewayError after retry budget is exhausted (no INTERNAL fallback)", async () => {
+    metrics.reset();
+    const client = buildClient("429-always");
+    const gateway = new LLMGateway({
+      apiKey: "test",
+      provider: "openai",
+      modelName: "gpt-4",
+      promptVersion: "1.0.0",
+      ctx: createRequestContext(),
+      client,
+      maxRetries: 2,
+    });
+    await expect(gateway.generateStructuredPlan({
+      destination: "tokyo",
+      flights: [],
+      stays: [],
+      memberPreferences: {},
+    })).rejects.toMatchObject({ code: "RATE_LIMITED" });
+    expect(client.parseCalls).toBe(3);
+    const rendered = metrics.render();
+    expect(rendered).toContain('error_category="rate_limited"');
   });
 });

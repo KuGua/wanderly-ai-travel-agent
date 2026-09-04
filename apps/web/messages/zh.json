@@ -319,6 +319,15 @@
       "startSharedPlanBody": "确认后，Wanderly 会开始生成完整行程方案，并先以 1 位成人、经济舱和 CNY 作为初始条件；之后可随时调整。",
       "startSharedPlanConfirm": "开始规划",
       "startSharedPlanStarting": "正在启动…",
+      "startSharedPlanNotReadyTitle": "行程信息还没补齐",
+      "startSharedPlanNotReadyBody": "还差{missing}才能开始完整规划。先在对话或卡片里补齐这些信息，Wanderly 才能进入共享规划流程。",
+      "startSharedPlanDisabledHint": "请先补齐{missing}，再开始规划。",
+      "missingField": {
+        "departure_city": "出发城市",
+        "destination_city": "目的地城市",
+        "travel_dates": "出行日期",
+        "separator": "、"
+      },
       "flightConfirmTitle": "机票信息已收集齐全，是否立即查询？",
       "flightConfirmButton": "查询",
       "flightCancelButton": "取消",

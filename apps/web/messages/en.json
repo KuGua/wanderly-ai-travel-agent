@@ -319,6 +319,15 @@
       "startSharedPlanBody": "Confirm to let Wanderly start building your complete trip plan. It will begin with 1 adult, economy, and CNY; you can adjust these later.",
       "startSharedPlanConfirm": "Start planning",
       "startSharedPlanStarting": "Starting…",
+      "startSharedPlanNotReadyTitle": "Trip details aren't complete yet",
+      "startSharedPlanNotReadyBody": "Still missing {missing} before full planning can begin. Add these in the chat or cards first; Wanderly only enters the shared planning flow once they are all set.",
+      "startSharedPlanDisabledHint": "Add {missing} before starting planning.",
+      "missingField": {
+        "departure_city": "departure city",
+        "destination_city": "destination city",
+        "travel_dates": "travel dates",
+        "separator": ", "
+      },
       "flightConfirmTitle": "Ready to search for flights — run it now?",
       "flightConfirmButton": "Search",
       "flightCancelButton": "Cancel",
