@@ -259,14 +259,9 @@ export function ExploreMapPage() {
       // Rather than leave a nameless pin bobbing in the ocean, take the pin
       // back and let 派蒙 wave the traveller off the edge of the world.
       if (locationReference.outcome === "NO_REFERENCE") {
-        inspirationMarkersRef.current.get(inspiration.id)?.remove();
-        inspirationMarkersRef.current.delete(inspiration.id);
-        retriedLocationReferenceIdsRef.current.delete(inspiration.id);
-        inspirationsRef.current = inspirationsRef.current.filter((item) => item.id !== inspiration.id);
-        setInspirations(inspirationsRef.current);
-        setSelected((current) => current?.id === inspiration.id ? null : current);
+        // Open water names no place, but the pin still lands like any other —
+        // 派蒙 just waves the traveller off the edge of the world alongside it.
         showMapNotice(t("oceanExploreLater"));
-        return;
       }
       const centers = locationReference.outcome === "REFERENCE"
         ? await loadAdministrativeCenters(locale).catch(() => [])
