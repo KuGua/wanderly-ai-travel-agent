@@ -657,7 +657,7 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
   --paper-writing-offset: 2px;
   border: 0;
   isolation: isolate;
-  border-radius: 3px 5px 20px 18px;
+  border-radius: 8px;
   color: var(--w-ink);
   background-color: color-mix(in srgb, var(--w-fog), var(--w-white) 58%);
   background-image:
@@ -734,54 +734,26 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
   background: linear-gradient(transparent, color-mix(in srgb, var(--w-mist), transparent 34%));
 }
 
-/* The fixed top edge mimics a page torn out of a spiral notepad: ragged paper
-   fragments above a row of punch holes. It is intentionally not a metal ring. */
+/* The page remains one uninterrupted surface: only the individual punched
+   holes have short, irregular tears above them instead of a second torn strip. */
 .wanderly-paper-chat .wanderly-paper-header {
   position: relative;
   z-index: 4;
   min-height: 70px;
   overflow: hidden;
   padding-top: 28px;
-  border-bottom: 1px solid color-mix(in srgb, var(--w-info), transparent 68%);
-  background: linear-gradient(to bottom, color-mix(in srgb, var(--w-white), transparent 18%), color-mix(in srgb, var(--w-fog), var(--w-white) 34%));
-  box-shadow: 0 8px 14px color-mix(in srgb, var(--w-moss), transparent 87%);
+  /* Controls sit directly on the page: a separate fill, divider, or shadow
+     here makes the torn top read as a second sheet layered over the paper. */
+  border-bottom: 0;
+  background: transparent;
+  box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
-.wanderly-paper-chat .wanderly-paper-header::before {
-  content: "";
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 22px;
-  pointer-events: none;
-  background: color-mix(in srgb, var(--w-fog), var(--w-white) 58%);
-  clip-path: polygon(0 48%, 4% 66%, 8% 25%, 13% 59%, 18% 35%, 23% 64%, 29% 24%, 35% 57%, 41% 32%, 47% 65%, 53% 26%, 59% 58%, 65% 34%, 71% 63%, 77% 23%, 83% 57%, 89% 32%, 95% 64%, 100% 42%, 100% 100%, 0 100%);
-  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--w-ink), transparent 83%));
-}
-
-.wanderly-paper-chat .wanderly-paper-header::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: -8px;
-  left: 0;
-  z-index: -1;
-  height: 9px;
-  background: linear-gradient(135deg, transparent 5px, color-mix(in srgb, var(--w-fog), var(--w-white) 58%) 0) 0 0 / 18px 9px repeat-x;
-  filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--w-bot-outline), transparent 82%));
-}
-
-.wanderly-paper-chat .wanderly-paper-header > :not(.wanderly-paper-holes) {
-  position: relative;
-  z-index: 1;
-}
-
 .wanderly-paper-holes {
   position: absolute;
+  z-index: 2;
   top: 10px;
   right: 26px;
   left: 26px;
@@ -791,12 +763,31 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
 }
 
 .wanderly-paper-holes span {
+  position: relative;
   width: 14px;
   height: 14px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--w-space), var(--w-ink) 38%);
   box-shadow: inset 0 2px 3px color-mix(in srgb, var(--w-ink), transparent 10%), 0 1px 0 color-mix(in srgb, var(--w-white), transparent 12%), 0 0 0 2px color-mix(in srgb, var(--w-fog), transparent 34%);
 }
+
+/* Each tear is a small cut-out joining its hole to the page edge. The varied
+   silhouettes create a hand-torn effect without laying paper over the header. */
+.wanderly-paper-holes span::before {
+  content: "";
+  position: absolute;
+  bottom: calc(100% - 1px);
+  left: 50%;
+  width: 16px;
+  height: 14px;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--w-space), var(--w-ink) 38%);
+  filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--w-white), transparent 28%));
+}
+
+.wanderly-paper-holes span:nth-child(3n + 1)::before { clip-path: polygon(15% 0, 88% 0, 74% 28%, 96% 55%, 65% 100%, 32% 78%, 4% 100%, 23% 48%, 0 22%); }
+.wanderly-paper-holes span:nth-child(3n + 2)::before { clip-path: polygon(7% 0, 82% 0, 100% 25%, 76% 53%, 93% 100%, 48% 78%, 12% 100%, 29% 57%, 0 33%); }
+.wanderly-paper-holes span:nth-child(3n)::before { clip-path: polygon(20% 0, 100% 0, 77% 35%, 94% 64%, 63% 100%, 39% 72%, 0 94%, 19% 50%, 4% 20%); }
 
 .wanderly-paper-chat .wanderly-cosmos-control {
   border-color: color-mix(in srgb, var(--w-bot-outline), transparent 55%);

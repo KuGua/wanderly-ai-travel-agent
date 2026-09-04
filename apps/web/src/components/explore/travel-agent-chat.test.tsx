@@ -661,6 +661,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     const paper = dialog.querySelector(".wanderly-paper-sheet");
     expect(paper).toHaveClass("wanderly-paper-chat", "wanderly-cosmos-panel");
     expect(paper).toHaveAttribute("data-wanderly-paper-state", "raised");
+    expect(paper?.querySelectorAll(".wanderly-paper-holes span")).toHaveLength(9);
     expect(dialog).not.toHaveClass("bg-sidebar", "wanderly-edge");
 
     const composerBox = screen.getByRole("textbox", { name: "Message Wanderly Agent" }).parentElement;
