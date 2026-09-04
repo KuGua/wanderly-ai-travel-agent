@@ -16,6 +16,7 @@ import type {
   ModelToolDefinition,
   ModelToolDispatcher,
   TripBriefProposal,
+  SharedPlanningMemoryInput,
 } from "./model-gateway.js";
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace } from "../types/schemas.js";
@@ -842,6 +843,7 @@ export class LLMGateway implements ModelGateway {
     };
     stays: StayOffer[];
     memberPreferences: Record<string, unknown>;
+    planningMemory: SharedPlanningMemoryInput;
     tools: ModelToolDefinition[];
     dispatchTool: ModelToolDispatcher;
     beforeFinal?: () => Promise<void>;
@@ -892,6 +894,7 @@ export class LLMGateway implements ModelGateway {
           flightSearchConstraints: params.flightSearchConstraints,
           stays: params.stays,
           memberPreferences: params.memberPreferences,
+          planningMemory: params.planningMemory,
         }),
       },
     ];

@@ -48,7 +48,7 @@ const memoryContextFactSchema = z.object({
   field: z.string().min(1).max(64),
   value: z.unknown(),
   category: z.enum(["PREFERENCE", "CONSTRAINT"]),
-  source: z.enum(["PROFILE_FORM", "PROPOSAL_CONFIRMATION", "HIGHLIGHT", "TRIP_OVERRIDE"]),
+  source: z.enum(["PROFILE_FORM", "PROPOSAL_CONFIRMATION", "HIGHLIGHT", "PERSONAL_NOTE", "TRIP_OVERRIDE"]),
 }).strict();
 
 /**

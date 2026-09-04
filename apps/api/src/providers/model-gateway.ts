@@ -6,6 +6,19 @@ import type { PersonalTripContext } from "../skills/personal/personal-trip-conte
 export type ConversationIntent = "auto_intro" | "user_typed";
 
 /**
+ * The only long-term-memory shape a shared planning model may receive.  Values
+ * in `confidentialConstraints` are planning-only: the plan validator rejects
+ * any attempt to repeat their key or value in persisted output.
+ */
+export interface SharedPlanningMemoryInput {
+  members: Record<string, {
+    preferences: Record<string, unknown>;
+    confidentialConstraints: Record<string, unknown>;
+  }>;
+  tripWidePreferences: Record<string, unknown>;
+}
+
+/**
  * Single entry in the bounded same-thread LLM context window. The shape
  * intentionally matches the `ThreadContextMessage` produced by
  * `apps/api/src/services/conversation-context-service.ts` so the Skill
@@ -34,7 +47,7 @@ export interface ConversationMemoryFact {
   field: string;
   value: unknown;
   category: "PREFERENCE" | "CONSTRAINT";
-  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION" | "HIGHLIGHT" | "TRIP_OVERRIDE";
+  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION" | "HIGHLIGHT" | "PERSONAL_NOTE" | "TRIP_OVERRIDE";
 }
 
 export interface ThreadContextMessage {
@@ -148,6 +161,7 @@ export interface ModelGateway {
     };
     stays: StayOffer[];
     memberPreferences: Record<string, unknown>;
+    planningMemory: SharedPlanningMemoryInput;
     tools: ModelToolDefinition[];
     dispatchTool: ModelToolDispatcher;
     /** Server-only gate evaluated before accepting a no-tool final response. */

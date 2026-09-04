@@ -277,6 +277,36 @@ memberships overlap only where explicitly configured.
 - A projected fact/consent change makes the first Trip's active plan and confirmations `STALE`; the old run cannot activate a plan. The unrelated Trip is unchanged.
 - Logs, metrics, traces, audit summaries, SSE and idempotency payloads do not contain memory values, observation dates, event references, conversation text or high-cardinality identifiers as metric labels.
 
+### TS-H1e-PERSONAL-NOTE — Owner-only free-text long-term memory
+
+**Objective:** Verify Personal Notes remain a bounded, owner-only exception to structured memory.
+
+**Steps:**
+
+1. Create an `ACTIVE` pinned Profile Personal Note and a current-Trip Personal Note.
+2. Start a Personal Agent turn inside that Trip and inspect its server-built memory context.
+3. Create a snapshot and start Shared Planning for the same Trip.
+4. Attempt to save a note containing a passport number, phone number, payment number or mobility information.
+5. Archive the note and retry the Personal Agent turn.
+
+**Expected outcomes:**
+
+- The Personal Agent receives at most three active notes and at most 900 characters; current-Trip and pinned notes take precedence.
+- The note never appears in `authorized_data._meta.memory`, a Shared Planning model input, Team API response, audit summary, metric label or trace attribute.
+- Sensitive note content is rejected before persistence or model invocation.
+- Archived notes are not included in any conversation context.
+
+### TS-H1e-SHARED-PLANNING-MEMORY — Safe consumption and output guard
+
+**Objective:** Verify only the parsed, current snapshot projection reaches Shared Planning.
+
+**Expected outcomes:**
+
+- Consented profile facts and current-Trip decisions reach the typed planning memory input; unconsented and form-only fields do not.
+- A malformed memory namespace fails closed.
+- A plan echoing a value or key from `confidentialOverrides` is rejected with `CONFIDENTIAL_VALUE_LEAK` and is not persisted.
+- Older snapshots without a memory namespace remain plannable with an empty memory input.
+
 ### TS-H1b — Persist and delete a private conversation without widening its scope
 
 **Stories:** H1, S1

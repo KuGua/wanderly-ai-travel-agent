@@ -10,6 +10,7 @@ import type {
 import { assertFieldAllowed, assertFieldAllowedV2, SnapshotFieldNotAllowedError } from "./snapshot-policy.js";
 import { CONSTRAINT_FIELD_CATALOG, type ConstraintFieldKey } from "./constraint-field-catalog.js";
 import { evaluateHardConstraints } from "./hard-constraint-evaluator.js";
+import { readMemoryProjection } from "../skills/shared/memory-projection-input.js";
 
 const provenanceFields = {
   source: z.string(),
@@ -370,6 +371,28 @@ export function assertConfidentialFree(params: {
         if (serialized) confidentialValues.push(serialized);
       }
     }
+  }
+
+  // Long-term memory keeps planning-only overrides in a separate namespace.
+  // It is deliberately parsed by the same boundary used for planning: a
+  // malformed namespace must not be treated as a reason to skip leak checks.
+  try {
+    const memory = readMemoryProjection(params.snapshot.authorizedData);
+    for (const member of Object.values(memory.members)) {
+      for (const [fieldKey, value] of Object.entries(member.confidentialOverrides)) {
+        confidentialFieldKeys.push(fieldKey);
+        const serialized = serializeForLeakCheck(value);
+        if (serialized) confidentialValues.push(serialized);
+      }
+    }
+  } catch {
+    addViolation(
+      params.violations,
+      "CONFIDENTIAL_VALUE_LEAK",
+      "authorizedData._meta.memory",
+      "Memory projection is malformed and cannot be safely checked",
+    );
+    return;
   }
 
   const planString = serializeForLeakCheck(params.plan);

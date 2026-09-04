@@ -155,4 +155,23 @@ describe("assertConfidentialFree", () => {
     assertConfidentialFree({ plan, snapshot, violations });
     expect(violations).toEqual([]);
   });
+
+  it("rejects a value held only in the long-term-memory confidential namespace", () => {
+    const snapshot = buildSnapshot({
+      _meta: {
+        schemaVersion: 2, memberAliases: {}, teamVisible: {}, orchestratorConfidential: {}, projectionManifest: [],
+        memory: {
+          members: {
+            "m-alice": {
+              profileFacts: {}, tripOverrides: {}, confidentialOverrides: { budget_max_usd: 1200 },
+            },
+          },
+          groupDecisions: {},
+        },
+      },
+    });
+    const violations: { code: string }[] = [];
+    assertConfidentialFree({ plan: buildPlan({ destination: "Budget 1200 Tokyo" }), snapshot, violations });
+    expect(violations.map((violation) => violation.code)).toContain("CONFIDENTIAL_VALUE_LEAK");
+  });
 });

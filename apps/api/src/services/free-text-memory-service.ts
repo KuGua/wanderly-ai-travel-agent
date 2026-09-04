@@ -13,7 +13,7 @@
  * in half; one who has filled the list is told which to remove, not left
  * wondering why the newest one vanished.
  */
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 
 import { db } from "../db/database.js";
 import { freeTextMemories } from "../db/schema.js";
@@ -27,9 +27,21 @@ export const FREE_TEXT_MEMORY_MAX_CHARS = 500;
 /** How many a traveller may keep. Reached, the next one is refused. */
 export const FREE_TEXT_MEMORY_MAX_ENTRIES = 20;
 
+export const personalNoteCategoryValues = ["GENERAL", "FOOD", "STAY", "PACE", "TRANSPORT", "BUDGET", "ACTIVITY"] as const;
+export type PersonalNoteCategory = typeof personalNoteCategoryValues[number];
+export type PersonalNoteScope = "ALL_TRIPS" | "CURRENT_TRIP";
+export type PersonalNotePriority = "PINNED" | "NORMAL";
+export type PersonalNoteStatus = "ACTIVE" | "ARCHIVED";
+
 export type FreeTextMemory = {
   id: string;
+  title: string;
   content: string;
+  category: PersonalNoteCategory;
+  appliesTo: PersonalNoteScope;
+  tripId: string | null;
+  priority: PersonalNotePriority;
+  status: PersonalNoteStatus;
   sourceThreadId: string | null;
   sourceMessageId: string | null;
   createdAt: Date;
@@ -44,7 +56,13 @@ export type SaveFreeTextOutcome =
 function toMemory(row: typeof freeTextMemories.$inferSelect): FreeTextMemory {
   return {
     id: row.id,
+    title: row.title,
     content: row.content,
+    category: row.category as PersonalNoteCategory,
+    appliesTo: row.appliesTo as PersonalNoteScope,
+    tripId: row.tripId,
+    priority: row.priority as PersonalNotePriority,
+    status: row.status as PersonalNoteStatus,
     sourceThreadId: row.sourceThreadId,
     sourceMessageId: row.sourceMessageId,
     createdAt: row.createdAt,
@@ -58,10 +76,28 @@ export async function listFreeTextMemories(userId: string): Promise<FreeTextMemo
   return rows.map(toMemory);
 }
 
+/** Owner-only, deterministic context selection. Notes never leave this service for Team planning. */
+export async function listPersonalNotesForConversation(userId: string, tripId?: string | null): Promise<FreeTextMemory[]> {
+  const scope = tripId
+    ? or(eq(freeTextMemories.appliesTo, "ALL_TRIPS"), and(eq(freeTextMemories.appliesTo, "CURRENT_TRIP"), eq(freeTextMemories.tripId, tripId)))
+    : eq(freeTextMemories.appliesTo, "ALL_TRIPS");
+  const rows = await db.select().from(freeTextMemories).where(and(
+    eq(freeTextMemories.userId, userId),
+    eq(freeTextMemories.status, "ACTIVE"),
+    scope,
+  )).orderBy(desc(freeTextMemories.priority), desc(freeTextMemories.updatedAt));
+  return rows.map(toMemory);
+}
+
 export async function saveFreeTextMemory(params: {
   ctx: RequestContext;
   userId: string;
+  title?: string;
   content: string;
+  category?: PersonalNoteCategory;
+  appliesTo?: PersonalNoteScope;
+  tripId?: string | null;
+  priority?: PersonalNotePriority;
   sourceThreadId?: string | null;
   sourceMessageId?: string | null;
 }): Promise<SaveFreeTextOutcome> {
@@ -83,9 +119,18 @@ export async function saveFreeTextMemory(params: {
       return { outcome: "LIST_FULL", limit: FREE_TEXT_MEMORY_MAX_ENTRIES };
     }
 
+    const appliesTo = params.appliesTo ?? "ALL_TRIPS";
+    if ((appliesTo === "CURRENT_TRIP") !== Boolean(params.tripId)) {
+      return { outcome: "EMPTY" } as const;
+    }
     const [row] = await tx.insert(freeTextMemories).values({
       userId: params.userId,
+      title: (params.title?.trim() || "Personal note").slice(0, 80),
       content,
+      category: params.category ?? "GENERAL",
+      appliesTo,
+      tripId: params.tripId ?? null,
+      priority: params.priority ?? "NORMAL",
       sourceThreadId: params.sourceThreadId ?? null,
       sourceMessageId: params.sourceMessageId ?? null,
     }).returning();
@@ -127,5 +172,23 @@ export async function deleteFreeTextMemory(params: {
     actorUserId: params.userId,
     summary: { memoryId: params.memoryId },
   });
+  return true;
+}
+
+/** Owner-scoped archive; archived notes remain visible to their owner but never enter a prompt. */
+export async function archiveFreeTextMemory(params: {
+  ctx: RequestContext;
+  userId: string;
+  memoryId: string;
+}): Promise<boolean> {
+  const updated = await db.update(freeTextMemories).set({
+    status: "ARCHIVED",
+    updatedAt: new Date(),
+  }).where(and(
+    eq(freeTextMemories.id, params.memoryId),
+    eq(freeTextMemories.userId, params.userId),
+  )).returning({ id: freeTextMemories.id });
+  if (updated.length === 0) return false;
+  metrics.inc("free_text_memory_writes_total", { result: "archived" });
   return true;
 }

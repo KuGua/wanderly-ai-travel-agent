@@ -1,6 +1,6 @@
 # 长期记忆实施方案
 
-**状态：** 已批准，待实施
+**状态：** 已实施（Personal Note 与 Shared Planning memory path 已接线）
 
 **范围：** 个人长期旅行记忆、仅当前 Trip 的共享/团队记忆，以及其向 Shared Trip Agent 的受控投影。
 **事实来源：** [TECH_STACK.md](../TECH_STACK.md)、[PRD.md](PRD.md)、[backlog.md](backlog.md)、[test-scenarios.md](test-scenarios.md)、[agent-architecture.md](agent-architecture.md)、[AGENTS.md](../AGENTS.md)。
@@ -9,12 +9,12 @@
 
 ### 1.1 已批准决策
 
-1. 第一阶段只使用 PostgreSQL 中的结构化事实；不引入 vector store、embedding、RAG、自动摘要 worker 或独立 memory service。
+1. 第一阶段只使用 PostgreSQL 中的结构化事实；允许 owner-only 的 Personal Note 作为不参与 consent export、Trip snapshot 或 planning 的受限例外；不引入 vector store、embedding、RAG、自动摘要 worker 或独立 memory service。
 2. 个人长期记忆默认私有。Shared Agent 不得查询个人 Profile、`preference_facts`、`memory_proposals` 或私有对话；它只消费当前 Trip 的、字段级 consent 导出的不可变 snapshot projection。
 3. Team memory 只属于一个 `tripId`，没有跨 Trip 团队记忆、群组偏好档案或跨行程共享检索。
 4. 低风险行为可自动聚合，但只能生成有有效期的待确认提案。用户确认前，提案不是长期事实，不进入任何 snapshot、计划或共享视图。
 5. 国籍、旅行证件、出生日期、健康和无障碍信息为 form-only 敏感字段：只能由用户的 Profile 表单创建或修改；任何对话、模型或行为路径均不得提取或创建其提案。
-6. 原始私聊仍只用于既有的同 owner、同 thread、有界 LLM context。它不进入长期记忆、行为聚合证据、Team memory 或 Shared Agent input。
+6. 原始私聊仍只用于既有的同 owner、同 thread、有界 LLM context。只有用户在 Profile 表单中明确保存的 Personal Note 可跨 thread 被 owner 的 Personal Agent 有界读取；它不进入行为聚合证据、Team memory、snapshot、Shared Agent 或 planning input。
 
 ### 1.2 记忆分类与权威性
 
@@ -23,7 +23,7 @@
 | 个人稳定事实 | `user_profiles` + `preference_facts` | owner 表单；owner 确认提案 | 仅当前 Trip consent projection | 跨 Trip，owner 可编辑/删除 |
 | 行为建议 | `memory_proposals` | 服务端聚合器；owner 可确认/忽略 | 永不直接输入 | 到期、确认或忽略即终态 |
 | 本次个人约束 | `trip_constraint_facts` | owner 确认 proposal 或 owner Trip command | `TEAM_VISIBLE` 或 `ORCHESTRATOR_CONFIDENTIAL` projection；后者仅供 Shared planning | 仅当前 Trip |
-| 本次团队决策 | `trip_memory_facts`，`kind=GROUP_DECISION` | 已授权 Trip command | 当前 Trip snapshot 的 group section | 仅当前 Trip |
+| 本次团队决策 | `trip_constraint_facts`，`kind=GROUP_DECISION` | 已授权 Trip command | 当前 Trip snapshot 的 group section | 仅当前 Trip |
 | 临时会话上下文 | `chat_messages`，Worker 内存 | 既有 conversation 流程 | 永不输入 Shared Agent | thread 删除或窗口裁剪 |
 
 `constraint_snapshots`、plan version、confirmation 与 booking 继续是业务权威状态。记忆事实和提案不能由模型输出直接创建，也不能取代这些状态机。
@@ -129,7 +129,7 @@ tail = (n - k) / ((1-d)·(T_first - T_k)) · ( T_first^(1-d) - T_k^(1-d) )
 | `k`（recentDepth） | 10 | 精确求和的最近观察数 |
 | `τ`（activationThreshold） | 0.50 | 可展示所需的最低 B；可由服务端配置覆盖 |
 | candidateMargin | ln(2) | 同字段多候选时，第一名相对第二名的最小领先 |
-| minimumIndependentObservations | 4 | 见下方说明；**不是 3** |
+| minimumIndependentObservations | 3 | 三段独立行程的最低门槛 |
 
 实现约束：
 

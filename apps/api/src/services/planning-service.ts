@@ -26,6 +26,7 @@ import {
   buildMemoryProjection,
   type MemoryProjectionInput,
 } from "./memory-projection-builder.js";
+import { buildSharedPlanningMemoryInput } from "../skills/shared/memory-projection-input.js";
 import { safePublicExplanationTokensFor } from "../policy/constraint-field-catalog.js";
 import { withMemorySpan } from "../memory/memory-spans.js";
 import { metrics } from "../observability/metrics.js";
@@ -889,6 +890,7 @@ export function buildPlanningModelProjection(authorizedData: unknown): Record<st
     teamVisible: meta.teamVisible,
     orchestratorConfidential: meta.orchestratorConfidential,
     projectionManifest: meta.projectionManifest,
+    planningMemory: buildSharedPlanningMemoryInput(authorizedData),
   };
 }
 
@@ -1161,6 +1163,7 @@ export async function generatePlan(params: {
       },
       stays: allStays,
       memberPreferences,
+      planningMemory: (memberPreferences.planningMemory ?? { members: {}, tripWidePreferences: {} }) as import("../providers/model-gateway.js").SharedPlanningMemoryInput,
       maxTurns: Number(process.env.MODEL_GATEWAY_TOOL_CALLING_MAX_TURNS ?? 8), signal: params.signal, ctx: params.ctx,
       // P3 (planner-resilience §6): hand the gateway a critic so that when
       // either `beforeFinal` (Gate A / Gate B) or the final structural check

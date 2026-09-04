@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { memoryFieldDefinition } from "../../memory/memory-field-catalog.js";
 import { memoryProjectionSchema, type MemoryProjection } from "../../types/schemas.js";
+import type { SharedPlanningMemoryInput } from "../../providers/model-gateway.js";
 
 /**
  * The Shared Trip Agent's only view of personal memory
@@ -80,6 +81,24 @@ export function readMemoryProjection(authorizedData: unknown): MemoryProjection 
     );
   }
   return parsed.data;
+}
+
+/**
+ * Produces the single, typed planning view of the memory namespace.  Keeping
+ * this next to the JSONB parser prevents callers from accidentally treating a
+ * snapshot as an unvalidated preference bag.
+ */
+export function buildSharedPlanningMemoryInput(authorizedData: unknown): SharedPlanningMemoryInput {
+  const projection = readMemoryProjection(authorizedData);
+  const members: SharedPlanningMemoryInput["members"] = {};
+  for (const alias of Object.keys(projection.members)) {
+    const member = projection.members[alias]!;
+    members[alias] = {
+      preferences: { ...member.profileFacts, ...member.tripOverrides },
+      confidentialConstraints: { ...member.confidentialOverrides },
+    };
+  }
+  return { members, tripWidePreferences: tripWidePreferences(projection) };
 }
 
 /**

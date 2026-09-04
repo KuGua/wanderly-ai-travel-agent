@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../db/database.js";
-import { preferenceFacts } from "../db/schema.js";
+import { preferenceFacts, tripMembers } from "../db/schema.js";
 import { withMemoryIdempotency } from "./memory-idempotency.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { createRequestContext } from "../utils/context.js";
@@ -26,8 +26,11 @@ import { userProfiles } from "../db/schema.js";
 import { rememberHighlight } from "../services/memory-highlight-service.js";
 import {
   FREE_TEXT_MEMORY_MAX_CHARS,
+  archiveFreeTextMemory,
   deleteFreeTextMemory,
   listFreeTextMemories,
+  personalNoteCategoryValues,
+  saveFreeTextMemory,
 } from "../services/free-text-memory-service.js";
 
 /**
@@ -268,7 +271,7 @@ export async function profileMemoryRoutes(app: FastifyInstance) {
       sourceMessageId: body.sourceMessageId ?? null,
     });
     // A refusal is a normal answer the UI shows the traveller, not an error.
-    return reply.code(result.outcome === "REMEMBERED_FIELD" || result.outcome === "REMEMBERED_NOTE" ? 201 : 200)
+    return reply.code(result.outcome === "REMEMBERED_NOTE" ? 201 : 200)
       .send({ ...result, highlightMaxChars: FREE_TEXT_MEMORY_MAX_CHARS });
   });
 
@@ -278,10 +281,54 @@ export async function profileMemoryRoutes(app: FastifyInstance) {
     return {
       notes: notes.map((note) => ({
         id: note.id,
+        title: note.title,
         content: note.content,
+        category: note.category,
+        appliesTo: note.appliesTo,
+        tripId: note.tripId,
+        priority: note.priority,
+        status: note.status,
         createdAt: note.createdAt.toISOString(),
       })),
     };
+  });
+
+  // Profile form's explicit Personal Note write path. It is intentionally
+  // separate from a chat highlight and cannot create a structured fact.
+  app.post("/profiles/me/memory/notes", async (request, reply) => {
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId,
+      request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
+    const body = z.object({
+      title: z.string().trim().min(1).max(80),
+      content: z.string().trim().min(1).max(FREE_TEXT_MEMORY_MAX_CHARS),
+      category: z.enum(personalNoteCategoryValues).default("GENERAL"),
+      appliesTo: z.enum(["ALL_TRIPS", "CURRENT_TRIP"]).default("ALL_TRIPS"),
+      tripId: z.string().uuid().nullable().optional(),
+      priority: z.enum(["PINNED", "NORMAL"]).default("NORMAL"),
+    }).strict().parse(request.body);
+    if (body.appliesTo === "CURRENT_TRIP") {
+      const [membership] = await db.select({ tripId: tripMembers.tripId }).from(tripMembers).where(and(
+        eq(tripMembers.tripId, body.tripId ?? ""),
+        eq(tripMembers.userId, request.user.id),
+      )).limit(1);
+      if (!membership) throw new ApiError(403, "Forbidden", "You are not an active member of this trip");
+    }
+    const result = await saveFreeTextMemory({
+      ctx, userId: request.user.id, title: body.title, content: body.content,
+      category: body.category, appliesTo: body.appliesTo, tripId: body.tripId ?? null, priority: body.priority,
+    });
+    if (result.outcome !== "SAVED") return reply.code(422).send(result);
+    return reply.code(201).send({ note: result.memory, remaining: result.remaining });
+  });
+
+  app.post<{ Params: { noteId: string } }>("/profiles/me/memory/notes/:noteId/archive", async (request, reply) => {
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId,
+      request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
+    const { noteId } = z.object({ noteId: z.string().uuid() }).parse(request.params);
+    if (!await archiveFreeTextMemory({ ctx, userId: request.user.id, memoryId: noteId })) {
+      throw new ApiError(404, "Not Found", "Note not found");
+    }
+    return reply.code(204).send();
   });
 
   // ─── DELETE /profiles/me/memory/notes/:noteId ────────────────────────────

@@ -10,6 +10,7 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, eq, inArray } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 
 import { db } from "../../src/db/database.js";
 import {
@@ -62,6 +63,8 @@ let aliceProfileId: string;
 /** Trip 1 consents to accommodation style; Trip 2 deliberately does not. */
 let consentedTripId: string;
 let unconsentedTripId: string;
+let thirdTripId: string;
+const testNamespace = randomUUID();
 
 async function ensureUser(externalId: string): Promise<string> {
   const [created] = await db.insert(users)
@@ -75,7 +78,7 @@ async function ensureUser(externalId: string): Promise<string> {
 
 async function cleanup() {
   const userIds = [aliceId, bobId].filter(Boolean);
-  const tripIds = [consentedTripId, unconsentedTripId].filter(Boolean);
+  const tripIds = [consentedTripId, unconsentedTripId, thirdTripId].filter(Boolean);
   if (userIds.length > 0) {
     await db.delete(memoryProposals).where(inArray(memoryProposals.userId, userIds));
     await db.delete(preferenceFacts).where(inArray(preferenceFacts.userId, userIds));
@@ -121,11 +124,11 @@ async function recordQualifyingEvidence(value = "budget") {
   return observe({ value, tripId: thirdTripId, dayOffset: 30 });
 }
 
-let thirdTripId: string;
-
 beforeAll(async () => {
-  aliceId = await ensureUser("ts-h1e-alice");
-  bobId = await ensureUser("ts-h1e-bob");
+  // This scenario shares a database with concurrently running suites. Fixed
+  // external IDs made another suite's cleanup capable of deleting our owner.
+  aliceId = await ensureUser(`ts-h1e-alice-${testNamespace}`);
+  bobId = await ensureUser(`ts-h1e-bob-${testNamespace}`);
   const [profile] = await db.insert(userProfiles)
     .values({ userId: aliceId, displayName: "Alice" })
     .onConflictDoNothing({ target: userProfiles.userId })
@@ -152,10 +155,6 @@ beforeEach(async () => {
     fieldList: ["accommodation_style"],
     granted: true,
   });
-});
-
-afterAll(async () => {
-  await db.delete(sharedTrips).where(eq(sharedTrips.id, thirdTripId));
 });
 
 describe("TS-H1e step 1 — behaviour raises a suggestion, never a fact", () => {

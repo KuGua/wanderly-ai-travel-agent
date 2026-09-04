@@ -20,7 +20,7 @@
  * negative sends a passport number to a model, which is not. Patterns match
  * the way people write these things, not every way they could.
  */
-export type SensitiveHighlightCategory = "nationality" | "date_of_birth" | "mobility_notes";
+export type SensitiveHighlightCategory = "nationality" | "date_of_birth" | "mobility_notes" | "identity_document" | "contact" | "payment";
 
 const PATTERNS: ReadonlyArray<{ category: SensitiveHighlightCategory; pattern: RegExp }> = [
   {
@@ -34,6 +34,18 @@ const PATTERNS: ReadonlyArray<{ category: SensitiveHighlightCategory; pattern: R
   {
     category: "mobility_notes",
     pattern: /轮椅|行动不便|无障碍|拄拐|助行器|膝盖|腰[伤疼痛]|走不[了动]|不能久站|wheelchair|mobility (aid|issue|impair)|accessib(le|ility) need|cannot walk|can't walk/iu,
+  },
+  {
+    category: "identity_document",
+    pattern: /\b[A-Z][0-9]{7,8}\b|\b(?:passport|证件|身份证)[\s:#号]*[A-Z0-9-]{6,}/iu,
+  },
+  {
+    category: "contact",
+    pattern: /\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b|\b(?:\+?\d[\d\s-]{7,}\d)\b|电话|手机号|email/iu,
+  },
+  {
+    category: "payment",
+    pattern: /\b(?:\d[ -]?){13,19}\b|信用卡|银行卡|cvv|card number/iu,
   },
 ];
 

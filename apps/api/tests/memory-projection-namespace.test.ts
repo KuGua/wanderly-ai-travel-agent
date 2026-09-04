@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildMemoryNamespace } from "../src/services/memory-projection-builder.js";
 import {
   MemoryProjectionUnavailableError,
+  buildSharedPlanningMemoryInput,
   memberPlanningPreferences,
   readMemoryProjection,
   tripWidePreferences,
@@ -174,6 +175,26 @@ describe("readMemoryProjection", () => {
     expect(() => readMemoryProjection({
       _meta: { memory: { members: {}, groupDecisions: {}, secrets: {} } },
     })).toThrow(MemoryProjectionUnavailableError);
+  });
+});
+
+describe("buildSharedPlanningMemoryInput", () => {
+  it("keeps confidential overrides separate while exposing safe trip-wide preferences", () => {
+    const memory = build({
+      consentedFieldsByUser: { [ALICE]: ["trip_pace"] },
+      preferenceFacts: [{ userId: ALICE, fieldKey: "trip_pace", value: "relaxed" }],
+      tripFacts: [{
+        ownerUserId: BOB, fieldKey: "budget_max_usd", kind: "PERSONAL_OVERRIDE",
+        visibility: "ORCHESTRATOR_CONFIDENTIAL", valueJson: { value: 1200 },
+      }],
+    });
+    expect(buildSharedPlanningMemoryInput({ _meta: { memory } })).toEqual({
+      members: {
+        "m-alice": { preferences: { trip_pace: "relaxed" }, confidentialConstraints: {} },
+        "m-bob": { preferences: {}, confidentialConstraints: { budget_max_usd: 1200 } },
+      },
+      tripWidePreferences: {},
+    });
   });
 });
 

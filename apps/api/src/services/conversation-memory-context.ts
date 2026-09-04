@@ -36,7 +36,7 @@
  */
 import { memoryFieldDefinition } from "../memory/memory-field-catalog.js";
 import { metrics } from "../observability/metrics.js";
-import { listFreeTextMemories } from "./free-text-memory-service.js";
+import { listPersonalNotesForConversation } from "./free-text-memory-service.js";
 import { listOverridesForOwner } from "./trip-memory-service.js";
 import { listActiveFacts } from "./preference-fact-service.js";
 
@@ -44,7 +44,7 @@ export type ConversationMemoryFact = {
   field: string;
   value: unknown;
   category: "PREFERENCE" | "CONSTRAINT";
-  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION" | "HIGHLIGHT" | "TRIP_OVERRIDE";
+  source: "PROFILE_FORM" | "PROPOSAL_CONFIRMATION" | "HIGHLIGHT" | "PERSONAL_NOTE" | "TRIP_OVERRIDE";
 };
 
 /**
@@ -63,7 +63,7 @@ export const CONVERSATION_MEMORY_MAX_FACTS = 16;
  * are kept and the rest are left behind rather than cut mid-sentence: half a
  * remembered preference is worse than none.
  */
-export const CONVERSATION_FREE_TEXT_BUDGET_CHARS = 2_000;
+export const CONVERSATION_FREE_TEXT_BUDGET_CHARS = 900;
 
 /**
  * How many notes may ride along, whatever the budget allows.
@@ -74,7 +74,7 @@ export const CONVERSATION_FREE_TEXT_BUDGET_CHARS = 2_000;
  * turn failed its input validation — which the traveller saw as a reply that
  * never came.
  */
-export const CONVERSATION_MEMORY_MAX_NOTES = 20;
+export const CONVERSATION_MEMORY_MAX_NOTES = 3;
 
 /**
  * Long-term memory as this trip sees it.
@@ -138,11 +138,11 @@ export async function buildConversationMemoryContext(
   const notes: ConversationMemoryFact[] = [];
   let spent = 0;
   let dropped = 0;
-  for (const memory of await listFreeTextMemories(ownerUserId)) {
+  for (const memory of await listPersonalNotesForConversation(ownerUserId, tripId)) {
     if (notes.length >= CONVERSATION_MEMORY_MAX_NOTES) { dropped += 1; continue; }
     if (spent + memory.content.length > CONVERSATION_FREE_TEXT_BUDGET_CHARS) { dropped += 1; continue; }
     spent += memory.content.length;
-    notes.push({ field: "note", value: memory.content, category: "PREFERENCE", source: "HIGHLIGHT" });
+    notes.push({ field: "note", value: memory.content, category: "PREFERENCE", source: "PERSONAL_NOTE" });
   }
   // Twenty notes may be kept and each may run to 500 characters, so 10,000
   // characters can be stored against a 2,000-character budget: a traveller can

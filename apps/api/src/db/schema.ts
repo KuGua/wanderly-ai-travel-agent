@@ -771,12 +771,20 @@ export const chatMessages = pgTable("chat_messages", {
 export const freeTextMemories = pgTable("free_text_memories", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  title: varchar("title", { length: 80 }).notNull().default("Personal note"),
   content: text("content").notNull(),
+  category: varchar("category", { length: 16 }).notNull().default("GENERAL"),
+  appliesTo: varchar("applies_to", { length: 16 }).notNull().default("ALL_TRIPS"),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }),
+  priority: varchar("priority", { length: 16 }).notNull().default("NORMAL"),
+  status: varchar("status", { length: 16 }).notNull().default("ACTIVE"),
   sourceThreadId: uuid("source_thread_id").references(() => chatThreads.id, { onDelete: "set null" }),
   sourceMessageId: uuid("source_message_id").references(() => chatMessages.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   userCreatedIdx: index("free_text_memories_user_created_idx").on(table.userId, table.createdAt),
+  userActiveIdx: index("free_text_memories_user_active_idx").on(table.userId, table.status, table.priority),
 }));
 
 /**
