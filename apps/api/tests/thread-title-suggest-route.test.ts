@@ -34,7 +34,7 @@ async function createExtraThread(title?: string): Promise<string> {
     method: "POST",
     url: `/api/v1/trips/${tripId}/threads`,
     headers: { ...authHeaders("alice"), "content-type": "application/json" },
-    payload: title === undefined ? { locale: "zh" } : { title },
+    payload: title === undefined ? { titleLocale: "zh" } : { title },
   });
   expect(res.statusCode).toBe(201);
   return (res.json() as { id: string }).id;
@@ -111,13 +111,13 @@ describe("POST /trips/:tripId/threads — server-owned numbering", () => {
         method: "POST",
         url: `/api/v1/trips/${tripId}/threads`,
         headers: { ...authHeaders("alice"), "content-type": "application/json" },
-        payload: { locale: "zh" },
+        payload: { titleLocale: "zh" },
       }),
       app.inject({
         method: "POST",
         url: `/api/v1/trips/${tripId}/threads`,
         headers: { ...authHeaders("alice"), "content-type": "application/json" },
-        payload: { locale: "zh" },
+        payload: { titleLocale: "zh" },
       }),
     ]);
 

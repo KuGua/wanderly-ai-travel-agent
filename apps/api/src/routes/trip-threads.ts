@@ -109,7 +109,7 @@ export async function tripThreadRoutes(app: FastifyInstance) {
       request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
     );
     const body = createTripThreadSchema.parse(request.body);
-    const locale: ThreadTitleLocale = body.locale ?? "en";
+    const locale: ThreadTitleLocale = body.titleLocale ?? "en";
     const now = new Date();
 
     const [thread] = await db.transaction(async (tx) => {

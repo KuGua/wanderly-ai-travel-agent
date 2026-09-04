@@ -361,7 +361,11 @@ export const createThreadSchema = z.object({
 
 export const createTripThreadSchema = z.object({
   title: z.string().trim().min(1).max(256).optional(),
-  locale: z.enum(["en", "zh"]).optional(),
+  // `titleLocale`, not `locale`: that is what every other title-bearing shape
+  // in this file calls it, and what the client sends. Named `locale` here the
+  // strict object rejected the body outright, so "New thread" answered 400
+  // and did nothing at all.
+  titleLocale: z.enum(["en", "zh"]).optional(),
 }).strict();
 
 export const threadSummarySchema = z.object({
