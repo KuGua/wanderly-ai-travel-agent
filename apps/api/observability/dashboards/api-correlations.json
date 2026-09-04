@@ -97,7 +97,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (status_class) (rate(http_requests_total[5m]))",
+          "expr": "sum by (status_class) (rate(http_requests_total{job=\"ai-travel-agent-api\"}[5m]))",
           "legendFormat": "{{status_class}}"
         }
       ]
@@ -116,19 +116,19 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_ms_bucket[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_ms_bucket{job=\"ai-travel-agent-api\"}[5m])))",
           "legendFormat": "p50"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_ms_bucket[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_ms_bucket{job=\"ai-travel-agent-api\"}[5m])))",
           "legendFormat": "p95"
         },
         {
           "refId": "C",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_ms_bucket[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_ms_bucket{job=\"ai-travel-agent-api\"}[5m])))",
           "legendFormat": "p99"
         }
       ]
@@ -147,13 +147,13 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (operation, outcome) (rate(agent_task_outcomes_total[5m]))",
+          "expr": "sum by (operation, outcome) (rate(agent_task_outcomes_total{job=\"ai-travel-agent-worker\"}[5m]))",
           "legendFormat": "{{operation}} / {{outcome}}"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (outcome) (rate(agent_task_recoveries_total[5m]))",
+          "expr": "sum by (outcome) (rate(agent_task_recoveries_total{job=\"ai-travel-agent-worker\"}[5m]))",
           "legendFormat": "recovered / {{outcome}}"
         }
       ]
