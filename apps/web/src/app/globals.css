@@ -285,12 +285,9 @@
   color: var(--w-ink);
 }
 
-/* Highlight-memory affordance adopts the pinned-place control on hover. */
-/* A deeper teal than the raw highlight: on the light translucent panel the
-   plain --w-highlight read minty, lighter than the same token on the dark nav.
-   Mixing toward ink lands it at the nav button's apparent depth. */
+/* The highlight-memory affordance matches the inspiration call-to-action. */
 .wanderly-remember-highlight {
-  background: color-mix(in srgb, var(--w-highlight), var(--w-ink) 20%);
+  background: var(--w-info);
   border-color: var(--w-ink);
 }
 
@@ -384,9 +381,10 @@
   box-shadow: 3px 3px 0 var(--w-ink);
 }
 
-.wanderly-cosmos-control:hover {
+.wanderly-cosmos-control:hover,
+.wanderly-cosmos-control:active {
   border-color: var(--w-fog);
-  background: var(--w-highlight);
+  background: var(--w-info);
   color: var(--w-ink);
 }
 
@@ -464,6 +462,19 @@
 .wanderly-cosmos-chat .wanderly-edge,
 .wanderly-cosmos-chat .wanderly-edge-thin {
   border-color: var(--w-space-line);
+}
+
+/* A quiet top bar lets the conversation recede under it instead of ending at
+   a hard rule. The scroll mask softens only messages travelling upward. */
+.wanderly-cosmos-chat-header {
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--w-space-panel), transparent 8%), transparent);
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+}
+
+.wanderly-cosmos-chat-scroll {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 3.25rem, #000 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 3.25rem, #000 100%);
 }
 
 .wanderly-cosmos .maplibregl-ctrl-group {

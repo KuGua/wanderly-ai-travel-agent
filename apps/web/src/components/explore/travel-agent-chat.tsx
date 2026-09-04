@@ -1074,7 +1074,7 @@ export function TravelAgentChat({
             planner on the right. The agent names itself on every reply, so the
             header repeating the name and the icon was saying it twice. */}
         {docked ? null : (
-        <header className="flex items-center gap-2.5 border-b-2 border-[var(--w-space-line)] px-3 pb-2 pt-3">
+        <header className="wanderly-cosmos-chat-header flex items-center gap-2.5 px-3 pb-2 pt-3">
           <button type="button" onClick={collapseConversation} aria-label={t("collapse")} className="grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press"><ChevronDown aria-hidden="true" className="size-4" /></button>
           <div className="min-w-0 flex-1" />
           {/* Icon-only, matching the collapse and trip-planner controls either
@@ -1098,16 +1098,16 @@ export function TravelAgentChat({
 
         <div ref={panelScrollRef} className={docked
           ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 xl:[&>*]:translate-x-1"
-          : "flex-1 overflow-y-auto px-5 py-5"} aria-live="polite">
+          : "wanderly-cosmos-chat-scroll flex-1 overflow-y-auto px-5 py-5"} aria-live="polite">
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
             <div className={docked ? "mx-auto flex max-w-[640px] flex-col items-start pb-4 pt-1 text-left" : "mb-4 flex flex-col items-start text-left"}>
-              <div aria-hidden="true" className={`mb-2 flex items-center gap-2 ${docked ? "text-primary" : "text-[var(--w-highlight)]"}`}>
+              <div aria-hidden="true" className={`mb-2 flex items-center gap-2 ${docked ? "text-primary" : "text-[var(--w-info)]"}`}>
                 <Sparkles className="size-3.5" />
                 <span className="h-px w-8 bg-current opacity-70" />
               </div>
-              <p className="max-w-[36rem] text-balance text-base font-bold leading-snug tracking-[-0.025em] text-primary sm:text-lg">
+              <p className={`max-w-[36rem] text-balance text-base font-bold leading-snug tracking-[-0.025em] ${docked ? "text-primary" : "text-[var(--w-info)]"} sm:text-lg`}>
                 {t("introTitle")}
               </p>
               <p className={`mt-2 max-w-[36rem] text-pretty text-[13px] leading-5 ${docked ? "text-muted-foreground" : "text-[var(--w-fog)]"}`}>
@@ -1175,8 +1175,6 @@ export function TravelAgentChat({
                a way to decline it, not a symmetrical alternative. */
             <section
               aria-label={t("briefProposalTitle")}
-              /* The globe uses one compact decision row. The workspace keeps
-                 the narrower centred card because it is part of the planner. */
               className={onGlobe
                 ? "mb-2 w-full -translate-y-[3px]"
                 : `mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[380px]`}
@@ -1393,7 +1391,7 @@ export function TravelAgentChat({
         </div>
       </div>
 
-      <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5 xl:translate-x-1" : "border-t-2 border-[var(--w-space-line)] px-3 pb-3 pt-2"}>
+      <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5 xl:translate-x-1" : "mx-6 mb-3 mt-2"}>
         {selectedPlace ? <button type="button" onClick={askAboutSelectedPlace} className={`mb-1.5 flex h-6 max-w-full items-center px-2.5 text-[10px] font-extrabold wanderly-r-xs wanderly-press ${docked ? "bg-[var(--w-mist)] text-primary wanderly-edge-thin" : "wanderly-cosmos-control"}`}><span className="truncate">{t("askAbout", { name: selectedPlace.place.name, context: selectedPlace.context })}</span></button> : null}
         <div className={`${docked ? "mx-auto max-w-[640px]" : ""} flex min-h-14 items-center gap-2 p-1.5 pl-4 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`}>
           <textarea ref={panelInputRef} value={draft} disabled={inputDisabled} rows={1} enterKeyHint="send" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !isComposingKey(event)) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} aria-label={t("messageInputAria")} placeholder={t("messagePlaceholder")} className={docked ? "max-h-[100px] min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold leading-[1.4] text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60" : "min-w-0 flex-1 resize-none bg-transparent text-sm font-semibold text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-60"} />
