@@ -142,7 +142,7 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 }
 
 describe("TravelAgentChat durable streaming flow", () => {
-  it("shows globe replies as unframed text without repeating the agent badge", async () => {
+  it("lays globe messages on opposite sides of the ruled paper without repeating the agent badge", async () => {
     const api = createApi({
       getOwnerConversation: vi.fn().mockResolvedValue({
         thread: thread(),
@@ -170,13 +170,14 @@ describe("TravelAgentChat durable streaming flow", () => {
     const answer = await screen.findByText("A direct answer about Indonesia.");
     const reply = answer.closest("article")?.querySelector(".chat-markdown")?.parentElement;
     expect(screen.queryByText("Wanderly Agent")).not.toBeInTheDocument();
-    expect(reply).toHaveClass("max-w-[86%]", "py-1", "text-justify", "text-[var(--w-fog)]");
+    expect(reply).toHaveClass("wanderly-paper-agent-message");
     expect(reply).not.toHaveClass("wanderly-cosmos-surface", "wanderly-edge", "wanderly-shadow-sm");
 
     const question = screen.getByText("A short question.").parentElement;
-    expect(question).toHaveClass("wanderly-cosmos-user-bubble", "ml-auto", "w-fit", "max-w-[86%]", "py-2");
+    expect(question).toHaveClass("wanderly-paper-user-message");
     expect(question).not.toHaveClass("wanderly-shadow-sm");
-    expect(question?.closest("article")).toHaveClass("mb-[17px]");
+    expect(question?.closest("article")).toHaveClass("wanderly-paper-user-row");
+    expect(reply?.closest("article")).toHaveClass("wanderly-paper-agent-row");
 
     const send = screen.getByRole("button", { name: "Send message" });
     expect(send).toHaveClass("wanderly-bot-action");
@@ -638,32 +639,27 @@ describe("TravelAgentChat durable streaming flow", () => {
     scrollTop.mockRestore();
   });
 
-  // The collapsed composer is the open panel's composer one state earlier, and
-  // both float in the cosmic scene, so they take the same deep-space material.
-  // Giving this one the paper card made opening the chat read as a jump
-  // between two different products.
-  it("uses the cosmic surface for the collapsed composer", async () => {
+  // The collapsed composer is the top strip of the same loose-leaf surface as
+  // the expanded chat, so opening it reads as unfolding one object.
+  it("uses the loose-leaf surface for the collapsed composer", async () => {
     renderChat(createApi(), { initiallyOpen: false });
 
     const collapsedComposer = screen.getByRole("form", { name: "Start a conversation with Wanderly Agent" });
-    expect(collapsedComposer).toHaveClass("wanderly-cosmos-surface", "wanderly-r-lg", "wanderly-shadow");
+    expect(collapsedComposer).toHaveClass("wanderly-paper-composer", "wanderly-cosmos-surface", "wanderly-r-lg", "wanderly-shadow");
     expect(collapsedComposer).not.toHaveClass("bg-card", "wanderly-edge");
   });
 
-  // The open panel floats inside `.wanderly-cosmos`, where the design system
-  // rules out a white card: it takes the deep-space panel, and everything it
-  // contains takes the deep-space surface rather than `bg-card` on paper.
-  it("uses the cosmic surfaces for the open conversation", async () => {
+  it("uses a loose-leaf panel for the open globe conversation", async () => {
     renderChat(createApi(), { initiallyOpen: false });
 
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Wanderly Agent conversation" });
-    expect(dialog).toHaveClass("wanderly-cosmos-chat", "wanderly-cosmos-panel", "wanderly-r-lg");
+    expect(dialog).toHaveClass("wanderly-cosmos-chat", "wanderly-paper-chat", "wanderly-cosmos-panel");
     expect(dialog).not.toHaveClass("bg-sidebar", "wanderly-edge");
 
     const composerBox = screen.getByRole("textbox", { name: "Message Wanderly Agent" }).parentElement;
-    expect(composerBox).toHaveClass("wanderly-cosmos-surface", "wanderly-r-md", "wanderly-shadow-sm");
+    expect(composerBox).toHaveClass("wanderly-paper-composer", "wanderly-cosmos-surface", "wanderly-r-md", "wanderly-shadow-sm");
     expect(composerBox).not.toHaveClass("bg-card");
   });
 

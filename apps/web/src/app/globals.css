@@ -463,16 +463,24 @@
    rather than a second, heavy application window. Its two low-opacity colour
    blooms pick up the map behind it while the blur preserves readable text. */
 .wanderly-cosmos-chat.wanderly-cosmos-panel {
-  border-color: color-mix(in srgb, var(--w-fog), transparent 58%);
+  border-color: transparent;
+  border-radius: 28px;
   background:
-    radial-gradient(circle at 92% 8%, color-mix(in srgb, var(--w-info), transparent 72%), transparent 42%),
-    radial-gradient(circle at 8% 92%, color-mix(in srgb, var(--w-highlight), transparent 86%), transparent 46%),
-    color-mix(in srgb, var(--w-space-tint), transparent 32%);
+    radial-gradient(ellipse 72% 56% at 8% 4%, color-mix(in srgb, var(--w-info), transparent 55%), transparent 70%),
+    radial-gradient(ellipse 70% 62% at 98% 10%, rgb(164 137 255 / 30%), transparent 72%),
+    radial-gradient(ellipse 78% 64% at 60% 104%, color-mix(in srgb, var(--w-highlight), transparent 65%), transparent 72%),
+    linear-gradient(132deg, color-mix(in srgb, var(--w-space-tint), transparent 17%), color-mix(in srgb, var(--w-primary), transparent 31%));
+  background-size: 150% 150%, 145% 145%, 155% 155%, 100% 100%;
+  background-position: 0% 0%, 100% 0%, 48% 100%, 0% 0%;
+  background-blend-mode: screen, screen, soft-light, normal;
   box-shadow:
-    0 10px 28px color-mix(in srgb, var(--w-space), transparent 58%),
-    0 2px 8px color-mix(in srgb, var(--w-ink), transparent 72%);
-  backdrop-filter: blur(22px) saturate(1.12) brightness(0.9);
-  -webkit-backdrop-filter: blur(22px) saturate(1.12) brightness(0.9);
+    inset 0 0 0 1px color-mix(in srgb, var(--w-fog), transparent 46%),
+    inset 0 1px 0 color-mix(in srgb, var(--w-white), transparent 56%),
+    0 14px 34px color-mix(in srgb, var(--w-space), transparent 61%),
+    0 3px 10px color-mix(in srgb, var(--w-ink), transparent 76%);
+  backdrop-filter: blur(24px) saturate(1.2) brightness(0.9);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2) brightness(0.9);
+  animation: wanderly-cosmos-mesh-drift 24s ease-in-out infinite alternate;
 }
 
 /* Reusable glass surface for the globe composer in both closed and open
@@ -480,29 +488,40 @@
    read as another boxed card inside the conversation. */
 .wanderly-cosmos-chat .wanderly-cosmos-composer,
 form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
-  border: 1px solid color-mix(in srgb, var(--w-fog), transparent 46%);
+  border: 1px solid color-mix(in srgb, var(--w-fog), transparent 52%);
   background:
-    linear-gradient(115deg, color-mix(in srgb, var(--w-fog), transparent 88%), transparent 42%),
-    color-mix(in srgb, var(--w-space-tint), transparent 28%);
+    radial-gradient(ellipse at 12% 0%, color-mix(in srgb, var(--w-info), transparent 72%), transparent 56%),
+    linear-gradient(115deg, color-mix(in srgb, var(--w-fog), transparent 84%), transparent 42%),
+    color-mix(in srgb, var(--w-space-tint), transparent 34%);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--w-fog), transparent 58%),
-    0 5px 14px color-mix(in srgb, var(--w-space), transparent 56%);
-  backdrop-filter: blur(18px) saturate(1.12);
-  -webkit-backdrop-filter: blur(18px) saturate(1.12);
+    inset 0 1px 0 color-mix(in srgb, var(--w-white), transparent 52%),
+    0 6px 16px color-mix(in srgb, var(--w-space), transparent 62%);
+  backdrop-filter: blur(20px) saturate(1.16);
+  -webkit-backdrop-filter: blur(20px) saturate(1.16);
 }
 
 /* The traveller's words get the same translucent material, lightly tinted so
    they remain distinguishable from the assistant's unboxed reply. */
 .wanderly-cosmos-user-bubble {
-  border: 1px solid color-mix(in srgb, var(--w-fog), transparent 48%);
+  border: 1px solid color-mix(in srgb, var(--w-fog), transparent 54%);
   background:
-    linear-gradient(120deg, color-mix(in srgb, var(--w-bot-outline), transparent 22%), color-mix(in srgb, var(--w-fog), transparent 88%)),
-    color-mix(in srgb, var(--w-space-tint), transparent 26%);
+    radial-gradient(ellipse at 92% 4%, rgb(169 137 255 / 25%), transparent 68%),
+    linear-gradient(120deg, color-mix(in srgb, var(--w-bot-outline), transparent 26%), color-mix(in srgb, var(--w-fog), transparent 90%)),
+    color-mix(in srgb, var(--w-space-tint), transparent 31%);
   box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--w-fog), transparent 60%),
-    0 4px 12px color-mix(in srgb, var(--w-space), transparent 66%);
-  backdrop-filter: blur(16px) saturate(1.1);
-  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+    inset 0 1px 0 color-mix(in srgb, var(--w-white), transparent 54%),
+    0 5px 14px color-mix(in srgb, var(--w-space), transparent 70%);
+  backdrop-filter: blur(18px) saturate(1.14);
+  -webkit-backdrop-filter: blur(18px) saturate(1.14);
+}
+
+@keyframes wanderly-cosmos-mesh-drift {
+  from { background-position: 0% 0%, 100% 0%, 48% 100%, 0% 0%; }
+  to { background-position: 14% 10%, 84% 14%, 58% 88%, 0% 0%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wanderly-cosmos-chat.wanderly-cosmos-panel { animation: none; }
 }
 
 /* Simulated vertical glass tab: no native white gutter, just a thin pill with
@@ -609,6 +628,278 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
 .wanderly-cosmos .maplibregl-ctrl button {
   background: var(--w-space-panel);
   filter: invert(1);
+}
+
+/*
+ * Loose-leaf conversation for the globe.
+ *
+ * This is intentionally scoped to the floating Explore chat: the docked
+ * workspace remains the planner's regular surface. The visual direction is a
+ * sheet of travel notes sitting over the actual globe, not a second map or a
+ * generic card. Its top edge is fixed outside the scrollport so the punched
+ * holes and torn paper stay put while the ruled writing moves underneath.
+ */
+.wanderly-paper-chat.wanderly-cosmos-panel {
+  --background: var(--w-fog);
+  --foreground: var(--w-ink);
+  --card: var(--w-fog);
+  --card-foreground: var(--w-ink);
+  --popover: var(--w-fog);
+  --popover-foreground: var(--w-ink);
+  --muted: var(--w-mist);
+  --muted-foreground: color-mix(in srgb, var(--w-ink), transparent 30%);
+  --secondary: var(--w-mist);
+  --secondary-foreground: var(--w-ink);
+  --border: color-mix(in srgb, var(--w-bot-outline), transparent 70%);
+  --input: color-mix(in srgb, var(--w-bot-outline), transparent 68%);
+  --ring: var(--w-info);
+  --paper-rule-height: 30px;
+  --paper-writing-offset: 2px;
+  border: 0;
+  border-radius: 7px 7px 20px 20px;
+  color: var(--w-ink);
+  background-color: color-mix(in srgb, var(--w-fog), var(--w-white) 58%);
+  background-image:
+    linear-gradient(96deg, color-mix(in srgb, var(--w-white), transparent 32%), transparent 39%, color-mix(in srgb, var(--w-moss), transparent 84%)),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--w-ink), transparent 97%) 0 1px, transparent 1px 4px),
+    radial-gradient(circle at 33% 17%, color-mix(in srgb, var(--w-white), transparent 15%), transparent 38%);
+  background-blend-mode: normal;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--w-white), transparent 32%),
+    -14px 20px 44px color-mix(in srgb, var(--w-space), transparent 50%),
+    0 3px 9px color-mix(in srgb, var(--w-ink), transparent 80%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  animation: none;
+}
+
+.wanderly-paper-chat.wanderly-cosmos-panel::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 26px;
+  pointer-events: none;
+  background: linear-gradient(transparent, color-mix(in srgb, var(--w-mist), transparent 34%));
+}
+
+/* Fixed perforation edge. There is deliberately no title, date, or red
+   margin rule on the page — only the binding holes and the torn paper edge. */
+.wanderly-paper-chat .wanderly-paper-header {
+  position: relative;
+  z-index: 4;
+  min-height: 54px;
+  overflow: hidden;
+  border-bottom: 1px solid color-mix(in srgb, var(--w-bot-outline), transparent 72%);
+  background: linear-gradient(to bottom, color-mix(in srgb, var(--w-white), transparent 18%), color-mix(in srgb, var(--w-fog), var(--w-white) 34%));
+  box-shadow: 0 8px 14px color-mix(in srgb, var(--w-moss), transparent 87%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.wanderly-paper-chat .wanderly-paper-header::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: -8px;
+  left: 0;
+  z-index: -1;
+  height: 9px;
+  background: linear-gradient(135deg, transparent 5px, color-mix(in srgb, var(--w-fog), var(--w-white) 58%) 0) 0 0 / 18px 9px repeat-x;
+  filter: drop-shadow(0 1px 0 color-mix(in srgb, var(--w-bot-outline), transparent 82%));
+}
+
+.wanderly-paper-chat .wanderly-paper-header > :not(.wanderly-paper-holes) {
+  position: relative;
+  z-index: 1;
+}
+
+.wanderly-paper-holes {
+  position: absolute;
+  top: 11px;
+  right: 61px;
+  left: 23px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.wanderly-paper-holes span {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--w-space);
+  box-shadow: inset 0 2px 2px color-mix(in srgb, var(--w-ink), transparent 18%), 0 1px 0 color-mix(in srgb, var(--w-white), transparent 16%);
+}
+
+.wanderly-paper-chat .wanderly-cosmos-control {
+  border-color: color-mix(in srgb, var(--w-bot-outline), transparent 55%);
+  background: color-mix(in srgb, var(--w-white), transparent 24%);
+  color: var(--w-ink);
+  box-shadow: 1px 2px 0 color-mix(in srgb, var(--w-bot-outline), transparent 62%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.wanderly-paper-chat .wanderly-cosmos-control:hover,
+.wanderly-paper-chat .wanderly-cosmos-control:active {
+  border-color: var(--w-bot-outline);
+  background: color-mix(in srgb, var(--w-highlight), var(--w-white) 70%);
+  color: var(--w-ink);
+}
+
+/* The rules live inside the scrollport, so they travel with the conversation.
+   Every ordinary text line shares one line-height; the small two-pixel
+   transform places writing just below the line band's vertical centre. */
+.wanderly-paper-chat .wanderly-paper-scroll {
+  position: relative;
+  padding: 25px 30px 30px;
+  color: var(--w-ink);
+  background-color: transparent;
+  background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--paper-rule-height) - 1px), color-mix(in srgb, var(--w-info), transparent 68%) calc(var(--paper-rule-height) - 1px) var(--paper-rule-height));
+  background-position: 0 24px;
+  background-attachment: local;
+  mask-image: none;
+  -webkit-mask-image: none;
+  scrollbar-color: color-mix(in srgb, var(--w-info), var(--w-fog) 38%) transparent;
+}
+
+.wanderly-paper-chat .wanderly-paper-scroll::-webkit-scrollbar-track { background: transparent; }
+.wanderly-paper-chat .wanderly-paper-scroll::-webkit-scrollbar-thumb {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--w-info), transparent 42%);
+  background-clip: padding-box;
+  box-shadow: none;
+}
+
+.wanderly-paper-agent-row,
+.wanderly-paper-user-row {
+  min-height: var(--paper-rule-height);
+  margin-bottom: var(--paper-rule-height);
+  font-size: 16px;
+  line-height: var(--paper-rule-height);
+  transform: translateY(var(--paper-writing-offset));
+}
+
+.wanderly-paper-agent-row {
+  margin-right: 22%;
+  color: var(--w-ink);
+  text-align: left;
+}
+
+.wanderly-paper-user-row {
+  display: flex;
+  justify-content: flex-end;
+  margin-left: 22%;
+  color: color-mix(in srgb, var(--w-info), var(--w-ink) 66%);
+  text-align: right;
+}
+
+.wanderly-paper-chat [data-role="USER"] > .wanderly-paper-user-message,
+.wanderly-paper-user-message {
+  width: auto;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 760;
+  line-height: inherit;
+  text-align: inherit;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.wanderly-paper-agent-message,
+.wanderly-paper-streaming-message {
+  max-width: 100%;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  text-align: inherit;
+}
+
+.wanderly-paper-chat .chat-markdown {
+  display: block;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.wanderly-paper-chat .chat-markdown > * {
+  margin: 0;
+  font-size: inherit;
+  line-height: var(--paper-rule-height);
+}
+
+.wanderly-paper-chat .chat-markdown > * + * { margin-top: 0; }
+.wanderly-paper-chat .chat-markdown ul,
+.wanderly-paper-chat .chat-markdown ol { padding-left: 1.2rem; }
+
+.wanderly-paper-chat .chat-markdown code {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--w-info), transparent 87%);
+  color: inherit;
+}
+
+.wanderly-paper-chat [data-pending="true"] {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 var(--paper-rule-height) 22%;
+  color: color-mix(in srgb, var(--w-info), var(--w-ink) 66%);
+  font-size: 16px;
+  font-weight: 760;
+  line-height: var(--paper-rule-height);
+  text-align: right;
+  transform: translateY(var(--paper-writing-offset));
+}
+
+.wanderly-paper-chat [data-role="ASSISTANT"][data-streaming="true"] .text-muted-foreground,
+.wanderly-paper-chat [data-role="ASSISTANT"][data-streaming="true"] .text-primary { color: var(--w-ink); }
+
+.wanderly-paper-form { position: relative; z-index: 5; }
+
+.wanderly-paper-chat .wanderly-paper-composer,
+form[data-wanderly-perch="composer"].wanderly-paper-composer {
+  border: 1px solid color-mix(in srgb, var(--w-bot-outline), transparent 54%);
+  background-color: color-mix(in srgb, var(--w-fog), var(--w-white) 54%);
+  background-image: repeating-linear-gradient(0deg, color-mix(in srgb, var(--w-ink), transparent 97%) 0 1px, transparent 1px 4px);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--w-white), transparent 18%), 0 4px 12px color-mix(in srgb, var(--w-space), transparent 72%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.wanderly-paper-chat .wanderly-paper-composer textarea,
+form[data-wanderly-perch="composer"].wanderly-paper-composer input {
+  color: var(--w-ink);
+}
+
+.wanderly-paper-chat .wanderly-paper-composer textarea::placeholder,
+form[data-wanderly-perch="composer"].wanderly-paper-composer input::placeholder {
+  color: color-mix(in srgb, var(--w-ink), transparent 42%);
+}
+
+.wanderly-paper-chat .wanderly-bot-action,
+form[data-wanderly-perch="composer"].wanderly-paper-composer .wanderly-bot-action {
+  border-color: color-mix(in srgb, var(--w-bot-outline), transparent 42%);
+  background: color-mix(in srgb, var(--w-info), var(--w-white) 49%);
+  color: var(--w-ink);
+  box-shadow: 1px 2px 0 color-mix(in srgb, var(--w-bot-outline), transparent 62%);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+@media (max-width: 639px) {
+  .wanderly-paper-chat .wanderly-paper-scroll { padding-right: 22px; padding-left: 22px; }
+  .wanderly-paper-agent-row { margin-right: 12%; }
+  .wanderly-paper-user-row { margin-left: 12%; }
+  .wanderly-paper-holes { right: 54px; left: 18px; }
+  .wanderly-paper-holes span:nth-child(n + 7) { display: none; }
 }
 
 /*
