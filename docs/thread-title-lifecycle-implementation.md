@@ -80,6 +80,10 @@
 
 **实施要求：** 在 P0 中把该 description 收窄为明确限定 trip name，并以本文为 thread title 的权威规则。不得让两处规则相互覆盖或含糊。
 
+> **2026-09-05 更新：** 上述"trip name 不得由模型派生"的结论已被 [Trip 标题目的地标签实施规范](trip-title-destination-label-implementation.md) 取代。该方案不让模型产出标题字符串，而是把模型输出限定为**参考数据可再解析的封闭词表**（国家 / 城市规范名，见其 D5），并同时修复 trip name 经邀请预览泄漏 DRAFT 探索细节的存量缺口（其 D10）。跨信任边界的顾虑由这两条共同处置，而不再依赖全面禁用。
+>
+> 因此 `routes/trips.ts:494` 的 description 应收窄为**限定该端点本身**（创建者手动改名）永不读取对话、永不调用 LLM；trip 标题的模型派生路径以该文为权威。thread title 的规则不受影响，仍以本文为准。
+
 ---
 
 ## 4. 技术栈

@@ -1105,10 +1105,10 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - In the Trip workspace the preparing banner is shown for the whole wait — list fetch and default-thread auto-provisioning alike — and clears once a thread is active. This surface never renders the idle state, because it never rests without a thread.
 - A failed threads fetch stops the workspace claiming a thread is coming; the thread rail remains the place the failure is reported in full, and the banner is not duplicated as a second error.
 
-### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields only
+### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields
 
 **Stories:** H1, H2
-**Objective:** Verify title generation is deterministic, localized and independent of private conversation text.
+**Objective:** Verify title generation is deterministic, localized and, on this path, independent of private conversation text. The country/region label path and the owner-triggered model path are covered by TS-EXPLORE-TRIP-2b.
 
 **Starting conditions:** Alice owns a Draft Trip and has sent private messages containing destinations or dates that differ from the explicit activation brief.
 
@@ -1126,10 +1126,41 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The first title is `Tokyo · Bangkok Trip Planner｜7 Days`; the Chinese title uses `行程规划` and no day suffix when dates are incomplete.
 - The `travelDays`-only activation derives `travelDateEnd` from `travelDateStart + travelDays - 1` and the resulting title carries the day suffix (`｜3 Days` / `｜3天`).
 - Both surfaces that can write a title — Explore and the Trip workspace — send the reader's own locale, so a Chinese session never produces a half-English title such as `新加坡 Trip Planner｜4 Days`. The client prop defaults to `en`, so this is asserted per call site rather than assumed.
-- The title never reflects private chat text, profiles or inferred facts, and no LLM call is made.
+- On this path the title never reflects private chat text, profiles or inferred facts, and no LLM call is made. `PATCH /trips/:tripId/title` never reads chat history or calls a model under any circumstance.
+- A trip with no destination label behaves byte-for-byte as before the label column was introduced.
 - Invalid calendar dates and reverse ranges are rejected; no title is fabricated from them.
 - Only the creator may manually rename. The change sets `name_source=MANUAL`; the audit event records the source but never title text.
 - Bob cannot submit through, view, or restore Alice's old session identifiers.
+
+### TS-EXPLORE-TRIP-2b — Name a trip from a country, and disambiguate same-name cities
+
+**Stories:** H1, H2
+**Objective:** Verify a country-level intent produces an informative title without ever becoming a planner destination, that same-name cities resolve by population dominance, and that every model-path failure leaves the stored title untouched.
+**Contract:** [Trip 标题目的地标签实施规范](trip-title-destination-label-implementation.md)
+
+**Starting conditions:** Alice owns a Draft Trip with an empty brief, UI language Chinese.
+
+**Steps:**
+
+1. Send "我想去法国" in the private thread.
+2. Inspect the trip row and the trip list card.
+3. Submit `巴黎` through the brief confirmation card; then submit `Valencia` on another Draft.
+4. Rename the trip manually, then send another country mention.
+5. On a Draft whose deterministic path found nothing, trigger `POST /trips/:tripId/title/suggest`; repeat it past the per-user quota.
+6. Force the gateway to time out, and separately force it to return free text rather than a resolvable place name.
+7. While a suggest call is in flight, rename the trip from another tab.
+8. As Bob, open the invitation preview for Alice's Draft trip.
+
+**Expected outcomes:**
+
+- The title becomes `法国行程规划`, while `destinationCandidates` stays `[]`. The label never reaches the planner, a provider query, or a `constraint_snapshot`.
+- Because the brief still has no city, the trip card shows a destination-pending marker and the assistant asks for a specific city — on the chat-text path, not only on map selection.
+- `巴黎` resolves to Paris/FR by population dominance and becomes a real destination; the title becomes `巴黎行程规划` and the label is cleared. `Valencia` stays `422 DESTINATION_UNRESOLVED` because no country dominates.
+- After a manual rename, `name_source='MANUAL'` and no automatic or model path ever overwrites the title.
+- Quota exhaustion returns `RATE_LIMITED` without calling the model. A gateway timeout returns `UNAVAILABLE`; unresolvable model output returns `REJECTED`. In every case the stored title and label are unchanged.
+- The in-flight suggest loses to the concurrent rename and exits through `MANUAL_LOCKED`; the user's own title survives.
+- The invitation preview for a Draft with `name_source='AUTO'` shows a generic localized planner name — it discloses neither the destination label nor the confirmed destinations, matching how the same response already redacts `destinationCandidates` and dates.
+- No audit row, log line, metric label or span attribute contains the label text; `TRIP_TITLE_LABEL_UPDATE` carries only `{ source }`.
 
 ### TS-EXPLORE-TRIP-3 — Destination references fail closed and stay city-scoped
 

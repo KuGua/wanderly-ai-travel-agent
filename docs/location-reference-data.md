@@ -23,6 +23,27 @@
 
 地图底图的可渲染标签和 SVG overlay 不参与坐标反向解析流程。它们是视觉层，不能成为该 resolver 的来源或 fallback。前端可以读取同仓库的主要城市标签目录识别聊天文本中明确出现的城市名称并移动视口，但该行为只创建当前会话灵感，不得生成旅行事实或替代服务端位置参考。
 
+## 目的地名称解析：国家、城市与重名消歧
+
+`resolveDestinationReference`（城市）与 `isKnownCountryName` / `resolveCountryLabel`（国家）是**刻意分离**的两条路径。国家是有用的探索上下文与标题素材，但永远不是 planner 目的地——它无法安全确定唯一的城市、机场或供应商查询。
+
+**跨国重名消歧（人口支配规则）。** 同名城市跨多个国家时，人口最高的匹配项须达到其它国家最高匹配项的 **5 倍**才被解析，否则维持 `null`。此前的实现要求匹配集合的 `countryCode` 唯一，导致所有跨国重名城市恒不可解析（`Paris` 在数据集中跨 CA/FR/US 共 7 条），其按人口降序取首项的代码实际是死代码。
+
+倍率 5 由真实数据集验证：
+
+| 输入 | 结果 |
+|---|---|
+| `paris` / `巴黎` | Paris/FR（2,138,551 vs ZA 71,319） |
+| `athens` / `birmingham` / `florence` / `milan` / `vienna` | GR / GB / IT / IT / AT，倍率 10 会误拒前两者 |
+| `valencia`（VE 1,619,470 vs ES 824,340） | `null`，真歧义 |
+| `barcelona` / `cambridge` / `toledo` / `santiago` | `null`，真歧义 |
+
+**索引必须包含 `alternateNames`。** 中文城市名（`东京`、`巴黎`）在 GeoNames 中**仅**存在于 `alternateNames` 列，主名与 ASCII 名列均无。剔除该列会使全部中文城市输入失效。
+
+**已知数据债：** `alternateNames` 存在跨城污染——`venice` 命中 Dayton/US，`manchester` 命中 Richmond/US，这些名字因此维持 `null`。行为保守、不产生错误解析，但需要上游数据清洗或人工别名覆盖表才能恢复。
+
+国家级输入进入展示专用的 trip 标题标签，永不写入 `destinationCandidates`。实施合同见 [Trip 标题目的地标签实施规范](trip-title-destination-label-implementation.md)。
+
 ## 解析源模式
 
 `apps/api/src/location-reference/location-reference-source.ts` 在进程启动时按 `LOCATION_REFERENCE_MODE` 选择解析源，公开 API 与内部 `policy/conversation-safety.ts` 共用同一抽象：
