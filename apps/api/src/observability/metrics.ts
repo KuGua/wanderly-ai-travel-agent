@@ -621,6 +621,18 @@ metrics.registerCounter(
   },
 );
 
+// Private thread title lifecycle (docs/thread-title-lifecycle-implementation.md §11.1).
+// Labels are bounded enums only — thread/trip/user IDs and the title text
+// itself are forbidden as metric labels and live in trace/log context.
+metrics.registerCounter(
+  "thread_title_writes_total",
+  "Private thread title writes by bounded source and result.",
+  {
+    source: ["deterministic", "llm", "manual"],
+    result: ["applied", "rejected", "unavailable", "no_material", "manual_locked"],
+  },
+);
+
 // Phase 3 — Personal Trip Orchestrator.
 metrics.registerCounter(
   "research_stage_total",

@@ -191,6 +191,9 @@ function thread() {
     scope: "TRIP" as const,
     isDefault: false,
     title: "Explore · Tokyo",
+    titleSource: "AUTO" as const,
+    titleLocale: "en" as const,
+    titleUpdatedAt: null,
     createdAt: CREATED_AT,
     archivedAt: null,
   };

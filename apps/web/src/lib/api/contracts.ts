@@ -96,6 +96,10 @@ export const threadSchema = z.object({
   scope: z.enum(["TRIP"]).default("TRIP"),
   isDefault: z.boolean().default(false),
   title: z.string(),
+  // Title lifecycle metadata (docs/thread-title-lifecycle-implementation.md §7.6).
+  titleSource: z.enum(["AUTO", "MANUAL"]),
+  titleLocale: z.enum(["en", "zh"]).nullable(),
+  titleUpdatedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   archivedAt: z.string().datetime().nullable(),
 });
@@ -105,7 +109,31 @@ export const threadsResponseSchema = z.object({
 });
 
 export const createTripThreadInputSchema = z.object({
-  title: z.string().trim().min(1).max(256),
+  // Server is the authority on auto-numbered titles; clients only supply a
+  // `title` when they want a MANUAL row (legacy direct callers / tests).
+  title: z.string().trim().min(1).max(256).optional(),
+  titleLocale: z.enum(["en", "zh"]).optional(),
+}).strict();
+
+export const renameThreadInputSchema = z.object({
+  title: z.string().trim().min(1).max(80),
+}).strict();
+
+export const suggestThreadTitleInputSchema = z.object({
+  requestId: z.string().uuid(),
+  locale: z.enum(["en", "zh"]),
+  overwriteManual: z.boolean().optional(),
+}).strict();
+
+export const suggestThreadTitleResponseSchema = z.object({
+  thread: threadSchema,
+  applied: z.boolean(),
+  reason: z.enum([
+    "MANUAL_LOCKED",
+    "NO_MATERIAL",
+    "REJECTED",
+    "UNAVAILABLE",
+  ]).optional(),
 }).strict();
 
 // Thread creation returns the same persisted summary used in thread lists.
@@ -1115,6 +1143,9 @@ export type Thread = z.infer<typeof threadSchema>;
 export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
 export type CreateTripThreadInput = z.infer<typeof createTripThreadInputSchema>;
 export type CreateThreadResponse = z.infer<typeof createThreadResponseSchema>;
+export type RenameThreadInput = z.infer<typeof renameThreadInputSchema>;
+export type SuggestThreadTitleInput = z.infer<typeof suggestThreadTitleInputSchema>;
+export type SuggestThreadTitleResponse = z.infer<typeof suggestThreadTitleResponseSchema>;
 export type TripDetail = z.infer<typeof tripDetailSchema>;
 export type TripMember = z.infer<typeof tripMemberSchema>;
 export type TripDetailResponse = z.infer<typeof tripDetailResponseSchema>;

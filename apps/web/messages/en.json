@@ -543,11 +543,25 @@
       "defaultBadge": "Default",
       "newThread": {
         "label": "New thread",
-        "placeholder": "e.g. Visa prep, Budget, Day-by-day plan",
-        "submit": "Create thread",
-        "submitting": "Creating…",
-        "validation": "Title must be 1–256 characters.",
-        "autoTitle": "New thread {index}"
+        "submitting": "Creating…"
+      },
+      "menu": {
+        "triggerLabel": "Thread actions",
+        "rename": "Rename",
+        "aiName": "Name with AI"
+      },
+      "rename": {
+        "inputLabel": "Thread title",
+        "save": "Save",
+        "cancel": "Cancel"
+      },
+      "aiName": {
+        "pending": "Naming with AI…",
+        "overwriteConfirm": "Replace your manual title with an AI suggestion?",
+        "reasonManualLocked": "This thread was renamed by you. Confirm to let AI name it instead.",
+        "reasonNoMaterial": "Send at least one message before asking AI to name this thread.",
+        "reasonUnavailable": "AI naming is temporarily unavailable — try again or rename manually.",
+        "reasonRejected": "AI couldn't produce a safe title — try again or rename manually."
       },
       "sectionLabel": "This trip",
       "archivedLabel": "Archived",

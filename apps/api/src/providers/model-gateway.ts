@@ -334,6 +334,21 @@ export interface ModelGateway {
       safeRationale: string;
     }>;
   }>;
+
+  /**
+   * Owner-triggered thread title suggestion (docs/thread-title-lifecycle-implementation.md §9.1).
+   * Optional so the gateway can be stubbed in tests and during the rollout
+   * window before the LLM wiring lands; the skill handles the absence by
+   * surfacing UPSTREAM_FAILURE which the route maps to UNAVAILABLE.
+   */
+  generateThreadTitle?(params: {
+    /** Server-validated language authority (LLM-GATEWAY.md §User-visible language contract). */
+    locale: "en" | "zh";
+    /** Owner USER messages only; assistant messages and other threads are never sent. */
+    messages: ReadonlyArray<{ text: string }>;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<{ title: string }>;
 }
 
 /** Narrow, versioned conversation behaviours; add values deliberately. */

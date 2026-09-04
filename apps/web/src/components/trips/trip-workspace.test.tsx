@@ -50,6 +50,9 @@ function buildThread(id: string, title: string, isDefault: boolean) {
     scope: "TRIP" as const,
     isDefault,
     title,
+    titleSource: "AUTO" as const,
+    titleLocale: "en" as const,
+    titleUpdatedAt: null,
     createdAt: "2026-08-21T10:00:00.000Z",
     archivedAt: null,
   };
@@ -385,7 +388,7 @@ describe("TripWorkspace", () => {
     expect(screen.queryByTestId("research-confirmation-card")).not.toBeInTheDocument();
   });
 
-  it("starts a new thread session in one click, without prompting for a title", async () => {
+  it("starts a new thread session in one click; the server owns the auto-numbered title", async () => {
     const api = createApi({
       getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
     });
@@ -395,8 +398,12 @@ describe("TripWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "New thread" }));
 
-    // The rail already holds one thread, so the new session is numbered 2.
-    await waitFor(() => expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { title: "New thread 2" }));
+    // Server is the authority on the auto-numbered title (see
+    // docs/thread-title-lifecycle-implementation.md §10.2 / D1). The client
+    // only sends the locale so the server can pick the right language.
+    await waitFor(() =>
+      expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { titleLocale: "en" }),
+    );
     expect(screen.queryByPlaceholderText(/Visa prep/)).not.toBeInTheDocument();
   });
 

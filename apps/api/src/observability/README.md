@@ -123,6 +123,7 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `research_stage_total` | counter | stage, outcome | stage ∈ `["snapshot_created","researching","validating","persisting","completed","completed_with_gaps","failed","stale"]`; outcome ∈ `["success","failure"]` |
 | `solo_plan_adoption_total` | counter | outcome | `["adopted","stale_plan","not_solo","forbidden","plan_not_proposed","error"]` |
 | `trip_activation_total` | counter | result | `["success","conflict","forbidden","invalid","error"]` |
+| `thread_title_writes_total` | counter | source, result | source ∈ `["deterministic","llm","manual"]`; result ∈ `["applied","rejected","unavailable","no_material","manual_locked"]` |
 | `trip_constraint_mutation_total` | counter | operation, visibility, strength, result | operation ∈ `["propose","confirm","dismiss","upsert","revoke","handoff_confirm"]`; visibility ∈ `["team_visible","orchestrator_confidential","mixed","n_a"]`; strength ∈ `["hard","soft","mixed","n_a"]`; result ∈ `["success","replay","conflict","catalog_invalid"]` |
 | `trip_draft_brief_update_total` | counter | result | `["success"]` |
 | `trip_invitation_rejected_total` | counter | reason | `["terminal_trip"]` |

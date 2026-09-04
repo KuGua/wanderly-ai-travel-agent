@@ -7,6 +7,9 @@ import type {
   ConversationTurnAcceptedResponse,
   CreateTripThreadInput,
   OwnerConversationResponse,
+  RenameThreadInput,
+  SuggestThreadTitleInput,
+  SuggestThreadTitleResponse,
   ThreadsResponse,
   TripActivationRequest,
   TripSearchPreferencesInput,
@@ -259,6 +262,46 @@ export function useCreateTripThread(tripId: string) {
     mutationFn: (input: CreateTripThreadInput) => api.createTripThread(tripId, input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: tripKeys.threads(tripId) });
+    },
+  });
+}
+
+export function useRenameThread(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ threadId, input }: { threadId: string; input: RenameThreadInput }) => {
+      if (!api.renameThread) {
+        throw new Error("TravelApi.renameThread is not implemented in this environment");
+      }
+      return api.renameThread(tripId, threadId, input);
+    },
+    onSuccess: () => {
+      // The server is the source of truth for the new title + MANUAL lock;
+      // invalidate the threads query so the rail re-renders from the
+      // authoritative ThreadSummary.
+      void queryClient.invalidateQueries({ queryKey: tripKeys.threads(tripId) });
+    },
+  });
+}
+
+export function useSuggestThreadTitle(tripId: string) {
+  const api = useTravelApi();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ threadId, input }: { threadId: string; input: SuggestThreadTitleInput }) => {
+      if (!api.suggestThreadTitle) {
+        throw new Error("TravelApi.suggestThreadTitle is not implemented in this environment");
+      }
+      return api.suggestThreadTitle(tripId, threadId, input);
+    },
+    onSuccess: (response: SuggestThreadTitleResponse) => {
+      // Only invalidate when the server actually wrote a new title; the
+      // `applied: false` reasons all leave the row unchanged, so refetching
+      // would be wasted bandwidth.
+      if (response.applied) {
+        void queryClient.invalidateQueries({ queryKey: tripKeys.threads(tripId) });
+      }
     },
   });
 }

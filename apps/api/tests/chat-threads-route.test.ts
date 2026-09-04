@@ -228,6 +228,92 @@ describe("chat-threads route — owner-only", () => {
   });
 });
 
+describe("PATCH /trips/:tripId/threads/:threadId/title — owner-only manual rename", () => {
+  async function createThreadAsAlice(): Promise<string> {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/threads",
+      headers: { ...authHeaders("alice"), "content-type": "application/json" },
+      payload: { title: "Visa prep", tripId },
+    });
+    expect(res.statusCode).toBe(201);
+    return (res.json() as { id: string }).id;
+  }
+
+  it("owner can rename and the row becomes MANUAL with NULL locale", async () => {
+    const threadId = await createThreadAsAlice();
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/trips/${tripId}/threads/${threadId}/title`,
+      headers: { ...authHeaders("alice"), "content-type": "application/json" },
+      payload: { title: "签证准备" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as {
+      id: string; title: string; titleSource: "AUTO" | "MANUAL";
+      titleLocale: "en" | "zh" | null; titleUpdatedAt: string | null;
+    };
+    expect(body.id).toBe(threadId);
+    expect(body.title).toBe("签证准备");
+    expect(body.titleSource).toBe("MANUAL");
+    expect(body.titleLocale).toBeNull();
+    expect(body.titleUpdatedAt).not.toBeNull();
+
+    // Persisted row matches the response.
+    const [row] = await db.select().from(chatThreads)
+      .where(eq(chatThreads.id, threadId)).limit(1);
+    expect(row!.titleSource).toBe("MANUAL");
+    expect(row!.titleLocale).toBeNull();
+    expect(row!.titleUpdatedAt).not.toBeNull();
+
+    // Audit row carries source: "manual" and never the title text.
+    const [audit] = await db.select()
+      .from(auditEvents)
+      .where(and(
+        eq(auditEvents.action, "CHAT_THREAD_TITLE_UPDATE"),
+        eq(auditEvents.actorUserId, aliceId),
+      ))
+      .limit(1);
+    expect(audit).toBeDefined();
+    const summary = audit!.summary as Record<string, unknown>;
+    expect(summary).toEqual({ threadId, source: "manual" });
+    expect(Object.keys(summary)).not.toContain("title");
+  });
+
+  it("non-owner is rejected with 403, even when the thread is in the same trip", async () => {
+    const threadId = await createThreadAsAlice();
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/trips/${tripId}/threads/${threadId}/title`,
+      headers: { ...authHeaders("bob"), "content-type": "application/json" },
+      payload: { title: "Sneaky rename" },
+    });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("unknown thread id is rejected with 404, not 403, to avoid leaking ids", async () => {
+    const missingId = randomUUID();
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/trips/${tripId}/threads/${missingId}/title`,
+      headers: { ...authHeaders("alice"), "content-type": "application/json" },
+      payload: { title: "Anything" },
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("rejects titles longer than 80 characters", async () => {
+    const threadId = await createThreadAsAlice();
+    const res = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/trips/${tripId}/threads/${threadId}/title`,
+      headers: { ...authHeaders("alice"), "content-type": "application/json" },
+      payload: { title: "a".repeat(81) },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
 async function cleanupOwnedChatState(): Promise<void> {
   if (!aliceId || !bobId) return;
 
@@ -237,6 +323,7 @@ async function cleanupOwnedChatState(): Promise<void> {
       "CHAT_THREAD_CREATE",
       "CHAT_THREAD_DELETE",
       "CHAT_MESSAGE_APPEND",
+      "CHAT_THREAD_TITLE_UPDATE",
     ]),
   ));
   // Deleting owned threads cascades their messages.

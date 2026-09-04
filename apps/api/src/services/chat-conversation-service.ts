@@ -39,6 +39,9 @@ function toThreadSummary(row: ChatThreadRow) {
     scope: row.scope,
     isDefault: row.isDefault,
     title: row.title,
+    titleSource: row.titleSource,
+    titleLocale: row.titleLocale,
+    titleUpdatedAt: row.titleUpdatedAt ? row.titleUpdatedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
   };

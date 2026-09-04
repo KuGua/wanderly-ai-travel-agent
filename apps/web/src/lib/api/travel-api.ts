@@ -9,6 +9,9 @@ import type {
   PersonalResearchConfirmRequest,
   PersonalResearchReadResponse,
   ProfileResponse,
+  RenameThreadInput,
+  SuggestThreadTitleInput,
+  SuggestThreadTitleResponse,
   ThreadsResponse,
   TripDetailResponse,
   TripsResponse,
@@ -116,6 +119,10 @@ export interface TravelApi {
   getTripThreads(tripId: string): Promise<ThreadsResponse>;
   createTripThread(tripId: string, input: CreateTripThreadInput): Promise<CreateThreadResponse>;
   getOrCreateDefaultTripThread(tripId: string): Promise<CreateThreadResponse>;
+  // Optional so unrelated test mocks don't have to stub them; the real
+  // HttpTravelApi implements both.
+  renameThread?(tripId: string, threadId: string, input: RenameThreadInput): Promise<CreateThreadResponse>;
+  suggestThreadTitle?(tripId: string, threadId: string, input: SuggestThreadTitleInput): Promise<SuggestThreadTitleResponse>;
   getOwnerConversation(threadId: string): Promise<OwnerConversationResponse>;
   submitConversationTurn(threadId: string, input: ConversationTurnRequest): Promise<ConversationTurnAcceptedResponse>;
   getAgentRun(runId: string): Promise<AgentRun>;

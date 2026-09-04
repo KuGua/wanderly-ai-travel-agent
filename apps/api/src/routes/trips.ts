@@ -247,6 +247,11 @@ export async function tripRoutes(app: FastifyInstance) {
       const defaultThreadId = await getOrCreateDefaultThread(tx, {
         tripId: trip.id,
         ownerUserId: request.user.id,
+        // The POST /trips path is a legacy direct-confirmed-trip create and
+        // does not carry a locale signal. The default thread it provisions
+        // uses English as the language authority; the trip itself keeps
+        // whatever the caller passed as `body.name`.
+        locale: "en",
       });
 
       await recordAudit({
@@ -491,7 +496,10 @@ export async function tripRoutes(app: FastifyInstance) {
 
   app.patch("/trips/:tripId/title", {
     schema: {
-      description: "Set a creator-managed trip title. This never reads chat history or calls an LLM.",
+      // Trip title only — never reads chat history and never calls an LLM.
+      // Private thread titles have their own lifecycle:
+      // docs/thread-title-lifecycle-implementation.md §3.1.
+      description: "Set a creator-managed trip title. This applies to the trip name only — it never reads chat history and never calls an LLM. Private thread titles have their own lifecycle; see docs/thread-title-lifecycle-implementation.md.",
       tags: ["trips"],
       params: toJsonSchema(tripIdParamSchema),
       body: toJsonSchema(updateTripTitleRequestSchema),

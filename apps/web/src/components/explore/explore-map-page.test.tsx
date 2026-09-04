@@ -622,6 +622,9 @@ function createTravelApiForAutoAsk(): TravelApi & {
     scope: "TRIP",
     isDefault: false,
     title: "Explore · Pinned place 1",
+    titleSource: "AUTO",
+    titleLocale: "en",
+    titleUpdatedAt: null,
     createdAt: CREATED_AT,
     archivedAt: null,
   };

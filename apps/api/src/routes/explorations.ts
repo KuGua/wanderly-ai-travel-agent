@@ -44,6 +44,7 @@ export async function explorationRoutes(app: FastifyInstance) {
         ctx,
         userId: request.user.id,
         requestId: body.requestId,
+        locale: body.locale,
       });
     } catch (error) {
       metrics.inc("exploration_start_total", { result: "error" });

@@ -5,6 +5,7 @@ import { and, eq, lt, sql } from "drizzle-orm";
 import { db } from "../db/database.js";
 import { chatThreads, sharedTrips, tripInvitations, tripMembers } from "../db/schema.js";
 import { recordAudit } from "./audit-service.js";
+import { buildDefaultThreadTitle, type ThreadTitleLocale } from "./thread-title-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { metrics } from "../observability/metrics.js";
 import type { RequestContext } from "../utils/context.js";
@@ -146,6 +147,7 @@ export async function acceptInvitation(params: {
   token: string;
   actorUserId: string;
   actorEmail: string | null;
+  locale: ThreadTitleLocale;
 }): Promise<InvitationAcceptResult> {
   if (typeof params.token !== "string" || params.token.length < 32) {
     throw new ApiError(400, "Bad Request", "Invalid invitation token");
@@ -224,6 +226,7 @@ export async function acceptInvitation(params: {
     const defaultThreadId = await getOrCreateDefaultThread(tx, {
       tripId: invitation.tripId,
       ownerUserId: params.actorUserId,
+      locale: params.locale,
     });
 
     await tx.update(tripInvitations)
@@ -353,7 +356,7 @@ export async function revokeInvitation(params: {
 
 export async function getOrCreateDefaultThread(
   tx: Tx,
-  params: { tripId: string; ownerUserId: string },
+  params: { tripId: string; ownerUserId: string; locale: ThreadTitleLocale },
 ): Promise<string> {
   const [existing] = await tx.select({ id: chatThreads.id })
     .from(chatThreads)
@@ -374,8 +377,15 @@ export async function getOrCreateDefaultThread(
     tripId: params.tripId,
     scope: "TRIP",
     isDefault: true,
-    title: "Personal trip scratchpad",
+    title: buildDefaultThreadTitle(params.locale),
+    titleSource: "AUTO",
+    titleLocale: params.locale,
   }).onConflictDoNothing();
+
+  metrics.inc("thread_title_writes_total", {
+    source: "deterministic",
+    result: "applied",
+  });
 
   const [after] = await tx.select({ id: chatThreads.id })
     .from(chatThreads)

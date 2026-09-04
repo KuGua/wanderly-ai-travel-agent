@@ -25,6 +25,15 @@ const invitationIdParamSchema = z.object({
 }).strict();
 const inviteTokenParamSchema = z.object({ inviteToken: z.string().min(32).max(256) }).strict();
 
+// `locale` is optional and only sets the language authority for the default
+// thread title that this accept call may provision. It never changes the
+// invitation's other semantics (trip binding, recipient match, audit
+// summary). Defaults to "en" so pre-existing clients without a body keep
+// working.
+const acceptInvitationRequestSchema = z.object({
+  locale: z.enum(["en", "zh"]).default("en"),
+}).strict();
+
 export async function tripInvitationRoutes(app: FastifyInstance) {
   // Only the trip creator may invite additional members.
   app.post("/trips/:tripId/invitations", {
@@ -81,10 +90,18 @@ export async function tripInvitationRoutes(app: FastifyInstance) {
       description: "Accept a Trip invitation using its one-time token.",
       tags: ["invitations"],
       params: toJsonSchema(inviteTokenParamSchema),
+      // Body is intentionally not declared in the Fastify schema: the
+      // accept endpoint is normally called without a body, and the locale
+      // override is an additive feature. The handler below tolerates
+      // missing/empty bodies and applies the schema after the framework
+      // has stopped trying to parse Content-Type.
       response: { 200: toJsonSchema(acceptInvitationResponseSchema) },
     },
   }, async (request, reply) => {
     const { inviteToken } = inviteTokenParamSchema.parse(request.params);
+    // Body is optional; absent or empty payload resolves to the default
+    // locale ("en") via acceptInvitationRequestSchema.
+    const { locale } = acceptInvitationRequestSchema.parse(request.body ?? {});
     const ctx = createRequestContext(
       request.user.id, request.correlationId, request.traceId,
       request.clientRequestId, request.traceparent, request.tracestate, request.spanId,
@@ -94,6 +111,7 @@ export async function tripInvitationRoutes(app: FastifyInstance) {
       token: inviteToken,
       actorUserId: request.user.id,
       actorEmail: request.user.email,
+      locale,
     });
     return reply.code(200).send(acceptInvitationResponseSchema.parse({
       tripId: result.tripId,

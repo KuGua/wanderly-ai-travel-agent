@@ -17,6 +17,8 @@ import {
   useGetOrCreateDefaultTripThread,
   useLatestResearchResult,
   useLatestPlanningRun,
+  useRenameThread,
+  useSuggestThreadTitle,
   useTrip,
   useTripPlans,
   useTripThreads,
@@ -52,9 +54,18 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const createThread = useCreateTripThread(tripId);
   const ensureDefault = useGetOrCreateDefaultTripThread(tripId);
   const updateTitle = useUpdateTripTitle(tripId);
+  const renameThread = useRenameThread(tripId);
+  const suggestTitle = useSuggestThreadTitle(tripId);
   const [editingTitle, setEditingTitle] = useState(false);
   const [manualTitle, setManualTitle] = useState("");
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  // Per-thread UI state for the rail overflow menu + inline rename form.
+  const [openMenuFor, setOpenMenuFor] = useState<string | null>(null);
+  const [renamingFor, setRenamingFor] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [aiNameFeedback, setAiNameFeedback] = useState<
+    { threadId: string; reason: "MANUAL_LOCKED" | "NO_MATERIAL" | "REJECTED" | "UNAVAILABLE" } | null
+  >(null);
 
   const autoProvisionAttemptedRef = useRef(false);
 
@@ -159,12 +170,14 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   }, [threads, threadsQuery.data, queryThreadId, querySharedView, router, searchParams, tripId, membershipRevoked]);
 
   // "New thread" opens a fresh session straight away — no title prompt.
-  // The server-side title is auto-numbered so the rail stays readable.
+  // The server is the authority on the auto-numbered title; the client only
+  // sends its locale so the server can pick the right language family
+  // (docs/thread-title-lifecycle-implementation.md D1 + §7.3).
   const handleCreateThread = useCallback(async () => {
     if (createThread.isPending) return;
     try {
       const created = await createThread.mutateAsync({
-        title: t("threads.newThread.autoTitle", { index: threads.length + 1 }),
+        titleLocale: locale === "zh" ? "zh" : "en",
       });
       const params = new URLSearchParams(searchParams.toString());
       params.delete(SHARED_VIEW_QUERY);
@@ -173,7 +186,7 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     } catch {
       // surfaced through the threads query error state.
     }
-  }, [createThread, router, searchParams, t, threads.length, tripId]);
+  }, [createThread, locale, router, searchParams, tripId]);
 
   // Select the shared plan surface in the rail. Mutually exclusive with
   // the `thread=` query parameter (spec §1.9): setting one clears the
@@ -223,6 +236,59 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
     params.set(SHARED_VIEW_QUERY, SHARED_VIEW_VALUE);
     router.push(`/trips/${tripId}?${params.toString()}` as Parameters<typeof router.push>[0]);
   }, [latestRun.data, querySharedView, router, searchParams, tripId]);
+
+  // Rail-level actions. The overflow menu is per-thread; the inline rename
+  // form replaces the title cell while active so the rail keeps a single
+  // visual line. Declared before the early returns below so the hook count
+  // stays stable across all render paths.
+  const beginRename = useCallback((thread: (typeof threads)[number]) => {
+    setOpenMenuFor(null);
+    setRenamingFor(thread.id);
+    setRenameDraft(thread.title);
+    setAiNameFeedback(null);
+  }, []);
+  const cancelRename = useCallback(() => {
+    setRenamingFor(null);
+    setRenameDraft("");
+  }, []);
+  const submitRename = useCallback(async (threadId: string) => {
+    const trimmed = renameDraft.trim();
+    if (!trimmed) return;
+    try {
+      await renameThread.mutateAsync({ threadId, input: { title: trimmed } });
+      cancelRename();
+    } catch {
+      // surfaced via the threads query error state; keep the form open so the
+      // user can retry without retyping.
+    }
+  }, [cancelRename, renameDraft, renameThread]);
+
+  const triggerAiName = useCallback(async (thread: (typeof threads)[number]) => {
+    setOpenMenuFor(null);
+    setAiNameFeedback(null);
+    const overwriteManual = thread.titleSource === "MANUAL"
+      ? window.confirm(t("threads.aiName.overwriteConfirm"))
+      : false;
+    if (thread.titleSource === "MANUAL" && !overwriteManual) {
+      setAiNameFeedback({ threadId: thread.id, reason: "MANUAL_LOCKED" });
+      return;
+    }
+    try {
+      const result = await suggestTitle.mutateAsync({
+        threadId: thread.id,
+        input: {
+          requestId: crypto.randomUUID(),
+          locale: locale === "zh" ? "zh" : "en",
+          overwriteManual,
+        },
+      });
+      if (!result.applied && result.reason) {
+        setAiNameFeedback({ threadId: thread.id, reason: result.reason });
+      }
+    } catch {
+      setAiNameFeedback({ threadId: thread.id, reason: "UNAVAILABLE" });
+    }
+  }, [locale, suggestTitle, t]);
 
   if (membershipRevoked) {
     return (
@@ -282,13 +348,21 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   // Every place the selected plan touches; the globe merges these onto countries.
   const globePlaces = [...trip.departureCities, ...trip.destinationCandidates];
 
+  // Rail-level actions were hoisted above the early returns to keep the
+  // hook order stable. The renderThread function is defined further below
+  // and closes over the hooks defined here.
+
   const renderThread = (thread: (typeof threads)[number]) => {
     const selected = thread.id === activeThread?.id;
+    const menuOpen = openMenuFor === thread.id;
+    const renaming = renamingFor === thread.id;
+    const feedback = aiNameFeedback?.threadId === thread.id ? aiNameFeedback : null;
     return (
-      <li key={thread.id}>
+      <li key={thread.id} className="relative">
         <button
           type="button"
           onClick={() => {
+            if (renaming) return; // don't navigate while the inline form is open
             const params = new URLSearchParams(searchParams.toString());
             // Picking a thread clears `view=shared`; the two are mutually
             // exclusive (§1.9 / §7.1).
@@ -300,7 +374,41 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
           aria-current={selected ? "page" : undefined}
           className={`relative min-h-[82px] w-full bg-card px-3 py-[11px] text-left text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-press ${selected ? "bg-[var(--w-highlight)] wanderly-shadow" : "wanderly-shadow-sm hover:bg-[var(--w-mist)]"}`}
         >
-          <b className="block truncate pr-[42px] text-[13px] font-bold">{thread.title}</b>
+          {renaming ? (
+            <form
+              className="flex min-w-0 items-center gap-1.5 pr-[42px]"
+              onClick={(event) => event.stopPropagation()}
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitRename(thread.id);
+              }}
+            >
+              <input
+                aria-label={t("threads.rename.inputLabel")}
+                autoFocus
+                maxLength={80}
+                value={renameDraft}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                className="min-w-0 flex-1 rounded-[10px] border bg-background px-2 py-1.5 text-[13px] font-bold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+              />
+              <button
+                type="submit"
+                disabled={renameThread.isPending}
+                className="rounded-[9px] bg-primary px-2 py-1.5 text-xs font-bold text-primary-foreground disabled:opacity-50"
+              >
+                {t("threads.rename.save")}
+              </button>
+              <button
+                type="button"
+                onClick={cancelRename}
+                className="rounded-[9px] px-1.5 py-1.5 text-xs font-bold text-muted-foreground hover:bg-secondary"
+              >
+                {t("threads.rename.cancel")}
+              </button>
+            </form>
+          ) : (
+            <b className="block truncate pr-[42px] text-[13px] font-bold">{thread.title}</b>
+          )}
           <span className="mt-1 block truncate text-xs">
             {thread.isDefault ? t("threads.defaultSubtitle") : t("threads.threadSubtitle")}
           </span>
@@ -313,6 +421,56 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
             </span>
           ) : null}
         </button>
+        {!renaming ? (
+          <button
+            type="button"
+            aria-label={t("threads.menu.triggerLabel")}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpenMenuFor(menuOpen ? null : thread.id);
+            }}
+            className="absolute right-2 top-2 grid size-7 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press hover:bg-[var(--w-mist)]"
+          >
+            <Pencil aria-hidden="true" className="size-3.5" />
+          </button>
+        ) : null}
+        {menuOpen ? (
+          <div
+            role="menu"
+            className="absolute right-2 top-10 z-20 grid min-w-[160px] gap-1 border bg-card p-1 text-sm shadow-md wanderly-edge wanderly-r-sm"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => beginRename(thread)}
+              className="rounded-[6px] px-2 py-1.5 text-left text-xs font-bold hover:bg-[var(--w-mist)]"
+            >
+              {t("threads.menu.rename")}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={suggestTitle.isPending}
+              onClick={() => void triggerAiName(thread)}
+              className="rounded-[6px] px-2 py-1.5 text-left text-xs font-bold hover:bg-[var(--w-mist)] disabled:opacity-50"
+            >
+              {suggestTitle.isPending
+                ? t("threads.aiName.pending")
+                : t("threads.menu.aiName")}
+            </button>
+          </div>
+        ) : null}
+        {feedback ? (
+          <p
+            role="status"
+            className="mt-1 px-3 text-[11px] font-bold text-muted-foreground"
+          >
+            {t(`threads.aiName.reason${feedback.reason.charAt(0)}${feedback.reason.slice(1).toLowerCase()}` as never)}
+          </p>
+        ) : null}
       </li>
     );
   };

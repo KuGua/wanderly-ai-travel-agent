@@ -154,6 +154,9 @@ describe("API contracts", () => {
       scope: "TRIP",
       isDefault: false,
       title: "Explore conversation",
+      titleSource: "AUTO",
+      titleLocale: "en",
+      titleUpdatedAt: null,
       createdAt: "2026-08-25T10:00:00.000Z",
       archivedAt: null,
     };

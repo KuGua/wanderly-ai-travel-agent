@@ -5,6 +5,7 @@ import { consentExplanationSkill } from "../skills/personal/consent-explanation-
 import { threadRecallSkill } from "../skills/personal/thread-recall-skill.js";
 import { travelConversationSkill } from "../skills/personal/travel-conversation-skill.js";
 import { tripConstraintProposeSkill } from "../skills/personal/trip-constraint-propose-skill.js";
+import { threadTitleSuggestSkill } from "../skills/personal/thread-title-suggest-skill.js";
 
 export const personalTravelAgent = {
   name: "personal" as const,
@@ -15,5 +16,6 @@ export const personalTravelAgent = {
     registerSkill(threadRecallSkill);
     registerSkill(travelConversationSkill);
     registerSkill(tripConstraintProposeSkill);
+    registerSkill(threadTitleSuggestSkill);
   },
 };

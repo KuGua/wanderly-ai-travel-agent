@@ -19,6 +19,10 @@ export type AuditAction =
   | "TRIP_INVITATION_REVOKE" | "TRIP_INVITATION_DECLINE" | "TRIP_DEFAULT_THREAD_PROVISION"
   | "EXPLORATION_START" | "TRIP_ACTIVATE" | "TRIP_TITLE_UPDATE" | "TRIP_DRAFT_BRIEF_UPDATE"
   | "TRIP_ARCHIVE" | "TRIP_UNARCHIVE" | "TRIP_DELETE"
+  // Private thread title lifecycle (docs/thread-title-lifecycle-implementation.md §11.2).
+  // The summary's `source` field is "deterministic" | "llm" | "manual" — the
+  // title text itself never appears here.
+  | "CHAT_THREAD_TITLE_UPDATE"
   | "TRIP_PIN_SESSION_WRITTEN" | "PLAN_ADOPTION_VOTED"
   | "SKILL_INVOKE" | "AGENT_RUN" | "AGENT_TASK"
   | "FLIGHT_SEARCH_REQUESTED" | "FLIGHT_SEARCH_COMPLETED" | "FLIGHT_SEARCH_UNAVAILABLE"

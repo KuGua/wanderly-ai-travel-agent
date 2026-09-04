@@ -11,6 +11,10 @@ import {
   explorationStartRequestSchema,
   explorationStartResponseSchema,
   ownerConversationResponseSchema,
+  renameThreadInputSchema,
+  suggestThreadTitleInputSchema,
+  suggestThreadTitleResponseSchema,
+  threadSchema,
   memoryFactSchema,
   memoryNotesResponseSchema,
   preferenceCardResolveResponseSchema,
@@ -274,6 +278,28 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request(
       "/trips/" + encodeURIComponent(tripId) + "/threads",
       createThreadResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  }
+
+  renameThread(tripId: string, threadId: string, input: import("./contracts").RenameThreadInput) {
+    const body = renameThreadInputSchema.parse(input);
+    return this.client.request(
+      "/trips/" + encodeURIComponent(tripId) + "/threads/" + encodeURIComponent(threadId) + "/title",
+      threadSchema,
+      { method: "PATCH", body: JSON.stringify(body) },
+    );
+  }
+
+  suggestThreadTitle(
+    tripId: string,
+    threadId: string,
+    input: import("./contracts").SuggestThreadTitleInput,
+  ) {
+    const body = suggestThreadTitleInputSchema.parse(input);
+    return this.client.request(
+      "/trips/" + encodeURIComponent(tripId) + "/threads/" + encodeURIComponent(threadId) + "/title/suggest",
+      suggestThreadTitleResponseSchema,
       { method: "POST", body: JSON.stringify(body) },
     );
   }

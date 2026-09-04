@@ -360,7 +360,8 @@ export const createThreadSchema = z.object({
 }).strict();
 
 export const createTripThreadSchema = z.object({
-  title: z.string().trim().min(1).max(256),
+  title: z.string().trim().min(1).max(256).optional(),
+  locale: z.enum(["en", "zh"]).optional(),
 }).strict();
 
 export const threadSummarySchema = z.object({
@@ -370,6 +371,10 @@ export const threadSummarySchema = z.object({
   scope: chatThreadScopeSchema,
   isDefault: z.boolean(),
   title: z.string(),
+  // Title lifecycle metadata (docs/thread-title-lifecycle-implementation.md §7.6).
+  titleSource: z.enum(["AUTO", "MANUAL"]),
+  titleLocale: z.enum(["en", "zh"]).nullable(),
+  titleUpdatedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   archivedAt: z.string().datetime().nullable(),
 });
@@ -1392,9 +1397,13 @@ export const declineInvitationResponseSchema = z.object({
 
 // Exploration start carries only the client's idempotency key.  No message
 // body, place, profile, or nationality data crosses this boundary, so audit
-// and log lines stay free of PII and trip business state.
+// and log lines stay free of PII and trip business state.  `locale` is the
+// only domain field: it picks the language authority for the draft trip's
+// `titleLocale` and the default thread's localized title
+// (docs/thread-title-lifecycle-implementation.md §7.4).
 export const explorationStartRequestSchema = z.object({
   requestId: uuidSchema,
+  locale: z.enum(["en", "zh"]).default("en"),
 }).strict();
 
 export const explorationStartResponseSchema = z.object({
@@ -1470,6 +1479,19 @@ export const updateTripTitleResponseSchema = z.object({
     updatedAt: z.string().datetime(),
   }).strict(),
 });
+
+// Owner-only manual rename of a private thread. 80 chars keeps the title
+// short enough for the chat rail and constrains the LLM suggest path's
+// max-length budget (40 chars post-truncation) with headroom.
+export const renameThreadRequestSchema = z.object({
+  title: z.string().trim().min(1).max(80),
+}).strict();
+
+// PATCH /trips/:tripId/threads/:threadId/title responds with the same
+// ThreadSummary used everywhere else; the `nameSource: "MANUAL"` is
+// carried in the summary view so the UI can warn before letting AI
+// overwrite a manual title.
+export const renameThreadResponseSchema = threadSummarySchema;
 
 export const tripActivationResponseSchema = z.object({
   trip: z.object({

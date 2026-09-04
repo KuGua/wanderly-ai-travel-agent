@@ -543,11 +543,25 @@
       "defaultBadge": "默认",
       "newThread": {
         "label": "新建对话",
-        "placeholder": "例如：签证准备、预算、逐日行程",
-        "submit": "创建",
-        "submitting": "创建中…",
-        "validation": "标题需为 1–256 字符。",
-        "autoTitle": "新对话 {index}"
+        "submitting": "创建中…"
+      },
+      "menu": {
+        "triggerLabel": "对话操作",
+        "rename": "重命名",
+        "aiName": "AI 命名"
+      },
+      "rename": {
+        "inputLabel": "对话标题",
+        "save": "保存",
+        "cancel": "取消"
+      },
+      "aiName": {
+        "pending": "正在用 AI 命名…",
+        "overwriteConfirm": "要把手动起的标题换成 AI 建议吗？",
+        "reasonManualLocked": "你已手动重命名过这个对话。如需让 AI 重新命名，请先确认覆盖。",
+        "reasonNoMaterial": "请先发送至少一条消息，再让 AI 命名。",
+        "reasonUnavailable": "AI 命名暂不可用，请稍后重试或手动重命名。",
+        "reasonRejected": "AI 未能给出安全标题，请稍后重试或手动重命名。"
       },
       "sectionLabel": "本项目",
       "archivedLabel": "已归档",

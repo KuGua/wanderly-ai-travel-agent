@@ -92,12 +92,18 @@ export async function chatThreadRoutes(app: FastifyInstance) {
       throw new ApiError(403, "Forbidden", "Not an active member of this trip");
     }
     const created = await db.transaction(async (tx) => {
+      const now = new Date();
       const [thread] = await tx.insert(chatThreads).values({
         ownerUserId: request.user.id,
         tripId: body.tripId!,
         scope: "TRIP",
         isDefault: false,
         title: body.title,
+        // The legacy shim always carries a caller-supplied title, so the
+        // lifecycle metadata is MANUAL and the locale is unknown.
+        titleSource: "MANUAL",
+        titleLocale: null,
+        titleUpdatedAt: now,
       }).returning();
       await recordAudit({
         ctx,
@@ -256,6 +262,9 @@ function toThreadSummary(row: typeof chatThreads.$inferSelect): ThreadSummary {
     scope: row.scope,
     isDefault: row.isDefault,
     title: row.title,
+    titleSource: row.titleSource,
+    titleLocale: row.titleLocale,
+    titleUpdatedAt: row.titleUpdatedAt ? row.titleUpdatedAt.toISOString() : null,
     createdAt: row.createdAt.toISOString(),
     archivedAt: row.archivedAt ? row.archivedAt.toISOString() : null,
   };

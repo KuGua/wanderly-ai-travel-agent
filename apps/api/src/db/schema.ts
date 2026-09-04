@@ -111,6 +111,11 @@ export const auditActionEnum = pgEnum("audit_action", [
   "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE", "TRIP_DRAFT_BRIEF_UPDATE",
   // Archive is a reversible hide, not a delete (0061_trip_archive_audit_actions.sql).
   "TRIP_ARCHIVE", "TRIP_UNARCHIVE", "TRIP_DELETE",
+  // Private thread title lifecycle (docs/thread-title-lifecycle-implementation.md §11.2,
+  // added via 0070_thread_title_audit_action.sql). The summary's `source`
+  // field distinguishes deterministic / llm / manual — the title text itself
+  // never lands in the audit log.
+  "CHAT_THREAD_TITLE_UPDATE",
   "SKILL_INVOKE", "AGENT_RUN", "AGENT_TASK",
   "FLIGHT_SEARCH_REQUESTED", "FLIGHT_SEARCH_COMPLETED", "FLIGHT_SEARCH_UNAVAILABLE",
   "FLIGHT_OFFER_EXPIRED",
@@ -694,6 +699,17 @@ export const chatThreads = pgTable("chat_threads", {
   // `chat_threads_one_active_default_per_member_trip`.
   isDefault: boolean("is_default").notNull().default(false),
   title: varchar("title", { length: 256 }).notNull(),
+  // Title lifecycle metadata (docs/thread-title-lifecycle-implementation.md
+  // §5). `title_source` is the AUTO/MANUAL lock: a MANUAL row is never
+  // overwritten by the automatic paths. `title_locale` is the language
+  // authority for AUTO titles and is NULL for MANUAL ones. `title_updated_at`
+  // is the most recent write; NULL until the first write happens.
+  titleSource: varchar("title_source", { length: 16 })
+    .$type<"AUTO" | "MANUAL">()
+    .default("MANUAL")
+    .notNull(),
+  titleLocale: varchar("title_locale", { length: 8 }).$type<"en" | "zh" | null>(),
+  titleUpdatedAt: timestamp("title_updated_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   archivedAt: timestamp("archived_at", { withTimezone: true }),
 }, (table) => ({

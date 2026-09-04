@@ -6,6 +6,9 @@ import {
   completeIdempotency,
   loadIdempotencyResult,
 } from "./idempotency-service.js";
+import { buildDefaultThreadTitle, type ThreadTitleLocale } from "./thread-title-service.js";
+import { buildTripTitle } from "./trip-title-service.js";
+import { metrics } from "../observability/metrics.js";
 import { ApiError } from "../middleware/error-handler.js";
 import type { RequestContext } from "../utils/context.js";
 
@@ -45,8 +48,10 @@ export async function startExploration(params: {
   ctx: RequestContext;
   userId: string;
   requestId: string;
+  locale: ThreadTitleLocale;
 }): Promise<ExplorationStartResult> {
   const key = idempotencyKey(params.userId, params.requestId);
+  const locale = params.locale;
 
   // Fast path: replay reads the cached result without touching business tables.
   const cached = await loadIdempotencyResult(key);
@@ -81,9 +86,17 @@ export async function startExploration(params: {
     }
 
     const [trip] = await tx.insert(sharedTrips).values({
-      name: "Trip Planner",
+      // The draft row has no destinations or dates yet, so buildTripTitle
+      // returns the locale-appropriate planner default. Once the brief is
+      // filled in, the activate path will rebuild a destination-aware name.
+      name: buildTripTitle({
+        destinationCandidates: [],
+        travelDateStart: null,
+        travelDateEnd: null,
+        locale,
+      }),
       nameSource: "AUTO",
-      titleLocale: "en",
+      titleLocale: locale,
       createdBy: params.userId,
       status: "DRAFT",
       departureCities: [],
@@ -104,8 +117,15 @@ export async function startExploration(params: {
       tripId: trip.id,
       scope: "TRIP",
       isDefault: true,
-      title: "Trip Planner",
+      title: buildDefaultThreadTitle(locale),
+      titleSource: "AUTO",
+      titleLocale: locale,
     }).returning();
+
+    metrics.inc("thread_title_writes_total", {
+      source: "deterministic",
+      result: "applied",
+    });
 
     await recordAudit({
       ctx: params.ctx,

@@ -64,6 +64,13 @@ runs **before** any insert. Rejection propagates as
   content.
 - Booking and changes: `BOOKING_SUBMIT`, `BOOKING_RESULT`, `CHANGE_EVENT`, `VISA_CHECK`.
 - Chat: `CHAT_THREAD_CREATE`, `CHAT_THREAD_DELETE`, `CHAT_MESSAGE_APPEND`.
+- Private thread title lifecycle (docs/thread-title-lifecycle-implementation.md §11.2):
+  `CHAT_THREAD_TITLE_UPDATE`. The summary's `source` field is one of
+  `deterministic` (system-generated default or auto-numbered extra),
+  `llm` (owner-triggered AI suggest), or `manual` (owner rename). The
+  summary is strictly `{ threadId, source }` and **never** contains the
+  title text — titles are derived from private conversation content and
+  must not be persisted in the audit log.
 - Agent runtime: `SKILL_INVOKE`, `AGENT_RUN`, `AGENT_TASK`. Task summaries
   contain only safe run/operation/status identifiers and never question or
   streamed/final message text.
@@ -145,6 +152,7 @@ safe task/capability/status identifiers, never the confirmed request input.
 - `BOOKING_SUBMIT`, `BOOKING_RESULT`
 - `CHANGE_EVENT`, `VISA_CHECK`
 - `CHAT_THREAD_CREATE`, `CHAT_THREAD_DELETE`, `CHAT_MESSAGE_APPEND`
+- `CHAT_THREAD_TITLE_UPDATE`
 - `SKILL_INVOKE`, `AGENT_RUN`, `AGENT_TASK`
 
 ## Failure modes
