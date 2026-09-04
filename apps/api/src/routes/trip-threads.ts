@@ -467,7 +467,26 @@ export async function tripThreadRoutes(app: FastifyInstance) {
     }
 
     // 5. Persist in a single transaction with audit + metric.
+    //
+    // The MANUAL check in step 1 read the row without a lock, and the model
+    // call between then and now takes seconds. If the owner renamed the
+    // thread in that window, writing here would silently discard their title
+    // and flip the row back to AUTO — exactly what the MANUAL lock exists to
+    // prevent (spec D4). Re-read FOR UPDATE and re-decide inside the
+    // transaction; a title that became MANUAL mid-flight leaves through the
+    // same MANUAL_LOCKED exit as one that was already locked when the owner
+    // clicked, so the UI needs no new state.
     const updated = await db.transaction(async (tx) => {
+      const [current] = await tx.select()
+        .from(chatThreads)
+        .where(eq(chatThreads.id, threadId))
+        .for("update")
+        .limit(1);
+      if (!current || current.tripId !== tripId) {
+        throw new ApiError(404, "Not Found", "Thread not found");
+      }
+      if (current.titleSource === "MANUAL" && !body.overwriteManual) return null;
+
       const [renamed] = await tx.update(chatThreads).set({
         title: cleaned.title,
         titleSource: "AUTO",
@@ -487,6 +506,19 @@ export async function tripThreadRoutes(app: FastifyInstance) {
       });
       return renamed;
     });
+
+    if (updated === null) {
+      metrics.inc("thread_title_writes_total", { source: "llm", result: "manual_locked" });
+      const [latest] = await db.select().from(chatThreads)
+        .where(eq(chatThreads.id, threadId)).limit(1);
+      return reply.code(200).send(suggestThreadTitleResponseSchema.parse({
+        // The owner's own rename is what the rail should show, not the
+        // pre-rename row this request started from.
+        thread: toThreadSummary(latest ?? thread),
+        applied: false,
+        reason: "MANUAL_LOCKED",
+      }));
+    }
 
     metrics.inc("thread_title_writes_total", { source: "llm", result: "applied" });
     logSafeRuntimeEvent(ctx, {
