@@ -71,6 +71,46 @@ without clipping it at the message viewport boundary.
 
 ## 模型网关配置与失败文案
 
+### TS-MG0 — Gemini 429 不能被指标标签错误改写成 `INTERNAL`
+
+**Objective:** Verify an upstream model quota response remains a bounded
+`RATE_LIMITED` outcome through the conversation error path, rather than making
+the durable task fail because observability rejected its own metric label.
+
+**Steps:**
+
+1. Configure a model-gateway test double that returns HTTP 429 before it emits
+   a conversation delta.
+2. Submit one private-thread conversation turn and let the Worker process it.
+3. Inspect the durable run, the Prometheus registry and safe Worker logs.
+
+**Expected outcomes:**
+
+- `llm_request_errors_total` accepts exactly
+  `provider=gemini`, `error_category=rate_limited`, `retryable=true`.
+- The error path uses the configured rate-limit backoff and then its existing
+  retry/fallback terminal behaviour; it never throws `MetricLabelError`.
+- The task is not marked `FAILED` with `errorCode=INTERNAL` merely because an
+  upstream 429 occurred.
+- The metric registry still rejects an arbitrary `error_category`, proving the
+  fix did not weaken its bounded-label guard.
+- Logs/traces contain only the safe error classification and correlation
+  context, never provider error bodies, conversation text or credentials.
+
+### TS-MG0a — Unknown internal LLM error categories remain bounded
+
+**Objective:** Verify a future internal classification cannot create a new
+Prometheus series or break the conversation failure path.
+
+**Steps:** Force `recordRetryableError` through an internal code without a
+declared metric mapping.
+
+**Expected outcomes:**
+
+- The metric records `error_category=unknown`.
+- No arbitrary value is passed to `MetricsRegistry`.
+- The original model failure remains the user-visible/task-level cause.
+
 ### TS-MG1 — 空的 `MODEL_GATEWAY_API_KEY` 在启动时被拒绝，而不是每一轮对话失败一次
 
 **Objective:** Verify a blank or shadowed model-gateway credential is a boot
@@ -1884,6 +1924,43 @@ depending on a provider-specific `finish_reason`.
 3. owner 只接受助手提议中的一部分时，只提取该部分；owner 的提问、纠正或反提议不算接受。
 4. owner 单方面的模糊表述（仅「下个月」，助手未解析或 owner 未接受）仍不得提取。
 5. 回归目标：日期不得只落在 `conversation_*_search_states` 而 `shared_trips.travel_date_start` 为空——那会让 `POST /trips/:tripId/activate` 无法创建 snapshot 与 `PROPOSE_PLAN` task，Trip 卡在无法规划的 `PLANNING`。
+
+### TS-DRAFT-SHARED-HANDOFF-1 — 国家级目的地不得伪装为可开始的 Shared 规划
+
+**Objective:** Verify DRAFT private chat gives an actionable, truthful next
+step when dates are known but the destination is a country or another
+non-city label.
+
+**Starting conditions:** A Solo `DRAFT` Trip belongs to its creator. The
+owner has confirmed `travelDateStart` and `travelDateEnd`, while
+`departureCities=[]` and `destinationCandidates=[]`.
+
+1. The owner discusses a country-level destination such as France and asks
+   how to arrange a ten-day trip.
+2. Inspect the conversation response, draft-brief proposal/card and the
+   “Start planning” action.
+3. The owner selects one unambiguous city, supplies an origin, confirms the
+   draft brief, and then clicks “Start planning”.
+4. Repeat with a natural-language “confirm” / “start” message before clicking
+   the UI action.
+
+**Expected outcomes:**
+
+- The reply may discuss high-level options, but states that a city and origin
+  are still required before full planning can start. It must not say that a
+  Shared plan has started or imply an itinerary/provider query exists.
+- The country name is never persisted as a destination city, and no fallback
+  chooses a capital. Until an unambiguous city is confirmed,
+  `destinationCandidates` remains empty and the CTA is disabled with a
+  comprehensible missing-field explanation.
+- Before the CTA click, no `constraint_snapshot`, snapshot-bound
+  `PLAN`/`REPLAN`/`RESEARCH` task or itinerary plan exists. The private turn
+  remains `CONVERSATION`; this scenario does not alter separately confirmed
+  `PERSONAL_RESEARCH` behaviour.
+- After confirmed city, origin and dates make the brief complete, only the
+  explicit CTA calls `POST /trips/:tripId/activate`; the Solo activation
+  transaction creates the snapshot and first planning task atomically.
+- Natural-language confirmation alone cannot activate the Trip.
 
 ## 已实施：成员私有对话候选交接 Shared Agent
 
