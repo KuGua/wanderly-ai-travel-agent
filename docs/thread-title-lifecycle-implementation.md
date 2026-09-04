@@ -314,6 +314,8 @@ export function buildIndexedThreadTitle(index: number, locale: ThreadTitleLocale
 | `timeoutMs` | `4000` | 用户在前台等待，比 `trip.constraint.propose` 的 1500ms 宽松；超时即 `UNAVAILABLE` |
 | `needsConfirm` | `false` | 触发动作本身即用户确认 |
 
+Skill 通过 `modelGateway().generateThreadTitle` 调用模型。**该方法在 `ModelGateway` 接口上是必需的，不得声明为可选**：可选时唯一的具体实现 `LLMGateway` 从未实现它，skill 的缺失守卫每次都命中，功能在所有环境恒返回 `UNAVAILABLE`，而编译不报错。测试 fake 不在 `tsconfig` 的 `include` 范围内，因此不受影响；skill 保留运行时守卫用于兜住注入的部分实现 gateway。
+
 **输入 schema（`.strict()`）**
 
 ```ts

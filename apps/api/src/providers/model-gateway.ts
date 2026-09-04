@@ -337,11 +337,15 @@ export interface ModelGateway {
 
   /**
    * Owner-triggered thread title suggestion (docs/thread-title-lifecycle-implementation.md §9.1).
-   * Optional so the gateway can be stubbed in tests and during the rollout
-   * window before the LLM wiring lands; the skill handles the absence by
-   * surfacing UPSTREAM_FAILURE which the route maps to UNAVAILABLE.
+   *
+   * Required, deliberately. While this was optional the only concrete gateway
+   * never implemented it, so the skill's absence guard fired on every call and
+   * the feature answered UNAVAILABLE in every environment without anything
+   * failing to compile. Test doubles live outside `tsconfig`'s `include`, so
+   * they are unaffected; the skill keeps a runtime guard for the ones that
+   * inject a partial gateway.
    */
-  generateThreadTitle?(params: {
+  generateThreadTitle(params: {
     /** Server-validated language authority (LLM-GATEWAY.md §User-visible language contract). */
     locale: "en" | "zh";
     /** Owner USER messages only; assistant messages and other threads are never sent. */
