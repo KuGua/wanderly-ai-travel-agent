@@ -277,9 +277,19 @@ metrics.registerHistogram(
   },
 );
 
-metrics.registerCounter("agent_skill_runs_total", "Total skill invocations by bounded outcome.", {
-  operation: ["profile", "consent", "research", "readiness", "planning", "review", "confirmation", "booking"],
+metrics.registerCounter("agent_skill_runs_total", "Registry skill invocations by bounded agent, skill and outcome.", {
+  agent: ["personal", "shared"],
+  skill: ["profile.memory", "profile.change_proposal", "consent.explanation", "thread.recall", "travel.conversation", "trip.constraint.propose", "plan.comparison", "readiness.check", "flight.search", "hotel.search", "accommodation.discover", "activities.search", "places.search", "places.adopt", "navigation.route", "mobility.search", "other"],
   outcome: ["success", "failure", "rejected", "timeout"],
+});
+metrics.registerHistogram("agent_skill_duration_ms", "Registry skill end-to-end duration by bounded agent, skill and outcome.", [50, 100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000], {
+  agent: ["personal", "shared"],
+  skill: ["profile.memory", "profile.change_proposal", "consent.explanation", "thread.recall", "travel.conversation", "trip.constraint.propose", "plan.comparison", "readiness.check", "flight.search", "hotel.search", "accommodation.discover", "activities.search", "places.search", "places.adopt", "navigation.route", "mobility.search", "other"],
+  outcome: ["success", "failure", "rejected", "timeout"],
+});
+metrics.registerCounter("agent_skill_retries_total", "Registry skill retry attempts by bounded agent and skill.", {
+  agent: ["personal", "shared"],
+  skill: ["profile.memory", "profile.change_proposal", "consent.explanation", "thread.recall", "travel.conversation", "trip.constraint.propose", "plan.comparison", "readiness.check", "flight.search", "hotel.search", "accommodation.discover", "activities.search", "places.search", "places.adopt", "navigation.route", "mobility.search", "other"],
 });
 metrics.registerCounter("plan_validation_failures_total", "Plan validation failures by bounded result.", {
   validationResult: ["schema", "authorization", "route", "provenance", "evidence", "unknown"],
@@ -373,8 +383,8 @@ metrics.registerCounter(
   },
 );
 metrics.registerCounter("agent_task_outcomes_total", "Durable Agent task outcomes by bounded operation and result.", {
-  operation: ["conversation", "plan", "replan"],
-  outcome: ["completed", "failed", "cancelled", "retrying"],
+  operation: ["conversation", "plan", "replan", "research", "personal_research"],
+  outcome: ["completed", "completed_with_gaps", "failed", "cancelled", "retrying"],
 });
 metrics.registerCounter("exploration_start_total", "Exploration-start idempotency outcomes.", {
   result: ["created", "cached", "conflict", "error"],
@@ -562,8 +572,8 @@ metrics.registerHistogram(
   "Accepted-to-terminal durable Agent task latency in milliseconds.",
   [100, 250, 500, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000, 300_000],
   {
-    operation: ["conversation", "plan", "replan"],
-    outcome: ["completed", "failed", "cancelled"],
+    operation: ["conversation", "plan", "replan", "research", "personal_research"],
+    outcome: ["completed", "completed_with_gaps", "failed", "cancelled"],
   },
 );
 

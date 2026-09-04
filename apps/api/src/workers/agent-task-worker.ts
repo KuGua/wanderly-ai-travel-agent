@@ -27,6 +27,7 @@ import {
   type AgentTaskRow,
 } from "../tasks/task-repository.js";
 import { publishAgentStreamEvent } from "../tasks/task-stream-publisher.js";
+import { recordTaskMetrics, taskMetricOperation, type TaskMetricOutcome } from "../tasks/task-observability.js";
 
 /**
  * Open the worker root span for a claimed task. The span is linked to the
@@ -46,8 +47,7 @@ function openWorkerRunSpan(run: AgentTaskRow) {
     {
       kind: SpanKind.CONSUMER,
       attributes: {
-        "tasks.operation": "conversation",
-        "tasks.run.id": run.id,
+        "tasks.operation": taskMetricOperation(run.operation),
         "tasks.attempt": run.generationAttempt,
         "tasks.recovery": tc === null,
       },
@@ -56,6 +56,12 @@ function openWorkerRunSpan(run: AgentTaskRow) {
   );
   safeSetAttribute(span, "app.correlation_id", tc?.correlationId ?? run.requestId);
   return span;
+}
+
+async function persistedPlanningOutcome(run: AgentTaskRow): Promise<TaskMetricOutcome> {
+  const [persisted] = await db.select({ status: agentTaskRuns.status })
+    .from(agentTaskRuns).where(eq(agentTaskRuns.id, run.id)).limit(1);
+  return persisted?.status === "COMPLETED_WITH_GAPS" ? "completed_with_gaps" : "completed";
 }
 
 /**
@@ -142,7 +148,7 @@ export async function processNextAgentTask(): Promise<boolean> {
         const planId = await handlePlanningTask({ run, ctx, signal: abortController.signal, leaseToken });
         await publishPhase(run, "PERSISTING", traceparent);
         await publishAgentStreamEvent({ event: "turn.completed", runId: run.id, generationAttempt: run.generationAttempt, resultPlanId: planId ?? undefined, traceparent });
-        metrics.inc("agent_task_outcomes_total", { operation: run.operation.toLowerCase(), outcome: "completed" });
+        recordTaskMetrics(run, await persistedPlanningOutcome(run));
         logSafeRuntimeEvent(ctx, {
           component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "success",
           attempt: run.generationAttempt, relatedRunId: run.id,
@@ -162,7 +168,7 @@ export async function processNextAgentTask(): Promise<boolean> {
       // own SSE events and a `turn.completed`, so the worker just bails
       // out cleanly without trying to persist a duplicate message.
       if (!output) {
-        metrics.inc("agent_task_outcomes_total", { operation: run.operation.toLowerCase(), outcome: "completed" });
+        recordTaskMetrics(run, "completed");
         logSafeRuntimeEvent(ctx, {
           component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "success",
           attempt: run.generationAttempt, relatedRunId: run.id,
@@ -212,11 +218,7 @@ export async function processNextAgentTask(): Promise<boolean> {
         responseMode: output.responseMode,
         traceparent,
       });
-      metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "completed" });
-      metrics.observe("agent_task_duration_ms", Date.now() - run.createdAt.getTime(), {
-        operation: "conversation",
-        outcome: "completed",
-      });
+      recordTaskMetrics(run, "completed");
       logSafeRuntimeEvent(ctx, {
         component: "worker", event: "task", operation: "conversation", outcome: "success",
         attempt: run.generationAttempt, relatedRunId: run.id,
@@ -232,11 +234,7 @@ export async function processNextAgentTask(): Promise<boolean> {
             generationAttempt: run.generationAttempt,
             traceparent,
           });
-          metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "cancelled" });
-          metrics.observe("agent_task_duration_ms", Date.now() - run.createdAt.getTime(), {
-            operation: "conversation",
-            outcome: "cancelled",
-          });
+          recordTaskMetrics(run, "cancelled");
         }
         return true;
       }
@@ -269,14 +267,10 @@ export async function processNextAgentTask(): Promise<boolean> {
         retryable: classified.retryable,
       });
       if (outcome === "RETRYING") {
-        metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "retrying" });
+        recordTaskMetrics(run, "retrying");
         await publishPhase(run, "RETRYING", traceparent);
       } else if (outcome === "FAILED") {
-        metrics.inc("agent_task_outcomes_total", { operation: "conversation", outcome: "failed" });
-        metrics.observe("agent_task_duration_ms", Date.now() - run.createdAt.getTime(), {
-          operation: "conversation",
-          outcome: "failed",
-        });
+        recordTaskMetrics(run, "failed");
         await publishAgentStreamEvent({
           event: "turn.failed",
           runId: run.id,

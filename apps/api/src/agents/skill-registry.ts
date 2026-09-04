@@ -4,8 +4,32 @@ import { SkillError, type SkillErrorCode } from "./errors.js";
 import { recordAudit } from "../services/audit-service.js";
 import { DefaultPolicyGate } from "./policy-gate.js";
 import { logSafeRuntimeEvent } from "../observability/telemetry.js";
+import { metrics } from "../observability/metrics.js";
 
 const skillsByName = new Map<string, Skill<unknown, unknown>>();
+
+const METRIC_SKILLS = new Set([
+  "profile.memory", "profile.change_proposal", "consent.explanation", "thread.recall", "travel.conversation", "trip.constraint.propose",
+  "plan.comparison", "readiness.check", "flight.search", "hotel.search", "accommodation.discover", "activities.search",
+  "places.search", "places.adopt", "navigation.route", "mobility.search",
+]);
+
+function metricSkillName(name: string): string {
+  return METRIC_SKILLS.has(name) ? name : "other";
+}
+
+function skillOutcome(error: unknown): "failure" | "rejected" | "timeout" {
+  if (error instanceof SkillError && error.code === "TIMEOUT") return "timeout";
+  if (error instanceof SkillError && ["INPUT_INVALID", "OUTPUT_INVALID", "POLICY_DENIED", "TOOL_NOT_ALLOWED", "SNAPSHOT_REQUIRED", "SKILL_VERSION_MISMATCH"].includes(error.code)) return "rejected";
+  return "failure";
+}
+
+function recordSkillMetrics(skill: Skill<unknown, unknown>, startedAt: number, outcome: "success" | "failure" | "rejected" | "timeout"): void {
+  if (skill.agent !== "personal" && skill.agent !== "shared") return;
+  const labels = { agent: skill.agent, skill: metricSkillName(skill.name), outcome };
+  metrics.inc("agent_skill_runs_total", labels);
+  metrics.observe("agent_skill_duration_ms", Date.now() - startedAt, labels);
+}
 
 const FORBIDDEN_PERSONAL_SCOPES: readonly SkillScope[] = [
   "bookings",
@@ -200,8 +224,10 @@ export async function invokeSkill<I, O>(
   options: SkillInvocationOptions = {},
 ): Promise<O> {
   const skill = getSkill(name);
+  const startedAt = Date.now();
 
   if (options.expectedVersion !== undefined && options.expectedVersion !== skill.version) {
+    recordSkillMetrics(skill, startedAt, "rejected");
     throw new SkillError(
       "SKILL_VERSION_MISMATCH",
       `Skill ${name} version mismatch: expected ${options.expectedVersion}, registered ${skill.version}`,
@@ -211,10 +237,12 @@ export async function invokeSkill<I, O>(
   try {
     ctx.policyGate.requireScope(skill.allowedTools);
   } catch (err) {
+    recordSkillMetrics(skill, startedAt, "rejected");
     throw new SkillError("TOOL_NOT_ALLOWED", `Scope rejected for ${name}: ${(err as Error).message}`);
   }
 
   if (skill.agent === "shared" && !ctx.snapshot) {
+    recordSkillMetrics(skill, startedAt, "rejected");
     throw new SkillError("SNAPSHOT_REQUIRED", `Shared skill ${name} requires a snapshot`);
   }
 
@@ -222,12 +250,12 @@ export async function invokeSkill<I, O>(
   try {
     input = skill.input.parse(payload) as I;
   } catch (err) {
+    recordSkillMetrics(skill, startedAt, "rejected");
     throw new SkillError("INPUT_INVALID", `Input validation failed for ${name}: ${(err as Error).message}`);
   }
 
   const retry = skill.retry;
   const maxAttempts = retry?.maxAttempts ?? 1;
-  const startedAt = Date.now();
   let attempt = 0;
   let lastError: unknown = undefined;
 
@@ -265,19 +293,35 @@ export async function invokeSkill<I, O>(
           attempt,
         });
       }
+      recordSkillMetrics(skill, startedAt, "success");
       return parsed;
     } catch (err) {
       lastError = err;
       // Caller cancellation never retries.
-      if (options.signal?.aborted) throw err;
+      if (options.signal?.aborted) {
+        recordSkillMetrics(skill, startedAt, skillOutcome(err));
+        throw err;
+      }
       // No retry declared and we've used our single attempt.
-      if (!retry || attempt >= maxAttempts) throw err;
+      if (!retry || attempt >= maxAttempts) {
+        recordSkillMetrics(skill, startedAt, skillOutcome(err));
+        throw err;
+      }
       // Non-retryable code (e.g. POLICY_DENIED, INPUT_INVALID) — stop here.
-      if (!isRetryableError(err, retry.retryOn)) throw err;
+      if (!isRetryableError(err, retry.retryOn)) {
+        recordSkillMetrics(skill, startedAt, skillOutcome(err));
+        throw err;
+      }
       // Retry budget consumed? Even when maxAttempts>1, refuse to retry if
       // we have nothing left.
-      if (attempt >= maxAttempts) throw err;
+      if (attempt >= maxAttempts) {
+        recordSkillMetrics(skill, startedAt, skillOutcome(err));
+        throw err;
+      }
       const delay = retryDelayMs(retry, attempt, isRateLimited(err));
+      if (skill.agent === "personal" || skill.agent === "shared") {
+        metrics.inc("agent_skill_retries_total", { agent: skill.agent, skill: metricSkillName(skill.name) });
+      }
       const errorCode: SkillErrorCode = err instanceof SkillError ? err.code : "UPSTREAM_FAILURE";
       logSafeRuntimeEvent(ctx.ctx, {
         component: "worker",

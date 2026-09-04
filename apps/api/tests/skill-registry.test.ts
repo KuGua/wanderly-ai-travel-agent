@@ -5,6 +5,7 @@ import { SkillError } from "../src/agents/errors.js";
 import type { Skill } from "../src/agents/contracts.js";
 import { createRequestContext } from "../src/utils/context.js";
 import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
+import { metrics } from "../src/observability/metrics.js";
 
 const echoInput = z.object({ v: z.number() });
 const echoOutput = z.object({ doubled: z.number() });
@@ -61,6 +62,7 @@ function buildBadOutputSkill(): Skill<unknown, unknown> {
 describe("skill registry", () => {
   beforeEach(() => {
     __resetRegistryForTests();
+    metrics.reset();
   });
 
   it("invokes a skill and records success", async () => {
@@ -73,6 +75,8 @@ describe("skill registry", () => {
     }, { v: 2 });
 
     expect(result).toEqual({ doubled: 4 });
+    expect(metrics.render()).toContain('agent_skill_runs_total{agent="personal",outcome="success",skill="other"} 1');
+    expect(metrics.render()).toContain('agent_skill_duration_ms_count{agent="personal",outcome="success",skill="other"} 1');
   });
 
   it("allows the same skill version across independent invocations", async () => {
@@ -122,6 +126,7 @@ describe("skill registry", () => {
       ctx: createRequestContext(),
       policyGate: new DefaultPolicyGate("personal"),
     }, undefined)).rejects.toMatchObject({ code: "TIMEOUT" });
+    expect(metrics.render()).toContain('agent_skill_runs_total{agent="personal",outcome="timeout",skill="other"} 1');
   });
 
   it("rejects output that fails schema validation", async () => {
