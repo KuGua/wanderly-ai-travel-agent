@@ -26,3 +26,18 @@ datasources:
         datasourceUid: ""
       nodeGraph:
         enabled: true
+
+  # Scrapes the API and Worker registries so the dashboard can render metrics
+  # instead of documenting `curl /metrics`. Local development only — see
+  # observability/prometheus.yml.
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    uid: prometheus
+    orgId: 1
+    url: http://prometheus:9090
+    isDefault: false
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s
