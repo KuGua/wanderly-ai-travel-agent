@@ -411,7 +411,7 @@ describe("TripWorkspace", () => {
     // docs/thread-title-lifecycle-implementation.md §10.2 / D1). The client
     // only sends the locale so the server can pick the right language.
     await waitFor(() =>
-      expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { locale: "en" }),
+      expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { titleLocale: "en" }),
     );
     expect(screen.queryByPlaceholderText(/Visa prep/)).not.toBeInTheDocument();
   });

@@ -112,7 +112,7 @@ export const createTripThreadInputSchema = z.object({
   // Server is the authority on auto-numbered titles; clients only supply a
   // `title` when they want a MANUAL row (legacy direct callers / tests).
   title: z.string().trim().min(1).max(256).optional(),
-  locale: z.enum(["en", "zh"]).optional(),
+  titleLocale: z.enum(["en", "zh"]).optional(),
 }).strict();
 
 export const renameThreadInputSchema = z.object({

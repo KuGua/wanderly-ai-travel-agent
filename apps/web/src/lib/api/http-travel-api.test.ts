@@ -10,6 +10,22 @@ const RUN_ID = "55555555-5555-4555-8555-555555555555";
 const CREATED_AT = "2026-08-25T10:00:00.000Z";
 
 describe("HttpTravelApi private conversation", () => {
+  it("sends the server's strict titleLocale contract when creating a trip thread", async () => {
+    const tripId = "99999999-9999-4999-8999-999999999999";
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(thread(), 201));
+    const api = new HttpTravelApi("https://api.example.test", fetchMock);
+
+    await api.createTripThread(tripId, { titleLocale: "en" });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      `https://api.example.test/api/v1/trips/${tripId}/threads`,
+    );
+    const options = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(options.method).toBe("POST");
+    expect(JSON.parse(String(options.body))).toEqual({ titleLocale: "en" });
+  });
+
   it("uses the trip-scoped thread endpoints and sends only the strict turn contract", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse(thread(), 200))
