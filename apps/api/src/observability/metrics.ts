@@ -395,6 +395,12 @@ metrics.registerCounter("trip_activation_total", "Draft Trip activation outcomes
 metrics.registerCounter("trip_draft_brief_update_total", "Creator-confirmed DRAFT brief updates.", {
   result: ["success"],
 });
+metrics.registerCounter(
+  "trip_brief_destination_resolution_total",
+  "Draft-brief destination submissions by whether the catalogue could resolve them.",
+  { result: ["accepted", "unresolved"] },
+);
+
 // Every value `requireActiveTrip` is called with has to be listed, or the
 // rejection it is recording throws instead: `metrics.inc` refuses an
 // undeclared label, so a Draft trip answered 500 where it meant to answer

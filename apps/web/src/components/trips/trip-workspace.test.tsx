@@ -314,6 +314,26 @@ describe("TripWorkspace", () => {
     expect(updateDraftTripBrief).not.toHaveBeenCalled();
   });
 
+  it("reads two destinations as two places, not one compound name", async () => {
+    // Joined on a separator they rendered as "Los Angeles · San Francisco",
+    // which reads as a single place — someone naming two cities was offered
+    // a destination they had not asked for.
+    const trip = buildTripResponse("DRAFT");
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue({
+        ...trip,
+        trip: {
+          ...trip.trip,
+          pendingBriefProposal: { destinationCandidates: ["Los Angeles", "San Francisco"] },
+        },
+      }),
+      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
+    });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    expect(await screen.findByRole("button", { name: /Los Angeles and San Francisco/ })).toBeInTheDocument();
+  });
+
   it("names the destination in the action rather than listing it above", async () => {
     // The facts used to sit in a bullet list over a generic "Confirm update".
     // Putting the destination in the label is what lets the list go: the

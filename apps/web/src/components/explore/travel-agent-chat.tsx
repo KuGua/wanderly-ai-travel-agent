@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight, ArrowUp, Check, ChevronDown, Copy, LoaderCircle, Plus, RotateCw, Sparkles, Square } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
@@ -177,6 +177,7 @@ export function TravelAgentChat({
 }: TravelAgentChatProps) {
   const t = useTranslations("explore.chat");
   const router = useRouter();
+  const fmt = useFormatter();
   // The same card serves the globe and the workspace, and only one of them
   // has a planner to open — saying "opens the planner" to someone already
   // standing in it is just wrong.
@@ -863,8 +864,12 @@ export function TravelAgentChat({
   // it, so the option reads as the decision rather than as a record change.
   // Absent — the model proposed only dates, say — the label stays generic
   // rather than rendering an empty gap.
+  // Formatted as a list, not joined on a separator: two cities rendered as
+  // "洛杉矶 · 旧金山" read as one compound place name, so a traveller naming
+  // two saw the card offer to save a single destination they had not asked
+  // for. `fmt.list` gives each locale its own conjunction.
   const briefDestination = briefProposal?.destinationCandidates?.length
-    ? briefProposal.destinationCandidates.join(" · ")
+    ? fmt.list(briefProposal.destinationCandidates, { type: "conjunction" })
     : null;
   const briefPrimaryLabel = isConfirmingBrief
     ? t(onGlobe ? "briefProposalOpening" : "briefProposalSaving")
