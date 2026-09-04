@@ -53,6 +53,32 @@ services:
         max-size: "10m"
         max-file: "2"
 
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=24h"
+      # Local diagnostics only; a day of samples is plenty and keeps the
+      # volume small.
+      - "--web.enable-lifecycle"
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    mem_limit: 512m
+    mem_reservation: 128m
+    cpus: 0.50
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "2"
+
   grafana:
     image: grafana/grafana:11.3.0
     ports:
@@ -74,6 +100,8 @@ services:
     depends_on:
       tempo:
         condition: service_healthy
+      prometheus:
+        condition: service_healthy
     mem_limit: 512m
     mem_reservation: 128m
     cpus: 0.50
@@ -84,3 +112,4 @@ services:
 
 volumes:
   tempo-data:
+  prometheus-data:

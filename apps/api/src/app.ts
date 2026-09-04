@@ -137,23 +137,34 @@ export async function buildApp(options: BuildAppOptions = {}) {
     // Open the server span. The route pattern is not yet known in onRequest
     // for Fastify 5, so we set the bare minimum attributes here and enrich
     // them later via the preHandler hook once routing has matched.
-    const span = getTracer().startSpan(
-      `HTTP ${request.method}`,
-      {
-        kind: SpanKind.SERVER,
-        attributes: {
-          "http.method": request.method,
-          // Tokens are bearer-like invitation credentials. Keep the route
-          // shape useful for diagnostics without recording the raw token.
-          "http.target": safeHttpTarget(request.url),
-          "net.peer.ip": request.ip,
-          "app.correlation_id": request.correlationId,
+    //
+    // Operational endpoints are the exception: container health checks and
+    // metric scrapers poll them continuously, so tracing them buries real
+    // request traces and — at the production 5% sampling ratio, which samples
+    // uniformly — crowds genuine traffic out of the sample. They are still
+    // traced when the caller supplies its own `traceparent`, which keeps a
+    // deliberate probe (`scripts/verify-trace-end-to-end.sh`) working while
+    // unattributed polling stays silent.
+    const span = isOperationalEndpoint(request.url) && !inbound
+      ? undefined
+      : getTracer().startSpan(
+        `HTTP ${request.method}`,
+        {
+          kind: SpanKind.SERVER,
+          attributes: {
+            "http.method": request.method,
+            // Tokens are bearer-like invitation credentials. Keep the route
+            // shape useful for diagnostics without recording the raw token.
+            "http.target": safeHttpTarget(request.url),
+            "net.peer.ip": request.ip,
+            "app.correlation_id": request.correlationId,
+          },
         },
-      },
-    );
-    const ctxWithSpan = trace.setSpan(context.active(), span);
-    request._otelContext = ctxWithSpan;
-    request._otelSpan = span;
+      );
+    if (span) {
+      request._otelContext = trace.setSpan(context.active(), span);
+      request._otelSpan = span;
+    }
 
     request.log = correlationChild(
       pinoInstance,
@@ -209,9 +220,12 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.addHook("onResponse", async (request, reply) => {
     const statusClass = `${Math.floor(reply.statusCode / 100)}xx` as "1xx" | "2xx" | "3xx" | "4xx" | "5xx";
     const method = metricMethod(request.method);
-    // `/metrics` is an introspection endpoint, not product traffic. Excluding
-    // it prevents polling from changing the SLI it is intended to expose.
-    if (request.url.split("?", 1)[0] !== "/metrics") {
+    // Operational endpoints are not product traffic. Excluding them keeps
+    // polling from changing the very SLIs they exist to expose: a health check
+    // every few seconds otherwise inflates request volume and drags the p95
+    // latency down, so `sli.api.latency` and `sli.api.errors` would measure the
+    // health check rather than the product.
+    if (!isOperationalEndpoint(request.url)) {
       metrics.inc("http_requests_total", { method, status_class: statusClass });
       metrics.observe("http_request_duration_ms", performance.now() - request.observabilityStartedAt, {
         method,
@@ -283,6 +297,17 @@ function metricMethod(method: string): "GET" | "HEAD" | "OPTIONS" | "POST" | "PU
   return ["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"].includes(method)
     ? method as "GET" | "HEAD" | "OPTIONS" | "POST" | "PUT" | "PATCH" | "DELETE"
     : "OTHER";
+}
+
+/**
+ * Endpoints that exist to be polled by infrastructure — container health
+ * checks and the Prometheus scrape target — rather than by product clients.
+ * They are excluded from both the HTTP metric series and (absent an explicit
+ * inbound `traceparent`) from tracing.
+ */
+export function isOperationalEndpoint(url: string): boolean {
+  const path = url.split("?", 1)[0] ?? "/";
+  return path === "/health" || path === "/metrics";
 }
 
 function safeHttpTarget(url: string): string {

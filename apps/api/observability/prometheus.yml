@@ -1,0 +1,36 @@
+# Local-development Prometheus.
+#
+# Exists so the bundled Grafana dashboard can render the metric registry
+# instead of telling engineers to `curl /metrics` by hand. It is NOT the
+# production collector — production still has no metrics exporter or scrape
+# target (see docs/observability-slo.md#known-collection-gaps).
+#
+# Both targets are reached over the Compose network. Neither is published to
+# the host: the API already publishes 3000 for its own sake, and the Worker's
+# metrics port stays task-local by design.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    env: local
+
+scrape_configs:
+  # The API process. `/metrics` is unauthenticated and excluded from the HTTP
+  # metric series, so scraping it does not perturb the SLIs it exposes.
+  - job_name: ai-travel-agent-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["app:3000"]
+        labels:
+          service: ai-travel-agent-api
+
+  # The Worker keeps its own in-process registry — agent_task_outcomes_total,
+  # agent_task_recoveries_total and agent_task_duration_ms are incremented
+  # only here, so without this target sli.worker.* cannot be computed at all.
+  - job_name: ai-travel-agent-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["worker:9464"]
+        labels:
+          service: ai-travel-agent-worker

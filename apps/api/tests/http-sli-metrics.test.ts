@@ -23,16 +23,28 @@ afterAll(async () => {
 beforeEach(() => metrics.reset());
 
 describe("unsampled API HTTP SLI metrics", () => {
-  it("records completed request count and latency while excluding metrics polling", async () => {
-    const health = await app.inject({ method: "GET", url: "/health" });
-    expect(health.statusCode).toBe(200);
+  it("records completed request count and latency for product traffic", async () => {
+    // Unauthenticated, so this 401s. The status class is what the series
+    // records; the point here is that a product route is counted at all.
+    const rejected = await app.inject({ method: "GET", url: "/api/v1/trips" });
+    expect(rejected.statusCode).toBe(401);
 
     const rendered = metrics.render();
-    expect(rendered).toContain('http_requests_total{method="GET",status_class="2xx"} 1');
-    expect(rendered).toContain('http_request_duration_ms_count{method="GET",status_class="2xx"} 1');
+    expect(rendered).toContain('http_requests_total{method="GET",status_class="4xx"} 1');
+    expect(rendered).toContain('http_request_duration_ms_count{method="GET",status_class="4xx"} 1');
+  });
 
-    const endpoint = await app.inject({ method: "GET", url: "/metrics" });
-    expect(endpoint.statusCode).toBe(200);
-    expect(metrics.render()).toContain('http_requests_total{method="GET",status_class="2xx"} 1');
+  it("excludes operational polling so it cannot move the SLIs it exposes", async () => {
+    // Both endpoints are polled continuously by the container health check
+    // and the Prometheus scrape. Counting them would inflate request volume
+    // and drag p95 down, so sli.api.latency would measure the health check.
+    // Trace-side exclusion is covered by
+    // tests/operational-endpoint-observability.test.ts.
+    expect((await app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/metrics" })).statusCode).toBe(200);
+
+    const rendered = metrics.render();
+    expect(rendered).toContain("http_requests_total 0");
+    expect(rendered).not.toMatch(/http_requests_total\{[^}]*\} [1-9]/u);
   });
 });

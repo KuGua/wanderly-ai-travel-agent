@@ -91,13 +91,14 @@ Tempo in that mode. The API port is published only to `127.0.0.1`; the
 container-only `LOCAL_DEV_CONTAINER=true` exception permits its internal
 `0.0.0.0` listener without widening local-auth access beyond the host.
 
-This starts `postgres`, `app`, `worker`, `tempo`, and `grafana`. Ports:
+This starts `postgres`, `app`, `worker`, `tempo`, `prometheus`, and `grafana`. Ports:
 
 | Service | Host | Notes |
 |---|---|---|
 | `app` (API) | `127.0.0.1:3000` | Standard API |
 | `tempo` (OTLP) | `127.0.0.1:4317` (gRPC), `127.0.0.1:4318` (HTTP) | Receives from `app` and `worker` |
-| `grafana` (UI) | `127.0.0.1:3003` | `admin` / `wanderly-dev` |
+| `grafana` (UI) | `127.0.0.1:3003` | `admin` / `wanderly-dev`. 3001 belongs to the Next.js web app. |
+| `prometheus` | `127.0.0.1:9090` | Scrapes `app:3000/metrics` and `worker:9464/metrics` |
 | `postgres` | `127.0.0.1:5432` | Standard local DB |
 
 ### Tear down
@@ -134,8 +135,15 @@ docker compose -f docker-compose.yml -f docker-compose.observability.yml \
 
 ### Inspect metrics
 
-Local dev does **not** run Mimir. The API exposes its registry on the
-`/metrics` endpoint:
+Local dev runs Prometheus (not Mimir) and Grafana reads it through the
+provisioned `Prometheus` datasource, so the dashboard's metric row renders
+directly. Check scrape health at `http://127.0.0.1:9090/api/v1/targets`.
+
+Both processes are scraped. The Worker keeps its own in-process registry —
+the `agent_task_*` series are incremented only there — so without the
+`worker:9464` target `sli.worker.*` cannot be computed at all.
+
+The raw text is still available per process:
 
 ```bash
 curl -s http://127.0.0.1:3000/metrics | head -20
@@ -234,7 +242,7 @@ Local invocation:
 cd apps/api
 docker compose --profile full -f docker-compose.yml -f docker-compose.observability.yml up -d --build
 API_BASE_URL=http://127.0.0.1:3000 \
-GRAFANA_BASE_URL=http://127.0.0.1:3001 \
+GRAFANA_BASE_URL=http://127.0.0.1:3003 \
 OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318 \
 ./scripts/verify-trace-end-to-end.sh
 ```
@@ -276,7 +284,7 @@ curl -fsS http://tempo:4318/v1/traces -X POST \
 curl -fsS http://127.0.0.1:3000/health
 
 # 3. Grafana reachability
-curl -fsS http://127.0.0.1:3001/api/health
+curl -fsS http://127.0.0.1:3003/api/health
 
 # 4. trace_id appears in pino stdout (proves correlation works)
 docker logs app 2>&1 | head -1 | jq -r '.trace_id // "no active span"'
