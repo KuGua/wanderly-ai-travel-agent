@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-import { requireResearchEligible } from "../../src/services/trip-status-guard.js";
+import { requireActiveTrip, requireResearchEligible } from "../../src/services/trip-status-guard.js";
 import * as schema from "../../src/db/schema.js";
 import { sharedTrips, tripMembers } from "../../src/db/schema.js";
 
@@ -142,5 +142,27 @@ describe("requireResearchEligible", () => {
     await addMember(tripId, owner, true);
     const mode = await requireResearchEligible(tripId, owner, ["Solo City"]);
     expect(mode).toBe("SOLO");
+  });
+
+  /**
+   * The guard counts its own rejection before raising, and `metrics.inc`
+   * throws on a label value the counter never declared — so an operation
+   * missing from the enum answered 500 instead of 409. `constraint_read`
+   * backs `GET /trips/:tripId/plans`, which made a Draft workspace look
+   * server-broken the moment it loaded.
+   */
+  it("rejects a Draft with 409 for every operation it is called with", async () => {
+    const owner = await makeUser();
+    const tripId = await makeTrip("DRAFT", owner);
+    await addMember(tripId, owner, true);
+
+    for (const operation of [
+      "constraint_read", "constraint_upsert", "constraint_propose",
+      "constraint_confirm", "constraint_dismiss", "constraint_revoke",
+      "planning", "consent", "booking", "confirmation", "change_event",
+    ] as const) {
+      await expect(requireActiveTrip(tripId, operation))
+        .rejects.toMatchObject({ statusCode: 409 });
+    }
   });
 });
