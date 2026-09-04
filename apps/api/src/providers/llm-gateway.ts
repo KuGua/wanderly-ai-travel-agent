@@ -573,6 +573,11 @@ const CONVERSATION_RESEARCH_TOOL_RULE = [
  * which values are already known.
  */
 const CONVERSATION_RESPONSE_CONSTRAINTS: Record<ConversationResponseConstraint, string> = {
+  DESTINATION_CITY_REQUIRED: [
+    "目的地澄清约束（本轮在地图中选中的是国家，而不是一座城市）",
+    "• 可以继续介绍这个国家作为旅行灵感，但不要把它说成已经确定的行程目的地，也不要建议保存它。",
+    "• 结尾用一个简短、可回答的问题请旅客选择一座城市，或选择要比较的两三座城市；不得默认首都或任何一个城市。",
+  ].join("\n"),
   HOTEL_SEARCH_READINESS: [
     "住宿/酒店搜索约束（仅在用户想找、比较、筛选或报价酒店时适用）",
     "• 回复开头先用一句简短的话引导：当前住宿条件确认后会纳入完整行程方案。不要把这句话说成单独酒店搜索的推广，不要列举或推销可单独查询的服务；随后直接帮助当前问题。语气友好自然，不做营销腔；不得提及内部 Agent 或角色名称。",

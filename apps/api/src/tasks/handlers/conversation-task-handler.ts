@@ -16,7 +16,11 @@ import {
 import { buildConversationContext } from "../../services/conversation-context-service.js";
 import { buildConversationMemoryContext } from "../../services/conversation-memory-context.js";
 import { loadLatestResearchEvidence } from "../../services/research-evidence-service.js";
-import { mergeTripBriefProposal, proposeTripBriefFromTurn } from "../../services/trip-brief-proposal-service.js";
+import {
+  isBriefDestinationCountry,
+  mergeTripBriefProposal,
+  proposeTripBriefFromTurn,
+} from "../../services/trip-brief-proposal-service.js";
 import { executePersonalResearch } from "../../services/personal-research-service.js";
 import {
   loadConversationHotelSearchState,
@@ -760,14 +764,17 @@ export async function handleConversationTask(params: {
       return explainToolFailure(withoutInternalFields(await dispatch(call)));
     };
   }
-  toolContext.responseConstraints = selectResponseConstraints({
-    tripStatus: tripContext.tripStatus,
-    registeredTools: tools.map((tool) => tool.name),
-    hotelSearchStateExists: hotelSearchState !== null,
-    flightSearchStateExists: flightSearchState !== null,
-    userConfirmed: toolContext.userConfirmed === true,
-    confirmedCapability,
-  });
+  toolContext.responseConstraints = [
+    ...selectResponseConstraints({
+      tripStatus: tripContext.tripStatus,
+      registeredTools: tools.map((tool) => tool.name),
+      hotelSearchStateExists: hotelSearchState !== null,
+      flightSearchStateExists: flightSearchState !== null,
+      userConfirmed: toolContext.userConfirmed === true,
+      confirmedCapability,
+    }),
+    ...(isBriefDestinationCountry(turnInput.place?.name) ? ["DESTINATION_CITY_REQUIRED" as const] : []),
+  ];
   // Post-P2 (§5.2): the safety gate asks `isEvidenceBacked()` once at the
   // end of the turn. We expose both the *this-turn* dispatch flag and any
   // *persisted* evidence the trip already has (hotel/flight only — the two

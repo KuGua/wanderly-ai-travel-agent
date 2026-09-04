@@ -356,4 +356,4 @@ export interface ModelGateway {
 }
 
 /** Narrow, versioned conversation behaviours; add values deliberately. */
-export type ConversationResponseConstraint = "HOTEL_SEARCH_READINESS" | "FLIGHT_SEARCH_READINESS";
+export type ConversationResponseConstraint = "HOTEL_SEARCH_READINESS" | "FLIGHT_SEARCH_READINESS" | "DESTINATION_CITY_REQUIRED";

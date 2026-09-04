@@ -232,7 +232,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     await submitFromCapsule("Go to Suzhou");
     fireEvent.click(await screen.findByRole("button", { name: "Save Suzhou to this trip" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("We couldn't verify that destination.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("We couldn't verify that city destination.");
     expect(screen.getByText("Set Suzhou as the destination?")).toBeInTheDocument();
   });
 

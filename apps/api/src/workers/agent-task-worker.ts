@@ -12,6 +12,7 @@ import { db } from "../db/database.js";
 import { agentTaskRuns, sharedTrips } from "../db/schema.js";
 import {
   mergePendingBriefProposal,
+  normalizeBriefProposalDestinations,
   type TripBriefProposal,
 } from "../services/trip-brief-proposal-service.js";
 import { agentTaskConfig } from "../tasks/config.js";
@@ -223,11 +224,18 @@ export async function processNextAgentTask(): Promise<boolean> {
         content: output.content,
         responseMode: output.responseMode,
       });
-      if (output.tripBriefProposal) {
+      const briefProposal = output.tripBriefProposal
+        ? normalizeBriefProposalDestinations(output.tripBriefProposal)
+        : null;
+      if (output.tripBriefProposal && !briefProposal) {
+        metrics.inc("trip_brief_proposal_destination_resolution_total", { result: "rejected" });
+      }
+      if (briefProposal) {
+        metrics.inc("trip_brief_proposal_destination_resolution_total", { result: "accepted" });
         // Persist before publishing: the notification can be missed, the row
         // cannot. The client rebuilds the card from the run it already polls.
         await db.update(agentTaskRuns)
-          .set({ tripBriefProposal: output.tripBriefProposal })
+          .set({ tripBriefProposal: briefProposal })
           .where(eq(agentTaskRuns.id, run.id));
         // Also on the trip, where it survives a reload and a device change.
         // Merged, because a brief is often given across several turns and the
@@ -236,8 +244,8 @@ export async function processNextAgentTask(): Promise<boolean> {
         // one turn can meet an end date from another, and a pair that cannot
         // be true has to be dropped before it becomes a card nobody can save.
         const persisted = run.tripId
-          ? await persistPendingBriefProposal(run.tripId, output.tripBriefProposal)
-          : output.tripBriefProposal;
+          ? await persistPendingBriefProposal(run.tripId, briefProposal)
+          : briefProposal;
         // The card is built from what was stored, never from what the turn
         // proposed: publishing the unguarded value would put a date on screen
         // that the trip does not have and the write boundary would refuse.

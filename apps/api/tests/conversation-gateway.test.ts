@@ -105,6 +105,28 @@ describe("conversational ModelGateway", () => {
     expect(messages[1]?.content).not.toContain("HOTEL_SEARCH_READINESS");
   });
 
+  it("asks for a city when the selected map place is a country", async () => {
+    const parse = vi.fn().mockResolvedValue({
+      choices: [{ message: {
+        parsed: null,
+        content: JSON.stringify({ reply: { content: "你想先去法国哪座城市？" } }),
+      } }],
+    });
+    const gateway = buildGateway({ chat: { completions: { parse } } });
+
+    await gateway.generateConversationReply({
+      question: "法国",
+      threadContext: [],
+      responseConstraints: ["DESTINATION_CITY_REQUIRED"],
+    });
+
+    const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
+    expect(messages[0]).toMatchObject({ role: "system" });
+    expect(messages[0]?.content).toContain("目的地澄清约束");
+    expect(messages[0]?.content).toContain("不得默认首都");
+    expect(messages[1]?.content).not.toContain("DESTINATION_CITY_REQUIRED");
+  });
+
   it("positions complete trip orchestration as the primary conversation goal", async () => {
     const parse = vi.fn().mockResolvedValue({
       choices: [{ message: {

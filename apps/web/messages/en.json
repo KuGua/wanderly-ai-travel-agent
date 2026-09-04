@@ -278,7 +278,7 @@
       "networkError": "The travel service could not be reached. Check the connection and try again.",
       "conversationBusy": "Your previous message is still being accepted. Please wait a moment, then retry.",
       "requestInvalid": "This message could not be accepted. Refresh the conversation and try again.",
-      "destinationUnresolved": "We couldn't verify that destination. Please use a supported city name or choose it on the map.",
+      "destinationUnresolved": "We couldn't verify that city destination. For a country or region, choose a specific city first, or select a city on the map.",
       "briefDatesInvalid": "Those travel dates can't be used — the end date is before the start, or the dates have already passed. Tell Wanderly the dates again in the chat.",
       "prefCardSaveFailed": "Those preferences could not be saved. Please check them and try again.",
       "prefCardSaved": "Saved for this trip.",

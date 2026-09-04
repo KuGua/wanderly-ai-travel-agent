@@ -1102,17 +1102,19 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 1. Send `Introduce Shanghai to me`, `Tell me about Tokyo`, and `Is Paris expensive?` in separate private turns.
 2. Send `from Singapore to Shanghai` and inspect the private brief proposal card.
-3. Submit `me`, an unknown city, and an ambiguous city directly to `PATCH /trips/:tripId/draft-brief` as Alice.
-4. Submit a supported localized city spelling such as `上海` through the same endpoint.
-5. Make the location-reference resolver unavailable, then send an otherwise explicit destination request.
+3. Select a country-level map reference such as `法国`, then send the accompanying private-chat turn.
+4. Submit `me`, an unknown city, an ambiguous city, and `法国` directly to `PATCH /trips/:tripId/draft-brief` as Alice.
+5. Submit a supported localized city spelling such as `上海` through the same endpoint.
+6. Make the location-reference resolver unavailable, then send an otherwise explicit destination request.
 
 **Expected outcomes:**
 
 - The discussion turns create no `tripBriefProposal`, no `pendingBriefProposal`, and no destination card; assistant prose mentioning a city does not itself become a trip fact.
+- A country-level selection remains exploration context: the reply asks the traveller to choose one or more cities, no save card is emitted, and no default city is inferred. A stale country-level proposal returned by an older deployment is hidden rather than rendered as an unsaveable card.
 - The route proposal names server-normalized cities and appears only after both route endpoints resolve uniquely.
 - Each invalid PATCH returns `422 DESTINATION_UNRESOLVED`; the existing brief, title and pending proposal remain unchanged.
 - A supported localized spelling is persisted as its canonical city name. No browser label, LLM output, fixture or free-text fallback substitutes for a failed resolution.
-- Resolver failure fails closed: no destination proposal is emitted and no trip fact is written. Telemetry records only the bounded resolution result, never the conversation text or city value.
+- Resolver failure fails closed: no destination proposal is emitted and no trip fact is written. Telemetry records only the bounded resolution result, never the conversation text or city value. `trip_brief_proposal_destination_resolution_total{result}` records accepted and rejected confirmation proposals without a place label.
 
 ### TS-EXPLORE-TRIP-4 — Brief proposal dates hold together before they reach the trip
 

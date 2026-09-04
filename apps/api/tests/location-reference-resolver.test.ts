@@ -47,6 +47,13 @@ describe("LocationReferenceResolver", () => {
     });
   });
 
+  it("recognises a country label without treating it as a city", () => {
+    expect(resolver.isKnownCountryName("Testland")).toBe(true);
+    expect(resolver.resolveDestinationReference({
+      destinationId: "testland", cityName: "Testland",
+    })).toBeNull();
+  });
+
   it("fails closed when a city label is ambiguous across countries", () => {
     const ambiguous = new LocationReferenceResolver([
       { properties: { ADMIN: "One", ISO_A2: "AA" }, geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } },

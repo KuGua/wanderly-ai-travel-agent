@@ -45,7 +45,11 @@ import { metrics } from "../observability/metrics.js";
 import { createConstraintSnapshot } from "../services/planning-service.js";
 import { acceptResearchTask } from "../tasks/task-repository.js";
 import { saveConfirmedSearchPreferences } from "../services/flight-search-preferences-service.js";
-import { normalizeBriefDestinations } from "../services/trip-brief-proposal-service.js";
+import {
+  normalizeBriefDestinations,
+  normalizeBriefProposalDestinations,
+  type TripBriefProposal,
+} from "../services/trip-brief-proposal-service.js";
 
 const tripIdParamSchema = z.object({ tripId: z.string().uuid() }).strict();
 
@@ -762,6 +766,13 @@ export async function tripRoutes(app: FastifyInstance) {
     return tripDetailsResponseSchema.parse({
       trip: {
         ...trip,
+        // Old deployments could persist a country/region in this preview.
+        // Hide such a stale preview rather than rendering a save button whose
+        // server-authoritative write is guaranteed to reject it. The stored
+        // value remains untouched for an explicit, audited maintenance repair.
+        pendingBriefProposal: trip.pendingBriefProposal
+          ? normalizeBriefProposalDestinations(trip.pendingBriefProposal as TripBriefProposal)
+          : null,
         createdAt: trip.createdAt.toISOString(),
         updatedAt: trip.updatedAt.toISOString(),
         pinnedSession,

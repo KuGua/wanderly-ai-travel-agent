@@ -64,7 +64,27 @@ async function patchBrief(tripId: string, payload: Record<string, unknown>) {
   });
 }
 
+async function getTrip(tripId: string) {
+  return app.inject({
+    method: "GET",
+    url: `/api/v1/trips/${tripId}`,
+    headers: authHeaders("alice"),
+  });
+}
+
 describe("draft-brief travel dates", () => {
+  it("does not return an older country-level proposal as an unsaveable card", async () => {
+    const tripId = await draftTrip();
+    await db.update(sharedTrips).set({
+      pendingBriefProposal: { destinationCandidates: ["France"] },
+    }).where(eq(sharedTrips.id, tripId));
+
+    const res = await getTrip(tripId);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().trip.pendingBriefProposal).toBeNull();
+  });
+
   it("names the reason when the end date lands before the start", async () => {
     const res = await patchBrief(await draftTrip(), {
       travelDateStart: "2026-10-01",

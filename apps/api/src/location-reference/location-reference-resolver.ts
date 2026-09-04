@@ -186,6 +186,16 @@ export class LocationReferenceResolver {
     };
   }
 
+  /**
+   * Answers only whether text names a country in the controlled reference
+   * data. This is deliberately separate from destination resolution: a
+   * country is useful exploration context, but never a planner destination
+   * because it cannot safely identify one city, airport, or provider query.
+   */
+  isKnownCountryName(value: string): boolean {
+    return this.countryCodesByName.has(normalizedName(value));
+  }
+
   private noReference(): LocationReference {
     return {
       outcome: "NO_REFERENCE",
