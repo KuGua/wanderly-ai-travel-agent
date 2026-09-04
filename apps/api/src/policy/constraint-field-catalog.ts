@@ -296,8 +296,18 @@ export function requiresResidualInferenceWarning(
  * Shared Agent 输出 explanation 时允许出现的 token 集合。Phase 3 的
  * `assertConfidentialFree` 会用此 set 反向校验 plan JSON 中是否夹带了私密值。
  */
-export function safePublicExplanationTokensFor(
-  fieldKey: ConstraintFieldKey,
-): readonly string[] {
-  return CONSTRAINT_FIELD_CATALOG[fieldKey].safePublicExplanationTokens;
+/**
+ * Takes a plain string because the callers read field keys out of the
+ * database, where anything may have been stored — the preference card writes
+ * memory-catalogue keys (`budget_max_usd`, `trip_pace`) into the same table,
+ * and this catalogue calls those `budget_max` and `pace`. The caller papered
+ * over the type with `as never`, so an unlisted key reached the index, came
+ * back `undefined`, and took the whole planning round down with it.
+ *
+ * An unknown field contributes no tokens. This set is an allow-list of words
+ * an explanation may contain; a field that is not in the catalogue has no
+ * words to allow, which is the safe answer rather than a crash.
+ */
+export function safePublicExplanationTokensFor(fieldKey: string): readonly string[] {
+  return CONSTRAINT_FIELD_CATALOG[fieldKey as ConstraintFieldKey]?.safePublicExplanationTokens ?? [];
 }

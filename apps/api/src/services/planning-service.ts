@@ -801,7 +801,7 @@ export async function createConstraintSnapshot(params: {
     for (const fact of factRows) referencedFieldKeys.add(fact.fieldKey);
     const allowedExplanation = new Set<string>();
     for (const fieldKey of referencedFieldKeys) {
-      for (const token of safePublicExplanationTokensFor(fieldKey as never)) {
+      for (const token of safePublicExplanationTokensFor(fieldKey)) {
         allowedExplanation.add(token);
       }
     }
