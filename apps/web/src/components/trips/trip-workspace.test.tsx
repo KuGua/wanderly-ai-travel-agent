@@ -291,10 +291,10 @@ describe("TripWorkspace", () => {
     });
   });
 
-  it("leaves the brief alone when the traveller would rather keep looking", async () => {
-    // The second option is not "ignore this": it is a choice to stay where
-    // they are. Nothing may be written on the way out, or the trip quietly
-    // acquires a destination they declined.
+  it("does not revive the retired brief destination card from legacy trip data", async () => {
+    // Destination decisions are now served exclusively by the durable
+    // Destination Cue batch. A stale destination-only brief must not render
+    // the old generic save/dismiss card or write anything to the trip.
     const trip = buildTripResponse("DRAFT");
     const updateDraftTripBrief = vi.fn();
     const api = createApi({
@@ -307,51 +307,10 @@ describe("TripWorkspace", () => {
     });
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
 
-    fireEvent.click(await screen.findByRole("button", { name: /Leave it as it is/ }));
-
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: /Leave it as it is/ })).not.toBeInTheDocument());
+    expect(await screen.findByRole("button", { name: "New thread" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Save Indonesia to this trip/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Leave it as it is/ })).not.toBeInTheDocument();
     expect(updateDraftTripBrief).not.toHaveBeenCalled();
-  });
-
-  it("reads two destinations as two places, not one compound name", async () => {
-    // Joined on a separator they rendered as "Los Angeles · San Francisco",
-    // which reads as a single place — someone naming two cities was offered
-    // a destination they had not asked for.
-    const trip = buildTripResponse("DRAFT");
-    const api = createApi({
-      getTrip: vi.fn().mockResolvedValue({
-        ...trip,
-        trip: {
-          ...trip.trip,
-          pendingBriefProposal: { destinationCandidates: ["Los Angeles", "San Francisco"] },
-        },
-      }),
-      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
-    });
-    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
-
-    expect(await screen.findByRole("button", { name: /Los Angeles and San Francisco/ })).toBeInTheDocument();
-  });
-
-  it("names the destination in the action rather than listing it above", async () => {
-    // The facts used to sit in a bullet list over a generic "Confirm update".
-    // Putting the destination in the label is what lets the list go: the
-    // button now states the decision instead of describing a record change.
-    const trip = buildTripResponse("DRAFT");
-    const api = createApi({
-      getTrip: vi.fn().mockResolvedValue({
-        ...trip,
-        trip: { ...trip.trip, pendingBriefProposal: { destinationCandidates: ["Indonesia"] } },
-      }),
-      getTripThreads: vi.fn().mockResolvedValue({ threads: [buildThread(DEFAULT_THREAD_ID, "Default", true)] }),
-    });
-    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
-
-    const save = await screen.findByRole("button", { name: "Save Indonesia to this trip" });
-    expect(save).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Leave it as it is" })).toBeInTheDocument();
-    expect(save.parentElement).toHaveClass("grid-cols-2");
   });
 
   it("tells the traveller a thread is coming while the list loads, and stops once it arrives", async () => {
@@ -452,7 +411,7 @@ describe("TripWorkspace", () => {
     // docs/thread-title-lifecycle-implementation.md §10.2 / D1). The client
     // only sends the locale so the server can pick the right language.
     await waitFor(() =>
-      expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { titleLocale: "en" }),
+      expect(api.createTripThread).toHaveBeenCalledWith(TRIP_ID, { locale: "en" }),
     );
     expect(screen.queryByPlaceholderText(/Visa prep/)).not.toBeInTheDocument();
   });

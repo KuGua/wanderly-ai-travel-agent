@@ -397,7 +397,16 @@
       "briefProposalQuestion": "Set {destination} as the destination?",
       "briefProposalQuestionNoDestination": "Set this as the destination?",
       "prefCardTurnQuestion": "I've just confirmed my preferences for this trip.",
-      "briefSavedTurnQuestion": "I've just saved this to the trip."
+      "briefSavedTurnQuestion": "I've just saved this to the trip.",
+      "briefProposalDetailsQuestion": "Save these trip details?",
+      "destinationCueTitle": "Destination confirmation",
+      "destinationCueQuestion": "Set {destination} as the destination?",
+      "destinationCueNavigation": "Switch destination candidate",
+      "destinationCuePrevious": "Previous destination",
+      "destinationCueNext": "Next destination",
+      "destinationCueAccept": "Save {destination} to this trip",
+      "destinationCueDismiss": "Leave it as it is",
+      "destinationCueSaving": "Saving…"
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",

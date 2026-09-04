@@ -38,6 +38,10 @@ import {
 } from "../../skills/personal/travel-conversation-skill.js";
 import { personalTripContextSchema, type PersonalTripContext } from "../../skills/personal/personal-trip-context-schema.js";
 import { extractConversationHandoffBatch } from "../../services/conversation-handoff-extraction-service.js";
+import {
+  decideDestinationCueForTurn,
+  type ResolvedDestinationCueDecision,
+} from "../../skills/personal/destination-cue-decision-skill.js";
 import type { AgentStreamEvent } from "../../types/schemas.js";
 import { personalResearchHotelDraftSchema, personalResearchFlightDraftSchema } from "../../types/schemas.js";
 import type { ConversationResponseConstraint, ModelToolDefinition, ModelToolDispatcher, TripBriefProposal } from "../../providers/model-gateway.js";
@@ -487,6 +491,7 @@ export async function handleConversationTask(params: {
   content: string;
   responseMode: import("../../types/schemas.js").ConversationResponseMode;
   tripBriefProposal?: TripBriefProposal;
+  destinationCueDecision?: Promise<ResolvedDestinationCueDecision | null>;
 } | null> {
   // ─── Quick Orchestration — Proactive intro (no user message) ─────────────
   // The run was created server-side on trip activation; the conversation
@@ -510,7 +515,7 @@ export async function handleConversationTask(params: {
   if (!params.run.tripId) {
     throw new ApiError(500, "Internal Server Error", "Conversation task missing tripId");
   }
-  const [membership] = await db.select({ userId: tripMembers.userId })
+  const [membership] = await db.select({ userId: tripMembers.userId, role: tripMembers.role })
     .from(tripMembers)
     .where(and(
       eq(tripMembers.tripId, params.run.tripId),
@@ -522,7 +527,7 @@ export async function handleConversationTask(params: {
   }
 
   const turnInput = await loadConversationTurnInput(params.run);
-  const tripContext = await loadPersonalTripContext(params.run.tripId);
+  const { context: tripContext, titleLocale } = await loadPersonalTripContext(params.run.tripId);
   // The bounded same-thread LLM context is built in its own service so
   // the read path stays pure and retryable (§3.1.4 / §6). Failures here
   // bubble up as a terminal task error before any model call.
@@ -559,6 +564,15 @@ export async function handleConversationTask(params: {
   const abortFromTask = () => execution.abort(params.signal.reason);
   if (params.signal.aborted) abortFromTask();
   else params.signal.addEventListener("abort", abortFromTask, { once: true });
+  const destinationCuePromise = tripContext.tripStatus === "DRAFT" && membership.role === "CREATOR"
+    ? decideDestinationCueForTurn({
+      ctx: { ctx: params.ctx, policyGate: new DefaultPolicyGate("personal") },
+      question: turnInput.question,
+      currentDestinations: tripContext.destinationCandidates,
+      locale: titleLocale ?? "en",
+      signal: execution.signal,
+    }).catch(() => null)
+    : Promise.resolve(null);
   // The Skill's timeout is a budget for *model* time, not for wall clock. A
   // tool-calling turn spends most of its wall clock inside a live supplier — a
   // hotel search runs 10s+ on its own — so charging that to the same 15s budget
@@ -853,7 +867,7 @@ export async function handleConversationTask(params: {
     ? mergeTripBriefProposal(
       // Direct owner statements are parsed conservatively and destination
       // values have already passed server-owned place resolution.
-      proposeTripBriefFromTurn(turnInput.question, turnInput.place),
+      withoutDestination(proposeTripBriefFromTurn(turnInput.question)),
       // The model extractor is retained only for an owner accepting a
       // concrete date/duration the assistant resolved in this same turn.
       // It can never introduce a destination, departure, or other free-text
@@ -870,7 +884,8 @@ export async function handleConversationTask(params: {
   if (!shouldExtractConversationHandoff(
     parsed.responseMode, tripContext.tripStatus, params.run.conversationSurface,
   )) {
-    return travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
+    const conversation = travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
+    return { ...conversation, destinationCueDecision: destinationCuePromise };
   }
 
   // Phase 6 / member conversation handoff — fire-and-forget candidate
@@ -912,7 +927,15 @@ export async function handleConversationTask(params: {
     // belt-and-braces guard against a future refactor that throws.
   }
 
-  return travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
+  const conversation = travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
+  return { ...conversation, destinationCueDecision: destinationCuePromise };
+}
+
+function withoutDestination(proposal: TripBriefProposal | null): TripBriefProposal | null {
+  if (!proposal) return null;
+  const { destinationCandidates, ...schedulingAndDeparture } = proposal;
+  void destinationCandidates;
+  return Object.keys(schedulingAndDeparture).length > 0 ? schedulingAndDeparture : null;
 }
 
 /**
@@ -948,7 +971,10 @@ export function shouldExtractConversationHandoff(
  * Throws if the trip row no longer exists; the caller treats this as a
  * terminal task failure.
  */
-async function loadPersonalTripContext(tripId: string): Promise<PersonalTripContext> {
+async function loadPersonalTripContext(tripId: string): Promise<{
+  context: PersonalTripContext;
+  titleLocale: "en" | "zh" | null;
+}> {
   const [trip] = await db.select({
     id: sharedTrips.id,
     name: sharedTrips.name,
@@ -958,6 +984,7 @@ async function loadPersonalTripContext(tripId: string): Promise<PersonalTripCont
     travelDays: sharedTrips.travelDays,
     departureCities: sharedTrips.departureCities,
     destinationCandidates: sharedTrips.destinationCandidates,
+    titleLocale: sharedTrips.titleLocale,
   }).from(sharedTrips).where(eq(sharedTrips.id, tripId)).limit(1);
   if (!trip) {
     throw new ApiError(404, "Not Found", "Trip not found while loading PersonalTripContext");
@@ -969,7 +996,7 @@ async function loadPersonalTripContext(tripId: string): Promise<PersonalTripCont
     trip.status === "DRAFT" || trip.status === "PLANNING" || trip.status === "STALE"
       ? trip.status
       : "CONFIRMED";
-  return personalTripContextSchema.parse({
+  return { context: personalTripContextSchema.parse({
     tripId: trip.id,
     tripName: trip.name,
     tripStatus,
@@ -978,7 +1005,7 @@ async function loadPersonalTripContext(tripId: string): Promise<PersonalTripCont
     travelDays: trip.travelDays,
     departureCities: trip.departureCities,
     destinationCandidates: trip.destinationCandidates,
-  });
+  }), titleLocale: trip.titleLocale };
 }
 
 class SafeConversationDeltaGate {

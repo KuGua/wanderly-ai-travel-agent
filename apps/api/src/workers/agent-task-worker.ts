@@ -17,6 +17,7 @@ import {
 } from "../services/trip-brief-proposal-service.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import { handleConversationTask, publishPhase } from "../tasks/handlers/conversation-task-handler.js";
+import { persistDestinationCue } from "../services/destination-cue-service.js";
 import { handlePlanningTask } from "../tasks/handlers/planning-task-handler.js";
 import {
   claimNextConversationTask,
@@ -232,6 +233,34 @@ export async function processNextAgentTask(): Promise<boolean> {
       }
       if (briefProposal) {
         metrics.inc("trip_brief_proposal_destination_resolution_total", { result: "accepted" });
+      }
+      if (output.destinationCueDecision) {
+        try {
+          const decision = await output.destinationCueDecision;
+          const cue = decision ? await persistDestinationCue({ run, decision }) : null;
+          if (cue) {
+            await publishAgentStreamEvent({
+              event: "destination.cue_ready",
+              runId: run.id,
+              generationAttempt: run.generationAttempt,
+              cue,
+              traceparent,
+            });
+          }
+        } catch (error) {
+          // The cue is an optional confirmation affordance. Conversation
+          // persistence and delivery must survive classifier/state failures.
+          logSafeRuntimeEvent(ctx, {
+            component: "worker",
+            event: "destination_cue",
+            operation: "conversation",
+            outcome: "failure",
+            errorCode: error instanceof Error ? error.name : "INTERNAL",
+            relatedRunId: run.id,
+          });
+        }
+      }
+      if (briefProposal) {
         // Persist before publishing: the notification can be missed, the row
         // cannot. The client rebuilds the card from the run it already polls.
         await db.update(agentTaskRuns)

@@ -18,6 +18,7 @@ import { confirmationRoutes } from "./routes/confirmations.js";
 import { bookingRoutes } from "./routes/bookings.js";
 import { changeEventRoutes } from "./routes/change-events.js";
 import { chatThreadRoutes } from "./routes/chat-threads.js";
+import { destinationCueRoutes } from "./routes/destination-cues.js";
 import { tripInvitationRoutes } from "./routes/trip-invitations.js";
 import { tripThreadRoutes } from "./routes/trip-threads.js";
 import { explorationRoutes } from "./routes/explorations.js";
@@ -276,6 +277,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(bookingRoutes, { prefix: "/api/v1" });
   await app.register(changeEventRoutes, { prefix: "/api/v1" });
   await app.register(chatThreadRoutes, { prefix: "/api/v1" });
+  await app.register(destinationCueRoutes, { prefix: "/api/v1" });
   await app.register(tripInvitationRoutes, { prefix: "/api/v1" });
   await app.register(tripThreadRoutes, { prefix: "/api/v1" });
   await app.register(explorationRoutes, { prefix: "/api/v1" });

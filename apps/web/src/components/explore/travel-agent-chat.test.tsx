@@ -19,6 +19,8 @@ const USER_MESSAGE_ID = "44444444-4444-4444-8444-444444444444";
 const RUN_ID = "55555555-5555-4555-8555-555555555555";
 const ASSISTANT_MESSAGE_ID = "77777777-7777-4777-8777-777777777777";
 const TRIP_ID = "99999999-9999-4999-8999-999999999999";
+const CUE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const CANDIDATE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const CREATED_AT = "2026-08-25T10:00:00.000Z";
 const TOKYO: ConversationPlace = {
   sourceId: "tokyo",
@@ -183,14 +185,14 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(send).not.toHaveClass("wanderly-action", "wanderly-bot-action", "wanderly-r-md");
   });
 
-  it("lays out the globe destination decision as one compact unfilled row", async () => {
+  it("renders the model-owned destination decision with parallel actions", async () => {
     const api = createApi({
       subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
         onEvent({
-          event: "trip.brief_proposed",
+          event: "destination.cue_ready",
           runId: RUN_ID,
           generationAttempt: 1,
-          proposal: { destinationCandidates: ["Suzhou"] },
+          cue: { id: CUE_ID, version: 1, candidates: [{ id: CANDIDATE_ID, displayName: "Suzhou", status: "PENDING" }] },
         });
         await untilAborted(signal);
       }),
@@ -200,29 +202,26 @@ describe("TravelAgentChat durable streaming flow", () => {
     await submitFromCapsule("Tell me about Suzhou");
 
     const question = await screen.findByText("Set Suzhou as the destination?");
-    expect(question.parentElement).toHaveClass("grid-cols-[minmax(0,1fr)_auto_auto]", "py-1");
     expect(question.closest("section")).toHaveClass("-translate-y-[3px]");
-
-    const plan = screen.getByRole("button", { name: "Plan trip" });
-    const explore = screen.getByRole("button", { name: "Keep exploring" });
-    expect(plan).toHaveClass("bg-transparent", "px-0", "py-1", "text-[var(--w-bot-outline)]");
-    expect(explore).toHaveClass("bg-transparent", "px-0", "py-1");
-    expect(plan).not.toHaveClass("wanderly-shadow-xs", "wanderly-action");
-    expect(explore).not.toHaveClass("wanderly-cosmos-control");
+    const plan = screen.getByRole("button", { name: "Save Suzhou to this trip" });
+    const explore = screen.getByRole("button", { name: "Leave it as it is" });
+    expect(plan.parentElement).toHaveClass("grid-cols-2");
+    expect(plan).toHaveClass("wanderly-action");
+    expect(explore).toHaveClass("wanderly-cosmos-control");
   });
 
   it("explains a destination-resolution rejection without dropping the proposal", async () => {
-    const updateDraftTripBrief = vi.fn().mockRejectedValue(
+    const acceptDestinationCue = vi.fn().mockRejectedValue(
       new TravelApiError("DESTINATION_UNRESOLVED: use an unambiguous supported city name", 422, "Unprocessable Entity", null),
     );
     const api = createApi({
-      updateDraftTripBrief,
+      acceptDestinationCue,
       subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
         onEvent({
-          event: "trip.brief_proposed",
+          event: "destination.cue_ready",
           runId: RUN_ID,
           generationAttempt: 1,
-          proposal: { destinationCandidates: ["Suzhou"] },
+          cue: { id: CUE_ID, version: 1, candidates: [{ id: CANDIDATE_ID, displayName: "Suzhou", status: "PENDING" }] },
         });
         await untilAborted(signal);
       }),
@@ -285,7 +284,7 @@ describe("TravelAgentChat durable streaming flow", () => {
 
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
     await submitFromCapsule("Go to Suzhou");
-    fireEvent.click(await screen.findByRole("button", { name: "Save Suzhou to this trip" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save this to the trip" }));
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Those travel dates can't be used");
@@ -1046,16 +1045,16 @@ describe("the trip's preference card", () => {
     ));
   });
 
-  it("picks the conversation back up once the destination is saved", async () => {
-    // Saving used to end the exchange: the card went, a line said it was
-    // stored, and nothing said what happens next — the same silence the
-    // preference card left behind.
+  it("picks the conversation back up once the remaining trip details are saved", async () => {
+    // Destination confirmation is handled by its durable cue. The brief card
+    // still owns non-destination details, and saving those must continue the
+    // conversation instead of ending in silence.
     // The proposal rides on a run, so there has to be one to read it from.
     localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
     const api = createApi({
       getAgentRun: vi.fn().mockResolvedValue({
         ...run("COMPLETED"),
-        tripBriefProposal: { destinationCandidates: ["Bangkok"] },
+        tripBriefProposal: { travelDays: 6 },
       }),
       updateDraftTripBrief: vi.fn().mockResolvedValue({
         trip: {
@@ -1078,7 +1077,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: /Save Bangkok to this trip/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save this to the trip" }));
 
     await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalledWith(
       THREAD_ID,

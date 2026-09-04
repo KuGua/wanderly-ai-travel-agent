@@ -83,6 +83,8 @@ import type {
   ResearchCommandAcceptedResponse,
   LatestResearchResultResponse,
   SoloAdoptPlanResponse,
+  DestinationCueActionInput,
+  DestinationCueActionResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -151,6 +153,8 @@ export interface TravelApi {
   /** Optional so existing test doubles keep compiling without a stub. */
   deleteTrip?(tripId: string): Promise<void>;
   updateDraftTripBrief?(tripId: string, input: UpdateDraftTripBriefInput): Promise<UpdateDraftTripBriefResponse>;
+  acceptDestinationCue?(threadId: string, cueId: string, candidateId: string, input: DestinationCueActionInput): Promise<DestinationCueActionResponse>;
+  dismissDestinationCue?(threadId: string, cueId: string, candidateId: string, input: DestinationCueActionInput): Promise<DestinationCueActionResponse>;
   saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput): Promise<TripSearchPreferencesResponse>;
   startPlanning(tripId: string): Promise<PlanningTaskAcceptedResponse>;
   getLatestPlanningRun(tripId: string): Promise<LatestPlanningRunResponse>;

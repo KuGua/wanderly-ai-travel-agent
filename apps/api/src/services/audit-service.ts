@@ -77,7 +77,8 @@ export type AuditAction =
   // DRAFT Personal Research durable tasks (added via 0047a, docs/draft-personal-research-implementation.md §3.2):
   | "PERSONAL_RESEARCH_COMMAND_ACCEPTED"
   | "PERSONAL_RESEARCH_COMPLETED"
-  | "PERSONAL_RESEARCH_CANCELLED";
+  | "PERSONAL_RESEARCH_CANCELLED"
+  | "DESTINATION_CUE_ACCEPT" | "DESTINATION_CUE_DISMISS";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
   [key: string]: AuditSummaryValue;

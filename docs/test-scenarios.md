@@ -1091,10 +1091,10 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Only the creator may manually rename. The change sets `name_source=MANUAL`; the audit event records the source but never title text.
 - Bob cannot submit through, view, or restore Alice's old session identifiers.
 
-### TS-EXPLORE-TRIP-3 — Destination brief proposals require explicit, resolvable cities
+### TS-EXPLORE-TRIP-3 — Destination references fail closed and stay city-scoped
 
 **Stories:** H1
-**Objective:** Verify that private conversation can suggest a destination only when the owner explicitly sets a city that the server can resolve unambiguously.
+**Objective:** Verify that discussion, route extraction and direct writes never persist an unresolved or non-city destination.
 
 **Starting conditions:** Alice owns a `DRAFT` Trip. The server location-reference dataset is available and contains Shanghai and Suzhou. No destination proposal is pending.
 
@@ -1141,6 +1141,30 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The card shows the dates it is about to save alongside the destination, and a coherent proposal saves on the first click.
 - The direct PATCH returns `400 BRIEF_DATES_INVALID`; the client renders copy that tells the traveller to restate the dates, never to refresh. The existing brief, title and pending proposal are unchanged.
 - The cleanup script is a dry run by default, is idempotent, strips only the incoherent date fields from stored proposals, and reports — never rewrites — confirmed trips whose travel dates are in the past.
+
+### TS-EXPLORE-TRIP-5 — Destination cues are user-only and individually confirmed
+
+**Stories:** H1
+**Objective:** Verify that the dedicated model proposes only current-USER-turn city destinations and that every candidate has an independent durable lifecycle.
+
+**Starting conditions:** Alice owns a `DRAFT` Trip. The server location-reference dataset is available and contains Beijing, Shanghai and Chengdu. No Destination Cue is pending.
+
+**Steps:**
+
+1. Send plain flight and hotel queries naming cities; then send `Set Tokyo as the destination and find a hotel`.
+2. Have the Assistant mention Shanghai while the USER says only `sounds good`; then have the USER explicitly name Shanghai.
+3. Send one turn naming Beijing, Shanghai and Chengdu; use both arrows, accept one and dismiss another.
+4. Refresh between actions and process the remaining city.
+5. Exercise dismissal recovery before 30 minutes, after one and two qualified mentions, and after 24 hours of silence.
+6. Make the model and location-reference resolver unavailable independently.
+
+**Expected outcomes:**
+
+- Plain flight/hotel queries and Assistant-only mentions create no Cue; the explicit set command shows Tokyo despite its hotel clause.
+- Every displayed label is a concrete canonical city. No `this` card, browser label or free-text fallback is possible.
+- Arrows only switch. Accepting/dismissing one removes only that candidate; REST recovery retains all remaining candidates until individually handled.
+- Suppression follows 30 minutes + two subsequent USER mentions, with a 24-hour silence reset. Agent text and retries never increment it.
+- Model/resolver failure produces no Cue and never fails or delays the conversation reply. Telemetry and audit contain IDs/counts only, never message text, city names or prompts.
 
 ### TS-OTEL-2 — Worker continuity after durable boundary
 

@@ -124,6 +124,7 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `solo_plan_adoption_total` | counter | outcome | `["adopted","stale_plan","not_solo","forbidden","plan_not_proposed","error"]` |
 | `trip_activation_total` | counter | result | `["success","conflict","forbidden","invalid","error"]` |
 | `thread_title_writes_total` | counter | source, result | source ∈ `["deterministic","llm","manual"]`; result ∈ `["applied","rejected","unavailable","no_material","manual_locked"]` |
+| `trip_brief_destination_resolution_total` | counter | result | `["accepted","unresolved"]` |
 | `trip_constraint_mutation_total` | counter | operation, visibility, strength, result | operation ∈ `["propose","confirm","dismiss","upsert","revoke","handoff_confirm"]`; visibility ∈ `["team_visible","orchestrator_confidential","mixed","n_a"]`; strength ∈ `["hard","soft","mixed","n_a"]`; result ∈ `["success","replay","conflict","catalog_invalid"]` |
 | `trip_brief_proposal_dates_total` | counter | result | `["ok","end_before_start","in_past","malformed"]` |
 | `trip_brief_proposal_destination_resolution_total` | counter | result | `["accepted","rejected"]` |
