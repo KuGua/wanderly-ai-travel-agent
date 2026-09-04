@@ -127,15 +127,13 @@
   background: color-mix(in srgb, var(--w-highlight), transparent 45%);
 }
 
-/* In the globe chat, selecting a message underlines it in the traveller's own
-   bubble colour rather than filling it with the fluorescent highlight — it
-   reads as "marked to remember" without the block of colour. */
+/* In the globe chat, selecting a message fills it in the traveller's own
+   bubble colour and thickens the glyphs, so the marked text reads as bold.
+   font-weight is not an allowed ::selection property, so the weight is faked
+   with a symmetric text-shadow (the one bold trick ::selection does permit). */
 .wanderly-cosmos-chat ::selection {
-  background: transparent;
-  text-decoration: underline;
-  text-decoration-color: var(--w-bot-outline);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 2px;
+  background: color-mix(in srgb, var(--w-bot-outline), transparent 35%);
+  text-shadow: 0.4px 0 0 currentColor, -0.4px 0 0 currentColor;
 }
 
 .dark {
