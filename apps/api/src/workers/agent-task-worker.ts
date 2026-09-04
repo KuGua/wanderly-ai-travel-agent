@@ -35,7 +35,7 @@ import { recordTaskMetrics, taskMetricOperation, type TaskMetricOutcome } from "
  * continuous across the durable boundary. When the task row has no trace
  * context (old rows, recovery path, replay) we fall back to a fresh span.
  */
-function openWorkerRunSpan(run: AgentTaskRow) {
+function openWorkerRunSpan(run: AgentTaskRow, claimDurationMs: number) {
   const tc = run.traceContext ?? null;
   const parsed = tc?.traceparent ? parseTraceparent(tc.traceparent) : null;
   const tracer = getTracer();
@@ -50,6 +50,10 @@ function openWorkerRunSpan(run: AgentTaskRow) {
         "tasks.operation": taskMetricOperation(run.operation),
         "tasks.attempt": run.generationAttempt,
         "tasks.recovery": tc === null,
+        // Latency of the claim query that produced this row. Carried here
+        // rather than on its own span so an empty poll — the overwhelming
+        // majority of them — costs no trace at all.
+        "tasks.claim_duration_ms": Math.round(claimDurationMs),
       },
       links,
     },
@@ -71,9 +75,10 @@ async function persistedPlanningOutcome(run: AgentTaskRow): Promise<TaskMetricOu
  */
 async function withWorkerSpan<T>(
   run: AgentTaskRow,
+  claimDurationMs: number,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const span = openWorkerRunSpan(run);
+  const span = openWorkerRunSpan(run, claimDurationMs);
   try {
     return await otelContext.with(otelTrace.setSpan(otelContext.active(), span), fn);
   } finally {
@@ -108,7 +113,9 @@ export async function processNextAgentTask(): Promise<boolean> {
       });
     }
   }
+  const claimStartedAt = performance.now();
   const run = await claimNextConversationTask() ?? await claimNextPlanningTask();
+  const claimDurationMs = performance.now() - claimStartedAt;
   if (!run) return recovered.length > 0;
   if (!run.leaseToken) throw new Error("Claimed task has no lease token");
 
@@ -131,7 +138,7 @@ export async function processNextAgentTask(): Promise<boolean> {
     });
   }, 250);
 
-  return withWorkerSpan(run, async () => {
+  return withWorkerSpan(run, claimDurationMs, async () => {
     try {
       logSafeRuntimeEvent(ctx, {
         component: "worker", event: "task", operation: run.operation.toLowerCase(), outcome: "started",

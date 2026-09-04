@@ -1175,34 +1175,28 @@ export async function recoverExpiredAgentTasks(): Promise<RecoveredAgentTask[]> 
   ];
 }
 
+/**
+ * Claim the next queued conversation task, or return null when the queue is
+ * empty.
+ *
+ * Deliberately un-traced. The Worker calls this on every poll tick, so a span
+ * here produced one trace per empty poll — roughly 1.6/s at the default
+ * `AGENT_WORKER_POLL_INTERVAL_MS`, which drowned real traces and, under the
+ * production sampler, consumed most of the trace budget on nothing. The span
+ * was also an orphan even on a successful claim: it runs before
+ * `agent_task_worker.run` opens, so it had no parent and started its own
+ * trace rather than joining the work it belongs to. The claim latency is
+ * preserved as `tasks.claim_duration_ms` on that run span instead — see
+ * `apps/api/src/workers/agent-task-worker.ts`.
+ */
 export async function claimNextConversationTask(): Promise<AgentTaskRow | null> {
-  const span = getTracer().startSpan("db.agent_task_runs.SELECT", {
-    kind: SpanKind.CLIENT,
-    attributes: {
-      "db.system": "postgresql",
-      "db.operation": "SELECT",
-      "db.sql.table": "agent_task_runs",
-    },
-  });
-  try {
-    const rows = await rawDb.unsafe<Array<{ id: string }>>(
-      CLAIM_CONVERSATION_SQL,
-      [randomUUID(), agentTaskConfig.leaseSeconds],
-    );
-    if (!rows[0]) {
-      safeSetAttribute(span, "db.outcome", "empty");
-      return null;
-    }
-    const [run] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, rows[0].id)).limit(1);
-    safeSetAttribute(span, "db.outcome", run ? "success" : "failure");
-    return run ?? null;
-  } catch (err) {
-    safeSetAttribute(span, "db.outcome", "failure");
-    recordSpanError(err);
-    throw err;
-  } finally {
-    span.end();
-  }
+  const rows = await rawDb.unsafe<Array<{ id: string }>>(
+    CLAIM_CONVERSATION_SQL,
+    [randomUUID(), agentTaskConfig.leaseSeconds],
+  );
+  if (!rows[0]) return null;
+  const [run] = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.id, rows[0].id)).limit(1);
+  return run ?? null;
 }
 
 export async function claimNextPlanningTask(): Promise<AgentTaskRow | null> {
