@@ -255,6 +255,21 @@ describe("agentRunResponseSchema — research intent fields (Phase 0/1)", () => 
     expect(parsed.tripBriefProposal?.travelDateEnd).toBe("2027-04-14");
   });
 
+  it("carries as many destinations as the trip itself accepts", () => {
+    // Capped at one, a traveller naming two cities made this endpoint fail
+    // validating its own response, and the chat reported the message as
+    // unacceptable. The trip and the draft-brief route both allow five.
+    const parsed = agentRunResponseSchema.parse({
+      ...baseRow,
+      researchIntentDraft: null,
+      researchIntentState: null,
+      tripBriefProposal: {
+        destinationCandidates: ["Los Angeles", "San Francisco", "Seattle", "San Diego", "Las Vegas"],
+      },
+    });
+    expect(parsed.tripBriefProposal?.destinationCandidates).toHaveLength(5);
+  });
+
   // ─── Backward-compat sanity ────────────────────────────────────────────────
   it("still accepts an empty messageSequence / resultPlanId for CONVERSATION rows", () => {
     const parsed = agentRunResponseSchema.parse({

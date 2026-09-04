@@ -494,7 +494,11 @@ export const agentRunResponseSchema = z.object({
    */
   tripBriefProposal: z.object({
     departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
-    destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+    // Five, like the trip itself and the draft-brief route that writes it.
+    // Capped at one here, a traveller naming two cities made this endpoint
+    // fail validating its own response — 400 on every poll, surfaced in the
+    // chat as a message that could not be accepted.
+    destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
     travelDateStart: dateStr.optional(),
     // The extraction prompt asks the model for this alongside the start date,
     // and the draft-brief route accepts it, but it was missing here — and this
@@ -1277,8 +1281,11 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     event: z.literal("trip.brief_proposed"),
     proposal: z.object({
       departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
-      destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(1).optional(),
+      destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
       travelDateStart: dateStr.optional(),
+      // Carried here too: this event and the run response describe the same
+      // proposal, and the extraction prompt asks for an end date.
+      travelDateEnd: dateStr.optional(),
       travelDays: z.number().int().min(1).max(365).optional(),
     }).strict(),
   }).strict(),
