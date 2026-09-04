@@ -267,12 +267,13 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(link).toHaveTextContent("Go to Trip Planner");
   });
 
-  it("collapses the floating conversation from its header control", () => {
+  it("lowers the floating conversation before collapsing it from its header control", async () => {
     renderChat(createApi());
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse conversation" }));
 
-    expect(screen.queryByRole("dialog", { name: "Wanderly Agent conversation" })).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Wanderly Agent conversation" }).querySelector(".wanderly-paper-sheet")).toHaveAttribute("data-wanderly-paper-state", "lowering");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Wanderly Agent conversation" })).not.toBeInTheDocument());
     expect(screen.getByRole("form", { name: "Start a conversation with Wanderly Agent" })).toBeInTheDocument();
   });
 
@@ -645,7 +646,8 @@ describe("TravelAgentChat durable streaming flow", () => {
     renderChat(createApi(), { initiallyOpen: false });
 
     const collapsedComposer = screen.getByRole("form", { name: "Start a conversation with Wanderly Agent" });
-    expect(collapsedComposer).toHaveClass("wanderly-paper-composer", "wanderly-cosmos-surface", "wanderly-r-lg", "wanderly-shadow");
+    expect(collapsedComposer).toHaveClass("wanderly-paper-composer", "wanderly-paper-perch", "wanderly-cosmos-surface", "wanderly-r-lg", "wanderly-shadow");
+    expect(collapsedComposer).toHaveAttribute("data-wanderly-paper-state", "perched");
     expect(collapsedComposer).not.toHaveClass("bg-card", "wanderly-edge");
   });
 
@@ -655,7 +657,10 @@ describe("TravelAgentChat durable streaming flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Chat history" }));
 
     const dialog = await screen.findByRole("dialog", { name: "Wanderly Agent conversation" });
-    expect(dialog).toHaveClass("wanderly-cosmos-chat", "wanderly-paper-chat", "wanderly-cosmos-panel");
+    expect(dialog).toHaveClass("wanderly-cosmos-chat");
+    const paper = dialog.querySelector(".wanderly-paper-sheet");
+    expect(paper).toHaveClass("wanderly-paper-chat", "wanderly-cosmos-panel");
+    expect(paper).toHaveAttribute("data-wanderly-paper-state", "raised");
     expect(dialog).not.toHaveClass("bg-sidebar", "wanderly-edge");
 
     const composerBox = screen.getByRole("textbox", { name: "Message Wanderly Agent" }).parentElement;

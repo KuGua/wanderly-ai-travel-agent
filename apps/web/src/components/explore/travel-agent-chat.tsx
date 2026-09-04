@@ -202,6 +202,7 @@ export function TravelAgentChat({
     && resolvedThreadStatus !== "error";
 
   const [draft, setDraft] = useState("");
+  const [isClosing, setIsClosing] = useState(false);
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([]);
   /**
    * Which thread the buffer above belongs to.
@@ -304,6 +305,11 @@ export function TravelAgentChat({
   const panelScrollRef = useRef<HTMLDivElement>(null);
   const pendingTurnAnchorRef = useRef<HTMLParagraphElement>(null);
   const wasSendingRef = useRef(false);
+  const closeTimerRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
+  }, []);
 
   const api = useTravelApi();
   const conversation = useOwnerConversation(effectiveThreadId);
@@ -689,7 +695,9 @@ export function TravelAgentChat({
   }
 
   function collapseConversation() {
-    onDismiss();
+    if (isClosing) return;
+    setIsClosing(true);
+    closeTimerRef.current = window.setTimeout(onDismiss, 280);
   }
 
   function stopActiveRun() {
@@ -1055,7 +1063,7 @@ export function TravelAgentChat({
       <>
         <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-20 right-4 z-40 px-3 py-1.5 text-[11px] font-extrabold wanderly-cosmos-control wanderly-r-xs wanderly-press landscape:bottom-24 landscape:right-6">{t("history")}</button>
         <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
-        <form data-wanderly-perch="composer" data-wanderly-avoid onSubmit={submitMessage} className="wanderly-cosmos-composer wanderly-paper-composer absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 p-1.5 pl-4 wanderly-cosmos-surface wanderly-r-lg wanderly-shadow sm:left-[94px] sm:right-3 sm:w-auto sm:translate-x-0 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)]" aria-label={t("startAria")}>
+        <form data-wanderly-perch="composer" data-wanderly-paper-state="perched" data-wanderly-avoid onSubmit={submitMessage} className="wanderly-cosmos-composer wanderly-paper-composer wanderly-paper-perch absolute bottom-3 left-1/2 z-40 flex min-h-14 w-[calc(100%-3rem)] -translate-x-1/2 items-center gap-2 p-1.5 pl-4 wanderly-cosmos-surface wanderly-r-lg wanderly-shadow sm:left-[94px] sm:right-3 sm:w-auto sm:translate-x-0 landscape:bottom-6 landscape:left-auto landscape:right-6 landscape:w-[min(calc(40vw-1.5rem),calc(66.667dvh-3.5rem),596px)]" aria-label={t("startAria")}>
           <Sparkles aria-hidden="true" className="size-4 shrink-0 text-primary" />
           <input value={draft} disabled={inputDisabled} onChange={(event) => setDraft(event.target.value)} aria-label={t("startInputAria")} placeholder={t("startPlaceholder")} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[var(--w-fog)] placeholder:text-[var(--w-space-muted)] focus:outline-none disabled:opacity-60" />
           {submitButton}
@@ -1065,7 +1073,8 @@ export function TravelAgentChat({
   }
 
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-visible bg-background" : "wanderly-cosmos-chat wanderly-paper-chat absolute inset-x-3 bottom-0 z-50 flex h-[calc(60dvh+0.75rem)] min-h-[300px] flex-col overflow-hidden wanderly-cosmos-panel sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-3 landscape:left-auto landscape:right-6 landscape:h-[calc(min(60vw,calc(100dvh-3rem),852px)+0.75rem)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-visible bg-background" : "wanderly-cosmos-chat absolute inset-x-3 bottom-0 z-50 h-[calc(60dvh+0.75rem)] min-h-[300px] sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-3 landscape:left-auto landscape:right-6 landscape:h-[calc(min(60vw,calc(100dvh-3rem),852px)+0.75rem)] landscape:min-h-0 landscape:w-[min(40vw,calc(66.667dvh-2rem),620px)]"}>
+      <div data-wanderly-paper-state={docked ? undefined : isClosing ? "lowering" : "raised"} className={docked ? "contents" : "wanderly-paper-chat wanderly-paper-sheet wanderly-cosmos-panel flex size-full flex-col overflow-hidden"}>
       {/* The panel paints its own deep-space ground, so the inner column stays
           transparent rather than laying a second surface over it. */}
       <div className={`flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>
@@ -1401,6 +1410,7 @@ export function TravelAgentChat({
           {submitButton}
         </div>
       </form>
+      </div>
     </aside>
   );
 

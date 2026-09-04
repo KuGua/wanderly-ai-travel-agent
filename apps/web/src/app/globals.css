@@ -656,7 +656,8 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
   --paper-rule-height: 30px;
   --paper-writing-offset: 2px;
   border: 0;
-  border-radius: 7px 7px 20px 20px;
+  isolation: isolate;
+  border-radius: 3px 5px 20px 18px;
   color: var(--w-ink);
   background-color: color-mix(in srgb, var(--w-fog), var(--w-white) 58%);
   background-image:
@@ -673,6 +674,54 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
   animation: none;
 }
 
+/* The collapsed composer is the exposed binding edge of the very same sheet.
+   Its continuation intentionally extends below the map's clipped viewport: it
+   reads as a page waiting just outside the browser, rather than a separate
+   floating search field. */
+.wanderly-paper-perch {
+  isolation: isolate;
+  overflow: visible;
+  border: 1px solid color-mix(in srgb, var(--w-bot-outline), transparent 48%);
+  border-radius: 8px 8px 15px 15px;
+  background-color: color-mix(in srgb, var(--w-fog), var(--w-white) 54%);
+  background-image:
+    radial-gradient(circle at 50% 9px, color-mix(in srgb, var(--w-space), var(--w-ink) 38%) 0 5px, color-mix(in srgb, var(--w-fog), var(--w-white) 54%) 5.5px 7px, transparent 7.5px) 29px 0 / 34px 18px repeat-x,
+    linear-gradient(to right, transparent 0 30px, color-mix(in srgb, var(--w-info), transparent 71%) 30px 31px, transparent 31px),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--w-ink), transparent 97%) 0 1px, transparent 1px 4px);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--w-white), transparent 12%), 0 5px 14px color-mix(in srgb, var(--w-space), transparent 67%);
+}
+
+.wanderly-paper-perch::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: -9px;
+  right: 0;
+  left: 0;
+  height: 18px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--w-fog), var(--w-white) 54%);
+  clip-path: polygon(0 62%, 4% 48%, 7% 65%, 12% 35%, 16% 58%, 21% 44%, 26% 68%, 31% 39%, 36% 59%, 42% 31%, 48% 62%, 54% 43%, 60% 66%, 66% 35%, 72% 57%, 78% 42%, 84% 66%, 90% 34%, 95% 56%, 100% 43%, 100% 100%, 0 100%);
+  filter: drop-shadow(0 -1px 0 color-mix(in srgb, var(--w-white), transparent 15%)) drop-shadow(0 1px 1px color-mix(in srgb, var(--w-ink), transparent 82%));
+}
+
+.wanderly-paper-perch::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: calc(100% - 7px);
+  right: 0;
+  left: 0;
+  height: 58dvh;
+  pointer-events: none;
+  border-right: 1px solid color-mix(in srgb, var(--w-bot-outline), transparent 64%);
+  border-left: 1px solid color-mix(in srgb, var(--w-bot-outline), transparent 64%);
+  background:
+    linear-gradient(to right, transparent 0 30px, color-mix(in srgb, var(--w-info), transparent 78%) 30px 31px, transparent 31px),
+    repeating-linear-gradient(to bottom, transparent 0 29px, color-mix(in srgb, var(--w-info), transparent 79%) 29px 30px),
+    color-mix(in srgb, var(--w-fog), var(--w-white) 54%);
+}
+
 .wanderly-paper-chat.wanderly-cosmos-panel::after {
   content: "";
   position: absolute;
@@ -685,18 +734,33 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
   background: linear-gradient(transparent, color-mix(in srgb, var(--w-mist), transparent 34%));
 }
 
-/* Fixed perforation edge. There is deliberately no title, date, or red
-   margin rule on the page — only the binding holes and the torn paper edge. */
+/* The fixed top edge mimics a page torn out of a spiral notepad: ragged paper
+   fragments above a row of punch holes. It is intentionally not a metal ring. */
 .wanderly-paper-chat .wanderly-paper-header {
   position: relative;
   z-index: 4;
-  min-height: 54px;
+  min-height: 70px;
   overflow: hidden;
-  border-bottom: 1px solid color-mix(in srgb, var(--w-bot-outline), transparent 72%);
+  padding-top: 28px;
+  border-bottom: 1px solid color-mix(in srgb, var(--w-info), transparent 68%);
   background: linear-gradient(to bottom, color-mix(in srgb, var(--w-white), transparent 18%), color-mix(in srgb, var(--w-fog), var(--w-white) 34%));
   box-shadow: 0 8px 14px color-mix(in srgb, var(--w-moss), transparent 87%);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+.wanderly-paper-chat .wanderly-paper-header::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 22px;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--w-fog), var(--w-white) 58%);
+  clip-path: polygon(0 48%, 4% 66%, 8% 25%, 13% 59%, 18% 35%, 23% 64%, 29% 24%, 35% 57%, 41% 32%, 47% 65%, 53% 26%, 59% 58%, 65% 34%, 71% 63%, 77% 23%, 83% 57%, 89% 32%, 95% 64%, 100% 42%, 100% 100%, 0 100%);
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--w-ink), transparent 83%));
 }
 
 .wanderly-paper-chat .wanderly-paper-header::after {
@@ -718,9 +782,9 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
 
 .wanderly-paper-holes {
   position: absolute;
-  top: 11px;
-  right: 61px;
-  left: 23px;
+  top: 10px;
+  right: 26px;
+  left: 26px;
   display: flex;
   justify-content: space-between;
   pointer-events: none;
@@ -730,8 +794,8 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
   width: 14px;
   height: 14px;
   border-radius: 999px;
-  background: var(--w-space);
-  box-shadow: inset 0 2px 2px color-mix(in srgb, var(--w-ink), transparent 18%), 0 1px 0 color-mix(in srgb, var(--w-white), transparent 16%);
+  background: color-mix(in srgb, var(--w-space), var(--w-ink) 38%);
+  box-shadow: inset 0 2px 3px color-mix(in srgb, var(--w-ink), transparent 10%), 0 1px 0 color-mix(in srgb, var(--w-white), transparent 12%), 0 0 0 2px color-mix(in srgb, var(--w-fog), transparent 34%);
 }
 
 .wanderly-paper-chat .wanderly-cosmos-control {
@@ -758,7 +822,9 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
   padding: 25px 30px 30px;
   color: var(--w-ink);
   background-color: transparent;
-  background-image: repeating-linear-gradient(to bottom, transparent 0 calc(var(--paper-rule-height) - 1px), color-mix(in srgb, var(--w-info), transparent 68%) calc(var(--paper-rule-height) - 1px) var(--paper-rule-height));
+  background-image:
+    linear-gradient(to right, transparent 0 30px, color-mix(in srgb, var(--w-info), transparent 71%) 30px 31px, transparent 31px),
+    repeating-linear-gradient(to bottom, transparent 0 calc(var(--paper-rule-height) - 1px), color-mix(in srgb, var(--w-info), transparent 68%) calc(var(--paper-rule-height) - 1px) var(--paper-rule-height));
   background-position: 0 24px;
   background-attachment: local;
   mask-image: none;
@@ -868,7 +934,9 @@ form[data-wanderly-perch="composer"].wanderly-cosmos-composer {
 form[data-wanderly-perch="composer"].wanderly-paper-composer {
   border: 1px solid color-mix(in srgb, var(--w-bot-outline), transparent 54%);
   background-color: color-mix(in srgb, var(--w-fog), var(--w-white) 54%);
-  background-image: repeating-linear-gradient(0deg, color-mix(in srgb, var(--w-ink), transparent 97%) 0 1px, transparent 1px 4px);
+  background-image:
+    linear-gradient(to right, transparent 0 22px, color-mix(in srgb, var(--w-info), transparent 78%) 22px 23px, transparent 23px),
+    repeating-linear-gradient(0deg, color-mix(in srgb, var(--w-ink), transparent 97%) 0 1px, transparent 1px 4px);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--w-white), transparent 18%), 0 4px 12px color-mix(in srgb, var(--w-space), transparent 72%);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -892,6 +960,37 @@ form[data-wanderly-perch="composer"].wanderly-paper-composer .wanderly-bot-actio
   box-shadow: 1px 2px 0 color-mix(in srgb, var(--w-bot-outline), transparent 62%);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+/* The dialog shell never moves, so MapLibre's globe stays visually anchored.
+   Only the opaque paper sheet crosses the viewport during each state change. */
+.wanderly-paper-sheet { position: relative; }
+
+.wanderly-paper-sheet[data-wanderly-paper-state="raised"] {
+  transform-origin: center bottom;
+  will-change: transform, opacity;
+  animation: wanderly-paper-rise 340ms cubic-bezier(.22, .9, .32, 1) both;
+}
+
+.wanderly-paper-sheet[data-wanderly-paper-state="lowering"] {
+  transform-origin: center bottom;
+  will-change: transform, opacity;
+  animation: wanderly-paper-lower 280ms cubic-bezier(.55, 0, .85, .36) both;
+}
+
+@keyframes wanderly-paper-rise {
+  from { opacity: .84; transform: translateY(calc(100% - 60px)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes wanderly-paper-lower {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: .84; transform: translateY(calc(100% - 60px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wanderly-paper-sheet[data-wanderly-paper-state="raised"],
+  .wanderly-paper-sheet[data-wanderly-paper-state="lowering"] { animation: none; }
 }
 
 @media (max-width: 639px) {
