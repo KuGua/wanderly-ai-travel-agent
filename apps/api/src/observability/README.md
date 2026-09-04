@@ -69,7 +69,7 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `conversation_memory_context_facts` | counter | — | — |
 | `conversation_memory_notes_dropped_total` | counter | — | — |
 | `conversation_memory_context_total` | counter | result | `["success","empty"]` |
-| `draft_command_rejected_total` | counter | operation | `["invitation","consent","planning","confirmation","booking","change_event","research"]` |
+| `draft_command_rejected_total` | counter | operation | `["invitation","consent","planning","confirmation","booking","change_event","research","constraint_read","constraint_upsert","constraint_propose","constraint_confirm","constraint_dismiss","constraint_revoke"]` |
 | `exploration_start_total` | counter | result | `["created","cached","conflict","error"]` |
 | `external_provider_http_calls_total` | counter | provider, operation, outcome | provider ∈ `["amadeus","flightapi","nuitee_connect","openrouteservice","opentripmap","serpapi","viator_mcp","location_reference"]`; operation ∈ `["flight.search","hotel.search","accommodation.discover","place.search","navigation.route","mobility.search","activities.search","oauth.token","location.resolve"]`; outcome ∈ `["success","failure"]` |
 | `external_provider_http_latency_ms` | histogram | provider, operation | provider ∈ `["amadeus","flightapi","nuitee_connect","openrouteservice","opentripmap","serpapi","viator_mcp","location_reference"]`; operation ∈ `["flight.search","hotel.search","accommodation.discover","place.search","navigation.route","mobility.search","activities.search","oauth.token","location.resolve"]`; buckets = `[100,250,500,1000,2000,5000,8000,15000,30000]` |

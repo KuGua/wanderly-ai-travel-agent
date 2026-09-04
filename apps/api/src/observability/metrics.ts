@@ -395,8 +395,17 @@ metrics.registerCounter("trip_activation_total", "Draft Trip activation outcomes
 metrics.registerCounter("trip_draft_brief_update_total", "Creator-confirmed DRAFT brief updates.", {
   result: ["success"],
 });
+// Every value `requireActiveTrip` is called with has to be listed, or the
+// rejection it is recording throws instead: `metrics.inc` refuses an
+// undeclared label, so a Draft trip answered 500 where it meant to answer
+// 409. The `constraint_*` operations were added to the guard without being
+// added here, which took `GET /trips/:tripId/plans` down for every Draft.
 metrics.registerCounter("draft_command_rejected_total", "Collaboration commands rejected because the Trip is still a Draft.", {
-  operation: ["invitation", "consent", "planning", "confirmation", "booking", "change_event", "research"],
+  operation: [
+    "invitation", "consent", "planning", "confirmation", "booking", "change_event", "research",
+    "constraint_read", "constraint_upsert", "constraint_propose",
+    "constraint_confirm", "constraint_dismiss", "constraint_revoke",
+  ],
 });
 metrics.registerCounter("trip_invitation_rejected_total", "Trip invitation attempts rejected because the Trip is archived or cancelled.", {
   reason: ["terminal_trip"],
