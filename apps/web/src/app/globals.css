@@ -673,9 +673,9 @@
 }
 
 .wanderly-destination-film {
-  --wanderly-film-edge: #2a1112;
-  --wanderly-film-edge-lit: #6b3028;
-  --wanderly-film-hole: #d9d5cd;
+  --wanderly-film-edge: #090a0d;
+  --wanderly-film-edge-lit: #282b31;
+  --wanderly-film-hole: #d7d9dc;
   position: relative;
   overflow: hidden;
   padding: 9px 34px;
