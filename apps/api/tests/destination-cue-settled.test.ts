@@ -6,11 +6,13 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "../src/db/database.js";
 import {
   agentTaskRuns,
+  auditEvents,
   chatMessages,
   chatThreads,
   destinationCueBatches,
   destinationCuePromptPolicies,
   sharedTrips,
+  tripMembers,
   users,
 } from "../src/db/schema.js";
 import { persistDestinationCue } from "../src/services/destination-cue-service.js";
