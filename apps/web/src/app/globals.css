@@ -149,14 +149,13 @@
   /* Still being worked out, as opposed to settled. A muted ochre rather than a
      saturated yellow: it shares a row with the blue and must not outrank it. */
   --w-cal-planning: color-mix(in srgb, #d4b483, var(--w-fog) 34%);
-  /* The two facing pages of the planner panel. Mixed toward white, not toward
-     the fog: the fog is a warm off-white, and pulling a muted teal-blue into it
-     at this strength cancels the hue outright — measured, 12% info in fog came
-     out at rgb(.87 .89 .89), which is a cool grey, not a blue. Against white
-     the same proportion keeps the tint legible while staying pale enough to sit
-     under the calendar's printed ruling. */
-  --w-sheet-blue: color-mix(in srgb, var(--w-info), var(--w-white) 78%);
-  --w-sheet-green: color-mix(in srgb, var(--w-highlight), var(--w-white) 80%);
+  /* The binding margin, and the facing page beside it. Both mixed toward white,
+     not toward the fog: the fog is a warm off-white, and pulling a muted colour
+     into it at this strength cancels the hue outright — measured, 12% info in
+     fog came out rgb(222 227 228), a cool grey with no blue left in it. The
+     year itself stays plain white; these tint what frames it. */
+  --w-sheet-blue: color-mix(in srgb, var(--w-info), var(--w-white) 80%);
+  --w-sheet-yellow: color-mix(in srgb, #d4b483, var(--w-white) 76%);
   --sidebar-foreground: var(--w-ink);
   --sidebar-primary: var(--w-highlight);
   --sidebar-primary-foreground: var(--w-ink);
@@ -664,7 +663,7 @@
    above the desk, where this needs to suggest sheets behind the top one. */
 .wanderly-pad {
   position: relative;
-  padding-left: 26px;
+  padding-left: 30px;
   /* The same generous corner the profile card uses, all four sides. Squaring
      the left to "make room" for the binding was unnecessary — the rings sit
      inside the radius — and it left the pad looking clipped beside every other
@@ -696,9 +695,9 @@
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
-  width: 26px;
+  width: 30px;
   border-right: 1px dashed color-mix(in srgb, var(--w-ink), transparent 76%);
-  background: color-mix(in srgb, var(--w-fog), var(--w-white) 40%);
+  background: var(--w-sheet-blue);
   border-radius: 17px 0 0 17px;
 }
 
@@ -714,16 +713,16 @@
 .wanderly-pad::after {
   content: "";
   position: absolute;
-  inset: 16px auto 16px 5px;
-  width: 17px;
+  inset: 18px auto 18px 4px;
+  width: 22px;
   pointer-events: none;
   background-repeat: repeat-y;
-  background-size: 17px 46px;
+  background-size: 22px 54px;
   background-image:
-    radial-gradient(ellipse 8px 5px at 50% 23px,
-      transparent 0 2.6px,
-      color-mix(in srgb, var(--w-ink), transparent 22%) 2.9px 4.2px,
-      transparent 4.5px);
+    radial-gradient(ellipse 11px 7px at 50% 27px,
+      transparent 0 3.5px,
+      color-mix(in srgb, var(--w-ink), transparent 22%) 3.9px 5.6px,
+      transparent 6px);
 }
 
 
