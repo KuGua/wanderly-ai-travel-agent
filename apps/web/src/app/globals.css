@@ -269,6 +269,30 @@
   border-radius: 999px;
 }
 
+/* A visible companion to the native scrollbar. macOS can hide its native
+ * scrollbar globally even with `overflow-y-scroll`; this track lives inside
+ * the trip-chat column so the scrolling affordance remains discoverable. */
+.wanderly-chat-scroll-track {
+  width: 10px;
+  cursor: pointer;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--w-moss), var(--w-white) 72%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--w-ink), transparent 78%);
+}
+
+.wanderly-chat-scroll-thumb {
+  min-height: 34px;
+  cursor: grab;
+  border: 2px solid var(--w-white);
+  border-radius: 999px;
+  background: var(--w-moss);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--w-ink), transparent 68%);
+}
+
+.wanderly-chat-scroll-thumb:active {
+  cursor: grabbing;
+}
+
 /*
  * Press feedback. Hovering shortens the shadow and slides the element into
  * it, so the control reads as pushed toward the page; the active state
