@@ -1104,12 +1104,12 @@ class SafeConversationDeltaGate {
     this.rawText += delta;
     this.pending += delta;
 
-    let boundary = completeSentenceBoundary(this.pending);
+    let boundary = completeClauseBoundary(this.pending);
     while (boundary > 0) {
       const segment = this.pending.slice(0, boundary);
       this.pending = this.pending.slice(boundary);
       await this.approveAndPublish(segment);
-      boundary = completeSentenceBoundary(this.pending);
+      boundary = completeClauseBoundary(this.pending);
     }
   }
 
@@ -1143,14 +1143,37 @@ class SafeConversationDeltaGate {
   }
 }
 
-function completeSentenceBoundary(value: string): number {
+/**
+ * Longest complete clause the gate may approve out of `value`.
+ *
+ * The unit used to be a whole sentence, which made the SSE stream arrive in
+ * one or two jumps: a reply like "巴黎是个不错的选择" has no terminator at
+ * all and only shipped from the final `flush()` — after generation had
+ * already finished — and "好的，我来帮你规划这次法国之旅。" produced exactly
+ * one delta. Clauses keep the same contract (a complete unit is approved
+ * before any of it is published, per docs/agent-streaming-implementation.md
+ * §4) while cutting the granularity several times finer.
+ *
+ * CJK punctuation is unambiguous, so it ends a clause on its own. ASCII
+ * punctuation must be followed by real whitespace, because it also appears
+ * inside values the reply is allowed to contain: `1,000`, `3.5`, `10:30`,
+ * `https://…`.
+ *
+ * Note there is deliberately no `$` alternative for the ASCII branch. This
+ * runs against a buffer that grows one token at a time, so end-of-text
+ * matches on *every* intermediate state — `$` would fire on the `,` of
+ * `1,000` the instant it arrived, before the `000` existed to disprove it.
+ * Trailing text with no boundary is shipped by `flush()` instead.
+ */
+export function completeClauseBoundary(value: string): number {
   let boundary = 0;
-  const pattern = /[.!?。！？](?:\s+|$)|\n+/gu;
-  for (const match of value.matchAll(pattern)) {
+  for (const match of value.matchAll(CLAUSE_BOUNDARY_PATTERN)) {
     boundary = (match.index ?? 0) + match[0].length;
   }
   return boundary;
 }
+
+const CLAUSE_BOUNDARY_PATTERN = /[。！？，、；：]\s*|[.!?,;:]\s+|\n+/gu;
 
 function boundedTextChunks(value: string, maxBytes: number): string[] {
   const chunks: string[] = [];

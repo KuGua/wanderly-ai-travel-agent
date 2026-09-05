@@ -230,7 +230,16 @@ export interface ModelGateway {
     ctx?: RequestContext;
   }): Promise<ConversationReply>;
 
-  streamConversationReply?(params: {
+  /**
+   * Required, not optional. An optional method here is the shape that lets a
+   * capability vanish silently: the caller's `gateway.streamConversationReply`
+   * guard falls through to the non-streaming path, which then replays the
+   * finished reply as a single `onDelta` call — the user sees one block and
+   * nothing fails to compile. The same footgun is documented on
+   * `generateThreadTitle` above. Test doubles live outside `tsconfig`'s
+   * `include`, so they are unaffected.
+   */
+  streamConversationReply(params: {
     question: string;
     place?: ConversationPlace;
     threadContext: ThreadContextMessage[];

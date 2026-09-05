@@ -13,6 +13,35 @@
 5. planning/replan 只允许 `run.phase` 和引用已持久化结果的 terminal event；禁止文本 delta、推理、raw provider payload、完整 snapshot 或未验证候选。
 6. SSE event、partial text 和 connection state 是易失 UI 数据，不得写入 `chat_messages`、plan、localStorage、审计、日志、trace 或指标。SSE 丢失/晚连不是失败；客户端应读取 task 状态与最终资源。
 
+## 显示粒度
+
+第 4 条要求每个 `message.delta` 先经 streaming safety gate 批准，因此 gate 必须先攒够一个完整语义单元才能放行——半句话无法判定 `containsUnsupportedOperationalClaim`。该单元的大小直接决定用户看到的是"打字"还是"整段弹出"。
+
+**单元是子句，不是句子。** `SafeConversationDeltaGate` 早期以句末标点为边界，实测后果：
+
+| 回复 | 句子级实际发出的 SSE 段数 |
+|---|---|
+| `好的，我来帮你规划这次法国之旅。` | 1 |
+| `巴黎是个不错的选择`（无句末标点） | 1，且要等生成结束后的 `flush()` |
+| 27 字、三个子句的长句 | 1 |
+
+即绝大多数回复只发一个 delta，SSE 在用户侧退化为整段输出。改用子句边界后同样三例分别为 2 / 1 / 4 段。
+
+`completeClauseBoundary` 的两条约束：
+
+- **CJK 标点**（`。！？，、；：`）单独成界，无歧义。
+- **ASCII 标点**（`.!?,;:`）必须后接真实空白。**不得使用 `$`（文本结尾）作为替代分支**——gate 的缓冲区每到达一个 token 就增长一次，结尾在每个中间状态都成立，`$` 会在 `1,000` 的逗号刚到达、`000` 尚不存在时就误判成界；`10:30`、`3.5`、`https://` 同理。尾部不成界的文本由 `flush()` 负责。
+
+回归用例见 `apps/api/tests/conversation-clause-boundary.test.ts`，其模拟逐 token 累加而非直接对成品字符串取边界——只有这种形状才能暴露上述 `$` 陷阱。
+
+**客户端节奏。** 浏览器按终端节奏绘制已批准的子句（`apps/web/src/components/explore/terminal-typing.ts`）。这不是把完整回复拿到后再回放：客户端永远不会绘制尚未经 SSE 到达的字符；`active` 结束时立即显示全文，动画不拖慢一轮对话的结束；`prefers-reduced-motion` 下直接全量渲染。
+
+**绘制速率必须跟随到达速率，不能是固定值。** 第一版用固定 90 字/秒，结果每个约 12 字的子句在 130ms 内画完，然后静止到下一个子句到达（约 700ms）——一次典型回复 85% 的时间画面是不动的，观感仍是"四块文字依次弹出"而不是打字。现在按运行期内观测到的到达速率的 1.3 倍绘制，让光标始终紧跟在数据前沿之后；`MIN_CHARS_PER_SECOND` 是首帧尚无速率可测时的下限，`CATCH_UP_WINDOW_MS` 是积压过大（突发、或整段回复只有一个 delta）时的兜底阀门。
+
+回归判据见 `terminal-typing.test.ts`：它按 `[到达时刻, 字数]` 重放一次真实运行，断言**静止时长**而不只是断言最终能画完——只有前者能抓住"跳一下冻结一下"这种退化。
+
+---
+
 ## 事件契约
 
 所有事件均使用严格 JSON `data`；event payload 不含 prompt、question、chain-of-thought、raw model/tool/provider payload、token usage、完整 snapshot、未授权 Profile、国籍、证件或底层错误文本。
