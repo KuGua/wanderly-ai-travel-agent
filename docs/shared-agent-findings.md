@@ -832,3 +832,43 @@ Gate B 各自独立。
 开局那一轮模型并行发出的调用里有三个在 1ms 内拿到 `POLICY_DENIED`。不是第二次机会，
 是三个**假的失败信号**。`generatePlan` 现在接受 `alreadyResearchedCapabilities`，
 把对应的一次性搜索工具从列表里摘掉；写类工具（`places.adopt`）保留。
+
+## #54 撤下工具却没交接证据，方案只剩航班 — 缺陷 — 已修（09-06）
+第一版真正持久化的共享方案出来了（run `adf0fb98`，9 次搜索全部 LIVE，89 条 offer），
+但卡片上只有航班一格有内容。
+
+**「酒店」这一格其实从来就没有可能填上过**，四处缺陷叠在一起：
+
+1. **证据没交接（#53 的另一半）**。`allHotels` / `allActivities` /
+   `allAccommodations` 唯一的写入点就是那三个工具的派发处理器。#53 把工具撤下，
+   等于撤掉了唯一的写入路径。worker 日志证实：那一轮模型只派发了两次
+   `flight.search`，其余一次都没有。
+2. **提示词根本不允许 `hotels`**。`llm-gateway.ts` 的 allowed keys 只列了
+   flights / stays / activities。schema 允许，提示词禁止。
+3. **`bindPlanSelectionsToEvidence` 不绑 `hotels`**。模型就算输出
+   `{"id":…}`，也不会被展开成完整报价，校验器逐条比对必然不匹配。
+4. **只修 1 会把空卡片变成运行失败**。`requireHotels` 一旦有酒店证据就要求方案
+   必须含 `hotels`，而 2、3 让它不可能有 → `EVIDENCE_NOT_FOUND`。
+
+另外「住宿」那一格无人可填：`StayProvider` 已删（#51），而 16 条 OpenTripMap
+住宿在 `planOutputSchema` 里**没有位置**。新增 `accommodations` 槽位（非报价发现，
+与 `hotels` 的带价报价分开），校验规则同构。
+
+前端也读错了字段：Nuitee 报价的名字是 `propertyName` 而卡片只读 `name`，
+所以每一条真实报价都会渲染成「—」。
+
+**顺带修的两个**：
+- `flight.search` 也加入撤下列表 —— coverage 已按规范矩阵搜完并交接 offer，
+  留着只是把同样两次搜索再买一遍（那一轮就重复付了）。
+- 工具可以被全部撤下，此时**不能发送 `tools` 字段**（空数组会被供应商拒绝）。
+
+## #55 `research_stage_total` 的一个标签值从未注册 — 缺陷 — 已修（09-06）
+`metrics.inc("research_stage_total", { stage: "completed", outcome: "research_summary" })`
+—— 该计数器的 `outcome` 只注册了 `success` / `failure`，所以这一行会**抛异常**。
+
+它活到今天是因为 research-summary 分支在 #48 之前根本不可达（编排层不传 lease）。
+修好 lease 之后第一次走到这里就炸了。改为 `stage: "completed_with_gaps", outcome: "success"`
+—— 两半都是已注册值，语义也更准：摘要就是一次带缺口的完成。
+
+**这类缺陷的形状值得记**：一个分支长期不可达，它内部的错误就不会被发现；
+把上游修通的那一刻，下游积累的问题会一起冒出来。

@@ -85,6 +85,7 @@ const parsedCompletionSchema = z.object({
     ),
     activities: optionalArray(z.unknown()),
     hotels: optionalArray(z.unknown()),
+    accommodations: optionalArray(z.unknown()),
     generatedAt: z.string().min(1),
     constraintReferences: optionalArray(z.string().min(1)),
     publicExplanationTokens: optionalArray(z.string().min(1)),
@@ -1396,8 +1397,9 @@ export class LLMGateway implements ModelGateway {
           role: "system",
           content: "Authoritative flight research is complete. Do not call flight.search again. "
             + "Return exactly one JSON object with one top-level key named plan. "
-            + "The plan object may contain only destination, destinationCandidatesEvaluated, flights, stays, activities, generatedAt, constraintReferences, and publicExplanationTokens. "
-            + "flights, stays, and activities must contain only compact {\"id\":\"exact evidence id\"} selection objects; do not copy or summarize the remaining evidence fields. "
+            + "The plan object may contain only destination, destinationCandidatesEvaluated, flights, stays, activities, hotels, accommodations, generatedAt, constraintReferences, and publicExplanationTokens. "
+            + "flights, stays, activities, hotels and accommodations must contain only compact {\"id\":\"exact evidence id\"} selection objects; do not copy or summarize the remaining evidence fields. "
+            + "`hotels` are priced quotes and `accommodations` are non-priced discovery — select from whichever the Tool results actually contain, and never move an entry between them. "
             + "destination, flights, and generatedAt are required keys. Return flights or stays as an empty array when that capability produced no evidence — an unavailable capability is reported as a gap, and inventing an offer to fill the array is a validation failure. Omit optional properties when they have no value; do not set them to null. "
             + "Use only the normalized Tool results already present in this conversation; never invent missing evidence.",
         });
@@ -1436,14 +1438,22 @@ export class LLMGateway implements ModelGateway {
       let raw: {
         choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }>;
       };
+      // Every tool can legitimately be withdrawn: the orchestrator researches
+      // each capability before synthesis, so a fully researched round has
+      // nothing left to offer and only needs the plan composed. An empty
+      // `tools` array is rejected by the provider, so omit the field entirely
+      // rather than sending one.
+      const turnTools = offeredTools();
       try {
         raw = await client.chat.completions.create({
           model: this.options.modelName,
           messages,
-          tools: offeredTools().map((tool) => ({ type: "function", function: tool })),
-          tool_choice: forceMissingFlightSearch
-            ? { type: "function", function: { name: "flight.search" } }
-            : forceFinalPlan ? "none" : "auto",
+          ...(turnTools.length > 0 ? {
+            tools: turnTools.map((tool) => ({ type: "function", function: tool })),
+            tool_choice: forceMissingFlightSearch
+              ? { type: "function", function: { name: "flight.search" } }
+              : forceFinalPlan ? "none" : "auto",
+          } : {}),
           // Gemini's OpenAI-compatible endpoint rejects forced function
           // calling when a JSON response MIME type is requested in the same
           // turn. Tool arguments remain schema-bound; strict JSON output is

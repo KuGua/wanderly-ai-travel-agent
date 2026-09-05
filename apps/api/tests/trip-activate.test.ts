@@ -15,19 +15,33 @@ import {
   providerSearchRuns,
   sharedTrips,
   sourceEvidence,
+  staySearchProviderAuthorizations,
   tripSearchPreferences,
   agentTaskRuns,
   tripMembers,
+  userProfiles,
   users,
   visaReadinessChecks,
 } from "../src/db/schema.js";
 import { and, eq } from "drizzle-orm";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
+import { __setQuoteNationalityCipherForTests } from "../src/services/quote-nationality-cipher.js";
+import { loadActiveQuoteNationality } from "../src/services/stay-search-provider-authorization.js";
 
 let app: FastifyInstance;
 let aliceId: string;
 
 beforeAll(async () => {
+  // The quote-nationality grant is encrypted before it is stored, and the real
+  // cipher needs KMS. A reversible stand-in keeps the assertions about *which*
+  // value was authorized without reaching for a key. The padding is not
+  // decoration: `stay_search_provider_authorizations_value_encrypted_check`
+  // refuses a ciphertext short enough to be a two-letter country code.
+  __setQuoteNationalityCipherForTests({
+    encrypt: async (value) => Buffer.from(`test:${value}:opaque-test-padding`).toString("base64"),
+    decrypt: async (value) => Buffer.from(value, "base64").toString("utf8")
+      .replace(/^test:|:opaque-test-padding$/g, ""),
+  });
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
   await app.ready();
 
@@ -49,6 +63,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  __setQuoteNationalityCipherForTests(undefined);
   await app.close();
 });
 
@@ -72,8 +87,10 @@ beforeEach(async () => {
   await db.delete(idempotencyRecords);
   await db.delete(tripSearchPreferences);
   await db.delete(chatThreads);
+  await db.delete(staySearchProviderAuthorizations);
   await db.delete(tripMembers);
   await db.delete(sharedTrips);
+  await db.delete(userProfiles);
 });
 
 async function createDraftFor(userId: string, externalId: "alice" | "bob"): Promise<string> {
@@ -313,6 +330,114 @@ describe("Trip activation", () => {
       .where(and(eq(chatThreads.tripId, draftId), eq(chatThreads.isDefault, true)))
       .limit(1);
     expect(after?.id).toBe(before?.id);
+  });
+
+  // Regression: Fastify's default AJV ran with `removeAdditional: true`, and
+  // inside `quoteNationalityDecision`'s `oneOf` the PROFILE branch's
+  // `additionalProperties: false` deleted `value` and `saveToProfile` from an
+  // INPUT decision before the INPUT branch was even tried. Every hand-entered
+  // nationality was answered with 400 "must have required property 'value'",
+  // so a traveller with no stored nationality could never leave DRAFT. These
+  // tests go through `app.inject`, which is the only place that runs.
+  it("activates with a hand-entered nationality and authorizes it for this trip only", async () => {
+    const draftId = await createDraftFor(aliceId, "alice");
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/activate`,
+      headers: authHeaders("alice"),
+      payload: {
+        ...validBrief,
+        quoteNationalityDecision: { source: "INPUT", value: "TW", saveToProfile: false, confirmProviderUse: true },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().trip.status).toBe("PLANNING");
+    // The value must survive validation intact — this is what the stripped
+    // payload used to lose.
+    const authorization = await loadActiveQuoteNationality({ tripId: draftId, memberId: aliceId });
+    expect(authorization).toMatchObject({ nationality: "TW", version: 1 });
+
+    // `saveToProfile: false` authorizes the provider call without writing the
+    // traveller's private Profile.
+    const profiles = await db.select().from(userProfiles).where(eq(userProfiles.userId, aliceId));
+    expect(profiles).toHaveLength(0);
+    // Nor may the authorized value appear in the audit trail.
+    const audits = await db.select().from(auditEvents).where(eq(auditEvents.tripId, draftId));
+    expect(JSON.stringify(audits.map((row) => row.summary))).not.toContain("TW");
+  });
+
+  it("saves the hand-entered nationality to the Profile when that box is ticked", async () => {
+    const draftId = await createDraftFor(aliceId, "alice");
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/activate`,
+      headers: authHeaders("alice"),
+      payload: {
+        ...validBrief,
+        // Lower case on purpose: the stored form is normalized.
+        quoteNationalityDecision: { source: "INPUT", value: "tw", saveToProfile: true, confirmProviderUse: true },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, aliceId));
+    expect(profile?.nationality).toBe("TW");
+    expect(await loadActiveQuoteNationality({ tripId: draftId, memberId: aliceId }))
+      .toMatchObject({ nationality: "TW" });
+  });
+
+  it("activates from a stored Profile nationality without the browser sending it", async () => {
+    await db.insert(userProfiles).values({ userId: aliceId, nationality: "TW" });
+    const draftId = await createDraftFor(aliceId, "alice");
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/activate`,
+      headers: authHeaders("alice"),
+      payload: {
+        ...validBrief,
+        quoteNationalityDecision: { source: "PROFILE", confirmProviderUse: true },
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(await loadActiveQuoteNationality({ tripId: draftId, memberId: aliceId }))
+      .toMatchObject({ nationality: "TW" });
+  });
+
+  it("fails closed when a PROFILE decision has no stored nationality to read", async () => {
+    const draftId = await createDraftFor(aliceId, "alice");
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/activate`,
+      headers: authHeaders("alice"),
+      payload: {
+        ...validBrief,
+        quoteNationalityDecision: { source: "PROFILE", confirmProviderUse: true },
+      },
+    });
+
+    expect(res.statusCode).toBe(422);
+    const [persisted] = await db.select().from(sharedTrips).where(eq(sharedTrips.id, draftId)).limit(1);
+    expect(persisted.status).toBe("DRAFT");
+  });
+
+  it("rejects an unknown body field instead of silently dropping it", async () => {
+    // The companion to the fix above: with AJV no longer editing the payload,
+    // the `.strict()` on every request schema is what refuses extra keys, and
+    // it now gets to. A misspelled field must not activate a trip under
+    // whatever the server happened to default it to.
+    const draftId = await createDraftFor(aliceId, "alice");
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/activate`,
+      headers: authHeaders("alice"),
+      payload: { ...validBrief, travelDatesEnd: "2026-10-20" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const [persisted] = await db.select().from(sharedTrips).where(eq(sharedTrips.id, draftId)).limit(1);
+    expect(persisted.status).toBe("DRAFT");
   });
 
   it("does not expose the removed registered-account invitation search endpoint", async () => {
