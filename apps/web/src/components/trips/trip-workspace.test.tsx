@@ -282,7 +282,9 @@ describe("TripWorkspace", () => {
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api, locale: "zh" });
 
     // The card offers two ways forward now; this is the one that saves.
-    fireEvent.click(await screen.findByRole("button", { name: /保存到这趟行程/ }));
+    // The fixture trip already holds Tokyo/Kyoto, so 新加坡 is a further
+    // destination and the card offers to add it rather than to name the trip.
+    fireEvent.click(await screen.findByRole("button", { name: /加入这趟行程/ }));
 
     await waitFor(() => {
       expect(api.updateDraftTripBrief).toHaveBeenCalledWith(TRIP_ID, expect.objectContaining({
@@ -348,7 +350,7 @@ describe("TripWorkspace", () => {
     });
     renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
 
-    const save = await screen.findByRole("button", { name: "Save Indonesia to this trip" });
+    const save = await screen.findByRole("button", { name: "Add Indonesia to this trip" });
     expect(save).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Leave it as it is" })).toBeInTheDocument();
     expect(save.parentElement).toHaveClass("grid-cols-2");

@@ -12,6 +12,7 @@ import { db } from "../db/database.js";
 import { agentTaskRuns, sharedTrips } from "../db/schema.js";
 import {
   mergePendingBriefProposal,
+  withoutSettledFields,
   type TripBriefProposal,
 } from "../services/trip-brief-proposal-service.js";
 import { agentTaskConfig } from "../tasks/config.js";
@@ -79,7 +80,14 @@ async function persistPendingBriefProposal(
   incoming: TripBriefProposal,
 ): Promise<TripBriefProposal | null> {
   return db.transaction(async (tx) => {
-    const [trip] = await tx.select({ pending: sharedTrips.pendingBriefProposal })
+    const [trip] = await tx.select({
+      pending: sharedTrips.pendingBriefProposal,
+      departureCities: sharedTrips.departureCities,
+      destinationCandidates: sharedTrips.destinationCandidates,
+      travelDateStart: sharedTrips.travelDateStart,
+      travelDateEnd: sharedTrips.travelDateEnd,
+      travelDays: sharedTrips.travelDays,
+    })
       .from(sharedTrips).where(eq(sharedTrips.id, tripId)).for("update").limit(1);
     if (!trip) return null;
     const { proposal, result } = mergePendingBriefProposal(
@@ -87,10 +95,21 @@ async function persistPendingBriefProposal(
       incoming,
     );
     metrics.inc("trip_brief_proposal_dates_total", { result });
+    // Subtract what the trip has already settled. Without this a turn that
+    // merely repeats a saved fact still carries a proposal, and a proposal is
+    // what puts the review card back on screen — asking again about a
+    // destination the traveller confirmed turns ago.
+    const unsettled = withoutSettledFields(proposal, {
+      departureCities: trip.departureCities ?? [],
+      destinationCandidates: trip.destinationCandidates ?? [],
+      travelDateStart: trip.travelDateStart ?? null,
+      travelDateEnd: trip.travelDateEnd ?? null,
+      travelDays: trip.travelDays ?? null,
+    });
     await tx.update(sharedTrips)
-      .set({ pendingBriefProposal: proposal })
+      .set({ pendingBriefProposal: unsettled })
       .where(eq(sharedTrips.id, tripId));
-    return proposal;
+    return unsettled;
   });
 }
 

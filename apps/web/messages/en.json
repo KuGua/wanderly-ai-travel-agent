@@ -395,7 +395,9 @@
       "briefProposalPlanTitleNoDestination": "Start planning this trip",
       "briefProposalSaveTitleNoDestination": "Save this to the trip",
       "briefProposalQuestion": "Set {destination} as the destination?",
-      "briefProposalQuestionNoDestination": "Set this as the destination?",
+      "briefProposalQuestionNoDestination": "Save these trip details?",
+      "briefProposalQuestionAdditional": "Add {destination} as a further destination?",
+      "briefProposalSaveTitleAdditional": "Add {destination} to this trip",
       "prefCardTurnQuestion": "I've just confirmed my preferences for this trip.",
       "briefSavedTurnQuestion": "I've just saved this to the trip."
     },

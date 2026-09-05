@@ -880,13 +880,29 @@ export function TravelAgentChat({
   const briefDestination = briefProposal?.destinationCandidates?.length
     ? fmt.list(briefProposal.destinationCandidates, { type: "conjunction" })
     : null;
+  // Once the trip holds a destination, a further one is an addition, not the
+  // decision that names the trip. Asking "set X as the destination?" of someone
+  // who settled that turns ago reads as though their answer was lost, so the
+  // card switches to the follow-on wording instead.
+  const briefIsAdditionalDestination = (() => {
+    const settled = trip.data?.trip.destinationCandidates ?? [];
+    const proposed = briefProposal?.destinationCandidates ?? [];
+    if (settled.length === 0 || proposed.length === 0) return false;
+    // Only a place the trip does not already hold is a further destination.
+    // Re-offering one that is already saved is not an addition, and the card
+    // for it should not have been raised at all.
+    const known = new Set(settled.map((name) => name.toLowerCase()));
+    return proposed.some((name) => !known.has(name.toLowerCase()));
+  })();
   const briefPrimaryLabel = isConfirmingBrief
     ? t(onGlobe ? "briefProposalOpening" : "briefProposalSaving")
     : onGlobe
       ? t("briefProposalPlanCompact")
-      : briefDestination
-        ? t("briefProposalSaveTitle", { destination: briefDestination })
-        : t("briefProposalSaveTitleNoDestination");
+      : briefIsAdditionalDestination
+        ? t("briefProposalSaveTitleAdditional", { destination: briefDestination as string })
+        : briefDestination
+          ? t("briefProposalSaveTitle", { destination: briefDestination })
+          : t("briefProposalSaveTitleNoDestination");
   const briefSecondaryLabel = t(onGlobe ? "briefProposalExploreCompact" : "briefProposalKeepTitle");
   // The card used to name only the destination while carrying dates it never
   // showed. A conversation once proposed an end date two years before its
@@ -1225,9 +1241,11 @@ export function TravelAgentChat({
             >
               <div className={onGlobe ? "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-1" : undefined}>
                 <p className={`${onGlobe ? "min-w-0 text-xs leading-4" : "mb-2 px-0.5 text-sm"} font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
-                  {briefDestination
-                    ? t("briefProposalQuestion", { destination: briefDestination })
-                    : t("briefProposalQuestionNoDestination")}
+                  {briefIsAdditionalDestination
+                    ? t("briefProposalQuestionAdditional", { destination: briefDestination as string })
+                    : briefDestination
+                      ? t("briefProposalQuestion", { destination: briefDestination })
+                      : t("briefProposalQuestionNoDestination")}
                   {briefDates ? (
                     <span className={`block font-semibold ${onGlobe ? "text-[10px] leading-4" : "mt-0.5 text-xs"} ${docked ? "text-muted-foreground" : "text-[var(--w-space-muted)]"}`}>
                       {briefDates}

@@ -1086,6 +1086,35 @@ describe("the trip's preference card", () => {
     ));
   });
 
+  it("asks about a further destination instead of re-asking the settled one", async () => {
+    // A trip that already holds Gero is not being told where it is going, so
+    // the card must not ask 「你想将 X 作为目的地吗？」 a second time — the
+    // traveller answered that, and repeating it reads as though the answer was
+    // lost. A genuinely new place is an addition, and says so.
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
+    const api = createApi({
+      getAgentRun: vi.fn().mockResolvedValue({
+        ...run("COMPLETED"),
+        tripBriefProposal: { destinationCandidates: ["Kyoto"] },
+      }),
+      getTrip: vi.fn().mockResolvedValue({
+        trip: {
+          id: TRIP_ID, name: "Gero", createdBy: OWNER_ID, status: "DRAFT",
+          departureCities: ["Beijing"], destinationCandidates: ["Gero"],
+          travelDateStart: null, travelDateEnd: null, travelDays: 10,
+          createdAt: CREATED_AT, updatedAt: CREATED_AT,
+        },
+        callerRole: "CREATOR",
+        members: [],
+      }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    expect(await screen.findByText("Add Kyoto as a further destination?")).toBeInTheDocument();
+    expect(screen.queryByText(/Set Kyoto as the destination\?/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add Kyoto to this trip" })).toBeInTheDocument();
+  });
+
   it("keeps the card up when the save is refused, so the answer can be corrected", async () => {
     // Clearing it on a rejection left a red line and nothing to edit: the
     // traveller's answer was gone with no way to put it back.
