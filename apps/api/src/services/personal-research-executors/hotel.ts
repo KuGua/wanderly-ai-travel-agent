@@ -6,6 +6,10 @@
  * `executeAndPersistHotelSearch` persistence layer) and projects the result
  * to the bounded `personalResearchHotelEvidenceSummarySchema` shape.
  *
+ * Returns both the chat-bound summary AND the offer-cue candidate
+ * projection so `personal-research-service.ts` can persist opaque
+ * candidate identities that survive refresh / reconnect / re-search.
+ *
  * Nuitee provider-only binding: when the resolved provider is
  * `nuitee_connect`, the executor resolves the active quote nationality via
  * `loadActiveQuoteNationality` if one exists. A missing binding no longer
@@ -34,6 +38,7 @@ import { PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT } from "../../types/schemas.js";
 import { loadActiveQuoteNationality } from "../../services/stay-search-provider-authorization.js";
 import { resolveTripDestinationReference } from "../../services/destination-reference-service.js";
 import { getLocationReferenceResolver } from "../../location-reference/location-reference-resolver.js";
+import type { HotelOfferCandidateProjection } from "../personal-research-offer-candidate-service.js";
 
 export type PersonalResearchHotelDraft = {
   kind: "HOTEL_SEARCH";
@@ -44,17 +49,22 @@ export type PersonalResearchHotelDraft = {
   currency: string;
 };
 
+export interface PersonalResearchHotelExecutorResult {
+  summary: PersonalResearchEvidenceSummary;
+  candidateProjections: HotelOfferCandidateProjection[];
+}
+
 export async function executePersonalHotelSearch(params: {
   run: AgentTaskRow;
   draft: PersonalResearchHotelDraft;
   signal: AbortSignal;
-}): Promise<PersonalResearchEvidenceSummary> {
+}): Promise<PersonalResearchHotelExecutorResult> {
   if (params.run.tripId === null || params.run.threadId === null) {
     throw new Error("Personal hotel run is missing trip/thread binding");
   }
   const provider = createHotelProvider();
   if (provider.providerName === "unconfigured") {
-    return unavailableSummary("NOT_CONFIGURED");
+    return unavailableResult("NOT_CONFIGURED");
   }
 
   // ─── Destination resolution ────────────────────────────────────────────
@@ -76,7 +86,7 @@ export async function executePersonalHotelSearch(params: {
     });
   }
   if (!destination) {
-    return unavailableSummary("SEARCH_CONSTRAINTS_INCOMPLETE");
+    return unavailableResult("SEARCH_CONSTRAINTS_INCOMPLETE");
   }
 
   // ─── Nuitee nationality binding (provider-only) ────────────────────────
@@ -114,11 +124,11 @@ export async function executePersonalHotelSearch(params: {
   try {
     result = await provider.searchHotels(input);
   } catch (err) {
-    return unavailableSummaryFromError(err);
+    return unavailableResultFromError(err);
   }
 
   if (result.outcome === "UNAVAILABLE") {
-    return unavailableSummaryFromReason(result.reason);
+    return unavailableResultFromReason(result.reason);
   }
 
   const offers: HotelProviderItem[] = result.data ?? [];
@@ -132,58 +142,72 @@ export async function executePersonalHotelSearch(params: {
   const minPrice = nightlyPrices.length > 0 ? Math.min(...nightlyPrices) : null;
   const maxPrice = nightlyPrices.length > 0 ? Math.max(...nightlyPrices) : null;
 
-  return {
-    outcome: "AVAILABLE",
-    capability: "hotel.search",
-    supplier: result.source,
-    capturedAt: result.capturedAt,
-    hotel: {
-      // Named properties with their nightly rate. A min/max band answers
-      // "roughly how much" but never "which one", which is the question a
-      // traveller is actually asking.
-      items: offers.slice(0, PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).map((offer) => ({
-        label: offer.propertyName,
-        price: Number.isFinite(offer.pricePerNight)
-          ? { amount: offer.pricePerNight, currency: offer.currency, unit: "PER_NIGHT" as const }
-          : null,
-        detail: [
-          `${offer.nights} 晚`,
-          offer.taxesAndFees?.status === "INCLUDED" ? "含税费" : null,
-          offer.cancellationSummary,
-        ].filter(Boolean).join(" · ") || null,
-      })),
-      propertyCount: offers.length,
-      currency: params.draft.currency,
-      cityCode: params.draft.cityCode,
-      checkIn: params.draft.checkIn,
-      checkOut: params.draft.checkOut,
-      minNightlyPrice: minPrice,
-      maxNightlyPrice: maxPrice,
-      topOffers: toTopOffers(offers),
-    },
-  };
-}
-
-/**
- * Bounded per-property line items, cheapest first, so the model can actually
- * answer "which one / how much" instead of only aggregate min/max stats.
- * Capped at 5 — same privacy boundary as the aggregate fields (no booking
- * link, offer id, or raw provider payload).
- */
-function toTopOffers(offers: HotelProviderItem[]): {
-  propertyName: string;
-  pricePerNight: number;
-  cancellationSummary: string | null;
-}[] {
-  return [...offers]
+  // Cheapest-first projection (by pricePerNight) so the model ranks
+  // affordability and the candidate identity layer writes ordinals 0..4.
+  const projected = [...offers]
     .filter((offer) => Number.isFinite(Number(offer.pricePerNight)))
     .sort((a, b) => Number(a.pricePerNight) - Number(b.pricePerNight))
-    .slice(0, 5)
-    .map((offer) => ({
+    .slice(0, 5);
+
+  const nights = Math.max(1, Math.round(
+    (Date.parse(params.draft.checkOut) - Date.parse(params.draft.checkIn)) / 86_400_000,
+  ));
+  const candidateProjections: HotelOfferCandidateProjection[] = projected.map((offer, index) => {
+    const nightly = Number(offer.pricePerNight);
+    const totalPrice = Number.isFinite(Number(offer.totalPrice))
+      ? Number(offer.totalPrice)
+      : nightly * nights;
+    return {
+      ordinal: index,
       propertyName: offer.propertyName,
-      pricePerNight: Number(offer.pricePerNight),
+      pricePerNight: nightly,
+      totalPrice,
+      currency: params.draft.currency,
+      checkIn: params.draft.checkIn,
+      checkOut: params.draft.checkOut,
       cancellationSummary: offer.cancellationSummary ?? null,
-    }));
+      roomSummary: offer.roomSummary ?? null,
+      taxStatus: offer.taxesAndFees?.status ?? "UNKNOWN",
+    };
+  });
+
+  return {
+    summary: {
+      outcome: "AVAILABLE",
+      capability: "hotel.search",
+      supplier: result.source,
+      capturedAt: result.capturedAt,
+      hotel: {
+        // Named properties with their nightly rate. A min/max band answers
+        // "roughly how much" but never "which one", which is the question a
+        // traveller is actually asking.
+        items: offers.slice(0, PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).map((offer) => ({
+          label: offer.propertyName,
+          price: Number.isFinite(offer.pricePerNight)
+            ? { amount: offer.pricePerNight, currency: offer.currency, unit: "PER_NIGHT" as const }
+            : null,
+          detail: [
+            `${offer.nights} 晚`,
+            offer.taxesAndFees?.status === "INCLUDED" ? "含税费" : null,
+            offer.cancellationSummary,
+          ].filter(Boolean).join(" · ") || null,
+        })),
+        propertyCount: offers.length,
+        currency: params.draft.currency,
+        cityCode: params.draft.cityCode,
+        checkIn: params.draft.checkIn,
+        checkOut: params.draft.checkOut,
+        minNightlyPrice: minPrice,
+        maxNightlyPrice: maxPrice,
+        topOffers: projected.map((offer) => ({
+          propertyName: offer.propertyName,
+          pricePerNight: Number(offer.pricePerNight),
+          cancellationSummary: offer.cancellationSummary ?? null,
+        })),
+      },
+    },
+    candidateProjections,
+  };
 }
 
 type UnavailableCode =
@@ -213,14 +237,18 @@ function unavailableSummary(errorCode: UnavailableCode): PersonalResearchEvidenc
   return { outcome: "UNAVAILABLE", summary: { errorCode } };
 }
 
-function unavailableSummaryFromReason(reason: string): PersonalResearchEvidenceSummary {
-  if ((ALLOWED_UNAVAILABLE_CODES as string[]).includes(reason)) {
-    return unavailableSummary(reason as UnavailableCode);
-  }
-  return unavailableSummary("UPSTREAM_FAILURE");
+function unavailableResult(errorCode: UnavailableCode): PersonalResearchHotelExecutorResult {
+  return { summary: unavailableSummary(errorCode), candidateProjections: [] };
 }
 
-function unavailableSummaryFromError(err: unknown): PersonalResearchEvidenceSummary {
-  if (err instanceof Error && err.name === "AbortError") return unavailableSummary("UPSTREAM_TIMEOUT");
-  return unavailableSummary("UPSTREAM_FAILURE");
+function unavailableResultFromReason(reason: string): PersonalResearchHotelExecutorResult {
+  if ((ALLOWED_UNAVAILABLE_CODES as string[]).includes(reason)) {
+    return unavailableResult(reason as UnavailableCode);
+  }
+  return unavailableResult("UPSTREAM_FAILURE");
+}
+
+function unavailableResultFromError(err: unknown): PersonalResearchHotelExecutorResult {
+  if (err instanceof Error && err.name === "AbortError") return unavailableResult("UPSTREAM_TIMEOUT");
+  return unavailableResult("UPSTREAM_FAILURE");
 }

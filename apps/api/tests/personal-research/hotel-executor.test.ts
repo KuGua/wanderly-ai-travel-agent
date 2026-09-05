@@ -103,9 +103,9 @@ describe("executePersonalHotelSearch", () => {
       draft: baseDraft,
       signal: new AbortController().signal,
     });
-    expect(result.outcome).toBe("UNAVAILABLE");
-    if (result.outcome === "UNAVAILABLE") {
-      expect(result.summary.errorCode).toBe("NOT_CONFIGURED");
+    expect(result.summary.outcome).toBe("UNAVAILABLE");
+    if (result.summary.outcome === "UNAVAILABLE") {
+      expect(result.summary.summary.errorCode).toBe("NOT_CONFIGURED");
     }
     expect(mockSearchHotels).not.toHaveBeenCalled();
   });
@@ -121,9 +121,9 @@ describe("executePersonalHotelSearch", () => {
       draft: baseDraft,
       signal: new AbortController().signal,
     });
-    expect(result.outcome).toBe("UNAVAILABLE");
-    if (result.outcome === "UNAVAILABLE") {
-      expect(result.summary.errorCode).toBe("SEARCH_CONSTRAINTS_INCOMPLETE");
+    expect(result.summary.outcome).toBe("UNAVAILABLE");
+    if (result.summary.outcome === "UNAVAILABLE") {
+      expect(result.summary.summary.errorCode).toBe("SEARCH_CONSTRAINTS_INCOMPLETE");
     }
     expect(mockSearchHotels).not.toHaveBeenCalled();
   });
@@ -139,7 +139,7 @@ describe("executePersonalHotelSearch", () => {
     });
     expect(mockSearchHotels).toHaveBeenCalledOnce();
     expect(mockSearchHotels).toHaveBeenCalledWith(expect.objectContaining({ quoteNationality: "US" }));
-    expect(result.outcome).toBe("UNAVAILABLE");
+    expect(result.summary.outcome).toBe("UNAVAILABLE");
   });
 
   it("projects min/max nightly price on AVAILABLE when Nuitee returns offers", async () => {
@@ -191,13 +191,13 @@ describe("executePersonalHotelSearch", () => {
       draft: baseDraft,
       signal: new AbortController().signal,
     });
-    expect(result.outcome).toBe("AVAILABLE");
-    if (result.outcome === "AVAILABLE") {
-      expect(result.capability).toBe("hotel.search");
-      expect(result.hotel?.propertyCount).toBe(2);
-      expect(result.hotel?.minNightlyPrice).toBe(50);
-      expect(result.hotel?.maxNightlyPrice).toBe(200);
-      expect(result.hotel?.topOffers).toEqual([
+    expect(result.summary.outcome).toBe("AVAILABLE");
+    if (result.summary.outcome === "AVAILABLE") {
+      expect(result.summary.capability).toBe("hotel.search");
+      expect(result.summary.hotel?.propertyCount).toBe(2);
+      expect(result.summary.hotel?.minNightlyPrice).toBe(50);
+      expect(result.summary.hotel?.maxNightlyPrice).toBe(200);
+      expect(result.summary.hotel?.topOffers).toEqual([
         { propertyName: "Capsule", pricePerNight: 50, cancellationSummary: null },
         { propertyName: "Park Hyatt", pricePerNight: 200, cancellationSummary: null },
       ]);

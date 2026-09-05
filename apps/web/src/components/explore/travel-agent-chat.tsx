@@ -21,6 +21,7 @@ import type {
   ConversationTurnRequest,
   PersonalResearchOperationCapability,
   DestinationCue,
+  OfferCue,
 } from "@/lib/api/contracts";
 import { FlightOfferCard } from "@/components/trips/flight-offer-card";
 import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
@@ -300,7 +301,14 @@ export function TravelAgentChat({
   const [savedDestinationNotice, setSavedDestinationNotice] = useState<string | null>(null);
   const [destinationCueIndex, setDestinationCueIndex] = useState(0);
   const [isActingOnDestinationCue, setIsActingOnDestinationCue] = useState(false);
-  const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
+  // Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+  // docs/hotel-offer-cue-model-draft.md). Up to two OPEN cues simultaneously
+  // (one per capability) — partial unique index on the server keeps that
+  // invariant; the UI keeps the latest cue per capability.
+  const [flightOfferCue, setFlightOfferCue] = useState<OfferCue | null>(null);
+  const [hotelOfferCue, setHotelOfferCue] = useState<OfferCue | null>(null);
+  const [savedOfferNotice, setSavedOfferNotice] = useState<{ capability: "flight" | "hotel"; headline: string } | null>(null);
+  const [isActingOnOfferCue, setIsActingOnOfferCue] = useState(false);  const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
   const [isStartingSharedPlan, setIsStartingSharedPlan] = useState(false);
   // The assistant already has every field it needs for a flight search but
   // won't spend the metered provider call without a person's say-so. Rather
@@ -500,6 +508,12 @@ export function TravelAgentChat({
         setDestinationCue(event.cue);
         setDestinationCueIndex(0);
       }
+      if (event.event === "flight.offer_cue_ready") {
+        setFlightOfferCue(event.cue);
+      }
+      if (event.event === "hotel.offer_cue_ready") {
+        setHotelOfferCue(event.cue);
+      }
       if (event.event === "turn.completed" && event.responseMode === "SAFE_REFUSAL" && event.assistantMessageId) {
         setRefusalMessageIds((current) => new Set(current).add(event.assistantMessageId!));
       }
@@ -676,6 +690,14 @@ export function TravelAgentChat({
     setDestinationCue(cue);
     setDestinationCueIndex(0);
   }, [conversation.data?.pendingDestinationCue]);
+
+  useEffect(() => {
+    const cues = conversation.data?.pendingOfferCues ?? [];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFlightOfferCue((current) => cues.find((cue) => cue.capability === "flight") ?? current);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setHotelOfferCue((current) => cues.find((cue) => cue.capability === "hotel") ?? current);
+  }, [conversation.data?.pendingOfferCues]);
 
   // The trip carries the unconfirmed brief too, and unlike the run it is still
   // there after a reload or on another device. This is the copy that makes the
@@ -882,6 +904,42 @@ export function TravelAgentChat({
       if (error instanceof TravelApiError && error.statusCode === 409) await conversation.refetch();
     } finally {
       setIsActingOnDestinationCue(false);
+    }
+  }
+
+  async function resolveOfferCue(
+    capability: "flight" | "hotel",
+    action: "accept" | "dismiss",
+    source: "CARD_BUTTON" | "RESULT_CARD_BUTTON" = "CARD_BUTTON",
+  ) {
+    const cue = capability === "flight" ? flightOfferCue : hotelOfferCue;
+    if (!effectiveThreadId || !cue || isActingOnOfferCue) return;
+    const candidate = cue.candidates[0];
+    if (!candidate) return;
+    const method = capability === "flight"
+      ? (action === "accept" ? api.acceptFlightOfferCue : api.dismissFlightOfferCue)
+      : (action === "accept" ? api.acceptHotelOfferCue : api.dismissHotelOfferCue);
+    if (!method) {
+      setRequestError(new Error("Offer confirmation is unavailable"));
+      return;
+    }
+    setIsActingOnOfferCue(true);
+    setRequestError(null);
+    try {
+      const result = await method.call(api, effectiveThreadId, cue.id, candidate.id, {
+        requestId: crypto.randomUUID(),
+        expectedVersion: cue.version,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        source,
+      });
+      if (capability === "flight") setFlightOfferCue(result.cue);
+      else setHotelOfferCue(result.cue);
+      if (action === "accept") setSavedOfferNotice({ capability, headline: candidate.display.headline });
+    } catch (error) {
+      setRequestError(error);
+      if (error instanceof TravelApiError && error.statusCode === 409) await conversation.refetch();
+    } finally {
+      setIsActingOnOfferCue(false);
     }
   }
 
@@ -1384,6 +1442,69 @@ export function TravelAgentChat({
             <p role="status" className={`${rowClass} text-xs font-semibold text-primary`}>
               {t("destinationCueSaved", { destination: savedDestinationNotice })}
             </p>
+          ) : null}
+          {savedOfferNotice ? (
+            <p role="status" className={`${rowClass} text-xs font-semibold text-primary`}>
+              {savedOfferNotice.capability === "flight"
+                ? "Saved to your draft trip. Not booked."
+                : "Saved to your draft trip. Not booked."}
+            </p>
+          ) : null}
+          {(flightOfferCue || hotelOfferCue) && effectiveThreadId ? (
+            <div className={onGlobe ? "mb-2 w-full -translate-y-[3px]" : `mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[420px] space-y-2`}>
+              {flightOfferCue ? (
+                <section aria-label="Take this flight?" className={actionCardClass}>
+                  <p className={`mb-2 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
+                    Take this flight?
+                  </p>
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    {flightOfferCue.candidates[0]?.display.headline}
+                    {flightOfferCue.candidates[0]?.display.subline ? ` · ${flightOfferCue.candidates[0]?.display.subline}` : ""}
+                    {flightOfferCue.candidates[0]?.display.priceLabel ? ` · ${flightOfferCue.candidates[0]?.display.priceLabel}` : ""}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void resolveOfferCue("flight", "accept")}
+                      disabled={isActingOnOfferCue}
+                      className={`${actionPrimaryClass} min-w-0 px-3 py-2.5 text-left`}
+                    >Accept</button>
+                    <button
+                      type="button"
+                      onClick={() => void resolveOfferCue("flight", "dismiss")}
+                      disabled={isActingOnOfferCue}
+                      className={`${actionSecondaryClass} min-w-0 px-3 py-2.5 text-left`}
+                    >Dismiss</button>
+                  </div>
+                </section>
+              ) : null}
+              {hotelOfferCue ? (
+                <section aria-label="Stay in this hotel?" className={actionCardClass}>
+                  <p className={`mb-2 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
+                    Stay in this hotel?
+                  </p>
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    {hotelOfferCue.candidates[0]?.display.headline}
+                    {hotelOfferCue.candidates[0]?.display.subline ? ` · ${hotelOfferCue.candidates[0]?.display.subline}` : ""}
+                    {hotelOfferCue.candidates[0]?.display.priceLabel ? ` · ${hotelOfferCue.candidates[0]?.display.priceLabel}` : ""}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void resolveOfferCue("hotel", "accept")}
+                      disabled={isActingOnOfferCue}
+                      className={`${actionPrimaryClass} min-w-0 px-3 py-2.5 text-left`}
+                    >Accept</button>
+                    <button
+                      type="button"
+                      onClick={() => void resolveOfferCue("hotel", "dismiss")}
+                      disabled={isActingOnOfferCue}
+                      className={`${actionSecondaryClass} min-w-0 px-3 py-2.5 text-left`}
+                    >Dismiss</button>
+                  </div>
+                </section>
+              ) : null}
+            </div>
           ) : null}
           {destinationCue && activeDestinationCandidate && effectiveThreadId ? (
             <section

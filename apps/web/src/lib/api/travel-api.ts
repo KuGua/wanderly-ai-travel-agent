@@ -85,6 +85,8 @@ import type {
   SoloAdoptPlanResponse,
   DestinationCueActionInput,
   DestinationCueActionResponse,
+  OfferCueActionInput,
+  OfferCueActionResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -160,6 +162,19 @@ export interface TravelApi {
   updateDraftTripBrief?(tripId: string, input: UpdateDraftTripBriefInput): Promise<UpdateDraftTripBriefResponse>;
   acceptDestinationCue?(threadId: string, cueId: string, candidateId: string, input: DestinationCueActionInput): Promise<DestinationCueActionResponse>;
   dismissDestinationCue?(threadId: string, cueId: string, candidateId: string, input: DestinationCueActionInput): Promise<DestinationCueActionResponse>;
+  // Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+  // docs/hotel-offer-cue-model-draft.md). Marked optional so a stale web
+  // bundle can still talk to an older API; the chat surfaces "confirmation
+  // unavailable" when any of these are missing.
+  listOfferCues?(threadId: string, capability?: "flight" | "hotel"): Promise<{ cues: import("./contracts").OfferCue[] }>;
+  acceptFlightOfferCue?(threadId: string, cueId: string, candidateId: string, input: OfferCueActionInput): Promise<OfferCueActionResponse>;
+  dismissFlightOfferCue?(threadId: string, cueId: string, candidateId: string, input: OfferCueActionInput): Promise<OfferCueActionResponse>;
+  acceptHotelOfferCue?(threadId: string, cueId: string, candidateId: string, input: OfferCueActionInput): Promise<OfferCueActionResponse>;
+  dismissHotelOfferCue?(threadId: string, cueId: string, candidateId: string, input: OfferCueActionInput): Promise<OfferCueActionResponse>;
+  selectFlightOfferFromCard?(threadId: string, candidateId: string, input: Omit<OfferCueActionInput, "source">): Promise<OfferCueActionResponse>;
+  selectHotelOfferFromCard?(threadId: string, candidateId: string, input: Omit<OfferCueActionInput, "source">): Promise<OfferCueActionResponse>;
+  listOfferSelections?(threadId: string): Promise<{ selections: import("./contracts").PersonalOfferSelection[] }>;
+  deleteOfferSelection?(threadId: string, selectionId: string, input: { requestId: string; expectedVersion: number }): Promise<{ selection: import("./contracts").PersonalOfferSelection | null }>;
   saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput): Promise<TripSearchPreferencesResponse>;
   startPlanning(tripId: string): Promise<PlanningTaskAcceptedResponse>;
   getLatestPlanningRun(tripId: string): Promise<LatestPlanningRunResponse>;

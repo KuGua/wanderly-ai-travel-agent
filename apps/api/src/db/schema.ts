@@ -92,6 +92,23 @@ export const destinationCueBatchStatusEnum = pgEnum("destination_cue_batch_statu
 export const destinationCueCandidateStatusEnum = pgEnum("destination_cue_candidate_status", [
   "PENDING", "ACCEPTED", "DISMISSED", "SUPERSEDED",
 ]);
+// Flight / Hotel Offer Cue lifecycle states. Personal-only; never used by
+// Shared Plan / booking authority.
+export const offerCueCapabilityEnum = pgEnum("offer_cue_capability", [
+  "flight", "hotel",
+]);
+export const offerCueBatchStatusEnum = pgEnum("offer_cue_batch_status", [
+  "OPEN", "RESOLVED", "SUPERSEDED", "EXPIRED",
+]);
+export const offerCueCandidateStatusEnum = pgEnum("offer_cue_candidate_status", [
+  "PENDING", "ACCEPTED", "DISMISSED", "EXPIRED",
+]);
+export const offerCueCandidateIntentEnum = pgEnum("offer_cue_candidate_intent", [
+  "EXPLICIT_SELECT", "STRONG_PREFERENCE",
+]);
+export const personalOfferSelectionStatusEnum = pgEnum("personal_offer_selection_status", [
+  "ACTIVE", "SUPERSEDED", "EXPIRED", "REMOVED",
+]);
 
 /**
  * Setup-scratchpad lifecycle (OPEN/CONFIRMED/CANCELLED/EXPIRED/SUPERSEDED)
@@ -120,6 +137,13 @@ export const auditActionEnum = pgEnum("audit_action", [
   // itself never appears here.
   "TRIP_TITLE_LABEL_UPDATE",
   "DESTINATION_CUE_ACCEPT", "DESTINATION_CUE_DISMISS",
+  // Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md §10,
+  // docs/hotel-offer-cue-model-draft.md §9; added via 0077_offer_cue_audit_enums.sql).
+  // Acceptance writes only to personal_offer_selections; no booking, no plan,
+  // no Shared agent re-trigger. The audit summary carries capability + cueId
+  // + candidateId — never carrier, property name, price, provider ID or route.
+  "FLIGHT_OFFER_CUE_ACCEPT", "FLIGHT_OFFER_CUE_DISMISS",
+  "HOTEL_OFFER_CUE_ACCEPT", "HOTEL_OFFER_CUE_DISMISS",
   // Archive is a reversible hide, not a delete (0061_trip_archive_audit_actions.sql).
   "TRIP_ARCHIVE", "TRIP_UNARCHIVE", "TRIP_DELETE",
   // Private thread title lifecycle (docs/thread-title-lifecycle-implementation.md §11.2,
@@ -1458,3 +1482,131 @@ export const personalResearchRequests = pgTable("personal_research_requests", {
   version: integer("version").default(1).notNull(),
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }).defaultNow().notNull(),
 });
+
+// ─── Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+//     docs/hotel-offer-cue-model-draft.md) ──────────────────────────────────
+// Personal-only state machine. Never writes shared_trips.constraint_snapshot,
+// never grants booking authority, never wakes the Shared agent. Phase 1
+// strictly DRAFT Trip creator's private thread — the service layer
+// additionally asserts trip.status === "DRAFT" && createdBy === owner.
+
+// Bounded projection of a Personal Research offer set with opaque, server-
+// issued identity. The browser sees `candidateRef` (uuid) and ordinal only;
+// providerOfferId, raw payload, coordinates and PII are stripped at the
+// executor boundary. `visible_before_message_sequence` records the upper-
+// bound `chat_messages.message_sequence` of the assistant message that
+// streamed the offer set; the resolver excludes candidates whose
+// visible_before_message_sequence is >= the user's current message
+// sequence, so the model never sees offers the traveller has not actually
+// seen.
+export const personalResearchOfferCandidates = pgTable("personal_research_offer_candidates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  evidenceId: uuid("evidence_id").references(() => personalResearchEvidence.id, { onDelete: "cascade" }).notNull(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  threadId: uuid("thread_id").references(() => chatThreads.id, { onDelete: "cascade" }).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  capability: offerCueCapabilityEnum("capability").notNull(),
+  offerSetId: uuid("offer_set_id").notNull(),
+  routeKey: varchar("route_key", { length: 64 }),
+  stayKey: varchar("stay_key", { length: 64 }),
+  ordinal: integer("ordinal").notNull(),
+  normalizedOfferJson: jsonb("normalized_offer_json").$type<Record<string, unknown>>().notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  visibleBeforeMessageSequence: bigint("visible_before_message_sequence", { mode: "number" }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  setOrdinalUnique: uniqueIndex("personal_research_offer_candidates_set_ord").on(table.offerSetId, table.ordinal),
+  setRouteUnique: uniqueIndex("personal_research_offer_candidates_set_route")
+    .on(table.offerSetId, table.routeKey)
+    .where(sql`${table.capability} = 'flight' AND ${table.routeKey} IS NOT NULL`),
+  setStayUnique: uniqueIndex("personal_research_offer_candidates_set_stay")
+    .on(table.offerSetId, table.stayKey)
+    .where(sql`${table.capability} = 'hotel' AND ${table.stayKey} IS NOT NULL`),
+  tripIdx: index("personal_research_offer_candidates_trip_idx").on(table.tripId, table.capability, table.createdAt),
+  expiresIdx: index("personal_research_offer_candidates_expires_idx").on(table.expiresAt).where(sql`${table.expiresAt} IS NOT NULL`),
+  evidenceIdx: index("personal_research_offer_candidates_evidence_idx").on(table.evidenceId),
+}));
+
+// One batch per source run. The partial unique index keeps at most one OPEN
+// batch per (thread, capability) so Flight and Hotel can each be OPEN
+// simultaneously but never two of the same capability on the same thread.
+export const offerCueBatches = pgTable("offer_cue_batches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceRunId: uuid("source_run_id").references(() => agentTaskRuns.id, { onDelete: "cascade" }).notNull().unique(),
+  threadId: uuid("thread_id").references(() => chatThreads.id, { onDelete: "cascade" }).notNull(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  capability: offerCueCapabilityEnum("capability").notNull(),
+  sourceMessageId: uuid("source_message_id").references(() => chatMessages.id, { onDelete: "set null" }),
+  offerSetId: uuid("offer_set_id").notNull(),
+  modelVersion: varchar("model_version", { length: 128 }).notNull(),
+  promptVersion: varchar("prompt_version", { length: 64 }).notNull(),
+  status: offerCueBatchStatusEnum("status").default("OPEN").notNull(),
+  version: integer("version").default(1).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  oneOpenPerThreadCap: uniqueIndex("offer_cue_batches_one_open_per_thread_cap")
+    .on(table.threadId, table.capability).where(sql`${table.status} = 'OPEN'`),
+  ownerThreadIdx: index("offer_cue_batches_owner_thread_idx")
+    .on(table.ownerUserId, table.threadId, table.capability, table.createdAt),
+}));
+
+// One row per candidate within a batch. Resolved to ACCEPTED or DISMISSED by
+// the act-on-candidate state machine; an empty batch flips the batch status
+// to RESOLVED.
+export const offerCueCandidates = pgTable("offer_cue_candidates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  batchId: uuid("batch_id").references(() => offerCueBatches.id, { onDelete: "cascade" }).notNull(),
+  personalOfferCandidateId: uuid("personal_offer_candidate_id").references(() => personalResearchOfferCandidates.id, { onDelete: "cascade" }).notNull(),
+  intent: offerCueCandidateIntentEnum("intent").notNull(),
+  ordinal: integer("ordinal").notNull(),
+  status: offerCueCandidateStatusEnum("status").default("PENDING").notNull(),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  batchOrdinalUnique: uniqueIndex("offer_cue_candidates_batch_ordinal_unique").on(table.batchId, table.ordinal),
+  batchCandidateUnique: uniqueIndex("offer_cue_candidates_batch_candidate_unique").on(table.batchId, table.personalOfferCandidateId),
+  batchStatusIdx: index("offer_cue_candidates_batch_status_idx").on(table.batchId, table.status, table.ordinal),
+}));
+
+// Prompt fatigue is Trip-wide, scoped per (owner, trip, capability) so
+// Flight and Hotel count independently — same shape as
+// destination_cue_prompt_policies but with capability in the primary key.
+export const offerCuePromptPolicies = pgTable("offer_cue_prompt_policies", {
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  capability: offerCueCapabilityEnum("capability").notNull(),
+  cooldownUntil: timestamp("cooldown_until", { withTimezone: true }),
+  dismissalDay: varchar("dismissal_day", { length: 10 }),
+  dailyDismissalCount: integer("daily_dismissal_count").default(0).notNull(),
+  mutedUntil: timestamp("muted_until", { withTimezone: true }),
+  timezone: varchar("timezone", { length: 64 }).default("UTC").notNull(),
+  version: integer("version").default(1).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.ownerUserId, table.tripId, table.capability] }),
+  tripIdx: index("offer_cue_prompt_policies_trip_idx").on(table.tripId, table.ownerUserId, table.capability),
+}));
+
+// The owner's confirmed personal offer candidate for one (trip, capability,
+// scopeKey). scopeKey = routeKey (flight) or stayKey (hotel). At most one
+// ACTIVE row per scope; accept supersedes any prior ACTIVE in the same scope
+// atomically. Never projected into constraint_snapshot; never consumed by
+// Shared agent or booking authority — see plan §"No-Snapshot guarantee".
+export const personalOfferSelections = pgTable("personal_offer_selections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  threadId: uuid("thread_id").references(() => chatThreads.id, { onDelete: "cascade" }).notNull(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  capability: offerCueCapabilityEnum("capability").notNull(),
+  personalOfferCandidateId: uuid("personal_offer_candidate_id").references(() => personalResearchOfferCandidates.id, { onDelete: "cascade" }).notNull(),
+  scopeKey: varchar("scope_key", { length: 64 }).notNull(),
+  status: personalOfferSelectionStatusEnum("status").default("ACTIVE").notNull(),
+  selectedAt: timestamp("selected_at", { withTimezone: true }).defaultNow().notNull(),
+  version: integer("version").default(1).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  tripIdx: index("personal_offer_selections_trip_idx").on(table.tripId, table.ownerUserId, table.capability, table.status),
+  candidateIdx: index("personal_offer_selections_candidate_idx").on(table.personalOfferCandidateId),
+}));
