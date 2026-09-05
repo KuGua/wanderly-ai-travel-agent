@@ -314,6 +314,44 @@ metrics.registerCounter("ui_diagnostic_events_total", "Authenticated, content-fr
   error_category: ["none", "validation", "network", "http_4xx", "http_5xx", "timeout", "aborted", "invalid_response", "render", "unhandled"],
 });
 
+// docs/flight-offer-cue-model-draft.md §10, docs/hotel-offer-cue-model-draft.md §9.
+// Low-cardinality labels only: capability, outcome, action, source. Never
+// include candidateRef, routeKey/stayKey, tripId/threadId/ownerUserId,
+// provider IDs, prices, or message text.
+metrics.registerCounter("offer_cue_decision_total", "Offer cue decisions emitted by the resolver.", {
+  capability: ["flight", "hotel"],
+  outcome: [
+    "created", "skipped_policy", "skipped_duplicate", "skipped_freshness",
+    "skipped_clarification", "failure", "no_candidates", "needs_clarification",
+  ],
+});
+metrics.registerCounter("offer_cue_action_total", "Offer cue card accept/dismiss outcomes.", {
+  capability: ["flight", "hotel"],
+  action: ["accept", "dismiss"],
+  outcome: [
+    "success", "stale_version", "not_found", "forbidden", "trip_state",
+    "conflict", "expired", "failure",
+  ],
+  source: ["card_button", "result_card_button"],
+});
+metrics.registerCounter("offer_cue_resolution_total", "Offer cue batches final state transitions.", {
+  capability: ["flight", "hotel"],
+  outcome: ["resolved", "superseded", "expired"],
+});
+metrics.registerCounter("personal_offer_selection_total", "Personal offer selection write outcomes.", {
+  capability: ["flight", "hotel"],
+  outcome: ["created", "superseded", "removed"],
+});
+metrics.registerHistogram(
+  "offer_cue_resolver_duration_ms",
+  "Wall clock duration of the offer cue LLM resolver.",
+  [50, 100, 250, 500, 1_000, 2_000, 5_000, 9_000, 15_000, 30_000],
+  {
+    capability: ["flight", "hotel"],
+    outcome: ["success", "timeout", "parse_error", "upstream_failure", "client_unavailable"],
+  },
+);
+
 // docs/long-term-memory-implementation.md section 7. Bounded enums only:
 // field keys, values, observation dates, trip ids and activation are all
 // forbidden as labels — they would be high-cardinality and, worse, would leak

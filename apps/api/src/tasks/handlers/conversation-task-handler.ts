@@ -175,6 +175,22 @@ function conversationToolDispatchEnabled(capability: PersonalResearchOperationCa
 }
 
 /**
+ * Single global rollout flag for Flight / Hotel Offer Cue (commit b85da5a
+ * design docs). When off, the conversation worker skips both cue promises
+ * and no `flight.offer_cue_ready` / `hotel.offer_cue_ready` events fire.
+ * Capability-scoped rollout lives in `OFFER_CUE_ENABLED_CAPABILITIES` (csv);
+ * default value covers both flight and hotel.
+ */
+function offerCueEnabledFor(capability: "flight" | "hotel"): boolean {
+  if (process.env.OFFER_CUE_ENABLED !== "true") return false;
+  const allowList = (process.env.OFFER_CUE_ENABLED_CAPABILITIES ?? "flight,hotel")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return allowList.includes(capability);
+}
+
+/**
  * A standalone confirmation at either end of a complete query — "…，CNY。确认
  * 搜索" and "CNY 确认搜索" both count — but never an embedded fragment such as
  * "如何确认搜索条件". A bare "确认" is included: the buttons send more, but a
