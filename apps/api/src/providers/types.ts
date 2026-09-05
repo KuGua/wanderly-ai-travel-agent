@@ -3,7 +3,6 @@ import type {
   FlightOffer,
   GroundOffer,
   HotelOffer,
-  StayOffer,
   VisaReadinessResult,
 } from "../types/domain.js";
 
@@ -26,16 +25,6 @@ export interface FlightSearchParams {
   cabin?: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST";
   currency?: string;
   signal?: AbortSignal;
-}
-
-export interface StayProvider {
-  searchStays(params: {
-    destination: string;
-    checkIn: string;
-    checkOut: string;
-    style?: string;
-    snapshotId: string;
-  }): Promise<ProviderResult<StayOffer[]>>;
 }
 
 /**

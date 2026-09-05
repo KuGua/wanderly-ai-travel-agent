@@ -64,6 +64,19 @@ export async function runResearch(params: {
   run: AgentTaskRow;
   signal: AbortSignal;
   /**
+   * The Worker's current lease on this run. `generatePlan` refuses to cross
+   * its persistence boundary without one — every write there is conditioned on
+   * still holding the lease — and its research-summary fallback refuses too.
+   *
+   * This was not passed. The plan branch therefore threw "Planning task lease
+   * authority is incomplete" before writing anything, and the summary branch
+   * rethrew instead of degrading, so a PROPOSE_PLAN run could produce neither
+   * a plan nor a summary however well the round went. Optional only so tests
+   * that drive the orchestrator directly keep compiling; a production caller
+   * always holds one.
+   */
+  leaseToken?: string;
+  /**
    * Phase 4 — testing seam. Production callers omit this and get the default
    * `resolvePlanningDependencies()`. Tests inject `testPlanningDependencies`
    * so the PROPOSE_PLAN branch can exercise the deterministic validator
@@ -314,8 +327,13 @@ export async function runResearch(params: {
         flightSearchPreferencesVersion: run.flightSearchPreferencesVersion ?? undefined,
         staySearchPreferencesVersion: run.staySearchPreferencesVersion ?? undefined,
         signal: planningRunSignal,
+        leaseToken: params.leaseToken,
         outputMode: "PROPOSED",
         coverage,
+        // Everything the capability loop above already ran. Their tools are
+        // one-shot per run, so re-offering them hands the model a refusal
+        // rather than a second chance.
+        alreadyResearchedCapabilities: requiredCapabilities,
       }, params.providerOverride!);
     } finally {
       clearTimeout(runDeadlineTimer);

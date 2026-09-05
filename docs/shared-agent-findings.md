@@ -741,3 +741,94 @@ trip 本来就收；web 侧 `startPlanning()` 和 `useStartPlanning` 都在，
 `planningToolBudgetExhausted` 说「方案没有改动，再试一次让下一轮完成」，
 而 `isRetryableFailure` 不含该 code —— **屏幕上根本没有重试按钮**。
 改为说明本轮已取得的结果已经保存。
+
+## #48 编排层从不把 Worker lease 传给合成，于是这条路径写不进任何东西 — 缺陷 — 已修（09-06）
+`generatePlan` 的持久化事务把每一次写入都条件在「仍持有 lease」上
+（`planning-service.ts:1499`），它的 research-summary 兜底同样要求 lease。
+而 `personal-trip-orchestrator-service.ts:307` 调用它时**只传了 agentTaskRunId，
+没传 leaseToken** —— research-task-handler 手里有，也没往下传。
+
+后果是双重的：
+- 计划分支在写任何东西之前就抛 `Planning task lease authority is incomplete`；
+- 摘要分支（#45 刚加的降级）走到 `if (!params.leaseToken) throw error` 直接重抛。
+
+**所以 PROPOSE_PLAN 这条路径无论跑得多好，既写不出 plan 也写不出 summary。**
+这是 `itinerary_plans` 一直是 0 行的第四个结构性原因，与航班 400、航线身份、
+Gate B 各自独立。
+
+**这条是我自己没验到位。** #45 的单测直接调 `generatePlan` 并传了 lease，绿的；
+真实调用路径上那个参数根本不存在。教训写在这里：**给一个函数加降级分支时，
+必须验证生产调用方满足该分支的前置条件，而不是只验证函数本身。**
+现在补了两条测试，一条走编排层（拿到 lease 就能降级），一条走 handler（确实往下传）。
+
+## #49 重复的航班搜索先付钱、再以唯一索引异常冒充供应商故障 — 缺陷 — 已修（09-06）
+`accommodation.discover` / `activities.search` / `hotel.search` 都是**先预留
+`provider_search_runs` 行、再调用供应商**，所以 run 内的重复请求在花钱之前就被
+`AlreadyAttemptedError` 挡下。`flight.search` 唯独相反：先调用、后插入。
+
+于是一次重复的 `SIN → SHA`：付了第二次 SerpAPI 调用，然后死在
+`(agent_task_run_id, snapshot_id, category, request_fingerprint)` 唯一索引上，
+抛出的是**裸 Postgres 错误**（不是 SkillError）→ 归类 `UNCLASSIFIED` →
+到模型手里是 `UPSTREAM_FAILURE`。**刚刚返回 LIVE 的那一格，看上去坏了。**
+模型于是更用力地重试它。
+
+改为与兄弟服务同构：先预留（`outcome: "PENDING"` + `onConflictDoNothing`），
+拿不到行就抛 `FlightSearchAlreadyAttemptedError` → `POLICY_DENIED`；
+供应商答复后再 update 该行。
+
+**这条与 #44 的守卫是两层**：网关那层让模型调不到已完成的工具，服务这层保证
+即使调到了也不会花钱、更不会伪装成供应商故障。#43（编排层预跑后又把一次性工具
+交给模型）仍然未修。
+
+---
+# 第八轮：一次「研究摘要说了两句假话」的运行（09-06）
+
+对象：trip `24a0799f`，run `a1641c39`。屏幕上是
+`航班: 无匹配结果` / `住宿: 无匹配结果`，而这一轮 8 次供应商调用 6 次 LIVE。
+
+## #50 航线矩阵有四个读取方，其中两个还在用城市名 — 根因 — 已修
+`TS-ROUTE-IDENTITY`（#42）只对齐了 coverage 与方案校验器。另外两个读取方没动：
+
+- `planning-service.ts` 把 `snapshot.departureCities/destinationCandidates` 原样
+  当作网关的 `flightSearchConstraints`，于是 `requiredFlightCells = {Singapore → Shanghai}`；
+  而工具描述给模型的只有 `SIN / PVG / SHA`。**矩阵永远补不齐** →
+  `forceMissingFlightSearch` 每轮强制再调一次 `flight.search` → 轮次耗尽。
+- `evaluateFlightResearchCompleteness` 拿城市名与 `provider_search_runs.origin_id`
+  精确比较。**这一半是 #42 引入的回归**：#42 之前 coverage 写的是城市名行，矩阵匹配
+  得上；#42 让 coverage 改写机场码之后，库里再没有城市名的行，每一格都是 MISSING。
+  我对齐了两条路径，漏了第三个读取方。
+
+**这也解释了 #44 的守卫为什么全部失效**：撤下工具、重复退款，条件都是「矩阵已补齐」。
+
+修法是让它只派生一次：`resolveFlightRouteMatrix()`，四个读取方共用。顺带解决两件事：
+快照里直接写机场码时按其自身接受；`cityFor()` 把机场码译回旅行者写的城市，
+所以缺口文案说「上海」而不是「(PVG)」。
+
+## #51 住宿缺口是每一次运行都会报的假话 — 缺陷 — 已修
+`allStays` 唯一的生产者是 `dependencies.stayProvider`，而 `StayProvider` 全仓库只有
+一个实现：恒返回 `NOT_CONFIGURED` 的桩。#15 当时改的是覆盖判定，没动 `allStays`。
+
+于是 `summarizeProviderGaps` 的 `stays.length === 0 → stay: NO_RESULTS` 在**每一次
+运行**上成立，包括这一轮手里握着 10 条 Nuitee 报价、16 条住宿发现的时候。
+
+而且它不只影响缺口：`allStays` 同时作为 `stays` 传给模型、作为 `evidence.stays` 传给
+校验器。**即使模型收敛了，方案里的住宿也必然是空的** —— 那 10 条报价它一条都引用不了。
+
+改为按真实证据（hotel quotes + accommodation discovery）计算；`StayProvider`、
+`UnavailableStayProvider` 与 `stayProvider` 依赖一并删除。
+
+## #52 真实 reason code 被逐层压平 — 缺陷 — 已修
+供应商说的是 `INVALID_PROVIDER_RESPONSE`，屏幕上是「未返回可验证的结果」。丢失发生在
+**三个地方**，而调查只找到了最后一个：
+1. coverage 扇出插入 `provider_search_runs` 时写 `errorCode: null` —— reason 在落库
+   那一刻就没了；
+2. `flightMatrixToGaps` 把所有 UNAVAILABLE 单元格一律记成 `UPSTREAM_FAILURE`；
+3. `summarizeProviderGaps` 把零航班一律记成 `NO_RESULTS`。
+
+三处全部改为携带供应商自己的分类。**「答复了但我们读不懂」和「这条航线没有航班」
+是两件事**，对用户的含义和对我们的修法都不同。
+
+## #53 编排层跑过的能力又原样交给模型 — 缺陷 — 已修（原 #43）
+开局那一轮模型并行发出的调用里有三个在 1ms 内拿到 `POLICY_DENIED`。不是第二次机会，
+是三个**假的失败信号**。`generatePlan` 现在接受 `alreadyResearchedCapabilities`，
+把对应的一次性搜索工具从列表里摘掉；写类工具（`places.adopt`）保留。

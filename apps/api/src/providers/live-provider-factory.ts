@@ -9,7 +9,6 @@ import type {
   NavigationProvider,
   PlaceSearchProvider,
   ProviderResult,
-  StayProvider,
   TransitJourneyProvider,
 } from "./types.js";
 import type {
@@ -18,7 +17,7 @@ import type {
   NormalizedRouteEvidence,
   NormalizedTransitJourney,
 } from "./types.js";
-import type { FlightOffer, StayOffer } from "../types/domain.js";
+import type { FlightOffer } from "../types/domain.js";
 import { AmadeusFlightProvider, readAmadeusConfiguration } from "./amadeus-flight-provider.js";
 import { FlightApiProvider, readFlightApiConfiguration } from "./flightapi-flight-provider.js";
 import { SerpApiFlightProvider, readSerpApiConfiguration } from "./serpapi-flight-provider.js";
@@ -43,12 +42,6 @@ import { eq } from "drizzle-orm";
 class UnavailableFlightProvider implements FlightProvider {
   readonly providerName = "unconfigured" as const;
   async searchFlights(): Promise<ProviderResult<FlightOffer[]>> {
-    return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
-  }
-}
-
-class UnavailableStayProvider implements StayProvider {
-  async searchStays(): Promise<ProviderResult<StayOffer[]>> {
     return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
   }
 }
@@ -108,7 +101,6 @@ class UnavailableAccommodationDiscoveryProvider implements AccommodationDiscover
  */
 export function createTravelProviders(): {
   flightProvider: FlightProvider;
-  stayProvider: StayProvider;
   placeProvider: PlaceSearchProvider;
   navigationProvider: NavigationProvider;
   mobilityOfferProvider: MobilityOfferProvider;
@@ -119,7 +111,6 @@ export function createTravelProviders(): {
 } {
   return {
     flightProvider: createFlightProvider(),
-    stayProvider: new UnavailableStayProvider(),
     placeProvider: createOrsPlace(),
     navigationProvider: createOrsNavigation(),
     mobilityOfferProvider: createAmadeusTransfer(),

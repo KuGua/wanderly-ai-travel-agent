@@ -1373,6 +1373,13 @@ export class LLMGateway implements ModelGateway {
       if (!flightToolAvailable || missingFlightCells().length > 0) return params.tools;
       return params.tools.filter((tool) => tool.name !== "flight.search");
     };
+    /** The (origin, destination) a flight call names, or null for other tools. */
+    const flightRouteOf = (name: string, args: unknown): { originId: string; destinationId: string } | null => {
+      if (name !== "flight.search" || typeof args !== "object" || args === null) return null;
+      const { originId, destinationId } = args as { originId?: unknown; destinationId?: unknown };
+      if (typeof originId !== "string" || typeof destinationId !== "string") return null;
+      return { originId, destinationId };
+    };
     const missingFlightCells = () => requiredFlightCells.filter(
       ({ originId, destinationId }) => !flightCellStates.has(flightCellKey(originId, destinationId)),
     );
@@ -1542,7 +1549,36 @@ export class LLMGateway implements ModelGateway {
         let args: unknown;
         try { args = JSON.parse(call.function?.arguments ?? ""); } catch { throw new ModelGatewayError("SCHEMA_PARSE"); }
         const callSignature = `${name}\u0000${call.function?.arguments ?? ""}`;
-        if (dispatchedCalls.has(callSignature)) {
+        const flightArgs = flightRouteOf(name, args);
+        const cacheKey = flightArgs ? flightCellKey(flightArgs.originId, flightArgs.destinationId) : null;
+
+        // A tool withdrawn from this turn's list must not run because the model
+        // asked for it anyway. Withdrawing `flight.search` once every required
+        // cell had an answer did not stop the model calling it — dispatch keyed
+        // off the name alone — so the round kept spending turns on a tool it
+        // had been told, and then not allowed, to stop using. Answer it the way
+        // a refused tool is answered: structurally, and without touching a
+        // supplier.
+        if (!offeredTools().some((tool) => tool.name === name)) {
+          logSafeRuntimeEvent(ctx, {
+            component: "tool", event: "dispatch_withdrawn", operation: "plan.comparison",
+            toolName: name, attempt: turn + 1, toolContext: "planning",
+          });
+          messages.push({
+            role: "tool",
+            tool_call_id: id,
+            content: JSON.stringify({
+              outcome: "UNAVAILABLE",
+              capability: name,
+              reason: "TOOL_NOT_AVAILABLE_THIS_TURN",
+              message: "This tool has finished its work for this run and is no longer available. "
+                + "Do not call it again. Return the final plan using the evidence already gathered.",
+            }),
+          });
+          continue;
+        }
+
+        if (dispatchedCalls.has(callSignature) || (cacheKey !== null && dispatchedCalls.has(cacheKey))) {
           // Answered before, so it costs no supplier time — which is exactly
           // why it must not silently cost a turn either.
           logSafeRuntimeEvent(ctx, {
@@ -1552,6 +1588,7 @@ export class LLMGateway implements ModelGateway {
         } else {
           everyCallWasARepeat = false;
           dispatchedCalls.add(callSignature);
+          if (cacheKey) dispatchedCalls.add(cacheKey);
         }
         const toolStart = Date.now();
         logSafeRuntimeEvent(ctx, {
@@ -1560,26 +1597,25 @@ export class LLMGateway implements ModelGateway {
         });
         let result: unknown;
         try {
-          const flightArgs = name === "flight.search"
-            && typeof args === "object" && args !== null
-            && typeof (args as { originId?: unknown }).originId === "string"
-            && typeof (args as { destinationId?: unknown }).destinationId === "string"
-            ? {
-                originId: (args as { originId: string }).originId,
-                destinationId: (args as { destinationId: string }).destinationId,
-              }
-            : null;
-          const cacheKey = flightArgs ? flightCellKey(flightArgs.originId, flightArgs.destinationId) : null;
           // Answer an identical call from the record instead of asking again.
-          // This was flight-only; a repeated `activities.search` still went out
-          // to the supplier for the same answer, spending quota and — on a tool
-          // with a once-per-run guard — coming back refused, which reads to the
-          // model as a new failure worth retrying.
-          if (toolResultCache.has(callSignature)) {
-            result = toolResultCache.get(callSignature);
+          // Two keys, because neither alone is enough: the signature is the raw
+          // argument text and misses a re-ask written with different key order
+          // or optional fields, while the flight cell key normalises a route to
+          // (origin, destination) but exists only for flights. With only the
+          // signature, a re-asked `SIN → SHA` reached the supplier again and
+          // collided with its own `provider_search_runs` row on the
+          // deterministic fingerprint — a unique-index error, raw and
+          // unclassified, which the model then read as the flight cell having
+          // failed. It asked harder.
+          const cachedUnder = [cacheKey, callSignature].find(
+            (key): key is string => key !== null && toolResultCache.has(key),
+          );
+          if (cachedUnder !== undefined) {
+            result = toolResultCache.get(cachedUnder);
           } else {
             result = await params.dispatchTool({ id, name, arguments: args });
             toolResultCache.set(callSignature, result);
+            if (cacheKey) toolResultCache.set(cacheKey, result);
           }
           if (cacheKey && typeof result === "object" && result !== null) {
             const outcome = (result as { outcome?: unknown }).outcome;

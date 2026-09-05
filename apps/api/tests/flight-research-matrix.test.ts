@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "../src/db/database.js";
 import { agentTaskRuns, auditEvents, constraintSnapshots, itineraryPlans, planningResearchResults, providerOffers, providerSearchRuns, sharedTrips, tripMembers, tripSearchPreferences, users } from "../src/db/schema.js";
 import { evaluateFlightResearchCompleteness } from "../src/services/flight-research-matrix-service.js";
+import { resolveFlightRouteMatrix } from "../src/location-reference/airport-reference.js";
 import { acceptPlanningTask, getLatestAuthorizedPlanningRun } from "../src/tasks/task-repository.js";
 import { createRequestContext } from "../src/utils/context.js";
 import { generatePlan, type PlanningDependencies } from "../src/services/planning-service.js";
@@ -54,24 +55,24 @@ describe("flight research matrix", () => {
   }
   it("requires exactly departureCities × destinationCandidates and scopes LIVE evidence to task/snapshot", async () => {
     await evidence("SFO", "NRT"); await evidence("SIN", "NRT"); await evidence("SFO", "CDG"); await evidence("SIN", "CDG", "LIVE", otherTaskId);
-    const result = await evaluateFlightResearchCompleteness({ snapshotId, agentTaskRunId: taskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] });
+    const result = await evaluateFlightResearchCompleteness({ snapshotId, agentTaskRunId: taskId, routes: resolveFlightRouteMatrix({ departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] }) });
     expect(result.cells).toHaveLength(4);
     expect(result.complete).toBe(false);
     expect(result.cells.find((cell) => cell.originId === "SIN" && cell.destinationId === "CDG")?.outcome).toBe("MISSING");
   });
   it("treats persisted UNAVAILABLE as incomplete and complete LIVE coverage as complete", async () => {
     for (const origin of ["SFO", "SIN"]) for (const destination of ["NRT", "CDG"]) await evidence(origin, destination);
-    expect((await evaluateFlightResearchCompleteness({ snapshotId, agentTaskRunId: taskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] })).complete).toBe(true);
+    expect((await evaluateFlightResearchCompleteness({ snapshotId, agentTaskRunId: taskId, routes: resolveFlightRouteMatrix({ departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] }) })).complete).toBe(true);
     await evidence("SFO", "NRT", "UNAVAILABLE", taskId, snapshotId);
     // A prior valid LIVE result remains evidence; UNAVAILABLE cannot create a
     // missing cell but also cannot displace an already persisted LIVE result.
-    expect((await evaluateFlightResearchCompleteness({ snapshotId, agentTaskRunId: taskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] })).complete).toBe(true);
+    expect((await evaluateFlightResearchCompleteness({ snapshotId, agentTaskRunId: taskId, routes: resolveFlightRouteMatrix({ departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT", "CDG"] }) })).complete).toBe(true);
   });
 
   it("treats UNAVAILABLE as attempted coverage but not commercial authority", async () => {
     await evidence("SFO", "NRT", "UNAVAILABLE");
     const unavailable = await evaluateFlightResearchCompleteness({
-      snapshotId, agentTaskRunId: taskId, departureCities: ["SFO"], destinationCandidates: ["NRT"],
+      snapshotId, agentTaskRunId: taskId, routes: resolveFlightRouteMatrix({ departureCities: ["SFO"], destinationCandidates: ["NRT"] }),
     });
     // Post-P0 (planner-resilience §1.3): completeness is "did the loop cover
     // every cell" — a UNAVAILABLE cell is still complete (we tried it). The
@@ -90,7 +91,7 @@ describe("flight research matrix", () => {
     }).returning();
     await evidence("SFO", "NRT", "LIVE", taskId, otherSnapshot.id);
     const wrongSnapshot = await evaluateFlightResearchCompleteness({
-      snapshotId, agentTaskRunId: taskId, departureCities: ["SFO"], destinationCandidates: ["NRT"],
+      snapshotId, agentTaskRunId: taskId, routes: resolveFlightRouteMatrix({ departureCities: ["SFO"], destinationCandidates: ["NRT"] }),
     });
     expect(wrongSnapshot.complete).toBe(false);
     expect(wrongSnapshot.cells[0].outcome).toBe("MISSING");
@@ -232,14 +233,14 @@ describe("flight research matrix", () => {
             } });
             if ((result as { outcome: string }).outcome === "LIVE") flights.push(...(result as { offers: never[] }).offers);
           }
-          matrixCompleteBeforeFinal = (await evaluateFlightResearchCompleteness({ snapshotId: planningSnapshot.id, agentTaskRunId: durableTaskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"] })).complete;
+          matrixCompleteBeforeFinal = (await evaluateFlightResearchCompleteness({ snapshotId: planningSnapshot.id, agentTaskRunId: durableTaskId, routes: resolveFlightRouteMatrix({ departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"] }) })).complete;
           await params.beforeFinal?.();
           beforeFinalPassed = true;
           // Simulate evidence rot after Gate B already passed: every cell flips
           // to UNAVAILABLE. The final authority check must not persist a plan;
           // it records the rotated cells as service gaps on a research summary.
           await db.update(providerSearchRuns).set({ outcome: "UNAVAILABLE", errorCode: "UPSTREAM_FAILURE" }).where(and(eq(providerSearchRuns.snapshotId, planningSnapshot.id), eq(providerSearchRuns.agentTaskRunId, durableTaskId)));
-          matrixCompleteAfterFinal = (await evaluateFlightResearchCompleteness({ snapshotId: planningSnapshot.id, agentTaskRunId: durableTaskId, departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"] })).complete;
+          matrixCompleteAfterFinal = (await evaluateFlightResearchCompleteness({ snapshotId: planningSnapshot.id, agentTaskRunId: durableTaskId, routes: resolveFlightRouteMatrix({ departureCities: ["SFO", "SIN"], destinationCandidates: ["NRT"] }) })).complete;
           return { destination: "NRT", destinationCandidatesEvaluated: ["NRT"], flights, stays: params.stays, generatedAt: "2026-08-25T00:00:00.000Z" };
         },
       },
