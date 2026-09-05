@@ -2572,6 +2572,14 @@ turn**，预算耗尽、方案没写成。而 `appendFlightProgress()` 每轮都
   一次性守卫后返回拒绝，在模型看来像一次值得重试的新失败。
 - 一整轮里全部是重复调用时不消耗 turn 预算，但**有额度上限**；超过后照常计数，
   所以只会重复自己的模型仍然会终止。
+- **撤下即不可调用**：模型仍然发出该工具调用时，直接返回结构化的
+  `TOOL_NOT_AVAILABLE_THIS_TURN` 并要求返回方案，**不派发、不碰供应商**。
+  仅从列表里移除是不够的——派发只按名字，模型照样能调到。
+- 重复判定对航班按 `(originId, destinationId)` 归一化，与「工具名+参数原文」的
+  签名并用：只用签名时，模型换一种参数写法（键顺序、可选字段）就绕过去，重复调用
+  真的打到供应商，撞上 `provider_search_runs` 的确定性 fingerprint 唯一索引，
+  抛出**裸 Error**（非 SkillError）→ 归类为 `UNCLASSIFIED`/`UPSTREAM_FAILURE`，
+  在模型看来是刚成功的航班格突然失败了，于是它更要重试。
 - 文案不得建议一个界面不提供的动作：`planningToolBudgetExhausted` 不再说
   「再试一次」（`isRetryableFailure` 并不包含该 code，屏幕上没有重试按钮），
   改为说明本轮已取得的结果已经保存。
