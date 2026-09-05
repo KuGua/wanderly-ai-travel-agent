@@ -12,7 +12,6 @@ import { applyTitleDestinationLabel } from "../services/trip-title-label-service
 import { postprocessTripDestinationLabel } from "../services/trip-destination-label-postprocess.js";
 import { runLlmSuggestEnvelope } from "../services/llm-suggest-envelope.js";
 import { createRequestContext } from "../utils/context.js";
-import { ApiError } from "../middleware/error-handler.js";
 import { errorResponseSchema, toJsonSchema } from "../types/schemas.js";
 import {
   TripDestinationLabelRateLimiter,
@@ -178,7 +177,15 @@ export async function tripTitleSuggestRoutes(app: FastifyInstance): Promise<void
     const truncatedMessages = userMessages.map((m) => ({ text: m.body.slice(0, MAX_MESSAGE_TEXT) }));
 
     // 4. Envelope: skill invoke + postprocess + bounded reason mapping.
-    const envelopeResult = await runLlmSuggestEnvelope<{ kind: "COUNTRY" | "CITY"; value: string }>({
+    // The envelope returns the *postprocessed* label, so what reaches the
+    // trip row below is the dataset's canonical name — never the model's raw
+    // text. That distinction is the whole point of the closed-vocabulary
+    // contract (spec §D5): a zh caller whose model answered "France" must
+    // still persist 法国, and "tokyo" must persist as Tokyo.
+    const envelopeResult = await runLlmSuggestEnvelope<
+      { kind: "COUNTRY" | "CITY"; value: string },
+      { kind: "COUNTRY" | "CITY"; value: string }
+    >({
       ctx,
       operation: "trip.destination.label",
       invoke: async () => invokeSkill(
@@ -186,12 +193,14 @@ export async function tripTitleSuggestRoutes(app: FastifyInstance): Promise<void
         { ctx, policyGate: new DefaultPolicyGate("personal") },
         { tripId, locale: body.locale, messages: truncatedMessages },
       ) as Promise<{ kind: "COUNTRY" | "CITY"; value: string }>,
-      postprocess: (output) => {
+      postprocess: (raw) => {
         const cleaned = postprocessTripDestinationLabel(
-          { kind: output.kind, value: output.value },
+          { kind: raw.kind, value: raw.value },
           body.locale,
         );
-        return cleaned.ok ? { ok: true } : { ok: false };
+        return cleaned.ok
+          ? { ok: true, value: { kind: cleaned.kind, value: cleaned.value } }
+          : { ok: false };
       },
     });
 
@@ -247,17 +256,20 @@ export async function tripTitleSuggestRoutes(app: FastifyInstance): Promise<void
   });
 }
 
-function reasonToMetricResult(reason: SuggestReason): "not_draft" | "manual_locked" | "superseded" | "no_material" | "rate_limited" {
+function reasonToMetricResult(
+  reason: SuggestReason,
+): "not_draft" | "manual_locked" | "superseded" | "no_material" | "rate_limited" | "rejected" | "unavailable" {
   switch (reason) {
     case "NOT_DRAFT": return "not_draft";
     case "MANUAL_LOCKED": return "manual_locked";
     case "SUPERSEDED": return "superseded";
     case "NO_MATERIAL": return "no_material";
     case "RATE_LIMITED": return "rate_limited";
-    case "REJECTED": return "superseded"; // postprocess reject is rare; fold into superseded
-    case "UNAVAILABLE": return "superseded"; // envelope failure counted elsewhere
+    // Both values are registered on `trip_title_writes_total`. Folding them
+    // into `superseded` left them permanently at zero, which hides exactly
+    // the two signals an operator needs: a sustained REJECTED rate points at
+    // a prompt or model regression, and UNAVAILABLE at gateway health.
+    case "REJECTED": return "rejected";
+    case "UNAVAILABLE": return "unavailable";
   }
 }
-
-// Suppress unused-warning on ApiError for potential future 5xx escalation.
-void ApiError;

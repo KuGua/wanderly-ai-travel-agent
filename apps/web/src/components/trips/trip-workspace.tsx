@@ -729,6 +729,17 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                     t={t}
                   />
                 </div>
+                {/* A country-only brief gets a display label so the trip has a
+                    usable name (e.g. 法国行程规划), but the label is never a
+                    planner destination. Without this notice the name reads as
+                    though the brief were complete while activation would still
+                    fail. Shown to every Draft viewer, not just the creator:
+                    the contradiction is visible to all of them. */}
+                {trip.status === "DRAFT" && trip.destinationCandidates.length === 0 ? (
+                  <p role="status" className="mt-3 text-[11px] leading-4 font-bold text-[var(--w-ink)]">
+                    {t("workspace.destinationPending")}
+                  </p>
+                ) : null}
                 {trip.status === "DRAFT" && callerRole === "CREATOR" ? (
                   <div className="mt-3">
                     <p className="text-[11px] leading-4 text-muted-foreground">{t("workspace.draftActivationHint")}</p>

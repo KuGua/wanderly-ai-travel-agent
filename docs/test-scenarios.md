@@ -1208,7 +1208,10 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - After a manual rename, `name_source='MANUAL'` and no automatic or model path ever overwrites the title.
 - Quota exhaustion returns `RATE_LIMITED` without calling the model. A gateway timeout returns `UNAVAILABLE`; unresolvable model output returns `REJECTED`. In every case the stored title and label are unchanged.
 - The in-flight suggest loses to the concurrent rename and exits through `MANUAL_LOCKED`; the user's own title survives.
-- The invitation preview for a Draft with `name_source='AUTO'` shows a generic localized planner name — it discloses neither the destination label nor the confirmed destinations, matching how the same response already redacts `destinationCandidates` and dates.
+- The invitation preview for a Draft with `name_source='AUTO'` shows a generic localized planner name in the invitee's own language (`?locale=en|zh`, defaulting to `en`) — it discloses neither the destination label nor the confirmed destinations, matching how the same response already redacts `destinationCandidates` and dates. A `MANUAL` Draft title is preserved.
+- What the model returns is validated *and canonicalised*: the stored label is always the reference dataset's own spelling, never the model's raw text. A zh caller whose model answers `France` stores `法国`; `tokyo` stores `Tokyo`.
+- A Draft whose brief still has no destination city says so on both the trip card and the workspace overview, so a title naming a country never reads as a complete brief.
+- `rejected` and `unavailable` are counted as themselves on `trip_title_writes_total`, not folded into `superseded`.
 - No audit row, log line, metric label or span attribute contains the label text; `TRIP_TITLE_LABEL_UPDATE` carries only `{ source }`.
 
 ### TS-EXPLORE-TRIP-3 — Destination references fail closed and stay city-scoped

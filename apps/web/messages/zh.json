@@ -129,7 +129,8 @@
       },
       "draft": {
         "short": "未命名探索 · 仅你可见",
-        "continueCta": "继续规划"
+        "continueCta": "继续规划",
+        "destinationPending": "目的地城市未确定"
       },
       "dates": {
         "notSet": "日期未设置",
@@ -697,6 +698,7 @@
       "mapWindow": "探索地图",
       "mapPinned": "固定",
       "openFullMap": "在完整地图中打开",
+      "destinationPending": "尚未确认目的地城市。即使行程已按国家或地区命名，开始规划仍需要具体城市。",
       "draftActivationHint": "先保存完整行程简报，再开始规划。同行者现在即可加入，但无法查看你的私密对话。",
       "activateDraft": "开始规划",
       "activateDraftError": "暂时无法开始规划，请重试。",

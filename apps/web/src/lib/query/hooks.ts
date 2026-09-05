@@ -191,11 +191,11 @@ export function useTrip(tripId: string | null) {
   });
 }
 
-export function useInvitationPreview(inviteToken: string | null) {
+export function useInvitationPreview(inviteToken: string | null, locale?: "en" | "zh") {
   const api = useTravelApi();
   return useQuery({
-    queryKey: invitationKeys.preview(inviteToken ?? "none"),
-    queryFn: () => api.getInvitationPreview!(inviteToken as string),
+    queryKey: invitationKeys.preview(inviteToken ?? "none", locale),
+    queryFn: () => api.getInvitationPreview!(inviteToken as string, locale),
     enabled: Boolean(inviteToken) && !!api.getInvitationPreview,
     retry: false,
   });

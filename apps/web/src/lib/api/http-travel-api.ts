@@ -239,8 +239,11 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request("/trips/" + encodeURIComponent(tripId), tripDetailResponseSchema);
   }
 
-  getInvitationPreview(inviteToken: string) {
-    return this.client.request("/trip-invitations/" + encodeURIComponent(inviteToken), invitationPreviewResponseSchema);
+  getInvitationPreview(inviteToken: string, locale?: "en" | "zh") {
+    // The server redacts a system-generated Draft title and renders a generic
+    // placeholder in its place; it needs the reader's own language to do that.
+    const query = locale ? `?locale=${encodeURIComponent(locale)}` : "";
+    return this.client.request("/trip-invitations/" + encodeURIComponent(inviteToken) + query, invitationPreviewResponseSchema);
   }
 
   acceptInvitation(inviteToken: string) {

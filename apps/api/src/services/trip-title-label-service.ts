@@ -22,8 +22,6 @@ import { buildTripTitle } from "./trip-title-service.js";
  * practice.
  */
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
 export type ApplyTitleLabelReason =
   | "MANUAL_LOCKED"
   | "NOT_DRAFT"

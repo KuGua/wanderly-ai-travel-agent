@@ -1,30 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { postprocessTripDestinationLabel } from "../src/services/trip-destination-label-postprocess.js";
-import { LocationReferenceResolver } from "../src/location-reference/location-reference-resolver.js";
-
-// Spec §8.3: postprocess re-resolves against the location reference data.
-// We swap the global singleton resolver for a synthetic one so the test is
-// deterministic and independent of the bundled GeoNames cities5000.
-const synthetic = new LocationReferenceResolver(
-  [
-    { properties: { ADMIN: "France", ISO_A2: "FR", NAME_EN: "France", NAME_ZH: "法国" }, geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } },
-    { properties: { ADMIN: "Japan", ISO_A2: "JP", NAME_EN: "Japan", NAME_ZH: "日本" }, geometry: { type: "Polygon", coordinates: [[[2, 0], [3, 0], [3, 1], [2, 1], [2, 0]]] } },
-  ],
-  [
-    { name: "Tokyo", alternateNames: ["东京"], countryCode: "JP", latitude: 0.5, longitude: 2.5, population: 13_960_000 },
-    { name: "Paris", countryCode: "FR", latitude: 0.5, longitude: 0.5, population: 2_138_551 },
-  ],
-  [],
-  { version: "test.1", checkedAt: "2026-08-25T00:00:00.000Z" },
-);
-
-// Swap the resolver's underlying map by stubbing the getter the service uses.
-// We can't easily replace the singleton, so instead the postprocess module's
-// resolveCountryLabel / resolveDestinationReference will fail because the
-// bundled dataset has no entry for the synthetic cities. The bundled dataset
-// is large enough that real cities like Paris and Tokyo actually resolve
-// against it, so we exercise both real-data and synthetic-data branches.
 
 describe("postprocessTripDestinationLabel", () => {
   describe("with bundled GeoNames + Natural Earth data (in-process default)", () => {

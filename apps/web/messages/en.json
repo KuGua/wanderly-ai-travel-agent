@@ -129,7 +129,8 @@
       },
       "draft": {
         "short": "Untitled exploration · only you can see it",
-        "continueCta": "Continue planning"
+        "continueCta": "Continue planning",
+        "destinationPending": "Destination city not set"
       },
       "dates": {
         "notSet": "Dates not set",
@@ -697,6 +698,7 @@
       "mapWindow": "Explore map",
       "mapPinned": "Pinned",
       "openFullMap": "Open in full map",
+      "destinationPending": "No destination city confirmed yet. Planning needs a specific city, even when the trip is already named after a country or region.",
       "draftActivationHint": "Save a complete brief, then start planning. Teammates can join now but cannot view your private conversation.",
       "activateDraft": "Start planning",
       "activateDraftError": "Could not start planning. Please try again.",

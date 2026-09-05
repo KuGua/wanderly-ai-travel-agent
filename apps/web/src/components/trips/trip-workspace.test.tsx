@@ -195,6 +195,30 @@ describe("TripWorkspace", () => {
     expect(within(overview).queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
   });
 
+  // A country-only brief writes a display-only label so the Draft gets a
+  // usable name, but the label is never a planner destination. The notice is
+  // what stops the name from reading as a complete brief.
+  it("warns a Draft whose brief still has no destination city", async () => {
+    const draft = buildTripResponse("DRAFT");
+    draft.trip.name = "France Trip Planner";
+    draft.trip.destinationCandidates = [];
+    const api = createApi({ getTrip: vi.fn().mockResolvedValue(draft) });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    const overview = await screen.findByRole("region", { name: "Trip overview" });
+    expect(within(overview).getByText(/No destination city confirmed yet/)).toBeInTheDocument();
+  });
+
+  it("drops the warning once the Draft has a confirmed destination", async () => {
+    const draft = buildTripResponse("DRAFT");
+    draft.trip.destinationCandidates = ["Paris"];
+    const api = createApi({ getTrip: vi.fn().mockResolvedValue(draft) });
+    renderWithIntl(<TripWorkspace tripId={TRIP_ID} />, { api });
+
+    await screen.findByRole("region", { name: "Trip overview" });
+    expect(screen.queryByText(/No destination city confirmed yet/)).not.toBeInTheDocument();
+  });
+
   it("auto-provisions a default thread when none exists", async () => {
     // First call returns empty (no threads yet); subsequent calls
     // return the freshly-provisioned default thread.

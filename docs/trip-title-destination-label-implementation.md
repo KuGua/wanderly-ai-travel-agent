@@ -397,10 +397,15 @@ D5 的落点。与 thread-title 的自由文本清洗不同，此处是**再解�
 4. `kind === "CITY"` → 必须能被 `resolveDestinationReference` 解析，否则 `REJECTED`；返回其**规范城市名**。
 5. `kind === "COUNTRY"` → 必须能被 `resolveCountryLabel` 解析，否则 `REJECTED`；返回按 `locale` 的规范国家名。
 6. 输出恒为参考数据集中的规范名，**不可能**是模型自由文本。
+7. **写入的必须是后处理返回的规范名，而不是模型原始输出。** 后处理同时承担校验与规范化两件事：`kind="CITY"` 时返回 resolver 给出的规范城市名（`tokyo` → `Tokyo`），`kind="COUNTRY"` 时返回按 `locale` 选出的规范国家名（zh + `France` → `法国`）。因此承载它的外壳必须能把清洗结果回传给调用方；任何只能回答"接受/拒绝"的外壳签名都会迫使调用方退回使用原始输出，规范化在存储层失效（见 §17-1）。
 
 因此 thread-title 后处理中的 URL / 邮箱 / 长数字串 / 原文回显四条规则在此**无需重复实现**——封闭词表已使这些形态无法通过第 4/5 步。
 
-> **共用外壳的抽象时机已到。** `docs/thread-title-lifecycle-implementation.md` §14 记有："不抽公共『gateway + 后处理 + fail closed』外壳，**待第二个使用者出现再抽**"。本 skill 即第二个使用者，该文档已预授权此次抽象。建议在 P1 中抽出 `services/llm-suggest-envelope.ts`，承载"调用 skill → 映射错误为有界 reason → 后处理 → `FOR UPDATE` 重读重判 → 写入 + audit + metric"这条骨架，thread-title 路由同步改为复用。
+> **共用外壳的抽象时机已到。** `docs/thread-title-lifecycle-implementation.md` §14 记有："不抽公共『gateway + 后处理 + fail closed』外壳，**待第二个使用者出现再抽**"。本 skill 即第二个使用者，该文档已预授权此次抽象。在 P1 中抽出 `services/llm-suggest-envelope.ts`，承载"调用 skill → 后处理 → 映射错误为有界 reason"这条骨架；`FOR UPDATE` 重读重判与写入 + audit + metric 留在各路由，因为两个调用方的形状不同。
+>
+> 该外壳必须以 `<TRaw, TClean>` 两个类型参数声明，`postprocess` 回传 `{ ok: true; value: TClean }`，外壳只返回 `TClean`，原始输出不得离开外壳。
+>
+> **thread-title 路由的迁移尚未进行**，因此该外壳目前只有一个调用方——这正是 thread-title 文档 §14 所警告的过早抽象。迁移前它不算兑现，记为技术债（§14）。
 
 ### 8.4 限流
 
@@ -459,7 +464,7 @@ name: (trip.status === "DRAFT" && trip.nameSource === "AUTO")
   : trip.name,
 ```
 
-`previewLocale` 取请求携带的界面语言，缺省 `"en"`（与既有 `titleLocale` 权威规则一致）。需为该 select 补上 `nameSource` 列。
+语言由调用方显式传入，服务端不猜：`GET /trip-invitations/:inviteToken` 接受 `?locale=en|zh`，缺省 `"en"`（与 `acceptInvitationRequestSchema` 及既有 `titleLocale` 权威规则一致）。该查询 schema **不使用 `.strict()`** 且以 `safeParse` 解析——一个无关的查询参数绝不能把有效邀请变成 400。需为该 select 补上 `nameSource` 列。前端 `useInvitationPreview` 须把 locale 一并放进 query key，否则切换语言会命中上一语言的缓存。
 
 ### 9.3 契约文件同步
 
@@ -487,6 +492,8 @@ metrics.registerCounter(
 ```
 
 **标签必须是有界枚举。** `tripId` / `userId` / 标签文本一律禁止作为 metric 标签，只能出现在 trace / log 上下文（AGENTS.md 可观测性条款 + D9）。
+
+**每个 reason 必须映射到自己的 `result` 值，不得折叠。** `rejected` 与 `unavailable` 尤其如此：持续的 `rejected` 指向 prompt 或模型回归，`unavailable` 指向 gateway 健康度；把它们并入 `superseded` 会让这两个值恒为零，同时污染"真实目的地胜出"的语义。§13.4 的 P2 立项判据依赖这些计数，折叠会让判据失效。
 
 ### 10.2 Logs / Traces
 
@@ -652,3 +659,52 @@ P0 的 8/9/10/11 与 1–7 无依赖，可由不同人并行认领。
 | **复用（不改）** | `agents/skill-registry.ts`、`providers/gateway-factory.ts`、`observability/metrics.ts`、`services/audit-service.ts` 写入范式、`ThreadTitleSuggestRateLimiter` 形态、`DefaultPolicyGate`、`withoutDestination()` 的 planner 契约 |
 | **修改** | `services/trip-title-service.ts`、`location-reference/location-reference-resolver.ts`、`services/destination-cue-service.ts:194`、`routes/trips.ts:673` 与 `:494`、`services/trip-invitation-service.ts:270-293`、`tasks/handlers/conversation-task-handler.ts:790` 与 866–879 区域、`providers/model-gateway.ts:294`、`db/schema.ts`、`types/schemas.ts`、`apps/web` 列表卡片与工作台 header、`messages/{en,zh}.json` |
 | **新增** | migration `0072` / `0073`、`services/trip-title-destination-label.ts`、`services/trip-title-label-service.ts`、`services/trip-destination-label-postprocess.ts`、`services/llm-suggest-envelope.ts`、`skills/personal/trip-destination-label-suggest-skill.ts` + `.md`、`routes/trip-destination-label-rate-limit.ts`、`POST /trips/:tripId/title/suggest` |
+
+---
+
+## 17. 落地校正（2026-09-05）
+
+首轮实现（`3a0195c`）落地后的代码核对发现三处偏差，均已修复。记录于此，因为其中两处的根因是本规范表述不够紧，规范正文已同步收紧。
+
+### 17-1 外壳丢弃后处理结果（数据正确性）
+
+`llm-suggest-envelope.ts` 的 `postprocess` 回调原签名为 `(o: TOutput) => { ok: true } | { ok: false }`，
+**结构上无法回传清洗值**，外壳因此只能 `return { ok: true, output: raw }`，路由随后持久化了模型原始输出。
+后果：zh 调用方在模型返回 `France` 时落库 `France` 而非 `法国`；`tokyo` 落库为 `tokyo`。
+
+后处理的规范化能力本身有单测覆盖并通过，缺的是路由层的集成测试——这正是它被漏掉的原因。
+
+**修复：** 外壳改为 `<TRaw, TClean>` 双类型参数，`postprocess` 回传 `{ ok: true; value: TClean }`，
+原始输出不再离开外壳。规范 §8.3 增加第 7 条。
+
+### 17-2 确定性路径缺 fail-soft
+
+`resolveTitleDestinationLabel` 的 doc 声明"does not throw on missing datasets"，但函数体没有 `try/catch`，
+而 `getLocationReferenceResolver()` 以 `readFileSync` 读四个数据文件、会抛。
+调用点 `conversation-task-handler.ts` 的 `.catch()` 只覆盖异步的 `applyTitleDestinationLabel`，
+同步的解析调用在其外——数据集不可读时整个对话轮次失败。
+
+违反 §13"参考数据集加载失败 → 返回 `null`，对话不受影响"，也偏离既有写法
+`trip-brief-proposal-service.ts` 的 `resolveBriefDestination`。
+
+**修复：** 函数体整体包 `try/catch` 返回 `null`。LLM 路径不受影响——外壳的 `try` 已覆盖后处理。
+
+### 17-3 邀请预览语言硬编码
+
+`previewLocaleForTrip()` 恒返回 `"en"`，中文受邀者看到 `Trip Planner`。
+脱敏逻辑本身正确，缺的是语言。**修复：** 见 §9.2，改为 `?locale=` 查询参数贯通到前端。
+
+### 17-4 同批附带修复
+
+- `reasonToMetricResult` 曾把 `REJECTED` / `UNAVAILABLE` 折叠为 `superseded`，使两个已注册的 metric 值恒为零。改为各自映射（§10.1）。
+- 删除 `trip-title-label-service.ts` 的未使用 `Tx` 类型别名与 `trip-destination-label-postprocess.test.ts` 中未被使用的 synthetic resolver 构造块（两者均使 `npm run lint` 报错）。
+
+### 17-5 本次未处理，需单独决策
+
+| 项 | 说明 |
+|---|---|
+| thread-title 迁移到共用外壳 | 规范 P1-5 要求，实际未做，外壳目前只有一个调用方（§8.3 注） |
+| `POST /trip-invitations/:token/accept` 不发送 `locale` | `http-travel-api.ts` 调用时不带 body，服务端恒取默认 `"en"`，被邀请者的 default thread 标题始终是英文。与 17-3 同类，但属既有缺陷，未在本批修复 |
+| `UNCHANGED` → metric `superseded` | 需新增注册枚举值才能分开，会扩大改动面 |
+| P1-8 前端"用 AI 命名"入口 | 属批 3；`POST /trips/:tripId/title/suggest` 目前无 UI 触发点 |
+

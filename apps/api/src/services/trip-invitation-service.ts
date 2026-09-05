@@ -267,6 +267,13 @@ export async function getInvitationPreview(params: {
   token: string;
   actorUserId: string;
   actorEmail: string | null;
+  /**
+   * The invitee's own interface language, sent explicitly by the client.
+   * Only used to render the redacted placeholder below; it never changes
+   * which trip is disclosed. Defaults to "en" so a client that omits it
+   * keeps working, matching `acceptInvitationRequestSchema`.
+   */
+  locale?: "en" | "zh";
 }): Promise<InvitationPreviewResult> {
   const invitation = await getPendingInvitationForActor(params);
   const [trip] = await db.select({
@@ -288,7 +295,7 @@ export async function getInvitationPreview(params: {
   // preserved — the creator typed them with full knowledge they would be
   // shared on an invite.
   const displayName = trip.status === "DRAFT" && trip.nameSource === "AUTO"
-    ? buildTripTitle({ destinationCandidates: [], locale: previewLocaleForTrip() })
+    ? buildTripTitle({ destinationCandidates: [], locale: params.locale ?? "en" })
     : trip.name;
   return {
     trip: {
@@ -302,16 +309,6 @@ export async function getInvitationPreview(params: {
     },
     expiresAt: invitation.expiresAt,
   };
-}
-
-/**
- * The invite preview is opened in the invitee's browser locale. Until that
- * locale is wired into the invitation token itself, "en" is the conservative
- * fallback that matches the existing titleLocale authority rule
- * (docs/thread-title-lifecycle-implementation.md §D8).
- */
-function previewLocaleForTrip(): "en" | "zh" {
-  return "en";
 }
 
 export async function declineInvitation(params: {

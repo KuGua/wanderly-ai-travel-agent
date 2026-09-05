@@ -413,6 +413,18 @@ match from any other country. `巴黎` / `Paris` therefore resolves to Paris,
 France, while genuinely contested names such as `Valencia` keep returning
 `422 DESTINATION_UNRESOLVED`.
 
+### `GET /trip-invitations/:inviteToken`
+Read the authenticated recipient's minimal invitation decision summary.
+
+Accepts `?locale=en|zh`. A Draft trip whose name is system-generated
+(`nameSource: "AUTO"`) has that name replaced by the generic localized planner
+placeholder — the title is composed from the creator's destinations or from a
+country label, and an invitee must not read the creator's unconfirmed
+exploration before accepting, exactly as `destinationCandidates` and the dates
+are already blanked on a Draft. A `MANUAL` title is preserved: the creator typed
+it knowing it would be shared. Omitting `locale` falls back to `en`; an
+unrelated query parameter never turns a valid invitation into a `400`.
+
 ### `POST /trips/:tripId/title/suggest`
 Ask the Personal Agent to infer the destination label from the caller's own
 private messages. Creator only, rate limited per user.

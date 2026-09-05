@@ -265,6 +265,79 @@ describe("Draft trip command guards", () => {
       .toEqual(["EXPLORATION_START", "TRIP_DEFAULT_THREAD_PROVISION"]);
   });
 
+  it("redacts a system-generated Draft name in the preview and renders it in the invitee's language", async () => {
+    // The same response already blanks destinationCandidates and dates on a
+    // Draft. The name used to leak straight past that: buildTripTitle puts the
+    // destinations *into* the name, and a country-only brief now puts a
+    // display label there too. An invitee decides whether to join; they do not
+    // get the creator's unconfirmed exploration.
+    const draftId = await createDraftFor("alice");
+    await db.update(sharedTrips)
+      .set({ name: "法国行程规划", nameSource: "AUTO", titleDestinationLabel: "法国", titleLabelSource: "REFERENCE" })
+      .where(eq(sharedTrips.id, draftId));
+
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/invitations`,
+      headers: authHeaders("alice"),
+      payload: {
+        recipientEmail: "bob@example.com",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+    expect(created.statusCode).toBe(201);
+    const inviteToken = created.json().inviteToken as string;
+
+    const english = await app.inject({
+      method: "GET",
+      url: `/api/v1/trip-invitations/${inviteToken}?locale=en`,
+      headers: authHeaders("bob"),
+    });
+    expect(english.json().trip.name).toBe("Trip Planner");
+
+    const chinese = await app.inject({
+      method: "GET",
+      url: `/api/v1/trip-invitations/${inviteToken}?locale=zh`,
+      headers: authHeaders("bob"),
+    });
+    expect(chinese.json().trip.name).toBe("行程规划");
+
+    // No locale at all still works, and still redacts.
+    const bare = await app.inject({
+      method: "GET",
+      url: `/api/v1/trip-invitations/${inviteToken}`,
+      headers: authHeaders("bob"),
+    });
+    expect(bare.json().trip.name).toBe("Trip Planner");
+  });
+
+  it("keeps a creator's manual Draft title visible in the preview", async () => {
+    // A MANUAL name was typed by the creator knowing they would invite
+    // someone; redacting it would hide information they chose to share.
+    const draftId = await createDraftFor("alice");
+    await db.update(sharedTrips)
+      .set({ name: "Alps 2026", nameSource: "MANUAL" })
+      .where(eq(sharedTrips.id, draftId));
+
+    const created = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${draftId}/invitations`,
+      headers: authHeaders("alice"),
+      payload: {
+        recipientEmail: "bob@example.com",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+    const inviteToken = created.json().inviteToken as string;
+
+    const preview = await app.inject({
+      method: "GET",
+      url: `/api/v1/trip-invitations/${inviteToken}?locale=zh`,
+      headers: authHeaders("bob"),
+    });
+    expect(preview.json().trip.name).toBe("Alps 2026");
+  });
+
   it("allows an email-bound invitation to a Draft without exposing the creator's private conversation", async () => {
     const draftId = await createDraftFor("alice");
 

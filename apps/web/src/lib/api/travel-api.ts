@@ -112,7 +112,7 @@ export interface TravelApi {
   getTrips(): Promise<TripsResponse>;
   getTrip(tripId: string): Promise<TripDetailResponse>;
   // Optional while older fixtures and API adapters adopt the invitation flow.
-  getInvitationPreview?(inviteToken: string): Promise<InvitationPreviewResponse>;
+  getInvitationPreview?(inviteToken: string, locale?: "en" | "zh"): Promise<InvitationPreviewResponse>;
   acceptInvitation?(inviteToken: string): Promise<AcceptInvitationResponse>;
   declineInvitation?(inviteToken: string): Promise<DeclineInvitationResponse>;
   createTripInvitation?(tripId: string, input: CreateTripInvitationInput): Promise<TripInvitationCreateResponse>;
