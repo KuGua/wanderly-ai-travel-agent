@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -1087,6 +1087,58 @@ describe("the trip's preference card", () => {
       THREAD_ID,
       expect.objectContaining({ intent: "brief_saved" }),
     ));
+  });
+
+  /**
+   * The readiness notice belongs to the planner, not the globe.
+   *
+   * On the globe someone is asking what a place is like — 「介绍一下蒙古国」 is
+   * a question about Mongolia, not a request to start planning — and answering
+   * it with a list of fields they have not been asked for reads as a chore
+   * they failed to do. The thread still syncs to the trip either way; only the
+   * call to action waits for the surface where starting is the point.
+   */
+  describe("the DRAFT readiness notice", () => {
+    function draftTripApi() {
+      return createApi({
+        getTrip: vi.fn().mockResolvedValue({
+          trip: {
+            id: TRIP_ID, name: "Mongolia", createdBy: OWNER_ID, status: "DRAFT",
+            departureCities: [], destinationCandidates: [],
+            travelDateStart: null, travelDateEnd: null, travelDays: null,
+            createdAt: CREATED_AT, updatedAt: CREATED_AT,
+          },
+          callerRole: "CREATOR",
+          members: [],
+        }),
+      });
+    }
+
+    it("appears in the workspace, naming what is missing", async () => {
+      renderChat(draftTripApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+      expect(await screen.findByText("Trip details aren't complete yet")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Start planning/i })).toBeDisabled();
+    });
+
+    it("stays off the globe", async () => {
+      // The workspace half of this pair is the positive control: the same
+      // fixture, the same DRAFT trip, and the notice appears. Asserting its
+      // absence on the globe only means something once the trip has actually
+      // loaded — the placeholder is on screen from the first frame, so waiting
+      // for that would let the assertion run before the query ever resolved,
+      // and it would pass with the surface check deleted.
+      const api = draftTripApi();
+      renderChat(api, { tripId: TRIP_ID, surface: "EXPLORE" });
+
+      await waitFor(() => expect(api.getTrip).toHaveBeenCalledWith(TRIP_ID));
+      // The query resolves in microtasks; a macrotask turn runs after all of
+      // them, so once this returns the trip is committed and anything it gates
+      // is on screen — or it is never coming.
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(screen.queryByText("Trip details aren't complete yet")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Start planning/i })).not.toBeInTheDocument();
+    });
   });
 
   it("keeps the card up when the save is refused, so the answer can be corrected", async () => {

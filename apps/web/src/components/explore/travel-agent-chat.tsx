@@ -1364,7 +1364,12 @@ export function TravelAgentChat({
               </div>
             </section>
           ) : null}
-          {!actionableBriefProposal && !destinationCue && trip.data?.trip.status === "DRAFT" ? (
+          {/* Workspace only. The globe is where someone asks what a place is
+              like, and a readiness notice there answers a question nobody
+              posed — "介绍一下蒙古国" is not a request to start planning. The
+              conversation still syncs to the trip; only the call to action
+              waits for the planner, where starting is the point of the page. */}
+          {!onGlobe && !actionableBriefProposal && !destinationCue && trip.data?.trip.status === "DRAFT" ? (
             <section aria-label={canStartSharedPlanning ? t("startSharedPlanTitle") : t("startSharedPlanNotReadyTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <p className="font-bold text-primary">
                 {canStartSharedPlanning ? t("startSharedPlanTitle") : t("startSharedPlanNotReadyTitle")}
