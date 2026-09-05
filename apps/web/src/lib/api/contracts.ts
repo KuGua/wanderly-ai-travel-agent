@@ -1671,6 +1671,26 @@ export const staySearchAuthorizationDtoSchema = z.object({
 }).strict();
 export type StaySearchAuthorizationDto = z.infer<typeof staySearchAuthorizationDtoSchema>;
 
+/**
+ * Mirrors `researchEvidenceOfferSchema` in apps/api/src/types/schemas.ts. The
+ * evidence a research run collected — activity and hotel offers with their
+ * supplier, price and capture time — is what makes a gap report readable
+ * rather than a bare list of codes.
+ */
+export const researchEvidenceOfferSchema = z.object({
+  category: z.enum(["activity", "hotel"]),
+  providerName: z.string(),
+  title: z.string(),
+  price: z.object({
+    amount: z.number(),
+    currency: z.string(),
+  }).strict().nullable(),
+  rating: z.number().nullable(),
+  detail: z.string().nullable(),
+  capturedAt: z.string().datetime(),
+}).strict();
+export type ResearchEvidenceOffer = z.infer<typeof researchEvidenceOfferSchema>;
+
 export const researchResultSchema = z.object({
   id: z.string().uuid(),
   tripId: z.string().uuid(),
@@ -1679,6 +1699,13 @@ export const researchResultSchema = z.object({
   status: researchResultStatusSchema,
   serviceGaps: z.array(serviceGapSchema),
   resultPlanId: z.string().uuid().nullable(),
+  // Both `GET /trips/:id/research/latest` and `GET /trips/:id/runs/:runId`
+  // always send this array (the API schema defaults it to `[]`), and this
+  // object is `.strict()`, so omitting it here rejected *every* response from
+  // either endpoint. The shared-plan gaps panel silently lost its capability
+  // list and the planning-run detail page failed outright with a generic
+  // transport error — for runs whose outcome it had already been handed.
+  offers: z.array(researchEvidenceOfferSchema).default([]),
   createdAt: z.string().datetime(),
 }).strict();
 

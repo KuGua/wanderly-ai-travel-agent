@@ -9,6 +9,7 @@ import {
   latestPlanResponseSchema,
   ownerConversationResponseSchema,
   profileResponseSchema,
+  researchResultSchema,
   serviceGapSchema,
   tripsResponseSchema,
 } from "./contracts";
@@ -225,5 +226,43 @@ describe("API contracts", () => {
       expect(serviceGapSchema.parse({ capability: "places", code }).code).toBe(code);
     }
     expect(() => serviceGapSchema.parse({ capability: "weather", code: "NO_RESULTS" })).toThrow();
+  });
+
+  /**
+   * The payload trip 8a634324 actually produced on 2026-09-05, byte for byte
+   * from `planning_research_results` plus the `offers: []` both research
+   * endpoints always send. The mirror was `.strict()` without `offers`, so
+   * every response from either endpoint was rejected: the shared-plan gaps
+   * panel lost its capability list, and the planning-run detail page showed
+   * "unable to load the planning result" for a run it had already received.
+   */
+  it("accepts a real completed-with-gaps research payload", () => {
+    const research = {
+      id: "a15c905b-b80d-4980-84b8-7c2d04c7c970",
+      tripId: "8a634324-3831-43d2-894f-ebaf61c3f021",
+      snapshotId: "cc0945b9-c4da-4b42-a0f8-5eadf702bb3a",
+      agentTaskRunId: "4b507761-de01-47fd-a4bf-a5e565faac5b",
+      status: "COMPLETED_WITH_GAPS",
+      serviceGaps: [
+        { code: "SKILL_CONTRACT_VIOLATION", capability: "accommodation" },
+        { code: "SKILL_CONTRACT_VIOLATION", capability: "places" },
+        { code: "PROVIDER_REQUEST_REJECTED", capability: "flight", destinationId: "Shanghai" },
+      ],
+      resultPlanId: null,
+      offers: [{
+        category: "hotel",
+        providerName: "OpenTripMap",
+        title: "Jinjiang Hotel",
+        price: null,
+        rating: null,
+        detail: null,
+        capturedAt: "2026-09-05T07:53:18.793Z",
+      }],
+      createdAt: "2026-09-05T07:53:21.205Z",
+    };
+
+    const parsed = researchResultSchema.parse(research);
+    expect(parsed.serviceGaps).toHaveLength(3);
+    expect(parsed.offers).toHaveLength(1);
   });
 });
