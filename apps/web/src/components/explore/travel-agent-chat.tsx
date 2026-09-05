@@ -1667,7 +1667,7 @@ export function TravelAgentChat({
             <article data-role="ASSISTANT" className={rowClass}>
               {agentLabel}
               <div className={agentBubbleClass}>
-                <p>{t("startSharedPlanDismissedNotice")}</p>
+                <ChatMarkdown content={t("startSharedPlanDismissedNotice")} />
               </div>
             </article>
           ) : null}
@@ -1998,6 +1998,7 @@ export function TravelAgentChat({
               fields={preferenceCard.fields}
               saving={savingPreferences}
               onSubmit={(adjustments) => void resolvePreferences(adjustments)}
+              onDismiss={dismissPreferenceCardOnSend}
             />
           ) : null}
           {preferenceSaveFailed ? (

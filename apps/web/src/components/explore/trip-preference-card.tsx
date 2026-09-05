@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useTranslations } from "next-intl";
 
@@ -90,10 +90,12 @@ export function TripPreferenceCard({
   fields,
   saving,
   onSubmit,
+  onDismiss,
 }: {
   fields: PreferenceCardField[];
   saving: boolean;
   onSubmit: (adjustments: Array<{ fieldKey: string; value: unknown }>) => void;
+  onDismiss: () => void;
 }): ReactNode {
   const t = useTranslations("explore.chat");
   const fieldLabel = useTranslations("explore.chat.prefCardField");
@@ -101,7 +103,10 @@ export function TripPreferenceCard({
   // — both the stay styles and the pace values — so reuse it rather than
   // restate the labels or guess a namespace per field.
   const optionLabels = useTranslations("trips.memory.values");
-  const [editing, setEditing] = useState(false);
+  // This card is a form, not a read-only summary. Opening straight into edit
+  // mode leaves one unambiguous action at the bottom: "Use these" persists
+  // the changes; the X closes without applying them.
+  const [editing] = useState(true);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
 
   const valueOf = (field: PreferenceCardField) =>
@@ -138,12 +143,13 @@ export function TripPreferenceCard({
         </div>
         <button
           type="button"
-          onClick={() => setEditing((current) => !current)}
-          aria-pressed={editing}
-          className="inline-flex min-h-11 shrink-0 items-center gap-1 text-xs font-extrabold text-[var(--w-ink)] underline decoration-2 underline-offset-4 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+          onClick={onDismiss}
+          disabled={saving}
+          aria-label={t("prefCardClose")}
+          title={t("prefCardClose")}
+          className="grid size-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:opacity-50"
         >
-          {editing ? t("prefCardDone") : t("prefCardEdit")}
-          <ArrowRight aria-hidden="true" className="size-3.5" />
+          <X aria-hidden="true" className="size-4" />
         </button>
       </div>
 
