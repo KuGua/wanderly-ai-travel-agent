@@ -66,11 +66,12 @@ const NEARBY_RADIUS_KM = 50;
 const DEFAULT_GEOGRAPHY_VISIBILITY: GeographyVisibility = { countries: true, regions: true, cities: true };
 
 /**
- * Pointing devices, i.e. a desktop. Only there is the floor applied: a phone
- * has so little width beside the chat panel that clamping the zoom would push
- * the globe off screen rather than keep it whole.
+ * Desktop-sized screens only. A pointer-media query looked more precise, but
+ * it is not stable across browser emulation, touch-enabled laptops, and some
+ * remote-desktop sessions. The product boundary is screen size, not the kind
+ * of pointing device, so keep the floor tied to the viewport alone.
  */
-const DESKTOP_QUERY = "(min-width: 768px) and (pointer: fine)";
+const DESKTOP_QUERY = "(min-width: 768px)";
 
 /**
  * Lowest zoom the desktop globe may reach.
@@ -762,6 +763,12 @@ export function ExploreMapPage() {
       // implementation without it should still render rather than throw.
       if (typeof map?.setMinZoom !== "function") return;
       map.setMinZoom(media.matches ? DESKTOP_MIN_ZOOM : undefined);
+      // `setMinZoom` constrains all later camera operations. Clamp the
+      // already-active camera too: this is needed when a narrow window is
+      // widened after its map was allowed below the desktop floor.
+      if (media.matches && map.getZoom() < DESKTOP_MIN_ZOOM && typeof map.setZoom === "function") {
+        map.setZoom(DESKTOP_MIN_ZOOM);
+      }
     };
     apply();
     // Older Safari, and the jsdom stub, expose only the deprecated

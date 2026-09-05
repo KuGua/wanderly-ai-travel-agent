@@ -987,6 +987,126 @@
   border-color: var(--w-space-line);
 }
 
+/*
+ * Collapsed conversation launch.
+ *
+ * The source is deliberately one transparent sprite sheet, but the body and
+ * exhaust are clipped by two independent elements. That keeps the rocket
+ * still and flame-free before activation, while letting the flame begin only
+ * for the launch frame without baking either visual into the other.
+ */
+.wanderly-chat-rocket-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.wanderly-chat-rocket-button:focus-visible {
+  outline: 2px solid var(--w-highlight);
+  outline-offset: 4px;
+}
+
+.wanderly-chat-rocket-body,
+.wanderly-chat-rocket-flame {
+  display: block;
+  background-image: url("/images/chat-launch-rocket-sprite.png");
+  background-repeat: no-repeat;
+  background-size: 140px 210px;
+}
+
+/* The top sprite occupies the first 116px after scaling. */
+.wanderly-chat-rocket-body {
+  width: 40px;
+  height: 116px;
+  background-position: center top;
+}
+
+/* The lower sprite starts at approximately 120px after scaling. */
+.wanderly-chat-rocket-flame {
+  width: 56px;
+  height: 88px;
+  background-position: center -120px;
+}
+
+.wanderly-chat-rocket-launch {
+  position: absolute;
+  right: 25px;
+  bottom: 201px;
+  z-index: 60;
+  display: grid;
+  width: 56px;
+  height: 204px;
+  place-items: center;
+  pointer-events: none;
+  transform-origin: center bottom;
+}
+
+.wanderly-chat-rocket-launch .wanderly-chat-rocket-body {
+  z-index: 1;
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+}
+
+.wanderly-chat-rocket-launch .wanderly-chat-rocket-flame {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+  animation: wanderly-rocket-flame .11s steps(2, end) infinite;
+}
+
+.wanderly-chat-rocket-launch--preparing .wanderly-chat-rocket-flame {
+  opacity: 0;
+  animation: none;
+}
+
+.wanderly-chat-rocket-launch--launching {
+  animation: wanderly-rocket-launch .7s cubic-bezier(.2, .7, .35, 1) forwards;
+}
+
+@keyframes wanderly-rocket-launch {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  78% { opacity: 1; transform: translateY(-76vh) scale(.68); }
+  100% { opacity: 0; transform: translateY(-100vh) scale(.5); }
+}
+
+@keyframes wanderly-rocket-flame {
+  0% { transform: scaleY(.88); filter: brightness(.9); }
+  100% { transform: scaleY(1.08); filter: brightness(1.12); }
+}
+
+/* At launch the lower edge stays parked on the terrain. The top begins 20px
+   below the rocket and rises with it to reveal the full conversation. */
+@media (min-width: 768px) {
+  .wanderly-chat-rocket-launch { right: 49px; }
+
+  .wanderly-cosmos-chat--launch {
+    transition: top .7s cubic-bezier(.2, .7, .35, 1), opacity .18s ease-out;
+  }
+
+  .wanderly-cosmos-chat--launch[data-launch-phase="preparing"] {
+    top: calc(100% - 164px);
+    min-height: 0;
+    opacity: .92;
+    transition: none;
+  }
+
+  .wanderly-cosmos-chat--launch[data-launch-phase="launching"] {
+    top: 112px;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wanderly-chat-rocket-launch,
+  .wanderly-chat-rocket-launch .wanderly-chat-rocket-flame,
+  .wanderly-cosmos-chat--launch {
+    animation: none;
+    transition: none;
+  }
+}
+
 .wanderly-cosmos .maplibregl-ctrl-group {
   border: 2px solid var(--w-space-line);
   border-radius: 12px 9px 13px 8px;

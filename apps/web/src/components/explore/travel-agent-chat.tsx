@@ -37,6 +37,7 @@ import { Link, useRouter } from "@/i18n/navigation";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
 type PendingTurn = ConversationTurnRequest;
+type ConversationLaunchPhase = "idle" | "preparing" | "launching";
 /**
  * One lookup the assistant made while composing the current reply. Kept in
  * arrival order so the reader sees the sequence of work, and settled entries
@@ -213,6 +214,11 @@ export function TravelAgentChat({
     && resolvedThreadStatus !== "error";
 
   const [draft, setDraft] = useState("");
+  // The collapsed globe composer opens with a physical launch rather than a
+  // snap. This is intentionally local UI state: the thread is unchanged, and
+  // reopening a different browser tab must not replay someone else's rocket.
+  const [conversationLaunchPhase, setConversationLaunchPhase] = useState<ConversationLaunchPhase>("idle");
+  const launchTimerRef = useRef<number | null>(null);
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([]);
   /**
    * Which thread the buffer above belongs to.
@@ -867,6 +873,10 @@ export function TravelAgentChat({
     };
   }, [open, conversation.isLoading, messages.length]);
 
+  useEffect(() => () => {
+    if (launchTimerRef.current !== null) window.clearTimeout(launchTimerRef.current);
+  }, []);
+
   useEffect(() => {
     if (!docked) return;
     const node = panelScrollRef.current;
@@ -930,6 +940,27 @@ export function TravelAgentChat({
 
   function collapseConversation() {
     onDismiss();
+  }
+
+  function openConversationWithLaunch() {
+    const reduceMotion = typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (docked || reduceMotion) {
+      onOpen();
+      return;
+    }
+    if (launchTimerRef.current !== null) window.clearTimeout(launchTimerRef.current);
+    // First mount the compact screen and rocket, then advance one paint later
+    // so CSS has a real start and end state to interpolate between.
+    setConversationLaunchPhase("preparing");
+    onOpen();
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => setConversationLaunchPhase("launching"));
+    });
+    launchTimerRef.current = window.setTimeout(() => {
+      setConversationLaunchPhase("idle");
+      launchTimerRef.current = null;
+    }, 720);
   }
 
   function dismissStartPlanningCard() {
@@ -1525,7 +1556,9 @@ export function TravelAgentChat({
   if (!open) {
     return (
       <>
-        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-[184px] right-4 z-40 px-3 py-1.5 text-[11px] font-extrabold wanderly-cosmos-control wanderly-crt-control wanderly-r-xs wanderly-press md:right-10">{t("history")}</button>
+        <button type="button" onClick={openConversationWithLaunch} data-wanderly-avoid aria-label={t("history")} title={t("history")} className="wanderly-chat-rocket-button absolute bottom-[201px] right-[25px] z-40 grid size-[44px] place-items-center md:right-[49px]">
+          <span aria-hidden="true" className="wanderly-chat-rocket-body" />
+        </button>
         <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
         {/* The collapsed state is the same terminal as the open one, showing
             only its prompt line. Its bottom offset clears the legs so the
@@ -1546,7 +1579,7 @@ export function TravelAgentChat({
   // as two offsets means it stays true on any viewport height instead of
   // needing a `min()` of guesses per screen size.
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : "wanderly-cosmos-chat wanderly-crt absolute bottom-[88px] left-1/2 z-50 flex h-[52dvh] min-h-[290px] w-[min(calc(100%-4.5rem),560px)] -translate-x-1/2 flex-col overflow-visible md:left-auto md:right-10 md:top-[112px] md:h-auto md:min-h-0 md:w-[min(42vw,560px)] md:translate-x-0"}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} data-launch-phase={conversationLaunchPhase} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : `wanderly-cosmos-chat wanderly-crt absolute bottom-[88px] left-1/2 z-50 flex h-[52dvh] min-h-[290px] w-[min(calc(100%-4.5rem),560px)] -translate-x-1/2 flex-col overflow-visible md:left-auto md:right-10 md:top-[112px] md:h-auto md:min-h-0 md:w-[min(42vw,560px)] md:translate-x-0${conversationLaunchPhase === "idle" ? "" : " wanderly-cosmos-chat--launch"}`}>
       {/* The open chat floats directly above the crater; only its input gains
           a physical surface, so it does not read as a second dialogue box. */}
       <div className={`relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>
@@ -2125,7 +2158,21 @@ export function TravelAgentChat({
     </aside>
   );
 
-  return conversationPanel;
+  return (
+    <>
+      {!docked && conversationLaunchPhase !== "idle" ? <RocketLaunchOverlay phase={conversationLaunchPhase} /> : null}
+      {conversationPanel}
+    </>
+  );
+}
+
+function RocketLaunchOverlay({ phase }: { phase: Exclude<ConversationLaunchPhase, "idle"> }) {
+  return (
+    <div aria-hidden="true" className={`wanderly-chat-rocket-launch wanderly-chat-rocket-launch--${phase}`}>
+      <span className="wanderly-chat-rocket-flame" />
+      <span className="wanderly-chat-rocket-body" />
+    </div>
+  );
 }
 
 function isFlightPreferenceComplete(draft: FlightPreferenceDraft): draft is Required<FlightPreferenceDraft> {
