@@ -2,6 +2,12 @@ import type { FlightOffer, StayOffer, PlanDiff } from "../types/domain.js";
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace, ConversationResponseMode } from "../types/schemas.js";
 import type { PersonalTripContext } from "../skills/personal/personal-trip-context-schema.js";
+import type {
+  FlightOfferCueInputCandidate,
+  FlightOfferCueDecisionResult,
+  HotelOfferCueInputCandidate,
+  HotelOfferCueDecisionResult,
+} from "./llm-gateway.js";
 
 export type ConversationIntent = "auto_intro" | "user_typed" | "preferences_saved" | "brief_saved";
 
@@ -325,6 +331,28 @@ export interface ModelGateway {
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<DestinationCueDecisionResult | null>;
+
+  // Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+  // docs/hotel-offer-cue-model-draft.md). Required for the same reason as
+  // `decideDestinationCue` — a partial gateway cannot silently answer
+  // null for every DRAFT trip without surfacing in the build.
+  decideFlightOfferCue(params: {
+    question: string;
+    offerSetId: string;
+    candidates: FlightOfferCueInputCandidate[];
+    locale: "en" | "zh";
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<FlightOfferCueDecisionResult | null>;
+
+  decideHotelOfferCue(params: {
+    question: string;
+    offerSetId: string;
+    candidates: HotelOfferCueInputCandidate[];
+    locale: "en" | "zh";
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<HotelOfferCueDecisionResult | null>;
 
   /**
    * S4: generate a single non-personalized short introduction for a

@@ -252,6 +252,95 @@ const TRIP_BRIEF_EXTRACTION_RULES = [
 ];
 
 const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v3";
+
+// ─── Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+//     docs/hotel-offer-cue-model-draft.md) ──────────────────────────────────
+// Stage 3 production path: the resolver hands the model the current USER
+// message + a bounded projection of offers the user has already seen. The
+// model returns PROPOSE | NO_CUE | NEEDS_CLARIFICATION plus zero-or-more
+// candidates (each carrying an opaque candidateRef and an intent). The
+// resolver then re-checks freshness, ownership, and same-scope dedup —
+// model output never writes Trip state directly.
+
+export const OFFER_CUE_REASON_CODES = [
+  "EXPLICIT_SELECTION", "STRONG_SELECTION",
+  "INSPECT_ONLY", "COMPARE_ONLY",
+  "REJECTED", "SEARCH_AGAIN",
+  "AMBIGUOUS_REFERENCE", "NO_SELECTION_INTENT",
+] as const;
+
+export const offerCueDecisionSchema = z.object({
+  decision: z.enum(["PROPOSE", "NO_CUE", "NEEDS_CLARIFICATION"]),
+  candidates: z.array(z.object({
+    candidateRef: z.string().uuid(),
+    intent: z.enum(["EXPLICIT_SELECT", "STRONG_PREFERENCE"]),
+  }).strict()).max(5),
+  reasonCode: z.enum(OFFER_CUE_REASON_CODES),
+}).strict().superRefine((value, ctx) => {
+  if (value.decision === "PROPOSE" && value.candidates.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "PROPOSE requires candidates" });
+  }
+  if (value.decision !== "PROPOSE" && value.candidates.length !== 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "NO_CUE/NEEDS_CLARIFICATION cannot carry candidates" });
+  }
+});
+
+export interface FlightOfferCueInputCandidate {
+  candidateRef: string;
+  ordinal: number;
+  routeKey: string;
+  carrierCode: string;
+  flightNumber: string | null;
+  departureAt: string;
+  arrivalAt: string;
+  totalDuration: string;
+  totalPrice: number;
+  currency: string;
+  stopCount: number;
+}
+
+export interface HotelOfferCueInputCandidate {
+  candidateRef: string;
+  ordinal: number;
+  stayKey: string;
+  propertyName: string;
+  checkIn: string;
+  checkOut: string;
+  pricePerNight: number;
+  totalPrice: number;
+  currency: string;
+  cancellationSummary: string | null;
+  roomSummary: string | null;
+  taxStatus: "INCLUDED" | "PARTIAL" | "UNKNOWN";
+}
+
+export interface FlightOfferCueDecisionResult {
+  decision: z.infer<typeof offerCueDecisionSchema>;
+  modelVersion: string;
+  promptVersion: string;
+}
+
+export type HotelOfferCueDecisionResult = FlightOfferCueDecisionResult;
+
+const FLIGHT_OFFER_CUE_PROMPT_VERSION = "flight-offer-cue/v1";
+const HOTEL_OFFER_CUE_PROMPT_VERSION = "hotel-offer-cue/v1";
+
+const FLIGHT_OFFER_CUE_SYSTEM_PROMPT = [
+  "You decide whether the traveller's current message is selecting one specific flight offer from the bounded list the user has already seen.",
+  "Inputs: currentMessage (the traveller's text), offers (up to 5 flight options with carrierCode, flightNumber, departureAt, arrivalAt, totalDuration, totalPrice bucketed, stopCount, routeKey).",
+  "Output exactly one JSON object: { decision: PROPOSE|NO_CUE|NEEDS_CLARIFICATION, candidates: [{ candidateRef, intent: EXPLICIT_SELECT|STRONG_PREFERENCE }], reasonCode }.",
+  "Constraints: candidates must come from the provided offers; same routeKey at most once; PROPOSE requires at least 1 candidate; NO_CUE and NEEDS_CLARIFICATION must carry zero candidates.",
+  "Map EXPLICIT_SELECT (e.g. '订这班', 'first flight', 'CA1234 吧') and STRONG_PREFERENCE (e.g. 'the cheapest direct', 'the morning one') to PROPOSE.",
+  "Map INSPECT_ONLY ('what time?', 'any baggage?'), COMPARE_ONLY ('which is cheaper?'), REJECTED ('too early'), SEARCH_AGAIN ('something else'), AMBIGUOUS_REFERENCE ('that one' with no resolvable ref), NO_SELECTION_INTENT ('great flight') to NO_CUE.",
+  "NEEDS_CLARIFICATION is required when the message implies a selection but the candidates cannot disambiguate (e.g. 'first or second' when both share a routeKey, or 'the early one' with multiple matching candidates).",
+  "Never output free-text rationale, provider IDs, URLs, or fields not in the input.",
+].join(" ");
+
+const HOTEL_OFFER_CUE_SYSTEM_PROMPT = FLIGHT_OFFER_CUE_SYSTEM_PROMPT
+  .replace("flight", "hotel")
+  .replace("flight options", "hotel options")
+  .replace("carrierCode, flightNumber, departureAt, arrivalAt", "propertyName, checkIn, checkOut, pricePerNight, totalPrice bucketed, taxStatus, stayKey")
+  .replace("routeKey", "stayKey");
 const DESTINATION_CUE_SYSTEM_PROMPT = [
   "Classify ONLY the owner's current message for owner-only destination confirmation or exclusion.",
   "Return exactly one JSON object with candidates, isNeutralMultiCityList, and reasonCode.",
@@ -2262,6 +2351,120 @@ export class LLMGateway implements ModelGateway {
         decision: parsed.data,
         modelVersion: this.options.modelName,
         promptVersion: DESTINATION_CUE_PROMPT_VERSION,
+      };
+    } catch (error) {
+      return giveUp((error as Error)?.name === "TimeoutError" ? "TIMEOUT" : "UPSTREAM_FAILURE");
+    }
+  }
+
+  async decideFlightOfferCue(params: {
+    question: string;
+    offerSetId: string;
+    candidates: FlightOfferCueInputCandidate[];
+    locale: "en" | "zh";
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<FlightOfferCueDecisionResult | null> {
+    const ctx = params.ctx ?? this.options.ctx;
+    const start = Date.now();
+    const giveUp = (errorCode: string): null => {
+      logSafeRuntimeEvent(ctx, {
+        component: "llm",
+        event: "flight_offer_cue_decision",
+        operation: "flight.offer.cue.decide",
+        outcome: "failure",
+        errorCode,
+        latencyMs: Date.now() - start,
+        promptVersion: FLIGHT_OFFER_CUE_PROMPT_VERSION,
+      });
+      return null;
+    };
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch {
+      return giveUp("CLIENT_UNAVAILABLE");
+    }
+    try {
+      const response = await client.chat.completions.parse({
+        model: this.options.modelName,
+        messages: [
+          { role: "system", content: FLIGHT_OFFER_CUE_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: JSON.stringify({
+              currentMessage: params.question,
+              offerSetId: params.offerSetId,
+              offers: params.candidates,
+              locale: params.locale,
+            }),
+          },
+        ],
+        response_format: { type: "json_object" },
+      }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+      const parsed = offerCueDecisionSchema.safeParse(completionPayload(response.choices[0]?.message));
+      if (!parsed.success) return giveUp("MALFORMED_DECISION");
+      return {
+        decision: parsed.data,
+        modelVersion: this.options.modelName,
+        promptVersion: FLIGHT_OFFER_CUE_PROMPT_VERSION,
+      };
+    } catch (error) {
+      return giveUp((error as Error)?.name === "TimeoutError" ? "TIMEOUT" : "UPSTREAM_FAILURE");
+    }
+  }
+
+  async decideHotelOfferCue(params: {
+    question: string;
+    offerSetId: string;
+    candidates: HotelOfferCueInputCandidate[];
+    locale: "en" | "zh";
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<HotelOfferCueDecisionResult | null> {
+    const ctx = params.ctx ?? this.options.ctx;
+    const start = Date.now();
+    const giveUp = (errorCode: string): null => {
+      logSafeRuntimeEvent(ctx, {
+        component: "llm",
+        event: "hotel_offer_cue_decision",
+        operation: "hotel.offer.cue.decide",
+        outcome: "failure",
+        errorCode,
+        latencyMs: Date.now() - start,
+        promptVersion: HOTEL_OFFER_CUE_PROMPT_VERSION,
+      });
+      return null;
+    };
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch {
+      return giveUp("CLIENT_UNAVAILABLE");
+    }
+    try {
+      const response = await client.chat.completions.parse({
+        model: this.options.modelName,
+        messages: [
+          { role: "system", content: HOTEL_OFFER_CUE_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: JSON.stringify({
+              currentMessage: params.question,
+              offerSetId: params.offerSetId,
+              offers: params.candidates,
+              locale: params.locale,
+            }),
+          },
+        ],
+        response_format: { type: "json_object" },
+      }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+      const parsed = offerCueDecisionSchema.safeParse(completionPayload(response.choices[0]?.message));
+      if (!parsed.success) return giveUp("MALFORMED_DECISION");
+      return {
+        decision: parsed.data,
+        modelVersion: this.options.modelName,
+        promptVersion: HOTEL_OFFER_CUE_PROMPT_VERSION,
       };
     } catch (error) {
       return giveUp((error as Error)?.name === "TimeoutError" ? "TIMEOUT" : "UPSTREAM_FAILURE");

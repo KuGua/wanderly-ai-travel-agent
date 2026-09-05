@@ -48,6 +48,12 @@ import {
   type ResolvedOfferCueDecision,
 } from "../../services/offer-cue-service.js";
 import { getUserMessageSequenceForRun } from "../../services/personal-research-sequence.js";
+import { listVisibleOfferCandidatesForThread } from "../../services/personal-research-offer-candidate-service.js";
+import { modelGateway } from "../../providers/gateway-factory.js";
+import {
+  incrementOfferCueMetrics,
+  observeOfferCueResolverDuration,
+} from "../../observability/metrics-counters.js";
 import type { AgentStreamEvent } from "../../types/schemas.js";
 import { personalResearchHotelDraftSchema, personalResearchFlightDraftSchema } from "../../types/schemas.js";
 import type { ConversationResponseConstraint, ModelToolDefinition, ModelToolDispatcher, TripBriefProposal } from "../../providers/model-gateway.js";
@@ -195,13 +201,13 @@ function offerCueEnabledFor(capability: "flight" | "hotel"): boolean {
 }
 
 /**
- * Resolver entry point for Flight / Hotel Offer Cue. Stage 2 returns null
- * (no model wired yet); Stage 3 calls `gateway.decideFlightOfferCue` /
- * `gateway.decideHotelOfferCue` with the bounded visible-candidate
- * projection. Always fail-closed: a resolver failure must never block
- * the conversation reply.
+ * Resolver entry point for Flight / Hotel Offer Cue (Stage 3). Loads the
+ * bounded visible-candidate projection, calls the model gateway, then
+ * re-validates freshness / ownership / same-scope dedup before returning
+ * a `ResolvedOfferCueDecision`. Always fail-closed: a resolver failure
+ * must never block the conversation reply.
  */
-async function resolveOfferCueForTurn(_params: {
+async function resolveOfferCueForTurn(params: {
   ctx: { ctx: RequestContext; policyGate: DefaultPolicyGate };
   run: AgentTaskRow;
   capability: "flight" | "hotel";
@@ -210,8 +216,122 @@ async function resolveOfferCueForTurn(_params: {
   currentUserMessageSequence: number;
   signal: AbortSignal;
 }): Promise<ResolvedOfferCueDecision | null> {
-  // Stage 2 stub: keep promise contract; Stage 3 replaces with the model call.
-  return Promise.resolve(null);
+  if (!params.run.tripId || !params.run.threadId) return null;
+  const visible = await listVisibleOfferCandidatesForThread({
+    threadId: params.run.threadId,
+    ownerUserId: params.run.createdByUserId,
+    capability: params.capability,
+    beforeMessageSequence: params.currentUserMessageSequence,
+    now: new Date(),
+  });
+  if (visible.length === 0) {
+    incrementOfferCueMetrics({ capability: params.capability, metric: "decision", outcome: "no_candidates" });
+    return null;
+  }
+  const offerSetId = visible[0]!.offerSetId;
+  const inputCandidates = visible.map((row) => ({
+    candidateRef: row.candidateRef,
+    ordinal: row.ordinal,
+    ...(params.capability === "flight"
+      ? {
+          routeKey: row.routeKey ?? "",
+          carrierCode: typeof row.normalizedOfferJson.carrierCode === "string" ? row.normalizedOfferJson.carrierCode : "",
+          flightNumber: typeof row.normalizedOfferJson.flightNumber === "string" ? row.normalizedOfferJson.flightNumber : null,
+          departureAt: typeof row.normalizedOfferJson.departureAt === "string" ? row.normalizedOfferJson.departureAt : "",
+          arrivalAt: typeof row.normalizedOfferJson.arrivalAt === "string" ? row.normalizedOfferJson.arrivalAt : "",
+          totalDuration: typeof row.normalizedOfferJson.totalDuration === "string" ? row.normalizedOfferJson.totalDuration : "",
+          totalPrice: typeof row.normalizedOfferJson.totalPrice === "number" ? row.normalizedOfferJson.totalPrice : 0,
+          currency: typeof row.normalizedOfferJson.currency === "string" ? row.normalizedOfferJson.currency : "USD",
+          stopCount: typeof row.normalizedOfferJson.stopCount === "number" ? row.normalizedOfferJson.stopCount : 0,
+        }
+      : {
+          stayKey: row.stayKey ?? "",
+          propertyName: typeof row.normalizedOfferJson.propertyName === "string" ? row.normalizedOfferJson.propertyName : "",
+          checkIn: typeof row.normalizedOfferJson.checkIn === "string" ? row.normalizedOfferJson.checkIn : "",
+          checkOut: typeof row.normalizedOfferJson.checkOut === "string" ? row.normalizedOfferJson.checkOut : "",
+          pricePerNight: typeof row.normalizedOfferJson.pricePerNight === "number" ? row.normalizedOfferJson.pricePerNight : 0,
+          totalPrice: typeof row.normalizedOfferJson.totalPrice === "number" ? row.normalizedOfferJson.totalPrice : 0,
+          currency: typeof row.normalizedOfferJson.currency === "string" ? row.normalizedOfferJson.currency : "USD",
+          cancellationSummary: typeof row.normalizedOfferJson.cancellationSummary === "string" ? row.normalizedOfferJson.cancellationSummary : null,
+          roomSummary: typeof row.normalizedOfferJson.roomSummary === "string" ? row.normalizedOfferJson.roomSummary : null,
+          taxStatus: (row.normalizedOfferJson.taxStatus === "INCLUDED" || row.normalizedOfferJson.taxStatus === "PARTIAL" ? row.normalizedOfferJson.taxStatus : "UNKNOWN") as "INCLUDED" | "PARTIAL" | "UNKNOWN",
+        }),
+  }));
+
+  const gateway = modelGateway();
+  const start = Date.now();
+  const timeoutSignal = AbortSignal.timeout(9_000);
+  const signal = AbortSignal.any([params.signal, timeoutSignal]);
+  let result: { decision: { decision: "PROPOSE" | "NO_CUE" | "NEEDS_CLARIFICATION"; candidates: Array<{ candidateRef: string; intent: "EXPLICIT_SELECT" | "STRONG_PREFERENCE" }>; reasonCode: string }; modelVersion: string; promptVersion: string } | null = null;
+  try {
+    if (params.capability === "flight") {
+      const flightResult = await gateway.decideFlightOfferCue({
+        question: params.question,
+        offerSetId,
+        candidates: inputCandidates as unknown as Parameters<typeof gateway.decideFlightOfferCue>[0]["candidates"],
+        locale: params.locale,
+        signal,
+        ctx: params.ctx.ctx,
+      });
+      result = flightResult;
+    } else {
+      const hotelResult = await gateway.decideHotelOfferCue({
+        question: params.question,
+        offerSetId,
+        candidates: inputCandidates as unknown as Parameters<typeof gateway.decideHotelOfferCue>[0]["candidates"],
+        locale: params.locale,
+        signal,
+        ctx: params.ctx.ctx,
+      });
+      result = hotelResult;
+    }
+  } catch {
+    observeOfferCueResolverDuration({ capability: params.capability, outcome: "upstream_failure", durationMs: Date.now() - start });
+    return null;
+  }
+  if (!result) {
+    observeOfferCueResolverDuration({ capability: params.capability, outcome: "upstream_failure", durationMs: Date.now() - start });
+    return null;
+  }
+  observeOfferCueResolverDuration({ capability: params.capability, outcome: "success", durationMs: Date.now() - start });
+
+  if (result.decision.decision === "NO_CUE" || result.decision.decision === "NEEDS_CLARIFICATION") {
+    incrementOfferCueMetrics({
+      capability: params.capability,
+      metric: "decision",
+      outcome: result.decision.decision === "NEEDS_CLARIFICATION" ? "needs_clarification" : "no_candidates",
+    });
+    return null;
+  }
+
+  const eligible: ResolvedOfferCueDecision["candidates"] = [];
+  const seenScope = new Set<string>();
+  for (const candidate of result.decision.candidates) {
+    const row = visible.find((r) => r.candidateRef === candidate.candidateRef);
+    if (!row) continue;
+    const scopeKey = params.capability === "flight" ? row.routeKey : row.stayKey;
+    if (scopeKey && seenScope.has(scopeKey)) {
+      incrementOfferCueMetrics({ capability: params.capability, metric: "decision", outcome: "skipped_duplicate" });
+      continue;
+    }
+    if (scopeKey) seenScope.add(scopeKey);
+    eligible.push({
+      ordinal: eligible.length,
+      candidateRef: row.candidateRef,
+      intent: candidate.intent,
+      routeKey: row.routeKey,
+      stayKey: row.stayKey,
+    });
+    if (eligible.length >= 5) break;
+  }
+  if (eligible.length === 0) return null;
+  return {
+    capability: params.capability,
+    candidates: eligible,
+    reasonCode: result.decision.reasonCode as ResolvedOfferCueDecision["reasonCode"],
+    modelVersion: result.modelVersion,
+    promptVersion: result.promptVersion,
+  };
 }
 
 /**
