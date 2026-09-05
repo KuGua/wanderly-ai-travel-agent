@@ -258,7 +258,7 @@ export async function processNextAgentTask(): Promise<boolean> {
       if (output.destinationCueDecision) {
         try {
           const decision = await output.destinationCueDecision;
-          const cue = decision ? await persistDestinationCue({ run, decision }) : null;
+          const cue = decision && decision.candidates.length > 0 ? await persistDestinationCue({ run, decision }) : null;
           if (cue) {
             await publishAgentStreamEvent({
               event: "destination.cue_ready",

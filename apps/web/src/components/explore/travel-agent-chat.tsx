@@ -1081,7 +1081,10 @@ export function TravelAgentChat({
     ? "bg-card text-[var(--w-ink)] wanderly-edge"
     : "wanderly-cosmos-surface";
   const userBubbleClass = docked
-    ? "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
+    // A block-level bubble filled the whole chat column before `ml-auto` had
+    // any visible effect. Fit the message first, then anchor that fitted box
+    // to the right; long replies still grow until the readable 86% cap.
+    ? "ml-auto w-fit max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
     // The globe bubble's fill, edge, radius and tail live in globals.css: it is
     // the one place in the app drawn as a classic iMessage bubble rather than
     // in the system's irregular-radius, hard-ink-edge language.
@@ -1118,7 +1121,16 @@ export function TravelAgentChat({
   // showed. A conversation once proposed an end date two years before its
   // start, and the traveller had no way to see it — the button simply failed.
   // What is about to be saved has to be legible before the click.
-  const briefDates = formatBriefDates(fmt, briefProposal);
+  const briefDates = formatBriefDates(fmt, actionableBriefProposal);
+  const briefDetails = [
+    actionableBriefProposal?.departureCities?.length
+      ? t("briefProposalDeparture", { cities: fmt.list(actionableBriefProposal.departureCities, { type: "conjunction" }) })
+      : null,
+    briefDates ? t("briefProposalDates", { dates: briefDates }) : null,
+    actionableBriefProposal?.travelDays !== undefined
+      ? t("briefProposalDays", { count: actionableBriefProposal.travelDays })
+      : null,
+  ].filter((detail): detail is string => Boolean(detail)).join(" · ");
   const activeDestinationCandidate = destinationCue?.candidates[destinationCueIndex] ?? null;
   // A broad brief review must never compete with an already-open precise
   // confirmation. Resolve destination, flight, and hotel cards first.
@@ -1600,9 +1612,9 @@ export function TravelAgentChat({
               <div className={onGlobe ? "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-1" : undefined}>
                 <p className={`${onGlobe ? "min-w-0 text-xs leading-4" : "mb-2 px-0.5 text-sm"} font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
                   {t("briefProposalDetailsQuestion")}
-                  {briefDates ? (
+                  {briefDetails ? (
                     <span className={`block font-semibold ${onGlobe ? "text-[10px] leading-4" : "mt-0.5 text-xs"} ${docked ? "text-muted-foreground" : "text-[var(--w-space-muted)]"}`}>
-                      {briefDates}
+                      {briefDetails}
                     </span>
                   ) : null}
                 </p>

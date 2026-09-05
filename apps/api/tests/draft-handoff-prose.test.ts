@@ -163,4 +163,11 @@ describe("conversation prose defers to the DRAFT handoff block", () => {
     expect(prose).toContain("canStartSharedPlanning");
     expect(prose).toContain("missingFields");
   });
+
+  it("requires concrete dates rather than treating a season or month as a trip fact", () => {
+    expect(prose).toContain("具体出行日期");
+    expect(prose).toContain("至少出发日，以及返程日或总天数");
+    expect(prose).toContain("重复这一具体日期要求");
+    expect(prose).not.toContain("大致月份或季节就够");
+  });
 });
