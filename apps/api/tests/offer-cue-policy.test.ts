@@ -47,6 +47,17 @@ describe("evaluateOfferCuePromptPolicy", () => {
     })).toEqual({ eligible: false, reason: "DAILY_LIMIT" });
   });
 
+  it("allows only a model-classified explicit selection to bypass suppression", () => {
+    expect(evaluateOfferCuePromptPolicy({
+      cooldownUntil: new Date(FIXED_NOW.getTime() + 29 * 60_000),
+      dismissalDay: "2026-09-05",
+      dailyDismissalCount: 3,
+      timeZone: "UTC",
+      now: FIXED_NOW,
+      explicitSelection: true,
+    })).toEqual({ eligible: true, reason: "EXPLICIT_BYPASS" });
+  });
+
   it("two dismissals in the same day stay eligible (third is the cap)", () => {
     expect(evaluateOfferCuePromptPolicy({
       cooldownUntil: null,

@@ -325,7 +325,7 @@ export type HotelOfferCueDecisionResult = FlightOfferCueDecisionResult;
 const FLIGHT_OFFER_CUE_PROMPT_VERSION = "flight-offer-cue/v1";
 const HOTEL_OFFER_CUE_PROMPT_VERSION = "hotel-offer-cue/v1";
 
-const FLIGHT_OFFER_CUE_SYSTEM_PROMPT = [
+export const FLIGHT_OFFER_CUE_SYSTEM_PROMPT = [
   "You decide whether the traveller's current message is selecting one specific flight offer from the bounded list the user has already seen.",
   "Inputs: currentMessage (the traveller's text), offers (up to 5 flight options with carrierCode, flightNumber, departureAt, arrivalAt, totalDuration, totalPrice bucketed, stopCount, routeKey).",
   "Output exactly one JSON object: { decision: PROPOSE|NO_CUE|NEEDS_CLARIFICATION, candidates: [{ candidateRef, intent: EXPLICIT_SELECT|STRONG_PREFERENCE }], reasonCode }.",
@@ -336,11 +336,16 @@ const FLIGHT_OFFER_CUE_SYSTEM_PROMPT = [
   "Never output free-text rationale, provider IDs, URLs, or fields not in the input.",
 ].join(" ");
 
-const HOTEL_OFFER_CUE_SYSTEM_PROMPT = FLIGHT_OFFER_CUE_SYSTEM_PROMPT
-  .replace("flight", "hotel")
-  .replace("flight options", "hotel options")
-  .replace("carrierCode, flightNumber, departureAt, arrivalAt", "propertyName, checkIn, checkOut, pricePerNight, totalPrice bucketed, taxStatus, stayKey")
-  .replace("routeKey", "stayKey");
+export const HOTEL_OFFER_CUE_SYSTEM_PROMPT = [
+  "You decide whether the traveller's current message is selecting one specific hotel offer from the bounded list the user has already seen.",
+  "Inputs: currentMessage (the traveller's text), offers (up to 5 hotel options with propertyName, checkIn, checkOut, pricePerNight, totalPrice bucketed, taxStatus, stayKey).",
+  "Output exactly one JSON object: { decision: PROPOSE|NO_CUE|NEEDS_CLARIFICATION, candidates: [{ candidateRef, intent: EXPLICIT_SELECT|STRONG_PREFERENCE }], reasonCode }.",
+  "Constraints: candidates must come from the provided offers; same stayKey at most once; PROPOSE requires at least 1 candidate; NO_CUE and NEEDS_CLARIFICATION must carry zero candidates.",
+  "Map EXPLICIT_SELECT (e.g. '订这家', '第一家吧', '就住外滩那家') and STRONG_PREFERENCE (e.g. '带免费取消的那家最合适', '市中心那家就它') to PROPOSE.",
+  "Map INSPECT_ONLY ('有早餐吗?', '离地铁多远?'), COMPARE_ONLY ('哪家更便宜?'), REJECTED ('太贵了'), SEARCH_AGAIN ('换个区域'), AMBIGUOUS_REFERENCE ('那家' with no resolvable ref), NO_SELECTION_INTENT ('这家不错') to NO_CUE.",
+  "NEEDS_CLARIFICATION is required when the message implies a selection but the candidates cannot disambiguate (e.g. '第一家还是第二家' for the same stayKey, or '市中心那家' with multiple matching candidates).",
+  "Never output free-text rationale, provider IDs, URLs, or fields not in the input.",
+].join(" ");
 const DESTINATION_CUE_SYSTEM_PROMPT = [
   "Classify ONLY the owner's current message for owner-only destination confirmation or exclusion.",
   "Return exactly one JSON object with candidates, isNeutralMultiCityList, and reasonCode.",

@@ -16,7 +16,7 @@ const MINIMUM_REPROMPT_MS = 30 * 60 * 1000;
 export const OFFER_CUE_DAILY_DISMISSAL_LIMIT = 3;
 export const OFFER_CUE_COOLDOWN_MS = MINIMUM_REPROMPT_MS;
 
-export type OfferCuePromptPolicyReason = "ELIGIBLE" | "COOLDOWN" | "DAILY_LIMIT";
+export type OfferCuePromptPolicyReason = "ELIGIBLE" | "EXPLICIT_BYPASS" | "COOLDOWN" | "DAILY_LIMIT";
 
 export interface OfferCuePromptPolicyInput {
   cooldownUntil: Date | null;
@@ -24,6 +24,8 @@ export interface OfferCuePromptPolicyInput {
   dailyDismissalCount: number;
   timeZone: string;
   now: Date;
+  /** Set only from the structured model's `EXPLICIT_SELECT` output. */
+  explicitSelection?: boolean;
 }
 
 export interface OfferCuePromptPolicyResult {
@@ -32,6 +34,10 @@ export interface OfferCuePromptPolicyResult {
 }
 
 export function evaluateOfferCuePromptPolicy(input: OfferCuePromptPolicyInput): OfferCuePromptPolicyResult {
+  // A model-classified explicit selection is a direct request to save an
+  // already visible offer. It may bypass prompt-fatigue suppression, but the
+  // resolver still performs all owner/thread/freshness/scope checks.
+  if (input.explicitSelection) return { eligible: true, reason: "EXPLICIT_BYPASS" };
   if (input.cooldownUntil && input.cooldownUntil.getTime() > input.now.getTime()) {
     return { eligible: false, reason: "COOLDOWN" };
   }

@@ -1,6 +1,6 @@
 # Hotel Offer Cue Decision Model
 
-**状态：** 已确认的实施设计；尚未创建模型、迁移、接口或业务代码。
+**状态：** 已在 `develop` 落地为可开关能力：候选投影、additive migration、结构化模型、服务端 resolver/policy、REST/SSE、owner-only selection 与 Web 确认卡均已实现。运行时须将 `OFFER_CUE_ENABLED=true`，并可用 `OFFER_CUE_ENABLED_CAPABILITIES=flight,hotel` 按能力灰度；默认关闭时不会创建或推送 Flight/Hotel Cue。
 **范围：** 在 owner 的私有聊天中，判断何时显示 `Stay in this hotel?`，并安全保存用户已确认的住宿选择。它不是酒店搜索触发、目的地确认、整体 Plan adoption 或预订。
 **关联文档：** [Destination Cue Decision Model](destination-cue-model-draft.md)、[Flight Offer Cue Decision Model](flight-offer-cue-model-draft.md)、[Hotel Search Tool](hotel-search-tool-implementation.md)。
 
@@ -124,6 +124,7 @@ DELETE /api/v1/threads/:threadId/offer-selections/:selectionId
 
 - `hotel` 独立应用 30 分钟 cooldown；同一 owner + Trip 的当日第三次 dismiss 后，静默到该用户本地自然日结束。
 - 被模型判为明确选择的文本允许绕过静默，但绝不允许服务端用关键词自行判为明确。
+- 同一聊天中同时存在多类开放确认时，呈现顺序固定为 **Destination → Flight → Hotel**。目的地卡可用自身的上/下一个箭头逐项浏览其候选；箭头只切换目的地候选，不指向、跳转或确认 Flight/Hotel 卡片。
 - Hotel Cue 与 Destination Cue 可以同屏编排，但永远是独立写入。接受酒店不会自动把酒店所在城市写为 Trip destination。
 - `dismiss` 只意味着“不显示这次采用确认”，不等同“不要这家酒店”，不影响未来用户重新搜索。
 - 本能力不改变酒店搜索本身的自动查询规则；`Stay in this hotel?` 只在用户看到结果、并在后续明确选择时出现。
