@@ -105,7 +105,7 @@ type PlaceSearchOutput =
   | { outcome: "UNAVAILABLE"; code: ProviderUnavailableCode };
 ```
 
-服务端从 `destinationId` 解析城市/国家偏置，限制每次最多 5 个结果、每 run 最多 6 次 place search、总字符/超时预算与 provider rate limit。候选只在当前 `runId` 有效；LLM 只能在后续 tool call 传回同 run `candidateId`。低置信度、国家不匹配或目的地外候选必须标为 `needsUserConfirmation`，不得自动成为 ACTIVE place。
+服务端从 `destinationId` 解析城市/国家偏置，限制每次最多 5 个结果、每 run 最多 6 次 place search、总字符/超时预算与 provider rate limit。「最多 5 个结果」由 `place-search-service.ts` 的 `PLACE_SEARCH_MAX_RESULTS` 在**服务端**收口，不依赖任何单个 provider 的内部上界——仓库内两个 place provider 都返回至多 10 条，而 skill 输出契约是 1..5；2026-09-05 之前这个常量从未被引用，未截断的结果在 skill registry 的输出校验里被拒，且因为拒绝发生在搜索已成功并落库之后，整个能力被报成 provider 故障（见 `docs/test-scenarios.md` TS-SKILL-OUTPUT-CONTRACT）。候选只在当前 `runId` 有效；LLM 只能在后续 tool call 传回同 run `candidateId`。低置信度、国家不匹配或目的地外候选必须标为 `needsUserConfirmation`，不得自动成为 ACTIVE place。
 
 ### 5.2 Shared `navigation.route`
 

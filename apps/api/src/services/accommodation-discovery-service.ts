@@ -36,7 +36,15 @@ export const accommodationEvidenceSchema = z.object({
   longitude: z.number().finite().min(-180).max(180),
   latitude: z.number().finite().min(-90).max(90),
   distanceMeters: z.number().int().nonnegative().nullable(),
-  popularityTier: z.number().int().min(1).max(3).nullable(),
+  // OpenTripMap's own `rate`, passed through unchanged. It rates 1–3 and
+  // reserves the upper band for cultural-heritage listings, so the real
+  // domain is 1..7 — the sibling place provider already normalises against
+  // 7 (`opentripmap-place-provider.ts`). This read `max(3)`, which rejected
+  // every heritage-listed stay; because the rejection happens in the skill
+  // registry's output validation, after the rows are already persisted, the
+  // run reported a provider outage for a search that had in fact succeeded.
+  // 0 means "unrated" upstream and is mapped to null before it gets here.
+  popularityTier: z.number().int().min(1).max(7).nullable(),
   source: z.literal("OpenTripMap"),
   attribution: z.literal("© OpenStreetMap contributors"),
   capturedAt: z.string().datetime({ offset: true }),

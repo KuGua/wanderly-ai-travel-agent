@@ -2470,6 +2470,33 @@ logs could say which parameter it objected to.
   Web mirror, the bounded metric label and the service-gap payload — so the new
   value never blanks a surface through a failed response parse.
 
+### TS-SKILL-OUTPUT-CONTRACT — Skill 输出上界必须容纳 provider 的合法输出
+
+**Objective:** Regression for the same 2026-09-05 trip as `TS-PROVIDER-4XX`.
+`accommodation` 与 `places` 两个能力的 `provider_search_runs` 都是 `LIVE`，
+`provider_offers` 里落了 16 条真实住宿，而共享方案面告诉成员「服务提供方暂时
+不可用」。原因不在供应商：skill handler 跑完并落库之后，skill registry 的
+输出校验拒绝了它自己的结果，异常被编排层的 catch 归类成 provider 故障。
+
+**Steps:**
+
+1. 让 accommodation provider 返回 OpenTripMap 文化遗产波段的 `rate`（5/6/7），
+   经 `accommodation.discover` 的输出契约解析。
+2. 让 place provider 返回其上界 10 条候选，调用 `places.search`。
+3. 核对每个 shared skill 的输出数组上界与其 provider 的结果上界。
+
+**Expected outcomes:**
+
+- 遗产波段评级通过输出校验：`popularityTier` 的域是 1..7（上游 `0` 已在
+  provider 内映射为 `null`），不是 1..3。
+- `places.search` 返回恰好 `PLACE_SEARCH_MAX_RESULTS`（5）条候选，收口发生在
+  服务端而不是某一个 provider 内，因此换 provider 不会重新打开这个缺口。
+- 收口发生在持久化之后：`provider_search_runs` 仍然记录供应商实际的
+  `LIVE` 结果与空 `errorCode`。
+- 逐条核对留痕：activities `limit:5` 对 `.max(5)`、hotel provider 10 对
+  `.max(10)`、accommodation `RESULT_LIMIT=20` 对 `.max(20)` 均一致，
+  places 是唯一错位的一处。
+
 ### TS-PLANNER-RESILIENCE-6 — 慢 provider 不再被报成模型故障
 
 **Objective:** Regression for `docs/shared-agent-findings.md` #32.
