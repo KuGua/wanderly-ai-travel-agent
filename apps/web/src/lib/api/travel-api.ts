@@ -87,6 +87,8 @@ import type {
   DestinationCueActionResponse,
   OfferCueActionInput,
   OfferCueActionResponse,
+  QuoteNationalityDecision,
+  StaySearchAuthorizationDto,
 } from "./contracts";
 
 export interface TravelApi {
@@ -176,7 +178,8 @@ export interface TravelApi {
   listOfferSelections?(threadId: string): Promise<{ selections: import("./contracts").PersonalOfferSelection[] }>;
   deleteOfferSelection?(threadId: string, selectionId: string, input: { requestId: string; expectedVersion: number }): Promise<{ selection: import("./contracts").PersonalOfferSelection | null }>;
   saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput): Promise<TripSearchPreferencesResponse>;
-  startPlanning(tripId: string): Promise<PlanningTaskAcceptedResponse>;
+  startPlanning(tripId: string, quoteNationalityDecision?: QuoteNationalityDecision): Promise<PlanningTaskAcceptedResponse>;
+  listStaySearchAuthorizations?(tripId: string): Promise<StaySearchAuthorizationDto[]>;
   getLatestPlanningRun(tripId: string): Promise<LatestPlanningRunResponse>;
   getTripPlanningRunDetail?(tripId: string, runId: string): Promise<import("./contracts").TripPlanningRunDetailResponse>;
   getLatestPlan(tripId: string): Promise<LatestPlanResponse>;

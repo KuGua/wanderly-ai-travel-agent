@@ -96,6 +96,7 @@ flowchart LR
 ### FR-1 个人资料与私有 Agent
 
 1. 用户可以保存、查看、编辑和删除稳定偏好：预算区间、住宿风格、旅行节奏、兴趣、航班偏好和风险/舒适度取舍。
+1a. 当 Nuitee 酒店报价缺少国籍时，“开始规划/再次规划”必须提供显式国籍选择。用户可单独选择是否把该值保存到私人 Profile；保存与本次 provider-only 报价授权必须在服务端同一事务完成。已有 Profile 国籍只能在用户本次明确确认报价用途后复用，已有有效的本次行程授权则不得再次询问。国籍值不得返回同行、写入客户端持久状态或进入遥测。
 2. 用户可以创建、回看和删除仅自己可访问的私有对话线程；线程归所属用户所有，可选关联一次行程（即`this trip`= 线程创建时绑定的 `tripId`，**不**替代 trip 本身）；同一用户在同一 trip 上可拥有多个线程（例如私有 scratchpad 与个人规划草稿），但每线程的 `ownerUserId` 唯一，其他 trip 成员或 Shared Agent 不得通过 trip 关联读取线程。
 3. 用户可以通过私有对话为本次旅行添加或覆盖偏好；本次覆盖不得静默改写稳定 Profile，且只有用户确认的提案才能写入 Profile 或 trip override。trip override 标记为 `this trip`，与稳定 Profile 严格隔离，且未经独立授权不得自动随 snapshot 共享给同行者。
 4. 系统必须显示每条资料的来源（Profile 或本次对话）和最近修改时间。
@@ -105,7 +106,7 @@ flowchart LR
 7a. `PLANNING` 或 `STALE` Trip 的任一当前成员可在本人私有线程中确认 Personal Agent 生成的非敏感结构化候选；确认只作用于该成员自己的 batch，并原子写入事实、snapshot 与自动 `PLAN`/`REPLAN` 任务。`DRAFT` 对话不得创建 Shared handoff 候选，成员移除后不得读取或确认旧 batch；删除来源私聊必须先失效其待确认候选，再删除正文。
 8. 探索首页进入、新地图浏览、坐标点击和打开聊天不得创建 Trip。用户首次提交聊天消息时，系统必须以幂等单事务创建其 `DRAFT` Trip、默认私有 thread 与初始 membership，再在该 thread 接受 turn。创建成功后，聊天框必须提供到该 Trip Planner 的链接，并携带该服务端返回的 `thread` ID，以便在同一私有对话中继续；不得由客户端猜测 Trip 或 thread ID。Trip Planner 的探索地图入口也必须携带当前私有 thread；Home 仅能在重新查询到该用户拥有、且属于该 Trip 的同一 thread 后显示历史与继续对话，URL 参数本身不授权。DRAFT owner 可经服务端拥有、参数受控的 Personal Flight/Hotel Research 查询私有 provider 结果；该结果不创建 snapshot、Shared Plan 或 booking authority。完整 brief 激活后，Shared provider/tool 才可按 snapshot 进入 planning/replan。普通站内路由返回探索页继续当前浏览器内存会话；新标签页、整页刷新或重新打开探索页开始新会话，除非用户通过上述已授权 Trip 入口显式交接。未发送消息的探索不得持久化为项目。
 9. 未被用户归档、且 `travelDateEnd` 未早于当前 UTC 日期的 Trip 属于活跃行程；首页以“规划中”呈现。归档是独立于 `PLANNING`/`CONFIRMED`/`BOOKED` 等业务状态的可见性属性：用户主动归档或行程结束日期过去后进入归档列表。缺失规划所需字段时，服务端只拒绝相应的 provider/planning 操作并说明缺口，不把行程降为草稿或阻止成员邀请。
-10. 系统可从重复、非敏感旅行行为生成长期偏好**提案**，但提案在用户确认前不是 Profile 事实、不得进入共享 snapshot 或计划输入。已确认的事实不随时间衰减，在用户主动修改或删除前一直有效；行为长期与已确认事实冲突时，系统只能提出"是否更新偏好"的非阻塞建议，并受最少独立观察次数、跨 Trip 数、证据跨度和记忆强度阈值共同约束（见 [长期记忆实施方案](long-term-memory-implementation.md) §3.6）。国籍、旅行证件、出生日期、健康和无障碍信息只能由用户通过 Profile 表单维护，禁止从私有对话或行为自动提取。
+10. 系统可从重复、非敏感旅行行为生成长期偏好**提案**，但提案在用户确认前不是 Profile 事实、不得进入共享 snapshot 或计划输入。已确认的事实不随时间衰减，在用户主动修改或删除前一直有效；行为长期与已确认事实冲突时，系统只能提出"是否更新偏好"的非阻塞建议，并受最少独立观察次数、跨 Trip 数、证据跨度和记忆强度阈值共同约束（见 [长期记忆实施方案](long-term-memory-implementation.md) §3.6）。国籍只能由用户通过 Profile 表单或明确标注“保存到私人 Profile”的报价国籍表单维护；旅行证件、出生日期、健康和无障碍信息只能通过 Profile 表单维护。上述敏感字段均禁止从私有对话或行为自动提取。
 11. 用户可在 Profile 表单显式维护 Personal Note，以记录无法进入字段目录的个人旅行偏好。Personal Note 仅由 owner 的 Personal Agent 在有界上下文中读取；不得进入 Team memory、constraint snapshot、Shared Agent 或 planning，并拒绝证件、健康、联系方式和支付信息等敏感内容。
 11. 用户点击服务端认可的稳定地图地点时，系统可在地点抽屉自动展示按语言共享的短介绍；有效期内不得重复调用 LLM。该内容不得使用任何用户、Profile、Trip、thread 或私聊输入，也不得创建 Draft Trip 或聊天消息。无稳定 `sourceId` 的灵感点不提供该能力。
 12. Personal Agent 可将中英自然语言中的明确“查找/规划”识别为不可执行的个人 research intent，并展示可恢复的 owner 确认卡；低置信度表达保持普通对话或请求澄清。确认后，服务端在该 owner 的单人 Trip snapshot 下接受 durable `RESEARCH` 或 `PROPOSE_PLAN` task；Personal Agent 不直接调用 provider、MCP、数据库或 Shared Skill。酒店 research 必须满足日期、已确认住宿搜索偏好、provider feature gate 及适用的 quote-nationality authorization；路线原始文本必须先经 owner 确认两个地点并采用为可路由 TripPlace，不能以模型猜测或任意旧地点直接执行。`PROPOSE_PLAN` 自动生成首版 `PROPOSED` plan，owner adoption 后才激活。实施合同见 [Personal Research Intent Routing 实施规范](personal-research-intent-routing-implementation.md)。

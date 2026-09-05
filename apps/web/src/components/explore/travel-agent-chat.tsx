@@ -22,6 +22,7 @@ import type {
   PersonalResearchOperationCapability,
   DestinationCue,
   OfferCue,
+  QuoteNationalityDecision,
 } from "@/lib/api/contracts";
 import { FlightOfferCard } from "@/components/trips/flight-offer-card";
 import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
@@ -29,7 +30,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { threadKeys } from "@/lib/query/keys";
 import { TravelApiError } from "@/lib/api/errors";
-import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useMyProfile, useOwnerConversation, useStartPlanning, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
+import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useMyProfile, useOwnerConversation, useStartPlanning, useStaySearchAuthorizations, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { useTravelApi } from "@/lib/query/provider";
 import { Link, useRouter } from "@/i18n/navigation";
@@ -317,6 +318,7 @@ export function TravelAgentChat({
   const [isActingOnOfferCue, setIsActingOnOfferCue] = useState(false);
   const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
   const [isStartingSharedPlan, setIsStartingSharedPlan] = useState(false);
+  const [saveNationalityToProfile, setSaveNationalityToProfile] = useState(true);
   // This is a voluntary pause, not a rejection of the trip brief. A normal
   // follow-up must not repeat the CTA; the named “Start planning” phrase is
   // the deliberate way to bring it back during this chat session.
@@ -678,8 +680,14 @@ export function TravelAgentChat({
   useEffect(() => {
     const status = agentRun.data?.status;
     if (!activeRunId || !status) return;
-    if (status === "COMPLETED" && effectiveThreadId && !completedRunHandledRef.current.has(activeRunId)) {
+    if ((status === "COMPLETED" || status === "COMPLETED_WITH_GAPS")
+      && !completedRunHandledRef.current.has(activeRunId)) {
       completedRunHandledRef.current.add(activeRunId);
+      // Mark terminal before the asynchronous history refresh. A final SSE
+      // delta can re-run this effect and trigger its cleanup while that request
+      // is pending; delaying this marker left activeRunId latched forever.
+      setCompletedStreamRunId(activeRunId);
+      if (!effectiveThreadId) return;
       let active = true;
       void api.getOwnerConversation(effectiveThreadId).then((restored) => {
         // Into the SHARED cache first, and unconditionally — this must land
@@ -706,8 +714,11 @@ export function TravelAgentChat({
           if (assistantMessageId && !streamState.text && assistant?.role === "ASSISTANT" && assistant.content) {
             setRecoveredStream({ runId: activeRunId, assistantMessageId, text: assistant.content });
           }
-          setCompletedStreamRunId(activeRunId);
         }
+      }).catch(() => {
+        // The terminal task status remains authoritative. Query polling or a
+        // later conversation refresh can recover history; the composer must
+        // not stay disabled because this read failed.
       });
       return () => { active = false; };
     }
@@ -774,7 +785,6 @@ export function TravelAgentChat({
     const cues = conversation.data?.pendingOfferCues ?? [];
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFlightOfferCue((current) => cues.find((cue) => cue.capability === "flight") ?? current);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHotelOfferCue((current) => cues.find((cue) => cue.capability === "hotel") ?? current);
   }, [conversation.data?.pendingOfferCues]);
 
@@ -1068,9 +1078,14 @@ export function TravelAgentChat({
       setIsStartingSharedPlan(true);
       setRequestError(null);
       try {
-        const accepted = await startPlanning.mutateAsync();
+        const accepted = await startPlanning.mutateAsync(quoteNationalityDecision
+          ? { quoteNationalityDecision }
+          : undefined);
         setActiveRunId(accepted.runId);
         storeActiveRunId(accepted.runId);
+        if (quoteNationalityDecision?.source === "INPUT" && quoteNationalityDecision.saveToProfile) {
+          await profile.refetch();
+        }
         await trip.refetch();
       } catch (error) {
         setRequestError(error);
@@ -1090,13 +1105,16 @@ export function TravelAgentChat({
         travelDateEnd: currentTrip.travelDateEnd,
         travelDays: currentTrip.travelDays ?? undefined,
         titleLocale,
-        ...(needsGuestNationality && guestNationality ? { guestNationality } : {}),
+        ...(quoteNationalityDecision ? { quoteNationalityDecision } : {}),
       }).then((result) => {
         if (result.planningRun) {
           setActiveRunId(result.planningRun.runId);
           storeActiveRunId(result.planningRun.runId);
         }
       });
+      if (quoteNationalityDecision?.source === "INPUT" && quoteNationalityDecision.saveToProfile) {
+        await profile.refetch();
+      }
       await trip.refetch();
     } catch (error) {
       setRequestError(error);
@@ -1112,15 +1130,11 @@ export function TravelAgentChat({
   // so anything reaching this point with destinations present is a further one.
   const cueIsAdditionalDestination = (trip.data?.trip.destinationCandidates.length ?? 0) > 0;
 
-  // Hotel prices are quoted per nationality, and the server will not guess one:
-  // it takes the traveller's profile value or the one sent here, and the plan
-  // task refuses without it. The server has accepted `guestNationality` since
-  // the quote work landed, but nothing ever asked for it — so anyone whose
-  // profile had none pressed "Start planning", got a 422, and read only
-  // "这条消息暂时无法被接受".
-  // Only the workspace renders the card that can ask, so the globe has no
-  // reason to fetch a profile it will never read.
+  // Profile storage and provider use are distinct decisions. The server reads
+  // PROFILE values itself; INPUT can be saved only through the explicit choice
+  // below. Existing trip-scoped authorization is authoritative for a retry.
   const profile = useMyProfile({ enabled: Boolean(tripId) && !onGlobe });
+  const staySearchAuthorizations = useStaySearchAuthorizations(!onGlobe ? tripId : null);
   const [guestNationality, setGuestNationality] = useState("");
   // Until the profile answers, whether a nationality is needed is unknown —
   // and an enabled button during that window is the same 422 with extra steps.
@@ -1148,6 +1162,39 @@ export function TravelAgentChat({
   // trip with no plan accepts a fresh PLAN.
   const canRetrySharedPlanning = trip.data?.trip.sharedPlanningState === "NO_PLAN_YET";
   const showPlanningCta = canStartSharedPlanning || canRetrySharedPlanning;
+  // Older/custom TravelApi adapters may not expose the read endpoint yet.
+  // Treat that as "no verified grant" rather than leaving the CTA loading
+  // forever; the explicit decision below still fails closed server-side.
+  const authorizationsSettled = !api.listStaySearchAuthorizations
+    || staySearchAuthorizations.isSuccess
+    || staySearchAuthorizations.isError;
+  const hasActiveQuoteAuthorization = Boolean(staySearchAuthorizations.data?.some(
+    (authorization) => authorization.providerName === "nuitee_connect"
+      && authorization.field === "guest_nationality",
+  ));
+  const retryNeedsQuoteDecision = canRetrySharedPlanning
+    && authorizationsSettled
+    && !hasActiveQuoteAuthorization;
+  const needsQuoteDecision = canStartSharedPlanning || retryNeedsQuoteDecision;
+  const showNationalityInput = needsQuoteDecision && needsGuestNationality;
+  const planningReadinessSettled = canRetrySharedPlanning
+    ? authorizationsSettled && (!retryNeedsQuoteDecision || profileSettled)
+    : profileSettled;
+  const planningActionDisabled = isStartingSharedPlan
+    || !planningReadinessSettled
+    || (showNationalityInput && !guestNationality);
+  const quoteNationalityDecision: QuoteNationalityDecision | undefined = needsQuoteDecision && profileSettled
+    ? needsGuestNationality
+      ? guestNationality
+        ? {
+          source: "INPUT",
+          value: guestNationality,
+          saveToProfile: saveNationalityToProfile,
+          confirmProviderUse: true,
+        }
+        : undefined
+      : { source: "PROFILE", confirmProviderUse: true }
+    : undefined;
 
   function confirmFlightSearch() {
     if (isSending) return;
@@ -1799,7 +1846,7 @@ export function TravelAgentChat({
               <p className="mt-1 text-xs text-muted-foreground">
                 {canRetrySharedPlanning ? t("retrySharedPlanBody") : t("startSharedPlanBody")}
               </p>
-              {canStartSharedPlanning && needsGuestNationality ? (
+              {showNationalityInput ? (
                 <div className="mt-3">
                   <label htmlFor="start-plan-nationality" className="block text-xs font-bold text-primary">
                     {t("startSharedPlanNationalityLabel")}
@@ -1810,22 +1857,47 @@ export function TravelAgentChat({
                     value={guestNationality}
                     onChange={(event) => setGuestNationality(event.target.value)}
                     disabled={isStartingSharedPlan}
-                    className="mt-1.5 w-full rounded-[12px] bg-card px-3 py-2 text-sm outline-none ring-1 ring-primary/15 transition-shadow focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
+                    className="mt-1.5 min-h-11 w-full rounded-[12px] bg-card px-3 py-2 text-sm outline-none ring-1 ring-primary/15 transition-shadow focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
                   >
                     <option value="">{t("startSharedPlanNationalityPlaceholder")}</option>
                     {QUOTE_NATIONALITIES.map((code) => (
                       <option key={code} value={code}>{countryLabel(code, titleLocale)}</option>
                     ))}
                   </select>
+                  <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-2 text-xs font-semibold text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={saveNationalityToProfile}
+                      onChange={(event) => setSaveNationalityToProfile(event.target.checked)}
+                      disabled={isStartingSharedPlan}
+                      className="size-4 accent-[var(--w-teal)]"
+                    />
+                    <span>{t("startSharedPlanSaveNationality")}</span>
+                  </label>
                 </div>
+              ) : null}
+              {needsQuoteDecision && profileSettled && !needsGuestNationality ? (
+                <p className="mt-3 rounded-[12px] bg-secondary px-3 py-2 text-xs font-semibold text-foreground">
+                  {t("startSharedPlanUseProfileNationality")}
+                </p>
+              ) : null}
+              {canRetrySharedPlanning && staySearchAuthorizations.isError ? (
+                <p role="alert" className="mt-3 text-xs font-semibold text-destructive">
+                  {t("startSharedPlanAuthorizationUnavailable")}
+                </p>
+              ) : null}
+              {needsQuoteDecision && profile.isError ? (
+                <p role="alert" className="mt-3 text-xs font-semibold text-destructive">
+                  {t("startSharedPlanProfileUnavailable")}
+                </p>
               ) : null}
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
                   data-testid="start-shared-plan-confirm"
                   onClick={() => void startSharedPlanning()}
-                  disabled={isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
-                  aria-disabled={isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
+                  disabled={planningActionDisabled}
+                  aria-disabled={planningActionDisabled}
                   className={actionPrimaryClass}
                 >
                   {isStartingSharedPlan

@@ -117,6 +117,14 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     updateTripTitle: vi.fn(),
     saveTripSearchPreferences: vi.fn(),
     startPlanning: vi.fn(),
+    listStaySearchAuthorizations: vi.fn().mockResolvedValue([{
+      id: "66666666-6666-4666-8666-666666666666",
+      providerName: "nuitee_connect",
+      field: "guest_nationality",
+      version: 1,
+      grantedAt: CREATED_AT,
+      expiresAt: null,
+    }]),
     getLatestPlanningRun: vi.fn(),
     getLatestPlan: vi.fn(),
     getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),
@@ -964,6 +972,22 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
   });
 
+  it("unlocks a completed-with-gaps run even when the final history refresh fails", async () => {
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
+    const api = createApi({
+      getAgentRun: vi.fn().mockResolvedValue(run("COMPLETED_WITH_GAPS")),
+      getOwnerConversation: vi.fn().mockRejectedValue(new TravelApiError(
+        "history unavailable", 503, "Service Unavailable", null,
+      )),
+    });
+
+    renderChat(api);
+
+    await waitFor(() => expect(localStorage.getItem(ACTIVE_RUN_KEY())).toBeNull());
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
+  });
+
   it("calls onThreadInvalidated when submitConversationTurn returns 404", async () => {
     const onInvalidated = vi.fn();
     const api = createApi({
@@ -1356,12 +1380,9 @@ describe("the trip's preference card", () => {
     }
 
     /**
-     * Hotel prices are quoted per nationality and the server will not guess
-     * one. It has accepted `guestNationality` since the quote work landed, but
-     * nothing ever sent it and no screen asked — so a traveller whose profile
-     * had none pressed "Start planning" on a complete brief, activation came
-     * back 422 "A confirmed Nuitee hotel quote nationality is required", and
-     * all they saw was 「这条消息暂时无法被接受」.
+     * A value entered here is an explicit provider-use decision. Saving it to
+     * the private Profile is a separate, visible choice that defaults on and
+     * can be turned off before submission.
      */
     it("asks for a quote nationality when the profile has none, and sends it", async () => {
       const activateTrip = vi.fn().mockResolvedValue({ trip: { id: TRIP_ID }, planningRun: null });
@@ -1377,7 +1398,14 @@ describe("the trip's preference card", () => {
 
       await waitFor(() => expect(activateTrip).toHaveBeenCalledWith(
         TRIP_ID,
-        expect.objectContaining({ guestNationality: "CN" }),
+        expect.objectContaining({
+          quoteNationalityDecision: {
+            source: "INPUT",
+            value: "CN",
+            saveToProfile: true,
+            confirmProviderUse: true,
+          },
+        }),
       ));
     });
 
@@ -1399,9 +1427,11 @@ describe("the trip's preference card", () => {
 
       fireEvent.click(start);
 
-      // The client never echoes a profile value back; the server prefers its own.
+      // The client confirms use by source; it never echoes the profile value.
       await waitFor(() => expect(activateTrip).toHaveBeenCalled());
-      expect(activateTrip.mock.calls[0][1]).not.toHaveProperty("guestNationality");
+      expect(activateTrip.mock.calls[0][1]).toEqual(expect.objectContaining({
+        quoteNationalityDecision: { source: "PROFILE", confirmProviderUse: true },
+      }));
     });
 
     it("stays off the globe", async () => {
@@ -1961,6 +1991,45 @@ describe("DRAFT → Shared handoff CTA", () => {
     // through the planning route that has always accepted one.
     await waitFor(() => expect(api.startPlanning).toHaveBeenCalledWith(TRIP_ID));
     expect(api.activateTrip).not.toHaveBeenCalled();
+  });
+
+  it("does not block a retry on an empty Profile when this trip already has an authorization", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(activatedTrip("NO_PLAN_YET")),
+      getMyProfile: vi.fn().mockResolvedValue({ profile: null }),
+      startPlanning: vi.fn().mockResolvedValue({ runId: RUN_ID, status: "QUEUED" }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const button = await screen.findByRole("button", { name: "Plan again" });
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.queryByLabelText(/Nationality for quotes/i)).not.toBeInTheDocument();
+    fireEvent.click(button);
+    await waitFor(() => expect(api.startPlanning).toHaveBeenCalledWith(TRIP_ID));
+  });
+
+  it("asks for a nationality on retry only when both Profile and trip authorization are missing", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(activatedTrip("NO_PLAN_YET")),
+      getMyProfile: vi.fn().mockResolvedValue({ profile: null }),
+      listStaySearchAuthorizations: vi.fn().mockResolvedValue([]),
+      startPlanning: vi.fn().mockResolvedValue({ runId: RUN_ID, status: "QUEUED" }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const button = await screen.findByRole("button", { name: "Plan again" });
+    await waitFor(() => expect(screen.getByLabelText(/Nationality for quotes/i)).toBeInTheDocument());
+    expect(button).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /Save to my private Profile/i })).toBeChecked();
+    fireEvent.change(screen.getByLabelText(/Nationality for quotes/i), { target: { value: "SG" } });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    await waitFor(() => expect(api.startPlanning).toHaveBeenCalledWith(TRIP_ID, {
+      source: "INPUT",
+      value: "SG",
+      saveToProfile: true,
+      confirmProviderUse: true,
+    }));
   });
 
   it("does not offer a run while one is under way or once a plan exists", async () => {

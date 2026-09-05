@@ -47,6 +47,8 @@ import {
   tripSearchPreferencesInputSchema,
   tripSearchPreferencesResponseSchema,
   planningTaskAcceptedResponseSchema,
+  quoteNationalityDecisionSchema,
+  staySearchAuthorizationsResponseSchema,
   latestPlanningRunResponseSchema,
   tripPlanningRunDetailResponseSchema,
   latestPlanResponseSchema,
@@ -109,6 +111,7 @@ import {
   type UpdateTripTitleInput,
   type UpdateDraftTripBriefInput,
   type TripSearchPreferencesInput,
+  type QuoteNationalityDecision,
   type PersonalResearchAnswersRequest,
   type PersonalResearchConfirmRequest,
   type PersonalResearchReadResponse,
@@ -569,10 +572,20 @@ export class HttpTravelApi implements TravelApi {
     );
   }
 
-  startPlanning(tripId: string) {
+  startPlanning(tripId: string, quoteNationalityDecision?: QuoteNationalityDecision) {
+    const decision = quoteNationalityDecision
+      ? quoteNationalityDecisionSchema.parse(quoteNationalityDecision)
+      : undefined;
     return this.client.request("/planning/generate", planningTaskAcceptedResponseSchema, {
-      method: "POST", body: JSON.stringify({ tripId }),
+      method: "POST", body: JSON.stringify({ tripId, ...(decision ? { quoteNationalityDecision: decision } : {}) }),
     });
+  }
+
+  listStaySearchAuthorizations(tripId: string) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/stay-search-provider-authorizations`,
+      staySearchAuthorizationsResponseSchema,
+    );
   }
 
   getLatestPlanningRun(tripId: string) {

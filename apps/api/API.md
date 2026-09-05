@@ -362,9 +362,23 @@ accepted invitation provisions that member's own default private thread.
   "destinationCandidates": ["Tokyo", "Bangkok", "Seoul"],
   "travelDateStart": "2026-10-01",
   "travelDateEnd": "2026-10-10",
-  "titleLocale": "en"
+  "titleLocale": "en",
+  "quoteNationalityDecision": {
+    "source": "INPUT",
+    "value": "US",
+    "saveToProfile": true,
+    "confirmProviderUse": true
+  }
 }
 ```
+
+`quoteNationalityDecision` is optional unless the configured hotel provider
+requires a missing quote authorization. `source: "PROFILE"` omits `value` and
+requires `confirmProviderUse: true`; the server reads the current user's
+private Profile only after this explicit action. `source: "INPUT"` requires an
+ISO alpha-2 `value`, a `saveToProfile` choice, and the same explicit provider
+confirmation. The optional Profile update, provider-only grant, snapshot, and
+planning-task acceptance commit atomically. Neither response echoes the value.
 
 **Response**: `200`
 ```json
@@ -541,9 +555,26 @@ by `runId` or subscribe to its SSE stream for safe progress and terminal state.
 **Body**:
 ```json
 {
-  "tripId": "uuid"
+  "tripId": "uuid",
+  "quoteNationalityDecision": {
+    "source": "PROFILE",
+    "confirmProviderUse": true
+  }
 }
 ```
+
+The decision uses the same strict union as trip activation and is needed only
+when this trip has no active provider-only quote authorization. Repeating a
+request with the same request ID returns the original task before applying the
+decision, so it cannot duplicate a Profile write, authorization version, or
+snapshot.
+
+### `GET /trips/:tripId/stay-search-provider-authorizations`
+
+Returns the current member's active provider-only authorizations for this trip.
+Each item contains only `id`, `providerName`, `field`, `version`, `grantedAt`
+and `expiresAt`; the protected nationality value is never returned. The client
+uses this metadata to avoid asking again when the trip is already authorized.
 
 **Accepted response** (`202`):
 ```json

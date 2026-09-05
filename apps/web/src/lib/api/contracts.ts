@@ -534,6 +534,19 @@ export const planningTaskAcceptedResponseSchema = z.object({
   snapshotId: z.string().uuid(),
 }).strict();
 
+export const quoteNationalityDecisionSchema = z.discriminatedUnion("source", [
+  z.object({
+    source: z.literal("PROFILE"),
+    confirmProviderUse: z.literal(true),
+  }).strict(),
+  z.object({
+    source: z.literal("INPUT"),
+    value: z.string().regex(/^[A-Za-z]{2}$/),
+    saveToProfile: z.boolean(),
+    confirmProviderUse: z.literal(true),
+  }).strict(),
+]);
+
 /**
  * ─── DRAFT Personal Research (docs/draft-personal-research-implementation.md) ──
  *
@@ -1048,14 +1061,7 @@ export const tripActivationRequestSchema = z.object({
   travelDateEnd: dateSchema.nullable().optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
-  /**
-   * ISO 3166-1 alpha-2, sent only when the traveller had to be asked because
-   * their profile carries none. The server prefers the profile and never
-   * guesses, so a trip whose owner has neither cannot be activated: the plan
-   * task refuses without a confirmed quote nationality, and activation came
-   * back 422 with nothing on screen explaining what was missing.
-   */
-  guestNationality: z.string().regex(/^[A-Za-z]{2}$/).optional(),
+  quoteNationalityDecision: quoteNationalityDecisionSchema.optional(),
 }).strict();
 
 export const tripActivationResponseSchema = z.object({
@@ -1281,6 +1287,7 @@ export type LocationIntroductionReady = z.infer<typeof locationIntroductionReady
 export type TripSearchPreferencesInput = z.infer<typeof tripSearchPreferencesInputSchema>;
 export type TripSearchPreferencesResponse = z.infer<typeof tripSearchPreferencesResponseSchema>;
 export type PlanningTaskAcceptedResponse = z.infer<typeof planningTaskAcceptedResponseSchema>;
+export type QuoteNationalityDecision = z.infer<typeof quoteNationalityDecisionSchema>;
 export type LatestPlanResponse = z.infer<typeof latestPlanResponseSchema>;
 export type LatestPlanningRunResponse = z.infer<typeof latestPlanningRunResponseSchema>;
 export type LocationIntroductionGenerating = z.infer<typeof locationIntroductionGeneratingSchema>;
@@ -1686,6 +1693,7 @@ export const staySearchAuthorizationDtoSchema = z.object({
   grantedAt: z.string().datetime(),
   expiresAt: z.string().datetime().nullable(),
 }).strict();
+export const staySearchAuthorizationsResponseSchema = z.array(staySearchAuthorizationDtoSchema);
 export type StaySearchAuthorizationDto = z.infer<typeof staySearchAuthorizationDtoSchema>;
 
 /**

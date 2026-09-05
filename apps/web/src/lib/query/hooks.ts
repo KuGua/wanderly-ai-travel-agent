@@ -25,6 +25,7 @@ import type {
   NavigationRouteSearchRequest,
   MobilitySearchRequest,
   MobilityOfferSelectionRequest,
+  QuoteNationalityDecision,
 } from "@/lib/api/contracts";
 import { useTravelApi } from "./provider";
 import { profileKeys, threadKeys, tripKeys, teamOrchestrationKeys, invitationKeys, personalOrchestrationKeys } from "./keys";
@@ -468,17 +469,33 @@ export function useStartPlanning(tripId: string) {
   const api = useTravelApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (preferences?: TripSearchPreferencesInput) => {
-      if (preferences) await api.saveTripSearchPreferences(tripId, preferences);
-      return api.startPlanning(tripId);
+    mutationFn: async (input?: {
+      preferences?: TripSearchPreferencesInput;
+      quoteNationalityDecision?: QuoteNationalityDecision;
+    }) => {
+      if (input?.preferences) await api.saveTripSearchPreferences(tripId, input.preferences);
+      return input?.quoteNationalityDecision
+        ? api.startPlanning(tripId, input.quoteNationalityDecision)
+        : api.startPlanning(tripId);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: tripKeys.planningRun(tripId) });
+      void queryClient.invalidateQueries({ queryKey: tripKeys.staySearchAuthorizations(tripId) });
       // The trip DTO carries `sharedPlanningState`, which has just moved to
       // IN_PROGRESS. Without this the CTA keeps offering a run that is already
       // under way.
       void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
     },
+  });
+}
+
+export function useStaySearchAuthorizations(tripId: string | null) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.staySearchAuthorizations(tripId ?? "none"),
+    queryFn: () => api.listStaySearchAuthorizations!(tripId!),
+    enabled: Boolean(tripId) && Boolean(api.listStaySearchAuthorizations),
+    retry: false,
   });
 }
 
