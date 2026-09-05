@@ -2879,3 +2879,11 @@ recognizable invented values.
 - Exactly one ACTIVE owner-only selection exists per `(trip, owner, capability, routeKey/stayKey)`; replacement supersedes the earlier selection atomically. No Personal selection enters a Shared snapshot, plan, confirmation or booking path.
 - Duplicate actions are idempotent; stale, cross-owner/thread, expired and superseded actions fail closed. REST recovery restores the same OPEN cue after refresh.
 - Flight and Hotel cooldown/daily counters are independent. Three Flight dismissals mute Flight only until the owner's local midnight; a model-classified explicit Flight choice may bypass mute but still cannot accept an expired or unowned candidate.
+
+
+## 地球页目的地抽屉深海玻璃回归（2026-09-06）
+
+- 在地球亮区、暗区和星空背景上分别打开目的地抽屉：深海蓝背景保持半透明，淡扫描纹理不干扰正文、次要资料和链接；外框为 6px 圆角，按钮为 4px 圆角，边框与主操作为冷蓝色，界面不出现青绿色主按钮。
+- “仅限本次会话的灵感”以无投影、2px 圆角、左侧蓝色状态线融入抽屉，不呈现为独立厚卡片或胶囊按钮。
+- 关闭、查看灵感、管理图钉和删除仍调用原有行为；删除文字与图标保持红色。按钮 hover、disabled、键盘 focus 状态清晰，主按钮 disabled 时不位移。
+- 开启 `prefers-reduced-transparency` 后抽屉回退为深色实底，文字对比度不依赖 backdrop blur。移动竖屏抽屉仍限制在 70dvh 并可滚动，横屏仍停靠右侧。
