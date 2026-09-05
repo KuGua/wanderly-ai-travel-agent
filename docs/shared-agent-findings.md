@@ -741,3 +741,22 @@ trip 本来就收；web 侧 `startPlanning()` 和 `useStartPlanning` 都在，
 `planningToolBudgetExhausted` 说「方案没有改动，再试一次让下一轮完成」，
 而 `isRetryableFailure` 不含该 code —— **屏幕上根本没有重试按钮**。
 改为说明本轮已取得的结果已经保存。
+
+## #48 编排层从不把 Worker lease 传给合成，于是这条路径写不进任何东西 — 缺陷 — 已修（09-06）
+`generatePlan` 的持久化事务把每一次写入都条件在「仍持有 lease」上
+（`planning-service.ts:1499`），它的 research-summary 兜底同样要求 lease。
+而 `personal-trip-orchestrator-service.ts:307` 调用它时**只传了 agentTaskRunId，
+没传 leaseToken** —— research-task-handler 手里有，也没往下传。
+
+后果是双重的：
+- 计划分支在写任何东西之前就抛 `Planning task lease authority is incomplete`；
+- 摘要分支（#45 刚加的降级）走到 `if (!params.leaseToken) throw error` 直接重抛。
+
+**所以 PROPOSE_PLAN 这条路径无论跑得多好，既写不出 plan 也写不出 summary。**
+这是 `itinerary_plans` 一直是 0 行的第四个结构性原因，与航班 400、航线身份、
+Gate B 各自独立。
+
+**这条是我自己没验到位。** #45 的单测直接调 `generatePlan` 并传了 lease，绿的；
+真实调用路径上那个参数根本不存在。教训写在这里：**给一个函数加降级分支时，
+必须验证生产调用方满足该分支的前置条件，而不是只验证函数本身。**
+现在补了两条测试，一条走编排层（拿到 lease 就能降级），一条走 handler（确实往下传）。

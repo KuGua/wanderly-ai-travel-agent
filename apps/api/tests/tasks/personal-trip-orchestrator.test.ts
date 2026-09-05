@@ -26,6 +26,7 @@ import {
 import { runResearch } from "../../src/tasks/personal-trip-orchestrator-service.js";
 import { createRequestContext } from "../../src/utils/context.js";
 import { testPlanningDependencies } from "../helpers/planning.js";
+import { ModelGatewayError } from "../../src/providers/llm-gateway.js";
 import {
   __setPlanningDependenciesForTests,
 } from "../../src/services/planning-service.js";
@@ -318,6 +319,60 @@ describe("personal-trip-orchestrator-service", () => {
     const [row] = await db.select().from(planningResearchResults)
       .where(eq(planningResearchResults.agentTaskRunId, runId));
     expect(row?.serviceGaps.some((g: { capability: string }) => g.capability === "flight")).toBe(true);
+  });
+
+  /**
+   * `generatePlan` conditions every write in its persistence transaction on
+   * still holding the Worker's lease, and refuses without one — including on
+   * its research-summary fallback. The orchestrator never passed the token it
+   * had, so a PROPOSE_PLAN round could produce neither a plan nor a summary
+   * however well it went: the plan branch threw "Planning task lease authority
+   * is incomplete" and the summary branch rethrew instead of degrading.
+   *
+   * The unit test for the degrade called `generatePlan` directly with a lease
+   * and passed. This one goes through the orchestrator, which is where the
+   * token was being dropped.
+   */
+  it("carries the Worker lease into synthesis so a spent budget can still degrade", async () => {
+    __setPlanningDependenciesForTests(testPlanningDependencies);
+    registerStubSkill("activities.search", { outcome: "LIVE" });
+    registerStubSkill("hotel.search", { outcome: "LIVE" });
+    registerStubSkill("places.search", { outcome: "LIVE" });
+    registerStubSkill("readiness.check", { outcome: "LIVE" });
+    // Coverage research is what makes a destination eligible at all, and it
+    // only runs when "flight" is requested.
+    await db.update(agentTaskRuns)
+      .set({ researchMode: "PROPOSE_PLAN", requestedCapabilities: ["flight", "activities", "places", "readiness"] })
+      .where(eq(agentTaskRuns.id, runId));
+    await db.update(constraintSnapshots)
+      .set({ authorizedData: { _meta: { schemaVersion: 2, projectionManifest: [] } } })
+      .where(eq(constraintSnapshots.id, snapshotId));
+
+    const run = await makeRunRow();
+    const result = await runResearch({
+      ctx: makeRunArgs(),
+      run,
+      signal: new AbortController().signal,
+      leaseToken: run.leaseToken!,
+      providerOverride: {
+        ...testPlanningDependencies,
+        modelGateway: {
+          ...testPlanningDependencies.modelGateway,
+          async generateStructuredPlanWithTools() {
+            throw new ModelGatewayError("TOOL_CALL_MAX_TURNS");
+          },
+        },
+      },
+    });
+
+    // Not a failed round: what the suppliers answered is durable and readable.
+    expect(result.outcome).toBe("COMPLETED_WITH_GAPS");
+    expect(result.researchResultId).toBeDefined();
+    const [row] = await db.select().from(planningResearchResults)
+      .where(eq(planningResearchResults.agentTaskRunId, runId));
+    expect(row).toBeDefined();
+    const plans = await db.select().from(itineraryPlans).where(eq(itineraryPlans.tripId, tripId));
+    expect(plans).toHaveLength(0);
   });
 
   it("PROPOSE_PLAN reaches PERSISTING and refuses a plan the validator cannot vouch for", async () => {
