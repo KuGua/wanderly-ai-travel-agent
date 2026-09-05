@@ -2,6 +2,15 @@ export type TripTitleLocale = "en" | "zh";
 
 export type TripTitleInput = {
   destinationCandidates: string[];
+  /**
+   * Display-only destination label (docs/trip-title-destination-label-implementation.md §D2/D3).
+   * Country/region only — never a city. Never feeds destinationCandidates,
+   * constraint_snapshot, or any provider query. Only used when
+   * destinationCandidates is empty; explicit city facts win
+   * deterministically. When null/empty the output is byte-identical to the
+   * pre-label synthesis.
+   */
+  titleDestinationLabel?: string | null;
   travelDateStart?: string | null;
   travelDateEnd?: string | null;
   travelDays?: number | null;
@@ -13,10 +22,14 @@ export type TripTitleInput = {
  * not receive conversation text, profile data, or inferred travel facts.
  */
 export function buildTripTitle(input: TripTitleInput): string {
-  const destinations = input.destinationCandidates
+  const explicit = input.destinationCandidates
     .map((destination) => destination.trim())
-    .filter(Boolean)
-    .join(" · ");
+    .filter(Boolean);
+  // Display-only label falls in only when there is no explicit city to show.
+  // The fallback order mirrors §D4: explicit cities > label > empty.
+  const destinations = explicit.length > 0
+    ? explicit.join(" · ")
+    : (input.titleDestinationLabel?.trim() ?? "");
   const days = input.travelDays ?? tripDays(input.travelDateStart, input.travelDateEnd);
   const isChinese = input.locale === "zh";
   const planner = isChinese ? "行程规划" : "Trip Planner";

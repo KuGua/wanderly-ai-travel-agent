@@ -18,6 +18,10 @@ export type AuditAction =
   | "TRIP_INVITATION_CREATE" | "TRIP_INVITATION_ACCEPT"
   | "TRIP_INVITATION_REVOKE" | "TRIP_INVITATION_DECLINE" | "TRIP_DEFAULT_THREAD_PROVISION"
   | "EXPLORATION_START" | "TRIP_ACTIVATE" | "TRIP_TITLE_UPDATE" | "TRIP_DRAFT_BRIEF_UPDATE"
+  // Trip title destination-label lifecycle (docs/trip-title-destination-label-implementation.md §10.3).
+  // The summary's `source` field is "reference" | "llm" — the label text
+  // itself never appears here.
+  | "TRIP_TITLE_LABEL_UPDATE"
   | "TRIP_ARCHIVE" | "TRIP_UNARCHIVE" | "TRIP_DELETE"
   // Private thread title lifecycle (docs/thread-title-lifecycle-implementation.md §11.2).
   // The summary's `source` field is "deterministic" | "llm" | "manual" — the

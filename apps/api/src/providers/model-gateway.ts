@@ -290,8 +290,14 @@ export interface ModelGateway {
    * Best-effort owner-turn classifier for the destination confirmation cue.
    * It receives only the current user message and already-confirmed city names:
    * never assistant prose, transcript history or a selected globe place.
+   *
+   * Required, deliberately. Previously optional; the spec §B5 narrow makes it
+   * mandatory so a partial gateway cannot silently answer UNAVAILABLE for
+   * every environment without anything failing to compile. Test doubles live
+   * outside `tsconfig`'s `include`; runtime guards on the consumer side
+   * remain.
    */
-  decideDestinationCue?(params: {
+  decideDestinationCue(params: {
     question: string;
     currentDestinations: string[];
     locale: "en" | "zh";
@@ -381,6 +387,31 @@ export interface ModelGateway {
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<{ title: string }>;
+
+  /**
+   * Owner-triggered trip destination label suggestion
+   * (docs/trip-title-destination-label-implementation.md §8.1).
+   *
+   * Output is a single closed-vocabulary slot: `{ kind, value }` where
+   * `kind ∈ { COUNTRY, CITY }` and `value` is a re-resolvable canonical
+   * name. The postprocess module re-resolves `value` against the location
+   * reference data, so the route never writes a free-text string into
+   * `shared_trips.title_destination_label`.
+   *
+   * Required, deliberately. Same compile-time discipline as
+   * `generateThreadTitle` — optionality here was spec §B5's exact hazard,
+   * so this method is mandatory on every `ModelGateway` implementation.
+   * Test doubles live outside `tsconfig`'s `include`; the skill keeps a
+   * runtime guard for partial gateways.
+   */
+  generateTripDestinationLabel(params: {
+    /** Server-validated language authority (LLM-GATEWAY.md §User-visible language contract). */
+    locale: "en" | "zh";
+    /** Owner USER messages only; at most three, each ≤512 chars (server-side). */
+    messages: ReadonlyArray<{ text: string }>;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<{ kind: "COUNTRY" | "CITY"; value: string }>;
 }
 
 /** Narrow, versioned conversation behaviours; add values deliberately. */

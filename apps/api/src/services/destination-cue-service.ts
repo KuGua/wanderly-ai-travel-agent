@@ -16,6 +16,7 @@ import type { AgentTaskRow } from "../tasks/task-repository.js";
 import type { ResolvedDestinationCueDecision } from "../skills/personal/destination-cue-decision-skill.js";
 import { requireOwnedTripThread, requireOwnedTripThreadRead } from "./chat-thread-service.js";
 import { buildTripTitle } from "./trip-title-service.js";
+import { clearTitleLabelFields } from "./trip-title-label-service.js";
 import { claimIdempotency, completeIdempotency } from "./idempotency-service.js";
 import { recordAudit } from "./audit-service.js";
 
@@ -198,7 +199,7 @@ export async function actOnDestinationCue(params: {
         travelDays: trip.travelDays,
         locale: params.titleLocale,
       });
-      await tx.update(sharedTrips).set({
+      await tx.update(sharedTrips).set(clearTitleLabelFields({
         destinationCandidates: destinations,
         pendingBriefProposal: sql`case
           when ${sharedTrips.pendingBriefProposal} is null then null
@@ -207,7 +208,7 @@ export async function actOnDestinationCue(params: {
         end`,
         ...(trip.nameSource === "AUTO" ? { name: title, titleLocale: params.titleLocale } : {}),
         updatedAt: now,
-      }).where(eq(sharedTrips.id, trip.id));
+      })).where(eq(sharedTrips.id, trip.id));
     } else {
       await tx.insert(destinationCueSuppressions).values({
         ownerUserId: params.ownerUserId,

@@ -21,6 +21,7 @@ import { chatThreadRoutes } from "./routes/chat-threads.js";
 import { destinationCueRoutes } from "./routes/destination-cues.js";
 import { tripInvitationRoutes } from "./routes/trip-invitations.js";
 import { tripThreadRoutes } from "./routes/trip-threads.js";
+import { tripTitleSuggestRoutes } from "./routes/trip-title-suggest.js";
 import { explorationRoutes } from "./routes/explorations.js";
 import { locationReferenceRoutes } from "./routes/location-reference.js";
 import { locationIntroductionRoutes } from "./routes/location-introduction.js";
@@ -280,6 +281,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
   await app.register(destinationCueRoutes, { prefix: "/api/v1" });
   await app.register(tripInvitationRoutes, { prefix: "/api/v1" });
   await app.register(tripThreadRoutes, { prefix: "/api/v1" });
+  await app.register(tripTitleSuggestRoutes, { prefix: "/api/v1" });
   await app.register(explorationRoutes, { prefix: "/api/v1" });
   await app.register(locationReferenceRoutes, { prefix: "/api/v1" });
   await app.register(locationIntroductionRoutes, { prefix: "/api/v1" });

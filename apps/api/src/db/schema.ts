@@ -115,6 +115,10 @@ export const auditActionEnum = pgEnum("audit_action", [
   "TRIP_INVITATION_CREATE", "TRIP_INVITATION_ACCEPT",
   "TRIP_INVITATION_REVOKE", "TRIP_INVITATION_DECLINE", "TRIP_DEFAULT_THREAD_PROVISION",
   "EXPLORATION_START", "TRIP_ACTIVATE", "TRIP_TITLE_UPDATE", "TRIP_DRAFT_BRIEF_UPDATE",
+  // Trip title destination-label lifecycle (docs/trip-title-destination-label-implementation.md §10.3).
+  // The summary's `source` field is "reference" | "llm" — the label text
+  // itself never appears here.
+  "TRIP_TITLE_LABEL_UPDATE",
   "DESTINATION_CUE_ACCEPT", "DESTINATION_CUE_DISMISS",
   // Archive is a reversible hide, not a delete (0061_trip_archive_audit_actions.sql).
   "TRIP_ARCHIVE", "TRIP_UNARCHIVE", "TRIP_DELETE",
@@ -359,6 +363,12 @@ export const sharedTrips = pgTable("shared_trips", {
   name: varchar("name", { length: 256 }).notNull(),
   nameSource: varchar("name_source", { length: 16 }).$type<"AUTO" | "MANUAL">().default("MANUAL").notNull(),
   titleLocale: varchar("title_locale", { length: 8 }).$type<"en" | "zh" | null>(),
+  // Display-only destination label (docs/trip-title-destination-label-implementation.md §D2/D3).
+  // Country/region only, never a city. Never feeds destinationCandidates,
+  // constraint_snapshot, or any provider query. NULL on all existing rows.
+  titleDestinationLabel: varchar("title_destination_label", { length: 64 }),
+  titleLabelSource: varchar("title_label_source", { length: 16 }).$type<"REFERENCE" | "LLM" | null>(),
+  titleLabelUpdatedAt: timestamp("title_label_updated_at", { withTimezone: true }),
   createdBy: uuid("created_by").references(() => users.id).notNull(),
   status: tripStatusEnum("status").default("PLANNING").notNull(),
   departureCities: jsonb("departure_cities").$type<string[]>().notNull(),   // ["Shanghai","San Francisco"]

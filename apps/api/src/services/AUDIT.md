@@ -72,6 +72,13 @@ runs **before** any insert. Rejection propagates as
   summary is strictly `{ threadId, source }` and **never** contains the
   title text — titles are derived from private conversation content and
   must not be persisted in the audit log.
+- Trip title destination-label lifecycle (docs/trip-title-destination-label-implementation.md §10.3):
+  `TRIP_TITLE_LABEL_UPDATE`. The summary's `source` field is `reference`
+  (deterministic country/region parse) or `llm` (owner-triggered AI
+  suggest). The summary is strictly `{ source }` and **never** contains
+  the label text — labels are derived from the owner's own turn and
+  must not be persisted in the audit log even though the resolved name
+  itself is public reference data.
 - Agent runtime: `SKILL_INVOKE`, `AGENT_RUN`, `AGENT_TASK`. Task summaries
   contain only safe run/operation/status identifiers and never question or
   streamed/final message text.
@@ -157,6 +164,7 @@ safe task/capability/status identifiers, never the confirmed request input.
 - `CHANGE_EVENT`, `VISA_CHECK`
 - `CHAT_THREAD_CREATE`, `CHAT_THREAD_DELETE`, `CHAT_MESSAGE_APPEND`
 - `CHAT_THREAD_TITLE_UPDATE`
+- `TRIP_TITLE_LABEL_UPDATE`
 - `SKILL_INVOKE`, `AGENT_RUN`, `AGENT_TASK`
 
 ## Failure modes

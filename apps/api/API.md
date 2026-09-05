@@ -391,9 +391,12 @@ accepted invitation provisions that member's own default private thread.
 The server derives the title from the explicit destinations, the display-only
 destination label (see below), the complete date range and `titleLocale`. Dates
 are counted inclusively. `PATCH /trips/:tripId/title` lets only the creator set
-a manual title; **that endpoint never reads private conversation history and
-never calls an LLM**, and its audit record contains only `source: manual` and
-never the title text.
+a manual title; **this manual-rename endpoint never reads private conversation
+history and never calls an LLM**, and its audit record contains only
+`source: manual` and never the title text. Trip destination labels are a
+separate lifecycle (deterministic + owner-explicit LLM suggest); see
+[Trip destination label](#trip-destination-label) and
+[POST /trips/:tripId/title/suggest](#post-tripsidtripidtitlesuggest) below.
 
 ### Trip destination label
 

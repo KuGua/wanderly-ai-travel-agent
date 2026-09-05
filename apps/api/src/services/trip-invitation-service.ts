@@ -6,6 +6,7 @@ import { db } from "../db/database.js";
 import { chatThreads, sharedTrips, tripInvitations, tripMembers } from "../db/schema.js";
 import { recordAudit } from "./audit-service.js";
 import { buildDefaultThreadTitle, type ThreadTitleLocale } from "./thread-title-service.js";
+import { buildTripTitle } from "./trip-title-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { metrics } from "../observability/metrics.js";
 import type { RequestContext } from "../utils/context.js";
@@ -270,6 +271,7 @@ export async function getInvitationPreview(params: {
   const invitation = await getPendingInvitationForActor(params);
   const [trip] = await db.select({
     name: sharedTrips.name,
+    nameSource: sharedTrips.nameSource,
     status: sharedTrips.status,
     archivedAt: sharedTrips.archivedAt,
     destinationCandidates: sharedTrips.destinationCandidates,
@@ -279,9 +281,18 @@ export async function getInvitationPreview(params: {
   // A pending token must not disclose a trip that can no longer be joined.
   // Keep this indistinguishable from any other invalid invitation.
   if (!trip || trip.status === "CANCELLED" || trip.archivedAt) throw invitationUnavailable();
+  // Spec §D10: when the trip is still DRAFT and the title is system-generated
+  // (AUTO, which includes label-derived titles for country-only briefs),
+  // the invitee sees the locale-appropriate generic placeholder rather than
+  // the creator's unconfirmed exploration. MANUAL titles are deliberately
+  // preserved — the creator typed them with full knowledge they would be
+  // shared on an invite.
+  const displayName = trip.status === "DRAFT" && trip.nameSource === "AUTO"
+    ? buildTripTitle({ destinationCandidates: [], locale: previewLocaleForTrip() })
+    : trip.name;
   return {
     trip: {
-      name: trip.name,
+      name: displayName,
       status: trip.status,
       // An invitee can decide whether to join a Draft, but must not see its
       // creator's unconfirmed exploration details before accepting.
@@ -291,6 +302,16 @@ export async function getInvitationPreview(params: {
     },
     expiresAt: invitation.expiresAt,
   };
+}
+
+/**
+ * The invite preview is opened in the invitee's browser locale. Until that
+ * locale is wired into the invitation token itself, "en" is the conservative
+ * fallback that matches the existing titleLocale authority rule
+ * (docs/thread-title-lifecycle-implementation.md §D8).
+ */
+function previewLocaleForTrip(): "en" | "zh" {
+  return "en";
 }
 
 export async function declineInvitation(params: {
