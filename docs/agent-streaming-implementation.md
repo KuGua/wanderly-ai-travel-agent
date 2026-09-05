@@ -34,7 +34,17 @@
 
 回归用例见 `apps/api/tests/conversation-clause-boundary.test.ts`，其模拟逐 token 累加而非直接对成品字符串取边界——只有这种形状才能暴露上述 `$` 陷阱。
 
-**客户端节奏。** 浏览器按终端节奏绘制已批准的子句（`apps/web/src/components/explore/terminal-typing.ts`）。这不是把完整回复拿到后再回放：客户端永远不会绘制尚未经 SSE 到达的字符；`active` 结束时立即显示全文，动画不拖慢一轮对话的结束；`prefers-reduced-motion` 下直接全量渲染。
+**客户端节奏。** 浏览器按终端节奏绘制已批准的子句（`apps/web/src/components/explore/terminal-typing.ts`）。正常路径不是把完整回复拿到后再回放：客户端只绘制已经由 SSE 到达的字符；`active` 结束时立即显示全文，动画不拖慢一轮对话的结束。
+
+**可恢复交付。** 每一条通过 `publishAgentStreamEvent` 的已批准帧，会先写入
+`agent_stream_events`，再经 PostgreSQL `NOTIFY` 做低延迟扇出。SSE 连接先订阅
+live relay，随后按 `Last-Event-ID` 回放持久化帧；客户端以 `streamEventId` 去重并在
+断线后以指数退避重连。因此 worker 在 React effect 开始前已完成的短回复也仍按帧到达，
+不会由 conversation 轮询直接替换成整段文本。若历史 run 没有 journal 或 journal 写入失败，
+完成态会以已落库的 assistant message 作一次受控揭示，业务状态始终仍以 run / conversation
+记录为准。
+
+**文字揭示不受 `prefers-reduced-motion` 门控。** 该表面的装饰性动画是块状光标的闪烁，`globals.css` 已在 reduce 查询下将其关闭。剩下的揭示本身是"内容在到达"，不是装饰；跳过它并不减少运动——文字仍会按服务端批准的子句落地，真实对比是「十几次突兀跳变」对「同样字符平滑流出」。早期版本在此额外做了 reduce 门控，结果是运动更刺眼、功能却静默消失。
 
 **绘制速率必须跟随到达速率，不能是固定值。** 第一版用固定 90 字/秒，结果每个约 12 字的子句在 130ms 内画完，然后静止到下一个子句到达（约 700ms）——一次典型回复 85% 的时间画面是不动的，观感仍是"四块文字依次弹出"而不是打字。现在按运行期内观测到的到达速率的 1.3 倍绘制，让光标始终紧跟在数据前沿之后；`MIN_CHARS_PER_SECOND` 是首帧尚无速率可测时的下限，`CATCH_UP_WINDOW_MS` 是积压过大（突发、或整段回复只有一个 delta）时的兜底阀门。
 

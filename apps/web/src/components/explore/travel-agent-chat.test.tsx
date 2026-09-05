@@ -911,6 +911,46 @@ describe("TravelAgentChat durable streaming flow", () => {
   });
 });
 
+describe("terminal typing cadence", () => {
+  // Mirrors a real run measured from a browser HAR: a 159-character reply
+  // delivered as ~13 clause-sized deltas spread across the generation window.
+  it("draws behind the stream instead of painting each delta whole", async () => {
+    const CLAUSE = "根据你的出发时间和预算，";
+    const api = createApi({
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({ event: "turn.started", runId: RUN_ID, generationAttempt: 1 });
+        for (let sequence = 0; sequence < 6; sequence += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          onEvent({
+            event: "message.delta", runId: RUN_ID, generationAttempt: 1, sequence, delta: CLAUSE,
+          });
+        }
+        await untilAborted(signal);
+      }),
+    });
+    renderChat(api);
+    await submitFromCapsule("帮我规划");
+
+    // Sample the two counters while deltas are still landing.
+    let sawLag = false;
+    for (let i = 0; i < 40; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const node = document.querySelector('[data-stream-chars]') as HTMLElement | null;
+      if (!node) continue;
+      const arrived = Number(node.dataset.streamChars ?? 0);
+      const typed = Number(node.dataset.typedChars ?? 0);
+      if (arrived > 0 && typed < arrived) { sawLag = true; break; }
+    }
+    expect(sawLag).toBe(true);
+
+    // And it always catches up to everything that arrived.
+    await waitFor(() => {
+      const node = document.querySelector('[data-stream-chars]') as HTMLElement;
+      expect(node.dataset.typedChars).toBe(node.dataset.streamChars);
+    }, { timeout: 4000 });
+  });
+});
+
 async function submitFromCapsule(question: string) {
   fireEvent.change(screen.getByRole("textbox", { name: "Message Wanderly Agent" }), { target: { value: question } });
   fireEvent.click(screen.getByRole("button", { name: "Send message" }));
