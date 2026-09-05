@@ -649,7 +649,8 @@
    level, softened at the edge. In `em` so it grows with whatever it underlines
    — at a fixed pixel height it looked right at one size and thin at the next.
    Not on a negative z-index: an ancestor's background paints over that. */
-.wanderly-brush { position: relative; display: inline-block; }
+.wanderly-brush { position: relative; display: inline-block;
+  --brush-ink: color-mix(in srgb, var(--w-highlight), var(--w-fog) 26%); }
 .wanderly-brush::after {
   content: "";
   position: absolute;
@@ -658,12 +659,15 @@
   transform: rotate(-.5deg);
   filter: blur(.02em);
   opacity: .8;
+  /* The kicker above it is underlined in `--w-highlight`; a blue brush under a
+     teal rule read as two different marks. Same hue, pulled back toward the
+     paper so the brush stays quieter than the rule it echoes. */
   background: linear-gradient(90deg,
     transparent 0,
-    color-mix(in srgb, var(--w-info), transparent 46%) 7%,
-    color-mix(in srgb, var(--w-info), transparent 22%) 26%,
-    color-mix(in srgb, var(--w-info), transparent 34%) 62%,
-    color-mix(in srgb, var(--w-info), transparent 58%) 88%,
+    color-mix(in srgb, var(--brush-ink), transparent 52%) 7%,
+    color-mix(in srgb, var(--brush-ink), transparent 26%) 26%,
+    color-mix(in srgb, var(--brush-ink), transparent 38%) 62%,
+    color-mix(in srgb, var(--brush-ink), transparent 62%) 88%,
     transparent 100%);
 }
 

@@ -151,17 +151,22 @@ export function HomeDashboard() {
         className="my-8 overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow"
         aria-label={tHome("calendar.ariaLabel")}
       >
-        {/* One panel split seven-three, the two halves the same height because
-            grid rows stretch. Two separate cards left a gutter between things
-            that are read together, and let the shorter one end early. */}
-        <div className="grid lg:grid-cols-[7fr_3fr]">
+        {/* One panel, the two halves the same height because grid rows stretch.
+            Two separate cards left a gutter between things that are read
+            together, and let the shorter one end early. The margin column is a
+            fixed width rather than a fraction: it holds three short fields, so
+            it should not grow with the window the way the year does. */}
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_268px]">
           <div className="min-w-0">
             <TripYearCalendar year={calendarYear} runs={calendarRuns} today={todayIso} />
           </div>
 
           <section
             aria-labelledby="profile-heading"
-            className="min-w-0 border-t-2 border-[var(--w-ink)] p-4 lg:border-l-2 lg:border-t-0"
+            /* A shaded margin column rather than a second white field: the
+               calendar half carries printed ruling, so an untextured white
+               beside it read as a brighter, separate sheet. */
+            className="min-w-0 border-t-2 border-[var(--w-ink)] bg-[var(--w-mist)] p-4 lg:border-l-2 lg:border-t-0"
           >
             <div className="mb-3 flex items-end justify-between gap-3">
             <div>
