@@ -243,6 +243,33 @@
 @utility wanderly-shadow-none { box-shadow: 0 0 0 var(--w-ink); }
 
 /*
+ * The trip workspace is a long-form conversation, so its scroll affordance
+ * must not disappear until the traveller happens to scroll.  Reserving a
+ * gutter also prevents message widths from jumping when the page overflows.
+ */
+@utility wanderly-scrollbar-persistent {
+  scrollbar-gutter: stable;
+  scrollbar-width: auto;
+  scrollbar-color: var(--w-moss) var(--w-mist);
+}
+
+.wanderly-scrollbar-persistent::-webkit-scrollbar {
+  width: 12px;
+}
+
+.wanderly-scrollbar-persistent::-webkit-scrollbar-track {
+  background: var(--w-mist);
+  border-left: 1px solid color-mix(in srgb, var(--w-ink), transparent 70%);
+}
+
+.wanderly-scrollbar-persistent::-webkit-scrollbar-thumb {
+  min-height: 42px;
+  background: var(--w-moss);
+  border: 3px solid var(--w-mist);
+  border-radius: 999px;
+}
+
+/*
  * Press feedback. Hovering shortens the shadow and slides the element into
  * it, so the control reads as pushed toward the page; the active state
  * seats it fully. Colour, shadow and offset all transition together, which

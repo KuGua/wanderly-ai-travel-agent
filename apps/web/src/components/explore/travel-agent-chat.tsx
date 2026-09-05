@@ -1384,7 +1384,7 @@ export function TravelAgentChat({
         )}
 
         <div ref={panelScrollRef} className={docked
-          ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 xl:[&>*]:translate-x-1"
+          ? "flex-1 overflow-y-scroll bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 wanderly-scrollbar-persistent xl:[&>*]:translate-x-1"
           : "flex-1 overflow-y-auto px-5 py-5"} aria-live="polite">
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
