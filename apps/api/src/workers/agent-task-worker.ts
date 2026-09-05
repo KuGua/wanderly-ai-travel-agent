@@ -19,6 +19,8 @@ import {
 import { agentTaskConfig } from "../tasks/config.js";
 import { handleConversationTask, publishPhase } from "../tasks/handlers/conversation-task-handler.js";
 import { persistDestinationCue } from "../services/destination-cue-service.js";
+import { persistOfferCue } from "../services/offer-cue-service.js";
+import { getUserMessageSequenceForRun } from "../services/personal-research-sequence.js";
 import { handlePlanningTask } from "../tasks/handlers/planning-task-handler.js";
 import {
   claimNextConversationTask,
@@ -277,6 +279,77 @@ export async function processNextAgentTask(): Promise<boolean> {
             errorCode: error instanceof Error ? error.name : "INTERNAL",
             relatedRunId: run.id,
           });
+        }
+      }
+      if (output.flightOfferCueDecision || output.hotelOfferCueDecision) {
+        const currentUserMessageSequence = run.tripId
+          ? await getUserMessageSequenceForRun({ runId: run.id, tripId: run.tripId })
+          : null;
+        if (currentUserMessageSequence !== null) {
+          if (output.flightOfferCueDecision) {
+            try {
+              const decision = await output.flightOfferCueDecision;
+              if (decision) {
+                const outcome = await persistOfferCue({
+                  ctx,
+                  run,
+                  decision,
+                  currentUserMessageSequence,
+                  capability: "flight",
+                });
+                if (outcome) {
+                  await publishAgentStreamEvent({
+                    event: "flight.offer_cue_ready",
+                    runId: run.id,
+                    generationAttempt: run.generationAttempt,
+                    cue: outcome.cue,
+                    traceparent,
+                  });
+                }
+              }
+            } catch (error) {
+              logSafeRuntimeEvent(ctx, {
+                component: "offer_cue",
+                event: "flight_offer_cue",
+                operation: "flight.offer.cue",
+                outcome: "failure",
+                errorCode: error instanceof Error ? error.name : "INTERNAL",
+                relatedRunId: run.id,
+              });
+            }
+          }
+          if (output.hotelOfferCueDecision) {
+            try {
+              const decision = await output.hotelOfferCueDecision;
+              if (decision) {
+                const outcome = await persistOfferCue({
+                  ctx,
+                  run,
+                  decision,
+                  currentUserMessageSequence,
+                  capability: "hotel",
+                });
+                if (outcome) {
+                  await publishAgentStreamEvent({
+                    event: "hotel.offer_cue_ready",
+                    runId: run.id,
+                    generationAttempt: run.generationAttempt,
+                    cue: outcome.cue,
+                    traceparent,
+                  });
+                }
+              }
+            } catch (error) {
+              logSafeRuntimeEvent(ctx, {
+                component: "offer_cue",
+                event: "hotel_offer_cue",
+                operation: "hotel.offer.cue",
+                outcome: "failure",
+                errorCode: error instanceof Error ? error.name : "INTERNAL",
+                relatedRunId: run.id,
+              });
+            }
+          }
         }
       }
       if (briefProposal) {

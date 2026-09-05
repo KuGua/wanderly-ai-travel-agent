@@ -201,7 +201,7 @@ export const pinoInstance: pino.Logger = pino({
  * exception messages are never accepted here.
  */
 export type SafeRuntimeEvent = {
-  component: "llm" | "tool" | "planner" | "worker" | "ui";
+  component: "llm" | "tool" | "planner" | "worker" | "ui" | "offer_cue";
   event: string;
   operation: string;
   outcome?: "started" | "success" | "failure" | "retrying" | "cancelled";
@@ -254,6 +254,14 @@ export type SafeRuntimeEvent = {
    */
   originId?: string;
   destinationId?: string;
+  /**
+   * Bounded reason code for cue decisions (Offer Cue reason codes). Never
+   * message text or model rationale.
+   */
+  cueReasonCode?: "EXPLICIT_SELECTION" | "STRONG_SELECTION"
+    | "INSPECT_ONLY" | "COMPARE_ONLY"
+    | "REJECTED" | "SEARCH_AGAIN"
+    | "AMBIGUOUS_REFERENCE" | "NO_SELECTION_INTENT";
 };
 
 export function logSafeRuntimeEvent(ctx: RequestContext, event: SafeRuntimeEvent): void {

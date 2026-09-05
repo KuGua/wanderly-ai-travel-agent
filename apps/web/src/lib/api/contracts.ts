@@ -303,12 +303,85 @@ export const destinationCueActionResponseSchema = z.object({
   }).strict(),
 }).strict();
 
+// ─── Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+//     docs/hotel-offer-cue-model-draft.md) ──────────────────────────────────
+// Personal-only confirmation card derived from offers the owner has already
+// seen. Mirrors the destination cue wire shape but with capability
+// scoping and opaque candidateRef (never providerOfferId or raw payload).
+export const offerCueCapabilitySchema = z.enum(["flight", "hotel"]);
+
+export const offerCueCandidateDisplaySchema = z.object({
+  capability: offerCueCapabilitySchema,
+  headline: z.string().min(1).max(160),
+  subline: z.string().max(160).nullable(),
+  priceLabel: z.string().max(64).nullable(),
+}).strict();
+
+export const offerCueCandidateSchema = z.object({
+  id: z.string().uuid(),
+  candidateRef: z.string().uuid(),
+  ordinal: z.number().int().min(0).max(4),
+  intent: z.enum(["EXPLICIT_SELECT", "STRONG_PREFERENCE"]),
+  status: z.enum(["PENDING", "ACCEPTED", "DISMISSED", "EXPIRED"]),
+  display: offerCueCandidateDisplaySchema,
+}).strict();
+
+export const offerCueSchema = z.object({
+  id: z.string().uuid(),
+  version: z.number().int().positive(),
+  capability: offerCueCapabilitySchema,
+  candidates: z.array(offerCueCandidateSchema).min(1).max(5),
+  reasonCode: z.enum([
+    "EXPLICIT_SELECTION", "STRONG_SELECTION",
+    "INSPECT_ONLY", "COMPARE_ONLY",
+    "REJECTED", "SEARCH_AGAIN",
+    "AMBIGUOUS_REFERENCE", "NO_SELECTION_INTENT",
+  ]),
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const offerCueActionInputSchema = z.object({
+  requestId: z.string().uuid(),
+  expectedVersion: z.number().int().positive(),
+  timeZone: z.string().trim().min(1).max(64).default("UTC"),
+  source: z.enum(["CARD_BUTTON", "RESULT_CARD_BUTTON"]).default("CARD_BUTTON"),
+}).strict();
+
+export const offerCueActionResponseSchema = z.object({
+  cue: offerCueSchema.nullable(),
+  selection: z.object({
+    id: z.string().uuid(),
+    capability: offerCueCapabilitySchema,
+    status: z.enum(["ACTIVE", "SUPERSEDED", "REMOVED"]),
+    selectedAt: z.string().datetime(),
+    supersededIds: z.array(z.string().uuid()),
+  }).nullable(),
+}).strict();
+
+export const personalOfferSelectionSchema = z.object({
+  id: z.string().uuid(),
+  capability: offerCueCapabilitySchema,
+  status: z.enum(["ACTIVE", "SUPERSEDED", "EXPIRED", "REMOVED"]),
+  display: offerCueCandidateDisplaySchema,
+  candidateRef: z.string().uuid(),
+  scopeKey: z.string().min(1).max(64),
+  selectedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+}).strict();
+
+export const personalOfferSelectionListResponseSchema = z.object({
+  selections: z.array(personalOfferSelectionSchema),
+}).strict();
+
 export const ownerConversationResponseSchema = z.object({
   thread: threadSchema,
   messages: z.array(conversationMessageSchema),
   // Optional during rolling deployment so a newer web build can still read
   // the pre-cue conversation payload from an older API instance.
   pendingDestinationCue: destinationCueSchema.nullable().optional(),
+  // Flight / Hotel Offer Cue (additive). Optional so older API payloads
+  // still parse; default [].
+  pendingOfferCues: z.array(offerCueSchema).max(2).optional(),
 });
 
 export const agentRunResponseSchema = z.object({
@@ -803,6 +876,17 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
   streamBaseSchema.extend({
     event: z.literal("destination.cue_ready"),
     cue: destinationCueSchema,
+  }).strict(),
+  // Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+  // docs/hotel-offer-cue-model-draft.md). The chat renders an accept/dismiss
+  // card; subsequent accept/dismiss is a follow-up POST, not an SSE.
+  streamBaseSchema.extend({
+    event: z.literal("flight.offer_cue_ready"),
+    cue: offerCueSchema,
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("hotel.offer_cue_ready"),
+    cue: offerCueSchema,
   }).strict(),
   streamBaseSchema.extend({ event: z.literal("turn.cancelled") }).strict(),
   streamBaseSchema.extend({ event: z.literal("turn.stale"), code: agentRunErrorCodeSchema }).strict(),
@@ -1772,6 +1856,11 @@ export type MobilityOfferSelectionRequest = z.infer<typeof mobilityOfferSelectio
 export type MobilityOfferSelectionResponse = z.infer<typeof mobilityOfferSelectionResponseSchema>;
 export type DestinationCue = z.infer<typeof destinationCueSchema>;
 export type DestinationCueActionInput = z.infer<typeof destinationCueActionInputSchema>;
+export type OfferCue = z.infer<typeof offerCueSchema>;
+export type OfferCueCapability = z.infer<typeof offerCueCapabilitySchema>;
+export type OfferCueActionInput = z.infer<typeof offerCueActionInputSchema>;
+export type OfferCueActionResponse = z.infer<typeof offerCueActionResponseSchema>;
+export type PersonalOfferSelection = z.infer<typeof personalOfferSelectionSchema>;
 export type DestinationCueActionResponse = z.infer<typeof destinationCueActionResponseSchema>;
 
 export type TripPlaceKind = z.infer<typeof tripPlaceKindSchema>;

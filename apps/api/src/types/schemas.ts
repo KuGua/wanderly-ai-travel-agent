@@ -1091,6 +1091,138 @@ export const personalResearchHotelOfferItemSchema = z.object({
   cancellationSummary: z.string().nullable(),
 }).strict();
 
+/**
+ * Full per-offer projection persisted in
+ * `personal_research_offer_candidates.normalized_offer_json`. Same privacy
+ * boundary as the existing chat DTO shapes (no providerOfferId, raw
+ * payload, or coordinates) — the candidate row is opaque to the browser
+ * (only `candidateRef` is exposed), but the model needs the full bounded
+ * fields to rank "cheapest direct" vs "morning flight" etc.
+ */
+export const personalResearchFlightOfferCandidateJsonSchema = z.object({
+  ordinal: z.number().int().min(0).max(4),
+  carrierCode: z.string().min(1).max(8),
+  flightNumber: z.string().nullable(),
+  departureAt: z.string().datetime(),
+  arrivalAt: z.string().datetime(),
+  totalDuration: z.string().min(1).max(32),
+  totalPrice: z.number().nonnegative(),
+  currency: z.string().length(3),
+  stopCount: z.number().int().nonnegative(),
+}).strict();
+export const personalResearchHotelOfferCandidateJsonSchema = z.object({
+  ordinal: z.number().int().min(0).max(4),
+  propertyName: z.string().min(1).max(200),
+  pricePerNight: z.number().nonnegative(),
+  totalPrice: z.number().nonnegative(),
+  currency: z.string().length(3),
+  checkIn: z.string(),
+  checkOut: z.string(),
+  cancellationSummary: z.string().nullable(),
+  roomSummary: z.string().nullable(),
+  taxStatus: z.enum(["INCLUDED", "PARTIAL", "UNKNOWN"]),
+}).strict();
+
+/**
+ * Opaque wire shape the browser sees for each candidate. Never includes
+ * providerOfferId, raw payload, coordinates, routeKey/stayKey, or PII.
+ */
+export const personalResearchOfferCandidateWireSchema = z.object({
+  candidateRef: uuidSchema,
+  ordinal: z.number().int().min(0).max(4),
+  capability: z.enum(["flight", "hotel"]),
+}).strict();
+
+// ─── Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+//     docs/hotel-offer-cue-model-draft.md) ──────────────────────────────────
+
+export const offerCueCapabilitySchema = z.enum(["flight", "hotel"]);
+export const offerCueBatchStatusSchema = z.enum(["OPEN", "RESOLVED", "SUPERSEDED", "EXPIRED"]);
+export const offerCueCandidateStatusSchema = z.enum(["PENDING", "ACCEPTED", "DISMISSED", "EXPIRED"]);
+export const offerCueCandidateIntentSchema = z.enum(["EXPLICIT_SELECT", "STRONG_PREFERENCE"]);
+export const offerCueReasonCodeSchema = z.enum([
+  "EXPLICIT_SELECTION", "STRONG_SELECTION",
+  "INSPECT_ONLY", "COMPARE_ONLY",
+  "REJECTED", "SEARCH_AGAIN",
+  "AMBIGUOUS_REFERENCE", "NO_SELECTION_INTENT",
+]);
+
+export const offerCueCandidateDisplaySchema = z.object({
+  capability: offerCueCapabilitySchema,
+  headline: z.string().min(1).max(160),
+  subline: z.string().max(160).nullable(),
+  priceLabel: z.string().max(64).nullable(),
+}).strict();
+
+export const offerCueCandidateResponseSchema = z.object({
+  id: uuidSchema,
+  candidateRef: uuidSchema,
+  ordinal: z.number().int().min(0).max(4),
+  intent: offerCueCandidateIntentSchema,
+  status: offerCueCandidateStatusSchema,
+  display: offerCueCandidateDisplaySchema,
+}).strict();
+
+export const offerCueResponseSchema = z.object({
+  id: uuidSchema,
+  version: z.number().int().positive(),
+  capability: offerCueCapabilitySchema,
+  candidates: z.array(offerCueCandidateResponseSchema).min(1).max(5),
+  reasonCode: offerCueReasonCodeSchema,
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export const offerCueActionRequestSchema = z.object({
+  requestId: uuidSchema,
+  expectedVersion: z.number().int().positive(),
+  timeZone: z.string().trim().min(1).max(64).default("UTC"),
+  source: z.enum(["CARD_BUTTON", "RESULT_CARD_BUTTON"]).default("CARD_BUTTON"),
+}).strict();
+
+export const offerCueActionResponseSchema = z.object({
+  cue: offerCueResponseSchema.nullable(),
+  selection: z.object({
+    id: uuidSchema,
+    capability: offerCueCapabilitySchema,
+    status: z.enum(["ACTIVE", "SUPERSEDED", "REMOVED"]),
+    selectedAt: z.string().datetime(),
+    supersededIds: z.array(uuidSchema),
+  }).nullable(),
+}).strict();
+
+export const personalOfferSelectionResponseSchema = z.object({
+  id: uuidSchema,
+  capability: offerCueCapabilitySchema,
+  status: z.enum(["ACTIVE", "SUPERSEDED", "EXPIRED", "REMOVED"]),
+  display: offerCueCandidateDisplaySchema,
+  candidateRef: uuidSchema,
+  scopeKey: z.string().min(1).max(64),
+  selectedAt: z.string().datetime(),
+  version: z.number().int().positive(),
+}).strict();
+
+export const personalOfferSelectionListResponseSchema = z.object({
+  selections: z.array(personalOfferSelectionResponseSchema),
+}).strict();
+
+export const personalOfferSelectionDeleteRequestSchema = z.object({
+  requestId: uuidSchema,
+  expectedVersion: z.number().int().positive(),
+}).strict();
+
+export type OfferCueCapability = z.infer<typeof offerCueCapabilitySchema>;
+export type OfferCueBatchStatus = z.infer<typeof offerCueBatchStatusSchema>;
+export type OfferCueCandidateStatus = z.infer<typeof offerCueCandidateStatusSchema>;
+export type OfferCueCandidateIntent = z.infer<typeof offerCueCandidateIntentSchema>;
+export type OfferCueReasonCode = z.infer<typeof offerCueReasonCodeSchema>;
+export type OfferCueCandidateDisplay = z.infer<typeof offerCueCandidateDisplaySchema>;
+export type OfferCueCandidateResponse = z.infer<typeof offerCueCandidateResponseSchema>;
+export type OfferCueResponse = z.infer<typeof offerCueResponseSchema>;
+export type OfferCueActionRequest = z.infer<typeof offerCueActionRequestSchema>;
+export type OfferCueActionResponse = z.infer<typeof offerCueActionResponseSchema>;
+export type PersonalOfferSelectionResponse = z.infer<typeof personalOfferSelectionResponseSchema>;
+export type PersonalOfferSelectionListResponse = z.infer<typeof personalOfferSelectionListResponseSchema>;
+
 export const personalResearchFlightEvidenceSummarySchema = z.object({
   items: z.array(personalResearchEvidenceItemSchema).max(PERSONAL_RESEARCH_EVIDENCE_ITEM_LIMIT).default([]),
   offerCount: z.number().int().nonnegative(),
@@ -1352,6 +1484,18 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
   streamBaseSchema.extend({
     event: z.literal("destination.cue_ready"),
     cue: destinationCueResponseSchema,
+  }).strict(),
+  // Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+  // docs/hotel-offer-cue-model-draft.md). The chat consumes the cue and
+  // renders an accept/dismiss card. Subsequent accept/dismiss is a
+  // follow-up POST, not an SSE.
+  streamBaseSchema.extend({
+    event: z.literal("flight.offer_cue_ready"),
+    cue: offerCueResponseSchema,
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("hotel.offer_cue_ready"),
+    cue: offerCueResponseSchema,
   }).strict(),
   streamBaseSchema.extend({
     event: z.literal("turn.cancelled"),

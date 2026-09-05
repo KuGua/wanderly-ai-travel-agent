@@ -82,7 +82,14 @@ export type AuditAction =
   | "PERSONAL_RESEARCH_COMMAND_ACCEPTED"
   | "PERSONAL_RESEARCH_COMPLETED"
   | "PERSONAL_RESEARCH_CANCELLED"
-  | "DESTINATION_CUE_ACCEPT" | "DESTINATION_CUE_DISMISS";
+  | "DESTINATION_CUE_ACCEPT" | "DESTINATION_CUE_DISMISS"
+  // Flight / Hotel Offer Cue (added via 0077_offer_cue_audit_enums.sql).
+  // Acceptance writes only to personal_offer_selections; no booking, no plan,
+  // no Shared agent re-trigger. The audit summary carries capability +
+  // cueId + candidateId + source — never carrier, property name, price,
+  // provider ID, or route/stay key.
+  | "FLIGHT_OFFER_CUE_ACCEPT" | "FLIGHT_OFFER_CUE_DISMISS"
+  | "HOTEL_OFFER_CUE_ACCEPT" | "HOTEL_OFFER_CUE_DISMISS";
 
 export type AuditSummaryValue = string | number | boolean | null | AuditSummaryValue[] | {
   [key: string]: AuditSummaryValue;
