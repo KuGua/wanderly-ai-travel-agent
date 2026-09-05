@@ -31,7 +31,7 @@
 ### 明确不在范围
 
 - 不创建第二套持久化“Session”表，不解绑 `chat_threads.trip_id`，也不改变 `shared_trips.pinned_session_id`（它当前指向 task run，而非 chat thread）。
-- 不让模型、浏览器或普通 conversation task 直接调用 provider；不做自由 multi-agent、真实预订/付款/签证申请或自动 handoff。
+- 不让模型或浏览器直接调用 provider。当前 Conversation Worker 已可通过服务端拥有的、Zod 校验的 Flight/Hotel dispatcher 调用 `executePersonalResearch`；该 dispatcher 仍不向模型或浏览器授予 raw provider authority，且结果只落入 owner-only `personal_research_evidence`。不做自由 multi-agent、真实预订/付款/签证申请或自动 handoff。
 - 不把 Personal Research 的结果或用户原文复制到 `constraint_snapshot`、Shared Agent、同行者或 telemetry。
 - 不假设已有可用的签证实时 provider。当前 `VisaProvider` / Sherpa 仍是禁用的接入目标，签证 Personal Research 必须等 provider contract、DPA、凭据和 sandbox 验证通过后另行启用。
 

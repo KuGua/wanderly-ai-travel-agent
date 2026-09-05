@@ -383,7 +383,14 @@ export type ProviderUnavailableCode =
   | "UPSTREAM_TIMEOUT"
   | "UPSTREAM_FAILURE"
   | "INVALID_PROVIDER_RESPONSE"
-  | "PROVIDER_NOT_APPROVED";
+  | "PROVIDER_NOT_APPROVED"
+  /**
+   * The supplier answered 4xx: it understood the request and refused it.
+   * Distinct from `UPSTREAM_FAILURE`, which means the supplier itself broke.
+   * A 4xx is nearly always our own parameters, so it must not be reported as
+   * a provider outage — the two need different repairs and different alerts.
+   */
+  | "PROVIDER_REQUEST_REJECTED";
 
 export interface ServiceGap {
   capability: ServiceCapability;

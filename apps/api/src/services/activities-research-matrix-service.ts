@@ -67,6 +67,7 @@ function isProviderUnavailableCode(value: string | null): value is ProviderUnava
     "UPSTREAM_FAILURE",
     "INVALID_PROVIDER_RESPONSE",
     "PROVIDER_NOT_APPROVED",
+    "PROVIDER_REQUEST_REJECTED",
   ].includes(value ?? "");
 }
 

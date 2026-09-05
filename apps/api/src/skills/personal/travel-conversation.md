@@ -23,7 +23,7 @@ and invoked only through the Skill Registry with expected version `1.2.0`.
 | `agent` | `personal` | `Skill.agent` |
 | `version` | `1.2.0` | `Skill.version` |
 | `allowedTools` | `"chat:read"`, `"hotel:search"`, `"flight:search"` (Phase 4) | Personal Agent allow-list |
-| `timeoutMs` | `15000` | `Skill.timeoutMs` |
+| `timeoutMs` | `30000` | `Skill.timeoutMs`, from `agentTaskConfig.conversationModelBudgetMs` (`CONVERSATION_MODEL_BUDGET_MS`) |
 | `needsConfirm` | `false` | `Skill.needsConfirm` |
 
 ## Contract
@@ -277,7 +277,7 @@ hashes—not question, answer, or transcript text.
 | --- | --- | --- | --- |
 | `INPUT_INVALID` | Question, place, or history violates the input schema | 400 | No; correct the request |
 | `OUTPUT_INVALID` | Gateway result violates the output schema | 422 | No; fix the implementation |
-| `TIMEOUT` | Execution exceeds 15000ms | 504 | Yes, with the same request ID |
+| `TIMEOUT` | Execution exceeds the configured model budget (default 30000ms) | 504 | Yes, with the same request ID |
 | `UPSTREAM_FAILURE` | Configured model/provider fails or returns unusable output | 502 | Yes, with the same request ID |
 | `TOOL_NOT_ALLOWED` | `chat:read` is denied by policy | 403 | No; correct policy/context |
 

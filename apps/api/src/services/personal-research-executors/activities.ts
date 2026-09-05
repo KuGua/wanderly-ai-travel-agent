@@ -103,7 +103,8 @@ type UnavailableCode =
   | "UPSTREAM_TIMEOUT"
   | "UPSTREAM_FAILURE"
   | "INVALID_PROVIDER_RESPONSE"
-  | "PROVIDER_NOT_APPROVED";
+  | "PROVIDER_NOT_APPROVED"
+  | "PROVIDER_REQUEST_REJECTED";
 
 const ALLOWED_UNAVAILABLE_CODES: UnavailableCode[] = [
   "NOT_CONFIGURED",
@@ -114,6 +115,7 @@ const ALLOWED_UNAVAILABLE_CODES: UnavailableCode[] = [
   "UPSTREAM_FAILURE",
   "INVALID_PROVIDER_RESPONSE",
   "PROVIDER_NOT_APPROVED",
+  "PROVIDER_REQUEST_REJECTED",
 ];
 
 function unavailableSummary(errorCode: UnavailableCode): PersonalResearchEvidenceSummary {

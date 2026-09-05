@@ -245,6 +245,85 @@ describe("conversational ModelGateway", () => {
   });
 });
 
+describe("a call aborted by our own deadline", () => {
+  /** The shape the OpenAI SDK actually raises: a plain Error, not an AbortError. */
+  function sdkAbortError() {
+    const error = new Error("Request was aborted.");
+    error.name = "Error";
+    return error;
+  }
+
+  it("is reported as TIMEOUT and is not retried", async () => {
+    // Regression for a turn cut by `createTurnDeadline`: the SDK hides the
+    // abort behind its own Error, so the failure used to be classified
+    // UPSTREAM_FAILURE — blaming the provider for our own budget — and then
+    // retried three more times against the same settled signal.
+    const controller = new AbortController();
+    const parse = vi.fn().mockImplementation(async () => {
+      controller.abort();
+      throw sdkAbortError();
+    });
+    const gateway = new LLMGateway({
+      apiKey: "test-key", provider: "openai", modelName: "test-model",
+      promptVersion: "chat-test-v1", ctx: createRequestContext(),
+      client: { chat: { completions: { parse } } }, maxRetries: 3,
+    });
+
+    await expect(gateway.generateConversationReply({
+      question: "Tell me about Tokyo",
+      threadContext: [],
+      signal: controller.signal,
+    })).resolves.toMatchObject({ responseMode: "FALLBACK" });
+
+    expect(parse).toHaveBeenCalledTimes(1);
+    expect(recordAgentRun).toHaveBeenCalledWith(expect.objectContaining({
+      status: "TIMEOUT",
+      errorCode: "TIMEOUT",
+    }));
+  });
+
+  it("is reported as TIMEOUT on the streaming path too", async () => {
+    const controller = new AbortController();
+    const create = vi.fn().mockImplementation(async () => {
+      controller.abort();
+      throw sdkAbortError();
+    });
+    const gateway = new LLMGateway({
+      apiKey: "test-key", provider: "openai", modelName: "test-model",
+      promptVersion: "chat-test-v1", ctx: createRequestContext(),
+      client: { chat: { completions: { create } } }, maxRetries: 3,
+    });
+
+    await expect(gateway.streamConversationReply({
+      question: "Tell me about Tokyo",
+      threadContext: [],
+      onDelta: () => {},
+      signal: controller.signal,
+    })).resolves.toMatchObject({ responseMode: "FALLBACK" });
+
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(recordAgentRun).toHaveBeenCalledWith(expect.objectContaining({
+      status: "TIMEOUT",
+      errorCode: "TIMEOUT",
+    }));
+  });
+
+  it("classifies an SDK abort as TIMEOUT even with no signal in scope", async () => {
+    // Backstop in `classifyError` for call sites that pass no signal.
+    const parse = vi.fn().mockRejectedValue(sdkAbortError());
+    const gateway = buildGateway({ chat: { completions: { parse } } });
+
+    await expect(gateway.generateConversationReply({
+      question: "Tell me about Tokyo",
+      threadContext: [],
+    })).resolves.toMatchObject({ responseMode: "FALLBACK" });
+
+    expect(recordAgentRun).toHaveBeenCalledWith(expect.objectContaining({
+      errorCode: "TIMEOUT",
+    }));
+  });
+});
+
 function buildGateway(client: unknown) {
   return new LLMGateway({
     apiKey: "test-key",

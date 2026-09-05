@@ -342,6 +342,9 @@ function classifyError(err: unknown): string {
   }
   const message = (err as Error).message ?? "";
   if (/timeout/i.test(message)) return "TIMEOUT";
+  // Backstop for call sites with no signal in scope. The SDK reports an
+  // aborted request this way and its `name` is not `AbortError`.
+  if (/\baborted\b/i.test(message)) return "TIMEOUT";
   if (/parse|schema/i.test(message)) return "SCHEMA_PARSE";
   if (/network|fetch|ENOTFOUND|ECONNRESET/i.test(message)) return "NETWORK";
   if (/quota|rate limit|too many requests/i.test(message)) return "RATE_LIMITED";
@@ -368,6 +371,24 @@ function errorCodeForRepair(err: unknown): string {
  * conservatively not retried either — operators should classify it before
  * flipping the flag.
  */
+/**
+ * True when *our own* signal aborted the call — a `createTurnDeadline` model
+ * budget, a lost task lease, or an explicit cancellation.
+ *
+ * The signal is the authority here, not the error. The OpenAI SDK swallows an
+ * aborted signal and raises its own `Error("Request was aborted.")` whose
+ * `name` is a plain `"Error"`, so the `AbortError` branch in `classifyError`
+ * never sees it and the failure lands on the `UPSTREAM_FAILURE` fallback —
+ * which tells an operator the provider broke when in fact we cut the call
+ * ourselves. `TIMEOUT` is also on the retryable list, so every remaining
+ * attempt then re-fired against the same settled signal, failed instantly,
+ * and burned its backoff wait for nothing (measured: three wasted retries
+ * over 1.9s after a 15s budget expired).
+ */
+function abortedByCaller(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
+}
+
 function isRetryableUpstreamError(code: string): boolean {
   // RATE_LIMITED is retryable, but on its own clock: the limits that produce it
   // here are per-minute (requests, and input tokens), so the window does reopen
@@ -1093,6 +1114,9 @@ export class LLMGateway implements ModelGateway {
         });
         return parsed.plan;
       } catch (err) {
+        // Our own deadline or cancellation: name it TIMEOUT and stop. Retrying
+        // would reuse the same aborted signal and fail again immediately.
+        if (abortedByCaller(params.signal)) { lastError = "TIMEOUT"; break; }
         lastError = classifyError(err);
         safeRecordRetryableError(this.options.provider, lastError);
         if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
@@ -1585,6 +1609,9 @@ export class LLMGateway implements ModelGateway {
         });
         return reply;
       } catch (err) {
+        // Our own deadline or cancellation: name it TIMEOUT and stop. Retrying
+        // would reuse the same aborted signal and fail again immediately.
+        if (abortedByCaller(params.signal)) { lastError = "TIMEOUT"; break; }
         lastError = classifyError(err);
         safeRecordRetryableError(this.options.provider, lastError);
         if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
@@ -1715,6 +1742,9 @@ export class LLMGateway implements ModelGateway {
           },
         });
       } catch (error) {
+        // Our own deadline or cancellation: name it TIMEOUT and stop. Retrying
+        // would reuse the same aborted signal and fail again immediately.
+        if (abortedByCaller(params.signal)) { lastError = "TIMEOUT"; break; }
         lastError = classifyError(error);
         safeRecordRetryableError(this.options.provider, lastError);
         // Retrying after a tool call can duplicate provider side effects;

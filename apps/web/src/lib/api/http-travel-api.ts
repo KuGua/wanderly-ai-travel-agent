@@ -43,6 +43,7 @@ import {
   tripSearchPreferencesResponseSchema,
   planningTaskAcceptedResponseSchema,
   latestPlanningRunResponseSchema,
+  tripPlanningRunDetailResponseSchema,
   latestPlanResponseSchema,
   tripDetailResponseSchema,
   invitationPreviewResponseSchema,
@@ -504,6 +505,13 @@ export class HttpTravelApi implements TravelApi {
 
   getLatestPlanningRun(tripId: string) {
     return this.client.request(`/planning/${encodeURIComponent(tripId)}/run/latest`, latestPlanningRunResponseSchema);
+  }
+
+  getTripPlanningRunDetail(tripId: string, runId: string) {
+    return this.client.request(
+      `/trips/${encodeURIComponent(tripId)}/runs/${encodeURIComponent(runId)}`,
+      tripPlanningRunDetailResponseSchema,
+    );
   }
 
   getLatestPlan(tripId: string) {

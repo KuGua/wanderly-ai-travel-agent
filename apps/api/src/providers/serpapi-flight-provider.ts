@@ -1,3 +1,4 @@
+import { logProviderRejection } from "./provider-error-diagnostics.js";
 import { randomUUID } from "node:crypto";
 import type { FlightOffer } from "../types/domain.js";
 import { metrics } from "../observability/metrics.js";
@@ -65,7 +66,14 @@ export class SerpApiFlightProvider implements FlightProvider {
       if (response.status === 429) return this.unavailable("RATE_LIMITED", start);
       if (response.status === 401 || response.status === 403) return this.unavailable("PROVIDER_NOT_APPROVED", start);
       if (response.status >= 500) return this.unavailable("UPSTREAM_FAILURE", start);
-      if (!response.ok) return this.unavailable("UPSTREAM_FAILURE", start);
+      if (!response.ok) {
+        // 4xx: the supplier understood the request and refused it, so this is
+        // our parameters, not its health. Read its explanation before the
+        // response is discarded — it is the only thing that names the field
+        // it objected to.
+        await logProviderRejection(response, { provider: "serpapi", operation: "flight.search" });
+        return this.unavailable("PROVIDER_REQUEST_REJECTED", start);
+      }
 
       const parsed = serpApiFlightSearchResponseSchema.safeParse(await response.json());
       if (!parsed.success) return this.unavailable("INVALID_PROVIDER_RESPONSE", start);

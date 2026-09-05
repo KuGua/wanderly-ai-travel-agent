@@ -91,6 +91,20 @@
 7. See [成员对话候选到 Shared Agent 交接实施规范](member-conversation-handoff-implementation.md) for API, migration, rollout and test requirements.
 8. Handoff extraction is available only after Trip activation (`PLANNING`/`STALE`), never from `DRAFT`; a former member cannot read or confirm an old candidate batch, and deleting the source private thread dismisses its pending candidates before transcript deletion.
 
+### H3a.1 — Confirm a private flight or hotel offer without booking it
+
+**Story:** As a DRAFT Trip creator, after I have seen my own live flight or hotel results, I want the system to ask for confirmation only when my current message actually selects one result, so I can save a candidate to my Trip without mistaking that for a purchase or silently changing a Shared Plan.
+
+**Acceptance criteria:**
+
+1. Flight and Hotel each use an independent structured-output decision model. Natural-language trigger decisions are never made by keyword or regex hard-code; deterministic code only checks identity, result-set eligibility, candidate ownership, freshness, version, idempotency and prompt policy.
+2. A classifier receives only the current owner message plus a bounded, server-issued projection of that owner's already-visible, unexpired offer set. It receives no Assistant/history text, raw provider payload, provider ID/link, Profile, other thread or other member data.
+3. Personal Research results persist owner-only offer candidates with opaque browser references. `provider_offers` and `provider_search_runs` remain snapshot-bound and Personal selections never become Shared evidence or booking authority.
+4. A unique explicit/strong selection creates `Take this flight?` or `Stay in this hotel?`; detail questions, comparisons, neutral positive remarks, rejection, re-search requests and ambiguous references do not. Same-leg/same-stay multi-selection requests clarification rather than creating competing cards.
+5. Accept stores an owner-only, versioned selection and returns a clear non-booking success message. It does not set a destination, activate/rewrite a plan, create an order, payment or provider redirect. Shared Planning later re-searches and revalidates evidence.
+6. Dismiss applies a per-capability 30-minute cooldown and a three-dismissal-per-local-day mute. Model-classified explicit selection may bypass suppression but remains subject to resolver/freshness checks. Destination, Flight and Hotel cards may share a container but each action is independent.
+7. This first release is DRAFT creator/thread only. Cross-thread/member access, expired/superseded candidates, stale versions, duplicate actions and model failure fail closed; model failure does not delay or fail normal chat.
+
 ### H3b — See the Shared Agent's result as a trip-wide read-only surface
 
 **Story:** As any active Trip member, I want the Shared Trip Agent's output to appear in a pinned, trip-wide place I can open at any time, so that I can see what was planned, why it changed, and what I still have to vote on — without asking the member who triggered it.
