@@ -1974,7 +1974,7 @@ export function TravelAgentChat({
           >
             <div
               aria-hidden="true"
-              className="wanderly-chat-scroll-thumb absolute inset-x-0 touch-none"
+              className="wanderly-chat-scroll-thumb absolute left-1/2 -translate-x-1/2 touch-none"
               style={{
                 height: `${chatScrollbarMetrics.thumbHeight}%`,
                 top: `${chatScrollbarMetrics.thumbTop}%`,

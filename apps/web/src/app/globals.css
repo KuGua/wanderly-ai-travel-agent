@@ -268,7 +268,9 @@
  * conversation reads as a page divider rather than a control. Only the thumb
  * is drawn. */
 .wanderly-chat-scroll-track {
-  width: 10px;
+  /* Wider than the thumb it holds: this is the click-to-jump target, and a
+   * 6.5px one would be a hard thing to hit on purpose. Invisible either way. */
+  width: 14px;
   cursor: pointer;
   background: transparent;
 }
@@ -277,6 +279,9 @@
  * the tinted track; with the track gone that ring separated the thumb from a
  * white page, which is to say it only made a 10px control 6px wide. */
 .wanderly-chat-scroll-thumb {
+  /* Narrower than its track, and centred in it — the drawn part is a hairline,
+   * the part you can hit is not. */
+  width: 6.5px;
   min-height: 34px;
   cursor: grab;
   border-radius: 999px;
