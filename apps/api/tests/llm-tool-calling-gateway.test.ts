@@ -34,6 +34,86 @@ describe("LLMGateway planning tools", () => {
     expect(String(initialMessages[1]?.content)).toContain('"originIds":["SFO"]');
   });
 
+  /**
+   * 2026-09-05: a run answered both its flight cells in turn one, then spent
+   * turns two through ten re-issuing `flight.search` for the same two cells.
+   * The cache served each instantly and spent no supplier quota, but every
+   * repeat consumed a turn; the budget ran out and the run was thrown away,
+   * with "Do not call flight.search again" in front of the model each pass.
+   * Telling it not to is not the same as making it impossible.
+   */
+  it("withdraws flight.search once every required cell has an answer", async () => {
+    process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = "true";
+    const flightCall = (id: string, destinationId: string) => ({
+      id, function: { name: "flight.search", arguments: JSON.stringify({ originId: "SFO", destinationId }) },
+    });
+    const create = vi.fn()
+      .mockResolvedValueOnce({ choices: [{ message: { tool_calls: [flightCall("c1", "NRT"), flightCall("c2", "HND")] } }] })
+      .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({
+        plan: { destination: "NRT", flights: [], generatedAt: "2026-01-01T00:00:00Z" },
+      }) } }] });
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "openai", modelName: "test", promptVersion: "test",
+      ctx: createRequestContext(), client: { chat: { completions: { create, parse: vi.fn() } } },
+    });
+    const dispatchTool = vi.fn().mockResolvedValue({
+      outcome: "LIVE", queryId: "11111111-1111-4111-8111-111111111111", offers: [],
+    });
+    await gateway.generateStructuredPlanWithTools!({
+      destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 4,
+      flightSearchConstraints: {
+        originIds: ["SFO"], destinationIds: ["NRT", "HND"],
+        tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD",
+      },
+      tools: [
+        { name: "flight.search", description: "test", parameters: {} },
+        { name: "activities.search", description: "test", parameters: {} },
+      ],
+      dispatchTool,
+    });
+
+    // First turn offers both tools; once both cells are answered the second
+    // turn offers only what is left to do.
+    const firstTools = (create.mock.calls[0][0].tools as Array<{ function: { name: string } }>).map((t) => t.function.name);
+    expect(firstTools).toContain("flight.search");
+    const secondTools = (create.mock.calls[1][0].tools as Array<{ function: { name: string } }>).map((t) => t.function.name);
+    expect(secondTools).not.toContain("flight.search");
+    expect(secondTools).toContain("activities.search");
+  });
+
+  it("does not spend the turn budget on calls it has already answered", async () => {
+    process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = "true";
+    const repeat = { id: "c1", function: { name: "activities.search", arguments: JSON.stringify({ destinationId: "NRT" }) } };
+    const create = vi.fn()
+      .mockResolvedValueOnce({ choices: [{ message: { tool_calls: [repeat] } }] })
+      // Two turns of nothing but the same call again. Before the refund these
+      // ate two of the three turns and the run died without a plan.
+      .mockResolvedValueOnce({ choices: [{ message: { tool_calls: [{ ...repeat, id: "c2" }] } }] })
+      .mockResolvedValueOnce({ choices: [{ message: { tool_calls: [{ ...repeat, id: "c3" }] } }] })
+      .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({
+        plan: { destination: "NRT", flights: [], generatedAt: "2026-01-01T00:00:00Z" },
+      }) } }] });
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "openai", modelName: "test", promptVersion: "test",
+      ctx: createRequestContext(), client: { chat: { completions: { create, parse: vi.fn() } } },
+    });
+    const dispatchTool = vi.fn().mockResolvedValue({ outcome: "LIVE", offers: [] });
+    const result = await gateway.generateStructuredPlanWithTools!({
+      destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 3,
+      flightSearchConstraints: {
+        originIds: [], destinationIds: [],
+        tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD",
+      },
+      tools: [{ name: "activities.search", description: "test", parameters: {} }],
+      dispatchTool,
+    });
+
+    expect(result.destination).toBe("NRT");
+    // The supplier was asked once; the repeats were answered from the record.
+    expect(dispatchTool).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledTimes(4);
+  });
+
   it("normalizes null optional plan arrays returned by an OpenAI-compatible provider", async () => {
     process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = "true";
     const create = vi.fn()

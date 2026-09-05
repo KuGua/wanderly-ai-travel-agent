@@ -300,7 +300,7 @@
         "message": "Wanderly could not write a plan this turn ({reason}), but kept what it found. See the trip workspace for details.",
         "reasonFlight": "no flight evidence was available for the recommended destination"
       },
-      "planningToolBudgetExhausted": "Wanderly ran out of time calling travel providers while planning. The plan was not changed; try again to let the next turn finish.",
+      "planningToolBudgetExhausted": "Planning did not converge within its budget. What this round did find is saved — you can see it in the planning result.",
       "conversationEvidenceWithoutReply": "Wanderly gathered {capabilityCount, plural, one {# result} other {# results}} from {providerName} (captured {capturedAtTime}) but could not finish the reply.",
       "preparingPrivateChat": "Preparing your private chat…",
       "privateChatUnavailable": "Private chat is unavailable.",

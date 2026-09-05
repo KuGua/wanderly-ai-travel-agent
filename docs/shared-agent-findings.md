@@ -662,3 +662,82 @@ serpapi 对每次航班搜索返回 400（我们的请求被拒，不是没有�
 两处一起改：扇出解析机场码；校验改用既有的 `airportServesCity()`（#22 加的那个，
 已经归一化大小写/空格/标点/变音符号并放行 CJK）。`ORIGIN_MISSING` 的多出发地
 判定和 `summarizeProviderGaps` 的 `missingOrigins` 用同一个判定。
+
+---
+# 第七轮：一次「全都成功却什么都没有」的规划（09-05 → 09-06）
+
+对象：trip `24a0799f`（Singapore → Shanghai，12-04~12-08）。
+run `f92e64e5` 以 `TOOL_CALL_MAX_TURNS` 失败，屏幕上只有
+「规划过程中调用供应商的时间用完了」。
+
+而这一轮 8 次 provider 搜索 **7 次 LIVE**，库里落了
+**28 条航班 offer、10 条 Nuitee 酒店报价、16 条住宿、4 条活动**。
+
+## #42 coverage 把城市名交给供应商 — 缺陷 — 已修（#39 的答案）
+见 #39 的补记。`logProviderRejection` 落地后 SerpApi 自己说了：
+`departure_id ("Singapore") should either be an uppercase 3-letter code`。
+
+**只修这一半会把失败从 400 挪到方案校验。** `plan-output-validator` 用字符串
+相等比较 `flight.origin` 与 `snapshot.departureCities`、`flight.destination`
+与 `plan.destination`，而 offer 里存的是机场码 —— **任何带真实机场码的 offer
+都无法通过它自己的方案校验**。这一条一直潜伏着：全库 `itinerary_plans` 从来
+是 0 行，模型从没成功返回过方案，所以没人撞到过。两处一起改。
+
+## #43 编排层预跑过的能力，又原样交给模型 — 缺陷 — 未修
+coverage 阶段已经跑过 `accommodation.discover` / `activities.search` /
+`places.search` 并写了 `provider_search_runs` 行。工具循环里模型再调，撞上
+`onConflictDoNothing` 的一次性守卫 → `AlreadyAttemptedError` → `POLICY_DENIED`，
+1–4ms，没碰 provider。**模型开局五个并行调用里有两个是这样被拒的 —— 注定的，
+不是偶发。** 它还得到了两个假的失败信号。
+
+未修：应当要么不把已跑过的能力放进工具列表，要么让守卫返回上一次的结果而不是
+拒绝。本轮先修了更上层的三条（#44/#45/#46），这条单列。
+
+## #44 模型不肯停，而重复调用照样吃 turn — 缺陷 — 已修
+turn 1 答完两个航班格；turn 2–10 连续五次重复 `flight.search`，在同样两格之间
+来回横跳（outputHash 交替）。缓存 0ms 返回、不花配额，**但每次消耗一个 turn**。
+`appendFlightProgress()` 每轮都在推「Do not call flight.search again」。
+
+**告诉模型别做，和让它做不到，是两回事。** 现在航班矩阵补齐后 `flight.search`
+从工具列表里撤下；完全相同的调用从本轮记录作答（原本只有航班有这个缓存）；
+整轮全是重复时不吃 turn 预算，但有额度上限，只会重复自己的模型仍然终止。
+
+## #45 turn 预算耗尽 = 整轮硬失败 — 缺陷 — 已修
+`classifyTaskError` 把 `TOOL_CALL_MAX_TURNS` 判为不可重试 → run `FAILED`，
+不写 summary、不写 plan，28 条航班和 10 条酒店一起消失。
+
+**这和 G1 是同一类错误，只是换了一道闸门。** 我们前一天刚拆掉航班那道，这道还在。
+现在与 `PlanEvidenceUnavailableError` 走同一条 `persistResearchSummary` 分支，
+reason `TOOL_BUDGET_EXHAUSTED`，run 落 `COMPLETED_WITH_GAPS`。
+仍然不产出 plan —— 模型没有给出选择，替它合成一个推荐就是编造。
+
+## #46 激活一次之后，对话再也叫不动规划 — 缺陷 — 已修
+用户原话：「当前『开始规划』如果被激活一次之后，往后对话完全无法激发」。
+
+两把锁同时锁死：
+1. `canStartSharedPlanning` 要求 `status === "DRAFT"`，而激活是单向的
+   （activate 对非 DRAFT 直接 409）。第一次点击把唯一入口消耗掉了。
+2. `buildDraftHandoffProse` 对非 DRAFT 返回**空字符串**，而系统提示词第 675 行
+   宣称这个块是活动边界的**唯一权威信号**。信号消失后模型退回通用规则，
+   永远指着一个已经不存在的按钮 —— 失败两小时后用户打「开始规划」，
+   得到的还是「点屏幕上的『开始规划』按钮」。
+
+加上共享方案面按规范不提供手动 replan，这趟 trip 成了死胡同。
+
+**钥匙一直都在。** `POST /planning/generate` 的守卫只拒绝 DRAFT，PLANNING 的
+trip 本来就收；web 侧 `startPlanning()` 和 `useStartPlanning` 都在，
+**全仓库没有任何组件调用** —— 又一个 G7 式孤儿。
+
+真正的修法不是加一个按钮，是**去掉那份重复**：`canStartSharedPlanning` 这个谓词
+被抄了两份（前端一份、conversation handler 一份），后者的注释还专门写着
+「必须和 UI 说同一个事实」。抄两份就是它们分叉的原因。现在
+`sharedPlanningState` 由服务端派生一次，同时供给 trip DTO 和 `PersonalTripContext`。
+
+**这不违反「禁止手动 replan」**：该禁令针对已有方案的情形，
+`member-conversation-handoff-implementation.md` 第 154 行自己写的是
+「无 plan 时接受 PLAN」。这趟 trip 有 0 个 plan。
+
+## #47 文案建议了一个界面不提供的动作 — 缺陷 — 已修
+`planningToolBudgetExhausted` 说「方案没有改动，再试一次让下一轮完成」，
+而 `isRetryableFailure` 不含该 code —— **屏幕上根本没有重试按钮**。
+改为说明本轮已取得的结果已经保存。

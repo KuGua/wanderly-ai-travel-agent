@@ -1339,9 +1339,40 @@ export class LLMGateway implements ModelGateway {
       params.flightSearchConstraints.destinationIds.map((destinationId) => ({ originId, destinationId })),
     );
     const flightCellStates = new Map<string, FlightCellState>();
-    const flightResultCache = new Map<string, unknown>();
+    /** Tool results already obtained this run, keyed by name + arguments. */
+    const toolResultCache = new Map<string, unknown>();
+    /**
+     * Repeated calls that cost a turn each.
+     *
+     * On 2026-09-05 a run finished its two flight cells in the first turn and
+     * then spent turns two through ten re-issuing `flight.search` for the same
+     * two cells. The result cache answered each in under a millisecond and
+     * spent no quota, but every one consumed a turn, and the budget ran out
+     * with the plan never written — while `appendFlightProgress()` pushed
+     * "Do not call flight.search again" on each pass. Telling the model not to
+     * is not the same as making it impossible.
+     */
+    const dispatchedCalls = new Set<string>();
+    let repeatOnlyTurns = 0;
+    /**
+     * How many turns may be spent entirely on calls already answered before
+     * they start costing budget. Small on purpose: one is a stumble, several
+     * in a row is the loop above.
+     */
+    const REPEAT_ONLY_TURN_ALLOWANCE = 2;
     let finalSchemaFailed = false;
     const flightCellKey = (originId: string, destinationId: string) => `${originId}\u0000${destinationId}`;
+    /**
+     * The tools this turn may actually use. Once every required flight cell
+     * has an answer, `flight.search` is withdrawn rather than merely
+     * discouraged: the model spent five consecutive turns re-asking for cells
+     * it had already completed, with the instruction not to in front of it
+     * each time. A tool that is not offered cannot be called.
+     */
+    const offeredTools = (): ModelToolDefinition[] => {
+      if (!flightToolAvailable || missingFlightCells().length > 0) return params.tools;
+      return params.tools.filter((tool) => tool.name !== "flight.search");
+    };
     const missingFlightCells = () => requiredFlightCells.filter(
       ({ originId, destinationId }) => !flightCellStates.has(flightCellKey(originId, destinationId)),
     );
@@ -1391,8 +1422,10 @@ export class LLMGateway implements ModelGateway {
       const forceMissingFlightSearch = turn > 0
         && flightToolAvailable
         && missingFlightCells().length > 0;
-      const forceFinalPlan = flightIsOnlyAvailableTool
-        && missingFlightCells().length === 0;
+      // Nothing left to call: either flight was the only tool and it is done,
+      // or every tool has been withdrawn. Ask for the plan itself.
+      const forceFinalPlan = offeredTools().length === 0
+        || (flightIsOnlyAvailableTool && missingFlightCells().length === 0);
       let raw: {
         choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }>;
       };
@@ -1400,7 +1433,7 @@ export class LLMGateway implements ModelGateway {
         raw = await client.chat.completions.create({
           model: this.options.modelName,
           messages,
-          tools: params.tools.map((tool) => ({ type: "function", function: tool })),
+          tools: offeredTools().map((tool) => ({ type: "function", function: tool })),
           tool_choice: forceMissingFlightSearch
             ? { type: "function", function: { name: "flight.search" } }
             : forceFinalPlan ? "none" : "auto",
@@ -1501,12 +1534,25 @@ export class LLMGateway implements ModelGateway {
       // OpenAI-standard fields can make the next Tool request fail with 400.
       // This object remains loop-local and is never logged or persisted.
       messages.push({ ...message, role: "assistant", content: message?.content ?? null, tool_calls: calls });
+      let everyCallWasARepeat = calls.length > 0;
       for (const call of calls) {
         const name = call.function?.name;
         const id = call.id;
         if (!name || !id) throw new ModelGatewayError("SCHEMA_PARSE");
         let args: unknown;
         try { args = JSON.parse(call.function?.arguments ?? ""); } catch { throw new ModelGatewayError("SCHEMA_PARSE"); }
+        const callSignature = `${name}\u0000${call.function?.arguments ?? ""}`;
+        if (dispatchedCalls.has(callSignature)) {
+          // Answered before, so it costs no supplier time — which is exactly
+          // why it must not silently cost a turn either.
+          logSafeRuntimeEvent(ctx, {
+            component: "tool", event: "dispatch_repeat", operation: "plan.comparison",
+            toolName: name, attempt: turn + 1, toolContext: "planning",
+          });
+        } else {
+          everyCallWasARepeat = false;
+          dispatchedCalls.add(callSignature);
+        }
         const toolStart = Date.now();
         logSafeRuntimeEvent(ctx, {
           component: "tool", event: "dispatch", operation: "plan.comparison", outcome: "started",
@@ -1524,11 +1570,16 @@ export class LLMGateway implements ModelGateway {
               }
             : null;
           const cacheKey = flightArgs ? flightCellKey(flightArgs.originId, flightArgs.destinationId) : null;
-          if (cacheKey && flightResultCache.has(cacheKey)) {
-            result = flightResultCache.get(cacheKey);
+          // Answer an identical call from the record instead of asking again.
+          // This was flight-only; a repeated `activities.search` still went out
+          // to the supplier for the same answer, spending quota and — on a tool
+          // with a once-per-run guard — coming back refused, which reads to the
+          // model as a new failure worth retrying.
+          if (toolResultCache.has(callSignature)) {
+            result = toolResultCache.get(callSignature);
           } else {
             result = await params.dispatchTool({ id, name, arguments: args });
-            if (cacheKey) flightResultCache.set(cacheKey, result);
+            toolResultCache.set(callSignature, result);
           }
           if (cacheKey && typeof result === "object" && result !== null) {
             const outcome = (result as { outcome?: unknown }).outcome;
@@ -1559,6 +1610,14 @@ export class LLMGateway implements ModelGateway {
         messages.push({ role: "tool", tool_call_id: id, content: boundToolResult(result) });
       }
       appendFlightProgress();
+      // A turn that asked only for answers it already had made no progress.
+      // Refunding it (up to a small allowance) hands the budget back to the
+      // work rather than to the loop; past the allowance it costs a turn like
+      // any other, so a model that will only repeat itself still terminates.
+      if (everyCallWasARepeat && repeatOnlyTurns < REPEAT_ONLY_TURN_ALLOWANCE) {
+        repeatOnlyTurns += 1;
+        turn -= 1;
+      }
     }
     const exhaustedCode = finalSchemaFailed && missingFlightCells().length === 0
       ? "SCHEMA_PARSE"
