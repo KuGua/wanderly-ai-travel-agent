@@ -737,6 +737,12 @@
   padding: 13px 16px 16px;
 }
 
+.wanderly-destination-film__frame--actions .wanderly-action,
+.wanderly-destination-film__frame--actions .wanderly-action:hover {
+  background-color: var(--w-white);
+  color: var(--w-ink);
+}
+
 .wanderly-cosmos-destination-drawer h2 {
   color: var(--w-fog);
 }
