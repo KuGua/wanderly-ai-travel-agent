@@ -153,6 +153,12 @@
     },
     "fixtures": {
       "tripName": "亚洲之旅"
+    },
+    "calendar": {
+      "year": "{year} 年",
+      "legendTrip": "行程期间",
+      "legendToday": "今天",
+      "ariaLabel": "行程年历"
     }
   },
   "profile": {

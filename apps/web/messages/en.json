@@ -153,6 +153,12 @@
     },
     "fixtures": {
       "tripName": "Asia Trip"
+    },
+    "calendar": {
+      "year": "{year}",
+      "legendTrip": "Trip dates",
+      "legendToday": "Today",
+      "ariaLabel": "Trip year"
     }
   },
   "profile": {

@@ -137,7 +137,15 @@
   --chart-5: var(--w-fog);
   --radius: 0.625rem;
   --welcome-glow: color-mix(in srgb, var(--w-highlight), transparent 62%);
-  --sidebar: var(--w-primary);
+  /* The rail stays as it was — same width, same hard edge, same shadow — but
+     its ground lifts a step and warms slightly, so it sits with the paper
+     dashboard beside it instead of reading as a separate slab. */
+  --sidebar: color-mix(in srgb, var(--w-primary), var(--w-fog) 16%);
+  /* Calendar marks. The run sits under the date numerals, so it stays lighter
+     than a chip would; today is a fill rather than an outline, which on a 17px
+     cell competed with the printed ruling around it. */
+  --w-cal-run: color-mix(in srgb, var(--w-info), var(--w-fog) 56%);
+  --w-cal-today: color-mix(in srgb, #c98f8a, var(--w-fog) 26%);
   --sidebar-foreground: var(--w-ink);
   --sidebar-primary: var(--w-highlight);
   --sidebar-primary-foreground: var(--w-ink);
@@ -631,6 +639,81 @@
   background: color-mix(in srgb, var(--w-crt-mid), #000 18%);
   border-color: var(--w-crt-line);
 }
+
+/* ---- paper desk ----------------------------------------------------------
+   The home dashboard is a desk: ruled paper for the year, note stock for the
+   trips, a clip on each. Every texture is drawn, so a card can be any width
+   and the tint can follow the palette rather than a bitmap. */
+
+/* A brushed underline rather than a border: thin at both ends, a touch off
+   level, softened at the edge. In `em` so it grows with whatever it underlines
+   — at a fixed pixel height it looked right at one size and thin at the next.
+   Not on a negative z-index: an ancestor's background paints over that. */
+.wanderly-brush { position: relative; display: inline-block; }
+.wanderly-brush::after {
+  content: "";
+  position: absolute;
+  left: -.22em; right: -.6em; bottom: -.24em; height: .4em;
+  border-radius: 60% 40% 55% 45% / 70% 60% 40% 30%;
+  transform: rotate(-.5deg);
+  filter: blur(.02em);
+  opacity: .8;
+  background: linear-gradient(90deg,
+    transparent 0,
+    color-mix(in srgb, var(--w-info), transparent 46%) 7%,
+    color-mix(in srgb, var(--w-info), transparent 22%) 26%,
+    color-mix(in srgb, var(--w-info), transparent 34%) 62%,
+    color-mix(in srgb, var(--w-info), transparent 58%) 88%,
+    transparent 100%);
+}
+
+/* Note stock. The three differ by tint and by one borrowed motif each: a
+   printed header band, a punched margin, a ticket stub. */
+.wanderly-note { position: relative; border-radius: 3px;
+  box-shadow: 0 1px 2px rgb(42 42 40 / .1), 0 8px 18px -14px rgb(42 42 40 / .5); }
+.wanderly-note--band { background-color: #F7F1E4; }
+.wanderly-note--band::before { content: ""; position: absolute; inset: 0 0 auto; height: 16px;
+  border-radius: 3px 3px 0 0; background: color-mix(in srgb, var(--w-info), var(--w-fog) 40%); }
+.wanderly-note--holes { background-color: #F8EDEC; }
+.wanderly-note--holes::before { content: ""; position: absolute; left: 10px; top: 16px; bottom: 16px;
+  width: 9px; background-repeat: repeat-y; background-size: 9px 23px;
+  background-image: radial-gradient(circle at 50% 50%, rgb(42 42 40 / .16) 0 3.4px, transparent 3.6px); }
+.wanderly-note--ticket { background-color: #EEF2F6; }
+.wanderly-note--ticket::before { content: ""; position: absolute; left: 17px; top: 10px; bottom: 10px;
+  width: 1px; background-size: 1px 7px;
+  background-image: linear-gradient(180deg, rgb(42 42 40 / .3) 0 3px, transparent 3px 7px); }
+
+/* The two bites out of a stub's edge. One pseudo-element with a percentage
+   box-shadow offset was the first attempt and drew a single notch: box-shadow
+   lengths do not take percentages. */
+.wanderly-notch::before, .wanderly-notch::after { content: ""; position: absolute; left: 12px;
+  width: 11px; height: 11px; border-radius: 999px; background: var(--w-page); }
+.wanderly-notch::before { top: -6px; }
+.wanderly-notch::after { bottom: -6px; }
+
+/* A clip drawn, not photographed: two rounded outlines, the inner one open at
+   the top so it reads as wire folding back on itself. */
+.wanderly-clip { position: absolute; top: -7px; right: 16px; z-index: 2; width: 13px; height: 30px;
+  border-radius: 7px; border: 1.6px solid rgb(140 146 152 / .85); }
+.wanderly-clip::after { content: ""; position: absolute; left: 2px; top: 6px; width: 5px; height: 18px;
+  border-radius: 4px; border: 1.6px solid rgb(140 146 152 / .55); border-top-color: transparent; }
+
+/* The calendar rules itself, one printed square per day, so a date always sits
+   inside a cell. A separate paper grid underneath was a second, unrelated
+   lattice — that is what read as misaligned. */
+.wanderly-cal-days, .wanderly-cal-dows {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  background-position: -1px -1px;
+  background-image:
+    linear-gradient(rgb(90 110 130 / .13) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(90 110 130 / .13) 1px, transparent 1px);
+}
+.wanderly-cal-days { background-size: calc(100% / 7) 17px; }
+.wanderly-cal-dows { background-size: calc(100% / 7) 100%; }
+/* One box model for every cell, marked or not: a nested grid let a highlighted
+   day size itself taller than its neighbours and knocked the runs out of line. */
+.wanderly-cal-day { display: block; height: 17px; line-height: 17px; text-align: center;
+  font-size: 9.5px; font-variant-numeric: tabular-nums; color: var(--w-ink); }
 
 /* A disabled control must not promise the highlight it will not give. */
 .wanderly-cosmos-control:disabled:hover {

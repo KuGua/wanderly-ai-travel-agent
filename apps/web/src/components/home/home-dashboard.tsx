@@ -14,6 +14,7 @@ import { useOptionalAuth } from "@/lib/auth/auth-provider";
 import type { TripSummary } from "@/lib/api/contracts";
 
 import { TripList } from "./trip-list";
+import { TripYearCalendar, tripRuns, yearsCovered } from "./trip-year-calendar";
 
 type StatusFilter = "active" | "all" | "completed" | "archived";
 
@@ -72,7 +73,24 @@ export function HomeDashboard() {
     },
   });
 
-  const trips = tripsQuery.data?.trips ?? [];
+  // Memoised, not `?? []`: that literal is a new array on every render, and it
+  // feeds four `useMemo` dependency lists below — each of which then recomputed
+  // every time regardless.
+  const trips = useMemo(() => tripsQuery.data?.trips ?? [], [tripsQuery.data]);
+  // `YYYY-MM-DD` in the reader's own zone. `toISOString()` would answer in UTC
+  // and highlight yesterday for anyone east of Greenwich after 00:00 local.
+  const todayIso = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  }, []);
+  const calendarRuns = useMemo(() => tripRuns(trips), [trips]);
+  // The year the traveller is most likely asking about: this one when it has
+  // trips, otherwise the nearest year that does.
+  const calendarYear = useMemo(() => {
+    const current = Number(todayIso.slice(0, 4));
+    const years = yearsCovered(calendarRuns, current);
+    return years.includes(current) ? current : years[years.length - 1];
+  }, [calendarRuns, todayIso]);
 
   const statusCounts = useMemo(() => {
     const counts = { active: 0, completed: 0, archived: 0 };
@@ -117,7 +135,7 @@ export function HomeDashboard() {
             {tHome("kicker")}
           </p>
           <h1 className="mt-2 text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">
-            {tHome("title")}
+            <span className="wanderly-brush">{tHome("title")}</span>
           </h1>
           <p className="mt-3 max-w-xl text-base text-muted-foreground">
             {tHome("subtitle")}
@@ -137,42 +155,13 @@ export function HomeDashboard() {
       </header>
       {startTrip.isError ? <p role="alert" className="mt-3 text-sm font-semibold text-destructive">{tHome("newTripError")}</p> : null}
 
-      {/* Summary cards */}
-      <section
-        className="my-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.45fr_repeat(3,1fr)]"
-        aria-label={tHome("summary.ariaLabel")}
-      >
-        <article className="flex min-h-[116px] items-center gap-4 bg-card p-[18px] wanderly-edge wanderly-r-lg wanderly-shadow sm:col-span-2 lg:col-span-1">
-          <span
-            className="relative grid size-[55px] shrink-0 place-items-center bg-[var(--w-info)] text-xl font-black text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
-            aria-hidden="true"
-          >
-            {tCommon("brandGlyph")}
-          </span>
-          <div>
-            <p className="text-[13px] text-muted-foreground">{tHome("summary.ready")}</p>
-            <strong className="mt-0.5 block text-[17px] tracking-[-0.04em]">
-              {statusCounts.active > 0
-                ? tHome("summary.activeTripsHeadline", { count: statusCounts.active })
-                : tHome("summary.privacyHeadline")}
-            </strong>
-          </div>
-        </article>
-        <SummaryCard
-          label={tHome("summary.activeLabel")}
-          value={String(statusCounts.active)}
-          detail={tHome("summary.activeDetail")}
-        />
-        <SummaryCard
-          label={tHome("summary.completedLabel")}
-          value={String(statusCounts.completed)}
-          detail={tHome("summary.completedDetail")}
-        />
-        <SummaryCard
-          label={tHome("summary.archivedLabel")}
-          value={String(statusCounts.archived)}
-          detail={tHome("summary.archivedDetail")}
-        />
+      {/* The year, where four tiles used to restate counts the trip list already
+          shows. Nineteen trips make "when is the year busy" the question a
+          number cannot answer. */}
+      <section className="my-8" aria-label={tHome("calendar.ariaLabel")}>
+        <div className="bg-card wanderly-edge wanderly-r-lg wanderly-shadow">
+          <TripYearCalendar year={calendarYear} runs={calendarRuns} today={todayIso} />
+        </div>
       </section>
 
       {/* Profile snapshot */}
@@ -243,41 +232,6 @@ export function HomeDashboard() {
 
       {/* Trips section */}
       <section className="mt-10" aria-labelledby="trips-heading">
-        {/* Filter toolbar */}
-        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap gap-2" role="group" aria-label={tHome("filter.ariaLabel")}>
-            {filters.map(({ key, count }) => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={filter === key}
-                onClick={() => setFilter(key)}
-                className={`inline-flex min-h-[39px] items-center gap-1.5 px-3.5 py-[7px] text-sm font-extrabold text-[var(--w-ink)] wanderly-edge wanderly-r-sm wanderly-press ${
-                  filter === key
-                    ? "bg-[var(--w-highlight)] wanderly-shadow-xs"
-                    : "bg-card hover:bg-[var(--w-mist)]"
-                }`}
-              >
-                {tHome(`filter.${key}`)}
-                <span className="tabular-nums opacity-70">
-                  {count}
-                </span>
-              </button>
-            ))}
-          </div>
-          <label className="flex min-h-[42px] w-full items-center gap-2 bg-card px-3 wanderly-edge wanderly-r-sm sm:w-[min(250px,100%)]">
-            <Search aria-hidden="true" className="size-[17px] text-[var(--w-ink)]" />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={tHome("filter.searchPlaceholder")}
-              aria-label={tHome("filter.searchPlaceholder")}
-              className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-[var(--w-ink)] placeholder:opacity-60"
-            />
-          </label>
-        </div>
-
         {/* Hero "continue" card */}
         {heroTrip && filter === "active" && !searchQuery ? (
           <section className="mb-6" aria-label={tHome("hero.ariaLabel")}>
@@ -344,14 +298,52 @@ export function HomeDashboard() {
           </section>
         ) : null}
 
-        {/* Trip grid */}
-        <div className="flex items-center justify-between gap-4 mb-3">
-          <h2 id="trips-heading" className="text-xl font-bold tracking-[-0.035em]">
-            {tHome("trips.heading")}
-          </h2>
-          <span className="text-[13px] font-bold text-muted-foreground" role="status" aria-atomic="true">
-            {tHome("trips.showing", { count: filteredTrips.length })}
-          </span>
+        {/* Trip grid. The filters live on this heading rather than beside the
+            "continue planning" card: that card only renders for the active
+            filter with no search, so filters placed there would disappear the
+            moment someone chose "archived" — the control removing itself. */}
+        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 id="trips-heading" className="text-xl font-bold tracking-[-0.035em]">
+              {tHome("trips.heading")}
+            </h2>
+          <div className="flex flex-wrap gap-2" role="group" aria-label={tHome("filter.ariaLabel")}>
+            {filters.map(({ key, count }) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={filter === key}
+                onClick={() => setFilter(key)}
+                className={`inline-flex min-h-[39px] items-center gap-1.5 px-3.5 py-[7px] text-sm font-extrabold text-[var(--w-ink)] wanderly-edge wanderly-r-sm wanderly-press ${
+                  filter === key
+                    ? "bg-[var(--w-cal-run)] wanderly-shadow-xs"
+                    : "bg-card hover:bg-[var(--w-mist)]"
+                }`}
+              >
+                {tHome(`filter.${key}`)}
+                <span className="tabular-nums opacity-70">
+                  {count}
+                </span>
+              </button>
+            ))}
+          </div>
+          </div>
+          <div className="flex items-center gap-4">
+          <label className="flex min-h-[42px] w-full items-center gap-2 bg-card px-3 wanderly-edge wanderly-r-sm sm:w-[min(250px,100%)]">
+            <Search aria-hidden="true" className="size-[17px] text-[var(--w-ink)]" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={tHome("filter.searchPlaceholder")}
+              aria-label={tHome("filter.searchPlaceholder")}
+              className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-[var(--w-ink)] placeholder:opacity-60"
+            />
+          </label>
+            <span className="shrink-0 text-[13px] font-bold text-muted-foreground" role="status" aria-atomic="true">
+              {tHome("trips.showing", { count: filteredTrips.length })}
+            </span>
+          </div>
         </div>
         {isCheckingSession || (isAuthenticated && tripsQuery.isPending) ? <LoadingState label={tCommon("loadingTrips")} /> : null}
         {!isCheckingSession && !isAuthenticated ? <PrivateDataSignInRequired subject="trips" /> : null}
@@ -388,24 +380,6 @@ function PrivateDataSignInRequired({ subject }: { subject: "profile" | "trips" }
         </Link>
       </div>
     </section>
-  );
-}
-
-function SummaryCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <article className="min-h-[116px] bg-card p-[18px] wanderly-edge wanderly-r-lg wanderly-shadow">
-      <p className="text-[13px] text-muted-foreground">{label}</p>
-      <strong className="mt-0.5 block text-2xl tracking-[-0.04em]">{value}</strong>
-      <p className="mt-1 text-[13px] text-muted-foreground">{detail}</p>
-    </article>
   );
 }
 

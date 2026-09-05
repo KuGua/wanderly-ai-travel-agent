@@ -8,13 +8,10 @@ import { Link } from "@/i18n/navigation";
 import type { TripSummary } from "@/lib/api/contracts";
 import { useDeleteTrip } from "@/lib/query/hooks";
 
-const artStyles = [
-  "from-[var(--w-info)] to-[var(--w-highlight)]",
-  "from-[var(--w-moss)] to-[var(--w-info)]",
-  "from-[var(--w-fog)] to-[var(--w-moss)]",
-  "from-[var(--w-highlight)] to-[var(--w-fog)]",
-  "from-[var(--w-primary)] to-[var(--w-moss)]",
-] as const;
+/* One note stock per trip, chosen from the id so a trip keeps its paper
+   between renders. Replaces five header gradients that were the same on every
+   card and so decorated without distinguishing. */
+const STOCKS = ["band", "holes", "ticket"] as const;
 
 /**
  * Picks a card's tilt and gradient from the trip's own id rather than its
@@ -66,20 +63,16 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
       {trips.map((trip) => {
         const style = STATUS_STYLES[trip.status];
         const seed = styleSeed(trip.id);
+        const stock = STOCKS[seed % STOCKS.length];
         return (
           <article
             key={trip.id}
-            className={`group relative flex min-h-[245px] flex-col overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow wanderly-press wanderly-press-lg ${
-              seed % 3 === 1 ? "wanderly-tilt-a" : seed % 3 === 2 ? "wanderly-tilt-b" : ""
+            className={`wanderly-note wanderly-note--${stock} group relative flex min-h-[190px] flex-col wanderly-press ${
+              stock === "band" ? "pt-[26px]" : stock === "holes" ? "pl-[18px]" : "pl-[16px]"
             }`}
           >
-            <div
-              className={`relative h-[87px] shrink-0 overflow-hidden border-b-2 border-[var(--w-ink)] bg-gradient-to-br ${artStyles[seed % artStyles.length]}`}
-              aria-hidden="true"
-            >
-              <span className="absolute -right-8 -top-[68px] size-[125px] rounded-full border-2 border-[var(--w-ink)]/65" />
-              <span className="absolute bottom-[-23px] left-[6%] h-[35px] w-[90%] -rotate-[5deg] rounded-[50%] border border-dashed border-[var(--w-ink)]/70" />
-            </div>
+            <span aria-hidden="true" className="wanderly-clip" />
+            {stock === "ticket" ? <span aria-hidden="true" className="wanderly-notch" /> : null}
             {/* Creator-only, matching the API: a member who wants out of a
                 shared trip is leaving it, not destroying it for everyone. Sits
                 over the artwork so it never crowds the trip's own details. */}
