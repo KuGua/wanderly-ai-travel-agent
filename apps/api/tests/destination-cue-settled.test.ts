@@ -1,17 +1,15 @@
 import { randomUUID } from "node:crypto";
 
-import { beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 
 import { db } from "../src/db/database.js";
 import {
   agentTaskRuns,
-  auditEvents,
   chatMessages,
   chatThreads,
   destinationCueBatches,
   sharedTrips,
-  tripMembers,
   users,
 } from "../src/db/schema.js";
 import { persistDestinationCue } from "../src/services/destination-cue-service.js";
@@ -24,15 +22,6 @@ beforeAll(async () => {
   const [existing] = await db.select().from(users).where(eq(users.externalId, "alice")).limit(1);
   aliceId = existing?.id ?? (await db.insert(users)
     .values({ externalId: "alice", displayName: "Alice" }).returning())[0].id;
-});
-
-beforeEach(async () => {
-  await db.delete(auditEvents);
-  await db.delete(agentTaskRuns);
-  await db.delete(chatMessages);
-  await db.delete(chatThreads);
-  await db.delete(tripMembers);
-  await db.delete(sharedTrips);
 });
 
 async function draftTripWith(destinations: string[]): Promise<{ tripId: string; run: AgentTaskRow }> {
@@ -93,13 +82,16 @@ function decision(names: string[]) {
  */
 describe("destination cue — already on the trip", () => {
   it("raises no cue for a destination the trip already holds", async () => {
-    const { run } = await draftTripWith(["Gero"]);
+    const { tripId, run } = await draftTripWith(["Gero"]);
 
     const cue = await persistDestinationCue({ run, decision: decision(["Gero"]) });
 
     expect(cue).toBeNull();
-    // Not merely hidden: no batch is written at all.
-    expect(await db.select().from(destinationCueBatches)).toHaveLength(0);
+    // Not merely hidden: no batch is written for this trip at all. Scoped to
+    // the trip rather than the table — this database is shared with every
+    // sibling file, so a global count is somebody else's rows.
+    expect(await db.select().from(destinationCueBatches)
+      .where(eq(destinationCueBatches.tripId, tripId))).toHaveLength(0);
   });
 
   it("matches the accept path's comparison rather than a stricter one", async () => {

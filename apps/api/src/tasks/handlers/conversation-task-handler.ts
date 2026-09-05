@@ -873,7 +873,17 @@ export async function handleConversationTask(params: {
   ) {
     throw new Error("Final conversation safety validation failed");
   }
-  if (gate.rawText === parsed.content) await gate.flush();
+  // Trailing text that never met a clause boundary is shipped here, and the
+  // guard is what keeps it from contradicting the persisted reply: a FALLBACK
+  // or a safe refusal replaces the answer wholesale, and streaming its tail
+  // anyway would leave the traveller reading half of an answer that was
+  // withdrawn.
+  //
+  // It compared raw bytes, and the output schema is `z.string().trim()`. A
+  // model reply ending in a newline — which is most of them — therefore failed
+  // the comparison, skipped the flush, and lost everything after its last
+  // clause boundary: 「…备齐了所有关键信息：从」 stopped exactly there.
+  if (gate.rawText.trim() === parsed.content) await gate.flush();
   // Draft brief extraction is private exploration behaviour. It remains
   // independent from the Shared handoff lifecycle below.
   const tripBriefProposal = parsed.responseMode === "MODEL" && tripContext.tripStatus === "DRAFT"
