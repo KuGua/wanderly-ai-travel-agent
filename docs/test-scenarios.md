@@ -2231,6 +2231,17 @@ that non-members see no plan/constraint/run data.
   remains the sole route to fill those fields.
 - Render the card only after all planning fields are present. If quote
   nationality is required, the card collects it before enabling submission.
+
+### Shared planning research outcomes
+
+- A terminal `RESEARCH` run with `research_mode=PROPOSE_PLAN`,
+  `COMPLETED_WITH_GAPS`, and no `resultPlanId` is visible in Shared plan as a
+  non-plan outcome with safe service-gap codes; it must not render the generic
+  "no shared plan yet" state or invent an itinerary.
+- The pinned result links to `/trips/:tripId/runs/:runId`. Members can read the
+  run status and safe gaps there; a run from another trip, a private run, or a
+  non-member request returns no detail and reveals no private inputs or
+  provider payloads.
 - `localStorage` unavailability never blocks render.
 - No member names or trigger attribution appear on the surface.
 
