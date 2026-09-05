@@ -1,6 +1,6 @@
 # Destination Cue Decision Model
 
-**状态：** v2 触发分类与提示疲劳策略已在 `codex/destination-cue-policy-v2` 实现；目的地排除确认/撤销和 combination card 仍待实现。
+**状态：** v2 触发分类与提示疲劳策略已合入 `develop`。目的地确认卡与 Flight/Hotel Offer 确认卡已实现；目的地排除确认/撤销仍待实现。
 **范围：** 决定何时显示 `Set {city} as the destination?`、何时进入目的地排除确认，以及如何为后续机票/酒店 combination card 提供触发上下文。航班采用与酒店采用由独立模型和独立 offer resolver 负责，实施契约见 [Flight Offer Cue Decision Model](flight-offer-cue-model-draft.md) 与 [Hotel Offer Cue Decision Model](hotel-offer-cue-model-draft.md)。
 
 ## 1. 产品语义
@@ -117,7 +117,7 @@ type Output = {
 - 卡片永远显示具体规范城市名，不允许 `Set this ...`。
 - v2 普通自动提示只包含一个城市，因此不显示多地点切换箭头。混合明确指令若产生多个待确认动作，必须逐项处理，切换控件只负责切换，不代表地点方向。
 - 接受时服务端原子追加规范城市、清除同城 exclusion，并按现有规则更新 AUTO title；dismiss 只更新 prompt policy。
-- 机票/酒店上下文中的 Destination Cue 不阻塞对应搜索意图。`triggerContext` 供后续 card orchestrator 组合或排序目的地、机票与酒店卡片；Flight/Hotel 采用只可引用用户已看见的私有结果，且其接受不得隐式接受目的地。三个卡片的 action、幂等和持久状态彼此独立。
+- 机票/酒店上下文中的 Destination Cue 不阻塞对应搜索意图。`triggerContext` 供 card orchestrator 排序目的地、机票与酒店卡片；同一聊天中卡片固定按 **Destination → Flight → Hotel** 呈现。Destination 的上/下一个箭头仅逐项切换该 destination batch 的候选，不指向或操作机票/酒店卡片。Flight/Hotel 采用只可引用用户已看见的私有结果，且其接受不得隐式接受目的地。三个卡片的 action、幂等和持久状态彼此独立。
 - 每次动作要求 `requestId` 与 `expectedVersion`；重复请求幂等，陈旧版本返回 409 后客户端从会话恢复。
 
 既有 accept/dismiss 接口保持兼容；排除确认使用独立接口：

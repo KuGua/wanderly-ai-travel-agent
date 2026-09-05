@@ -1450,6 +1450,56 @@ export function TravelAgentChat({
                 : "Saved to your draft trip. Not booked."}
             </p>
           ) : null}
+          {destinationCue && activeDestinationCandidate && effectiveThreadId ? (
+            <section
+              aria-label={t("destinationCueTitle")}
+              className={onGlobe
+                ? "relative mb-2 w-full -translate-y-[3px]"
+                : `relative mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[420px] ${actionCardClass}`}
+            >
+              {destinationCue.candidates.length > 1 ? (
+                <div className="absolute right-0 top-0 flex gap-1" aria-label={t("destinationCueNavigation")}>
+                  <button
+                    type="button"
+                    aria-label={t("destinationCuePrevious")}
+                    onClick={() => setDestinationCueIndex((current) => (current - 1 + destinationCue.candidates.length) % destinationCue.candidates.length)}
+                    className="grid size-8 place-items-center rounded-full border border-current/20 transition-opacity hover:opacity-70"
+                  ><ChevronLeft aria-hidden="true" className="size-4" /></button>
+                  <button
+                    type="button"
+                    aria-label={t("destinationCueNext")}
+                    onClick={() => setDestinationCueIndex((current) => (current + 1) % destinationCue.candidates.length)}
+                    className="grid size-8 place-items-center rounded-full border border-current/20 transition-opacity hover:opacity-70"
+                  ><ChevronRight aria-hidden="true" className="size-4" /></button>
+                </div>
+              ) : null}
+              <p className={`${destinationCue.candidates.length > 1 ? "pr-[76px]" : ""} mb-2 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
+                {t(cueIsAdditionalDestination ? "destinationCueQuestionAdditional" : "destinationCueQuestion",
+                  { destination: activeDestinationCandidate.displayName })}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => void resolveDestinationCue("accept")}
+                  disabled={isActingOnDestinationCue}
+                  className={`${actionPrimaryClass} min-w-0 px-3 py-2.5 text-left`}
+                >{isActingOnDestinationCue
+                  ? t("destinationCueSaving")
+                  : t(cueIsAdditionalDestination ? "destinationCueAcceptAdditional" : "destinationCueAccept",
+                    { destination: activeDestinationCandidate.displayName })}</button>
+                <button
+                  type="button"
+                  onClick={() => void resolveDestinationCue("dismiss")}
+                  disabled={isActingOnDestinationCue}
+                  className={`${actionSecondaryClass} min-w-0 px-3 py-2.5 text-left`}
+                >{t("destinationCueDismiss")}</button>
+              </div>
+            </section>
+          ) : null}
+          {/* Confirmation prompts are intentionally stacked by planning scope:
+              destination first, then the flight and hotel choices which may
+              reference it. A destination batch owns its own next/previous
+              controls; Flight and Hotel remain separate persisted actions. */}
           {(flightOfferCue || hotelOfferCue) && effectiveThreadId ? (
             <div className={onGlobe ? "mb-2 w-full -translate-y-[3px]" : `mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[420px] space-y-2`}>
               {flightOfferCue ? (
@@ -1505,52 +1555,6 @@ export function TravelAgentChat({
                 </section>
               ) : null}
             </div>
-          ) : null}
-          {destinationCue && activeDestinationCandidate && effectiveThreadId ? (
-            <section
-              aria-label={t("destinationCueTitle")}
-              className={onGlobe
-                ? "relative mb-2 w-full -translate-y-[3px]"
-                : `relative mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[420px] ${actionCardClass}`}
-            >
-              {destinationCue.candidates.length > 1 ? (
-                <div className="absolute right-0 top-0 flex gap-1" aria-label={t("destinationCueNavigation")}>
-                  <button
-                    type="button"
-                    aria-label={t("destinationCuePrevious")}
-                    onClick={() => setDestinationCueIndex((current) => (current - 1 + destinationCue.candidates.length) % destinationCue.candidates.length)}
-                    className="grid size-8 place-items-center rounded-full border border-current/20 transition-opacity hover:opacity-70"
-                  ><ChevronLeft aria-hidden="true" className="size-4" /></button>
-                  <button
-                    type="button"
-                    aria-label={t("destinationCueNext")}
-                    onClick={() => setDestinationCueIndex((current) => (current + 1) % destinationCue.candidates.length)}
-                    className="grid size-8 place-items-center rounded-full border border-current/20 transition-opacity hover:opacity-70"
-                  ><ChevronRight aria-hidden="true" className="size-4" /></button>
-                </div>
-              ) : null}
-              <p className={`${destinationCue.candidates.length > 1 ? "pr-[76px]" : ""} mb-2 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
-                {t(cueIsAdditionalDestination ? "destinationCueQuestionAdditional" : "destinationCueQuestion",
-                  { destination: activeDestinationCandidate.displayName })}
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => void resolveDestinationCue("accept")}
-                  disabled={isActingOnDestinationCue}
-                  className={`${actionPrimaryClass} min-w-0 px-3 py-2.5 text-left`}
-                >{isActingOnDestinationCue
-                  ? t("destinationCueSaving")
-                  : t(cueIsAdditionalDestination ? "destinationCueAcceptAdditional" : "destinationCueAccept",
-                    { destination: activeDestinationCandidate.displayName })}</button>
-                <button
-                  type="button"
-                  onClick={() => void resolveDestinationCue("dismiss")}
-                  disabled={isActingOnDestinationCue}
-                  className={`${actionSecondaryClass} min-w-0 px-3 py-2.5 text-left`}
-                >{t("destinationCueDismiss")}</button>
-              </div>
-            </section>
           ) : null}
           {actionableBriefProposal && tripId ? (
             /* A question with two answers. The primary carries the weight

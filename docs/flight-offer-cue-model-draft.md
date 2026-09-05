@@ -1,6 +1,6 @@
 # Flight Offer Cue Decision Model
 
-**状态：** 已确认的实施设计；尚未创建模型、迁移、接口或业务代码。
+**状态：** 已在 `develop` 落地为可开关能力：候选投影、additive migration、结构化模型、服务端 resolver/policy、REST/SSE、owner-only selection 与 Web 确认卡均已实现。运行时须将 `OFFER_CUE_ENABLED=true`，并可用 `OFFER_CUE_ENABLED_CAPABILITIES=flight,hotel` 按能力灰度；默认关闭时不会创建或推送 Flight/Hotel Cue。
 **范围：** 在 owner 的私有聊天中，判断何时显示 `Take this flight?`，并安全保存用户已确认的航班选择。它不是机票搜索确认、目的地确认、整体 Plan adoption 或预订。
 **关联文档：** [Destination Cue Decision Model](destination-cue-model-draft.md)、[Hotel Offer Cue Decision Model](hotel-offer-cue-model-draft.md)、[DRAFT Personal Research](draft-personal-research-implementation.md)。
 
@@ -132,7 +132,8 @@ DELETE /api/v1/threads/:threadId/offer-selections/:selectionId
 
 - 对同一 owner + Trip + `flight`，dismiss 后 30 分钟内不自动弹 Flight Cue；同一用户本地自然日累计三次 dismiss 后静默到当日结束。
 - 仍由模型判定为明确选择的文本可以绕过静默，但服务端仍必须完成引用和有效期校验；不得用正则自行认定“明确”。
-- Destination、Flight、Hotel 可被一个组合容器呈现，但仍是独立 action。接受航班不隐式接受目的地，也不接受酒店。
+- 同一聊天中同时存在多类开放确认时，呈现顺序固定为 **Destination → Flight → Hotel**。目的地卡可用自身的上/下一个箭头逐项浏览其候选；箭头只切换目的地候选，不指向、跳转或确认 Flight/Hotel 卡片。
+- Destination、Flight、Hotel 仍是独立 action。接受航班不隐式接受目的地，也不接受酒店。
 - 同一航段的多个报价不使用轮播替代选择；模型应请求澄清。不同航段的候选可逐项确认，切换箭头只切换待确认项，不表示航线方向。
 
 ## 9. 实施阶段与验收

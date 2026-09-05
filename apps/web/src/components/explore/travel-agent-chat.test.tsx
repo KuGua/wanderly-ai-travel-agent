@@ -226,6 +226,64 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(explore).toHaveClass("wanderly-cosmos-control");
   });
 
+  it("stacks destination, flight, then hotel confirmations", async () => {
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [],
+        pendingDestinationCue: {
+          id: CUE_ID,
+          version: 1,
+          candidates: [{ id: CANDIDATE_ID, displayName: "Suzhou", status: "PENDING" }],
+        },
+        pendingOfferCues: [
+          {
+            id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            version: 1,
+            capability: "flight",
+            reasonCode: "EXPLICIT_SELECTION",
+            expiresAt: "2030-08-25T10:00:00.000Z",
+            candidates: [{
+              id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+              candidateRef: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+              ordinal: 0,
+              intent: "EXPLICIT_SELECT",
+              status: "PENDING",
+              display: { capability: "flight", headline: "Beijing → Suzhou", subline: null, priceLabel: null },
+            }],
+          },
+          {
+            id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+            version: 1,
+            capability: "hotel",
+            reasonCode: "EXPLICIT_SELECTION",
+            expiresAt: "2030-08-25T10:00:00.000Z",
+            candidates: [{
+              id: "12121212-1212-4212-8212-121212121212",
+              candidateRef: "13131313-1313-4313-8313-131313131313",
+              ordinal: 0,
+              intent: "EXPLICIT_SELECT",
+              status: "PENDING",
+              display: { capability: "hotel", headline: "Suzhou Garden Hotel", subline: null, priceLabel: null },
+            }],
+          },
+        ],
+      }),
+    });
+
+    renderChat(api, { tripId: TRIP_ID });
+
+    const destination = (await screen.findByText("Set Suzhou as the destination?")).closest("section");
+    const flight = (await screen.findByText("Take this flight?")).closest("section");
+    const hotel = (await screen.findByText("Stay in this hotel?")).closest("section");
+
+    expect(destination).not.toBeNull();
+    expect(flight).not.toBeNull();
+    expect(hotel).not.toBeNull();
+    expect(destination!.compareDocumentPosition(flight!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(flight!.compareDocumentPosition(hotel!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("offers a further destination as an addition once the trip has one", async () => {
     // The sibling test above is the control: with no destination on the trip
     // the same cue asks 「要将 X 设为目的地吗？」. Once Gero is saved, the trip is

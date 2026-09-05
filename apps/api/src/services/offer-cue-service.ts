@@ -86,8 +86,9 @@ export interface ResolvedOfferCueOutcome {
  *
  * Single transaction:
  *   - dedup by `source_run_id UNIQUE` (a retried run lands on the same batch)
- *   - lock `offer_cue_prompt_policies` FOR UPDATE so dismiss bookkeeping is
- *     serialised with `actOnOfferCueCandidate`
+ *   - lock and evaluate `offer_cue_prompt_policies` so dismiss bookkeeping is
+ *     serialised with `actOnOfferCueCandidate`; only a model-classified
+ *     explicit selection can bypass suppression
  *   - drop candidates whose personal_research_offer_candidates row is
  *     missing, expired, or whose visible_before_message_sequence is >=
  *     currentUserMessageSequence (the user has not actually seen the offer)
@@ -126,11 +127,23 @@ export async function persistOfferCue(params: {
     // Lock the prompt policy row even when we may not write it: keeps the
     // accept/dismiss path serialised with persist so an in-flight dismiss
     // can't change eligibility mid-flight.
-    await tx.select().from(offerCuePromptPolicies).where(and(
+    const [promptPolicyRow] = await tx.select().from(offerCuePromptPolicies).where(and(
       eq(offerCuePromptPolicies.ownerUserId, params.run.createdByUserId),
       eq(offerCuePromptPolicies.tripId, tripId),
       eq(offerCuePromptPolicies.capability, capability),
     )).for("update").limit(1);
+    const promptPolicy = evaluateOfferCuePromptPolicy({
+      cooldownUntil: promptPolicyRow?.cooldownUntil ?? null,
+      dismissalDay: promptPolicyRow?.dismissalDay ?? null,
+      dailyDismissalCount: promptPolicyRow?.dailyDismissalCount ?? 0,
+      timeZone: promptPolicyRow?.timezone ?? "UTC",
+      now,
+      explicitSelection: params.decision.candidates.some((candidate) => candidate.intent === "EXPLICIT_SELECT"),
+    });
+    if (!promptPolicy.eligible) {
+      incrementOfferCueMetrics({ capability, metric: "decision", outcome: "skipped_policy" });
+      return null;
+    }
 
     const refs = params.decision.candidates.map((c) => c.candidateRef);
     let candidateRows: Array<{
