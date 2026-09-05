@@ -603,6 +603,61 @@
   -webkit-backdrop-filter: blur(10px) saturate(1.15) brightness(0.65);
 }
 
+/*
+ * A selected destination is inspected in place, so its detail drawer remains
+ * part of the map rather than switching to the paper-card treatment used by
+ * ordinary pages. The fog-on-deep-blue pair preserves readable copy over
+ * bright terrain without introducing another accent colour.
+ */
+.wanderly-cosmos-destination-drawer {
+  color: var(--w-fog);
+}
+
+.wanderly-cosmos-destination-drawer h2 {
+  color: var(--w-fog);
+}
+
+.wanderly-cosmos-destination-close,
+.wanderly-cosmos-destination-secondary,
+.wanderly-cosmos-destination-danger,
+.wanderly-cosmos-destination-label {
+  border: 1.5px solid var(--w-space-line);
+  background: var(--w-space-surface);
+  box-shadow: 2px 2px 0 var(--w-ink);
+}
+
+.wanderly-cosmos-destination-close {
+  color: var(--w-fog);
+}
+
+.wanderly-cosmos-destination-kicker {
+  color: var(--w-highlight);
+}
+
+.wanderly-cosmos-destination-muted {
+  color: var(--w-space-muted);
+}
+
+.wanderly-cosmos-destination-label,
+.wanderly-cosmos-destination-secondary {
+  color: var(--w-fog);
+}
+
+.wanderly-cosmos-destination-secondary:hover,
+.wanderly-cosmos-destination-close:hover {
+  border-color: var(--w-fog);
+  background: color-mix(in srgb, var(--w-space-surface), var(--w-info) 22%);
+}
+
+.wanderly-cosmos-destination-danger {
+  color: var(--destructive);
+}
+
+.wanderly-cosmos-destination-danger:hover {
+  border-color: color-mix(in srgb, var(--destructive), var(--w-space-line) 45%);
+  background: color-mix(in srgb, var(--w-space-surface), var(--destructive) 12%);
+}
+
 @layer components {
   /* ==========================================================================
    * The lunar terminal.
@@ -1562,8 +1617,8 @@ html.wanderly-flip .wanderly-flip-game {
   place-items: center;
   border: 2px solid rgb(255 255 255 / 96%);
   border-radius: 999px;
-  background: #0b5264;
-  box-shadow: 0 6px 16px rgb(8 47 63 / 28%);
+  background: var(--w-space-mid);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--w-space), transparent 60%);
   cursor: pointer;
   pointer-events: auto;
   transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
@@ -1586,8 +1641,8 @@ html.wanderly-flip .wanderly-flip-game {
   width: 0.55rem;
   height: 0.55rem;
   border-radius: 999px;
-  background: white;
-  box-shadow: 0 0 0 3px rgb(255 255 255 / 20%);
+  background: var(--w-fog);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--w-fog), transparent 80%);
   content: "";
 }
 
@@ -1598,10 +1653,10 @@ html.wanderly-flip .wanderly-flip-game {
   max-width: 11rem;
   overflow: hidden;
   padding: 0.35rem 0.6rem;
-  border: 1px solid rgb(255 255 255 / 65%);
+  border: 1px solid var(--w-space-line);
   border-radius: 999px;
-  background: rgb(8 47 63 / 92%);
-  color: white;
+  background: var(--w-space-surface);
+  color: var(--w-fog);
   font-size: 0.72rem;
   font-weight: 700;
   line-height: 1;
@@ -1611,12 +1666,12 @@ html.wanderly-flip .wanderly-flip-game {
 }
 
 .wanderly-map-marker:focus-visible {
-  outline: 3px solid #f6bd60;
+  outline: 3px solid var(--w-highlight);
   outline-offset: 4px;
 }
 
 .wanderly-map-marker--inspiration {
-  background: #ef7654;
+  background: var(--w-highlight);
 }
 
 .wanderly-map-marker--inspiration > span {
@@ -1627,7 +1682,7 @@ html.wanderly-flip .wanderly-flip-game {
 .wanderly-map-marker--inspiration:hover,
 .wanderly-map-marker--inspiration:focus-visible,
 .wanderly-map-marker--selected {
-  box-shadow: 0 10px 24px rgb(8 47 63 / 38%);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--w-space), transparent 48%);
   transform: translateY(-0.18rem);
 }
 
@@ -1639,8 +1694,8 @@ html.wanderly-flip .wanderly-flip-game {
 }
 
 .wanderly-map-marker--selected {
-  background: #0b5264;
-  box-shadow: 0 0 0 4px rgb(246 189 96 / 88%), 0 10px 24px rgb(8 47 63 / 38%);
+  background: var(--w-highlight);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--w-fog), var(--w-highlight) 30%), 0 10px 24px color-mix(in srgb, var(--w-space), transparent 48%);
 }
 
 .wanderly-liquid-glass {

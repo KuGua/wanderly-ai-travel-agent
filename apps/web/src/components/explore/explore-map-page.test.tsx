@@ -550,7 +550,7 @@ describe("ExploreMapPage private inspirations", () => {
 
     const viewButton = await screen.findByRole("button", { name: /View this inspiration/i });
     const previewCard = screen.getByRole("heading", { name: "Pinned place 1" }).closest("aside");
-    expect(previewCard).toHaveClass("wanderly-edge", "wanderly-r-lg", "wanderly-shadow-lg");
+    expect(previewCard).toHaveClass("wanderly-cosmos-destination-drawer", "wanderly-cosmos-panel", "wanderly-r-lg");
     expect(viewButton).toHaveClass("wanderly-edge", "wanderly-r-md", "wanderly-shadow-sm");
     fireEvent.click(viewButton);
 

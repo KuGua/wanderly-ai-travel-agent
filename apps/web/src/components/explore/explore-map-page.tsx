@@ -1053,23 +1053,23 @@ export function ExploreMapPage() {
       ) : null}
 
       {selected && !managePinsOpen && !chatOpen ? (
-        <aside data-wanderly-avoid className="absolute inset-x-3 bottom-3 z-30 max-h-[70dvh] overflow-y-auto bg-card p-5 pb-24 text-[var(--w-ink)] wanderly-edge wanderly-r-lg wanderly-shadow-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(360px,calc(100%-2rem))] landscape:pb-5">
-          <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label={t("drawerCloseAriaLabel")} className="absolute right-4 top-4 grid size-9 place-items-center bg-[var(--w-fog)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press">
+        <aside data-wanderly-avoid className="wanderly-cosmos-destination-drawer absolute inset-x-3 bottom-3 z-30 max-h-[70dvh] overflow-y-auto p-5 pb-24 wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(360px,calc(100%-2rem))] landscape:pb-5">
+          <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label={t("drawerCloseAriaLabel")} className="wanderly-cosmos-destination-close absolute right-4 top-4 grid size-9 place-items-center wanderly-r-xs wanderly-press">
             <X aria-hidden="true" className="size-4" />
           </button>
-          <p className="text-[11px] font-black uppercase tracking-[0.14em] text-[var(--w-ink)] wanderly-underline">{stateLabel(exploreState, t)}</p>
-          <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em] text-[var(--w-ink)]" aria-live="polite">
+          <p className="wanderly-cosmos-destination-kicker text-[11px] font-black uppercase tracking-[0.14em] wanderly-underline">{stateLabel(exploreState, t)}</p>
+          <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em]" aria-live="polite">
             {selected.locationReferenceStatus === "loading" ? t("resolvingLocation") : selected.name}
           </h2>
-          <p className="font-semibold text-[var(--w-muted)]">{selected.country}</p>
-          <p className="mt-3 inline-flex bg-[var(--w-mist)] px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
+          <p className="wanderly-cosmos-destination-muted font-semibold">{selected.country}</p>
+          <p className="wanderly-cosmos-destination-label mt-3 inline-flex px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] wanderly-r-xs">
             {selected.kind === "geography"
                 ? t("drawerKindGeography")
                 : t("drawerKindInspiration")}
           </p>
-          <p className="mt-4 text-sm leading-6 text-[var(--w-muted)]">{selected.note}</p>
+          <p className="mt-4 text-sm leading-6">{selected.note}</p>
           {selected.locationReference?.outcome === "REFERENCE" ? (
-            <div className="mt-3 text-xs leading-5 text-muted-foreground">
+            <div className="wanderly-cosmos-destination-muted mt-3 text-xs leading-5">
               <p>{t("locationReference", {
                 country: selected.locationReference.country,
                 region: selected.locationReference.admin1 ?? t("locationReferenceNoRegion"),
@@ -1092,10 +1092,10 @@ export function ExploreMapPage() {
           </button>
           {selected.kind === "inspiration" ? (
             <div className="mt-2 grid grid-cols-2 gap-2">
-              <button type="button" onClick={openPinManager} className="inline-flex min-h-11 items-center justify-center gap-1.5 bg-[var(--w-mist)] text-sm font-extrabold text-primary wanderly-edge-thin wanderly-r-sm wanderly-press">
+              <button type="button" onClick={openPinManager} className="wanderly-cosmos-destination-secondary inline-flex min-h-11 items-center justify-center gap-1.5 text-sm font-extrabold wanderly-r-sm wanderly-press">
                 <ListChecks aria-hidden="true" className="size-4" /> {t("managePinsCta")}
               </button>
-              <button type="button" onClick={() => deleteInspirations([selected.id])} className="inline-flex min-h-11 items-center justify-center gap-1.5 bg-card text-sm font-extrabold text-destructive wanderly-edge-thin wanderly-r-sm wanderly-press">
+              <button type="button" onClick={() => deleteInspirations([selected.id])} className="wanderly-cosmos-destination-danger inline-flex min-h-11 items-center justify-center gap-1.5 text-sm font-extrabold wanderly-r-sm wanderly-press">
                 <Trash2 aria-hidden="true" className="size-4" /> {t("deleteThisCta")}
               </button>
             </div>
