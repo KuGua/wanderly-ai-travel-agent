@@ -39,6 +39,10 @@ export const threadKeys = {
   all: ["threads"] as const,
   list: ["threads", "list"] as const,
   conversation: (threadId: string) => ["threads", threadId, "conversation"] as const,
+  // Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+  // docs/hotel-offer-cue-model-draft.md).
+  offerCues: (threadId: string) => ["threads", threadId, "offer-cues"] as const,
+  offerSelections: (threadId: string) => ["threads", threadId, "offer-selections"] as const,
 };
 
 export const locationIntroductionKeys = {

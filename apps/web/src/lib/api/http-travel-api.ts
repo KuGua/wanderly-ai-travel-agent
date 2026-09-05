@@ -39,6 +39,11 @@ import {
   updateDraftTripBriefResponseSchema,
   destinationCueActionInputSchema,
   destinationCueActionResponseSchema,
+  offerCueSchema,
+  offerCueActionInputSchema,
+  offerCueActionResponseSchema,
+  personalOfferSelectionSchema,
+  personalOfferSelectionListResponseSchema,
   tripSearchPreferencesInputSchema,
   tripSearchPreferencesResponseSchema,
   planningTaskAcceptedResponseSchema,
@@ -484,6 +489,73 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request(
       `/threads/${encodeURIComponent(threadId)}/destination-cues/${encodeURIComponent(cueId)}/candidates/${encodeURIComponent(candidateId)}/${action}`,
       destinationCueActionResponseSchema,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+  }
+
+  // ─── Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+  //     docs/hotel-offer-cue-model-draft.md) ────────────────────────────────
+  listOfferCues(threadId: string, capability?: "flight" | "hotel") {
+    const qs = capability ? `?capability=${encodeURIComponent(capability)}` : "";
+    return this.client.request(
+      `/threads/${encodeURIComponent(threadId)}/offer-cues${qs}`,
+      z.object({ cues: z.array(offerCueSchema) }).strict(),
+      { method: "GET" },
+    );
+  }
+
+  acceptFlightOfferCue(threadId: string, cueId: string, candidateId: string, input: import("./contracts").OfferCueActionInput) {
+    return this.offerCueAction(threadId, cueId, candidateId, "flight", "accept", input);
+  }
+
+  dismissFlightOfferCue(threadId: string, cueId: string, candidateId: string, input: import("./contracts").OfferCueActionInput) {
+    return this.offerCueAction(threadId, cueId, candidateId, "flight", "dismiss", input);
+  }
+
+  acceptHotelOfferCue(threadId: string, cueId: string, candidateId: string, input: import("./contracts").OfferCueActionInput) {
+    return this.offerCueAction(threadId, cueId, candidateId, "hotel", "accept", input);
+  }
+
+  dismissHotelOfferCue(threadId: string, cueId: string, candidateId: string, input: import("./contracts").OfferCueActionInput) {
+    return this.offerCueAction(threadId, cueId, candidateId, "hotel", "dismiss", input);
+  }
+
+  selectFlightOfferFromCard(threadId: string, candidateId: string, input: Omit<import("./contracts").OfferCueActionInput, "source">) {
+    return this.acceptFlightOfferCue(threadId, candidateId, candidateId, { ...input, source: "RESULT_CARD_BUTTON" });
+  }
+
+  selectHotelOfferFromCard(threadId: string, candidateId: string, input: Omit<import("./contracts").OfferCueActionInput, "source">) {
+    return this.acceptHotelOfferCue(threadId, candidateId, candidateId, { ...input, source: "RESULT_CARD_BUTTON" });
+  }
+
+  listOfferSelections(threadId: string) {
+    return this.client.request(
+      `/threads/${encodeURIComponent(threadId)}/offer-selections`,
+      personalOfferSelectionListResponseSchema,
+      { method: "GET" },
+    );
+  }
+
+  deleteOfferSelection(threadId: string, selectionId: string, input: { requestId: string; expectedVersion: number }) {
+    return this.client.request(
+      `/threads/${encodeURIComponent(threadId)}/offer-selections/${encodeURIComponent(selectionId)}`,
+      z.object({ selection: personalOfferSelectionSchema.nullable() }).strict(),
+      { method: "DELETE", body: JSON.stringify(input) },
+    );
+  }
+
+  private offerCueAction(
+    threadId: string,
+    cueId: string,
+    candidateId: string,
+    capability: "flight" | "hotel",
+    action: "accept" | "dismiss",
+    input: import("./contracts").OfferCueActionInput,
+  ) {
+    const body = offerCueActionInputSchema.parse(input);
+    return this.client.request(
+      `/threads/${encodeURIComponent(threadId)}/offer-cues/${encodeURIComponent(cueId)}/candidates/${encodeURIComponent(candidateId)}/${action}`,
+      offerCueActionResponseSchema,
       { method: "POST", body: JSON.stringify(body) },
     );
   }
