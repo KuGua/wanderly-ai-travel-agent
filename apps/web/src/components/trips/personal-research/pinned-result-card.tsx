@@ -12,7 +12,12 @@
  * card is read-only in MVP: no manual pin / unpin UI.
  */
 
-import Link from "next/link";
+// The locale-aware Link, not `next/link`. Routing is `localePrefix: "always"`,
+// so a bare `/trips/...` href has no locale segment: the middleware has to
+// redirect, and a reader whose locale is not the default can land on the
+// default-locale copy of the page they clicked from. The sibling entry point
+// in shared-plan-view.tsx already emits `/zh/trips/...`; this one did not.
+import { Link } from "@/i18n/navigation";
 import type { FC } from "react";
 
 import type { TripPinnedSession } from "@/lib/api/contracts";
