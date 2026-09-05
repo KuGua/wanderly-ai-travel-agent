@@ -2,7 +2,7 @@
 
 import { ArrowRight, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, LoaderCircle, Plus, RotateCw, Sparkles, Square, X } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
-import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
 import { useTerminalTyping } from "./terminal-typing";
@@ -56,6 +56,11 @@ type StreamState = {
   text: string;
   phase: string | null;
   tools: ToolActivity[];
+};
+
+type ChatScrollbarMetrics = {
+  thumbHeight: number;
+  thumbTop: number;
 };
 
 type FlightPreferenceDraft = {
@@ -335,11 +340,16 @@ export function TravelAgentChat({
   >(null);
   const panelInputRef = useRef<HTMLTextAreaElement>(null);
   const panelScrollRef = useRef<HTMLDivElement>(null);
+  const chatScrollbarDragRef = useRef<{ pointerId: number; startY: number; startScrollTop: number } | null>(null);
   const pendingTurnAnchorRef = useRef<HTMLParagraphElement>(null);
   const wasSendingRef = useRef(false);
   const seenStreamEventIdsRef = useRef(new Set<string>());
   const lastStreamEventIdRef = useRef<string | null>(null);
   const completedRunHandledRef = useRef(new Set<string>());
+  const [chatScrollbarMetrics, setChatScrollbarMetrics] = useState<ChatScrollbarMetrics>({
+    thumbHeight: 100,
+    thumbTop: 0,
+  });
 
   const api = useTravelApi();
   const conversation = useOwnerConversation(effectiveThreadId);
@@ -350,6 +360,68 @@ export function TravelAgentChat({
   const submitTurn = useSubmitConversationTurn();
   const isSending = submitTurn.isPending || Boolean(activeRunId);
   const inputDisabled = !canSend || isSending;
+
+  const syncChatScrollbar = useCallback(() => {
+    const node = panelScrollRef.current;
+    if (!node) return;
+
+    const available = Math.max(node.scrollHeight - node.clientHeight, 0);
+    const thumbHeight = available === 0
+      ? 100
+      : Math.max(12, (node.clientHeight / node.scrollHeight) * 100);
+    const thumbTop = available === 0
+      ? 0
+      : (node.scrollTop / available) * (100 - thumbHeight);
+
+    setChatScrollbarMetrics((current) => (
+      Math.abs(current.thumbHeight - thumbHeight) < 0.1
+        && Math.abs(current.thumbTop - thumbTop) < 0.1
+        ? current
+        : { thumbHeight, thumbTop }
+    ));
+  }, []);
+
+  const jumpChatScrollbar = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const node = panelScrollRef.current;
+    if (!node || event.currentTarget !== event.target) return;
+    const track = event.currentTarget.getBoundingClientRect();
+    const available = Math.max(node.scrollHeight - node.clientHeight, 0);
+    if (available === 0 || track.height === 0) return;
+    const desiredTop = Math.min(Math.max(event.clientY - track.top, 0), track.height);
+    node.scrollTop = (desiredTop / track.height) * available;
+  }, []);
+
+  const startChatScrollbarDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const node = panelScrollRef.current;
+    if (!node) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    chatScrollbarDragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startScrollTop: node.scrollTop,
+    };
+  }, []);
+
+  const dragChatScrollbar = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const node = panelScrollRef.current;
+    const drag = chatScrollbarDragRef.current;
+    if (!node || !drag || drag.pointerId !== event.pointerId) return;
+    const trackHeight = event.currentTarget.parentElement?.getBoundingClientRect().height ?? 0;
+    const available = Math.max(node.scrollHeight - node.clientHeight, 0);
+    if (trackHeight === 0 || available === 0) return;
+    const movableTrack = trackHeight * (1 - chatScrollbarMetrics.thumbHeight / 100);
+    if (movableTrack === 0) return;
+    node.scrollTop = drag.startScrollTop + ((event.clientY - drag.startY) / movableTrack) * available;
+  }, [chatScrollbarMetrics.thumbHeight]);
+
+  const stopChatScrollbarDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (chatScrollbarDragRef.current?.pointerId !== event.pointerId) return;
+    chatScrollbarDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
 
   const clearLocalSessionState = useCallback(() => {
     clearStoredActiveRunId();
@@ -783,6 +855,31 @@ export function TravelAgentChat({
       window.clearTimeout(afterTransition);
     };
   }, [open, conversation.isLoading, messages.length]);
+
+  useEffect(() => {
+    if (!docked) return;
+    const node = panelScrollRef.current;
+    if (!node) return;
+
+    const sync = () => syncChatScrollbar();
+    sync();
+    node.addEventListener("scroll", sync, { passive: true });
+    window.addEventListener("resize", sync);
+
+    // `scrollHeight` changes when a streamed reply gains a new line, without
+    // necessarily resizing the scroll container itself. Observe its children
+    // so the visual thumb remains truthful throughout the reply.
+    const observer = typeof MutationObserver === "undefined"
+      ? null
+      : new MutationObserver(sync);
+    observer?.observe(node, { childList: true, characterData: true, subtree: true });
+
+    return () => {
+      node.removeEventListener("scroll", sync);
+      window.removeEventListener("resize", sync);
+      observer?.disconnect();
+    };
+  }, [docked, syncChatScrollbar]);
 
   function submitMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1384,8 +1481,8 @@ export function TravelAgentChat({
         )}
 
         <div ref={panelScrollRef} className={docked
-          ? "flex-1 overflow-y-auto bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 xl:[&>*]:translate-x-1"
-          : "flex-1 overflow-y-auto px-5 py-5"} aria-live="polite">
+          ? "flex-1 overflow-y-scroll bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 wanderly-scrollbar-persistent xl:[&>*]:translate-x-1"
+          : "flex-1 overflow-y-auto px-5 py-5"} onScroll={docked ? syncChatScrollbar : undefined} aria-live="polite">
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
@@ -1869,6 +1966,26 @@ export function TravelAgentChat({
             </div>
           ) : null}
         </div>
+        {docked ? (
+          <div
+            aria-label="Conversation scrollbar"
+            className="wanderly-chat-scroll-track absolute bottom-5 right-2 top-5 z-10"
+            onPointerDown={jumpChatScrollbar}
+          >
+            <div
+              aria-hidden="true"
+              className="wanderly-chat-scroll-thumb absolute left-1/2 -translate-x-1/2 touch-none"
+              style={{
+                height: `${chatScrollbarMetrics.thumbHeight}%`,
+                top: `${chatScrollbarMetrics.thumbTop}%`,
+              }}
+              onPointerDown={startChatScrollbarDrag}
+              onPointerMove={dragChatScrollbar}
+              onPointerUp={stopChatScrollbarDrag}
+              onPointerCancel={stopChatScrollbarDrag}
+            />
+          </div>
+        ) : null}
       </div>
 
       <form data-testid={docked ? "docked-chat-composer" : undefined} onSubmit={submitMessage} className={docked ? "relative z-10 mx-[clamp(16px,3vw,34px)] mb-5 xl:translate-x-1" : "relative z-10 px-3 pb-3 pt-2"}>

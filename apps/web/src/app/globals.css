@@ -243,6 +243,56 @@
 @utility wanderly-shadow-none { box-shadow: 0 0 0 var(--w-ink); }
 
 /*
+ * The trip conversation draws its own scrollbar (see
+ * `wanderly-chat-scroll-track` below), because macOS hides the native one
+ * until the moment someone scrolls and a long conversation needs the
+ * affordance to be there beforehand.
+ *
+ * So the native bar is taken out of the picture entirely rather than styled
+ * to match: two bars were rendering side by side on the same column, one
+ * drawn by us and one by the browser, and no amount of matching colours
+ * makes two scrollbars read as one.
+ */
+@utility wanderly-scrollbar-persistent {
+  scrollbar-width: none;
+}
+
+.wanderly-scrollbar-persistent::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* The trip chat's own scrollbar, replacing the native one that macOS hides
+ * until you scroll. The track carries no fill: it is a hit area for
+ * click-to-jump, and a second tinted column running the height of the
+ * conversation reads as a page divider rather than a control. Only the thumb
+ * is drawn. */
+.wanderly-chat-scroll-track {
+  /* Wider than the thumb it holds: this is the click-to-jump target, and a
+   * 6.5px one would be a hard thing to hit on purpose. Invisible either way. */
+  width: 14px;
+  cursor: pointer;
+  background: transparent;
+}
+
+/* The only drawn part. The white ring it used to carry existed to lift it off
+ * the tinted track; with the track gone that ring separated the thumb from a
+ * white page, which is to say it only made a 10px control 6px wide. */
+.wanderly-chat-scroll-thumb {
+  /* Narrower than its track, and centred in it — the drawn part is a hairline,
+   * the part you can hit is not. */
+  width: 6.5px;
+  min-height: 34px;
+  cursor: grab;
+  border-radius: 999px;
+  background: var(--w-moss);
+}
+
+.wanderly-chat-scroll-thumb:active {
+  cursor: grabbing;
+}
+
+/*
  * Press feedback. Hovering shortens the shadow and slides the element into
  * it, so the control reads as pushed toward the page; the active state
  * seats it fully. Colour, shadow and offset all transition together, which
