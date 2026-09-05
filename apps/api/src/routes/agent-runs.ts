@@ -8,7 +8,10 @@ import {
   getAuthorizedAgentRun,
   requestAgentTaskCancellation,
 } from "../tasks/task-repository.js";
-import { uuidSchema, type AgentStreamEvent } from "../types/schemas.js";
+import { agentStreamEventSchema, uuidSchema, type AgentStreamEvent } from "../types/schemas.js";
+import { db } from "../db/database.js";
+import { agentStreamEvents } from "../db/schema.js";
+import { and, asc, gt, eq } from "drizzle-orm";
 import {
   getTracer,
   parseTraceparent,
@@ -44,6 +47,7 @@ export async function agentRunRoutes(
   app.get("/agent-runs/:runId/events", async (request, reply) => {
     const runId = readRunId(request.params);
     await getAuthorizedAgentRun(runId, request.user.id);
+    const afterEventId = readLastEventId(request.headers["last-event-id"]);
 
     // Open the SSE stream root span. The span is a sibling of the inbound
     // HTTP server span — events fan in from the Worker via NOTIFY/LISTEN
@@ -102,6 +106,20 @@ export async function agentRunRoutes(
         eventSpan.end();
       }
     });
+    // Subscribe before the database read so a frame written during replay is
+    // delivered live. The client de-duplicates by streamEventId if it also
+    // appears in the replay result.
+    const replay = await db.select({ id: agentStreamEvents.id, event: agentStreamEvents.event })
+      .from(agentStreamEvents)
+      .where(afterEventId === 0
+        ? eq(agentStreamEvents.runId, runId)
+        : and(eq(agentStreamEvents.runId, runId), gt(agentStreamEvents.id, afterEventId)))
+      .orderBy(asc(agentStreamEvents.id))
+      .limit(1_000);
+    for (const row of replay) {
+      const parsed = agentStreamEventSchema.safeParse({ ...row.event, streamEventId: String(row.id) });
+      if (parsed.success && parsed.data.runId === runId) reply.raw.write(serializeSseEvent(parsed.data));
+    }
     const keepAlive = setInterval(() => {
       if (!reply.raw.destroyed) reply.raw.write(": keep-alive\n\n");
     }, agentTaskConfig.streamKeepAliveMs);
@@ -128,7 +146,15 @@ function readRunId(params: unknown): string {
   return uuidSchema.parse((params as { runId?: unknown }).runId);
 }
 
+function readLastEventId(value: string | string[] | undefined): number {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw || !/^\d+$/.test(raw)) return 0;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) && id > 0 ? id : 0;
+}
+
 function serializeSseEvent(event: AgentStreamEvent) {
-  const { event: eventName, ...data } = event;
-  return "event: " + eventName + "\n" + "data: " + JSON.stringify(data) + "\n\n";
+  const { event: eventName, streamEventId, ...data } = event;
+  return (streamEventId ? "id: " + streamEventId + "\n" : "")
+    + "event: " + eventName + "\n" + "data: " + JSON.stringify({ ...data, ...(streamEventId ? { streamEventId } : {}) }) + "\n\n";
 }

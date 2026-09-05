@@ -4,7 +4,7 @@ import { db } from "../db/database.js";
 import {
   destinationCueBatches,
   destinationCueCandidates,
-  destinationCueSuppressions,
+  destinationCuePromptPolicies,
   idempotencyRecords,
   sharedTrips,
 } from "../db/schema.js";
@@ -22,25 +22,23 @@ import { recordAudit } from "./audit-service.js";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const MINIMUM_REPROMPT_MS = 30 * 60 * 1000;
-const SILENCE_RESET_MS = 24 * 60 * 60 * 1000;
-const REQUIRED_SUBSEQUENT_MENTIONS = 2;
+const DAILY_DISMISSAL_LIMIT = 3;
 
-export function evaluateDestinationCueSuppression(input: {
-  dismissedAt: Date;
-  lastQualifiedMentionAt: Date;
-  qualifiedMentionCount: number;
+export function evaluateDestinationCuePromptPolicy(input: {
+  cooldownUntil: Date | null;
+  dismissalDay: string | null;
+  dailyDismissalCount: number;
+  timeZone: string;
   now: Date;
-}): { eligible: boolean; nextMentionCount: number; reset: boolean } {
-  if (input.now.getTime() - input.lastQualifiedMentionAt.getTime() >= SILENCE_RESET_MS) {
-    return { eligible: true, nextMentionCount: 0, reset: true };
+}): { eligible: boolean; reason: "ELIGIBLE" | "COOLDOWN" | "DAILY_LIMIT" } {
+  if (input.cooldownUntil && input.cooldownUntil.getTime() > input.now.getTime()) {
+    return { eligible: false, reason: "COOLDOWN" };
   }
-  const nextMentionCount = input.qualifiedMentionCount + 1;
-  return {
-    eligible: input.now.getTime() - input.dismissedAt.getTime() >= MINIMUM_REPROMPT_MS
-      && nextMentionCount >= REQUIRED_SUBSEQUENT_MENTIONS,
-    nextMentionCount,
-    reset: false,
-  };
+  if (input.dismissalDay === localDayKey(input.now, input.timeZone)
+    && input.dailyDismissalCount >= DAILY_DISMISSAL_LIMIT) {
+    return { eligible: false, reason: "DAILY_LIMIT" };
+  }
+  return { eligible: true, reason: "ELIGIBLE" };
 }
 
 /**
@@ -78,41 +76,25 @@ export async function persistDestinationCue(params: {
       .from(sharedTrips).where(eq(sharedTrips.id, tripId)).limit(1);
     const settledDestinations = (cueTrip?.destinationCandidates as string[] | undefined) ?? [];
 
+    const [promptPolicy] = await tx.select().from(destinationCuePromptPolicies)
+      .where(and(
+        eq(destinationCuePromptPolicies.ownerUserId, params.run.createdByUserId),
+        eq(destinationCuePromptPolicies.tripId, tripId),
+      ))
+      .for("update")
+      .limit(1);
+    const automaticEligible = !promptPolicy || evaluateDestinationCuePromptPolicy({
+      cooldownUntil: promptPolicy.cooldownUntil,
+      dismissalDay: promptPolicy.dismissalDay,
+      dailyDismissalCount: promptPolicy.dailyDismissalCount,
+      timeZone: promptPolicy.timezone,
+      now,
+    }).eligible;
     const eligible: ResolvedDestinationCueDecision["candidates"] = [];
     for (const candidate of params.decision.candidates) {
+      if (!automaticEligible && candidate.intent !== "EXPLICIT_SET_DESTINATION") continue;
       if (isAlreadyOnTrip(settledDestinations, candidate.canonicalCityName)) continue;
-      const [suppression] = await tx.select().from(destinationCueSuppressions)
-        .where(and(
-          eq(destinationCueSuppressions.ownerUserId, params.run.createdByUserId),
-          eq(destinationCueSuppressions.tripId, tripId),
-          eq(destinationCueSuppressions.candidateKeyHash, candidate.candidateKeyHash),
-        ))
-        .for("update")
-        .limit(1);
-      if (!suppression) {
-        eligible.push(candidate);
-        continue;
-      }
-      const policy = evaluateDestinationCueSuppression({ ...suppression, now });
-      if (policy.eligible) {
-        await tx.delete(destinationCueSuppressions).where(and(
-          eq(destinationCueSuppressions.ownerUserId, params.run.createdByUserId),
-          eq(destinationCueSuppressions.tripId, tripId),
-          eq(destinationCueSuppressions.candidateKeyHash, candidate.candidateKeyHash),
-        ));
-        eligible.push(candidate);
-      } else {
-        await tx.update(destinationCueSuppressions).set({
-          qualifiedMentionCount: policy.nextMentionCount,
-          lastQualifiedMentionAt: now,
-          version: suppression.version + 1,
-          updatedAt: now,
-        }).where(and(
-          eq(destinationCueSuppressions.ownerUserId, params.run.createdByUserId),
-          eq(destinationCueSuppressions.tripId, tripId),
-          eq(destinationCueSuppressions.candidateKeyHash, candidate.candidateKeyHash),
-        ));
-      }
+      eligible.push(candidate);
     }
     if (eligible.length === 0) return null;
 
@@ -142,6 +124,8 @@ export async function persistDestinationCue(params: {
       canonicalCityName: candidate.canonicalCityName,
       countryCode: candidate.countryCode,
       candidateKeyHash: candidate.candidateKeyHash,
+      candidateIntent: candidate.intent,
+      triggerContext: candidate.triggerContext,
       createdAt: now,
     })));
     return cueFromBatch(tx, batch.id);
@@ -175,6 +159,7 @@ export async function actOnDestinationCue(params: {
   requestId: string;
   expectedVersion: number;
   titleLocale: "en" | "zh";
+  timeZone: string;
 }): Promise<DestinationCueActionResponse> {
   const key = `destination-cue:${params.ownerUserId}:${params.candidateId}:${params.action}:${params.requestId}`;
   return db.transaction(async (tx) => {
@@ -230,17 +215,42 @@ export async function actOnDestinationCue(params: {
         updatedAt: now,
       })).where(eq(sharedTrips.id, trip.id));
     } else {
-      await tx.insert(destinationCueSuppressions).values({
+      const timeZone = normalizeTimeZone(params.timeZone);
+      const dismissalDay = localDayKey(now, timeZone);
+      const [policy] = await tx.select().from(destinationCuePromptPolicies)
+        .where(and(
+          eq(destinationCuePromptPolicies.ownerUserId, params.ownerUserId),
+          eq(destinationCuePromptPolicies.tripId, trip.id),
+        ))
+        .for("update")
+        .limit(1);
+      const dailyDismissalCount = policy?.dismissalDay === dismissalDay
+        ? policy.dailyDismissalCount + 1
+        : 1;
+      const cooldownUntil = new Date(now.getTime() + MINIMUM_REPROMPT_MS);
+      const mutedUntil = dailyDismissalCount >= DAILY_DISMISSAL_LIMIT
+        ? nextLocalDayStart(now, timeZone)
+        : null;
+      await tx.insert(destinationCuePromptPolicies).values({
         ownerUserId: params.ownerUserId,
         tripId: trip.id,
-        candidateKeyHash: candidate.candidateKeyHash,
-        dismissedAt: now,
-        lastQualifiedMentionAt: now,
-        qualifiedMentionCount: 0,
+        cooldownUntil,
+        dismissalDay,
+        dailyDismissalCount,
+        mutedUntil,
+        timezone: timeZone,
         updatedAt: now,
       }).onConflictDoUpdate({
-        target: [destinationCueSuppressions.ownerUserId, destinationCueSuppressions.tripId, destinationCueSuppressions.candidateKeyHash],
-        set: { dismissedAt: now, lastQualifiedMentionAt: now, qualifiedMentionCount: 0, updatedAt: now, version: sql`${destinationCueSuppressions.version} + 1` },
+        target: [destinationCuePromptPolicies.ownerUserId, destinationCuePromptPolicies.tripId],
+        set: {
+          cooldownUntil,
+          dismissalDay,
+          dailyDismissalCount,
+          mutedUntil,
+          timezone: timeZone,
+          updatedAt: now,
+          version: sql`${destinationCuePromptPolicies.version} + 1`,
+        },
       });
     }
     await tx.update(destinationCueCandidates).set({
@@ -288,9 +298,55 @@ async function cueFromBatch(target: typeof db | Tx, batchId: string): Promise<De
     id: destinationCueCandidates.id,
     displayName: destinationCueCandidates.canonicalCityName,
     status: destinationCueCandidates.status,
+    intent: destinationCueCandidates.candidateIntent,
+    triggerContext: destinationCueCandidates.triggerContext,
   }).from(destinationCueCandidates)
     .where(and(eq(destinationCueCandidates.batchId, batchId), eq(destinationCueCandidates.status, "PENDING")))
     .orderBy(asc(destinationCueCandidates.ordinal));
   if (candidates.length === 0) return null;
   return destinationCueResponseSchema.parse({ id: batch.id, version: batch.version, candidates });
+}
+
+function normalizeTimeZone(value: string): string {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date(0));
+    return value;
+  } catch {
+    return "UTC";
+  }
+}
+
+function localParts(value: Date, timeZone: string): Record<string, number> {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: normalizeTimeZone(timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(value);
+  return Object.fromEntries(parts
+    .filter((part) => part.type !== "literal")
+    .map((part) => [part.type, Number(part.value)]));
+}
+
+function localDayKey(value: Date, timeZone: string): string {
+  const parts = localParts(value, timeZone);
+  return `${parts.year!.toString().padStart(4, "0")}-${parts.month!.toString().padStart(2, "0")}-${parts.day!.toString().padStart(2, "0")}`;
+}
+
+function timeZoneOffsetMs(value: Date, timeZone: string): number {
+  const parts = localParts(value, timeZone);
+  return Date.UTC(parts.year!, parts.month! - 1, parts.day!, parts.hour!, parts.minute!, parts.second!)
+    - value.getTime();
+}
+
+function nextLocalDayStart(value: Date, timeZone: string): Date {
+  const parts = localParts(value, timeZone);
+  const nextDayWallClock = Date.UTC(parts.year!, parts.month! - 1, parts.day! + 1);
+  let result = new Date(nextDayWallClock - timeZoneOffsetMs(new Date(nextDayWallClock), timeZone));
+  result = new Date(nextDayWallClock - timeZoneOffsetMs(result, timeZone));
+  return result;
 }

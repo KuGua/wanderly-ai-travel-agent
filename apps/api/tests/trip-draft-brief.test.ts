@@ -73,6 +73,20 @@ async function getTrip(tripId: string) {
 }
 
 describe("draft-brief travel dates", () => {
+  it("lets a Draft member open empty shared read projections without activating the trip", async () => {
+    const tripId = await draftTrip();
+
+    const [plans, constraints] = await Promise.all([
+      app.inject({ method: "GET", url: `/api/v1/trips/${tripId}/plans`, headers: authHeaders("alice") }),
+      app.inject({ method: "GET", url: `/api/v1/trips/${tripId}/constraints`, headers: authHeaders("alice") }),
+    ]);
+
+    expect(plans.statusCode).toBe(200);
+    expect(plans.json()).toMatchObject({ tripId, proposed: [], active: [], stale: [] });
+    expect(constraints.statusCode).toBe(200);
+    expect(constraints.json()).toMatchObject({ tripId, teamVisibleFacts: [] });
+  });
+
   it("does not return an older country-level proposal as an unsaveable card", async () => {
     const tripId = await draftTrip();
     await db.update(sharedTrips).set({

@@ -482,6 +482,14 @@ export const destinationCueCandidateResponseSchema = z.object({
   id: uuidSchema,
   displayName: z.string().min(1).max(128),
   status: z.enum(["PENDING", "ACCEPTED", "DISMISSED", "SUPERSEDED"]),
+  intent: z.enum(["DESTINATION_INTEREST", "EXPLICIT_SET_DESTINATION"]).optional(),
+  triggerContext: z.enum([
+    "BARE_CITY",
+    "CITY_EXPLORATION",
+    "FLIGHT_DESTINATION",
+    "HOTEL_DESTINATION",
+    "EXPLICIT_DESTINATION_COMMAND",
+  ]).optional(),
 }).strict();
 
 export const destinationCueResponseSchema = z.object({
@@ -494,6 +502,7 @@ export const destinationCueActionRequestSchema = z.object({
   requestId: uuidSchema,
   expectedVersion: z.number().int().positive(),
   titleLocale: z.enum(["en", "zh"]).optional(),
+  timeZone: z.string().trim().min(1).max(64).default("UTC"),
 }).strict();
 
 export const destinationCueActionResponseSchema = z.object({
@@ -617,6 +626,8 @@ export const agentRunResponseSchema = z.object({
 const streamBaseSchema = z.object({
   runId: uuidSchema,
   generationAttempt: z.number().int().nonnegative(),
+  /** Monotonic journal id, added by the publisher before relay delivery. */
+  streamEventId: z.string().regex(/^\d+$/).optional(),
   /**
    * Optional W3C `traceparent` header value forwarded from the originating
    * HTTP request. Carried by every NOTIFY payload so the relay can re-enter

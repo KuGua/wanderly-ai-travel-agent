@@ -38,6 +38,7 @@ describe("conversational ModelGateway", () => {
     expect(messages[0]?.content.match(/User-visible language \(higher priority than history\)/g)).toHaveLength(1);
     expect(messages[0]?.content).toContain("If the traveller explicitly requests a translation or another language");
     expect(messages[0]?.content).toContain("`threadContext`, `memoryContext`, destination country, and provider evidence");
+    expect(messages[0]?.content).toContain("单独的城市名默认表示查看详情");
     expect(recordAgentRun).toHaveBeenCalledWith(expect.objectContaining({
       skillName: "travel.conversation",
       status: "SUCCESS",

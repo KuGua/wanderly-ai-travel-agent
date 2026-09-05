@@ -59,15 +59,15 @@ describe("durable owner-only Personal Agent conversation flow", () => {
       async decideDestinationCue() {
         return {
           decision: {
-            disposition: "PROPOSE",
             candidates: [
-              { mentionedText: "Tokyo", ordinal: 0 },
-              { mentionedText: "Kyoto", ordinal: 1 },
+              { mentionedText: "Tokyo", ordinal: 0, intent: "EXPLICIT_SET_DESTINATION", triggerContext: "EXPLICIT_DESTINATION_COMMAND" },
+              { mentionedText: "Kyoto", ordinal: 1, intent: "EXPLICIT_SET_DESTINATION", triggerContext: "EXPLICIT_DESTINATION_COMMAND" },
             ],
-            reasonCode: "QUALIFIED_DESTINATION_MENTION",
+            isNeutralMultiCityList: false,
+            reasonCode: "EXPLICIT_DESTINATION_COMMAND",
           },
           modelVersion: "test-destination-model",
-          promptVersion: "destination-cue/v1",
+          promptVersion: "destination-cue/v3",
         };
       },
     };

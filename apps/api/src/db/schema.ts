@@ -1017,6 +1017,19 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
     .on(table.threadId).where(sql`${table.researchIntentState} = 'PROPOSED' AND ${table.threadId} IS NOT NULL`),
 }));
 
+/**
+ * Bounded-at-read replay journal for private Agent SSE. `event` is never a
+ * telemetry payload; route-level run authorization protects every read.
+ */
+export const agentStreamEvents = pgTable("agent_stream_events", {
+  id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+  runId: uuid("run_id").references(() => agentTaskRuns.id, { onDelete: "cascade" }).notNull(),
+  event: jsonb("event").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  runIdIdIdx: index("agent_stream_events_run_id_id_idx").on(table.runId, table.id),
+}));
+
 // Owner-only confirmation UI generated from one DRAFT conversation turn.
 // Unlike `shared_trips.pending_brief_proposal`, this state is scoped to the
 // private thread and therefore cannot be projected to other trip members.
@@ -1046,6 +1059,12 @@ export const destinationCueCandidates = pgTable("destination_cue_candidates", {
   canonicalCityName: varchar("canonical_city_name", { length: 128 }).notNull(),
   countryCode: varchar("country_code", { length: 2 }).notNull(),
   candidateKeyHash: varchar("candidate_key_hash", { length: 64 }).notNull(),
+  candidateIntent: varchar("candidate_intent", { length: 48 })
+    .$type<"DESTINATION_INTEREST" | "EXPLICIT_SET_DESTINATION">()
+    .default("DESTINATION_INTEREST").notNull(),
+  triggerContext: varchar("trigger_context", { length: 48 })
+    .$type<"BARE_CITY" | "CITY_EXPLORATION" | "FLIGHT_DESTINATION" | "HOTEL_DESTINATION" | "EXPLICIT_DESTINATION_COMMAND">()
+    .default("CITY_EXPLORATION").notNull(),
   status: destinationCueCandidateStatusEnum("status").default("PENDING").notNull(),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -1071,6 +1090,24 @@ export const destinationCueSuppressions = pgTable("destination_cue_suppressions"
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   pk: primaryKey({ columns: [table.ownerUserId, table.tripId, table.candidateKeyHash] }),
+}));
+
+// V2 prompt fatigue is Trip-wide rather than tied to one city. The timestamps
+// stay UTC; dismissalDay is derived using the user-supplied, validated IANA
+// timezone so "three times today" follows the traveller's calendar day.
+export const destinationCuePromptPolicies = pgTable("destination_cue_prompt_policies", {
+  ownerUserId: uuid("owner_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  tripId: uuid("trip_id").references(() => sharedTrips.id, { onDelete: "cascade" }).notNull(),
+  cooldownUntil: timestamp("cooldown_until", { withTimezone: true }),
+  dismissalDay: varchar("dismissal_day", { length: 10 }),
+  dailyDismissalCount: integer("daily_dismissal_count").default(0).notNull(),
+  mutedUntil: timestamp("muted_until", { withTimezone: true }),
+  timezone: varchar("timezone", { length: 64 }).default("UTC").notNull(),
+  version: integer("version").default(1).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.ownerUserId, table.tripId] }),
+  tripOwnerIdx: index("destination_cue_prompt_policies_trip_idx").on(table.tripId, table.ownerUserId),
 }));
 
 // ─── Agent Runs (LLM gateway observability) ─────────────────────────────────

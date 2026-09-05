@@ -5,17 +5,20 @@ import type { Skill, SkillContext } from "../../agents/contracts.js";
 import { modelGateway } from "../../providers/gateway-factory.js";
 import { getLocationReferenceResolver } from "../../location-reference/location-reference-resolver.js";
 
-const EXPLICIT_DESTINATION = /(?:\b(?:set|make)\b.{0,100}\b(?:as|to be)\s+(?:the\s+)?destination\b|(?:把|将).{1,100}(?:设|设置|定)(?:为|成)(?:这次旅行的?)?目的地|目的地\s*(?:设|设置|定|是|为))/iu;
-const FLIGHT_OR_HOTEL = /(?:\b(?:flights?|hotels?|stays?|accommodations?)\b|机票|航班|酒店|住宿|饭店)/iu;
+const EXPLICIT_DESTINATION_COMMAND =
+  /(?:\b(?:set|make)\b.{0,100}\b(?:as|to be)\s+(?:the\s+)?destination\b|(?:把|将).{1,100}(?:设|设置|定)(?:为|成)(?:这次旅行的?)?目的地|目的地\s*(?:设|设置|定|是|为))/iu;
 
-export type DestinationCuePreflight = "MODEL" | "SKIP_FLIGHT_OR_HOTEL";
+export type DestinationCuePreflight = "MODEL";
 
-/** Deterministic precedence guard; an explicit destination command wins. */
-export function destinationCuePreflight(question: string): DestinationCuePreflight {
-  if (EXPLICIT_DESTINATION.test(question)) return "MODEL";
-  return FLIGHT_OR_HOTEL.test(question)
-    ? "SKIP_FLIGHT_OR_HOTEL"
-    : "MODEL";
+/**
+ * V2 intentionally sends every eligible current-user turn to the bounded
+ * classifier. Bare cities and one-city flight/hotel requests are product
+ * triggers; natural-language city roles cannot be implemented safely as a
+ * keyword exclusion list.
+ */
+export function destinationCuePreflight(question?: string): DestinationCuePreflight {
+  void question;
+  return "MODEL";
 }
 
 export interface ResolvedDestinationCueDecision {
@@ -24,6 +27,13 @@ export interface ResolvedDestinationCueDecision {
     canonicalCityName: string;
     countryCode: string;
     candidateKeyHash: string;
+    intent: "DESTINATION_INTEREST" | "EXPLICIT_SET_DESTINATION";
+    triggerContext:
+      | "BARE_CITY"
+      | "CITY_EXPLORATION"
+      | "FLIGHT_DESTINATION"
+      | "HOTEL_DESTINATION"
+      | "EXPLICIT_DESTINATION_COMMAND";
   }>;
   modelVersion: string;
   promptVersion: string;
@@ -41,6 +51,14 @@ export const destinationCueDecisionOutputSchema = z.object({
     canonicalCityName: z.string().min(1).max(128),
     countryCode: z.string().length(2),
     candidateKeyHash: z.string().regex(/^[0-9a-f]{64}$/),
+    intent: z.enum(["DESTINATION_INTEREST", "EXPLICIT_SET_DESTINATION"]),
+    triggerContext: z.enum([
+      "BARE_CITY",
+      "CITY_EXPLORATION",
+      "FLIGHT_DESTINATION",
+      "HOTEL_DESTINATION",
+      "EXPLICIT_DESTINATION_COMMAND",
+    ]),
   }).strict()).min(1).max(5),
   modelVersion: z.string().min(1).max(128),
   promptVersion: z.string().min(1).max(64),
@@ -53,7 +71,7 @@ export async function decideDestinationCueForTurn(params: {
   locale: "en" | "zh";
   signal: AbortSignal;
 }): Promise<ResolvedDestinationCueDecision | null> {
-  if (destinationCuePreflight(params.question) === "SKIP_FLIGHT_OR_HOTEL") return null;
+  destinationCuePreflight(params.question);
   const gateway = modelGateway();
   if (!gateway.decideDestinationCue) return null;
   // Measured 2.6s-5.2s against the 2.5s this used to allow, so the budget was
@@ -69,12 +87,19 @@ export async function decideDestinationCueForTurn(params: {
     signal,
     ctx: params.ctx.ctx,
   });
-  if (!result || result.decision.disposition !== "PROPOSE") return null;
+  if (!result || result.decision.isNeutralMultiCityList) return null;
 
   const current = new Set(params.currentDestinations.map(normalize));
   const seen = new Set<string>();
   const candidates: ResolvedDestinationCueDecision["candidates"] = [];
-  for (const candidate of [...result.decision.candidates].sort((a, b) => a.ordinal - b.ordinal)) {
+  const modelCandidates = [...result.decision.candidates].sort((a, b) => a.ordinal - b.ordinal);
+  const deterministicExplicitSet = EXPLICIT_DESTINATION_COMMAND.test(params.question)
+    && modelCandidates.length === 1
+    && modelCandidates[0]?.intent !== "EXPLICIT_EXCLUDE_DESTINATION";
+  for (const candidate of modelCandidates) {
+    // Explicit exclusions require a separate confirmation and durable state.
+    // Fail closed until that boundary exists; never render a positive card.
+    if (candidate.intent === "EXPLICIT_EXCLUDE_DESTINATION") continue;
     let reference;
     try {
       reference = getLocationReferenceResolver().resolveDestinationReference({
@@ -88,14 +113,23 @@ export async function decideDestinationCueForTurn(params: {
     const key = normalize(`${reference.cityName}|${reference.countryCode}`);
     if (current.has(normalize(reference.cityName)) || seen.has(key)) continue;
     seen.add(key);
+    const intent = deterministicExplicitSet ? "EXPLICIT_SET_DESTINATION" : candidate.intent;
     candidates.push({
       ordinal: candidates.length,
       canonicalCityName: reference.cityName,
       countryCode: reference.countryCode,
       candidateKeyHash: createHash("sha256").update(key).digest("hex"),
+      intent,
+      triggerContext: deterministicExplicitSet
+        ? "EXPLICIT_DESTINATION_COMMAND"
+        : candidate.triggerContext === "EXPLICIT_EXCLUSION_COMMAND"
+        ? "CITY_EXPLORATION"
+        : candidate.triggerContext,
     });
   }
   if (candidates.length === 0) return null;
+  const hasExplicitSet = candidates.some((candidate) => candidate.intent === "EXPLICIT_SET_DESTINATION");
+  if (!hasExplicitSet && candidates.length !== 1) return null;
   return destinationCueDecisionOutputSchema.parse({
     candidates,
     modelVersion: result.modelVersion,
@@ -113,9 +147,9 @@ export const destinationCueDecisionSkill: Skill<
 > = {
   name: "destination.cue.decide",
   agent: "personal",
-  version: "1.0.0",
+  version: "2.0.0",
   allowedTools: ["chat:read"],
-  timeoutMs: 2_500,
+  timeoutMs: 9_000,
   needsConfirm: false,
   input: destinationCueDecisionInputSchema,
   output: destinationCueDecisionOutputSchema,

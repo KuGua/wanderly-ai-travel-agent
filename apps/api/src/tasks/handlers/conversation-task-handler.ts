@@ -566,6 +566,11 @@ export async function handleConversationTask(params: {
   const abortFromTask = () => execution.abort(params.signal.reason);
   if (params.signal.aborted) abortFromTask();
   else params.signal.addEventListener("abort", abortFromTask, { once: true });
+  // The deterministic parser remains the source for non-destination brief
+  // fields below. Destination cues deliberately do not use it as a fallback:
+  // v2 needs the language classifier to distinguish a neutral city list from
+  // actual destination interest.
+  const directBriefProposal = proposeTripBriefFromTurn(turnInput.question);
   const destinationCuePromise = tripContext.tripStatus === "DRAFT" && membership.role === "CREATOR"
     ? decideDestinationCueForTurn({
       ctx: { ctx: params.ctx, policyGate: new DefaultPolicyGate("personal") },
@@ -890,7 +895,7 @@ export async function handleConversationTask(params: {
     ? mergeTripBriefProposal(
       // Direct owner statements are parsed conservatively and destination
       // values have already passed server-owned place resolution.
-      withoutDestination(proposeTripBriefFromTurn(turnInput.question)),
+      withoutDestination(directBriefProposal),
       // The model extractor is retained only for an owner accepting a
       // concrete date/duration the assistant resolved in this same turn.
       // It can never introduce a destination, departure, or other free-text
