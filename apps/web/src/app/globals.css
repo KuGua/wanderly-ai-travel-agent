@@ -652,7 +652,11 @@
 .wanderly-pad {
   position: relative;
   padding-left: 26px;
-  border-radius: 4px 12px 12px 4px;
+  /* The same generous corner the profile card uses, all four sides. Squaring
+     the left to "make room" for the binding was unnecessary — the rings sit
+     inside the radius — and it left the pad looking clipped beside every other
+     card on the page. */
+  border-radius: 17px;
   box-shadow:
     3px 3px 0 -1px var(--w-page),
     3px 3px 0 var(--w-ink),
@@ -668,7 +672,7 @@
   width: 26px;
   border-right: 1px dashed color-mix(in srgb, var(--w-ink), transparent 76%);
   background: color-mix(in srgb, var(--w-fog), var(--w-white) 40%);
-  border-radius: 4px 0 0 4px;
+  border-radius: 17px 0 0 17px;
 }
 
 /* The rings themselves: evenly spaced ellipses that straddle that strip. Two

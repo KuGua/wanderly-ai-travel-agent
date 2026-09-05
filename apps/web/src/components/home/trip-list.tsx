@@ -73,10 +73,6 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
           >
             <span aria-hidden="true" className="wanderly-clip" />
             {stock === "ticket" ? <span aria-hidden="true" className="wanderly-notch" /> : null}
-            {/* Creator-only, matching the API: a member who wants out of a
-                shared trip is leaving it, not destroying it for everyone. Sits
-                over the artwork so it never crowds the trip's own details. */}
-            {trip.role === "CREATOR" ? <DeleteTripControl trip={trip} t={t} /> : null}
             <div className="flex flex-1 flex-col p-4">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="text-[19px] font-bold tracking-[-0.035em]">{trip.name}</h3>
@@ -118,6 +114,13 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
               </div>
               <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs text-[var(--w-ink)]">
                 <span className="flex items-center gap-1.5">
+                  {/* Creator-only, matching the API: a member who wants out of
+                      a shared trip is leaving it, not destroying it for
+                      everyone. In the footer row rather than floating over it,
+                      and always present: revealing it on hover put it on top of
+                      this line, and a control nobody can see is one nobody can
+                      reach on a touch screen. */}
+                  {trip.role === "CREATOR" ? <DeleteTripControl trip={trip} t={t} /> : null}
                   <UsersRound aria-hidden="true" className="size-3.5" />
                   {t("trip.members", { count: trip.memberCount })} ·{" "}
                   {trip.role === "CREATOR"
@@ -159,19 +162,15 @@ function DeleteTripControl({ trip, t }: { trip: TripSummary; t: Translator }) {
         onClick={() => setArmed(true)}
         aria-label={t("trip.delete", { name: trip.name })}
         title={t("trip.delete", { name: trip.name })}
-        /* Bottom-left, drawn in ink rather than filled in red. A red block at
-           the top-right shouted destruction over a card the traveller was only
-           reading, and sat where the status badge already draws the eye. The
-           confirm step is where the warning belongs. */
-        className="absolute bottom-3 left-3 z-10 grid size-9 place-items-center text-[var(--w-ink)] opacity-0 pointer-events-none transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-sm:pointer-events-auto max-sm:opacity-100 wanderly-edge-thin wanderly-r-xs wanderly-press hover:bg-[var(--w-ink)]/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-ink)]/30"
+        className="grid size-6 shrink-0 place-items-center rounded-[6px] text-[var(--w-ink)]/55 transition-colors hover:bg-[var(--w-ink)]/8 hover:text-[var(--w-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-ink)]/30"
       >
-        <Trash2 aria-hidden="true" className="size-4" />
+        <Trash2 aria-hidden="true" className="size-[13px]" />
       </button>
     );
   }
 
   return (
-    <div role="group" aria-label={t("trip.deleteConfirmTitle")} className="absolute bottom-3 left-3 z-10 flex items-center gap-1.5 bg-card px-2 py-1.5 wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs">
+    <div role="group" aria-label={t("trip.deleteConfirmTitle")} className="flex items-center gap-1.5 bg-card px-2 py-1 wanderly-edge-thin wanderly-r-xs">
       <span className="text-[11px] font-bold text-[var(--w-ink)]">{t("trip.deleteConfirmTitle")}</span>
       <button
         type="button"

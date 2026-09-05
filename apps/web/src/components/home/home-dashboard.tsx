@@ -123,7 +123,7 @@ export function HomeDashboard() {
         <div>
           {/* No kicker. The brushed title carries the page on its own, and the
               line said what the sign-in copy and the profile column already do. */}
-          <h1 className=" text-[clamp(1.75rem,3.6vw,2.35rem)] font-bold leading-none tracking-[-0.05em]">
+          <h1 className="text-[clamp(1.75rem,3.6vw,2.35rem)] font-semibold leading-none tracking-[-0.04em] text-[var(--w-ink)]/85">
             <span className="wanderly-brush">{tHome("title")}</span>
           </h1>
         </div>
@@ -239,15 +239,21 @@ export function HomeDashboard() {
         </div>
       </section>
 
-      {/* Trips section */}
-      <section className="mt-10" aria-labelledby="trips-heading">
+      {/* The trips get a leaf of their own, lighter than the year above: a
+          hairline and a soft drop rather than the pad's ink edge and page
+          stack, so the notes still read as pinned onto it rather than framed
+          by a second heavy panel. */}
+      <section
+        className="mt-8 rounded-[14px] border border-[var(--w-ink)]/10 bg-[color-mix(in_srgb,var(--w-card,#fff),var(--w-fog)_28%)] p-5 shadow-[0_1px_2px_rgb(42_42_40/.05),0_14px_30px_-24px_rgb(42_42_40/.5)] sm:p-6"
+        aria-labelledby="trips-heading"
+      >
         {/* Trip grid. The filters live on this heading rather than beside the
             "continue planning" card: that card only renders for the active
             filter with no search, so filters placed there would disappear the
             moment someone chose "archived" — the control removing itself. */}
         <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 id="trips-heading" className="text-xl font-bold tracking-[-0.035em]">
+            <h2 id="trips-heading" className="text-lg font-semibold tracking-[-0.025em] text-[var(--w-ink)]/80">
               {tHome("trips.heading")}
             </h2>
           <div className="flex flex-wrap gap-2" role="group" aria-label={tHome("filter.ariaLabel")}>
@@ -257,9 +263,13 @@ export function HomeDashboard() {
                 type="button"
                 aria-pressed={filter === key}
                 onClick={() => setFilter(key)}
-                className={`inline-flex min-h-[39px] items-center gap-1.5 px-3.5 py-[7px] text-sm font-extrabold text-[var(--w-ink)] wanderly-edge wanderly-r-sm wanderly-press ${
+                /* Colour alone marks the selection. The hard shadow and the
+                   press offset made choosing a filter feel like throwing a
+                   switch, four of which sat in a row above a list that simply
+                   redraws. */
+                className={`inline-flex min-h-[36px] items-center gap-1.5 px-3.5 py-[6px] text-sm font-semibold text-[var(--w-ink)] transition-colors wanderly-edge-thin wanderly-r-sm ${
                   filter === key
-                    ? "bg-[var(--w-cal-run)] wanderly-shadow-xs"
+                    ? "bg-[var(--w-cal-run)]"
                     : "bg-card hover:bg-[var(--w-mist)]"
                 }`}
               >
