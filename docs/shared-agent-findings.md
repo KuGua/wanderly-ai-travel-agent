@@ -760,3 +760,22 @@ Gate B 各自独立。
 真实调用路径上那个参数根本不存在。教训写在这里：**给一个函数加降级分支时，
 必须验证生产调用方满足该分支的前置条件，而不是只验证函数本身。**
 现在补了两条测试，一条走编排层（拿到 lease 就能降级），一条走 handler（确实往下传）。
+
+## #49 重复的航班搜索先付钱、再以唯一索引异常冒充供应商故障 — 缺陷 — 已修（09-06）
+`accommodation.discover` / `activities.search` / `hotel.search` 都是**先预留
+`provider_search_runs` 行、再调用供应商**，所以 run 内的重复请求在花钱之前就被
+`AlreadyAttemptedError` 挡下。`flight.search` 唯独相反：先调用、后插入。
+
+于是一次重复的 `SIN → SHA`：付了第二次 SerpAPI 调用，然后死在
+`(agent_task_run_id, snapshot_id, category, request_fingerprint)` 唯一索引上，
+抛出的是**裸 Postgres 错误**（不是 SkillError）→ 归类 `UNCLASSIFIED` →
+到模型手里是 `UPSTREAM_FAILURE`。**刚刚返回 LIVE 的那一格，看上去坏了。**
+模型于是更用力地重试它。
+
+改为与兄弟服务同构：先预留（`outcome: "PENDING"` + `onConflictDoNothing`），
+拿不到行就抛 `FlightSearchAlreadyAttemptedError` → `POLICY_DENIED`；
+供应商答复后再 update 该行。
+
+**这条与 #44 的守卫是两层**：网关那层让模型调不到已完成的工具，服务这层保证
+即使调到了也不会花钱、更不会伪装成供应商故障。#43（编排层预跑后又把一次性工具
+交给模型）仍然未修。

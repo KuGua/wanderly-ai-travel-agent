@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/database.js";
 import { providerOffers, providerSearchRuns } from "../db/schema.js";
@@ -90,6 +91,18 @@ export function validateSnapshotBoundFlightSearch(params: {
 }
 
 /** Persist only normalized successful evidence or the stable unavailable code. */
+/**
+ * One exact flight request may run once per planning run. Mirrors the guard
+ * every sibling search service already had; flight was the one that did not,
+ * and paid for the duplicate before failing on the unique index.
+ */
+export class FlightSearchAlreadyAttemptedError extends Error {
+  constructor() {
+    super("flight.search may run only once per exact request in a planning run");
+    this.name = "FlightSearchAlreadyAttemptedError";
+  }
+}
+
 export async function executeAndPersistFlightSearch(params: {
   ctx: RequestContext;
   tripId: string;
@@ -113,6 +126,25 @@ export async function executeAndPersistFlightSearch(params: {
     cabin: params.input.cabin,
     currency: params.input.currency,
   })).digest("hex");
+  // Reserve the cell before spending anything, the way every sibling search
+  // service does. This service inserted its row *after* the supplier answered,
+  // so an identical request inside one run paid for a second search and then
+  // died on the unique index — as a raw Postgres error, which classified as
+  // UNCLASSIFIED and reached the model as UPSTREAM_FAILURE. A flight cell that
+  // had just come back LIVE looked broken, and the model retried it. Reserving
+  // first turns that into a typed refusal before a supplier is touched.
+  const [reservedRun] = await db.insert(providerSearchRuns).values({
+    snapshotId: params.snapshotId,
+    agentTaskRunId: params.agentTaskRunId ?? null,
+    category: "flight",
+    providerName,
+    originId: params.input.originId,
+    destinationId: params.input.destinationId,
+    requestFingerprint: fingerprint,
+    outcome: "PENDING",
+  }).onConflictDoNothing().returning();
+  if (!reservedRun) throw new FlightSearchAlreadyAttemptedError();
+
   await recordAudit({
     ctx: params.ctx, action: "FLIGHT_SEARCH_REQUESTED", tripId: params.tripId,
     summary: { provider: providerName, operation: "flight_search" },
@@ -148,17 +180,10 @@ export async function executeAndPersistFlightSearch(params: {
     signal: params.signal,
   });
   const [searchRun] = await db.transaction(async (tx) => {
-    const [run] = await tx.insert(providerSearchRuns).values({
-      snapshotId: params.snapshotId,
-      agentTaskRunId: params.agentTaskRunId ?? null,
-      category: "flight",
-      providerName,
-      originId: params.input.originId,
-      destinationId: params.input.destinationId,
-      requestFingerprint: fingerprint,
+    const [run] = await tx.update(providerSearchRuns).set({
       outcome: result.outcome,
       errorCode: result.outcome === "UNAVAILABLE" ? result.reason : null,
-    }).returning();
+    }).where(eq(providerSearchRuns.id, reservedRun.id)).returning();
     if (result.outcome === "LIVE") {
       await tx.insert(providerOffers).values(result.data.map((offer) => ({
         snapshotId: params.snapshotId,

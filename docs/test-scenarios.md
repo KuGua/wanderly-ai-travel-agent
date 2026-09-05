@@ -2575,6 +2575,9 @@ turn**，预算耗尽、方案没写成。而 `appendFlightProgress()` 每轮都
 - **撤下即不可调用**：模型仍然发出该工具调用时，直接返回结构化的
   `TOOL_NOT_AVAILABLE_THIS_TURN` 并要求返回方案，**不派发、不碰供应商**。
   仅从列表里移除是不够的——派发只按名字，模型照样能调到。
+- `flight.search` 与其余搜索服务一样**先预留 `provider_search_runs` 行再调用供应商**：
+  run 内的完全重复请求以 `POLICY_DENIED` 被拒，不花第二次供应商调用；此前它是
+  先调用后插入，重复请求付了钱才死在唯一索引上，且是**裸 Postgres 错误**。
 - 重复判定对航班按 `(originId, destinationId)` 归一化，与「工具名+参数原文」的
   签名并用：只用签名时，模型换一种参数写法（键顺序、可选字段）就绕过去，重复调用
   真的打到供应商，撞上 `provider_search_runs` 的确定性 fingerprint 唯一索引，
