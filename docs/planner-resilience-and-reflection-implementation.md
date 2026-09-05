@@ -211,6 +211,31 @@ Web 的镜像 enum、以及详情页的文案表——否则新值会在某一�
 `logSafeRuntimeEvent`，只带受控字段（能力/skill 名、类型码、attempt、耗时），
 不带异常消息——异常消息可能夹带供应商或用户文本。
 
+#### 3.3.2 Turn 预算耗尽降级为 research summary（2026-09-06）
+
+`TOOL_CALL_MAX_TURNS` 原本经 `agent-task-worker.ts` 的 `classifyTaskError` 判为
+不可重试 → run `FAILED`，不写 summary、不写 plan。
+
+Trip `24a0799f`（2026-09-05）：8 次 provider 搜索 7 次 LIVE，库里落了
+**28 条航班 offer、10 条 Nuitee 酒店报价、16 条住宿、4 条活动**，
+`planning_research_results` 0 行、`itinerary_plans` 0 行，屏幕上只有
+「规划过程中调用供应商的时间用完了」。
+
+日志里的原因很清楚：模型在 turn 1 并行发了五个调用（两次 flight.search 拿到 LIVE、
+hotel.search 拿到 LIVE、accommodation.discover 与 activities.search 因一次性守卫
+被拒），随后 **turn 2–10 连续五次重复调用 flight.search**，在已经做完的那两格之间
+来回横跳。`flightResultCache` 让这些重复 0ms 返回、不花配额，**但每次仍然消耗一个
+turn**。`appendFlightProgress()` 每轮都在推「Do not call flight.search again」，模型不听。
+
+**Turn 预算耗尽是模型没能停手，不是这一轮什么都没找到。** 与 §3.1.1 的判断同源：
+局部问题不得升级为整轮失败并丢弃已验证的证据。`generatePlan` 现在把
+`ModelGatewayError{code: "TOOL_CALL_MAX_TURNS"}` 与 `PlanEvidenceUnavailableError`
+走同一条 `persistResearchSummary` 分支，reason 为 `TOOL_BUDGET_EXHAUSTED`，
+run 落 `COMPLETED_WITH_GAPS`。
+
+**不产出 plan 是对的**：模型没有给出选择，我们不能替它合成一个推荐——那是编造。
+但它一路取得的证据必须能被看见。
+
 ### 3.4 `policy-gate.ts`
 
 ```ts

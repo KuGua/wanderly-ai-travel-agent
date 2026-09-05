@@ -337,10 +337,12 @@ export async function runResearch(params: {
       throw err;
     }
 
-    // Per §1.3 of the planner-resilience design, the synthesis outcome is a
-    // discriminator: a destination with no commercial flight authority
-    // produces a research summary rather than a plan. We forward the summary
-    // to the caller without triggering solo auto-accept (no plan to adopt).
+    // The synthesis outcome is a discriminator. A run yields a summary rather
+    // than a plan when there is nothing citable to build one from, or when the
+    // model spent its turn budget without returning one — in both cases the
+    // evidence it did gather is already persisted and the summary is what
+    // makes it visible. Forwarded without solo auto-accept: there is no plan
+    // to adopt.
     if (synthesis.outcome === "RESEARCH_SUMMARY") {
       metrics.inc("research_stage_total", { stage: "completed", outcome: "research_summary" });
       return { outcome: "COMPLETED_WITH_GAPS", researchResultId: synthesis.researchResultId };
