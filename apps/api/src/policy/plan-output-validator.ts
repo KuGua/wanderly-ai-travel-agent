@@ -97,7 +97,13 @@ export const planOutputSchema = z.object({
   // the full candidate set explicitly. When absent, the validator derives a
   // single-element set from `destination` so pre-Phase 3 plans still pass.
   destinationCandidatesEvaluated: z.array(z.string().min(1)).min(1).optional(),
-  flights: z.array(flightOfferSchema).min(1),
+  // May be empty. A flight provider that fails or refuses the request is a
+  // capability gap, not grounds for withholding the whole plan: the other
+  // capabilities' live evidence is still worth showing, and the missing one
+  // renders as an explicit UNAVAILABLE row on the proposal card. What is
+  // never permitted is inventing a flight to satisfy a schema — the offers
+  // here are cross-checked against run-scoped provider evidence below.
+  flights: z.array(flightOfferSchema),
   // A missing stay provider/result is persisted as a Phase 4 service gap; it
   // must not force the LLM to invent a hotel offer.
   stays: z.array(stayOfferSchema),
@@ -270,9 +276,17 @@ export function validatePlanOutput(params: {
     }
   });
 
-  for (const origin of params.snapshot.departureCities) {
-    if (!plan.flights.some(flight => flight.origin === origin)) {
-      addViolation(violations, "ORIGIN_MISSING", "flights", "A required snapshot origin has no selected flight");
+  // Only meaningful once the capability produced anything at all. With some
+  // flights but not all origins covered, a member genuinely cannot reach the
+  // destination and the plan is wrong — that stays a hard violation. With no
+  // flights whatsoever the capability is simply unavailable, which the gap
+  // list already states; repeating it once per origin here would block the
+  // plan the caller has decided to produce anyway.
+  if (plan.flights.length > 0) {
+    for (const origin of params.snapshot.departureCities) {
+      if (!plan.flights.some(flight => flight.origin === origin)) {
+        addViolation(violations, "ORIGIN_MISSING", "flights", "A required snapshot origin has no selected flight");
+      }
     }
   }
 
@@ -319,12 +333,19 @@ export function validatePlanOutput(params: {
     violations,
   });
 
-  const expectedGeneratedAt = [...plan.flights, ...plan.stays, ...(plan.activities ?? []), ...(plan.hotels ?? [])]
-    .map(offer => offer.capturedAt)
-    .sort()
-    .at(-1);
-  if (plan.generatedAt !== expectedGeneratedAt) {
-    addViolation(violations, "GENERATED_AT_MISMATCH", "generatedAt", "Generation time does not match selected evidence");
+  // `generatedAt` must be the capture time of the freshest thing the plan
+  // actually cites, so a reader can date the plan by its own evidence. A plan
+  // that cites nothing has no such time and must not be persisted at all —
+  // that is a distinct violation from a wrong one, and saying so is what keeps
+  // an evidence-free shell from passing as a plan.
+  const citedOffers = [...plan.flights, ...plan.stays, ...(plan.activities ?? []), ...(plan.hotels ?? [])];
+  if (citedOffers.length === 0) {
+    addViolation(violations, "EVIDENCE_NOT_FOUND", "generatedAt", "A plan must cite at least one piece of provider evidence");
+  } else {
+    const expectedGeneratedAt = citedOffers.map(offer => offer.capturedAt).sort().at(-1);
+    if (plan.generatedAt !== expectedGeneratedAt) {
+      addViolation(violations, "GENERATED_AT_MISMATCH", "generatedAt", "Generation time does not match selected evidence");
+    }
   }
 
   if (violations.length > 0) {

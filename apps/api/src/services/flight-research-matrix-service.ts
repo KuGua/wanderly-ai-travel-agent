@@ -37,9 +37,11 @@ export type FlightResearchCell = {
  * authorized origin × destination pair to have been *attempted* (i.e. not
  * `MISSING`). A `UNAVAILABLE` cell is still complete — the loop tried it and
  * the answer was "no". Whether that answer is sufficient to *synthesize* a
- * commercial plan is a separate question, owned by
- * `hasCommercialFlightAuthority` (Gate B in §1.3 of the planner-resilience
- * design).
+ * commercial plan is a separate question. It used to be owned by a Gate B
+ * that required a LIVE cell on the chosen destination; that gate is gone —
+ * an unusable flight capability is a gap on the plan, not grounds for
+ * withholding it. What remains is that a plan must cite some provider
+ * evidence, enforced in `planning-service.ts` at persistence.
  */
 export async function evaluateFlightResearchCompleteness(params: {
   snapshotId: string;
@@ -65,22 +67,6 @@ export async function evaluateFlightResearchCompleteness(params: {
     return { originId, destinationId, outcome };
   }));
   return { complete: cells.every((cell) => cell.outcome !== "MISSING"), cells };
-}
-
-/**
- * Commercial authority gate for the flight capability. Research completeness
- * only says the loop covered every cell; whether a destination can carry a
- * commercial plan assertion requires at least one `LIVE` evidence cell for
- * that destination. Without it, the planner must produce a research summary
- * (no plan), per §1.3 of the planner-resilience design.
- */
-export function hasCommercialFlightAuthority(
-  cells: ReadonlyArray<FlightResearchCell>,
-  destinationId: string,
-): boolean {
-  return cells.some((cell) =>
-    cell.destinationId === destinationId && cell.outcome === "LIVE",
-  );
 }
 
 /**

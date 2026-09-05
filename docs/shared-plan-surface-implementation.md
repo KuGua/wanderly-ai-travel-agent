@@ -170,7 +170,7 @@ apps/api
 - **每一项价格必须与币种成对渲染**，并附 `source` 与 `capturedAt`；`expiresAt` 已过期的 offer 必须标注过期，不得静默展示（`AGENTS.md` fixture-first 与事实边界）。
 - `publicExplanationTokens` 是服务端 allow-list token（形如 `SATISFIES_ALL_PRIVATE_CONSTRAINTS`），**前端按 token 渲染本地化固定文案**，不得展示原始 token，也不得由前端拼接任何解释性自由文本。未知 token 静默跳过。
 - `constraintReferences` 只用于"引用了 N 项已授权约束"的计数展示，不展开具体路径。
-- `flights` 为空数组在 schema 层不可能出现（`.min(1)`）；`stays` / `activities` / `hotels` 为空表示该能力本次 `UNAVAILABLE`，必须显式渲染缺口，不得省略。
+- `flights` / `stays` / `activities` / `hotels` 任一为空都表示该能力本次 `UNAVAILABLE`，必须显式渲染缺口，不得省略。**航班不再例外**：`.min(1)` 已于 2026-09-05 移除（见 [规划器韧性与有界反思实施规范](planner-resilience-and-reflection-implementation.md) §3.1.1），一次被拒的航班请求不应再把整份方案连同其余已验证的结果一起拿走。前端 `PlanProposalCard` 的 `FlightsSection` 本就有空数组分支，无需改动。方案整体必须至少引用一条证据——四类全空的卡片不是方案，服务端在持久化前拒绝。
 
 ### 4.3 唯一的客户端持久化
 

@@ -41,10 +41,30 @@ describe("planning-service post-deprecation contracts", () => {
     expect(codes).toContainEqual({ capability: "mobility", code: "PROVIDER_NOT_APPROVED" });
   });
 
-  it("validateProviderCoverage throws PlanningDataUnavailableError when an origin is unsatisfied", () => {
+  /**
+   * Zero flights is the whole capability being unavailable — a supplier
+   * outage, a refused request, a city with no controlled airport. As of
+   * 2026-09-05 that is a gap on the plan rather than grounds for withholding
+   * it, so this must NOT throw: the run still has whatever else came back
+   * live, and one refused flight request used to take all of it away.
+   */
+  it("validateProviderCoverage lets an entirely unavailable flight capability through", () => {
     expect(() => validateProviderCoverage({
       requiredOrigins: ["Shanghai"],
       flights: [],
+      stays: [],
+    })).not.toThrow();
+  });
+
+  /**
+   * Some flights but an uncovered origin is a different statement: the plan
+   * would tell one member there is a way to get there and another nothing.
+   * That stays a hard refusal.
+   */
+  it("validateProviderCoverage still throws when one origin of several is unsatisfied", () => {
+    expect(() => validateProviderCoverage({
+      requiredOrigins: ["Shanghai", "Singapore"],
+      flights: [flightFrom("Shanghai")],
       stays: [],
     })).toThrow(PlanningDataUnavailableError);
   });
@@ -52,29 +72,33 @@ describe("planning-service post-deprecation contracts", () => {
   it("validateProviderCoverage passes when every required origin is covered", () => {
     expect(() => validateProviderCoverage({
       requiredOrigins: ["Shanghai"],
-      flights: [{
-        id: "f1",
-        providerOfferId: "p1",
-        providerName: "test",
-        queryId: "00000000-0000-4000-8000-000000000001",
-        origin: "Shanghai",
-        destination: "Tokyo",
-        segments: [],
-        totalDuration: "PT10H",
-        totalPrice: 100,
-        currency: "USD",
-        cabin: "ECONOMY" as const,
-        adults: 1,
-        baggageSummary: null,
-        changeSummary: null,
-        source: "test",
-        capturedAt: "2026-08-23T00:00:00.000Z",
-        expiresAt: "2026-08-24T00:00:00.000Z",
-      }],
+      flights: [flightFrom("Shanghai")],
       stays: [],
     })).not.toThrow();
   });
 });
+
+function flightFrom(origin: string) {
+  return {
+    id: `f-${origin}`,
+    providerOfferId: `p-${origin}`,
+    providerName: "test",
+    queryId: "00000000-0000-4000-8000-000000000001",
+    origin,
+    destination: "Tokyo",
+    segments: [],
+    totalDuration: "PT10H",
+    totalPrice: 100,
+    currency: "USD",
+    cabin: "ECONOMY" as const,
+    adults: 1,
+    baggageSummary: null,
+    changeSummary: null,
+    source: "test",
+    capturedAt: "2026-08-23T00:00:00.000Z",
+    expiresAt: "2026-08-24T00:00:00.000Z",
+  };
+}
 /**
  * Every tool result stays in the conversation for the rest of the loop, so the
  * request grows with each call. A few provider lists pushed it past the

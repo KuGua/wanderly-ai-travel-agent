@@ -147,9 +147,8 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
   });
 
   it("renders the UNAVAILABLE gap when stays/hotels/activities are empty", () => {
-    // Per §4.2: `flights` is `.min(1)` server-side, so it always carries
-    // a row. Empty `stays`/`hotels`/`activities` legitimately happen and
-    // must each render their own UNAVAILABLE marker.
+    // Empty `stays`/`hotels`/`activities` legitimately happen and must each
+    // render their own UNAVAILABLE marker.
     renderCard(makePlan({
       planData: {
         flights: [{
@@ -167,6 +166,34 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
     // "This capability returned was not collected" copy.
     const cards = screen.getAllByText(/This capability returned was not collected/i);
     expect(cards.length).toBe(3);
+  });
+
+  /**
+   * 2026-09-05: `flights` stopped being `.min(1)` server-side. A refused
+   * flight request used to withhold the entire plan; it is now a capability
+   * gap like any other, and the card has to say so rather than quietly
+   * omitting the section — a plan that shows stays and no flight row at all
+   * reads as "no flights needed", which is a different and false claim.
+   */
+  it("renders an UNAVAILABLE flight row rather than omitting the section", () => {
+    renderCard(makePlan({
+      planData: {
+        flights: [],
+        stays: [{
+          name: "Hotel Test",
+          totalPrice: 500,
+          currency: "USD",
+          source: "TestStay",
+          capturedAt: "2026-09-01T00:00:00.000Z",
+        }],
+      },
+    }));
+    const card = screen.getByTestId(`plan-proposal-card-${PLAN_ID}`);
+    expect(card.textContent).toContain("Hotel Test");
+    // Assert the flight section specifically, not a total: the card's own
+    // section count is a separate concern and has its own quirks.
+    const flightSection = screen.getByRole("region", { name: "Flights" });
+    expect(flightSection.textContent).toMatch(/This capability returned was not collected/i);
   });
 
   it("renders explanation tokens as localized copy", () => {

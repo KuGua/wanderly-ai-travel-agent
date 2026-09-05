@@ -10,7 +10,7 @@
  *
  *   - `validatePlanOutput` (coverage / evidence / snapshot-field policy)
  *   - `evaluateFlightResearchCompleteness` + Gate B
- *     (`hasCommercialFlightAuthority`)
+ *     (a destination with no citable provider evidence at all)
  *   - `validateProviderCoverage`
  *   - `PlanValidationError` from the deterministic snapshot/plan validators
  *
@@ -63,7 +63,7 @@ const HINTS: Record<PlanCritiqueCode, string> = {
  * Pure mapping from a thrown error into a critic emission. Returns `null`
  * for errors that the critic cannot safely describe — in those cases the
  * caller should rethrow the original error and skip the repair loop. The
- * `CommercialAuthorityMissingError` (research-summary branch signal) is in
+ * `PlanEvidenceUnavailableError` (research-summary branch signal) is in
  * the `null` set on purpose: it is a Gate-B outcome, not a fixable output
  * defect, and the planner already handles it by switching branches.
  */

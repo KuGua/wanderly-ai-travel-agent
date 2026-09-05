@@ -57,11 +57,25 @@ describe("personal-trip-orchestrator-service", () => {
   });
 
   afterAll(async () => {
-    // beforeEach truncates before each test but not after the last one; a
-    // RESEARCH row left behind here breaks migrate.test.ts's from-scratch
-    // migration replay (0012's pre-RESEARCH constraint) if it runs later in
-    // the same single-forked vitest process.
-    await cleanup.unsafe(`DELETE FROM agent_task_runs`);
+    // beforeEach truncates before each test but not after the last one. The
+    // leftovers are not this file's problem alone: the suite runs single-forked
+    // against one database, and a later file doing an unscoped
+    // `delete(sharedTrips)` fails on our foreign keys — which is how a change
+    // to what the last test persists here surfaced as six unrelated failures
+    // in trip-draft-brief. Clear the same set beforeEach clears, so the next
+    // file starts from the same empty state whatever this one wrote.
+    await cleanup.unsafe(`
+      TRUNCATE TABLE users, audit_events, outbox_events, planning_research_results,
+        constraint_snapshots, agent_task_runs, idempotency_records,
+        chat_messages, chat_threads, provider_search_runs, provider_offers,
+        trip_members, trip_search_preferences, trip_stay_search_preferences,
+        shared_trips, itinerary_plans, member_confirmations, source_evidence,
+        visa_readiness_checks, trip_constraint_proposals, trip_constraint_facts,
+        trip_invitations, consent_grants, user_profiles, preference_facts,
+        memory_proposals, plan_adoption_votes, trip_places,
+        booking_executions
+      RESTART IDENTITY CASCADE
+    `);
   });
 
   beforeEach(async () => {
@@ -306,7 +320,7 @@ describe("personal-trip-orchestrator-service", () => {
     expect(row?.serviceGaps.some((g: { capability: string }) => g.capability === "flight")).toBe(true);
   });
 
-  it("PROPOSE_PLAN persists a summary instead of a plan when no destination has complete commercial coverage", async () => {
+  it("PROPOSE_PLAN reaches PERSISTING and refuses a plan the validator cannot vouch for", async () => {
     // The default test dependencies deliberately have no accommodation
     // discovery provider. Even with a LIVE flight, that leaves no destination
     // eligible for a commercially grounded plan.
@@ -378,9 +392,12 @@ describe("personal-trip-orchestrator-service", () => {
       const violations = (err as { violations?: unknown }).violations
         ?? (err as { message?: string }).message;
       expect(violations).toBeTruthy();
-      // Validator must report flights[0] (the structure error we expected).
-      const v = JSON.stringify(violations);
-      expect(v).toContain("flights");
+      // Which field the stub trips on is not the point and has moved before:
+      // it used to be `flights[0]`, because the schema demanded at least one
+      // flight. It no longer does — an unavailable flight capability is a gap
+      // on the plan, not grounds for withholding it — so assert only that the
+      // deterministic validator refused a plan it could not tie to evidence.
+      expect(JSON.stringify(violations)).toMatch(/STRUCTURE_INVALID|EVIDENCE|flights/);
       return;
     }
     expect(result.outcome).toBe("COMPLETED_WITH_GAPS");

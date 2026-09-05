@@ -2507,6 +2507,31 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
   端点的每一个响应解析失败——gaps 面板丢掉能力清单，详情页整页报错。回归用例
   直接用 trip `8a634324` 的真实 payload。
 
+### TS-PLAN-WITHOUT-FLIGHTS — 航班不可用不再withheld整份方案
+
+**Objective:** 2026-09-05 产品决定：航班 provider 返回 4xx 也必须产出方案。
+Trip `8a634324` 的 serpapi 对每次航班搜索返回 HTTP 400，Gate B 因此把整轮降级为
+research summary，而同一轮已经拿到 16 条真实住宿与 5 条带价格的真实活动。
+
+**Steps:**
+
+1. 航班 provider 对所有 origin×destination 返回 4xx；住宿/活动返回 LIVE。
+2. 只有航班 LIVE、住宿覆盖缺失的目的地。
+3. 两个出发地，其中一个有航班、另一个没有。
+4. 所有能力都不可用的目的地。
+5. 方案卡渲染一个 `flights: []` 的方案。
+
+**Expected outcomes:**
+
+- 1 与 2 都产出 `PROPOSED` plan；缺失的那个能力以 `flight/NO_RESULTS` 或
+  `stay/NO_RESULTS` gap 记录在方案上，而不是取消方案。
+- 3 仍然硬拒（`PlanningDataUnavailableError`）：有航班却漏掉一个 origin，等于告诉
+  一位成员有路可走、另一位没有——那是错的方案，不是不可用的能力。
+- 4 不产出方案，写 research summary（`NO_CITABLE_EVIDENCE`）。一张只有目的地名字、
+  不含任何可验证事实的卡片是 `AGENTS.md` 禁止的 `Demo data` 形状。
+- 模型在任何情况下都不得为了填满数组而编造航班；输出仍逐条比对 run-scoped 证据。
+- 方案卡把空 `flights` 渲染成显式 `UNAVAILABLE` 行，与 stays/hotels/activities 一致。
+
 ### TS-SKILL-OUTPUT-CONTRACT — Skill 输出上界必须容纳 provider 的合法输出
 
 **Objective:** Regression for the same 2026-09-05 trip as `TS-PROVIDER-4XX`.

@@ -601,3 +601,44 @@ serpapi flight.search 返回 HTTP 400。按 G1 的规则，Shanghai 没有 LIVE 
 刷新/断线后流式内容无法回放；Offer Cue 全套表也不在。
 与 `bootstrap-vs-migrations-ledger` 那条记忆**方向相反**：这次表是真的没有，
 需要跑迁移而不是对账。已应用至 `0078`。
+
+## #41 航班被拒就 withheld 整份方案 — 产品决定 — 已改（09-05）
+用户决定：**航班 provider 返回 HTTP 400 也需要产出方案。**
+
+G1 之后的规则是「目的地需同时有 LIVE 航班与住宿覆盖才产出方案」。这一轮
+serpapi 对每次航班搜索返回 400（我们的请求被拒，不是没有航线），Shanghai
+因此没有 LIVE 航班证据，整轮降级为 research summary —— 而同一轮已经拿到
+**16 条真实住宿、5 条带价格与评分的真实活动**。一个能力被拒，把其余全部
+已验证的结果一起拿走了。
+
+判定改为：**目的地有任一能力的 LIVE 证据即可**（`coverage.evaluatedDestinations`
+本来就是这个集合，不必新算）。缺的能力在方案卡上渲染成显式 `UNAVAILABLE` 行，
+和 stays/hotels/activities 一直以来的待遇一致。
+
+挡在路上的门禁一共五道，全部要一起改，少一道就是 `PLAN_VALIDATION_FAILED`：
+1. `planOutputSchema.flights` 的 `.min(1)`；
+2. 校验器的 `ORIGIN_MISSING`（零航班时每个 origin 各报一次）；
+3. `validateProviderCoverage` 的 `missingOrigins` 硬拒；
+4. `beforeFinal` 的 Gate B（`hasCommercialFlightAuthority`）；
+5. 持久化事务里的同一个 Gate B。
+
+**保留的两条边界**：
+- **有航班但某个 origin 没有** 仍然硬拒。那不是「能力不可用」，是在告诉一位成员
+  有路可走、另一位没有 —— 那是错的方案。
+- **方案必须引用至少一条 provider 证据**。所有能力可以各自不可用，但一张只写着
+  目的地名字、不含任何可验证事实的卡片不是方案，是 `AGENTS.md` 禁止的
+  `Demo data` 形状。这类运行仍写 research summary，reason 为 `NO_CITABLE_EVIDENCE`。
+
+`hasCommercialFlightAuthority()` 随之成为死代码，已删除（连同它的两条单测）。
+`CommercialAuthorityMissingError` 更名为 `PlanEvidenceUnavailableError`，语义从
+「没有商业航班依据」收窄为「没有任何可引用的证据」。
+
+**顺带修的测试隔离缺陷**：`tests/tasks/personal-trip-orchestrator.test.ts` 的
+`afterAll` 只删 `agent_task_runs`，其余表留给下一个文件；而
+`tests/trip-draft-brief.test.ts` 的 `beforeEach` 做的是**无作用域**的
+`db.delete(sharedTrips)`。本次改动改变了前者最后写入什么，于是后者的六条用例
+一起变红 —— 六条与本次改动毫无关系的用例。`afterAll` 改为清理与 `beforeEach`
+相同的表集合。这类「一个文件的残留决定另一个文件成败」的耦合，下次还会咬人。
+
+**未做**：flight 400 本身的根因仍未查（#39）。放开门禁让产品不再因此空手，
+但航班搜索该能用还是得能用。

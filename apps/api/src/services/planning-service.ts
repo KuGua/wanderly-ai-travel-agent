@@ -60,7 +60,7 @@ import { hotelSearchModelArgumentsSchema } from "./hotel-search-service.js";
 import { accommodationDiscoveryModelArgumentsSchema } from "./accommodation-discovery-service.js";
 import { loadCurrentConfirmedSearchPreferences } from "./flight-search-preferences-service.js";
 import { loadCurrentStaySearchPreferences } from "./stay-search-preferences-service.js";
-import { evaluateFlightResearchCompleteness, flightMatrixToGaps, FlightResearchIncompleteError, hasCommercialFlightAuthority } from "./flight-research-matrix-service.js";
+import { evaluateFlightResearchCompleteness, flightMatrixToGaps, FlightResearchIncompleteError } from "./flight-research-matrix-service.js";
 import {
   activitiesMatrixToGaps,
   evaluateActivitiesResearchCompleteness,
@@ -140,7 +140,7 @@ export class PlanningDataUnavailableError extends Error {
  */
 export type PlanSynthesisOutcome =
   | { readonly outcome: "PLAN"; readonly planId: string; readonly gaps: ReadonlyArray<ServiceGap> }
-  | { readonly outcome: "RESEARCH_SUMMARY"; readonly researchResultId: string; readonly gaps: ReadonlyArray<ServiceGap>; readonly reason: "NO_COMMERCIAL_FLIGHT_AUTHORITY" };
+  | { readonly outcome: "RESEARCH_SUMMARY"; readonly researchResultId: string; readonly gaps: ReadonlyArray<ServiceGap>; readonly reason: "NO_CITABLE_EVIDENCE" };
 
 /**
  * Re-evaluate every research matrix on the supplied transaction and merge
@@ -279,7 +279,7 @@ async function persistResearchSummary(params: {
   snapshotId: string;
   agentTaskRunId: string;
   leaseToken: string;
-  reason: "NO_COMMERCIAL_FLIGHT_AUTHORITY";
+  reason: "NO_CITABLE_EVIDENCE";
   toolFailureGaps: Array<{ capability: string; code: string }>;
   snapshotFields: { departureCities: string[]; destinationCandidates: string[] };
   allFlights: FlightOffer[];
@@ -373,15 +373,12 @@ async function persistResearchSummary(params: {
  * switches to a research-summary branch instead. This class MUST be caught
  * inside `generatePlan` — it is not a worker-visible failure mode.
  */
-export class CommercialAuthorityMissingError extends Error {
+export class PlanEvidenceUnavailableError extends Error {
   readonly code = "PLANNING_DATA_UNAVAILABLE";
 
-  constructor(
-    readonly capability: "flight",
-    readonly destinationId: string,
-  ) {
-    super(`No commercial authority for capability "${capability}" on destination "${destinationId}"`);
-    this.name = "CommercialAuthorityMissingError";
+  constructor(readonly destinationId: string) {
+    super(`No citable provider evidence for destination "${destinationId}"`);
+    this.name = "PlanEvidenceUnavailableError";
   }
 }
 
@@ -623,6 +620,15 @@ export function validateProviderCoverage(params: {
   flights: FlightOffer[];
   stays: StayOffer[];
 }): void {
+  // Zero flights is the whole capability being unavailable — a supplier
+  // outage, a refused request, a city with no controlled airport. That is a
+  // gap (`summarizeProviderGaps` already emits `flight/NO_RESULTS`), and the
+  // plan is still worth producing from whatever else came back live.
+  //
+  // Some flights but an uncovered origin is a different statement: the plan
+  // would be telling one member there is a way to get there and another
+  // nothing at all. That remains structural and still refuses.
+  if (params.flights.length === 0) return;
   const { missingOrigins } = summarizeProviderGaps(params);
   if (missingOrigins.length > 0) {
     throw new PlanningDataUnavailableError(missingOrigins.map((origin) => `flight:${origin}`));
@@ -1170,12 +1176,12 @@ export async function generatePlan(params: {
       // throws, the gateway can re-emit a deterministic system message and
       // give the model one bounded repair iteration. The critic returns
       // `null` for errors it cannot safely describe (e.g. our own
-      // `CommercialAuthorityMissingError`, which is a Gate-B branch signal —
+      // `PlanEvidenceUnavailableError`, which is a Gate-B branch signal —
       // not a fixable output defect) so the original error propagates and
       // `generatePlan` can switch to the research-summary branch instead.
       repairBudget: Number(process.env.MODEL_GATEWAY_PLAN_REPAIR_BUDGET ?? 2),
       onValidationFailure: (error: unknown) => {
-        if (error instanceof CommercialAuthorityMissingError) return null;
+        if (error instanceof PlanEvidenceUnavailableError) return null;
         return toCritiques(error);
       },
       beforeFinal: async () => {
@@ -1192,15 +1198,13 @@ export async function generatePlan(params: {
             departureCities: snapshot.departureCities as string[], destinationCandidates: snapshot.destinationCandidates as string[],
           });
           if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
-          // Gate B — commercial authority. Completeness (above) only checks
-          // the loop covered every cell; we additionally need at least one
-          // LIVE cell on the destination we are about to synthesize a plan
-          // for. Without it, the run falls into the research-summary branch
-          // (§1.3 of the planner-resilience design) and never produces a
-          // PROPOSED plan.
-          if (!hasCommercialFlightAuthority(matrix.cells, params.destination)) {
-            throw new CommercialAuthorityMissingError("flight", params.destination);
-          }
+          // Gate B used to refuse here when no cell on this destination came
+          // back LIVE. It no longer does: one refused flight request withheld
+          // every other capability the run had verified. A destination with no
+          // usable flight is a gap on the plan, and the plan is still produced
+          // from whatever else is live. What must still hold is that the plan
+          // cites *something* — enforced at persistence, below, where the tool
+          // loop has finished adding evidence.
           // Re-check usable flight coverage before accepting final synthesis.
           // Stay unavailability is intentionally a Phase 4 service gap and is
           // represented as an empty selection, never a runtime fixture.
@@ -1359,12 +1363,12 @@ export async function generatePlan(params: {
 
   // Per §1.3 of the planner-resilience design, a destination that fails Gate B
   // (no commercial flight authority) must produce a research summary, not a
-  // plan. The discriminator has already thrown `CommercialAuthorityMissingError`
+  // plan. The discriminator has already thrown `PlanEvidenceUnavailableError`
   // from inside `beforeFinal`; we catch it here at the planning-service boundary
   // and route to the research-summary branch — leaving the plan branch only for
   // destinations that survived both gates.
   } catch (error) {
-    if (error instanceof CommercialAuthorityMissingError) {
+    if (error instanceof PlanEvidenceUnavailableError) {
       if (!params.agentTaskRunId || !params.leaseToken) {
         // No durable run to write a summary for — rethrow so the worker surfaces
         // the failure (matches the pre-P0 path which also had no run guard).
@@ -1376,7 +1380,7 @@ export async function generatePlan(params: {
         snapshotId: params.snapshotId,
         agentTaskRunId: params.agentTaskRunId,
         leaseToken: params.leaseToken,
-        reason: "NO_COMMERCIAL_FLIGHT_AUTHORITY",
+        reason: "NO_CITABLE_EVIDENCE",
         toolFailureGaps: toolFailureGaps.map((g) => ({
           capability: g.capability,
           code: g.code,
@@ -1457,8 +1461,15 @@ export async function generatePlan(params: {
       // auditable gap rather than a fatal condition. MISSING cells (the
       // planner never even tried) still hard-fail the round.
       if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
-      if (!hasCommercialFlightAuthority(matrix.cells, params.destination)) {
-        throw new CommercialAuthorityMissingError("flight", params.destination);
+      // A plan has to rest on something. Every capability may individually be
+      // reported as a gap, but a card naming a destination and citing no
+      // verifiable fact at all is not a plan — it is the "Demo data" shape
+      // `AGENTS.md` forbids, dressed as a real one. Such a run writes the
+      // research summary instead, which states honestly what was and was not
+      // obtained.
+      if (allFlights.length === 0 && allStays.length === 0
+        && allActivities.length === 0 && allHotels.length === 0) {
+        throw new PlanEvidenceUnavailableError(params.destination);
       }
       if (hotelEnabled) {
         const hotelMatrix = await evaluateHotelResearchCompleteness({
@@ -1657,7 +1668,7 @@ export async function generatePlan(params: {
       return { planId: plan.id, gaps: validatedServiceGaps };
     });
   } catch (error) {
-    if (error instanceof CommercialAuthorityMissingError) {
+    if (error instanceof PlanEvidenceUnavailableError) {
       if (!params.agentTaskRunId || !params.leaseToken) throw error;
       return await persistResearchSummary({
         ctx: params.ctx,
@@ -1665,7 +1676,7 @@ export async function generatePlan(params: {
         snapshotId: params.snapshotId,
         agentTaskRunId: params.agentTaskRunId,
         leaseToken: params.leaseToken,
-        reason: "NO_COMMERCIAL_FLIGHT_AUTHORITY",
+        reason: "NO_CITABLE_EVIDENCE",
         toolFailureGaps: toolFailureGaps.map((g) => ({ capability: g.capability, code: g.code })),
         snapshotFields: {
           departureCities: snapshot.departureCities as string[],

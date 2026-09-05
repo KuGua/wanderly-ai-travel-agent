@@ -1262,7 +1262,7 @@ export class LLMGateway implements ModelGateway {
      * the rendered critique back to the model. Returning `null` skips the
      * repair loop and rethrows the original error verbatim — that is the
      * correct behaviour for errors the critic cannot safely describe
-     * (e.g. `CommercialAuthorityMissingError`).
+     * (e.g. `PlanEvidenceUnavailableError`).
      */
     onValidationFailure?: (error: unknown) => readonly { code: string; fieldPaths: readonly string[]; hint: string }[] | null;
     signal?: AbortSignal;
@@ -1327,7 +1327,7 @@ export class LLMGateway implements ModelGateway {
             + "Return exactly one JSON object with one top-level key named plan. "
             + "The plan object may contain only destination, destinationCandidatesEvaluated, flights, stays, activities, generatedAt, constraintReferences, and publicExplanationTokens. "
             + "flights, stays, and activities must contain only compact {\"id\":\"exact evidence id\"} selection objects; do not copy or summarize the remaining evidence fields. "
-            + "destination, flights, and generatedAt are required. Return stays as an empty array when no stay evidence exists. Omit optional properties when they have no value; do not set them to null. "
+            + "destination, flights, and generatedAt are required keys. Return flights or stays as an empty array when that capability produced no evidence — an unavailable capability is reported as a gap, and inventing an offer to fill the array is a validation failure. Omit optional properties when they have no value; do not set them to null. "
             + "Use only the normalized Tool results already present in this conversation; never invent missing evidence.",
         });
         return;

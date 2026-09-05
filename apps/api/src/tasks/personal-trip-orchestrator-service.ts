@@ -226,15 +226,22 @@ export async function runResearch(params: {
       );
     }
     // Research completeness and commercial authority are separate gates.
-    // An unavailable cell is a visible gap, not a failed run; however we must
-    // not synthesize a plan for a destination that has neither a LIVE flight
-    // nor any accommodation coverage. Such a run persists a safe summary with
-    // no plan/booking authority.
+    // An unavailable cell is a visible gap, not a failed run.
+    //
+    // A destination qualifies on *any* live evidence, not specifically on
+    // flights. `evaluatedDestinations` is exactly that set: coverage research
+    // adds a destination when a flight search came back LIVE and when
+    // accommodation coverage was confirmed. Requiring flights on top of stay
+    // coverage meant one refused flight request — a supplier 4xx, our own bad
+    // parameters, a city with no controlled airport — withheld everything else
+    // the run had verified. What each capability did or did not return is
+    // stated as a gap on the plan itself instead.
+    //
+    // Zero live evidence still yields no plan: a card naming a destination and
+    // nothing else is not a plan, and `AGENTS.md` forbids presenting it as one.
     const uncoveredStays = new Set(coverage.missingDestinations);
-    const eligibleDestinations = destinationCandidates.filter((destination) =>
-      !uncoveredStays.has(destination)
-      && coverage.allFlights.some((flight) => flight.destination === destination),
-    );
+    const evaluated = new Set(coverage.evaluatedDestinations);
+    const eligibleDestinations = destinationCandidates.filter((destination) => evaluated.has(destination));
     if (eligibleDestinations.length === 0) {
       for (const destination of destinationCandidates) {
         if (!coverage.allFlights.some((flight) => flight.destination === destination)) {
@@ -254,7 +261,11 @@ export async function runResearch(params: {
     }
 
     // Pick a primary eligible destination deterministically (the model still
-    // ranks within the evidence it is allowed to cite).
+    // ranks within the evidence it is allowed to cite). Flight count remains
+    // the ranking signal where flights exist — more routes is a better answer
+    // for a traveller — and snapshot candidate order breaks the tie when none
+    // of the eligible destinations has any, so a flightless run still picks
+    // the same destination on every replay.
     const counts = new Map<string, number>();
     for (const flight of coverage.allFlights) {
       if (!eligibleDestinations.includes(flight.destination)) continue;
@@ -263,15 +274,17 @@ export async function runResearch(params: {
     const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([d]) => d);
     const recommended = sorted[0] ?? eligibleDestinations[0];
 
-    // Per §3.3 of the planner-resilience design, only the *recommended*
-    // destination's missing stay coverage trips the hard refusal. Other
-    // candidates lacking stays are recorded as `service_gaps` so the user
-    // sees a real gap instead of an opaque whole-trip failure.
-    if (coverage.missingDestinations.includes(recommended)) {
-      throw Object.assign(
-        new Error(`Research uncovered the recommended destination: ${recommended}`),
-        { code: "PLANNING_DATA_UNAVAILABLE" },
-      );
+    // Whatever the recommended destination did not get, say so on the plan.
+    // These two used to be refusals — missing stay coverage threw
+    // `PLANNING_DATA_UNAVAILABLE`, and a destination without flights never
+    // became eligible at all. Both are now gaps the proposal card renders as
+    // explicit UNAVAILABLE rows, which is the same treatment every other
+    // capability already got.
+    if (uncoveredStays.has(recommended)) {
+      gaps.push({ capability: "stay", code: "NO_RESULTS", destinationId: recommended });
+    }
+    if (!coverage.allFlights.some((flight) => flight.destination === recommended)) {
+      gaps.push({ capability: "flight", code: "NO_RESULTS", destinationId: recommended });
     }
 
     const initialHash = hashProjectionManifest(snapshot.authorizedData);

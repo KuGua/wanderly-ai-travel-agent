@@ -61,14 +61,13 @@ tool loop（maxTurns=8，已有）
 beforeFinal
    ├─ Gate A 研究完整性：所有 cell ≠ MISSING
    │     失败 → FlightResearchIncompleteError（PLANNING_DATA_UNAVAILABLE，不可重试）
-   ├─ Gate B 商业依据：plan 目的地至少一格 LIVE
-   │     失败 → 不抛错，走 research-summary 分支
+   ├─ （Gate B 商业依据已于 2026-09-05 移除，见 §3.1.1）
    └─ 输出 schema / policy / evidence 校验
          失败 → plan-critique → 回灌 → repair 预算（≤2）
                   预算耗尽 → 原错误照常抛出
    │
    ├─ 通过 ────► PROPOSED plan + service_gaps + COMPLETED_WITH_GAPS/COMPLETED
-   └─ Gate B 失败 ─► planning_research_results（result_plan_id = NULL）
+   └─ 零可引用证据 ─► planning_research_results（result_plan_id = NULL）
                       + COMPLETED_WITH_GAPS
                       经 GET /trips/:tripId/research/latest 呈现
 ```
@@ -128,6 +127,26 @@ if (!hasCommercialFlightAuthority(matrix.cells, params.destination)) {          
 `CommercialAuthorityMissingError` 是本模块内部的控制流信号，**不得逃逸到 Worker**：`generatePlan` 捕获它并切换到 research-summary 分支。
 
 `validateProviderCoverage`（第 351 行）保持不变——`missingOrigins` 是结构性缺口，仍为硬门禁。
+
+#### 3.1.1 Gate B 已移除（2026-09-05，产品决定）
+
+**上文 §3.1/§3.2 描述的 Gate B 不再存在。** 用户决定：航班 provider 返回 4xx 也必须产出方案。
+
+理由来自 trip `8a634324`：serpapi 对每一次航班搜索返回 HTTP 400（我们的请求被拒，不是「这条航线没航班」），Shanghai 因此没有 LIVE 航班证据，Gate B 把整轮降级为 research summary——**而同一轮已经拿到了 16 条真实住宿、5 条带价格与评分的真实活动**。一个能力被拒，把其余所有已验证的结果一起拿走了。
+
+新的判定：
+
+| 旧 | 新 |
+|---|---|
+| 目的地需同时有 LIVE 航班**与**住宿覆盖 | 目的地有**任一**能力的 LIVE 证据即可（`coverage.evaluatedDestinations`） |
+| 推荐目的地缺住宿覆盖 → 抛 `PLANNING_DATA_UNAVAILABLE` | 记为 `stay/NO_RESULTS` gap |
+| 目的地无 LIVE 航班 → 不产出 plan | 记为 `flight/NO_RESULTS` gap |
+| `planOutputSchema.flights` 为 `.min(1)` | 允许空数组 |
+| `validateProviderCoverage` 对任何未覆盖 origin 硬拒 | 零航班时放行（整个能力不可用）；**有航班但某 origin 未覆盖仍硬拒**——那意味着告诉一位成员有路可走、另一位没有 |
+
+保留的下限：**方案必须引用至少一条 provider 证据**。所有能力可以各自不可用，但一张只写着目的地名字、不含任何可验证事实的卡片不是方案，是 `AGENTS.md` 禁止的 `Demo data` 形状。这类运行仍写 research summary，由 `PlanEvidenceUnavailableError`（原 `CommercialAuthorityMissingError`）触发，reason 为 `NO_CITABLE_EVIDENCE`。
+
+`hasCommercialFlightAuthority()` 随之成为死代码并已删除；上文 §3.1「改动 2」的代码块是历史记录，不再是当前实现。
 
 **`generatePlan` 返回值改为判别联合：**
 

@@ -197,6 +197,66 @@ describe("plan-output-validator", () => {
     expect(() => planOutputSchema.parse(goodPlanData())).not.toThrow();
   });
 
+  /**
+   * 2026-09-05: a refused flight request used to withhold the entire plan.
+   * A trip whose flight provider answered 4xx therefore showed nothing at all,
+   * even though the run had verified live accommodation and activities. Flights
+   * are now a capability like any other: absent means an UNAVAILABLE row on the
+   * card, not a missing plan.
+   */
+  it("accepts a plan with no flights when other evidence is cited", () => {
+    const activity = goodActivity();
+    const plan = {
+      ...goodPlanData(),
+      flights: [],
+      activities: [activity],
+      generatedAt: activity.capturedAt,
+    };
+    const result = validatePlanOutput({
+      planData: plan,
+      snapshot,
+      evidence: { ...goodEvidence(), activities: [activity] },
+    });
+    expect(result.flights).toEqual([]);
+    expect(result.activities).toHaveLength(1);
+  });
+
+  /**
+   * The one thing an empty flight list must not license. Every capability may
+   * be unavailable at once, and the result is still not a plan — a card naming
+   * a destination and citing no verifiable fact is the shape `AGENTS.md`
+   * forbids. Such a run writes the research summary instead.
+   */
+  it("refuses a plan that cites no evidence at all", () => {
+    const violations = violationsFor({
+      ...goodPlanData(),
+      flights: [],
+      stays: [],
+    });
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "EVIDENCE_NOT_FOUND", fieldPath: "generatedAt" }),
+      ]),
+    );
+  });
+
+  /**
+   * Multi-origin invariant, unchanged. Some flights but an origin with none
+   * means one member is told there is a way to get there and another nothing —
+   * that is a wrong plan, not an unavailable capability.
+   */
+  it("still refuses a partially covered origin set", () => {
+    const violations = violationsFor(
+      goodPlanData(),
+      { ...snapshot, departureCities: ["San Francisco", "Singapore"] },
+    );
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "ORIGIN_MISSING", fieldPath: "flights" }),
+      ]),
+    );
+  });
+
   it("accepts an empty stay selection as a provider service gap", () => {
     const planData = { ...goodPlanData(), stays: [] };
     expect(() => validatePlanOutput({
