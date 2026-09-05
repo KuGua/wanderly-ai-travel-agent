@@ -146,7 +146,12 @@ export interface TravelApi {
   savePersonalResearchAnswers?(runId: string, input: PersonalResearchAnswersRequest): Promise<void>;
   confirmPersonalResearch?(runId: string, input: PersonalResearchConfirmRequest): Promise<PersonalResearchConfirmAcceptedResponse>;
   cancelPersonalResearch?(runId: string): Promise<PersonalResearchReadResponse>;
-  subscribeAgentRun(runId: string, signal: AbortSignal, onEvent: (event: AgentStreamEvent) => void): Promise<void>;
+  subscribeAgentRun(
+    runId: string,
+    signal: AbortSignal,
+    onEvent: (event: AgentStreamEvent) => void,
+    options?: { lastEventId?: string },
+  ): Promise<void>;
   startExploration(input: ExplorationStartRequest): Promise<ExplorationStartResponse>;
   activateTrip(tripId: string, input: TripActivationRequest): Promise<TripActivationResponse>;
   updateTripTitle(tripId: string, input: UpdateTripTitleInput): Promise<UpdateTripTitleResponse>;

@@ -136,7 +136,12 @@ describe("HttpTravelApi private conversation", () => {
 
     await api.getAgentRun(RUN_ID);
     await api.cancelAgentRun(RUN_ID);
-    await api.subscribeAgentRun(RUN_ID, new AbortController().signal, (event) => events.push(event));
+    await api.subscribeAgentRun(
+      RUN_ID,
+      new AbortController().signal,
+      (event) => events.push(event),
+      { lastEventId: "42" },
+    );
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       `https://api.example.test/api/v1/agent-runs/${RUN_ID}`,
@@ -146,6 +151,8 @@ describe("HttpTravelApi private conversation", () => {
     expect((fetchMock.mock.calls[1][1] as RequestInit).method).toBe("POST");
     expect(new Headers((fetchMock.mock.calls[2][1] as RequestInit).headers).get("Authorization"))
       .toBe("Bearer test-access-token");
+    expect(new Headers((fetchMock.mock.calls[2][1] as RequestInit).headers).get("Last-Event-ID"))
+      .toBe("42");
     expect(events).toEqual([{
       event: "message.delta",
       runId: RUN_ID,

@@ -53,18 +53,20 @@ export function typedLength(
   return Math.min(available, revealed + Math.max(paced, catchUp));
 }
 
-function prefersReducedMotion(): boolean {
-  return typeof window !== "undefined"
-    && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
-}
-
+/**
+ * Deliberately not gated on `prefers-reduced-motion`.
+ *
+ * The decorative part of this surface is the blinking block cursor, and
+ * `globals.css` already stops that under the reduce query. What is left is the
+ * reveal itself, which is content arriving, not decoration — and skipping it
+ * does not reduce motion: the text still lands in whatever clauses the server
+ * approved, so the honest comparison is a dozen abrupt jumps versus one smooth
+ * flow of the same characters. The bail-out that used to live here made the
+ * motion *more* jarring while silently removing the feature.
+ */
 export function useTerminalTyping(text: string, active: boolean): string {
   const [revealed, setRevealed] = useState(0);
   const revealedRef = useRef(0);
-  // Lazy state initialiser rather than a ref: this value is read during
-  // render, where a ref read is neither safe nor allowed. Sampled once per
-  // mount, matching the existing `shazi-flip-game` pattern.
-  const [reduced] = useState(prefersReducedMotion);
   const targetRef = useRef(text);
 
   // Written from an effect, not during render. The frame loop reads it so a
@@ -75,7 +77,7 @@ export function useTerminalTyping(text: string, active: boolean): string {
   });
 
   useEffect(() => {
-    if (!active || reduced) return;
+    if (!active) return;
     // A run starts from the beginning. Resetting here rather than on the
     // inactive branch keeps `setRevealed` out of the effect body, where a
     // synchronous state write would cascade renders.
@@ -97,8 +99,8 @@ export function useTerminalTyping(text: string, active: boolean): string {
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [active, reduced]);
+  }, [active]);
 
-  if (!active || reduced) return text;
+  if (!active) return text;
   return text.slice(0, Math.floor(revealed));
 }

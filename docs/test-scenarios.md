@@ -2203,9 +2203,34 @@ that non-members see no plan/constraint/run data.
 - Rail entry always visible, even with zero plans.
 - `?view=shared` and `?thread=<uuid>` are strictly exclusive; setting
   either clears the other.
+- A current member may open the Shared plan surface while the Trip is still
+  `DRAFT`; the read-only plans and team-visible-constraints projections return
+  empty collections and the UI renders the empty state. This does not permit
+  any Draft collaboration write (snapshot, plan/replan, constraint mutation,
+  confirmation or booking), all of which still return `409 TRIP_NOT_ACTIVE`.
 - Unknown-thread fallback effect does NOT fire when `view=shared` is
   active, so refresh cannot bounce the user out.
 - Non-member gets 403 with no plan / constraint / run data rendered.
+
+### Agent stream replay and terminal reveal
+
+- Submit a conversation run which completes before the browser installs its SSE
+  effect. The initial SSE request (without `Last-Event-ID`) replays its durable
+  frames in ascending `streamEventId` order, and `data-stream-chars` becomes
+  non-zero before the terminal row is cleared.
+- Disconnect after a delivered frame, then reconnect with its `Last-Event-ID`.
+  Only later frames are replayed; a live/replay overlap is rendered once.
+- If the run is terminal and no journal frame is available, the persisted
+  assistant message is revealed in the terminal row before it returns to normal
+  conversation history. No reconnect or replay creates a second task.
+
+### DRAFT planning call to action
+
+- In the trip workspace, do not render the **Start planning** card while the
+  DRAFT brief lacks a departure city, destination, or travel dates. The chat
+  remains the sole route to fill those fields.
+- Render the card only after all planning fields are present. If quote
+  nationality is required, the card collects it before enabling submission.
 - `localStorage` unavailability never blocks render.
 - No member names or trigger attribution appear on the surface.
 

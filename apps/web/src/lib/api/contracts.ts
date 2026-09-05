@@ -722,6 +722,7 @@ export const latestPlanningRunResponseSchema = z.object({ run: agentRunResponseS
 const streamBaseSchema = z.object({
   runId: z.string().uuid(),
   generationAttempt: z.number().int().nonnegative(),
+  streamEventId: z.string().regex(/^\d+$/).optional(),
 });
 
 /**
