@@ -1146,15 +1146,16 @@ describe("the trip's preference card", () => {
     ],
   };
 
-  it("renders card actions as underlined links with directional affordances", async () => {
+  it("opens as an editable form with a close control and one save action", async () => {
     const api = createApi({ getPreferenceCard: vi.fn().mockResolvedValue(card) });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
     const preferenceCard = await screen.findByTestId("trip-preference-card");
     expect(preferenceCard).not.toHaveClass("wanderly-shadow");
-    expect(screen.getByRole("button", { name: "Edit" })).toHaveClass("underline");
+    expect(screen.getByRole("button", { name: "Close trip preferences" })).toBeInTheDocument();
     expect(screen.getByTestId("trip-preference-submit")).toHaveClass("underline");
     expect(preferenceCard.querySelectorAll("svg[aria-hidden='true']")).toHaveLength(2);
+    expect(screen.getByLabelText("trip_pace")).toBeInTheDocument();
   });
 
   it("submits only what the traveller changed", async () => {
@@ -1166,7 +1167,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByTestId("trip-preference-card");
     fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));
 
@@ -1191,7 +1192,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByTestId("trip-preference-card");
     fireEvent.change(screen.getByLabelText("interests"), { target: { value: "historical sites, museums" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));
 
@@ -1217,7 +1218,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByTestId("trip-preference-card");
     fireEvent.click(screen.getByLabelText("no_red_eye"));
     fireEvent.change(screen.getByLabelText("budget_max_usd"), { target: { value: "2500" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));
@@ -1244,7 +1245,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByTestId("trip-preference-card");
     fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));
 
@@ -1447,7 +1448,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByTestId("trip-preference-card");
     fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));
 
@@ -1464,7 +1465,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByTestId("trip-preference-submit"));
+    fireEvent.click(await screen.findByRole("button", { name: "Close trip preferences" }));
 
     await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(TRIP_ID, []));
     await waitFor(() => expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument());
