@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { destinationCuePreflight } from "../src/skills/personal/destination-cue-decision-skill.js";
+import {
+  buildDeterministicDestinationCueDecision,
+  destinationCuePreflight,
+} from "../src/skills/personal/destination-cue-decision-skill.js";
 import { evaluateDestinationCueSuppression } from "../src/services/destination-cue-service.js";
 import { destinationCueDecisionSchema } from "../src/providers/llm-gateway.js";
 
@@ -18,6 +21,26 @@ describe("destination cue preflight", () => {
 
   it("sends a genuine travel mention to the model", () => {
     expect(destinationCuePreflight("我这次想去北京、成都和杭州")).toBe("MODEL");
+  });
+});
+
+describe("deterministic destination-cue fallback", () => {
+  it("keeps an already resolved city reviewable when the model cue is unavailable", () => {
+    expect(buildDeterministicDestinationCueDecision({
+      candidates: ["Shanghai"],
+      currentDestinations: [],
+    })).toMatchObject({
+      candidates: [{ canonicalCityName: "Shanghai", countryCode: "CN", ordinal: 0 }],
+      modelVersion: "deterministic-brief-parser",
+      promptVersion: "destination-cue-fallback-v1",
+    });
+  });
+
+  it("does not re-prompt for a city already confirmed on the trip", () => {
+    expect(buildDeterministicDestinationCueDecision({
+      candidates: ["Shanghai"],
+      currentDestinations: ["Shanghai"],
+    })).toBeNull();
   });
 });
 

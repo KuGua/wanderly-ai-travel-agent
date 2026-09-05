@@ -166,6 +166,7 @@ export class ApiClient {
     path: string,
     signal: AbortSignal,
     onEvent: (eventName: string, data: unknown) => void,
+    options: { lastEventId?: string } = {},
   ): Promise<void> {
     const headers = new Headers({ Accept: "text/event-stream" });
     const accessToken = await this.getAccessToken();
@@ -173,6 +174,10 @@ export class ApiClient {
     const requestId = generateRequestId();
     headers.set("X-Request-Id", requestId);
     headers.set("X-Correlation-Id", this.lastCorrelationId ?? requestId);
+    // The stream journal is durable. Supplying the last processed frame id
+    // lets a reconnect request exactly the missing suffix instead of replaying
+    // the whole run (or silently missing a fast worker's output).
+    if (options.lastEventId) headers.set("Last-Event-ID", options.lastEventId);
 
     let response: Response;
     try {

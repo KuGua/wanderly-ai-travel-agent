@@ -272,7 +272,6 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
   // ─── GET /trips/:tripId/constraints ──────────────────────────────────────
   app.get("/trips/:tripId/constraints", async (request) => {
     const { tripId } = tripIdParamsSchema.parse(request.params);
-    await requireActiveTrip(tripId, "constraint_read");
     await assertMember(tripId, request.user.id);
     const rows = await listFactsForMembers({ tripId, viewerUserId: request.user.id });
     return tripConstraintsListResponseSchema.parse({ tripId, teamVisibleFacts: rows });
@@ -283,7 +282,6 @@ export async function teamOrchestrationRoutes(app: FastifyInstance): Promise<voi
   // sections. Confidential values are stripped by `listTripPlans`.
   app.get("/trips/:tripId/plans", async (request) => {
     const { tripId } = tripIdParamsSchema.parse(request.params);
-    await requireActiveTrip(tripId, "constraint_read");
     await assertMember(tripId, request.user.id);
     const sections = await listTripPlans({ tripId, viewerUserId: request.user.id });
     return tripPlansListResponseSchema.parse({ tripId, ...sections });

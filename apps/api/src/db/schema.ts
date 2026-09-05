@@ -1017,6 +1017,19 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
     .on(table.threadId).where(sql`${table.researchIntentState} = 'PROPOSED' AND ${table.threadId} IS NOT NULL`),
 }));
 
+/**
+ * Bounded-at-read replay journal for private Agent SSE. `event` is never a
+ * telemetry payload; route-level run authorization protects every read.
+ */
+export const agentStreamEvents = pgTable("agent_stream_events", {
+  id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+  runId: uuid("run_id").references(() => agentTaskRuns.id, { onDelete: "cascade" }).notNull(),
+  event: jsonb("event").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  runIdIdIdx: index("agent_stream_events_run_id_id_idx").on(table.runId, table.id),
+}));
+
 // Owner-only confirmation UI generated from one DRAFT conversation turn.
 // Unlike `shared_trips.pending_brief_proposal`, this state is scoped to the
 // private thread and therefore cannot be projected to other trip members.

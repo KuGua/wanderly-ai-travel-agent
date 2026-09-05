@@ -566,11 +566,16 @@ export async function handleConversationTask(params: {
   const abortFromTask = () => execution.abort(params.signal.reason);
   if (params.signal.aborted) abortFromTask();
   else params.signal.addEventListener("abort", abortFromTask, { once: true });
+  // This parser is server-owned and only returns allow-listed city labels. Its
+  // destination is passed to the cue classifier as a safe fallback; it is
+  // never written without the creator accepting the resulting cue.
+  const directBriefProposal = proposeTripBriefFromTurn(turnInput.question);
   const destinationCuePromise = tripContext.tripStatus === "DRAFT" && membership.role === "CREATOR"
     ? decideDestinationCueForTurn({
       ctx: { ctx: params.ctx, policyGate: new DefaultPolicyGate("personal") },
       question: turnInput.question,
       currentDestinations: tripContext.destinationCandidates,
+      fallbackCandidates: directBriefProposal?.destinationCandidates,
       locale: titleLocale ?? "en",
       signal: execution.signal,
     }).catch(() => null)
@@ -880,7 +885,7 @@ export async function handleConversationTask(params: {
     ? mergeTripBriefProposal(
       // Direct owner statements are parsed conservatively and destination
       // values have already passed server-owned place resolution.
-      withoutDestination(proposeTripBriefFromTurn(turnInput.question)),
+      withoutDestination(directBriefProposal),
       // The model extractor is retained only for an owner accepting a
       // concrete date/duration the assistant resolved in this same turn.
       // It can never introduce a destination, departure, or other free-text

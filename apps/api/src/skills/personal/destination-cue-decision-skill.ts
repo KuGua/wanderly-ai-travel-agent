@@ -29,6 +29,48 @@ export interface ResolvedDestinationCueDecision {
   promptVersion: string;
 }
 
+/**
+ * Turns cities already accepted by the server-owned brief parser into the
+ * same reviewable cue shape as the model classifier. This is deliberately a
+ * fallback, not an automatic write: the owner still has to accept the cue
+ * before `destinationCandidates` changes.
+ */
+export function buildDeterministicDestinationCueDecision(params: {
+  candidates: readonly string[];
+  currentDestinations: readonly string[];
+}): ResolvedDestinationCueDecision | null {
+  const current = new Set(params.currentDestinations.map(normalize));
+  const seen = new Set<string>();
+  const candidates: ResolvedDestinationCueDecision["candidates"] = [];
+  for (const candidate of params.candidates) {
+    let reference;
+    try {
+      reference = getLocationReferenceResolver().resolveDestinationReference({
+        destinationId: candidate,
+        cityName: candidate,
+      });
+    } catch {
+      return null;
+    }
+    if (!reference) continue;
+    const key = normalize(`${reference.cityName}|${reference.countryCode}`);
+    if (current.has(normalize(reference.cityName)) || seen.has(key)) continue;
+    seen.add(key);
+    candidates.push({
+      ordinal: candidates.length,
+      canonicalCityName: reference.cityName,
+      countryCode: reference.countryCode,
+      candidateKeyHash: createHash("sha256").update(key).digest("hex"),
+    });
+  }
+  if (candidates.length === 0) return null;
+  return {
+    candidates,
+    modelVersion: "deterministic-brief-parser",
+    promptVersion: "destination-cue-fallback-v1",
+  };
+}
+
 export const destinationCueDecisionInputSchema = z.object({
   question: z.string().trim().min(1).max(4000),
   currentDestinations: z.array(z.string().trim().min(1).max(128)).max(5),
@@ -50,26 +92,40 @@ export async function decideDestinationCueForTurn(params: {
   ctx: SkillContext;
   question: string;
   currentDestinations: string[];
+  /** Cities already resolved from this turn by the brief parser. */
+  fallbackCandidates?: readonly string[];
   locale: "en" | "zh";
   signal: AbortSignal;
 }): Promise<ResolvedDestinationCueDecision | null> {
   if (destinationCuePreflight(params.question) === "SKIP_FLIGHT_OR_HOTEL") return null;
   const gateway = modelGateway();
-  if (!gateway.decideDestinationCue) return null;
+  const fallback = () => buildDeterministicDestinationCueDecision({
+    candidates: params.fallbackCandidates ?? [],
+    currentDestinations: params.currentDestinations,
+  });
+  if (!gateway.decideDestinationCue) return fallback();
   // Measured 2.6s-5.2s against the 2.5s this used to allow, so the budget was
   // losing races it should have won — and losing them silently. The call is
   // started before the reply's own model call and awaited after it, so the
   // wall clock overlaps rather than adds.
   const timeoutSignal = AbortSignal.timeout(9_000);
   const signal = AbortSignal.any([params.signal, timeoutSignal]);
-  const result = await gateway.decideDestinationCue({
-    question: params.question,
-    currentDestinations: params.currentDestinations,
-    locale: params.locale,
-    signal,
-    ctx: params.ctx.ctx,
-  });
-  if (!result || result.decision.disposition !== "PROPOSE") return null;
+  let result: Awaited<ReturnType<NonNullable<typeof gateway.decideDestinationCue>>> | null = null;
+  try {
+    result = await gateway.decideDestinationCue({
+      question: params.question,
+      currentDestinations: params.currentDestinations,
+      locale: params.locale,
+      signal,
+      ctx: params.ctx.ctx,
+    });
+  } catch {
+    // A model cue is optional; a city that the deterministic brief parser has
+    // already resolved remains safe to present for explicit owner review.
+    if (params.signal.aborted) return null;
+    return fallback();
+  }
+  if (!result || result.decision.disposition !== "PROPOSE") return fallback();
 
   const current = new Set(params.currentDestinations.map(normalize));
   const seen = new Set<string>();

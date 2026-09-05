@@ -274,9 +274,18 @@ export function TravelAgentChat({
   const [requestError, setRequestError] = useState<unknown>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
+  const [recoveredStream, setRecoveredStream] = useState<{
+    runId: string;
+    assistantMessageId: string;
+    text: string;
+  } | null>(null);
+  const [completedStreamRunId, setCompletedStreamRunId] = useState<string | null>(null);
+  const streamText = streamState.text || (
+    recoveredStream?.runId === activeRunId ? recoveredStream.text : ""
+  );
   // Draws the clauses the server has already approved at a terminal
   // cadence. Bounded so it never trails the stream — see terminal-typing.ts.
-  const typedStreamText = useTerminalTyping(streamState.text, Boolean(activeRunId));
+  const typedStreamText = useTerminalTyping(streamText, Boolean(activeRunId));
   const [pendingFlightConfirmation, setPendingFlightConfirmation] = useState(false);
   // This is intentionally a local draft. Selecting a chip does not create a
   // preference version, invalidate a plan, or authorize a provider call; the
@@ -313,6 +322,9 @@ export function TravelAgentChat({
   const panelScrollRef = useRef<HTMLDivElement>(null);
   const pendingTurnAnchorRef = useRef<HTMLParagraphElement>(null);
   const wasSendingRef = useRef(false);
+  const seenStreamEventIdsRef = useRef(new Set<string>());
+  const lastStreamEventIdRef = useRef<string | null>(null);
+  const completedRunHandledRef = useRef(new Set<string>());
 
   const api = useTravelApi();
   const conversation = useOwnerConversation(effectiveThreadId);
@@ -332,6 +344,8 @@ export function TravelAgentChat({
     setPendingTurn(null);
     setActiveRunId(null);
     setStreamState(emptyStreamState());
+    setRecoveredStream(null);
+    setCompletedStreamRunId(null);
     setRequestError(null);
     setBriefProposal(null);
     setDestinationCue(null);
@@ -388,6 +402,10 @@ export function TravelAgentChat({
         setSessionThreadId(activeThreadId);
         setSessionMessages((current) => mergeMessages(current, [response.userMessage]));
         setStreamState(emptyStreamState());
+        setRecoveredStream(null);
+        setCompletedStreamRunId(null);
+        seenStreamEventIdsRef.current.clear();
+        lastStreamEventIdRef.current = null;
         setActiveRunId(response.runId);
         storeActiveRunId(response.runId);
         setPendingTurn(null);
@@ -458,8 +476,16 @@ export function TravelAgentChat({
 
   useEffect(() => {
     if (!activeRunId) return;
+    seenStreamEventIdsRef.current.clear();
+    lastStreamEventIdRef.current = null;
     const controller = new AbortController();
-    void api.subscribeAgentRun(activeRunId, controller.signal, (event) => {
+    let retryDelayMs = 250;
+    const consume = (event: AgentStreamEvent) => {
+      if (event.streamEventId) {
+        if (seenStreamEventIdsRef.current.has(event.streamEventId)) return;
+        seenStreamEventIdsRef.current.add(event.streamEventId);
+        lastStreamEventIdRef.current = event.streamEventId;
+      }
       if (event.event === "trip.brief_proposed") {
         // A traveller often supplies the brief across several turns (city and
         // duration first, departure/date next). Keep the unconfirmed card as
@@ -502,10 +528,30 @@ export function TravelAgentChat({
       ) {
         void refetchAgentRun();
       }
-    }).catch(() => {
-      // A dropped observation connection never cancels the accepted task.
-      // Polling the durable run state remains the recovery path.
-    });
+    };
+    void (async () => {
+      // Fetch does not implement EventSource's automatic reconnect. Keep the
+      // cursor ourselves so every reconnect asks the server journal for only
+      // the missing events. This is also what closes the submit-to-subscribe
+      // race: the first connection has no cursor and replays from event 0.
+      while (!controller.signal.aborted) {
+        try {
+          const lastEventId = lastStreamEventIdRef.current;
+          if (lastEventId) {
+            await api.subscribeAgentRun(activeRunId, controller.signal, consume, { lastEventId });
+          } else {
+            await api.subscribeAgentRun(activeRunId, controller.signal, consume);
+          }
+          retryDelayMs = 250;
+        } catch {
+          // Durable run polling remains a second recovery path. The retry
+          // below observes only the journal; it never creates another task.
+        }
+        if (controller.signal.aborted) break;
+        await new Promise<void>((resolve) => window.setTimeout(resolve, retryDelayMs));
+        retryDelayMs = Math.min(retryDelayMs * 2, 2_000);
+      }
+    })();
     return () => controller.abort();
   }, [activeRunId, api, refetchAgentRun]);
 
@@ -536,7 +582,8 @@ export function TravelAgentChat({
   useEffect(() => {
     const status = agentRun.data?.status;
     if (!activeRunId || !status) return;
-    if (status === "COMPLETED" && effectiveThreadId) {
+    if (status === "COMPLETED" && effectiveThreadId && !completedRunHandledRef.current.has(activeRunId)) {
+      completedRunHandledRef.current.add(activeRunId);
       let active = true;
       void api.getOwnerConversation(effectiveThreadId).then((restored) => {
         // Into the SHARED cache first, and unconditionally — this must land
@@ -553,12 +600,17 @@ export function TravelAgentChat({
         if (active) {
           setSessionThreadId(effectiveThreadId);
           setSessionMessages((current) => mergeMessages(current, restored.messages));
-        }
-      }).finally(() => {
-        if (active) {
-          setActiveRunId(null);
-          clearStoredActiveRunId();
-          setStreamState(emptyStreamState());
+          // A run can finish before the React subscription effect starts. The
+          // journal normally fills `streamState`; this fallback protects runs
+          // created before the journal or during a transient journal failure.
+          const assistantMessageId = agentRun.data?.assistantMessageId;
+          const assistant = assistantMessageId
+            ? restored.messages.find((message) => message.id === assistantMessageId)
+            : undefined;
+          if (assistantMessageId && !streamState.text && assistant?.role === "ASSISTANT" && assistant.content) {
+            setRecoveredStream({ runId: activeRunId, assistantMessageId, text: assistant.content });
+          }
+          setCompletedStreamRunId(activeRunId);
         }
       });
       return () => { active = false; };
@@ -577,7 +629,22 @@ export function TravelAgentChat({
       }, 0);
       return () => window.clearTimeout(clearTerminalRun);
     }
-  }, [activeRunId, agentRun.data?.status, agentRun.data?.operation, agentRun.data?.errorCode, api, effectiveThreadId, queryClient]);
+  }, [activeRunId, agentRun.data?.status, agentRun.data?.operation, agentRun.data?.errorCode, agentRun.data?.assistantMessageId, api, effectiveThreadId, queryClient, streamState.text]);
+
+  useEffect(() => {
+    if (!activeRunId || completedStreamRunId !== activeRunId) return;
+    // Keep the terminal row until its final character is visible. This avoids
+    // replacing a recovered reply with an already-complete history bubble.
+    if (streamText.length > typedStreamText.length) return;
+    const clearTerminalRun = window.setTimeout(() => {
+      setActiveRunId(null);
+      clearStoredActiveRunId();
+      setStreamState(emptyStreamState());
+      setRecoveredStream(null);
+      setCompletedStreamRunId(null);
+    }, 0);
+    return () => window.clearTimeout(clearTerminalRun);
+  }, [activeRunId, completedStreamRunId, streamText.length, typedStreamText.length]);
 
   // Backstop for the confirm panel: `useAgentRun` polls this run every 1.5s
   // regardless of the SSE stream's health, so a dropped or reconnected
@@ -1250,7 +1317,7 @@ export function TravelAgentChat({
               </p>
             </div>
           ) : null}
-          {messages.map((message) => (
+          {messages.filter((message) => message.id !== recoveredStream?.assistantMessageId).map((message) => (
             <article key={message.id} data-role={message.role} className={message.role === "USER" ? userRowClass : rowClass}>
               {message.role === "USER" ? (
                 <div className={userBubbleClass}>
@@ -1276,7 +1343,18 @@ export function TravelAgentChat({
           {activeRunId ? (
             <article data-role="ASSISTANT" data-streaming="true" className={rowClass}>
               {agentLabel}
-              <div className={streamingAgentClass} data-streaming="true" data-terminal-output={onGlobe ? "true" : undefined}>
+              <div
+                className={streamingAgentClass}
+                data-streaming="true"
+                data-terminal-output={onGlobe ? "true" : undefined}
+                // Diagnostics for the typing cadence, readable in the Elements
+                // panel: `arrived` is what SSE has delivered, `typed` is what
+                // the cursor has drawn. If the two are always equal the pacing
+                // hook is being bypassed; if `arrived` jumps in clause-sized
+                // steps the server side is what to look at.
+                data-stream-chars={streamText.length}
+                data-typed-chars={typedStreamText.length}
+              >
               {streamState.tools.length > 0 ? <ToolActivityList items={streamState.tools} /> : null}
               {typedStreamText ? (
                 <ChatMarkdown content={typedStreamText} />

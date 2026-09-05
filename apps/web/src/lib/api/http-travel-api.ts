@@ -414,6 +414,7 @@ export class HttpTravelApi implements TravelApi {
     runId: string,
     signal: AbortSignal,
     onEvent: (event: import("./contracts").AgentStreamEvent) => void,
+    options?: { lastEventId?: string },
   ) {
     return this.client.stream(
       "/agent-runs/" + encodeURIComponent(runId) + "/events",
@@ -422,6 +423,7 @@ export class HttpTravelApi implements TravelApi {
         const parsed = agentStreamEventSchema.safeParse({ ...asRecord(data), event: eventName });
         if (parsed.success) onEvent(parsed.data);
       },
+      options,
     );
   }
 

@@ -617,6 +617,8 @@ export const agentRunResponseSchema = z.object({
 const streamBaseSchema = z.object({
   runId: uuidSchema,
   generationAttempt: z.number().int().nonnegative(),
+  /** Monotonic journal id, added by the publisher before relay delivery. */
+  streamEventId: z.string().regex(/^\d+$/).optional(),
   /**
    * Optional W3C `traceparent` header value forwarded from the originating
    * HTTP request. Carried by every NOTIFY payload so the relay can re-enter
