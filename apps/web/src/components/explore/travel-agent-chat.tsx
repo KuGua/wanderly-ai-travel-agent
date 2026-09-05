@@ -1449,7 +1449,7 @@ export function TravelAgentChat({
   // as two offsets means it stays true on any viewport height instead of
   // needing a `min()` of guesses per screen size.
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : "wanderly-cosmos-chat wanderly-crt absolute bottom-[88px] left-1/2 z-50 flex h-[52dvh] min-h-[290px] w-[min(calc(100%-4.5rem),560px)] -translate-x-1/2 flex-col overflow-visible md:left-auto md:right-10 md:top-[112px] md:h-auto md:min-h-0 md:w-[min(42vw,560px)] md:translate-x-0"}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} data-wanderly-chat-panel={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : "wanderly-cosmos-chat wanderly-crt absolute bottom-[88px] left-1/2 z-50 flex h-[52dvh] min-h-[290px] w-[min(calc(100%-4.5rem),560px)] -translate-x-1/2 flex-col overflow-visible md:left-auto md:right-10 md:top-[112px] md:h-auto md:min-h-0 md:w-[min(42vw,560px)] md:translate-x-0"}>
       {/* The open chat floats directly above the crater; only its input gains
           a physical surface, so it does not read as a second dialogue box. */}
       <div className={`relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>

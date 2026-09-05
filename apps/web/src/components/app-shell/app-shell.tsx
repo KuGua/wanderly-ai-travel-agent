@@ -41,6 +41,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background sm:grid sm:grid-cols-[88px_minmax(0,1fr)]">
       <aside
         data-wanderly-avoid
+        // The explore map canvas runs the full width of the window, under this
+        // rail. The globe camera measures the rail so it can centre the planet
+        // in the strip that is actually uncovered.
+        data-wanderly-rail
         className={cn(
           "relative z-50 flex h-[62px] items-center gap-2 border-b-2 border-[var(--w-ink)] bg-sidebar px-3.5 py-2 text-sidebar-foreground",
           // Long floating navigation card on desktop.

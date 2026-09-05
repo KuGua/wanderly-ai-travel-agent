@@ -15,6 +15,8 @@ import { GeographyLabelOverlay } from "./geography-label-overlay";
 import { loadAdministrativeCenters, pinGranularityForZoom, pinSelectionForReference, type PinGranularity } from "./pin-selection";
 import { solidifyGlobeStyle } from "./map-surface-style";
 import { WanderBot } from "./wander-bot";
+import { chatCameraPadding, insetPadding, visibleMapWidth } from "./chat-camera-padding";
+import type { CameraPadding, Rect } from "./chat-camera-padding";
 import { LocationIntroductionPanel } from "./location-introduction-panel";
 import { ExploreChatHost, type TripConversationHandoff } from "./explore-chat-host";
 import { useLocationIntroduction } from "@/lib/query/use-location-introduction";
@@ -174,6 +176,10 @@ export function ExploreMapPage() {
   const inspirationsRef = useRef<Destination[]>([]);
   const inspirationSequenceRef = useRef(0);
   const chatCameraActiveRef = useRef(false);
+  /* What the chat panel is currently taking from the camera. Every other
+     camera move has to add to this rather than replace it, or the globe
+     slides back under the panel. */
+  const chatCameraPaddingRef = useRef<CameraPadding>({ top: 0, right: 0, bottom: 0, left: 0 });
   const chatOpenRef = useRef(false);
   const chatSelectedPinIdRef = useRef<string | null>(null);
   const preserveChatCameraOnCloseRef = useRef(false);
@@ -518,10 +524,18 @@ export function ExploreMapPage() {
       const maplibregl = await import("maplibre-gl");
       const bounds = new maplibregl.LngLatBounds();
       mentioned.forEach((city) => bounds.extend(city.coordinates));
-      const camera = map.cameraForBounds(bounds, { padding: 80 });
+      // Framed inside the strip the panel leaves, not inside the whole window.
+      // `fitBounds` sizes the camera to fit the bounds within its own padding,
+      // so a flat `padding: 80` picked a zoom and centre for a window with
+      // nothing on top of it — measured here, that was zoom 4.10 centred on
+      // 120E where the panel-aware framing wants 3.61 centred on 141E. The
+      // eastern half of the cities it had just pinned ended up behind the
+      // chat panel.
+      const framing = insetPadding(chatCameraPaddingRef.current, 80);
+      const camera = map.cameraForBounds(bounds, { padding: framing });
       if (camera && (camera.zoom ?? 0) >= 2.25) {
         stopGlobeSpin(spinAnimationRef);
-        map.fitBounds(bounds, { padding: 80, maxZoom: 6, duration: reducedMotion() ? 0 : 1600 });
+        map.fitBounds(bounds, { padding: framing, maxZoom: 6, duration: reducedMotion() ? 0 : 1600 });
       } else {
         stopGlobeSpin(spinAnimationRef);
         map.flyTo({ center: SINGAPORE, zoom: 2.25, duration: reducedMotion() ? 0 : 1400 });
@@ -790,7 +804,8 @@ export function ExploreMapPage() {
           preserveChatCameraOnCloseRef.current = false;
           return;
         }
-        map.easeTo({ padding: { top: 0, right: 0, bottom: 0, left: 0 }, duration: reducedMotion() ? 0 : 450 });
+        chatCameraPaddingRef.current = { top: 0, right: 0, bottom: 0, left: 0 };
+        map.easeTo({ padding: chatCameraPaddingRef.current, duration: reducedMotion() ? 0 : 450 });
         chatCameraActiveRef.current = false;
       }
       return;
@@ -798,35 +813,50 @@ export function ExploreMapPage() {
 
     const initialZoom = map.getZoom();
     const adjustCameraForChat = (duration: number) => {
+      // The idle spin drives the camera with one `setCenter` per frame, and a
+      // `setCenter` mid-flight cancels an `easeTo`. So the shift below was
+      // computed correctly and then thrown away on the next frame, and the
+      // globe sat under the panel — but only while the planet happened to be
+      // spinning, which is why selecting a pin first (which stops the spin)
+      // appeared to fix it. Opening the chat ends the idle state, exactly as
+      // selecting a pin does.
+      stopGlobeSpin(spinAnimationRef);
       const currentCenter = map.getCenter();
-      const isPortrait = window.matchMedia("(orientation: portrait)").matches;
+      const orientation = window.matchMedia("(orientation: portrait)").matches ? "portrait" : "landscape";
+      const container = containerRef.current;
+      const mapRect = container?.getBoundingClientRect();
+      const mapBox = mapRect && mapRect.width > 0
+        ? { left: mapRect.left, right: mapRect.right, top: mapRect.top, bottom: mapRect.bottom }
+        : { left: 0, right: 1024, top: 0, bottom: window.innerHeight };
 
-      if (isPortrait) {
-        map.easeTo({
-          center: selected ? selected.coordinates : [currentCenter.lng, currentCenter.lat],
-          zoom: selected ? Math.max(initialZoom, 5.4) : initialZoom + Math.log2(0.8),
-          padding: { top: 0, right: 0, bottom: Math.round(window.innerHeight * 0.6) + 24, left: 0 },
-          duration,
-        });
-      } else {
-        const mapWidth = containerRef.current?.clientWidth || 1024;
-        const mapHeight = containerRef.current?.clientHeight || window.innerHeight;
-        const dialogWidth = document.querySelector<HTMLElement>('[aria-label="Wanderly Agent conversation"]')?.offsetWidth || mapWidth * 0.4;
-        const rightPadding = Math.min(dialogWidth + 24, Math.max(0, mapWidth - 120));
-        const visibleWidth = Math.max(120, mapWidth - rightPadding);
-        const shortEdge = Math.min(mapWidth, mapHeight);
-        const comfortableGlobeDiameter = shortEdge * 0.72;
-        const globeScale = visibleWidth >= comfortableGlobeDiameter
-          ? 1
-          : Math.min(1, (visibleWidth * 0.9) / (shortEdge * 0.9));
+      // Found by data attribute rather than by `aria-label`: the label is
+      // translated, so an English selector matched in exactly one locale and
+      // silently fell back to a guessed width in every other.
+      const padding = chatCameraPadding({
+        map: mapBox,
+        panel: rectOf('[data-wanderly-chat-panel]'),
+        rail: rectOf("[data-wanderly-rail]"),
+        orientation,
+      });
+      chatCameraPaddingRef.current = padding;
 
-        map.easeTo({
-          center: selected ? selected.coordinates : [currentCenter.lng, currentCenter.lat],
-          zoom: selected ? Math.max(initialZoom, 5.4) : initialZoom + Math.log2(globeScale),
-          padding: { top: 0, right: rightPadding, bottom: 0, left: 0 },
-          duration,
-        });
-      }
+      const mapWidth = mapBox.right - mapBox.left;
+      const mapHeight = mapBox.bottom - mapBox.top;
+      const visibleWidth = visibleMapWidth(mapWidth, padding);
+      const shortEdge = Math.min(mapWidth, mapHeight);
+      const comfortableGlobeDiameter = shortEdge * 0.72;
+      const globeScale = orientation === "portrait" || visibleWidth >= comfortableGlobeDiameter
+        ? 1
+        : Math.min(1, (visibleWidth * 0.9) / (shortEdge * 0.9));
+
+      map.easeTo({
+        center: selected ? selected.coordinates : [currentCenter.lng, currentCenter.lat],
+        zoom: selected
+          ? Math.max(initialZoom, 5.4)
+          : initialZoom + Math.log2(orientation === "portrait" ? 0.8 : globeScale),
+        padding,
+        duration,
+      });
 
       chatCameraActiveRef.current = true;
     };
@@ -1112,6 +1142,15 @@ export function ExploreMapPage() {
       />
     </main>
   );
+}
+
+/** Live box of a floating overlay, or null when it is not on screen. */
+function rectOf(selector: string): Rect | null {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (!element) return null;
+  const box = element.getBoundingClientRect();
+  if (box.width <= 0 || box.height <= 0) return null;
+  return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
 }
 
 export function toConversationPlace(selected: ExploreDestination): ConversationPlace {
