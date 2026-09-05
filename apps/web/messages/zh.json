@@ -300,7 +300,7 @@
         "message": "Wanderly 这一轮没法写出方案（{reason}），但已保留它查到的内容。详见行程工作区。",
         "reasonFlight": "推荐目的地没有可用的航班证据"
       },
-      "planningToolBudgetExhausted": "规划过程中调用供应商的时间用完了。方案没有改动，再试一次让下一轮完成。",
+      "planningToolBudgetExhausted": "规划没能在预算内收敛。本轮已取得的搜索结果已经保存，可在规划结果里查看。",
       "conversationEvidenceWithoutReply": "Wanderly 从 {providerName} 拿到了 {capabilityCount, plural, other {# 条}}结果（采集于 {capturedAtTime}），但没能把回复写完。",
       "preparingPrivateChat": "正在准备你的私人对话…",
       "privateChatUnavailable": "私人对话暂不可用。",
