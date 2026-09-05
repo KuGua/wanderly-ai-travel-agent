@@ -102,7 +102,6 @@
       "action": "Sign in"
     },
     "profile": {
-      "kicker": "Private by default",
       "heading": "Profile snapshot",
       "edit": "Edit profile",
       "departure": "Departure",

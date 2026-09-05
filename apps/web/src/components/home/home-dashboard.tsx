@@ -156,7 +156,7 @@ export function HomeDashboard() {
             together, and let the shorter one end early. The margin column is a
             fixed width rather than a fraction: it holds three short fields, so
             it should not grow with the window the way the year does. */}
-        <div className="grid lg:grid-cols-[minmax(0,1fr)_268px]">
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_296px]">
           <div className="min-w-0">
             <TripYearCalendar year={calendarYear} runs={calendarRuns} today={todayIso} />
           </div>
@@ -169,17 +169,15 @@ export function HomeDashboard() {
             className="min-w-0 border-t-2 border-[var(--w-ink)] bg-[var(--w-mist)] p-4 lg:border-l-2 lg:border-t-0"
           >
             <div className="mb-3 flex items-end justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
-                {tHome("profile.kicker")}
-              </p>
-              <h2 id="profile-heading" className="mt-1 text-xl font-bold tracking-[-0.035em]">
-                {tHome("profile.heading")}
-              </h2>
-            </div>
+            {/* No kicker here. In a 268px column it wrapped to two lines and
+                took more room than the heading it was labelling, and the page
+                already says "private by default" over its own title. */}
+            <h2 id="profile-heading" className="text-lg font-bold tracking-[-0.035em]">
+              {tHome("profile.heading")}
+            </h2>
             <Link
               href="/profile"
-              className="inline-flex min-h-11 items-center gap-2 rounded-[14px] px-3 text-sm font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[14px] px-2 text-[13px] font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
             >
               <Settings2 aria-hidden="true" className="size-4" /> {tHome("profile.edit")}
             </Link>
@@ -297,6 +295,12 @@ export function HomeDashboard() {
   );
 }
 
+/**
+ * Container queries, not `sm:`. This block appears both full-width under the
+ * trip grid and inside a 296px margin column, and a viewport breakpoint cannot
+ * tell those apart: on a wide screen the narrow copy still laid itself out
+ * side-by-side and squeezed its own text to one word a line.
+ */
 function PrivateDataSignInRequired({ subject }: { subject: "profile" | "trips" }) {
   const tHome = useTranslations("home");
   const isProfile = subject === "profile";
@@ -304,8 +308,8 @@ function PrivateDataSignInRequired({ subject }: { subject: "profile" | "trips" }
   const body = tHome(isProfile ? "signInRequired.profileBody" : "signInRequired.tripsBody");
 
   return (
-    <section className="w-full border-2 border-dashed border-[var(--w-ink)]/55 bg-[var(--w-mist)] p-5 wanderly-r-lg sm:px-6" aria-label={title}>
-      <div className="flex min-h-[108px] flex-col justify-between gap-4 sm:flex-row sm:items-center sm:gap-8">
+    <section className="@container w-full border-2 border-dashed border-[var(--w-ink)]/55 bg-[var(--w-mist)] p-5 wanderly-r-lg @lg:px-6" aria-label={title}>
+      <div className="flex min-h-[108px] flex-col justify-between gap-4 @lg:flex-row @lg:items-center @lg:gap-8">
         <div className="flex min-w-0 max-w-2xl items-start gap-3">
           <LockKeyhole aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div>
