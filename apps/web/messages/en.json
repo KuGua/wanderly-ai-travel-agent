@@ -411,10 +411,12 @@
       "briefProposalDetailsQuestion": "Save these trip details?",
       "destinationCueTitle": "Destination confirmation",
       "destinationCueQuestion": "Set {destination} as the destination?",
+      "destinationCueQuestionAdditional": "Add {destination} as a further destination?",
       "destinationCueNavigation": "Switch destination candidate",
       "destinationCuePrevious": "Previous destination",
       "destinationCueNext": "Next destination",
       "destinationCueAccept": "Save {destination} to this trip",
+      "destinationCueAcceptAdditional": "Add {destination} to this trip",
       "destinationCueDismiss": "Leave it as it is",
       "destinationCueSaving": "Saving…"
     },

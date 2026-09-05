@@ -212,6 +212,41 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(explore).toHaveClass("wanderly-cosmos-control");
   });
 
+  it("offers a further destination as an addition once the trip has one", async () => {
+    // The sibling test above is the control: with no destination on the trip
+    // the same cue asks 「要将 X 设为目的地吗？」. Once Gero is saved, the trip is
+    // no longer being told where it is going, and asking that again reads as
+    // though the traveller's answer was lost.
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue({
+        trip: {
+          id: TRIP_ID, name: "Gero", createdBy: OWNER_ID, status: "DRAFT",
+          departureCities: ["Beijing"], destinationCandidates: ["Gero"],
+          travelDateStart: null, travelDateEnd: null, travelDays: 10,
+          createdAt: CREATED_AT, updatedAt: CREATED_AT,
+        },
+        callerRole: "CREATOR",
+        members: [],
+      }),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "destination.cue_ready",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          cue: { id: CUE_ID, version: 1, candidates: [{ id: CANDIDATE_ID, displayName: "Kyoto", status: "PENDING" }] },
+        });
+        await untilAborted(signal);
+      }),
+    });
+
+    renderChat(api, { tripId: TRIP_ID });
+    await submitFromCapsule("Tell me about Kyoto");
+
+    expect(await screen.findByText("Add Kyoto as a further destination?")).toBeInTheDocument();
+    expect(screen.queryByText("Set Kyoto as the destination?")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add Kyoto to this trip" })).toBeInTheDocument();
+  });
+
   it("explains a destination-resolution rejection without dropping the proposal", async () => {
     const acceptDestinationCue = vi.fn().mockRejectedValue(
       new TravelApiError("DESTINATION_UNRESOLVED: use an unambiguous supported city name", 422, "Unprocessable Entity", null),

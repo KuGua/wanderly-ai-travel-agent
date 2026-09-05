@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { destinationCuePreflight } from "../src/skills/personal/destination-cue-decision-skill.js";
 import { evaluateDestinationCueSuppression } from "../src/services/destination-cue-service.js";
+import { destinationCueDecisionSchema } from "../src/providers/llm-gateway.js";
 
 describe("destination cue preflight", () => {
   it("does not cue from a plain flight or hotel search", () => {
@@ -45,5 +46,76 @@ describe("destination cue dismissal recovery", () => {
       qualifiedMentionCount: 1,
       now: new Date("2026-09-05T00:00:00.000Z"),
     })).toEqual({ eligible: true, nextMentionCount: 0, reset: true });
+  });
+});
+
+/**
+ * The decision the model actually returns has to parse.
+ *
+ * The prompt named the three top-level keys and mentioned ordinals but never
+ * said a candidate is an object, and the model answered
+ * `{"candidates": ["东京"], ...}`. The strict schema rejected it and the
+ * gateway's only failure mode was `return null`, so the cue produced nothing
+ * for any city, in any turn, with no log, no metric and no error — the trip
+ * simply never got a destination and the readiness card kept asking for one.
+ *
+ * The prompt now spells the object out. This pins the tolerance underneath it,
+ * because a prompt is a request and a schema is the contract.
+ */
+describe("destination cue decision parsing", () => {
+  it("reads the bare-string candidates the model actually produced", () => {
+    const parsed = destinationCueDecisionSchema.safeParse({
+      disposition: "PROPOSE",
+      candidates: ["东京"],
+      reasonCode: "EXPLICIT_DESTINATION_COMMAND",
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.candidates).toEqual([{ mentionedText: "东京", ordinal: 0 }]);
+  });
+
+  it("takes position as the ordinal when the strings carry none", () => {
+    const parsed = destinationCueDecisionSchema.safeParse({
+      disposition: "PROPOSE",
+      candidates: ["京都", "大阪"],
+      reasonCode: "QUALIFIED_DESTINATION_MENTION",
+    });
+
+    expect(parsed.success && parsed.data.candidates).toEqual([
+      { mentionedText: "京都", ordinal: 0 },
+      { mentionedText: "大阪", ordinal: 1 },
+    ]);
+  });
+
+  it("still reads the documented object form", () => {
+    const parsed = destinationCueDecisionSchema.safeParse({
+      disposition: "PROPOSE",
+      candidates: [{ mentionedText: "Tokyo", ordinal: 0 }],
+      reasonCode: "EXPLICIT_DESTINATION_COMMAND",
+    });
+
+    expect(parsed.success && parsed.data.candidates).toEqual([{ mentionedText: "Tokyo", ordinal: 0 }]);
+  });
+
+  it("keeps rejecting a decision that contradicts itself", () => {
+    // Tolerating the candidate shape must not loosen the disposition rules.
+    expect(destinationCueDecisionSchema.safeParse({
+      disposition: "DO_NOT_PROPOSE",
+      candidates: ["东京"],
+      reasonCode: "NO_DESTINATION",
+    }).success).toBe(false);
+    expect(destinationCueDecisionSchema.safeParse({
+      disposition: "PROPOSE",
+      candidates: [],
+      reasonCode: "EXPLICIT_DESTINATION_COMMAND",
+    }).success).toBe(false);
+  });
+
+  it("rejects entries that are neither a string nor a candidate", () => {
+    expect(destinationCueDecisionSchema.safeParse({
+      disposition: "PROPOSE",
+      candidates: [{ city: "Tokyo" }],
+      reasonCode: "EXPLICIT_DESTINATION_COMMAND",
+    }).success).toBe(false);
   });
 });

@@ -56,7 +56,11 @@ export async function decideDestinationCueForTurn(params: {
   if (destinationCuePreflight(params.question) === "SKIP_FLIGHT_OR_HOTEL") return null;
   const gateway = modelGateway();
   if (!gateway.decideDestinationCue) return null;
-  const timeoutSignal = AbortSignal.timeout(2_500);
+  // Measured 2.6s-5.2s against the 2.5s this used to allow, so the budget was
+  // losing races it should have won — and losing them silently. The call is
+  // started before the reply's own model call and awaited after it, so the
+  // wall clock overlaps rather than adds.
+  const timeoutSignal = AbortSignal.timeout(9_000);
   const signal = AbortSignal.any([params.signal, timeoutSignal]);
   const result = await gateway.decideDestinationCue({
     question: params.question,

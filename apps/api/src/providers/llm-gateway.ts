@@ -116,12 +116,30 @@ const tripBriefExtractionSchema = z.object({
   proposal: tripBriefProposalFieldsSchema.nullable(),
 }).strict();
 
-const destinationCueDecisionSchema = z.object({
-  disposition: z.enum(["PROPOSE", "DO_NOT_PROPOSE", "AMBIGUOUS"]),
-  candidates: z.array(z.object({
+/**
+ * `["Tokyo"]` is read as `[{ mentionedText: "Tokyo", ordinal: 0 }]`.
+ *
+ * The prompt now spells the object out, but a prompt is a request and a schema
+ * is a contract: this one's only failure mode was a silent `null`, so when the
+ * model answered with the bare strings the prompt had never ruled out, every
+ * cue for every city vanished with nothing logged. Positional order is what
+ * `ordinal` means, so it can be recovered from the array itself.
+ */
+const destinationCueCandidatesSchema = z.preprocess(
+  (value) => (Array.isArray(value)
+    ? value.map((entry, index) => (typeof entry === "string"
+      ? { mentionedText: entry, ordinal: index }
+      : entry))
+    : value),
+  z.array(z.object({
     mentionedText: z.string().trim().min(1).max(128),
     ordinal: z.number().int().min(0).max(4),
   }).strict()).max(5),
+);
+
+export const destinationCueDecisionSchema = z.object({
+  disposition: z.enum(["PROPOSE", "DO_NOT_PROPOSE", "AMBIGUOUS"]),
+  candidates: destinationCueCandidatesSchema,
   reasonCode: z.enum([
     "EXPLICIT_DESTINATION_COMMAND",
     "QUALIFIED_DESTINATION_MENTION",
@@ -181,6 +199,8 @@ const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v1";
 const DESTINATION_CUE_SYSTEM_PROMPT = [
   "You classify ONLY the owner's current message for an owner-only destination confirmation cue.",
   "Return exactly one JSON object with disposition, candidates, and reasonCode.",
+  "Each entry of candidates is an OBJECT, never a bare string: {\"mentionedText\": \"<the city exactly as the owner wrote it>\", \"ordinal\": <0-based position>}.",
+  "Example: {\"disposition\": \"PROPOSE\", \"candidates\": [{\"mentionedText\": \"Tokyo\", \"ordinal\": 0}], \"reasonCode\": \"EXPLICIT_DESTINATION_COMMAND\"}",
   "A candidate must be a city explicitly named by the owner as a possible trip destination.",
   "Do not infer a city from assistant text, history, a map selection, airport, country, region, hotel, or flight.",
   "A plain request to search, compare, or book flights, hotels, stays, or accommodation is DO_NOT_PROPOSE, even when route cities appear.",
@@ -2113,11 +2133,24 @@ export class LLMGateway implements ModelGateway {
     ctx?: RequestContext;
   }): Promise<DestinationCueDecisionResult | null> {
     const ctx = params.ctx ?? this.options.ctx;
+    // Every exit below used to be a bare `return null`, which made a schema
+    // mismatch, an aborted call and an unreachable provider the same event:
+    // nothing at all. The cue produced nothing for any city and no log said so.
+    const giveUp = (errorCode: string): null => {
+      logSafeRuntimeEvent(ctx, {
+        component: "planner",
+        event: "destination_cue_decision",
+        operation: "destination.cue.decide",
+        outcome: "failure",
+        errorCode,
+      });
+      return null;
+    };
     let client: OpenAIClientLike;
     try {
       client = await this.loadClient();
     } catch {
-      return null;
+      return giveUp("CLIENT_UNAVAILABLE");
     }
     try {
       const response = await client.chat.completions.parse({
@@ -2136,14 +2169,14 @@ export class LLMGateway implements ModelGateway {
         response_format: { type: "json_object" },
       }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
       const parsed = destinationCueDecisionSchema.safeParse(completionPayload(response.choices[0]?.message));
-      if (!parsed.success) return null;
+      if (!parsed.success) return giveUp("MALFORMED_DECISION");
       return {
         decision: parsed.data,
         modelVersion: this.options.modelName,
         promptVersion: DESTINATION_CUE_PROMPT_VERSION,
       };
-    } catch {
-      return null;
+    } catch (error) {
+      return giveUp((error as Error)?.name === "TimeoutError" ? "TIMEOUT" : "UPSTREAM_FAILURE");
     }
   }
 

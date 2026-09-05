@@ -836,6 +836,13 @@ export function TravelAgentChat({
     }
   }
 
+  // A trip that already holds a destination is not being told where it is
+  // going, so a new place is an addition. Asking 「要将 X 设为目的地吗？」 of
+  // someone who settled that turns ago reads as though their answer was lost.
+  // The server no longer raises a cue for a destination already on the trip,
+  // so anything reaching this point with destinations present is a further one.
+  const cueIsAdditionalDestination = (trip.data?.trip.destinationCandidates.length ?? 0) > 0;
+
   const canStartSharedPlanning = trip.data?.trip.status === "DRAFT"
     && trip.data.trip.departureCities.length > 0
     && trip.data.trip.destinationCandidates.length > 0
@@ -1300,7 +1307,8 @@ export function TravelAgentChat({
                 </div>
               ) : null}
               <p className={`${destinationCue.candidates.length > 1 ? "pr-[76px]" : ""} mb-2 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
-                {t("destinationCueQuestion", { destination: activeDestinationCandidate.displayName })}
+                {t(cueIsAdditionalDestination ? "destinationCueQuestionAdditional" : "destinationCueQuestion",
+                  { destination: activeDestinationCandidate.displayName })}
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -1308,7 +1316,10 @@ export function TravelAgentChat({
                   onClick={() => void resolveDestinationCue("accept")}
                   disabled={isActingOnDestinationCue}
                   className={`${actionPrimaryClass} min-w-0 px-3 py-2.5 text-left`}
-                >{isActingOnDestinationCue ? t("destinationCueSaving") : t("destinationCueAccept", { destination: activeDestinationCandidate.displayName })}</button>
+                >{isActingOnDestinationCue
+                  ? t("destinationCueSaving")
+                  : t(cueIsAdditionalDestination ? "destinationCueAcceptAdditional" : "destinationCueAccept",
+                    { destination: activeDestinationCandidate.displayName })}</button>
                 <button
                   type="button"
                   onClick={() => void resolveDestinationCue("dismiss")}

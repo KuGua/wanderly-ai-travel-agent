@@ -43,6 +43,18 @@ export function evaluateDestinationCueSuppression(input: {
   };
 }
 
+/**
+ * The same comparison the accept path uses to decide a candidate is already on
+ * the trip. Shared so the two can never disagree — one deciding a name is new
+ * while the other decides it is a duplicate is how a cue gets raised for a
+ * destination that is then silently discarded.
+ */
+function isAlreadyOnTrip(destinations: string[], canonicalCityName: string): boolean {
+  return destinations.some(
+    (name) => name.localeCompare(canonicalCityName, undefined, { sensitivity: "accent" }) === 0,
+  );
+}
+
 export async function persistDestinationCue(params: {
   run: AgentTaskRow;
   decision: ResolvedDestinationCueDecision;
@@ -59,8 +71,16 @@ export async function persistDestinationCue(params: {
       .limit(1);
     if (existing) return cueFromBatch(tx, existing.id);
 
+    // Suppression only records a dismissal, and accepting writes none — so
+    // without this a destination the traveller confirmed came straight back as
+    // a question the next time the conversation mentioned it.
+    const [cueTrip] = await tx.select({ destinationCandidates: sharedTrips.destinationCandidates })
+      .from(sharedTrips).where(eq(sharedTrips.id, tripId)).limit(1);
+    const settledDestinations = (cueTrip?.destinationCandidates as string[] | undefined) ?? [];
+
     const eligible: ResolvedDestinationCueDecision["candidates"] = [];
     for (const candidate of params.decision.candidates) {
+      if (isAlreadyOnTrip(settledDestinations, candidate.canonicalCityName)) continue;
       const [suppression] = await tx.select().from(destinationCueSuppressions)
         .where(and(
           eq(destinationCueSuppressions.ownerUserId, params.run.createdByUserId),
@@ -188,7 +208,7 @@ export async function actOnDestinationCue(params: {
     const now = new Date();
     let destinations = trip.destinationCandidates as string[];
     if (params.action === "accept") {
-      if (!destinations.some((name) => name.localeCompare(candidate.canonicalCityName, undefined, { sensitivity: "accent" }) === 0)) {
+      if (!isAlreadyOnTrip(destinations, candidate.canonicalCityName)) {
         if (destinations.length >= 5) throw new ApiError(409, "Conflict", "Trip already has five destinations");
         destinations = [...destinations, candidate.canonicalCityName];
       }
