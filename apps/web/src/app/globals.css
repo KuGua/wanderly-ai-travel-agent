@@ -149,6 +149,14 @@
   /* Still being worked out, as opposed to settled. A muted ochre rather than a
      saturated yellow: it shares a row with the blue and must not outrank it. */
   --w-cal-planning: color-mix(in srgb, #d4b483, var(--w-fog) 34%);
+  /* The two facing pages of the planner panel. Mixed toward white, not toward
+     the fog: the fog is a warm off-white, and pulling a muted teal-blue into it
+     at this strength cancels the hue outright — measured, 12% info in fog came
+     out at rgb(.87 .89 .89), which is a cool grey, not a blue. Against white
+     the same proportion keeps the tint legible while staying pale enough to sit
+     under the calendar's printed ruling. */
+  --w-sheet-blue: color-mix(in srgb, var(--w-info), var(--w-white) 78%);
+  --w-sheet-green: color-mix(in srgb, var(--w-highlight), var(--w-white) 80%);
   --sidebar-foreground: var(--w-ink);
   --sidebar-primary: var(--w-highlight);
   --sidebar-primary-foreground: var(--w-ink);
@@ -656,9 +664,7 @@
    above the desk, where this needs to suggest sheets behind the top one. */
 .wanderly-pad {
   position: relative;
-  /* Wide enough for a ring to be a ring. At 26px the binding could only hold a
-     flat ellipse outline, which read as punched holes rather than a coil. */
-  padding-left: 34px;
+  padding-left: 26px;
   /* The same generous corner the profile card uses, all four sides. Squaring
      the left to "make room" for the binding was unnecessary — the rings sit
      inside the radius — and it left the pad looking clipped beside every other
@@ -685,40 +691,41 @@
     7px 7px 0 var(--w-ink);
 }
 
-/* The binding column, and the spine the rings close onto. Solid rather than
-   dashed: the dashes read as a fold, and a coil needs an edge to be bound to. */
+/* The binding column: a strip of paper the holes are punched through. */
 .wanderly-pad::before {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
-  width: 34px;
-  border-right: 1.3px solid color-mix(in srgb, var(--w-ink), transparent 35%);
+  width: 26px;
+  border-right: 1px dashed color-mix(in srgb, var(--w-ink), transparent 76%);
   background: color-mix(in srgb, var(--w-fog), var(--w-white) 40%);
   border-radius: 17px 0 0 17px;
 }
 
-/* The rings themselves: one wire loop, tiled down the edge so the count follows
-   the panel's height instead of being fixed.
+/* The holes themselves: evenly spaced punched ellipses, repeated down the edge
+   so the count follows the panel's height instead of being fixed.
 
-   Drawn as an outline — a dark contour with a paper-coloured core over it —
-   rather than as a solid stroke with a highlight. That is what the reference
-   coil is: line art, where the wire's thickness is two contour lines and not a
-   gradient. A solid stroke at this size reads as a printed tally mark.
+   Holes, not a coil. A drawn wire binding was tried and pulled: on a panel this
+   tall it ran the full height and the eye read a striped margin rather than a
+   notebook. Punched paper says the same thing and stays quiet.
 
-   The loop closes onto the spine at both ends, and its leftmost point stops
-   short of the pad's own border so the two outlines never touch. */
+   The pitch is deliberately loose — at 34px the holes crowded into a dotted
+   rule, which is a texture, not a set of holes you could thread. */
 .wanderly-pad::after {
   content: "";
   position: absolute;
-  /* Clear of the 17px corner: the panel clips its overflow, so a loop starting
-     any higher would have its left side cut by the rounded edge. */
-  inset: 21px auto 21px 0;
-  width: 36px;
+  inset: 16px auto 16px 5px;
+  width: 17px;
   pointer-events: none;
   background-repeat: repeat-y;
-  background-size: 36px 27px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='27' viewBox='0 0 36 27'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath d='M33 21 C 30 25.5, 13 27, 6.5 20 C 2.5 15, 4.5 7, 13 3.5 C 20.5 0.5, 29 1.5, 33.5 4' stroke='%232a2a28' stroke-width='5'/%3E%3Cpath d='M33 21 C 30 25.5, 13 27, 6.5 20 C 2.5 15, 4.5 7, 13 3.5 C 20.5 0.5, 29 1.5, 33.5 4' stroke='%23fbfaf8' stroke-width='2.5'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 17px 46px;
+  background-image:
+    radial-gradient(ellipse 8px 5px at 50% 23px,
+      transparent 0 2.6px,
+      color-mix(in srgb, var(--w-ink), transparent 22%) 2.9px 4.2px,
+      transparent 4.5px);
 }
+
 
 /* ---- paper desk ----------------------------------------------------------
    The home dashboard is a desk: ruled paper for the year, note stock for the

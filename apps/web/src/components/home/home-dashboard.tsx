@@ -195,16 +195,19 @@ export function HomeDashboard() {
             fixed width rather than a fraction: it holds three short fields, so
             it should not grow with the window the way the year does. */}
         <div className="grid lg:grid-cols-[minmax(0,1fr)_296px]">
-          <div className="min-w-0">
+          {/* The year's own page. Tinted rather than white so the panel reads
+              as two facing pages rather than one sheet with a shaded margin
+              stuck to its side. */}
+          <div className="min-w-0 bg-[var(--w-sheet-blue)]">
             <TripYearCalendar year={calendarYear} runs={calendarRuns} today={todayIso} />
           </div>
 
           <section
             aria-labelledby="profile-heading"
-            /* A shaded margin column rather than a second white field: the
-               calendar half carries printed ruling, so an untextured white
-               beside it read as a brighter, separate sheet. */
-            className="min-w-0 border-t-2 border-[var(--w-ink)] bg-[var(--w-mist)] p-4 lg:border-l-2 lg:border-t-0"
+            /* The facing page. It was the fog grey that separated it from a
+               white calendar; now that the calendar has a page of its own, the
+               two are told apart by hue instead of by lightness. */
+            className="min-w-0 border-t-2 border-[var(--w-ink)] bg-[var(--w-sheet-green)] p-4 lg:border-l-2 lg:border-t-0"
           >
             <div className="mb-3 flex items-end justify-between gap-3">
             {/* No kicker here. In a 268px column it wrapped to two lines and
