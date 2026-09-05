@@ -8,10 +8,16 @@ import {
   getAuthorizedAgentRun,
   requestAgentTaskCancellation,
 } from "../tasks/task-repository.js";
-import { agentStreamEventSchema, uuidSchema, type AgentStreamEvent } from "../types/schemas.js";
+import {
+  agentStreamEventSchema,
+  tripPlanningRunDetailResponseSchema,
+  uuidSchema,
+  type AgentStreamEvent,
+} from "../types/schemas.js";
 import { db } from "../db/database.js";
-import { agentStreamEvents } from "../db/schema.js";
+import { agentStreamEvents, agentTaskRuns, planningResearchResults } from "../db/schema.js";
 import { and, asc, gt, eq } from "drizzle-orm";
+import { ApiError } from "../middleware/error-handler.js";
 import {
   getTracer,
   parseTraceparent,
@@ -25,6 +31,37 @@ export async function agentRunRoutes(
   app.get("/agent-runs/:runId", async (request) => {
     const runId = readRunId(request.params);
     return getAuthorizedAgentRun(runId, request.user.id);
+  });
+
+  // This is intentionally trip-scoped rather than a generic run inspector:
+  // members may inspect a shared planning outcome, while private conversation
+  // and PERSONAL_RESEARCH runs remain outside this surface.
+  app.get("/trips/:tripId/runs/:runId", async (request) => {
+    const runId = readRunId(request.params);
+    const tripId = uuidSchema.parse((request.params as { tripId?: unknown }).tripId);
+    const run = await getAuthorizedAgentRun(runId, request.user.id);
+    const [stored] = await db.select({ tripId: agentTaskRuns.tripId }).from(agentTaskRuns)
+      .where(eq(agentTaskRuns.id, runId)).limit(1);
+    if (stored?.tripId !== tripId || !["PLAN", "REPLAN", "RESEARCH"].includes(run.operation)) {
+      throw new ApiError(404, "Not Found", "Planning run not found for this trip");
+    }
+    const [research] = await db.select().from(planningResearchResults)
+      .where(eq(planningResearchResults.agentTaskRunId, runId))
+      .limit(1);
+    return tripPlanningRunDetailResponseSchema.parse({
+      run,
+      research: research ? {
+        id: research.id,
+        tripId: research.tripId,
+        snapshotId: research.snapshotId,
+        agentTaskRunId: research.agentTaskRunId,
+        status: research.status,
+        serviceGaps: research.serviceGaps,
+        resultPlanId: research.resultPlanId,
+        offers: [],
+        createdAt: research.createdAt.toISOString(),
+      } : null,
+    });
   });
 
   app.post("/agent-runs/:runId/cancel", async (request) => {

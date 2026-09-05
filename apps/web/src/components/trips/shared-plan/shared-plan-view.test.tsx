@@ -124,4 +124,42 @@ describe("SharedPlanView — Phase 1 states", () => {
     const card = await findByTestId("plan-proposal-card-00000000-0000-0000-4000-000000000010");
     expect(card.textContent).toContain("Tokyo");
   });
+
+  it("explains a completed shared-planning run with gaps instead of showing a misleading empty state", async () => {
+    const runId = "00000000-0000-4000-8000-000000000099";
+    const api = buildApi({
+      getLatestPlanningRun: vi.fn().mockResolvedValue({
+        run: {
+          runId,
+          operation: "RESEARCH",
+          status: "COMPLETED_WITH_GAPS",
+          generationAttempt: 0,
+          attemptCount: 1,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:01:00.000Z",
+          finishedAt: "2026-09-01T00:01:00.000Z",
+          errorCode: null,
+          assistantMessageId: null,
+          resultPlanId: null,
+          researchIntentDraft: null,
+          researchIntentState: null,
+        },
+      }),
+      getLatestResearchResult: vi.fn().mockResolvedValue({
+        result: {
+          id: "00000000-0000-4000-8000-000000000098",
+          tripId: TRIP_ID,
+          snapshotId: "00000000-0000-4000-8000-000000000097",
+          agentTaskRunId: runId,
+          status: "COMPLETED_WITH_GAPS",
+          serviceGaps: [{ capability: "flight", code: "NO_RESULTS", destinationId: "Shanghai" }],
+          resultPlanId: null,
+          createdAt: "2026-09-01T00:01:00.000Z",
+        },
+      }),
+    });
+    const { findByTestId, findByText } = renderWithIntl(<SharedPlanView tripId={TRIP_ID} />, { api });
+    expect(await findByTestId("shared-plan-gaps")).toBeDefined();
+    expect(await findByText("flight: NO_RESULTS")).toBeDefined();
+  });
 });

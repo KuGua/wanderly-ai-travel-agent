@@ -1272,6 +1272,16 @@ export const latestResearchResultResponseSchema = z.object({
 }).strict();
 
 /**
+ * Member-safe inspection of one trip-bound planning run. The response is
+ * deliberately limited to the durable run projection and its safe service
+ * gaps; it never returns a snapshot, provider payload, or private chat data.
+ */
+export const tripPlanningRunDetailResponseSchema = z.object({
+  run: agentRunResponseSchema,
+  research: researchResultResponseSchema.nullable(),
+}).strict();
+
+/**
  * `tool.started` / `tool.settled` SSE events.
  *
  * A reply that pauses while a supplier answers reads as a hang. These say

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import { SpanKind } from "@opentelemetry/api";
 
 import { db, rawDb } from "../db/database.js";
@@ -884,7 +884,13 @@ export async function getLatestAuthorizedPlanningRun(tripId: string, userId: str
   )).limit(1);
   if (!member) throw new ApiError(403, "Forbidden", "Not authorized for this planning run");
   const [run] = await db.select().from(agentTaskRuns).where(and(
-    eq(agentTaskRuns.tripId, tripId), inArray(agentTaskRuns.operation, ["PLAN", "REPLAN"]),
+    eq(agentTaskRuns.tripId, tripId),
+    // New planning accepts durable RESEARCH rows in PROPOSE_PLAN mode. A
+    // RESEARCH_ONLY result must never appear on the Shared plan surface.
+    or(
+      inArray(agentTaskRuns.operation, ["PLAN", "REPLAN"]),
+      and(eq(agentTaskRuns.operation, "RESEARCH"), eq(agentTaskRuns.researchMode, "PROPOSE_PLAN")),
+    ),
   )).orderBy(desc(agentTaskRuns.createdAt)).limit(1);
   return run ? toRunResponse(run) : null;
 }

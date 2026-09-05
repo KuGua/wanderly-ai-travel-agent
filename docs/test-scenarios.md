@@ -2396,6 +2396,38 @@ skills register normally.
 - Case 2 never extends `expires_at` beyond `created_at +
   maxLifetimeSeconds`; the task terminates instead of being renewed forever.
 
+### TS-PLANNER-RESILIENCE-7 — 模型预算可配置，超时不被误报为上游故障
+
+**Objective:** Regression for the 2026-09-05 incident where a turn whose pure
+model time reached the hard-coded 15s budget was aborted, reported as
+`UPSTREAM_FAILURE`, and then retried three more times against the already
+aborted signal.
+
+**Steps:**
+
+1. Set `CONVERSATION_MODEL_BUDGET_MS` and submit a turn whose model call
+   outlasts it. Repeat with the variable unset.
+2. Set the variable outside `5000..90000`.
+3. Inspect the `llm` runtime event and the provider call count for the
+   aborted turn.
+
+**Expected outcomes:**
+
+- The Skill's `timeoutMs` follows `CONVERSATION_MODEL_BUDGET_MS`; unset it and
+  the budget is 30000ms. Raising it requires no code change.
+- An out-of-range value fails at boot with the variable named, in line with
+  every other `positiveInteger` setting.
+- A turn cut by this budget records `errorCode: "TIMEOUT"`, **not**
+  `UPSTREAM_FAILURE` — the SDK reports its own `Error("Request was aborted.")`
+  whose `name` is not `AbortError`, so classification must come from the
+  signal, not the message.
+- The provider is called exactly once for that turn: an aborted signal stops
+  the retry loop instead of burning the remaining attempts and their backoff.
+- The traveller still receives the `FALLBACK` notice; nothing throws to the
+  SSE channel.
+- Model budget + tool budget stay below `CONVERSATION_TURN_HARD_CAP_MS`, so
+  the budget fires before the cap does.
+
 ### TS-PLANNER-RESILIENCE-6 — 慢 provider 不再被报成模型故障
 
 **Objective:** Regression for `docs/shared-agent-findings.md` #32.

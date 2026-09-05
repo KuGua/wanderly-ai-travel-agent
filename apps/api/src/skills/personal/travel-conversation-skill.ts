@@ -8,6 +8,7 @@ import {
   requestsUnsupportedOperationalFacts,
   safeConversationRefusal,
 } from "../../policy/conversation-safety.js";
+import { agentTaskConfig } from "../../tasks/config.js";
 import { modelGateway } from "../../providers/gateway-factory.js";
 import { ModelGatewayError } from "../../providers/llm-gateway.js";
 import {
@@ -274,7 +275,12 @@ export const travelConversationSkill: Skill<TravelConversationInput, TravelConve
   // broader Personal agent never receives a tool call unless the feature
   // is on AND the capability is enabled.
   allowedTools: ["chat:read", "hotel:search"],
-  timeoutMs: 15_000,
+  // Server-owned model budget, not a constant. Note this field has two
+  // consumers: `createTurnDeadline` in the conversation task handler (the
+  // path that actually runs today) and `skill-registry.ts`'s per-attempt
+  // timeout, which applies if this skill is ever reached through
+  // `invokeSkill`. Both must move together, which is why it lives in config.
+  timeoutMs: agentTaskConfig.conversationModelBudgetMs,
   needsConfirm: false,
   input: travelConversationInputSchema,
   output: travelConversationOutputSchema,

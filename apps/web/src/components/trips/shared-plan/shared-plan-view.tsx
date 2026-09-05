@@ -3,8 +3,9 @@
 import { useTranslations } from "next-intl";
 
 import { ErrorState, LoadingState } from "@/components/ui/data-state";
+import { Link } from "@/i18n/navigation";
 import { TravelApiError } from "@/lib/api/errors";
-import { useSharedPlanFeed, useTripPlans } from "@/lib/query/hooks";
+import { useLatestResearchResult, useSharedPlanFeed, useTripPlans } from "@/lib/query/hooks";
 import { readLastSeenVersion, writeLastSeenVersion } from "@/lib/trips/shared-plan-read-state";
 import { PlanProposalCard } from "./plan-proposal-card";
 import { PlanVersionTrail } from "./plan-version-trail";
@@ -40,6 +41,7 @@ export function SharedPlanView({ tripId }: { tripId: string }) {
   const t = useTranslations("trips.sharedPlan");
   const feed = useSharedPlanFeed(tripId);
   const plansQuery = useTripPlans(tripId);
+  const researchQuery = useLatestResearchResult(tripId);
 
   // Loading: any of the four reads still in flight. Treat the run as the
   // primary loading signal so we don't bounce between states.
@@ -94,6 +96,39 @@ export function SharedPlanView({ tripId }: { tripId: string }) {
       >
         <p className="text-base font-bold text-foreground">{t("empty.title")}</p>
         <p className="text-sm text-muted-foreground">{t("empty.body")}</p>
+      </section>
+    );
+  }
+
+  // A PROPOSE_PLAN research run can complete safely without a plan when live
+  // evidence is missing. It is not the same state as "no run yet"; make the
+  // outcome and its repair path visible instead of hiding it behind an empty
+  // Shared-plan panel.
+  const latestResearch = researchQuery.data?.result ?? null;
+  const matchingResearch = latestResearch?.agentTaskRunId === feed.run?.runId
+    ? latestResearch
+    : null;
+  const completedWithGaps = empty
+    && feed.run?.status === "COMPLETED_WITH_GAPS"
+    && !feed.run.resultPlanId
+    && matchingResearch;
+  if (completedWithGaps) {
+    return (
+      <section
+        data-testid="shared-plan-gaps"
+        aria-label={t("gaps.title")}
+        className="grid gap-3 border-2 border-amber-400 bg-amber-50 p-6 text-left wanderly-edge wanderly-r-md"
+      >
+        <p className="text-base font-bold text-amber-950">{t("gaps.title")}</p>
+        <p className="text-sm text-amber-950">{t("gaps.body")}</p>
+        <ul className="grid gap-1 text-sm text-amber-950">
+          {matchingResearch.serviceGaps.map((gap, index) => (
+            <li key={`${gap.capability}-${gap.code}-${index}`}>{gap.capability}: {gap.code}</li>
+          ))}
+        </ul>
+        <Link href={`/trips/${tripId}/runs/${feed.run.runId}`} className="w-fit text-sm font-bold text-sky-800 hover:underline">
+          {t("gaps.detail")}
+        </Link>
       </section>
     );
   }
