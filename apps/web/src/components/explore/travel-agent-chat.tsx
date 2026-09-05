@@ -5,6 +5,7 @@ import { useFormatter, useTranslations } from "next-intl";
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ChatMarkdown } from "@/components/ui/chat-markdown";
+import { useTerminalTyping } from "./terminal-typing";
 import { ResearchRunCard } from "@/components/trips/personal-research/research-run-card";
 import { TripPreferenceCard } from "./trip-preference-card";
 import { PinnedResultCard } from "@/components/trips/personal-research/pinned-result-card";
@@ -273,6 +274,9 @@ export function TravelAgentChat({
   const [requestError, setRequestError] = useState<unknown>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<StreamState>(emptyStreamState);
+  // Draws the clauses the server has already approved at a terminal
+  // cadence. Bounded so it never trails the stream — see terminal-typing.ts.
+  const typedStreamText = useTerminalTyping(streamState.text, Boolean(activeRunId));
   const [pendingFlightConfirmation, setPendingFlightConfirmation] = useState(false);
   // This is intentionally a local draft. Selecting a chip does not create a
   // preference version, invalidate a plan, or authorize a provider call; the
@@ -1256,8 +1260,8 @@ export function TravelAgentChat({
               {agentLabel}
               <div className={streamingAgentClass} data-streaming="true" data-terminal-output={onGlobe ? "true" : undefined}>
               {streamState.tools.length > 0 ? <ToolActivityList items={streamState.tools} /> : null}
-              {streamState.text ? (
-                <ChatMarkdown content={streamState.text} />
+              {typedStreamText ? (
+                <ChatMarkdown content={typedStreamText} />
               ) : null}
               <div className="mt-2 flex items-center gap-3">
                 <p role="status" className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground">

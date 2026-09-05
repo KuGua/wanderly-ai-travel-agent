@@ -79,8 +79,13 @@ durable message.
 
 1. Send one exploration chat message and observe the active Agent run while
    `message.delta` events arrive.
-2. Let the run complete, then reload the private thread history.
-3. Repeat with reduced motion enabled.
+2. Send a message whose reply is a single Chinese sentence with internal commas
+   (`好的，我来帮你规划这次法国之旅。`), and one whose reply carries no sentence
+   punctuation at all (`巴黎是个不错的选择`).
+3. Send a message whose reply contains a number, a time and a URL
+   (`1,000`, `10:30`, `https://example.com/x`).
+4. Let a run complete, then reload the private thread history.
+5. Repeat with reduced motion enabled.
 
 **Expected outcomes:**
 
@@ -90,6 +95,16 @@ durable message.
   the reply is settled.
 - Deltas appear incrementally in their received sequence. No full-response
   wait or duplicate assistant bubble is introduced.
+- The gate approves and publishes **clauses**, not whole sentences: the
+  comma-separated Chinese reply arrives as more than one `message.delta`, and a
+  long multi-clause sentence arrives as several. A reply with no sentence
+  punctuation still ships from the final flush, so it is the one case that
+  legitimately arrives whole.
+- Numbers, times and URLs are never split across deltas — `1,000` and `10:30`
+  stay intact, because end-of-buffer is not a clause boundary.
+- Text is drawn at a terminal cadence, but never ahead of the stream and never
+  as a replay of a finished reply: a large backlog is drawn within about a
+  second, and the settled reply is never delayed waiting for the animation.
 - The prompt and cursor are decorative: assistive technology announces the
   reply text and existing status feedback, not the terminal affordances.
   Reduced motion disables the blink.
