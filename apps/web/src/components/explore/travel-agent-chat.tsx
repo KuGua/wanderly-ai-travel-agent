@@ -1012,7 +1012,9 @@ export function TravelAgentChat({
     // The globe bubble's fill, edge, radius and tail live in globals.css: it is
     // the one place in the app drawn as a classic iMessage bubble rather than
     // in the system's irregular-radius, hard-ink-edge language.
-    : "wanderly-user-bubble ml-auto w-fit max-w-[86%] px-3.5 py-2 text-[15px] leading-[1.45]";
+    // One size down and a weight up: at 14px/600 the line holds together on a
+    // scanned ground better than 15px/400 did, and takes less room doing it.
+    : "wanderly-user-bubble ml-auto w-fit max-w-[86%] px-3.5 py-[7px] text-[14px] font-semibold leading-[1.5]";
   // On the globe, assistant replies sit directly on the conversation ground:
   // the panel is already a readable surface, so wrapping every answer in a
   // second framed card makes the narrow column feel dense. The Trip workspace
