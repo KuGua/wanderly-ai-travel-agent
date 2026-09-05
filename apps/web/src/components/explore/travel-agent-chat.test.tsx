@@ -83,7 +83,17 @@ function renderChat(api: TravelApi, options: Parameters<typeof ChatHarness>[0] =
 
 function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
   return {
-    getMyProfile: vi.fn(),
+    // The component reads the profile to decide whether it must ask for a
+    // quote nationality, and a fixture that resolves to `undefined` is not a
+    // profile the API can return. The default carries one, which is the common
+    // case; the tests about the ask override it.
+    getMyProfile: vi.fn().mockResolvedValue({
+      profile: {
+        id: "profile-1", userId: OWNER_ID, displayName: "Alice", nationality: "CN",
+        dateOfBirth: null, interests: null, accommodationStyle: null,
+        updatedAt: CREATED_AT,
+      },
+    }),
     updateMyProfile: vi.fn(),
     getTrips: vi.fn(),
     getTrip: vi.fn(),
@@ -1154,6 +1164,74 @@ describe("the trip's preference card", () => {
 
       expect(await screen.findByText("Trip details aren't complete yet")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /Start planning/i })).toBeDisabled();
+    });
+
+    function profileWith(nationality: string | null) {
+      return {
+        profile: {
+          id: "p1", userId: OWNER_ID, displayName: "Alice", nationality,
+          dateOfBirth: null, interests: null, accommodationStyle: null,
+          updatedAt: CREATED_AT,
+        },
+      };
+    }
+
+    function readyTripApi(nationality: string | null, activateTrip = vi.fn()) {
+      return createApi({
+        activateTrip,
+        getMyProfile: vi.fn().mockResolvedValue(profileWith(nationality)),
+        getTrip: vi.fn().mockResolvedValue({
+          trip: {
+            id: TRIP_ID, name: "Tokyo", createdBy: OWNER_ID, status: "DRAFT",
+            departureCities: ["Chengdu"], destinationCandidates: ["Tokyo"],
+            travelDateStart: "2026-09-26", travelDateEnd: "2026-10-05", travelDays: 10,
+            createdAt: CREATED_AT, updatedAt: CREATED_AT,
+          },
+          callerRole: "CREATOR",
+          members: [],
+        }),
+      });
+    }
+
+    /**
+     * Hotel prices are quoted per nationality and the server will not guess
+     * one. It has accepted `guestNationality` since the quote work landed, but
+     * nothing ever sent it and no screen asked — so a traveller whose profile
+     * had none pressed "Start planning" on a complete brief, activation came
+     * back 422 "A confirmed Nuitee hotel quote nationality is required", and
+     * all they saw was 「这条消息暂时无法被接受」.
+     */
+    it("asks for a quote nationality when the profile has none, and sends it", async () => {
+      const activateTrip = vi.fn().mockResolvedValue({ trip: { id: TRIP_ID }, planningRun: null });
+      renderChat(readyTripApi(null, activateTrip), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+      const start = await screen.findByRole("button", { name: /Start planning/i });
+      // Held until answered: pressing it without one is the 422.
+      expect(start).toBeDisabled();
+
+      fireEvent.change(await screen.findByLabelText(/Nationality for quotes/i), { target: { value: "CN" } });
+      expect(start).toBeEnabled();
+      fireEvent.click(start);
+
+      await waitFor(() => expect(activateTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        expect.objectContaining({ guestNationality: "CN" }),
+      ));
+    });
+
+    it("does not ask when the profile already carries one", async () => {
+      const activateTrip = vi.fn().mockResolvedValue({ trip: { id: TRIP_ID }, planningRun: null });
+      renderChat(readyTripApi("CN", activateTrip), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+      const start = await screen.findByRole("button", { name: /Start planning/i });
+      expect(start).toBeEnabled();
+      expect(screen.queryByLabelText(/Nationality for quotes/i)).not.toBeInTheDocument();
+
+      fireEvent.click(start);
+
+      // The client never echoes a profile value back; the server prefers its own.
+      await waitFor(() => expect(activateTrip).toHaveBeenCalled());
+      expect(activateTrip.mock.calls[0][1]).not.toHaveProperty("guestNationality");
     });
 
     it("stays off the globe", async () => {
