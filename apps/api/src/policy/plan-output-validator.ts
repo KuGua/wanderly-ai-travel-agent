@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
+import { airportServesCity, resolveAirportReference } from "../location-reference/airport-reference.js";
 import type {
   ConstraintSnapshotData,
   ActivityEvidence,
@@ -156,6 +157,24 @@ export class PlanValidationError extends Error {
   }
 }
 
+/**
+ * Does this flight endpoint name the same place as this snapshot city?
+ *
+ * A flight offer records controlled airport ids (`SIN`, `PVG`) because that is
+ * what the suppliers take; the snapshot records the traveller's own words
+ * (`Singapore`, `Shanghai`, `上海`). Comparing the two as strings meant no
+ * offer could ever match its own plan: every flight would be both an origin
+ * the snapshot did not allow and a destination that did not match. The route
+ * identity used here is the one the rest of the system already uses —
+ * `airportServesCity`, which normalises case, spacing, punctuation and
+ * diacritics and passes CJK through (§#22).
+ */
+function routeEndpointMatches(endpoint: string, city: string): boolean {
+  if (endpoint === city) return true;
+  const airport = resolveAirportReference(endpoint);
+  return airport !== null && airportServesCity(airport, city);
+}
+
 function addViolation(
   violations: PlanValidationViolation[],
   code: PlanViolationCode,
@@ -268,10 +287,10 @@ export function validatePlanOutput(params: {
   }
 
   plan.flights.forEach((flight, index) => {
-    if (!params.snapshot.departureCities.includes(flight.origin)) {
+    if (!params.snapshot.departureCities.some((city) => routeEndpointMatches(flight.origin, city))) {
       addViolation(violations, "ORIGIN_NOT_ALLOWED", `flights.${index}.origin`, "Origin is not allowed by the snapshot");
     }
-    if (flight.destination !== plan.destination) {
+    if (!routeEndpointMatches(flight.destination, plan.destination)) {
       addViolation(violations, "DESTINATION_MISMATCH", `flights.${index}.destination`, "Offer destination does not match the plan");
     }
   });
@@ -284,7 +303,7 @@ export function validatePlanOutput(params: {
   // plan the caller has decided to produce anyway.
   if (plan.flights.length > 0) {
     for (const origin of params.snapshot.departureCities) {
-      if (!plan.flights.some(flight => flight.origin === origin)) {
+      if (!plan.flights.some(flight => routeEndpointMatches(flight.origin, origin))) {
         addViolation(violations, "ORIGIN_MISSING", "flights", "A required snapshot origin has no selected flight");
       }
     }

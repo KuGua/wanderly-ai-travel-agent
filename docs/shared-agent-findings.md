@@ -585,7 +585,7 @@ routing 是 `localePrefix: "always"` + `defaultLocale: "en"`，中文读者可�
 **测试盖不住这条**：`next-intl/navigation` 的测试桩原样渲染 href。
 所以守卫放在 `no-restricted-imports` lint 规则里，覆盖全部现有与未来组件。
 
-## #39 这一轮没出方案的真因是航班 400 — 未查
+## #39 这一轮没出方案的真因是航班 400 — 已查明并修复（09-06）
 serpapi flight.search 返回 HTTP 400。按 G1 的规则，Shanghai 没有 LIVE 航班证据 →
 无候选合格 → 写 `result_plan_id = NULL`。**共享方案面显示「本次未生成共享方案」
 在这一点上是对的**，错的是它给出的理由。
@@ -642,3 +642,23 @@ serpapi 对每次航班搜索返回 400（我们的请求被拒，不是没有�
 
 **未做**：flight 400 本身的根因仍未查（#39）。放开门禁让产品不再因此空手，
 但航班搜索该能用还是得能用。
+
+**根因（09-06）**：`logProviderRejection` 落地后，SerpApi 自己说了：
+
+> `` `departure_id` ("Singapore") should either be an uppercase 3-letter code or start with "/m" or "/g". ``
+
+`researchCoverageForSnapshot` 的航班扇出把 snapshot 里的**城市名**直接交给 adapter，
+而模型的工具循环走 `airportIdsForCities` 解析成机场码。**同一轮、同一个 provider、
+同一条航线**：coverage 那条 400，工具循环那条 200 加 28 条 offer。两条路径对
+「一条航线」的定义不一致。
+
+修法是让扇出也解析机场码。**但只修这一半会把失败从 400 挪到方案校验**：
+`plan-output-validator` 用字符串相等比较 `flight.origin` 与 `snapshot.departureCities`、
+`flight.destination` 与 `plan.destination`，而 offer 里存的是机场码。也就是说
+**任何带真实机场码的 offer 都无法通过它自己的方案校验**——`ORIGIN_NOT_ALLOWED`
+和 `DESTINATION_MISMATCH` 会同时报。这一条一直是潜伏的：全库 `itinerary_plans`
+从来是 0 行，模型从没成功返回过一份方案，所以没人撞到过。
+
+两处一起改：扇出解析机场码；校验改用既有的 `airportServesCity()`（#22 加的那个，
+已经归一化大小写/空格/标点/变音符号并放行 CJK）。`ORIGIN_MISSING` 的多出发地
+判定和 `summarizeProviderGaps` 的 `missingOrigins` 用同一个判定。

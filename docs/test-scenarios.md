@@ -2507,6 +2507,34 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
   端点的每一个响应解析失败——gaps 面板丢掉能力清单，详情页整页报错。回归用例
   直接用 trip `8a634324` 的真实 payload。
 
+### TS-ROUTE-IDENTITY — 航线只有一种身份
+
+**Objective:** 一条航线在这个系统里有两种写法：供应商要受控机场码（`SIN`、`PVG`），
+snapshot 里是旅行者自己的话（`Singapore`、`新加坡`、`上海`）。只要有一层不做换算，
+同一条航线就会在那一层消失。2026-09-05 两处同时中招。
+
+**Steps:**
+
+1. 以 `departureCities: ["新加坡"]`、`destinationCandidates: ["Shanghai"]` 跑 coverage 研究，
+   记录 adapter 实际收到的参数。
+2. 目的地换成没有受控机场的城市（如 Kyoto）。
+3. 用带机场码的 offer（`SFO → NRT`）构造一份目的地为 `Tokyo` 的方案，送 `validatePlanOutput`。
+4. 同样的方案改成 `SFO → CDG`。
+5. 两个出发地，其中一个的机场没有任何 offer。
+
+**Expected outcomes:**
+
+- adapter 收到的永远是 `^[A-Z]{3}$`：`SIN → PVG` / `SIN → SHA`。中英文城市名解析一致。
+  SerpApi 对城市名的回答是 `400 departure_id ("Singapore") should either be an
+  uppercase 3-letter code…`，这条路径不得再产生它。
+- 没有受控机场的城市不发起任何搜索、也**不猜邻近机场**（§#22），由调用方报成航班缺口。
+- `evaluatedDestinations` / `missingDestinations` 仍以 snapshot 的城市名为键——
+  下游的目的地资格过滤全靠它。
+- 方案校验按 `airportServesCity` 判定航线端点：`NRT` 对 `Tokyo` 通过，
+  `CDG` 对 `Tokyo` 仍报 `DESTINATION_MISMATCH`，`ORIGIN_NOT_ALLOWED` 与
+  `ORIGIN_MISSING` 用同一个判定。字符串相等的实现意味着**任何**带真实机场码的
+  offer 都无法通过它自己的方案校验。
+
 ### TS-PLAN-WITHOUT-FLIGHTS — 航班不可用不再withheld整份方案
 
 **Objective:** 2026-09-05 产品决定：航班 provider 返回 4xx 也必须产出方案。
