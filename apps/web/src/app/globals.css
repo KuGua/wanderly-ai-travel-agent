@@ -669,12 +669,25 @@
 
 /* Note stock. The three differ by tint and by one borrowed motif each: a
    printed header band, a punched margin, a ticket stub. */
+/* Three shadows, not one: a hairline where the paper meets the desk, a short
+   cast that separates cards from each other, and a long soft one that lifts
+   the whole sheet. A single blur reads as a flat card with a grey edge. */
 .wanderly-note { position: relative; border-radius: 3px;
-  box-shadow: 0 1px 2px rgb(42 42 40 / .1), 0 8px 18px -14px rgb(42 42 40 / .5); }
+  box-shadow:
+    0 1px 1px rgb(42 42 40 / .13),
+    0 4px 8px -3px rgb(42 42 40 / .16),
+    0 16px 28px -18px rgb(42 42 40 / .55); }
+.wanderly-note:hover { box-shadow:
+    0 1px 1px rgb(42 42 40 / .13),
+    0 7px 14px -4px rgb(42 42 40 / .19),
+    0 22px 36px -20px rgb(42 42 40 / .6); }
 .wanderly-note--band { background-color: #F7F1E4; }
 .wanderly-note--band::before { content: ""; position: absolute; inset: 0 0 auto; height: 16px;
   border-radius: 3px 3px 0 0; background: color-mix(in srgb, var(--w-info), var(--w-fog) 40%); }
-.wanderly-note--holes { background-color: #F8EDEC; }
+/* Sage rather than rose. The pink stock was the one colour on the page with
+   no relative anywhere else in the palette, so a wall of cards read as three
+   unrelated papers instead of one desk. */
+.wanderly-note--holes { background-color: color-mix(in srgb, var(--w-highlight), var(--w-fog) 82%); }
 .wanderly-note--holes::before { content: ""; position: absolute; left: 10px; top: 16px; bottom: 16px;
   width: 9px; background-repeat: repeat-y; background-size: 9px 23px;
   background-image: radial-gradient(circle at 50% 50%, rgb(42 42 40 / .16) 0 3.4px, transparent 3.6px); }
