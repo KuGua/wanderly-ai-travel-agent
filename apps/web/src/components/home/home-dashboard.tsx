@@ -121,10 +121,9 @@ export function HomeDashboard() {
     <main className="mx-auto w-full max-w-[1240px] px-5 py-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
       <header className="flex flex-wrap items-start justify-between gap-6">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
-            {tHome("kicker")}
-          </p>
-          <h1 className="mt-2 text-[clamp(1.75rem,3.6vw,2.35rem)] font-bold leading-none tracking-[-0.05em]">
+          {/* No kicker. The brushed title carries the page on its own, and the
+              line said what the sign-in copy and the profile column already do. */}
+          <h1 className=" text-[clamp(1.75rem,3.6vw,2.35rem)] font-bold leading-none tracking-[-0.05em]">
             <span className="wanderly-brush">{tHome("title")}</span>
           </h1>
         </div>
@@ -135,7 +134,7 @@ export function HomeDashboard() {
           /* The selected filter's blue, not the mint `wanderly-action`. Scoped
              to this page: that class is shared by twelve other files, and the
              brief was these two controls, not every primary button. */
-          className="inline-flex min-h-12 items-center gap-2 bg-[var(--w-cal-run)] px-5 text-sm font-extrabold text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow wanderly-press hover:bg-[color-mix(in_srgb,var(--w-cal-run),var(--w-ink)_10%)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex min-h-12 items-center gap-2 bg-[var(--w-cal-run)] px-5 text-sm font-extrabold text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-xs wanderly-press hover:bg-[color-mix(in_srgb,var(--w-cal-run),var(--w-ink)_10%)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[17px] fill-none stroke-current stroke-[2.4px]">
             <path d="M12 5v14M5 12h14" />
