@@ -138,9 +138,21 @@ export class PlanningDataUnavailableError extends Error {
  * it produces a research summary instead. The discriminator lets callers
  * branch on the two cases without inspecting a nullable `resultPlanId`.
  */
+/**
+ * Why a run produced a research summary instead of a plan.
+ *
+ * `NO_CITABLE_EVIDENCE` — every capability came up empty, so there is nothing
+ * to build a plan on.
+ * `TOOL_BUDGET_EXHAUSTED` — the model spent its turn budget without returning
+ * one. The evidence it gathered on the way is already persisted and is exactly
+ * what the summary reports; discarding the run because the model would not
+ * stop asking throws away work the traveller's suppliers already did.
+ */
+export type ResearchSummaryReason = "NO_CITABLE_EVIDENCE" | "TOOL_BUDGET_EXHAUSTED";
+
 export type PlanSynthesisOutcome =
   | { readonly outcome: "PLAN"; readonly planId: string; readonly gaps: ReadonlyArray<ServiceGap> }
-  | { readonly outcome: "RESEARCH_SUMMARY"; readonly researchResultId: string; readonly gaps: ReadonlyArray<ServiceGap>; readonly reason: "NO_CITABLE_EVIDENCE" };
+  | { readonly outcome: "RESEARCH_SUMMARY"; readonly researchResultId: string; readonly gaps: ReadonlyArray<ServiceGap>; readonly reason: ResearchSummaryReason };
 
 /**
  * Re-evaluate every research matrix on the supplied transaction and merge
@@ -279,7 +291,7 @@ async function persistResearchSummary(params: {
   snapshotId: string;
   agentTaskRunId: string;
   leaseToken: string;
-  reason: "NO_CITABLE_EVIDENCE";
+  reason: ResearchSummaryReason;
   toolFailureGaps: Array<{ capability: string; code: string }>;
   snapshotFields: { departureCities: string[]; destinationCandidates: string[] };
   allFlights: FlightOffer[];
@@ -373,6 +385,23 @@ async function persistResearchSummary(params: {
  * switches to a research-summary branch instead. This class MUST be caught
  * inside `generatePlan` — it is not a worker-visible failure mode.
  */
+/**
+ * Should this failure become a research summary rather than a failed run?
+ *
+ * Both cases share the same shape: the run did real work, that work is already
+ * persisted, and the only thing missing is the model's plan. Failing the run
+ * throws the work away — on 2026-09-05 a run that had collected 28 flight
+ * offers, 10 hotel quotes, 16 stays and 4 activities reported nothing but
+ * "the provider time ran out", because the model spent its last five turns
+ * re-asking for a flight search it had already completed.
+ */
+function researchSummaryReasonFor(error: unknown): ResearchSummaryReason | null {
+  if (error instanceof PlanEvidenceUnavailableError) return "NO_CITABLE_EVIDENCE";
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "TOOL_CALL_MAX_TURNS") return "TOOL_BUDGET_EXHAUSTED";
+  return null;
+}
+
 export class PlanEvidenceUnavailableError extends Error {
   readonly code = "PLANNING_DATA_UNAVAILABLE";
 
@@ -1402,7 +1431,8 @@ export async function generatePlan(params: {
   // and route to the research-summary branch — leaving the plan branch only for
   // destinations that survived both gates.
   } catch (error) {
-    if (error instanceof PlanEvidenceUnavailableError) {
+    const summaryReason = researchSummaryReasonFor(error);
+    if (summaryReason) {
       if (!params.agentTaskRunId || !params.leaseToken) {
         // No durable run to write a summary for — rethrow so the worker surfaces
         // the failure (matches the pre-P0 path which also had no run guard).
@@ -1414,7 +1444,7 @@ export async function generatePlan(params: {
         snapshotId: params.snapshotId,
         agentTaskRunId: params.agentTaskRunId,
         leaseToken: params.leaseToken,
-        reason: "NO_CITABLE_EVIDENCE",
+        reason: summaryReason,
         toolFailureGaps: toolFailureGaps.map((g) => ({
           capability: g.capability,
           code: g.code,
@@ -1702,7 +1732,8 @@ export async function generatePlan(params: {
       return { planId: plan.id, gaps: validatedServiceGaps };
     });
   } catch (error) {
-    if (error instanceof PlanEvidenceUnavailableError) {
+    const summaryReason = researchSummaryReasonFor(error);
+    if (summaryReason) {
       if (!params.agentTaskRunId || !params.leaseToken) throw error;
       return await persistResearchSummary({
         ctx: params.ctx,
@@ -1710,7 +1741,7 @@ export async function generatePlan(params: {
         snapshotId: params.snapshotId,
         agentTaskRunId: params.agentTaskRunId,
         leaseToken: params.leaseToken,
-        reason: "NO_CITABLE_EVIDENCE",
+        reason: summaryReason,
         toolFailureGaps: toolFailureGaps.map((g) => ({ capability: g.capability, code: g.code })),
         snapshotFields: {
           departureCities: snapshot.departureCities as string[],
