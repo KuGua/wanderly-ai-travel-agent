@@ -55,20 +55,23 @@ describe("TripList", () => {
     expect(await screen.findByRole("group", { name: "Delete for good?" })).toBeInTheDocument();
   });
 
-  it("places the destructive delete control at the card's top-right and reveals it on hover or focus", () => {
+  // Position and colour moved: a red block at the top-right shouted destruction
+  // over a card being read, and sat where the status badge already draws the
+  // eye. It is drawn in ink at the bottom-left now, and the warning lives in
+  // the confirm step. Staying hidden until hover or focus is unchanged, and is
+  // the half of this test that was always about behaviour.
+  it("keeps the delete control out of the way until hover or focus", () => {
     renderWithIntl(<TripList trips={[trip()]} />, { api: apiWithDelete() });
 
     const control = screen.getByRole("button", { name: "Delete Tokyo trip" });
     expect(control).toHaveClass(
-      "right-2",
-      "top-2",
-      "bg-destructive",
-      "text-white",
+      "bottom-3",
+      "left-3",
       "opacity-0",
       "group-hover:opacity-100",
       "group-focus-within:opacity-100",
     );
-    expect(control).not.toHaveClass("left-2");
+    expect(control).not.toHaveClass("bg-destructive", "text-white");
   });
 
   it("deletes once the confirmation is taken", async () => {

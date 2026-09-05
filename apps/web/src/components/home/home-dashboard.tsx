@@ -124,7 +124,7 @@ export function HomeDashboard() {
           <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
             {tHome("kicker")}
           </p>
-          <h1 className="mt-2 text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">
+          <h1 className="mt-2 text-[clamp(1.75rem,3.6vw,2.35rem)] font-bold leading-none tracking-[-0.05em]">
             <span className="wanderly-brush">{tHome("title")}</span>
           </h1>
         </div>
@@ -132,7 +132,10 @@ export function HomeDashboard() {
           type="button"
           onClick={() => startTrip.mutate()}
           disabled={startTrip.isPending}
-          className="inline-flex min-h-12 items-center gap-2 px-5 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-60"
+          /* The selected filter's blue, not the mint `wanderly-action`. Scoped
+             to this page: that class is shared by twelve other files, and the
+             brief was these two controls, not every primary button. */
+          className="inline-flex min-h-12 items-center gap-2 bg-[var(--w-cal-run)] px-5 text-sm font-extrabold text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow wanderly-press hover:bg-[color-mix(in_srgb,var(--w-cal-run),var(--w-ink)_10%)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[17px] fill-none stroke-current stroke-[2.4px]">
             <path d="M12 5v14M5 12h14" />
@@ -177,7 +180,9 @@ export function HomeDashboard() {
             </h2>
             <Link
               href="/profile"
-              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[14px] px-2 text-[13px] font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+              /* The same hue as the button, taken 52% toward ink: at the
+                 button's own value this is 1.6:1 on paper and unreadable. */
+              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[14px] px-2 text-[13px] font-bold text-[color-mix(in_srgb,var(--w-cal-run),var(--w-ink)_52%)] hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
             >
               <Settings2 aria-hidden="true" className="size-4" /> {tHome("profile.edit")}
             </Link>
