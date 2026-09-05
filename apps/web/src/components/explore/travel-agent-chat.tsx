@@ -938,22 +938,6 @@ export function TravelAgentChat({
     && Boolean(trip.data.trip.travelDateStart)
     && Boolean(trip.data.trip.travelDateEnd || trip.data.trip.travelDays);
 
-  // Mirrors the server-side derivation in `loadPersonalTripContext`
-  // (apps/api/src/tasks/handlers/conversation-task-handler.ts). The two
-  // MUST stay byte-identical so the chat CTA and the conversation
-  // prompt cannot disagree about which slots are still empty. The UI
-  // never reads private conversation content into this list — only the
-  // existence of each required field — so the model has nothing extra
-  // to leak.
-  const missingFields = trip.data?.trip.status === "DRAFT"
-    ? [
-        ...(trip.data.trip.departureCities.length === 0 ? ["departure_city" as const] : []),
-        ...(trip.data.trip.destinationCandidates.length === 0 ? ["destination_city" as const] : []),
-        ...(!trip.data.trip.travelDateStart || !(trip.data.trip.travelDateEnd || trip.data.trip.travelDays)
-            ? ["travel_dates" as const] : []),
-      ]
-    : [];
-
   function confirmFlightSearch() {
     if (isSending) return;
     // The server's confirmation gate reads the literal phrase from the user
@@ -1480,19 +1464,13 @@ export function TravelAgentChat({
               posed — "介绍一下蒙古国" is not a request to start planning. The
               conversation still syncs to the trip; only the call to action
               waits for the planner, where starting is the point of the page. */}
-          {!onGlobe && !actionableBriefProposal && !destinationCue && trip.data?.trip.status === "DRAFT" ? (
-            <section aria-label={canStartSharedPlanning ? t("startSharedPlanTitle") : t("startSharedPlanNotReadyTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
+          {!onGlobe && !actionableBriefProposal && !destinationCue && canStartSharedPlanning ? (
+            <section aria-label={t("startSharedPlanTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <p className="font-bold text-primary">
-                {canStartSharedPlanning ? t("startSharedPlanTitle") : t("startSharedPlanNotReadyTitle")}
+                {t("startSharedPlanTitle")}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {canStartSharedPlanning
-                  ? t("startSharedPlanBody")
-                  : t("startSharedPlanNotReadyBody", {
-                      missing: missingFields
-                        .map((field) => t(`missingField.${field}`))
-                        .join(t("missingField.separator")),
-                    })}
+                {t("startSharedPlanBody")}
               </p>
               {canStartSharedPlanning && needsGuestNationality ? (
                 <div className="mt-3">
@@ -1518,15 +1496,8 @@ export function TravelAgentChat({
                 <button
                   type="button"
                   onClick={() => void startSharedPlanning()}
-                  disabled={!canStartSharedPlanning || isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
-                  aria-disabled={!canStartSharedPlanning || isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
-                  title={!canStartSharedPlanning
-                    ? t("startSharedPlanDisabledHint", {
-                        missing: missingFields
-                          .map((field) => t(`missingField.${field}`))
-                          .join(t("missingField.separator")),
-                      })
-                    : undefined}
+                  disabled={isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
+                  aria-disabled={isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
                   className={actionPrimaryClass}
                 >
                   {isStartingSharedPlan ? t("startSharedPlanStarting") : t("startSharedPlanConfirm")}

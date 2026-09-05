@@ -2219,6 +2219,14 @@ that non-members see no plan/constraint/run data.
 - If the run is terminal and no journal frame is available, the persisted
   assistant message is revealed in the terminal row before it returns to normal
   conversation history. No reconnect or replay creates a second task.
+
+### DRAFT planning call to action
+
+- In the trip workspace, do not render the **Start planning** card while the
+  DRAFT brief lacks a departure city, destination, or travel dates. The chat
+  remains the sole route to fill those fields.
+- Render the card only after all planning fields are present. If quote
+  nationality is required, the card collects it before enabling submission.
 - `localStorage` unavailability never blocks render.
 - No member names or trigger attribution appear on the surface.
 

@@ -1183,7 +1183,7 @@ describe("the trip's preference card", () => {
    * they failed to do. The thread still syncs to the trip either way; only the
    * call to action waits for the surface where starting is the point.
    */
-  describe("the DRAFT readiness notice", () => {
+  describe("the DRAFT planning CTA", () => {
     function draftTripApi() {
       return createApi({
         getTrip: vi.fn().mockResolvedValue({
@@ -1199,11 +1199,13 @@ describe("the trip's preference card", () => {
       });
     }
 
-    it("appears in the workspace, naming what is missing", async () => {
-      renderChat(draftTripApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+    it("stays hidden until the brief can actually start planning", async () => {
+      const api = draftTripApi();
+      renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-      expect(await screen.findByText("Trip details aren't complete yet")).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: /Start planning/i })).toBeDisabled();
+      await waitFor(() => expect(api.getTrip).toHaveBeenCalledWith(TRIP_ID));
+      expect(screen.queryByText("Trip details aren't complete yet")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Start planning/i })).not.toBeInTheDocument();
     });
 
     function profileWith(nationality: string | null) {
@@ -1712,7 +1714,7 @@ describe("DRAFT → Shared handoff CTA", () => {
     };
   }
 
-  it("renders the missing-departure explanation and disables the CTA when only the city is set", async () => {
+  it("does not render a planning CTA when the departure city is missing", async () => {
     const api = createApi({
       getTrip: vi.fn().mockResolvedValue(draftTrip({
         departureCities: [],
@@ -1724,19 +1726,12 @@ describe("DRAFT → Shared handoff CTA", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    const heading = await screen.findByText(/Trip details aren't complete yet/i);
-    expect(heading).toBeInTheDocument();
-    expect(screen.getByText(/departure city/i)).toBeInTheDocument();
-
-    const button = screen.getByRole("button", { name: "Start planning" });
-    expect(button).toBeDisabled();
-    expect(button).toHaveAttribute("aria-disabled", "true");
-
-    fireEvent.click(button);
-    await waitFor(() => expect(api.activateTrip).not.toHaveBeenCalled());
+    await waitFor(() => expect(api.getTrip).toHaveBeenCalledWith(TRIP_ID));
+    expect(screen.queryByText(/Trip details aren't complete yet/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
   });
 
-  it("renders the missing-dates explanation and disables the CTA when city + departure are set but dates are not", async () => {
+  it("does not render a planning CTA when travel dates are missing", async () => {
     const api = createApi({
       getTrip: vi.fn().mockResolvedValue(draftTrip({
         departureCities: ["Shanghai"],
@@ -1749,12 +1744,9 @@ describe("DRAFT → Shared handoff CTA", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    const heading = await screen.findByText(/Trip details aren't complete yet/i);
-    expect(heading).toBeInTheDocument();
-    expect(screen.getByText(/travel dates/i)).toBeInTheDocument();
-
-    const button = screen.getByRole("button", { name: "Start planning" });
-    expect(button).toBeDisabled();
+    await waitFor(() => expect(api.getTrip).toHaveBeenCalledWith(TRIP_ID));
+    expect(screen.queryByText(/Trip details aren't complete yet/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
   });
 
   it("renders the ready CTA and only fires activateTrip on explicit click", async () => {
