@@ -507,3 +507,97 @@ CONVERSATION run，`started_at → finished_at` 只有 **60ms**，`error_code=IN
 `PERSONAL_CONVERSATION_TOOL_DISPATCH_ENABLED=false` 仍然生效（覆盖了上面的 `true`）。
 那是有注释说明的显式决定，且与本次故障无关——纯文本对话不需要工具调用。
 要恢复工具调用需单独决定。
+
+---
+# 第六轮：一次「跑完了但什么都没显示」的 trip（09-05）
+
+对象：trip `8a634324`（新加坡 → Shanghai，2026-10-01~07）。
+run `4b507761` 是 RESEARCH / PROPOSE_PLAN，终态 `COMPLETED_WITH_GAPS`，
+`result_plan_id = NULL`。屏幕上：共享方案面「本次未生成共享方案」，
+点「查看运行详情」整页红字「无法读取规划结果 / 出错了，请重试。关联 ID：null」。
+
+四条独立缺陷叠在同一个屏幕上。按发现顺序记。
+
+## #35 Skill 拒绝了自己合法的输出，被报成供应商故障 — 缺陷 — 已修
+`provider_search_runs` 这一轮五行：flight `UNAVAILABLE`，accommodation / place /
+activity 全部 `LIVE`；`provider_offers` 落了 16 条真实上海住宿。
+而 `service_gaps` 写的是 `accommodation: UPSTREAM_FAILURE`、`places: UPSTREAM_FAILURE`。
+
+**定位靠的是审计表**：`SKILL_INVOKE`（只在成功后写）这一轮只有 `activities.search`
+和 `readiness.check` 两条，而 `ACCOMMODATION_DISCOVERY_COMPLETED`、
+`PLACE_SEARCH_COMPLETED` 都在。handler 跑完了，registry 在 handler 返回之后抛的——
+两者之间只有一步 `skill.output.parse(raw)`。
+
+两处 schema 与实现不一致：
+1. `popularityTier: z.number().int().min(1).max(3)`，而 provider 透传的是
+   OpenTripMap 的 `rate`，实际取值 `1,2,3,5,6,7`。**判据不是猜的**：同一供应商的
+   兄弟 provider（`opentripmap-place-provider.ts:156`）注释里早就写着
+   「rates 1–3 and reserves 7 for cultural heritage」并按 `/7` 归一化。
+2. `places.search` 输出 `.max(5)`，而两个 place provider 都返回至多 10 条；
+   本该收口的 `PLACE_SEARCH_MAX_RESULTS = 5` **导出后全仓库无人引用**，是死常量。
+
+修法：上界改 1..7；截断放在服务端而非某个 provider（换 adapter 不会重开缺口）。
+横向核对了其余能力：activities 5/5、hotel 10/10、accommodation 20/20 都对齐，
+places 是唯一错位的一处。
+
+**要点**：持久化发生在输出校验之前。所以「数据已经在库里、屏幕却说供应商挂了」
+是这个顺序的必然结果，不是巧合。
+
+## #36 分类器读错误文本，且整个 catch 不记日志 — 缺陷 — 已修
+`classifyError` 按 `err.message` 子串匹配、兜底 `UPSTREAM_FAILURE`。
+"Output validation failed for accommodation.discover" 不含任何关键词 → 兜底。
+这与 #21（配额消息里的 "limit: 25000" 被正则读成 5xx）是同一课：
+**有类型码就不要读文本。**
+
+改为按 `SkillError.code` 分类，文本只留给非 `SkillError`。新增
+`SKILL_CONTRACT_VIOLATION`（`InternalGapCode`，刻意不在 `ProviderUnavailableCode`
+里——没有任何 adapter 能产出它），文案明说「不是服务提供方的问题、重试无效」。
+
+同一个 catch 此前**一行日志都不记**，所以 worker 日志里这一轮干干净净。
+编排层与 registry 的终态失败分支各补一条受控诊断（能力/skill 名、类型码、
+attempt、耗时），不带异常消息原文。
+
+## #37 详情页整页报错，是前端契约镜像漏了字段 — 缺陷 — 已修
+**先前的判断是错的。** 日志里这条路由只有 16:22 的两次 404，我据此判断是端点
+落地前的旧构建、刷新即可。实际不是：真因在客户端。
+
+`researchResultSchema` 是 `.strict()` 且**没有 `offers`**，而服务端
+`researchResultResponseSchema` 对它 `.default([])`，两个 research 端点每次都发。
+于是**每一个**响应都解析失败：
+- 共享方案面的 gaps 面板只剩标题和正文，能力清单静默消失（截图里就是这样）；
+- `/trips/:id/runs/:runId` 整页变成通用错误。
+
+`关联 ID：null` 是这条判断的关键线索——客户端 Zod 失败而非 HTTP 错误，
+而且 `x-correlation-id` 不在 CORS `exposedHeaders` 里，浏览器跨源根本读不到它。
+两处一并修了。
+
+同一层还有第二个洞：Web 的 `serviceCapabilitySchema` 缺 `places` 和 `readiness`，
+而这一轮恰好产出了一个 `places` gap。
+
+**教训**：服务端 `serviceGaps` 在响应契约里是松类型 `z.record`，Web 侧是严格枚举。
+这条不对称本身就是缺口温床，任一侧新增取值必须同批更新另一侧。
+
+## #38 置顶结果卡的链接丢了 locale — 缺陷 — 已修
+`PinnedResultCard` 从 `next/link` 引入 `Link`，href 是 `/trips/...` 无 locale 段；
+routing 是 `localePrefix: "always"` + `defaultLocale: "en"`，中文读者可能落到英文页。
+兄弟入口 `shared-plan-view.tsx` 发的是 `/zh/trips/...`。
+
+**测试盖不住这条**：`next-intl/navigation` 的测试桩原样渲染 href。
+所以守卫放在 `no-restricted-imports` lint 规则里，覆盖全部现有与未来组件。
+
+## #39 这一轮没出方案的真因是航班 400 — 未查
+serpapi flight.search 返回 HTTP 400。按 G1 的规则，Shanghai 没有 LIVE 航班证据 →
+无候选合格 → 写 `result_plan_id = NULL`。**共享方案面显示「本次未生成共享方案」
+在这一点上是对的**，错的是它给出的理由。
+
+机场解析验过没问题（`新加坡 → SIN`、`Shanghai → PVG, SHA`）。当时的代码把 400
+记成 `NO_RESULTS`；`ad493ac`（同日 16:51）已改为 `PROVIDER_REQUEST_REJECTED` 并调用
+`logProviderRejection` 记下供应商的解释。重跑一轮即可看到它拒绝的是哪个字段。
+
+## #40 本地库落后五个迁移 — 环境 — 已解决
+`schema_migrations` 停在 `0073`，而仓库有到 `0078`。`agent_stream_events` 不存在，
+于是每个 run 的 SSE journal 写入失败、replay 查询直接抛
+`relation "agent_stream_events" does not exist`（API 日志 10:34–10:47 一直在报），
+刷新/断线后流式内容无法回放；Offer Cue 全套表也不在。
+与 `bootstrap-vs-migrations-ledger` 那条记忆**方向相反**：这次表是真的没有，
+需要跑迁移而不是对账。已应用至 `0078`。
