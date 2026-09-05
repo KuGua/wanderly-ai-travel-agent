@@ -12,7 +12,7 @@ export function AccountAuthControl() {
   const [open, setOpen] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const accountMenuRef = useRef<HTMLDivElement>(null);
+  const accountMenuRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -53,7 +53,7 @@ export function AccountAuthControl() {
 
   if (auth.status === "SIGNED_IN") {
     return (
-      <div ref={accountMenuRef} className="relative">
+      <div ref={(node) => { accountMenuRef.current = node; }} className="relative">
         <button type="button" onClick={() => setOpen((current) => !current)} title={t("signedInAs", { username: auth.user?.username ?? t("traveler") })} aria-label={t("accountMenu")} className="grid size-10 place-items-center border-[1.5px] border-[var(--w-ink)] bg-[var(--w-fog)] text-[var(--w-ink)] wanderly-r-sm wanderly-press hover:bg-[var(--w-highlight)] sm:size-11">
           <UserRound aria-hidden="true" className="size-5" />
         </button>
@@ -78,7 +78,7 @@ export function AccountAuthControl() {
       </button>
       {open ? (
         <div role="dialog" aria-label={t("dialogAria")} className="fixed inset-0 z-[120] grid place-items-center bg-sidebar/40 p-4">
-          <form onSubmit={submit} className="relative w-full max-w-sm rounded-3xl bg-white p-6 text-foreground shadow-2xl">
+          <form ref={(node) => { accountMenuRef.current = node; }} onSubmit={submit} className="relative w-full max-w-sm rounded-3xl bg-white p-6 text-foreground shadow-2xl">
             <button type="button" onClick={() => setOpen(false)} aria-label={t("close")} className="absolute right-4 top-4 grid size-10 place-items-center rounded-full bg-muted"><X aria-hidden="true" className="size-4" /></button>
             <h2 className="pr-10 text-xl font-black">{t("heading")}</h2>
             <p className="mt-2 text-sm text-muted-foreground">{t("body")}</p>
