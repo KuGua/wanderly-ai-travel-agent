@@ -1,6 +1,5 @@
 "use client";
 
-import { LockKeyhole } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
@@ -26,17 +25,23 @@ export function ProfilePageContent() {
 
   return (
     <main className="mx-auto w-full max-w-[1240px] px-5 py-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
+      {/* Same header as the planner: brushed title, no kicker. The privacy line
+          survives the cut the dashboard's kickers did not — it states what the
+          page does with what you type, which nothing else here says. */}
       <header className="flex flex-wrap items-start justify-between gap-6">
-        <div>
-          <p className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.11em] text-primary">
-            <LockKeyhole aria-hidden="true" className="size-4" /> {t("kicker")}
-          </p>
-          <h1 className="mt-2 text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">{t("title")}</h1>
-          <p className="mt-3 max-w-2xl text-muted-foreground">{t("subtitle")}</p>
-        </div>
+        <h1 className="text-[clamp(1.75rem,3.6vw,2.35rem)] font-semibold leading-none tracking-[-0.04em] text-[var(--w-ink)]/85">
+          <span className="wanderly-brush">{t("title")}</span>
+        </h1>
+        <Link
+          href="/projects"
+          className="inline-flex min-h-12 items-center gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-card px-5 text-sm font-semibold text-[var(--w-ink)] transition-colors hover:bg-[var(--w-mist)]"
+        >
+          {t("backToPlanner")}
+        </Link>
       </header>
+      <p className="mt-[18px] max-w-[62ch] text-[13.5px] leading-[1.65] text-[var(--w-ink)]/58">{t("subtitle")}</p>
 
-      <div className="mt-10">
+      <div className="mt-7">
         {profileQuery.isPending ? <LoadingState label={tCommon("loadingProfileCapital")} /> : null}
         {profileQuery.isError ? <ErrorState error={profileQuery.error} title={t("errorSummaryTitle")} /> : null}
         {profileQuery.data?.profile ? (

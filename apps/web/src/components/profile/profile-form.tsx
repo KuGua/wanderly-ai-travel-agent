@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Save } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useFormatter, useTranslations } from "next-intl";
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -110,6 +110,7 @@ export function ProfileForm({
 }) {
   const t = useTranslations("profile");
   const tErrors = useTranslations("errors");
+  const fmt = useFormatter();
   const schema = useMemo(() => makeProfileFormSchema(t), [t]);
   const {
     register,
@@ -157,8 +158,8 @@ export function ProfileForm({
       {/* The padding sits on each half rather than on the card, so the rule
           between them can run edge to edge — it is the upper half's own bottom
           border, which puts it exactly on the seam. */}
-      <div className="bg-card wanderly-edge wanderly-r-lg wanderly-shadow">
-      <section aria-labelledby="travel-basics-heading" className="border-b border-dashed border-[var(--w-ink)]/35 p-4 sm:p-5">
+      <div className="wanderly-sheet overflow-hidden bg-card wanderly-edge">
+      <section aria-labelledby="travel-basics-heading" className="border-b border-dashed border-[var(--w-ink)]/22 px-6 pb-6 pt-[22px]">
         <SectionHeading id="travel-basics-heading" title={t("sectionBasicsTitle")} description={t("sectionBasicsDescription")} />
         <div className="mt-3 grid gap-x-3 gap-y-[6.5px] sm:grid-cols-3">
           <Field id="departure-city" label={t("fields.departureCity")} error={errors.departureCity?.message}>
@@ -173,7 +174,7 @@ export function ProfileForm({
         </div>
       </section>
 
-      <section aria-labelledby="preferences-heading" className="p-4 sm:p-5">
+      <section aria-labelledby="preferences-heading" className="px-6 pb-6 pt-[22px]">
         <SectionHeading id="preferences-heading" title={t("sectionPrefsTitle")} description={t("sectionPrefsDescription")} />
         <div className="mt-3 grid gap-x-3 gap-y-2 sm:grid-cols-[2fr_3fr]">
           {/* Left column, 2 of 5: the three short controls. */}
@@ -188,6 +189,10 @@ export function ProfileForm({
                   value={field.value}
                   onChange={field.onChange}
                   invalid={Boolean(errors.accommodationStyle)}
+                  triggerClassName={cn(
+                    "flex min-h-[42px] w-full items-center justify-between gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-card px-3 text-left text-base outline-none focus-visible:ring-4 focus-visible:ring-[var(--w-info)]/30 sm:text-sm",
+                    errors.accommodationStyle && "border-destructive",
+                  )}
                   options={[
                     { value: "", label: t("accommodation.notSet") },
                     { value: "city_center", label: t("accommodation.city_center") },
@@ -201,9 +206,9 @@ export function ProfileForm({
           <Field id="budget-max-usd" label={t("fields.budgetMaxUsd")} error={errors.budgetMaxUsd?.message}>
             <input id="budget-max-usd" {...register("budgetMaxUsd")} className={inputClass(Boolean(errors.budgetMaxUsd))} inputMode="numeric" />
           </Field>
-          <label className="flex min-h-11 items-center gap-3 bg-card px-4 py-3 wanderly-edge wanderly-r-md">
-            <input type="checkbox" {...register("noRedEye")} className="size-5 accent-[var(--w-highlight)] wanderly-edge-thin wanderly-r-xs" />
-            <span className="text-sm font-medium">{t("fields.noRedEyeLabel")}</span>
+          <label className="flex min-h-[42px] items-center gap-2.5 rounded-[10px] border border-[var(--w-ink)]/10 bg-card px-3.5">
+            <input type="checkbox" {...register("noRedEye")} className="size-[17px] rounded-[4px] accent-[var(--w-info)]" />
+            <span className="text-[13.5px] font-semibold">{t("fields.noRedEyeLabel")}</span>
           </label>
           </div>
 
@@ -221,22 +226,32 @@ export function ProfileForm({
           </div>
         </div>
       </section>
-      </div>
 
-      {/* The button at the form's bottom-right, not sticky: it used to ride
-          the scroll and slide over the content below. The save status sits
-          beside it rather than in a reserved strip underneath — that strip was
-          blank almost always, and it was most of the gap before the next
-          section. */}
-      <div className="flex items-center justify-end gap-3">
-        <div aria-live="polite" className="text-sm">
-          {saved ? <p className="text-emerald-700">{t("savedToast")}</p> : null}
-          {errorMessage ? <p role="alert" className="text-destructive">{errorMessage}</p> : null}
+      {/* The action bar is part of the sheet rather than floating under it: it
+          used to be sticky and rode the scroll over the section below. The left
+          side carries the save status when there is one and the real last-saved
+          time when there is not, so the strip is never blank. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-dashed border-[var(--w-ink)]/22 bg-[color-mix(in_srgb,var(--w-card,#fff),var(--w-fog)_34%)] px-6 py-3.5">
+        <div aria-live="polite" className="text-[12.5px]">
+          {errorMessage ? (
+            <p role="alert" className="font-semibold text-destructive">{errorMessage}</p>
+          ) : saved ? (
+            <p className="font-semibold text-emerald-700">{t("savedToast")}</p>
+          ) : (
+            <p className="text-[var(--w-ink)]/50">
+              {t("lastSaved", { date: fmt.dateTime(new Date(profile.updatedAt), { dateStyle: "medium" }) })}
+            </p>
+          )}
         </div>
-        <Button type="submit" size="lg" className="min-h-11 px-5 wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action" disabled={isSaving || !isDirty}>
-          <Save aria-hidden="true" />
+        <Button
+          type="submit"
+          className="inline-flex min-h-11 items-center gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-[var(--w-cal-run)] px-5 text-sm font-semibold text-[var(--w-ink)] shadow-none transition-colors hover:bg-[color-mix(in_srgb,var(--w-cal-run),var(--w-ink)_10%)] disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={isSaving || !isDirty}
+        >
+          <Save aria-hidden="true" className="size-4" />
           {isSaving ? t("saving") : t("save")}
         </Button>
+      </div>
       </div>
     </form>
   );
@@ -263,7 +278,12 @@ function splitList(value: string) {
 }
 
 function SectionHeading({ id, title, description }: { id: string; title: string; description: string }) {
-  return <div><h2 id={id} className="text-xl font-semibold">{title}</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p></div>;
+  return (
+    <div>
+      <h2 id={id} className="text-base font-semibold tracking-[-0.02em] text-[var(--w-ink)]/80">{title}</h2>
+      <p className="mt-[5px] max-w-2xl text-[12.5px] text-[var(--w-ink)]/52">{description}</p>
+    </div>
+  );
 }
 
 function Field({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string; children: React.ReactNode }) {
@@ -288,8 +308,12 @@ function Field({ id, label, hint, error, children }: { id: string; label: string
 }
 
 function inputClass(invalid: boolean) {
+  // The planner's hairline, not the 2px edge this form used to carry: eight
+  // controls at that weight made the page read as a stack of boxes with the
+  // labels squeezed between them.
   return cn(
-    "min-h-11 w-full bg-card px-3 text-base outline-none wanderly-edge wanderly-r-sm sm:text-sm",
+    "min-h-[42px] w-full rounded-[10px] border border-[var(--w-ink)]/10 bg-card px-3 text-base outline-none",
+    "focus-visible:ring-4 focus-visible:ring-[var(--w-info)]/25 sm:text-sm",
     invalid && "border-destructive",
   );
 }

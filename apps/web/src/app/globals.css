@@ -671,6 +671,20 @@
     7px 7px 0 var(--w-ink);
 }
 
+/* The same sheet of paper, without the hardware. The profile page is one long
+   form, so a binding would run its whole height and turn into a striped margin;
+   the calendar pad is short enough to carry a coil, this is not. What is kept
+   is the page stack, which is the part that says "paper" rather than "card". */
+.wanderly-sheet {
+  position: relative;
+  border-radius: 17px;
+  box-shadow:
+    3px 3px 0 -1px var(--w-page),
+    3px 3px 0 var(--w-ink),
+    7px 7px 0 -1px var(--w-page),
+    7px 7px 0 var(--w-ink);
+}
+
 /* The binding column, and the spine the rings close onto. Solid rather than
    dashed: the dashes read as a fold, and a coil needs an edge to be bound to. */
 .wanderly-pad::before {

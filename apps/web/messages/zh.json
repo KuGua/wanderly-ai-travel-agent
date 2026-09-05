@@ -165,6 +165,8 @@
     "kicker": "私人资料",
     "title": "出行偏好",
     "subtitle": "除非后续授权流程明确记录此选择，否则此处内容不会与任何行程共享。我们从不收集护照号码。",
+    "backToPlanner": "返回计划簿",
+    "lastSaved": "上次保存于 {date}",
     "errorSummaryTitle": "请检查高亮的资料字段。",
     "errorSummaryBody": "您的更改尚未提交。",
     "sectionBasicsTitle": "出行基础信息",
