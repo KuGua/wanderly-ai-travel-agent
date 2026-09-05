@@ -495,8 +495,8 @@
    so it stays inside the palette. Ink on the darkest band is ~9:1. */
 .wanderly-crt .wanderly-user-bubble {
   --bubble-tint: color-mix(in srgb, var(--w-info), var(--w-bot-outline) 40%);
-  --bubble-top: color-mix(in srgb, var(--bubble-tint), var(--w-fog) 56%);
-  --bubble-bottom: color-mix(in srgb, var(--bubble-tint), var(--w-fog) 18%);
+  --bubble-top: color-mix(in srgb, var(--bubble-tint), var(--w-fog) 76%);
+  --bubble-bottom: color-mix(in srgb, var(--bubble-tint), var(--w-fog) 46%);
   --bubble-edge: color-mix(in srgb, var(--bubble-tint), var(--w-ink) 26%);
   position: relative;
   border: 1px solid var(--bubble-edge);
@@ -511,41 +511,38 @@
     0 1px 3px rgb(4 9 16 / .5);
 }
 
-/* Tail: outline first, fill over it, so the 1px edge continues around it. */
-.wanderly-crt .wanderly-user-bubble::before,
-.wanderly-crt .wanderly-user-bubble::after {
-  content: "";
-  position: absolute;
-  bottom: 5px;
-  width: 0;
-  height: 0;
-  border-style: solid;
+/* No tail. The first attempt grew one at the bottom-right and it detached:
+   the 17px radius curves the right edge inward exactly where the tail was
+   anchored, so it read as a loose grey arrow beside the bubble rather than
+   part of it. A tail that has to fight the corner it grows from is not worth
+   the corner. */
+
+/* The opening lines. `--primary` resolves to the mint highlight, which the
+   panel's token remap does not cover, so the sparkle, the rule and the title
+   were the last green on a blue screen. */
+.wanderly-crt .wanderly-intro-mark,
+.wanderly-crt .wanderly-intro-title {
+  color: var(--w-crt-text);
 }
 
-.wanderly-crt .wanderly-user-bubble::before {
-  right: -8px;
-  border-width: 7px 0 7px 9px;
-  border-color: transparent transparent transparent var(--bubble-edge);
-}
-
-.wanderly-crt .wanderly-user-bubble::after {
-  right: -6px;
-  border-width: 6px 0 6px 7px;
-  border-color: transparent transparent transparent var(--bubble-bottom);
+.wanderly-crt .wanderly-intro-body {
+  color: color-mix(in srgb, var(--w-crt-text), transparent 30%);
 }
 
 /* Inside the terminal, the mint highlight is the wrong instrument.
    `.wanderly-cosmos-chat` already remaps card, border, ring and muted text to
    phosphor, so a control that still answers in `--w-highlight` is the one
    green thing left on a blue screen. */
-.wanderly-crt .wanderly-cosmos-control {
+.wanderly-crt .wanderly-cosmos-control,
+.wanderly-crt-control {
   border-color: color-mix(in srgb, var(--w-crt-line), transparent 45%);
   background: color-mix(in srgb, var(--w-crt-deep), #000 18%);
   color: var(--w-crt-text);
   box-shadow: 3px 3px 0 rgb(4 9 16 / .7);
 }
 
-.wanderly-crt .wanderly-cosmos-control:hover:not(:disabled) {
+.wanderly-crt .wanderly-cosmos-control:hover:not(:disabled),
+.wanderly-crt-control:hover:not(:disabled) {
   border-color: var(--w-crt-line);
   background: color-mix(in srgb, var(--w-crt-line), transparent 62%);
   color: var(--w-crt-text);

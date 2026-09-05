@@ -1238,7 +1238,7 @@ export function TravelAgentChat({
   if (!open) {
     return (
       <>
-        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-[184px] right-4 z-40 px-3 py-1.5 text-[11px] font-extrabold wanderly-cosmos-control wanderly-r-xs wanderly-press md:right-10">{t("history")}</button>
+        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-[184px] right-4 z-40 px-3 py-1.5 text-[11px] font-extrabold wanderly-cosmos-control wanderly-crt-control wanderly-r-xs wanderly-press md:right-10">{t("history")}</button>
         <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
         {/* The collapsed state is the same terminal as the open one, showing
             only its prompt line. Its bottom offset clears the legs so the
@@ -1297,14 +1297,14 @@ export function TravelAgentChat({
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
             <div className={docked ? "mx-auto flex max-w-[640px] flex-col items-start pb-4 pt-1 text-left" : "mb-4 flex flex-col items-start text-left"}>
-              <div aria-hidden="true" className={`mb-2 flex items-center gap-2 ${docked ? "text-primary" : "text-[var(--w-highlight)]"}`}>
+              <div aria-hidden="true" className={`wanderly-intro-mark mb-2 flex items-center gap-2 ${docked ? "text-primary" : "text-[var(--w-highlight)]"}`}>
                 <Sparkles className="size-3.5" />
                 <span className="h-px w-8 bg-current opacity-70" />
               </div>
-              <p className="max-w-[36rem] text-balance text-base font-bold leading-snug tracking-[-0.025em] text-primary sm:text-lg">
+              <p className="wanderly-intro-title max-w-[36rem] text-balance text-base font-bold leading-snug tracking-[-0.025em] text-primary sm:text-lg">
                 {t("introTitle")}
               </p>
-              <p className={`mt-2 max-w-[36rem] text-pretty text-[13px] leading-5 ${docked ? "text-muted-foreground" : "text-[var(--w-fog)]"}`}>
+              <p className={`wanderly-intro-body mt-2 max-w-[36rem] text-pretty text-[13px] leading-5 ${docked ? "text-muted-foreground" : "text-[var(--w-fog)]"}`}>
                 {t("introBody")}
               </p>
             </div>
