@@ -1009,7 +1009,10 @@ export function TravelAgentChat({
     : "wanderly-cosmos-surface";
   const userBubbleClass = docked
     ? "ml-auto max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
-    : "ml-auto w-fit max-w-[86%] bg-[var(--w-bot-outline)] px-3.5 py-2 text-[15px] leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md";
+    // The globe bubble's fill, edge, radius and tail live in globals.css: it is
+    // the one place in the app drawn as a classic iMessage bubble rather than
+    // in the system's irregular-radius, hard-ink-edge language.
+    : "wanderly-user-bubble ml-auto w-fit max-w-[86%] px-3.5 py-2 text-[15px] leading-[1.45]";
   // On the globe, assistant replies sit directly on the conversation ground:
   // the panel is already a readable surface, so wrapping every answer in a
   // second framed card makes the narrow column feel dense. The Trip workspace

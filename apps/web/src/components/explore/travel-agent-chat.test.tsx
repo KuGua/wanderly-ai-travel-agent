@@ -188,7 +188,11 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(reply).not.toHaveClass("wanderly-cosmos-surface", "wanderly-edge", "wanderly-shadow-sm");
 
     const question = screen.getByText("A short question.").parentElement;
-    expect(question).toHaveClass("ml-auto", "w-fit", "max-w-[86%]", "py-2", "bg-[var(--w-bot-outline)]");
+    // The fill moved out of the utility and into `.wanderly-user-bubble`, which
+    // draws the traveller's own message as an iMessage bubble on the terminal
+    // ground; the flat `--w-bot-outline` slab it replaced read as a grey block.
+    // Layout stays asserted here — only who owns the paint has changed.
+    expect(question).toHaveClass("ml-auto", "w-fit", "max-w-[86%]", "py-2", "wanderly-user-bubble");
     expect(question).not.toHaveClass("wanderly-shadow-sm");
     expect(question?.closest("article")).toHaveClass("mb-[17px]");
 

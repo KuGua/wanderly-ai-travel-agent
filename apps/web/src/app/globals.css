@@ -484,6 +484,56 @@
   color: var(--w-ink);
 }
 
+/* The traveller's own message, drawn as a classic iMessage bubble.
+   Deliberately not the system's irregular-radius, hard-ink-edge language: on
+   the terminal ground a flat `--w-bot-outline` slab read as a grey block, and
+   the one thing on screen that is the traveller's own voice deserves to be
+   legible at a glance.
+   The reference is iOS 6, at lower chroma than the original: that blue was
+   built for a white list view, and at full saturation on deep navy it shouts.
+   Mixed off `--w-info` toward `--w-bot-outline` and lightened with `--w-fog`,
+   so it stays inside the palette. Ink on the darkest band is ~9:1. */
+.wanderly-crt .wanderly-user-bubble {
+  --bubble-tint: color-mix(in srgb, var(--w-info), var(--w-bot-outline) 40%);
+  --bubble-top: color-mix(in srgb, var(--bubble-tint), var(--w-fog) 56%);
+  --bubble-bottom: color-mix(in srgb, var(--bubble-tint), var(--w-fog) 18%);
+  --bubble-edge: color-mix(in srgb, var(--bubble-tint), var(--w-ink) 26%);
+  position: relative;
+  border: 1px solid var(--bubble-edge);
+  border-radius: 17px;
+  background: linear-gradient(to bottom, var(--bubble-top), var(--bubble-bottom));
+  color: var(--w-ink);
+  /* The glossy lip along the top and a shadow with enough weight to lift the
+     bubble off a dark panel — the system's 3px hard shadow reads as a sticker
+     here, where every other edge is soft. */
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / .55),
+    0 1px 3px rgb(4 9 16 / .5);
+}
+
+/* Tail: outline first, fill over it, so the 1px edge continues around it. */
+.wanderly-crt .wanderly-user-bubble::before,
+.wanderly-crt .wanderly-user-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: 5px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+.wanderly-crt .wanderly-user-bubble::before {
+  right: -8px;
+  border-width: 7px 0 7px 9px;
+  border-color: transparent transparent transparent var(--bubble-edge);
+}
+
+.wanderly-crt .wanderly-user-bubble::after {
+  right: -6px;
+  border-width: 6px 0 6px 7px;
+  border-color: transparent transparent transparent var(--bubble-bottom);
+}
+
 /* Inside the terminal, the mint highlight is the wrong instrument.
    `.wanderly-cosmos-chat` already remaps card, border, ring and muted text to
    phosphor, so a control that still answers in `--w-highlight` is the one
