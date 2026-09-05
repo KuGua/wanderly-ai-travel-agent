@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight, Heart, LockKeyhole, MapPinned, Search, Settings2 } from "lucide-react";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -56,7 +56,6 @@ export function HomeDashboard() {
   const api = useTravelApi();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const fmt = useFormatter();
 
   const [filter, setFilter] = useState<StatusFilter>("active");
   const [searchQuery, setSearchQuery] = useState("");
@@ -111,15 +110,6 @@ export function HomeDashboard() {
       .filter((trip) => matchesSearch(trip, searchQuery));
   }, [trips, filter, searchQuery]);
 
-  const heroTrip = useMemo(() => {
-    const visibleTrips = trips.filter((trip) => !isArchivedTrip(trip));
-    // Returning to an unfinished private exploration is the most immediate
-    // action, so surface a Draft before an in-progress or stale plan.
-    return visibleTrips.find((trip) => trip.status === "DRAFT")
-      ?? visibleTrips.find((trip) => trip.status === "STALE" || trip.status === "PLANNING")
-      ?? null;
-  }, [trips]);
-
   const filters: { key: StatusFilter; count: number }[] = [
     { key: "active", count: statusCounts.active },
     { key: "all", count: trips.length },
@@ -137,9 +127,6 @@ export function HomeDashboard() {
           <h1 className="mt-2 text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">
             <span className="wanderly-brush">{tHome("title")}</span>
           </h1>
-          <p className="mt-3 max-w-xl text-base text-muted-foreground">
-            {tHome("subtitle")}
-          </p>
         </div>
         <button
           type="button"
@@ -155,149 +142,84 @@ export function HomeDashboard() {
       </header>
       {startTrip.isError ? <p role="alert" className="mt-3 text-sm font-semibold text-destructive">{tHome("newTripError")}</p> : null}
 
-      {/* The year, where four tiles used to restate counts the trip list already
-          shows. Nineteen trips make "when is the year busy" the question a
-          number cannot answer. */}
-      <section className="my-8" aria-label={tHome("calendar.ariaLabel")}>
-        <div className="bg-card wanderly-edge wanderly-r-lg wanderly-shadow">
+      {/* The year, and the profile beside it. Four summary tiles and three
+          profile tiles used to stack down the page restating counts the trip
+          list already showed; the calendar answers "when is the year busy",
+          which a number cannot, and the profile rides along in the space that
+          leaves rather than claiming a band of its own. */}
+      <section className="my-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_290px]" aria-label={tHome("calendar.ariaLabel")}>
+        <div className="min-w-0 bg-card wanderly-edge wanderly-r-lg wanderly-shadow">
           <TripYearCalendar year={calendarYear} runs={calendarRuns} today={todayIso} />
         </div>
-      </section>
 
-      {/* Profile snapshot */}
-      <section aria-labelledby="profile-heading">
-        <div className="mb-3 flex items-end justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
-              {tHome("profile.kicker")}
-            </p>
-            <h2 id="profile-heading" className="mt-1 text-xl font-bold tracking-[-0.035em]">
-              {tHome("profile.heading")}
-            </h2>
-          </div>
-          <Link
-            href="/profile"
-            className="inline-flex min-h-11 items-center gap-2 rounded-[14px] px-3 text-sm font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
-          >
-            <Settings2 aria-hidden="true" className="size-4" /> {tHome("profile.edit")}
-          </Link>
-        </div>
-        {isCheckingSession || (isAuthenticated && profileQuery.isPending) ? <LoadingState label={tCommon("loadingProfile")} /> : null}
-        {!isCheckingSession && !isAuthenticated ? <PrivateDataSignInRequired subject="profile" /> : null}
-        {isAuthenticated && profileQuery.isError ? (
-          <ErrorState error={profileQuery.error} title={tHome("errorStateProfileUnavailable")} />
-        ) : null}
-        {isAuthenticated && profileQuery.data?.profile ? (
-          <div className="grid gap-0.5 overflow-hidden bg-[var(--w-ink)] wanderly-edge wanderly-r-lg wanderly-shadow sm:grid-cols-3">
-            <SummaryItem
-              icon={MapPinned}
-              label={tHome("profile.departure")}
-              value={profileQuery.data.profile.departureCity ?? tHome("summary.notSet")}
-            />
-            <SummaryItem
-              icon={Heart}
-              label={tHome("profile.interests")}
-              value={
-                profileQuery.data.profile.interests?.length
-                  ? profileQuery.data.profile.interests.join(", ")
-                  : tHome("summary.notSet")
-              }
-            />
-            <SummaryItem
-              icon={Settings2}
-              label={tHome("profile.stayStyle")}
-              value={
-                profileQuery.data.profile.accommodationStyle
-                  ? tHome(
-                      `trip.accommodation.${profileQuery.data.profile.accommodationStyle}`,
-                    )
-                  : tHome("summary.notSet")
-              }
-            />
-          </div>
-        ) : null}
-        {isAuthenticated && profileQuery.data?.profile === null ? (
-          <div className="border-2 border-dashed border-[var(--w-ink)] bg-card p-7 wanderly-r-lg">
-            <h3 className="font-bold">{tHome("profile.emptyTitle")}</h3>
-            <p className="mt-2 text-sm text-muted-foreground">{tHome("profile.emptyBody")}</p>
+        <section aria-labelledby="profile-heading" className="min-w-0">
+          <div className="mb-3 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
+                {tHome("profile.kicker")}
+              </p>
+              <h2 id="profile-heading" className="mt-1 text-xl font-bold tracking-[-0.035em]">
+                {tHome("profile.heading")}
+              </h2>
+            </div>
             <Link
               href="/profile"
-              className="mt-4 inline-flex min-h-11 items-center font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+              className="inline-flex min-h-11 items-center gap-2 rounded-[14px] px-3 text-sm font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
             >
-              {tHome("profile.emptyAction")}
+              <Settings2 aria-hidden="true" className="size-4" /> {tHome("profile.edit")}
             </Link>
           </div>
-        ) : null}
+          {isCheckingSession || (isAuthenticated && profileQuery.isPending) ? <LoadingState label={tCommon("loadingProfile")} /> : null}
+          {!isCheckingSession && !isAuthenticated ? <PrivateDataSignInRequired subject="profile" /> : null}
+          {isAuthenticated && profileQuery.isError ? (
+            <ErrorState error={profileQuery.error} title={tHome("errorStateProfileUnavailable")} />
+          ) : null}
+          {isAuthenticated && profileQuery.data?.profile ? (
+            <div className="grid gap-0.5 overflow-hidden bg-[var(--w-ink)] wanderly-edge wanderly-r-lg wanderly-shadow">
+              <SummaryItem
+                icon={MapPinned}
+                label={tHome("profile.departure")}
+                value={profileQuery.data.profile.departureCity ?? tHome("summary.notSet")}
+              />
+              <SummaryItem
+                icon={Heart}
+                label={tHome("profile.interests")}
+                value={
+                  profileQuery.data.profile.interests?.length
+                    ? profileQuery.data.profile.interests.join(", ")
+                    : tHome("summary.notSet")
+                }
+              />
+              <SummaryItem
+                icon={Settings2}
+                label={tHome("profile.stayStyle")}
+                value={
+                  profileQuery.data.profile.accommodationStyle
+                    ? tHome(
+                        `trip.accommodation.${profileQuery.data.profile.accommodationStyle}`,
+                      )
+                    : tHome("summary.notSet")
+                }
+              />
+            </div>
+          ) : null}
+          {isAuthenticated && profileQuery.data?.profile === null ? (
+            <div className="border-2 border-dashed border-[var(--w-ink)] bg-card p-5 wanderly-r-lg">
+              <h3 className="font-bold">{tHome("profile.emptyTitle")}</h3>
+              <p className="mt-2 text-sm text-muted-foreground">{tHome("profile.emptyBody")}</p>
+              <Link
+                href="/profile"
+                className="mt-4 inline-flex min-h-11 items-center font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+              >
+                {tHome("profile.emptyAction")}
+              </Link>
+            </div>
+          ) : null}
+        </section>
       </section>
 
       {/* Trips section */}
       <section className="mt-10" aria-labelledby="trips-heading">
-        {/* Hero "continue" card */}
-        {heroTrip && filter === "active" && !searchQuery ? (
-          <section className="mb-6" aria-label={tHome("hero.ariaLabel")}>
-            <div className="mb-3 flex items-center justify-between gap-4">
-              <h2 className="text-xl font-bold tracking-[-0.035em]">{tHome("hero.heading")}</h2>
-              <span className="text-[13px] font-bold text-muted-foreground">{tHome("hero.needsAction")}</span>
-            </div>
-            <article className="grid overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow-lg sm:grid-cols-[170px_minmax(0,1fr)_auto] lg:grid-cols-[200px_minmax(0,1fr)_auto]">
-              <div className="relative min-h-[120px] overflow-hidden border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] sm:min-h-0 sm:border-b-0 sm:border-r-2" aria-hidden="true">
-                <span className="absolute -left-5 top-[30px] h-[110px] w-[210px] -rotate-[18deg] rounded-[50%] border-2 border-dashed border-[var(--w-primary)]" />
-                <span className="absolute left-[74px] top-[69px] size-[21px] -rotate-45 rounded-[50%_50%_50%_5px] border-[3px] border-[var(--w-ink)] bg-[var(--w-highlight)]" />
-              </div>
-              <div className="p-5 sm:p-6">
-                <span className="inline-flex items-center gap-1.5 bg-[var(--w-fog)] px-2.5 py-1 text-xs font-black text-[var(--w-ink)] wanderly-edge wanderly-r-xs">
-                  <span className="size-[7px] rounded-full bg-current" />
-                  {heroTrip.status === "DRAFT"
-                    ? tHome("hero.draftBadge")
-                    : heroTrip.status === "STALE"
-                      ? tHome("hero.staleBadge")
-                      : tHome("hero.planningBadge")}
-                </span>
-                <h3 className="mt-2 text-2xl font-bold tracking-[-0.045em]">{heroTrip.name}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {heroTrip.status === "DRAFT"
-                    ? tHome("hero.draftBody")
-                    : heroTrip.status === "STALE"
-                      ? tHome("hero.staleBody")
-                      : tHome("hero.planningBody")}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {heroTrip.departureCities.length > 0 || heroTrip.memberCount > 0 ? (
-                    <span className="bg-card px-2 py-1 text-xs font-bold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
-                      {tHome("trip.members", { count: heroTrip.memberCount })}
-                    </span>
-                  ) : null}
-                  {heroTrip.travelDateStart && heroTrip.travelDateEnd ? (
-                    <span className="rounded-lg bg-secondary px-2 py-1 text-xs font-bold text-secondary-foreground">
-                      {fmt.dateTime(new Date(heroTrip.travelDateStart), { dateStyle: "medium" })}
-                      {" – "}
-                      {fmt.dateTime(new Date(heroTrip.travelDateEnd), { dateStyle: "medium" })}
-                    </span>
-                  ) : null}
-                  {heroTrip.destinationCandidates.length > 0 ? (
-                    <span className="rounded-lg bg-secondary px-2 py-1 text-xs font-bold text-secondary-foreground">
-                      {heroTrip.destinationCandidates.join(" · ")}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="flex items-center justify-center p-5">
-                <Link
-                  href={`/trips/${heroTrip.id}` as "/trips/[tripId]"}
-                  className="inline-flex min-h-[45px] items-center gap-2 px-4 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action"
-                >
-                  {heroTrip.status === "DRAFT"
-                    ? tHome("hero.draftCta")
-                    : heroTrip.status === "STALE"
-                      ? tHome("hero.reviewCta")
-                      : tHome("hero.continueCta")}
-                  <ArrowRight aria-hidden="true" className="size-4" />
-                </Link>
-              </div>
-            </article>
-          </section>
-        ) : null}
-
         {/* Trip grid. The filters live on this heading rather than beside the
             "continue planning" card: that card only renders for the active
             filter with no search, so filters placed there would disappear the

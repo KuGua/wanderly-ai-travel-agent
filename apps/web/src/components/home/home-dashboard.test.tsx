@@ -103,16 +103,18 @@ describe("HomeDashboard", () => {
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith(`/trips/${TRIP_ID}?thread=${THREAD_ID}`));
   });
 
-  it("shows an unarchived Draft in the default active list and prioritizes it for continuation", async () => {
+  // The counts were two: once in the "continue planning" hero and once in the
+  // grid. The hero is gone — it repeated a card the grid already showed — so a
+  // Draft now appears once, and its own card carries the way back into it.
+  it("shows an unarchived Draft in the default active list", async () => {
     renderAuthenticatedDashboard(makeApi([planningTrip, draftTrip]));
 
     await waitFor(() => {
-      expect(screen.getAllByRole("heading", { name: "Taipei exploration" })).toHaveLength(2);
+      expect(screen.getAllByRole("heading", { name: "Taipei exploration" })).toHaveLength(1);
     });
 
     expect(screen.getByRole("button", { name: "Active2" })).toBeInTheDocument();
-    expect(screen.getByText("Draft needs details")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Continue exploration" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Continue planning" })).toHaveAttribute(
       "href",
       "/trips/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     );
@@ -129,7 +131,7 @@ describe("HomeDashboard", () => {
     renderAuthenticatedDashboard(makeApi([draftTrip, archivedDraft]));
 
     await waitFor(() => {
-      expect(screen.getAllByRole("heading", { name: "Taipei exploration" })).toHaveLength(2);
+      expect(screen.getAllByRole("heading", { name: "Taipei exploration" })).toHaveLength(1);
     });
 
     expect(screen.queryByText("Archived Taipei exploration")).not.toBeInTheDocument();
