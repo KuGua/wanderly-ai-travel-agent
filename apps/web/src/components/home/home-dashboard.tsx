@@ -147,13 +147,23 @@ export function HomeDashboard() {
           list already showed; the calendar answers "when is the year busy",
           which a number cannot, and the profile rides along in the space that
           leaves rather than claiming a band of its own. */}
-      <section className="my-8 grid gap-4 lg:grid-cols-[minmax(0,1fr)_290px]" aria-label={tHome("calendar.ariaLabel")}>
-        <div className="min-w-0 bg-card wanderly-edge wanderly-r-lg wanderly-shadow">
-          <TripYearCalendar year={calendarYear} runs={calendarRuns} today={todayIso} />
-        </div>
+      <section
+        className="my-8 overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow"
+        aria-label={tHome("calendar.ariaLabel")}
+      >
+        {/* One panel split seven-three, the two halves the same height because
+            grid rows stretch. Two separate cards left a gutter between things
+            that are read together, and let the shorter one end early. */}
+        <div className="grid lg:grid-cols-[7fr_3fr]">
+          <div className="min-w-0">
+            <TripYearCalendar year={calendarYear} runs={calendarRuns} today={todayIso} />
+          </div>
 
-        <section aria-labelledby="profile-heading" className="min-w-0">
-          <div className="mb-3 flex items-end justify-between gap-4">
+          <section
+            aria-labelledby="profile-heading"
+            className="min-w-0 border-t-2 border-[var(--w-ink)] p-4 lg:border-l-2 lg:border-t-0"
+          >
+            <div className="mb-3 flex items-end justify-between gap-3">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
                 {tHome("profile.kicker")}
@@ -174,8 +184,11 @@ export function HomeDashboard() {
           {isAuthenticated && profileQuery.isError ? (
             <ErrorState error={profileQuery.error} title={tHome("errorStateProfileUnavailable")} />
           ) : null}
+          {/* Rows on the panel, not a card inside a card: the ink-gap grid and
+              its own edge and shadow were a second frame drawn just inside the
+              first one. */}
           {isAuthenticated && profileQuery.data?.profile ? (
-            <div className="grid gap-0.5 overflow-hidden bg-[var(--w-ink)] wanderly-edge wanderly-r-lg wanderly-shadow">
+            <div className="divide-y divide-[var(--w-ink)]/12">
               <SummaryItem
                 icon={MapPinned}
                 label={tHome("profile.departure")}
@@ -215,7 +228,8 @@ export function HomeDashboard() {
               </Link>
             </div>
           ) : null}
-        </section>
+          </section>
+        </div>
       </section>
 
       {/* Trips section */}
@@ -315,8 +329,8 @@ function SummaryItem({
   value: string;
 }) {
   return (
-    <div className="bg-card p-5">
-      <Icon aria-hidden="true" className="mb-3 size-5 text-[var(--w-ink)]" />
+    <div className="py-3.5 first:pt-0 last:pb-0">
+      <Icon aria-hidden="true" className="mb-2 size-[18px] text-[var(--w-ink)]" />
       <p className="text-[11px] font-black uppercase tracking-[0.11em] text-muted-foreground">
         {label}
       </p>
