@@ -1348,16 +1348,19 @@ export function TravelAgentChat({
               {typedStreamText ? (
                 <ChatMarkdown content={typedStreamText} />
               ) : null}
-              <div className="mt-2 flex items-center gap-3">
-                <p role="status" className="inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+              {/* Hook classes, not colours: the paper palette below is correct in
+                  the workspace, and globals.css repaints this row in phosphor
+                  under `.wanderly-crt` so the terminal has one tone. */}
+              <div className="wanderly-thinking mt-2 flex items-center gap-3">
+                <p role="status" className="wanderly-thinking-label inline-flex items-center gap-2 text-xs font-semibold text-muted-foreground">
                   <span className="inline-flex gap-[3px]">
-                    <span className="size-[5px] animate-bounce rounded-full bg-primary/50 [animation-delay:0ms] motion-reduce:animate-none" />
-                    <span className="size-[5px] animate-bounce rounded-full bg-primary/50 [animation-delay:150ms] motion-reduce:animate-none" />
-                    <span className="size-[5px] animate-bounce rounded-full bg-primary/50 [animation-delay:300ms] motion-reduce:animate-none" />
+                    <span className="wanderly-thinking-dot size-[5px] animate-bounce rounded-full bg-primary/50 [animation-delay:0ms] motion-reduce:animate-none" />
+                    <span className="wanderly-thinking-dot size-[5px] animate-bounce rounded-full bg-primary/50 [animation-delay:150ms] motion-reduce:animate-none" />
+                    <span className="wanderly-thinking-dot size-[5px] animate-bounce rounded-full bg-primary/50 [animation-delay:300ms] motion-reduce:animate-none" />
                   </span>
                   {t("sending")}
                 </p>
-                <button type="button" onClick={stopActiveRun} disabled={cancelRun.isPending} className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-card px-3 py-1 text-xs font-bold text-primary disabled:opacity-50">
+                <button type="button" onClick={stopActiveRun} disabled={cancelRun.isPending} className="wanderly-thinking-stop inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-card px-3 py-1 text-xs font-bold text-primary disabled:opacity-50">
                   <Square aria-hidden="true" className="size-3 fill-current" />{t("stop")}
                 </button>
               </div>

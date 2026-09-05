@@ -484,6 +484,57 @@
   color: var(--w-ink);
 }
 
+/* Inside the terminal, the mint highlight is the wrong instrument.
+   `.wanderly-cosmos-chat` already remaps card, border, ring and muted text to
+   phosphor, so a control that still answers in `--w-highlight` is the one
+   green thing left on a blue screen. */
+.wanderly-crt .wanderly-cosmos-control {
+  border-color: color-mix(in srgb, var(--w-crt-line), transparent 45%);
+  background: color-mix(in srgb, var(--w-crt-deep), #000 18%);
+  color: var(--w-crt-text);
+  box-shadow: 3px 3px 0 rgb(4 9 16 / .7);
+}
+
+.wanderly-crt .wanderly-cosmos-control:hover:not(:disabled) {
+  border-color: var(--w-crt-line);
+  background: color-mix(in srgb, var(--w-crt-line), transparent 62%);
+  color: var(--w-crt-text);
+}
+
+/* The "thinking" row was the last thing in the terminal still wearing the
+   paper palette. Its dots and Stop chip are painted with `--primary`, which
+   the panel's token remap does not cover, so they sat mint-green on navy.
+
+   Unlayered on purpose. The first attempt put these in `@layer components`,
+   where they lost to Tailwind's `bg-card` / `text-primary` — utilities are a
+   later layer, and layer order beats specificity, so a two-class selector
+   still lost to a one-class utility. Nothing on screen changed. */
+.wanderly-crt .wanderly-thinking-dot {
+  background: var(--w-crt-text);
+  opacity: .7;
+}
+
+/* The label rides on `--muted-foreground`, which the panel resolves to a
+   42%-transparent line blue: fine for a placeholder, thin for 12px text that
+   is telling someone their turn is still running. */
+.wanderly-crt .wanderly-thinking-label {
+  color: color-mix(in srgb, var(--w-crt-text), transparent 18%);
+}
+
+.wanderly-crt .wanderly-thinking-stop {
+  /* The composer's recessed glass, so the chip reads as part of the terminal
+     rather than a card floating on it. Phosphor text on this ground is
+     12.5:1 — the chip can be this dark and still be read at 12px. */
+  background: color-mix(in srgb, var(--w-crt-deep), #000 26%);
+  border-color: color-mix(in srgb, var(--w-crt-line), transparent 40%);
+  color: var(--w-crt-text);
+}
+
+.wanderly-crt .wanderly-thinking-stop:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--w-crt-mid), #000 18%);
+  border-color: var(--w-crt-line);
+}
+
 /* A disabled control must not promise the highlight it will not give. */
 .wanderly-cosmos-control:disabled:hover {
   border-color: var(--w-space-line);
