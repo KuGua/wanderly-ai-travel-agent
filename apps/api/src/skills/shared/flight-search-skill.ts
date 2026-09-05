@@ -5,6 +5,7 @@ import { createTravelProviders } from "../../providers/live-provider-factory.js"
 import type { FlightProvider } from "../../providers/types.js";
 import {
   executeAndPersistFlightSearch,
+  FlightSearchAlreadyAttemptedError,
   flightSearchInputSchema,
   validateSnapshotBoundFlightSearch,
   type FlightSearchInput,
@@ -123,15 +124,27 @@ async function executeFlightSearchSkill(
   } catch (error) {
     throw new SkillError("POLICY_DENIED", `flight.search constraints rejected: ${(error as Error).message}`);
   }
-  const result = await executeAndPersistFlightSearch({
-    ctx: ctx.ctx,
-    tripId: ctx.flightSearch.tripId,
-    snapshotId: ctx.flightSearch.snapshotId,
-    agentTaskRunId: ctx.flightSearch.agentTaskRunId,
-    input: validated,
-    provider,
-    signal,
-  });
+  let result;
+  try {
+    result = await executeAndPersistFlightSearch({
+      ctx: ctx.ctx,
+      tripId: ctx.flightSearch.tripId,
+      snapshotId: ctx.flightSearch.snapshotId,
+      agentTaskRunId: ctx.flightSearch.agentTaskRunId,
+      input: validated,
+      provider,
+      signal,
+    });
+  } catch (error) {
+    // The same shape the sibling searches use for their once-per-run guard.
+    // Reaching the caller as a typed refusal, this reads as "already done";
+    // as the raw unique-index error it used to be, it read as the supplier
+    // having broken, and the model retried the cell it had just completed.
+    if (error instanceof FlightSearchAlreadyAttemptedError) {
+      throw new SkillError("POLICY_DENIED", error.message);
+    }
+    throw error;
+  }
   return result.outcome === "LIVE"
     ? { outcome: "LIVE", queryId: result.queryId!, offers: result.data }
     : { outcome: "UNAVAILABLE", code: result.reason };

@@ -824,9 +824,89 @@
  * part of the map rather than switching to the paper-card treatment used by
  * ordinary pages. The fog-on-deep-blue pair preserves readable copy over
  * bright terrain without introducing another accent colour.
+ *
+ * The drawer is a vertical film strip: the mechanical brown edge and its
+ * sprocket holes belong to the case, while each frame stays translucent so
+ * the selected location remains visibly connected to the globe beneath it.
  */
 .wanderly-cosmos-destination-drawer {
+  border: 0;
+  background: transparent;
   color: var(--w-fog);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.wanderly-destination-film {
+  --wanderly-film-edge: #090a0d;
+  --wanderly-film-edge-lit: #282b31;
+  --wanderly-film-hole: #d7d9dc;
+  position: relative;
+  overflow: hidden;
+  padding: 9px 34px;
+  border: 3px solid var(--wanderly-film-edge);
+  background:
+    linear-gradient(90deg, var(--wanderly-film-edge-lit), var(--wanderly-film-edge) 13%, var(--wanderly-film-edge) 87%, var(--wanderly-film-edge-lit));
+  box-shadow:
+    4px 4px 0 var(--w-ink),
+    0 18px 40px color-mix(in srgb, var(--w-space), transparent 20%),
+    inset 0 0 0 2px color-mix(in srgb, var(--wanderly-film-edge-lit), #000 38%);
+}
+
+.wanderly-destination-film::before,
+.wanderly-destination-film::after {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  bottom: 10px;
+  width: 18px;
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      var(--wanderly-film-hole) 0 13px,
+      color-mix(in srgb, var(--wanderly-film-hole), var(--w-ink) 20%) 13px 15px,
+      transparent 15px 29px
+    );
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--w-ink), transparent 35%);
+  content: "";
+  pointer-events: none;
+}
+
+.wanderly-destination-film::before { left: 7px; }
+.wanderly-destination-film::after { right: 7px; transform: scaleX(-1); }
+
+.wanderly-destination-film__frame {
+  position: relative;
+  z-index: 1;
+  padding: 16px;
+  border: 1.5px solid var(--w-space-line);
+  background: color-mix(in srgb, #050609, transparent 8%);
+  backdrop-filter: blur(18px) saturate(1.2) brightness(0.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2) brightness(0.5);
+}
+
+.wanderly-destination-film__frame + .wanderly-destination-film__frame {
+  margin-top: 9px;
+}
+
+.wanderly-destination-film__frame--identity {
+  min-height: 148px;
+}
+
+.wanderly-destination-film__frame--context {
+  min-height: 124px;
+}
+
+.wanderly-destination-film__frame--actions {
+  padding: 13px 16px 16px;
+}
+
+.wanderly-destination-film__frame--actions .wanderly-action,
+.wanderly-destination-film__frame--actions .wanderly-action:hover {
+  background-color: var(--w-white);
+  color: var(--w-ink);
 }
 
 .wanderly-cosmos-destination-drawer h2 {
@@ -1151,6 +1231,140 @@
 .wanderly-cosmos-chat .wanderly-edge,
 .wanderly-cosmos-chat .wanderly-edge-thin {
   border-color: var(--w-space-line);
+}
+
+/*
+ * Collapsed conversation launch.
+ *
+ * The source is deliberately one transparent sprite sheet, but the body and
+ * exhaust are clipped by two independent elements. That keeps the rocket
+ * still and flame-free before activation, while letting the flame begin only
+ * for the launch frame without baking either visual into the other.
+ */
+.wanderly-chat-rocket-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.wanderly-chat-rocket-button:focus-visible {
+  outline: 2px solid var(--w-highlight);
+  outline-offset: 4px;
+}
+
+.wanderly-chat-rocket-body,
+.wanderly-chat-rocket-flame {
+  display: block;
+  background-image: url("/images/chat-launch-rocket-sprite.png");
+  background-repeat: no-repeat;
+  background-size: 140px 210px;
+}
+
+/* The top sprite occupies the first 116px after scaling. */
+.wanderly-chat-rocket-body {
+  width: 40px;
+  height: 116px;
+  background-position: center top;
+}
+
+/* The lower sprite starts at approximately 120px after scaling. */
+.wanderly-chat-rocket-flame {
+  width: 56px;
+  height: 88px;
+  background-position: center -120px;
+}
+
+.wanderly-chat-rocket-launch {
+  position: absolute;
+  right: 25px;
+  bottom: 201px;
+  z-index: 60;
+  display: grid;
+  width: 56px;
+  height: 204px;
+  place-items: center;
+  pointer-events: none;
+  transform-origin: center bottom;
+}
+
+.wanderly-chat-rocket-launch .wanderly-chat-rocket-body {
+  z-index: 1;
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+}
+
+.wanderly-chat-rocket-launch .wanderly-chat-rocket-flame {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: end;
+  animation: wanderly-rocket-flame .11s steps(2, end) infinite;
+}
+
+.wanderly-chat-rocket-launch--preparing .wanderly-chat-rocket-flame {
+  opacity: 0;
+  animation: none;
+}
+
+.wanderly-chat-rocket-launch--launching {
+  animation: wanderly-rocket-launch .7s cubic-bezier(.2, .7, .35, 1) forwards;
+}
+
+/* Closing keeps the launch path but must not use CSS `reverse`: reversing an
+   ease-out curve creates a slow-start, accelerating descent. These are the
+   same three positions in descending order, played with the launch curve so
+   velocity steadily decreases until touchdown. */
+.wanderly-chat-rocket-launch--landing {
+  animation: wanderly-rocket-land .7s cubic-bezier(.2, .7, .35, 1) forwards;
+}
+
+@keyframes wanderly-rocket-launch {
+  0% { opacity: 1; transform: translateY(0) scale(1); }
+  78% { opacity: 1; transform: translateY(-76vh) scale(.68); }
+  100% { opacity: 0; transform: translateY(-100vh) scale(.5); }
+}
+
+@keyframes wanderly-rocket-land {
+  0% { opacity: 0; transform: translateY(-100vh) scale(.5); }
+  22% { opacity: 1; transform: translateY(-76vh) scale(.68); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes wanderly-rocket-flame {
+  0% { transform: scaleY(.88); filter: brightness(.9); }
+  100% { transform: scaleY(1.08); filter: brightness(1.12); }
+}
+
+/* At launch the lower edge stays parked on the terrain. The top begins 20px
+   below the rocket and rises with it to reveal the full conversation. */
+@media (min-width: 768px) {
+  .wanderly-chat-rocket-launch { right: 49px; }
+
+  .wanderly-cosmos-chat--launch {
+    transition: top .7s cubic-bezier(.2, .7, .35, 1), opacity .18s ease-out;
+  }
+
+  .wanderly-cosmos-chat--launch[data-launch-phase="preparing"] {
+    top: calc(100% - 164px);
+    min-height: 0;
+    opacity: .92;
+    transition: none;
+  }
+
+  .wanderly-cosmos-chat--launch[data-launch-phase="launching"] {
+    top: 112px;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wanderly-chat-rocket-launch,
+  .wanderly-chat-rocket-launch .wanderly-chat-rocket-flame,
+  .wanderly-cosmos-chat--launch {
+    animation: none;
+    transition: none;
+  }
 }
 
 .wanderly-cosmos .maplibregl-ctrl-group {

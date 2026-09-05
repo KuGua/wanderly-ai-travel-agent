@@ -117,6 +117,14 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     updateTripTitle: vi.fn(),
     saveTripSearchPreferences: vi.fn(),
     startPlanning: vi.fn(),
+    listStaySearchAuthorizations: vi.fn().mockResolvedValue([{
+      id: "66666666-6666-4666-8666-666666666666",
+      providerName: "nuitee_connect",
+      field: "guest_nationality",
+      version: 1,
+      grantedAt: CREATED_AT,
+      expiresAt: null,
+    }]),
     getLatestPlanningRun: vi.fn(),
     getLatestPlan: vi.fn(),
     getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),
@@ -964,6 +972,22 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
   });
 
+  it("unlocks a completed-with-gaps run even when the final history refresh fails", async () => {
+    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
+    const api = createApi({
+      getAgentRun: vi.fn().mockResolvedValue(run("COMPLETED_WITH_GAPS")),
+      getOwnerConversation: vi.fn().mockRejectedValue(new TravelApiError(
+        "history unavailable", 503, "Service Unavailable", null,
+      )),
+    });
+
+    renderChat(api);
+
+    await waitFor(() => expect(localStorage.getItem(ACTIVE_RUN_KEY())).toBeNull());
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message Wanderly Agent" })).not.toBeDisabled();
+  });
+
   it("calls onThreadInvalidated when submitConversationTurn returns 404", async () => {
     const onInvalidated = vi.fn();
     const api = createApi({
@@ -1146,15 +1170,16 @@ describe("the trip's preference card", () => {
     ],
   };
 
-  it("renders card actions as underlined links with directional affordances", async () => {
+  it("opens as an editable form with a close control and one save action", async () => {
     const api = createApi({ getPreferenceCard: vi.fn().mockResolvedValue(card) });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
     const preferenceCard = await screen.findByTestId("trip-preference-card");
     expect(preferenceCard).not.toHaveClass("wanderly-shadow");
-    expect(screen.getByRole("button", { name: "Edit" })).toHaveClass("underline");
+    expect(screen.getByRole("button", { name: "Close trip preferences" })).toBeInTheDocument();
     expect(screen.getByTestId("trip-preference-submit")).toHaveClass("underline");
     expect(preferenceCard.querySelectorAll("svg[aria-hidden='true']")).toHaveLength(2);
+    expect(screen.getByLabelText("trip_pace")).toBeInTheDocument();
   });
 
   it("submits only what the traveller changed", async () => {
@@ -1166,7 +1191,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByTestId("trip-preference-card");
     fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));
 
@@ -1191,7 +1216,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByTestId("trip-preference-card");
     fireEvent.change(screen.getByLabelText("interests"), { target: { value: "historical sites, museums" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));
 
@@ -1217,7 +1242,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByTestId("trip-preference-card");
     fireEvent.click(screen.getByLabelText("no_red_eye"));
     fireEvent.change(screen.getByLabelText("budget_max_usd"), { target: { value: "2500" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));
@@ -1244,7 +1269,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByTestId("trip-preference-card");
     fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));
 
@@ -1356,12 +1381,9 @@ describe("the trip's preference card", () => {
     }
 
     /**
-     * Hotel prices are quoted per nationality and the server will not guess
-     * one. It has accepted `guestNationality` since the quote work landed, but
-     * nothing ever sent it and no screen asked — so a traveller whose profile
-     * had none pressed "Start planning" on a complete brief, activation came
-     * back 422 "A confirmed Nuitee hotel quote nationality is required", and
-     * all they saw was 「这条消息暂时无法被接受」.
+     * A value entered here is an explicit provider-use decision. Saving it to
+     * the private Profile is a separate, visible choice that defaults on and
+     * can be turned off before submission.
      */
     it("asks for a quote nationality when the profile has none, and sends it", async () => {
       const activateTrip = vi.fn().mockResolvedValue({ trip: { id: TRIP_ID }, planningRun: null });
@@ -1377,7 +1399,14 @@ describe("the trip's preference card", () => {
 
       await waitFor(() => expect(activateTrip).toHaveBeenCalledWith(
         TRIP_ID,
-        expect.objectContaining({ guestNationality: "CN" }),
+        expect.objectContaining({
+          quoteNationalityDecision: {
+            source: "INPUT",
+            value: "CN",
+            saveToProfile: true,
+            confirmProviderUse: true,
+          },
+        }),
       ));
     });
 
@@ -1399,9 +1428,11 @@ describe("the trip's preference card", () => {
 
       fireEvent.click(start);
 
-      // The client never echoes a profile value back; the server prefers its own.
+      // The client confirms use by source; it never echoes the profile value.
       await waitFor(() => expect(activateTrip).toHaveBeenCalled());
-      expect(activateTrip.mock.calls[0][1]).not.toHaveProperty("guestNationality");
+      expect(activateTrip.mock.calls[0][1]).toEqual(expect.objectContaining({
+        quoteNationalityDecision: { source: "PROFILE", confirmProviderUse: true },
+      }));
     });
 
     it("stays off the globe", async () => {
@@ -1447,7 +1478,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    await screen.findByTestId("trip-preference-card");
     fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));
 
@@ -1464,7 +1495,7 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByTestId("trip-preference-submit"));
+    fireEvent.click(await screen.findByRole("button", { name: "Close trip preferences" }));
 
     await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(TRIP_ID, []));
     await waitFor(() => expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument());
@@ -1921,5 +1952,99 @@ describe("DRAFT → Shared handoff CTA", () => {
     // Clicking the CTA is the only path to activation.
     fireEvent.click(button);
     await waitFor(() => expect(api.activateTrip).toHaveBeenCalledTimes(1));
+  });
+
+  /**
+   * Activation is one-way, and this CTA used to render for DRAFT only. A trip
+   * whose first run failed therefore had no way back: no CTA, no manual replan
+   * on the shared surface, and an assistant still telling the traveller to
+   * press a button that was gone. `sharedPlanningState` is the server's answer
+   * to "can another run be offered right now".
+   */
+  function activatedTrip(sharedPlanningState: string) {
+    return {
+      trip: {
+        ...draftTrip().trip,
+        status: "PLANNING" as const,
+        departureCities: ["Singapore"],
+        destinationCandidates: ["Shanghai"],
+        travelDateStart: "2026-12-04",
+        travelDateEnd: "2026-12-08",
+        sharedPlanningState,
+      },
+      callerRole: "CREATOR",
+      members: [],
+    };
+  }
+
+  it("offers another run when a trip is activated but has no plan", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(activatedTrip("NO_PLAN_YET")),
+      activateTrip: vi.fn(),
+      startPlanning: vi.fn().mockResolvedValue({ runId: RUN_ID, status: "QUEUED" }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const button = await screen.findByRole("button", { name: "Plan again" });
+    fireEvent.click(button);
+
+    // Activation would 409 on a trip that is no longer DRAFT; the retry goes
+    // through the planning route that has always accepted one.
+    await waitFor(() => expect(api.startPlanning).toHaveBeenCalledWith(TRIP_ID));
+    expect(api.activateTrip).not.toHaveBeenCalled();
+  });
+
+  it("does not block a retry on an empty Profile when this trip already has an authorization", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(activatedTrip("NO_PLAN_YET")),
+      getMyProfile: vi.fn().mockResolvedValue({ profile: null }),
+      startPlanning: vi.fn().mockResolvedValue({ runId: RUN_ID, status: "QUEUED" }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const button = await screen.findByRole("button", { name: "Plan again" });
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.queryByLabelText(/Nationality for quotes/i)).not.toBeInTheDocument();
+    fireEvent.click(button);
+    await waitFor(() => expect(api.startPlanning).toHaveBeenCalledWith(TRIP_ID));
+  });
+
+  it("asks for a nationality on retry only when both Profile and trip authorization are missing", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(activatedTrip("NO_PLAN_YET")),
+      getMyProfile: vi.fn().mockResolvedValue({ profile: null }),
+      listStaySearchAuthorizations: vi.fn().mockResolvedValue([]),
+      startPlanning: vi.fn().mockResolvedValue({ runId: RUN_ID, status: "QUEUED" }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const button = await screen.findByRole("button", { name: "Plan again" });
+    await waitFor(() => expect(screen.getByLabelText(/Nationality for quotes/i)).toBeInTheDocument());
+    expect(button).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: /Save to my private Profile/i })).toBeChecked();
+    fireEvent.change(screen.getByLabelText(/Nationality for quotes/i), { target: { value: "SG" } });
+    expect(button).toBeEnabled();
+    fireEvent.click(button);
+    await waitFor(() => expect(api.startPlanning).toHaveBeenCalledWith(TRIP_ID, {
+      source: "INPUT",
+      value: "SG",
+      saveToProfile: true,
+      confirmProviderUse: true,
+    }));
+  });
+
+  it("does not offer a run while one is under way or once a plan exists", async () => {
+    for (const state of ["IN_PROGRESS", "PLAN_AVAILABLE"]) {
+      const api = createApi({
+        getTrip: vi.fn().mockResolvedValue(activatedTrip(state)),
+        activateTrip: vi.fn(),
+        startPlanning: vi.fn(),
+      });
+      const view = renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+      await waitFor(() => expect(api.getTrip).toHaveBeenCalledWith(TRIP_ID));
+      expect(screen.queryByRole("button", { name: "Plan again" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
+      view.unmount();
+    }
   });
 });

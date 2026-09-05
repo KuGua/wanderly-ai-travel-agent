@@ -2,6 +2,7 @@ import { boundToolResult } from "../src/providers/llm-gateway.js";
 import { describe, expect, it } from "vitest";
 import {
   PlanningDataUnavailableError,
+  planningToolsFor,
   summarizeProviderGaps,
   validateProviderCoverage,
 } from "../src/services/planning-service.js";
@@ -11,7 +12,7 @@ describe("planning-service post-deprecation contracts", () => {
     const result = summarizeProviderGaps({
       requiredOrigins: ["Shanghai"],
       flights: [],
-      stays: [],
+      stayEvidenceCount: 0,
     });
     expect(result.gaps.find((g) => g.capability === "navigation")).toBeUndefined();
   });
@@ -20,7 +21,7 @@ describe("planning-service post-deprecation contracts", () => {
     const result = summarizeProviderGaps({
       requiredOrigins: ["Shanghai"],
       flights: [],
-      stays: [],
+      stayEvidenceCount: 0,
     });
     const capabilities = result.gaps.map((g) => g.capability).sort();
     expect(capabilities).toEqual(["flight", "stay"]);
@@ -30,7 +31,7 @@ describe("planning-service post-deprecation contracts", () => {
     const result = summarizeProviderGaps({
       requiredOrigins: ["Shanghai"],
       flights: [],
-      stays: [],
+      stayEvidenceCount: 0,
       unavailableCapabilities: [
         { capability: "navigation", code: "NOT_CONFIGURED" },
         { capability: "mobility", code: "PROVIDER_NOT_APPROVED" },
@@ -48,11 +49,56 @@ describe("planning-service post-deprecation contracts", () => {
    * it, so this must NOT throw: the run still has whatever else came back
    * live, and one refused flight request used to take all of it away.
    */
+  /**
+   * `allStays` had exactly one producer: a `StayProvider` stub that always
+   * returned NOT_CONFIGURED. So this gap fired on every run ever made,
+   * including runs holding ten live Nuitee quotes and sixteen discovered
+   * stays — the screen said "no accommodation found" over a database that had
+   * plenty. Stay status is evidence now, not a stubbed provider's silence.
+   */
+  it("reports a stay gap from real evidence, not from a stubbed provider", () => {
+    const withEvidence = summarizeProviderGaps({
+      requiredOrigins: ["Shanghai"],
+      flights: [],
+      stayEvidenceCount: 10,
+    });
+    expect(withEvidence.gaps.find((g) => g.capability === "stay")).toBeUndefined();
+
+    const without = summarizeProviderGaps({
+      requiredOrigins: ["Shanghai"],
+      flights: [],
+      stayEvidenceCount: 0,
+    });
+    expect(without.gaps).toContainEqual({ capability: "stay", code: "NO_RESULTS" });
+  });
+
+  /**
+   * A supplier that answered in a shape we could not read is not a route with
+   * no flights. Flattening every flight failure to NO_RESULTS told the
+   * traveller "no verified results" for a route that has plenty, and threw
+   * away the only lead for whoever debugs it next.
+   */
+  it("keeps the supplier's own reason instead of flattening it to NO_RESULTS", () => {
+    const result = summarizeProviderGaps({
+      requiredOrigins: ["Shanghai"],
+      flights: [],
+      stayEvidenceCount: 1,
+      flightFailureCode: "INVALID_PROVIDER_RESPONSE",
+    });
+    expect(result.gaps).toContainEqual({ capability: "flight", code: "INVALID_PROVIDER_RESPONSE" });
+
+    const unknown = summarizeProviderGaps({
+      requiredOrigins: ["Shanghai"],
+      flights: [],
+      stayEvidenceCount: 1,
+    });
+    expect(unknown.gaps).toContainEqual({ capability: "flight", code: "NO_RESULTS" });
+  });
+
   it("validateProviderCoverage lets an entirely unavailable flight capability through", () => {
     expect(() => validateProviderCoverage({
       requiredOrigins: ["Shanghai"],
       flights: [],
-      stays: [],
     })).not.toThrow();
   });
 
@@ -65,7 +111,6 @@ describe("planning-service post-deprecation contracts", () => {
     expect(() => validateProviderCoverage({
       requiredOrigins: ["Shanghai", "Singapore"],
       flights: [flightFrom("Shanghai")],
-      stays: [],
     })).toThrow(PlanningDataUnavailableError);
   });
 
@@ -73,7 +118,6 @@ describe("planning-service post-deprecation contracts", () => {
     expect(() => validateProviderCoverage({
       requiredOrigins: ["Shanghai"],
       flights: [flightFrom("Shanghai")],
-      stays: [],
     })).not.toThrow();
   });
 });
@@ -105,6 +149,45 @@ function flightFrom(origin: string) {
  * model's input limit, which came back as a 429 — reported, before the
  * classifier was fixed, as a provider outage.
  */
+/**
+ * The orchestrator researches accommodation, activities, places and hotels
+ * before synthesis, and each of those services reserves a
+ * `provider_search_runs` row per run. Offering their tools again did not give
+ * the model a second chance — it gave it a POLICY_DENIED in under a
+ * millisecond, three of them in the opening turn, which read as three fresh
+ * failures worth retrying.
+ */
+describe("planningToolsFor", () => {
+  const tools = [
+    { name: "flight.search", description: "", parameters: {} },
+    { name: "accommodation.discover", description: "", parameters: {} },
+    { name: "activities.search", description: "", parameters: {} },
+    { name: "places.search", description: "", parameters: {} },
+    { name: "places.adopt", description: "", parameters: {} },
+    { name: "hotel.search", description: "", parameters: {} },
+  ];
+
+  it("withdraws the one-shot search tools whose capability already ran", () => {
+    const offered = planningToolsFor(["accommodation", "activities", "hotel"], tools).map((t) => t.name);
+    expect(offered).not.toContain("accommodation.discover");
+    expect(offered).not.toContain("activities.search");
+    expect(offered).not.toContain("hotel.search");
+    // Not researched, so still on offer.
+    expect(offered).toContain("places.search");
+    expect(offered).toContain("flight.search");
+  });
+
+  it("keeps write tools, which are not one-shot searches", () => {
+    const offered = planningToolsFor(["places"], tools).map((t) => t.name);
+    expect(offered).not.toContain("places.search");
+    expect(offered).toContain("places.adopt");
+  });
+
+  it("offers everything when nothing has run yet", () => {
+    expect(planningToolsFor([], tools)).toHaveLength(tools.length);
+  });
+});
+
 describe("boundToolResult", () => {
   it("keeps a small result exactly as it was", () => {
     const result = { outcome: "LIVE", offers: [{ id: "a" }, { id: "b" }] };

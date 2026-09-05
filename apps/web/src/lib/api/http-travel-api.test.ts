@@ -85,19 +85,32 @@ describe("HttpTravelApi private conversation", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ tripId, version: 1, tripType: "ROUND_TRIP", currency: "USD", adults: 1, cabin: "ECONOMY", offerFreshnessMinutes: 15, confirmedBy: OWNER_ID, createdAt: CREATED_AT }, 201))
       .mockResolvedValueOnce(jsonResponse({ runId: RUN_ID, operation: "PLAN", status: "QUEUED", generationAttempt: 0, snapshotId }, 202))
+      .mockResolvedValueOnce(jsonResponse([{
+        id: "66666666-6666-4666-8666-666666666666",
+        providerName: "nuitee_connect",
+        field: "guest_nationality",
+        version: 1,
+        grantedAt: CREATED_AT,
+        expiresAt: null,
+      }]))
       .mockResolvedValueOnce(jsonResponse({ run: null }));
     const api = new HttpTravelApi("https://api.example.test", fetchMock);
 
     await api.saveTripSearchPreferences(tripId, { tripType: "ROUND_TRIP", currency: "USD", adults: 1, cabin: "ECONOMY", offerFreshnessMinutes: 15 });
-    await api.startPlanning(tripId);
+    await api.startPlanning(tripId, { source: "PROFILE", confirmProviderUse: true });
+    await api.listStaySearchAuthorizations(tripId);
     await api.getLatestPlanningRun(tripId);
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       `https://api.example.test/api/v1/trips/${tripId}/search-preferences`,
       "https://api.example.test/api/v1/planning/generate",
+      `https://api.example.test/api/v1/trips/${tripId}/stay-search-provider-authorizations`,
       `https://api.example.test/api/v1/planning/${tripId}/run/latest`,
     ]);
-    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({ tripId });
+    expect(JSON.parse(String((fetchMock.mock.calls[1][1] as RequestInit).body))).toEqual({
+      tripId,
+      quoteNationalityDecision: { source: "PROFILE", confirmProviderUse: true },
+    });
   });
 
   it("reads, cancels, and subscribes to an authenticated durable run", async () => {

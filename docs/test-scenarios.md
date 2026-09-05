@@ -1557,6 +1557,49 @@ that a grant/revoke invalidates dependent plans.
 - The authorization endpoint returns `404` for foreign trip/member
   combinations; `422` for non-ISO-3166-1 alpha-2 input.
 
+### TS-HOTEL-PROVIDER-2a — Capture, remember and reuse quote nationality during planning
+
+**Stories:** H1, H3, S1, S6
+
+**Objective:** Verify the planning CTA collects a missing quote nationality,
+optionally saves it to the private Profile, and does not repeat the question
+once either the Profile or this trip's authorization can satisfy the flow.
+
+**Steps:**
+
+1. Open a ready DRAFT trip whose owner has neither a Profile nationality nor a
+   Nuitee quote authorization. Confirm the CTA is disabled until an ISO country
+   value is selected and that “save to my private Profile” is a visible,
+   independently selectable control.
+2. Start planning once with save enabled. Inspect the private Profile, active
+   provider authorization, snapshot/task, response DTOs and telemetry.
+3. Start a different ready trip. Confirm the UI explains that the Profile value
+   will be used for this trip, requires the Start action, and sends `PROFILE`
+   without putting the value in the request.
+4. Retry a `PLANNING` trip in `NO_PLAN_YET` state while its active trip
+   authorization exists but its Profile nationality is absent. Confirm “Plan
+   again” is enabled and no nationality field is shown.
+5. Revoke the trip authorization and retry with save disabled. Confirm the form
+   reappears, the new value remains trip-scoped, and no Profile is created.
+6. Repeat the same request ID and simulate a terminal
+   `COMPLETED_WITH_GAPS` run whose final conversation refresh fails.
+
+**Expected outcomes:**
+
+- Save-enabled input atomically writes the owner-only Profile/memory fact,
+  provider grant, snapshot and durable task; save-disabled input creates only
+  the trip-scoped grant.
+- Profile reuse always requires the current Start/Plan-again action; an active
+  trip grant suppresses duplicate collection. No path infers a nationality
+  from conversation or sends it in a Profile-source request.
+- An idempotent retry returns the same run without another Profile write,
+  authorization version or snapshot.
+- The nationality value is absent from shared DTOs, browser persistence,
+  audit summaries, logs, traces and metric labels.
+- `COMPLETED`, `COMPLETED_WITH_GAPS`, `FAILED`, `STALE` and `CANCELLED` all
+  release the composer and clear the stored active-run pointer even if the
+  final history refresh is unavailable; “Wanderly is thinking” never latches.
+
 ### TS-HOTEL-TOOL-2 — Non-price accommodation discovery and destination integrity
 
 **Stories:** H3, H5, S1
@@ -2506,6 +2549,187 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
   存在的 `offers` 数组。该 schema 是 `.strict()`，少一个字段就会让两个 research
   端点的每一个响应解析失败——gaps 面板丢掉能力清单，详情页整页报错。回归用例
   直接用 trip `8a634324` 的真实 payload。
+
+### TS-NO-REOFFER-RESEARCHED-TOOLS — 已经跑过的能力不再交给模型
+
+**Objective:** 编排层在 synthesis 之前已经跑过 accommodation / activities /
+places / hotel，而这些服务都按 run 预留 `provider_search_runs` 行。工具列表却把它们
+原样再交给模型：开局那一轮模型并行发出的调用里，有三个在一毫秒内拿到
+`POLICY_DENIED` —— 不是第二次机会，是三个**假的失败信号**，模型据此更用力地重试。
+
+**Steps:**
+
+1. 以已研究能力 `["accommodation", "activities", "hotel"]` 构造工具列表。
+2. 以 `["places"]` 构造，检查 `places.adopt` 是否保留。
+3. 以空列表构造。
+
+**Expected outcomes:**
+
+- 对应的一次性搜索工具从列表中移除；未研究的能力照常提供。
+- 写类工具（`places.adopt`）保留 —— 它不是一次性搜索。
+- 没有任何能力跑过时，工具列表不变。
+
+### TS-TOOL-TURN-ACCOUNTING — 重复的调用不得吃掉 turn 预算
+
+**Objective:** 2026-09-05 那一轮在 turn 1 就答完了两个航班格，随后 turn 2–10
+连续五次重复调用 `flight.search`。缓存 0ms 返回、不花配额，**但每次照样消耗一个
+turn**，预算耗尽、方案没写成。而 `appendFlightProgress()` 每轮都在推
+「Do not call flight.search again」——**告诉模型别做，和让它做不到，是两回事**。
+
+**Steps:**
+
+1. 所有必需航班格答完后，检查下一轮实际提供给模型的工具列表。
+2. 连续多轮只发出与此前完全相同的调用，检查 dispatch 次数与 turn 消耗。
+3. 一直只重复到超过允许额度，检查是否仍然终止。
+
+**Expected outcomes:**
+
+- 航班矩阵补齐后 `flight.search` **从工具列表中撤下**，而不仅仅是被劝阻；
+  其余工具照常提供。工具列表为空时强制模型返回方案（`tool_choice: "none"`）。
+- 完全相同的调用（工具名 + 参数）从本轮记录中作答，不再发往供应商——原本只有
+  `flight.search` 有这个缓存，重复的 `activities.search` 仍会打出去，撞上
+  一次性守卫后返回拒绝，在模型看来像一次值得重试的新失败。
+- 一整轮里全部是重复调用时不消耗 turn 预算，但**有额度上限**；超过后照常计数，
+  所以只会重复自己的模型仍然会终止。
+- **撤下即不可调用**：模型仍然发出该工具调用时，直接返回结构化的
+  `TOOL_NOT_AVAILABLE_THIS_TURN` 并要求返回方案，**不派发、不碰供应商**。
+  仅从列表里移除是不够的——派发只按名字，模型照样能调到。
+- `flight.search` 与其余搜索服务一样**先预留 `provider_search_runs` 行再调用供应商**：
+  run 内的完全重复请求以 `POLICY_DENIED` 被拒，不花第二次供应商调用；此前它是
+  先调用后插入，重复请求付了钱才死在唯一索引上，且是**裸 Postgres 错误**。
+- 重复判定对航班按 `(originId, destinationId)` 归一化，与「工具名+参数原文」的
+  签名并用：只用签名时，模型换一种参数写法（键顺序、可选字段）就绕过去，重复调用
+  真的打到供应商，撞上 `provider_search_runs` 的确定性 fingerprint 唯一索引，
+  抛出**裸 Error**（非 SkillError）→ 归类为 `UNCLASSIFIED`/`UPSTREAM_FAILURE`，
+  在模型看来是刚成功的航班格突然失败了，于是它更要重试。
+- 文案不得建议一个界面不提供的动作：`planningToolBudgetExhausted` 不再说
+  「再试一次」（`isRetryableFailure` 并不包含该 code，屏幕上没有重试按钮），
+  改为说明本轮已取得的结果已经保存。
+
+### TS-REENTER-PLANNING — 激活过一次之后仍然能再跑一轮
+
+**Objective:** Trip `24a0799f` 在第一轮规划失败后完全卡死。「开始规划」卡片只在
+`status === "DRAFT"` 时渲染，而激活是单向的；共享方案面按规范不提供手动 replan；
+提示词的 handoff 块对非 DRAFT 返回空字符串，于是助手继续让用户点一个不存在的按钮。
+
+**Steps:**
+
+1. DRAFT 且 brief 完整 → 检查 CTA 与点击后调用的端点。
+2. 激活后运行失败/无方案 → 检查 CTA、文案与调用的端点。
+3. 运行进行中 → 检查 CTA。
+4. 已有 PROPOSED/ACTIVE 方案 → 检查 CTA。
+5. 只有 STALE 方案 → 检查状态判定。
+6. 四种状态下分别检查 handoff 提示词块。
+
+**Expected outcomes:**
+
+- `sharedPlanningState` 由服务端派生一次，同时出现在 trip DTO 和
+  `PersonalTripContext`；界面与提示词不得各自重算（这条重复正是本缺陷的成因）。
+- `NOT_STARTED` → 「开始规划」，点击走 `POST /trips/:tripId/activate`。
+- `NO_PLAN_YET` → 「重新规划」，点击走 `POST /planning/generate`；**不得**调用
+  activate（对非 DRAFT 必然 409）。重试不重写已确认的搜索偏好——那会切版本并
+  按规范 stale 掉方案与确认。
+- `IN_PROGRESS` / `PLAN_AVAILABLE` → 不渲染任何规划 CTA。
+- 仅有 STALE/SUPERSEDED 方案时状态为 `NO_PLAN_YET`：历史可读，但不算「有方案」。
+- handoff 块四种状态各有文案：进行中不得催点按钮、无方案时指向「重新规划」且
+  不得声称方案已生成、有方案时指向共享方案面且不得复述方案内容。
+- 这不是 `member-conversation-handoff-implementation.md` 禁止的手动 replan：
+  该禁令针对**已有方案**的情形，同文档第 154 行明写「无 plan 时接受 PLAN」。
+
+### TS-GAP-TRUTHFULNESS — 缺口必须说真话
+
+**Objective:** 一次运行同时报了两句假话：`stay: NO_RESULTS`（库里有 10 条 Nuitee
+报价、16 条住宿发现、stay coverage LIVE）和 `flight: NO_RESULTS`（供应商实际说的是
+`INVALID_PROVIDER_RESPONSE`）。
+
+**Steps:**
+
+1. 一轮里有 hotel/accommodation 证据，检查是否仍报 stay 缺口。
+2. 航班以 `INVALID_PROVIDER_RESPONSE` 失败，检查 gap code 与详情页文案。
+3. coverage 扇出记录 UNAVAILABLE 时检查 `provider_search_runs.error_code`。
+4. 一轮完全没有住宿证据时，检查是否仍报 stay 缺口。
+
+**Expected outcomes:**
+
+- stay 缺口由**真实证据**（hotel quotes + accommodation discovery）决定。旧的
+  `allStays` 只有一个生产者——一个恒返回 `NOT_CONFIGURED` 的 `StayProvider` 桩——
+  所以它让**每一次**运行都报住宿缺口。该桩连同 `StayProvider` 接口已删除。
+- 航班缺口带供应商自己的分类，逐层保留：coverage 插入时写入 `error_code`（此前写
+  `null`，reason 在落库那一刻就丢了）、矩阵单元格带上它、`flightMatrixToGaps` 用它
+  而不是一律 `UPSTREAM_FAILURE`、`summarizeProviderGaps` 用它而不是一律 `NO_RESULTS`。
+- 真的没有住宿证据时仍然如实报 `stay: NO_RESULTS`。
+
+### TS-TOOL-BUDGET-DEGRADES — turn 预算耗尽不得丢弃已取得的证据
+
+**Objective:** Trip `24a0799f`（2026-09-05）的 run 以 `TOOL_CALL_MAX_TURNS` 失败，
+而库里已经落了 28 条航班 offer、10 条酒店报价、16 条住宿、4 条活动。
+
+**Steps:**
+
+1. 让工具循环耗尽 turn 预算（模型始终不返回 plan）。
+2. 检查 run 状态、`planning_research_results`、以及 `research/latest` 的可读性。
+3. 同一轮内所有能力都不可用时，仍走 `NO_CITABLE_EVIDENCE`。
+
+**Expected outcomes:**
+
+- run 落 `COMPLETED_WITH_GAPS` 且 `error_code` 为空，**不是 `FAILED`**。
+- 写入 `planning_research_results`，reason `TOOL_BUDGET_EXHAUSTED`；
+  这一轮已落的 offers 经 `GET /trips/:tripId/research/latest` 可读。
+- **不产出 plan**：模型没有给出选择，服务端不得替它合成一个推荐。
+- `NO_CITABLE_EVIDENCE` 与 `TOOL_BUDGET_EXHAUSTED` 是两个不同的 reason，
+  走同一条 summary 分支但各自可辨。
+
+### TS-CANONICAL-ROUTE-MATRIX — 航线矩阵只派生一次
+
+**Objective:** `TS-ROUTE-IDENTITY` 让 coverage 与校验器说同一种身份，但**第三、
+第四个读取方**仍各自派生：模型网关的 `requiredFlightCells` 用城市名，数据库完整性
+检查也用城市名与 `provider_search_runs.origin_id` 精确比较。于是网关要
+`Singapore → Shanghai`，模型只能搜 `SIN → SHA`，矩阵永远补不齐 —— 每一轮强制再调
+一次 `flight.search`，直到轮次耗尽。为阻止这个循环而加的守卫（撤下工具、重复退款）
+全部以「矩阵已补齐」为条件，因此全部失效。
+
+**Steps:**
+
+1. 以 `Singapore / 新加坡 → Shanghai` 解析规范矩阵。
+2. 目的地换成没有受控机场的城市。
+3. 快照里直接写机场码（运维夹具、或用户就写了 "NRT"）。
+4. 分别检查网关矩阵、coverage 扇出、数据库完整性检查三者拿到的格子。
+
+**Expected outcomes:**
+
+- 三个读取方拿到**同一组**格子：`SIN→PVG`、`SIN→SHA`；中英文城市名结果一致。
+- 无受控机场的城市不产生格子，记入 `citiesWithoutAirport`，**不猜邻近机场**（§#22）。
+- 快照里已经是机场码时按其自身接受，不得报成"该行程没有机场"。
+- `cityFor()` 能把机场码译回旅行者写的城市：缺口文案说的是「上海」，不是「(PVG)」。
+- coverage 已经覆盖全部格子时，模型这一轮不再被强制调用 `flight.search`。
+
+### TS-ROUTE-IDENTITY — 航线只有一种身份
+
+**Objective:** 一条航线在这个系统里有两种写法：供应商要受控机场码（`SIN`、`PVG`），
+snapshot 里是旅行者自己的话（`Singapore`、`新加坡`、`上海`）。只要有一层不做换算，
+同一条航线就会在那一层消失。2026-09-05 两处同时中招。
+
+**Steps:**
+
+1. 以 `departureCities: ["新加坡"]`、`destinationCandidates: ["Shanghai"]` 跑 coverage 研究，
+   记录 adapter 实际收到的参数。
+2. 目的地换成没有受控机场的城市（如 Kyoto）。
+3. 用带机场码的 offer（`SFO → NRT`）构造一份目的地为 `Tokyo` 的方案，送 `validatePlanOutput`。
+4. 同样的方案改成 `SFO → CDG`。
+5. 两个出发地，其中一个的机场没有任何 offer。
+
+**Expected outcomes:**
+
+- adapter 收到的永远是 `^[A-Z]{3}$`：`SIN → PVG` / `SIN → SHA`。中英文城市名解析一致。
+  SerpApi 对城市名的回答是 `400 departure_id ("Singapore") should either be an
+  uppercase 3-letter code…`，这条路径不得再产生它。
+- 没有受控机场的城市不发起任何搜索、也**不猜邻近机场**（§#22），由调用方报成航班缺口。
+- `evaluatedDestinations` / `missingDestinations` 仍以 snapshot 的城市名为键——
+  下游的目的地资格过滤全靠它。
+- 方案校验按 `airportServesCity` 判定航线端点：`NRT` 对 `Tokyo` 通过，
+  `CDG` 对 `Tokyo` 仍报 `DESTINATION_MISMATCH`，`ORIGIN_NOT_ALLOWED` 与
+  `ORIGIN_MISSING` 用同一个判定。字符串相等的实现意味着**任何**带真实机场码的
+  offer 都无法通过它自己的方案校验。
 
 ### TS-PLAN-WITHOUT-FLIGHTS — 航班不可用不再withheld整份方案
 

@@ -222,6 +222,10 @@ export const tripMemberSchema = z.object({
   joinedAt: z.string().datetime(),
 });
 
+export const sharedPlanningStateSchema = z.enum([
+  "NOT_STARTED", "IN_PROGRESS", "NO_PLAN_YET", "PLAN_AVAILABLE",
+]);
+
 export const tripDetailsResponseSchema = z.object({
   trip: z.object({
     id: uuidSchema,
@@ -238,6 +242,14 @@ export const tripDetailsResponseSchema = z.object({
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     pinnedSession: tripPinnedSessionSchema.nullable().optional(),
+    /**
+     * Server-derived: whether another planning run can be offered right now.
+     * See `services/shared-planning-state-service.ts`. It is here rather than
+     * recomputed per client so the chat CTA and the assistant's prompt cannot
+     * disagree about it — which is exactly how a trip became unplannable on
+     * 2026-09-05.
+     */
+    sharedPlanningState: sharedPlanningStateSchema,
     /**
      * A brief extracted from conversation that the traveller has not confirmed
      * yet. Never a trip fact — the confirmed values are the fields above.
@@ -284,9 +296,24 @@ export const revokeConsentSchema = z.object({
 
 // ─── Planning ───────────────────────────────────────────────────────────────
 
+export const quoteNationalityDecisionSchema = z.discriminatedUnion("source", [
+  z.object({
+    source: z.literal("PROFILE"),
+    confirmProviderUse: z.literal(true),
+  }).strict(),
+  z.object({
+    source: z.literal("INPUT"),
+    value: z.string().regex(/^[A-Za-z]{2}$/),
+    saveToProfile: z.boolean(),
+    confirmProviderUse: z.literal(true),
+  }).strict(),
+]);
+export type QuoteNationalityDecision = z.infer<typeof quoteNationalityDecisionSchema>;
+
 export const planRequestSchema = z.object({
   tripId: uuidSchema,
-});
+  quoteNationalityDecision: quoteNationalityDecisionSchema.optional(),
+}).strict();
 
 export const flightCabinSchema = z.enum(["ECONOMY", "PREMIUM_ECONOMY", "BUSINESS", "FIRST"]);
 export const tripSearchPreferencesRequestSchema = z.object({
@@ -1653,13 +1680,10 @@ export const tripActivationRequestSchema = z.object({
   travelDateEnd: dateStr.nullable().optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
-  /**
-   * Nationality to quote hotel prices against, sent only when the traveller
-   * had to be asked for it because their profile has none. When the profile
-   * has one, the server uses that and this is absent — the client never
-   * echoes a value it read from the profile back at us.
-   */
-  guestNationality: z.string().regex(/^[A-Za-z]{2}$/).optional(),
+  /** Explicitly separates private Profile storage from the provider-only
+   * authorization for this trip. PROFILE never echoes the stored value
+   * through the browser. */
+  quoteNationalityDecision: quoteNationalityDecisionSchema.optional(),
 }).strict();
 
 export const updateDraftTripBriefRequestSchema = z.object({

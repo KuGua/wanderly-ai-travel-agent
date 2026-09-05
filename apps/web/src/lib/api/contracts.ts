@@ -140,6 +140,16 @@ export const suggestThreadTitleResponseSchema = z.object({
 // This keeps the active trip/thread metadata available to the UI immediately.
 export const createThreadResponseSchema = threadSchema;
 
+/**
+ * Where a trip stands on the road to a shared plan. Derived once on the
+ * server (`services/shared-planning-state-service.ts`) precisely so this
+ * client and the assistant's prompt cannot disagree about it.
+ */
+export const sharedPlanningStateSchema = z.enum([
+  "NOT_STARTED", "IN_PROGRESS", "NO_PLAN_YET", "PLAN_AVAILABLE",
+]);
+export type SharedPlanningState = z.infer<typeof sharedPlanningStateSchema>;
+
 // Single-trip detail DTO returned by GET /api/v1/trips/:tripId.
 export const tripDetailSchema = z.object({
   id: z.string().uuid(),
@@ -156,6 +166,13 @@ export const tripDetailSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   pinnedSession: tripPinnedSessionSchema.nullable().optional(),
+  /**
+   * Server-derived: whether another planning run can be offered right now.
+   * Mirrors `sharedPlanningStateSchema` in apps/api/src/types/schemas.ts.
+   * Optional so a client can render against an older server, but the CTA
+   * treats a missing value as "cannot offer" rather than guessing.
+   */
+  sharedPlanningState: sharedPlanningStateSchema.optional(),
   /** Extracted from conversation, not yet confirmed. Never a trip fact. */
   pendingBriefProposal: z.object({
     departureCities: z.array(z.string()).optional(),
@@ -516,6 +533,19 @@ export const planningTaskAcceptedResponseSchema = z.object({
   generationAttempt: z.literal(0),
   snapshotId: z.string().uuid(),
 }).strict();
+
+export const quoteNationalityDecisionSchema = z.discriminatedUnion("source", [
+  z.object({
+    source: z.literal("PROFILE"),
+    confirmProviderUse: z.literal(true),
+  }).strict(),
+  z.object({
+    source: z.literal("INPUT"),
+    value: z.string().regex(/^[A-Za-z]{2}$/),
+    saveToProfile: z.boolean(),
+    confirmProviderUse: z.literal(true),
+  }).strict(),
+]);
 
 /**
  * ─── DRAFT Personal Research (docs/draft-personal-research-implementation.md) ──
@@ -1031,14 +1061,7 @@ export const tripActivationRequestSchema = z.object({
   travelDateEnd: dateSchema.nullable().optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
   titleLocale: z.enum(["en", "zh"]),
-  /**
-   * ISO 3166-1 alpha-2, sent only when the traveller had to be asked because
-   * their profile carries none. The server prefers the profile and never
-   * guesses, so a trip whose owner has neither cannot be activated: the plan
-   * task refuses without a confirmed quote nationality, and activation came
-   * back 422 with nothing on screen explaining what was missing.
-   */
-  guestNationality: z.string().regex(/^[A-Za-z]{2}$/).optional(),
+  quoteNationalityDecision: quoteNationalityDecisionSchema.optional(),
 }).strict();
 
 export const tripActivationResponseSchema = z.object({
@@ -1264,6 +1287,7 @@ export type LocationIntroductionReady = z.infer<typeof locationIntroductionReady
 export type TripSearchPreferencesInput = z.infer<typeof tripSearchPreferencesInputSchema>;
 export type TripSearchPreferencesResponse = z.infer<typeof tripSearchPreferencesResponseSchema>;
 export type PlanningTaskAcceptedResponse = z.infer<typeof planningTaskAcceptedResponseSchema>;
+export type QuoteNationalityDecision = z.infer<typeof quoteNationalityDecisionSchema>;
 export type LatestPlanResponse = z.infer<typeof latestPlanResponseSchema>;
 export type LatestPlanningRunResponse = z.infer<typeof latestPlanningRunResponseSchema>;
 export type LocationIntroductionGenerating = z.infer<typeof locationIntroductionGeneratingSchema>;
@@ -1669,6 +1693,7 @@ export const staySearchAuthorizationDtoSchema = z.object({
   grantedAt: z.string().datetime(),
   expiresAt: z.string().datetime().nullable(),
 }).strict();
+export const staySearchAuthorizationsResponseSchema = z.array(staySearchAuthorizationDtoSchema);
 export type StaySearchAuthorizationDto = z.infer<typeof staySearchAuthorizationDtoSchema>;
 
 /**

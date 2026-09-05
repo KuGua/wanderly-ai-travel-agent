@@ -322,3 +322,15 @@ type PersonalTripContext = {
 - 用私聊文本直接更新 Profile、consent、snapshot 或计划；
 - 新建 Trip 作为对话副作用；
 - Redis、WebSocket、Temporal、额外 Agent 服务或新的外部旅行 provider。
+
+## PersonalTripContext allow-list 增补（2026-09-06）
+
+新增 `sharedPlanningState`（`NOT_STARTED` / `IN_PROGRESS` / `NO_PLAN_YET` /
+`PLAN_AVAILABLE`）。与 `canStartSharedPlanning` 同性质：服务端派生的低基数判断，
+不含任何成员数据、不含 brief 正文。
+
+加它的原因：`canStartSharedPlanning` 只回答「DRAFT brief 是否完整」，行程一经激活
+即为 false，而 `buildDraftHandoffProse` 对非 DRAFT 返回空字符串——系统提示词却把
+该块声明为活动边界的唯一权威信号。信号消失后模型退回通用规则，永远指向一个已经
+消失的「开始规划」按钮。同一个值同时供给 trip DTO 与本上下文，界面与提示词因此
+不可能各说各话（见 `services/shared-planning-state-service.ts`）。

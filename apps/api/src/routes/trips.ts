@@ -1,9 +1,10 @@
 import { eq, and, asc, count, desc, inArray, sql, type SQL } from "drizzle-orm";
+import { loadSharedPlanningState } from "../services/shared-planning-state-service.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/database.js";
-import { grantQuoteNationality } from "../services/stay-search-provider-authorization.js";
+import { applyQuoteNationalityDecision } from "../services/quote-nationality-decision-service.js";
 import { saveConfirmedStaySearchPreferences } from "../services/stay-search-preferences-service.js";
 import {
   agentTaskRuns,
@@ -17,7 +18,6 @@ import {
   itineraryPlans,
   memberConfirmations,
   consentGrants,
-  userProfiles,
 } from "../db/schema.js";
 import {
   createTripSchema,
@@ -392,26 +392,15 @@ export async function tripRoutes(app: FastifyInstance) {
       // PLANNING: each required member must still confirm their own inputs.
       let planningRun: { runId: string; snapshotId: string } | undefined;
       if (requiredMembers.length === 1 && body.travelDateStart && derivedTravelDateEnd) {
-        // Hotel quotes need a guest nationality, and until now nothing granted
-        // one: the endpoint existed but no screen called it, so every trip made
-        // through the product had none. The stay search then never returned
-        // LIVE, the destination was recorded as uncovered, and the whole run
-        // refused to synthesize a plan — with nothing on screen saying why.
-        //
-        // The value comes from the traveller's own profile, or from what they
-        // were asked for on the card when their profile has none. It is never
-        // guessed and never defaulted, and pressing "Start planning" is the
-        // consent, exactly as it already is for the flight conditions (§3.2).
-        // Granted inside this transaction so a trip is never left PLANNING and
-        // unauthorized.
-        const [creatorProfile] = await tx.select({ nationality: userProfiles.nationality })
-          .from(userProfiles).where(eq(userProfiles.userId, request.user.id)).limit(1);
-        const quoteNationality = body.guestNationality ?? creatorProfile?.nationality ?? null;
-        if (quoteNationality) {
-          await grantQuoteNationality({
+        // Starting the trip confirms provider use explicitly. INPUT may also
+        // save the same value to the owner's private Profile; PROFILE reads it
+        // only on the server, so the browser never echoes the sensitive value.
+        if (body.quoteNationalityDecision) {
+          await applyQuoteNationalityDecision({
+            ctx,
             tripId,
-            memberId: request.user.id,
-            value: quoteNationality,
+            userId: request.user.id,
+            decision: body.quoteNationalityDecision,
             tx,
           });
         }
@@ -766,9 +755,15 @@ export async function tripRoutes(app: FastifyInstance) {
       }
     }
 
+    const sharedPlanningState = await loadSharedPlanningState({
+      tripId,
+      tripStatus: trip.status,
+    });
+
     return tripDetailsResponseSchema.parse({
       trip: {
         ...trip,
+        sharedPlanningState,
         // Old deployments could persist a country/region in this preview.
         // Hide such a stale preview rather than rendering a save button whose
         // server-authoritative write is guaranteed to reject it. The stored

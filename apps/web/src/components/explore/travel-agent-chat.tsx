@@ -22,6 +22,7 @@ import type {
   PersonalResearchOperationCapability,
   DestinationCue,
   OfferCue,
+  QuoteNationalityDecision,
 } from "@/lib/api/contracts";
 import { FlightOfferCard } from "@/components/trips/flight-offer-card";
 import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
@@ -29,13 +30,14 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { threadKeys } from "@/lib/query/keys";
 import { TravelApiError } from "@/lib/api/errors";
-import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useMyProfile, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
+import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useMyProfile, useOwnerConversation, useStartPlanning, useStaySearchAuthorizations, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { useTravelApi } from "@/lib/query/provider";
 import { Link, useRouter } from "@/i18n/navigation";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
 type PendingTurn = ConversationTurnRequest;
+type ConversationLaunchPhase = "idle" | "preparing" | "launching" | "landing";
 /**
  * One lookup the assistant made while composing the current reply. Kept in
  * arrival order so the reader sees the sequence of work, and settled entries
@@ -202,6 +204,7 @@ export function TravelAgentChat({
   const tripPin = useTripPin(tripId ?? null);
   const trip = useTrip(tripId);
   const activateTrip = useActivateTrip(tripId ?? "");
+  const startPlanning = useStartPlanning(tripId ?? "");
   const pinnedSession = tripPin.data ?? null;
   // Send is allowed when we already have a thread, or when the parent
   // has supplied a provisioner the first send can use (exploration
@@ -211,6 +214,11 @@ export function TravelAgentChat({
     && resolvedThreadStatus !== "error";
 
   const [draft, setDraft] = useState("");
+  // The collapsed globe composer opens with a physical launch rather than a
+  // snap. This is intentionally local UI state: the thread is unchanged, and
+  // reopening a different browser tab must not replay someone else's rocket.
+  const [conversationLaunchPhase, setConversationLaunchPhase] = useState<ConversationLaunchPhase>("idle");
+  const launchTimerRef = useRef<number | null>(null);
   const [sessionMessages, setSessionMessages] = useState<ConversationMessage[]>([]);
   /**
    * Which thread the buffer above belongs to.
@@ -316,6 +324,7 @@ export function TravelAgentChat({
   const [isActingOnOfferCue, setIsActingOnOfferCue] = useState(false);
   const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
   const [isStartingSharedPlan, setIsStartingSharedPlan] = useState(false);
+  const [saveNationalityToProfile, setSaveNationalityToProfile] = useState(true);
   // This is a voluntary pause, not a rejection of the trip brief. A normal
   // follow-up must not repeat the CTA; the named “Start planning” phrase is
   // the deliberate way to bring it back during this chat session.
@@ -677,8 +686,14 @@ export function TravelAgentChat({
   useEffect(() => {
     const status = agentRun.data?.status;
     if (!activeRunId || !status) return;
-    if (status === "COMPLETED" && effectiveThreadId && !completedRunHandledRef.current.has(activeRunId)) {
+    if ((status === "COMPLETED" || status === "COMPLETED_WITH_GAPS")
+      && !completedRunHandledRef.current.has(activeRunId)) {
       completedRunHandledRef.current.add(activeRunId);
+      // Mark terminal before the asynchronous history refresh. A final SSE
+      // delta can re-run this effect and trigger its cleanup while that request
+      // is pending; delaying this marker left activeRunId latched forever.
+      setCompletedStreamRunId(activeRunId);
+      if (!effectiveThreadId) return;
       let active = true;
       void api.getOwnerConversation(effectiveThreadId).then((restored) => {
         // Into the SHARED cache first, and unconditionally — this must land
@@ -705,8 +720,11 @@ export function TravelAgentChat({
           if (assistantMessageId && !streamState.text && assistant?.role === "ASSISTANT" && assistant.content) {
             setRecoveredStream({ runId: activeRunId, assistantMessageId, text: assistant.content });
           }
-          setCompletedStreamRunId(activeRunId);
         }
+      }).catch(() => {
+        // The terminal task status remains authoritative. Query polling or a
+        // later conversation refresh can recover history; the composer must
+        // not stay disabled because this read failed.
       });
       return () => { active = false; };
     }
@@ -773,7 +791,6 @@ export function TravelAgentChat({
     const cues = conversation.data?.pendingOfferCues ?? [];
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFlightOfferCue((current) => cues.find((cue) => cue.capability === "flight") ?? current);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setHotelOfferCue((current) => cues.find((cue) => cue.capability === "hotel") ?? current);
   }, [conversation.data?.pendingOfferCues]);
 
@@ -856,6 +873,10 @@ export function TravelAgentChat({
     };
   }, [open, conversation.isLoading, messages.length]);
 
+  useEffect(() => () => {
+    if (launchTimerRef.current !== null) window.clearTimeout(launchTimerRef.current);
+  }, []);
+
   useEffect(() => {
     if (!docked) return;
     const node = panelScrollRef.current;
@@ -918,7 +939,36 @@ export function TravelAgentChat({
   }
 
   function collapseConversation() {
+    if (!docked && !(typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+      if (launchTimerRef.current !== null) window.clearTimeout(launchTimerRef.current);
+      setConversationLaunchPhase("landing");
+      launchTimerRef.current = window.setTimeout(() => {
+        setConversationLaunchPhase("idle");
+        launchTimerRef.current = null;
+      }, 720);
+    }
     onDismiss();
+  }
+
+  function openConversationWithLaunch() {
+    const reduceMotion = typeof window.matchMedia === "function"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (docked || reduceMotion) {
+      onOpen();
+      return;
+    }
+    if (launchTimerRef.current !== null) window.clearTimeout(launchTimerRef.current);
+    // First mount the compact screen and rocket, then advance one paint later
+    // so CSS has a real start and end state to interpolate between.
+    setConversationLaunchPhase("preparing");
+    onOpen();
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => setConversationLaunchPhase("launching"));
+    });
+    launchTimerRef.current = window.setTimeout(() => {
+      setConversationLaunchPhase("idle");
+      launchTimerRef.current = null;
+    }, 720);
   }
 
   function dismissStartPlanningCard() {
@@ -1057,7 +1107,33 @@ export function TravelAgentChat({
 
   async function startSharedPlanning() {
     const currentTrip = trip.data?.trip;
-    if (!tripId || !currentTrip || currentTrip.status !== "DRAFT" || isStartingSharedPlan) return;
+    if (!tripId || !currentTrip || isStartingSharedPlan) return;
+    // A trip past DRAFT has already been activated once: its snapshot fields,
+    // confirmed flight and stay preferences and quote-nationality grant are
+    // all durable, and `POST /planning/generate` re-reads the latest of each
+    // and cuts a fresh snapshot. Activation is the wrong call there — it 409s
+    // on anything but DRAFT.
+    if (currentTrip.sharedPlanningState === "NO_PLAN_YET") {
+      setIsStartingSharedPlan(true);
+      setRequestError(null);
+      try {
+        const accepted = await startPlanning.mutateAsync(quoteNationalityDecision
+          ? { quoteNationalityDecision }
+          : undefined);
+        setActiveRunId(accepted.runId);
+        storeActiveRunId(accepted.runId);
+        if (quoteNationalityDecision?.source === "INPUT" && quoteNationalityDecision.saveToProfile) {
+          await profile.refetch();
+        }
+        await trip.refetch();
+      } catch (error) {
+        setRequestError(error);
+      } finally {
+        setIsStartingSharedPlan(false);
+      }
+      return;
+    }
+    if (currentTrip.status !== "DRAFT") return;
     setIsStartingSharedPlan(true);
     setRequestError(null);
     try {
@@ -1068,13 +1144,16 @@ export function TravelAgentChat({
         travelDateEnd: currentTrip.travelDateEnd,
         travelDays: currentTrip.travelDays ?? undefined,
         titleLocale,
-        ...(needsGuestNationality && guestNationality ? { guestNationality } : {}),
+        ...(quoteNationalityDecision ? { quoteNationalityDecision } : {}),
       }).then((result) => {
         if (result.planningRun) {
           setActiveRunId(result.planningRun.runId);
           storeActiveRunId(result.planningRun.runId);
         }
       });
+      if (quoteNationalityDecision?.source === "INPUT" && quoteNationalityDecision.saveToProfile) {
+        await profile.refetch();
+      }
       await trip.refetch();
     } catch (error) {
       setRequestError(error);
@@ -1090,15 +1169,11 @@ export function TravelAgentChat({
   // so anything reaching this point with destinations present is a further one.
   const cueIsAdditionalDestination = (trip.data?.trip.destinationCandidates.length ?? 0) > 0;
 
-  // Hotel prices are quoted per nationality, and the server will not guess one:
-  // it takes the traveller's profile value or the one sent here, and the plan
-  // task refuses without it. The server has accepted `guestNationality` since
-  // the quote work landed, but nothing ever asked for it — so anyone whose
-  // profile had none pressed "Start planning", got a 422, and read only
-  // "这条消息暂时无法被接受".
-  // Only the workspace renders the card that can ask, so the globe has no
-  // reason to fetch a profile it will never read.
+  // Profile storage and provider use are distinct decisions. The server reads
+  // PROFILE values itself; INPUT can be saved only through the explicit choice
+  // below. Existing trip-scoped authorization is authoritative for a retry.
   const profile = useMyProfile({ enabled: Boolean(tripId) && !onGlobe });
+  const staySearchAuthorizations = useStaySearchAuthorizations(!onGlobe ? tripId : null);
   const [guestNationality, setGuestNationality] = useState("");
   // Until the profile answers, whether a nationality is needed is unknown —
   // and an enabled button during that window is the same 422 with extra steps.
@@ -1112,6 +1187,53 @@ export function TravelAgentChat({
     && trip.data.trip.destinationCandidates.length > 0
     && Boolean(trip.data.trip.travelDateStart)
     && Boolean(trip.data.trip.travelDateEnd || trip.data.trip.travelDays);
+
+  // Activation is one-way, and this card used to be the only thing that could
+  // start a run. So a trip whose first run failed had no way back: the CTA
+  // rendered for DRAFT only, the shared surface deliberately offers no manual
+  // replan, and the assistant kept pointing at a button that was gone. The
+  // server route for a further run has always existed and accepted a PLANNING
+  // trip — `POST /planning/generate` refuses DRAFT and nothing else — and the
+  // client method and hook for it shipped with no caller.
+  //
+  // Offering a retry here is not the manual replan the handoff spec forbids;
+  // that ban is about an existing plan, and §154 of the same document says a
+  // trip with no plan accepts a fresh PLAN.
+  const canRetrySharedPlanning = trip.data?.trip.sharedPlanningState === "NO_PLAN_YET";
+  const showPlanningCta = canStartSharedPlanning || canRetrySharedPlanning;
+  // Older/custom TravelApi adapters may not expose the read endpoint yet.
+  // Treat that as "no verified grant" rather than leaving the CTA loading
+  // forever; the explicit decision below still fails closed server-side.
+  const authorizationsSettled = !api.listStaySearchAuthorizations
+    || staySearchAuthorizations.isSuccess
+    || staySearchAuthorizations.isError;
+  const hasActiveQuoteAuthorization = Boolean(staySearchAuthorizations.data?.some(
+    (authorization) => authorization.providerName === "nuitee_connect"
+      && authorization.field === "guest_nationality",
+  ));
+  const retryNeedsQuoteDecision = canRetrySharedPlanning
+    && authorizationsSettled
+    && !hasActiveQuoteAuthorization;
+  const needsQuoteDecision = canStartSharedPlanning || retryNeedsQuoteDecision;
+  const showNationalityInput = needsQuoteDecision && needsGuestNationality;
+  const planningReadinessSettled = canRetrySharedPlanning
+    ? authorizationsSettled && (!retryNeedsQuoteDecision || profileSettled)
+    : profileSettled;
+  const planningActionDisabled = isStartingSharedPlan
+    || !planningReadinessSettled
+    || (showNationalityInput && !guestNationality);
+  const quoteNationalityDecision: QuoteNationalityDecision | undefined = needsQuoteDecision && profileSettled
+    ? needsGuestNationality
+      ? guestNationality
+        ? {
+          source: "INPUT",
+          value: guestNationality,
+          saveToProfile: saveNationalityToProfile,
+          confirmProviderUse: true,
+        }
+        : undefined
+      : { source: "PROFILE", confirmProviderUse: true }
+    : undefined;
 
   function confirmFlightSearch() {
     if (isSending) return;
@@ -1181,7 +1303,7 @@ export function TravelAgentChat({
     // A block-level bubble filled the whole chat column before `ml-auto` had
     // any visible effect. Fit the message first, then anchor that fitted box
     // to the right; long replies still grow until the readable 86% cap.
-    ? "ml-auto w-fit max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
+    ? "ml-auto w-fit max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-white wanderly-edge wanderly-r-md wanderly-shadow-sm"
     // The globe bubble's fill, edge, radius and tail live in globals.css: it is
     // the one place in the app drawn as a classic iMessage bubble rather than
     // in the system's irregular-radius, hard-ink-edge language.
@@ -1347,7 +1469,21 @@ export function TravelAgentChat({
     // starts mid-line.
     const rects = range.getClientRects?.();
     const rect = rects && rects.length > 0 ? rects[0] : range.getBoundingClientRect();
-    setHighlight({ text, x: rect.left + rect.width / 2, y: rect.top, messageId });
+    const chatPanel = panelScrollRef.current;
+    if (chatPanel) {
+      const panelRect = chatPanel.getBoundingClientRect();
+      // The control belongs to the selected message in the scrolling chat
+      // canvas, not to the browser viewport. Store coordinates in that canvas
+      // so it follows the message when the traveller scrolls the conversation.
+      setHighlight({
+        text,
+        x: rect.left - panelRect.left + chatPanel.scrollLeft + rect.width / 2,
+        y: rect.top - panelRect.top + chatPanel.scrollTop,
+        messageId,
+      });
+    } else {
+      setHighlight({ text, x: rect.left + rect.width / 2, y: rect.top, messageId });
+    }
     setRememberState(null);
   }, []);
 
@@ -1428,7 +1564,11 @@ export function TravelAgentChat({
   if (!open) {
     return (
       <>
-        <button type="button" onClick={onOpen} data-wanderly-avoid className="absolute bottom-[184px] right-4 z-40 px-3 py-1.5 text-[11px] font-extrabold wanderly-cosmos-control wanderly-crt-control wanderly-r-xs wanderly-press md:right-10">{t("history")}</button>
+        {conversationLaunchPhase !== "landing" ? (
+          <button type="button" onClick={openConversationWithLaunch} data-wanderly-avoid aria-label={t("history")} title={t("history")} className="wanderly-chat-rocket-button absolute bottom-[201px] right-[25px] z-40 grid size-[44px] place-items-center md:right-[49px]">
+            <span aria-hidden="true" className="wanderly-chat-rocket-body" />
+          </button>
+        ) : <RocketLaunchOverlay phase="landing" />}
         <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
         {/* The collapsed state is the same terminal as the open one, showing
             only its prompt line. Its bottom offset clears the legs so the
@@ -1449,7 +1589,7 @@ export function TravelAgentChat({
   // as two offsets means it stays true on any viewport height instead of
   // needing a `min()` of guesses per screen size.
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} data-wanderly-chat-panel={docked ? undefined : ""} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : "wanderly-cosmos-chat wanderly-crt absolute bottom-[88px] left-1/2 z-50 flex h-[52dvh] min-h-[290px] w-[min(calc(100%-4.5rem),560px)] -translate-x-1/2 flex-col overflow-visible md:left-auto md:right-10 md:top-[112px] md:h-auto md:min-h-0 md:w-[min(42vw,560px)] md:translate-x-0"}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} data-wanderly-chat-panel={docked ? undefined : ""} data-launch-phase={conversationLaunchPhase} aria-label={t("dialogAria")} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : `wanderly-cosmos-chat wanderly-crt absolute bottom-[88px] left-1/2 z-50 flex h-[52dvh] min-h-[290px] w-[min(calc(100%-4.5rem),560px)] -translate-x-1/2 flex-col overflow-visible md:left-auto md:right-10 md:top-[112px] md:h-auto md:min-h-0 md:w-[min(42vw,560px)] md:translate-x-0${conversationLaunchPhase === "idle" ? "" : " wanderly-cosmos-chat--launch"}`}>
       {/* The open chat floats directly above the crater; only its input gains
           a physical surface, so it does not read as a second dialogue box. */}
       <div className={`relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>
@@ -1481,8 +1621,8 @@ export function TravelAgentChat({
         )}
 
         <div ref={panelScrollRef} className={docked
-          ? "flex-1 overflow-y-scroll bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 wanderly-scrollbar-persistent xl:[&>*]:translate-x-1"
-          : "flex-1 overflow-y-auto px-5 py-5"} onScroll={docked ? syncChatScrollbar : undefined} aria-live="polite">
+          ? "relative flex-1 overflow-y-scroll bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 wanderly-scrollbar-persistent xl:[&>*]:translate-x-1"
+          : "relative flex-1 overflow-y-auto px-5 py-5"} onScroll={docked ? syncChatScrollbar : undefined} aria-live="polite">
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
@@ -1584,7 +1724,7 @@ export function TravelAgentChat({
             <article data-role="ASSISTANT" className={rowClass}>
               {agentLabel}
               <div className={agentBubbleClass}>
-                <p>{t("startSharedPlanDismissedNotice")}</p>
+                <ChatMarkdown content={t("startSharedPlanDismissedNotice")} />
               </div>
             </article>
           ) : null}
@@ -1745,8 +1885,8 @@ export function TravelAgentChat({
               posed — "介绍一下蒙古国" is not a request to start planning. The
               conversation still syncs to the trip; only the call to action
               waits for the planner, where starting is the point of the page. */}
-          {!onGlobe && !actionableBriefProposal && !hasOpenConfirmationCard && canStartSharedPlanning && !startPlanningCardDismissed ? (
-            <section aria-label={t("startSharedPlanTitle")} className={`relative ${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
+          {!onGlobe && !actionableBriefProposal && !hasOpenConfirmationCard && showPlanningCta && !startPlanningCardDismissed ? (
+            <section aria-label={canRetrySharedPlanning ? t("retrySharedPlanTitle") : t("startSharedPlanTitle")} data-testid="start-shared-plan-card" className={`relative ${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <button
                 type="button"
                 aria-label={t("startSharedPlanDismiss")}
@@ -1758,12 +1898,12 @@ export function TravelAgentChat({
                 <X aria-hidden="true" className="size-4" />
               </button>
               <p className="font-bold text-primary">
-                {t("startSharedPlanTitle")}
+                {canRetrySharedPlanning ? t("retrySharedPlanTitle") : t("startSharedPlanTitle")}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {t("startSharedPlanBody")}
+                {canRetrySharedPlanning ? t("retrySharedPlanBody") : t("startSharedPlanBody")}
               </p>
-              {canStartSharedPlanning && needsGuestNationality ? (
+              {showNationalityInput ? (
                 <div className="mt-3">
                   <label htmlFor="start-plan-nationality" className="block text-xs font-bold text-primary">
                     {t("startSharedPlanNationalityLabel")}
@@ -1774,24 +1914,52 @@ export function TravelAgentChat({
                     value={guestNationality}
                     onChange={(event) => setGuestNationality(event.target.value)}
                     disabled={isStartingSharedPlan}
-                    className="mt-1.5 w-full rounded-[12px] bg-card px-3 py-2 text-sm outline-none ring-1 ring-primary/15 transition-shadow focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
+                    className="mt-1.5 min-h-11 w-full rounded-[12px] bg-card px-3 py-2 text-sm outline-none ring-1 ring-primary/15 transition-shadow focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
                   >
                     <option value="">{t("startSharedPlanNationalityPlaceholder")}</option>
                     {QUOTE_NATIONALITIES.map((code) => (
                       <option key={code} value={code}>{countryLabel(code, titleLocale)}</option>
                     ))}
                   </select>
+                  <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-2 text-xs font-semibold text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={saveNationalityToProfile}
+                      onChange={(event) => setSaveNationalityToProfile(event.target.checked)}
+                      disabled={isStartingSharedPlan}
+                      className="size-4 accent-[var(--w-teal)]"
+                    />
+                    <span>{t("startSharedPlanSaveNationality")}</span>
+                  </label>
                 </div>
+              ) : null}
+              {needsQuoteDecision && profileSettled && !needsGuestNationality ? (
+                <p className="mt-3 rounded-[12px] bg-secondary px-3 py-2 text-xs font-semibold text-foreground">
+                  {t("startSharedPlanUseProfileNationality")}
+                </p>
+              ) : null}
+              {canRetrySharedPlanning && staySearchAuthorizations.isError ? (
+                <p role="alert" className="mt-3 text-xs font-semibold text-destructive">
+                  {t("startSharedPlanAuthorizationUnavailable")}
+                </p>
+              ) : null}
+              {needsQuoteDecision && profile.isError ? (
+                <p role="alert" className="mt-3 text-xs font-semibold text-destructive">
+                  {t("startSharedPlanProfileUnavailable")}
+                </p>
               ) : null}
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
+                  data-testid="start-shared-plan-confirm"
                   onClick={() => void startSharedPlanning()}
-                  disabled={isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
-                  aria-disabled={isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
+                  disabled={planningActionDisabled}
+                  aria-disabled={planningActionDisabled}
                   className={actionPrimaryClass}
                 >
-                  {isStartingSharedPlan ? t("startSharedPlanStarting") : t("startSharedPlanConfirm")}
+                  {isStartingSharedPlan
+                    ? t("startSharedPlanStarting")
+                    : canRetrySharedPlanning ? t("retrySharedPlanConfirm") : t("startSharedPlanConfirm")}
                 </button>
               </div>
             </section>
@@ -1887,6 +2055,7 @@ export function TravelAgentChat({
               fields={preferenceCard.fields}
               saving={savingPreferences}
               onSubmit={(adjustments) => void resolvePreferences(adjustments)}
+              onDismiss={dismissPreferenceCardOnSend}
             />
           ) : null}
           {preferenceSaveFailed ? (
@@ -1909,7 +2078,7 @@ export function TravelAgentChat({
               data-testid="remember-highlight"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => void rememberSelection()}
-              style={{ position: "fixed", left: highlight.x, top: Math.max(highlight.y - 36, 8), transform: "translateX(-50%)", zIndex: 60 }}
+              style={{ position: "absolute", left: highlight.x, top: Math.max(highlight.y - 36, 8), transform: "translateX(-50%)", zIndex: 20 }}
               className={docked
                 ? "flex h-6 items-center px-3 text-[11px] font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action"
                 : "flex h-6 items-center px-3 text-[11px] font-bold text-[var(--w-fog)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-remember-highlight transition-colors"}
@@ -1999,7 +2168,21 @@ export function TravelAgentChat({
     </aside>
   );
 
-  return conversationPanel;
+  return (
+    <>
+      {!docked && conversationLaunchPhase !== "idle" ? <RocketLaunchOverlay phase={conversationLaunchPhase} /> : null}
+      {conversationPanel}
+    </>
+  );
+}
+
+function RocketLaunchOverlay({ phase }: { phase: Exclude<ConversationLaunchPhase, "idle"> }) {
+  return (
+    <div aria-hidden="true" className={`wanderly-chat-rocket-launch wanderly-chat-rocket-launch--${phase}`}>
+      <span className="wanderly-chat-rocket-flame" />
+      <span className="wanderly-chat-rocket-body" />
+    </div>
+  );
 }
 
 function isFlightPreferenceComplete(draft: FlightPreferenceDraft): draft is Required<FlightPreferenceDraft> {

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { __resetRegistryForTests, invokeSkill, registerSkill } from "../src/agents/skill-registry.js";
 import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
 import { createFlightSearchSkill } from "../src/skills/shared/flight-search-skill.js";
+import { agentTaskRuns } from "../src/db/schema.js";
 import { db } from "../src/db/database.js";
 import { auditEvents, constraintSnapshots, providerOffers, providerSearchRuns, sharedTrips, tripMembers, tripSearchPreferences, users } from "../src/db/schema.js";
 import { saveConfirmedSearchPreferences } from "../src/services/flight-search-preferences-service.js";
@@ -91,6 +92,38 @@ describe("flight.search Shared Skill", () => {
     expect(output).toMatchObject({ outcome: "LIVE", offers: [expect.objectContaining({ providerOfferId: "offer-1", currency: "USD" })] });
     expect(JSON.stringify(output)).not.toContain("secret");
     expect(await db.select().from(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, snapshotId))).toHaveLength(1);
+  });
+
+  /**
+   * Every sibling search service reserves its `provider_search_runs` row
+   * before calling a supplier, so a repeat inside one run is refused for free.
+   * Flight inserted after the answer came back: a repeat paid for a second
+   * search and then died on the unique index as a raw Postgres error, which
+   * classified as UNCLASSIFIED and reached the model as UPSTREAM_FAILURE — a
+   * cell that had just come back LIVE now looked broken, so it retried.
+   */
+  it("refuses an exact repeat before touching the supplier", async () => {
+    // The guard is scoped to a planning run — without one there is no "once
+    // per run" to enforce, and the partial unique index does not apply.
+    const agentTaskRunId = randomUUID();
+    await db.insert(agentTaskRuns).values({
+      id: agentTaskRunId, operation: "PLAN", status: "RUNNING", createdByUserId: userId, tripId,
+      snapshotId, flightSearchPreferencesVersion: preferenceVersion,
+      requestId: randomUUID(), expiresAt: new Date(Date.now() + 60_000),
+    });
+    const first = await invokeSkill("flight.search", context("shared", { agentTaskRunId }), request());
+    expect(first).toMatchObject({ outcome: "LIVE" });
+
+    await expect(invokeSkill("flight.search", context("shared", { agentTaskRunId }), request()))
+      .rejects.toMatchObject({ code: "POLICY_DENIED" });
+
+    // One reservation, one search: the repeat neither wrote a row nor called out.
+    expect(await db.select().from(providerSearchRuns)
+      .where(eq(providerSearchRuns.snapshotId, snapshotId))).toHaveLength(1);
+
+    await db.delete(providerOffers).where(eq(providerOffers.snapshotId, snapshotId));
+    await db.delete(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, snapshotId));
+    await db.delete(agentTaskRuns).where(eq(agentTaskRuns.id, agentTaskRunId));
   });
 
   it.each(["personal", "review"] as const)("denies %s Agent contexts", async (agent) => {

@@ -585,7 +585,7 @@ routing 是 `localePrefix: "always"` + `defaultLocale: "en"`，中文读者可�
 **测试盖不住这条**：`next-intl/navigation` 的测试桩原样渲染 href。
 所以守卫放在 `no-restricted-imports` lint 规则里，覆盖全部现有与未来组件。
 
-## #39 这一轮没出方案的真因是航班 400 — 未查
+## #39 这一轮没出方案的真因是航班 400 — 已查明并修复（09-06）
 serpapi flight.search 返回 HTTP 400。按 G1 的规则，Shanghai 没有 LIVE 航班证据 →
 无候选合格 → 写 `result_plan_id = NULL`。**共享方案面显示「本次未生成共享方案」
 在这一点上是对的**，错的是它给出的理由。
@@ -642,3 +642,193 @@ serpapi 对每次航班搜索返回 400（我们的请求被拒，不是没有�
 
 **未做**：flight 400 本身的根因仍未查（#39）。放开门禁让产品不再因此空手，
 但航班搜索该能用还是得能用。
+
+**根因（09-06）**：`logProviderRejection` 落地后，SerpApi 自己说了：
+
+> `` `departure_id` ("Singapore") should either be an uppercase 3-letter code or start with "/m" or "/g". ``
+
+`researchCoverageForSnapshot` 的航班扇出把 snapshot 里的**城市名**直接交给 adapter，
+而模型的工具循环走 `airportIdsForCities` 解析成机场码。**同一轮、同一个 provider、
+同一条航线**：coverage 那条 400，工具循环那条 200 加 28 条 offer。两条路径对
+「一条航线」的定义不一致。
+
+修法是让扇出也解析机场码。**但只修这一半会把失败从 400 挪到方案校验**：
+`plan-output-validator` 用字符串相等比较 `flight.origin` 与 `snapshot.departureCities`、
+`flight.destination` 与 `plan.destination`，而 offer 里存的是机场码。也就是说
+**任何带真实机场码的 offer 都无法通过它自己的方案校验**——`ORIGIN_NOT_ALLOWED`
+和 `DESTINATION_MISMATCH` 会同时报。这一条一直是潜伏的：全库 `itinerary_plans`
+从来是 0 行，模型从没成功返回过一份方案，所以没人撞到过。
+
+两处一起改：扇出解析机场码；校验改用既有的 `airportServesCity()`（#22 加的那个，
+已经归一化大小写/空格/标点/变音符号并放行 CJK）。`ORIGIN_MISSING` 的多出发地
+判定和 `summarizeProviderGaps` 的 `missingOrigins` 用同一个判定。
+
+---
+# 第七轮：一次「全都成功却什么都没有」的规划（09-05 → 09-06）
+
+对象：trip `24a0799f`（Singapore → Shanghai，12-04~12-08）。
+run `f92e64e5` 以 `TOOL_CALL_MAX_TURNS` 失败，屏幕上只有
+「规划过程中调用供应商的时间用完了」。
+
+而这一轮 8 次 provider 搜索 **7 次 LIVE**，库里落了
+**28 条航班 offer、10 条 Nuitee 酒店报价、16 条住宿、4 条活动**。
+
+## #42 coverage 把城市名交给供应商 — 缺陷 — 已修（#39 的答案）
+见 #39 的补记。`logProviderRejection` 落地后 SerpApi 自己说了：
+`departure_id ("Singapore") should either be an uppercase 3-letter code`。
+
+**只修这一半会把失败从 400 挪到方案校验。** `plan-output-validator` 用字符串
+相等比较 `flight.origin` 与 `snapshot.departureCities`、`flight.destination`
+与 `plan.destination`，而 offer 里存的是机场码 —— **任何带真实机场码的 offer
+都无法通过它自己的方案校验**。这一条一直潜伏着：全库 `itinerary_plans` 从来
+是 0 行，模型从没成功返回过方案，所以没人撞到过。两处一起改。
+
+## #43 编排层预跑过的能力，又原样交给模型 — 缺陷 — 未修
+coverage 阶段已经跑过 `accommodation.discover` / `activities.search` /
+`places.search` 并写了 `provider_search_runs` 行。工具循环里模型再调，撞上
+`onConflictDoNothing` 的一次性守卫 → `AlreadyAttemptedError` → `POLICY_DENIED`，
+1–4ms，没碰 provider。**模型开局五个并行调用里有两个是这样被拒的 —— 注定的，
+不是偶发。** 它还得到了两个假的失败信号。
+
+未修：应当要么不把已跑过的能力放进工具列表，要么让守卫返回上一次的结果而不是
+拒绝。本轮先修了更上层的三条（#44/#45/#46），这条单列。
+
+## #44 模型不肯停，而重复调用照样吃 turn — 缺陷 — 已修
+turn 1 答完两个航班格；turn 2–10 连续五次重复 `flight.search`，在同样两格之间
+来回横跳（outputHash 交替）。缓存 0ms 返回、不花配额，**但每次消耗一个 turn**。
+`appendFlightProgress()` 每轮都在推「Do not call flight.search again」。
+
+**告诉模型别做，和让它做不到，是两回事。** 现在航班矩阵补齐后 `flight.search`
+从工具列表里撤下；完全相同的调用从本轮记录作答（原本只有航班有这个缓存）；
+整轮全是重复时不吃 turn 预算，但有额度上限，只会重复自己的模型仍然终止。
+
+## #45 turn 预算耗尽 = 整轮硬失败 — 缺陷 — 已修
+`classifyTaskError` 把 `TOOL_CALL_MAX_TURNS` 判为不可重试 → run `FAILED`，
+不写 summary、不写 plan，28 条航班和 10 条酒店一起消失。
+
+**这和 G1 是同一类错误，只是换了一道闸门。** 我们前一天刚拆掉航班那道，这道还在。
+现在与 `PlanEvidenceUnavailableError` 走同一条 `persistResearchSummary` 分支，
+reason `TOOL_BUDGET_EXHAUSTED`，run 落 `COMPLETED_WITH_GAPS`。
+仍然不产出 plan —— 模型没有给出选择，替它合成一个推荐就是编造。
+
+## #46 激活一次之后，对话再也叫不动规划 — 缺陷 — 已修
+用户原话：「当前『开始规划』如果被激活一次之后，往后对话完全无法激发」。
+
+两把锁同时锁死：
+1. `canStartSharedPlanning` 要求 `status === "DRAFT"`，而激活是单向的
+   （activate 对非 DRAFT 直接 409）。第一次点击把唯一入口消耗掉了。
+2. `buildDraftHandoffProse` 对非 DRAFT 返回**空字符串**，而系统提示词第 675 行
+   宣称这个块是活动边界的**唯一权威信号**。信号消失后模型退回通用规则，
+   永远指着一个已经不存在的按钮 —— 失败两小时后用户打「开始规划」，
+   得到的还是「点屏幕上的『开始规划』按钮」。
+
+加上共享方案面按规范不提供手动 replan，这趟 trip 成了死胡同。
+
+**钥匙一直都在。** `POST /planning/generate` 的守卫只拒绝 DRAFT，PLANNING 的
+trip 本来就收；web 侧 `startPlanning()` 和 `useStartPlanning` 都在，
+**全仓库没有任何组件调用** —— 又一个 G7 式孤儿。
+
+真正的修法不是加一个按钮，是**去掉那份重复**：`canStartSharedPlanning` 这个谓词
+被抄了两份（前端一份、conversation handler 一份），后者的注释还专门写着
+「必须和 UI 说同一个事实」。抄两份就是它们分叉的原因。现在
+`sharedPlanningState` 由服务端派生一次，同时供给 trip DTO 和 `PersonalTripContext`。
+
+**这不违反「禁止手动 replan」**：该禁令针对已有方案的情形，
+`member-conversation-handoff-implementation.md` 第 154 行自己写的是
+「无 plan 时接受 PLAN」。这趟 trip 有 0 个 plan。
+
+## #47 文案建议了一个界面不提供的动作 — 缺陷 — 已修
+`planningToolBudgetExhausted` 说「方案没有改动，再试一次让下一轮完成」，
+而 `isRetryableFailure` 不含该 code —— **屏幕上根本没有重试按钮**。
+改为说明本轮已取得的结果已经保存。
+
+## #48 编排层从不把 Worker lease 传给合成，于是这条路径写不进任何东西 — 缺陷 — 已修（09-06）
+`generatePlan` 的持久化事务把每一次写入都条件在「仍持有 lease」上
+（`planning-service.ts:1499`），它的 research-summary 兜底同样要求 lease。
+而 `personal-trip-orchestrator-service.ts:307` 调用它时**只传了 agentTaskRunId，
+没传 leaseToken** —— research-task-handler 手里有，也没往下传。
+
+后果是双重的：
+- 计划分支在写任何东西之前就抛 `Planning task lease authority is incomplete`；
+- 摘要分支（#45 刚加的降级）走到 `if (!params.leaseToken) throw error` 直接重抛。
+
+**所以 PROPOSE_PLAN 这条路径无论跑得多好，既写不出 plan 也写不出 summary。**
+这是 `itinerary_plans` 一直是 0 行的第四个结构性原因，与航班 400、航线身份、
+Gate B 各自独立。
+
+**这条是我自己没验到位。** #45 的单测直接调 `generatePlan` 并传了 lease，绿的；
+真实调用路径上那个参数根本不存在。教训写在这里：**给一个函数加降级分支时，
+必须验证生产调用方满足该分支的前置条件，而不是只验证函数本身。**
+现在补了两条测试，一条走编排层（拿到 lease 就能降级），一条走 handler（确实往下传）。
+
+## #49 重复的航班搜索先付钱、再以唯一索引异常冒充供应商故障 — 缺陷 — 已修（09-06）
+`accommodation.discover` / `activities.search` / `hotel.search` 都是**先预留
+`provider_search_runs` 行、再调用供应商**，所以 run 内的重复请求在花钱之前就被
+`AlreadyAttemptedError` 挡下。`flight.search` 唯独相反：先调用、后插入。
+
+于是一次重复的 `SIN → SHA`：付了第二次 SerpAPI 调用，然后死在
+`(agent_task_run_id, snapshot_id, category, request_fingerprint)` 唯一索引上，
+抛出的是**裸 Postgres 错误**（不是 SkillError）→ 归类 `UNCLASSIFIED` →
+到模型手里是 `UPSTREAM_FAILURE`。**刚刚返回 LIVE 的那一格，看上去坏了。**
+模型于是更用力地重试它。
+
+改为与兄弟服务同构：先预留（`outcome: "PENDING"` + `onConflictDoNothing`），
+拿不到行就抛 `FlightSearchAlreadyAttemptedError` → `POLICY_DENIED`；
+供应商答复后再 update 该行。
+
+**这条与 #44 的守卫是两层**：网关那层让模型调不到已完成的工具，服务这层保证
+即使调到了也不会花钱、更不会伪装成供应商故障。#43（编排层预跑后又把一次性工具
+交给模型）仍然未修。
+
+---
+# 第八轮：一次「研究摘要说了两句假话」的运行（09-06）
+
+对象：trip `24a0799f`，run `a1641c39`。屏幕上是
+`航班: 无匹配结果` / `住宿: 无匹配结果`，而这一轮 8 次供应商调用 6 次 LIVE。
+
+## #50 航线矩阵有四个读取方，其中两个还在用城市名 — 根因 — 已修
+`TS-ROUTE-IDENTITY`（#42）只对齐了 coverage 与方案校验器。另外两个读取方没动：
+
+- `planning-service.ts` 把 `snapshot.departureCities/destinationCandidates` 原样
+  当作网关的 `flightSearchConstraints`，于是 `requiredFlightCells = {Singapore → Shanghai}`；
+  而工具描述给模型的只有 `SIN / PVG / SHA`。**矩阵永远补不齐** →
+  `forceMissingFlightSearch` 每轮强制再调一次 `flight.search` → 轮次耗尽。
+- `evaluateFlightResearchCompleteness` 拿城市名与 `provider_search_runs.origin_id`
+  精确比较。**这一半是 #42 引入的回归**：#42 之前 coverage 写的是城市名行，矩阵匹配
+  得上；#42 让 coverage 改写机场码之后，库里再没有城市名的行，每一格都是 MISSING。
+  我对齐了两条路径，漏了第三个读取方。
+
+**这也解释了 #44 的守卫为什么全部失效**：撤下工具、重复退款，条件都是「矩阵已补齐」。
+
+修法是让它只派生一次：`resolveFlightRouteMatrix()`，四个读取方共用。顺带解决两件事：
+快照里直接写机场码时按其自身接受；`cityFor()` 把机场码译回旅行者写的城市，
+所以缺口文案说「上海」而不是「(PVG)」。
+
+## #51 住宿缺口是每一次运行都会报的假话 — 缺陷 — 已修
+`allStays` 唯一的生产者是 `dependencies.stayProvider`，而 `StayProvider` 全仓库只有
+一个实现：恒返回 `NOT_CONFIGURED` 的桩。#15 当时改的是覆盖判定，没动 `allStays`。
+
+于是 `summarizeProviderGaps` 的 `stays.length === 0 → stay: NO_RESULTS` 在**每一次
+运行**上成立，包括这一轮手里握着 10 条 Nuitee 报价、16 条住宿发现的时候。
+
+而且它不只影响缺口：`allStays` 同时作为 `stays` 传给模型、作为 `evidence.stays` 传给
+校验器。**即使模型收敛了，方案里的住宿也必然是空的** —— 那 10 条报价它一条都引用不了。
+
+改为按真实证据（hotel quotes + accommodation discovery）计算；`StayProvider`、
+`UnavailableStayProvider` 与 `stayProvider` 依赖一并删除。
+
+## #52 真实 reason code 被逐层压平 — 缺陷 — 已修
+供应商说的是 `INVALID_PROVIDER_RESPONSE`，屏幕上是「未返回可验证的结果」。丢失发生在
+**三个地方**，而调查只找到了最后一个：
+1. coverage 扇出插入 `provider_search_runs` 时写 `errorCode: null` —— reason 在落库
+   那一刻就没了；
+2. `flightMatrixToGaps` 把所有 UNAVAILABLE 单元格一律记成 `UPSTREAM_FAILURE`；
+3. `summarizeProviderGaps` 把零航班一律记成 `NO_RESULTS`。
+
+三处全部改为携带供应商自己的分类。**「答复了但我们读不懂」和「这条航线没有航班」
+是两件事**，对用户的含义和对我们的修法都不同。
+
+## #53 编排层跑过的能力又原样交给模型 — 缺陷 — 已修（原 #43）
+开局那一轮模型并行发出的调用里有三个在 1ms 内拿到 `POLICY_DENIED`。不是第二次机会，
+是三个**假的失败信号**。`generatePlan` 现在接受 `alreadyResearchedCapabilities`，
+把对应的一次性搜索工具从列表里摘掉；写类工具（`places.adopt`）保留。

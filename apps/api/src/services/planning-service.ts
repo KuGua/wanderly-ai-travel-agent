@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import type { ModelToolDefinition } from "../providers/model-gateway.js";
+import type { ProviderUnavailableCode } from "../types/domain.js";
 import { db } from "../db/database.js";
 import {
   constraintSnapshots,
@@ -41,14 +43,13 @@ import type {
   MobilityOfferProvider,
   NavigationProvider,
   PlaceSearchProvider,
-  StayProvider,
   TransitJourneyProvider,
 } from "../providers/types.js";
 import { validatePlanOutput } from "../policy/plan-output-validator.js";
 import { DefaultPolicyGate } from "../agents/policy-gate.js";
 import { SkillError } from "../agents/errors.js";
 import { invokeSkill } from "../agents/skill-registry.js";
-import { airportIdsForCities } from "../location-reference/airport-reference.js";
+import { airportServesCity, resolveAirportReference, resolveFlightRouteMatrix } from "../location-reference/airport-reference.js";
 import { logSafeRuntimeEvent, pinoInstance } from "../observability/telemetry.js";
 import { resolveTripDestinationReference } from "./destination-reference-service.js";
 import { flightSearchModelArgumentsSchema } from "./flight-search-service.js";
@@ -81,7 +82,6 @@ import { bindPlanSelectionsToEvidence } from "./plan-evidence-binding.js";
 
 export interface PlanningDependencies {
   flightProvider: FlightProvider;
-  stayProvider: StayProvider;
   placeProvider: PlaceSearchProvider;
   navigationProvider: NavigationProvider;
   mobilityOfferProvider: MobilityOfferProvider;
@@ -110,7 +110,6 @@ function resolvePlanningDependencies(): PlanningDependencies {
 
   return {
     flightProvider: configuredProviders.flightProvider,
-    stayProvider: configuredProviders.stayProvider,
     placeProvider: configuredProviders.placeProvider,
     navigationProvider: configuredProviders.navigationProvider,
     mobilityOfferProvider: configuredProviders.mobilityOfferProvider,
@@ -138,9 +137,21 @@ export class PlanningDataUnavailableError extends Error {
  * it produces a research summary instead. The discriminator lets callers
  * branch on the two cases without inspecting a nullable `resultPlanId`.
  */
+/**
+ * Why a run produced a research summary instead of a plan.
+ *
+ * `NO_CITABLE_EVIDENCE` — every capability came up empty, so there is nothing
+ * to build a plan on.
+ * `TOOL_BUDGET_EXHAUSTED` — the model spent its turn budget without returning
+ * one. The evidence it gathered on the way is already persisted and is exactly
+ * what the summary reports; discarding the run because the model would not
+ * stop asking throws away work the traveller's suppliers already did.
+ */
+export type ResearchSummaryReason = "NO_CITABLE_EVIDENCE" | "TOOL_BUDGET_EXHAUSTED";
+
 export type PlanSynthesisOutcome =
   | { readonly outcome: "PLAN"; readonly planId: string; readonly gaps: ReadonlyArray<ServiceGap> }
-  | { readonly outcome: "RESEARCH_SUMMARY"; readonly researchResultId: string; readonly gaps: ReadonlyArray<ServiceGap>; readonly reason: "NO_CITABLE_EVIDENCE" };
+  | { readonly outcome: "RESEARCH_SUMMARY"; readonly researchResultId: string; readonly gaps: ReadonlyArray<ServiceGap>; readonly reason: ResearchSummaryReason };
 
 /**
  * Re-evaluate every research matrix on the supplied transaction and merge
@@ -159,7 +170,13 @@ async function evaluateAndValidateServiceGaps(params: {
   agentTaskRunId: string;
   snapshot: { departureCities: string[]; destinationCandidates: string[] };
   allFlights: FlightOffer[];
-  allStays: StayOffer[];
+  /**
+   * How many pieces of accommodation evidence this round actually holds —
+   * hotel quotes plus discovered stays. It used to be the legacy `StayOffer[]`
+   * whose only producer was a permanently stubbed provider, so every run
+   * reported `stay: NO_RESULTS` regardless of what it had found.
+   */
+  stayEvidenceCount: number;
   toolFailureGaps: Array<{ capability: string; code: string }>;
   activitiesEnabled: boolean;
   hotelEnabled: boolean;
@@ -172,8 +189,10 @@ async function evaluateAndValidateServiceGaps(params: {
   const finalMatrix = await evaluateFlightResearchCompleteness({
     snapshotId: params.snapshotId,
     agentTaskRunId: params.agentTaskRunId,
-    departureCities: params.snapshot.departureCities,
-    destinationCandidates: params.snapshot.destinationCandidates,
+    routes: resolveFlightRouteMatrix({
+      departureCities: params.snapshot.departureCities,
+      destinationCandidates: params.snapshot.destinationCandidates,
+    }),
     client: params.tx,
   });
   flightMatrixGaps = flightMatrixToGaps(finalMatrix.cells);
@@ -207,7 +226,10 @@ async function evaluateAndValidateServiceGaps(params: {
   const { gaps: capabilityGaps } = summarizeProviderGaps({
     requiredOrigins: params.snapshot.departureCities,
     flights: params.allFlights,
-    stays: params.allStays,
+    stayEvidenceCount: params.stayEvidenceCount,
+    // When no flight came back at all, report what the matrix says went wrong
+    // rather than the blanket "no results".
+    ...(flightMatrixGaps[0] ? { flightFailureCode: flightMatrixGaps[0].code } : {}),
   });
   const allServiceGaps: ServiceGap[] = [
     ...params.toolFailureGaps.map((g) => ({
@@ -279,11 +301,11 @@ async function persistResearchSummary(params: {
   snapshotId: string;
   agentTaskRunId: string;
   leaseToken: string;
-  reason: "NO_CITABLE_EVIDENCE";
+  reason: ResearchSummaryReason;
   toolFailureGaps: Array<{ capability: string; code: string }>;
   snapshotFields: { departureCities: string[]; destinationCandidates: string[] };
   allFlights: FlightOffer[];
-  allStays: StayOffer[];
+  stayEvidenceCount: number;
   activitiesEnabled: boolean;
   hotelEnabled: boolean;
   accommodationDiscoveryEnabled: boolean;
@@ -296,7 +318,7 @@ async function persistResearchSummary(params: {
       agentTaskRunId: params.agentTaskRunId,
       snapshot: params.snapshotFields,
       allFlights: params.allFlights,
-      allStays: params.allStays,
+      stayEvidenceCount: params.stayEvidenceCount,
       toolFailureGaps: params.toolFailureGaps,
       activitiesEnabled: params.activitiesEnabled,
       hotelEnabled: params.hotelEnabled,
@@ -373,6 +395,23 @@ async function persistResearchSummary(params: {
  * switches to a research-summary branch instead. This class MUST be caught
  * inside `generatePlan` — it is not a worker-visible failure mode.
  */
+/**
+ * Should this failure become a research summary rather than a failed run?
+ *
+ * Both cases share the same shape: the run did real work, that work is already
+ * persisted, and the only thing missing is the model's plan. Failing the run
+ * throws the work away — on 2026-09-05 a run that had collected 28 flight
+ * offers, 10 hotel quotes, 16 stays and 4 activities reported nothing but
+ * "the provider time ran out", because the model spent its last five turns
+ * re-asking for a flight search it had already completed.
+ */
+function researchSummaryReasonFor(error: unknown): ResearchSummaryReason | null {
+  if (error instanceof PlanEvidenceUnavailableError) return "NO_CITABLE_EVIDENCE";
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === "TOOL_CALL_MAX_TURNS") return "TOOL_BUDGET_EXHAUSTED";
+  return null;
+}
+
 export class PlanEvidenceUnavailableError extends Error {
   readonly code = "PLANNING_DATA_UNAVAILABLE";
 
@@ -503,10 +542,28 @@ export async function researchCoverageForSnapshot(params: {
   const evaluatedDestinations = new Set<string>();
   const missingDestinations = new Set<string>();
 
-  // Decoupled origin × destination fan-out for flights.
+  // Decoupled origin × destination fan-out for flights, over *controlled
+  // airports* rather than the snapshot's city names.
+  //
+  // This used to pass the city strings straight through, and SerpApi said
+  // exactly what was wrong with that: `departure_id` ("Singapore") should
+  // either be an uppercase 3-letter code or start with "/m" or "/g". Every
+  // coverage flight search 400'd, while the model's own tool loop — which
+  // resolves airports first — got 200 and 28 offers for the same route on the
+  // same run. Two paths, one route, two ideas of what a route is.
+  //
+  // A city with no controlled airport yields no cell, which the caller reports
+  // as a flight gap. We still do not guess a neighbouring code (§#22).
+  const routeMatrix = resolveFlightRouteMatrix({
+    departureCities: params.departureCities,
+    destinationCandidates: params.destinationCandidates,
+  });
   const flightSettlements = await Promise.allSettled(
-    params.departureCities.flatMap((origin) =>
-      params.destinationCandidates.map((destination) => (async () => {
+    routeMatrix.cells.map(({ originId, destinationId }) => (async () => {
+      const destinationCity = routeMatrix.cityFor(destinationId) ?? destinationId;
+      const origin = originId;
+      const destination = destinationId;
+      {
         const result = await deps.flightProvider.searchFlights({
           origin,
           destination,
@@ -525,7 +582,12 @@ export async function researchCoverageForSnapshot(params: {
               destinationId: destination.slice(0, 128),
               requestFingerprint: randomUUID(),
               outcome: "UNAVAILABLE",
-              errorCode: null,
+              // The supplier's own classification, not a blank. Writing null
+              // here lost the reason at the moment it was known: a run whose
+              // flight searches came back INVALID_PROVIDER_RESPONSE was
+              // reported to the traveller as "no verified results", which
+              // reads as "there are no flights" for a route that has plenty.
+              errorCode: result.reason,
             });
           }
           return; // UNAVAILABLE → no offer, but the attempted cell is durable
@@ -543,10 +605,13 @@ export async function researchCoverageForSnapshot(params: {
             errorCode: null,
           });
         }
-        evaluatedDestinations.add(destination);
+        // The city, not the airport: every downstream consumer
+        // (`evaluatedDestinations`, `missingDestinations`, the orchestrator's
+        // eligibility filter) is keyed by the snapshot's candidate strings.
+        evaluatedDestinations.add(destinationCity);
         allFlights.push(...result.data);
-      })()),
-    ),
+      }
+    })()),
   );
   if (params.signal?.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
   void flightSettlements;
@@ -587,22 +652,55 @@ export async function researchCoverageForSnapshot(params: {
  * `origin-missing` condition is structural and remains a hard gate;
  * capability-level UNAVAILABLE is reported as a gap rather than a failure.
  */
+/** Airport-id vs snapshot-city identity, shared with the plan validator. */
+function flightServesOrigin(endpoint: string, city: string): boolean {
+  if (endpoint === city) return true;
+  const airport = resolveAirportReference(endpoint);
+  return airport !== null && airportServesCity(airport, city);
+}
+
+type ProviderGapCode = ProviderUnavailableCode;
+type ProviderGapCapability = "flight" | "stay" | "navigation" | "mobility" | "transit";
+
 export function summarizeProviderGaps(params: {
   requiredOrigins: string[];
   flights: FlightOffer[];
-  stays: StayOffer[];
+  /**
+   * Everything that answers "could this traveller sleep somewhere". Hotel
+   * quotes and accommodation discovery both count; the legacy `StayOffer`
+   * array does not exist any more.
+   *
+   * It used to be that array alone, whose only producer was a permanently
+   * stubbed provider, so every run reported `stay: NO_RESULTS` — including
+   * runs holding ten live Nuitee quotes and sixteen discovered stays. The
+   * screen said "no accommodation found" over a database that had plenty.
+   */
+  stayEvidenceCount: number;
+  /**
+   * What the flight capability actually reported, when it reported anything.
+   * Without this a supplier that answered `INVALID_PROVIDER_RESPONSE` was
+   * flattened into `NO_RESULTS` — "there are no flights" for a route with
+   * plenty, and a lost lead for whoever debugs it next.
+   */
+  flightFailureCode?: ProviderGapCode;
   // Optional signal flags so the matrix can express capabilities that are
   // soft-disabled (e.g. `PLAN_ENABLE_MOBILITY=false`). Today these are
   // computed by callers; the planner layer merely forwards them.
-  unavailableCapabilities?: ReadonlyArray<{ capability: "flight" | "stay" | "navigation" | "mobility" | "transit"; code: "NOT_CONFIGURED" | "PROVIDER_NOT_APPROVED" }>;
-}): { gaps: { capability: "flight" | "stay" | "navigation" | "mobility" | "transit"; code: "NOT_CONFIGURED" | "PROVIDER_NOT_APPROVED" | "NO_RESULTS" | "UPSTREAM_FAILURE"; }[]; missingOrigins: string[] } {
+  unavailableCapabilities?: ReadonlyArray<{ capability: ProviderGapCapability; code: "NOT_CONFIGURED" | "PROVIDER_NOT_APPROVED" }>;
+}): { gaps: { capability: ProviderGapCapability; code: ProviderGapCode }[]; missingOrigins: string[] } {
   const missingOrigins = params.requiredOrigins
-    .filter(origin => !params.flights.some(flight => flight.origin === origin));
-  const gaps: { capability: "flight" | "stay" | "navigation" | "mobility" | "transit"; code: "NOT_CONFIGURED" | "PROVIDER_NOT_APPROVED" | "NO_RESULTS" | "UPSTREAM_FAILURE"; }[] = [];
+    // Offers carry controlled airport ids; `requiredOrigins` carries the
+    // snapshot's city names. Compared as strings, every origin reads as
+    // uncovered — see `routeEndpointMatches` in plan-output-validator.ts.
+    .filter(origin => !params.flights.some(flight => flightServesOrigin(flight.origin, origin)));
+  const gaps: { capability: ProviderGapCapability; code: ProviderGapCode }[] = [];
   // Zero-candidate soft gates from Phase 4 outcome matrix: a capability
-  // with zero results is reported as a `NO_RESULTS` gap, not a throw.
-  if (params.flights.length === 0) gaps.push({ capability: "flight", code: "NO_RESULTS" });
-  if (params.stays.length === 0) gaps.push({ capability: "stay", code: "NO_RESULTS" });
+  // with zero results is a gap, not a throw — reported under the reason the
+  // supplier gave when there is one.
+  if (params.flights.length === 0) {
+    gaps.push({ capability: "flight", code: params.flightFailureCode ?? "NO_RESULTS" });
+  }
+  if (params.stayEvidenceCount === 0) gaps.push({ capability: "stay", code: "NO_RESULTS" });
   for (const cap of params.unavailableCapabilities ?? []) {
     gaps.push({ capability: cap.capability, code: cap.code });
   }
@@ -618,7 +716,6 @@ export function summarizeProviderGaps(params: {
 export function validateProviderCoverage(params: {
   requiredOrigins: string[];
   flights: FlightOffer[];
-  stays: StayOffer[];
 }): void {
   // Zero flights is the whole capability being unavailable — a supplier
   // outage, a refused request, a city with no controlled airport. That is a
@@ -629,7 +726,11 @@ export function validateProviderCoverage(params: {
   // would be telling one member there is a way to get there and another
   // nothing at all. That remains structural and still refuses.
   if (params.flights.length === 0) return;
-  const { missingOrigins } = summarizeProviderGaps(params);
+  const { missingOrigins } = summarizeProviderGaps({
+    requiredOrigins: params.requiredOrigins,
+    flights: params.flights,
+    stayEvidenceCount: 0,
+  });
   if (missingOrigins.length > 0) {
     throw new PlanningDataUnavailableError(missingOrigins.map((origin) => `flight:${origin}`));
   }
@@ -915,6 +1016,37 @@ export function buildPlanningModelProjection(authorizedData: unknown): Record<st
  * flight evidence only through the registered model-requested Skill; the final
  * transaction verifies the complete authorized matrix before persisting a plan.
  */
+/**
+ * The search tools whose service reserves a `provider_search_runs` row per
+ * run, so a second call for the same request is refused rather than repeated.
+ */
+const ONE_SHOT_TOOL_BY_CAPABILITY: Readonly<Record<string, string>> = {
+  accommodation: "accommodation.discover",
+  activities: "activities.search",
+  hotel: "hotel.search",
+  places: "places.search",
+};
+
+/**
+ * Drop the tools whose capability the orchestrator already researched.
+ *
+ * Those searches are one-shot per run. Offering them again did not give the
+ * model a second chance at anything — it gave it a POLICY_DENIED within a
+ * millisecond, three of them in the opening turn, which read as three fresh
+ * failures worth retrying. The evidence they would have returned is already
+ * in this round's `provider_offers` and reaches synthesis through the
+ * coverage bundle.
+ */
+export function planningToolsFor(
+  alreadyResearched: readonly string[],
+  tools: ModelToolDefinition[],
+): ModelToolDefinition[] {
+  const withdrawn = new Set(
+    alreadyResearched.map((capability) => ONE_SHOT_TOOL_BY_CAPABILITY[capability]).filter(Boolean),
+  );
+  return tools.filter((tool) => !withdrawn.has(tool.name));
+}
+
 export async function generatePlan(params: {
   ctx: RequestContext;
   tripId: string;
@@ -935,6 +1067,14 @@ export async function generatePlan(params: {
    */
   outputMode?: "PROPOSED" | "ACTIVATE";
   coverage?: CoverageResearchResult;
+  /**
+   * Capabilities the orchestrator already researched before calling here.
+   * Their tools are one-shot per run — a second call hits the
+   * `provider_search_runs` reservation and comes back POLICY_DENIED — so
+   * offering them again guarantees the model spends its opening turn
+   * collecting refusals. It read those as new failures and asked again.
+   */
+  alreadyResearchedCapabilities?: readonly string[];
 }, dependencies: PlanningDependencies = resolvePlanningDependencies()): Promise<PlanSynthesisOutcome> {
   // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
@@ -988,20 +1128,16 @@ export async function generatePlan(params: {
     }
   }
 
-  // Stay provider calls run for every planning branch (legacy and
-  // tool-calling); both paths rely on `allStays` being populated for the
-  // deterministic provider-coverage gate. POI / route / mobility evidence
-  // is gathered through the LLM tool loop when enabled.
-  const stayResult = await dependencies.stayProvider.searchStays({
-    destination: params.destination,
-    checkIn: snapshot.travelDateStart,
-    checkOut: snapshot.travelDateEnd,
-    snapshotId: params.snapshotId,
-  });
-  if (stayResult.outcome !== "UNAVAILABLE") {
-    allStays.push(...stayResult.data);
-  }
-
+  // There is no stay provider to call. `StayProvider` had exactly one
+  // implementation in this repo — a stub returning NOT_CONFIGURED — so this
+  // call could only ever leave `allStays` empty, and everything downstream
+  // read that emptiness as "no accommodation was found". Runs holding ten live
+  // Nuitee quotes and sixteen discovered stays reported `stay: NO_RESULTS`.
+  //
+  // Real accommodation reaches the plan as `hotels` (Nuitee / SerpApi quotes)
+  // and is discovered through `accommodation.discover`; the stay gap is now
+  // computed from that evidence. `allStays` stays as the plan contract's
+  // `stays` slot, empty until something can genuinely fill it.
   // The flight tool takes controlled airport ids, and the snapshot holds city
   // names. Nothing translated between them, so the model dutifully passed
   // "Shanghai" and "Tokyo" and the search rejected them as uncontrolled — every
@@ -1010,8 +1146,18 @@ export async function generatePlan(params: {
   // the model can only ask for airports that exist, and a city with no
   // controlled airport is a flight gap stated up front instead of a failure
   // discovered at the end.
-  const originAirports = airportIdsForCities(snapshot.departureCities as string[]);
-  const destinationAirports = airportIdsForCities(snapshot.destinationCandidates as string[]);
+  // The one derivation every reader shares: the tool description below, the
+  // gateway's required-cell matrix, and the two database completeness checks.
+  // They used to derive it separately and disagree — the gateway demanded
+  // `Singapore → Shanghai` while the model could only search `SIN → SHA`, so
+  // its matrix never completed and it forced another flight search every turn
+  // until the budget was gone.
+  const flightRoutes = resolveFlightRouteMatrix({
+    departureCities: snapshot.departureCities as string[],
+    destinationCandidates: snapshot.destinationCandidates as string[],
+  });
+  const originAirports = flightRoutes.originIds;
+  const destinationAirports = flightRoutes.destinationIds;
   const memberPreferences = buildPlanningModelProjection(snapshot.authorizedData);
   /**
    * Capabilities the tool loop could not deliver. Declared out here so they
@@ -1158,8 +1304,8 @@ export async function generatePlan(params: {
       destination: params.destination,
       destinationCandidates: snapshot.destinationCandidates as string[],
       flightSearchConstraints: {
-        originIds: snapshot.departureCities as string[],
-        destinationIds: snapshot.destinationCandidates as string[],
+        originIds: flightRoutes.originIds,
+        destinationIds: flightRoutes.destinationIds,
         tripType: preferences.tripType as "ONE_WAY" | "ROUND_TRIP",
         departureDate: snapshot.travelDateStart,
         ...(preferences.tripType === "ROUND_TRIP" ? { returnDate: snapshot.travelDateEnd } : {}),
@@ -1195,7 +1341,7 @@ export async function generatePlan(params: {
         if (flightsAreSearchable) {
           const matrix = await evaluateFlightResearchCompleteness({
             snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId!,
-            departureCities: snapshot.departureCities as string[], destinationCandidates: snapshot.destinationCandidates as string[],
+            routes: flightRoutes,
           });
           if (!matrix.complete) throw new FlightResearchIncompleteError(matrix.cells);
           // Gate B used to refuse here when no cell on this destination came
@@ -1211,7 +1357,6 @@ export async function generatePlan(params: {
           validateProviderCoverage({
             requiredOrigins: snapshot.departureCities,
             flights: allFlights,
-            stays: allStays,
           });
         } else {
           toolFailureGaps.push({ capability: "flight", code: "NOT_CONFIGURED" });
@@ -1239,7 +1384,7 @@ export async function generatePlan(params: {
           if (!accommodationMatrix.complete) throw new AccommodationResearchIncompleteError(accommodationMatrix.cells);
         }
       },
-      tools: [
+      tools: planningToolsFor(params.alreadyResearchedCapabilities ?? [], [
         {
           name: "flight.search",
           // The allowed codes are named in the description rather than as a
@@ -1299,7 +1444,7 @@ export async function generatePlan(params: {
           description: "Discover non-price accommodation candidates near one controlled destination. This is not availability or a quote.",
           parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
         }] : []),
-      ],
+      ]),
       dispatchTool: async (call) => {
         // A tool that fails must not end the run. The model asked for
         // something it could not have — a flight between airports missing
@@ -1357,7 +1502,7 @@ export async function generatePlan(params: {
       },
     });
   } else {
-    validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights, stays: allStays });
+    validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights });
     candidatePlanData = await dependencies.modelGateway.generateStructuredPlan({ destination: params.destination, flights: allFlights, stays: allStays, memberPreferences, ctx: params.ctx, signal: params.signal });
   }
 
@@ -1368,7 +1513,8 @@ export async function generatePlan(params: {
   // and route to the research-summary branch — leaving the plan branch only for
   // destinations that survived both gates.
   } catch (error) {
-    if (error instanceof PlanEvidenceUnavailableError) {
+    const summaryReason = researchSummaryReasonFor(error);
+    if (summaryReason) {
       if (!params.agentTaskRunId || !params.leaseToken) {
         // No durable run to write a summary for — rethrow so the worker surfaces
         // the failure (matches the pre-P0 path which also had no run guard).
@@ -1380,7 +1526,7 @@ export async function generatePlan(params: {
         snapshotId: params.snapshotId,
         agentTaskRunId: params.agentTaskRunId,
         leaseToken: params.leaseToken,
-        reason: "NO_CITABLE_EVIDENCE",
+        reason: summaryReason,
         toolFailureGaps: toolFailureGaps.map((g) => ({
           capability: g.capability,
           code: g.code,
@@ -1390,7 +1536,7 @@ export async function generatePlan(params: {
           destinationCandidates: snapshot.destinationCandidates as string[],
         },
         allFlights,
-        allStays,
+        stayEvidenceCount: allHotels.length + allAccommodations.length,
         activitiesEnabled,
         hotelEnabled,
         accommodationDiscoveryEnabled,
@@ -1408,7 +1554,7 @@ export async function generatePlan(params: {
     });
   }
 
-  validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights, stays: allStays });
+  validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights });
 
   // The model output is untrusted until the deterministic control plane proves
   // snapshot authorization and an exact match to run-scoped provider evidence.
@@ -1453,8 +1599,7 @@ export async function generatePlan(params: {
       const matrix = await evaluateFlightResearchCompleteness({
         snapshotId: params.snapshotId,
         agentTaskRunId: params.agentTaskRunId,
-        departureCities: snapshot.departureCities as string[],
-        destinationCandidates: snapshot.destinationCandidates as string[],
+        routes: flightRoutes,
         client: tx,
       });
       // Phase 4 outcome matrix: a cell that returned UNAVAILABLE is an
@@ -1608,7 +1753,7 @@ export async function generatePlan(params: {
           destinationCandidates: snapshot.destinationCandidates as string[],
         },
         allFlights,
-        allStays,
+        stayEvidenceCount: allHotels.length + allAccommodations.length,
         toolFailureGaps: toolFailureGaps.map((g) => ({
           capability: g.capability,
           code: g.code,
@@ -1668,7 +1813,8 @@ export async function generatePlan(params: {
       return { planId: plan.id, gaps: validatedServiceGaps };
     });
   } catch (error) {
-    if (error instanceof PlanEvidenceUnavailableError) {
+    const summaryReason = researchSummaryReasonFor(error);
+    if (summaryReason) {
       if (!params.agentTaskRunId || !params.leaseToken) throw error;
       return await persistResearchSummary({
         ctx: params.ctx,
@@ -1676,14 +1822,14 @@ export async function generatePlan(params: {
         snapshotId: params.snapshotId,
         agentTaskRunId: params.agentTaskRunId,
         leaseToken: params.leaseToken,
-        reason: "NO_CITABLE_EVIDENCE",
+        reason: summaryReason,
         toolFailureGaps: toolFailureGaps.map((g) => ({ capability: g.capability, code: g.code })),
         snapshotFields: {
           departureCities: snapshot.departureCities as string[],
           destinationCandidates: snapshot.destinationCandidates as string[],
         },
         allFlights,
-        allStays,
+        stayEvidenceCount: allHotels.length + allAccommodations.length,
         activitiesEnabled,
         hotelEnabled,
         accommodationDiscoveryEnabled,

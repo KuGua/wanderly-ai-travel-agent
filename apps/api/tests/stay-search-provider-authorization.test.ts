@@ -11,6 +11,8 @@ import {
   sharedTrips,
   staySearchProviderAuthorizations,
   tripMembers,
+  userProfiles,
+  preferenceFacts,
   users,
 } from "../src/db/schema.js";
 import {
@@ -21,6 +23,8 @@ import {
 } from "../src/services/stay-search-provider-authorization.js";
 import { __setQuoteNationalityCipherForTests } from "../src/services/quote-nationality-cipher.js";
 import { eq } from "drizzle-orm";
+import { applyQuoteNationalityDecision } from "../src/services/quote-nationality-decision-service.js";
+import { createRequestContext } from "../src/utils/context.js";
 
 describe("stay-search-provider-authorization", () => {
   let ownerId: string;
@@ -55,6 +59,10 @@ describe("stay-search-provider-authorization", () => {
     await db.delete(itineraryPlans).where(eq(itineraryPlans.tripId, tripId));
     await db.delete(tripMembers).where(eq(tripMembers.tripId, tripId));
     await db.delete(sharedTrips).where(eq(sharedTrips.id, tripId));
+    // Profile-to-memory synchronization records a privacy-safe audit without a
+    // trip id. Clear every event created by this isolated actor before the
+    // user row, otherwise the audit FK correctly prevents teardown.
+    await db.delete(auditEvents).where(eq(auditEvents.actorUserId, ownerId));
     await db.delete(users).where(eq(users.id, ownerId));
   });
 
@@ -71,6 +79,77 @@ describe("stay-search-provider-authorization", () => {
     const loaded = await loadActiveQuoteNationality({ tripId, memberId: ownerId });
     expect(loaded?.nationality).toBe("US");
     expect(loaded?.version).toBe(1);
+  });
+
+  it("saves an explicitly entered nationality to the private Profile and grants this trip", async () => {
+    await db.transaction((tx) => applyQuoteNationalityDecision({
+      ctx: createRequestContext(ownerId),
+      tripId,
+      userId: ownerId,
+      decision: {
+        source: "INPUT",
+        value: "sg",
+        saveToProfile: true,
+        confirmProviderUse: true,
+      },
+      tx,
+    }));
+
+    const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, ownerId));
+    expect(profile.nationality).toBe("SG");
+    const facts = await db.select().from(preferenceFacts).where(eq(preferenceFacts.userId, ownerId));
+    expect(facts.some((fact) => fact.fieldKey === "nationality" && fact.status === "ACTIVE")).toBe(true);
+    expect((await loadActiveQuoteNationality({ tripId, memberId: ownerId }))?.nationality).toBe("SG");
+
+    const audits = await db.select().from(auditEvents).where(eq(auditEvents.tripId, tripId));
+    expect(audits.map((event) => event.action)).toEqual(expect.arrayContaining([
+      "PROFILE_CREATE",
+      "HOTEL_PROVIDER_GRANTED",
+    ]));
+    expect(JSON.stringify(audits.map((event) => event.summary))).not.toContain('"SG"');
+  });
+
+  it("can keep an entered nationality trip-scoped without creating a Profile", async () => {
+    await db.transaction((tx) => applyQuoteNationalityDecision({
+      ctx: createRequestContext(ownerId),
+      tripId,
+      userId: ownerId,
+      decision: {
+        source: "INPUT",
+        value: "jp",
+        saveToProfile: false,
+        confirmProviderUse: true,
+      },
+      tx,
+    }));
+
+    expect(await db.select().from(userProfiles).where(eq(userProfiles.userId, ownerId))).toHaveLength(0);
+    expect((await loadActiveQuoteNationality({ tripId, memberId: ownerId }))?.nationality).toBe("JP");
+  });
+
+  it("uses a stored Profile value only after an explicit provider-use confirmation", async () => {
+    await db.insert(userProfiles).values({ userId: ownerId, nationality: "DE" });
+    await db.transaction((tx) => applyQuoteNationalityDecision({
+      ctx: createRequestContext(ownerId),
+      tripId,
+      userId: ownerId,
+      decision: { source: "PROFILE", confirmProviderUse: true },
+      tx,
+    }));
+
+    expect((await loadActiveQuoteNationality({ tripId, memberId: ownerId }))?.nationality).toBe("DE");
+  });
+
+  it("fails closed when PROFILE is confirmed but no nationality is stored", async () => {
+    await expect(db.transaction((tx) => applyQuoteNationalityDecision({
+      ctx: createRequestContext(ownerId),
+      tripId,
+      userId: ownerId,
+      decision: { source: "PROFILE", confirmProviderUse: true },
+      tx,
+    }))).rejects.toMatchObject({ statusCode: 422 });
+
+    expect(await listStaySearchAuthorizations({ tripId, memberId: ownerId })).toEqual([]);
   });
 
   it("revokes the prior ACTIVE row on a new grant and bumps the version", async () => {

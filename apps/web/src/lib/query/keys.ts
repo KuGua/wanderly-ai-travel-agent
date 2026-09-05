@@ -17,6 +17,7 @@ export const tripKeys = {
   pinned: (tripId: string) => ["trips", tripId, "pinned-session"] as const,
   threads: (tripId: string) => ["trips", tripId, "my-threads"] as const,
   planningRun: (tripId: string) => ["trips", tripId, "planning-run"] as const,
+  staySearchAuthorizations: (tripId: string) => ["trips", tripId, "stay-search-authorizations"] as const,
   planningRunDetail: (tripId: string, runId: string) => ["trips", tripId, "planning-run", runId] as const,
   latestPlan: (tripId: string) => ["trips", tripId, "latest-plan"] as const,
   memoryOverrides: (tripId: string) => ["trips", tripId, "memory", "me"] as const,

@@ -43,6 +43,7 @@ export async function handleResearchTask(params: {
     ctx: params.ctx,
     run: params.run,
     signal: params.signal,
+    leaseToken: params.leaseToken,
   });
 
   await publishPhase(params.run, "VALIDATING", params.ctx.traceparent);
