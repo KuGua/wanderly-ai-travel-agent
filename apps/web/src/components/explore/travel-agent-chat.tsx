@@ -29,7 +29,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { threadKeys } from "@/lib/query/keys";
 import { TravelApiError } from "@/lib/api/errors";
-import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useMyProfile, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
+import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useMyProfile, useOwnerConversation, useStartPlanning, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { useTravelApi } from "@/lib/query/provider";
 import { Link, useRouter } from "@/i18n/navigation";
@@ -197,6 +197,7 @@ export function TravelAgentChat({
   const tripPin = useTripPin(tripId ?? null);
   const trip = useTrip(tripId);
   const activateTrip = useActivateTrip(tripId ?? "");
+  const startPlanning = useStartPlanning(tripId ?? "");
   const pinnedSession = tripPin.data ?? null;
   // Send is allowed when we already have a thread, or when the parent
   // has supplied a provisioner the first send can use (exploration
@@ -960,7 +961,28 @@ export function TravelAgentChat({
 
   async function startSharedPlanning() {
     const currentTrip = trip.data?.trip;
-    if (!tripId || !currentTrip || currentTrip.status !== "DRAFT" || isStartingSharedPlan) return;
+    if (!tripId || !currentTrip || isStartingSharedPlan) return;
+    // A trip past DRAFT has already been activated once: its snapshot fields,
+    // confirmed flight and stay preferences and quote-nationality grant are
+    // all durable, and `POST /planning/generate` re-reads the latest of each
+    // and cuts a fresh snapshot. Activation is the wrong call there — it 409s
+    // on anything but DRAFT.
+    if (currentTrip.sharedPlanningState === "NO_PLAN_YET") {
+      setIsStartingSharedPlan(true);
+      setRequestError(null);
+      try {
+        const accepted = await startPlanning.mutateAsync();
+        setActiveRunId(accepted.runId);
+        storeActiveRunId(accepted.runId);
+        await trip.refetch();
+      } catch (error) {
+        setRequestError(error);
+      } finally {
+        setIsStartingSharedPlan(false);
+      }
+      return;
+    }
+    if (currentTrip.status !== "DRAFT") return;
     setIsStartingSharedPlan(true);
     setRequestError(null);
     try {
@@ -1015,6 +1037,20 @@ export function TravelAgentChat({
     && trip.data.trip.destinationCandidates.length > 0
     && Boolean(trip.data.trip.travelDateStart)
     && Boolean(trip.data.trip.travelDateEnd || trip.data.trip.travelDays);
+
+  // Activation is one-way, and this card used to be the only thing that could
+  // start a run. So a trip whose first run failed had no way back: the CTA
+  // rendered for DRAFT only, the shared surface deliberately offers no manual
+  // replan, and the assistant kept pointing at a button that was gone. The
+  // server route for a further run has always existed and accepted a PLANNING
+  // trip — `POST /planning/generate` refuses DRAFT and nothing else — and the
+  // client method and hook for it shipped with no caller.
+  //
+  // Offering a retry here is not the manual replan the handoff spec forbids;
+  // that ban is about an existing plan, and §154 of the same document says a
+  // trip with no plan accepts a fresh PLAN.
+  const canRetrySharedPlanning = trip.data?.trip.sharedPlanningState === "NO_PLAN_YET";
+  const showPlanningCta = canStartSharedPlanning || canRetrySharedPlanning;
 
   function confirmFlightSearch() {
     if (isSending) return;
@@ -1648,8 +1684,8 @@ export function TravelAgentChat({
               posed — "介绍一下蒙古国" is not a request to start planning. The
               conversation still syncs to the trip; only the call to action
               waits for the planner, where starting is the point of the page. */}
-          {!onGlobe && !actionableBriefProposal && !hasOpenConfirmationCard && canStartSharedPlanning && !startPlanningCardDismissed ? (
-            <section aria-label={t("startSharedPlanTitle")} className={`relative ${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
+          {!onGlobe && !actionableBriefProposal && !hasOpenConfirmationCard && showPlanningCta && !startPlanningCardDismissed ? (
+            <section aria-label={canRetrySharedPlanning ? t("retrySharedPlanTitle") : t("startSharedPlanTitle")} data-testid="start-shared-plan-card" className={`relative ${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <button
                 type="button"
                 aria-label={t("startSharedPlanDismiss")}
@@ -1661,10 +1697,10 @@ export function TravelAgentChat({
                 <X aria-hidden="true" className="size-4" />
               </button>
               <p className="font-bold text-primary">
-                {t("startSharedPlanTitle")}
+                {canRetrySharedPlanning ? t("retrySharedPlanTitle") : t("startSharedPlanTitle")}
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {t("startSharedPlanBody")}
+                {canRetrySharedPlanning ? t("retrySharedPlanBody") : t("startSharedPlanBody")}
               </p>
               {canStartSharedPlanning && needsGuestNationality ? (
                 <div className="mt-3">
@@ -1689,12 +1725,15 @@ export function TravelAgentChat({
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
+                  data-testid="start-shared-plan-confirm"
                   onClick={() => void startSharedPlanning()}
                   disabled={isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
                   aria-disabled={isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
                   className={actionPrimaryClass}
                 >
-                  {isStartingSharedPlan ? t("startSharedPlanStarting") : t("startSharedPlanConfirm")}
+                  {isStartingSharedPlan
+                    ? t("startSharedPlanStarting")
+                    : canRetrySharedPlanning ? t("retrySharedPlanConfirm") : t("startSharedPlanConfirm")}
                 </button>
               </div>
             </section>

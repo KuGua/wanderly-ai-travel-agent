@@ -993,7 +993,40 @@ function buildConversationSystemPrompt(params: {
  *   itinerary, or activating from natural language.
  */
 export function buildDraftHandoffProse(tripContext: PersonalTripContext | null): string {
-  if (!tripContext || tripContext.tripStatus !== "DRAFT") return "";
+  if (!tripContext) return "";
+
+  // Everything past DRAFT used to return the empty string here — and the
+  // system prompt names this block as its *only* authoritative signal about
+  // the activation boundary. With no block the model fell back to the generic
+  // rule ("destination and dates are known, so tell them to press Start
+  // planning") and kept saying that forever, about a button that disappears
+  // the moment a trip is activated. A traveller whose first run failed was
+  // told to press it again for as long as the thread lived.
+  if (tripContext.tripStatus !== "DRAFT") {
+    switch (tripContext.sharedPlanningState) {
+      case "IN_PROGRESS":
+        return [
+          "本行程的共享规划正在进行中。",
+          "不要让用户点「开始规划」——按钮此时不在屏幕上，规划已经在跑。",
+          "可以回答关于目的地、日期、偏好的问题；不得声称方案已经生成，也不得代为编造进度或结果。",
+        ].join("\n");
+      case "NO_PLAN_YET":
+        return [
+          "本行程已经开始过规划，但上一轮没有产出可用方案。",
+          "屏幕上现在是「重新规划」按钮，不是「开始规划」。用户表达想再试时，引导其点击它；不要替他们点击。",
+          "不得声称方案已经生成，也不得自己编一份逐日行程来填补空缺。可以说明还缺什么、或建议调整出发地/日期/偏好后再跑一轮。",
+        ].join("\n");
+      case "PLAN_AVAILABLE":
+        return [
+          "本行程已有共享方案，可在共享方案面查看。",
+          "不要让用户点「开始规划」——该按钮不在屏幕上。需要查看方案时，指向共享方案面。",
+          "不得复述方案内容或声称其中的价格、航班、住宿细节；那些由共享方案面按来源与采集时间渲染。",
+        ].join("\n");
+      case "NOT_STARTED":
+        break;
+    }
+    return "";
+  }
 
   if (tripContext.canStartSharedPlanning) {
     return [

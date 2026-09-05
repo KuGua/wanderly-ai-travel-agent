@@ -1,4 +1,5 @@
 import { and, desc, eq, gt, inArray } from "drizzle-orm";
+import { loadSharedPlanningState } from "../../services/shared-planning-state-service.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 
@@ -1281,6 +1282,11 @@ async function loadPersonalTripContext(tripId: string): Promise<{
     }
   }
 
+  const sharedPlanningState = await loadSharedPlanningState({
+    tripId: trip.id,
+    tripStatus: trip.status,
+  });
+
   return { context: personalTripContextSchema.parse({
     tripId: trip.id,
     tripName: trip.name,
@@ -1292,6 +1298,7 @@ async function loadPersonalTripContext(tripId: string): Promise<{
     destinationCandidates: trip.destinationCandidates,
     canStartSharedPlanning,
     missingFields,
+    sharedPlanningState,
   }), titleLocale: trip.titleLocale };
 }
 

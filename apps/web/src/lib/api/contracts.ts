@@ -140,6 +140,16 @@ export const suggestThreadTitleResponseSchema = z.object({
 // This keeps the active trip/thread metadata available to the UI immediately.
 export const createThreadResponseSchema = threadSchema;
 
+/**
+ * Where a trip stands on the road to a shared plan. Derived once on the
+ * server (`services/shared-planning-state-service.ts`) precisely so this
+ * client and the assistant's prompt cannot disagree about it.
+ */
+export const sharedPlanningStateSchema = z.enum([
+  "NOT_STARTED", "IN_PROGRESS", "NO_PLAN_YET", "PLAN_AVAILABLE",
+]);
+export type SharedPlanningState = z.infer<typeof sharedPlanningStateSchema>;
+
 // Single-trip detail DTO returned by GET /api/v1/trips/:tripId.
 export const tripDetailSchema = z.object({
   id: z.string().uuid(),
@@ -156,6 +166,13 @@ export const tripDetailSchema = z.object({
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   pinnedSession: tripPinnedSessionSchema.nullable().optional(),
+  /**
+   * Server-derived: whether another planning run can be offered right now.
+   * Mirrors `sharedPlanningStateSchema` in apps/api/src/types/schemas.ts.
+   * Optional so a client can render against an older server, but the CTA
+   * treats a missing value as "cannot offer" rather than guessing.
+   */
+  sharedPlanningState: sharedPlanningStateSchema.optional(),
   /** Extracted from conversation, not yet confirmed. Never a trip fact. */
   pendingBriefProposal: z.object({
     departureCities: z.array(z.string()).optional(),

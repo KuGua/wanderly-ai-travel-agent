@@ -39,6 +39,19 @@ export const personalTripContextSchema = z.object({
   missingFields: z.array(
     z.enum(["departure_city", "destination_city", "travel_dates"]),
   ).max(3),
+  /**
+   * Server-derived: whether another planning run can be offered right now.
+   * Same value the trip DTO carries, from the same derivation, so the prompt
+   * and the on-screen CTA cannot disagree.
+   *
+   * `canStartSharedPlanning` above answers only "is the DRAFT brief complete".
+   * It goes false the instant a trip is activated, and until this field
+   * existed there was nothing left to tell the model what had happened: the
+   * handoff block went empty for every non-DRAFT trip, and the assistant kept
+   * directing the traveller to a button that had disappeared. Carries no
+   * member data — it is a four-valued server judgement, like the flag above.
+   */
+  sharedPlanningState: z.enum(["NOT_STARTED", "IN_PROGRESS", "NO_PLAN_YET", "PLAN_AVAILABLE"]),
 }).strict();
 
 export type PersonalTripContext = z.infer<typeof personalTripContextSchema>;
