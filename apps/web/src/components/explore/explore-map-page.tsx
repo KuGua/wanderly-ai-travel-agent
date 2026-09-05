@@ -66,11 +66,12 @@ const NEARBY_RADIUS_KM = 50;
 const DEFAULT_GEOGRAPHY_VISIBILITY: GeographyVisibility = { countries: true, regions: true, cities: true };
 
 /**
- * Pointing devices, i.e. a desktop. Only there is the floor applied: a phone
- * has so little width beside the chat panel that clamping the zoom would push
- * the globe off screen rather than keep it whole.
+ * Desktop-sized screens only. A pointer-media query looked more precise, but
+ * it is not stable across browser emulation, touch-enabled laptops, and some
+ * remote-desktop sessions. The product boundary is screen size, not the kind
+ * of pointing device, so keep the floor tied to the viewport alone.
  */
-const DESKTOP_QUERY = "(min-width: 768px) and (pointer: fine)";
+const DESKTOP_QUERY = "(min-width: 768px)";
 
 /**
  * Lowest zoom the desktop globe may reach.
@@ -762,6 +763,12 @@ export function ExploreMapPage() {
       // implementation without it should still render rather than throw.
       if (typeof map?.setMinZoom !== "function") return;
       map.setMinZoom(media.matches ? DESKTOP_MIN_ZOOM : undefined);
+      // `setMinZoom` constrains all later camera operations. Clamp the
+      // already-active camera too: this is needed when a narrow window is
+      // widened after its map was allowed below the desktop floor.
+      if (media.matches && map.getZoom() < DESKTOP_MIN_ZOOM && typeof map.setZoom === "function") {
+        map.setZoom(DESKTOP_MIN_ZOOM);
+      }
     };
     apply();
     // Older Safari, and the jsdom stub, expose only the deprecated
@@ -1053,53 +1060,63 @@ export function ExploreMapPage() {
       ) : null}
 
       {selected && !managePinsOpen && !chatOpen ? (
-        <aside data-wanderly-avoid className="wanderly-cosmos-destination-drawer absolute inset-x-3 bottom-3 z-30 max-h-[70dvh] overflow-y-auto p-5 pb-24 wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(360px,calc(100%-2rem))] landscape:pb-5">
-          <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label={t("drawerCloseAriaLabel")} className="wanderly-cosmos-destination-close absolute right-4 top-4 grid size-9 place-items-center wanderly-r-xs wanderly-press">
-            <X aria-hidden="true" className="size-4" />
-          </button>
-          <p className="wanderly-cosmos-destination-kicker text-[11px] font-black uppercase tracking-[0.14em] wanderly-underline">{stateLabel(exploreState, t)}</p>
-          <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em]" aria-live="polite">
-            {selected.locationReferenceStatus === "loading" ? t("resolvingLocation") : selected.name}
-          </h2>
-          <p className="wanderly-cosmos-destination-muted font-semibold">{selected.country}</p>
-          <p className="wanderly-cosmos-destination-label mt-3 inline-flex px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] wanderly-r-xs">
-            {selected.kind === "geography"
-                ? t("drawerKindGeography")
-                : t("drawerKindInspiration")}
-          </p>
-          <p className="mt-4 text-sm leading-6">{selected.note}</p>
-          {selected.locationReference?.outcome === "REFERENCE" ? (
-            <div className="wanderly-cosmos-destination-muted mt-3 text-xs leading-5">
-              <p>{t("locationReference", {
-                country: selected.locationReference.country,
-                region: selected.locationReference.admin1 ?? t("locationReferenceNoRegion"),
-                city: selected.locationReference.nearestCity ?? t("locationReferenceNoCity"),
-              })}</p>
-              <p className="mt-1">
-                {t("locationReferenceDataPrefix")} <a className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a>{" · "}<a className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a>
+        <aside data-wanderly-avoid className="wanderly-cosmos-destination-drawer absolute inset-x-3 bottom-3 z-30 max-h-[70dvh] overflow-y-auto wanderly-cosmos-panel wanderly-r-lg sm:left-[94px] sm:right-3 landscape:inset-x-auto landscape:bottom-auto landscape:right-6 landscape:top-28 landscape:w-[min(400px,calc(100%-2rem))]">
+          <div className="wanderly-destination-film">
+            <section className="wanderly-destination-film__frame wanderly-destination-film__frame--identity">
+              <button type="button" onClick={() => { clearJourneyTimers(); setSelected(null); setExploreState("IDLE"); }} aria-label={t("drawerCloseAriaLabel")} className="wanderly-cosmos-destination-close absolute right-4 top-4 grid size-9 place-items-center wanderly-r-xs wanderly-press">
+                <X aria-hidden="true" className="size-4" />
+              </button>
+              <p className="wanderly-cosmos-destination-kicker text-[11px] font-black uppercase tracking-[0.14em] wanderly-underline">{stateLabel(exploreState, t)}</p>
+              <h2 className="mt-2 pr-9 text-3xl font-bold tracking-[-0.05em]" aria-live="polite">
+                {selected.locationReferenceStatus === "loading" ? t("resolvingLocation") : selected.name}
+              </h2>
+              <p className="wanderly-cosmos-destination-muted font-semibold">{selected.country}</p>
+              <p className="wanderly-cosmos-destination-label mt-3 inline-flex px-2.5 py-1 text-[11px] font-black uppercase tracking-[0.08em] wanderly-r-xs">
+                {selected.kind === "geography"
+                    ? t("drawerKindGeography")
+                    : t("drawerKindInspiration")}
               </p>
-            </div>
-          ) : null}
-          {selected.stableSourceId ? (
-            <LocationIntroductionPanel state={introduction.state} onRetry={introduction.retry} />
-          ) : null}
-          {selected.locationReferenceStatus === "loading" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceLoading")}</p> : null}
-          {selected.locationReferenceStatus === "unavailable" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceUnavailable")}</p> : null}
-          <button type="button" onClick={startExploring} disabled={exploreState !== "SELECTED"} className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 px-4 font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action disabled:cursor-default disabled:opacity-80">
-            {exploreState === "SELECTED" ? (
-              <><MapPin aria-hidden="true" className="size-4" /> {selected.kind === "geography" ? t("action.viewGeography") : t("action.viewInspiration")}</>
-            ) : stateAction(exploreState, selected.kind, t)}
-          </button>
-          {selected.kind === "inspiration" ? (
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <button type="button" onClick={openPinManager} className="wanderly-cosmos-destination-secondary inline-flex min-h-11 items-center justify-center gap-1.5 text-sm font-extrabold wanderly-r-sm wanderly-press">
-                <ListChecks aria-hidden="true" className="size-4" /> {t("managePinsCta")}
+            </section>
+
+            <section className="wanderly-destination-film__frame wanderly-destination-film__frame--context">
+              <p className="text-sm leading-6">{selected.note}</p>
+              {selected.locationReference?.outcome === "REFERENCE" ? (
+                <div className="wanderly-cosmos-destination-muted mt-3 text-xs leading-5">
+                  <p>{t("locationReference", {
+                    country: selected.locationReference.country,
+                    region: selected.locationReference.admin1 ?? t("locationReferenceNoRegion"),
+                    city: selected.locationReference.nearestCity ?? t("locationReferenceNoCity"),
+                  })}</p>
+                  <p className="mt-1">
+                    {t("locationReferenceDataPrefix")} <a className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a>{" · "}<a className="underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a>
+                  </p>
+                </div>
+              ) : null}
+              {selected.stableSourceId ? (
+                <LocationIntroductionPanel state={introduction.state} onRetry={introduction.retry} />
+              ) : null}
+              {selected.locationReferenceStatus === "loading" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceLoading")}</p> : null}
+              {selected.locationReferenceStatus === "unavailable" ? <p className="mt-3 text-xs text-muted-foreground" role="status">{t("locationReferenceUnavailable")}</p> : null}
+            </section>
+
+            <section className="wanderly-destination-film__frame wanderly-destination-film__frame--actions">
+              <button type="button" onClick={startExploring} disabled={exploreState !== "SELECTED"} className="inline-flex min-h-12 w-full items-center justify-center gap-2 px-4 font-extrabold wanderly-edge wanderly-r-md wanderly-shadow-sm wanderly-press wanderly-action disabled:cursor-default disabled:opacity-80">
+                {exploreState === "SELECTED" ? (
+                  <><MapPin aria-hidden="true" className="size-4" /> {selected.kind === "geography" ? t("action.viewGeography") : t("action.viewInspiration")}</>
+                ) : stateAction(exploreState, selected.kind, t)}
               </button>
-              <button type="button" onClick={() => deleteInspirations([selected.id])} className="wanderly-cosmos-destination-danger inline-flex min-h-11 items-center justify-center gap-1.5 text-sm font-extrabold wanderly-r-sm wanderly-press">
-                <Trash2 aria-hidden="true" className="size-4" /> {t("deleteThisCta")}
-              </button>
-            </div>
-          ) : null}
+              {selected.kind === "inspiration" ? (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={openPinManager} className="wanderly-cosmos-destination-secondary inline-flex min-h-11 items-center justify-center gap-1.5 text-sm font-extrabold wanderly-r-sm wanderly-press">
+                    <ListChecks aria-hidden="true" className="size-4" /> {t("managePinsCta")}
+                  </button>
+                  <button type="button" onClick={() => deleteInspirations([selected.id])} className="wanderly-cosmos-destination-danger inline-flex min-h-11 items-center justify-center gap-1.5 text-sm font-extrabold wanderly-r-sm wanderly-press">
+                    <Trash2 aria-hidden="true" className="size-4" /> {t("deleteThisCta")}
+                  </button>
+                </div>
+              ) : null}
+            </section>
+          </div>
         </aside>
       ) : null}
       <ExploreChatHost
