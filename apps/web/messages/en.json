@@ -50,6 +50,7 @@
     "subtitle": "Continue a trip that is taking shape, or tune the private preferences that guide your recommendations.",
     "newTrip": "New trip",
     "newTripError": "We could not create a new trip. Please try again.",
+    "continueTrip": "Continue current plan",
     "summary": {
       "ariaLabel": "Workspace summary",
       "ready": "Your travel space is ready",
@@ -111,7 +112,7 @@
       "emptyAction": "Review Profile setup"
     },
     "trips": {
-      "heading": "Your trips",
+      "heading": "Planner",
       "showing": "Showing {count}",
       "emptyTitle": "No trips yet",
       "emptyBody": "Trips from your account will appear here. Trip creation is a later slice."

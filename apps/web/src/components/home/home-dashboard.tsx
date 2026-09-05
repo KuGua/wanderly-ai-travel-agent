@@ -83,6 +83,19 @@ export function HomeDashboard() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   }, []);
   const calendarRuns = useMemo(() => tripRuns(trips), [trips]);
+  /* The plan the reader is most likely coming back to finish. Restored from
+     the hero card that used to sit above the calendar: the card itself said
+     little the trip's own note does not, but "take me back to the one I was
+     in the middle of" was the one thing on it the list cannot do — the list
+     is sorted, not ranked, and with twenty notes the live one is not on top.
+     An unfinished private exploration outranks a plan already under way,
+     because it is the one still waiting on the traveller rather than on us. */
+  const currentTrip = useMemo(() => {
+    const live = trips.filter((trip) => !isArchivedTrip(trip));
+    return live.find((trip) => trip.status === "DRAFT")
+      ?? live.find((trip) => trip.status === "STALE" || trip.status === "PLANNING")
+      ?? null;
+  }, [trips]);
   // The year the traveller is most likely asking about: this one when it has
   // trips, otherwise the nearest year that does.
   const calendarYear = useMemo(() => {
@@ -127,20 +140,43 @@ export function HomeDashboard() {
             <span className="wanderly-brush">{tHome("title")}</span>
           </h1>
         </div>
-        <button
-          type="button"
-          onClick={() => startTrip.mutate()}
-          disabled={startTrip.isPending}
-          /* The selected filter's blue, not the mint `wanderly-action`. Scoped
-             to this page: that class is shared by twelve other files, and the
-             brief was these two controls, not every primary button. */
-          className="inline-flex min-h-12 items-center gap-2 bg-[var(--w-cal-run)] px-5 text-sm font-extrabold text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-xs wanderly-press hover:bg-[color-mix(in_srgb,var(--w-cal-run),var(--w-ink)_10%)] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[17px] fill-none stroke-current stroke-[2.4px]">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          {startTrip.isPending ? tCommon("loadingTrips") : tHome("newTrip")}
-        </button>
+        {/* The two ways into a plan, in the filter chips' outline: the heavy
+            edge and hard shadow made one button shout across a page whose
+            every other control had just been quietened. Fill still separates
+            them — starting something new is the page's own action, resuming
+            is a link into a trip. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => startTrip.mutate()}
+            disabled={startTrip.isPending}
+            /* The selected filter's blue, not the mint `wanderly-action`. Scoped
+               to this page: that class is shared by twelve other files, and the
+               brief was these two controls, not every primary button. */
+            className="inline-flex min-h-12 items-center gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-[var(--w-cal-run)] px-5 text-sm font-semibold text-[var(--w-ink)] transition-colors hover:bg-[color-mix(in_srgb,var(--w-cal-run),var(--w-ink)_10%)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[17px] fill-none stroke-current stroke-[2.4px]">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            {startTrip.isPending ? tCommon("loadingTrips") : tHome("newTrip")}
+          </button>
+          {/* Absent rather than disabled when there is nothing in progress: a
+              greyed-out "no plan yet" is a control explaining its own
+              uselessness, and a reader with no trips has the new-plan button
+              right beside it. */}
+          {currentTrip ? (
+            <Link
+              href={`/trips/${currentTrip.id}` as "/trips/[tripId]"}
+              className="inline-flex min-h-12 items-center gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-card px-5 text-sm font-semibold text-[var(--w-ink)] transition-colors hover:bg-[var(--w-mist)]"
+            >
+              <ArrowRight aria-hidden="true" className="size-[15px]" />
+              <span>{tHome("continueTrip")}</span>
+              {/* The trip's own name, so the control says which plan it will
+                  open rather than making the reader click to find out. */}
+              <span className="max-w-[13ch] truncate font-normal text-[var(--w-ink)]/60">{currentTrip.name}</span>
+            </Link>
+          ) : null}
+        </div>
       </header>
       {startTrip.isError ? <p role="alert" className="mt-3 text-sm font-semibold text-destructive">{tHome("newTripError")}</p> : null}
 

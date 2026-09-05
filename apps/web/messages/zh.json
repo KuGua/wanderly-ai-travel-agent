@@ -50,6 +50,7 @@
     "subtitle": "继续规划一段正在成形的旅行，或调整用于指导推荐的私人偏好。",
     "newTrip": "新建规划",
     "newTripError": "暂时无法新建行程，请重试。",
+    "continueTrip": "继续当前规划",
     "summary": {
       "ariaLabel": "工作区概览",
       "ready": "您的旅行空间已就绪",
@@ -111,7 +112,7 @@
       "emptyAction": "查看资料设置"
     },
     "trips": {
-      "heading": "您的行程",
+      "heading": "计划簿",
       "showing": "共 {count} 项",
       "emptyTitle": "暂无行程",
       "emptyBody": "您账号下的行程会显示在这里。行程创建将在后续切片中提供。"
