@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, LoaderCircle, Plus, RotateCw, Sparkles, Square } from "lucide-react";
+import { ArrowRight, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, LoaderCircle, Plus, RotateCw, Sparkles, Square, X } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -308,8 +308,14 @@ export function TravelAgentChat({
   const [flightOfferCue, setFlightOfferCue] = useState<OfferCue | null>(null);
   const [hotelOfferCue, setHotelOfferCue] = useState<OfferCue | null>(null);
   const [savedOfferNotice, setSavedOfferNotice] = useState<{ capability: "flight" | "hotel"; headline: string } | null>(null);
-  const [isActingOnOfferCue, setIsActingOnOfferCue] = useState(false);  const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
+  const [isActingOnOfferCue, setIsActingOnOfferCue] = useState(false);
+  const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
   const [isStartingSharedPlan, setIsStartingSharedPlan] = useState(false);
+  // This is a voluntary pause, not a rejection of the trip brief. A normal
+  // follow-up must not repeat the CTA; the named “Start planning” phrase is
+  // the deliberate way to bring it back during this chat session.
+  const [startPlanningCardDismissed, setStartPlanningCardDismissed] = useState(false);
+  const [startPlanningDismissalNotice, setStartPlanningDismissalNotice] = useState(false);
   // The assistant already has every field it needs for a flight search but
   // won't spend the metered provider call without a person's say-so. Rather
   // than have the user type "确认搜索", a persistent button does it — it
@@ -790,6 +796,10 @@ export function TravelAgentChat({
       void reopenPreferenceCard();
       return;
     }
+    if (opensStartPlanningCard(question)) {
+      setStartPlanningCardDismissed(false);
+      setStartPlanningDismissalNotice(false);
+    }
     dismissPreferenceCardOnSend();
 
     const turn: PendingTurn = {
@@ -812,6 +822,11 @@ export function TravelAgentChat({
 
   function collapseConversation() {
     onDismiss();
+  }
+
+  function dismissStartPlanningCard() {
+    setStartPlanningCardDismissed(true);
+    setStartPlanningDismissalNotice(true);
   }
 
   function stopActiveRun() {
@@ -1105,6 +1120,12 @@ export function TravelAgentChat({
   // What is about to be saved has to be legible before the click.
   const briefDates = formatBriefDates(fmt, briefProposal);
   const activeDestinationCandidate = destinationCue?.candidates[destinationCueIndex] ?? null;
+  // A broad brief review must never compete with an already-open precise
+  // confirmation. Resolve destination, flight, and hotel cards first.
+  const hasOpenConfirmationCard = Boolean(
+    (destinationCue && activeDestinationCandidate && effectiveThreadId)
+    || ((flightOfferCue || hotelOfferCue) && effectiveThreadId),
+  );
 
   const actionCardClass = `px-3.5 py-3 text-sm ${surfaceClass} wanderly-r-md wanderly-shadow-sm`;
   const actionPrimaryClass = "min-h-10 px-3 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-50";
@@ -1450,6 +1471,14 @@ export function TravelAgentChat({
                 : "Saved to your draft trip. Not booked."}
             </p>
           ) : null}
+          {startPlanningDismissalNotice ? (
+            <article data-role="ASSISTANT" className={rowClass}>
+              {agentLabel}
+              <div className={agentBubbleClass}>
+                <p>{t("startSharedPlanDismissedNotice")}</p>
+              </div>
+            </article>
+          ) : null}
           {destinationCue && activeDestinationCandidate && effectiveThreadId ? (
             <section
               aria-label={t("destinationCueTitle")}
@@ -1556,7 +1585,7 @@ export function TravelAgentChat({
               ) : null}
             </div>
           ) : null}
-          {actionableBriefProposal && tripId ? (
+          {actionableBriefProposal && tripId && !hasOpenConfirmationCard ? (
             /* A question with two answers. The primary carries the weight
                because one of them is the decision being invited; the other is
                a way to decline it, not a symmetrical alternative. */
@@ -1607,8 +1636,18 @@ export function TravelAgentChat({
               posed — "介绍一下蒙古国" is not a request to start planning. The
               conversation still syncs to the trip; only the call to action
               waits for the planner, where starting is the point of the page. */}
-          {!onGlobe && !actionableBriefProposal && !destinationCue && canStartSharedPlanning ? (
-            <section aria-label={t("startSharedPlanTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
+          {!onGlobe && !actionableBriefProposal && !hasOpenConfirmationCard && canStartSharedPlanning && !startPlanningCardDismissed ? (
+            <section aria-label={t("startSharedPlanTitle")} className={`relative ${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
+              <button
+                type="button"
+                aria-label={t("startSharedPlanDismiss")}
+                title={t("startSharedPlanDismiss")}
+                onClick={dismissStartPlanningCard}
+                disabled={isStartingSharedPlan}
+                className="absolute right-2 top-2 grid size-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
+              >
+                <X aria-hidden="true" className="size-4" />
+              </button>
               <p className="font-bold text-primary">
                 {t("startSharedPlanTitle")}
               </p>
@@ -1626,7 +1665,7 @@ export function TravelAgentChat({
                     value={guestNationality}
                     onChange={(event) => setGuestNationality(event.target.value)}
                     disabled={isStartingSharedPlan}
-                    className="mt-1.5 w-full rounded-[12px] border border-primary/20 bg-card px-3 py-2 text-sm disabled:opacity-50"
+                    className="mt-1.5 w-full rounded-[12px] bg-card px-3 py-2 text-sm outline-none ring-1 ring-primary/15 transition-shadow focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50"
                   >
                     <option value="">{t("startSharedPlanNationalityPlaceholder")}</option>
                     {QUOTE_NATIONALITIES.map((code) => (
@@ -2108,6 +2147,10 @@ const QUOTE_NATIONALITIES = [
 
 /** The country's own name in the reader's language, not an English label. */
 function countryLabel(code: string, locale: "en" | "zh"): string {
+  // Browser locale data varies in how it names these territories. The quote
+  // selector uses the product's explicit China notation in both languages.
+  if (code === "HK") return locale === "zh" ? "香港（中国）" : "Hong Kong (China)";
+  if (code === "TW") return locale === "zh" ? "台湾（中国）" : "Taiwan (China)";
   try {
     return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code;
   } catch {
@@ -2115,6 +2158,12 @@ function countryLabel(code: string, locale: "en" | "zh"): string {
     // code is still a usable answer and the select still works.
     return code;
   }
+}
+
+/** Reopen only for the phrase the dismissal notice explicitly advertises. */
+function opensStartPlanningCard(text: string): boolean {
+  const normalized = text.trim().toLocaleLowerCase();
+  return normalized === "开始规划" || normalized === "start planning";
 }
 
 function isRetryable(error: unknown) {
