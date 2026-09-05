@@ -1557,6 +1557,49 @@ that a grant/revoke invalidates dependent plans.
 - The authorization endpoint returns `404` for foreign trip/member
   combinations; `422` for non-ISO-3166-1 alpha-2 input.
 
+### TS-HOTEL-PROVIDER-2a — Capture, remember and reuse quote nationality during planning
+
+**Stories:** H1, H3, S1, S6
+
+**Objective:** Verify the planning CTA collects a missing quote nationality,
+optionally saves it to the private Profile, and does not repeat the question
+once either the Profile or this trip's authorization can satisfy the flow.
+
+**Steps:**
+
+1. Open a ready DRAFT trip whose owner has neither a Profile nationality nor a
+   Nuitee quote authorization. Confirm the CTA is disabled until an ISO country
+   value is selected and that “save to my private Profile” is a visible,
+   independently selectable control.
+2. Start planning once with save enabled. Inspect the private Profile, active
+   provider authorization, snapshot/task, response DTOs and telemetry.
+3. Start a different ready trip. Confirm the UI explains that the Profile value
+   will be used for this trip, requires the Start action, and sends `PROFILE`
+   without putting the value in the request.
+4. Retry a `PLANNING` trip in `NO_PLAN_YET` state while its active trip
+   authorization exists but its Profile nationality is absent. Confirm “Plan
+   again” is enabled and no nationality field is shown.
+5. Revoke the trip authorization and retry with save disabled. Confirm the form
+   reappears, the new value remains trip-scoped, and no Profile is created.
+6. Repeat the same request ID and simulate a terminal
+   `COMPLETED_WITH_GAPS` run whose final conversation refresh fails.
+
+**Expected outcomes:**
+
+- Save-enabled input atomically writes the owner-only Profile/memory fact,
+  provider grant, snapshot and durable task; save-disabled input creates only
+  the trip-scoped grant.
+- Profile reuse always requires the current Start/Plan-again action; an active
+  trip grant suppresses duplicate collection. No path infers a nationality
+  from conversation or sends it in a Profile-source request.
+- An idempotent retry returns the same run without another Profile write,
+  authorization version or snapshot.
+- The nationality value is absent from shared DTOs, browser persistence,
+  audit summaries, logs, traces and metric labels.
+- `COMPLETED`, `COMPLETED_WITH_GAPS`, `FAILED`, `STALE` and `CANCELLED` all
+  release the composer and clear the stored active-run pointer even if the
+  final history refresh is unavailable; “Wanderly is thinking” never latches.
+
 ### TS-HOTEL-TOOL-2 — Non-price accommodation discovery and destination integrity
 
 **Stories:** H3, H5, S1

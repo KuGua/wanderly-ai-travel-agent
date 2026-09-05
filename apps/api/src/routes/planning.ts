@@ -5,11 +5,12 @@ import { db } from "../db/database.js";
 import { sharedTrips, tripMembers, tripSearchPreferences, tripStaySearchPreferences } from "../db/schema.js";
 import { planRequestSchema } from "../types/schemas.js";
 import { createConstraintSnapshot, getLatestActivePlan } from "../services/planning-service.js";
-import { acceptResearchTask, getLatestAuthorizedPlanningRun } from "../tasks/task-repository.js";
+import { acceptResearchTask, findResearchTaskByRequestId, getLatestAuthorizedPlanningRun } from "../tasks/task-repository.js";
 import { requireActiveTrip } from "../services/trip-status-guard.js";
 import { createRequestContext } from "../utils/context.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { personalResearchCapabilitySchema } from "../types/schemas.js";
+import { applyQuoteNationalityDecision } from "../services/quote-nationality-decision-service.js";
 import {
   PlanAdoptionServiceError,
   planAdoptionErrorToApiError,
@@ -39,61 +40,66 @@ export async function planningRoutes(app: FastifyInstance) {
     }
 
     await requireActiveTrip(body.tripId, "planning");
+    const requestId = request.clientRequestId ?? randomUUID();
 
-    const [trip] = await db.select().from(sharedTrips).where(eq(sharedTrips.id, body.tripId)).limit(1);
-    if (!trip) {
-      throw new ApiError(404, "Not Found", "Trip not found");
-    }
+    const accepted = await db.transaction(async (tx) => {
+      // Serialize an idempotent retry before it can refresh provider authority,
+      // write Profile memory, or allocate another immutable snapshot.
+      const [trip] = await tx.select().from(sharedTrips)
+        .where(eq(sharedTrips.id, body.tripId)).for("update").limit(1);
+      if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
+      const existing = await findResearchTaskByRequestId({ tripId: body.tripId, requestId, tx });
+      if (existing) return existing;
 
-    const members = await db.select().from(tripMembers)
-      .where(and(eq(tripMembers.tripId, body.tripId), eq(tripMembers.isRequired, true)));
-    const memberIds = members.map(m => m.userId);
+      const members = await tx.select().from(tripMembers)
+        .where(and(eq(tripMembers.tripId, body.tripId), eq(tripMembers.isRequired, true)));
+      const memberIds = members.map((member) => member.userId);
+      const destinationCandidates = (trip.destinationCandidates as string[]) ?? [];
+      if (destinationCandidates.length === 0) {
+        throw new ApiError(422, "Unprocessable Entity", "Trip has no destination candidates");
+      }
 
-    const destinationCandidates = (trip.destinationCandidates as string[]) ?? [];
-    if (destinationCandidates.length === 0) {
-      throw new ApiError(422, "Unprocessable Entity", "Trip has no destination candidates");
-    }
+      if (body.quoteNationalityDecision) {
+        await applyQuoteNationalityDecision({
+          ctx,
+          tripId: body.tripId,
+          userId: request.user.id,
+          decision: body.quoteNationalityDecision,
+          tx,
+        });
+      }
 
-    const departureCities = (trip.departureCities as string[]) ?? [];
-    const travelDateStart = trip.travelDateStart ?? undefined;
-    const travelDateEnd = trip.travelDateEnd ?? undefined;
+      const snapshotId = await createConstraintSnapshot({
+        tripId: body.tripId,
+        memberIds,
+        departureCities: (trip.departureCities as string[]) ?? [],
+        destinationCandidates,
+        travelDateStart: trip.travelDateStart ?? undefined,
+        travelDateEnd: trip.travelDateEnd ?? undefined,
+        tx,
+      });
 
-    // One shared snapshot anchors every plan in this round.
-    const snapshotId = await createConstraintSnapshot({
-      tripId: body.tripId,
-      memberIds,
-      departureCities,
-      destinationCandidates,
-      travelDateStart,
-      travelDateEnd,
-    });
+      const [latestPreference] = await tx.select().from(tripSearchPreferences)
+        .where(eq(tripSearchPreferences.tripId, body.tripId))
+        .orderBy(desc(tripSearchPreferences.version)).limit(1);
+      if (!latestPreference) throw new ApiError(422, "Unprocessable Entity", "Confirmed flight search preferences are required");
+      const latestStayPreference = process.env.PLAN_ENABLE_HOTEL === "true"
+        ? await tx.select().from(tripStaySearchPreferences).where(eq(tripStaySearchPreferences.tripId, body.tripId)).orderBy(desc(tripStaySearchPreferences.version)).limit(1)
+        : [];
+      if (process.env.PLAN_ENABLE_HOTEL === "true" && !latestStayPreference[0]) {
+        throw new ApiError(422, "Unprocessable Entity", "Confirmed stay search preferences are required");
+      }
 
-    const latestPreference = await db.select().from(tripSearchPreferences)
-      .where(eq(tripSearchPreferences.tripId, body.tripId))
-      .orderBy(desc(tripSearchPreferences.version)).limit(1);
-    if (!latestPreference[0]) throw new ApiError(422, "Unprocessable Entity", "Confirmed flight search preferences are required");
-    const latestStayPreference = process.env.PLAN_ENABLE_HOTEL === "true"
-      ? await db.select().from(tripStaySearchPreferences).where(eq(tripStaySearchPreferences.tripId, body.tripId)).orderBy(desc(tripStaySearchPreferences.version)).limit(1)
-      : [];
-    if (process.env.PLAN_ENABLE_HOTEL === "true" && !latestStayPreference[0]) {
-      throw new ApiError(422, "Unprocessable Entity", "Confirmed stay search preferences are required");
-    }
-
-    const accepted = await acceptResearchTask({
-      ctx, tripId: body.tripId, userId: request.user.id, snapshotId,
-      flightSearchPreferencesVersion: latestPreference[0].version,
-      staySearchPreferencesVersion: latestStayPreference[0]?.version ?? undefined,
-      outputMode: "PROPOSE_PLAN",
-      requestedCapabilities: FULL_CAPABILITY_SET,
-      // Hotel capability is active only when PLAN_ENABLE_HOTEL=true; in
-      // every other case the task has no hotel slot and `hotel_provider`
-      // stays NULL. When the capability IS active but the env-side
-      // `HOTEL_PROVIDER` is unset (still defaults to disabled), the
-      // underlying resolver also returns null — the run row stays
-      // NULL and the Worker reports hotel as NOT_CONFIGURED, never a
-      // silent fallback. Spec §3.1, §3.2.
-      hotelProvider: process.env.PLAN_ENABLE_HOTEL === "true" ? undefined : null,
-      requestId: request.clientRequestId ?? randomUUID(),
+      return acceptResearchTask({
+        ctx, tripId: body.tripId, userId: request.user.id, snapshotId,
+        flightSearchPreferencesVersion: latestPreference.version,
+        staySearchPreferencesVersion: latestStayPreference[0]?.version ?? undefined,
+        outputMode: "PROPOSE_PLAN",
+        requestedCapabilities: FULL_CAPABILITY_SET,
+        hotelProvider: process.env.PLAN_ENABLE_HOTEL === "true" ? undefined : null,
+        requestId,
+        tx,
+      });
     });
     // Rewrite operation label for the legacy public contract.
     return reply.code(202).send({

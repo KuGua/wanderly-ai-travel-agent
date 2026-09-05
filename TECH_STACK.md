@@ -93,6 +93,8 @@ Agent 不能自行跨越以下边界：
 - 不能把 provider 返回值当作永久真相；
 - 不能自动扣款、自动预订或绕过任一成员确认。
 
+Nuitee 报价国籍采用显式、服务端权威的 `quoteNationalityDecision`：用户可选择本次输入（可另选是否保存到私人 Profile）或确认使用既有 Profile 值。Profile 写入、provider-only grant、snapshot 与 task acceptance 在同一数据库事务中完成；同一 request ID 的重试先命中既有 task，不重复写 Profile、刷新授权版本或创建 snapshot。浏览器只能读取不含国籍值的授权元数据；已有有效 trip grant 时不再询问，Profile 复用仍需本次用户动作确认，不属于自动推断。
+
 ### 单人 Trip 编排模式
 
 同一受控 `TripOrchestrator` 同时服务单人和多人 Trip；`Personal Agent` 是 owner 私聊入口、补问与受控命令发起者，而不是 provider/tool 的直接调用者。单人 Trip 只有一位 required member，使用该 owner 明确授权的最小 snapshot；多人 Trip 使用全体成员授权汇总的 snapshot。两种模式均通过 PostgreSQL durable Worker、Shared Skill registry、typed provider adapter、evidence validator 和 plan 状态机执行，绝不新建 Personal 专属 provider、evidence store 或自由 Agent-to-Agent 通道。

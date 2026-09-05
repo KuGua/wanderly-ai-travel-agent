@@ -61,7 +61,7 @@
 | 任务一致性 | task 接受时把选择写入服务端权威状态 `agent_task_runs.hotel_provider`；一个 run 只能查询一个 provider，禁止自动 fallback 或混合比较。 |
 | 产品边界 | 两家 provider 都只提供实时搜索和比较。所有结果显示来源、采集时间、有效期、总价与每晚价；税费或必缴费用不完整/无法验证时一律显示“可能另计”。 |
 | 模型权限 | LLM 只能调用 `hotel.search({ destinationId })`，不能选择 provider，也不能传递地点、日期、住客、币种、国籍、供应商 ID 或 URL。 |
-| Nuitee 国籍字段 | `guestNationality` 必须由用户显式确认一次“本次报价国籍”并以 provider-only 授权保存；禁止从 Profile 自动推断、写入 LLM prompt、同行可见 DTO 或遥测。 |
+| Nuitee 国籍字段 | `guestNationality` 必须由用户显式确认一次“本次报价国籍”并以 provider-only 授权保存。用户可明确输入并选择是否另存私人 Profile，或通过本次操作明确确认使用既有 Profile 值；禁止无用户动作从 Profile 自动推断、写入 LLM prompt、同行可见 DTO 或遥测。 |
 
 Nuitee 的 `/v3.0/hotels/rates` 是实时报价/可用性接口，要求入住/离店日期、币种、`guestNationality`、`occupancies` 和一种地点条件。MVP 使用现有完整 `DestinationReference.cityName + countryCode`，不调用付费 Places API。认证使用仅服务端的 `X-API-Key`。具体外部契约以 [Nuitee Rates API](https://docs.liteapi.travel/reference/post_hotels-rates)、[认证说明](https://docs.liteapi.travel/reference/authentication) 和 [错误码](https://docs.liteapi.travel/reference/api-errors-for-hotel-booking-workflow) 为准。
 
@@ -168,7 +168,7 @@ NUITEE_HOTEL_MAX_RETRIES=1
 
 ## 6. 接口与 UI 变更
 
-`hotel.search` 的 LLM tool schema 和对外 plan 比较 DTO 不新增 provider 参数。新增 owner 确认的 provider-only 报价输入 endpoint/表单，最小请求为：`provider: "nuitee_connect"`、`guestNationality: ISO-3166-1 alpha-2`、明确用途确认；响应只返回授权状态/版本，不回显国籍。
+`hotel.search` 的 LLM tool schema 和对外 plan 比较 DTO 不新增 provider 参数。“开始规划/再次规划”接受显式 `quoteNationalityDecision`：`INPUT` 携带 ISO-3166-1 alpha-2 值、`saveToProfile` 和用途确认；`PROFILE` 不携带国籍值，只表示用户本次确认由服务端读取自己的私人 Profile。服务端在一个事务中完成可选 Profile 写入、provider-only grant、snapshot 与 task acceptance。授权查询只返回 id、provider、field、version 与时间，不回显国籍；已有有效 trip grant 时 UI 不再重复询问。
 
 酒店 comparison DTO 可增加只读 `providerName`（内部稳定枚举）与 `source`（展示文本），但不得包含 Nuitee `offerId`、supplier URL、完整地址、图片 URL、国籍或原始房型 token。provider 差异须在卡片来源处明确展示，禁止把不同 provider 的结果标为同一库存池。
 
@@ -202,5 +202,5 @@ NUITEE_HOTEL_MAX_RETRIES=1
 
 - 不使用 Nuitee MCP server、Places、Price Index、Prebook、Book、订单、支付、redirect/deep link。
 - 不新增 Redis、Temporal、Step Functions、WebSocket、自由 multi-agent 或客户端业务真相。
-- 不自动按成员 Profile 填充国籍，不将多位成员拆成多次报价后伪装为同一订单价。
+- 不在缺少本次用户确认时自动按成员 Profile 填充国籍，不将多位成员拆成多次报价后伪装为同一订单价。
 - 不做运行时 fixture/demo fallback，不从 base price 推断税费或总价，不在两家 provider 之间自动 fallback。
