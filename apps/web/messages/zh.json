@@ -607,12 +607,18 @@
         "body": "当成员在私人对话中确认了团队的共同出行约束后，团队方案会出现在这里，供所有人查看与投票。",
         "backToThread": "回到我的对话"
       },
+      "gaps": {
+        "title": "本次未生成共享方案",
+        "body": "规划器已完成研究，但实时可验证数据不完整，因此没有创建不可靠的行程方案。",
+        "detail": "查看运行详情"
+      },
       "status": {
         "queued": "已排队 — 等待规划器",
         "researching": "正在研究方案…",
         "persisting": "正在保存方案…",
         "retrying": "因暂时性失败正在重试…",
         "completed": "方案已就绪",
+        "completedWithGaps": "研究已完成，但关键信息缺失，未生成方案",
         "failed": "本次运行未产出方案",
         "cancelled": "本次运行已取消",
         "lastUpdated": "最后更新于 {value}"

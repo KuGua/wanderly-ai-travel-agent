@@ -366,6 +366,14 @@ export type ProviderResult<T> =
     }
   | {
       outcome: "UNAVAILABLE";
+      /**
+       * Kept structurally identical to `ProviderUnavailableCode` in
+       * `types/domain.ts`, which is the canonical list. It is spelled out
+       * again rather than imported because `domain.ts` already imports from
+       * this file; adding a value means updating both, plus the Zod mirrors
+       * in `types/schemas.ts` and `apps/web/src/lib/api/contracts.ts` and the
+       * bounded metric label in `observability/metrics.ts`.
+       */
       reason:
         | "NOT_CONFIGURED"
         | "SEARCH_CONSTRAINTS_INCOMPLETE"
@@ -374,5 +382,6 @@ export type ProviderResult<T> =
         | "UPSTREAM_TIMEOUT"
         | "UPSTREAM_FAILURE"
         | "INVALID_PROVIDER_RESPONSE"
-        | "PROVIDER_NOT_APPROVED";
+        | "PROVIDER_NOT_APPROVED"
+        | "PROVIDER_REQUEST_REJECTED";
     };

@@ -432,7 +432,7 @@ metrics.registerCounter("agent_task_recoveries_total", "Expired Agent task lease
 metrics.registerCounter("flight_provider_requests_total", "Flight provider requests by bounded outcome.", {
   outcome: ["live", "unavailable"],
   provider: ["amadeus", "flightapi", "serpapi"],
-  error_category: ["none", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "no_results", "provider_not_approved", "search_constraints_incomplete"],
+  error_category: ["none", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "no_results", "provider_not_approved", "search_constraints_incomplete", "provider_request_rejected"],
 });
 metrics.registerCounter("external_provider_http_calls_total", "Outbound provider HTTP calls by bounded provider, operation, and transport result.", {
   provider: ["amadeus", "flightapi", "nuitee_connect", "openrouteservice", "opentripmap", "serpapi", "viator_mcp", "location_reference"],

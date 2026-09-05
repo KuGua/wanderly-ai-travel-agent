@@ -268,13 +268,29 @@ expiresAt: new Date(Math.min(
 
 `tasks/handlers/conversation-task-handler.ts:558` 用单个 `setTimeout(travelConversationSkill.timeoutMs)`（15000ms）罩住「建上下文 + 模型 + 工具调用 + 模型收尾」。酒店 skill 自身 `timeoutMs` 即为 15000ms，因此一次慢 provider 必然吃光整个回合预算，结果被报成模型故障（`docs/shared-agent-findings.md` #32：价格已查到并落库，屏幕显示「连不上模型」）。
 
+### 5.2 模型预算必须可配置，且超时不得被误报为上游故障
+
+**2026-09-05 实测。** `travelConversationSkill.timeoutMs` 曾硬编码 15000ms。同一会话连续两轮的**纯模型时间**（工具窗口已被 `withPausedModelBudget` 排除）分别为 15.0s 与 15.0s：前者压线返回，后者被本 deadline 中止，用户看到降级文案「I can't reach the conversation model right now」。贴着上限即为系统性失败，不是偶发。
+
+**改动一：预算移入 `tasks/config.ts`** 的 `conversationModelBudgetMs`（`CONVERSATION_MODEL_BUDGET_MS`，默认 30000，区间 5000–90000）。运维无需改代码即可调整。注意 `Skill.timeoutMs` 有两个消费者——本 deadline 与 `skill-registry.ts` 的每次尝试超时——移入配置正是为了让两者同步。
+
+若 30s 也被打满，正确做法是收窄上下文（`CONVERSATION_CONTEXT_MAX_TURNS` / `_MAX_CHARS`），而非无限抬高预算：模型预算 + 工具预算之和必须显著低于 `CONVERSATION_TURN_HARD_CAP_MS`，否则真正触发的会是硬上限。
+
+**改动二：本 deadline 造成的中止必须归类为 `TIMEOUT` 并停止重试。**
+
+`onAbort` 特意把 `error.name` 设为 `AbortError` 以便 `classifyError` 识别，但 **OpenAI SDK 会吞掉被中止的 signal，抛出自有的 `Error("Request was aborted.")`**，其 `name` 为普通 `"Error"`。于是该分支落空、归入兜底的 `UPSTREAM_FAILURE`——把我们自己的预算超时报成供应商故障。更糟的是 `TIMEOUT` 本身位于 `isRetryableUpstreamError` 列表内，因此剩余重试全部打在同一个已中止的 signal 上，立即失败并白白消耗退避等待（实测：15s 预算耗尽后又空转 3 次、约 1.9s）。
+
+修法是以 **signal 本身**为权威，而非匹配错误文案：`llm-gateway.ts` 的 `abortedByCaller(params.signal)` 在三处重试循环（`generateStructuredPlan`、`generateConversationReply`、`streamConversationReply`）的 catch 开头判定，命中即置 `TIMEOUT` 并 `break`。`classifyError` 另保留一条 `/\baborted\b/i` 文案兜底，供无 signal 可用的调用点使用。
+
+---
+
 ### 5.1 预算模型
 
 实现为扩展既有的 `createTurnDeadline`（`conversation-task-handler.ts`），而不是新建模块——它已经拥有暂停语义、硬上限与可注入时钟，唯一缺的是工具聚合预算：
 
 ```ts
 createTurnDeadline(params: {
-  modelBudgetMs: number;      // = travelConversationSkill.timeoutMs（15000）
+  modelBudgetMs: number;      // = travelConversationSkill.timeoutMs = CONVERSATION_MODEL_BUDGET_MS，默认 30000
   toolBudgetMs?: number;      // CONVERSATION_TOOL_BUDGET_MS，默认 20000
   hardCapMs?: number;         // CONVERSATION_TURN_HARD_CAP_MS，默认 120000
   onAbort: (reason: string) => void;
@@ -407,9 +423,10 @@ MODEL_GATEWAY_PLAN_REPAIR_BUDGET=2
 PLANNING_RUN_DEADLINE_MS=180000
 # 任务自 created_at 起的生命周期上限，防止重试无限续期
 AGENT_TASK_MAX_LIFETIME_SECONDS=900
-# 对话回合的工具聚合预算。model 时钟沿用 Skill 的 timeoutMs，硬上限沿用
-# CONVERSATION_TURN_HARD_CAP_MS 常量，两者都不新增环境变量。
+# 对话回合的工具聚合预算。硬上限沿用 CONVERSATION_TURN_HARD_CAP_MS 常量。
 CONVERSATION_TOOL_BUDGET_MS=20000
+# 对话回合的模型墙钟（Skill 的 timeoutMs 由它提供）。见 §5.2。
+CONVERSATION_MODEL_BUDGET_MS=30000
 # Provider 重试次数（1 = 单次重试；0 = 不重试）
 AMADEUS_FLIGHT_MAX_RETRIES=1
 SERPAPI_FLIGHT_MAX_RETRIES=1

@@ -431,6 +431,20 @@ export function useLatestPlanningRun(tripId: string, { enabled = true }: { enabl
   });
 }
 
+/** Member-safe detail used by the pinned Shared-planning result page. */
+export function useTripPlanningRunDetail(tripId: string, runId: string) {
+  const api = useTravelApi();
+  return useQuery({
+    queryKey: tripKeys.planningRunDetail(tripId, runId),
+    queryFn: () => {
+      if (!api.getTripPlanningRunDetail) throw new Error("Planning-run detail is unavailable");
+      return api.getTripPlanningRunDetail(tripId, runId);
+    },
+    enabled: Boolean(api.getTripPlanningRunDetail && tripId && runId),
+    retry: false,
+  });
+}
+
 export function useLatestPlan(tripId: string, enabled: boolean) {
   const api = useTravelApi();
   return useQuery({

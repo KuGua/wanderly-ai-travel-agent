@@ -163,6 +163,7 @@ export interface TravelApi {
   saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput): Promise<TripSearchPreferencesResponse>;
   startPlanning(tripId: string): Promise<PlanningTaskAcceptedResponse>;
   getLatestPlanningRun(tripId: string): Promise<LatestPlanningRunResponse>;
+  getTripPlanningRunDetail?(tripId: string, runId: string): Promise<import("./contracts").TripPlanningRunDetailResponse>;
   getLatestPlan(tripId: string): Promise<LatestPlanResponse>;
 
   // ── Team Agent 协作编排 (Phase 5) ────────────────────────────────────────────

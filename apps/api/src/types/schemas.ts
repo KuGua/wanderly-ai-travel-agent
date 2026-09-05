@@ -1161,6 +1161,7 @@ export const personalResearchUnavailableEvidenceSummarySchema = z.object({
     "UPSTREAM_FAILURE",
     "INVALID_PROVIDER_RESPONSE",
     "PROVIDER_NOT_APPROVED",
+    "PROVIDER_REQUEST_REJECTED",
   ]),
 }).strict();
 
@@ -1269,6 +1270,16 @@ export const researchResultResponseSchema = z.object({
 
 export const latestResearchResultResponseSchema = z.object({
   result: researchResultResponseSchema.nullable(),
+}).strict();
+
+/**
+ * Member-safe inspection of one trip-bound planning run. The response is
+ * deliberately limited to the durable run projection and its safe service
+ * gaps; it never returns a snapshot, provider payload, or private chat data.
+ */
+export const tripPlanningRunDetailResponseSchema = z.object({
+  run: agentRunResponseSchema,
+  research: researchResultResponseSchema.nullable(),
 }).strict();
 
 /**

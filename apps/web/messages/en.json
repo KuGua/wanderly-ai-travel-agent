@@ -607,12 +607,18 @@
         "body": "When a member confirms shared trip constraints in their private chat, the team-wide plan will appear here for everyone to review and vote on.",
         "backToThread": "Back to my conversation"
       },
+      "gaps": {
+        "title": "A shared plan was not generated",
+        "body": "The planner completed its research, but verified live data was incomplete. No itinerary was created.",
+        "detail": "View run details"
+      },
       "status": {
         "queued": "Queued — waiting for the planner",
         "researching": "Researching options…",
         "persisting": "Saving the plan…",
         "retrying": "Retrying after a transient failure…",
         "completed": "Plan is ready",
+        "completedWithGaps": "Research finished, but key data was missing — no plan was created",
         "failed": "This run did not produce a plan",
         "cancelled": "This run was cancelled",
         "lastUpdated": "Last updated {value}"

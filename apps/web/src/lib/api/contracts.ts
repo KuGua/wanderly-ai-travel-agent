@@ -579,6 +579,7 @@ export const personalResearchUnavailableEvidenceSummarySchema = z.object({
     "UPSTREAM_FAILURE",
     "INVALID_PROVIDER_RESPONSE",
     "PROVIDER_NOT_APPROVED",
+    "PROVIDER_REQUEST_REJECTED",
   ]),
 }).strict();
 
@@ -1505,6 +1506,9 @@ export const providerUnavailableCodeSchema = z.enum([
   "UPSTREAM_FAILURE",
   "INVALID_PROVIDER_RESPONSE",
   "PROVIDER_NOT_APPROVED",
+  // The supplier refused the request (4xx). Mirrored from the API contract:
+  // an unknown value here fails the response parse and blanks the surface.
+  "PROVIDER_REQUEST_REJECTED",
 ]);
 
 export const serviceGapSchema = z.object({
@@ -1580,11 +1584,18 @@ export const researchResultSchema = z.object({
   createdAt: z.string().datetime(),
 }).strict();
 
+/** Safe member-visible detail for a trip-bound Shared planning run. */
+export const tripPlanningRunDetailResponseSchema = z.object({
+  run: agentRunResponseSchema,
+  research: researchResultSchema.nullable(),
+}).strict();
+
 export type ServiceCapability = z.infer<typeof serviceCapabilitySchema>;
 export type ProviderUnavailableCode = z.infer<typeof providerUnavailableCodeSchema>;
 export type ServiceGap = z.infer<typeof serviceGapSchema>;
 export type ResearchResultStatus = z.infer<typeof researchResultStatusSchema>;
 export type ResearchResult = z.infer<typeof researchResultSchema>;
+export type TripPlanningRunDetailResponse = z.infer<typeof tripPlanningRunDetailResponseSchema>;
 // Note: `personalResearchCapabilitySchema` / `personalResearchKindSchema` /
 // `personalResearchIntentSchema` are declared above the `agentStreamEventSchema`
 // discriminated union (so the SSE member can reference them). The remaining
