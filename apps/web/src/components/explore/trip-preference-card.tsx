@@ -107,12 +107,6 @@ export function TripPreferenceCard({
   const valueOf = (field: PreferenceCardField) =>
     Object.hasOwn(draft, field.fieldKey) ? draft[field.fieldKey] : field.value;
 
-  // Only count the changes the traveller actually made — touching the field
-  // back to its inherited value should not count as an adjustment.
-  const adjustedCount = fields.filter(
-    (field) => Object.hasOwn(draft, field.fieldKey) && draft[field.fieldKey] !== field.value,
-  ).length;
-
   function submit() {
     // Only what the traveller actually changed. Writing every field would
     // pin the whole set to this trip, and a later profile edit would stop
@@ -226,14 +220,8 @@ export function TripPreferenceCard({
         })}
       </dl>
 
-      <p className="relative z-[2] mt-3 text-xs leading-snug text-muted-foreground">
-        {adjustedCount === 0
-          ? t("prefCardInherited")
-          : `${adjustedCount} · ${t("prefCardAdjusted")}`}
-      </p>
-
       {!editing ? (
-        <p className="relative z-[2] mt-2 text-[11px] leading-snug text-muted-foreground/80">
+        <p className="relative z-[2] mt-3 text-[11px] leading-snug text-muted-foreground/80">
           {t("prefCardReopenHint")}
         </p>
       ) : null}
