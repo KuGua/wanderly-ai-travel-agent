@@ -1065,10 +1065,24 @@
   animation: wanderly-rocket-launch .7s cubic-bezier(.2, .7, .35, 1) forwards;
 }
 
+/* Closing keeps the launch path but must not use CSS `reverse`: reversing an
+   ease-out curve creates a slow-start, accelerating descent. These are the
+   same three positions in descending order, played with the launch curve so
+   velocity steadily decreases until touchdown. */
+.wanderly-chat-rocket-launch--landing {
+  animation: wanderly-rocket-land .7s cubic-bezier(.2, .7, .35, 1) forwards;
+}
+
 @keyframes wanderly-rocket-launch {
   0% { opacity: 1; transform: translateY(0) scale(1); }
   78% { opacity: 1; transform: translateY(-76vh) scale(.68); }
   100% { opacity: 0; transform: translateY(-100vh) scale(.5); }
+}
+
+@keyframes wanderly-rocket-land {
+  0% { opacity: 0; transform: translateY(-100vh) scale(.5); }
+  22% { opacity: 1; transform: translateY(-76vh) scale(.68); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 @keyframes wanderly-rocket-flame {

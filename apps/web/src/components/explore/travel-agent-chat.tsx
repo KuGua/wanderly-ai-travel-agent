@@ -37,7 +37,7 @@ import { Link, useRouter } from "@/i18n/navigation";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
 type PendingTurn = ConversationTurnRequest;
-type ConversationLaunchPhase = "idle" | "preparing" | "launching";
+type ConversationLaunchPhase = "idle" | "preparing" | "launching" | "landing";
 /**
  * One lookup the assistant made while composing the current reply. Kept in
  * arrival order so the reader sees the sequence of work, and settled entries
@@ -939,6 +939,14 @@ export function TravelAgentChat({
   }
 
   function collapseConversation() {
+    if (!docked && !(typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+      if (launchTimerRef.current !== null) window.clearTimeout(launchTimerRef.current);
+      setConversationLaunchPhase("landing");
+      launchTimerRef.current = window.setTimeout(() => {
+        setConversationLaunchPhase("idle");
+        launchTimerRef.current = null;
+      }, 720);
+    }
     onDismiss();
   }
 
@@ -1556,9 +1564,11 @@ export function TravelAgentChat({
   if (!open) {
     return (
       <>
-        <button type="button" onClick={openConversationWithLaunch} data-wanderly-avoid aria-label={t("history")} title={t("history")} className="wanderly-chat-rocket-button absolute bottom-[201px] right-[25px] z-40 grid size-[44px] place-items-center md:right-[49px]">
-          <span aria-hidden="true" className="wanderly-chat-rocket-body" />
-        </button>
+        {conversationLaunchPhase !== "landing" ? (
+          <button type="button" onClick={openConversationWithLaunch} data-wanderly-avoid aria-label={t("history")} title={t("history")} className="wanderly-chat-rocket-button absolute bottom-[201px] right-[25px] z-40 grid size-[44px] place-items-center md:right-[49px]">
+            <span aria-hidden="true" className="wanderly-chat-rocket-body" />
+          </button>
+        ) : <RocketLaunchOverlay phase="landing" />}
         <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} compact />
         {/* The collapsed state is the same terminal as the open one, showing
             only its prompt line. Its bottom offset clears the legs so the
@@ -1579,7 +1589,7 @@ export function TravelAgentChat({
   // as two offsets means it stays true on any viewport height instead of
   // needing a `min()` of guesses per screen size.
   const conversationPanel = (
-    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} data-launch-phase={conversationLaunchPhase} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : `wanderly-cosmos-chat wanderly-crt absolute bottom-[88px] left-1/2 z-50 flex h-[52dvh] min-h-[290px] w-[min(calc(100%-4.5rem),560px)] -translate-x-1/2 flex-col overflow-visible md:left-auto md:right-10 md:top-[112px] md:h-auto md:min-h-0 md:w-[min(42vw,560px)] md:translate-x-0${conversationLaunchPhase === "idle" ? "" : " wanderly-cosmos-chat--launch"}`}>
+    <aside role={docked ? undefined : "dialog"} data-wanderly-avoid={docked ? undefined : ""} aria-label={t("dialogAria")} data-launch-phase={conversationLaunchPhase} className={docked ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-background" : `wanderly-cosmos-chat wanderly-crt absolute bottom-[88px] left-1/2 z-50 flex h-[52dvh] min-h-[290px] w-[min(calc(100%-4.5rem),430px)] -translate-x-1/2 flex-col overflow-visible md:left-auto md:right-10 md:top-[112px] md:h-auto md:min-h-0 md:w-[min(42vw,430px)] md:translate-x-0${conversationLaunchPhase === "idle" ? "" : " wanderly-cosmos-chat--launch"}`}>
       {/* The open chat floats directly above the crater; only its input gains
           a physical surface, so it does not read as a second dialogue box. */}
       <div className={`relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden ${docked ? "bg-background" : "bg-transparent"}`}>
