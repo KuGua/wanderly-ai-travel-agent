@@ -44,11 +44,19 @@ import { recordAudit } from "./audit-service.js";
 import { listPersonalOfferSelectionsForTrip, createPersonalOfferSelection, supersedeScopeSelections, type PersonalOfferSelectionCreated } from "./personal-offer-selection-service.js";
 import { incrementOfferCueMetrics } from "../observability/metrics-counters.js";
 import { logSafeRuntimeEvent } from "../observability/telemetry.js";
+import {
+  OFFER_CUE_COOLDOWN_MS,
+  OFFER_CUE_DAILY_DISMISSAL_LIMIT,
+  evaluateOfferCuePromptPolicy,
+  localDayKey,
+  nextLocalDayStart,
+  normalizeTimeZone,
+} from "./offer-cue-prompt-policy.js";
+
+export { evaluateOfferCuePromptPolicy };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-const MINIMUM_REPROMPT_MS = 30 * 60 * 1000;
-const DAILY_DISMISSAL_LIMIT = 3;
 const CANDIDATE_EXPIRY_SAFETY_MS = 5_000;
 
 export type OfferCueCapability = "flight" | "hotel";
@@ -71,23 +79,6 @@ export interface ResolvedOfferCueDecision {
 
 export interface ResolvedOfferCueOutcome {
   cue: OfferCueResponse;
-}
-
-export function evaluateOfferCuePromptPolicy(input: {
-  cooldownUntil: Date | null;
-  dismissalDay: string | null;
-  dailyDismissalCount: number;
-  timeZone: string;
-  now: Date;
-}): { eligible: boolean; reason: "ELIGIBLE" | "COOLDOWN" | "DAILY_LIMIT" } {
-  if (input.cooldownUntil && input.cooldownUntil.getTime() > input.now.getTime()) {
-    return { eligible: false, reason: "COOLDOWN" };
-  }
-  if (input.dismissalDay === localDayKey(input.now, input.timeZone)
-    && input.dailyDismissalCount >= DAILY_DISMISSAL_LIMIT) {
-    return { eligible: false, reason: "DAILY_LIMIT" };
-  }
-  return { eligible: true, reason: "ELIGIBLE" };
 }
 
 /**
@@ -451,8 +442,8 @@ export async function actOnOfferCueCandidate(params: {
       const dailyDismissalCount = policy?.dismissalDay === dismissalDay
         ? policy.dailyDismissalCount + 1
         : 1;
-      const cooldownUntil = new Date(nowMs + MINIMUM_REPROMPT_MS);
-      const mutedUntil = dailyDismissalCount >= DAILY_DISMISSAL_LIMIT
+      const cooldownUntil = new Date(nowMs + OFFER_CUE_COOLDOWN_MS);
+      const mutedUntil = dailyDismissalCount >= OFFER_CUE_DAILY_DISMISSAL_LIMIT
         ? nextLocalDayStart(now, timeZone)
         : null;
       await tx.insert(offerCuePromptPolicies).values({
@@ -676,45 +667,4 @@ export async function loadPersonalOfferSelectionsForThread(params: {
     ownerUserId: params.ownerUserId,
     capability: params.capability,
   });
-}
-
-// ─── Local-day helpers (mirror destination-cue-service.ts:319-352) ─────────
-
-function normalizeTimeZone(value: string): string {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date(0));
-    return value;
-  } catch {
-    return "UTC";
-  }
-}
-
-function localParts(value: Date, timeZone: string): Record<string, number> {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: normalizeTimeZone(timeZone),
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
-  }).formatToParts(value);
-  return Object.fromEntries(parts
-    .filter((part) => part.type !== "literal")
-    .map((part) => [part.type, Number(part.value)]));
-}
-
-function localDayKey(value: Date, timeZone: string): string {
-  const parts = localParts(value, timeZone);
-  return `${parts.year!.toString().padStart(4, "0")}-${parts.month!.toString().padStart(2, "0")}-${parts.day!.toString().padStart(2, "0")}`;
-}
-
-function timeZoneOffsetMs(value: Date, timeZone: string): number {
-  const parts = localParts(value, timeZone);
-  return Date.UTC(parts.year!, parts.month! - 1, parts.day!, parts.hour!, parts.minute!, parts.second!)
-    - value.getTime();
-}
-
-function nextLocalDayStart(value: Date, timeZone: string): Date {
-  const parts = localParts(value, timeZone);
-  const nextDayWallClock = Date.UTC(parts.year!, parts.month! - 1, parts.day! + 1);
-  let result = new Date(nextDayWallClock - timeZoneOffsetMs(new Date(nextDayWallClock), timeZone));
-  result = new Date(nextDayWallClock - timeZoneOffsetMs(result, timeZone));
-  return result;
 }

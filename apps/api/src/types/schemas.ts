@@ -1485,6 +1485,18 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     event: z.literal("destination.cue_ready"),
     cue: destinationCueResponseSchema,
   }).strict(),
+  // Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
+  // docs/hotel-offer-cue-model-draft.md). The chat consumes the cue and
+  // renders an accept/dismiss card. Subsequent accept/dismiss is a
+  // follow-up POST, not an SSE.
+  streamBaseSchema.extend({
+    event: z.literal("flight.offer_cue_ready"),
+    cue: offerCueResponseSchema,
+  }).strict(),
+  streamBaseSchema.extend({
+    event: z.literal("hotel.offer_cue_ready"),
+    cue: offerCueResponseSchema,
+  }).strict(),
   streamBaseSchema.extend({
     event: z.literal("turn.cancelled"),
   }).strict(),

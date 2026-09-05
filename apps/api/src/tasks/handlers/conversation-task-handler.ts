@@ -44,6 +44,10 @@ import {
   decideDestinationCueForTurn,
   type ResolvedDestinationCueDecision,
 } from "../../skills/personal/destination-cue-decision-skill.js";
+import {
+  type ResolvedOfferCueDecision,
+} from "../../services/offer-cue-service.js";
+import { getUserMessageSequenceForRun } from "../../services/personal-research-sequence.js";
 import type { AgentStreamEvent } from "../../types/schemas.js";
 import { personalResearchHotelDraftSchema, personalResearchFlightDraftSchema } from "../../types/schemas.js";
 import type { ConversationResponseConstraint, ModelToolDefinition, ModelToolDispatcher, TripBriefProposal } from "../../providers/model-gateway.js";
@@ -188,6 +192,26 @@ function offerCueEnabledFor(capability: "flight" | "hotel"): boolean {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
   return allowList.includes(capability);
+}
+
+/**
+ * Resolver entry point for Flight / Hotel Offer Cue. Stage 2 returns null
+ * (no model wired yet); Stage 3 calls `gateway.decideFlightOfferCue` /
+ * `gateway.decideHotelOfferCue` with the bounded visible-candidate
+ * projection. Always fail-closed: a resolver failure must never block
+ * the conversation reply.
+ */
+async function resolveOfferCueForTurn(_params: {
+  ctx: { ctx: RequestContext; policyGate: DefaultPolicyGate };
+  run: AgentTaskRow;
+  capability: "flight" | "hotel";
+  question: string;
+  locale: "en" | "zh";
+  currentUserMessageSequence: number;
+  signal: AbortSignal;
+}): Promise<ResolvedOfferCueDecision | null> {
+  // Stage 2 stub: keep promise contract; Stage 3 replaces with the model call.
+  return Promise.resolve(null);
 }
 
 /**
@@ -510,6 +534,8 @@ export async function handleConversationTask(params: {
   responseMode: import("../../types/schemas.js").ConversationResponseMode;
   tripBriefProposal?: TripBriefProposal;
   destinationCueDecision?: Promise<ResolvedDestinationCueDecision | null>;
+  flightOfferCueDecision?: Promise<ResolvedOfferCueDecision | null>;
+  hotelOfferCueDecision?: Promise<ResolvedOfferCueDecision | null>;
 } | null> {
   // ─── Quick Orchestration — Proactive intro (no user message) ─────────────
   // The run was created server-side on trip activation; the conversation
@@ -593,6 +619,40 @@ export async function handleConversationTask(params: {
       question: turnInput.question,
       currentDestinations: tripContext.destinationCandidates,
       locale: titleLocale ?? "en",
+      signal: execution.signal,
+    }).catch(() => null)
+    : Promise.resolve(null);
+
+  // Flight / Hotel Offer Cue promises (docs/flight-offer-cue-model-draft.md,
+  // docs/hotel-offer-cue-model-draft.md). Stage 2/3 share the same resolver
+  // path; OFFER_CUE_ENABLED is the rollout lever. fail-closed — model failure
+  // must not delay the conversation reply.
+  const canOfferCue = tripContext.tripStatus === "DRAFT" && membership.role === "CREATOR";
+  const flightOfferCueCurrentSeq = canOfferCue && offerCueEnabledFor("flight") && params.run.tripId
+    ? await getUserMessageSequenceForRun({ runId: params.run.id, tripId: params.run.tripId })
+    : null;
+  const hotelOfferCueCurrentSeq = canOfferCue && offerCueEnabledFor("hotel") && params.run.tripId
+    ? await getUserMessageSequenceForRun({ runId: params.run.id, tripId: params.run.tripId })
+    : null;
+  const flightOfferCuePromise = canOfferCue && offerCueEnabledFor("flight") && flightOfferCueCurrentSeq !== null
+    ? resolveOfferCueForTurn({
+      ctx: { ctx: params.ctx, policyGate: new DefaultPolicyGate("personal") },
+      run: params.run,
+      capability: "flight",
+      question: turnInput.question,
+      locale: titleLocale ?? "en",
+      currentUserMessageSequence: flightOfferCueCurrentSeq,
+      signal: execution.signal,
+    }).catch(() => null)
+    : Promise.resolve(null);
+  const hotelOfferCuePromise = canOfferCue && offerCueEnabledFor("hotel") && hotelOfferCueCurrentSeq !== null
+    ? resolveOfferCueForTurn({
+      ctx: { ctx: params.ctx, policyGate: new DefaultPolicyGate("personal") },
+      run: params.run,
+      capability: "hotel",
+      question: turnInput.question,
+      locale: titleLocale ?? "en",
+      currentUserMessageSequence: hotelOfferCueCurrentSeq,
       signal: execution.signal,
     }).catch(() => null)
     : Promise.resolve(null);
@@ -953,7 +1013,7 @@ export async function handleConversationTask(params: {
     parsed.responseMode, tripContext.tripStatus, params.run.conversationSurface,
   )) {
     const conversation = travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
-    return { ...conversation, destinationCueDecision: destinationCuePromise };
+    return { ...conversation, destinationCueDecision: destinationCuePromise, flightOfferCueDecision: flightOfferCuePromise, hotelOfferCueDecision: hotelOfferCuePromise };
   }
 
   // Phase 6 / member conversation handoff — fire-and-forget candidate
@@ -996,7 +1056,7 @@ export async function handleConversationTask(params: {
   }
 
   const conversation = travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
-  return { ...conversation, destinationCueDecision: destinationCuePromise };
+  return { ...conversation, destinationCueDecision: destinationCuePromise, flightOfferCueDecision: flightOfferCuePromise, hotelOfferCueDecision: hotelOfferCuePromise };
 }
 
 function withoutDestination(proposal: TripBriefProposal | null): TripBriefProposal | null {
