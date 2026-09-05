@@ -73,9 +73,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 title={label}
                 className={cn(
                   "grid size-10 place-items-center border-[1.5px] border-[var(--w-ink)] text-[var(--w-ink)] wanderly-r-sm wanderly-press sm:size-11",
+                  // The dashboard's blue, not the mint: the rail is the one
+                  // place the old accent survived, and it disagreed with every
+                  // selected thing on the page it navigates to.
                   active
-                    ? "bg-[var(--w-highlight)] wanderly-shadow-xs"
-                    : "bg-[var(--w-fog)] hover:bg-[var(--w-highlight)] hover:wanderly-shadow-xs",
+                    ? "bg-[var(--w-cal-run)] wanderly-shadow-xs"
+                    : "bg-[var(--w-fog)] hover:bg-[var(--w-cal-run)] hover:wanderly-shadow-xs",
                 )}
               >
                 <Icon aria-hidden="true" className="size-5" />

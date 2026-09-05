@@ -36,7 +36,7 @@ export function LocaleSwitcher() {
           router.replace(pathname, { locale: nextLocale as (typeof routing.locales)[number] });
         });
       }}
-      triggerClassName="grid size-10 cursor-pointer place-items-center border-[1.5px] border-[var(--w-ink)] bg-[var(--w-fog)] text-[var(--w-ink)] outline-none wanderly-r-sm wanderly-press hover:bg-[var(--w-highlight)] focus-visible:ring-4 focus-visible:ring-[var(--w-highlight)]/40 sm:size-11"
+      triggerClassName="grid size-10 cursor-pointer place-items-center border-[1.5px] border-[var(--w-ink)] bg-[var(--w-fog)] text-[var(--w-ink)] outline-none wanderly-r-sm wanderly-press hover:bg-[var(--w-cal-run)] focus-visible:ring-4 focus-visible:ring-[var(--w-info)]/40 sm:size-11"
       renderTrigger={() => (
         <>
           <Globe aria-hidden="true" className="size-4" />
