@@ -1087,7 +1087,12 @@ export async function handleConversationTask(params: {
   if (gate.rawText.trim() === parsed.content) await gate.flush();
   // Draft brief extraction is private exploration behaviour. It remains
   // independent from the Shared handoff lifecycle below.
-  const tripBriefProposal = parsed.responseMode === "MODEL" && tripContext.tripStatus === "DRAFT"
+  // Destination cue classification is also the language-aware boundary for
+  // destination, flight and hotel turns. Those turns own their respective
+  // confirmation cards; never create the generic brief-review card from a
+  // departure/date phrase embedded in one of them.
+  const destinationCueDecision = await destinationCuePromise;
+  const tripBriefProposal = parsed.responseMode === "MODEL" && tripContext.tripStatus === "DRAFT" && !destinationCueDecision
     ? mergeTripBriefProposal(
       // Direct owner statements are parsed conservatively and destination
       // values have already passed server-owned place resolution.
@@ -1143,7 +1148,7 @@ export async function handleConversationTask(params: {
     parsed.responseMode, tripContext.tripStatus, params.run.conversationSurface,
   )) {
     const conversation = travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
-    return { ...conversation, destinationCueDecision: destinationCuePromise, flightOfferCueDecision: flightOfferCuePromise, hotelOfferCueDecision: hotelOfferCuePromise };
+    return { ...conversation, destinationCueDecision: Promise.resolve(destinationCueDecision), flightOfferCueDecision: flightOfferCuePromise, hotelOfferCueDecision: hotelOfferCuePromise };
   }
 
   // Phase 6 / member conversation handoff — fire-and-forget candidate
@@ -1186,7 +1191,7 @@ export async function handleConversationTask(params: {
   }
 
   const conversation = travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
-  return { ...conversation, destinationCueDecision: destinationCuePromise, flightOfferCueDecision: flightOfferCuePromise, hotelOfferCueDecision: hotelOfferCuePromise };
+  return { ...conversation, destinationCueDecision: Promise.resolve(destinationCueDecision), flightOfferCueDecision: flightOfferCuePromise, hotelOfferCueDecision: hotelOfferCuePromise };
 }
 
 function withoutDestination(proposal: TripBriefProposal | null): TripBriefProposal | null {

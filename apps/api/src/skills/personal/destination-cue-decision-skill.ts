@@ -59,7 +59,7 @@ export const destinationCueDecisionOutputSchema = z.object({
       "HOTEL_DESTINATION",
       "EXPLICIT_DESTINATION_COMMAND",
     ]),
-  }).strict()).min(1).max(5),
+  }).strict()).min(0).max(5),
   modelVersion: z.string().min(1).max(128),
   promptVersion: z.string().min(1).max(64),
 }).strict().nullable();
@@ -127,7 +127,15 @@ export async function decideDestinationCueForTurn(params: {
         : candidate.triggerContext,
     });
   }
-  if (candidates.length === 0) return null;
+  // The classifier still identified this turn as destination/flight/hotel
+  // context when every candidate was already saved or explicitly excluded.
+  // Preserve that signal so the broad brief-review card cannot interrupt a
+  // more specific travel-service request; the worker skips empty batches.
+  if (candidates.length === 0) {
+    return destinationCueDecisionOutputSchema.parse({
+      candidates: [], modelVersion: result.modelVersion, promptVersion: result.promptVersion,
+    });
+  }
   const hasExplicitSet = candidates.some((candidate) => candidate.intent === "EXPLICIT_SET_DESTINATION");
   if (!hasExplicitSet && candidates.length !== 1) return null;
   return destinationCueDecisionOutputSchema.parse({

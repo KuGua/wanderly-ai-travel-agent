@@ -1118,7 +1118,16 @@ export function TravelAgentChat({
   // showed. A conversation once proposed an end date two years before its
   // start, and the traveller had no way to see it — the button simply failed.
   // What is about to be saved has to be legible before the click.
-  const briefDates = formatBriefDates(fmt, briefProposal);
+  const briefDates = formatBriefDates(fmt, actionableBriefProposal);
+  const briefDetails = [
+    actionableBriefProposal?.departureCities?.length
+      ? t("briefProposalDeparture", { cities: fmt.list(actionableBriefProposal.departureCities, { type: "conjunction" }) })
+      : null,
+    briefDates ? t("briefProposalDates", { dates: briefDates }) : null,
+    actionableBriefProposal?.travelDays !== undefined
+      ? t("briefProposalDays", { count: actionableBriefProposal.travelDays })
+      : null,
+  ].filter((detail): detail is string => Boolean(detail)).join(" · ");
   const activeDestinationCandidate = destinationCue?.candidates[destinationCueIndex] ?? null;
   // A broad brief review must never compete with an already-open precise
   // confirmation. Resolve destination, flight, and hotel cards first.
@@ -1600,9 +1609,9 @@ export function TravelAgentChat({
               <div className={onGlobe ? "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-1" : undefined}>
                 <p className={`${onGlobe ? "min-w-0 text-xs leading-4" : "mb-2 px-0.5 text-sm"} font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
                   {t("briefProposalDetailsQuestion")}
-                  {briefDates ? (
+                  {briefDetails ? (
                     <span className={`block font-semibold ${onGlobe ? "text-[10px] leading-4" : "mt-0.5 text-xs"} ${docked ? "text-muted-foreground" : "text-[var(--w-space-muted)]"}`}>
-                      {briefDates}
+                      {briefDetails}
                     </span>
                   ) : null}
                 </p>
