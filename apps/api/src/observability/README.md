@@ -20,7 +20,7 @@ must go through these; nothing else.
 | `telemetry.ts` | Pino instance with `LOGGER_REDACTION`, `correlationChild`, `FastifyRequest` augmentation for `rawBody` + `correlationId`/`traceId`/`spanId`. | [§Log redaction](#log-redaction) |
 | `redaction.ts` | Generic `redact(value, opts)` walker with default depth=4 and `DEFAULT_REDACT_KEYS`. | [§Log redaction](#log-redaction) |
 | `tracing.ts` | OpenTelemetry bootstrap, `parseTraceparent`/`formatTraceparent`, `FORBIDDEN_SPAN_ATTRIBUTE_KEYS`, `safeSetAttribute`, `recordSpanError`. | [§Distributed tracing](#distributed-tracing) |
-| `agent-runs.ts` | `recordAgentRun({...})` writes `agent_runs` + an `AGENT_RUN` audit event. | [§Agent runs](#agent-runs) |
+| `agent-runs.ts` | `recordAgentRun({...})` best-effort writes `agent_runs` + an `AGENT_RUN` audit event. | [§Agent runs](#agent-runs) |
 
 ## Metrics
 
@@ -369,8 +369,13 @@ rows.
 ## Agent runs
 
 `recordAgentRun({ ctx, skillName, agentName, modelName, promptVersion,
-outputHash, latencyMs, status, errorCode?, tokens? })` inserts one row into
-`agent_runs` then writes an `audit_events` row with `action: "AGENT_RUN"`.
+outputHash, latencyMs, status, errorCode?, tokens? })` atomically writes one
+`agent_runs` row and one `audit_events` row with `action: "AGENT_RUN"`. It is
+derived telemetry: if that transaction fails, it emits a content-free
+`OBSERVABILITY_FAILURE` warning and returns `"failed"`; it never replaces the
+LLM result or the original model error. Authorization, state-transition,
+confirmation, booking, and their owning audit writes are not covered by this
+best-effort exception and retain their strict failure behavior.
 
 Schema (from `db/schema.ts:258-271`):
 
@@ -395,12 +400,17 @@ shape: `{ prompt, completion, total }`.
   `providers/llm-gateway.ts`, `routes/bookings.ts`, and `policy/*` (rejections).
 - `pinoInstance` is wired into `app.ts` (`Fastify({ logger: pinoInstance })`),
   used by `utils/logger.ts` (re-export), and read by `middleware/*`.
-- `recordAgentRun` is called from `providers/llm-gateway.ts` only.
+- `recordAgentRun` is called from `providers/llm-gateway.ts` only and is safe
+  to await because it resolves to `"recorded"` or `"failed"` rather than
+  throwing an observability-store failure.
 
 ## Verification
 
 - `npx vitest run tests/observability-hardening.test.ts` — covers logger
   redaction and bounded metric labels.
+- `npx vitest run tests/agent-runs-observability.test.ts` — covers an
+  unavailable agent-run telemetry transaction without changing the caller's
+  result.
 - `npx vitest run tests/llm-gateway.test.ts` — covers
   `provider_fallback_total` and `llm_request_latency_ms` increments.
 - `npx vitest run tests/audit-whitelist.test.ts` — covers

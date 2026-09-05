@@ -82,6 +82,7 @@ Personal 对话允许讨论国家级目的地和路线方向，但 Shared activa
 | `apps/api/src/providers/llm-gateway.ts` | 修改 | 引入受控的 LLM metric category 归一化函数；`RATE_LIMITED` 映射到 `rate_limited`，再写指标。保留 `isRetryableUpstreamError()` 与 20s+ jitter 的限流退避。 |
 | `apps/api/src/observability/metrics.ts` | 修改 | 在 `llm_request_errors_total.error_category` allow-list 增加唯一固定值 `rate_limited`。不得删除校验或接受自由文本。 |
 | `apps/api/src/observability/README.md` | 修改 | 同步该 metric 的枚举和 429 语义。 |
+| `apps/api/src/observability/agent-runs.ts` | 修改 | 将派生的 `agent_runs` 与 `AGENT_RUN` audit 写入同一 transaction；失败时仅记录安全 `OBSERVABILITY_FAILURE` 并返回受控结果，不得覆盖 LLM 成功结果或已分类的模型错误。 |
 | `apps/api/tests/**` | 修改/新增 | 覆盖 429 指标、重试/失败路径和 label boundedness。 |
 | `apps/api/src/providers/llm-gateway.ts` 的对话提示 | 修改 | 为 DRAFT + 缺字段场景加入明确的“先选城市/补出发地，再确认并开始规划”约束；不能命令模型自动激活。 |
 | `apps/web/src/components/explore/travel-agent-chat.tsx` | 修改 | 复用 `canStartSharedPlanning`，将缺失字段转化为准确 UI 提示或 disabled-action 说明；按钮继续仅调用既有 activate mutation。 |
@@ -197,6 +198,7 @@ canStartSharedPlanning =
 3. 更新 observability 文档。
 4. 编写并通过 429、未知错误码、label boundedness 测试。
 5. 在本地受控 provider stub 下验证日志、指标、task 终态。
+6. 验证 agent-run 派生遥测存储不可用时，原模型结果保持不变，且没有半写入的 telemetry/audit 行。
 
 **完成门槛：** 429 不产生 `MetricLabelError`；没有任意 error_category label；测试验证 retry/fallback 或既有稳定终态。
 
@@ -242,6 +244,7 @@ canStartSharedPlanning =
 |---|---|
 | 为修复 429 放开自由 metric label，导致高基数 | 只增加 `rate_limited`，并用 union/映射及 registry test 强制枚举。 |
 | 吞掉 observability 故障，掩盖编程错误 | 仅在已归一化 mapping 的边界处理；未知值映射 `unknown` 并保留安全日志。 |
+| agent-run 插入与 audit 行不一致 | 两行放入同一 transaction；仅该派生 telemetry transaction 可 best-effort 失败。 |
 | 文案修复意外变成自动激活 | `POST /activate` 继续仅由 CTA mutation 调用；增加“自然语言不可激活”回归测试。 |
 | 国家到城市的自动推断导致错误 itinerary | 保持 `LocationReferenceResolver` 的唯一城市要求与 fail-closed 行为。 |
 | 将私聊内容用于 readiness/指标 | DTO 和 metric 只传安全枚举；禁止正文、Profile、坐标、thread/trip ID labels。 |

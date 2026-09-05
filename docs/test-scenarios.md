@@ -138,6 +138,28 @@ declared metric mapping.
 - No arbitrary value is passed to `MetricsRegistry`.
 - The original model failure remains the user-visible/task-level cause.
 
+### TS-MG0b — Agent-run telemetry failure cannot replace the model outcome
+
+**Objective:** Verify that loss of the derived `agent_runs`/`AGENT_RUN`
+observability transaction does not turn a successful reply or a classified
+model failure into `INTERNAL`.
+
+**Steps:** Force the transaction used by `recordAgentRun` to reject, then run
+one successful model-gateway request and one request that returns a classified
+upstream failure.
+
+**Expected outcomes:**
+
+- The successful request retains its response and the classified failure
+  retains its original error code.
+- The recorder returns its bounded failure outcome and emits a content-free
+  `OBSERVABILITY_FAILURE` warning with correlation context only.
+- No partial `agent_runs` or `AGENT_RUN` audit row is committed: the two writes
+  share one transaction.
+- Authorization, trip-state, confirmation, booking, and their business audit
+  writes remain strict; this exception applies only to derived agent-run
+  telemetry.
+
 ### TS-MG1 — 空的 `MODEL_GATEWAY_API_KEY` 在启动时被拒绝，而不是每一轮对话失败一次
 
 **Objective:** Verify a blank or shadowed model-gateway credential is a boot
