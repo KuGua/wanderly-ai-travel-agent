@@ -321,3 +321,83 @@ export function airportServesCity(airport: AirportReference, city: string): bool
 export function controlledAirports(): readonly AirportReference[] {
   return AIRPORTS;
 }
+
+/**
+ * The controlled flight routes a snapshot's cities actually permit, plus the
+ * city each airport stands for.
+ *
+ * A route is written two ways in this system: suppliers take airport ids, the
+ * snapshot holds the traveller's own words. Three readers derived that
+ * translation independently — the model gateway's required-cell matrix, the
+ * coverage fan-out, and the database completeness check — and they disagreed.
+ * The gateway asked for `Singapore → Shanghai` while every search the model
+ * was allowed to run was `SIN → SHA` / `SIN → PVG`, so its matrix could never
+ * complete: it forced another `flight.search` on every turn until the budget
+ * ran out. Deriving it once removes the class, not just the instance.
+ *
+ * A city with no controlled airport contributes no route. That is deliberate
+ * (§#22): the caller reports it as a flight gap rather than guessing at a
+ * neighbouring code.
+ */
+export interface FlightRouteMatrix {
+  /** Controlled origin airport ids, in snapshot order. */
+  readonly originIds: string[];
+  /** Controlled destination airport ids, in snapshot order. */
+  readonly destinationIds: string[];
+  /** Every origin × destination pair the matrix requires. */
+  readonly cells: ReadonlyArray<{ originId: string; destinationId: string }>;
+  /** Snapshot cities that resolved to no controlled airport. */
+  readonly citiesWithoutAirport: string[];
+  /**
+   * The snapshot city an airport id stands for. Gaps and copy name the city
+   * the traveller wrote; "(PVG)" is not an answer to "where could I not go".
+   */
+  cityFor(airportId: string): string | null;
+}
+
+export function resolveFlightRouteMatrix(params: {
+  departureCities: readonly string[];
+  destinationCandidates: readonly string[];
+}): FlightRouteMatrix {
+  const cityByAirport = new Map<string, string>();
+  const resolve = (cities: readonly string[], missing: string[]): string[] => {
+    const ids: string[] = [];
+    for (const city of cities) {
+      // A snapshot entry may already be a controlled airport id — an operator
+      // fixture, or a brief a traveller wrote as "NRT". Accept it as itself
+      // rather than reporting the trip as having no airport, which is what
+      // resolving by city name alone would say.
+      const asAirport = resolveAirportReference(city);
+      if (asAirport) {
+        if (!ids.includes(asAirport.id)) ids.push(asAirport.id);
+        if (!cityByAirport.has(asAirport.id)) cityByAirport.set(asAirport.id, asAirport.city);
+        continue;
+      }
+      const forCity = airportIdsForCities([city]);
+      if (forCity.length === 0) {
+        if (!missing.includes(city)) missing.push(city);
+        continue;
+      }
+      for (const id of forCity) {
+        if (!ids.includes(id)) ids.push(id);
+        if (!cityByAirport.has(id)) cityByAirport.set(id, city);
+      }
+    }
+    return ids;
+  };
+
+  const citiesWithoutAirport: string[] = [];
+  const originIds = resolve(params.departureCities, citiesWithoutAirport);
+  const destinationIds = resolve(params.destinationCandidates, citiesWithoutAirport);
+  const cells = originIds.flatMap((originId) =>
+    destinationIds.map((destinationId) => ({ originId, destinationId })),
+  );
+
+  return {
+    originIds,
+    destinationIds,
+    cells,
+    citiesWithoutAirport,
+    cityFor: (airportId: string) => cityByAirport.get(airportId) ?? null,
+  };
+}

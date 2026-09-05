@@ -330,6 +330,10 @@ export async function runResearch(params: {
         leaseToken: params.leaseToken,
         outputMode: "PROPOSED",
         coverage,
+        // Everything the capability loop above already ran. Their tools are
+        // one-shot per run, so re-offering them hands the model a refusal
+        // rather than a second chance.
+        alreadyResearchedCapabilities: requiredCapabilities,
       }, params.providerOverride!);
     } finally {
       clearTimeout(runDeadlineTimer);

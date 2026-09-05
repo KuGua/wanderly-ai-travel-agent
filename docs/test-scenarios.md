@@ -2550,6 +2550,25 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
   端点的每一个响应解析失败——gaps 面板丢掉能力清单，详情页整页报错。回归用例
   直接用 trip `8a634324` 的真实 payload。
 
+### TS-NO-REOFFER-RESEARCHED-TOOLS — 已经跑过的能力不再交给模型
+
+**Objective:** 编排层在 synthesis 之前已经跑过 accommodation / activities /
+places / hotel，而这些服务都按 run 预留 `provider_search_runs` 行。工具列表却把它们
+原样再交给模型：开局那一轮模型并行发出的调用里，有三个在一毫秒内拿到
+`POLICY_DENIED` —— 不是第二次机会，是三个**假的失败信号**，模型据此更用力地重试。
+
+**Steps:**
+
+1. 以已研究能力 `["accommodation", "activities", "hotel"]` 构造工具列表。
+2. 以 `["places"]` 构造，检查 `places.adopt` 是否保留。
+3. 以空列表构造。
+
+**Expected outcomes:**
+
+- 对应的一次性搜索工具从列表中移除；未研究的能力照常提供。
+- 写类工具（`places.adopt`）保留 —— 它不是一次性搜索。
+- 没有任何能力跑过时，工具列表不变。
+
 ### TS-TOOL-TURN-ACCOUNTING — 重复的调用不得吃掉 turn 预算
 
 **Objective:** 2026-09-05 那一轮在 turn 1 就答完了两个航班格，随后 turn 2–10
@@ -2617,6 +2636,29 @@ turn**，预算耗尽、方案没写成。而 `appendFlightProgress()` 每轮都
 - 这不是 `member-conversation-handoff-implementation.md` 禁止的手动 replan：
   该禁令针对**已有方案**的情形，同文档第 154 行明写「无 plan 时接受 PLAN」。
 
+### TS-GAP-TRUTHFULNESS — 缺口必须说真话
+
+**Objective:** 一次运行同时报了两句假话：`stay: NO_RESULTS`（库里有 10 条 Nuitee
+报价、16 条住宿发现、stay coverage LIVE）和 `flight: NO_RESULTS`（供应商实际说的是
+`INVALID_PROVIDER_RESPONSE`）。
+
+**Steps:**
+
+1. 一轮里有 hotel/accommodation 证据，检查是否仍报 stay 缺口。
+2. 航班以 `INVALID_PROVIDER_RESPONSE` 失败，检查 gap code 与详情页文案。
+3. coverage 扇出记录 UNAVAILABLE 时检查 `provider_search_runs.error_code`。
+4. 一轮完全没有住宿证据时，检查是否仍报 stay 缺口。
+
+**Expected outcomes:**
+
+- stay 缺口由**真实证据**（hotel quotes + accommodation discovery）决定。旧的
+  `allStays` 只有一个生产者——一个恒返回 `NOT_CONFIGURED` 的 `StayProvider` 桩——
+  所以它让**每一次**运行都报住宿缺口。该桩连同 `StayProvider` 接口已删除。
+- 航班缺口带供应商自己的分类，逐层保留：coverage 插入时写入 `error_code`（此前写
+  `null`，reason 在落库那一刻就丢了）、矩阵单元格带上它、`flightMatrixToGaps` 用它
+  而不是一律 `UPSTREAM_FAILURE`、`summarizeProviderGaps` 用它而不是一律 `NO_RESULTS`。
+- 真的没有住宿证据时仍然如实报 `stay: NO_RESULTS`。
+
 ### TS-TOOL-BUDGET-DEGRADES — turn 预算耗尽不得丢弃已取得的证据
 
 **Objective:** Trip `24a0799f`（2026-09-05）的 run 以 `TOOL_CALL_MAX_TURNS` 失败，
@@ -2636,6 +2678,30 @@ turn**，预算耗尽、方案没写成。而 `appendFlightProgress()` 每轮都
 - **不产出 plan**：模型没有给出选择，服务端不得替它合成一个推荐。
 - `NO_CITABLE_EVIDENCE` 与 `TOOL_BUDGET_EXHAUSTED` 是两个不同的 reason，
   走同一条 summary 分支但各自可辨。
+
+### TS-CANONICAL-ROUTE-MATRIX — 航线矩阵只派生一次
+
+**Objective:** `TS-ROUTE-IDENTITY` 让 coverage 与校验器说同一种身份，但**第三、
+第四个读取方**仍各自派生：模型网关的 `requiredFlightCells` 用城市名，数据库完整性
+检查也用城市名与 `provider_search_runs.origin_id` 精确比较。于是网关要
+`Singapore → Shanghai`，模型只能搜 `SIN → SHA`，矩阵永远补不齐 —— 每一轮强制再调
+一次 `flight.search`，直到轮次耗尽。为阻止这个循环而加的守卫（撤下工具、重复退款）
+全部以「矩阵已补齐」为条件，因此全部失效。
+
+**Steps:**
+
+1. 以 `Singapore / 新加坡 → Shanghai` 解析规范矩阵。
+2. 目的地换成没有受控机场的城市。
+3. 快照里直接写机场码（运维夹具、或用户就写了 "NRT"）。
+4. 分别检查网关矩阵、coverage 扇出、数据库完整性检查三者拿到的格子。
+
+**Expected outcomes:**
+
+- 三个读取方拿到**同一组**格子：`SIN→PVG`、`SIN→SHA`；中英文城市名结果一致。
+- 无受控机场的城市不产生格子，记入 `citiesWithoutAirport`，**不猜邻近机场**（§#22）。
+- 快照里已经是机场码时按其自身接受，不得报成"该行程没有机场"。
+- `cityFor()` 能把机场码译回旅行者写的城市：缺口文案说的是「上海」，不是「(PVG)」。
+- coverage 已经覆盖全部格子时，模型这一轮不再被强制调用 `flight.search`。
 
 ### TS-ROUTE-IDENTITY — 航线只有一种身份
 

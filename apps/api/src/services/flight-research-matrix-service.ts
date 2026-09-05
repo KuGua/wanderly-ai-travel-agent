@@ -1,4 +1,6 @@
 import { and, eq } from "drizzle-orm";
+import type { FlightRouteMatrix } from "../location-reference/airport-reference.js";
+import type { ProviderUnavailableCode } from "../types/domain.js";
 import { db, type DB } from "../db/database.js";
 import { providerSearchRuns } from "../db/schema.js";
 
@@ -28,6 +30,8 @@ export type FlightResearchCell = {
   originId: string;
   destinationId: string;
   outcome: FlightResearchOutcome;
+  /** The supplier's own reason for an UNAVAILABLE cell, when it gave one. */
+  errorCode?: string | null;
 };
 
 /**
@@ -46,8 +50,14 @@ export type FlightResearchCell = {
 export async function evaluateFlightResearchCompleteness(params: {
   snapshotId: string;
   agentTaskRunId: string;
-  departureCities: string[];
-  destinationCandidates: string[];
+  /**
+   * The canonical route matrix. `provider_search_runs` records controlled
+   * airport ids, so this must be expressed in the same ids — it used to take
+   * the snapshot's city names and compare them to those rows as raw strings,
+   * which meant every cell read MISSING once the searches themselves spoke
+   * airport ids, and no round could ever be complete.
+   */
+  routes: FlightRouteMatrix;
   client?: FlightResearchReadClient;
 }): Promise<{ complete: boolean; cells: FlightResearchCell[] }> {
   const client = params.client ?? db;
@@ -55,17 +65,24 @@ export async function evaluateFlightResearchCompleteness(params: {
     originId: providerSearchRuns.originId,
     destinationId: providerSearchRuns.destinationId,
     outcome: providerSearchRuns.outcome,
+    errorCode: providerSearchRuns.errorCode,
   }).from(providerSearchRuns).where(and(
     eq(providerSearchRuns.snapshotId, params.snapshotId),
     eq(providerSearchRuns.agentTaskRunId, params.agentTaskRunId),
     eq(providerSearchRuns.category, "flight"),
   ));
-  const cells = params.departureCities.flatMap((originId) => params.destinationCandidates.map((destinationId) => {
+  const cells = params.routes.cells.map(({ originId, destinationId }) => {
     const matching = runs.filter((run) => run.originId === originId && run.destinationId === destinationId);
     const outcome: FlightResearchOutcome = matching.some((run) => run.outcome === "LIVE")
       ? "LIVE" : matching.some((run) => run.outcome === "UNAVAILABLE") ? "UNAVAILABLE" : "MISSING";
-    return { originId, destinationId, outcome };
-  }));
+    // The supplier's own classification for an unavailable cell, so the gap
+    // can say `INVALID_PROVIDER_RESPONSE` rather than the blanket
+    // `UPSTREAM_FAILURE` this used to report for every failure alike.
+    const errorCode = outcome === "UNAVAILABLE"
+      ? matching.find((run) => run.outcome === "UNAVAILABLE" && run.errorCode)?.errorCode ?? null
+      : null;
+    return { originId, destinationId, outcome, errorCode };
+  });
   return { complete: cells.every((cell) => cell.outcome !== "MISSING"), cells };
 }
 
@@ -79,13 +96,17 @@ export async function evaluateFlightResearchCompleteness(params: {
  * cell to have been attempted (per §1.3 of the planner-resilience design),
  * UNAVAILABLE cells flow through and become gaps.
  */
-export function flightMatrixToGaps(cells: ReadonlyArray<FlightResearchCell>): Array<{ capability: "flight"; code: "NO_RESULTS" | "UPSTREAM_FAILURE"; originId: string; destinationId: string }> {
-  const gaps: Array<{ capability: "flight"; code: "NO_RESULTS" | "UPSTREAM_FAILURE"; originId: string; destinationId: string }> = [];
+export function flightMatrixToGaps(cells: ReadonlyArray<FlightResearchCell>): Array<{ capability: "flight"; code: ProviderUnavailableCode; originId: string; destinationId: string }> {
+  const gaps: Array<{ capability: "flight"; code: ProviderUnavailableCode; originId: string; destinationId: string }> = [];
   for (const cell of cells) {
     if (cell.outcome !== "UNAVAILABLE") continue;
     gaps.push({
       capability: "flight",
-      code: "UPSTREAM_FAILURE",
+      // What the supplier said, when it said anything. `UPSTREAM_FAILURE` for
+      // every unavailable cell alike told the traveller a provider was down
+      // when it had in fact answered and been refused, or answered in a shape
+      // we could not read.
+      code: (cell.errorCode as ProviderUnavailableCode | null) ?? "UPSTREAM_FAILURE",
       originId: cell.originId,
       destinationId: cell.destinationId,
     });
