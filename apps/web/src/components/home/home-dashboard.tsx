@@ -267,7 +267,7 @@ export function HomeDashboard() {
                    press offset made choosing a filter feel like throwing a
                    switch, four of which sat in a row above a list that simply
                    redraws. */
-                className={`inline-flex min-h-[36px] items-center gap-1.5 px-3.5 py-[6px] text-sm font-semibold text-[var(--w-ink)] transition-colors wanderly-edge-thin wanderly-r-sm ${
+                className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-[10px] border border-[var(--w-ink)]/10 px-3.5 py-[6px] text-sm font-semibold text-[var(--w-ink)] transition-colors ${
                   filter === key
                     ? "bg-[var(--w-cal-run)]"
                     : "bg-card hover:bg-[var(--w-mist)]"
@@ -282,7 +282,7 @@ export function HomeDashboard() {
           </div>
           </div>
           <div className="flex items-center gap-4">
-          <label className="flex min-h-[42px] w-full items-center gap-2 bg-card px-3 wanderly-edge wanderly-r-sm sm:w-[min(250px,100%)]">
+          <label className="flex min-h-[42px] w-full items-center gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-card px-3 sm:w-[min(250px,100%)]">
             <Search aria-hidden="true" className="size-[17px] text-[var(--w-ink)]" />
             <input
               type="search"
