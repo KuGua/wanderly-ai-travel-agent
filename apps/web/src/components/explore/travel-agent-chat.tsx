@@ -1303,7 +1303,7 @@ export function TravelAgentChat({
     // A block-level bubble filled the whole chat column before `ml-auto` had
     // any visible effect. Fit the message first, then anchor that fitted box
     // to the right; long replies still grow until the readable 86% cap.
-    ? "ml-auto w-fit max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
+    ? "ml-auto w-fit max-w-[86%] bg-[var(--w-info)] px-3.5 py-3 text-sm leading-[1.45] text-white wanderly-edge wanderly-r-md wanderly-shadow-sm"
     // The globe bubble's fill, edge, radius and tail live in globals.css: it is
     // the one place in the app drawn as a classic iMessage bubble rather than
     // in the system's irregular-radius, hard-ink-edge language.
