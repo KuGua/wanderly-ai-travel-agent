@@ -2502,6 +2502,10 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
   attempt、耗时），且不含异常消息原文。
 - 跨源可读性：`x-correlation-id` 在 CORS `exposedHeaders` 中，界面「技术详情」
   不再恒为 `null`。
+- Web 的 `researchResultSchema` 能解析服务端**实际**发送的整个 DTO，包括恒定
+  存在的 `offers` 数组。该 schema 是 `.strict()`，少一个字段就会让两个 research
+  端点的每一个响应解析失败——gaps 面板丢掉能力清单，详情页整页报错。回归用例
+  直接用 trip `8a634324` 的真实 payload。
 
 ### TS-SKILL-OUTPUT-CONTRACT — Skill 输出上界必须容纳 provider 的合法输出
 

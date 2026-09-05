@@ -217,6 +217,8 @@ review: ["snapshot:read"],   // 移除 "plan:write:propose"
 
 read surface 复用既有 `GET /trips/:tripId/research/latest`（`routes/research.ts:214`）——它已是 member-scoped、mode-agnostic，返回 `serviceGaps`、`offers` 与可空的 `resultPlanId`，**无需新增端点**。web 侧 `useLatestResearchResult` 已存在，只需处理 `resultPlanId === null` 分支。
 
+**Web 镜像必须逐字段对齐（2026-09-05 补）。** `apps/web` 的 `researchResultSchema` 是 `.strict()` 且此前缺 `offers`，而服务端两个 research 端点都恒定发送该数组（API schema `.default([])`）。结果是**每一个**响应都解析失败：共享方案面的 gaps 面板静默丢掉能力清单，`/trips/:id/runs/:runId` 详情页整页变成一句通用错误——对着一次它已经拿到手的运行结果。同批还补齐了能力枚举缺失的 `places` / `readiness`。服务端的 `serviceGaps` 在响应契约里是 `z.record` 松类型，Web 侧是严格枚举；这条不对称是这类缺口的温床，任何一侧新增取值都必须同批更新另一侧（见 `docs/test-scenarios.md` TS-GAP-ATTRIBUTION）。
+
 ---
 
 ## 4. 阶段 P1 — 韧性策略统一

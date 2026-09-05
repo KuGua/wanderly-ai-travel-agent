@@ -15,6 +15,7 @@ const BASE_RESULT: ResearchResult = {
     { capability: "navigation", code: "NO_RESULTS" },
   ],
   resultPlanId: null,
+  offers: [],
   createdAt: "2026-08-29T00:00:00.000Z",
 };
 
