@@ -157,6 +157,41 @@ if (coverage.missingDestinations.length > 0) { throw ... PLANNING_DATA_UNAVAILAB
 
 改为同一模式：只有当**推荐目的地本身**缺住宿覆盖时才降级为 research-summary（`reason: "NO_STAY_COVERAGE"`）；其余候选缺覆盖记为 `service_gap`，不阻断合成。
 
+#### 3.3.1 Gap code 的归属：供应商 vs 我们自己（2026-09-05 补）
+
+同一个 catch 还承担了「把失败的能力翻译成 gap code」这件事，而它的 `classifyError`
+按 `err.message` 做子串匹配、兜底 `UPSTREAM_FAILURE`。`SkillError` 是带类型码的，
+文本匹配意味着任何不含关键词的失败都会被报成供应商故障。
+
+Trip `8a634324`（2026-09-05）：`accommodation` 与 `places` 的
+`provider_search_runs` 都是 `LIVE`、`provider_offers` 落了 16 条真实住宿，
+而共享方案面写着「服务提供方暂时不可用」。真实原因是两个 skill 的输出契约拒绝了
+自己的合法结果（见 `docs/test-scenarios.md` TS-SKILL-OUTPUT-CONTRACT），抛出的
+`OUTPUT_INVALID` 的文本不含任何关键词，于是掉进兜底。这与本仓库
+`docs/shared-agent-findings.md` #21 是同一类错误：有类型码就不要读文本。
+
+固定下来的语义：
+
+| 来源 | Gap code |
+|---|---|
+| 供应商本身故障 / 网络 / 5xx | `UPSTREAM_FAILURE` |
+| 供应商超时 | `UPSTREAM_TIMEOUT` |
+| 配额 | `RATE_LIMITED` |
+| 供应商 4xx 拒绝（我们的参数） | `PROVIDER_REQUEST_REJECTED` |
+| **我们自己的 Skill 契约拒绝了合法结果** | **`SKILL_CONTRACT_VIOLATION`** |
+| 授权/scope/快照缺失，调用未发出 | `SEARCH_CONSTRAINTS_INCOMPLETE` |
+
+`SKILL_CONTRACT_VIOLATION` 是 `InternalGapCode`，刻意不在
+`ProviderUnavailableCode` 内：没有任何 adapter 可以产出它，只有编排层给自己的失败
+分类时会产生。它必须被**端到端**接受——服务端持久化的 `serviceGapSchema`、
+Web 的镜像 enum、以及详情页的文案表——否则新值会在某一层解析失败并让整个界面变白，
+这正是 `TS-PROVIDER-4XX` 已经记过的陷阱。
+
+同一处 catch 此前**不记任何日志**，所以这类失败在 worker 日志里完全不可见，
+唯一的痕迹是那条说谎的 gap code。现在编排层与 skill registry 的终态失败分支各记一条
+`logSafeRuntimeEvent`，只带受控字段（能力/skill 名、类型码、attempt、耗时），
+不带异常消息——异常消息可能夹带供应商或用户文本。
+
 ### 3.4 `policy-gate.ts`
 
 ```ts

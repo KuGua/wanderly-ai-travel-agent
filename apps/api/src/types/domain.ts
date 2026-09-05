@@ -392,9 +392,24 @@ export type ProviderUnavailableCode =
    */
   | "PROVIDER_REQUEST_REJECTED";
 
+/**
+ * A capability can also come up short because *we* broke, not the supplier:
+ * a Skill's declared input/output contract rejected a legitimate provider
+ * answer, or a version pin no longer matches the registry. Reporting that as
+ * `UPSTREAM_FAILURE` blames a supplier that did its job — the traveller is
+ * told to wait for an outage that will never clear, and an operator looks at
+ * the wrong dashboard. It is deliberately *not* part of
+ * `ProviderUnavailableCode`: no adapter can produce it, only the orchestrator
+ * classifying its own failure.
+ */
+export type InternalGapCode = "SKILL_CONTRACT_VIOLATION";
+
+/** Everything a `service_gaps` entry may carry, from either side of the line. */
+export type ServiceGapCode = ProviderUnavailableCode | InternalGapCode;
+
 export interface ServiceGap {
   capability: ServiceCapability;
-  code: ProviderUnavailableCode;
+  code: ServiceGapCode;
   destinationId?: string;
 }
 

@@ -139,6 +139,29 @@ describe("skill registry", () => {
     }, undefined)).rejects.toMatchObject({ code: "OUTPUT_INVALID" });
   });
 
+  /**
+   * Output validation runs after the handler has already executed — and, for
+   * the search skills, after it has already called a supplier and persisted
+   * the answer. So a rejection here is not a no-op: the work happened, the
+   * evidence is in the database, and the only thing the caller receives is an
+   * exception. On 2026-09-05 that exception became a "provider unavailable"
+   * gap on a trip whose searches had all succeeded. The failure path leaves
+   * no `SKILL_INVOKE` audit row — the metric below and the runtime log added
+   * alongside it are the only traces, so both must stay.
+   */
+  it("counts a post-handler rejection as a failed run", async () => {
+    const skill = buildBadOutputSkill();
+    registerSkill(skill);
+
+    await expect(invokeSkill(skill.name, {
+      ctx: createRequestContext(),
+      policyGate: new DefaultPolicyGate("personal"),
+    }, undefined)).rejects.toMatchObject({ code: "OUTPUT_INVALID" });
+
+    expect(metrics.render()).toContain('agent_skill_runs_total{agent="personal",outcome="rejected",skill="other"} 1');
+    expect(metrics.render()).not.toContain('agent_skill_runs_total{agent="personal",outcome="success",skill="other"}');
+  });
+
   // ── P1-A: retry contract ────────────────────────────────────────────────
   describe("retry policy (P1-A)", () => {
     function buildRetryingSkill(opts: {

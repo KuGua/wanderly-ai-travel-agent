@@ -9,6 +9,7 @@ import {
   latestPlanResponseSchema,
   ownerConversationResponseSchema,
   profileResponseSchema,
+  serviceGapSchema,
   tripsResponseSchema,
 } from "./contracts";
 import { testProfileResponse, testTripsResponse } from "@/test/api-fixtures";
@@ -199,5 +200,30 @@ describe("API contracts", () => {
       sequence: -1,
       delta: "invalid",
     })).toThrow();
+  });
+
+  /**
+   * Regression for the 2026-09-05 planning-run detail page, which showed
+   * "Unable to load the planning result" for a run that had completed. The
+   * failure was on this side of the wire: the capability mirror omitted
+   * `places` and `readiness`, so a response carrying a `places` gap failed
+   * the parse and the page reported a transport error for a run whose
+   * outcome it was holding in its hands.
+   */
+  it("mirrors every service-gap capability and code the API can emit", () => {
+    for (const capability of [
+      "flight", "stay", "hotel", "accommodation", "activities",
+      "places", "navigation", "transit", "mobility", "readiness",
+    ]) {
+      expect(serviceGapSchema.parse({ capability, code: "NO_RESULTS" }).capability).toBe(capability);
+    }
+    for (const code of [
+      "NOT_CONFIGURED", "SEARCH_CONSTRAINTS_INCOMPLETE", "NO_RESULTS", "RATE_LIMITED",
+      "UPSTREAM_TIMEOUT", "UPSTREAM_FAILURE", "INVALID_PROVIDER_RESPONSE",
+      "PROVIDER_NOT_APPROVED", "PROVIDER_REQUEST_REJECTED", "SKILL_CONTRACT_VIOLATION",
+    ]) {
+      expect(serviceGapSchema.parse({ capability: "places", code }).code).toBe(code);
+    }
+    expect(() => serviceGapSchema.parse({ capability: "weather", code: "NO_RESULTS" })).toThrow();
   });
 });
