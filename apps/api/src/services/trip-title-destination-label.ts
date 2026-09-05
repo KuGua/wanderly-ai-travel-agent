@@ -1,0 +1,61 @@
+import { getLocationReferenceResolver } from "../location-reference/location-reference-resolver.js";
+
+export type TitleDestinationLabelSource = "REFERENCE";
+
+export type TitleDestinationLabel = {
+  label: string;
+  source: TitleDestinationLabelSource;
+};
+
+/**
+ * Pure function. Resolves a candidate string into a display-only trip
+ * destination label. The label is **country/region only** — never a city —
+ * and lives in `shared_trips.title_destination_label`, never in
+ * `destinationCandidates`, `constraint_snapshot`, or any provider query.
+ * See docs/trip-title-destination-label-implementation.md §D2/D3 and §6.3.
+ *
+ * Returns `null` when:
+ *   - the candidate resolves as a known city (the existing
+ *     `destinationCandidates` path handles cities, no label needed), or
+ *   - the candidate is neither a city nor a country in the reference data.
+ *
+ * Reference data load failure surfaces as `null`. The dataset is an
+ * allow-list, never an availability dependency for chat: the caller in
+ * `conversation-task-handler.ts` runs this inline on the reply path, so a
+ * missing or unreadable dataset must decline the label rather than fail the
+ * whole turn. Mirrors `resolveBriefDestination` in
+ * `trip-brief-proposal-service.ts`.
+ */
+export function resolveTitleDestinationLabel(params: {
+  candidate: string;
+  locale: "en" | "zh";
+}): TitleDestinationLabel | null {
+  try {
+    const resolver = getLocationReferenceResolver();
+    // Step 1: a city match short-circuits. Cities are not labels — they are
+    // already a fact that the planner owns, so the title goes through the
+    // existing destinationCandidates path.
+    const cityMatch = resolver.resolveDestinationReference({
+      destinationId: "title-destination-label",
+      cityName: params.candidate,
+    });
+    if (cityMatch) return null;
+
+    // Step 2: try the country label resolver. Picks the locale-appropriate
+    // canonical name from the dataset; falls back to English when the
+    // dataset has no Chinese entry for this country.
+    const countryLabel = resolver.resolveCountryLabel(params.candidate);
+    if (!countryLabel) return null;
+    const label = params.locale === "zh" && countryLabel.nameZh
+      ? countryLabel.nameZh
+      : countryLabel.nameEn;
+    if (!label) return null;
+    return { label, source: "REFERENCE" };
+  } catch {
+    // `getLocationReferenceResolver` reads four dataset files with
+    // `readFileSync` and throws when any is missing or malformed. Declining
+    // the label keeps the conversation reply alive; the trip simply keeps
+    // its placeholder title.
+    return null;
+  }
+}

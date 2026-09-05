@@ -34,6 +34,13 @@ const acceptInvitationRequestSchema = z.object({
   locale: z.enum(["en", "zh"]).default("en"),
 }).strict();
 
+// Read-side language authority for the preview's redacted placeholder. Not
+// `.strict()` and parsed with `safeParse`: an unrelated query parameter must
+// never turn a valid invitation into a 400.
+const invitationPreviewQuerySchema = z.object({
+  locale: z.enum(["en", "zh"]).optional(),
+});
+
 export async function tripInvitationRoutes(app: FastifyInstance) {
   // Only the trip creator may invite additional members.
   app.post("/trips/:tripId/invitations", {
@@ -68,14 +75,20 @@ export async function tripInvitationRoutes(app: FastifyInstance) {
 
   app.get("/trip-invitations/:inviteToken", {
     schema: {
-      description: "Read the authenticated recipient's minimal invitation decision summary.",
+      description: "Read the authenticated recipient's minimal invitation decision summary. Pass ?locale=en|zh so a redacted Draft placeholder renders in the invitee's own language.",
       tags: ["invitations"],
       params: toJsonSchema(inviteTokenParamSchema),
       response: { 200: toJsonSchema(tripInvitationPreviewResponseSchema) },
     },
   }, async (request, reply) => {
     const { inviteToken } = inviteTokenParamSchema.parse(request.params);
-    const result = await getInvitationPreview({ token: inviteToken, actorUserId: request.user.id, actorEmail: request.user.email });
+    const query = invitationPreviewQuerySchema.safeParse(request.query ?? {});
+    const result = await getInvitationPreview({
+      token: inviteToken,
+      actorUserId: request.user.id,
+      actorEmail: request.user.email,
+      locale: query.success ? query.data.locale : undefined,
+    });
     return reply.code(200).send(tripInvitationPreviewResponseSchema.parse({
       ...result,
       membership: "MEMBER",

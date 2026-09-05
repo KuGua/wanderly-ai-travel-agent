@@ -19,6 +19,8 @@ const USER_MESSAGE_ID = "44444444-4444-4444-8444-444444444444";
 const RUN_ID = "55555555-5555-4555-8555-555555555555";
 const ASSISTANT_MESSAGE_ID = "77777777-7777-4777-8777-777777777777";
 const TRIP_ID = "99999999-9999-4999-8999-999999999999";
+const CUE_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const CANDIDATE_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const CREATED_AT = "2026-08-25T10:00:00.000Z";
 const TOKYO: ConversationPlace = {
   sourceId: "tokyo",
@@ -171,6 +173,8 @@ describe("TravelAgentChat durable streaming flow", () => {
     const reply = answer.closest("article")?.querySelector(".chat-markdown")?.parentElement;
     expect(screen.queryByText("Wanderly Agent")).not.toBeInTheDocument();
     expect(reply).toHaveClass("max-w-[86%]", "py-1", "text-justify", "text-[var(--w-fog)]");
+    expect(reply).toHaveAttribute("data-terminal-output", "true");
+    expect(reply).toHaveClass("wanderly-terminal-output");
     expect(reply).not.toHaveClass("wanderly-cosmos-surface", "wanderly-edge", "wanderly-shadow-sm");
 
     const question = screen.getByText("A short question.").parentElement;
@@ -183,14 +187,14 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(send).not.toHaveClass("wanderly-action", "wanderly-bot-action", "wanderly-r-md");
   });
 
-  it("lays out the globe destination decision as one compact unfilled row", async () => {
+  it("renders the model-owned destination decision with parallel actions", async () => {
     const api = createApi({
       subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
         onEvent({
-          event: "trip.brief_proposed",
+          event: "destination.cue_ready",
           runId: RUN_ID,
           generationAttempt: 1,
-          proposal: { destinationCandidates: ["Suzhou"] },
+          cue: { id: CUE_ID, version: 1, candidates: [{ id: CANDIDATE_ID, displayName: "Suzhou", status: "PENDING" }] },
         });
         await untilAborted(signal);
       }),
@@ -200,29 +204,26 @@ describe("TravelAgentChat durable streaming flow", () => {
     await submitFromCapsule("Tell me about Suzhou");
 
     const question = await screen.findByText("Set Suzhou as the destination?");
-    expect(question.parentElement).toHaveClass("grid-cols-[minmax(0,1fr)_auto_auto]", "py-1");
     expect(question.closest("section")).toHaveClass("-translate-y-[3px]");
-
-    const plan = screen.getByRole("button", { name: "Plan trip" });
-    const explore = screen.getByRole("button", { name: "Keep exploring" });
-    expect(plan).toHaveClass("bg-transparent", "px-0", "py-1", "text-[var(--w-bot-outline)]");
-    expect(explore).toHaveClass("bg-transparent", "px-0", "py-1");
-    expect(plan).not.toHaveClass("wanderly-shadow-xs", "wanderly-action");
-    expect(explore).not.toHaveClass("wanderly-cosmos-control");
+    const plan = screen.getByRole("button", { name: "Save Suzhou to this trip" });
+    const explore = screen.getByRole("button", { name: "Leave it as it is" });
+    expect(plan.parentElement).toHaveClass("grid-cols-2");
+    expect(plan).toHaveClass("wanderly-action");
+    expect(explore).toHaveClass("wanderly-cosmos-control");
   });
 
   it("explains a destination-resolution rejection without dropping the proposal", async () => {
-    const updateDraftTripBrief = vi.fn().mockRejectedValue(
+    const acceptDestinationCue = vi.fn().mockRejectedValue(
       new TravelApiError("DESTINATION_UNRESOLVED: use an unambiguous supported city name", 422, "Unprocessable Entity", null),
     );
     const api = createApi({
-      updateDraftTripBrief,
+      acceptDestinationCue,
       subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
         onEvent({
-          event: "trip.brief_proposed",
+          event: "destination.cue_ready",
           runId: RUN_ID,
           generationAttempt: 1,
-          proposal: { destinationCandidates: ["Suzhou"] },
+          cue: { id: CUE_ID, version: 1, candidates: [{ id: CANDIDATE_ID, displayName: "Suzhou", status: "PENDING" }] },
         });
         await untilAborted(signal);
       }),
@@ -232,7 +233,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     await submitFromCapsule("Go to Suzhou");
     fireEvent.click(await screen.findByRole("button", { name: "Save Suzhou to this trip" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("We couldn't verify that destination.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("We couldn't verify that city destination.");
     expect(screen.getByText("Set Suzhou as the destination?")).toBeInTheDocument();
   });
 
@@ -285,7 +286,7 @@ describe("TravelAgentChat durable streaming flow", () => {
 
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
     await submitFromCapsule("Go to Suzhou");
-    fireEvent.click(await screen.findByRole("button", { name: "Save Suzhou to this trip" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save this to the trip" }));
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Those travel dates can't be used");
@@ -589,6 +590,8 @@ describe("TravelAgentChat durable streaming flow", () => {
     await submitFromCapsule("Tell me about Tokyo");
 
     expect(await screen.findByText("A streamed answer.")).toBeInTheDocument();
+    expect(document.querySelector('[data-streaming="true"] [data-terminal-output="true"]')).toHaveClass("wanderly-terminal-output");
+    expect(document.querySelector('[data-streaming="true"][data-terminal-output="true"]')).toHaveClass("wanderly-terminal-output");
     expect(screen.getByText("Tell me about Tokyo")).toBeInTheDocument();
     expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
       requestId: REQUEST_ID,
@@ -1046,16 +1049,16 @@ describe("the trip's preference card", () => {
     ));
   });
 
-  it("picks the conversation back up once the destination is saved", async () => {
-    // Saving used to end the exchange: the card went, a line said it was
-    // stored, and nothing said what happens next — the same silence the
-    // preference card left behind.
+  it("picks the conversation back up once the remaining trip details are saved", async () => {
+    // Destination confirmation is handled by its durable cue. The brief card
+    // still owns non-destination details, and saving those must continue the
+    // conversation instead of ending in silence.
     // The proposal rides on a run, so there has to be one to read it from.
     localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
     const api = createApi({
       getAgentRun: vi.fn().mockResolvedValue({
         ...run("COMPLETED"),
-        tripBriefProposal: { destinationCandidates: ["Bangkok"] },
+        tripBriefProposal: { travelDays: 6 },
       }),
       updateDraftTripBrief: vi.fn().mockResolvedValue({
         trip: {
@@ -1078,41 +1081,12 @@ describe("the trip's preference card", () => {
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
-    fireEvent.click(await screen.findByRole("button", { name: /Save Bangkok to this trip/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save this to the trip" }));
 
     await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalledWith(
       THREAD_ID,
       expect.objectContaining({ intent: "brief_saved" }),
     ));
-  });
-
-  it("asks about a further destination instead of re-asking the settled one", async () => {
-    // A trip that already holds Gero is not being told where it is going, so
-    // the card must not ask 「你想将 X 作为目的地吗？」 a second time — the
-    // traveller answered that, and repeating it reads as though the answer was
-    // lost. A genuinely new place is an addition, and says so.
-    localStorage.setItem(ACTIVE_RUN_KEY(), RUN_ID);
-    const api = createApi({
-      getAgentRun: vi.fn().mockResolvedValue({
-        ...run("COMPLETED"),
-        tripBriefProposal: { destinationCandidates: ["Kyoto"] },
-      }),
-      getTrip: vi.fn().mockResolvedValue({
-        trip: {
-          id: TRIP_ID, name: "Gero", createdBy: OWNER_ID, status: "DRAFT",
-          departureCities: ["Beijing"], destinationCandidates: ["Gero"],
-          travelDateStart: null, travelDateEnd: null, travelDays: 10,
-          createdAt: CREATED_AT, updatedAt: CREATED_AT,
-        },
-        callerRole: "CREATOR",
-        members: [],
-      }),
-    });
-    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
-
-    expect(await screen.findByText("Add Kyoto as a further destination?")).toBeInTheDocument();
-    expect(screen.queryByText(/Set Kyoto as the destination\?/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add Kyoto to this trip" })).toBeInTheDocument();
   });
 
   it("keeps the card up when the save is refused, so the answer can be corrected", async () => {
@@ -1492,5 +1466,121 @@ describe("Enter while an IME is composing", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalled());
+  });
+});
+
+/**
+ * DRAFT → Shared handoff CTA render conditions.
+ *
+ * Spec: the section must always render for DRAFT trips so the creator
+ * sees whether the brief is ready, *and* must list which slot is empty
+ * when it isn't. The CTA button must only be enabled when the brief is
+ * complete; natural language typed into the chat box must NOT trigger
+ * any activate call.
+ */
+describe("DRAFT → Shared handoff CTA", () => {
+  function draftTrip(overrides: Partial<{
+    status: "DRAFT";
+    departureCities: string[];
+    destinationCandidates: string[];
+    travelDateStart: string | null;
+    travelDateEnd: string | null;
+    travelDays: number | null;
+  }> = {}) {
+    return {
+      trip: {
+        id: TRIP_ID,
+        name: "Tokyo",
+        createdBy: OWNER_ID,
+        status: "DRAFT" as const,
+        departureCities: [],
+        destinationCandidates: ["Tokyo"],
+        travelDateStart: null,
+        travelDateEnd: null,
+        travelDays: null,
+        createdAt: CREATED_AT,
+        updatedAt: CREATED_AT,
+        ...overrides,
+      },
+      callerRole: "CREATOR",
+      members: [],
+    };
+  }
+
+  it("renders the missing-departure explanation and disables the CTA when only the city is set", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(draftTrip({
+        departureCities: [],
+        destinationCandidates: ["Tokyo"],
+        travelDateStart: "2026-09-10",
+        travelDateEnd: "2026-09-15",
+      })),
+      activateTrip: vi.fn(),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const heading = await screen.findByText(/Trip details aren't complete yet/i);
+    expect(heading).toBeInTheDocument();
+    expect(screen.getByText(/departure city/i)).toBeInTheDocument();
+
+    const button = screen.getByRole("button", { name: "Start planning" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute("aria-disabled", "true");
+
+    fireEvent.click(button);
+    await waitFor(() => expect(api.activateTrip).not.toHaveBeenCalled());
+  });
+
+  it("renders the missing-dates explanation and disables the CTA when city + departure are set but dates are not", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(draftTrip({
+        departureCities: ["Shanghai"],
+        destinationCandidates: ["Tokyo"],
+        travelDateStart: null,
+        travelDateEnd: null,
+        travelDays: null,
+      })),
+      activateTrip: vi.fn(),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const heading = await screen.findByText(/Trip details aren't complete yet/i);
+    expect(heading).toBeInTheDocument();
+    expect(screen.getByText(/travel dates/i)).toBeInTheDocument();
+
+    const button = screen.getByRole("button", { name: "Start planning" });
+    expect(button).toBeDisabled();
+  });
+
+  it("renders the ready CTA and only fires activateTrip on explicit click", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(draftTrip({
+        departureCities: ["Shanghai"],
+        destinationCandidates: ["Tokyo"],
+        travelDateStart: "2026-09-10",
+        travelDateEnd: "2026-09-15",
+      })),
+      activateTrip: vi.fn().mockResolvedValue({
+        trip: draftTrip().trip,
+        planningRun: { runId: RUN_ID, status: "RUNNING" },
+      }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const heading = await screen.findByText(/Trip details are ready/i);
+    expect(heading).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Start planning" });
+    expect(button).not.toBeDisabled();
+
+    // Typing natural-language confirmation must NOT auto-activate.
+    const input = screen.getByRole("textbox", { name: "Message Wanderly Agent" });
+    fireEvent.change(input, { target: { value: "好的，开始吧" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(api.submitConversationTurn).toHaveBeenCalled());
+    expect(api.activateTrip).not.toHaveBeenCalled();
+
+    // Clicking the CTA is the only path to activation.
+    fireEvent.click(button);
+    await waitFor(() => expect(api.activateTrip).toHaveBeenCalledTimes(1));
   });
 });

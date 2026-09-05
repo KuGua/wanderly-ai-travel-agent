@@ -47,6 +47,8 @@ dataset. Accepted localized spellings are stored as the canonical city name.
 An unknown, ambiguous, or non-place value returns `422 DESTINATION_UNRESOLVED`;
 the trip brief and its pending proposal are left unchanged. This endpoint never
 uses a browser label, assistant reply, or free-text fallback as a destination.
+A country or region name is never accepted here either — it can only become a
+display-only trip title label (see "Trip destination label").
 
 ---
 
@@ -386,11 +388,71 @@ accepted invitation provisions that member's own default private thread.
 - `404 Not Found` — no trip with that id.
 - `409 Conflict` (`TRIP_NOT_DRAFT`) — trip is not in `DRAFT` status.
 
-The server derives the title only from the explicit destinations, complete date
-range and `titleLocale`; it does not read private conversation history or call
-an LLM. Dates are counted inclusively. `PATCH /trips/:tripId/title` lets only
-the creator set a manual title; the audit record contains only `source: manual`
-and never the title text.
+The server derives the title from the explicit destinations, the display-only
+destination label (see below), the complete date range and `titleLocale`. Dates
+are counted inclusively. `PATCH /trips/:tripId/title` lets only the creator set
+a manual title; **this manual-rename endpoint never reads private conversation
+history and never calls an LLM**, and its audit record contains only
+`source: manual` and never the title text. Trip destination labels are a
+separate lifecycle (deterministic + owner-explicit LLM suggest); see
+[Trip destination label](#trip-destination-label) and
+[POST /trips/:tripId/title/suggest](#post-tripsidtripidtitlesuggest) below.
+
+### Trip destination label
+
+When a traveller names only a country or region, it cannot become a
+`destinationCandidates` entry — the planner contract is city-only. The server
+instead stores a **display-only** label on the trip and feeds it to the same
+title builder, so the trip is named `法国行程规划` rather than a bare
+placeholder. The label never reaches the planner, a provider query, or a
+`constraint_snapshot`, and a confirmed city always supersedes it.
+
+Same-name cities across countries resolve by population dominance: the
+highest-population match wins only when it is at least five times the largest
+match from any other country. `巴黎` / `Paris` therefore resolves to Paris,
+France, while genuinely contested names such as `Valencia` keep returning
+`422 DESTINATION_UNRESOLVED`.
+
+### `GET /trip-invitations/:inviteToken`
+Read the authenticated recipient's minimal invitation decision summary.
+
+Accepts `?locale=en|zh`. A Draft trip whose name is system-generated
+(`nameSource: "AUTO"`) has that name replaced by the generic localized planner
+placeholder — the title is composed from the creator's destinations or from a
+country label, and an invitee must not read the creator's unconfirmed
+exploration before accepting, exactly as `destinationCandidates` and the dates
+are already blanked on a Draft. A `MANUAL` title is preserved: the creator typed
+it knowing it would be shared. Omitting `locale` falls back to `en`; an
+unrelated query parameter never turns a valid invitation into a `400`.
+
+### `POST /trips/:tripId/title/suggest`
+Ask the Personal Agent to infer the destination label from the caller's own
+private messages. Creator only, rate limited per user.
+
+**Request**: `{ "locale": "zh" }`
+
+**Response**:
+```json
+{
+  "trip": { "id": "uuid", "name": "法国行程规划", "nameSource": "AUTO" },
+  "applied": true
+}
+```
+
+Business failures return `200` with `applied: false` and a bounded `reason`:
+`NOT_DRAFT`, `MANUAL_LOCKED`, `SUPERSEDED`, `NO_MATERIAL`, `RATE_LIMITED`,
+`UNAVAILABLE`, `REJECTED`. The stored title is never modified on a failure, and
+a concurrent manual rename always wins.
+
+The model may only return a country or city name that re-resolves through the
+server location-reference dataset; free text is refused as `REJECTED`. Profile,
+Personal Notes, long-term memory, assistant replies and other threads are never
+sent. The label text never appears in logs, traces, audit summaries or metric
+labels.
+
+**Errors**:
+- `403 Forbidden` — caller is not the creator.
+- `404 Not Found` — no trip with that id.
 
 ### `GET /trips/:tripId`
 Get trip details (members only).

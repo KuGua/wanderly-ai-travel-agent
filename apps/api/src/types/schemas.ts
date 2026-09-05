@@ -478,9 +478,37 @@ export const conversationTurnAcceptedResponseSchema = z.object({
   userMessage: ownerConversationMessageSchema.extend({ role: z.literal("USER") }),
 });
 
+export const destinationCueCandidateResponseSchema = z.object({
+  id: uuidSchema,
+  displayName: z.string().min(1).max(128),
+  status: z.enum(["PENDING", "ACCEPTED", "DISMISSED", "SUPERSEDED"]),
+}).strict();
+
+export const destinationCueResponseSchema = z.object({
+  id: uuidSchema,
+  version: z.number().int().positive(),
+  candidates: z.array(destinationCueCandidateResponseSchema).min(1).max(5),
+}).strict();
+
+export const destinationCueActionRequestSchema = z.object({
+  requestId: uuidSchema,
+  expectedVersion: z.number().int().positive(),
+  titleLocale: z.enum(["en", "zh"]).optional(),
+}).strict();
+
+export const destinationCueActionResponseSchema = z.object({
+  cue: destinationCueResponseSchema.nullable(),
+  trip: z.object({
+    id: uuidSchema,
+    destinationCandidates: z.array(z.string()).max(5),
+    updatedAt: z.string().datetime(),
+  }).strict(),
+}).strict();
+
 export const ownerConversationResponseSchema = z.object({
   thread: threadSummarySchema,
   messages: z.array(ownerConversationMessageSchema),
+  pendingDestinationCue: destinationCueResponseSchema.nullable(),
 });
 
 export const agentRunResponseSchema = z.object({
@@ -1300,6 +1328,10 @@ export const agentStreamEventSchema = z.discriminatedUnion("event", [
     }).strict(),
   }).strict(),
   streamBaseSchema.extend({
+    event: z.literal("destination.cue_ready"),
+    cue: destinationCueResponseSchema,
+  }).strict(),
+  streamBaseSchema.extend({
     event: z.literal("turn.cancelled"),
   }).strict(),
   streamBaseSchema.extend({
@@ -1792,3 +1824,6 @@ export type CastAdoptionVoteRequest = z.infer<typeof castAdoptionVoteRequestSche
 export type ConstraintHandoffConfirmRequest = z.infer<typeof constraintHandoffConfirmRequestSchema>;
 export type ConstraintHandoffConfirmResponse = z.infer<typeof constraintHandoffConfirmResponseSchema>;
 export type ConstraintHandoffBatchResponse = z.infer<typeof constraintHandoffBatchResponseSchema>;
+export type DestinationCueResponse = z.infer<typeof destinationCueResponseSchema>;
+export type DestinationCueActionRequest = z.infer<typeof destinationCueActionRequestSchema>;
+export type DestinationCueActionResponse = z.infer<typeof destinationCueActionResponseSchema>;

@@ -69,7 +69,96 @@ without clipping it at the message viewport boundary.
   edge. Do not alter the relative alignment or size of individual conversation
   bubbles.
 
+### TS-W2 — Explore chat renders approved LLM text as terminal output
+
+**Objective:** Verify the globe chat presents safe SSE message deltas as a
+terminal response without changing task state or exposing partial text as a
+durable message.
+
+**Steps:**
+
+1. Send one exploration chat message and observe the active Agent run while
+   `message.delta` events arrive.
+2. Let the run complete, then reload the private thread history.
+3. Repeat with reduced motion enabled.
+
+**Expected outcomes:**
+
+- Each visible assistant reply begins with the same `>` prompt treatment as
+  the terminal composer. While the SSE run remains active, a phosphor block
+  cursor appears after the most recently rendered output; it disappears once
+  the reply is settled.
+- Deltas appear incrementally in their received sequence. No full-response
+  wait or duplicate assistant bubble is introduced.
+- The prompt and cursor are decorative: assistive technology announces the
+  reply text and existing status feedback, not the terminal affordances.
+  Reduced motion disables the blink.
+- Reloaded history contains only the server-approved, completed assistant
+  message; in-progress partial text remains ephemeral.
+
 ## 模型网关配置与失败文案
+
+### TS-MG0 — Gemini 429 不能被指标标签错误改写成 `INTERNAL`
+
+**Objective:** Verify an upstream model quota response remains a bounded
+`RATE_LIMITED` outcome through the conversation error path, rather than making
+the durable task fail because observability rejected its own metric label.
+
+**Steps:**
+
+1. Configure a model-gateway test double that returns HTTP 429 before it emits
+   a conversation delta.
+2. Submit one private-thread conversation turn and let the Worker process it.
+3. Inspect the durable run, the Prometheus registry and safe Worker logs.
+
+**Expected outcomes:**
+
+- `llm_request_errors_total` accepts exactly
+  `provider=gemini`, `error_category=rate_limited`, `retryable=true`.
+- The error path uses the configured rate-limit backoff and then its existing
+  retry/fallback terminal behaviour; it never throws `MetricLabelError`.
+- The task is not marked `FAILED` with `errorCode=INTERNAL` merely because an
+  upstream 429 occurred.
+- The metric registry still rejects an arbitrary `error_category`, proving the
+  fix did not weaken its bounded-label guard.
+- Logs/traces contain only the safe error classification and correlation
+  context, never provider error bodies, conversation text or credentials.
+
+### TS-MG0a — Unknown internal LLM error categories remain bounded
+
+**Objective:** Verify a future internal classification cannot create a new
+Prometheus series or break the conversation failure path.
+
+**Steps:** Force `recordRetryableError` through an internal code without a
+declared metric mapping.
+
+**Expected outcomes:**
+
+- The metric records `error_category=unknown`.
+- No arbitrary value is passed to `MetricsRegistry`.
+- The original model failure remains the user-visible/task-level cause.
+
+### TS-MG0b — Agent-run telemetry failure cannot replace the model outcome
+
+**Objective:** Verify that loss of the derived `agent_runs`/`AGENT_RUN`
+observability transaction does not turn a successful reply or a classified
+model failure into `INTERNAL`.
+
+**Steps:** Force the transaction used by `recordAgentRun` to reject, then run
+one successful model-gateway request and one request that returns a classified
+upstream failure.
+
+**Expected outcomes:**
+
+- The successful request retains its response and the classified failure
+  retains its original error code.
+- The recorder returns its bounded failure outcome and emits a content-free
+  `OBSERVABILITY_FAILURE` warning with correlation context only.
+- No partial `agent_runs` or `AGENT_RUN` audit row is committed: the two writes
+  share one transaction.
+- Authorization, trip-state, confirmation, booking, and their business audit
+  writes remain strict; this exception applies only to derived agent-run
+  telemetry.
 
 ### TS-MG1 — 空的 `MODEL_GATEWAY_API_KEY` 在启动时被拒绝，而不是每一轮对话失败一次
 
@@ -1065,10 +1154,10 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - In the Trip workspace the preparing banner is shown for the whole wait — list fetch and default-thread auto-provisioning alike — and clears once a thread is active. This surface never renders the idle state, because it never rests without a thread.
 - A failed threads fetch stops the workspace claiming a thread is coming; the thread rail remains the place the failure is reported in full, and the banner is not duplicated as a second error.
 
-### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields only
+### TS-EXPLORE-TRIP-2 — Derive a trip title from explicit brief fields
 
 **Stories:** H1, H2
-**Objective:** Verify title generation is deterministic, localized and independent of private conversation text.
+**Objective:** Verify title generation is deterministic, localized and, on this path, independent of private conversation text. The country/region label path and the owner-triggered model path are covered by TS-EXPLORE-TRIP-2b.
 
 **Starting conditions:** Alice owns a Draft Trip and has sent private messages containing destinations or dates that differ from the explicit activation brief.
 
@@ -1086,15 +1175,49 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The first title is `Tokyo · Bangkok Trip Planner｜7 Days`; the Chinese title uses `行程规划` and no day suffix when dates are incomplete.
 - The `travelDays`-only activation derives `travelDateEnd` from `travelDateStart + travelDays - 1` and the resulting title carries the day suffix (`｜3 Days` / `｜3天`).
 - Both surfaces that can write a title — Explore and the Trip workspace — send the reader's own locale, so a Chinese session never produces a half-English title such as `新加坡 Trip Planner｜4 Days`. The client prop defaults to `en`, so this is asserted per call site rather than assumed.
-- The title never reflects private chat text, profiles or inferred facts, and no LLM call is made.
+- On this path the title never reflects private chat text, profiles or inferred facts, and no LLM call is made. `PATCH /trips/:tripId/title` never reads chat history or calls a model under any circumstance.
+- A trip with no destination label behaves byte-for-byte as before the label column was introduced.
 - Invalid calendar dates and reverse ranges are rejected; no title is fabricated from them.
 - Only the creator may manually rename. The change sets `name_source=MANUAL`; the audit event records the source but never title text.
 - Bob cannot submit through, view, or restore Alice's old session identifiers.
 
-### TS-EXPLORE-TRIP-3 — Destination brief proposals require explicit, resolvable cities
+### TS-EXPLORE-TRIP-2b — Name a trip from a country, and disambiguate same-name cities
+
+**Stories:** H1, H2
+**Objective:** Verify a country-level intent produces an informative title without ever becoming a planner destination, that same-name cities resolve by population dominance, and that every model-path failure leaves the stored title untouched.
+**Contract:** [Trip 标题目的地标签实施规范](trip-title-destination-label-implementation.md)
+
+**Starting conditions:** Alice owns a Draft Trip with an empty brief, UI language Chinese.
+
+**Steps:**
+
+1. Send "我想去法国" in the private thread.
+2. Inspect the trip row and the trip list card.
+3. Submit `巴黎` through the brief confirmation card; then submit `Valencia` on another Draft.
+4. Rename the trip manually, then send another country mention.
+5. On a Draft whose deterministic path found nothing, trigger `POST /trips/:tripId/title/suggest`; repeat it past the per-user quota.
+6. Force the gateway to time out, and separately force it to return free text rather than a resolvable place name.
+7. While a suggest call is in flight, rename the trip from another tab.
+8. As Bob, open the invitation preview for Alice's Draft trip.
+
+**Expected outcomes:**
+
+- The title becomes `法国行程规划`, while `destinationCandidates` stays `[]`. The label never reaches the planner, a provider query, or a `constraint_snapshot`.
+- Because the brief still has no city, the trip card shows a destination-pending marker and the assistant asks for a specific city — on the chat-text path, not only on map selection.
+- `巴黎` resolves to Paris/FR by population dominance and becomes a real destination; the title becomes `巴黎行程规划` and the label is cleared. `Valencia` stays `422 DESTINATION_UNRESOLVED` because no country dominates.
+- After a manual rename, `name_source='MANUAL'` and no automatic or model path ever overwrites the title.
+- Quota exhaustion returns `RATE_LIMITED` without calling the model. A gateway timeout returns `UNAVAILABLE`; unresolvable model output returns `REJECTED`. In every case the stored title and label are unchanged.
+- The in-flight suggest loses to the concurrent rename and exits through `MANUAL_LOCKED`; the user's own title survives.
+- The invitation preview for a Draft with `name_source='AUTO'` shows a generic localized planner name in the invitee's own language (`?locale=en|zh`, defaulting to `en`) — it discloses neither the destination label nor the confirmed destinations, matching how the same response already redacts `destinationCandidates` and dates. A `MANUAL` Draft title is preserved.
+- What the model returns is validated *and canonicalised*: the stored label is always the reference dataset's own spelling, never the model's raw text. A zh caller whose model answers `France` stores `法国`; `tokyo` stores `Tokyo`.
+- A Draft whose brief still has no destination city says so on both the trip card and the workspace overview, so a title naming a country never reads as a complete brief.
+- `rejected` and `unavailable` are counted as themselves on `trip_title_writes_total`, not folded into `superseded`.
+- No audit row, log line, metric label or span attribute contains the label text; `TRIP_TITLE_LABEL_UPDATE` carries only `{ source }`.
+
+### TS-EXPLORE-TRIP-3 — Destination references fail closed and stay city-scoped
 
 **Stories:** H1
-**Objective:** Verify that private conversation can suggest a destination only when the owner explicitly sets a city that the server can resolve unambiguously.
+**Objective:** Verify that discussion, route extraction and direct writes never persist an unresolved or non-city destination.
 
 **Starting conditions:** Alice owns a `DRAFT` Trip. The server location-reference dataset is available and contains Shanghai and Suzhou. No destination proposal is pending.
 
@@ -1102,17 +1225,19 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 1. Send `Introduce Shanghai to me`, `Tell me about Tokyo`, and `Is Paris expensive?` in separate private turns.
 2. Send `from Singapore to Shanghai` and inspect the private brief proposal card.
-3. Submit `me`, an unknown city, and an ambiguous city directly to `PATCH /trips/:tripId/draft-brief` as Alice.
-4. Submit a supported localized city spelling such as `上海` through the same endpoint.
-5. Make the location-reference resolver unavailable, then send an otherwise explicit destination request.
+3. Select a country-level map reference such as `法国`, then send the accompanying private-chat turn.
+4. Submit `me`, an unknown city, an ambiguous city, and `法国` directly to `PATCH /trips/:tripId/draft-brief` as Alice.
+5. Submit a supported localized city spelling such as `上海` through the same endpoint.
+6. Make the location-reference resolver unavailable, then send an otherwise explicit destination request.
 
 **Expected outcomes:**
 
 - The discussion turns create no `tripBriefProposal`, no `pendingBriefProposal`, and no destination card; assistant prose mentioning a city does not itself become a trip fact.
+- A country-level selection remains exploration context: the reply asks the traveller to choose one or more cities, no save card is emitted, and no default city is inferred. A stale country-level proposal returned by an older deployment is hidden rather than rendered as an unsaveable card.
 - The route proposal names server-normalized cities and appears only after both route endpoints resolve uniquely.
 - Each invalid PATCH returns `422 DESTINATION_UNRESOLVED`; the existing brief, title and pending proposal remain unchanged.
 - A supported localized spelling is persisted as its canonical city name. No browser label, LLM output, fixture or free-text fallback substitutes for a failed resolution.
-- Resolver failure fails closed: no destination proposal is emitted and no trip fact is written. Telemetry records only the bounded resolution result, never the conversation text or city value.
+- Resolver failure fails closed: no destination proposal is emitted and no trip fact is written. Telemetry records only the bounded resolution result, never the conversation text or city value. `trip_brief_proposal_destination_resolution_total{result}` records accepted and rejected confirmation proposals without a place label.
 
 ### TS-EXPLORE-TRIP-4 — Brief proposal dates hold together before they reach the trip
 
@@ -1139,6 +1264,30 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The card shows the dates it is about to save alongside the destination, and a coherent proposal saves on the first click.
 - The direct PATCH returns `400 BRIEF_DATES_INVALID`; the client renders copy that tells the traveller to restate the dates, never to refresh. The existing brief, title and pending proposal are unchanged.
 - The cleanup script is a dry run by default, is idempotent, strips only the incoherent date fields from stored proposals, and reports — never rewrites — confirmed trips whose travel dates are in the past.
+
+### TS-EXPLORE-TRIP-5 — Destination cues are user-only and individually confirmed
+
+**Stories:** H1
+**Objective:** Verify that the dedicated model proposes only current-USER-turn city destinations and that every candidate has an independent durable lifecycle.
+
+**Starting conditions:** Alice owns a `DRAFT` Trip. The server location-reference dataset is available and contains Beijing, Shanghai and Chengdu. No Destination Cue is pending.
+
+**Steps:**
+
+1. Send plain flight and hotel queries naming cities; then send `Set Tokyo as the destination and find a hotel`.
+2. Have the Assistant mention Shanghai while the USER says only `sounds good`; then have the USER explicitly name Shanghai.
+3. Send one turn naming Beijing, Shanghai and Chengdu; use both arrows, accept one and dismiss another.
+4. Refresh between actions and process the remaining city.
+5. Exercise dismissal recovery before 30 minutes, after one and two qualified mentions, and after 24 hours of silence.
+6. Make the model and location-reference resolver unavailable independently.
+
+**Expected outcomes:**
+
+- Plain flight/hotel queries and Assistant-only mentions create no Cue; the explicit set command shows Tokyo despite its hotel clause.
+- Every displayed label is a concrete canonical city. No `this` card, browser label or free-text fallback is possible.
+- Arrows only switch. Accepting/dismissing one removes only that candidate; REST recovery retains all remaining candidates until individually handled.
+- Suppression follows 30 minutes + two subsequent USER mentions, with a 24-hour silence reset. Agent text and retries never increment it.
+- Model/resolver failure produces no Cue and never fails or delays the conversation reply. Telemetry and audit contain IDs/counts only, never message text, city names or prompts.
 
 ### TS-OTEL-2 — Worker continuity after durable boundary
 
@@ -1858,6 +2007,43 @@ depending on a provider-specific `finish_reason`.
 3. owner 只接受助手提议中的一部分时，只提取该部分；owner 的提问、纠正或反提议不算接受。
 4. owner 单方面的模糊表述（仅「下个月」，助手未解析或 owner 未接受）仍不得提取。
 5. 回归目标：日期不得只落在 `conversation_*_search_states` 而 `shared_trips.travel_date_start` 为空——那会让 `POST /trips/:tripId/activate` 无法创建 snapshot 与 `PROPOSE_PLAN` task，Trip 卡在无法规划的 `PLANNING`。
+
+### TS-DRAFT-SHARED-HANDOFF-1 — 国家级目的地不得伪装为可开始的 Shared 规划
+
+**Objective:** Verify DRAFT private chat gives an actionable, truthful next
+step when dates are known but the destination is a country or another
+non-city label.
+
+**Starting conditions:** A Solo `DRAFT` Trip belongs to its creator. The
+owner has confirmed `travelDateStart` and `travelDateEnd`, while
+`departureCities=[]` and `destinationCandidates=[]`.
+
+1. The owner discusses a country-level destination such as France and asks
+   how to arrange a ten-day trip.
+2. Inspect the conversation response, draft-brief proposal/card and the
+   “Start planning” action.
+3. The owner selects one unambiguous city, supplies an origin, confirms the
+   draft brief, and then clicks “Start planning”.
+4. Repeat with a natural-language “confirm” / “start” message before clicking
+   the UI action.
+
+**Expected outcomes:**
+
+- The reply may discuss high-level options, but states that a city and origin
+  are still required before full planning can start. It must not say that a
+  Shared plan has started or imply an itinerary/provider query exists.
+- The country name is never persisted as a destination city, and no fallback
+  chooses a capital. Until an unambiguous city is confirmed,
+  `destinationCandidates` remains empty and the CTA is disabled with a
+  comprehensible missing-field explanation.
+- Before the CTA click, no `constraint_snapshot`, snapshot-bound
+  `PLAN`/`REPLAN`/`RESEARCH` task or itinerary plan exists. The private turn
+  remains `CONVERSATION`; this scenario does not alter separately confirmed
+  `PERSONAL_RESEARCH` behaviour.
+- After confirmed city, origin and dates make the brief complete, only the
+  explicit CTA calls `POST /trips/:tripId/activate`; the Solo activation
+  transaction creates the snapshot and first planning task atomically.
+- Natural-language confirmation alone cannot activate the Trip.
 
 ## 已实施：成员私有对话候选交接 Shared Agent
 

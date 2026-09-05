@@ -129,7 +129,8 @@
       },
       "draft": {
         "short": "未命名探索 · 仅你可见",
-        "continueCta": "继续规划"
+        "continueCta": "继续规划",
+        "destinationPending": "目的地城市未确定"
       },
       "dates": {
         "notSet": "日期未设置",
@@ -278,7 +279,7 @@
       "networkError": "暂时无法连接旅行服务。请检查网络后重试。",
       "conversationBusy": "上一条消息仍在创建中。请稍等片刻后重试。",
       "requestInvalid": "这条消息暂时无法被接受。请刷新对话后重试。",
-      "destinationUnresolved": "无法确认这个目的地。请使用受支持的城市名，或从地图中选择地点。",
+      "destinationUnresolved": "无法确认这个城市目的地。国家或地区需要先选择具体城市；也可以从地图中选择城市。",
       "briefDatesInvalid": "这组出行日期无法使用（结束日期早于开始日期，或日期已经过去）。请在对话里重新说一次日期。",
       "prefCardSaveFailed": "偏好保存失败，请检查后重试。",
       "prefCardSaved": "已保存到本次行程。",
@@ -319,6 +320,15 @@
       "startSharedPlanBody": "确认后，Wanderly 会开始生成完整行程方案，并先以 1 位成人、经济舱和 CNY 作为初始条件；之后可随时调整。",
       "startSharedPlanConfirm": "开始规划",
       "startSharedPlanStarting": "正在启动…",
+      "startSharedPlanNotReadyTitle": "行程信息还没补齐",
+      "startSharedPlanNotReadyBody": "还差{missing}才能开始完整规划。先在对话或卡片里补齐这些信息，Wanderly 才能进入共享规划流程。",
+      "startSharedPlanDisabledHint": "请先补齐{missing}，再开始规划。",
+      "missingField": {
+        "departure_city": "出发城市",
+        "destination_city": "目的地城市",
+        "travel_dates": "出行日期",
+        "separator": "、"
+      },
       "flightConfirmTitle": "机票信息已收集齐全，是否立即查询？",
       "flightConfirmButton": "查询",
       "flightCancelButton": "取消",
@@ -395,11 +405,18 @@
       "briefProposalPlanTitleNoDestination": "开始规划这趟行程",
       "briefProposalSaveTitleNoDestination": "保存到这趟行程",
       "briefProposalQuestion": "你想将 {destination} 作为目的地吗？",
-      "briefProposalQuestionNoDestination": "要把这些行程信息保存下来吗？",
-      "briefProposalQuestionAdditional": "你想把 {destination} 作为后续目的地吗？",
-      "briefProposalSaveTitleAdditional": "把{destination}加入这趟行程",
+      "briefProposalQuestionNoDestination": "你想将这里作为目的地吗？",
       "prefCardTurnQuestion": "我刚确认了这趟行程的偏好。",
-      "briefSavedTurnQuestion": "我刚把这些信息存进了行程。"
+      "briefSavedTurnQuestion": "我刚把这些信息存进了行程。",
+      "briefProposalDetailsQuestion": "要保存这些行程信息吗？",
+      "destinationCueTitle": "目的地确认",
+      "destinationCueQuestion": "要将 {destination} 设为目的地吗？",
+      "destinationCueNavigation": "切换目的地候选项",
+      "destinationCuePrevious": "上一个目的地",
+      "destinationCueNext": "下一个目的地",
+      "destinationCueAccept": "把 {destination} 保存到这趟行程",
+      "destinationCueDismiss": "先不设置",
+      "destinationCueSaving": "正在保存…"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",
@@ -681,6 +698,7 @@
       "mapWindow": "探索地图",
       "mapPinned": "固定",
       "openFullMap": "在完整地图中打开",
+      "destinationPending": "尚未确认目的地城市。即使行程已按国家或地区命名，开始规划仍需要具体城市。",
       "draftActivationHint": "先保存完整行程简报，再开始规划。同行者现在即可加入，但无法查看你的私密对话。",
       "activateDraft": "开始规划",
       "activateDraftError": "暂时无法开始规划，请重试。",

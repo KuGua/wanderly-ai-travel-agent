@@ -95,10 +95,18 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
               </div>
               <div className="mt-2 space-y-2 text-[13px] text-[var(--w-ink)]">
                 {trip.status === "DRAFT" ? (
-                  <p className="flex gap-2">
-                    <MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-                    <span>{t("trip.draft.short")}</span>
-                  </p>
+                  <>
+                    <p className="flex gap-2">
+                      <MapPin aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                      <span>{t("trip.draft.short")}</span>
+                    </p>
+                    {/* The card title can already name a country while the
+                        brief still has no city, so say so here rather than
+                        letting the name imply a complete brief. */}
+                    {trip.destinationCandidates.length === 0 ? (
+                      <p className="font-bold">{t("trip.draft.destinationPending")}</p>
+                    ) : null}
+                  </>
                 ) : (
                   <>
                     <p className="flex gap-2">

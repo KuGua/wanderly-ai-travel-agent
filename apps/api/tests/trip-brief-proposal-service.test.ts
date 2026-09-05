@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   coherentBriefDates,
+  isBriefDestinationCountry,
   mergePendingBriefProposal,
   mergeTripBriefProposal,
   normalizeBriefDestinations,
+  normalizeBriefProposalDestinations,
   proposeTripBriefFromTurn,
   withoutSettledFields,
 } from "../src/services/trip-brief-proposal-service.js";
@@ -17,6 +19,11 @@ describe("proposeTripBriefFromTurn", () => {
   });
   it("uses a selected map place without retaining the question", () => {
     expect(proposeTripBriefFromTurn("7 days", { name: "Kyoto", latitude: 35, longitude: 135, sourceType: "REFERENCE" })).toEqual({ destinationCandidates: ["Kyoto"], travelDays: 7 });
+  });
+  it("does not turn a selected country into a destination confirmation", () => {
+    expect(proposeTripBriefFromTurn("法国", {
+      name: "法国", latitude: 46.2, longitude: 2.2, sourceType: "REFERENCE",
+    })).toBeNull();
   });
   it("does not create a candidate from unrelated text", () => {
     expect(proposeTripBriefFromTurn("What food should I try?")).toBeNull();
@@ -119,6 +126,17 @@ describe("normalizeBriefDestinations", () => {
   it("fails closed for a pronoun or an unknown place", () => {
     expect(normalizeBriefDestinations(["me"])).toBeNull();
     expect(normalizeBriefDestinations(["Not a real city"])).toBeNull();
+  });
+
+  it("drops an entire confirmation proposal when its destination is not a city", () => {
+    expect(normalizeBriefProposalDestinations({
+      destinationCandidates: ["France"], travelDays: 7,
+    })).toBeNull();
+  });
+
+  it("classifies a known country as exploration context, not a city", () => {
+    expect(isBriefDestinationCountry("France")).toBe(true);
+    expect(isBriefDestinationCountry("Paris")).toBe(false);
   });
 });
 

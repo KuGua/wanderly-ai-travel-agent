@@ -16,7 +16,13 @@ import {
 import { buildConversationContext } from "../../services/conversation-context-service.js";
 import { buildConversationMemoryContext } from "../../services/conversation-memory-context.js";
 import { loadLatestResearchEvidence } from "../../services/research-evidence-service.js";
-import { mergeTripBriefProposal, proposeTripBriefFromTurn } from "../../services/trip-brief-proposal-service.js";
+import {
+  isBriefDestinationCountry,
+  mergeTripBriefProposal,
+  proposeTripBriefFromTurn,
+} from "../../services/trip-brief-proposal-service.js";
+import { resolveTitleDestinationLabel } from "../../services/trip-title-destination-label.js";
+import { applyTitleDestinationLabel } from "../../services/trip-title-label-service.js";
 import { executePersonalResearch } from "../../services/personal-research-service.js";
 import {
   loadConversationHotelSearchState,
@@ -34,6 +40,10 @@ import {
 } from "../../skills/personal/travel-conversation-skill.js";
 import { personalTripContextSchema, type PersonalTripContext } from "../../skills/personal/personal-trip-context-schema.js";
 import { extractConversationHandoffBatch } from "../../services/conversation-handoff-extraction-service.js";
+import {
+  decideDestinationCueForTurn,
+  type ResolvedDestinationCueDecision,
+} from "../../skills/personal/destination-cue-decision-skill.js";
 import type { AgentStreamEvent } from "../../types/schemas.js";
 import { personalResearchHotelDraftSchema, personalResearchFlightDraftSchema } from "../../types/schemas.js";
 import type { ConversationResponseConstraint, ModelToolDefinition, ModelToolDispatcher, TripBriefProposal } from "../../providers/model-gateway.js";
@@ -483,6 +493,7 @@ export async function handleConversationTask(params: {
   content: string;
   responseMode: import("../../types/schemas.js").ConversationResponseMode;
   tripBriefProposal?: TripBriefProposal;
+  destinationCueDecision?: Promise<ResolvedDestinationCueDecision | null>;
 } | null> {
   // ─── Quick Orchestration — Proactive intro (no user message) ─────────────
   // The run was created server-side on trip activation; the conversation
@@ -506,7 +517,7 @@ export async function handleConversationTask(params: {
   if (!params.run.tripId) {
     throw new ApiError(500, "Internal Server Error", "Conversation task missing tripId");
   }
-  const [membership] = await db.select({ userId: tripMembers.userId })
+  const [membership] = await db.select({ userId: tripMembers.userId, role: tripMembers.role })
     .from(tripMembers)
     .where(and(
       eq(tripMembers.tripId, params.run.tripId),
@@ -518,7 +529,7 @@ export async function handleConversationTask(params: {
   }
 
   const turnInput = await loadConversationTurnInput(params.run);
-  const tripContext = await loadPersonalTripContext(params.run.tripId);
+  const { context: tripContext, titleLocale } = await loadPersonalTripContext(params.run.tripId);
   // The bounded same-thread LLM context is built in its own service so
   // the read path stays pure and retryable (§3.1.4 / §6). Failures here
   // bubble up as a terminal task error before any model call.
@@ -555,6 +566,15 @@ export async function handleConversationTask(params: {
   const abortFromTask = () => execution.abort(params.signal.reason);
   if (params.signal.aborted) abortFromTask();
   else params.signal.addEventListener("abort", abortFromTask, { once: true });
+  const destinationCuePromise = tripContext.tripStatus === "DRAFT" && membership.role === "CREATOR"
+    ? decideDestinationCueForTurn({
+      ctx: { ctx: params.ctx, policyGate: new DefaultPolicyGate("personal") },
+      question: turnInput.question,
+      currentDestinations: tripContext.destinationCandidates,
+      locale: titleLocale ?? "en",
+      signal: execution.signal,
+    }).catch(() => null)
+    : Promise.resolve(null);
   // The Skill's timeout is a budget for *model* time, not for wall clock. A
   // tool-calling turn spends most of its wall clock inside a live supplier — a
   // hotel search runs 10s+ on its own — so charging that to the same 15s budget
@@ -760,14 +780,28 @@ export async function handleConversationTask(params: {
       return explainToolFailure(withoutInternalFields(await dispatch(call)));
     };
   }
-  toolContext.responseConstraints = selectResponseConstraints({
-    tripStatus: tripContext.tripStatus,
-    registeredTools: tools.map((tool) => tool.name),
-    hotelSearchStateExists: hotelSearchState !== null,
-    flightSearchStateExists: flightSearchState !== null,
-    userConfirmed: toolContext.userConfirmed === true,
-    confirmedCapability,
-  });
+  // Spec §7.2 / §D4: extract the chat-side candidate once and reuse it for
+  // the city-required constraint below and the label trigger point further
+  // down. The deterministic parser is cheap (pure regex on the owner's
+  // own text); calling it twice would be both wasted CPU and a hazard for
+  // divergent shape assumptions across the two use sites.
+  const chatExtractedCandidate = proposeTripBriefFromTurn(turnInput.question)?.destinationCandidates?.[0];
+  toolContext.responseConstraints = [
+    ...selectResponseConstraints({
+      tripStatus: tripContext.tripStatus,
+      registeredTools: tools.map((tool) => tool.name),
+      hotelSearchStateExists: hotelSearchState !== null,
+      flightSearchStateExists: flightSearchState !== null,
+      userConfirmed: toolContext.userConfirmed === true,
+      confirmedCapability,
+    }),
+    // Spec §7.2: extend the city-required prompt to chat text as well as
+    // map pickers. `chatExtractedCandidate` is computed once and reused by
+    // the label trigger point below.
+    ...(isBriefDestinationCountry(turnInput.place?.name)
+        || isBriefDestinationCountry(chatExtractedCandidate)
+      ? ["DESTINATION_CITY_REQUIRED" as const] : []),
+  ];
   // Post-P2 (§5.2): the safety gate asks `isEvidenceBacked()` once at the
   // end of the turn. We expose both the *this-turn* dispatch flag and any
   // *persisted* evidence the trip already has (hotel/flight only — the two
@@ -846,7 +880,7 @@ export async function handleConversationTask(params: {
     ? mergeTripBriefProposal(
       // Direct owner statements are parsed conservatively and destination
       // values have already passed server-owned place resolution.
-      proposeTripBriefFromTurn(turnInput.question, turnInput.place),
+      withoutDestination(proposeTripBriefFromTurn(turnInput.question)),
       // The model extractor is retained only for an owner accepting a
       // concrete date/duration the assistant resolved in this same turn.
       // It can never introduce a destination, departure, or other free-text
@@ -856,6 +890,40 @@ export async function handleConversationTask(params: {
       parsedReply.tripBriefProposal,
     )
     : undefined;
+  // Spec §7.1: derive a display-only destination label from this turn.
+  // The label is country/region only — never a city — and lives in
+  // shared_trips.title_destination_label, not in destinationCandidates or
+  // any planner input. Must run outside any DB transaction so the future
+  // P1 LLM call can keep this trigger point unchanged when the label
+  // source becomes LLM (D7). For now the call is fully deterministic and
+  // awaited inline; P1 will move it to fire-and-forget after migration.
+  if (tripContext.tripStatus === "DRAFT" && titleLocale) {
+    const candidate = turnInput.place?.name ?? chatExtractedCandidate;
+    if (candidate) {
+      const resolved = resolveTitleDestinationLabel({ candidate, locale: titleLocale });
+      if (resolved) {
+        await applyTitleDestinationLabel({
+          ctx: params.ctx,
+          tripId: tripContext.tripId,
+          label: resolved.label,
+          source: resolved.source,
+          locale: titleLocale,
+        }).catch((err) => {
+          // Fail-soft: a label write must never break the conversation
+          // reply. Log the error in trace context, keep the metric counter
+          // honest (no implicit "applied" claim), and let the conversation
+          // continue. AGENTS.md observability.
+          logSafeRuntimeEvent(params.ctx, {
+            component: "planner",
+            event: "apply_title_label",
+            operation: "trip.destination.label",
+            outcome: "failure",
+            errorCode: (err as Error)?.name ?? "UNKNOWN",
+          });
+        });
+      }
+    }
+  }
   // Shared handoff is a collaboration command. Draft trips are private
   // exploration only; completed/cancelled trips must not create fresh shared
   // constraints. PLANNING and STALE are the two states that can safely accept
@@ -863,7 +931,8 @@ export async function handleConversationTask(params: {
   if (!shouldExtractConversationHandoff(
     parsed.responseMode, tripContext.tripStatus, params.run.conversationSurface,
   )) {
-    return travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
+    const conversation = travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
+    return { ...conversation, destinationCueDecision: destinationCuePromise };
   }
 
   // Phase 6 / member conversation handoff — fire-and-forget candidate
@@ -905,7 +974,15 @@ export async function handleConversationTask(params: {
     // belt-and-braces guard against a future refactor that throws.
   }
 
-  return travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
+  const conversation = travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
+  return { ...conversation, destinationCueDecision: destinationCuePromise };
+}
+
+function withoutDestination(proposal: TripBriefProposal | null): TripBriefProposal | null {
+  if (!proposal) return null;
+  const { destinationCandidates, ...schedulingAndDeparture } = proposal;
+  void destinationCandidates;
+  return Object.keys(schedulingAndDeparture).length > 0 ? schedulingAndDeparture : null;
 }
 
 /**
@@ -941,7 +1018,10 @@ export function shouldExtractConversationHandoff(
  * Throws if the trip row no longer exists; the caller treats this as a
  * terminal task failure.
  */
-async function loadPersonalTripContext(tripId: string): Promise<PersonalTripContext> {
+async function loadPersonalTripContext(tripId: string): Promise<{
+  context: PersonalTripContext;
+  titleLocale: "en" | "zh" | null;
+}> {
   const [trip] = await db.select({
     id: sharedTrips.id,
     name: sharedTrips.name,
@@ -951,6 +1031,7 @@ async function loadPersonalTripContext(tripId: string): Promise<PersonalTripCont
     travelDays: sharedTrips.travelDays,
     departureCities: sharedTrips.departureCities,
     destinationCandidates: sharedTrips.destinationCandidates,
+    titleLocale: sharedTrips.titleLocale,
   }).from(sharedTrips).where(eq(sharedTrips.id, tripId)).limit(1);
   if (!trip) {
     throw new ApiError(404, "Not Found", "Trip not found while loading PersonalTripContext");
@@ -962,7 +1043,29 @@ async function loadPersonalTripContext(tripId: string): Promise<PersonalTripCont
     trip.status === "DRAFT" || trip.status === "PLANNING" || trip.status === "STALE"
       ? trip.status
       : "CONFIRMED";
-  return personalTripContextSchema.parse({
+
+  // Mirrors the web client's `canStartSharedPlanning` predicate at
+  // apps/web/src/components/explore/travel-agent-chat.tsx — the
+  // Personal Agent must speak the same truth as the UI CTA. The flag
+  // never authorizes activation on its own; the only DRAFT→PLANNING
+  // write boundary is `POST /trips/:tripId/activate`, owned by the UI.
+  const canStartSharedPlanning =
+    tripStatus === "DRAFT"
+    && trip.departureCities.length > 0
+    && trip.destinationCandidates.length > 0
+    && Boolean(trip.travelDateStart)
+    && Boolean(trip.travelDateEnd || trip.travelDays);
+
+  const missingFields: PersonalTripContext["missingFields"] = [];
+  if (tripStatus === "DRAFT") {
+    if (trip.departureCities.length === 0) missingFields.push("departure_city");
+    if (trip.destinationCandidates.length === 0) missingFields.push("destination_city");
+    if (!trip.travelDateStart || !(trip.travelDateEnd || trip.travelDays)) {
+      missingFields.push("travel_dates");
+    }
+  }
+
+  return { context: personalTripContextSchema.parse({
     tripId: trip.id,
     tripName: trip.name,
     tripStatus,
@@ -971,7 +1074,9 @@ async function loadPersonalTripContext(tripId: string): Promise<PersonalTripCont
     travelDays: trip.travelDays,
     departureCities: trip.departureCities,
     destinationCandidates: trip.destinationCandidates,
-  });
+    canStartSharedPlanning,
+    missingFields,
+  }), titleLocale: trip.titleLocale };
 }
 
 class SafeConversationDeltaGate {

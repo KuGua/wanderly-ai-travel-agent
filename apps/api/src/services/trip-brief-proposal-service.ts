@@ -273,6 +273,31 @@ export function normalizeBriefDestinations(candidates: string[]): string[] | nul
   return normalized;
 }
 
+/**
+ * A confirmation card is a preview of one atomic write, so it must be held
+ * to the same city-only contract as the write boundary. Returning `null`
+ * drops the entire incoming proposal rather than leaving dates or a departure
+ * behind on a card whose destination cannot be saved.
+ */
+export function normalizeBriefProposalDestinations(
+  proposal: TripBriefProposal,
+): TripBriefProposal | null {
+  if (!proposal.destinationCandidates) return proposal;
+  const destinationCandidates = normalizeBriefDestinations(proposal.destinationCandidates);
+  return destinationCandidates ? { ...proposal, destinationCandidates } : null;
+}
+
+/** True when a selected map label is a known country rather than one city. */
+export function isBriefDestinationCountry(value: string | undefined): boolean {
+  const candidate = value?.trim();
+  if (!candidate) return false;
+  try {
+    return getLocationReferenceResolver().isKnownCountryName(candidate);
+  } catch {
+    return false;
+  }
+}
+
 function extractDestination(question: string): string | undefined {
   const english = question.match(/\b(?:go|going|travel|travelling|traveling|visit|visiting|head|heading)\s+to\s+([A-Za-z][A-Za-z .'-]{0,63}?)(?=\s+(?:for\s+)?[1-9]\d{0,2}\s+days?\b|[,.!?]|$)/iu);
   // The activity verb terminates the destination whether or not a duration

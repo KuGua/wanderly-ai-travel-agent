@@ -36,6 +36,7 @@ import {
   type ProjectDisplayState,
 } from "../types/schemas.js";
 import { buildTripTitle, isValidTripDate } from "../services/trip-title-service.js";
+import { clearTitleLabelFields } from "../services/trip-title-label-service.js";
 import { createRequestContext } from "../utils/context.js";
 import { recordAudit } from "../services/audit-service.js";
 import { ApiError } from "../middleware/error-handler.js";
@@ -45,7 +46,11 @@ import { metrics } from "../observability/metrics.js";
 import { createConstraintSnapshot } from "../services/planning-service.js";
 import { acceptResearchTask } from "../tasks/task-repository.js";
 import { saveConfirmedSearchPreferences } from "../services/flight-search-preferences-service.js";
-import { normalizeBriefDestinations } from "../services/trip-brief-proposal-service.js";
+import {
+  normalizeBriefDestinations,
+  normalizeBriefProposalDestinations,
+  type TripBriefProposal,
+} from "../services/trip-brief-proposal-service.js";
 
 const tripIdParamSchema = z.object({ tripId: z.string().uuid() }).strict();
 
@@ -496,10 +501,12 @@ export async function tripRoutes(app: FastifyInstance) {
 
   app.patch("/trips/:tripId/title", {
     schema: {
-      // Trip title only — never reads chat history and never calls an LLM.
-      // Private thread titles have their own lifecycle:
-      // docs/thread-title-lifecycle-implementation.md §3.1.
-      description: "Set a creator-managed trip title. This applies to the trip name only — it never reads chat history and never calls an LLM. Private thread titles have their own lifecycle; see docs/thread-title-lifecycle-implementation.md.",
+      // Creator-managed manual rename: never reads chat history and never
+      // calls an LLM. The trip's display-only destination label has a
+      // separate lifecycle and an owner-explicit LLM suggest endpoint
+      // (POST /trips/:tripId/title/suggest); see
+      // docs/trip-title-destination-label-implementation.md §3.1.
+      description: "Set a creator-managed trip title. This endpoint never reads chat history and never calls an LLM. For the destination-label lifecycle (deterministic + owner-explicit LLM suggest), see docs/trip-title-destination-label-implementation.md.",
       tags: ["trips"],
       params: toJsonSchema(tripIdParamSchema),
       body: toJsonSchema(updateTripTitleRequestSchema),
@@ -668,13 +675,13 @@ export async function tripRoutes(app: FastifyInstance) {
       const nextDays = body.travelDays ?? trip.travelDays;
       const autoTitle = buildTripTitle({ destinationCandidates: nextDestinations, travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays, locale: body.titleLocale });
       const now = new Date();
-      await tx.update(sharedTrips).set({
+      await tx.update(sharedTrips).set(clearTitleLabelFields({
         departureCities: nextDepartures, destinationCandidates: nextDestinations,
         travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays,
         // The candidate has become a fact; the card has nothing left to offer.
         pendingBriefProposal: null,
         ...(trip.nameSource === "AUTO" ? { name: autoTitle, titleLocale: body.titleLocale } : {}), updatedAt: now,
-      }).where(eq(sharedTrips.id, tripId));
+      })).where(eq(sharedTrips.id, tripId));
       await recordAudit({ ctx, action: "TRIP_DRAFT_BRIEF_UPDATE", actorUserId: request.user.id, tripId, summary: { source: body.replaceDestinationCandidates ? "creator_brief_editor" : "conversation_confirmation", changedFields: [ ...(body.departureCities ? ["departureCities"] : []), ...(body.destinationCandidates ? ["destinationCandidates"] : []), ...(body.travelDateStart !== undefined ? ["travelDateStart"] : []), ...(body.travelDateEnd !== undefined ? ["travelDateEnd"] : []), ...(body.travelDays !== undefined ? ["travelDays"] : []) ] }, tx });
       return { id: tripId, name: trip.nameSource === "AUTO" ? autoTitle : trip.name, nameSource: trip.nameSource, status: "DRAFT" as const, departureCities: nextDepartures, destinationCandidates: nextDestinations, travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays ?? null, updatedAt: now.toISOString() };
     });
@@ -762,6 +769,13 @@ export async function tripRoutes(app: FastifyInstance) {
     return tripDetailsResponseSchema.parse({
       trip: {
         ...trip,
+        // Old deployments could persist a country/region in this preview.
+        // Hide such a stale preview rather than rendering a save button whose
+        // server-authoritative write is guaranteed to reject it. The stored
+        // value remains untouched for an explicit, audited maintenance repair.
+        pendingBriefProposal: trip.pendingBriefProposal
+          ? normalizeBriefProposalDestinations(trip.pendingBriefProposal as TripBriefProposal)
+          : null,
         createdAt: trip.createdAt.toISOString(),
         updatedAt: trip.updatedAt.toISOString(),
         pinnedSession,

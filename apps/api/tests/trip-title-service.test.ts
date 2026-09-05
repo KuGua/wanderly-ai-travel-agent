@@ -29,4 +29,57 @@ describe("trip titles", () => {
     expect(tripDays("2026-02-29", "2026-03-01")).toBeNull();
     expect(tripDays("2026-10-08", "2026-10-07")).toBeNull();
   });
+
+  // Spec §D4 / §6.1: titleDestinationLabel is a display-only fallback for
+  // country-only briefs. It never reaches the planner and is byte-identical
+  // to today when null/empty.
+  describe("titleDestinationLabel fallback", () => {
+    it("byte-identical output when label is null", () => {
+      expect(buildTripTitle({ destinationCandidates: [], locale: "en" })).toBe("Trip Planner");
+      expect(buildTripTitle({ destinationCandidates: [], locale: "zh" })).toBe("行程规划");
+      expect(buildTripTitle({ destinationCandidates: [], titleDestinationLabel: null, locale: "en" })).toBe("Trip Planner");
+      expect(buildTripTitle({ destinationCandidates: [], titleDestinationLabel: null, locale: "zh" })).toBe("行程规划");
+    });
+
+    it("byte-identical output when label is empty or whitespace", () => {
+      expect(buildTripTitle({ destinationCandidates: [], titleDestinationLabel: "", locale: "en" })).toBe("Trip Planner");
+      expect(buildTripTitle({ destinationCandidates: [], titleDestinationLabel: "   ", locale: "zh" })).toBe("行程规划");
+    });
+
+    it("uses the label when explicit cities are empty", () => {
+      expect(buildTripTitle({ destinationCandidates: [], titleDestinationLabel: "法国", locale: "zh" })).toBe("法国行程规划");
+      expect(buildTripTitle({ destinationCandidates: [], titleDestinationLabel: "France", locale: "en" })).toBe("France Trip Planner");
+    });
+
+    it("explicit cities always win over the label (D4 priority)", () => {
+      expect(buildTripTitle({
+        destinationCandidates: ["Paris"],
+        titleDestinationLabel: "France",
+        locale: "en",
+      })).toBe("Paris Trip Planner");
+      expect(buildTripTitle({
+        destinationCandidates: ["巴黎"],
+        titleDestinationLabel: "法国",
+        locale: "zh",
+      })).toBe("巴黎行程规划");
+    });
+
+    it("label combines with dates when explicit cities are empty", () => {
+      expect(buildTripTitle({
+        destinationCandidates: [],
+        titleDestinationLabel: "France",
+        travelDateStart: "2026-10-01",
+        travelDateEnd: "2026-10-07",
+        locale: "en",
+      })).toBe("France Trip Planner｜7 Days");
+    });
+
+    it("trims whitespace around the label", () => {
+      expect(buildTripTitle({
+        destinationCandidates: [],
+        titleDestinationLabel: "  France  ",
+        locale: "en",
+      })).toBe("France Trip Planner");
+    });
+  });
 });

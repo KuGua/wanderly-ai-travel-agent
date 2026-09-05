@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, ArrowUp, Check, ChevronDown, Copy, LoaderCircle, Plus, RotateCw, Sparkles, Square } from "lucide-react";
+import { ArrowRight, ArrowUp, Check, ChevronDown, ChevronLeft, ChevronRight, Copy, LoaderCircle, Plus, RotateCw, Sparkles, Square } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 import { FormEvent, KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -19,6 +19,7 @@ import type {
   ConversationPlace,
   ConversationTurnRequest,
   PersonalResearchOperationCapability,
+  DestinationCue,
 } from "@/lib/api/contracts";
 import { FlightOfferCard } from "@/components/trips/flight-offer-card";
 import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
@@ -176,8 +177,8 @@ export function TravelAgentChat({
   onSharedRunStarted,
 }: TravelAgentChatProps) {
   const t = useTranslations("explore.chat");
-  const router = useRouter();
   const fmt = useFormatter();
+  const router = useRouter();
   // The same card serves the globe and the workspace, and only one of them
   // has a planner to open — saying "opens the planner" to someone already
   // standing in it is just wrong.
@@ -282,6 +283,9 @@ export function TravelAgentChat({
   const [flightPreferenceSaveError, setFlightPreferenceSaveError] = useState<unknown>(null);
   const [flightPreferencesSaved, setFlightPreferencesSaved] = useState(false);
   const [briefProposal, setBriefProposal] = useState<Extract<AgentStreamEvent, { event: "trip.brief_proposed" }>["proposal"] | null>(null);
+  const [destinationCue, setDestinationCue] = useState<DestinationCue | null>(null);
+  const [destinationCueIndex, setDestinationCueIndex] = useState(0);
+  const [isActingOnDestinationCue, setIsActingOnDestinationCue] = useState(false);
   const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
   const [isStartingSharedPlan, setIsStartingSharedPlan] = useState(false);
   // The assistant already has every field it needs for a flight search but
@@ -326,6 +330,8 @@ export function TravelAgentChat({
     setStreamState(emptyStreamState());
     setRequestError(null);
     setBriefProposal(null);
+    setDestinationCue(null);
+    setDestinationCueIndex(0);
     setPendingFlightConfirmation(false);
     setShowFlightPreferenceCard(false);
     setFlightPreferenceDraft(EMPTY_FLIGHT_PREFERENCE_DRAFT);
@@ -454,7 +460,12 @@ export function TravelAgentChat({
         // A traveller often supplies the brief across several turns (city and
         // duration first, departure/date next). Keep the unconfirmed card as
         // an accumulating review, rather than discarding earlier fields.
-        setBriefProposal((current) => ({ ...current, ...event.proposal }));
+        const proposal = withoutDestinationProposal(event.proposal);
+        if (proposal) setBriefProposal((current) => ({ ...current, ...proposal }));
+      }
+      if (event.event === "destination.cue_ready") {
+        setDestinationCue(event.cue);
+        setDestinationCueIndex(0);
       }
       if (event.event === "turn.completed" && event.responseMode === "SAFE_REFUSAL" && event.assistantMessageId) {
         setRefusalMessageIds((current) => new Set(current).add(event.assistantMessageId!));
@@ -584,14 +595,25 @@ export function TravelAgentChat({
     setPendingFlightConfirmation(pending);
   }, [agentRun.data?.pendingFlightConfirmation]);
 
+  useEffect(() => {
+    const cue = conversation.data?.pendingDestinationCue;
+    if (cue === undefined) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDestinationCue(cue);
+    setDestinationCueIndex(0);
+  }, [conversation.data?.pendingDestinationCue]);
+
   // The trip carries the unconfirmed brief too, and unlike the run it is still
   // there after a reload or on another device. This is the copy that makes the
   // card dependable; the run and the notification are just faster.
   useEffect(() => {
     const proposed = trip.data?.trip.pendingBriefProposal;
     if (!proposed) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setBriefProposal((current) => ({ ...current, ...proposed }));
+    const proposal = withoutDestinationProposal(proposed);
+    if (proposal) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBriefProposal((current) => ({ ...current, ...proposal }));
+    }
   }, [trip.data?.trip.pendingBriefProposal]);
 
   // Same reason as the confirmation above: `trip.brief_proposed` is published
@@ -603,8 +625,11 @@ export function TravelAgentChat({
   useEffect(() => {
     const proposed = agentRun.data?.tripBriefProposal;
     if (!proposed) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setBriefProposal((current) => ({ ...current, ...proposed }));
+    const proposal = withoutDestinationProposal(proposed);
+    if (proposal) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBriefProposal((current) => ({ ...current, ...proposal }));
+    }
   }, [agentRun.data?.tripBriefProposal]);
 
   // The classifier is server-owned. Only its explicit flight-preference gap
@@ -709,7 +734,8 @@ export function TravelAgentChat({
   }
 
   async function confirmBriefProposal() {
-    if (!tripId || !briefProposal || isConfirmingBrief) return;
+    const proposal = withoutDestinationProposal(briefProposal);
+    if (!tripId || !proposal || isConfirmingBrief) return;
     if (!api.updateDraftTripBrief) {
       setRequestError(new Error("Draft brief updates are unavailable"));
       return;
@@ -718,11 +744,7 @@ export function TravelAgentChat({
     setRequestError(null);
     try {
       await api.updateDraftTripBrief(tripId, {
-        ...briefProposal,
-        // The extractor is instructed to return the full updated destination
-        // set (not just newly-added ones) whenever it proposes this field —
-        // replace rather than merge-append so a corrected list actually wins.
-        replaceDestinationCandidates: briefProposal.destinationCandidates ? true : undefined,
+        ...proposal,
         titleLocale,
       });
       await trip.refetch();
@@ -759,6 +781,34 @@ export function TravelAgentChat({
     }
   }
 
+  async function resolveDestinationCue(action: "accept" | "dismiss") {
+    const cue = destinationCue;
+    const candidate = cue?.candidates[destinationCueIndex];
+    if (!effectiveThreadId || !cue || !candidate || isActingOnDestinationCue) return;
+    const method = action === "accept" ? api.acceptDestinationCue : api.dismissDestinationCue;
+    if (!method) {
+      setRequestError(new Error("Destination confirmation is unavailable"));
+      return;
+    }
+    setIsActingOnDestinationCue(true);
+    setRequestError(null);
+    try {
+      const result = await method.call(api, effectiveThreadId, cue.id, candidate.id, {
+        requestId: crypto.randomUUID(),
+        expectedVersion: cue.version,
+        titleLocale,
+      });
+      setDestinationCue(result.cue);
+      setDestinationCueIndex((current) => result.cue ? Math.min(current, result.cue.candidates.length - 1) : 0);
+      await trip.refetch();
+    } catch (error) {
+      setRequestError(error);
+      if (error instanceof TravelApiError && error.statusCode === 409) await conversation.refetch();
+    } finally {
+      setIsActingOnDestinationCue(false);
+    }
+  }
+
   async function startSharedPlanning() {
     const currentTrip = trip.data?.trip;
     if (!tripId || !currentTrip || currentTrip.status !== "DRAFT" || isStartingSharedPlan) return;
@@ -791,6 +841,22 @@ export function TravelAgentChat({
     && trip.data.trip.destinationCandidates.length > 0
     && Boolean(trip.data.trip.travelDateStart)
     && Boolean(trip.data.trip.travelDateEnd || trip.data.trip.travelDays);
+
+  // Mirrors the server-side derivation in `loadPersonalTripContext`
+  // (apps/api/src/tasks/handlers/conversation-task-handler.ts). The two
+  // MUST stay byte-identical so the chat CTA and the conversation
+  // prompt cannot disagree about which slots are still empty. The UI
+  // never reads private conversation content into this list — only the
+  // existence of each required field — so the model has nothing extra
+  // to leak.
+  const missingFields = trip.data?.trip.status === "DRAFT"
+    ? [
+        ...(trip.data.trip.departureCities.length === 0 ? ["departure_city" as const] : []),
+        ...(trip.data.trip.destinationCandidates.length === 0 ? ["destination_city" as const] : []),
+        ...(!trip.data.trip.travelDateStart || !(trip.data.trip.travelDateEnd || trip.data.trip.travelDays)
+            ? ["travel_dates" as const] : []),
+      ]
+    : [];
 
   function confirmFlightSearch() {
     if (isSending) return;
@@ -863,12 +929,13 @@ export function TravelAgentChat({
   // the panel is already a readable surface, so wrapping every answer in a
   // second framed card makes the narrow column feel dense. The Trip workspace
   // keeps its illustrated card treatment because it lives on a paper surface.
+  const terminalOutputClass = onGlobe ? "wanderly-terminal-output" : "";
   const agentBubbleClass = docked
     ? `group/msg relative max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`
-    : "group/msg relative max-w-[86%] py-1 text-[17px] text-justify text-[var(--w-fog)]";
+    : `group/msg relative max-w-[86%] py-1 text-[17px] text-justify text-[var(--w-fog)] ${terminalOutputClass}`;
   const streamingAgentClass = docked
     ? `max-w-[86%] px-3.5 py-3 ${surfaceClass} wanderly-r-md wanderly-shadow-sm`
-    : "max-w-[86%] py-1 text-[17px] text-justify text-[var(--w-fog)]";
+    : `relative max-w-[86%] py-1 text-[17px] text-justify text-[var(--w-fog)] ${terminalOutputClass}`;
   // The destination now names the action instead of sitting in a list above
   // it, so the option reads as the decision rather than as a record change.
   // Absent — the model proposed only dates, say — the label stays generic
@@ -877,38 +944,19 @@ export function TravelAgentChat({
   // "洛杉矶 · 旧金山" read as one compound place name, so a traveller naming
   // two saw the card offer to save a single destination they had not asked
   // for. `fmt.list` gives each locale its own conjunction.
-  const briefDestination = briefProposal?.destinationCandidates?.length
-    ? fmt.list(briefProposal.destinationCandidates, { type: "conjunction" })
-    : null;
-  // Once the trip holds a destination, a further one is an addition, not the
-  // decision that names the trip. Asking "set X as the destination?" of someone
-  // who settled that turns ago reads as though their answer was lost, so the
-  // card switches to the follow-on wording instead.
-  const briefIsAdditionalDestination = (() => {
-    const settled = trip.data?.trip.destinationCandidates ?? [];
-    const proposed = briefProposal?.destinationCandidates ?? [];
-    if (settled.length === 0 || proposed.length === 0) return false;
-    // Only a place the trip does not already hold is a further destination.
-    // Re-offering one that is already saved is not an addition, and the card
-    // for it should not have been raised at all.
-    const known = new Set(settled.map((name) => name.toLowerCase()));
-    return proposed.some((name) => !known.has(name.toLowerCase()));
-  })();
+  const actionableBriefProposal = withoutDestinationProposal(briefProposal);
   const briefPrimaryLabel = isConfirmingBrief
     ? t(onGlobe ? "briefProposalOpening" : "briefProposalSaving")
     : onGlobe
       ? t("briefProposalPlanCompact")
-      : briefIsAdditionalDestination
-        ? t("briefProposalSaveTitleAdditional", { destination: briefDestination as string })
-        : briefDestination
-          ? t("briefProposalSaveTitle", { destination: briefDestination })
-          : t("briefProposalSaveTitleNoDestination");
+      : t("briefProposalSaveTitleNoDestination");
   const briefSecondaryLabel = t(onGlobe ? "briefProposalExploreCompact" : "briefProposalKeepTitle");
   // The card used to name only the destination while carrying dates it never
   // showed. A conversation once proposed an end date two years before its
   // start, and the traveller had no way to see it — the button simply failed.
   // What is about to be saved has to be legible before the click.
   const briefDates = formatBriefDates(fmt, briefProposal);
+  const activeDestinationCandidate = destinationCue?.candidates[destinationCueIndex] ?? null;
 
   const actionCardClass = `px-3.5 py-3 text-sm ${surfaceClass} wanderly-r-md wanderly-shadow-sm`;
   const actionPrimaryClass = "min-h-10 px-3 text-xs font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-50";
@@ -1185,6 +1233,7 @@ export function TravelAgentChat({
                   <div
                     className={agentBubbleClass}
                     data-remember-message-id={message.id}
+                    data-terminal-output={onGlobe ? "true" : undefined}
                   >
                     <ChatMarkdown content={message.content} />
                     <CopyButton text={message.content} />
@@ -1198,7 +1247,7 @@ export function TravelAgentChat({
           {activeRunId ? (
             <article data-role="ASSISTANT" data-streaming="true" className={rowClass}>
               {agentLabel}
-              <div className={streamingAgentClass}>
+              <div className={streamingAgentClass} data-streaming="true" data-terminal-output={onGlobe ? "true" : undefined}>
               {streamState.tools.length > 0 ? <ToolActivityList items={streamState.tools} /> : null}
               {streamState.text ? (
                 <ChatMarkdown content={streamState.text} />
@@ -1227,7 +1276,49 @@ export function TravelAgentChat({
                 ? <button type="button" onClick={retryPendingTurn} disabled={isSending} className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1.5 text-xs font-bold text-destructive shadow-sm disabled:opacity-50"><RotateCw aria-hidden="true" className="size-3.5" />{t("retry")}</button> : null}
             </div>
           ) : null}
-          {briefProposal && tripId ? (
+          {destinationCue && activeDestinationCandidate && effectiveThreadId ? (
+            <section
+              aria-label={t("destinationCueTitle")}
+              className={onGlobe
+                ? "relative mb-2 w-full -translate-y-[3px]"
+                : `relative mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[420px] ${actionCardClass}`}
+            >
+              {destinationCue.candidates.length > 1 ? (
+                <div className="absolute right-0 top-0 flex gap-1" aria-label={t("destinationCueNavigation")}>
+                  <button
+                    type="button"
+                    aria-label={t("destinationCuePrevious")}
+                    onClick={() => setDestinationCueIndex((current) => (current - 1 + destinationCue.candidates.length) % destinationCue.candidates.length)}
+                    className="grid size-8 place-items-center rounded-full border border-current/20 transition-opacity hover:opacity-70"
+                  ><ChevronLeft aria-hidden="true" className="size-4" /></button>
+                  <button
+                    type="button"
+                    aria-label={t("destinationCueNext")}
+                    onClick={() => setDestinationCueIndex((current) => (current + 1) % destinationCue.candidates.length)}
+                    className="grid size-8 place-items-center rounded-full border border-current/20 transition-opacity hover:opacity-70"
+                  ><ChevronRight aria-hidden="true" className="size-4" /></button>
+                </div>
+              ) : null}
+              <p className={`${destinationCue.candidates.length > 1 ? "pr-[76px]" : ""} mb-2 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
+                {t("destinationCueQuestion", { destination: activeDestinationCandidate.displayName })}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => void resolveDestinationCue("accept")}
+                  disabled={isActingOnDestinationCue}
+                  className={`${actionPrimaryClass} min-w-0 px-3 py-2.5 text-left`}
+                >{isActingOnDestinationCue ? t("destinationCueSaving") : t("destinationCueAccept", { destination: activeDestinationCandidate.displayName })}</button>
+                <button
+                  type="button"
+                  onClick={() => void resolveDestinationCue("dismiss")}
+                  disabled={isActingOnDestinationCue}
+                  className={`${actionSecondaryClass} min-w-0 px-3 py-2.5 text-left`}
+                >{t("destinationCueDismiss")}</button>
+              </div>
+            </section>
+          ) : null}
+          {actionableBriefProposal && tripId ? (
             /* A question with two answers. The primary carries the weight
                because one of them is the decision being invited; the other is
                a way to decline it, not a symmetrical alternative. */
@@ -1241,11 +1332,7 @@ export function TravelAgentChat({
             >
               <div className={onGlobe ? "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-1" : undefined}>
                 <p className={`${onGlobe ? "min-w-0 text-xs leading-4" : "mb-2 px-0.5 text-sm"} font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
-                  {briefIsAdditionalDestination
-                    ? t("briefProposalQuestionAdditional", { destination: briefDestination as string })
-                    : briefDestination
-                      ? t("briefProposalQuestion", { destination: briefDestination })
-                      : t("briefProposalQuestionNoDestination")}
+                  {t("briefProposalDetailsQuestion")}
                   {briefDates ? (
                     <span className={`block font-semibold ${onGlobe ? "text-[10px] leading-4" : "mt-0.5 text-xs"} ${docked ? "text-muted-foreground" : "text-[var(--w-space-muted)]"}`}>
                       {briefDates}
@@ -1277,12 +1364,37 @@ export function TravelAgentChat({
               </div>
             </section>
           ) : null}
-          {canStartSharedPlanning && !briefProposal ? (
-            <section aria-label={t("startSharedPlanTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
-              <p className="font-bold text-primary">{t("startSharedPlanTitle")}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{t("startSharedPlanBody")}</p>
+          {!actionableBriefProposal && !destinationCue && trip.data?.trip.status === "DRAFT" ? (
+            <section aria-label={canStartSharedPlanning ? t("startSharedPlanTitle") : t("startSharedPlanNotReadyTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
+              <p className="font-bold text-primary">
+                {canStartSharedPlanning ? t("startSharedPlanTitle") : t("startSharedPlanNotReadyTitle")}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {canStartSharedPlanning
+                  ? t("startSharedPlanBody")
+                  : t("startSharedPlanNotReadyBody", {
+                      missing: missingFields
+                        .map((field) => t(`missingField.${field}`))
+                        .join(t("missingField.separator")),
+                    })}
+              </p>
               <div className="mt-3 flex gap-2">
-                <button type="button" onClick={() => void startSharedPlanning()} disabled={isStartingSharedPlan} className={actionPrimaryClass}>{isStartingSharedPlan ? t("startSharedPlanStarting") : t("startSharedPlanConfirm")}</button>
+                <button
+                  type="button"
+                  onClick={() => void startSharedPlanning()}
+                  disabled={!canStartSharedPlanning || isStartingSharedPlan}
+                  aria-disabled={!canStartSharedPlanning || isStartingSharedPlan}
+                  title={!canStartSharedPlanning
+                    ? t("startSharedPlanDisabledHint", {
+                        missing: missingFields
+                          .map((field) => t(`missingField.${field}`))
+                          .join(t("missingField.separator")),
+                      })
+                    : undefined}
+                  className={actionPrimaryClass}
+                >
+                  {isStartingSharedPlan ? t("startSharedPlanStarting") : t("startSharedPlanConfirm")}
+                </button>
               </div>
             </section>
           ) : null}
@@ -1741,6 +1853,19 @@ function isRetryableFailure(error: AgentRunFailure): boolean {
   // someone pressed a button again.
   return error.errorCode === null
     || ["NETWORK", "UPSTREAM_5XX", "UPSTREAM_FAILURE", "TIMEOUT", "INTERNAL"].includes(error.errorCode);
+}
+
+function withoutDestinationProposal<T extends {
+  destinationCandidates?: string[];
+  departureCities?: string[];
+  travelDateStart?: string;
+  travelDateEnd?: string;
+  travelDays?: number;
+}>(proposal: T | null | undefined): Omit<T, "destinationCandidates"> | null {
+  if (!proposal) return null;
+  const { destinationCandidates, ...details } = proposal;
+  void destinationCandidates;
+  return Object.keys(details).length > 0 ? details : null;
 }
 
 function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {

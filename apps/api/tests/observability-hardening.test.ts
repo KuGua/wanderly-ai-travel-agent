@@ -170,6 +170,44 @@ describe("bounded metrics", () => {
     expect(metrics.render()).not.toContain("arbitrary-model-name");
   });
 
+  it("accepts rate_limited for llm_request_errors_total (closes the 429 metric regression)", () => {
+    expect(() => metrics.inc("llm_request_errors_total", {
+      provider: "openai",
+      error_category: "rate_limited",
+      retryable: "true",
+    })).not.toThrow();
+    expect(() => metrics.inc("llm_request_errors_total", {
+      provider: "gemini",
+      error_category: "rate_limited",
+      retryable: "false",
+    })).not.toThrow();
+    expect(() => metrics.inc("llm_request_errors_total", {
+      provider: "openai-compatible",
+      error_category: "rate_limited",
+      retryable: "true",
+    })).not.toThrow();
+    const rendered = metrics.render();
+    expect(rendered).toContain('error_category="rate_limited"');
+    // The first two increments share the same (provider, error_category, retryable) tuple.
+    // A different retryable label must still be emitted as its own series.
+    expect(rendered).toMatch(/(rate_limited.*retryable="true"|retryable="true".*rate_limited)/);
+  });
+
+  it("still rejects any free-form error_category value to keep the label set bounded", () => {
+    expect(() => metrics.inc("llm_request_errors_total", {
+      provider: "openai",
+      error_category: "wat",
+      retryable: "true",
+    })).toThrow(MetricLabelError);
+    // Future-proofing: must not silently accept arbitrary lowercase strings
+    // such as `code.toLowerCase()` of an internal error code outside the union.
+    expect(() => metrics.inc("llm_request_errors_total", {
+      provider: "openai",
+      error_category: "tool_call_max_turns",
+      retryable: "true",
+    })).toThrow(MetricLabelError);
+  });
+
   it("describes every registered series so docs:verify can diff the registry", () => {
     const described = metrics.describe();
     const names = described.map(series => series.name);

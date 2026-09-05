@@ -129,7 +129,8 @@
       },
       "draft": {
         "short": "Untitled exploration · only you can see it",
-        "continueCta": "Continue planning"
+        "continueCta": "Continue planning",
+        "destinationPending": "Destination city not set"
       },
       "dates": {
         "notSet": "Dates not set",
@@ -278,7 +279,7 @@
       "networkError": "The travel service could not be reached. Check the connection and try again.",
       "conversationBusy": "Your previous message is still being accepted. Please wait a moment, then retry.",
       "requestInvalid": "This message could not be accepted. Refresh the conversation and try again.",
-      "destinationUnresolved": "We couldn't verify that destination. Please use a supported city name or choose it on the map.",
+      "destinationUnresolved": "We couldn't verify that city destination. For a country or region, choose a specific city first, or select a city on the map.",
       "briefDatesInvalid": "Those travel dates can't be used — the end date is before the start, or the dates have already passed. Tell Wanderly the dates again in the chat.",
       "prefCardSaveFailed": "Those preferences could not be saved. Please check them and try again.",
       "prefCardSaved": "Saved for this trip.",
@@ -319,6 +320,15 @@
       "startSharedPlanBody": "Confirm to let Wanderly start building your complete trip plan. It will begin with 1 adult, economy, and CNY; you can adjust these later.",
       "startSharedPlanConfirm": "Start planning",
       "startSharedPlanStarting": "Starting…",
+      "startSharedPlanNotReadyTitle": "Trip details aren't complete yet",
+      "startSharedPlanNotReadyBody": "Still missing {missing} before full planning can begin. Add these in the chat or cards first; Wanderly only enters the shared planning flow once they are all set.",
+      "startSharedPlanDisabledHint": "Add {missing} before starting planning.",
+      "missingField": {
+        "departure_city": "departure city",
+        "destination_city": "destination city",
+        "travel_dates": "travel dates",
+        "separator": ", "
+      },
       "flightConfirmTitle": "Ready to search for flights — run it now?",
       "flightConfirmButton": "Search",
       "flightCancelButton": "Cancel",
@@ -395,11 +405,18 @@
       "briefProposalPlanTitleNoDestination": "Start planning this trip",
       "briefProposalSaveTitleNoDestination": "Save this to the trip",
       "briefProposalQuestion": "Set {destination} as the destination?",
-      "briefProposalQuestionNoDestination": "Save these trip details?",
-      "briefProposalQuestionAdditional": "Add {destination} as a further destination?",
-      "briefProposalSaveTitleAdditional": "Add {destination} to this trip",
+      "briefProposalQuestionNoDestination": "Set this as the destination?",
       "prefCardTurnQuestion": "I've just confirmed my preferences for this trip.",
-      "briefSavedTurnQuestion": "I've just saved this to the trip."
+      "briefSavedTurnQuestion": "I've just saved this to the trip.",
+      "briefProposalDetailsQuestion": "Save these trip details?",
+      "destinationCueTitle": "Destination confirmation",
+      "destinationCueQuestion": "Set {destination} as the destination?",
+      "destinationCueNavigation": "Switch destination candidate",
+      "destinationCuePrevious": "Previous destination",
+      "destinationCueNext": "Next destination",
+      "destinationCueAccept": "Save {destination} to this trip",
+      "destinationCueDismiss": "Leave it as it is",
+      "destinationCueSaving": "Saving…"
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",
@@ -681,6 +698,7 @@
       "mapWindow": "Explore map",
       "mapPinned": "Pinned",
       "openFullMap": "Open in full map",
+      "destinationPending": "No destination city confirmed yet. Planning needs a specific city, even when the trip is already named after a country or region.",
       "draftActivationHint": "Save a complete brief, then start planning. Teammates can join now but cannot view your private conversation.",
       "activateDraft": "Start planning",
       "activateDraftError": "Could not start planning. Please try again.",

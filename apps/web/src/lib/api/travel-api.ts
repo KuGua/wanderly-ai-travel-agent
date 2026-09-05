@@ -83,6 +83,8 @@ import type {
   ResearchCommandAcceptedResponse,
   LatestResearchResultResponse,
   SoloAdoptPlanResponse,
+  DestinationCueActionInput,
+  DestinationCueActionResponse,
 } from "./contracts";
 
 export interface TravelApi {
@@ -110,7 +112,7 @@ export interface TravelApi {
   getTrips(): Promise<TripsResponse>;
   getTrip(tripId: string): Promise<TripDetailResponse>;
   // Optional while older fixtures and API adapters adopt the invitation flow.
-  getInvitationPreview?(inviteToken: string): Promise<InvitationPreviewResponse>;
+  getInvitationPreview?(inviteToken: string, locale?: "en" | "zh"): Promise<InvitationPreviewResponse>;
   acceptInvitation?(inviteToken: string): Promise<AcceptInvitationResponse>;
   declineInvitation?(inviteToken: string): Promise<DeclineInvitationResponse>;
   createTripInvitation?(tripId: string, input: CreateTripInvitationInput): Promise<TripInvitationCreateResponse>;
@@ -151,6 +153,8 @@ export interface TravelApi {
   /** Optional so existing test doubles keep compiling without a stub. */
   deleteTrip?(tripId: string): Promise<void>;
   updateDraftTripBrief?(tripId: string, input: UpdateDraftTripBriefInput): Promise<UpdateDraftTripBriefResponse>;
+  acceptDestinationCue?(threadId: string, cueId: string, candidateId: string, input: DestinationCueActionInput): Promise<DestinationCueActionResponse>;
+  dismissDestinationCue?(threadId: string, cueId: string, candidateId: string, input: DestinationCueActionInput): Promise<DestinationCueActionResponse>;
   saveTripSearchPreferences(tripId: string, input: TripSearchPreferencesInput): Promise<TripSearchPreferencesResponse>;
   startPlanning(tripId: string): Promise<PlanningTaskAcceptedResponse>;
   getLatestPlanningRun(tripId: string): Promise<LatestPlanningRunResponse>;

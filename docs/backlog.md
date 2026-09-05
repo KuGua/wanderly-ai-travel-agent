@@ -32,7 +32,7 @@
 9. A submitted Personal Agent question is persisted with a durable task before streaming begins. Browser close, refresh, network loss and SSE disconnect do not cancel it; only an explicit Stop requests cancellation. The task is lease-recoverable and an ASSISTANT message is persisted only after final safety validation succeeds.
 10. Repeated, non-sensitive behavior may create a user-visible, expiring Profile suggestion, but only a user confirmation may create or replace a stable preference fact. Suggestions never enter a snapshot or shared view.
 11. Nationality, travel documents, date of birth, health and accessibility data are form-only: no conversation or behavior extraction path may create a proposal for them.
-12. A DRAFT destination proposal is emitted only for an owner’s explicit current-turn trip statement or a server-verified map place. Every proposed and creator-confirmed destination resolves to one server-owned `DestinationReference`; prose questions, assistant-only mentions, pronouns, unknown and ambiguous labels fail closed without changing the existing brief.
+12. A DRAFT creator's Destination Cue is decided by a dedicated current-USER-turn model and resolved to a server-owned canonical city. Plain flight/hotel queries, assistant-only mentions, selected-map state, pronouns, unknown and ambiguous labels fail closed. Explicit set-destination commands override the flight/hotel exclusion. Cue batches are owner/thread-scoped, REST-recoverable, and every multi-city candidate is accepted or dismissed independently; arrows only switch candidates.
 
 ### H1a — Start and resume an exploration-scoped private Trip
 
@@ -242,6 +242,24 @@
 7. Background automatic naming is explicitly out of scope for this story; the promotion criteria are recorded in the implementation spec.
 
 实施合同见 [Thread 标题生命周期实施规范](thread-title-lifecycle-implementation.md)。
+
+### S8 — Name a trip when the traveller has only named a country
+
+**Story:** As a traveler who has only said which country I want to visit, I want my trip to carry a title that tells me what it is about, so that I can find it in my project list before I have picked a city.
+
+**Acceptance criteria:**
+
+1. A country-level intent writes a display-only destination label and the trip title becomes e.g. `法国行程规划`. `destinationCandidates` stays empty and the label never reaches the planner, a provider query or a `constraint_snapshot`.
+2. Because the brief still lacks a city, the trip card and workspace show a destination-pending marker, and the assistant asks for a specific city on the chat-text path — not only when a place is picked on the map.
+3. Same-name cities across countries resolve by population dominance (`巴黎` / `Paris` → Paris, France). Where no country dominates (`Valencia`, `Barcelona`) the request keeps returning `422 DESTINATION_UNRESOLVED` rather than guessing.
+4. Confirming a real city supersedes the label: the title recomputes from the city and the label is cleared.
+5. The owner can explicitly ask the Personal Agent to infer the label. The model may only return a country or city name that re-resolves through the server location-reference dataset; anything else is refused.
+6. Every failure path leaves the stored title untouched and returns a readable reason: `NOT_DRAFT`, `MANUAL_LOCKED`, `SUPERSEDED`, `NO_MATERIAL`, `RATE_LIMITED`, `UNAVAILABLE`, `REJECTED`. A manual rename always wins a concurrent model call.
+7. Trip names are member-visible, so a Draft trip with a system-generated name shows a generic localized name in the invitation preview — consistent with how that response already redacts destinations and dates.
+8. `TRIP_TITLE_LABEL_UPDATE` audit rows carry only `{ source }`; the label text never appears in logs, traces, audit summaries or metric labels.
+9. Background automatic model naming is explicitly out of scope; the promotion criteria are recorded in the implementation spec.
+
+实施合同见 [Trip 标题目的地标签实施规范](trip-title-destination-label-implementation.md)。
 
 ### P3 — Observe one owner request across API → DB → Worker → SSE
 

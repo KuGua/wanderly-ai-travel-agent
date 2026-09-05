@@ -12,11 +12,13 @@ import { db } from "../db/database.js";
 import { agentTaskRuns, sharedTrips } from "../db/schema.js";
 import {
   mergePendingBriefProposal,
+  normalizeBriefProposalDestinations,
   withoutSettledFields,
   type TripBriefProposal,
 } from "../services/trip-brief-proposal-service.js";
 import { agentTaskConfig } from "../tasks/config.js";
 import { handleConversationTask, publishPhase } from "../tasks/handlers/conversation-task-handler.js";
+import { persistDestinationCue } from "../services/destination-cue-service.js";
 import { handlePlanningTask } from "../tasks/handlers/planning-task-handler.js";
 import {
   claimNextConversationTask,
@@ -242,11 +244,46 @@ export async function processNextAgentTask(): Promise<boolean> {
         content: output.content,
         responseMode: output.responseMode,
       });
-      if (output.tripBriefProposal) {
+      const briefProposal = output.tripBriefProposal
+        ? normalizeBriefProposalDestinations(output.tripBriefProposal)
+        : null;
+      if (output.tripBriefProposal && !briefProposal) {
+        metrics.inc("trip_brief_proposal_destination_resolution_total", { result: "rejected" });
+      }
+      if (briefProposal) {
+        metrics.inc("trip_brief_proposal_destination_resolution_total", { result: "accepted" });
+      }
+      if (output.destinationCueDecision) {
+        try {
+          const decision = await output.destinationCueDecision;
+          const cue = decision ? await persistDestinationCue({ run, decision }) : null;
+          if (cue) {
+            await publishAgentStreamEvent({
+              event: "destination.cue_ready",
+              runId: run.id,
+              generationAttempt: run.generationAttempt,
+              cue,
+              traceparent,
+            });
+          }
+        } catch (error) {
+          // The cue is an optional confirmation affordance. Conversation
+          // persistence and delivery must survive classifier/state failures.
+          logSafeRuntimeEvent(ctx, {
+            component: "worker",
+            event: "destination_cue",
+            operation: "conversation",
+            outcome: "failure",
+            errorCode: error instanceof Error ? error.name : "INTERNAL",
+            relatedRunId: run.id,
+          });
+        }
+      }
+      if (briefProposal) {
         // Persist before publishing: the notification can be missed, the row
         // cannot. The client rebuilds the card from the run it already polls.
         await db.update(agentTaskRuns)
-          .set({ tripBriefProposal: output.tripBriefProposal })
+          .set({ tripBriefProposal: briefProposal })
           .where(eq(agentTaskRuns.id, run.id));
         // Also on the trip, where it survives a reload and a device change.
         // Merged, because a brief is often given across several turns and the
@@ -255,8 +292,8 @@ export async function processNextAgentTask(): Promise<boolean> {
         // one turn can meet an end date from another, and a pair that cannot
         // be true has to be dropped before it becomes a card nobody can save.
         const persisted = run.tripId
-          ? await persistPendingBriefProposal(run.tripId, output.tripBriefProposal)
-          : output.tripBriefProposal;
+          ? await persistPendingBriefProposal(run.tripId, briefProposal)
+          : briefProposal;
         // The card is built from what was stored, never from what the turn
         // proposed: publishing the unguarded value would put a date on screen
         // that the trip does not have and the write boundary would refuse.

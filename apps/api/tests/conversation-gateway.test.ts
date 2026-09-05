@@ -105,6 +105,28 @@ describe("conversational ModelGateway", () => {
     expect(messages[1]?.content).not.toContain("HOTEL_SEARCH_READINESS");
   });
 
+  it("asks for a city when the selected map place is a country", async () => {
+    const parse = vi.fn().mockResolvedValue({
+      choices: [{ message: {
+        parsed: null,
+        content: JSON.stringify({ reply: { content: "你想先去法国哪座城市？" } }),
+      } }],
+    });
+    const gateway = buildGateway({ chat: { completions: { parse } } });
+
+    await gateway.generateConversationReply({
+      question: "法国",
+      threadContext: [],
+      responseConstraints: ["DESTINATION_CITY_REQUIRED"],
+    });
+
+    const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
+    expect(messages[0]).toMatchObject({ role: "system" });
+    expect(messages[0]?.content).toContain("目的地澄清约束");
+    expect(messages[0]?.content).toContain("不得默认首都");
+    expect(messages[1]?.content).not.toContain("DESTINATION_CITY_REQUIRED");
+  });
+
   it("positions complete trip orchestration as the primary conversation goal", async () => {
     const parse = vi.fn().mockResolvedValue({
       choices: [{ message: {
@@ -124,7 +146,8 @@ describe("conversational ModelGateway", () => {
     expect(messages[0]?.content).toContain("完整行程编排优先级");
     expect(messages[0]?.content).toContain("不得把单独搜索包装成推荐路径");
     expect(messages[0]?.content).toContain("不要生成 Day 1–N");
-    expect(messages[0]?.content).toContain("确认行程信息后即可开始规划");
+    expect(messages[0]?.content).toContain("prompt 后注入的 DRAFT handoff 块是这里唯一权威信号");
+    expect(messages[0]?.content).toContain("canStartSharedPlanning=true 才允许引导用户点击");
     expect(messages[0]?.content).not.toContain("Shared Agent");
     expect(messages[0]?.content).toContain("不得声称已经完成预订、支付、实时查询或任何外部操作");
     expect(messages[0]?.content).toContain("目的地介绍和一般旅行问答是辅助用户探索与决策的能力");

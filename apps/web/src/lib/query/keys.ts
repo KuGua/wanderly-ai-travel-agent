@@ -28,7 +28,10 @@ export const tripKeys = {
 };
 
 export const invitationKeys = {
-  preview: (inviteToken: string) => ["trip-invitations", inviteToken, "preview"] as const,
+  // `locale` belongs in the key: a redacted Draft placeholder is rendered
+  // server-side, so the same token yields a different name per language.
+  preview: (inviteToken: string, locale?: string) =>
+    ["trip-invitations", inviteToken, "preview", locale ?? "en"] as const,
 };
 
 export const threadKeys = {

@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, CalendarDays, Check, LoaderCircle, LockKeyhole, MapPinned, ShieldCheck, UserRound } from "lucide-react";
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
@@ -13,6 +13,7 @@ import { useAcceptInvitation, useDeclineInvitation, useInvitationPreview } from 
 
 export function JoinTripInvitation({ inviteToken }: { inviteToken: string }) {
   const t = useTranslations("invitation");
+  const locale = useLocale();
   const fmt = useFormatter();
   const router = useRouter();
   const auth = useAuth();
@@ -40,7 +41,7 @@ export function JoinTripInvitation({ inviteToken }: { inviteToken: string }) {
   const redirectTarget = `/trips/join/${inviteToken}${invitedEmail ? `?email=${encodeURIComponent(invitedEmail)}` : ""}`;
   const loginHref = { pathname: "/login", query: { redirect: redirectTarget } } as const;
   const registerHref = { pathname: "/register", query: invitedEmail ? { email: invitedEmail, redirect: redirectTarget } : { redirect: redirectTarget } } as const;
-  const preview = useInvitationPreview(isSignedIn ? inviteToken : null);
+  const preview = useInvitationPreview(isSignedIn ? inviteToken : null, locale === "zh" ? "zh" : "en");
   const accept = useAcceptInvitation();
   const decline = useDeclineInvitation();
   const [confirmDecline, setConfirmDecline] = useState(false);

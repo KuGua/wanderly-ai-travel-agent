@@ -16,6 +16,7 @@ import type {
   ModelToolDefinition,
   ModelToolDispatcher,
   TripBriefProposal,
+  DestinationCueDecisionResult,
   SharedPlanningMemoryInput,
 } from "./model-gateway.js";
 import type { RequestContext } from "../utils/context.js";
@@ -115,6 +116,28 @@ const tripBriefExtractionSchema = z.object({
   proposal: tripBriefProposalFieldsSchema.nullable(),
 }).strict();
 
+const destinationCueDecisionSchema = z.object({
+  disposition: z.enum(["PROPOSE", "DO_NOT_PROPOSE", "AMBIGUOUS"]),
+  candidates: z.array(z.object({
+    mentionedText: z.string().trim().min(1).max(128),
+    ordinal: z.number().int().min(0).max(4),
+  }).strict()).max(5),
+  reasonCode: z.enum([
+    "EXPLICIT_DESTINATION_COMMAND",
+    "QUALIFIED_DESTINATION_MENTION",
+    "FLIGHT_OR_HOTEL_QUERY",
+    "NO_DESTINATION",
+    "AMBIGUOUS_REFERENCE",
+  ]),
+}).strict().superRefine((value, ctx) => {
+  if (value.disposition === "PROPOSE" && value.candidates.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "PROPOSE requires candidates" });
+  }
+  if (value.disposition !== "PROPOSE" && value.candidates.length !== 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "non-PROPOSE decisions cannot carry candidates" });
+  }
+});
+
 // Same Gemini root-flattening quirk as geminiConversationCompletionSchema above.
 const geminiTripBriefExtractionSchema = z.union([z.null(), tripBriefProposalFieldsSchema])
   .transform((proposal) => ({ proposal }));
@@ -153,6 +176,20 @@ const TRIP_BRIEF_EXTRACTION_RULES = [
   "- `travelDateEnd` must be the same date as or later than `travelDateStart`. If you cannot produce a pair that satisfies that, omit both date fields rather than emitting one you are unsure of.",
   "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
 ];
+
+const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v1";
+const DESTINATION_CUE_SYSTEM_PROMPT = [
+  "You classify ONLY the owner's current message for an owner-only destination confirmation cue.",
+  "Return exactly one JSON object with disposition, candidates, and reasonCode.",
+  "A candidate must be a city explicitly named by the owner as a possible trip destination.",
+  "Do not infer a city from assistant text, history, a map selection, airport, country, region, hotel, or flight.",
+  "A plain request to search, compare, or book flights, hotels, stays, or accommodation is DO_NOT_PROPOSE, even when route cities appear.",
+  "An explicit command to set/make a named city the destination is PROPOSE and overrides the flight/hotel exclusion in the same message.",
+  "Questions that genuinely consider visiting a named city may be PROPOSE. Incidental mentions are DO_NOT_PROPOSE.",
+  "Exclude cities already present in currentDestinations. Preserve textual order, use ordinal 0..4, and return at most five unique cities.",
+  "If a reference such as 'this', 'there', or 'the next place' cannot be resolved from the current message alone, return AMBIGUOUS with no candidates.",
+  "Allowed reasonCode values: EXPLICIT_DESTINATION_COMMAND, QUALIFIED_DESTINATION_MENTION, FLIGHT_OR_HOTEL_QUERY, NO_DESTINATION, AMBIGUOUS_REFERENCE.",
+].join("\n");
 
 function canonicalize(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -276,12 +313,79 @@ function computeBackoffMs(attempt: number, code?: string): number {
   return exp + Math.floor(Math.random() * Math.min(200, exp));
 }
 
+/**
+ * Closed union of values permitted for `llm_request_errors_total.error_category`.
+ * The metric registry enforces this allow-list; widening it requires
+ * updating both this union AND the registration in
+ * `apps/api/src/observability/metrics.ts` AND the table row in
+ * `apps/api/src/observability/README.md` (the docs verify script fails CI
+ * on drift).
+ */
+type LlmMetricErrorCategory =
+  | "upstream_5xx"
+  | "upstream_failure"
+  | "network"
+  | "timeout"
+  | "schema_parse"
+  | "tool_protocol"
+  | "rate_limited"
+  | "unknown";
+
+/**
+ * Closed mapping from internal LLM error codes to the bounded metric
+ * label set. Any code absent from this map is collapsed to `"unknown"`
+ * — never passed through `toLowerCase()` as a free-form label, so future
+ * internal codes cannot leak into the metric series.
+ */
+const LLM_ERROR_CATEGORY_MAP: Readonly<Record<string, LlmMetricErrorCategory>> = {
+  UPSTREAM_5XX: "upstream_5xx",
+  UPSTREAM_FAILURE: "upstream_failure",
+  NETWORK: "network",
+  TIMEOUT: "timeout",
+  SCHEMA_PARSE: "schema_parse",
+  TOOL_PROTOCOL: "tool_protocol",
+  RATE_LIMITED: "rate_limited",
+};
+
+function toLlmMetricErrorCategory(code: string): LlmMetricErrorCategory {
+  return LLM_ERROR_CATEGORY_MAP[code] ?? "unknown";
+}
+
 function recordRetryableError(provider: MetricProvider, code: string): void {
   metrics.inc("llm_request_errors_total", {
     provider,
-    error_category: code.toLowerCase(),
+    error_category: toLlmMetricErrorCategory(code),
     retryable: String(isRetryableUpstreamError(code)),
   });
+}
+
+/**
+ * Defensive wrapper around {@link recordRetryableError}. A metric label
+ * programmer-error (e.g. a future drift between this union and the
+ * registry's allow-list) must never abort the retry or fallback path on
+ * the conversation worker. If the increment throws, surface a fixed
+ * diagnostic so the drift is observable in NDJSON, and otherwise give up
+ * silently — never re-throw into the LLM call site.
+ */
+function safeRecordRetryableError(provider: MetricProvider, code: string): void {
+  try {
+    recordRetryableError(provider, code);
+  } catch (err) {
+    try {
+      pinoInstance.warn(
+        {
+          component: "llm-metrics",
+          diagnostic: "OBSERVABILITY_FAILURE",
+          metric: "llm_request_errors_total",
+          errorClass: err instanceof Error ? err.name : typeof err,
+        },
+        "LLM error metric was not recorded",
+      );
+    } catch {
+      // Pino itself failed; nothing more to do that does not risk masking
+      // the original upstream error.
+    }
+  }
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -375,7 +479,7 @@ const CONVERSATION_PROMPT_PROSE = [
   "Wanderly 可以在用户明确确认的受控流程中协助比较目的地、研究机票与住宿、寻找景点和活动、安排每日路线与本地交通，并整理出行准备。不得声称已经完成预订、支付、实时查询或任何外部操作。",
   "",
   "完整行程编排优先级：",
-  "1. 用户明确要规划、安排、比较一次旅行，或表达尚未决定去哪里、何时去、如何开始时，收集并简要归纳出发地、目的地、日期/时长和真正影响选择的偏好。不要生成 Day 1–N、路线、基地城市、换住宿方案、交通安排或任何可执行 itinerary；这些由确认后的行程规划流程完成。信息足够时，清楚说明「确认行程信息后即可开始规划」；在用户确认前不得声称已经开始。不要一次抛出冗长问卷。",
+  "1. 用户明确要规划、安排、比较一次旅行，或表达尚未决定去哪里、何时去、如何开始时，收集并简要归纳出发地、目的地、日期/时长和真正影响选择的偏好。不要生成 Day 1–N、路线、基地城市、换住宿方案、交通安排或任何可执行 itinerary；这些由用户在屏幕上的「开始规划」按钮显式触发后才会真正进入，本轮不得声称已经开始，prompt 后注入的 DRAFT handoff 块是这里唯一权威信号（canStartSharedPlanning=true 才允许引导用户点击；false 时只补齐缺口）。不要一次抛出冗长问卷。",
   "2. 只有当用户亲自明确提出想查找、比较、筛选或报价机票、住宿/酒店等具体旅行服务时，才收集其受控查询条件。开头可用一句话说明这些条件会纳入完整行程方案；不得把单独搜索包装成推荐路径，也不得用服务查询引导用户作决定。",
   "3. 用户只问机票、酒店、景点、活动、路线或出行准备中的一项时，先直接帮助当前问题。对路线类问题只给高层取舍或探索方向，不得扩写成逐日行程。仅在自然合适时，用一句不施压的邀请说明：确认后可把它纳入完整方案；不要重复推销或阻断单项需求。",
   "4. 用户只要求目的地介绍、灵感或一般旅行问答时，先完成该附加需求。若回答确实能帮助下一步决策，可在结尾用一句话邀请用户提供出发地、日期和偏好，以便继续编排行程；用户没有表示规划意愿时不要强行转入规划流程。",
@@ -577,6 +681,11 @@ const CONVERSATION_RESEARCH_TOOL_RULE = [
  * which values are already known.
  */
 const CONVERSATION_RESPONSE_CONSTRAINTS: Record<ConversationResponseConstraint, string> = {
+  DESTINATION_CITY_REQUIRED: [
+    "目的地澄清约束（本轮在地图中选中的是国家，而不是一座城市）",
+    "• 可以继续介绍这个国家作为旅行灵感，但不要把它说成已经确定的行程目的地，也不要建议保存它。",
+    "• 结尾用一个简短、可回答的问题请旅客选择一座城市，或选择要比较的两三座城市；不得默认首都或任何一个城市。",
+  ].join("\n"),
   HOTEL_SEARCH_READINESS: [
     "住宿/酒店搜索约束（仅在用户想找、比较、筛选或报价酒店时适用）",
     "• 回复开头先用一句简短的话引导：当前住宿条件确认后会纳入完整行程方案。不要把这句话说成单独酒店搜索的推广，不要列举或推销可单独查询的服务；随后直接帮助当前问题。语气友好自然，不做营销腔；不得提及内部 Agent 或角色名称。",
@@ -653,12 +762,68 @@ export function currentDateRule(now: Date): string {
 function buildConversationSystemPrompt(params: {
   base: string;
   responseConstraints?: readonly ConversationResponseConstraint[];
+  /**
+   * Optional PersonalTripContext. When provided AND `tripStatus === "DRAFT"`,
+   * a server-authored prose block is appended that tells the model whether
+   * the brief is complete and (if not) which slots are empty. This is the
+   * authoritative source — natural-language user input must NOT cause a
+   * DRAFT→PLANNING transition; the only write boundary is
+   * `POST /trips/:tripId/activate`, owned by the UI CTA.
+   */
+  tripContext?: PersonalTripContext | null;
   /** Injectable so a test pins a date rather than following the clock. */
   now?: Date;
 }): string {
   const constraints = [...new Set(params.responseConstraints ?? [])]
     .map((constraint) => CONVERSATION_RESPONSE_CONSTRAINTS[constraint]);
-  return [params.base + currentDateRule(params.now ?? new Date()), ...constraints].join("\n\n");
+  const draftBlock = buildDraftHandoffProse(params.tripContext ?? null);
+  return [
+    params.base + currentDateRule(params.now ?? new Date()),
+    draftBlock,
+    ...constraints,
+  ].filter(Boolean).join("\n\n");
+}
+
+/**
+ * Server-authored prose block that gates Personal Agent wording around
+ * the DRAFT → Shared handoff. Exported so it can be unit-tested without
+ * standing up the full conversation stack.
+ *
+ * Contract:
+ * - Returns the empty string for non-DRAFT trips, and for null context.
+ * - When the brief is complete (`canStartSharedPlanning === true`):
+ *   tells the model that the UI CTA is the *only* activation path; the
+ *   model may suggest the user click it but must NOT claim planning has
+ *   started and must NOT call any activation endpoint.
+ * - When the brief is incomplete: enumerates which slots are empty and
+ *   forbids claiming planning has started, generating Day-by-Day
+ *   itinerary, or activating from natural language.
+ */
+export function buildDraftHandoffProse(tripContext: PersonalTripContext | null): string {
+  if (!tripContext || tripContext.tripStatus !== "DRAFT") return "";
+
+  if (tripContext.canStartSharedPlanning) {
+    return [
+      "本行程信息已齐全（DRAFT）。",
+      "用户点击屏幕上的「开始规划」按钮才会真正进入共享规划；本轮不得声称已开始，也不要替用户调用激活流程。",
+      "可继续提供出发地/日期/偏好相关建议；如用户主动表达准备开始规划，引导其点击「开始规划」按钮（不要替他们点击或代为确认）。",
+    ].join("\n");
+  }
+
+  const fieldLabels: Record<string, string> = {
+    departure_city: "出发城市",
+    destination_city: "目的地城市",
+    travel_dates: "出行日期",
+  };
+  const reasons = tripContext.missingFields.length === 0
+    ? "尚有未确认字段"
+    : tripContext.missingFields.map((field) => fieldLabels[field] ?? field).join("、");
+
+  return [
+    `本行程仍为 DRAFT，缺：${reasons}。`,
+    "在用户补齐这些字段之前，不得声称已开始规划，不得生成逐日行程、Day-by-Day 路线或任何可执行 itinerary。",
+    "可以继续介绍目的地、讨论方向、解释约束；如用户说「好的，开始吧」「确认」之类，自然语言不得触发任何共享规划流程。等待用户在界面点击「开始规划」按钮。",
+  ].join("\n");
 }
 
 // Joined with a newline so each section keeps the blank line that separates it
@@ -815,7 +980,7 @@ export class LLMGateway implements ModelGateway {
           // SCHEMA_PARSE is the model misreading the schema. Retrying won't help
           // — fail fast so we don't burn quota on the same broken response.
           lastError = "SCHEMA_PARSE";
-          recordRetryableError(this.options.provider, lastError);
+          safeRecordRetryableError(this.options.provider, lastError);
           break;
         }
         const parsed = completion.data;
@@ -851,7 +1016,7 @@ export class LLMGateway implements ModelGateway {
         return parsed.plan;
       } catch (err) {
         lastError = classifyError(err);
-        recordRetryableError(this.options.provider, lastError);
+        safeRecordRetryableError(this.options.provider, lastError);
         if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
         await sleep(computeBackoffMs(attempt, lastError));
       }
@@ -1271,6 +1436,7 @@ export class LLMGateway implements ModelGateway {
                   content: buildConversationSystemPrompt({
                     base: STRUCTURED_CONVERSATION_SYSTEM_PROMPT,
                     responseConstraints: params.responseConstraints,
+                    tripContext: params.tripContext ?? null,
                   }),
                 },
                 {
@@ -1303,7 +1469,7 @@ export class LLMGateway implements ModelGateway {
           // the answer. Bail out and surface a FALLBACK so the UI keeps
           // rendering instead of dropping the SSE channel.
           lastError = "SCHEMA_PARSE";
-          recordRetryableError(this.options.provider, lastError);
+          safeRecordRetryableError(this.options.provider, lastError);
           break;
         }
 
@@ -1342,7 +1508,7 @@ export class LLMGateway implements ModelGateway {
         return reply;
       } catch (err) {
         lastError = classifyError(err);
-        recordRetryableError(this.options.provider, lastError);
+        safeRecordRetryableError(this.options.provider, lastError);
         if (!isRetryableUpstreamError(lastError) || attempt >= maxRetries) break;
         await sleep(computeBackoffMs(attempt, lastError));
       }
@@ -1472,7 +1638,7 @@ export class LLMGateway implements ModelGateway {
         });
       } catch (error) {
         lastError = classifyError(error);
-        recordRetryableError(this.options.provider, lastError);
+        safeRecordRetryableError(this.options.provider, lastError);
         // Retrying after a tool call can duplicate provider side effects;
         // retrying after text can concatenate replies in the UI.
         if (sentAnyDelta || toolCallStarted) break;
@@ -1546,6 +1712,7 @@ export class LLMGateway implements ModelGateway {
         content: buildConversationSystemPrompt({
           base: STREAMED_CONVERSATION_SYSTEM_PROMPT,
           responseConstraints: params.responseConstraints,
+          tripContext: params.tripContext ?? null,
         }),
       },
       {
@@ -1938,6 +2105,48 @@ export class LLMGateway implements ModelGateway {
     }
   }
 
+  async decideDestinationCue(params: {
+    question: string;
+    currentDestinations: string[];
+    locale: "en" | "zh";
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<DestinationCueDecisionResult | null> {
+    const ctx = params.ctx ?? this.options.ctx;
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch {
+      return null;
+    }
+    try {
+      const response = await client.chat.completions.parse({
+        model: this.options.modelName,
+        messages: [
+          { role: "system", content: DESTINATION_CUE_SYSTEM_PROMPT },
+          {
+            role: "user",
+            content: JSON.stringify({
+              currentMessage: params.question,
+              currentDestinations: params.currentDestinations,
+              locale: params.locale,
+            }),
+          },
+        ],
+        response_format: { type: "json_object" },
+      }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+      const parsed = destinationCueDecisionSchema.safeParse(completionPayload(response.choices[0]?.message));
+      if (!parsed.success) return null;
+      return {
+        decision: parsed.data,
+        modelVersion: this.options.modelName,
+        promptVersion: DESTINATION_CUE_PROMPT_VERSION,
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async generateLocationIntroduction(params: {
     locale: "en" | "zh";
     place: {
@@ -2304,6 +2513,118 @@ export class LLMGateway implements ModelGateway {
           safeSetAttribute(span, "llm.outcome", "SUCCESS");
           span.end();
           return { title: parsed.data.title };
+        }
+        lastError = "SCHEMA_PARSE";
+      } catch (error) {
+        lastError = classifyError(error);
+      }
+    }
+
+    return recordFailure(lastError);
+  }
+
+  /**
+   * Owner-triggered trip destination label
+   * (docs/trip-title-destination-label-implementation.md §8.1).
+   *
+   * The caller has already reduced the conversation to at most three of the
+   * owner's own USER messages, truncated server-side. Nothing else about
+   * the owner, the trip or the assistant's replies reaches the model.
+   *
+   * The output is a closed vocabulary slot: { kind: "COUNTRY" | "CITY",
+   * value: <canonical reference name> }. Postprocessing
+   * (`services/trip-destination-label-postprocess.ts`) is what re-resolves
+   * `value` against the location reference data and refuses free text; this
+   * prompt can therefore ask for a name and trust the schema parser to
+   * bound it. The route never writes a free-text string into
+   * `shared_trips.title_destination_label`.
+   */
+  async generateTripDestinationLabel(params: {
+    locale: "en" | "zh";
+    messages: ReadonlyArray<{ text: string }>;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<{ kind: "COUNTRY" | "CITY"; value: string }> {
+    const ctx = params.ctx ?? this.options.ctx;
+    const start = Date.now();
+    const span = getTracer().startSpan("llm.openai.parse", {
+      kind: SpanKind.CLIENT,
+      attributes: {
+        "llm.method": "trip.destination.label",
+        "llm.stream": false,
+      },
+    });
+    annotateLlmSpan(
+      span,
+      this.options.provider,
+      this.options.modelName,
+      this.options.promptVersion,
+      "trip.destination.label",
+    );
+
+    const recordFailure = (errorCode: string): never => {
+      logSafeRuntimeEvent(ctx, {
+        component: "llm", event: "request", operation: "trip.destination.label",
+        outcome: "failure", errorCode, latencyMs: Date.now() - start,
+        promptVersion: this.options.promptVersion,
+      });
+      safeSetAttribute(span, "llm.outcome", errorCode);
+      safeSetAttribute(span, "llm.error_code", errorCode);
+      span.end();
+      throw new ModelGatewayError(errorCode, "conversation");
+    };
+
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch (err) {
+      return recordFailure(classifyError(err));
+    }
+
+    // No current question to infer language from — the server-validated
+    // locale is the sole authority (LLM-GATEWAY.md §User-visible language
+    // contract). The label name MUST be returned in the dataset's canonical
+    // form (English by default; Chinese if the dataset has it); the
+    // postprocess module will re-resolve against the reference data either
+    // way and re-pick the locale-appropriate label.
+    const language = params.locale === "zh" ? "Simplified Chinese" : "English";
+    const systemPrompt = [
+      "You identify the single country or city that a private travel-planning conversation is about.",
+      `Return the place name in its canonical ${language} form (the form the user is most likely to recognise).`,
+      "If the traveller names a country, set kind to COUNTRY and value to that country's canonical name.",
+      "If the traveller names a city (or city + country), set kind to CITY and value to that city's canonical name.",
+      "If the traveller mentions several places with no clear primary subject, return kind COUNTRY and value \"\".",
+      "Never return a sentence, a phrase, a description, or a sentence fragment. Never include a URL, an email, a date, or a number.",
+      "Return exactly one JSON object of the form {\"kind\": \"COUNTRY\" | \"CITY\", \"value\": \"…\"}.",
+    ].join(" ");
+
+    const maxRetries = this.options.maxRetries ?? 1;
+    let lastError = "SCHEMA_PARSE";
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      try {
+        const response = await client.chat.completions.parse({
+          model: this.options.modelName,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: JSON.stringify({ messages: params.messages.map(m => m.text) }) },
+          ],
+          response_format: { type: "json_object" },
+        }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+
+        const raw = completionPayload(response.choices[0]?.message);
+        const parsed = z.object({
+          kind: z.enum(["COUNTRY", "CITY"]),
+          value: z.string().min(1).max(64),
+        }).safeParse(raw);
+        if (parsed.success) {
+          logSafeRuntimeEvent(ctx, {
+            component: "llm", event: "request", operation: "trip.destination.label",
+            outcome: "success", latencyMs: Date.now() - start,
+            promptVersion: this.options.promptVersion,
+          });
+          safeSetAttribute(span, "llm.outcome", "SUCCESS");
+          span.end();
+          return { kind: parsed.data.kind, value: parsed.data.value };
         }
         lastError = "SCHEMA_PARSE";
       } catch (error) {

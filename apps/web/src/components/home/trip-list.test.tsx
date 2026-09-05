@@ -120,4 +120,31 @@ describe("TripList", () => {
     );
     expect(after.container.querySelectorAll("article")[0]!.className).toBe(kyotoBefore);
   });
+
+  // A country-only brief now gives a Draft a real-looking name ("法国行程规划")
+  // while destinationCandidates stays empty. Without this marker the card
+  // reads as though the brief were complete.
+  it("marks a Draft whose brief still has no destination city", () => {
+    renderWithIntl(
+      <TripList trips={[trip({ name: "France Trip Planner", status: "DRAFT", destinationCandidates: [] })]} />,
+      { api: apiWithDelete() },
+    );
+    expect(screen.getByText("Destination city not set")).toBeInTheDocument();
+  });
+
+  it("drops the marker once the Draft has a confirmed destination", () => {
+    renderWithIntl(
+      <TripList trips={[trip({ status: "DRAFT", destinationCandidates: ["Paris"] })]} />,
+      { api: apiWithDelete() },
+    );
+    expect(screen.queryByText("Destination city not set")).not.toBeInTheDocument();
+  });
+
+  it("never shows the marker outside Draft", () => {
+    renderWithIntl(
+      <TripList trips={[trip({ status: "PLANNING", destinationCandidates: [] })]} />,
+      { api: apiWithDelete() },
+    );
+    expect(screen.queryByText("Destination city not set")).not.toBeInTheDocument();
+  });
 });

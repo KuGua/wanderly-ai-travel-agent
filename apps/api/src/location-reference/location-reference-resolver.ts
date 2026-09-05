@@ -33,6 +33,8 @@ type CountryFeature = {
     ADM0_A3?: string;
     NAME_EN?: string;
     NAME_ZH?: string;
+    /** Natural Earth Admin 0 LABELRANK (1-2 for principal countries, 5+ for territories). Used to pick the principal country when ISO_A2 is shared with an overseas territory. */
+    LABELRANK?: number;
   };
   bbox?: [number, number, number, number];
   geometry: { type: "Polygon" | "MultiPolygon"; coordinates: Position[][] | Position[][][] };
@@ -66,12 +68,22 @@ const KM_PER_DEGREE_LATITUDE = 111.32;
 const MIN_MAJOR_CITY_POPULATION = 50_000;
 const CITY_LEVEL_FEATURE_CODES = new Set(["PPL", "PPLA", "PPLA2", "PPLC"]);
 const AUTHORITY_FEATURE_CODES = new Set(["PPLA", "PPLA2", "PPLC"]);
+// When a city name resolves to candidates across multiple countries, the
+// highest-population match must dominate every other country's best match by
+// at least this factor before we accept it. Below the threshold the resolver
+// stays conservative and returns null (real ambiguity, not bad luck).
+// Validated against cities5000: paris/athens/birmingham pass; valencia,
+// barcelona, cambridge, toledo, santiago correctly stay ambiguous. See
+// docs/trip-title-destination-label-implementation.md §6.2(a) for the
+// verification table.
+const CITY_POPULATION_DOMINANCE_RATIO = 5;
 
 export class LocationReferenceResolver {
   private readonly countries: CountryFeature[];
   private readonly citiesByCountry: Map<string, City[]>;
   private readonly citiesByName: Map<string, City[]>;
   private readonly countryCodesByName: Map<string, string>;
+  private readonly countryLabelsByCode: Map<string, { nameEn: string; nameZh: string }>;
   private readonly admin1ByCountry: Map<string, Admin1Feature[]>;
   private readonly manifest: Manifest;
 
@@ -86,7 +98,25 @@ export class LocationReferenceResolver {
     this.citiesByCountry = new Map();
     this.citiesByName = new Map();
     this.countryCodesByName = new Map();
+    this.countryLabelsByCode = new Map();
     this.admin1ByCountry = new Map();
+    // Pick the lowest-LABELRANK entry per ISO_A2 as the "principal"
+    // country. Natural Earth Admin 0 lists overseas territories with the
+    // same ISO_A2 as their parent country (Clipperton Island / FR,
+    // Puerto Rico / US, ...) and gives the territory a higher
+    // LABELRANK. Without this filter, the LAST iterated row's labels
+    // overwrite the parent's, so `resolveCountryLabel("France")` would
+    // return Clipperton's labels.
+    const principalByCode = new Map<string, CountryFeature>();
+    for (const country of countries) {
+      const countryCode = normalizedCountryCode(country.properties.ISO_A2);
+      if (!countryCode) continue;
+      const existing = principalByCode.get(countryCode);
+      if (!existing
+        || (country.properties.LABELRANK ?? 99) < (existing.properties.LABELRANK ?? 99)) {
+        principalByCode.set(countryCode, country);
+      }
+    }
     for (const country of countries) {
       const countryCode = normalizedCountryCode(country.properties.ISO_A2);
       if (!countryCode) continue;
@@ -99,6 +129,16 @@ export class LocationReferenceResolver {
       ]) {
         if (alias) this.countryCodesByName.set(normalizedName(alias), countryCode);
       }
+    }
+    for (const [countryCode, country] of principalByCode) {
+      // NAME_EN is the dataset's English label; ADMIN is Natural Earth's
+      // primary name and is the safe fallback when NAME_EN is absent
+      // (mirrors the policy in resolve()). NAME_ZH is sparse in Natural
+      // Earth; an empty string is treated as "no Chinese label".
+      this.countryLabelsByCode.set(countryCode, {
+        nameEn: country.properties.NAME_EN ?? country.properties.ADMIN ?? "",
+        nameZh: country.properties.NAME_ZH ?? "",
+      });
     }
     for (const city of cityLevelProjection(cities)) {
       const grouped = this.citiesByCountry.get(city.countryCode) ?? [];
@@ -160,7 +200,16 @@ export class LocationReferenceResolver {
     };
   }
 
-  /** Resolve a planner-owned city label into a provider-safe reference. */
+  /** Resolve a planner-owned city label into a provider-safe reference.
+   *
+   * Cross-country duplicates (Paris, Athens, Birmingham, ...) used to be
+   * hard-rejected as soon as two countries matched. They are now resolved
+   * by a population-dominance rule: the highest-population candidate must
+   * dominate the best candidate from any other country by at least
+   * `CITY_POPULATION_DOMINANCE_RATIO` (5×). Below the threshold we stay
+   * conservative and return null so callers fall back to a city-required
+   * prompt instead of guessing. `alternateNames` indexing is preserved
+   * because Chinese city names live only there. */
   resolveDestinationReference(params: {
     destinationId: string;
     cityName: string;
@@ -173,17 +222,58 @@ export class LocationReferenceResolver {
     const narrowed = hintedCountryCode
       ? matches.filter((city) => city.countryCode === hintedCountryCode)
       : matches;
-    if (narrowed.length === 0 || new Set(narrowed.map((city) => city.countryCode)).size !== 1) {
-      return null;
+    if (narrowed.length === 0) return null;
+    const sorted = [...narrowed].sort((left, right) => (right.population ?? 0) - (left.population ?? 0));
+    const top = sorted[0];
+    if (new Set(sorted.map((city) => city.countryCode)).size === 1) {
+      return this.toDestinationReference(params.destinationId, top);
     }
-    const city = [...narrowed].sort((left, right) => (right.population ?? 0) - (left.population ?? 0))[0];
+    const bestOtherPopulation = sorted
+      .filter((city) => city.countryCode !== top.countryCode)
+      .reduce((max, city) => Math.max(max, city.population ?? 0), 0);
+    if ((top.population ?? 0) >= CITY_POPULATION_DOMINANCE_RATIO * Math.max(bestOtherPopulation, 1)) {
+      return this.toDestinationReference(params.destinationId, top);
+    }
+    return null;
+  }
+
+  private toDestinationReference(destinationId: string, city: City): DestinationReference {
     return {
-      destinationId: params.destinationId,
+      destinationId,
       cityName: city.name,
       countryCode: city.countryCode,
       latitude: city.latitude,
       longitude: city.longitude,
     };
+  }
+
+  /**
+   * Resolve a country/region name into the canonical bilingual label.
+   * Deliberately separate from destination resolution: a country is title
+   * and exploration context, never a planner destination
+   * (docs/trip-title-destination-label-implementation.md §D3).
+   *
+   * Returns null when the value does not resolve to a known country; the
+   * caller is then free to fall back to other parsers. `nameEn` falls back
+   * to ADMIN when NAME_EN is absent in the dataset; `nameZh` may be empty
+   * for the few Natural Earth entries that have no Chinese label.
+   */
+  resolveCountryLabel(value: string): { countryCode: string; nameEn: string; nameZh: string } | null {
+    const countryCode = this.countryCodesByName.get(normalizedName(value));
+    if (!countryCode) return null;
+    const labels = this.countryLabelsByCode.get(countryCode);
+    if (!labels) return null;
+    return { countryCode, nameEn: labels.nameEn, nameZh: labels.nameZh };
+  }
+
+  /**
+   * Answers only whether text names a country in the controlled reference
+   * data. This is deliberately separate from destination resolution: a
+   * country is useful exploration context, but never a planner destination
+   * because it cannot safely identify one city, airport, or provider query.
+   */
+  isKnownCountryName(value: string): boolean {
+    return this.countryCodesByName.has(normalizedName(value));
   }
 
   private noReference(): LocationReference {

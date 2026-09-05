@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { LLMGateway, ModelGatewayError } from "../src/providers/llm-gateway.js";
 import { createRequestContext } from "../src/utils/context.js";
+import { metrics } from "../src/observability/metrics.js";
 
 const OLD_ENV = { ...process.env };
 
@@ -16,7 +17,7 @@ interface CapturingClient {
    * Stream plan: first call throws immediately (no delta yet) OR throws
    * after the first delta. Subsequent calls succeed.
    */
-  scenario: "fail-before-delta" | "fail-after-delta" | "always-fail";
+  scenario: "fail-before-delta" | "fail-after-delta" | "always-fail" | "429-before-delta" | "429-always";
 }
 
 function buildClient(scenario: CapturingClient["scenario"]): CapturingClient {
@@ -42,6 +43,12 @@ function buildClient(scenario: CapturingClient["scenario"]): CapturingClient {
           if (scenario === "always-fail") {
             throw new Error("upstream returned 503 Service Unavailable");
           }
+          if (scenario === "429-before-delta" && client.createCalls === 1) {
+            throw Object.assign(new Error("upstream returned 429 Too Many Requests"), { status: 429 });
+          }
+          if (scenario === "429-always") {
+            throw Object.assign(new Error("upstream returned 429 Too Many Requests"), { status: 429 });
+          }
           return (async function* () {
             yield { choices: [{ delta: { content: "hello " } }] };
             yield { choices: [{ delta: { content: "world" } }] };
@@ -56,7 +63,7 @@ function buildClient(scenario: CapturingClient["scenario"]): CapturingClient {
 
 describe("LLMGateway streamConversationReply retry policy", () => {
   beforeEach(() => {
-    process.env = { ...OLD_ENV, NODE_ENV: "test", MODEL_GATEWAY_BASE_BACKOFF_MS: "10", MODEL_GATEWAY_MAX_BACKOFF_MS: "30" };
+    process.env = { ...OLD_ENV, NODE_ENV: "test", MODEL_GATEWAY_BASE_BACKOFF_MS: "10", MODEL_GATEWAY_MAX_BACKOFF_MS: "30", MODEL_GATEWAY_RATE_LIMIT_BACKOFF_MS: "10" };
   });
   afterEach(() => {
     process.env = { ...OLD_ENV };
@@ -127,5 +134,53 @@ describe("LLMGateway streamConversationReply retry policy", () => {
     expect(reply.responseMode).toBe("FALLBACK");
     expect(reply.content.length).toBeGreaterThan(0);
     expect(deltas).toEqual([]); // no chunks were ever sent
+  });
+
+  it("retries a pre-delta RATE_LIMITED (HTTP 429) without MetricLabelError and labels the metric rate_limited", async () => {
+    metrics.reset();
+    const client = buildClient("429-before-delta");
+    const gateway = new LLMGateway({
+      apiKey: "test",
+      provider: "openai",
+      modelName: "gpt-4",
+      promptVersion: "1.0.0",
+      ctx: createRequestContext(),
+      client,
+    });
+    const deltas: string[] = [];
+    const reply = await gateway.streamConversationReply!({
+      question: "hi",
+      threadContext: [],
+      onDelta: (delta) => { deltas.push(delta); },
+    });
+    expect(client.createCalls).toBe(2);
+    expect(reply.responseMode).toBe("MODEL");
+    expect(reply.content).toBe("hello world");
+    expect(deltas.join("")).toBe("hello world");
+    expect(metrics.render()).toContain('error_category="rate_limited"');
+  });
+
+  it("returns a FALLBACK reply when a sustained RATE_LIMITED exhausts the retry budget (no INTERNAL)", async () => {
+    metrics.reset();
+    const client = buildClient("429-always");
+    const gateway = new LLMGateway({
+      apiKey: "test",
+      provider: "openai",
+      modelName: "gpt-4",
+      promptVersion: "1.0.0",
+      ctx: createRequestContext(),
+      client,
+      maxRetries: 1,
+    });
+    const deltas: string[] = [];
+    const reply = await gateway.streamConversationReply!({
+      question: "hi",
+      threadContext: [],
+      onDelta: (delta) => { deltas.push(delta); },
+    });
+    expect(client.createCalls).toBe(2);
+    expect(reply.responseMode).toBe("FALLBACK");
+    expect(deltas).toEqual([]);
+    expect(metrics.render()).toContain('error_category="rate_limited"');
   });
 });

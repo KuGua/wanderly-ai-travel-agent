@@ -6,6 +6,7 @@ import { db } from "../db/database.js";
 import { chatThreads, sharedTrips, tripInvitations, tripMembers } from "../db/schema.js";
 import { recordAudit } from "./audit-service.js";
 import { buildDefaultThreadTitle, type ThreadTitleLocale } from "./thread-title-service.js";
+import { buildTripTitle } from "./trip-title-service.js";
 import { ApiError } from "../middleware/error-handler.js";
 import { metrics } from "../observability/metrics.js";
 import type { RequestContext } from "../utils/context.js";
@@ -266,10 +267,18 @@ export async function getInvitationPreview(params: {
   token: string;
   actorUserId: string;
   actorEmail: string | null;
+  /**
+   * The invitee's own interface language, sent explicitly by the client.
+   * Only used to render the redacted placeholder below; it never changes
+   * which trip is disclosed. Defaults to "en" so a client that omits it
+   * keeps working, matching `acceptInvitationRequestSchema`.
+   */
+  locale?: "en" | "zh";
 }): Promise<InvitationPreviewResult> {
   const invitation = await getPendingInvitationForActor(params);
   const [trip] = await db.select({
     name: sharedTrips.name,
+    nameSource: sharedTrips.nameSource,
     status: sharedTrips.status,
     archivedAt: sharedTrips.archivedAt,
     destinationCandidates: sharedTrips.destinationCandidates,
@@ -279,9 +288,18 @@ export async function getInvitationPreview(params: {
   // A pending token must not disclose a trip that can no longer be joined.
   // Keep this indistinguishable from any other invalid invitation.
   if (!trip || trip.status === "CANCELLED" || trip.archivedAt) throw invitationUnavailable();
+  // Spec §D10: when the trip is still DRAFT and the title is system-generated
+  // (AUTO, which includes label-derived titles for country-only briefs),
+  // the invitee sees the locale-appropriate generic placeholder rather than
+  // the creator's unconfirmed exploration. MANUAL titles are deliberately
+  // preserved — the creator typed them with full knowledge they would be
+  // shared on an invite.
+  const displayName = trip.status === "DRAFT" && trip.nameSource === "AUTO"
+    ? buildTripTitle({ destinationCandidates: [], locale: params.locale ?? "en" })
+    : trip.name;
   return {
     trip: {
-      name: trip.name,
+      name: displayName,
       status: trip.status,
       // An invitee can decide whether to join a Draft, but must not see its
       // creator's unconfirmed exploration details before accepting.
