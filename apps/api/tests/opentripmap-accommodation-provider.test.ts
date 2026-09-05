@@ -4,6 +4,9 @@ import {
   OpenTripMapAccommodationProvider,
   readOpenTripMapAccommodationConfiguration,
 } from "../src/providers/opentripmap-accommodation-provider.js";
+import { accommodationDiscoverySkill } from "../src/skills/shared/accommodation-discovery-skill.js";
+import { accommodationDiscoveryOutputSchema } from "../src/skills/shared/accommodation-discovery-skill.js";
+import { randomUUID } from "node:crypto";
 
 const destination = {
   destinationId: "tokyo",
@@ -42,6 +45,44 @@ describe("OpenTripMapAccommodationProvider", () => {
     });
     expect(JSON.stringify(result)).not.toContain("secret");
     expect(JSON.stringify(result)).not.toContain("wikidata");
+  });
+
+  /**
+   * OpenTripMap rates 1–3 and reserves the upper band for cultural-heritage
+   * listings, so a real Shanghai answer carries tiers 5, 6 and 7 alongside
+   * 1–3. The evidence schema used to stop at 3. Because the skill registry
+   * validates a skill's output *after* the handler has already persisted its
+   * rows, the whole capability was reported to the traveller as a provider
+   * outage for a search that had in fact returned sixteen live stays.
+   */
+  it("passes heritage-band ratings through to a valid skill output", async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse(
+      [5, 6, 7].map((rate, index) => ({
+        xid: `N${index}`, name: `Heritage stay ${index}`, kinds: "hotels,accomodations",
+        dist: 100 + index, rate, point: { lon: 121.458, lat: 31.222 },
+      })),
+    )) as typeof fetch;
+    const result = await provider(fetchImpl).discoverAccommodations({ destination, limit: 20 });
+    expect(result.outcome).toBe("LIVE");
+    if (result.outcome !== "LIVE") return;
+    expect(result.data.map((item) => item.popularityTier)).toEqual([5, 6, 7]);
+
+    // The registry parses exactly this shape; anything it rejects here is a
+    // silent capability outage in production.
+    const queryId = randomUUID();
+    const parsed = accommodationDiscoveryOutputSchema.safeParse({
+      outcome: "LIVE",
+      queryId,
+      accommodations: result.data.map((item) => ({
+        ...item,
+        id: randomUUID(),
+        queryId,
+        destinationId: destination.destinationId,
+        expiresAt: new Date(Date.parse(item.capturedAt) + 86_400_000).toISOString(),
+      })),
+    });
+    expect(accommodationDiscoverySkill.output).toBe(accommodationDiscoveryOutputSchema);
+    expect(parsed.success).toBe(true);
   });
 
   it("fails closed on authentication, limits and schema drift", async () => {

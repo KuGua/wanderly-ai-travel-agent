@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { __resetRegistryForTests, invokeSkill, registerSkill } from "../src/agents/skill-registry.js";
 import { DefaultPolicyGate } from "../src/agents/policy-gate.js";
 import { createPlaceSearchSkill } from "../src/skills/shared/place-search-skill.js";
+import { PLACE_SEARCH_MAX_RESULTS } from "../src/services/place-search-service.js";
 import { createTripPlaceSkill } from "../src/skills/shared/trip-place-skill.js";
 import { db } from "../src/db/database.js";
 import {
@@ -54,6 +55,41 @@ function unavailableProvider(): PlaceSearchProvider {
   return {
     async searchPlaces(): Promise<ProviderResult<NormalizedPlaceCandidate[]>> {
       return { outcome: "UNAVAILABLE", reason: "NOT_CONFIGURED" };
+    },
+  };
+}
+
+/**
+ * Both place providers in the repo answer with up to ten candidates
+ * (`ors-place-provider.ts` PLACE_RESULT_LIMIT, `opentripmap-place-provider.ts`
+ * MAX_RESULTS), while the skill's output contract is 1..5. Before the service
+ * enforced `PLACE_SEARCH_MAX_RESULTS`, a ten-candidate answer failed output
+ * validation inside the skill registry — after the search had already run and
+ * been persisted — and the orchestrator reported it to the traveller as a
+ * provider outage.
+ */
+function overCapPlaceProvider(count = 10): PlaceSearchProvider {
+  const candidates: NormalizedPlaceCandidate[] = Array.from({ length: count }, (_unused, index) => ({
+    candidateId: randomUUID(),
+    displayName: `Sushi ${index + 1}`,
+    kind: "RESTAURANT",
+    countryCode: "JP",
+    cityName: "Tokyo",
+    longitude: 139.69,
+    latitude: 35.68,
+    confidence: 0.9,
+    needsUserConfirmation: false,
+    source: "ORS Geocoding",
+    capturedAt: "2026-08-28T00:00:00.000Z",
+  }));
+  return {
+    async searchPlaces(): Promise<ProviderResult<NormalizedPlaceCandidate[]>> {
+      return {
+        outcome: "LIVE",
+        data: candidates,
+        source: "ORS Geocoding",
+        capturedAt: "2026-08-28T00:00:00.000Z",
+      };
     },
   };
 }
@@ -139,6 +175,30 @@ describe("places.search Shared Skill", () => {
   it("rejects unknown skills and unknown categories", async () => {
     await expect(invokeSkill("places.unknown", context(), request())).rejects.toMatchObject({ code: "UNKNOWN_SKILL" });
     await expect(invokeSkill("places.search", context(), { ...request(), category: "BUSINESS" })).rejects.toMatchObject({ code: "INPUT_INVALID" });
+  });
+
+  it("trims a provider answer that exceeds the contracted result cap", async () => {
+    __resetRegistryForTests();
+    registerSkill(createTripPlaceSkill());
+    registerSkill(createPlaceSearchSkill(overCapPlaceProvider(10)));
+    const output = await invokeSkill<unknown, { outcome: string; candidates: unknown[] }>(
+      "places.search",
+      context(),
+      request(),
+    );
+    expect(output.outcome).toBe("LIVE");
+    expect(output.candidates).toHaveLength(PLACE_SEARCH_MAX_RESULTS);
+  });
+
+  it("still records what the supplier actually answered", async () => {
+    __resetRegistryForTests();
+    registerSkill(createTripPlaceSkill());
+    registerSkill(createPlaceSearchSkill(overCapPlaceProvider(10)));
+    await invokeSkill("places.search", context(), request());
+    const runs = await db.select().from(providerSearchRuns).where(eq(providerSearchRuns.snapshotId, snapshotId));
+    expect(runs).toHaveLength(1);
+    expect(runs[0].outcome).toBe("LIVE");
+    expect(runs[0].errorCode).toBeNull();
   });
 
   it("returns UNAVAILABLE without writing a trip_places row", async () => {

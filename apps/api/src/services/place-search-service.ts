@@ -75,6 +75,17 @@ export interface PlaceSearchExecutionContext {
   agentTaskRunId?: string;
 }
 
+/**
+ * Server-side result cap, per `docs/ground-mobility-implementation.md` §7
+ * ("限制每次最多 5 个结果") and the `places.search` skill contract
+ * ("1..5 candidates"). It is enforced here rather than in a provider
+ * because it is a contract of this service: both place providers in the
+ * repo return up to 10, and the skill's output schema caps at 5, so an
+ * untrimmed 6..10-candidate answer failed output validation *after* the
+ * search had already succeeded and been persisted — surfacing to the
+ * traveller as a provider outage. This constant existed for exactly this
+ * job and was never referenced.
+ */
 export const PLACE_SEARCH_MAX_RESULTS = 5;
 export const PLACE_SEARCH_MAX_PER_RUN = 6;
 
@@ -175,5 +186,10 @@ export async function executeAndPersistPlaceSearch(params: {
     provider: "openrouteservice",
     error_category: result.outcome === "LIVE" ? "none" : result.reason.toLowerCase(),
   });
-  return result.outcome === "LIVE" ? { ...result, queryId: searchRun.id } : result;
+  // Trim after persistence, not before: `provider_search_runs` keeps what the
+  // supplier actually answered, while every caller of this service (skill and
+  // model-gateway tool dispatch alike) sees the contracted bound.
+  return result.outcome === "LIVE"
+    ? { ...result, data: result.data.slice(0, PLACE_SEARCH_MAX_RESULTS), queryId: searchRun.id }
+    : result;
 }
