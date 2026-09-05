@@ -1347,7 +1347,21 @@ export function TravelAgentChat({
     // starts mid-line.
     const rects = range.getClientRects?.();
     const rect = rects && rects.length > 0 ? rects[0] : range.getBoundingClientRect();
-    setHighlight({ text, x: rect.left + rect.width / 2, y: rect.top, messageId });
+    const chatPanel = panelScrollRef.current;
+    if (chatPanel) {
+      const panelRect = chatPanel.getBoundingClientRect();
+      // The control belongs to the selected message in the scrolling chat
+      // canvas, not to the browser viewport. Store coordinates in that canvas
+      // so it follows the message when the traveller scrolls the conversation.
+      setHighlight({
+        text,
+        x: rect.left - panelRect.left + chatPanel.scrollLeft + rect.width / 2,
+        y: rect.top - panelRect.top + chatPanel.scrollTop,
+        messageId,
+      });
+    } else {
+      setHighlight({ text, x: rect.left + rect.width / 2, y: rect.top, messageId });
+    }
     setRememberState(null);
   }, []);
 
@@ -1481,8 +1495,8 @@ export function TravelAgentChat({
         )}
 
         <div ref={panelScrollRef} className={docked
-          ? "flex-1 overflow-y-scroll bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 wanderly-scrollbar-persistent xl:[&>*]:translate-x-1"
-          : "flex-1 overflow-y-auto px-5 py-5"} onScroll={docked ? syncChatScrollbar : undefined} aria-live="polite">
+          ? "relative flex-1 overflow-y-scroll bg-background px-[clamp(16px,3vw,34px)] pb-10 pt-6 wanderly-scrollbar-persistent xl:[&>*]:translate-x-1"
+          : "relative flex-1 overflow-y-auto px-5 py-5"} onScroll={docked ? syncChatScrollbar : undefined} aria-live="polite">
           <ThreadStatus status={resolvedThreadStatus} onRetry={onRetryThread} />
           {conversation.isLoading ? <p role="status" className="text-sm text-muted-foreground">{t("restoring")}</p> : null}
           {!conversation.isLoading && messages.length === 0 && !pendingTurn ? (
@@ -1909,7 +1923,7 @@ export function TravelAgentChat({
               data-testid="remember-highlight"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => void rememberSelection()}
-              style={{ position: "fixed", left: highlight.x, top: Math.max(highlight.y - 36, 8), transform: "translateX(-50%)", zIndex: 60 }}
+              style={{ position: "absolute", left: highlight.x, top: Math.max(highlight.y - 36, 8), transform: "translateX(-50%)", zIndex: 20 }}
               className={docked
                 ? "flex h-6 items-center px-3 text-[11px] font-extrabold wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press wanderly-action"
                 : "flex h-6 items-center px-3 text-[11px] font-bold text-[var(--w-fog)] wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-remember-highlight transition-colors"}
