@@ -1,6 +1,8 @@
-import type { ActivityEvidence, FlightOffer, StayOffer } from "../types/domain.js";
+import type {
+  AccommodationEvidence, ActivityEvidence, FlightOffer, HotelOffer, StayOffer,
+} from "../types/domain.js";
 
-type Evidence = FlightOffer | StayOffer | ActivityEvidence;
+type Evidence = FlightOffer | StayOffer | ActivityEvidence | HotelOffer | AccommodationEvidence;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -28,7 +30,17 @@ export function bindPlanSelectionsToEvidence(params: {
   flights: readonly FlightOffer[];
   stays: readonly StayOffer[];
   activities: readonly ActivityEvidence[];
+  /**
+   * Hotels and accommodations were absent here, so a model that selected one
+   * had its `{"id":…}` reference left as-is and then failed the validator's
+   * exact-match check against the full record. The hotel slot could never be
+   * filled by any plan, whatever evidence the run held.
+   */
+  hotels?: readonly HotelOffer[];
+  accommodations?: readonly AccommodationEvidence[];
 }): Record<string, unknown> {
+  const hotels = params.hotels ?? [];
+  const accommodations = params.accommodations ?? [];
   const bound = {
     ...params.candidate,
     flights: bindSelections(params.candidate.flights, params.flights),
@@ -36,12 +48,19 @@ export function bindPlanSelectionsToEvidence(params: {
     ...(Object.hasOwn(params.candidate, "activities")
       ? { activities: bindSelections(params.candidate.activities, params.activities) }
       : {}),
+    ...(Object.hasOwn(params.candidate, "hotels")
+      ? { hotels: bindSelections(params.candidate.hotels, hotels) }
+      : {}),
+    ...(Object.hasOwn(params.candidate, "accommodations")
+      ? { accommodations: bindSelections(params.candidate.accommodations, accommodations) }
+      : {}),
   };
-  const selected = [bound.flights, bound.stays, bound.activities]
+  const selected = [bound.flights, bound.stays, bound.activities, bound.hotels, bound.accommodations]
     .flatMap((value) => Array.isArray(value) ? value : [])
     .filter(isRecord);
   const authoritativeById = new Map<string, Evidence>(
-    [...params.flights, ...params.stays, ...params.activities].map((value) => [value.id, value]),
+    [...params.flights, ...params.stays, ...params.activities, ...hotels, ...accommodations]
+      .map((value) => [value.id, value]),
   );
   const authoritativeTimestamps: string[] = [];
   for (const value of selected) {

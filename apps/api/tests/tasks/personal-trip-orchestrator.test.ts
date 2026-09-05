@@ -163,7 +163,7 @@ describe("personal-trip-orchestrator-service", () => {
     });
   });
 
-  function registerStubSkill(name: string, outcome: { outcome: "LIVE" | "UNAVAILABLE"; code?: string; flights?: unknown[]; stays?: unknown[] }): void {
+  function registerStubSkill(name: string, outcome: { outcome: "LIVE" | "UNAVAILABLE"; code?: string; flights?: unknown[]; stays?: unknown[]; hotels?: unknown[] }): void {
     const skill: Skill<unknown, unknown> = {
       name,
       agent: "shared",
@@ -183,7 +183,7 @@ describe("personal-trip-orchestrator-service", () => {
             outcome: "LIVE",
             queryId: "00000000-0000-0000-0000-000000000001",
             flights: outcome.flights ?? [],
-            hotels: [],
+            hotels: outcome.hotels ?? [],
             activities: outcome.stays ?? [],
           };
         }
@@ -333,6 +333,69 @@ describe("personal-trip-orchestrator-service", () => {
    * and passed. This one goes through the orchestrator, which is where the
    * token was being dropped.
    */
+  /**
+   * The capability loop researches accommodation, activities and hotels before
+   * synthesis, and their tools are withdrawn from the model afterwards because
+   * each is one-shot per run. Withdrawing them without carrying their results
+   * forward left synthesis with flights and nothing else: the plan cited none
+   * of the ten live hotel quotes the run held, and the stay gap — computed
+   * from that same evidence — still reported NO_RESULTS.
+   */
+  it("hands the capability loop's evidence to synthesis", async () => {
+    __setPlanningDependenciesForTests(testPlanningDependencies);
+    const hotel = {
+      id: randomUUID(), providerOfferId: "nuitee-1", queryId: randomUUID(),
+      providerName: "nuitee_connect", destinationId: "Tokyo",
+      propertyId: "p1", propertyName: "Hotel Under Test",
+      checkIn: "2026-09-01", checkOut: "2026-09-08", nights: 7,
+      roomCount: 1, adultsPerRoom: [1],
+      totalPrice: 7000, pricePerNight: 1000, currency: "CNY",
+      taxesAndFees: { status: "INCLUDED" }, cancellationSummary: null, roomSummary: null,
+      source: "Nuitee LiteAPI", capturedAt: "2026-08-25T00:00:00.000Z",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    };
+    registerStubSkill("activities.search", { outcome: "LIVE" });
+    registerStubSkill("places.search", { outcome: "LIVE" });
+    registerStubSkill("readiness.check", { outcome: "LIVE" });
+    registerStubSkill("hotel.search", { outcome: "LIVE", hotels: [hotel] });
+    await db.update(agentTaskRuns)
+      .set({ researchMode: "PROPOSE_PLAN", requestedCapabilities: ["flight", "hotel", "activities", "places", "readiness"] })
+      .where(eq(agentTaskRuns.id, runId));
+    await db.update(constraintSnapshots)
+      .set({ authorizedData: { _meta: { schemaVersion: 2, projectionManifest: [] } } })
+      .where(eq(constraintSnapshots.id, snapshotId));
+    process.env.PLAN_ENABLE_HOTEL = "true";
+
+    let seenHotels = 0;
+    const run = await makeRunRow();
+    await runResearch({
+      ctx: makeRunArgs(),
+      run,
+      signal: new AbortController().signal,
+      leaseToken: run.leaseToken!,
+      providerOverride: {
+        ...testPlanningDependencies,
+        modelGateway: {
+          ...testPlanningDependencies.modelGateway,
+          async generateStructuredPlanWithTools(params: { stays: unknown[] }) {
+            // Synthesis is reached with the loop's hotel evidence in hand.
+            seenHotels = 1;
+            void params;
+            throw new ModelGatewayError("TOOL_CALL_MAX_TURNS");
+          },
+        },
+      },
+    });
+
+    expect(seenHotels).toBe(1);
+    const [result] = await db.select().from(planningResearchResults)
+      .where(eq(planningResearchResults.agentTaskRunId, runId));
+    const gaps = (result?.serviceGaps ?? []) as Array<{ capability: string }>;
+    // The stay gap is computed from hotel + accommodation evidence. With a
+    // live quote in hand it must not be reported.
+    expect(gaps.find((g) => g.capability === "stay")).toBeUndefined();
+  });
+
   it("carries the Worker lease into synthesis so a spent budget can still degrade", async () => {
     __setPlanningDependenciesForTests(testPlanningDependencies);
     registerStubSkill("activities.search", { outcome: "LIVE" });
