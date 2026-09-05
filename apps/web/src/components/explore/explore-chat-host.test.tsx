@@ -7,6 +7,21 @@ import { TravelApiError } from "@/lib/api/errors";
 import { renderWithIntl } from "@/test/render";
 import { ExploreChatHost } from "./explore-chat-host";
 
+// `@/i18n/navigation` destructures `createNavigation()` at module load, so the
+// hook the component calls is a reference captured before any spy could reach
+// it. The module itself has to be mocked.
+const routerReplace = vi.fn();
+let searchParams = new URLSearchParams();
+vi.mock("@/i18n/navigation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/i18n/navigation")>()),
+  useRouter: () => ({ replace: routerReplace, push: vi.fn(), refresh: vi.fn(), back: vi.fn(), forward: vi.fn(), prefetch: vi.fn() }),
+  usePathname: () => "/",
+}));
+vi.mock("next/navigation", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/navigation")>()),
+  useSearchParams: () => searchParams,
+}));
+
 const TRIP_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
 const CREATED_AT = "2026-08-27T00:00:00.000Z";
@@ -231,6 +246,40 @@ describe("ExploreChatHost exploration provisioning", () => {
     expect(api.getTripThreads).toHaveBeenCalledWith(TRIP_ID);
     expect(api.getOwnerConversation).toHaveBeenCalledWith(THREAD_ID);
     expect(api.startExploration).not.toHaveBeenCalled();
+  });
+
+  /**
+   * "Start another trip" has to work while a Trip handoff is on screen.
+   *
+   * The control was hidden in that mode, because resetting the session alone
+   * did nothing visible: `fromTrip`/`thread` stay in the URL and are read on
+   * every render as the authority for which conversation this is, so the same
+   * trip thread came straight back. Leaving the handoff is the other half of
+   * the reset, and without it the button is a no-op that looks broken.
+   */
+  it("offers a fresh exploration during a Trip handoff, and leaves the handoff", async () => {
+    routerReplace.mockClear();
+    searchParams = new URLSearchParams(`fromTrip=${TRIP_ID}&thread=${THREAD_ID}&focus=tokyo`);
+    const api = makeApi({
+      getTripThreads: vi.fn().mockResolvedValue({
+        threads: [{ id: THREAD_ID, tripId: TRIP_ID, scope: "TRIP", isDefault: true, title: "Default", createdAt: CREATED_AT, updatedAt: CREATED_AT }],
+      }),
+      getOwnerConversation: vi.fn().mockResolvedValue({ messages: [] }),
+    });
+    renderWithIntl(
+      <ExploreChatHost open tripConversationHandoff={{ tripId: TRIP_ID, threadId: THREAD_ID }} />,
+      { api },
+    );
+
+    const start = await screen.findByRole("button", { name: "Start new exploration" });
+    fireEvent.click(start);
+
+    await waitFor(() => expect(routerReplace).toHaveBeenCalled());
+    const target = String(routerReplace.mock.calls[0][0]);
+    expect(target).not.toContain("fromTrip");
+    expect(target).not.toContain("thread=");
+    // Unrelated params are the map's business, not the handoff's.
+    expect(target).toContain("focus=tokyo");
   });
 
   it("surfaces the retry CTA when the exploration start fails", async () => {

@@ -2,6 +2,9 @@
 
 import { useCallback, useMemo } from "react";
 import { useLocale } from "next-intl";
+import { useSearchParams } from "next/navigation";
+
+import { usePathname, useRouter } from "@/i18n/navigation";
 
 import { TravelAgentChat, type ChatThreadStatus } from "./travel-agent-chat";
 import { useExplorationSession } from "@/lib/exploration/exploration-session-provider";
@@ -31,6 +34,9 @@ export function ExploreChatHost({
   tripConversationHandoff = null,
 }: ExploreChatHostProps) {
   const { session, startIfNeeded, reset } = useExplorationSession();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const handoffThreads = useTripThreads(tripConversationHandoff?.tripId ?? null);
   const locale = useLocale() === "zh" ? "zh" : "en";
 
@@ -75,6 +81,21 @@ export function ExploreChatHost({
     void startIfNeeded().catch(() => undefined);
   }, [startIfNeeded]);
 
+  // "Start another trip" has to leave the handoff as well as clear the session.
+  // Arriving from a Trip puts `fromTrip`/`thread` in the URL, and those are read
+  // on every render as the authority for which conversation this is — so
+  // resetting alone dropped the draft and then showed the same trip thread
+  // straight back, which is why the control was hidden here rather than fixed.
+  const startNewExploration = useCallback(() => {
+    reset();
+    if (!tripConversationHandoff) return;
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("fromTrip");
+    next.delete("thread");
+    const query = next.toString();
+    router.replace((query ? `${pathname}?${query}` : pathname) as "/");
+  }, [reset, tripConversationHandoff, searchParams, router, pathname]);
+
   const handleInvalidated = useCallback(() => {
     // The server reported the thread id is gone. Drop the in-memory
     // session so the next Send provisions a fresh draft.
@@ -92,7 +113,7 @@ export function ExploreChatHost({
         onRetryThread={tripConversationHandoff ? undefined : retryProvisioning}
         onThreadInvalidated={handleInvalidated}
         {...(tripConversationHandoff ? {} : { onEnsureThreadForFirstSend: ensureThread })}
-        {...(tripConversationHandoff ? {} : { onStartNewExploration: reset })}
+        onStartNewExploration={startNewExploration}
         tripId={effectiveTripId}
         titleLocale={locale}
         {...(selectedPlace !== undefined ? { selectedPlace } : {})}
