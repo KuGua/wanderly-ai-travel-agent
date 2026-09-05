@@ -412,6 +412,8 @@
       "prefCardTurnQuestion": "我刚确认了这趟行程的偏好。",
       "briefSavedTurnQuestion": "我刚把这些信息存进了行程。",
       "briefProposalDetailsQuestion": "要保存这些行程信息吗？",
+      "startSharedPlanDismiss": "关闭行程信息已齐全提示",
+      "startSharedPlanDismissedNotice": "收到，后续您可以发送「开始规划」以规划行程。",
       "destinationCueTitle": "目的地确认",
       "destinationCueQuestion": "要将 {destination} 设为目的地吗？",
       "destinationCueQuestionAdditional": "你想把 {destination} 作为后续目的地吗？",

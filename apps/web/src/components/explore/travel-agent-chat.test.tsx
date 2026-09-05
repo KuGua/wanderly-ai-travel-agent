@@ -226,6 +226,32 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(explore).toHaveClass("wanderly-cosmos-control");
   });
 
+  it("keeps a broad trip-details save card hidden while a confirmation card is open", async () => {
+    const api = createApi({
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "trip.brief_proposed",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          proposal: { travelDays: 4 },
+        });
+        onEvent({
+          event: "destination.cue_ready",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          cue: { id: CUE_ID, version: 1, candidates: [{ id: CANDIDATE_ID, displayName: "Suzhou", status: "PENDING" }] },
+        });
+        await untilAborted(signal);
+      }),
+    });
+
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
+    await submitFromCapsule("Four days in Suzhou");
+
+    expect(await screen.findByText("Set Suzhou as the destination?")).toBeInTheDocument();
+    expect(screen.queryByText("Save these trip details?")).not.toBeInTheDocument();
+  });
+
   it("stacks destination, flight, then hotel confirmations", async () => {
     const api = createApi({
       getOwnerConversation: vi.fn().mockResolvedValue({
@@ -1355,6 +1381,14 @@ describe("the trip's preference card", () => {
       ));
     });
 
+    it("uses the explicit China labels for Hong Kong and Taiwan quote markets", async () => {
+      renderChat(readyTripApi(null), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+      const select = await screen.findByLabelText(/Nationality for quotes/i);
+      expect(within(select).getByRole("option", { name: "Hong Kong (China)" })).toBeInTheDocument();
+      expect(within(select).getByRole("option", { name: "Taiwan (China)" })).toBeInTheDocument();
+    });
+
     it("does not ask when the profile already carries one", async () => {
       const activateTrip = vi.fn().mockResolvedValue({ trip: { id: TRIP_ID }, planningRun: null });
       renderChat(readyTripApi("CN", activateTrip), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
@@ -1387,6 +1421,20 @@ describe("the trip's preference card", () => {
       await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
       expect(screen.queryByText("Trip details aren't complete yet")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /Start planning/i })).not.toBeInTheDocument();
+    });
+
+    it("can dismiss the readiness card and restores it only after the advertised phrase", async () => {
+      renderChat(readyTripApi("CN"), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+      fireEvent.click(await screen.findByRole("button", { name: "Close trip details ready" }));
+      expect(screen.queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
+      expect(screen.getByText("Got it. You can send “Start planning” later to plan your trip.")).toBeInTheDocument();
+
+      const input = screen.getByRole("textbox", { name: "Message Wanderly Agent" });
+      fireEvent.change(input, { target: { value: "Start planning" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(await screen.findByRole("button", { name: "Start planning" })).toBeInTheDocument();
     });
   });
 
