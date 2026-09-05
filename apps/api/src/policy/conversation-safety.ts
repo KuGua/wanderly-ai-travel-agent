@@ -33,18 +33,68 @@ const FLIGHT_STATUS_TERMS = [
   // Chinese: flight on-time / disruption terms.
   "准点", "晚点", "延误", "取消",
 ];
-// Visa / entry / passport — a closed set that has no provider path. Both
-// English and Chinese forms must be intercepted on the input and output sides.
-const VISA_TERMS = [
-  "visa", "visas",
-  "签证", "护照", "入境", "免签", "落地签",
+// Visa / entry / passport.
+//
+// Mentioning one of these is not the problem; *deciding* one is. The rule used
+// to reject any reply containing any of these words, which threw away ordinary
+// planning answers — "remember to check the visa requirements", "make sure the
+// passport has six months left", even "we can rest in the city after arrival"
+// (入境). Since a Chinese itinerary almost always mentions travel preparation,
+// the gate fired on the very turn where planning begins.
+const VISA_TOPIC_TERMS = [
+  "visa", "visas", "passport",
+  "签证", "护照",
 ];
-const ENTRY_RULE_TERMS = [
-  "rule", "rules", "require", "requires", "required", "requirement", "requirements",
-  "need", "needs", "eligible", "eligibility", "valid", "allowed", "without",
-  // Chinese: requirement / eligibility phrasing.
-  "需要", "要求", "必须", "能不能", "可以", "允许", "资格",
+/**
+ * Words that only sometimes mean entry policy. 入境 is ordinary itinerary
+ * language for "after you arrive", so pairing it with a word as common as 可以
+ * rejected "入境后可以先在市区休整一天" — a sentence about resting, not rules.
+ * These need an unambiguous eligibility word before they count.
+ */
+const VISA_WEAK_TOPIC_TERMS = ["入境", "immigration", "entry"];
+/**
+ * Conclusions in their own right: naming one is asserting an outcome this
+ * chat has no provider to stand behind, whatever surrounds it.
+ */
+const VISA_CONCLUSION_TERMS = [
+  "visa-free", "visa free", "visa on arrival", "no visa required", "without a visa",
+  "免签", "落地签", "无需签证", "不需要签证", "不用签证", "不用办签证",
 ];
+/**
+ * Words that turn a visa mention into a claim about the traveller's own
+ * eligibility.
+ */
+const VISA_ASSERTION_TERMS = [
+  "require", "requires", "required", "need", "needs", "must", "have to", "has to",
+  "eligible", "eligibility", "exempt", "allowed", "can enter", "obtain a",
+  "do not need", "don't need",
+  "需要", "必须", "可以", "能够", "符合", "有资格", "不用", "无须", "无需", "办理",
+];
+/** The subset that carries eligibility on its own, with no help from context. */
+const VISA_STRICT_ASSERTION_TERMS = [
+  "require", "requires", "required", "need", "needs", "must", "have to", "has to",
+  "eligible", "eligibility", "exempt", "do not need", "don't need",
+  "需要", "必须", "符合", "有资格", "不用", "无须", "无需",
+];
+/**
+ * Deferral wins over assertion. "Check the visa requirements before you go" and
+ * "confirm with the destination's official guidance" contain requirement words
+ * but decide nothing — they are the behaviour the product wants, and the point
+ * of the rule is to leave the answer to an official source.
+ */
+const VISA_DEFERRAL_TERMS = [
+  "check", "confirm", "verify", "official", "consulate", "embassy", "may vary",
+  "确认", "核实", "核对", "查询", "查证", "以官方", "官方口径", "官网", "领事", "使馆", "为准", "自行",
+];
+
+/** True when the text decides a visa outcome rather than pointing at one. */
+function assertsVisaOutcome(text: string): boolean {
+  if (hasAnyTerm(text, VISA_CONCLUSION_TERMS)) return true;
+  if (hasAnyTerm(text, VISA_DEFERRAL_TERMS)) return false;
+  if (hasAnyTerm(text, VISA_TOPIC_TERMS)) return hasAnyTerm(text, VISA_ASSERTION_TERMS);
+  if (hasAnyTerm(text, VISA_WEAK_TOPIC_TERMS)) return hasAnyTerm(text, VISA_STRICT_ASSERTION_TERMS);
+  return false;
+}
 
 export async function resolveConversationPlace(place: ConversationPlace | undefined): Promise<ConversationPlace | undefined> {
   if (!place) return undefined;
@@ -87,11 +137,11 @@ export function requestsUnsupportedOperationalFacts(question: string, opts?: Ope
   const text = normalizePolicyText(question);
   void opts;
 
-  if (hasAnyTerm(text, VISA_TERMS)) return true;
-  if (
-    hasAnyTerm(text, ["entry", "enter", "immigration", "passport"])
-    && hasAnyTerm(text, ENTRY_RULE_TERMS)
-  ) return true;
+  // Asking about a visa is a fair question, and refusing it before the model
+  // is even called meant a canned policy recital where the traveller wanted
+  // help. The model answers now — the prompt requires it to say plainly that
+  // this chat cannot confirm entry rules and to send them to the official
+  // source — and the output gate below still stops it deciding anything.
 
   if (
     hasAnyTerm(text, ["booking", "bookings", "reservation", "reservations", "预订", "订"])
@@ -128,17 +178,11 @@ export function containsUnsupportedOperationalClaim(content: string, opts?: Oper
   const text = normalizePolicyText(content);
   const evidenceBacked = opts?.evidenceBacked === true;
 
-  // Chat has no authoritative visa provider path. Conservatively reject every
-  // MODEL response that introduces visa facts, including unfamiliar phrasing.
-  if (hasAnyTerm(text, VISA_TERMS)) return true;
-  if (
-    hasAnyTerm(text, ["entry", "enter", "immigration", "passport"])
-    && hasAnyTerm(text, [
-      "require", "requires", "required", "requirement", "requirements", "need", "needs", "must",
-      "eligible", "eligibility", "ineligible", "allowed", "not allowed", "valid", "invalid", "without",
-      "需要", "要求", "必须", "资格",
-    ])
-  ) return true;
+  // Chat has no authoritative visa provider, so it may not decide a visa
+  // outcome. Naming one is fine — and necessary: travel preparation is part
+  // of a plan. `assertsVisaOutcome` separates the two, and treats a deferral
+  // to the official source as the safe answer it is.
+  if (assertsVisaOutcome(text)) return true;
 
   // The standalone price/availability gate was removed on purpose (demo-scope
   // simplification, explicit request): the model may state prices, fares and
@@ -168,12 +212,26 @@ export function containsUnsupportedOperationalClaim(content: string, opts?: Oper
   return hasFlightReference(text) && hasAnyTerm(text, FLIGHT_STATUS_TERMS);
 }
 
+/**
+ * The last resort, not the usual answer.
+ *
+ * This used to recite the policy — "cannot claim live prices, inventory, visa
+ * conclusions, booking status or flight status" — which read as an accusation
+ * about what the traveller had asked. Someone who typed "let's start planning"
+ * was told the chat would not give them visa conclusions. The reply now speaks
+ * only to the question at hand: the answer could not be established here, it
+ * would not be reliable if guessed, and it is worth checking at the source.
+ *
+ * Reaching this at all means the model's own attempt was withheld, so the
+ * prompt asks the model to say this in its own words first — see the
+ * unverifiable-question rule in the conversation prompt.
+ */
 export function safeConversationRefusal(question?: string): ConversationReply {
   const chinese = question !== undefined && /[\p{Script=Han}]/u.test(question);
   return {
     content: chinese
-      ? "我可以协助整理旅行想法和确认规划条件，但不能在对话中声称实时价格、库存、签证结论、预订状态或航班动态。你的查询条件已收到；确认行程信息后即可在受控流程中生成完整方案。"
-      : "I can help organize travel ideas and confirm planning details, but this chat cannot claim live prices, inventory, visa conclusions, booking status, or flight status. Your search details are noted; once the trip details are confirmed, Wanderly can generate a complete plan through its controlled planning flow.",
+      ? "这个我暂时没法在对话里给你一个靠得住的答案——就算给了也不一定准确，建议你再到官方渠道核实一下。行程本身我们可以继续往下聊。"
+      : "I can't get you a reliable answer to that one here — anything I guessed might not be accurate, so it's worth confirming at the official source. We can keep going on the trip itself in the meantime.",
     responseMode: "SAFE_REFUSAL",
   };
 }

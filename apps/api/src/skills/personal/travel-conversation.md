@@ -61,18 +61,27 @@ and the user has expressed search intent. The tool result is persisted into
 existing unique index), and the second LLM turn streams a grounded summary
 back to the SSE channel. The conversation worker relaxes the price/hotel and
 availability/hotel safety rules for the second turn only — every other
-safety rule (visa, booking status, flight status, schedule) keeps firing
-unconditionally.
+safety rule (visa conclusions, booking status, flight status, schedule) keeps
+firing unconditionally.
 
 The flag is the rollout lever. Default off in `.env.example`; flip on per
 environment after deploy. Behaviour is byte-identical to v1.1.0 when the
 flag is off.
 
 Before model invocation, the Skill deterministically rejects explicit requests
-for live/current prices, inventory or availability, visa/entry conclusions,
-booking status and other real-time provider facts. After a model response, the
-same narrow fact boundary replaces unsupported operational claims with an
-explicit deterministic `SAFE_REFUSAL`. General destination inspiration and qualitative
+for booking status and flight status. It no longer rejects visa and entry
+questions: refusing those before the model was called answered a traveller
+asking for help with a recital of what the product will not claim, and a
+question the product cannot settle is better answered by saying so and
+pointing at the official source than by a canned block.
+
+After a model response, the fact boundary replaces unsupported operational
+claims with a deterministic `SAFE_REFUSAL`. The visa rule there blocks a
+*conclusion*, not a mention — "confirm the visa requirements before you go"
+and "check the passport is valid for six months" are the wanted behaviour and
+pass, while "you are visa-free" and "you need a visa to enter" do not. Wording
+that defers to an official source is admitted unless a conclusion has already
+been stated alongside it. General destination inspiration and qualitative
 guidance remain allowed.
 
 Provider unavailability, timeout, retry exhaustion, or malformed model output
