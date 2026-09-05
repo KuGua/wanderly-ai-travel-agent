@@ -59,5 +59,6 @@ function isCode(value: string | null): value is ProviderUnavailableCode {
   return [
     "NOT_CONFIGURED", "SEARCH_CONSTRAINTS_INCOMPLETE", "NO_RESULTS", "RATE_LIMITED",
     "UPSTREAM_TIMEOUT", "UPSTREAM_FAILURE", "INVALID_PROVIDER_RESPONSE", "PROVIDER_NOT_APPROVED",
+    "PROVIDER_REQUEST_REJECTED",
   ].includes(value ?? "");
 }

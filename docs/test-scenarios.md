@@ -950,6 +950,8 @@ Runnable coverage: add `apps/api/tests/services/personal-research-intent-classif
 - The client receives only documented safe phases and an identifier/version-safe terminal result; it never receives model reasoning, prompt, raw provider payload or unvalidated plan content.
 - A final `COMPLETED` event refers only to an already validated and persisted plan version; a final `COMPLETED_WITH_GAPS` event refers only to an already persisted safe research summary and carries no commercial authority.
 - The API and Web task-status contracts accept `COMPLETED_WITH_GAPS`; a durable planning run in that state remains readable and the Web fetches its persisted plan instead of presenting a response-schema error.
+- `COMPLETED_WITH_GAPS` never reuses the `COMPLETED` status line. Such a run produced no plan, so the Shared surface must not read "Plan is ready" above an empty list; it names the missing-data outcome instead.
+- The gaps explanation renders from the run alone. The research row supplies *which* capabilities were missing, so a slow or absent research read degrades the panel to its summary line rather than falling back to a status bar over an empty surface.
 - After the proposal is adopted, the Web accepts and renders a grounded flight plan even when optional stay or ground evidence is absent; the missing capabilities remain explicit gaps and are never populated with fixtures.
 - Consent revocation or a newer run makes the old stream terminal/stale; it cannot activate, display or overwrite a plan after invalidation.
 - Stream identifiers remain out of metric labels, and no event widens membership or snapshot authorization.
@@ -2438,6 +2440,35 @@ aborted signal.
   SSE channel.
 - Model budget + tool budget stay below `CONVERSATION_TURN_HARD_CAP_MS`, so
   the budget fires before the cap does.
+
+### TS-PROVIDER-4XX — 供应商拒绝请求不再被报成供应商故障
+
+**Objective:** Regression for the 2026-09-05 trip whose shared plan never
+appeared. SerpApi answered `400` on every flight search; the adapter reported
+`UPSTREAM_FAILURE` and discarded the response body unread, so nothing in the
+logs could say which parameter it objected to.
+
+**Steps:**
+
+1. Make each flight/hotel provider answer `400` with a JSON body carrying an
+   `error` message; repeat with `404`, `401`, `429` and `503`.
+2. Answer `400` with a body that echoes the request URL, API key included.
+3. Inspect the resulting gap code, the metric label and the log line.
+
+**Expected outcomes:**
+
+- `4xx` other than `401`/`403`/`429` maps to `PROVIDER_REQUEST_REJECTED`, not
+  `UPSTREAM_FAILURE`: the supplier understood the request and refused it, which
+  is our parameters and not its health. `401`/`403` stay
+  `PROVIDER_NOT_APPROVED`, `429` stays `RATE_LIMITED`, `5xx` stays
+  `UPSTREAM_FAILURE`.
+- The supplier's own message is logged once, so an operator can see which field
+  was rejected without reproducing the call.
+- That log never carries a credential: an echoed `api_key` / `token` /
+  `access_token` / `key` value is redacted and the message is truncated.
+- `PROVIDER_REQUEST_REJECTED` is accepted end to end — the API Zod contract, the
+  Web mirror, the bounded metric label and the service-gap payload — so the new
+  value never blanks a surface through a failed response parse.
 
 ### TS-PLANNER-RESILIENCE-6 — 慢 provider 不再被报成模型故障
 

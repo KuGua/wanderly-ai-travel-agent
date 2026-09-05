@@ -80,7 +80,8 @@ export type UnavailableErrorCode =
   | "UPSTREAM_TIMEOUT"
   | "UPSTREAM_FAILURE"
   | "INVALID_PROVIDER_RESPONSE"
-  | "PROVIDER_NOT_APPROVED";
+  | "PROVIDER_NOT_APPROVED"
+  | "PROVIDER_REQUEST_REJECTED";
 
 export interface PersonalResearchExecutorResult {
   evidenceId: string;
@@ -196,6 +197,7 @@ function mapExecutorErrorToUnavailableCode(err: unknown): UnavailableErrorCode {
         "UPSTREAM_FAILURE",
         "INVALID_PROVIDER_RESPONSE",
         "PROVIDER_NOT_APPROVED",
+        "PROVIDER_REQUEST_REJECTED",
       ];
       if ((allowed as string[]).includes(code)) return code as UnavailableErrorCode;
     }

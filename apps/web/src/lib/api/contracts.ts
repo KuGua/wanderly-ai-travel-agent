@@ -579,6 +579,7 @@ export const personalResearchUnavailableEvidenceSummarySchema = z.object({
     "UPSTREAM_FAILURE",
     "INVALID_PROVIDER_RESPONSE",
     "PROVIDER_NOT_APPROVED",
+    "PROVIDER_REQUEST_REJECTED",
   ]),
 }).strict();
 
@@ -1505,6 +1506,9 @@ export const providerUnavailableCodeSchema = z.enum([
   "UPSTREAM_FAILURE",
   "INVALID_PROVIDER_RESPONSE",
   "PROVIDER_NOT_APPROVED",
+  // The supplier refused the request (4xx). Mirrored from the API contract:
+  // an unknown value here fails the response parse and blanks the surface.
+  "PROVIDER_REQUEST_REJECTED",
 ]);
 
 export const serviceGapSchema = z.object({

@@ -1,3 +1,4 @@
+import { logProviderRejection } from "./provider-error-diagnostics.js";
 import { createHash } from "node:crypto";
 
 import { metrics } from "../observability/metrics.js";
@@ -105,7 +106,11 @@ export class SerpApiHotelProvider implements HotelProvider {
     if (response.status === 401 || response.status === 403) return { outcome: "UNAVAILABLE", reason: "PROVIDER_NOT_APPROVED" };
     if (response.status === 429) return { outcome: "UNAVAILABLE", reason: "RATE_LIMITED" };
     if (response.status >= 500) return { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };
-    if (!response.ok) return { outcome: "UNAVAILABLE", reason: "UPSTREAM_FAILURE" };
+    if (!response.ok) {
+      // 4xx: refused, not broken. See serpapi-flight-provider for the reasoning.
+      await logProviderRejection(response, { provider: "serpapi", operation: "hotel.search" });
+      return { outcome: "UNAVAILABLE", reason: "PROVIDER_REQUEST_REJECTED" };
+    }
 
     const parsed = serpApiHotelResponseSchema.safeParse(await readBoundedJson(response));
     if (!parsed.success) return { outcome: "UNAVAILABLE", reason: "INVALID_PROVIDER_RESPONSE" };

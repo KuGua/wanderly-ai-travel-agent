@@ -162,4 +162,38 @@ describe("SharedPlanView — Phase 1 states", () => {
     expect(await findByTestId("shared-plan-gaps")).toBeDefined();
     expect(await findByText("flight: NO_RESULTS")).toBeDefined();
   });
+
+  // The panel used to require a research row whose id matched the run. Only
+  // `plansQuery` gates the first paint, so whenever the research read had not
+  // landed the page fell through to a status bar reading "Plan is ready" over
+  // an empty surface. Whether to explain is the run's business; the research
+  // row only supplies which capabilities were missing.
+  it("still explains the gaps when the research detail is unavailable", async () => {
+    const runId = "00000000-0000-4000-8000-000000000099";
+    const api = buildApi({
+      getLatestPlanningRun: vi.fn().mockResolvedValue({
+        run: {
+          runId,
+          operation: "RESEARCH",
+          status: "COMPLETED_WITH_GAPS",
+          generationAttempt: 0,
+          attemptCount: 1,
+          createdAt: "2026-09-01T00:00:00.000Z",
+          updatedAt: "2026-09-01T00:01:00.000Z",
+          finishedAt: "2026-09-01T00:01:00.000Z",
+          errorCode: null,
+          assistantMessageId: null,
+          resultPlanId: null,
+          researchIntentDraft: null,
+          researchIntentState: null,
+        },
+      }),
+      getLatestResearchResult: vi.fn().mockResolvedValue({ result: null }),
+    });
+    const { findByTestId, queryByText } = renderWithIntl(<SharedPlanView tripId={TRIP_ID} />, { api });
+
+    expect(await findByTestId("shared-plan-gaps")).toBeDefined();
+    // And never the line that made an empty page look like a finished one.
+    expect(queryByText("Plan is ready")).toBeNull();
+  });
 });

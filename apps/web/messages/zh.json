@@ -618,6 +618,7 @@
         "persisting": "正在保存方案…",
         "retrying": "因暂时性失败正在重试…",
         "completed": "方案已就绪",
+        "completedWithGaps": "研究已完成，但关键信息缺失，未生成方案",
         "failed": "本次运行未产出方案",
         "cancelled": "本次运行已取消",
         "lastUpdated": "最后更新于 {value}"

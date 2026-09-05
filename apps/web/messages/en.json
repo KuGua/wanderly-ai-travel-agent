@@ -618,6 +618,7 @@
         "persisting": "Saving the plan…",
         "retrying": "Retrying after a transient failure…",
         "completed": "Plan is ready",
+        "completedWithGaps": "Research finished, but key data was missing — no plan was created",
         "failed": "This run did not produce a plan",
         "cancelled": "This run was cancelled",
         "lastUpdated": "Last updated {value}"

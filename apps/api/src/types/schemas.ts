@@ -1161,6 +1161,7 @@ export const personalResearchUnavailableEvidenceSummarySchema = z.object({
     "UPSTREAM_FAILURE",
     "INVALID_PROVIDER_RESPONSE",
     "PROVIDER_NOT_APPROVED",
+    "PROVIDER_REQUEST_REJECTED",
   ]),
 }).strict();
 

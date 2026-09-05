@@ -142,6 +142,11 @@ describe("SerpApiFlightProvider", () => {
     [403, {}, "PROVIDER_NOT_APPROVED"],
     [429, {}, "RATE_LIMITED"],
     [503, {}, "UPSTREAM_FAILURE"],
+    // A 4xx means the supplier understood us and refused: our parameters, not
+    // its health. Reporting it as UPSTREAM_FAILURE sent operators looking for
+    // a provider outage while SerpApi kept returning 400 on every search.
+    [400, { error: "Invalid departure_id" }, "PROVIDER_REQUEST_REJECTED"],
+    [404, {}, "PROVIDER_REQUEST_REJECTED"],
   ])("fails closed for response %s", async (status, body, reason) => {
     const result = await provider(async () => new Response(JSON.stringify(body), { status })).searchFlights(request);
     expect(result).toEqual({ outcome: "UNAVAILABLE", reason });

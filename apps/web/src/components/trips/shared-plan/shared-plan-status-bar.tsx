@@ -64,8 +64,13 @@ function statusToTranslationKey(status: AgentRun["status"]): string {
     case "RUNNING":
       return "researching";
     case "COMPLETED":
-    case "COMPLETED_WITH_GAPS":
       return "completed";
+    // Deliberately not folded into `completed`. A run that finished with gaps
+    // produced no plan, so "Plan is ready" over an empty surface is the most
+    // misleading line the page can show — it reads as a broken page rather
+    // than as the honest outcome it is.
+    case "COMPLETED_WITH_GAPS":
+      return "completedWithGaps";
     case "FAILED":
     case "STALE":
       return "failed";

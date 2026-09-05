@@ -108,11 +108,18 @@ export function SharedPlanView({ tripId }: { tripId: string }) {
   const matchingResearch = latestResearch?.agentTaskRunId === feed.run?.runId
     ? latestResearch
     : null;
+  // Whether to explain is decided by the run alone; the research row only
+  // supplies *which* capabilities were missing. Requiring the match here made
+  // the panel depend on a second request that this component never waits for
+  // — only `plansQuery.isLoading` gates the first paint — so a run that
+  // completed with gaps fell through to the generic branch below and rendered
+  // a status bar over an empty surface. The list degrades to a summary line
+  // when the detail has not arrived (or the row is missing) rather than
+  // taking the explanation away with it.
   const completedWithGaps = empty
     && feed.run?.status === "COMPLETED_WITH_GAPS"
-    && !feed.run.resultPlanId
-    && matchingResearch;
-  if (completedWithGaps) {
+    && !feed.run.resultPlanId;
+  if (completedWithGaps && feed.run) {
     return (
       <section
         data-testid="shared-plan-gaps"
@@ -121,11 +128,13 @@ export function SharedPlanView({ tripId }: { tripId: string }) {
       >
         <p className="text-base font-bold text-amber-950">{t("gaps.title")}</p>
         <p className="text-sm text-amber-950">{t("gaps.body")}</p>
-        <ul className="grid gap-1 text-sm text-amber-950">
-          {matchingResearch.serviceGaps.map((gap, index) => (
-            <li key={`${gap.capability}-${gap.code}-${index}`}>{gap.capability}: {gap.code}</li>
-          ))}
-        </ul>
+        {matchingResearch ? (
+          <ul className="grid gap-1 text-sm text-amber-950">
+            {matchingResearch.serviceGaps.map((gap, index) => (
+              <li key={`${gap.capability}-${gap.code}-${index}`}>{gap.capability}: {gap.code}</li>
+            ))}
+          </ul>
+        ) : null}
         <Link href={`/trips/${tripId}/runs/${feed.run.runId}`} className="w-fit text-sm font-bold text-sky-800 hover:underline">
           {t("gaps.detail")}
         </Link>
