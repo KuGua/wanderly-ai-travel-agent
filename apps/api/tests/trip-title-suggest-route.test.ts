@@ -200,6 +200,17 @@ describe("POST /trips/:tripId/title/suggest", () => {
     expect((await readTrip()).name).toBe("我的欧洲行");
   });
 
+  it("never calls the model after the trip leaves Draft", async () => {
+    await addUserMessage("我想去法国");
+    await db.update(sharedTrips).set({ status: "PLANNING" })
+      .where(eq(sharedTrips.id, tripId));
+
+    const res = await suggest();
+
+    expect(res.json()).toMatchObject({ applied: false, reason: "NOT_DRAFT" });
+    expect(generateTripDestinationLabel).not.toHaveBeenCalled();
+  });
+
   it("declines once a real destination city has been confirmed", async () => {
     await addUserMessage("我想去法国");
     await db.update(sharedTrips).set({ destinationCandidates: ["Paris"] })

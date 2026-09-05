@@ -54,7 +54,7 @@ export function AccountAuthControl() {
   if (auth.status === "SIGNED_IN") {
     return (
       <div ref={(node) => { accountMenuRef.current = node; }} className="relative">
-        <button type="button" onClick={() => setOpen((current) => !current)} title={t("signedInAs", { username: auth.user?.username ?? t("traveler") })} aria-label={t("accountMenu")} className="grid size-10 place-items-center border-[1.5px] border-[var(--w-ink)] bg-[var(--w-fog)] text-[var(--w-ink)] wanderly-r-sm wanderly-press hover:bg-[var(--w-highlight)] sm:size-11">
+        <button type="button" onClick={() => setOpen((current) => !current)} title={t("signedInAs", { username: auth.user?.username ?? t("traveler") })} aria-label={t("accountMenu")} className="grid size-10 place-items-center border-[1.5px] border-[var(--w-ink)] bg-[var(--w-fog)] text-[var(--w-ink)] wanderly-r-sm wanderly-press hover:bg-[var(--w-cal-run)] sm:size-11">
           <UserRound aria-hidden="true" className="size-5" />
         </button>
         {open ? (

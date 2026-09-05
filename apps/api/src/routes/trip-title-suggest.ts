@@ -145,12 +145,24 @@ export async function tripTitleSuggestRoutes(app: FastifyInstance): Promise<void
       }));
     };
 
-    // 2. Rate limit. Bound the per-user cost of the LLM call.
+    // 2. Cheap authoritative gates must run before rate limiting, transcript
+    // reads, or model invocation. The transaction in
+    // applyTitleDestinationLabel re-checks them after the model returns to
+    // protect against concurrent changes; this preflight prevents spending a
+    // request on a trip that is already known to be ineligible.
+    if (trip.status !== "DRAFT") {
+      return reject("NOT_DRAFT");
+    }
+    if (trip.nameSource === "MANUAL") {
+      return reject("MANUAL_LOCKED");
+    }
+
+    // 3. Rate limit. Bound the per-user cost of the LLM call.
     if (!rateLimiter.allow(request.user.id)) {
       return reject("RATE_LIMITED");
     }
 
-    // 3. NO_MATERIAL — pull the owner's default thread; reject if no USER
+    // 4. NO_MATERIAL — pull the owner's default thread; reject if no USER
     // messages yet. No point spending an LLM call on an empty transcript.
     const [defaultThread] = await db.select({ id: chatThreads.id })
       .from(chatThreads)
@@ -176,7 +188,7 @@ export async function tripTitleSuggestRoutes(app: FastifyInstance): Promise<void
     }
     const truncatedMessages = userMessages.map((m) => ({ text: m.body.slice(0, MAX_MESSAGE_TEXT) }));
 
-    // 4. Envelope: skill invoke + postprocess + bounded reason mapping.
+    // 5. Envelope: skill invoke + postprocess + bounded reason mapping.
     // The envelope returns the *postprocessed* label, so what reaches the
     // trip row below is the dataset's canonical name — never the model's raw
     // text. That distinction is the whole point of the closed-vocabulary
@@ -206,7 +218,7 @@ export async function tripTitleSuggestRoutes(app: FastifyInstance): Promise<void
 
     if (!envelopeResult.ok) return reject(envelopeResult.reason);
 
-    // 5. Persist via the shared service. It owns the FOR UPDATE re-read,
+    // 6. Persist via the shared service. It owns the FOR UPDATE re-read,
     // the MANUAL_LOCKED / NOT_DRAFT / SUPERSEDED / UNCHANGED gates, and
     // the audit + metric calls — same gates that protect the REFERENCE
     // path, so concurrent owner-rename or city-confirm never gets

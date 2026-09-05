@@ -8,13 +8,10 @@ import { Link } from "@/i18n/navigation";
 import type { TripSummary } from "@/lib/api/contracts";
 import { useDeleteTrip } from "@/lib/query/hooks";
 
-const artStyles = [
-  "from-[var(--w-info)] to-[var(--w-highlight)]",
-  "from-[var(--w-moss)] to-[var(--w-info)]",
-  "from-[var(--w-fog)] to-[var(--w-moss)]",
-  "from-[var(--w-highlight)] to-[var(--w-fog)]",
-  "from-[var(--w-primary)] to-[var(--w-moss)]",
-] as const;
+/* One note stock per trip, chosen from the id so a trip keeps its paper
+   between renders. Replaces five header gradients that were the same on every
+   card and so decorated without distinguishing. */
+const STOCKS = ["band", "holes", "ticket"] as const;
 
 /**
  * Picks a card's tilt and gradient from the trip's own id rather than its
@@ -66,24 +63,16 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
       {trips.map((trip) => {
         const style = STATUS_STYLES[trip.status];
         const seed = styleSeed(trip.id);
+        const stock = STOCKS[seed % STOCKS.length];
         return (
           <article
             key={trip.id}
-            className={`group relative flex min-h-[245px] flex-col overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow wanderly-press wanderly-press-lg ${
-              seed % 3 === 1 ? "wanderly-tilt-a" : seed % 3 === 2 ? "wanderly-tilt-b" : ""
+            className={`wanderly-note wanderly-note--${stock} group relative flex min-h-[190px] flex-col wanderly-press ${
+              stock === "band" ? "pt-[26px]" : stock === "holes" ? "pl-[18px]" : "pl-[16px]"
             }`}
           >
-            <div
-              className={`relative h-[87px] shrink-0 overflow-hidden border-b-2 border-[var(--w-ink)] bg-gradient-to-br ${artStyles[seed % artStyles.length]}`}
-              aria-hidden="true"
-            >
-              <span className="absolute -right-8 -top-[68px] size-[125px] rounded-full border-2 border-[var(--w-ink)]/65" />
-              <span className="absolute bottom-[-23px] left-[6%] h-[35px] w-[90%] -rotate-[5deg] rounded-[50%] border border-dashed border-[var(--w-ink)]/70" />
-            </div>
-            {/* Creator-only, matching the API: a member who wants out of a
-                shared trip is leaving it, not destroying it for everyone. Sits
-                over the artwork so it never crowds the trip's own details. */}
-            {trip.role === "CREATOR" ? <DeleteTripControl trip={trip} t={t} /> : null}
+            <span aria-hidden="true" className="wanderly-clip" />
+            {stock === "ticket" ? <span aria-hidden="true" className="wanderly-notch" /> : null}
             <div className="flex flex-1 flex-col p-4">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="text-[19px] font-bold tracking-[-0.035em]">{trip.name}</h3>
@@ -125,6 +114,13 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
               </div>
               <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs text-[var(--w-ink)]">
                 <span className="flex items-center gap-1.5">
+                  {/* Creator-only, matching the API: a member who wants out of
+                      a shared trip is leaving it, not destroying it for
+                      everyone. In the footer row rather than floating over it,
+                      and always present: revealing it on hover put it on top of
+                      this line, and a control nobody can see is one nobody can
+                      reach on a touch screen. */}
+                  {trip.role === "CREATOR" ? <DeleteTripControl trip={trip} t={t} /> : null}
                   <UsersRound aria-hidden="true" className="size-3.5" />
                   {t("trip.members", { count: trip.memberCount })} ·{" "}
                   {trip.role === "CREATOR"
@@ -166,15 +162,15 @@ function DeleteTripControl({ trip, t }: { trip: TripSummary; t: Translator }) {
         onClick={() => setArmed(true)}
         aria-label={t("trip.delete", { name: trip.name })}
         title={t("trip.delete", { name: trip.name })}
-        className="absolute right-2 top-2 z-10 grid size-11 place-items-center bg-destructive text-white opacity-0 pointer-events-none transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 max-sm:pointer-events-auto max-sm:opacity-100 wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs wanderly-press focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/50"
+        className="grid size-6 shrink-0 place-items-center rounded-[6px] text-[var(--w-ink)]/55 transition-colors hover:bg-[var(--w-ink)]/8 hover:text-[var(--w-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-ink)]/30"
       >
-        <Trash2 aria-hidden="true" className="size-4" />
+        <Trash2 aria-hidden="true" className="size-[13px]" />
       </button>
     );
   }
 
   return (
-    <div role="group" aria-label={t("trip.deleteConfirmTitle")} className="absolute right-2 top-2 z-10 flex items-center gap-1.5 bg-card px-2 py-1.5 wanderly-edge-thin wanderly-r-xs wanderly-shadow-xs">
+    <div role="group" aria-label={t("trip.deleteConfirmTitle")} className="flex items-center gap-1.5 bg-card px-2 py-1 wanderly-edge-thin wanderly-r-xs">
       <span className="text-[11px] font-bold text-[var(--w-ink)]">{t("trip.deleteConfirmTitle")}</span>
       <button
         type="button"

@@ -103,16 +103,18 @@ describe("HomeDashboard", () => {
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith(`/trips/${TRIP_ID}?thread=${THREAD_ID}`));
   });
 
-  it("shows an unarchived Draft in the default active list and prioritizes it for continuation", async () => {
+  // The counts were two: once in the "continue planning" hero and once in the
+  // grid. The hero is gone — it repeated a card the grid already showed — so a
+  // Draft now appears once, and its own card carries the way back into it.
+  it("shows an unarchived Draft in the default active list", async () => {
     renderAuthenticatedDashboard(makeApi([planningTrip, draftTrip]));
 
     await waitFor(() => {
-      expect(screen.getAllByRole("heading", { name: "Taipei exploration" })).toHaveLength(2);
+      expect(screen.getAllByRole("heading", { name: "Taipei exploration" })).toHaveLength(1);
     });
 
     expect(screen.getByRole("button", { name: "Active2" })).toBeInTheDocument();
-    expect(screen.getByText("Draft needs details")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Continue exploration" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Continue planning" })).toHaveAttribute(
       "href",
       "/trips/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     );
@@ -129,7 +131,7 @@ describe("HomeDashboard", () => {
     renderAuthenticatedDashboard(makeApi([draftTrip, archivedDraft]));
 
     await waitFor(() => {
-      expect(screen.getAllByRole("heading", { name: "Taipei exploration" })).toHaveLength(2);
+      expect(screen.getAllByRole("heading", { name: "Taipei exploration" })).toHaveLength(1);
     });
 
     expect(screen.queryByText("Archived Taipei exploration")).not.toBeInTheDocument();
@@ -137,6 +139,36 @@ describe("HomeDashboard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Archived1" }));
     expect(screen.getByText("Archived Taipei exploration")).toBeInTheDocument();
+  });
+
+  it("points the header's continue control at the unfinished exploration", async () => {
+    // Listed planning-first, so this fails if the control just takes the head
+    // of the list: a Draft is still waiting on the traveller, a plan under way
+    // is waiting on us.
+    renderAuthenticatedDashboard(makeApi([planningTrip, draftTrip]));
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Continue current plan/ })).toBeInTheDocument();
+    });
+    const control = screen.getByRole("link", { name: /Continue current plan/ });
+    expect(control).toHaveAttribute("href", "/trips/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    // It names the plan it opens rather than making the reader click to find out.
+    expect(control).toHaveTextContent("Taipei exploration");
+  });
+
+  it("leaves the continue control out when nothing is in progress", async () => {
+    const archivedDraft = {
+      ...draftTrip,
+      archivedAt: "2026-08-30T01:00:00.000Z",
+      archiveReason: "USER_ARCHIVED" as const,
+    };
+    renderAuthenticatedDashboard(makeApi([archivedDraft]));
+
+    // Waited on the archived count, not on the header: the header renders on
+    // the first frame whether or not the trips have arrived, so waiting there
+    // asserts against an empty list and passes for the wrong reason.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Archived1" })).toBeInTheDocument());
+    expect(screen.queryByRole("link", { name: /Continue current plan/ })).not.toBeInTheDocument();
   });
 
   it("asks a signed-out visitor to sign in instead of requesting private Home data", () => {

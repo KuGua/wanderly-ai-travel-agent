@@ -55,20 +55,22 @@ describe("TripList", () => {
     expect(await screen.findByRole("group", { name: "Delete for good?" })).toBeInTheDocument();
   });
 
-  it("places the destructive delete control at the card's top-right and reveals it on hover or focus", () => {
+  /**
+   * Delete sits in the footer row and is always visible.
+   *
+   * It began as a red block at the card's top-right, revealed on hover: it
+   * shouted destruction over a card being read, and a hover-only control is
+   * one a touch screen cannot reach. Then it was absolutely positioned at the
+   * bottom-left, where it covered the member line. It is now a member of that
+   * line, drawn in ink, with the warning kept for the confirm step.
+   */
+  it("keeps the delete control in the footer row, visible and in ink", () => {
     renderWithIntl(<TripList trips={[trip()]} />, { api: apiWithDelete() });
 
     const control = screen.getByRole("button", { name: "Delete Tokyo trip" });
-    expect(control).toHaveClass(
-      "right-2",
-      "top-2",
-      "bg-destructive",
-      "text-white",
-      "opacity-0",
-      "group-hover:opacity-100",
-      "group-focus-within:opacity-100",
-    );
-    expect(control).not.toHaveClass("left-2");
+    expect(control).not.toHaveClass("opacity-0", "absolute", "bg-destructive", "text-white");
+    // Beside the member line rather than over it.
+    expect(control.parentElement?.textContent).toContain("1 member");
   });
 
   it("deletes once the confirmation is taken", async () => {

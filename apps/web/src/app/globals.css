@@ -137,7 +137,18 @@
   --chart-5: var(--w-fog);
   --radius: 0.625rem;
   --welcome-glow: color-mix(in srgb, var(--w-highlight), transparent 62%);
-  --sidebar: var(--w-primary);
+  /* The rail stays as it was — same width, same hard edge, same shadow — but
+     its ground lifts a step and warms slightly, so it sits with the paper
+     dashboard beside it instead of reading as a separate slab. */
+  --sidebar: color-mix(in srgb, var(--w-primary), var(--w-fog) 16%);
+  /* Calendar marks. The run sits under the date numerals, so it stays lighter
+     than a chip would; today is a fill rather than an outline, which on a 17px
+     cell competed with the printed ruling around it. */
+  --w-cal-run: color-mix(in srgb, var(--w-info), var(--w-fog) 56%);
+  --w-cal-today: color-mix(in srgb, #c98f8a, var(--w-fog) 26%);
+  /* Still being worked out, as opposed to settled. A muted ochre rather than a
+     saturated yellow: it shares a row with the blue and must not outrank it. */
+  --w-cal-planning: color-mix(in srgb, #d4b483, var(--w-fog) 34%);
   --sidebar-foreground: var(--w-ink);
   --sidebar-primary: var(--w-highlight);
   --sidebar-primary-foreground: var(--w-ink);
@@ -480,8 +491,13 @@
 @media (min-width: 768px) {
   .wanderly-starfield--lunar::before {
     left: auto;
-    width: min(56vw, 820px);
-    height: clamp(140px, 19vh, 210px);
+    /* Smaller than the ground the terminal first stood on: at 56vw the outcrop
+       reached most of the way across the scene and read as a second subject
+       competing with the planet. Both axes are cut by the same fraction, so
+       the 320x80 art keeps the pixel aspect it is drawn at — squashing one
+       axis alone is what would make the surface look wrong. */
+    width: min(44vw, 640px);
+    height: clamp(112px, 15vh, 168px);
     -webkit-mask-image:
       linear-gradient(180deg, transparent 0, rgb(0 0 0 / .45) 5%, #000 18%),
       linear-gradient(90deg, transparent 0, rgb(0 0 0 / .5) 12%, #000 30%);
@@ -632,6 +648,156 @@
   border-color: var(--w-crt-line);
 }
 
+/* A spiral pad, laid on its side: the binding runs down the left edge and the
+   block of pages shows along the right and bottom. Drawn rather than an image,
+   so the rings space themselves to whatever height the panel ends up.
+
+   The stack is three offset outlines, not a blur — a shadow suggests height
+   above the desk, where this needs to suggest sheets behind the top one. */
+.wanderly-pad {
+  position: relative;
+  /* Wide enough for a ring to be a ring. At 26px the binding could only hold a
+     flat ellipse outline, which read as punched holes rather than a coil. */
+  padding-left: 34px;
+  /* The same generous corner the profile card uses, all four sides. Squaring
+     the left to "make room" for the binding was unnecessary — the rings sit
+     inside the radius — and it left the pad looking clipped beside every other
+     card on the page. */
+  border-radius: 17px;
+  box-shadow:
+    3px 3px 0 -1px var(--w-page),
+    3px 3px 0 var(--w-ink),
+    7px 7px 0 -1px var(--w-page),
+    7px 7px 0 var(--w-ink);
+}
+
+/* The binding column, and the spine the rings close onto. Solid rather than
+   dashed: the dashes read as a fold, and a coil needs an edge to be bound to. */
+.wanderly-pad::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 34px;
+  border-right: 1.3px solid color-mix(in srgb, var(--w-ink), transparent 35%);
+  background: color-mix(in srgb, var(--w-fog), var(--w-white) 40%);
+  border-radius: 17px 0 0 17px;
+}
+
+/* The rings themselves: one wire loop, tiled down the edge so the count follows
+   the panel's height instead of being fixed.
+
+   Drawn as an outline — a dark contour with a paper-coloured core over it —
+   rather than as a solid stroke with a highlight. That is what the reference
+   coil is: line art, where the wire's thickness is two contour lines and not a
+   gradient. A solid stroke at this size reads as a printed tally mark.
+
+   The loop closes onto the spine at both ends, and its leftmost point stops
+   short of the pad's own border so the two outlines never touch. */
+.wanderly-pad::after {
+  content: "";
+  position: absolute;
+  /* Clear of the 17px corner: the panel clips its overflow, so a loop starting
+     any higher would have its left side cut by the rounded edge. */
+  inset: 21px auto 21px 0;
+  width: 36px;
+  pointer-events: none;
+  background-repeat: repeat-y;
+  background-size: 36px 27px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='36' height='27' viewBox='0 0 36 27'%3E%3Cg fill='none' stroke-linecap='round'%3E%3Cpath d='M33 21 C 30 25.5, 13 27, 6.5 20 C 2.5 15, 4.5 7, 13 3.5 C 20.5 0.5, 29 1.5, 33.5 4' stroke='%232a2a28' stroke-width='5'/%3E%3Cpath d='M33 21 C 30 25.5, 13 27, 6.5 20 C 2.5 15, 4.5 7, 13 3.5 C 20.5 0.5, 29 1.5, 33.5 4' stroke='%23fbfaf8' stroke-width='2.5'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* ---- paper desk ----------------------------------------------------------
+   The home dashboard is a desk: ruled paper for the year, note stock for the
+   trips, a clip on each. Every texture is drawn, so a card can be any width
+   and the tint can follow the palette rather than a bitmap. */
+
+/* A brushed underline rather than a border: thin at both ends, a touch off
+   level, softened at the edge. In `em` so it grows with whatever it underlines
+   — at a fixed pixel height it looked right at one size and thin at the next.
+   Not on a negative z-index: an ancestor's background paints over that. */
+.wanderly-brush { position: relative; display: inline-block;
+  --brush-ink: color-mix(in srgb, var(--w-highlight), var(--w-fog) 26%); }
+.wanderly-brush::after {
+  content: "";
+  position: absolute;
+  left: -.22em; right: -.6em; bottom: -.24em; height: .4em;
+  border-radius: 60% 40% 55% 45% / 70% 60% 40% 30%;
+  transform: rotate(-.5deg);
+  filter: blur(.02em);
+  opacity: .8;
+  /* The kicker above it is underlined in `--w-highlight`; a blue brush under a
+     teal rule read as two different marks. Same hue, pulled back toward the
+     paper so the brush stays quieter than the rule it echoes. */
+  background: linear-gradient(90deg,
+    transparent 0,
+    color-mix(in srgb, var(--brush-ink), transparent 52%) 7%,
+    color-mix(in srgb, var(--brush-ink), transparent 26%) 26%,
+    color-mix(in srgb, var(--brush-ink), transparent 38%) 62%,
+    color-mix(in srgb, var(--brush-ink), transparent 62%) 88%,
+    transparent 100%);
+}
+
+/* Note stock. The three differ by tint and by one borrowed motif each: a
+   printed header band, a punched margin, a ticket stub. */
+/* Three shadows, not one: a hairline where the paper meets the desk, a short
+   cast that separates cards from each other, and a long soft one that lifts
+   the whole sheet. A single blur reads as a flat card with a grey edge. */
+.wanderly-note { position: relative; border-radius: 3px;
+  box-shadow:
+    0 1px 1px rgb(42 42 40 / .13),
+    0 4px 8px -3px rgb(42 42 40 / .16),
+    0 16px 28px -18px rgb(42 42 40 / .55); }
+.wanderly-note:hover { box-shadow:
+    0 1px 1px rgb(42 42 40 / .13),
+    0 7px 14px -4px rgb(42 42 40 / .19),
+    0 22px 36px -20px rgb(42 42 40 / .6); }
+.wanderly-note--band { background-color: #F7F1E4; }
+.wanderly-note--band::before { content: ""; position: absolute; inset: 0 0 auto; height: 16px;
+  border-radius: 3px 3px 0 0; background: color-mix(in srgb, var(--w-info), var(--w-fog) 40%); }
+/* Sage rather than rose. The pink stock was the one colour on the page with
+   no relative anywhere else in the palette, so a wall of cards read as three
+   unrelated papers instead of one desk. */
+.wanderly-note--holes { background-color: color-mix(in srgb, var(--w-highlight), var(--w-fog) 82%); }
+.wanderly-note--holes::before { content: ""; position: absolute; left: 10px; top: 16px; bottom: 16px;
+  width: 9px; background-repeat: repeat-y; background-size: 9px 23px;
+  background-image: radial-gradient(circle at 50% 50%, rgb(42 42 40 / .16) 0 3.4px, transparent 3.6px); }
+.wanderly-note--ticket { background-color: #EEF2F6; }
+.wanderly-note--ticket::before { content: ""; position: absolute; left: 17px; top: 10px; bottom: 10px;
+  width: 1px; background-size: 1px 7px;
+  background-image: linear-gradient(180deg, rgb(42 42 40 / .3) 0 3px, transparent 3px 7px); }
+
+/* The two bites out of a stub's edge. One pseudo-element with a percentage
+   box-shadow offset was the first attempt and drew a single notch: box-shadow
+   lengths do not take percentages. */
+.wanderly-notch::before, .wanderly-notch::after { content: ""; position: absolute; left: 12px;
+  width: 11px; height: 11px; border-radius: 999px; background: var(--w-page); }
+.wanderly-notch::before { top: -6px; }
+.wanderly-notch::after { bottom: -6px; }
+
+/* A clip drawn, not photographed: two rounded outlines, the inner one open at
+   the top so it reads as wire folding back on itself. */
+.wanderly-clip { position: absolute; top: -7px; right: 16px; z-index: 2; width: 13px; height: 30px;
+  border-radius: 7px; border: 1.6px solid rgb(140 146 152 / .85); }
+.wanderly-clip::after { content: ""; position: absolute; left: 2px; top: 6px; width: 5px; height: 18px;
+  border-radius: 4px; border: 1.6px solid rgb(140 146 152 / .55); border-top-color: transparent; }
+
+/* The calendar rules itself, one printed square per day, so a date always sits
+   inside a cell. A separate paper grid underneath was a second, unrelated
+   lattice — that is what read as misaligned. */
+.wanderly-cal-days, .wanderly-cal-dows {
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr));
+  background-position: -1px -1px;
+  background-image:
+    linear-gradient(rgb(90 110 130 / .13) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(90 110 130 / .13) 1px, transparent 1px);
+}
+.wanderly-cal-days { background-size: calc(100% / 7) 17px; }
+.wanderly-cal-dows { background-size: calc(100% / 7) 100%; }
+/* One box model for every cell, marked or not: a nested grid let a highlighted
+   day size itself taller than its neighbours and knocked the runs out of line. */
+.wanderly-cal-day { display: block; height: 17px; line-height: 17px; text-align: center;
+  font-size: 9.5px; font-variant-numeric: tabular-nums; color: var(--w-ink); }
+
 /* A disabled control must not promise the highlight it will not give. */
 .wanderly-cosmos-control:disabled:hover {
   border-color: var(--w-space-line);
@@ -664,83 +830,22 @@
  * the selected location remains visibly connected to the globe beneath it.
  */
 .wanderly-cosmos-destination-drawer {
-  border: 0;
-  background: transparent;
+  --w-destination-line: color-mix(in srgb, var(--w-crt-line), var(--w-fog) 22%);
+  --w-destination-accent: color-mix(in srgb, var(--w-crt-text), var(--w-crt-line) 42%);
+  border: 1.5px solid var(--w-destination-line);
+  border-radius: 6px;
+  background-color: color-mix(in srgb, var(--w-crt-deep), transparent 13%);
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0 3px,
+    rgb(168 216 255 / .025) 3px 4px
+  );
   color: var(--w-fog);
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.wanderly-destination-film {
-  --wanderly-film-edge: #090a0d;
-  --wanderly-film-edge-lit: #282b31;
-  --wanderly-film-hole: #d7d9dc;
-  position: relative;
-  overflow: hidden;
-  padding: 9px 34px;
-  border: 3px solid var(--wanderly-film-edge);
-  background:
-    linear-gradient(90deg, var(--wanderly-film-edge-lit), var(--wanderly-film-edge) 13%, var(--wanderly-film-edge) 87%, var(--wanderly-film-edge-lit));
+  backdrop-filter: blur(16px) saturate(1.08) brightness(0.58);
+  -webkit-backdrop-filter: blur(16px) saturate(1.08) brightness(0.58);
   box-shadow:
-    4px 4px 0 var(--w-ink),
-    0 18px 40px color-mix(in srgb, var(--w-space), transparent 20%),
-    inset 0 0 0 2px color-mix(in srgb, var(--wanderly-film-edge-lit), #000 38%);
-}
-
-.wanderly-destination-film::before,
-.wanderly-destination-film::after {
-  position: absolute;
-  z-index: 2;
-  top: 10px;
-  bottom: 10px;
-  width: 18px;
-  border-radius: 2px;
-  background:
-    repeating-linear-gradient(
-      to bottom,
-      var(--wanderly-film-hole) 0 13px,
-      color-mix(in srgb, var(--wanderly-film-hole), var(--w-ink) 20%) 13px 15px,
-      transparent 15px 29px
-    );
-  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--w-ink), transparent 35%);
-  content: "";
-  pointer-events: none;
-}
-
-.wanderly-destination-film::before { left: 7px; }
-.wanderly-destination-film::after { right: 7px; transform: scaleX(-1); }
-
-.wanderly-destination-film__frame {
-  position: relative;
-  z-index: 1;
-  padding: 16px;
-  border: 1.5px solid var(--w-space-line);
-  background: color-mix(in srgb, #050609, transparent 8%);
-  backdrop-filter: blur(18px) saturate(1.2) brightness(0.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.2) brightness(0.5);
-}
-
-.wanderly-destination-film__frame + .wanderly-destination-film__frame {
-  margin-top: 9px;
-}
-
-.wanderly-destination-film__frame--identity {
-  min-height: 148px;
-}
-
-.wanderly-destination-film__frame--context {
-  min-height: 124px;
-}
-
-.wanderly-destination-film__frame--actions {
-  padding: 13px 16px 16px;
-}
-
-.wanderly-destination-film__frame--actions .wanderly-action,
-.wanderly-destination-film__frame--actions .wanderly-action:hover {
-  background-color: var(--w-white);
-  color: var(--w-ink);
+    4px 5px 0 rgb(2 10 17 / .72),
+    0 20px 42px rgb(2 10 17 / .38);
 }
 
 .wanderly-cosmos-destination-drawer h2 {
@@ -749,10 +854,10 @@
 
 .wanderly-cosmos-destination-close,
 .wanderly-cosmos-destination-secondary,
-.wanderly-cosmos-destination-danger,
-.wanderly-cosmos-destination-label {
-  border: 1.5px solid var(--w-space-line);
-  background: var(--w-space-surface);
+.wanderly-cosmos-destination-danger {
+  border: 1.5px solid var(--w-destination-line);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--w-space-surface), transparent 8%);
   box-shadow: 2px 2px 0 var(--w-ink);
 }
 
@@ -761,16 +866,45 @@
 }
 
 .wanderly-cosmos-destination-kicker {
-  color: var(--w-highlight);
+  display: inline-block;
+  padding-bottom: 3px;
+  border-bottom: 1px solid var(--w-destination-accent);
+  color: var(--w-destination-accent);
 }
 
 .wanderly-cosmos-destination-muted {
   color: var(--w-space-muted);
 }
 
-.wanderly-cosmos-destination-label,
 .wanderly-cosmos-destination-secondary {
   color: var(--w-fog);
+}
+
+.wanderly-cosmos-destination-label {
+  border-left: 2px solid var(--w-destination-accent);
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--w-crt-line), transparent 86%);
+  color: color-mix(in srgb, var(--w-crt-text), var(--w-fog) 18%);
+  box-shadow: none;
+}
+
+.wanderly-cosmos-destination-primary {
+  border: 1.5px solid var(--w-destination-line);
+  border-radius: 4px;
+  background-color: color-mix(in srgb, var(--w-crt-line), var(--w-crt-deep) 38%);
+  background-image: none;
+  color: var(--w-fog);
+  box-shadow: 3px 3px 0 rgb(2 10 17 / .72);
+}
+
+.wanderly-cosmos-destination-primary:hover:not(:disabled) {
+  border-color: var(--w-crt-text);
+  background-color: color-mix(in srgb, var(--w-crt-line), var(--w-crt-deep) 22%);
+}
+
+.wanderly-cosmos-destination-primary:disabled {
+  transform: none;
+  box-shadow: 3px 3px 0 rgb(2 10 17 / .72);
 }
 
 .wanderly-cosmos-destination-secondary:hover,
@@ -912,7 +1046,7 @@
   /* The prompt character. Blinking it is the scene's one perpetual motion —
      opacity on four glyph-widths, which the compositor handles alone. */
   .wanderly-crt-caret {
-    color: var(--w-crt-line);
+    color: var(--w-crt-text);
     animation: wanderly-crt-blink 1.1s steps(1, end) infinite;
   }
 
@@ -994,6 +1128,7 @@
   /* Anything the terminal prints is phosphor, including the placeholder. */
   .wanderly-crt input,
   .wanderly-crt textarea {
+    caret-color: var(--w-crt-text);
     color: var(--w-crt-text);
     font-family: var(--font-mono);
     letter-spacing: .01em;
@@ -1026,6 +1161,7 @@
   }
 
   .wanderly-cosmos-panel { background: var(--w-space-tint); }
+  .wanderly-cosmos-destination-drawer { background: color-mix(in srgb, var(--w-space-tint), #000 10%); }
   .wanderly-cosmos-surface { background: color-mix(in srgb, var(--w-space-tint), #000 34%); }
 }
 

@@ -41,6 +41,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background sm:grid sm:grid-cols-[88px_minmax(0,1fr)]">
       <aside
         data-wanderly-avoid
+        // The explore map canvas runs the full width of the window, under this
+        // rail. The globe camera measures the rail so it can centre the planet
+        // in the strip that is actually uncovered.
+        data-wanderly-rail
         className={cn(
           "relative z-50 flex h-[62px] items-center gap-2 border-b-2 border-[var(--w-ink)] bg-sidebar px-3.5 py-2 text-sidebar-foreground",
           // Long floating navigation card on desktop.
@@ -69,9 +73,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 title={label}
                 className={cn(
                   "grid size-10 place-items-center border-[1.5px] border-[var(--w-ink)] text-[var(--w-ink)] wanderly-r-sm wanderly-press sm:size-11",
+                  // The dashboard's blue, not the mint: the rail is the one
+                  // place the old accent survived, and it disagreed with every
+                  // selected thing on the page it navigates to.
                   active
-                    ? "bg-[var(--w-highlight)] wanderly-shadow-xs"
-                    : "bg-[var(--w-fog)] hover:bg-[var(--w-highlight)] hover:wanderly-shadow-xs",
+                    ? "bg-[var(--w-cal-run)] wanderly-shadow-xs"
+                    : "bg-[var(--w-fog)] hover:bg-[var(--w-cal-run)] hover:wanderly-shadow-xs",
                 )}
               >
                 <Icon aria-hidden="true" className="size-5" />

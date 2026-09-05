@@ -46,11 +46,11 @@
     "signOutFailed": "Sign-out failed. Please try again."
   },
   "home": {
-    "kicker": "Your private travel space",
     "title": "My program",
     "subtitle": "Continue a trip that is taking shape, or tune the private preferences that guide your recommendations.",
     "newTrip": "New trip",
     "newTripError": "We could not create a new trip. Please try again.",
+    "continueTrip": "Continue current plan",
     "summary": {
       "ariaLabel": "Workspace summary",
       "ready": "Your travel space is ready",
@@ -102,7 +102,6 @@
       "action": "Sign in"
     },
     "profile": {
-      "kicker": "Private by default",
       "heading": "Profile snapshot",
       "edit": "Edit profile",
       "departure": "Departure",
@@ -113,7 +112,7 @@
       "emptyAction": "Review Profile setup"
     },
     "trips": {
-      "heading": "Your trips",
+      "heading": "Planner",
       "showing": "Showing {count}",
       "emptyTitle": "No trips yet",
       "emptyBody": "Trips from your account will appear here. Trip creation is a later slice."
@@ -153,6 +152,13 @@
     },
     "fixtures": {
       "tripName": "Asia Trip"
+    },
+    "calendar": {
+      "year": "{year}",
+      "legendPlanning": "In planning",
+      "legendTrip": "Trip dates",
+      "legendToday": "Today",
+      "ariaLabel": "Trip year"
     }
   },
   "profile": {

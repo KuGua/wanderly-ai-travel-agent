@@ -1223,6 +1223,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - Because the brief still has no city, the trip card shows a destination-pending marker and the assistant asks for a specific city — on the chat-text path, not only on map selection.
 - `巴黎` resolves to Paris/FR by population dominance and becomes a real destination; the title becomes `巴黎行程规划` and the label is cleared. `Valencia` stays `422 DESTINATION_UNRESOLVED` because no country dominates.
 - After a manual rename, `name_source='MANUAL'` and no automatic or model path ever overwrites the title.
+- The suggest route returns `MANUAL_LOCKED` or `NOT_DRAFT` from its initial authoritative trip read, before consuming rate-limit quota, reading private messages, or invoking the gateway; the transactional write gate repeats the same checks to cover a rename or status change that races with an in-flight model call.
 - Quota exhaustion returns `RATE_LIMITED` without calling the model. A gateway timeout returns `UNAVAILABLE`; unresolvable model output returns `REJECTED`. In every case the stored title and label are unchanged.
 - The in-flight suggest loses to the concurrent rename and exits through `MANUAL_LOCKED`; the user's own title survives.
 - The invitation preview for a Draft with `name_source='AUTO'` shows a generic localized planner name in the invitee's own language (`?locale=en|zh`, defaulting to `en`) — it discloses neither the destination label nor the confirmed destinations, matching how the same response already redacts `destinationCandidates` and dates. A `MANUAL` Draft title is preserved.
@@ -2916,6 +2917,13 @@ recognizable invented values.
 - Exactly one ACTIVE owner-only selection exists per `(trip, owner, capability, routeKey/stayKey)`; replacement supersedes the earlier selection atomically. No Personal selection enters a Shared snapshot, plan, confirmation or booking path.
 - Duplicate actions are idempotent; stale, cross-owner/thread, expired and superseded actions fail closed. REST recovery restores the same OPEN cue after refresh.
 - Flight and Hotel cooldown/daily counters are independent. Three Flight dismissals mute Flight only until the owner's local midnight; a model-classified explicit Flight choice may bypass mute but still cannot accept an expired or unowned candidate.
+
+## 地球页目的地抽屉深海玻璃回归（2026-09-06）
+
+- 在地球亮区、暗区和星空背景上分别打开目的地抽屉：深海蓝背景保持半透明，淡扫描纹理不干扰正文、次要资料和链接；外框为 6px 圆角，按钮为 4px 圆角，边框与主操作为冷蓝色，界面不出现青绿色主按钮。
+- “仅限本次会话的灵感”以无投影、2px 圆角、左侧蓝色状态线融入抽屉，不呈现为独立厚卡片或胶囊按钮。
+- 关闭、查看灵感、管理图钉和删除仍调用原有行为；删除文字与图标保持红色。按钮 hover、disabled、键盘 focus 状态清晰，主按钮 disabled 时不位移。
+- 开启 `prefers-reduced-transparency` 后抽屉回退为深色实底，文字对比度不依赖 backdrop blur。移动竖屏抽屉仍限制在 70dvh 并可滚动，横屏仍停靠右侧。
 
 ### TS-ACTIVATE-QUOTE-NATIONALITY — 手填国籍必须能通过请求校验
 

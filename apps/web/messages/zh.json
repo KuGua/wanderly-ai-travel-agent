@@ -46,11 +46,11 @@
     "signOutFailed": "退出失败，请重试。"
   },
   "home": {
-    "kicker": "您的私人旅行空间",
     "title": "我的行程",
     "subtitle": "继续规划一段正在成形的旅行，或调整用于指导推荐的私人偏好。",
     "newTrip": "新建规划",
     "newTripError": "暂时无法新建行程，请重试。",
+    "continueTrip": "继续当前规划",
     "summary": {
       "ariaLabel": "工作区概览",
       "ready": "您的旅行空间已就绪",
@@ -102,7 +102,6 @@
       "action": "去登录"
     },
     "profile": {
-      "kicker": "默认私密",
       "heading": "资料快照",
       "edit": "编辑资料",
       "departure": "出发地",
@@ -113,7 +112,7 @@
       "emptyAction": "查看资料设置"
     },
     "trips": {
-      "heading": "您的行程",
+      "heading": "计划簿",
       "showing": "共 {count} 项",
       "emptyTitle": "暂无行程",
       "emptyBody": "您账号下的行程会显示在这里。行程创建将在后续切片中提供。"
@@ -153,6 +152,13 @@
     },
     "fixtures": {
       "tripName": "亚洲之旅"
+    },
+    "calendar": {
+      "year": "{year} 年",
+      "legendPlanning": "计划中",
+      "legendTrip": "行程期间",
+      "legendToday": "今天",
+      "ariaLabel": "行程年历"
     }
   },
   "profile": {

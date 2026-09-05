@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight, Heart, LockKeyhole, MapPinned, Search, Settings2 } from "lucide-react";
-import { useFormatter, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
@@ -14,6 +14,7 @@ import { useOptionalAuth } from "@/lib/auth/auth-provider";
 import type { TripSummary } from "@/lib/api/contracts";
 
 import { TripList } from "./trip-list";
+import { TripYearCalendar, tripRuns, yearsCovered } from "./trip-year-calendar";
 
 type StatusFilter = "active" | "all" | "completed" | "archived";
 
@@ -55,7 +56,6 @@ export function HomeDashboard() {
   const api = useTravelApi();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const fmt = useFormatter();
 
   const [filter, setFilter] = useState<StatusFilter>("active");
   const [searchQuery, setSearchQuery] = useState("");
@@ -72,7 +72,37 @@ export function HomeDashboard() {
     },
   });
 
-  const trips = tripsQuery.data?.trips ?? [];
+  // Memoised, not `?? []`: that literal is a new array on every render, and it
+  // feeds four `useMemo` dependency lists below — each of which then recomputed
+  // every time regardless.
+  const trips = useMemo(() => tripsQuery.data?.trips ?? [], [tripsQuery.data]);
+  // `YYYY-MM-DD` in the reader's own zone. `toISOString()` would answer in UTC
+  // and highlight yesterday for anyone east of Greenwich after 00:00 local.
+  const todayIso = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  }, []);
+  const calendarRuns = useMemo(() => tripRuns(trips), [trips]);
+  /* The plan the reader is most likely coming back to finish. Restored from
+     the hero card that used to sit above the calendar: the card itself said
+     little the trip's own note does not, but "take me back to the one I was
+     in the middle of" was the one thing on it the list cannot do — the list
+     is sorted, not ranked, and with twenty notes the live one is not on top.
+     An unfinished private exploration outranks a plan already under way,
+     because it is the one still waiting on the traveller rather than on us. */
+  const currentTrip = useMemo(() => {
+    const live = trips.filter((trip) => !isArchivedTrip(trip));
+    return live.find((trip) => trip.status === "DRAFT")
+      ?? live.find((trip) => trip.status === "STALE" || trip.status === "PLANNING")
+      ?? null;
+  }, [trips]);
+  // The year the traveller is most likely asking about: this one when it has
+  // trips, otherwise the nearest year that does.
+  const calendarYear = useMemo(() => {
+    const current = Number(todayIso.slice(0, 4));
+    const years = yearsCovered(calendarRuns, current);
+    return years.includes(current) ? current : years[years.length - 1];
+  }, [calendarRuns, todayIso]);
 
   const statusCounts = useMemo(() => {
     const counts = { active: 0, completed: 0, archived: 0 };
@@ -93,15 +123,6 @@ export function HomeDashboard() {
       .filter((trip) => matchesSearch(trip, searchQuery));
   }, [trips, filter, searchQuery]);
 
-  const heroTrip = useMemo(() => {
-    const visibleTrips = trips.filter((trip) => !isArchivedTrip(trip));
-    // Returning to an unfinished private exploration is the most immediate
-    // action, so surface a Draft before an in-progress or stale plan.
-    return visibleTrips.find((trip) => trip.status === "DRAFT")
-      ?? visibleTrips.find((trip) => trip.status === "STALE" || trip.status === "PLANNING")
-      ?? null;
-  }, [trips]);
-
   const filters: { key: StatusFilter; count: number }[] = [
     { key: "active", count: statusCounts.active },
     { key: "all", count: trips.length },
@@ -113,138 +134,164 @@ export function HomeDashboard() {
     <main className="mx-auto w-full max-w-[1240px] px-5 py-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
       <header className="flex flex-wrap items-start justify-between gap-6">
         <div>
-          <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
-            {tHome("kicker")}
-          </p>
-          <h1 className="mt-2 text-[clamp(2.25rem,5vw,3rem)] font-bold leading-none tracking-[-0.055em]">
-            {tHome("title")}
+          {/* No kicker. The brushed title carries the page on its own, and the
+              line said what the sign-in copy and the profile column already do. */}
+          <h1 className="text-[clamp(1.75rem,3.6vw,2.35rem)] font-semibold leading-none tracking-[-0.04em] text-[var(--w-ink)]/85">
+            <span className="wanderly-brush">{tHome("title")}</span>
           </h1>
-          <p className="mt-3 max-w-xl text-base text-muted-foreground">
-            {tHome("subtitle")}
-          </p>
         </div>
-        <button
-          type="button"
-          onClick={() => startTrip.mutate()}
-          disabled={startTrip.isPending}
-          className="inline-flex min-h-12 items-center gap-2 px-5 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[17px] fill-none stroke-current stroke-[2.4px]">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
-          {startTrip.isPending ? tCommon("loadingTrips") : tHome("newTrip")}
-        </button>
+        {/* The two ways into a plan, in the filter chips' outline: the heavy
+            edge and hard shadow made one button shout across a page whose
+            every other control had just been quietened. Fill still separates
+            them — starting something new is the page's own action, resuming
+            is a link into a trip. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => startTrip.mutate()}
+            disabled={startTrip.isPending}
+            /* The selected filter's blue, not the mint `wanderly-action`. Scoped
+               to this page: that class is shared by twelve other files, and the
+               brief was these two controls, not every primary button. */
+            className="inline-flex min-h-12 items-center gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-[var(--w-cal-run)] px-5 text-sm font-semibold text-[var(--w-ink)] transition-colors hover:bg-[color-mix(in_srgb,var(--w-cal-run),var(--w-ink)_10%)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[17px] fill-none stroke-current stroke-[2.4px]">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            {startTrip.isPending ? tCommon("loadingTrips") : tHome("newTrip")}
+          </button>
+          {/* Absent rather than disabled when there is nothing in progress: a
+              greyed-out "no plan yet" is a control explaining its own
+              uselessness, and a reader with no trips has the new-plan button
+              right beside it. */}
+          {currentTrip ? (
+            <Link
+              href={`/trips/${currentTrip.id}` as "/trips/[tripId]"}
+              className="inline-flex min-h-12 items-center gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-card px-5 text-sm font-semibold text-[var(--w-ink)] transition-colors hover:bg-[var(--w-mist)]"
+            >
+              <ArrowRight aria-hidden="true" className="size-[15px]" />
+              <span>{tHome("continueTrip")}</span>
+              {/* The trip's own name, so the control says which plan it will
+                  open rather than making the reader click to find out. */}
+              <span className="max-w-[13ch] truncate font-normal text-[var(--w-ink)]/60">{currentTrip.name}</span>
+            </Link>
+          ) : null}
+        </div>
       </header>
       {startTrip.isError ? <p role="alert" className="mt-3 text-sm font-semibold text-destructive">{tHome("newTripError")}</p> : null}
 
-      {/* Summary cards */}
+      {/* The year, and the profile beside it. Four summary tiles and three
+          profile tiles used to stack down the page restating counts the trip
+          list already showed; the calendar answers "when is the year busy",
+          which a number cannot, and the profile rides along in the space that
+          leaves rather than claiming a band of its own. */}
       <section
-        className="my-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.45fr_repeat(3,1fr)]"
-        aria-label={tHome("summary.ariaLabel")}
+        className="wanderly-pad my-8 overflow-hidden bg-card wanderly-edge"
+        aria-label={tHome("calendar.ariaLabel")}
       >
-        <article className="flex min-h-[116px] items-center gap-4 bg-card p-[18px] wanderly-edge wanderly-r-lg wanderly-shadow sm:col-span-2 lg:col-span-1">
-          <span
-            className="relative grid size-[55px] shrink-0 place-items-center bg-[var(--w-info)] text-xl font-black text-[var(--w-ink)] wanderly-edge wanderly-r-md wanderly-shadow-sm"
-            aria-hidden="true"
-          >
-            {tCommon("brandGlyph")}
-          </span>
-          <div>
-            <p className="text-[13px] text-muted-foreground">{tHome("summary.ready")}</p>
-            <strong className="mt-0.5 block text-[17px] tracking-[-0.04em]">
-              {statusCounts.active > 0
-                ? tHome("summary.activeTripsHeadline", { count: statusCounts.active })
-                : tHome("summary.privacyHeadline")}
-            </strong>
+        {/* One panel, the two halves the same height because grid rows stretch.
+            Two separate cards left a gutter between things that are read
+            together, and let the shorter one end early. The margin column is a
+            fixed width rather than a fraction: it holds three short fields, so
+            it should not grow with the window the way the year does. */}
+        <div className="grid lg:grid-cols-[minmax(0,1fr)_296px]">
+          <div className="min-w-0">
+            <TripYearCalendar year={calendarYear} runs={calendarRuns} today={todayIso} />
           </div>
-        </article>
-        <SummaryCard
-          label={tHome("summary.activeLabel")}
-          value={String(statusCounts.active)}
-          detail={tHome("summary.activeDetail")}
-        />
-        <SummaryCard
-          label={tHome("summary.completedLabel")}
-          value={String(statusCounts.completed)}
-          detail={tHome("summary.completedDetail")}
-        />
-        <SummaryCard
-          label={tHome("summary.archivedLabel")}
-          value={String(statusCounts.archived)}
-          detail={tHome("summary.archivedDetail")}
-        />
-      </section>
 
-      {/* Profile snapshot */}
-      <section aria-labelledby="profile-heading">
-        <div className="mb-3 flex items-end justify-between gap-4">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
-              {tHome("profile.kicker")}
-            </p>
-            <h2 id="profile-heading" className="mt-1 text-xl font-bold tracking-[-0.035em]">
+          <section
+            aria-labelledby="profile-heading"
+            /* A shaded margin column rather than a second white field: the
+               calendar half carries printed ruling, so an untextured white
+               beside it read as a brighter, separate sheet. */
+            className="min-w-0 border-t-2 border-[var(--w-ink)] bg-[var(--w-mist)] p-4 lg:border-l-2 lg:border-t-0"
+          >
+            <div className="mb-3 flex items-end justify-between gap-3">
+            {/* No kicker here. In a 268px column it wrapped to two lines and
+                took more room than the heading it was labelling, and the page
+                already says "private by default" over its own title. */}
+            <h2 id="profile-heading" className="text-lg font-bold tracking-[-0.035em]">
               {tHome("profile.heading")}
             </h2>
-          </div>
-          <Link
-            href="/profile"
-            className="inline-flex min-h-11 items-center gap-2 rounded-[14px] px-3 text-sm font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
-          >
-            <Settings2 aria-hidden="true" className="size-4" /> {tHome("profile.edit")}
-          </Link>
-        </div>
-        {isCheckingSession || (isAuthenticated && profileQuery.isPending) ? <LoadingState label={tCommon("loadingProfile")} /> : null}
-        {!isCheckingSession && !isAuthenticated ? <PrivateDataSignInRequired subject="profile" /> : null}
-        {isAuthenticated && profileQuery.isError ? (
-          <ErrorState error={profileQuery.error} title={tHome("errorStateProfileUnavailable")} />
-        ) : null}
-        {isAuthenticated && profileQuery.data?.profile ? (
-          <div className="grid gap-0.5 overflow-hidden bg-[var(--w-ink)] wanderly-edge wanderly-r-lg wanderly-shadow sm:grid-cols-3">
-            <SummaryItem
-              icon={MapPinned}
-              label={tHome("profile.departure")}
-              value={profileQuery.data.profile.departureCity ?? tHome("summary.notSet")}
-            />
-            <SummaryItem
-              icon={Heart}
-              label={tHome("profile.interests")}
-              value={
-                profileQuery.data.profile.interests?.length
-                  ? profileQuery.data.profile.interests.join(", ")
-                  : tHome("summary.notSet")
-              }
-            />
-            <SummaryItem
-              icon={Settings2}
-              label={tHome("profile.stayStyle")}
-              value={
-                profileQuery.data.profile.accommodationStyle
-                  ? tHome(
-                      `trip.accommodation.${profileQuery.data.profile.accommodationStyle}`,
-                    )
-                  : tHome("summary.notSet")
-              }
-            />
-          </div>
-        ) : null}
-        {isAuthenticated && profileQuery.data?.profile === null ? (
-          <div className="border-2 border-dashed border-[var(--w-ink)] bg-card p-7 wanderly-r-lg">
-            <h3 className="font-bold">{tHome("profile.emptyTitle")}</h3>
-            <p className="mt-2 text-sm text-muted-foreground">{tHome("profile.emptyBody")}</p>
             <Link
               href="/profile"
-              className="mt-4 inline-flex min-h-11 items-center font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+              /* The same hue as the button, taken 52% toward ink: at the
+                 button's own value this is 1.6:1 on paper and unreadable. */
+              className="inline-flex min-h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-[14px] px-2 text-[13px] font-bold text-[color-mix(in_srgb,var(--w-cal-run),var(--w-ink)_52%)] hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
             >
-              {tHome("profile.emptyAction")}
+              <Settings2 aria-hidden="true" className="size-4" /> {tHome("profile.edit")}
             </Link>
           </div>
-        ) : null}
+          {isCheckingSession || (isAuthenticated && profileQuery.isPending) ? <LoadingState label={tCommon("loadingProfile")} /> : null}
+          {!isCheckingSession && !isAuthenticated ? <PrivateDataSignInRequired subject="profile" /> : null}
+          {isAuthenticated && profileQuery.isError ? (
+            <ErrorState error={profileQuery.error} title={tHome("errorStateProfileUnavailable")} />
+          ) : null}
+          {/* Rows on the panel, not a card inside a card: the ink-gap grid and
+              its own edge and shadow were a second frame drawn just inside the
+              first one. */}
+          {isAuthenticated && profileQuery.data?.profile ? (
+            <div className="divide-y divide-[var(--w-ink)]/12">
+              <SummaryItem
+                icon={MapPinned}
+                label={tHome("profile.departure")}
+                value={profileQuery.data.profile.departureCity ?? tHome("summary.notSet")}
+              />
+              <SummaryItem
+                icon={Heart}
+                label={tHome("profile.interests")}
+                value={
+                  profileQuery.data.profile.interests?.length
+                    ? profileQuery.data.profile.interests.join(", ")
+                    : tHome("summary.notSet")
+                }
+              />
+              <SummaryItem
+                icon={Settings2}
+                label={tHome("profile.stayStyle")}
+                value={
+                  profileQuery.data.profile.accommodationStyle
+                    ? tHome(
+                        `trip.accommodation.${profileQuery.data.profile.accommodationStyle}`,
+                      )
+                    : tHome("summary.notSet")
+                }
+              />
+            </div>
+          ) : null}
+          {isAuthenticated && profileQuery.data?.profile === null ? (
+            <div className="border-2 border-dashed border-[var(--w-ink)] bg-card p-5 wanderly-r-lg">
+              <h3 className="font-bold">{tHome("profile.emptyTitle")}</h3>
+              <p className="mt-2 text-sm text-muted-foreground">{tHome("profile.emptyBody")}</p>
+              <Link
+                href="/profile"
+                className="mt-4 inline-flex min-h-11 items-center font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/30"
+              >
+                {tHome("profile.emptyAction")}
+              </Link>
+            </div>
+          ) : null}
+          </section>
+        </div>
       </section>
 
-      {/* Trips section */}
-      <section className="mt-10" aria-labelledby="trips-heading">
-        {/* Filter toolbar */}
-        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      {/* The trips get a leaf of their own, lighter than the year above: a
+          hairline and a soft drop rather than the pad's ink edge and page
+          stack, so the notes still read as pinned onto it rather than framed
+          by a second heavy panel. */}
+      <section
+        className="mt-8 rounded-[14px] border border-[var(--w-ink)]/10 bg-[color-mix(in_srgb,var(--w-card,#fff),var(--w-fog)_28%)] p-5 shadow-[0_1px_2px_rgb(42_42_40/.05),0_14px_30px_-24px_rgb(42_42_40/.5)] sm:p-6"
+        aria-labelledby="trips-heading"
+      >
+        {/* Trip grid. The filters live on this heading rather than beside the
+            "continue planning" card: that card only renders for the active
+            filter with no search, so filters placed there would disappear the
+            moment someone chose "archived" — the control removing itself. */}
+        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 id="trips-heading" className="text-lg font-semibold tracking-[-0.025em] text-[var(--w-ink)]/80">
+              {tHome("trips.heading")}
+            </h2>
           <div className="flex flex-wrap gap-2" role="group" aria-label={tHome("filter.ariaLabel")}>
             {filters.map(({ key, count }) => (
               <button
@@ -252,9 +299,13 @@ export function HomeDashboard() {
                 type="button"
                 aria-pressed={filter === key}
                 onClick={() => setFilter(key)}
-                className={`inline-flex min-h-[39px] items-center gap-1.5 px-3.5 py-[7px] text-sm font-extrabold text-[var(--w-ink)] wanderly-edge wanderly-r-sm wanderly-press ${
+                /* Colour alone marks the selection. The hard shadow and the
+                   press offset made choosing a filter feel like throwing a
+                   switch, four of which sat in a row above a list that simply
+                   redraws. */
+                className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-[10px] border border-[var(--w-ink)]/10 px-3.5 py-[6px] text-sm font-semibold text-[var(--w-ink)] transition-colors ${
                   filter === key
-                    ? "bg-[var(--w-highlight)] wanderly-shadow-xs"
+                    ? "bg-[var(--w-cal-run)]"
                     : "bg-card hover:bg-[var(--w-mist)]"
                 }`}
               >
@@ -265,7 +316,9 @@ export function HomeDashboard() {
               </button>
             ))}
           </div>
-          <label className="flex min-h-[42px] w-full items-center gap-2 bg-card px-3 wanderly-edge wanderly-r-sm sm:w-[min(250px,100%)]">
+          </div>
+          <div className="flex items-center gap-4">
+          <label className="flex min-h-[42px] w-full items-center gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-card px-3 sm:w-[min(250px,100%)]">
             <Search aria-hidden="true" className="size-[17px] text-[var(--w-ink)]" />
             <input
               type="search"
@@ -276,82 +329,10 @@ export function HomeDashboard() {
               className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-[var(--w-ink)] placeholder:opacity-60"
             />
           </label>
-        </div>
-
-        {/* Hero "continue" card */}
-        {heroTrip && filter === "active" && !searchQuery ? (
-          <section className="mb-6" aria-label={tHome("hero.ariaLabel")}>
-            <div className="mb-3 flex items-center justify-between gap-4">
-              <h2 className="text-xl font-bold tracking-[-0.035em]">{tHome("hero.heading")}</h2>
-              <span className="text-[13px] font-bold text-muted-foreground">{tHome("hero.needsAction")}</span>
-            </div>
-            <article className="grid overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow-lg sm:grid-cols-[170px_minmax(0,1fr)_auto] lg:grid-cols-[200px_minmax(0,1fr)_auto]">
-              <div className="relative min-h-[120px] overflow-hidden border-b-2 border-[var(--w-ink)] bg-[var(--w-fog)] sm:min-h-0 sm:border-b-0 sm:border-r-2" aria-hidden="true">
-                <span className="absolute -left-5 top-[30px] h-[110px] w-[210px] -rotate-[18deg] rounded-[50%] border-2 border-dashed border-[var(--w-primary)]" />
-                <span className="absolute left-[74px] top-[69px] size-[21px] -rotate-45 rounded-[50%_50%_50%_5px] border-[3px] border-[var(--w-ink)] bg-[var(--w-highlight)]" />
-              </div>
-              <div className="p-5 sm:p-6">
-                <span className="inline-flex items-center gap-1.5 bg-[var(--w-fog)] px-2.5 py-1 text-xs font-black text-[var(--w-ink)] wanderly-edge wanderly-r-xs">
-                  <span className="size-[7px] rounded-full bg-current" />
-                  {heroTrip.status === "DRAFT"
-                    ? tHome("hero.draftBadge")
-                    : heroTrip.status === "STALE"
-                      ? tHome("hero.staleBadge")
-                      : tHome("hero.planningBadge")}
-                </span>
-                <h3 className="mt-2 text-2xl font-bold tracking-[-0.045em]">{heroTrip.name}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {heroTrip.status === "DRAFT"
-                    ? tHome("hero.draftBody")
-                    : heroTrip.status === "STALE"
-                      ? tHome("hero.staleBody")
-                      : tHome("hero.planningBody")}
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {heroTrip.departureCities.length > 0 || heroTrip.memberCount > 0 ? (
-                    <span className="bg-card px-2 py-1 text-xs font-bold text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
-                      {tHome("trip.members", { count: heroTrip.memberCount })}
-                    </span>
-                  ) : null}
-                  {heroTrip.travelDateStart && heroTrip.travelDateEnd ? (
-                    <span className="rounded-lg bg-secondary px-2 py-1 text-xs font-bold text-secondary-foreground">
-                      {fmt.dateTime(new Date(heroTrip.travelDateStart), { dateStyle: "medium" })}
-                      {" – "}
-                      {fmt.dateTime(new Date(heroTrip.travelDateEnd), { dateStyle: "medium" })}
-                    </span>
-                  ) : null}
-                  {heroTrip.destinationCandidates.length > 0 ? (
-                    <span className="rounded-lg bg-secondary px-2 py-1 text-xs font-bold text-secondary-foreground">
-                      {heroTrip.destinationCandidates.join(" · ")}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="flex items-center justify-center p-5">
-                <Link
-                  href={`/trips/${heroTrip.id}` as "/trips/[tripId]"}
-                  className="inline-flex min-h-[45px] items-center gap-2 px-4 text-sm font-extrabold wanderly-edge wanderly-r-md wanderly-shadow wanderly-press wanderly-action"
-                >
-                  {heroTrip.status === "DRAFT"
-                    ? tHome("hero.draftCta")
-                    : heroTrip.status === "STALE"
-                      ? tHome("hero.reviewCta")
-                      : tHome("hero.continueCta")}
-                  <ArrowRight aria-hidden="true" className="size-4" />
-                </Link>
-              </div>
-            </article>
-          </section>
-        ) : null}
-
-        {/* Trip grid */}
-        <div className="flex items-center justify-between gap-4 mb-3">
-          <h2 id="trips-heading" className="text-xl font-bold tracking-[-0.035em]">
-            {tHome("trips.heading")}
-          </h2>
-          <span className="text-[13px] font-bold text-muted-foreground" role="status" aria-atomic="true">
-            {tHome("trips.showing", { count: filteredTrips.length })}
-          </span>
+            <span className="shrink-0 text-[13px] font-bold text-muted-foreground" role="status" aria-atomic="true">
+              {tHome("trips.showing", { count: filteredTrips.length })}
+            </span>
+          </div>
         </div>
         {isCheckingSession || (isAuthenticated && tripsQuery.isPending) ? <LoadingState label={tCommon("loadingTrips")} /> : null}
         {!isCheckingSession && !isAuthenticated ? <PrivateDataSignInRequired subject="trips" /> : null}
@@ -364,6 +345,12 @@ export function HomeDashboard() {
   );
 }
 
+/**
+ * Container queries, not `sm:`. This block appears both full-width under the
+ * trip grid and inside a 296px margin column, and a viewport breakpoint cannot
+ * tell those apart: on a wide screen the narrow copy still laid itself out
+ * side-by-side and squeezed its own text to one word a line.
+ */
 function PrivateDataSignInRequired({ subject }: { subject: "profile" | "trips" }) {
   const tHome = useTranslations("home");
   const isProfile = subject === "profile";
@@ -371,8 +358,8 @@ function PrivateDataSignInRequired({ subject }: { subject: "profile" | "trips" }
   const body = tHome(isProfile ? "signInRequired.profileBody" : "signInRequired.tripsBody");
 
   return (
-    <section className="w-full border-2 border-dashed border-[var(--w-ink)]/55 bg-[var(--w-mist)] p-5 wanderly-r-lg sm:px-6" aria-label={title}>
-      <div className="flex min-h-[108px] flex-col justify-between gap-4 sm:flex-row sm:items-center sm:gap-8">
+    <section className="@container w-full border-2 border-dashed border-[var(--w-ink)]/55 bg-[var(--w-mist)] p-5 wanderly-r-lg @lg:px-6" aria-label={title}>
+      <div className="flex min-h-[108px] flex-col justify-between gap-4 @lg:flex-row @lg:items-center @lg:gap-8">
         <div className="flex min-w-0 max-w-2xl items-start gap-3">
           <LockKeyhole aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div>
@@ -391,24 +378,6 @@ function PrivateDataSignInRequired({ subject }: { subject: "profile" | "trips" }
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
-  return (
-    <article className="min-h-[116px] bg-card p-[18px] wanderly-edge wanderly-r-lg wanderly-shadow">
-      <p className="text-[13px] text-muted-foreground">{label}</p>
-      <strong className="mt-0.5 block text-2xl tracking-[-0.04em]">{value}</strong>
-      <p className="mt-1 text-[13px] text-muted-foreground">{detail}</p>
-    </article>
-  );
-}
-
 function SummaryItem({
   icon: Icon,
   label,
@@ -419,8 +388,8 @@ function SummaryItem({
   value: string;
 }) {
   return (
-    <div className="bg-card p-5">
-      <Icon aria-hidden="true" className="mb-3 size-5 text-[var(--w-ink)]" />
+    <div className="py-3.5 first:pt-0 last:pb-0">
+      <Icon aria-hidden="true" className="mb-2 size-[18px] text-[var(--w-ink)]" />
       <p className="text-[11px] font-black uppercase tracking-[0.11em] text-muted-foreground">
         {label}
       </p>
