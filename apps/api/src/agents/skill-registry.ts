@@ -260,6 +260,28 @@ export async function invokeSkill<I, O>(
   let attempt = 0;
   let lastError: unknown = undefined;
 
+  /**
+   * Terminal failure of an invocation. The success path leaves a
+   * `SKILL_INVOKE` audit row; the failure path used to leave only a metric,
+   * so a Skill that failed its own output validation was invisible in the
+   * logs — the caller's gap code was the only trace, and it named the
+   * supplier. Bounded fields only: skill name, typed code, attempt count.
+   * Never the exception message, which can carry provider or user text.
+   */
+  const giveUp = (err: unknown) => {
+    const outcome = skillOutcome(err);
+    recordSkillMetrics(skill, startedAt, outcome);
+    logSafeRuntimeEvent(ctx.ctx, {
+      component: "worker",
+      event: "skill",
+      operation: name,
+      outcome: "failure",
+      errorCode: err instanceof SkillError ? err.code : "UNCLASSIFIED",
+      attempt,
+      latencyMs: Date.now() - startedAt,
+    });
+  };
+
   while (attempt < maxAttempts) {
     attempt += 1;
     try {
@@ -300,23 +322,23 @@ export async function invokeSkill<I, O>(
       lastError = err;
       // Caller cancellation never retries.
       if (options.signal?.aborted) {
-        recordSkillMetrics(skill, startedAt, skillOutcome(err));
+        giveUp(err);
         throw err;
       }
       // No retry declared and we've used our single attempt.
       if (!retry || attempt >= maxAttempts) {
-        recordSkillMetrics(skill, startedAt, skillOutcome(err));
+        giveUp(err);
         throw err;
       }
       // Non-retryable code (e.g. POLICY_DENIED, INPUT_INVALID) — stop here.
       if (!isRetryableError(err, retry.retryOn)) {
-        recordSkillMetrics(skill, startedAt, skillOutcome(err));
+        giveUp(err);
         throw err;
       }
       // Retry budget consumed? Even when maxAttempts>1, refuse to retry if
       // we have nothing left.
       if (attempt >= maxAttempts) {
-        recordSkillMetrics(skill, startedAt, skillOutcome(err));
+        giveUp(err);
         throw err;
       }
       const delay = retryDelayMs(retry, attempt, isRateLimited(err));

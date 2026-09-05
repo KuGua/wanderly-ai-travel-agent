@@ -12,12 +12,26 @@ const gapLabels: Record<string, Record<string, string>> = {
     UPSTREAM_FAILURE: "The provider was temporarily unavailable.",
     UPSTREAM_TIMEOUT: "The provider request timed out.",
     NOT_CONFIGURED: "This provider is not configured.",
+    RATE_LIMITED: "The provider's request quota was exhausted.",
+    PROVIDER_NOT_APPROVED: "This provider has not authorised the request.",
+    PROVIDER_REQUEST_REJECTED: "The provider refused the request — the parameters are ours to repair, not an outage.",
+    INVALID_PROVIDER_RESPONSE: "The provider's answer did not match its documented shape.",
+    SEARCH_CONSTRAINTS_INCOMPLETE: "The search was missing a required constraint.",
+    // Deliberately does not mention the supplier. This code exists precisely
+    // because the search may well have succeeded.
+    SKILL_CONTRACT_VIOLATION: "A result was rejected by our own validation, not by the provider. Recorded for repair; retrying will not help.",
   },
   zh: {
     NO_RESULTS: "未返回可验证的结果。",
     UPSTREAM_FAILURE: "服务提供方暂时不可用。",
     UPSTREAM_TIMEOUT: "服务提供方请求超时。",
     NOT_CONFIGURED: "该服务提供方尚未配置。",
+    RATE_LIMITED: "服务提供方的请求配额已用尽。",
+    PROVIDER_NOT_APPROVED: "该服务提供方未授权本次请求。",
+    PROVIDER_REQUEST_REJECTED: "服务提供方拒绝了本次请求——这是我们的参数问题，不是对方故障。",
+    INVALID_PROVIDER_RESPONSE: "服务提供方的返回不符合其约定格式。",
+    SEARCH_CONSTRAINTS_INCOMPLETE: "本次搜索缺少必需的约束条件。",
+    SKILL_CONTRACT_VIOLATION: "结果被我们自己的校验拒绝，不是服务提供方的问题。已记录待修复，重试无效。",
   },
 };
 

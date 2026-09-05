@@ -217,6 +217,11 @@ export async function buildApp(options: BuildAppOptions = {}) {
     // Keep this allow-list aligned with the API's browser-facing routes.
     // In particular, creator-confirmed draft brief updates use PATCH.
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    // Without this the browser cannot read either header cross-origin, so the
+    // web app's "technical details" line rendered "correlation id: null" on
+    // every client-side failure — the one field an operator would use to find
+    // the request in the logs. Both are server-minted ids, never user data.
+    exposedHeaders: ["x-correlation-id", "x-request-id"],
   });
 
   app.addHook("onRequest", async (request) => {

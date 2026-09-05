@@ -2,7 +2,7 @@ import { z } from "zod";
 import { db } from "../db/database.js";
 import { planningResearchResults, researchResultStatusEnum } from "../db/schema.js";
 import type { RequestContext } from "../utils/context.js";
-import type { PlanningResearchResult, ServiceCapability, ProviderUnavailableCode, ResearchResultStatus } from "../types/domain.js";
+import type { PlanningResearchResult, ServiceCapability, ServiceGapCode, ResearchResultStatus } from "../types/domain.js";
 import { recordAudit } from "./audit-service.js";
 
 /**
@@ -35,9 +35,22 @@ export const providerUnavailableCodeSchema = z.enum([
   "PROVIDER_REQUEST_REJECTED",
 ]);
 
+/**
+ * A gap can also be ours: `SKILL_CONTRACT_VIOLATION` is raised by the
+ * orchestrator when a Skill's own input/output contract rejected a legitimate
+ * provider answer. It is not in `providerUnavailableCodeSchema` because no
+ * adapter may produce it. Persistence must accept it — a narrower gate here
+ * would fail the write and lose the very outcome the run is trying to report,
+ * which is the same shape of bug this code exists to name.
+ */
+export const serviceGapCodeSchema = z.enum([
+  ...providerUnavailableCodeSchema.options,
+  "SKILL_CONTRACT_VIOLATION",
+]);
+
 export const serviceGapSchema = z.object({
   capability: serviceCapabilitySchema,
-  code: providerUnavailableCodeSchema,
+  code: serviceGapCodeSchema,
   destinationId: z.string().min(1).max(64).optional(),
 }).strict();
 
@@ -118,7 +131,7 @@ export function toResearchResultDto(row: {
   snapshotId: string;
   agentTaskRunId: string | null;
   status: ResearchResultStatus;
-  serviceGaps: Array<{ capability: ServiceCapability; code: ProviderUnavailableCode; destinationId?: string }>;
+  serviceGaps: Array<{ capability: ServiceCapability; code: ServiceGapCode; destinationId?: string }>;
   resultPlanId: string | null;
   createdAt: Date;
 }): PlanningResearchResult {

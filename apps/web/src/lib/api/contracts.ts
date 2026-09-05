@@ -1580,7 +1580,12 @@ export const tripPlaceActionResponseSchema = z.object({
   status: tripPlaceStatusSchema,
 }).strict();
 
-export const serviceCapabilitySchema = z.enum(["flight", "stay", "hotel", "accommodation", "activities", "navigation", "transit", "mobility"]);
+// Mirrors `ServiceCapability` in apps/api/src/types/domain.ts exactly. It
+// used to omit "places" and "readiness", both of which the orchestrator
+// can and does emit: a run that reported a `places` gap failed this parse
+// and blanked the whole planning-run detail page behind a generic "something
+// went wrong", hiding the very outcome the page exists to explain.
+export const serviceCapabilitySchema = z.enum(["flight", "stay", "hotel", "accommodation", "activities", "places", "navigation", "transit", "mobility", "readiness"]);
 export const providerUnavailableCodeSchema = z.enum([
   "NOT_CONFIGURED",
   "SEARCH_CONSTRAINTS_INCOMPLETE",
@@ -1595,9 +1600,18 @@ export const providerUnavailableCodeSchema = z.enum([
   "PROVIDER_REQUEST_REJECTED",
 ]);
 
+// A gap can also be ours rather than a supplier's — see `InternalGapCode` in
+// apps/api/src/types/domain.ts. Mirrored here for the same reason as
+// PROVIDER_REQUEST_REJECTED: an unknown value fails the response parse and
+// blanks the surface.
+export const serviceGapCodeSchema = z.enum([
+  ...providerUnavailableCodeSchema.options,
+  "SKILL_CONTRACT_VIOLATION",
+]);
+
 export const serviceGapSchema = z.object({
   capability: serviceCapabilitySchema,
-  code: providerUnavailableCodeSchema,
+  code: serviceGapCodeSchema,
   destinationId: z.string().optional(),
 }).strict();
 

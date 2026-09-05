@@ -2470,6 +2470,39 @@ logs could say which parameter it objected to.
   Web mirror, the bounded metric label and the service-gap payload — so the new
   value never blanks a surface through a failed response parse.
 
+### TS-GAP-ATTRIBUTION — 我们自己的失败不得报成供应商故障
+
+**Objective:** 同一趟 trip 的第二层问题。就算输出契约都对齐了，下一次任何
+schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按错误**文本**分类、
+兜底 `UPSTREAM_FAILURE`，且整个 catch 不记日志。
+
+**Steps:**
+
+1. 让一个能力抛出 `OUTPUT_INVALID` / `INPUT_INVALID` / `SCHEMA_PARSE` /
+   `SKILL_VERSION_MISMATCH`。
+2. 抛出一个 `POLICY_DENIED`，但把 "upstream"、"timeout"、"rate" 都塞进它的
+   message。
+3. 抛出真正的 `NETWORK` / `UPSTREAM_5XX` / `UPSTREAM_FAILURE`。
+4. 抛出一个非 `SkillError` 的普通 `Error`。
+5. 让持久化、Web 契约镜像与详情页文案表分别接收 `SKILL_CONTRACT_VIOLATION`
+   与 `places` / `readiness` 能力。
+
+**Expected outcomes:**
+
+- 契约类错误映射为 `SKILL_CONTRACT_VIOLATION`，界面文案明确说明「不是服务提供方的
+  问题、重试无效」，不出现任何指向供应商健康度的措辞。
+- 分类按 `SkillError.code` 而不是 message：带误导性关键词的 `POLICY_DENIED`
+  仍映射为 `SEARCH_CONSTRAINTS_INCOMPLETE`。
+- 真实上游故障仍映射为 `UPSTREAM_FAILURE`；非 `SkillError` 保留子串兜底。
+- `SKILL_CONTRACT_VIOLATION` 端到端可用：服务端 `serviceGapSchema` 落库、
+  Web 镜像 enum 解析、详情页有本地化文案。Web 的能力镜像必须与
+  `ServiceCapability` 逐项一致——缺 `places` / `readiness` 会让携带该能力的响应
+  解析失败，把整页变成一句「出错了，请重试」。
+- 每一次能力失败在 worker 日志里留下一条受控诊断（能力/skill 名、类型码、
+  attempt、耗时），且不含异常消息原文。
+- 跨源可读性：`x-correlation-id` 在 CORS `exposedHeaders` 中，界面「技术详情」
+  不再恒为 `null`。
+
 ### TS-SKILL-OUTPUT-CONTRACT — Skill 输出上界必须容纳 provider 的合法输出
 
 **Objective:** Regression for the same 2026-09-05 trip as `TS-PROVIDER-4XX`.
