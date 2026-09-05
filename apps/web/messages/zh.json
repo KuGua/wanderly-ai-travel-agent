@@ -426,7 +426,10 @@
       "destinationCueAcceptAdditional": "把 {destination} 加入这趟行程",
       "destinationCueDismiss": "先不设置",
       "destinationCueSaving": "正在保存…",
-      "destinationCueSaved": "已将 {destination} 保存为这趟行程的目的地。"
+      "destinationCueSaved": "已将 {destination} 保存为这趟行程的目的地。",
+      "retrySharedPlanTitle": "重新规划",
+      "retrySharedPlanBody": "上一轮规划没有产出可用方案。行程信息保持不变，可以直接再跑一轮。",
+      "retrySharedPlanConfirm": "重新规划"
     },
     "unavailableHeading": "地球加载失败",
     "unavailableBody": "您仍可以在下方选择目的地。当前网络可能无法访问地图。",

@@ -1,4 +1,5 @@
 import { eq, and, asc, count, desc, inArray, sql, type SQL } from "drizzle-orm";
+import { loadSharedPlanningState } from "../services/shared-planning-state-service.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
@@ -766,9 +767,15 @@ export async function tripRoutes(app: FastifyInstance) {
       }
     }
 
+    const sharedPlanningState = await loadSharedPlanningState({
+      tripId,
+      tripStatus: trip.status,
+    });
+
     return tripDetailsResponseSchema.parse({
       trip: {
         ...trip,
+        sharedPlanningState,
         // Old deployments could persist a country/region in this preview.
         // Hide such a stale preview rather than rendering a save button whose
         // server-authoritative write is guaranteed to reject it. The stored

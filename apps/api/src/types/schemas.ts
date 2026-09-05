@@ -222,6 +222,10 @@ export const tripMemberSchema = z.object({
   joinedAt: z.string().datetime(),
 });
 
+export const sharedPlanningStateSchema = z.enum([
+  "NOT_STARTED", "IN_PROGRESS", "NO_PLAN_YET", "PLAN_AVAILABLE",
+]);
+
 export const tripDetailsResponseSchema = z.object({
   trip: z.object({
     id: uuidSchema,
@@ -238,6 +242,14 @@ export const tripDetailsResponseSchema = z.object({
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
     pinnedSession: tripPinnedSessionSchema.nullable().optional(),
+    /**
+     * Server-derived: whether another planning run can be offered right now.
+     * See `services/shared-planning-state-service.ts`. It is here rather than
+     * recomputed per client so the chat CTA and the assistant's prompt cannot
+     * disagree about it — which is exactly how a trip became unplannable on
+     * 2026-09-05.
+     */
+    sharedPlanningState: sharedPlanningStateSchema,
     /**
      * A brief extracted from conversation that the traveller has not confirmed
      * yet. Never a trip fact — the confirmed values are the fields above.

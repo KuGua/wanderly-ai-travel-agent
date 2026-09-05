@@ -2507,6 +2507,36 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
   端点的每一个响应解析失败——gaps 面板丢掉能力清单，详情页整页报错。回归用例
   直接用 trip `8a634324` 的真实 payload。
 
+### TS-REENTER-PLANNING — 激活过一次之后仍然能再跑一轮
+
+**Objective:** Trip `24a0799f` 在第一轮规划失败后完全卡死。「开始规划」卡片只在
+`status === "DRAFT"` 时渲染，而激活是单向的；共享方案面按规范不提供手动 replan；
+提示词的 handoff 块对非 DRAFT 返回空字符串，于是助手继续让用户点一个不存在的按钮。
+
+**Steps:**
+
+1. DRAFT 且 brief 完整 → 检查 CTA 与点击后调用的端点。
+2. 激活后运行失败/无方案 → 检查 CTA、文案与调用的端点。
+3. 运行进行中 → 检查 CTA。
+4. 已有 PROPOSED/ACTIVE 方案 → 检查 CTA。
+5. 只有 STALE 方案 → 检查状态判定。
+6. 四种状态下分别检查 handoff 提示词块。
+
+**Expected outcomes:**
+
+- `sharedPlanningState` 由服务端派生一次，同时出现在 trip DTO 和
+  `PersonalTripContext`；界面与提示词不得各自重算（这条重复正是本缺陷的成因）。
+- `NOT_STARTED` → 「开始规划」，点击走 `POST /trips/:tripId/activate`。
+- `NO_PLAN_YET` → 「重新规划」，点击走 `POST /planning/generate`；**不得**调用
+  activate（对非 DRAFT 必然 409）。重试不重写已确认的搜索偏好——那会切版本并
+  按规范 stale 掉方案与确认。
+- `IN_PROGRESS` / `PLAN_AVAILABLE` → 不渲染任何规划 CTA。
+- 仅有 STALE/SUPERSEDED 方案时状态为 `NO_PLAN_YET`：历史可读，但不算「有方案」。
+- handoff 块四种状态各有文案：进行中不得催点按钮、无方案时指向「重新规划」且
+  不得声称方案已生成、有方案时指向共享方案面且不得复述方案内容。
+- 这不是 `member-conversation-handoff-implementation.md` 禁止的手动 replan：
+  该禁令针对**已有方案**的情形，同文档第 154 行明写「无 plan 时接受 PLAN」。
+
 ### TS-TOOL-BUDGET-DEGRADES — turn 预算耗尽不得丢弃已取得的证据
 
 **Objective:** Trip `24a0799f`（2026-09-05）的 run 以 `TOOL_CALL_MAX_TURNS` 失败，
