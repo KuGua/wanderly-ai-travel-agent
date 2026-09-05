@@ -76,12 +76,24 @@ export interface TripBriefProposal {
 
 export interface DestinationCueDecisionResult {
   decision: {
-    disposition: "PROPOSE" | "DO_NOT_PROPOSE" | "AMBIGUOUS";
-    candidates: Array<{ mentionedText: string; ordinal: number }>;
+    candidates: Array<{
+      mentionedText: string;
+      ordinal: number;
+      intent: "DESTINATION_INTEREST" | "EXPLICIT_SET_DESTINATION" | "EXPLICIT_EXCLUDE_DESTINATION";
+      triggerContext:
+        | "BARE_CITY"
+        | "CITY_EXPLORATION"
+        | "FLIGHT_DESTINATION"
+        | "HOTEL_DESTINATION"
+        | "EXPLICIT_DESTINATION_COMMAND"
+        | "EXPLICIT_EXCLUSION_COMMAND";
+    }>;
+    isNeutralMultiCityList: boolean;
     reasonCode:
       | "EXPLICIT_DESTINATION_COMMAND"
-      | "QUALIFIED_DESTINATION_MENTION"
-      | "FLIGHT_OR_HOTEL_QUERY"
+      | "EXPLICIT_EXCLUSION_COMMAND"
+      | "SINGLE_DESTINATION_INTEREST"
+      | "NEUTRAL_MULTI_CITY_LIST"
       | "NO_DESTINATION"
       | "AMBIGUOUS_REFERENCE";
   };

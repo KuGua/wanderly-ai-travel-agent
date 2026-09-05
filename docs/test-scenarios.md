@@ -1280,29 +1280,33 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The direct PATCH returns `400 BRIEF_DATES_INVALID`; the client renders copy that tells the traveller to restate the dates, never to refresh. The existing brief, title and pending proposal are unchanged.
 - The cleanup script is a dry run by default, is idempotent, strips only the incoherent date fields from stored proposals, and reports — never rewrites — confirmed trips whose travel dates are in the past.
 
-### TS-EXPLORE-TRIP-5 — Destination cues are user-only and individually confirmed
+### TS-EXPLORE-TRIP-5 — Destination cues use hybrid language classification and bounded prompting
 
 **Stories:** H1
-**Objective:** Verify that the dedicated model proposes only current-USER-turn city destinations and that every candidate has an independent durable lifecycle.
+**Objective:** Verify that deterministic policy, current-USER-turn language classification and server resolution jointly identify a single destination interest without treating the model as write authority.
 
 **Starting conditions:** Alice owns a `DRAFT` Trip. The server location-reference dataset is available and contains Beijing, Shanghai and Chengdu. No Destination Cue is pending.
 
 **Steps:**
 
-1. Send plain flight and hotel queries naming cities; then send `Set Tokyo as the destination and find a hotel`.
-2. Have the Assistant mention Shanghai while the USER says only `sounds good`; then have the USER explicitly name Shanghai.
-3. Send one turn naming Beijing, Shanghai and Chengdu; use both arrows, accept one and dismiss another.
-4. Refresh between actions and process the remaining city.
-5. Exercise dismissal recovery before 30 minutes, after one and two qualified mentions, and after 24 hours of silence.
-6. Make the model and location-reference resolver unavailable independently.
+1. In separate clean states send `北京`, `北京怎么样？`, `介绍一下北京`, `我在考虑北京`, `北京有哪些酒店？` and `帮我查去北京的机票`.
+2. Send `从上海飞北京`; then test a one-origin/multiple-destination flight request and a hotel comparison across several cities.
+3. Send neutral lists/comparisons such as `北京、上海、南京、苏州` and `北京和上海哪个好？`.
+4. Have the Assistant mention Shanghai while the USER says only `sounds good`; then test pronouns, a country, an unknown label and an ambiguous same-name city.
+5. Dismiss a valid Cue and retry another automatic Cue before and after 30 minutes. Repeat until the third dismissal in the user's local day, cross the local-day boundary, and retry.
+6. During both cooldown and daily mute send `把东京设为目的地`; refresh before acting and repeat the same action request.
+7. Send direct exclusions (`不想去北京`, `不要安排北京`, `排除北京`) and non-direct negatives (`不是不想去北京`, `如果不去北京`, `朋友不想去北京`, `为什么有人不想去北京`). Confirm and then undo one valid exclusion.
+8. Send the mixed explicit command `把上海设为目的地，北京不要去`, then make the model and location-reference resolver unavailable independently.
 
 **Expected outcomes:**
 
-- Plain flight/hotel queries and Assistant-only mentions create no Cue; the explicit set command shows Tokyo despite its hotel clause.
-- Every displayed label is a concrete canonical city. No `this` card, browser label or free-text fallback is possible.
-- Arrows only switch. Accepting/dismissing one removes only that candidate; REST recovery retains all remaining candidates until individually handled.
-- Suppression follows 30 minutes + two subsequent USER mentions, with a 24-hour silence reset. Agent text and retries never increment it.
-- Model/resolver failure produces no Cue and never fails or delays the conversation reply. Telemetry and audit contain IDs/counts only, never message text, city names or prompts.
+- Every single-city interest and single-city hotel/flight destination shows one concrete canonical city. `从上海飞北京` shows only Beijing; the origin never becomes a destination candidate.
+- Neutral multi-city lists/comparisons and multi-destination searches produce no ordinary Destination Cue. Assistant-only mentions, browser state and unresolved references cannot create one.
+- A dismiss starts a Trip-wide 30-minute cooldown. The third dismissal in one user-local day mutes automatic Cues until that local day ends; refresh, retries, model failures and non-candidates do not increment the count.
+- An explicit set command bypasses both mute layers but still requires resolver validation, user confirmation, idempotency and optimistic locking.
+- Direct exclusion language produces a separate confirmation and no destination Cue. Only confirmation writes a durable exclusion; conditional, quoted, double-negative and unclear-scope language writes nothing. Undo reverses the exclusion and invalidates dependent planning state consistently.
+- The mixed explicit command retains both independently confirmed actions. Model/resolver failure produces no Cue or exclusion proposal and never fails or delays the conversation reply.
+- Telemetry and audit contain only safe enums, IDs and counts—never message text, city names, prompts or model rationale.
 
 ### TS-OTEL-2 — Worker continuity after durable boundary
 

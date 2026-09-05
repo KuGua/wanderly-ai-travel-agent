@@ -125,34 +125,90 @@ const tripBriefExtractionSchema = z.object({
  * cue for every city vanished with nothing logged. Positional order is what
  * `ordinal` means, so it can be recovered from the array itself.
  */
+const destinationCueCandidateIntentSchema = z.enum([
+  "DESTINATION_INTEREST",
+  "EXPLICIT_SET_DESTINATION",
+  "EXPLICIT_EXCLUDE_DESTINATION",
+]);
+const destinationCueTriggerContextSchema = z.enum([
+  "BARE_CITY",
+  "CITY_EXPLORATION",
+  "FLIGHT_DESTINATION",
+  "HOTEL_DESTINATION",
+  "EXPLICIT_DESTINATION_COMMAND",
+  "EXPLICIT_EXCLUSION_COMMAND",
+]);
 const destinationCueCandidatesSchema = z.preprocess(
   (value) => (Array.isArray(value)
-    ? value.map((entry, index) => (typeof entry === "string"
-      ? { mentionedText: entry, ordinal: index }
-      : entry))
+    ? value.map((entry, index) => {
+      if (typeof entry === "string") {
+        return {
+          mentionedText: entry,
+          ordinal: index,
+          intent: "DESTINATION_INTEREST",
+          triggerContext: "CITY_EXPLORATION",
+        };
+      }
+      if (entry && typeof entry === "object") {
+        const candidate = entry as Record<string, unknown>;
+        return {
+          ...candidate,
+          intent: candidate.intent ?? "DESTINATION_INTEREST",
+          triggerContext: candidate.triggerContext ?? "CITY_EXPLORATION",
+        };
+      }
+      return entry;
+    })
     : value),
   z.array(z.object({
     mentionedText: z.string().trim().min(1).max(128),
     ordinal: z.number().int().min(0).max(4),
+    intent: destinationCueCandidateIntentSchema,
+    triggerContext: destinationCueTriggerContextSchema,
   }).strict()).max(5),
 );
 
 export const destinationCueDecisionSchema = z.object({
-  disposition: z.enum(["PROPOSE", "DO_NOT_PROPOSE", "AMBIGUOUS"]),
   candidates: destinationCueCandidatesSchema,
+  isNeutralMultiCityList: z.boolean(),
   reasonCode: z.enum([
     "EXPLICIT_DESTINATION_COMMAND",
-    "QUALIFIED_DESTINATION_MENTION",
-    "FLIGHT_OR_HOTEL_QUERY",
+    "EXPLICIT_EXCLUSION_COMMAND",
+    "SINGLE_DESTINATION_INTEREST",
+    "NEUTRAL_MULTI_CITY_LIST",
     "NO_DESTINATION",
     "AMBIGUOUS_REFERENCE",
   ]),
 }).strict().superRefine((value, ctx) => {
-  if (value.disposition === "PROPOSE" && value.candidates.length === 0) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "PROPOSE requires candidates" });
+  const exclusions = value.candidates.filter((candidate) => candidate.intent === "EXPLICIT_EXCLUDE_DESTINATION");
+  const explicitSets = value.candidates.filter((candidate) => candidate.intent === "EXPLICIT_SET_DESTINATION");
+  if (value.isNeutralMultiCityList && value.candidates.length !== 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "neutral multi-city lists cannot carry candidates" });
   }
-  if (value.disposition !== "PROPOSE" && value.candidates.length !== 0) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "non-PROPOSE decisions cannot carry candidates" });
+  if (["NO_DESTINATION", "AMBIGUOUS_REFERENCE", "NEUTRAL_MULTI_CITY_LIST"].includes(value.reasonCode)
+    && value.candidates.length !== 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "non-candidate decisions cannot carry candidates" });
+  }
+  if (["SINGLE_DESTINATION_INTEREST", "EXPLICIT_DESTINATION_COMMAND", "EXPLICIT_EXCLUSION_COMMAND"].includes(value.reasonCode)
+    && value.candidates.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "candidate decisions require candidates" });
+  }
+  if (value.reasonCode === "EXPLICIT_EXCLUSION_COMMAND"
+    && (exclusions.length === 0 || explicitSets.length > 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "exclusion decisions require exclusion candidates" });
+  }
+  if (value.reasonCode === "EXPLICIT_DESTINATION_COMMAND" && explicitSets.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "explicit destination decisions require an explicit-set candidate" });
+  }
+  for (const candidate of value.candidates) {
+    if (candidate.intent === "EXPLICIT_EXCLUDE_DESTINATION"
+      && candidate.triggerContext !== "EXPLICIT_EXCLUSION_COMMAND") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "exclusion intent/context mismatch" });
+    }
+    if (candidate.intent === "EXPLICIT_SET_DESTINATION"
+      && candidate.triggerContext !== "EXPLICIT_DESTINATION_COMMAND") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "explicit-set intent/context mismatch" });
+    }
   }
 });
 
@@ -195,21 +251,22 @@ const TRIP_BRIEF_EXTRACTION_RULES = [
   "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
 ];
 
-const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v2";
+const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v3";
 const DESTINATION_CUE_SYSTEM_PROMPT = [
-  "You classify ONLY the owner's current message for an owner-only destination confirmation cue.",
-  "Return exactly one JSON object with disposition, candidates, and reasonCode.",
-  "Each entry of candidates is an OBJECT, never a bare string: {\"mentionedText\": \"<the city exactly as the owner wrote it>\", \"ordinal\": <0-based position>}.",
-  "Example: {\"disposition\": \"PROPOSE\", \"candidates\": [{\"mentionedText\": \"Tokyo\", \"ordinal\": 0}], \"reasonCode\": \"EXPLICIT_DESTINATION_COMMAND\"}",
-  "A candidate must be a city explicitly named by the owner as a possible trip destination.",
-  "Do not infer a city from assistant text, history, a map selection, airport, country, region, hotel, or flight.",
-  "A plain request to search, compare, or book flights, hotels, stays, or accommodation is DO_NOT_PROPOSE, even when route cities appear.",
-  "An explicit command to set/make a named city the destination is PROPOSE and overrides the flight/hotel exclusion in the same message.",
-  "A message containing only one city name is DO_NOT_PROPOSE; treat it as browsing for details, never as destination consent.",
-  "Questions that genuinely consider visiting a named city may be PROPOSE. Incidental mentions are DO_NOT_PROPOSE.",
-  "Exclude cities already present in currentDestinations. Preserve textual order, use ordinal 0..4, and return at most five unique cities.",
-  "If a reference such as 'this', 'there', or 'the next place' cannot be resolved from the current message alone, return AMBIGUOUS with no candidates.",
-  "Allowed reasonCode values: EXPLICIT_DESTINATION_COMMAND, QUALIFIED_DESTINATION_MENTION, FLIGHT_OR_HOTEL_QUERY, NO_DESTINATION, AMBIGUOUS_REFERENCE.",
+  "Classify ONLY the owner's current message for owner-only destination confirmation or exclusion.",
+  "Return exactly one JSON object with candidates, isNeutralMultiCityList, and reasonCode.",
+  "Each candidate is an object with mentionedText, ordinal, intent, and triggerContext.",
+  "A bare single city, a question or introduction about one city, weak interest in one city, a hotel request in one city, and a flight request with one destination city all produce one candidate.",
+  "For a route such as 'from Shanghai to Beijing', Shanghai is the origin and only Beijing is the destination candidate.",
+  "A neutral list or comparison containing two or more possible destination cities produces no candidates and isNeutralMultiCityList=true.",
+  "The neutral-list rule does not erase explicit per-city commands. 'Set Shanghai as destination, but exclude Beijing' produces two candidates with different intents.",
+  "Use intent DESTINATION_INTEREST for ordinary interest, EXPLICIT_SET_DESTINATION for an explicit set command, and EXPLICIT_EXCLUDE_DESTINATION only for a direct owner instruction not to visit, arrange, consider, or include that city.",
+  "Do not classify double negation, a hypothetical/conditional, quoted or third-party preference, general discussion, or unclear negation scope as EXPLICIT_EXCLUDE_DESTINATION.",
+  "Use triggerContext BARE_CITY, CITY_EXPLORATION, FLIGHT_DESTINATION, HOTEL_DESTINATION, EXPLICIT_DESTINATION_COMMAND, or EXPLICIT_EXCLUSION_COMMAND.",
+  "Never infer from assistant text, history, a map selection, provider result, country, region, airport alone, or an unresolved pronoun.",
+  "Exclude cities already present in currentDestinations. Preserve textual order and return at most five unique candidates.",
+  "Allowed reasonCode values: SINGLE_DESTINATION_INTEREST, EXPLICIT_DESTINATION_COMMAND, EXPLICIT_EXCLUSION_COMMAND, NEUTRAL_MULTI_CITY_LIST, NO_DESTINATION, AMBIGUOUS_REFERENCE.",
+  "Example: {\"candidates\":[{\"mentionedText\":\"北京\",\"ordinal\":0,\"intent\":\"DESTINATION_INTEREST\",\"triggerContext\":\"BARE_CITY\"}],\"isNeutralMultiCityList\":false,\"reasonCode\":\"SINGLE_DESTINATION_INTEREST\"}.",
 ].join("\n");
 
 function canonicalize(value: unknown): string {

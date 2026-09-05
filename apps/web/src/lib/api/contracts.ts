@@ -271,6 +271,14 @@ export const destinationCueCandidateSchema = z.object({
   id: z.string().uuid(),
   displayName: z.string().min(1).max(128),
   status: z.enum(["PENDING", "ACCEPTED", "DISMISSED", "SUPERSEDED"]),
+  intent: z.enum(["DESTINATION_INTEREST", "EXPLICIT_SET_DESTINATION"]).optional(),
+  triggerContext: z.enum([
+    "BARE_CITY",
+    "CITY_EXPLORATION",
+    "FLIGHT_DESTINATION",
+    "HOTEL_DESTINATION",
+    "EXPLICIT_DESTINATION_COMMAND",
+  ]).optional(),
 }).strict();
 
 export const destinationCueSchema = z.object({
@@ -283,6 +291,7 @@ export const destinationCueActionInputSchema = z.object({
   requestId: z.string().uuid(),
   expectedVersion: z.number().int().positive(),
   titleLocale: z.enum(["en", "zh"]).optional(),
+  timeZone: z.string().trim().min(1).max(64).default("UTC"),
 }).strict();
 
 export const destinationCueActionResponseSchema = z.object({

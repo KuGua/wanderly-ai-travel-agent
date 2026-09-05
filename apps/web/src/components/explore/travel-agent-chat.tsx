@@ -804,6 +804,7 @@ export function TravelAgentChat({
         requestId: crypto.randomUUID(),
         expectedVersion: cue.version,
         titleLocale,
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       });
       setDestinationCue(result.cue);
       setDestinationCueIndex((current) => result.cue ? Math.min(current, result.cue.candidates.length - 1) : 0);

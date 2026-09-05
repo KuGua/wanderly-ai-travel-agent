@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 import { db } from "../src/db/database.js";
 import {
@@ -10,6 +10,7 @@ import {
   chatMessages,
   chatThreads,
   destinationCueBatches,
+  destinationCuePromptPolicies,
   sharedTrips,
   tripMembers,
   users,
@@ -27,12 +28,15 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  // This suite shares a disposable schema with provider tests. Cascading from
+  // the Trip root clears snapshots/offers in FK order and keeps this focused
+  // test independent of whichever suite ran immediately before it.
+  await db.execute(sql`TRUNCATE TABLE shared_trips CASCADE`);
   await db.delete(auditEvents);
   await db.delete(agentTaskRuns);
   await db.delete(chatMessages);
   await db.delete(chatThreads);
   await db.delete(tripMembers);
-  await db.delete(sharedTrips);
 });
 
 async function draftTripWith(destinations: string[]): Promise<{ tripId: string; run: AgentTaskRow }> {
@@ -67,13 +71,20 @@ async function draftTripWith(destinations: string[]): Promise<{ tripId: string; 
   return { tripId, run };
 }
 
-function decision(names: string[]) {
+function decision(
+  names: string[],
+  intent: "DESTINATION_INTEREST" | "EXPLICIT_SET_DESTINATION" = "EXPLICIT_SET_DESTINATION",
+) {
   return {
     candidates: names.map((canonicalCityName, ordinal) => ({
       ordinal,
       canonicalCityName,
       countryCode: "JP",
       candidateKeyHash: "a".repeat(63) + String(ordinal),
+      intent,
+      triggerContext: intent === "EXPLICIT_SET_DESTINATION"
+        ? "EXPLICIT_DESTINATION_COMMAND" as const
+        : "CITY_EXPLORATION" as const,
     })),
     modelVersion: "test-model",
     promptVersion: "test-prompt",
@@ -133,5 +144,33 @@ describe("destination cue — already on the trip", () => {
     const cue = await persistDestinationCue({ run, decision: decision(["Gero", "Kyoto"]) });
 
     expect(cue?.candidates).toHaveLength(2);
+  });
+});
+
+describe("destination cue — Trip-wide prompt fatigue", () => {
+  it("suppresses automatic interest during cooldown but lets an explicit set command through", async () => {
+    const { tripId, run } = await draftTripWith([]);
+    const now = new Date("2026-09-04T08:00:00.000Z");
+    await db.insert(destinationCuePromptPolicies).values({
+      ownerUserId: aliceId,
+      tripId,
+      cooldownUntil: new Date("2026-09-04T08:30:00.000Z"),
+      dismissalDay: "2026-09-04",
+      dailyDismissalCount: 1,
+      timezone: "UTC",
+    });
+
+    expect(await persistDestinationCue({
+      run,
+      decision: decision(["Kyoto"], "DESTINATION_INTEREST"),
+      now,
+    })).toBeNull();
+
+    const cue = await persistDestinationCue({
+      run,
+      decision: decision(["Kyoto"], "EXPLICIT_SET_DESTINATION"),
+      now,
+    });
+    expect(cue?.candidates.map((candidate) => candidate.displayName)).toEqual(["Kyoto"]);
   });
 });

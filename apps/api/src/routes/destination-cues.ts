@@ -51,6 +51,7 @@ export async function destinationCueRoutes(app: FastifyInstance) {
         requestId: body.requestId,
         expectedVersion: body.expectedVersion,
         titleLocale: body.titleLocale ?? "en",
+        timeZone: body.timeZone,
       });
     });
   }
