@@ -155,6 +155,7 @@
     },
     "calendar": {
       "year": "{year} 年",
+      "legendPlanning": "计划中",
       "legendTrip": "行程期间",
       "legendToday": "今天",
       "ariaLabel": "行程年历"

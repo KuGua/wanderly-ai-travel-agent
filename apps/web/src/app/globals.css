@@ -146,6 +146,9 @@
      cell competed with the printed ruling around it. */
   --w-cal-run: color-mix(in srgb, var(--w-info), var(--w-fog) 56%);
   --w-cal-today: color-mix(in srgb, #c98f8a, var(--w-fog) 26%);
+  /* Still being worked out, as opposed to settled. A muted ochre rather than a
+     saturated yellow: it shares a row with the blue and must not outrank it. */
+  --w-cal-planning: color-mix(in srgb, #d4b483, var(--w-fog) 34%);
   --sidebar-foreground: var(--w-ink);
   --sidebar-primary: var(--w-highlight);
   --sidebar-primary-foreground: var(--w-ink);
@@ -638,6 +641,52 @@
 .wanderly-crt .wanderly-thinking-stop:hover:not(:disabled) {
   background: color-mix(in srgb, var(--w-crt-mid), #000 18%);
   border-color: var(--w-crt-line);
+}
+
+/* A spiral pad, laid on its side: the binding runs down the left edge and the
+   block of pages shows along the right and bottom. Drawn rather than an image,
+   so the rings space themselves to whatever height the panel ends up.
+
+   The stack is three offset outlines, not a blur — a shadow suggests height
+   above the desk, where this needs to suggest sheets behind the top one. */
+.wanderly-pad {
+  position: relative;
+  padding-left: 26px;
+  border-radius: 4px 12px 12px 4px;
+  box-shadow:
+    3px 3px 0 -1px var(--w-page),
+    3px 3px 0 var(--w-ink),
+    7px 7px 0 -1px var(--w-page),
+    7px 7px 0 var(--w-ink);
+}
+
+/* The binding column: a strip of paper the rings pass through. */
+.wanderly-pad::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 26px;
+  border-right: 1px dashed color-mix(in srgb, var(--w-ink), transparent 76%);
+  background: color-mix(in srgb, var(--w-fog), var(--w-white) 40%);
+  border-radius: 4px 0 0 4px;
+}
+
+/* The rings themselves: evenly spaced ellipses that straddle that strip. Two
+   backgrounds — a dark ring and the lighter inner void — repeated down the
+   edge, so the count follows the panel's height instead of being fixed. */
+.wanderly-pad::after {
+  content: "";
+  position: absolute;
+  inset: 14px auto 14px 5px;
+  width: 17px;
+  pointer-events: none;
+  background-repeat: repeat-y;
+  background-size: 17px 34px;
+  background-image:
+    radial-gradient(ellipse 8px 5px at 50% 50%,
+      transparent 0 2.6px,
+      color-mix(in srgb, var(--w-ink), transparent 22%) 2.9px 4.2px,
+      transparent 4.5px);
 }
 
 /* ---- paper desk ----------------------------------------------------------

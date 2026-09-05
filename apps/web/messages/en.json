@@ -155,6 +155,7 @@
     },
     "calendar": {
       "year": "{year}",
+      "legendPlanning": "In planning",
       "legendTrip": "Trip dates",
       "legendToday": "Today",
       "ariaLabel": "Trip year"

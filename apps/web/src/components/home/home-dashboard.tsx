@@ -148,7 +148,7 @@ export function HomeDashboard() {
           which a number cannot, and the profile rides along in the space that
           leaves rather than claiming a band of its own. */}
       <section
-        className="my-8 overflow-hidden bg-card wanderly-edge wanderly-r-lg wanderly-shadow"
+        className="wanderly-pad my-8 overflow-hidden bg-card wanderly-edge"
         aria-label={tHome("calendar.ariaLabel")}
       >
         {/* One panel, the two halves the same height because grid rows stretch.

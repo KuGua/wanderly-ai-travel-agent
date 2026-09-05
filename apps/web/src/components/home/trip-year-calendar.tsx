@@ -19,11 +19,20 @@ import { useFormatter, useTranslations } from "next-intl";
 export type CalendarTrip = {
   id: string;
   name: string;
+  status: "DRAFT" | "PLANNING" | "STALE" | "CONFIRMED" | "BOOKED" | "CANCELLED";
   travelDateStart: string | null;
   travelDateEnd: string | null;
 };
 
-type Run = { start: string; end: string };
+/**
+ * Two kinds of run, because "these dates are settled" and "these dates are
+ * still being worked out" are different answers to the same question, and a
+ * year drawn in one colour cannot tell them apart.
+ */
+type RunKind = "planning" | "settled";
+type Run = { start: string; end: string; kind: RunKind };
+
+const PLANNING_STATUSES = new Set(["DRAFT", "PLANNING", "STALE"]);
 
 /** Days in a month, without constructing a Date in the caller's timezone. */
 function daysInMonth(year: number, monthIndex: number): number {
@@ -46,6 +55,7 @@ export function tripRuns(trips: readonly CalendarTrip[]): Run[] {
       start: trip.travelDateStart,
       // A trip with a start but no end still owns its first day.
       end: trip.travelDateEnd ?? trip.travelDateStart,
+      kind: (PLANNING_STATUSES.has(trip.status) ? "planning" : "settled") as RunKind,
     }))
     .filter((run) => run.end >= run.start);
 }
@@ -83,6 +93,10 @@ export function TripYearCalendar({
       <div className="flex items-baseline justify-between px-4 pt-4">
         <p className="text-[13px] font-bold tracking-[.02em]">{t("year", { year })}</p>
         <div className="flex gap-3 text-[10.5px] text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <i aria-hidden="true" className="inline-block size-[9px] rounded-[2px] bg-[var(--w-cal-planning)]" />
+            {t("legendPlanning")}
+          </span>
           <span className="inline-flex items-center gap-1.5">
             <i aria-hidden="true" className="inline-block size-[9px] rounded-[2px] bg-[var(--w-cal-run)]" />
             {t("legendTrip")}
@@ -124,7 +138,7 @@ export function TripYearCalendar({
                       className={[
                         "wanderly-cal-day",
                         cell.outside ? "opacity-40" : "",
-                        run ? "bg-[var(--w-cal-run)]" : "",
+                        run ? (run.kind === "planning" ? "bg-[var(--w-cal-planning)]" : "bg-[var(--w-cal-run)]") : "",
                         run && date === run.start ? "rounded-l-[4px]" : "",
                         run && date === run.end ? "rounded-r-[4px]" : "",
                         isToday ? "rounded-[4px] bg-[var(--w-cal-today)] font-bold" : "",
