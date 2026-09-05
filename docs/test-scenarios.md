@@ -2459,3 +2459,36 @@ recognizable invented values.
 `apps/api/tests/plan-critique.test.ts`,
 `apps/api/tests/conversation-turn-budget.test.ts`,
 `apps/web/src/components/explore/travel-agent-chat.test.tsx`.
+
+### TS-OFFER-CUE-1 — Flight / Hotel 采用 Cue 仅在真实选择时触发
+
+**Starting conditions:** A DRAFT Trip creator owns a private thread with an already rendered, unexpired Flight or Hotel offer set. Each item has a server-issued opaque candidate reference; no provider offer ID is present in the browser DTO.
+
+**Steps:**
+
+1. Send explicit and strong selections: `第二班吧`、`最便宜的直飞就它`、`就住第一家`、`带免费取消的那家最合适，就它`.
+2. Send detail, comparison, neutral-positive, rejection and search-again messages: `第一班几点到？`、`A 和 B 哪个好？`、`这家不错`、`不要这家`、`换便宜一点的`.
+3. Send `订这个航班` and `订这家酒店`.
+4. Repeat a message with an unresolved pronoun or a candidate from another/superseded result set.
+
+**Expected outcomes:**
+
+- The Flight and Hotel models, not keyword/regex fast paths, determine selection intent from the current USER message plus only the bounded eligible candidate set.
+- Only unique explicit/strong selections create the respective confirmation card. Detail, comparison, neutral-positive, rejection, re-search and unresolved messages create none.
+- `订` creates a non-booking selection confirmation only; no provider order, payment, redirect, Plan activation or booking authority is created.
+- A model timeout/invalid output suppresses the Cue and leaves normal conversation unaffected. No user text, hotel/flight name, price, raw provider payload or provider ID appears in logs, metrics or browser persistence.
+
+### TS-OFFER-CUE-2 — 采用状态、并发、过期与提示疲劳
+
+**Steps:**
+
+1. Accept a valid Flight candidate, then accept another candidate for the same route key; repeat for a Hotel candidate with the same stay key.
+2. Double-submit accept/dismiss with one `requestId`; submit a stale `expectedVersion`; attempt an action from another owner/thread.
+3. Expire or supersede an offer set before accept; refresh the page while a Cue remains OPEN.
+4. Dismiss three Flight cues in one owner-local day, then trigger a Hotel cue; repeat an explicit Flight selection inside Flight cooldown.
+
+**Expected outcomes:**
+
+- Exactly one ACTIVE owner-only selection exists per `(trip, owner, capability, routeKey/stayKey)`; replacement supersedes the earlier selection atomically. No Personal selection enters a Shared snapshot, plan, confirmation or booking path.
+- Duplicate actions are idempotent; stale, cross-owner/thread, expired and superseded actions fail closed. REST recovery restores the same OPEN cue after refresh.
+- Flight and Hotel cooldown/daily counters are independent. Three Flight dismissals mute Flight only until the owner's local midnight; a model-classified explicit Flight choice may bypass mute but still cannot accept an expired or unowned candidate.
