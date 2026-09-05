@@ -7,6 +7,7 @@ import {
   normalizeBriefDestinations,
   normalizeBriefProposalDestinations,
   proposeTripBriefFromTurn,
+  withoutSettledFields,
 } from "../src/services/trip-brief-proposal-service.js";
 
 /** The day the reported turn happened, so the year rollover is pinned. */
@@ -300,5 +301,61 @@ describe("mergePendingBriefProposal", () => {
   it("clears the proposal when nothing survives", () => {
     expect(mergePendingBriefProposal(null, { travelDateStart: "2024-10-01" }, SEPTEMBER_2026))
       .toEqual({ proposal: null, result: "in_past" });
+  });
+});
+
+/**
+ * The review card is raised by the existence of a proposal, and the extractor
+ * fires on any one of departure, destination, dates or duration. A turn that
+ * merely repeats a settled fact therefore put the card back on screen — a
+ * traveller who had saved Gero and a 10-day length was asked
+ * 「你想将这里作为目的地吗？」 again, with no destination in the proposal for the
+ * question to even name, because the turn mentioned "10天" a second time.
+ */
+describe("withoutSettledFields", () => {
+  const settled = {
+    departureCities: ["北京"],
+    destinationCandidates: ["Gero"],
+    travelDateStart: "2026-03-20",
+    travelDateEnd: "2026-03-29",
+    travelDays: 10,
+  };
+
+  it("drops a proposal that repeats what the trip already holds", () => {
+    expect(withoutSettledFields({ travelDays: 10 }, settled)).toBeNull();
+    expect(withoutSettledFields({ destinationCandidates: ["Gero"] }, settled)).toBeNull();
+    expect(withoutSettledFields({ departureCities: ["北京"], travelDays: 10 }, settled)).toBeNull();
+  });
+
+  it("ignores case when comparing place names", () => {
+    expect(withoutSettledFields({ destinationCandidates: ["gero"] }, settled)).toBeNull();
+  });
+
+  it("keeps a genuinely new destination", () => {
+    expect(withoutSettledFields({ destinationCandidates: ["京都"], travelDays: 10 }, settled))
+      .toEqual({ destinationCandidates: ["京都"] });
+  });
+
+  it("keeps a new field while dropping the settled ones beside it", () => {
+    expect(withoutSettledFields({ travelDateStart: "2026-04-01", travelDays: 10 }, settled))
+      .toEqual({ travelDateStart: "2026-04-01" });
+  });
+
+  it("treats a different candidate set as new even when it contains the settled one", () => {
+    expect(withoutSettledFields({ destinationCandidates: ["Gero", "京都"] }, settled))
+      .toEqual({ destinationCandidates: ["Gero", "京都"] });
+  });
+
+  it("passes a null proposal through", () => {
+    expect(withoutSettledFields(null, settled)).toBeNull();
+  });
+
+  it("keeps everything when the trip has settled nothing", () => {
+    const empty = {
+      departureCities: [], destinationCandidates: [],
+      travelDateStart: null, travelDateEnd: null, travelDays: null,
+    };
+    expect(withoutSettledFields({ destinationCandidates: ["Gero"], travelDays: 10 }, empty))
+      .toEqual({ destinationCandidates: ["Gero"], travelDays: 10 });
   });
 });

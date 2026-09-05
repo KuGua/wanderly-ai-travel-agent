@@ -72,12 +72,8 @@ describe("conversation place provenance", () => {
 // were never part of that removed gate.
 describe("conversation operational fact boundary", () => {
   it.each([
-    ["visa ordinary phrasing", "What visa do Chinese citizens need for Japan?"],
-    ["visa direct phrasing", "Do Chinese citizens need a visa for Japan?"],
-    ["entry conclusion", "Can I enter Japan without a visa?"],
     ["booking", "Can I book this hotel now?"],
     ["flight status", "Is flight SQ12 delayed?"],
-    ["plural visa", "Which visas are required for Japan?"],
     ["ordinary flight-status wording", "Is SQ12 late?"],
   ])("returns a deterministic SAFE_REFUSAL before calling the model for a %s question", async (_label, question) => {
     const generateConversationReply = vi.fn();
@@ -86,21 +82,50 @@ describe("conversation operational fact boundary", () => {
     const result = await invokeConversation(question);
 
     expect(result.responseMode).toBe("SAFE_REFUSAL");
-    expect(result.content).toContain("cannot claim live prices");
     expect(generateConversationReply).not.toHaveBeenCalled();
   });
 
-  it("localizes a Chinese SAFE_REFUSAL without exposing internal role names", async () => {
-    const generateConversationReply = vi.fn();
+  // A visa question is a fair question. Refusing it before the model was even
+  // called answered a traveller asking for help with a recital of what the
+  // product will not do. The model answers now — under a prompt rule telling
+  // it to say the requirement cannot be confirmed here and to point at the
+  // official source — and the output gate below still stops it deciding.
+  it.each([
+    ["visa ordinary phrasing", "What visa do Chinese citizens need for Japan?"],
+    ["visa direct phrasing", "Do Chinese citizens need a visa for Japan?"],
+    ["entry conclusion", "Can I enter Japan without a visa?"],
+    ["plural visa", "Which visas are required for Japan?"],
+    ["Chinese visa question", "日本签证需要什么？"],
+  ])("lets the model answer a %s question instead of refusing it up front", async (_label, question) => {
+    const generateConversationReply = vi.fn().mockResolvedValue({
+      content: "Entry rules are set by the destination — please confirm with the official consulate before you travel.",
+      responseMode: "MODEL",
+    });
+    __setModelGatewayForTests(buildGateway(generateConversationReply));
+
+    const result = await invokeConversation(question);
+
+    expect(generateConversationReply).toHaveBeenCalledOnce();
+    expect(result.responseMode).toBe("MODEL");
+  });
+
+  it("says it cannot confirm rather than reciting the policy, and localizes", async () => {
+    const generateConversationReply = vi.fn().mockResolvedValue({
+      content: "你需要办理签证。",
+      responseMode: "MODEL",
+    });
     __setModelGatewayForTests(buildGateway(generateConversationReply));
 
     const result = await invokeConversation("日本签证需要什么？");
 
     expect(result).toMatchObject({ responseMode: "SAFE_REFUSAL" });
-    expect(result.content).toContain("确认行程信息后即可");
     expect(result.content).not.toContain("Agent");
-    expect(result.content).toContain("查询条件已收到");
-    expect(generateConversationReply).not.toHaveBeenCalled();
+    // Speaks to the question asked; does not list what the product refuses to
+    // claim, which read as an accusation to anyone who had not asked for it.
+    expect(result.content).toContain("不一定准确");
+    expect(result.content).toContain("核实");
+    expect(result.content).not.toContain("签证结论");
+    expect(result.content).not.toContain("查询条件已收到");
   });
 
   it.each([
@@ -242,7 +267,8 @@ function buildGateway(generateConversationReply: ReturnType<typeof vi.fn>): Mode
 }
 
 describe("requestsUnsupportedOperationalFacts — Personal Research Intent (Phase 0/1)", () => {
-  describe("Chinese visa / entry terms trigger refusal", () => {
+  // Asking is allowed; the output gate governs what may be answered.
+  describe("Chinese visa / entry questions reach the model", () => {
     it.each([
       "签证怎么办",
       "日本签证需要什么",
@@ -250,8 +276,8 @@ describe("requestsUnsupportedOperationalFacts — Personal Research Intent (Phas
       "入境规则",
       "免签国家",
       "落地签材料",
-    ])("flags %s as operational", (question) => {
-      expect(requestsUnsupportedOperationalFacts(question)).toBe(true);
+    ])("does NOT flag %s as operational", (question) => {
+      expect(requestsUnsupportedOperationalFacts(question)).toBe(false);
     });
   });
 
@@ -303,6 +329,50 @@ describe("requestsUnsupportedOperationalFacts — Personal Research Intent (Phas
     ])("does NOT flag %s", (question) => {
       expect(requestsUnsupportedOperationalFacts(question)).toBe(false);
     });
+  });
+});
+
+/**
+ * The visa rule blocks a conclusion, not a mention.
+ *
+ * It used to reject any reply containing 签证/护照/入境/visa, which threw away
+ * ordinary planning answers: a traveller who typed 「开始规划吧」 or 「10天」 got
+ * a canned refusal listing "签证结论" among the things the product would not
+ * claim — as though they had asked about visas. Travel preparation is part of
+ * a plan, so the gate fired on the very turn where planning begins.
+ *
+ * These two lists are the boundary. Pointing at the official source is the
+ * behaviour the product wants and must survive; deciding the traveller's own
+ * eligibility must not.
+ */
+describe("visa gate — defers freely, decides never", () => {
+  it.each([
+    ["planning reply that mentions preparation", "好的，我们从东京开始。出发前记得提前确认签证要求并核对护照有效期。"],
+    ["passport validity reminder", "出发前请检查护照有效期是否超过六个月。"],
+    ["入境 as ordinary arrival language", "入境后可以先在市区休整一天。"],
+    ["deferral to the official line", "具体签证要求请以目的地官方口径为准。"],
+    ["English deferral", "Please confirm visa requirements with the official consulate before you go."],
+    ["requirement named but left open", "签证要求各国不同，出发前需要你自行到官网核实。"],
+  ])("admits %s", (_label, text) => {
+    expect(containsUnsupportedOperationalClaim(text)).toBe(false);
+  });
+
+  it.each([
+    ["visa-free conclusion", "中国公民前往泰国免签，你不需要办理签证。"],
+    ["visa on arrival", "你可以办落地签。"],
+    ["requirement stated as fact", "你需要签证才能入境。"],
+    ["English visa-free", "You are visa-free for this trip."],
+    ["English negative requirement", "You do not need a visa to enter."],
+    ["eligibility via passport", "中国护照可以直接入境泰国。"],
+  ])("strips %s", (_label, text) => {
+    expect(containsUnsupportedOperationalClaim(text)).toBe(true);
+  });
+
+  it("strips a conclusion even when it also points at an official source", () => {
+    // Deferral wording must not launder a decision that is already made.
+    expect(containsUnsupportedOperationalClaim(
+      "泰国对中国免签，具体请以官方口径为准。",
+    )).toBe(true);
   });
 });
 
@@ -387,11 +457,11 @@ describe("requestsUnsupportedOperationalFacts — userConfirmed is now a no-op",
     expect(requestsUnsupportedOperationalFacts("确认搜索 TWD")).toBe(false);
   });
 
-  it("still strips 「确认搜索」 with US-visa phrasing regardless of userConfirmed", () => {
+  it("no longer refuses 「确认搜索」 with US-visa phrasing up front", () => {
     expect(requestsUnsupportedOperationalFacts(
       "确认搜索 entry requires valid passport",
       { userConfirmed: true },
-    )).toBe(true);
+    )).toBe(false);
   });
 
   it("allows an availability + hotel query regardless of userConfirmed", () => {

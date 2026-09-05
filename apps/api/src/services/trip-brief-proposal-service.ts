@@ -87,6 +87,49 @@ export function mergePendingBriefProposal(
   return { proposal: Object.keys(proposal).length > 0 ? proposal : null, result };
 }
 
+/** What the trip has already committed, for `withoutSettledFields` to subtract. */
+export interface SettledTripBrief {
+  departureCities: string[];
+  destinationCandidates: string[];
+  travelDateStart: string | null;
+  travelDateEnd: string | null;
+  travelDays: number | null;
+}
+
+function sameStrings(a: string[] | undefined, b: string[]): boolean {
+  if (!a || a.length !== b.length) return false;
+  const settled = new Set(b.map((value) => value.toLowerCase()));
+  return a.every((value) => settled.has(value.toLowerCase()));
+}
+
+/**
+ * Strips everything the trip already agreed to, so the review card only ever
+ * asks about something the traveller has not already answered.
+ *
+ * The extractor fires on any one of departure, destination, dates or duration,
+ * so a turn that merely repeats a settled fact still produced a proposal — and
+ * a proposal is what raises the card. A traveller who had already saved Gero
+ * and a 10-day length was asked "你想将这里作为目的地吗？" again, with no
+ * destination in the proposal at all to name, purely because the turn happened
+ * to mention "10天" a second time.
+ *
+ * Returns `null` when nothing new survives, which the caller stores as a
+ * cleared proposal and never publishes.
+ */
+export function withoutSettledFields(
+  proposal: TripBriefProposal | null,
+  settled: SettledTripBrief,
+): TripBriefProposal | null {
+  if (!proposal) return null;
+  const next: TripBriefProposal = { ...proposal };
+  if (sameStrings(next.departureCities, settled.departureCities)) delete next.departureCities;
+  if (sameStrings(next.destinationCandidates, settled.destinationCandidates)) delete next.destinationCandidates;
+  if (next.travelDateStart && next.travelDateStart === settled.travelDateStart) delete next.travelDateStart;
+  if (next.travelDateEnd && next.travelDateEnd === settled.travelDateEnd) delete next.travelDateEnd;
+  if (next.travelDays !== undefined && next.travelDays === settled.travelDays) delete next.travelDays;
+  return Object.keys(next).length > 0 ? next : null;
+}
+
 /** Extracts only explicit, current-turn facts; never history or a persisted question. */
 export function proposeTripBriefFromTurn(
   question: string,

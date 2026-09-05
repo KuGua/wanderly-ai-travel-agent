@@ -28,7 +28,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { threadKeys } from "@/lib/query/keys";
 import { TravelApiError } from "@/lib/api/errors";
-import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
+import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useMyProfile, useOwnerConversation, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { useTravelApi } from "@/lib/query/provider";
 import { Link, useRouter } from "@/i18n/navigation";
@@ -830,6 +830,7 @@ export function TravelAgentChat({
         travelDateEnd: currentTrip.travelDateEnd,
         travelDays: currentTrip.travelDays ?? undefined,
         titleLocale,
+        ...(needsGuestNationality && guestNationality ? { guestNationality } : {}),
       }).then((result) => {
         if (result.planningRun) {
           setActiveRunId(result.planningRun.runId);
@@ -843,6 +844,30 @@ export function TravelAgentChat({
       setIsStartingSharedPlan(false);
     }
   }
+
+  // A trip that already holds a destination is not being told where it is
+  // going, so a new place is an addition. Asking 「要将 X 设为目的地吗？」 of
+  // someone who settled that turns ago reads as though their answer was lost.
+  // The server no longer raises a cue for a destination already on the trip,
+  // so anything reaching this point with destinations present is a further one.
+  const cueIsAdditionalDestination = (trip.data?.trip.destinationCandidates.length ?? 0) > 0;
+
+  // Hotel prices are quoted per nationality, and the server will not guess one:
+  // it takes the traveller's profile value or the one sent here, and the plan
+  // task refuses without it. The server has accepted `guestNationality` since
+  // the quote work landed, but nothing ever asked for it — so anyone whose
+  // profile had none pressed "Start planning", got a 422, and read only
+  // "这条消息暂时无法被接受".
+  // Only the workspace renders the card that can ask, so the globe has no
+  // reason to fetch a profile it will never read.
+  const profile = useMyProfile({ enabled: Boolean(tripId) && !onGlobe });
+  const [guestNationality, setGuestNationality] = useState("");
+  // Until the profile answers, whether a nationality is needed is unknown —
+  // and an enabled button during that window is the same 422 with extra steps.
+  // A failed read counts as "no nationality": asking someone a question they
+  // could have skipped is a smaller cost than a rejected activation.
+  const profileSettled = profile.isSuccess || profile.isError;
+  const needsGuestNationality = profileSettled && !profile.data?.profile?.nationality;
 
   const canStartSharedPlanning = trip.data?.trip.status === "DRAFT"
     && trip.data.trip.departureCities.length > 0
@@ -1313,7 +1338,8 @@ export function TravelAgentChat({
                 </div>
               ) : null}
               <p className={`${destinationCue.candidates.length > 1 ? "pr-[76px]" : ""} mb-2 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
-                {t("destinationCueQuestion", { destination: activeDestinationCandidate.displayName })}
+                {t(cueIsAdditionalDestination ? "destinationCueQuestionAdditional" : "destinationCueQuestion",
+                  { destination: activeDestinationCandidate.displayName })}
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -1321,7 +1347,10 @@ export function TravelAgentChat({
                   onClick={() => void resolveDestinationCue("accept")}
                   disabled={isActingOnDestinationCue}
                   className={`${actionPrimaryClass} min-w-0 px-3 py-2.5 text-left`}
-                >{isActingOnDestinationCue ? t("destinationCueSaving") : t("destinationCueAccept", { destination: activeDestinationCandidate.displayName })}</button>
+                >{isActingOnDestinationCue
+                  ? t("destinationCueSaving")
+                  : t(cueIsAdditionalDestination ? "destinationCueAcceptAdditional" : "destinationCueAccept",
+                    { destination: activeDestinationCandidate.displayName })}</button>
                 <button
                   type="button"
                   onClick={() => void resolveDestinationCue("dismiss")}
@@ -1377,7 +1406,12 @@ export function TravelAgentChat({
               </div>
             </section>
           ) : null}
-          {!actionableBriefProposal && !destinationCue && trip.data?.trip.status === "DRAFT" ? (
+          {/* Workspace only. The globe is where someone asks what a place is
+              like, and a readiness notice there answers a question nobody
+              posed — "介绍一下蒙古国" is not a request to start planning. The
+              conversation still syncs to the trip; only the call to action
+              waits for the planner, where starting is the point of the page. */}
+          {!onGlobe && !actionableBriefProposal && !destinationCue && trip.data?.trip.status === "DRAFT" ? (
             <section aria-label={canStartSharedPlanning ? t("startSharedPlanTitle") : t("startSharedPlanNotReadyTitle")} className={`${docked ? "mx-auto mb-[18px] max-w-[640px]" : "max-w-[86%]"} ${actionCardClass}`}>
               <p className="font-bold text-primary">
                 {canStartSharedPlanning ? t("startSharedPlanTitle") : t("startSharedPlanNotReadyTitle")}
@@ -1391,12 +1425,32 @@ export function TravelAgentChat({
                         .join(t("missingField.separator")),
                     })}
               </p>
+              {canStartSharedPlanning && needsGuestNationality ? (
+                <div className="mt-3">
+                  <label htmlFor="start-plan-nationality" className="block text-xs font-bold text-primary">
+                    {t("startSharedPlanNationalityLabel")}
+                  </label>
+                  <p className="mt-0.5 text-xs text-muted-foreground">{t("startSharedPlanNationalityHint")}</p>
+                  <select
+                    id="start-plan-nationality"
+                    value={guestNationality}
+                    onChange={(event) => setGuestNationality(event.target.value)}
+                    disabled={isStartingSharedPlan}
+                    className="mt-1.5 w-full rounded-[12px] border border-primary/20 bg-card px-3 py-2 text-sm disabled:opacity-50"
+                  >
+                    <option value="">{t("startSharedPlanNationalityPlaceholder")}</option>
+                    {QUOTE_NATIONALITIES.map((code) => (
+                      <option key={code} value={code}>{countryLabel(code, titleLocale)}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
               <div className="mt-3 flex gap-2">
                 <button
                   type="button"
                   onClick={() => void startSharedPlanning()}
-                  disabled={!canStartSharedPlanning || isStartingSharedPlan}
-                  aria-disabled={!canStartSharedPlanning || isStartingSharedPlan}
+                  disabled={!canStartSharedPlanning || isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
+                  aria-disabled={!canStartSharedPlanning || isStartingSharedPlan || !profileSettled || (needsGuestNationality && !guestNationality)}
                   title={!canStartSharedPlanning
                     ? t("startSharedPlanDisabledHint", {
                         missing: missingFields
@@ -1855,6 +1909,29 @@ function formatBriefDates(
   if (start && end) return fmt.dateTimeRange(start, end, day);
   const single = start ?? end;
   return single ? fmt.dateTime(single, day) : null;
+}
+
+/**
+ * A short list rather than every ISO code: this asks a traveller for the
+ * nationality their hotel prices are quoted against, and a 250-entry select is
+ * a worse answer to that than the markets the product actually serves. Anyone
+ * outside it sets the value in their profile, which the server prefers over
+ * this field.
+ */
+const QUOTE_NATIONALITIES = [
+  "CN", "HK", "TW", "SG", "MY", "JP", "KR", "TH", "ID", "PH", "VN",
+  "AU", "NZ", "IN", "GB", "US", "CA", "DE", "FR", "IT", "ES", "NL", "AE",
+];
+
+/** The country's own name in the reader's language, not an English label. */
+function countryLabel(code: string, locale: "en" | "zh"): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code;
+  } catch {
+    // `DisplayNames` is absent in some runtimes (older jsdom included); the
+    // code is still a usable answer and the select still works.
+    return code;
+  }
 }
 
 function isRetryable(error: unknown) {

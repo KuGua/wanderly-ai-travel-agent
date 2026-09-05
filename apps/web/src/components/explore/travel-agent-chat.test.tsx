@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -83,7 +83,17 @@ function renderChat(api: TravelApi, options: Parameters<typeof ChatHarness>[0] =
 
 function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
   return {
-    getMyProfile: vi.fn(),
+    // The component reads the profile to decide whether it must ask for a
+    // quote nationality, and a fixture that resolves to `undefined` is not a
+    // profile the API can return. The default carries one, which is the common
+    // case; the tests about the ask override it.
+    getMyProfile: vi.fn().mockResolvedValue({
+      profile: {
+        id: "profile-1", userId: OWNER_ID, displayName: "Alice", nationality: "CN",
+        dateOfBirth: null, interests: null, accommodationStyle: null,
+        updatedAt: CREATED_AT,
+      },
+    }),
     updateMyProfile: vi.fn(),
     getTrips: vi.fn(),
     getTrip: vi.fn(),
@@ -210,6 +220,41 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(plan.parentElement).toHaveClass("grid-cols-2");
     expect(plan).toHaveClass("wanderly-action");
     expect(explore).toHaveClass("wanderly-cosmos-control");
+  });
+
+  it("offers a further destination as an addition once the trip has one", async () => {
+    // The sibling test above is the control: with no destination on the trip
+    // the same cue asks 「要将 X 设为目的地吗？」. Once Gero is saved, the trip is
+    // no longer being told where it is going, and asking that again reads as
+    // though the traveller's answer was lost.
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue({
+        trip: {
+          id: TRIP_ID, name: "Gero", createdBy: OWNER_ID, status: "DRAFT",
+          departureCities: ["Beijing"], destinationCandidates: ["Gero"],
+          travelDateStart: null, travelDateEnd: null, travelDays: 10,
+          createdAt: CREATED_AT, updatedAt: CREATED_AT,
+        },
+        callerRole: "CREATOR",
+        members: [],
+      }),
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "destination.cue_ready",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          cue: { id: CUE_ID, version: 1, candidates: [{ id: CANDIDATE_ID, displayName: "Kyoto", status: "PENDING" }] },
+        });
+        await untilAborted(signal);
+      }),
+    });
+
+    renderChat(api, { tripId: TRIP_ID });
+    await submitFromCapsule("Tell me about Kyoto");
+
+    expect(await screen.findByText("Add Kyoto as a further destination?")).toBeInTheDocument();
+    expect(screen.queryByText("Set Kyoto as the destination?")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add Kyoto to this trip" })).toBeInTheDocument();
   });
 
   it("explains a destination-resolution rejection without dropping the proposal", async () => {
@@ -1119,6 +1164,126 @@ describe("the trip's preference card", () => {
       THREAD_ID,
       expect.objectContaining({ intent: "brief_saved" }),
     ));
+  });
+
+  /**
+   * The readiness notice belongs to the planner, not the globe.
+   *
+   * On the globe someone is asking what a place is like — 「介绍一下蒙古国」 is
+   * a question about Mongolia, not a request to start planning — and answering
+   * it with a list of fields they have not been asked for reads as a chore
+   * they failed to do. The thread still syncs to the trip either way; only the
+   * call to action waits for the surface where starting is the point.
+   */
+  describe("the DRAFT readiness notice", () => {
+    function draftTripApi() {
+      return createApi({
+        getTrip: vi.fn().mockResolvedValue({
+          trip: {
+            id: TRIP_ID, name: "Mongolia", createdBy: OWNER_ID, status: "DRAFT",
+            departureCities: [], destinationCandidates: [],
+            travelDateStart: null, travelDateEnd: null, travelDays: null,
+            createdAt: CREATED_AT, updatedAt: CREATED_AT,
+          },
+          callerRole: "CREATOR",
+          members: [],
+        }),
+      });
+    }
+
+    it("appears in the workspace, naming what is missing", async () => {
+      renderChat(draftTripApi(), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+      expect(await screen.findByText("Trip details aren't complete yet")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Start planning/i })).toBeDisabled();
+    });
+
+    function profileWith(nationality: string | null) {
+      return {
+        profile: {
+          id: "p1", userId: OWNER_ID, displayName: "Alice", nationality,
+          dateOfBirth: null, interests: null, accommodationStyle: null,
+          updatedAt: CREATED_AT,
+        },
+      };
+    }
+
+    function readyTripApi(nationality: string | null, activateTrip = vi.fn()) {
+      return createApi({
+        activateTrip,
+        getMyProfile: vi.fn().mockResolvedValue(profileWith(nationality)),
+        getTrip: vi.fn().mockResolvedValue({
+          trip: {
+            id: TRIP_ID, name: "Tokyo", createdBy: OWNER_ID, status: "DRAFT",
+            departureCities: ["Chengdu"], destinationCandidates: ["Tokyo"],
+            travelDateStart: "2026-09-26", travelDateEnd: "2026-10-05", travelDays: 10,
+            createdAt: CREATED_AT, updatedAt: CREATED_AT,
+          },
+          callerRole: "CREATOR",
+          members: [],
+        }),
+      });
+    }
+
+    /**
+     * Hotel prices are quoted per nationality and the server will not guess
+     * one. It has accepted `guestNationality` since the quote work landed, but
+     * nothing ever sent it and no screen asked — so a traveller whose profile
+     * had none pressed "Start planning" on a complete brief, activation came
+     * back 422 "A confirmed Nuitee hotel quote nationality is required", and
+     * all they saw was 「这条消息暂时无法被接受」.
+     */
+    it("asks for a quote nationality when the profile has none, and sends it", async () => {
+      const activateTrip = vi.fn().mockResolvedValue({ trip: { id: TRIP_ID }, planningRun: null });
+      renderChat(readyTripApi(null, activateTrip), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+      const start = await screen.findByRole("button", { name: /Start planning/i });
+      // Held until answered: pressing it without one is the 422.
+      expect(start).toBeDisabled();
+
+      fireEvent.change(await screen.findByLabelText(/Nationality for quotes/i), { target: { value: "CN" } });
+      expect(start).toBeEnabled();
+      fireEvent.click(start);
+
+      await waitFor(() => expect(activateTrip).toHaveBeenCalledWith(
+        TRIP_ID,
+        expect.objectContaining({ guestNationality: "CN" }),
+      ));
+    });
+
+    it("does not ask when the profile already carries one", async () => {
+      const activateTrip = vi.fn().mockResolvedValue({ trip: { id: TRIP_ID }, planningRun: null });
+      renderChat(readyTripApi("CN", activateTrip), { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+      const start = await screen.findByRole("button", { name: /Start planning/i });
+      expect(start).toBeEnabled();
+      expect(screen.queryByLabelText(/Nationality for quotes/i)).not.toBeInTheDocument();
+
+      fireEvent.click(start);
+
+      // The client never echoes a profile value back; the server prefers its own.
+      await waitFor(() => expect(activateTrip).toHaveBeenCalled());
+      expect(activateTrip.mock.calls[0][1]).not.toHaveProperty("guestNationality");
+    });
+
+    it("stays off the globe", async () => {
+      // The workspace half of this pair is the positive control: the same
+      // fixture, the same DRAFT trip, and the notice appears. Asserting its
+      // absence on the globe only means something once the trip has actually
+      // loaded — the placeholder is on screen from the first frame, so waiting
+      // for that would let the assertion run before the query ever resolved,
+      // and it would pass with the surface check deleted.
+      const api = draftTripApi();
+      renderChat(api, { tripId: TRIP_ID, surface: "EXPLORE" });
+
+      await waitFor(() => expect(api.getTrip).toHaveBeenCalledWith(TRIP_ID));
+      // The query resolves in microtasks; a macrotask turn runs after all of
+      // them, so once this returns the trip is committed and anything it gates
+      // is on screen — or it is never coming.
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(screen.queryByText("Trip details aren't complete yet")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Start planning/i })).not.toBeInTheDocument();
+    });
   });
 
   it("keeps the card up when the save is refused, so the answer can be corrected", async () => {
