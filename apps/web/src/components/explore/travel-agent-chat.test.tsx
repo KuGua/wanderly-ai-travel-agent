@@ -237,6 +237,38 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(screen.getByText("Set Suzhou as the destination?")).toBeInTheDocument();
   });
 
+  it("confirms exactly which destination was saved", async () => {
+    const acceptDestinationCue = vi.fn().mockResolvedValue({
+      cue: null,
+      trip: { id: TRIP_ID, destinationCandidates: ["Suzhou"], updatedAt: CREATED_AT },
+    });
+    const api = createApi({
+      acceptDestinationCue,
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "destination.cue_ready",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          cue: { id: CUE_ID, version: 1, candidates: [{ id: CANDIDATE_ID, displayName: "Suzhou", status: "PENDING" }] },
+        });
+        await untilAborted(signal);
+      }),
+    });
+
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
+    await submitFromCapsule("I want to visit Suzhou");
+    fireEvent.click(await screen.findByRole("button", { name: "Save Suzhou to this trip" }));
+
+    const saved = await screen.findByText("Suzhou has been saved as a destination for this trip.");
+    expect(saved).toHaveAttribute("role", "status");
+    expect(acceptDestinationCue).toHaveBeenCalledWith(
+      THREAD_ID,
+      CUE_ID,
+      CANDIDATE_ID,
+      expect.objectContaining({ expectedVersion: 1, titleLocale: "en" }),
+    );
+  });
+
   /**
    * The card named only the destination while carrying dates it never showed,
    * so a proposal whose end date was two years before its start looked exactly

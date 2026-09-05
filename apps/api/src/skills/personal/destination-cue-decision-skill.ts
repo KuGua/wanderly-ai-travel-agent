@@ -8,14 +8,31 @@ import { getLocationReferenceResolver } from "../../location-reference/location-
 const EXPLICIT_DESTINATION = /(?:\b(?:set|make)\b.{0,100}\b(?:as|to be)\s+(?:the\s+)?destination\b|(?:把|将).{1,100}(?:设|设置|定)(?:为|成)(?:这次旅行的?)?目的地|目的地\s*(?:设|设置|定|是|为))/iu;
 const FLIGHT_OR_HOTEL = /(?:\b(?:flights?|hotels?|stays?|accommodations?)\b|机票|航班|酒店|住宿|饭店)/iu;
 
-export type DestinationCuePreflight = "MODEL" | "SKIP_FLIGHT_OR_HOTEL";
+export type DestinationCuePreflight = "MODEL" | "SKIP_FLIGHT_OR_HOTEL" | "SKIP_BARE_CITY";
 
 /** Deterministic precedence guard; an explicit destination command wins. */
 export function destinationCuePreflight(question: string): DestinationCuePreflight {
   if (EXPLICIT_DESTINATION.test(question)) return "MODEL";
-  return FLIGHT_OR_HOTEL.test(question)
-    ? "SKIP_FLIGHT_OR_HOTEL"
-    : "MODEL";
+  if (FLIGHT_OR_HOTEL.test(question)) return "SKIP_FLIGHT_OR_HOTEL";
+  return isBareCityReference(question) ? "SKIP_BARE_CITY" : "MODEL";
+}
+
+/**
+ * A city name on its own is exploration, not consent to mutate the Trip.
+ * Resolve it through the same server-owned catalogue used after model
+ * classification so aliases work without maintaining a second city list.
+ */
+function isBareCityReference(question: string): boolean {
+  const candidate = question.trim().replace(/[。！？.!?]+$/u, "").trim();
+  if (!candidate || /[，,、；;\n]/u.test(candidate)) return false;
+  try {
+    return Boolean(getLocationReferenceResolver().resolveDestinationReference({
+      destinationId: candidate,
+      cityName: candidate,
+    }));
+  } catch {
+    return false;
+  }
 }
 
 export interface ResolvedDestinationCueDecision {
@@ -53,7 +70,7 @@ export async function decideDestinationCueForTurn(params: {
   locale: "en" | "zh";
   signal: AbortSignal;
 }): Promise<ResolvedDestinationCueDecision | null> {
-  if (destinationCuePreflight(params.question) === "SKIP_FLIGHT_OR_HOTEL") return null;
+  if (destinationCuePreflight(params.question) !== "MODEL") return null;
   const gateway = modelGateway();
   if (!gateway.decideDestinationCue) return null;
   const timeoutSignal = AbortSignal.timeout(2_500);

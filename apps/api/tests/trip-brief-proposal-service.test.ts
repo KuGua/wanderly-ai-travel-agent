@@ -13,6 +13,11 @@ import {
 const SEPTEMBER_2026 = new Date("2026-09-04T13:26:38Z");
 
 describe("proposeTripBriefFromTurn", () => {
+  it("does not turn a bare city detail request into trip brief state", () => {
+    expect(proposeTripBriefFromTurn("北京")).toBeNull();
+    expect(proposeTripBriefFromTurn("上海")).toBeNull();
+  });
+
   it("extracts explicit English destination and duration", () => {
     expect(proposeTripBriefFromTurn("I am going to Tokyo for 7 days")).toEqual({ destinationCandidates: ["Tokyo"], travelDays: 7 });
   });

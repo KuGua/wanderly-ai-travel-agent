@@ -177,7 +177,7 @@ const TRIP_BRIEF_EXTRACTION_RULES = [
   "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
 ];
 
-const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v1";
+const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v2";
 const DESTINATION_CUE_SYSTEM_PROMPT = [
   "You classify ONLY the owner's current message for an owner-only destination confirmation cue.",
   "Return exactly one JSON object with disposition, candidates, and reasonCode.",
@@ -185,6 +185,7 @@ const DESTINATION_CUE_SYSTEM_PROMPT = [
   "Do not infer a city from assistant text, history, a map selection, airport, country, region, hotel, or flight.",
   "A plain request to search, compare, or book flights, hotels, stays, or accommodation is DO_NOT_PROPOSE, even when route cities appear.",
   "An explicit command to set/make a named city the destination is PROPOSE and overrides the flight/hotel exclusion in the same message.",
+  "A message containing only one city name is DO_NOT_PROPOSE; treat it as browsing for details, never as destination consent.",
   "Questions that genuinely consider visiting a named city may be PROPOSE. Incidental mentions are DO_NOT_PROPOSE.",
   "Exclude cities already present in currentDestinations. Preserve textual order, use ordinal 0..4, and return at most five unique cities.",
   "If a reference such as 'this', 'there', or 'the next place' cannot be resolved from the current message alone, return AMBIGUOUS with no candidates.",
@@ -493,7 +494,7 @@ const CONVERSATION_PROMPT_PROSE = [
   "判断规则（按顺序）：",
   "1. 先执行上方的完整行程编排优先级。明确规划请求绝不能被 `auto_intro` 或介绍类措辞降级成单纯的种草文案。",
   "2. 如果 `intent === \"auto_intro\"` 且问题本身读起来像是对一个目的地的介绍/描述请求，使用下方的「种草介绍」规则。",
-  "3. 如果 `intent === \"user_typed\"` 且用户实际只是在要求介绍一个目的地（例如手动输入 `Tell me about Kyoto` 或 `介绍一下京都`），同样使用「种草介绍」规则。",
+  "3. 如果 `intent === \"user_typed\"` 且用户实际只是在要求介绍一个目的地（例如手动输入 `Tell me about Kyoto`、`介绍一下京都`，或只输入城市名 `北京`），同样使用「种草介绍」规则。单独的城市名默认表示查看详情，绝不表示已经保存或同意修改行程。",
   "4. 如果 `intent === \"preferences_saved\"`，使用下方的「偏好确认后的接话」规则。",
   "5. 如果 `intent === \"brief_saved\"`，使用下方的「行程信息保存后的接话」规则。",
   "6. 其他所有情况使用「一般旅行问答」规则，并遵守上方对完整行程或单项需求的优先级。",

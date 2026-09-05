@@ -288,6 +288,7 @@ export function TravelAgentChat({
   const [flightPreferencesSaved, setFlightPreferencesSaved] = useState(false);
   const [briefProposal, setBriefProposal] = useState<Extract<AgentStreamEvent, { event: "trip.brief_proposed" }>["proposal"] | null>(null);
   const [destinationCue, setDestinationCue] = useState<DestinationCue | null>(null);
+  const [savedDestinationNotice, setSavedDestinationNotice] = useState<string | null>(null);
   const [destinationCueIndex, setDestinationCueIndex] = useState(0);
   const [isActingOnDestinationCue, setIsActingOnDestinationCue] = useState(false);
   const [isConfirmingBrief, setIsConfirmingBrief] = useState(false);
@@ -336,6 +337,7 @@ export function TravelAgentChat({
     setBriefProposal(null);
     setDestinationCue(null);
     setDestinationCueIndex(0);
+    setSavedDestinationNotice(null);
     setPendingFlightConfirmation(false);
     setShowFlightPreferenceCard(false);
     setFlightPreferenceDraft(EMPTY_FLIGHT_PREFERENCE_DRAFT);
@@ -357,6 +359,7 @@ export function TravelAgentChat({
   const sendTurn = useCallback(
     async (turn: PendingTurn) => {
       setRequestError(null);
+      setSavedDestinationNotice(null);
       // Any new turn — typed or via the confirm/cancel buttons below —
       // supersedes whatever the previous turn was waiting on.
       setPendingFlightConfirmation(false);
@@ -804,6 +807,7 @@ export function TravelAgentChat({
       });
       setDestinationCue(result.cue);
       setDestinationCueIndex((current) => result.cue ? Math.min(current, result.cue.candidates.length - 1) : 0);
+      if (action === "accept") setSavedDestinationNotice(candidate.displayName);
       await trip.refetch();
     } catch (error) {
       setRequestError(error);
@@ -1279,6 +1283,11 @@ export function TravelAgentChat({
                 && !(visibleError instanceof AgentRunFailure && !isRetryableFailure(visibleError))
                 ? <button type="button" onClick={retryPendingTurn} disabled={isSending} className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-card px-3 py-1.5 text-xs font-bold text-destructive shadow-sm disabled:opacity-50"><RotateCw aria-hidden="true" className="size-3.5" />{t("retry")}</button> : null}
             </div>
+          ) : null}
+          {savedDestinationNotice ? (
+            <p role="status" className={`${rowClass} text-xs font-semibold text-primary`}>
+              {t("destinationCueSaved", { destination: savedDestinationNotice })}
+            </p>
           ) : null}
           {destinationCue && activeDestinationCandidate && effectiveThreadId ? (
             <section

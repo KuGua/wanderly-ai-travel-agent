@@ -18,6 +18,13 @@ describe("destination cue preflight", () => {
   it("sends a genuine travel mention to the model", () => {
     expect(destinationCuePreflight("我这次想去北京、成都和杭州")).toBe("MODEL");
   });
+
+  it("treats one bare city as browsing rather than destination consent", () => {
+    expect(destinationCuePreflight("北京")).toBe("SKIP_BARE_CITY");
+    expect(destinationCuePreflight("上海？")).toBe("SKIP_BARE_CITY");
+    expect(destinationCuePreflight("Tokyo")).toBe("SKIP_BARE_CITY");
+    expect(destinationCuePreflight("北京、成都和杭州")).toBe("MODEL");
+  });
 });
 
 describe("destination cue dismissal recovery", () => {
