@@ -2507,6 +2507,26 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
   端点的每一个响应解析失败——gaps 面板丢掉能力清单，详情页整页报错。回归用例
   直接用 trip `8a634324` 的真实 payload。
 
+### TS-TOOL-BUDGET-DEGRADES — turn 预算耗尽不得丢弃已取得的证据
+
+**Objective:** Trip `24a0799f`（2026-09-05）的 run 以 `TOOL_CALL_MAX_TURNS` 失败，
+而库里已经落了 28 条航班 offer、10 条酒店报价、16 条住宿、4 条活动。
+
+**Steps:**
+
+1. 让工具循环耗尽 turn 预算（模型始终不返回 plan）。
+2. 检查 run 状态、`planning_research_results`、以及 `research/latest` 的可读性。
+3. 同一轮内所有能力都不可用时，仍走 `NO_CITABLE_EVIDENCE`。
+
+**Expected outcomes:**
+
+- run 落 `COMPLETED_WITH_GAPS` 且 `error_code` 为空，**不是 `FAILED`**。
+- 写入 `planning_research_results`，reason `TOOL_BUDGET_EXHAUSTED`；
+  这一轮已落的 offers 经 `GET /trips/:tripId/research/latest` 可读。
+- **不产出 plan**：模型没有给出选择，服务端不得替它合成一个推荐。
+- `NO_CITABLE_EVIDENCE` 与 `TOOL_BUDGET_EXHAUSTED` 是两个不同的 reason，
+  走同一条 summary 分支但各自可辨。
+
 ### TS-ROUTE-IDENTITY — 航线只有一种身份
 
 **Objective:** 一条航线在这个系统里有两种写法：供应商要受控机场码（`SIN`、`PVG`），
