@@ -427,7 +427,10 @@
       "destinationCueAcceptAdditional": "Add {destination} to this trip",
       "destinationCueDismiss": "Leave it as it is",
       "destinationCueSaving": "Saving…",
-      "destinationCueSaved": "{destination} has been saved as a destination for this trip."
+      "destinationCueSaved": "{destination} has been saved as a destination for this trip.",
+      "retrySharedPlanTitle": "Plan again",
+      "retrySharedPlanBody": "The last run finished without a usable plan. Your trip details are unchanged — you can run it again.",
+      "retrySharedPlanConfirm": "Plan again"
     },
     "unavailableHeading": "The globe could not load",
     "unavailableBody": "You can still choose a destination below. Map access may be unavailable on this network.",

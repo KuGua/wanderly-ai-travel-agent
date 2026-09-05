@@ -455,16 +455,29 @@ export function useLatestPlan(tripId: string, enabled: boolean) {
   });
 }
 
+/**
+ * Start another planning run on an already-activated trip.
+ *
+ * `preferences` is optional and deliberately so. Activation already wrote the
+ * confirmed flight and stay preferences, and re-saving them would cut a new
+ * version — which is the documented trigger for staling plans and
+ * confirmations. A retry after a run that produced nothing should change
+ * nothing about the brief; it should just run again.
+ */
 export function useStartPlanning(tripId: string) {
   const api = useTravelApi();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (preferences: TripSearchPreferencesInput) => {
-      await api.saveTripSearchPreferences(tripId, preferences);
+    mutationFn: async (preferences?: TripSearchPreferencesInput) => {
+      if (preferences) await api.saveTripSearchPreferences(tripId, preferences);
       return api.startPlanning(tripId);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: tripKeys.planningRun(tripId) });
+      // The trip DTO carries `sharedPlanningState`, which has just moved to
+      // IN_PROGRESS. Without this the CTA keeps offering a run that is already
+      // under way.
+      void queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
     },
   });
 }

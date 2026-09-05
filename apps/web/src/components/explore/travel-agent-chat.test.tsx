@@ -1922,4 +1922,59 @@ describe("DRAFT → Shared handoff CTA", () => {
     fireEvent.click(button);
     await waitFor(() => expect(api.activateTrip).toHaveBeenCalledTimes(1));
   });
+
+  /**
+   * Activation is one-way, and this CTA used to render for DRAFT only. A trip
+   * whose first run failed therefore had no way back: no CTA, no manual replan
+   * on the shared surface, and an assistant still telling the traveller to
+   * press a button that was gone. `sharedPlanningState` is the server's answer
+   * to "can another run be offered right now".
+   */
+  function activatedTrip(sharedPlanningState: string) {
+    return {
+      trip: {
+        ...draftTrip().trip,
+        status: "PLANNING" as const,
+        departureCities: ["Singapore"],
+        destinationCandidates: ["Shanghai"],
+        travelDateStart: "2026-12-04",
+        travelDateEnd: "2026-12-08",
+        sharedPlanningState,
+      },
+      callerRole: "CREATOR",
+      members: [],
+    };
+  }
+
+  it("offers another run when a trip is activated but has no plan", async () => {
+    const api = createApi({
+      getTrip: vi.fn().mockResolvedValue(activatedTrip("NO_PLAN_YET")),
+      activateTrip: vi.fn(),
+      startPlanning: vi.fn().mockResolvedValue({ runId: RUN_ID, status: "QUEUED" }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const button = await screen.findByRole("button", { name: "Plan again" });
+    fireEvent.click(button);
+
+    // Activation would 409 on a trip that is no longer DRAFT; the retry goes
+    // through the planning route that has always accepted one.
+    await waitFor(() => expect(api.startPlanning).toHaveBeenCalledWith(TRIP_ID));
+    expect(api.activateTrip).not.toHaveBeenCalled();
+  });
+
+  it("does not offer a run while one is under way or once a plan exists", async () => {
+    for (const state of ["IN_PROGRESS", "PLAN_AVAILABLE"]) {
+      const api = createApi({
+        getTrip: vi.fn().mockResolvedValue(activatedTrip(state)),
+        activateTrip: vi.fn(),
+        startPlanning: vi.fn(),
+      });
+      const view = renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+      await waitFor(() => expect(api.getTrip).toHaveBeenCalledWith(TRIP_ID));
+      expect(screen.queryByRole("button", { name: "Plan again" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Start planning" })).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
 });

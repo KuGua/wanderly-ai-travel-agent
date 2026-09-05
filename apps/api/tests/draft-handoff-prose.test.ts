@@ -14,6 +14,7 @@ const baseContext = {
   destinationCandidates: [],
   canStartSharedPlanning: false,
   missingFields: [] as Array<"departure_city" | "destination_city" | "travel_dates">,
+  sharedPlanningState: "NOT_STARTED" as const,
 };
 
 function makeContext(overrides: Record<string, unknown>): ReturnType<typeof personalTripContextSchema.parse> {
@@ -25,18 +26,52 @@ describe("buildDraftHandoffProse", () => {
     expect(buildDraftHandoffProse(null)).toBe("");
   });
 
-  it("returns the empty string for non-DRAFT trips — handoff prose is DRAFT-only", () => {
-    expect(buildDraftHandoffProse(makeContext({
-      tripStatus: "PLANNING",
-      departureCities: ["Shanghai"],
-      destinationCandidates: ["Tokyo"],
-      travelDateStart: "2026-09-10",
-      travelDateEnd: "2026-09-15",
-      canStartSharedPlanning: false,
-    }))).toBe("");
+  /**
+   * This block is the prompt's only authoritative signal about the activation
+   * boundary, and it used to go empty for every non-DRAFT trip. The model then
+   * fell back to the generic rule — "destination and dates are known, so tell
+   * them to press Start planning" — about a button that disappears on
+   * activation. A traveller whose first run failed was told to press it again
+   * for as long as the thread lived.
+   */
+  const activated = {
+    departureCities: ["Shanghai"],
+    destinationCandidates: ["Tokyo"],
+    travelDateStart: "2026-09-10",
+    travelDateEnd: "2026-09-15",
+    canStartSharedPlanning: false,
+    tripStatus: "PLANNING" as const,
+  };
+
+  it("tells the model a run is under way rather than pointing at a vanished button", () => {
+    const prose = buildDraftHandoffProse(makeContext({ ...activated, sharedPlanningState: "IN_PROGRESS" }));
+    expect(prose).toContain("正在进行中");
+    expect(prose).toContain("不要让用户点「开始规划」");
+    expect(prose).toContain("不得声称方案已经生成");
+  });
+
+  it("names the retry button when a run finished without a plan", () => {
+    const prose = buildDraftHandoffProse(makeContext({ ...activated, sharedPlanningState: "NO_PLAN_YET" }));
+    expect(prose).toContain("没有产出可用方案");
+    expect(prose).toContain("「重新规划」");
+    // The failure mode this replaces: directing the traveller to a CTA that
+    // only ever renders for a DRAFT trip.
+    expect(prose).not.toContain("点「开始规划」按钮");
+    expect(prose).toContain("不得声称方案已经生成");
+  });
+
+  it("points at the shared surface once a plan exists, and never recites it", () => {
+    const prose = buildDraftHandoffProse(makeContext({ ...activated, sharedPlanningState: "PLAN_AVAILABLE" }));
+    expect(prose).toContain("共享方案面");
+    expect(prose).toContain("不要让用户点「开始规划」");
+    expect(prose).toContain("不得复述方案内容");
+  });
+
+  it("stays silent for a trip past planning with nothing to say", () => {
     expect(buildDraftHandoffProse(makeContext({
       tripStatus: "CONFIRMED",
       canStartSharedPlanning: false,
+      sharedPlanningState: "NOT_STARTED",
     }))).toBe("");
   });
 

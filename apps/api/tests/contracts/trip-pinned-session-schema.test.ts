@@ -88,6 +88,7 @@ describe("tripSummarySchema — pinnedSession projection", () => {
     archiveReason: null,
     memberCount: 1,
     role: "CREATOR" as const,
+    sharedPlanningState: "NO_PLAN_YET" as const,
     createdAt: "2026-09-01T00:00:00.000Z",
     updatedAt: "2026-09-15T00:00:00.000Z",
     displayState: "IN_PROGRESS" as const,
@@ -132,6 +133,7 @@ describe("tripDetailsResponseSchema — pinnedSession on the trip object", () =>
     travelDays: 8,
     archivedAt: null,
     archiveReason: null,
+    sharedPlanningState: "NO_PLAN_YET" as const,
     createdAt: "2026-09-01T00:00:00.000Z",
     updatedAt: "2026-09-15T00:00:00.000Z",
   };
