@@ -48,7 +48,7 @@ import { validatePlanOutput } from "../policy/plan-output-validator.js";
 import { DefaultPolicyGate } from "../agents/policy-gate.js";
 import { SkillError } from "../agents/errors.js";
 import { invokeSkill } from "../agents/skill-registry.js";
-import { airportIdsForCities } from "../location-reference/airport-reference.js";
+import { airportIdsForCities, airportServesCity, resolveAirportReference } from "../location-reference/airport-reference.js";
 import { logSafeRuntimeEvent, pinoInstance } from "../observability/telemetry.js";
 import { resolveTripDestinationReference } from "./destination-reference-service.js";
 import { flightSearchModelArgumentsSchema } from "./flight-search-service.js";
@@ -503,10 +503,31 @@ export async function researchCoverageForSnapshot(params: {
   const evaluatedDestinations = new Set<string>();
   const missingDestinations = new Set<string>();
 
-  // Decoupled origin × destination fan-out for flights.
+  // Decoupled origin × destination fan-out for flights, over *controlled
+  // airports* rather than the snapshot's city names.
+  //
+  // This used to pass the city strings straight through, and SerpApi said
+  // exactly what was wrong with that: `departure_id` ("Singapore") should
+  // either be an uppercase 3-letter code or start with "/m" or "/g". Every
+  // coverage flight search 400'd, while the model's own tool loop — which
+  // resolves airports first — got 200 and 28 offers for the same route on the
+  // same run. Two paths, one route, two ideas of what a route is.
+  //
+  // A city with no controlled airport yields no cell, which the caller reports
+  // as a flight gap. We still do not guess a neighbouring code (§#22).
+  const flightRoutes = params.departureCities.flatMap((originCity) => {
+    const originAirports = airportIdsForCities([originCity]);
+    return params.destinationCandidates.flatMap((destinationCity) =>
+      airportIdsForCities([destinationCity]).flatMap((destinationId) =>
+        originAirports.map((originId) => ({ originId, destinationId, destinationCity })),
+      ),
+    );
+  });
   const flightSettlements = await Promise.allSettled(
-    params.departureCities.flatMap((origin) =>
-      params.destinationCandidates.map((destination) => (async () => {
+    flightRoutes.map(({ originId, destinationId, destinationCity }) => (async () => {
+      const origin = originId;
+      const destination = destinationId;
+      {
         const result = await deps.flightProvider.searchFlights({
           origin,
           destination,
@@ -543,10 +564,13 @@ export async function researchCoverageForSnapshot(params: {
             errorCode: null,
           });
         }
-        evaluatedDestinations.add(destination);
+        // The city, not the airport: every downstream consumer
+        // (`evaluatedDestinations`, `missingDestinations`, the orchestrator's
+        // eligibility filter) is keyed by the snapshot's candidate strings.
+        evaluatedDestinations.add(destinationCity);
         allFlights.push(...result.data);
-      })()),
-    ),
+      }
+    })()),
   );
   if (params.signal?.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
   void flightSettlements;
@@ -587,6 +611,13 @@ export async function researchCoverageForSnapshot(params: {
  * `origin-missing` condition is structural and remains a hard gate;
  * capability-level UNAVAILABLE is reported as a gap rather than a failure.
  */
+/** Airport-id vs snapshot-city identity, shared with the plan validator. */
+function flightServesOrigin(endpoint: string, city: string): boolean {
+  if (endpoint === city) return true;
+  const airport = resolveAirportReference(endpoint);
+  return airport !== null && airportServesCity(airport, city);
+}
+
 export function summarizeProviderGaps(params: {
   requiredOrigins: string[];
   flights: FlightOffer[];
@@ -597,7 +628,10 @@ export function summarizeProviderGaps(params: {
   unavailableCapabilities?: ReadonlyArray<{ capability: "flight" | "stay" | "navigation" | "mobility" | "transit"; code: "NOT_CONFIGURED" | "PROVIDER_NOT_APPROVED" }>;
 }): { gaps: { capability: "flight" | "stay" | "navigation" | "mobility" | "transit"; code: "NOT_CONFIGURED" | "PROVIDER_NOT_APPROVED" | "NO_RESULTS" | "UPSTREAM_FAILURE"; }[]; missingOrigins: string[] } {
   const missingOrigins = params.requiredOrigins
-    .filter(origin => !params.flights.some(flight => flight.origin === origin));
+    // Offers carry controlled airport ids; `requiredOrigins` carries the
+    // snapshot's city names. Compared as strings, every origin reads as
+    // uncovered — see `routeEndpointMatches` in plan-output-validator.ts.
+    .filter(origin => !params.flights.some(flight => flightServesOrigin(flight.origin, origin)));
   const gaps: { capability: "flight" | "stay" | "navigation" | "mobility" | "transit"; code: "NOT_CONFIGURED" | "PROVIDER_NOT_APPROVED" | "NO_RESULTS" | "UPSTREAM_FAILURE"; }[] = [];
   // Zero-candidate soft gates from Phase 4 outcome matrix: a capability
   // with zero results is reported as a `NO_RESULTS` gap, not a throw.

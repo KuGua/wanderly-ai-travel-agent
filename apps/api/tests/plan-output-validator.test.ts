@@ -204,6 +204,50 @@ describe("plan-output-validator", () => {
    * are now a capability like any other: absent means an UNAVAILABLE row on the
    * card, not a missing plan.
    */
+  /**
+   * Providers take controlled airport ids; the snapshot holds the traveller's
+   * own words. Comparing them as strings meant a real offer could never match
+   * its own plan — every flight was both an origin the snapshot disallowed and
+   * a destination that did not match, so no plan built from live flight
+   * evidence could ever persist. Nothing caught it because the repo had never
+   * written a plan.
+   */
+  it("matches a flight offer's airport ids against the snapshot's city names", () => {
+    const airportPlan = {
+      ...goodPlanData(),
+      destination: "Tokyo",
+      flights: [{ ...goodPlanData().flights[0], origin: "SFO", destination: "NRT" }],
+    };
+    const evidence = { ...goodEvidence(), flights: airportPlan.flights };
+    const result = validatePlanOutput({ planData: airportPlan, snapshot, evidence });
+    expect(result.flights[0].destination).toBe("NRT");
+  });
+
+  it("still rejects an airport that serves a different city", () => {
+    const wrongPlan = {
+      ...goodPlanData(),
+      flights: [{ ...goodPlanData().flights[0], origin: "SFO", destination: "CDG" }],
+    };
+    const violations = (() => {
+      try {
+        validatePlanOutput({
+          planData: wrongPlan,
+          snapshot,
+          evidence: { ...goodEvidence(), flights: wrongPlan.flights },
+        });
+      } catch (error) {
+        if (error instanceof PlanValidationError) return error.violations;
+        throw error;
+      }
+      throw new Error("Expected plan validation to fail");
+    })();
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "DESTINATION_MISMATCH" }),
+      ]),
+    );
+  });
+
   it("accepts a plan with no flights when other evidence is cited", () => {
     const activity = goodActivity();
     const plan = {
