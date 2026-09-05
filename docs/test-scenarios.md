@@ -69,6 +69,33 @@ without clipping it at the message viewport boundary.
   edge. Do not alter the relative alignment or size of individual conversation
   bubbles.
 
+### TS-W2 — Explore chat renders approved LLM text as terminal output
+
+**Objective:** Verify the globe chat presents safe SSE message deltas as a
+terminal response without changing task state or exposing partial text as a
+durable message.
+
+**Steps:**
+
+1. Send one exploration chat message and observe the active Agent run while
+   `message.delta` events arrive.
+2. Let the run complete, then reload the private thread history.
+3. Repeat with reduced motion enabled.
+
+**Expected outcomes:**
+
+- Each visible assistant reply begins with the same `>` prompt treatment as
+  the terminal composer. While the SSE run remains active, a phosphor block
+  cursor appears after the most recently rendered output; it disappears once
+  the reply is settled.
+- Deltas appear incrementally in their received sequence. No full-response
+  wait or duplicate assistant bubble is introduced.
+- The prompt and cursor are decorative: assistive technology announces the
+  reply text and existing status feedback, not the terminal affordances.
+  Reduced motion disables the blink.
+- Reloaded history contains only the server-approved, completed assistant
+  message; in-progress partial text remains ephemeral.
+
 ## 模型网关配置与失败文案
 
 ### TS-MG0 — Gemini 429 不能被指标标签错误改写成 `INTERNAL`
