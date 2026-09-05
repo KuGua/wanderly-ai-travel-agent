@@ -716,7 +716,7 @@
   z-index: 1;
   padding: 16px;
   border: 1.5px solid var(--w-space-line);
-  background: var(--w-space-panel);
+  background: color-mix(in srgb, #050609, transparent 8%);
   backdrop-filter: blur(18px) saturate(1.2) brightness(0.5);
   -webkit-backdrop-filter: blur(18px) saturate(1.2) brightness(0.5);
 }
