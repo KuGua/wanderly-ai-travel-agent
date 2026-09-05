@@ -658,9 +658,83 @@
  * part of the map rather than switching to the paper-card treatment used by
  * ordinary pages. The fog-on-deep-blue pair preserves readable copy over
  * bright terrain without introducing another accent colour.
+ *
+ * The drawer is a vertical film strip: the mechanical brown edge and its
+ * sprocket holes belong to the case, while each frame stays translucent so
+ * the selected location remains visibly connected to the globe beneath it.
  */
 .wanderly-cosmos-destination-drawer {
+  border: 0;
+  background: transparent;
   color: var(--w-fog);
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.wanderly-destination-film {
+  --wanderly-film-edge: #2a1112;
+  --wanderly-film-edge-lit: #6b3028;
+  --wanderly-film-hole: #d9d5cd;
+  position: relative;
+  overflow: hidden;
+  padding: 9px 34px;
+  border: 3px solid var(--wanderly-film-edge);
+  background:
+    linear-gradient(90deg, var(--wanderly-film-edge-lit), var(--wanderly-film-edge) 13%, var(--wanderly-film-edge) 87%, var(--wanderly-film-edge-lit));
+  box-shadow:
+    4px 4px 0 var(--w-ink),
+    0 18px 40px color-mix(in srgb, var(--w-space), transparent 20%),
+    inset 0 0 0 2px color-mix(in srgb, var(--wanderly-film-edge-lit), #000 38%);
+}
+
+.wanderly-destination-film::before,
+.wanderly-destination-film::after {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  bottom: 10px;
+  width: 18px;
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      var(--wanderly-film-hole) 0 13px,
+      color-mix(in srgb, var(--wanderly-film-hole), var(--w-ink) 20%) 13px 15px,
+      transparent 15px 29px
+    );
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--w-ink), transparent 35%);
+  content: "";
+  pointer-events: none;
+}
+
+.wanderly-destination-film::before { left: 7px; }
+.wanderly-destination-film::after { right: 7px; transform: scaleX(-1); }
+
+.wanderly-destination-film__frame {
+  position: relative;
+  z-index: 1;
+  padding: 16px;
+  border: 1.5px solid var(--w-space-line);
+  background: var(--w-space-panel);
+  backdrop-filter: blur(18px) saturate(1.2) brightness(0.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.2) brightness(0.5);
+}
+
+.wanderly-destination-film__frame + .wanderly-destination-film__frame {
+  margin-top: 9px;
+}
+
+.wanderly-destination-film__frame--identity {
+  min-height: 148px;
+}
+
+.wanderly-destination-film__frame--context {
+  min-height: 124px;
+}
+
+.wanderly-destination-film__frame--actions {
+  padding: 13px 16px 16px;
 }
 
 .wanderly-cosmos-destination-drawer h2 {
