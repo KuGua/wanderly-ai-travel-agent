@@ -2507,6 +2507,32 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
   端点的每一个响应解析失败——gaps 面板丢掉能力清单，详情页整页报错。回归用例
   直接用 trip `8a634324` 的真实 payload。
 
+### TS-TOOL-TURN-ACCOUNTING — 重复的调用不得吃掉 turn 预算
+
+**Objective:** 2026-09-05 那一轮在 turn 1 就答完了两个航班格，随后 turn 2–10
+连续五次重复调用 `flight.search`。缓存 0ms 返回、不花配额，**但每次照样消耗一个
+turn**，预算耗尽、方案没写成。而 `appendFlightProgress()` 每轮都在推
+「Do not call flight.search again」——**告诉模型别做，和让它做不到，是两回事**。
+
+**Steps:**
+
+1. 所有必需航班格答完后，检查下一轮实际提供给模型的工具列表。
+2. 连续多轮只发出与此前完全相同的调用，检查 dispatch 次数与 turn 消耗。
+3. 一直只重复到超过允许额度，检查是否仍然终止。
+
+**Expected outcomes:**
+
+- 航班矩阵补齐后 `flight.search` **从工具列表中撤下**，而不仅仅是被劝阻；
+  其余工具照常提供。工具列表为空时强制模型返回方案（`tool_choice: "none"`）。
+- 完全相同的调用（工具名 + 参数）从本轮记录中作答，不再发往供应商——原本只有
+  `flight.search` 有这个缓存，重复的 `activities.search` 仍会打出去，撞上
+  一次性守卫后返回拒绝，在模型看来像一次值得重试的新失败。
+- 一整轮里全部是重复调用时不消耗 turn 预算，但**有额度上限**；超过后照常计数，
+  所以只会重复自己的模型仍然会终止。
+- 文案不得建议一个界面不提供的动作：`planningToolBudgetExhausted` 不再说
+  「再试一次」（`isRetryableFailure` 并不包含该 code，屏幕上没有重试按钮），
+  改为说明本轮已取得的结果已经保存。
+
 ### TS-REENTER-PLANNING — 激活过一次之后仍然能再跑一轮
 
 **Objective:** Trip `24a0799f` 在第一轮规划失败后完全卡死。「开始规划」卡片只在
