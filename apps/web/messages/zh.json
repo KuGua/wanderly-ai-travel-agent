@@ -803,6 +803,10 @@
         "MEMBER": "成员"
       },
       "openPinAria": "在完整地图中查看 {name}",
+      "departuresEdit": "编辑出发城市",
+      "departuresEditLabel": "出发城市，用逗号分隔",
+      "departuresPlaceholder": "新加坡，台北",
+      "departuresSaveError": "出发城市保存失败，请重试。",
       "destinationsEdit": "编辑目的地",
       "destinationsEditLabel": "目的地，用逗号分隔",
       "destinationsPlaceholder": "东京，京都",

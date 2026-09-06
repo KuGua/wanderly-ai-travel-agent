@@ -803,6 +803,10 @@
         "MEMBER": "Member"
       },
       "openPinAria": "View {name} on the full map",
+      "departuresEdit": "Edit departure cities",
+      "departuresEditLabel": "Departure cities, separated by commas",
+      "departuresPlaceholder": "Singapore, Taipei",
+      "departuresSaveError": "Could not save the departure cities. Please retry.",
       "destinationsEdit": "Edit destinations",
       "destinationsEditLabel": "Destinations, separated by commas",
       "destinationsPlaceholder": "Tokyo, Kyoto",
