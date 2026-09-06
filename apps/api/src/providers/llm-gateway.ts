@@ -787,9 +787,9 @@ const USER_VISIBLE_REPLY_LANGUAGE_RULE = [
   "User-visible language (higher priority than history)",
   "Apply this rule to every natural-language reply shown to the traveller, regardless of whether it is a destination introduction or general travel guidance.",
   "1. If the traveller explicitly requests a translation or another language, use that language.",
-  "2. Otherwise, use the dominant language of the current `question` field.",
-  "3. `threadContext`, `memoryContext`, destination country, and provider evidence are context only; they never select the reply language.",
-  "For one mixed-language message, identify its dominant communication language. Proper nouns and established place or brand names may retain their usual or local spelling.",
+  "2. Otherwise, use the server-validated `locale` field: `zh` means Chinese and `en` means English. A place name written in another script does not change the reply language.",
+  "3. `question`, `threadContext`, `memoryContext`, destination country, and provider evidence are context only; they never override `locale` unless rule 1 applies.",
+  "Proper nouns and established place or brand names may retain their usual or local spelling.",
 ].join("\n");
 
 const STRUCTURED_CONVERSATION_OUTPUT_RULE = [
@@ -1952,6 +1952,7 @@ export class LLMGateway implements ModelGateway {
 
   async generateConversationReply(params: {
     question: string;
+    locale?: "en" | "zh";
     place?: ConversationPlace;
     threadContext: ThreadContextMessage[];
     memoryContext?: ConversationMemoryFact[];
@@ -2034,6 +2035,7 @@ export class LLMGateway implements ModelGateway {
                   role: "user",
                   content: JSON.stringify({
                     question: params.question,
+                    locale: params.locale ?? "en",
                     place: params.place ?? null,
                     intent: params.intent ?? null,
                     threadContext: params.threadContext,
@@ -2133,11 +2135,12 @@ export class LLMGateway implements ModelGateway {
       status: lastError === "TIMEOUT" ? "TIMEOUT" : "ERROR",
       errorCode: lastError,
     });
-    return safeConversationFallback();
+    return safeConversationFallback(params.locale ?? "en");
   }
 
   async streamConversationReply(params: {
     question: string;
+    locale?: "en" | "zh";
     place?: ConversationPlace;
     threadContext: ThreadContextMessage[];
     memoryContext?: ConversationMemoryFact[];
@@ -2202,7 +2205,7 @@ export class LLMGateway implements ModelGateway {
         status: "ERROR",
         errorCode,
       });
-      return safeConversationFallback();
+      return safeConversationFallback(params.locale ?? "en");
     }
 
     // The retry budget covers the "haven't started streaming yet" window
@@ -2274,13 +2277,14 @@ export class LLMGateway implements ModelGateway {
     }
     // Pre-stream failure: surface a FALLBACK reply so the UI keeps
     // rendering and SSE closes cleanly.
-    return safeConversationFallback();
+    return safeConversationFallback(params.locale ?? "en");
   }
 
   private async streamConversationReplyOnce(args: {
     client: OpenAIClientLike;
     params: {
       question: string;
+      locale?: "en" | "zh";
       place?: ConversationPlace;
       threadContext: ThreadContextMessage[];
       memoryContext?: ConversationMemoryFact[];
@@ -2316,6 +2320,7 @@ export class LLMGateway implements ModelGateway {
         role: "user",
         content: JSON.stringify({
           question: params.question,
+          locale: params.locale ?? "en",
           place: params.place ?? null,
           intent: params.intent ?? null,
           threadContext: params.threadContext,

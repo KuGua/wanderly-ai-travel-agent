@@ -6,7 +6,7 @@ import type {
   PersonalResearchIntent,
   ResearchCommandRequest,
 } from "@/lib/api/contracts";
-import { useTravelApi, useOptionalTravelApi } from "@/lib/query/provider";
+import { useOptionalTravelApi } from "@/lib/query/provider";
 import { Button } from "@/components/ui/button";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import {
@@ -17,6 +17,7 @@ import {
 } from "@/lib/trips/personal-research-readiness-copy";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { realProviderCapabilities, type ResearchCapability } from "@/lib/trips/personal-research-readiness-copy";
+import { useErrorMessage } from "@/lib/api/use-error-message";
 
 /**
  * Personal Research Intent — owner confirmation card (Phase 2).
@@ -67,6 +68,7 @@ export function ResearchConfirmationCard(props: ResearchConfirmationCardProps): 
   const { tripId, onDismiss } = props;
   const api = useOptionalTravelApi();
   const confirmMutation = useConfirmResearchCommand(tripId);
+  const errorMessage = useErrorMessage();
   const dismissMutation = useDismissResearchIntent(
     props.source === "classifier-extracted" ? props.runId : null,
   );
@@ -244,12 +246,12 @@ export function ResearchConfirmationCard(props: ResearchConfirmationCardProps): 
       </div>
       {confirmMutation.isError ? (
         <p role="alert" className="mt-2 text-xs text-red-500">
-          提交失败：{(confirmMutation.error as Error).message}
+          提交失败：{errorMessage(confirmMutation.error)}
         </p>
       ) : null}
       {dismissMutation.isError ? (
         <p role="alert" className="mt-2 text-xs text-red-500">
-          取消失败：{(dismissMutation.error as Error).message}
+          取消失败：{errorMessage(dismissMutation.error)}
         </p>
       ) : null}
       <ConfirmDialog

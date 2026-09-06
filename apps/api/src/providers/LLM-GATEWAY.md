@@ -52,8 +52,10 @@ safety policy rejects unsupported operational claims.
 
 The language rule applies only to natural-language content displayed to a
 traveller. Its order is: an explicit language or translation request in the
-current turn; otherwise, the dominant language of that current question.
-Thread context, long-term memory, destination country, and provider evidence
+current turn; otherwise, the server-validated interface `locale` captured with
+that durable turn. A Latin-script place name in a Chinese UI does not switch
+the answer to English.
+The current question, thread context, long-term memory, destination country, and provider evidence
 are context only and cannot change that choice. Proper nouns may retain their
 usual local spelling. The shared rule is injected once into both structured
 and streamed `travel.conversation` prompts.

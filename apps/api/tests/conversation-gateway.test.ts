@@ -63,6 +63,7 @@ describe("conversational ModelGateway", () => {
 
     await expect(gateway.generateConversationReply({
       question: "Tell me about Tokyo",
+      locale: "zh",
       threadContext: [],
     })).resolves.toEqual({
       content: "A bounded model answer.",
@@ -80,6 +81,8 @@ describe("conversational ModelGateway", () => {
     const messages = parse.mock.calls[0][0].messages as Array<{ role: string; content: string }>;
     expect(messages[0]?.content).toContain("User-visible language (higher priority than history)");
     expect(messages[0]?.content.match(/User-visible language \(higher priority than history\)/g)).toHaveLength(1);
+    expect(messages[0]?.content).toContain("server-validated `locale`");
+    expect(JSON.parse(messages[1]!.content)).toMatchObject({ locale: "zh", question: "Tell me about Tokyo" });
   });
 
   it("adds Skill-selected hotel readiness guidance without placing it in user content", async () => {
@@ -321,6 +324,20 @@ describe("a call aborted by our own deadline", () => {
     expect(recordAgentRun).toHaveBeenCalledWith(expect.objectContaining({
       errorCode: "TIMEOUT",
     }));
+  });
+
+  it("returns a Chinese fallback for a Chinese interface even when the question is a Latin-script place name", async () => {
+    const parse = vi.fn().mockRejectedValue(new Error("provider unavailable"));
+    const gateway = buildGateway({ chat: { completions: { parse } } });
+
+    await expect(gateway.generateConversationReply({
+      question: "Shanghai",
+      locale: "zh",
+      threadContext: [],
+    })).resolves.toEqual({
+      content: "暂时无法连接对话模型，请稍后再试。",
+      responseMode: "FALLBACK",
+    });
   });
 });
 

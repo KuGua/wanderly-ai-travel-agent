@@ -496,7 +496,7 @@ export function TravelAgentChat({
           threadId: activeThreadId,
           // Stamped here rather than at each call site so the confirm and
           // cancel buttons carry it too, not just typed messages.
-          input: { ...turn, surface },
+          input: { ...turn, locale: titleLocale, surface },
         });
         setSessionThreadId(activeThreadId);
         setSessionMessages((current) => mergeMessages(current, [response.userMessage]));
@@ -524,6 +524,7 @@ export function TravelAgentChat({
       clearLocalSessionState,
       onThreadInvalidated,
       surface,
+      titleLocale,
     ],
   );
 
@@ -1084,7 +1085,7 @@ export function TravelAgentChat({
       });
       setDestinationCue(result.cue);
       setDestinationCueIndex((current) => result.cue ? Math.min(current, result.cue.candidates.length - 1) : 0);
-      if (action === "accept") setSavedDestinationNotice(candidate.displayName);
+      if (action === "accept") setSavedDestinationNotice(destinationCandidateDisplayName(candidate, titleLocale));
       await trip.refetch();
     } catch (error) {
       setRequestError(error);
@@ -1386,6 +1387,9 @@ export function TravelAgentChat({
       : null,
   ].filter((detail): detail is string => Boolean(detail)).join(" · ");
   const activeDestinationCandidate = destinationCue?.candidates[destinationCueIndex] ?? null;
+  const activeDestinationDisplayName = activeDestinationCandidate
+    ? destinationCandidateDisplayName(activeDestinationCandidate, titleLocale)
+    : null;
   // Precise confirmations still block the Start Planning CTA, but they no
   // longer suppress the independent origin/date/duration Brief below.
   const hasOpenConfirmationCard = Boolean(
@@ -1754,9 +1758,7 @@ export function TravelAgentChat({
           ) : null}
           {savedOfferNotice ? (
             <p role="status" className={`${rowClass} text-xs font-semibold text-primary`}>
-              {savedOfferNotice.capability === "flight"
-                ? "Saved to your draft trip. Not booked."
-                : "Saved to your draft trip. Not booked."}
+              {t(savedOfferNotice.capability === "flight" ? "offerCueFlightSaved" : "offerCueHotelSaved")}
             </p>
           ) : null}
           {startPlanningDismissalNotice ? (
@@ -1792,7 +1794,7 @@ export function TravelAgentChat({
               ) : null}
               <p className={`${destinationCue.candidates.length > 1 ? "pr-[76px]" : ""} mb-2 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
                 {t(cueIsAdditionalDestination ? "destinationCueQuestionAdditional" : "destinationCueQuestion",
-                  { destination: activeDestinationCandidate.displayName })}
+                  { destination: activeDestinationDisplayName ?? activeDestinationCandidate.displayName })}
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button
@@ -1803,7 +1805,7 @@ export function TravelAgentChat({
                 >{isActingOnDestinationCue
                   ? t("destinationCueSaving")
                   : t(cueIsAdditionalDestination ? "destinationCueAcceptAdditional" : "destinationCueAccept",
-                    { destination: activeDestinationCandidate.displayName })}</button>
+                    { destination: activeDestinationDisplayName ?? activeDestinationCandidate.displayName })}</button>
                 <button
                   type="button"
                   onClick={() => void resolveDestinationCue("dismiss")}
@@ -1820,14 +1822,14 @@ export function TravelAgentChat({
           {(flightOfferCue || hotelOfferCue) && effectiveThreadId ? (
             <div className={onGlobe ? "mb-2 w-full -translate-y-[3px]" : `mx-auto ${docked ? "mb-[18px]" : ""} w-full max-w-[420px] space-y-2`}>
               {flightOfferCue ? (
-                <section aria-label="Take this flight?" className={actionCardClass}>
+                <section aria-label={t("offerCueFlightQuestion")} className={actionCardClass}>
                   <p className={`mb-2 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
-                    Take this flight?
+                    {t("offerCueFlightQuestion")}
                   </p>
                   <p className="mb-2 text-xs text-muted-foreground">
-                    {flightOfferCue.candidates[0]?.display.headline}
+                    {localizedOfferHeadline(flightOfferCue.candidates[0]?.display.headline, "flight", t)}
                     {flightOfferCue.candidates[0]?.display.subline ? ` · ${flightOfferCue.candidates[0]?.display.subline}` : ""}
-                    {flightOfferCue.candidates[0]?.display.priceLabel ? ` · ${flightOfferCue.candidates[0]?.display.priceLabel}` : ""}
+                    {flightOfferCue.candidates[0]?.display.priceLabel ? ` · ${localizedOfferPrice(flightOfferCue.candidates[0].display.priceLabel, titleLocale, t)}` : ""}
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -1835,25 +1837,25 @@ export function TravelAgentChat({
                       onClick={() => void resolveOfferCue("flight", "accept")}
                       disabled={isActingOnOfferCue}
                       className={`${actionPrimaryClass} min-w-0 px-3 py-2.5 text-left`}
-                    >Accept</button>
+                    >{t("offerCueAccept")}</button>
                     <button
                       type="button"
                       onClick={() => void resolveOfferCue("flight", "dismiss")}
                       disabled={isActingOnOfferCue}
                       className={`${actionSecondaryClass} min-w-0 px-3 py-2.5 text-left`}
-                    >Dismiss</button>
+                    >{t("offerCueDismiss")}</button>
                   </div>
                 </section>
               ) : null}
               {hotelOfferCue ? (
-                <section aria-label="Stay in this hotel?" className={actionCardClass}>
+                <section aria-label={t("offerCueHotelQuestion")} className={actionCardClass}>
                   <p className={`mb-2 text-sm font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
-                    Stay in this hotel?
+                    {t("offerCueHotelQuestion")}
                   </p>
                   <p className="mb-2 text-xs text-muted-foreground">
-                    {hotelOfferCue.candidates[0]?.display.headline}
+                    {localizedOfferHeadline(hotelOfferCue.candidates[0]?.display.headline, "hotel", t)}
                     {hotelOfferCue.candidates[0]?.display.subline ? ` · ${hotelOfferCue.candidates[0]?.display.subline}` : ""}
-                    {hotelOfferCue.candidates[0]?.display.priceLabel ? ` · ${hotelOfferCue.candidates[0]?.display.priceLabel}` : ""}
+                    {hotelOfferCue.candidates[0]?.display.priceLabel ? ` · ${localizedOfferPrice(hotelOfferCue.candidates[0].display.priceLabel, titleLocale, t)}` : ""}
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -1861,13 +1863,13 @@ export function TravelAgentChat({
                       onClick={() => void resolveOfferCue("hotel", "accept")}
                       disabled={isActingOnOfferCue}
                       className={`${actionPrimaryClass} min-w-0 px-3 py-2.5 text-left`}
-                    >Accept</button>
+                    >{t("offerCueAccept")}</button>
                     <button
                       type="button"
                       onClick={() => void resolveOfferCue("hotel", "dismiss")}
                       disabled={isActingOnOfferCue}
                       className={`${actionSecondaryClass} min-w-0 px-3 py-2.5 text-left`}
-                    >Dismiss</button>
+                    >{t("offerCueDismiss")}</button>
                   </div>
                 </section>
               ) : null}
@@ -2513,6 +2515,34 @@ function withoutDestinationProposal<T extends {
   const { destinationCandidates, ...details } = proposal;
   void destinationCandidates;
   return Object.keys(details).length > 0 ? details : null;
+}
+
+function destinationCandidateDisplayName(
+  candidate: { displayName: string; localizedNames?: { en: string; zh: string | null } },
+  locale: "en" | "zh",
+): string {
+  if (locale === "zh") return candidate.localizedNames?.zh ?? candidate.displayName;
+  return candidate.localizedNames?.en ?? candidate.displayName;
+}
+
+function localizedOfferHeadline(
+  headline: string | undefined,
+  capability: "flight" | "hotel",
+  t: ReturnType<typeof useTranslations>,
+): string {
+  if (!headline || headline === "Flight option" || headline === "Hotel option") {
+    return t(capability === "flight" ? "offerCueFlightFallback" : "offerCueHotelFallback");
+  }
+  return headline;
+}
+
+function localizedOfferPrice(
+  priceLabel: string,
+  locale: "en" | "zh",
+  t: ReturnType<typeof useTranslations>,
+): string {
+  if (locale !== "zh" || !priceLabel.endsWith(" / night")) return priceLabel;
+  return t("offerCuePerNight", { price: priceLabel.slice(0, -" / night".length) });
 }
 
 function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {

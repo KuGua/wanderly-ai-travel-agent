@@ -441,21 +441,23 @@ memberships overlap only where explicitly configured.
 
 Runnable coverage: see `apps/api/tests/chat-conversation-e2e.test.ts` (202 acceptance, owner scope, active-run exclusion, idempotency, Worker completion, explicit queued cancellation, bounded retry failure, deterministic sequence and safe recall), `apps/api/tests/conversation-gateway.test.ts` (structured and streamed model paths plus controlled failure), `apps/web/src/components/explore/travel-agent-chat.test.tsx` (temporary delta ordering, generation-attempt replacement, Stop semantics and history recovery), `apps/web/src/lib/api/http-travel-api.test.ts` (authenticated fetch-SSE parsing), `apps/api/tests/agent-run-stream-headers.test.ts` (cross-origin and correlation headers survive the hijacked stream), `apps/api/tests/chat-threads-route.test.ts` and `apps/api/tests/thread-recall-skill.test.ts`. Worker-process kill/recovery and deployed proxy buffering remain manual release checks.
 
-### TS-H1b-LANGUAGE — User-visible prose follows the current-turn language authority
+### TS-H1b-LANGUAGE — User-visible prose follows the current interface locale
 
 **Stories:** H1, S1
-**Objective:** Verify that every private-chat prose mode applies one shared language rule without allowing historical context or destination metadata to switch languages.
+**Objective:** Verify that every private-chat prose mode applies one shared language rule without allowing a place-name script, historical context or destination metadata to switch languages.
 
 **Steps:**
 
-1. Send Chinese, English, Japanese/Korean and mixed-language private-chat questions; include a thread history written in a different language and destinations whose local language differs from the current question.
+1. Under both `zh` and `en` interface locales, send Chinese, English, Japanese/Korean and mixed-language private-chat questions; include a thread history written in a different language and destinations whose local language differs from the interface.
 2. Repeat each request with an explicit instruction to answer or translate into another language.
 3. Exercise both the structured and SSE-streaming conversation paths; inspect the assembled system prompt in the fake provider.
 4. Request a public location introduction with `locale: "zh"` for a non-Chinese destination, then repeat with `locale: "en"`.
 
 **Expected outcomes:**
 
-- The private-chat answer uses the explicit requested language when present; otherwise it uses the current question's dominant language. History, memory, destination locale and provider evidence do not switch it.
+- The private-chat answer uses the explicit requested language when present; otherwise it uses the server-validated interface locale persisted with the durable turn. Question script, history, memory, destination locale and provider evidence do not switch it.
+- A Chinese destination confirmation renders `上海` while retaining canonical `Shanghai` for persistence/search. Missing Chinese aliases fail safely to the canonical name.
+- Flight/hotel confirmation controls and success notices use message-catalog copy. Network/model fallback and embedded-card errors never expose raw English transport or server messages in a Chinese UI.
 - Both conversation paths contain exactly one shared user-visible language rule. The rule does not alter typed plan, extraction, evidence, tool-argument, enum or ID contracts.
 - Public location introduction has no user-question language inference: it uses only the validated request locale and distinct locale cache key; the destination's local language cannot override it.
 

@@ -965,6 +965,8 @@ export const agentTaskRuns = pgTable("agent_task_runs", {
    * as exploration, so the failure direction is remembering nothing.
    */
   conversationSurface: varchar("conversation_surface", { length: 32 }),
+  /** Reader UI language captured when this durable conversation turn entered the queue. */
+  conversationLocale: varchar("conversation_locale", { length: 8 }).$type<"en" | "zh" | null>(),
   /**
    * The trip brief extracted from this turn, awaiting the traveller's
    * confirmation. Kept here because the notification that used to carry it is

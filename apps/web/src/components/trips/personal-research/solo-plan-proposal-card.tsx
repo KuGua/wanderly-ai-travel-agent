@@ -4,6 +4,7 @@ import type { ListedPlan } from "@/lib/api/contracts";
 import { useSoloAdoptPlan } from "@/lib/query/hooks";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
 import { Button } from "@/components/ui/button";
+import { useErrorMessage } from "@/lib/api/use-error-message";
 
 /**
  * Phase 6 / Personal Trip Orchestrator — solo plan proposal card.
@@ -26,6 +27,7 @@ export function SoloPlanProposalCard({
   onAdopted?: () => void;
 }): ReactNode {
   const mutation = useSoloAdoptPlan(tripId);
+  const errorMessage = useErrorMessage();
   return (
     <div
       data-testid="solo-plan-proposal-card"
@@ -49,7 +51,7 @@ export function SoloPlanProposalCard({
       </Button>
       {mutation.isError ? (
         <p role="alert" className="mt-2 text-xs text-red-500">
-          采纳失败：{(mutation.error as Error).message}
+          采纳失败：{errorMessage(mutation.error)}
         </p>
       ) : null}
     </div>

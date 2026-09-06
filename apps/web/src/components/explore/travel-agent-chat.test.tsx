@@ -46,6 +46,7 @@ function ChatHarness({
   onThreadInvalidated,
   surface,
   variant,
+  titleLocale,
 }: {
   controlledThreadId?: string | null;
   initiallyOpen?: boolean;
@@ -57,6 +58,7 @@ function ChatHarness({
   /** Defaults to the globe, like the component does. */
   surface?: "EXPLORE" | "TRIP_WORKSPACE";
   variant?: "floating" | "docked";
+  titleLocale?: "en" | "zh";
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   return (
@@ -66,6 +68,7 @@ function ChatHarness({
       onDismiss={() => setOpen(false)}
       threadId={controlledThreadId}
       tripId={tripId}
+      titleLocale={titleLocale}
       onThreadInvalidated={onThreadInvalidated}
       {...(surface ? { surface } : {})}
       {...(variant ? { variant } : {})}
@@ -317,6 +320,48 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(hotel).not.toBeNull();
     expect(destination!.compareDocumentPosition(flight!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(flight!.compareDocumentPosition(hotel!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("uses localized destination and offer copy in the Chinese interface", async () => {
+    const api = createApi({
+      getOwnerConversation: vi.fn().mockResolvedValue({
+        thread: thread(),
+        messages: [],
+        pendingDestinationCue: {
+          id: CUE_ID,
+          version: 1,
+          candidates: [{
+            id: CANDIDATE_ID,
+            displayName: "Shanghai",
+            localizedNames: { en: "Shanghai", zh: "上海" },
+            status: "PENDING",
+          }],
+        },
+        pendingOfferCues: [{
+          id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+          version: 1,
+          capability: "flight",
+          reasonCode: "EXPLICIT_SELECTION",
+          expiresAt: "2030-08-25T10:00:00.000Z",
+          candidates: [{
+            id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            candidateRef: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            ordinal: 0,
+            intent: "EXPLICIT_SELECT",
+            status: "PENDING",
+            display: { capability: "flight", headline: "MU 5101", subline: null, priceLabel: null },
+          }],
+        }],
+      }),
+    });
+
+    renderWithIntl(<ChatHarness tripId={TRIP_ID} titleLocale="zh" />, { api, locale: "zh" });
+
+    expect(await screen.findByText("要将 上海 设为目的地吗？")).toBeInTheDocument();
+    expect(screen.queryByText("要将 Shanghai 设为目的地吗？")).not.toBeInTheDocument();
+    expect(screen.getByText("选择这趟航班吗？")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "选择" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "暂不选择" })).toBeInTheDocument();
   });
 
   it("offers a further destination as an addition once the trip has one", async () => {
@@ -803,6 +848,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(api.submitConversationTurn).toHaveBeenCalledWith(THREAD_ID, {
       requestId: REQUEST_ID,
       question: "Tell me about Tokyo",
+      locale: "en",
       // Every turn is stamped with the surface it was typed on; this host is
       // the exploration globe, which must never feed long-term memory.
       surface: "EXPLORE",
@@ -822,6 +868,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(body).toEqual({
       requestId: REQUEST_ID,
       question: "What makes it interesting?",
+      locale: "en",
       place: TOKYO,
       surface: "EXPLORE",
     });
@@ -1071,6 +1118,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(body).toEqual({
       requestId: REQUEST_ID,
       question: "What is the weather like?",
+      locale: "en",
       place: TOKYO,
       surface: "EXPLORE",
     });

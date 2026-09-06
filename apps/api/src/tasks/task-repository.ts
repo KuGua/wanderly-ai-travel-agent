@@ -192,6 +192,7 @@ export async function acceptConversationTask(params: {
         traceContext: buildTraceContextForTask(params.ctx),
         intent: params.input.intent ?? null,
         conversationSurface: params.input.surface ?? null,
+        conversationLocale: params.input.locale ?? null,
         ...placeColumns(place),
       }).returning();
 
@@ -1256,6 +1257,7 @@ export async function taskCancellationRequested(runId: string, leaseToken: strin
  */
 export async function loadConversationTurnInput(run: AgentTaskRow): Promise<{
   question: string;
+  locale?: "en" | "zh";
   place?: ConversationPlace;
   intent?: "auto_intro" | "user_typed";
 }> {
@@ -1265,7 +1267,12 @@ export async function loadConversationTurnInput(run: AgentTaskRow): Promise<{
     .limit(1);
   if (!message || message.role !== "USER") throw new Error("Conversation USER message is unavailable");
   const intent = run.intent === "auto_intro" || run.intent === "user_typed" ? run.intent : undefined;
-  return { question: message.body, place: taskPlace(run), intent };
+  return {
+    question: message.body,
+    ...(run.conversationLocale ? { locale: run.conversationLocale } : {}),
+    place: taskPlace(run),
+    intent,
+  };
 }
 
 export async function completeConversationTask(params: {

@@ -11,6 +11,7 @@ import {
   useConfirmConstraintHandoffBatch,
 } from "@/lib/query/hooks";
 import { recordUiDiagnostic } from "@/lib/observability/ui-diagnostics";
+import { useErrorMessage } from "@/lib/api/use-error-message";
 
 /**
  * Phase 6 / Member conversation handoff — candidate card.
@@ -55,6 +56,7 @@ export function ConversationHandoffCard({
   // that namespace has no `handoff*` key at all, so every label in this card
   // was rendering as its own key path.
   const t = useTranslations("teamOrchestration");
+  const errorMessage = useErrorMessage();
   const [selections, setSelections] = useState<Map<string, { visibility: ConstraintVisibility; strength: ConstraintStrength }>>(() => {
     const initial = new Map<string, { visibility: ConstraintVisibility; strength: ConstraintStrength }>();
     for (const proposal of batch.batch) {
@@ -226,7 +228,7 @@ export function ConversationHandoffCard({
 
       {mutation.isError ? (
         <p role="alert" className="mt-2 text-xs text-red-500">
-          {t("handoffConfirmError", { message: (mutation.error as Error).message })}
+          {t("handoffConfirmError", { message: errorMessage(mutation.error) })}
         </p>
       ) : null}
     </section>

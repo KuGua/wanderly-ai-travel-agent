@@ -854,6 +854,7 @@ export async function handleConversationTask(params: {
   });
   const input = travelConversationInputSchema.parse({
     ...turnInput,
+    locale: turnInput.locale ?? titleLocale ?? "en",
     tripContext,
     threadContext: context.messages,
     memoryContext,
@@ -1176,9 +1177,13 @@ export async function handleConversationTask(params: {
       .filter(Boolean)
       .sort()
       .at(-1) ?? new Date().toISOString();
-    const templateBody = evidenceRows.length === 0
-      ? "Wanderly captured search results but could not finish the reply."
-      : `Wanderly gathered ${evidenceRows.length} result${evidenceRows.length === 1 ? "" : "s"} from ${providerNames || "a travel provider"} (latest captured at ${latestCapturedAt}) but could not finish the reply.`;
+    const templateBody = input.locale === "zh"
+      ? evidenceRows.length === 0
+        ? "Wanderly 已获取搜索结果，但暂时无法完成回复。"
+        : `Wanderly 已从${providerNames || "旅行服务商"}获取 ${evidenceRows.length} 条结果（最新获取时间：${latestCapturedAt}），但暂时无法完成回复。`
+      : evidenceRows.length === 0
+        ? "Wanderly captured search results but could not finish the reply."
+        : `Wanderly gathered ${evidenceRows.length} result${evidenceRows.length === 1 ? "" : "s"} from ${providerNames || "a travel provider"} (latest captured at ${latestCapturedAt}) but could not finish the reply.`;
     logSafeRuntimeEvent(params.ctx, {
       component: "worker", event: "evidence_without_reply",
       operation: "conversation", outcome: "failure",
@@ -1204,7 +1209,7 @@ export async function handleConversationTask(params: {
   const parsed = parsedReply.responseMode === "FALLBACK" && evidenceDispatched
     ? travelConversationOutputSchema.parse({
       ...parsedReply,
-      content: evidenceBackedConversationFallback().content,
+      content: evidenceBackedConversationFallback(input.locale).content,
     })
     : parsedReply;
   if (

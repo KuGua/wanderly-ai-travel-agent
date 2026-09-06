@@ -312,6 +312,7 @@ export interface ModelGateway {
 
   generateConversationReply(params: {
     question: string;
+    locale?: "en" | "zh";
     place?: ConversationPlace;
     /**
      * Server-built, bounded same-thread LLM context window.  Built only
@@ -359,6 +360,7 @@ export interface ModelGateway {
    */
   streamConversationReply(params: {
     question: string;
+    locale?: "en" | "zh";
     place?: ConversationPlace;
     threadContext: ThreadContextMessage[];
     memoryContext?: ConversationMemoryFact[];

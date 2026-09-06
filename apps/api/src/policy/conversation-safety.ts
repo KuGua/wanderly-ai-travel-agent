@@ -305,9 +305,11 @@ export function pendingTripMutationReply(question?: string): ConversationReply {
  * it as a model response. Content respects the same safety boundary as the
  * system prompt (no price / inventory / visa / booking / flight-status claims).
  */
-export function safeConversationFallback(): ConversationReply {
+export function safeConversationFallback(locale: "en" | "zh" = "en"): ConversationReply {
   return {
-    content: "I can't reach the conversation model right now — please try again in a moment.",
+    content: locale === "zh"
+      ? "暂时无法连接对话模型，请稍后再试。"
+      : "I can't reach the conversation model right now — please try again in a moment.",
     responseMode: "FALLBACK",
   };
 }
@@ -320,10 +322,11 @@ export function safeConversationFallback(): ConversationReply {
  * work that actually succeeded. Same safety boundary as above: it points at the
  * results without making any price / inventory claim of its own.
  */
-export function evidenceBackedConversationFallback(): ConversationReply {
+export function evidenceBackedConversationFallback(locale: "en" | "zh" = "en"): ConversationReply {
   return {
-    content:
-      "Your search finished and the results below are saved, but I couldn't write the summary just now — please ask again if you'd like me to walk through them.",
+    content: locale === "zh"
+      ? "搜索已经完成，结果也已保存在下方，但我刚才没能生成总结；如果需要，我可以稍后再为你梳理。"
+      : "Your search finished and the results below are saved, but I couldn't write the summary just now — please ask again if you'd like me to walk through them.",
     responseMode: "FALLBACK",
   };
 }

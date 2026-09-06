@@ -255,6 +255,7 @@
 5. Every failure path leaves the stored title untouched and returns a readable reason: `MANUAL_LOCKED`, `NO_MATERIAL` (no user message yet, model not called), `REJECTED` (post-processing refused a URL, e-mail, long digit run, or verbatim echo of the conversation), `UNAVAILABLE` (gateway timeout or failure).
 6. Thread titles are owner-only data: absent from shared snapshots, the shared plan surface, member lists, invitation previews, logs, traces, audit summaries and metric labels. `CHAT_THREAD_TITLE_UPDATE` audit rows carry only `{ threadId, source }`.
 7. Background automatic naming is explicitly out of scope for this story; the promotion criteria are recorded in the implementation spec.
+8. Every durable private-chat turn carries the validated reader locale through the queue. Unless the current turn explicitly requests another language, model prose, degradation notices, confirmation-card controls and error copy use that locale. Canonical provider city names remain stable business values while the API projects a locale-specific display label for UI use.
 
 实施合同见 [Thread 标题生命周期实施规范](thread-title-lifecycle-implementation.md)。
 

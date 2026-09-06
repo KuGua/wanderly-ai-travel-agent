@@ -75,6 +75,7 @@ const researchEvidenceOfferSchema = z.object({
 
 export const travelConversationInputSchema = z.object({
   question: z.string().trim().min(1).max(4000),
+  locale: z.enum(["en", "zh"]).default("en"),
   place: conversationPlaceSchema.optional(),
   intent: conversationIntentSchema.optional(),
   // Typed catalogue facts plus the traveller's own highlighted notes, which
@@ -184,6 +185,7 @@ export async function executeTravelConversation(
     reply = onDelta && gateway.streamConversationReply
       ? await gateway.streamConversationReply({
           question: input.question,
+          locale: input.locale,
           place: input.place,
           threadContext: input.threadContext,
           memoryContext: input.memoryContext,
@@ -201,6 +203,7 @@ export async function executeTravelConversation(
         })
       : await gateway.generateConversationReply({
           question: input.question,
+          locale: input.locale,
           place: input.place,
           threadContext: input.threadContext,
           memoryContext: input.memoryContext,

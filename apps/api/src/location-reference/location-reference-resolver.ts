@@ -237,6 +237,33 @@ export class LocationReferenceResolver {
     return null;
   }
 
+  /**
+   * Resolve the same provider-safe city identity together with labels intended
+   * only for display. GeoNames keeps translated city labels in alternateNames,
+   * so this projection must stay separate from the canonical `cityName` used
+   * by search, deduplication and persistence.
+   */
+  resolveDestinationLabels(params: {
+    cityName: string;
+    countryHint?: string;
+  }): { nameEn: string; nameZh: string | null } | null {
+    const reference = this.resolveDestinationReference({
+      destinationId: "display-label",
+      cityName: params.cityName,
+      ...(params.countryHint ? { countryHint: params.countryHint } : {}),
+    });
+    if (!reference) return null;
+    const city = (this.citiesByCountry.get(reference.countryCode) ?? []).find((candidate) =>
+      candidate.name === reference.cityName
+      && candidate.latitude === reference.latitude
+      && candidate.longitude === reference.longitude);
+    if (!city) return { nameEn: reference.cityName, nameZh: null };
+    return {
+      nameEn: city.name,
+      nameZh: preferredChineseCityAlias(city.alternateNames ?? []),
+    };
+  }
+
   private toDestinationReference(destinationId: string, city: City): DestinationReference {
     return {
       destinationId,
@@ -285,6 +312,22 @@ export class LocationReferenceResolver {
       isTravelFact: false,
     };
   }
+}
+
+function preferredChineseCityAlias(aliases: readonly string[]): string | null {
+  const candidates = aliases
+    .map((alias, index) => ({ alias: alias.trim(), index }))
+    .filter(({ alias }) => /\p{Script=Han}/u.test(alias))
+    .filter(({ alias }) => {
+      const length = Array.from(alias).length;
+      return length >= 2 && length <= 8 && !alias.startsWith("中国");
+    })
+    .sort((left, right) => {
+      const leftLength = Array.from(left.alias).length;
+      const rightLength = Array.from(right.alias).length;
+      return leftLength - rightLength || left.index - right.index;
+    });
+  return candidates[0]?.alias ?? null;
 }
 
 let defaultResolver: LocationReferenceResolver | undefined;

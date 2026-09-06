@@ -369,4 +369,27 @@ describe("LocationReferenceResolver country vs city disambiguation in alternateN
     // And the Chinese name is NOT misread as a country.
     expect(resolver.resolveCountryLabel("东京")).toBeNull();
   });
+
+  it("projects a localized display label without changing the canonical destination", () => {
+    const resolver = new LocationReferenceResolver(
+      [{ properties: { ADMIN: "China", ISO_A2: "CN" }, geometry: { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]] } }],
+      [{
+        name: "Shanghai",
+        alternateNames: ["Shanghai City", "上海", "上海市", "中国上海", "沪"],
+        countryCode: "CN",
+        latitude: 0.5,
+        longitude: 0.5,
+        population: 24_874_500,
+      }],
+      [],
+      { version: "test.1", checkedAt: "2026-08-25T00:00:00.000Z" },
+    );
+
+    expect(resolver.resolveDestinationLabels({ cityName: "上海", countryHint: "CN" })).toEqual({
+      nameEn: "Shanghai",
+      nameZh: "上海",
+    });
+    expect(resolver.resolveDestinationReference({ destinationId: "shanghai", cityName: "上海" })?.cityName)
+      .toBe("Shanghai");
+  });
 });

@@ -11,6 +11,7 @@ import {
 import { ApiError } from "../middleware/error-handler.js";
 import { destinationCueActionResponseSchema, destinationCueResponseSchema } from "../types/schemas.js";
 import type { DestinationCueActionResponse, DestinationCueResponse } from "../types/schemas.js";
+import { getLocationReferenceResolver } from "../location-reference/location-reference-resolver.js";
 import type { RequestContext } from "../utils/context.js";
 import type { AgentTaskRow } from "../tasks/task-repository.js";
 import type { ResolvedDestinationCueDecision } from "../skills/personal/destination-cue-decision-skill.js";
@@ -367,6 +368,7 @@ async function cueFromBatch(target: typeof db | Tx, batchId: string): Promise<De
   const candidates = await target.select({
     id: destinationCueCandidates.id,
     displayName: destinationCueCandidates.canonicalCityName,
+    countryCode: destinationCueCandidates.countryCode,
     status: destinationCueCandidates.status,
     intent: destinationCueCandidates.candidateIntent,
     triggerContext: destinationCueCandidates.triggerContext,
@@ -374,7 +376,18 @@ async function cueFromBatch(target: typeof db | Tx, batchId: string): Promise<De
     .where(and(eq(destinationCueCandidates.batchId, batchId), eq(destinationCueCandidates.status, "PENDING")))
     .orderBy(asc(destinationCueCandidates.ordinal));
   if (candidates.length === 0) return null;
-  return destinationCueResponseSchema.parse({ id: batch.id, version: batch.version, candidates });
+  const resolver = getLocationReferenceResolver();
+  const localizedCandidates = candidates.map(({ countryCode, ...candidate }) => {
+    const labels = resolver.resolveDestinationLabels({
+      cityName: candidate.displayName,
+      countryHint: countryCode,
+    });
+    return {
+      ...candidate,
+      ...(labels ? { localizedNames: { en: labels.nameEn, zh: labels.nameZh } } : {}),
+    };
+  });
+  return destinationCueResponseSchema.parse({ id: batch.id, version: batch.version, candidates: localizedCandidates });
 }
 
 function normalizeTimeZone(value: string): string {

@@ -467,6 +467,8 @@ export const conversationSurfaceSchema = z.enum(["EXPLORE", "TRIP_WORKSPACE"]);
 export const conversationTurnRequestSchema = z.object({
   requestId: uuidSchema,
   question: z.string().trim().min(1).max(4000),
+  // Optional for compatibility with already-queued turns and older clients.
+  locale: z.enum(["en", "zh"]).optional(),
   place: conversationPlaceSchema.optional(),
   intent: conversationIntentSchema.optional(),
   surface: conversationSurfaceSchema.optional(),
@@ -510,6 +512,10 @@ export const conversationTurnAcceptedResponseSchema = z.object({
 export const destinationCueCandidateResponseSchema = z.object({
   id: uuidSchema,
   displayName: z.string().min(1).max(128),
+  localizedNames: z.object({
+    en: z.string().min(1).max(128),
+    zh: z.string().min(1).max(128).nullable(),
+  }).strict().optional(),
   status: z.enum(["PENDING", "ACCEPTED", "DISMISSED", "SUPERSEDED"]),
   intent: z.enum(["DESTINATION_INTEREST", "EXPLICIT_SET_DESTINATION"]).optional(),
   triggerContext: z.enum([

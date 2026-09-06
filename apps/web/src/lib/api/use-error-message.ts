@@ -17,8 +17,8 @@ const KNOWN_STATUS_KEYS = new Set([
 
 /**
  * Returns a function that converts an arbitrary thrown value into a
- * user-facing, locale-aware message. Server-supplied `message` strings are
- * surfaced verbatim when no localized status-code mapping exists.
+ * user-facing, locale-aware message. Server and transport text is diagnostic
+ * data, never UI copy; unknown cases use a localized generic message.
  */
 export function useErrorMessage() {
   const t = useTranslations("errors");
@@ -34,7 +34,7 @@ export function useErrorMessage() {
         // raw server strings as UI copy.
         return t("byStatusCode.fallback");
       }
-      return error.message || t("byStatusCode.fallback");
+      return t("networkUnreachable");
     }
     return t("generic");
   };
