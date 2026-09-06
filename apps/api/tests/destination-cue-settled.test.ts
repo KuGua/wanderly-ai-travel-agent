@@ -167,7 +167,7 @@ describe("destination cue — already on the trip", () => {
   });
 
   it("raises every candidate when the trip has settled none", async () => {
-    const { tripId, run } = await draftTripWith([]);
+    const { run } = await draftTripWith([]);
 
     const cue = await persistDestinationCue({ run, decision: decision(["Gero", "Kyoto"]) });
 
