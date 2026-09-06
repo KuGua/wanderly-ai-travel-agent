@@ -171,6 +171,36 @@ describe("HomeDashboard", () => {
     expect(screen.queryByRole("link", { name: /Continue current plan/ })).not.toBeInTheDocument();
   });
 
+  it("keeps the year the reader paged to, even once trip data lands after the click", async () => {
+    let resolveTrips: (value: TripsResponse) => void = () => {};
+    const api = {
+      getMyProfile: vi.fn().mockResolvedValue({ profile: null }),
+      getTrips: vi.fn().mockReturnValue(
+        new Promise<TripsResponse>((resolve) => {
+          resolveTrips = resolve;
+        }),
+      ),
+    } as unknown as TravelApi;
+    renderAuthenticatedDashboard(api);
+
+    const heading = await screen.findByText(/^\d{4}$/);
+    const shown = Number(heading.textContent);
+
+    fireEvent.click(screen.getByRole("button", { name: "Next year" }));
+    expect(screen.getByText(/^\d{4}$/)).toHaveTextContent(String(shown + 1));
+
+    // This trip covers no year near today's, so the derived year would jump the
+    // calendar to 2029; the reader's own choice outranks it.
+    resolveTrips({
+      trips: [{ ...draftTrip, travelDateStart: "2029-04-01", travelDateEnd: "2029-04-08" }],
+    });
+    await waitFor(() => expect(screen.getAllByText("Taipei exploration").length).toBeGreaterThan(0));
+    expect(screen.getByText(/^\d{4}$/)).toHaveTextContent(String(shown + 1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous year" }));
+    expect(screen.getByText(/^\d{4}$/)).toHaveTextContent(String(shown));
+  });
+
   it("does not present a failed trip-list request as zero trips", async () => {
     const api = {
       getMyProfile: vi.fn().mockResolvedValue({ profile: null }),

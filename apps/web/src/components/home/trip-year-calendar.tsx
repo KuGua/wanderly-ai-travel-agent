@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useFormatter, useTranslations } from "next-intl";
 
 /**
@@ -75,11 +76,14 @@ export function TripYearCalendar({
   year,
   runs,
   today,
+  onYearChange,
 }: {
   year: number;
   runs: readonly Run[];
   /** `YYYY-MM-DD` in the reader's own timezone, resolved by the caller. */
   today: string;
+  /** Step the shown year. Omitted renders the year without its arrows. */
+  onYearChange?: (year: number) => void;
 }) {
   const t = useTranslations("home.calendar");
   const format = useFormatter();
@@ -90,8 +94,36 @@ export function TripYearCalendar({
 
   return (
     <div>
-      <div className="flex items-baseline justify-between px-4 pt-4">
-        <p className="text-[13px] font-bold tracking-[.02em]">{t("year", { year })}</p>
+      <div className="flex items-center justify-between px-4 pt-4">
+        {/* The year heads this half of the card, so it is sized like the
+            heading over the trips below rather than like a caption. The arrows
+            sit with it: trips run past December, and a year the reader cannot
+            leave is a year they can only look at. */}
+        <div className="flex items-center gap-1">
+          <p className="text-lg font-semibold tracking-[-0.02em] text-[var(--w-ink)]/85">
+            {t("year", { year })}
+          </p>
+          {onYearChange ? (
+            <span className="ml-1 flex items-center gap-0.5">
+              <button
+                type="button"
+                onClick={() => onYearChange(year - 1)}
+                aria-label={t("previousYear")}
+                className="grid size-7 place-items-center rounded-[8px] text-[var(--w-ink)]/55 transition-colors hover:bg-[var(--w-ink)]/8 hover:text-[var(--w-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-info)]/40"
+              >
+                <ChevronLeft aria-hidden="true" className="size-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onYearChange(year + 1)}
+                aria-label={t("nextYear")}
+                className="grid size-7 place-items-center rounded-[8px] text-[var(--w-ink)]/55 transition-colors hover:bg-[var(--w-ink)]/8 hover:text-[var(--w-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-info)]/40"
+              >
+                <ChevronRight aria-hidden="true" className="size-4" />
+              </button>
+            </span>
+          ) : null}
+        </div>
         <div className="flex gap-3 text-[10.5px] text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
             <i aria-hidden="true" className="inline-block size-[9px] rounded-[2px] bg-[var(--w-cal-planning)]" />

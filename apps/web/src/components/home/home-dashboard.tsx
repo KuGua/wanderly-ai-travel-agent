@@ -1,7 +1,6 @@
 "use client";
 
 import { ArrowRight, Heart, LockKeyhole, MapPinned, Search, Settings2 } from "lucide-react";
-import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -104,6 +103,11 @@ export function HomeDashboard() {
     const years = yearsCovered(calendarRuns, current);
     return years.includes(current) ? current : years[years.length - 1];
   }, [calendarRuns, todayIso]);
+  /* Null until the traveller steps the year themselves. Seeding state from
+     `calendarYear` instead would let a late trips response yank the calendar
+     back to the derived year under someone who had already paged away. */
+  const [chosenYear, setChosenYear] = useState<number | null>(null);
+  const shownYear = chosenYear ?? calendarYear;
 
   const statusCounts = useMemo(() => {
     const counts = { active: 0, completed: 0, archived: 0 };
@@ -198,7 +202,12 @@ export function HomeDashboard() {
             it should not grow with the window the way the year does. */}
         <div className="grid lg:grid-cols-[minmax(0,1fr)_296px]">
           <div className="min-w-0">
-            <TripYearCalendar year={calendarYear} runs={calendarRuns} today={todayIso} />
+            <TripYearCalendar
+              year={shownYear}
+              runs={calendarRuns}
+              today={todayIso}
+              onYearChange={setChosenYear}
+            />
           </div>
 
           <section
@@ -284,13 +293,14 @@ export function HomeDashboard() {
       <div className="relative mt-8">
         {/* A real translucent fibre texture, placed outside the masked felt so
             its torn ends can cross the board edge without being clipped. */}
-        <Image
-          src="/images/washi-tape-blue.png"
-          alt=""
+        <span
           aria-hidden="true"
-          width={768}
-          height={256}
-          className="pointer-events-none absolute -left-[14px] -top-[4px] z-10 h-auto w-[84px] select-none rotate-[-38deg] opacity-90 sm:-left-[18px] sm:-top-[2px] sm:w-[100px]"
+          /* The PNG supplies the fibre, a token supplies the colour: masked
+             rather than drawn as an <img>, so the strip is the same blue as
+             the binding margin it sits above instead of whatever the file was
+             exported at. Width and height are both set — `h-auto` tied the
+             thickness to the 3:1 export, and this wants to read as tape. */
+          className="pointer-events-none absolute -left-[54px] top-[2px] z-10 block h-[40px] w-[104px] rotate-[-38deg] bg-[var(--w-sheet-blue)] [mask-image:url('/images/washi-tape-blue.png')] [mask-position:center] [mask-repeat:no-repeat] [mask-size:100%_100%] sm:-left-[62px] sm:top-[4px] sm:h-[46px] sm:w-[124px]"
         />
         <section
           /* Felt, not a second sheet of paper. The pad above is the notebook;

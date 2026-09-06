@@ -156,6 +156,8 @@
     },
     "calendar": {
       "year": "{year} 年",
+      "previousYear": "上一年",
+      "nextYear": "下一年",
       "legendPlanning": "计划中",
       "legendTrip": "行程期间",
       "legendToday": "今天",

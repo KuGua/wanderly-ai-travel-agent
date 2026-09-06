@@ -156,6 +156,8 @@
     },
     "calendar": {
       "year": "{year}",
+      "previousYear": "Previous year",
+      "nextYear": "Next year",
       "legendPlanning": "In planning",
       "legendTrip": "Trip dates",
       "legendToday": "Today",
