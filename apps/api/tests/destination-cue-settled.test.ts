@@ -10,6 +10,7 @@ import {
   chatMessages,
   chatThreads,
   destinationCueBatches,
+  destinationCueCandidates,
   destinationCuePromptPolicies,
   sharedTrips,
   tripMembers,
@@ -167,7 +168,7 @@ describe("destination cue — already on the trip", () => {
   });
 
   it("raises every candidate when the trip has settled none", async () => {
-    const { tripId, run } = await draftTripWith([]);
+    const { run } = await draftTripWith([]);
 
     const cue = await persistDestinationCue({ run, decision: decision(["Gero", "Kyoto"]) });
 
@@ -189,30 +190,83 @@ describe("destination cue — already on the trip", () => {
   });
 });
 
-describe("destination cue — Trip-wide prompt fatigue", () => {
-  it("suppresses automatic interest during cooldown but lets an explicit set command through", async () => {
+/**
+ * Declining a city is a statement about that city. It used to be stored as a
+ * thirty-minute cooldown on `(owner, trip)`, so turning down one suggestion
+ * silenced every other city too: the traveller named a different place and
+ * nothing appeared, and only an explicit "把北京设为目的地" still worked.
+ */
+describe("destination cue — a dismissal is about the city it dismissed", () => {
+  const DISMISSED_AT = new Date("2026-09-04T08:00:00.000Z");
+  const SOON_AFTER = new Date("2026-09-04T08:10:00.000Z");
+  const AFTER_COOLDOWN = new Date("2026-09-04T08:31:00.000Z");
+
+  async function tripWithDismissedKyoto() {
+    const { run } = await draftTripWith([]);
+    const raised = await persistDestinationCue({
+      run,
+      decision: decision(["Kyoto"], "DESTINATION_INTEREST"),
+      now: DISMISSED_AT,
+    });
+    expect(raised).not.toBeNull();
+    await db.update(destinationCueCandidates)
+      .set({ status: "DISMISSED", resolvedAt: DISMISSED_AT })
+      .where(eq(destinationCueCandidates.canonicalCityName, "Kyoto"));
+    return { run };
+  }
+
+  it("does not ask about the declined city again straight away", async () => {
+    const { run } = await tripWithDismissedKyoto();
+    expect(await persistDestinationCue({
+      run: await nextRunFor(run),
+      decision: decision(["Kyoto"], "DESTINATION_INTEREST"),
+      now: SOON_AFTER,
+    })).toBeNull();
+  });
+
+  it("still asks about a different city", async () => {
+    const { run } = await tripWithDismissedKyoto();
+    const cue = await persistDestinationCue({
+      run: await nextRunFor(run),
+      decision: decision(["Osaka"], "DESTINATION_INTEREST"),
+      now: SOON_AFTER,
+    });
+    expect(cue?.candidates.map((candidate) => candidate.displayName)).toEqual(["Osaka"]);
+  });
+
+  it("lets an explicit set command through for the declined city itself", async () => {
+    const { run } = await tripWithDismissedKyoto();
+    const cue = await persistDestinationCue({
+      run: await nextRunFor(run),
+      decision: decision(["Kyoto"], "EXPLICIT_SET_DESTINATION"),
+      now: SOON_AFTER,
+    });
+    expect(cue?.candidates.map((candidate) => candidate.displayName)).toEqual(["Kyoto"]);
+  });
+
+  it("asks again once the half hour is up", async () => {
+    const { run } = await tripWithDismissedKyoto();
+    const cue = await persistDestinationCue({
+      run: await nextRunFor(run),
+      decision: decision(["Kyoto"], "DESTINATION_INTEREST"),
+      now: AFTER_COOLDOWN,
+    });
+    expect(cue?.candidates.map((candidate) => candidate.displayName)).toEqual(["Kyoto"]);
+  });
+
+  it("still stops at the day's third dismissal, whatever the city", async () => {
     const { tripId, run } = await draftTripWith([]);
-    const now = new Date("2026-09-04T08:00:00.000Z");
     await db.insert(destinationCuePromptPolicies).values({
       ownerUserId: aliceId,
       tripId,
-      cooldownUntil: new Date("2026-09-04T08:30:00.000Z"),
       dismissalDay: "2026-09-04",
-      dailyDismissalCount: 1,
+      dailyDismissalCount: 3,
       timezone: "UTC",
     });
-
     expect(await persistDestinationCue({
       run,
-      decision: decision(["Kyoto"], "DESTINATION_INTEREST"),
-      now,
+      decision: decision(["Osaka"], "DESTINATION_INTEREST"),
+      now: SOON_AFTER,
     })).toBeNull();
-
-    const cue = await persistDestinationCue({
-      run,
-      decision: decision(["Kyoto"], "EXPLICIT_SET_DESTINATION"),
-      now,
-    });
-    expect(cue?.candidates.map((candidate) => candidate.displayName)).toEqual(["Kyoto"]);
   });
 });

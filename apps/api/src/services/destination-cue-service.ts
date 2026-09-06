@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, sql } from "drizzle-orm";
 
 import { db } from "../db/database.js";
 import {
@@ -24,16 +24,23 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 const MINIMUM_REPROMPT_MS = 30 * 60 * 1000;
 const DAILY_DISMISSAL_LIMIT = 3;
 
+/**
+ * How often the traveller may be asked *at all*, whatever the city.
+ *
+ * The 30-minute cooldown a dismissal used to set lived here, keyed on
+ * `(owner, trip)` — so declining Shanghai silenced Beijing too, and the next
+ * city the traveller named simply never raised a card. Only an explicit
+ * "把北京设为目的地" got through, which is how the suppression was noticed.
+ * That cooldown now belongs to the city it was about; see
+ * `citiesInDismissalCooldown`. What remains here is the daily volume guard,
+ * which is about nagging and is rightly trip-wide.
+ */
 export function evaluateDestinationCuePromptPolicy(input: {
-  cooldownUntil: Date | null;
   dismissalDay: string | null;
   dailyDismissalCount: number;
   timeZone: string;
   now: Date;
-}): { eligible: boolean; reason: "ELIGIBLE" | "COOLDOWN" | "DAILY_LIMIT" } {
-  if (input.cooldownUntil && input.cooldownUntil.getTime() > input.now.getTime()) {
-    return { eligible: false, reason: "COOLDOWN" };
-  }
+}): { eligible: boolean; reason: "ELIGIBLE" | "DAILY_LIMIT" } {
   if (input.dismissalDay === localDayKey(input.now, input.timeZone)
     && input.dailyDismissalCount >= DAILY_DISMISSAL_LIMIT) {
     return { eligible: false, reason: "DAILY_LIMIT" };
@@ -51,6 +58,39 @@ function isAlreadyOnTrip(destinations: string[], canonicalCityName: string): boo
   return destinations.some(
     (name) => name.localeCompare(canonicalCityName, undefined, { sensitivity: "accent" }) === 0,
   );
+}
+
+/** Case-insensitive, matching how `isAlreadyOnTrip` compares the same names. */
+function cityCooldownKey(cityName: string): string {
+  return cityName.toLocaleLowerCase();
+}
+
+/**
+ * Cities this traveller declined for this trip within the last half hour.
+ *
+ * Read from the dismissals themselves rather than from a copy: the candidate
+ * rows already record which city was declined and when, so there is no second
+ * piece of state to keep in step. It mirrors how `memory_proposals` scopes its
+ * own cooldown to the proposal it belongs to.
+ */
+async function citiesInDismissalCooldown(params: {
+  tx: Tx;
+  tripId: string;
+  ownerUserId: string;
+  now: Date;
+}): Promise<Set<string>> {
+  const since = new Date(params.now.getTime() - MINIMUM_REPROMPT_MS);
+  const rows = await params.tx
+    .select({ cityName: destinationCueCandidates.canonicalCityName })
+    .from(destinationCueCandidates)
+    .innerJoin(destinationCueBatches, eq(destinationCueCandidates.batchId, destinationCueBatches.id))
+    .where(and(
+      eq(destinationCueBatches.tripId, params.tripId),
+      eq(destinationCueBatches.ownerUserId, params.ownerUserId),
+      eq(destinationCueCandidates.status, "DISMISSED"),
+      gt(destinationCueCandidates.resolvedAt, since),
+    ));
+  return new Set(rows.map((row) => cityCooldownKey(row.cityName)));
 }
 
 export async function persistDestinationCue(params: {
@@ -84,15 +124,23 @@ export async function persistDestinationCue(params: {
       .for("update")
       .limit(1);
     const automaticEligible = !promptPolicy || evaluateDestinationCuePromptPolicy({
-      cooldownUntil: promptPolicy.cooldownUntil,
       dismissalDay: promptPolicy.dismissalDay,
       dailyDismissalCount: promptPolicy.dailyDismissalCount,
       timeZone: promptPolicy.timezone,
       now,
     }).eligible;
+    const cooledDown = await citiesInDismissalCooldown({
+      tx, tripId, ownerUserId: params.run.createdByUserId, now,
+    });
     const eligible: ResolvedDestinationCueDecision["candidates"] = [];
     for (const candidate of params.decision.candidates) {
-      if (!automaticEligible && candidate.intent !== "EXPLICIT_SET_DESTINATION") continue;
+      // An explicit command is the traveller asking for this city by name, so
+      // it outranks both guards — declining a suggestion is not a standing
+      // refusal to be asked again when you bring the city up yourself.
+      if (candidate.intent !== "EXPLICIT_SET_DESTINATION") {
+        if (!automaticEligible) continue;
+        if (cooledDown.has(cityCooldownKey(candidate.canonicalCityName))) continue;
+      }
       if (isAlreadyOnTrip(settledDestinations, candidate.canonicalCityName)) continue;
       eligible.push(candidate);
     }
@@ -245,6 +293,10 @@ export async function actOnDestinationCue(params: {
       const dailyDismissalCount = policy?.dismissalDay === dismissalDay
         ? policy.dailyDismissalCount + 1
         : 1;
+      // Still recorded, no longer a gate: the cooldown that decides whether a
+      // card may appear is now read per city from the dismissals themselves.
+      // Kept because it is a true statement about this row and dropping a
+      // column is its own migration.
       const cooldownUntil = new Date(now.getTime() + MINIMUM_REPROMPT_MS);
       const mutedUntil = dailyDismissalCount >= DAILY_DISMISSAL_LIMIT
         ? nextLocalDayStart(now, timeZone)

@@ -68,33 +68,30 @@ describe("destination cue preflight", () => {
 });
 
 describe("destination cue prompt policy", () => {
-  it("suppresses automatic cues during the thirty-minute cooldown", () => {
+  /**
+   * The thirty-minute cooldown a dismissal sets is no longer decided here.
+   * Keyed on `(owner, trip)`, it silenced every city rather than the declined
+   * one: after turning down Shanghai, naming Beijing raised nothing, and only
+   * an explicit "把北京设为目的地" got through. It belongs to the city it was
+   * about, and `persistDestinationCue` reads it from the dismissals themselves.
+   */
+  it("no longer silences one city because another was declined", () => {
     expect(evaluateDestinationCuePromptPolicy({
-      cooldownUntil: new Date("2026-09-04T00:30:00.000Z"),
       dismissalDay: "2026-09-04",
       dailyDismissalCount: 1,
       timeZone: "UTC",
       now: new Date("2026-09-04T00:29:59.000Z"),
-    })).toEqual({ eligible: false, reason: "COOLDOWN" });
-    expect(evaluateDestinationCuePromptPolicy({
-      cooldownUntil: new Date("2026-09-04T00:30:00.000Z"),
-      dismissalDay: "2026-09-04",
-      dailyDismissalCount: 1,
-      timeZone: "UTC",
-      now: new Date("2026-09-04T00:30:00.000Z"),
     })).toEqual({ eligible: true, reason: "ELIGIBLE" });
   });
 
   it("applies the three-dismissal limit to the user's local calendar day", () => {
     expect(evaluateDestinationCuePromptPolicy({
-      cooldownUntil: null,
       dismissalDay: "2026-09-04",
       dailyDismissalCount: 3,
       timeZone: "Asia/Shanghai",
       now: new Date("2026-09-04T15:59:59.000Z"),
     })).toEqual({ eligible: false, reason: "DAILY_LIMIT" });
     expect(evaluateDestinationCuePromptPolicy({
-      cooldownUntil: null,
       dismissalDay: "2026-09-04",
       dailyDismissalCount: 3,
       timeZone: "Asia/Shanghai",

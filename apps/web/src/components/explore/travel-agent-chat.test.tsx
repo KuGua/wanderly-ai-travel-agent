@@ -1234,6 +1234,58 @@ describe("the trip's preference card", () => {
     ));
   });
 
+  /**
+   * Departure is not only a preference — it is one of the three facts the trip
+   * brief needs before planning can start. The server used to quietly copy it
+   * from the profile; that copy was removed as a silent write, and nothing
+   * replaced it, so an inherited "Shanghai" sat in the card while the trip
+   * overview said "Departure — Not set" and no screen explained the gap.
+   */
+  it("confirms the departure it is showing, even untouched", async () => {
+    const withDeparture = {
+      show: true,
+      fields: [
+        card.fields[0],
+        { fieldKey: "departure_city", category: "PREFERENCE" as const, value: "Shanghai", inherited: true, options: null, kind: "text" as const },
+      ],
+    };
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(withDeparture),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: ["departure_city"] }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    await screen.findByTestId("trip-preference-card");
+    fireEvent.click(screen.getByTestId("trip-preference-submit"));
+
+    await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(
+      TRIP_ID, [{ fieldKey: "departure_city", value: "Shanghai" }],
+    ));
+  });
+
+  it("does not invent a departure the card has no value for", async () => {
+    const withoutDeparture = {
+      show: true,
+      fields: [
+        card.fields[0],
+        { fieldKey: "departure_city", category: "PREFERENCE" as const, value: null, inherited: true, options: null, kind: "text" as const },
+      ],
+    };
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(withoutDeparture),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: ["trip_pace"] }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    await screen.findByTestId("trip-preference-card");
+    fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
+    fireEvent.click(screen.getByTestId("trip-preference-submit"));
+
+    await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(
+      TRIP_ID, [{ fieldKey: "trip_pace", value: "packed" }],
+    ));
+  });
+
   it("sends a list field as a list the first time it is filled in", async () => {
     // The shape used to be guessed from the value on screen, which is null
     // until the field is first set. So a first `interests` went up as the raw

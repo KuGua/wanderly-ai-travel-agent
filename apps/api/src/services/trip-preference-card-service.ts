@@ -18,7 +18,9 @@ import { db } from "../db/database.js";
 import { sharedTrips, tripPreferenceCardViews } from "../db/schema.js";
 import { MEMORY_FIELD_CATALOG, memoryFieldDefinition } from "../memory/memory-field-catalog.js";
 import type { RequestContext } from "../utils/context.js";
+import { ApiError } from "../middleware/error-handler.js";
 import { recordAudit } from "./audit-service.js";
+import { resolveBriefDestination } from "./trip-brief-proposal-service.js";
 import { listActiveFacts } from "./preference-fact-service.js";
 import { assertActiveMember, listOverridesForOwner, saveOverride } from "./trip-memory-service.js";
 
@@ -161,6 +163,13 @@ export async function resolvePreferenceCard(params: {
         .where(eq(sharedTrips.id, params.tripId)).for("update");
       // The brief is editable only until planning begins. A preference card
       // answered later must not silently rewrite an activated shared plan.
+      // A city the catalogue cannot name is not a departure. Fail the request
+      // rather than storing something planning will reject later, when the
+      // traveller is no longer looking at the field they typed it into.
+      const resolvedDeparture = resolveBriefDestination(departureCity);
+      if (!resolvedDeparture) {
+        throw new ApiError(422, "Unprocessable Entity", "DEPARTURE_UNRESOLVED: use an unambiguous supported city name");
+      }
       if (trip?.status === "DRAFT") {
         const now = new Date();
         const pending = trip.pendingBriefProposal as Record<string, unknown> | null;
@@ -168,7 +177,12 @@ export async function resolvePreferenceCard(params: {
           ? Object.fromEntries(Object.entries(pending).filter(([key]) => key !== "departureCities"))
           : null;
         await tx.update(sharedTrips).set({
-          departureCities: [departureCity],
+          // Through the same resolver the draft-brief write boundary uses. The
+          // card wrote the raw string, so confirming 上海 here and 上海 in the
+          // conversation left the trip holding two different spellings of one
+          // city, and `withoutSettledFields` then re-asked for an origin that
+          // was already saved.
+          departureCities: [resolvedDeparture],
           // Saving one explicit field must not erase unrelated pending dates
           // or duration from the conversation card.
           pendingBriefProposal: remainingPending && Object.keys(remainingPending).length > 0

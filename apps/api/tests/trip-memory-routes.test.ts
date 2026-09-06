@@ -127,6 +127,39 @@ describe("personal overrides", () => {
     expect(trip.pendingBriefProposal).toEqual({ travelDays: 4 });
   });
 
+  /**
+   * The same resolver the draft-brief write boundary uses. Without it the card
+   * stored 上海 while the conversation stored Shanghai, and `withoutSettledFields`
+   * compares those two strings — so the origin card reopened for a city that
+   * was already saved.
+   */
+  it("stores the catalogue's name for the city, not the traveller's spelling", async () => {
+    await db.update(sharedTrips).set({ status: "DRAFT" }).where(eq(sharedTrips.id, tripOne));
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripOne}/preference-card`,
+      headers: authHeaders(OWNER),
+      payload: { adjustments: [{ fieldKey: "departure_city", value: "北京" }] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const [trip] = await db.select({ departureCities: sharedTrips.departureCities })
+      .from(sharedTrips).where(eq(sharedTrips.id, tripOne)).limit(1);
+    expect(trip.departureCities).toEqual(["Beijing"]);
+  });
+
+  it("refuses a departure the catalogue cannot name", async () => {
+    await db.update(sharedTrips).set({ status: "DRAFT" }).where(eq(sharedTrips.id, tripOne));
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripOne}/preference-card`,
+      headers: authHeaders(OWNER),
+      payload: { adjustments: [{ fieldKey: "departure_city", value: "Wakanda" }] },
+    });
+
+    expect(response.statusCode).toBe(422);
+  });
+
   it("clears only the confirmed origin from a pending generic brief", async () => {
     await db.update(sharedTrips).set({
       status: "DRAFT",
