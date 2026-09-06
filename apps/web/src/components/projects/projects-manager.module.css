@@ -38,13 +38,6 @@
 .rotatingRecord { position:absolute; width:100%; aspect-ratio:1; top:50%; left:0; margin-top:-50%; border-radius:50%; background:repeating-radial-gradient(circle,#20201d 0 2px,#35332b 3px,#20201d 4px 6px); box-shadow:0 0 0 3px #171814; transform:scaleY(.274); }
 .rotatingRecord::before,.vinyl::before { content:""; position:absolute; inset:0; border-radius:50%; background:conic-gradient(transparent 15%,#e6d6ab30 20%,transparent 28%,transparent 65%,#e6d6ab20 70%,transparent 78%); }
 .recordLabel { position:absolute; inset:32%; display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--label,#c1a16c); color:#29271f; text-align:center; padding:10%; font-size:clamp(9px,1vw,15px); line-height:1.35; font-weight:600; overflow:hidden; overflow-wrap:anywhere; }
-/* Lettering filled into the plinth's plate, which the artwork paints at
-   #4c4b49. Near-white with a hard offset shadow read as a caption laid over
-   the photograph; aged brass is what an engraved plate on a 1920s cabinet
-   actually holds, and it sits with the record label and the wall calendar.
-   The soft dark shadow is legibility, not decoration: two lines of this can
-   overrun the plate onto the lighter body below it. */
-.nameplate { position:absolute; left:43%; top:60.2%; width:13%; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; text-align:center; color:#e2d7be; font-size:clamp(12px,1.1vw,16px); line-height:1.25; text-shadow:0 1px 2px #1c1913cc; }
 /* The first record starts under the middle of the room rather than against
    the left edge. The inline padding is exactly the offset that centres one
    sleeve, so the existing loop maths is untouched: `scrollLeft = segment`
@@ -64,7 +57,7 @@
 .quietState { position:absolute; top:83%; left:50%; transform:translateX(-50%); color:#f9e9c4; background:#4a301dd9; padding:10px 18px; border-radius:2px; font-size:13px; text-align:center; cursor:pointer; }
 @media(prefers-reduced-motion:no-preference) { .rotatingRecord { animation:turn 9s linear infinite; } }
 @keyframes turn { from { transform:scaleY(.274) rotate(0deg); } to { transform:scaleY(.274) rotate(360deg); } }
-@media(max-width:639px) { .room { min-height:calc(100dvh - 62px); } .scene { width:max(100%,calc((100dvh - 62px)*1.5)); } .collectionSet { gap:20px; padding-right:20px; } .collection { --sleeve-w:clamp(112px,18dvh,150px); } .nameplate { font-size:12px; } }
+@media(max-width:639px) { .room { min-height:calc(100dvh - 62px); } .scene { width:max(100%,calc((100dvh - 62px)*1.5)); } .collectionSet { gap:20px; padding-right:20px; } .collection { --sleeve-w:clamp(112px,18dvh,150px); } }
 @media(prefers-reduced-motion:reduce) { .sleeve,.vinyl { transition:none; } }
 
 /* Square paper jackets stand at an angle; the disk slides behind the opaque front. */
