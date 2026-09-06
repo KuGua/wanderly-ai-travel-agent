@@ -107,7 +107,7 @@ describe("plan-output-validator", () => {
 
   it("accepts a dated daily itinerary only when provider items cite selected evidence", () => {
     const data = goodPlanData();
-    data.dailyItinerary = ["2025-08-01", "2025-08-02", "2025-08-03", "2025-08-04", "2025-08-05", "2025-08-06"].map((date, index) => ({
+    data.dailyItinerary = ["2025-08-01", "2025-08-02", "2025-08-03", "2025-08-04", "2025-08-05", "2025-08-06", "2025-08-07"].map((date, index) => ({
       date,
       timeZone: "destination_local",
       items: [{
@@ -124,6 +124,37 @@ describe("plan-output-validator", () => {
     })).not.toThrow();
   });
 
+  it("accepts the server-owned ready outcome and rejects mixed legacy state", () => {
+    const days = ["2025-08-01", "2025-08-02", "2025-08-03", "2025-08-04", "2025-08-05", "2025-08-06", "2025-08-07"].map((date) => ({
+      date,
+      timeZone: "destination_local" as const,
+      items: [{
+        kind: "SUGGESTED_STOP" as const,
+        startTimeLocal: "09:00",
+        endTimeLocal: "10:00",
+        title: "Suggested stop",
+        verification: "SUGGESTED" as const,
+      }],
+    }));
+    const data = {
+      ...goodPlanData(),
+      dailyItineraryOutcome: {
+        status: "READY" as const,
+        days,
+        attempts: 1,
+        checkedAt: "2026-09-06T12:00:00.000Z",
+      },
+    };
+    expect(() => validatePlanOutput({
+      planData: data, snapshot, evidence: goodEvidence(), requireDailyItinerary: true,
+    })).not.toThrow();
+
+    expect(violationsFor({ ...data, dailyItineraryStatus: "READY", dailyItinerary: days }))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "STRUCTURE_INVALID", fieldPath: "dailyItineraryOutcome" }),
+      ]));
+  });
+
   it("rejects overlapping times and a fabricated provider-backed itinerary item", () => {
     const data = goodPlanData();
     data.dailyItinerary = [{ date: "2025-08-01", timeZone: "destination_local", items: [
@@ -131,8 +162,8 @@ describe("plan-output-validator", () => {
       { kind: "FLIGHT", startTimeLocal: "10:00", endTimeLocal: "12:00", title: "Invented flight", verification: "PROVIDER_BACKED", evidenceRef: { category: "flights", id: "missing" } },
     ] }];
     expect(violationsFor(data)).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: "STRUCTURE_INVALID", fieldPath: "dailyItinerary.0.items.1" }),
-      expect.objectContaining({ code: "EVIDENCE_NOT_FOUND", fieldPath: "dailyItinerary.0.items.1.evidenceRef" }),
+      expect.objectContaining({ code: "DAILY_ITINERARY_TIME_ORDER", fieldPath: "dailyItinerary.0.items.1" }),
+      expect.objectContaining({ code: "DAILY_ITINERARY_EVIDENCE_REFERENCE", fieldPath: "dailyItinerary.0.items.1.evidenceRef" }),
     ]));
   });
 
@@ -279,13 +310,7 @@ describe("plan-output-validator", () => {
     );
   });
 
-  /**
-   * Sixteen OpenTripMap stays were collected on every run and had nowhere in
-   * the plan to go: `hotels` is for priced quotes, and there was no slot for
-   * non-priced discovery. The card's "住宿" row could not be filled by
-   * anything, so it always read "no verifiable data for this capability".
-   */
-  it("accepts non-priced accommodation discovery as its own evidence slot", () => {
+  it("rejects accommodation discovery from the final plan contract", () => {
     const accommodation = {
       id: "00000000-0000-4000-8000-000000000040",
       queryId: "00000000-0000-4000-8000-000000000041",
@@ -300,28 +325,20 @@ describe("plan-output-validator", () => {
       capturedAt: "2026-08-23T00:00:00.000Z",
       expiresAt: "2099-08-23T00:00:00.000Z",
     };
-    const plan = { ...goodPlanData(), accommodations: [accommodation] };
-    const result = validatePlanOutput({
-      planData: plan,
-      snapshot,
-      evidence: { ...goodEvidence(), accommodations: [accommodation] },
-    });
-    expect(result.accommodations).toHaveLength(1);
-  });
-
-  it("refuses accommodation the run never collected", () => {
-    const invented = {
-      id: "00000000-0000-4000-8000-000000000042",
-      queryId: "00000000-0000-4000-8000-000000000043",
-      providerPlaceId: "W1", destinationId: "Tokyo", name: "Invented Inn", kind: "hotels",
-      longitude: 1, latitude: 1, distanceMeters: null, popularityTier: null,
-      source: "OpenTripMap" as const,
-      attribution: "© OpenStreetMap contributors" as const,
-      capturedAt: "2026-08-23T00:00:00.000Z",
-      expiresAt: "2099-08-23T00:00:00.000Z",
-    };
-    const violations = violationsFor({ ...goodPlanData(), accommodations: [invented] });
-    expect(violations.some((v) => v.fieldPath.startsWith("accommodations"))).toBe(true);
+    let caught: unknown;
+    try {
+      validatePlanOutput({
+        planData: { ...goodPlanData(), accommodations: [accommodation] },
+        snapshot,
+        evidence: { ...goodEvidence(), accommodations: [accommodation] },
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(PlanValidationError);
+    expect((caught as PlanValidationError).violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "STRUCTURE_INVALID", fieldPath: "planData" }),
+    ]));
   });
 
   it("accepts a plan with no flights when other evidence is cited", () => {

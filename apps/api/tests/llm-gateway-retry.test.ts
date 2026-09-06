@@ -47,7 +47,7 @@ function buildClient(behavior: "ok" | "schema-bad" | "5xx" | "5xx-then-ok" | "pa
             throw new Error("response schema validation failed");
           }
           return {
-            choices: [{ message: { parsed: { plan: { destination: "tokyo", flights: [], stays: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+            choices: [{ message: { parsed: { plan: { destination: "tokyo", flights: [], hotels: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
             usage: { prompt: 1, completion: 1, total: 2 },
           };
         },

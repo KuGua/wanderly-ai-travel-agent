@@ -32,7 +32,7 @@ const planComparisonInputSchema = z.object({
 }).strict();
 ```
 
-`flights` 在生产中强转为 `FlightOffer[]`；schema 接受 `unknown[]` 是为了 validator 能与原始 provider 证据做 deep-strict-equal。新规划的住宿由 durable planning path 的 `hotels[]`（报价）与 `accommodations[]`（发现）表达，已退役的 `stays` 不会进入模型契约。
+`flights` 在生产中强转为 `FlightOffer[]`；schema 接受 `unknown[]` 是为了 validator 能与原始 provider 证据做 deep-strict-equal。新规划的最终住宿只由 durable planning path 的 `hotels[]`（报价）表达；`accommodation.discover` 是研究与 gap 归因证据，不进入 plan。已退役的 `stays` / `accommodations` 不会进入新模型输出契约。
 
 `memberPreferences` 是 snapshot 的 `authorizedData` 投影，已经过 `consent-service.buildAuthorizedData` 过滤。它不是 Personal Agent 对话的转发：私聊正文、未经确认的候选和 Personal Research evidence 永不进入该输入。敏感字段只有通过专用表单、字段级 consent 和服务端 projection 才可能以最小必要形式出现在 Shared planning Worker 内部；模型不得自行推断或请求它们。
 

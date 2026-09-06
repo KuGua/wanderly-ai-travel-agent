@@ -206,6 +206,13 @@ export type SafeRuntimeEvent = {
   operation: string;
   outcome?: "started" | "success" | "failure" | "retrying" | "cancelled";
   errorCode?: string;
+  /** Closed daily-itinerary repair reason; never model output or rejected values. */
+  validationCode?: "SCHEMA_INVALID" | "DATE_COVERAGE_INVALID" | "TIME_ORDER_INVALID" | "EVIDENCE_REFERENCE_INVALID";
+  /** Bounded schema-shaped paths only (for example dailyItinerary.0.items.1). */
+  fieldPaths?: readonly string[];
+  /** Versioned provider wire contract and content-free SHA-256 identifier. */
+  schemaVersion?: string;
+  schemaFingerprint?: string;
   latencyMs?: number;
   attempt?: number;
   toolName?: string;

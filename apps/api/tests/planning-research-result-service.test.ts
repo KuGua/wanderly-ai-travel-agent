@@ -85,6 +85,22 @@ describe("planning-research-result-service", () => {
     expect(rows[0].serviceGaps).toEqual(gaps);
   });
 
+  it("deduplicates identical user-visible gaps before persistence", async () => {
+    const duplicate = {
+      capability: "places" as const,
+      code: "SKILL_CONTRACT_VIOLATION" as const,
+      destinationId: "shanghai",
+    };
+    const id = await recordPlanningResearchResult({
+      ctx: createRequestContext(userId, randomUUID(), randomUUID()),
+      tripId, snapshotId, agentTaskRunId: taskId,
+      status: "COMPLETED_WITH_GAPS",
+      serviceGaps: [duplicate, duplicate, { ...duplicate, destinationId: "tokyo" }],
+    });
+    const rows = await db.select().from(planningResearchResults).where(eq(planningResearchResults.id, id));
+    expect(rows[0].serviceGaps).toEqual([duplicate, { ...duplicate, destinationId: "tokyo" }]);
+  });
+
   it("rejects malformed service gaps", () => {
     const result = serviceGapSchema.safeParse({
       capability: "spaceship",

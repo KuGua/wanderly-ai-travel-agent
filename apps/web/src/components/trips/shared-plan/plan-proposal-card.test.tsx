@@ -136,6 +136,29 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
     expect(screen.getByText("Suggestion — verify")).toBeDefined();
   });
 
+  it("shows an explicit daily-schedule degradation without hiding the shared plan", () => {
+    renderCard(makePlan({ planData: {
+      destination: "Tokyo",
+      dailyItineraryStatus: "UNAVAILABLE",
+    } }));
+    expect(screen.getByText("Daily itinerary suggestions")).toBeDefined();
+    expect(screen.getByText("The shared plan is ready, but its daily schedule could not be generated.")).toBeDefined();
+  });
+
+  it("explains a provider contract rejection without claiming content retries", () => {
+    renderCard(makePlan({ planData: {
+      destination: "Tokyo",
+      dailyItineraryOutcome: {
+        status: "UNAVAILABLE",
+        reason: "MODEL_CONTRACT_REJECTED",
+        retryable: false,
+        attempts: 1,
+        checkedAt: "2026-10-01T00:00:00.000Z",
+      },
+    } }));
+    expect(screen.getByText("The shared plan is ready, but its daily schedule is unavailable because of a generation service problem.")).toBeDefined();
+  });
+
   it("marks expired offers", () => {
     renderCard(makePlan({
       planData: {
@@ -158,9 +181,9 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
     expect(screen.getAllByTestId("plan-offer-expired").length).toBeGreaterThan(0);
   });
 
-  it("renders the UNAVAILABLE gap when stays/hotels/activities are empty", () => {
-    // Empty `stays`/`hotels`/`activities` legitimately happen and must each
-    // render their own UNAVAILABLE marker.
+  it("renders the UNAVAILABLE gap when hotels/activities are empty", () => {
+    // Empty `hotels`/`activities` legitimately happen and must each render
+    // their own UNAVAILABLE marker.
     renderCard(makePlan({
       planData: {
         flights: [{
@@ -174,10 +197,10 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
         }],
       },
     }));
-    // §10.2.9: three gaps — stays, hotels, activities — each with
+    // §10.2.9: two gaps — hotels and activities — each with
     // "This capability returned was not collected" copy.
     const cards = screen.getAllByText(/This capability returned was not collected/i);
-    expect(cards.length).toBe(3);
+    expect(cards.length).toBe(2);
   });
 
   /**
@@ -191,8 +214,8 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
     renderCard(makePlan({
       planData: {
         flights: [],
-        stays: [{
-          name: "Hotel Test",
+        hotels: [{
+          propertyName: "Hotel Test",
           totalPrice: 500,
           currency: "USD",
           source: "TestStay",
@@ -208,13 +231,7 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
     expect(flightSection.textContent).toMatch(/This capability returned was not collected/i);
   });
 
-  /**
-   * The two accommodation slots carry different shapes, and the card read
-   * neither correctly: a Nuitee quote names itself `propertyName`, so every
-   * real hotel rendered as "—", and non-priced discovery had no slot at all,
-   * leaving the 住宿 row permanently empty over sixteen collected stays.
-   */
-  it("renders a priced quote by its property name and discovery without a price", () => {
+  it("renders only the selected hotel and hides legacy accommodation discovery", () => {
     renderCard(makePlan({
       planData: {
         flights: [],
@@ -236,11 +253,9 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
     const card = screen.getByTestId(`plan-proposal-card-${PLAN_ID}`);
     expect(card.textContent).toContain("remm Roppongi");
     expect(card.textContent).toContain("CNY 3066.24");
-    expect(card.textContent).toContain("Jinjiang Hotel");
-    // Discovery carries no rate, and must not be dressed up as one.
-    const stays = screen.getByRole("region", { name: "Stays" });
-    expect(stays.textContent).toContain("OpenTripMap");
-    expect(stays.textContent).not.toMatch(/CNY \d/);
+    expect(card.textContent).not.toContain("Jinjiang Hotel");
+    expect(screen.queryByRole("region", { name: "Stays" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Hotels" }).textContent).toContain("Nuitee LiteAPI");
   });
 
   it("renders explanation tokens as localized copy", () => {

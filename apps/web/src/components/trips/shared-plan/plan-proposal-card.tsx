@@ -49,34 +49,12 @@ type FlightOffer = {
   }>;
 };
 
-type StayOffer = {
+type HotelOffer = {
   name?: string;
-  cityName?: string;
-  nightlyPrice?: number;
-  totalPrice?: number;
-  currency?: string;
-  source?: string;
-  capturedAt?: string;
-  expiresAt?: string;
-};
-
-/**
- * A priced quote. Its name field is `propertyName`, not `name` — reading only
- * `name` rendered every real Nuitee quote as "—".
- */
-type HotelOffer = StayOffer & {
   propertyName?: string;
   pricePerNight?: number;
-};
-
-/**
- * Non-priced accommodation discovered near the destination. It answers "could
- * someone stay here at all", so it carries no price and must not be shown as
- * though it were a quote.
- */
-type AccommodationEvidence = {
-  name?: string;
-  kind?: string;
+  totalPrice?: number;
+  currency?: string;
   source?: string;
   capturedAt?: string;
   expiresAt?: string;
@@ -95,14 +73,26 @@ type DailyItineraryDay = {
   items?: Array<{ startTimeLocal?: string; endTimeLocal?: string; title?: string; verification?: "PROVIDER_BACKED" | "SUGGESTED" }>;
 };
 
+type DailyItineraryUnavailableReason =
+  | "MODEL_CONTRACT_REJECTED"
+  | "MODEL_TEMPORARILY_UNAVAILABLE"
+  | "CONTENT_REPAIR_EXHAUSTED"
+  | "CAPABILITY_NOT_CONFIGURED"
+  | "INTERNAL_ERROR"
+  | "LEGACY_UNKNOWN";
+
+type DailyItineraryOutcome =
+  | { status: "READY"; days: DailyItineraryDay[]; attempts: number; checkedAt: string }
+  | { status: "UNAVAILABLE"; reason: DailyItineraryUnavailableReason; retryable: boolean; attempts: number; checkedAt: string };
+
 type PlanPayload = {
   destination?: string;
   flights?: FlightOffer[];
-  stays?: StayOffer[];
   hotels?: HotelOffer[];
-  accommodations?: AccommodationEvidence[];
   activities?: ActivityEvidence[];
   dailyItinerary?: DailyItineraryDay[];
+  dailyItineraryStatus?: "READY" | "UNAVAILABLE";
+  dailyItineraryOutcome?: DailyItineraryOutcome;
   constraintReferences?: string[];
   publicExplanationTokens?: string[];
   generatedAt?: string;
@@ -131,7 +121,7 @@ export function PlanProposalCard({ plan, tripId }: { plan: ListedPlan; tripId: s
       </p>
 
       <FlightsSection payload={payload} />
-      <StaysSection payload={payload} />
+      <HotelsSection payload={payload} />
       <ActivitiesSection payload={payload} />
       <DailyItinerarySection payload={payload} />
       <ExplanationSection tokens={payload.publicExplanationTokens} />
@@ -144,11 +134,28 @@ export function PlanProposalCard({ plan, tripId }: { plan: ListedPlan; tripId: s
 
 function DailyItinerarySection({ payload }: { payload: PlanPayload }) {
   const t = useTranslations("trips.sharedPlan.plan");
-  if (!payload.dailyItinerary?.length) return null;
+  const outcome = payload.dailyItineraryOutcome;
+  const days = outcome?.status === "READY" ? outcome.days : payload.dailyItinerary;
+  if (!days?.length) {
+    const unavailable = outcome?.status === "UNAVAILABLE" || payload.dailyItineraryStatus === "UNAVAILABLE";
+    if (!unavailable) return null;
+    const reason = outcome?.status === "UNAVAILABLE" ? outcome.reason : "LEGACY_UNKNOWN";
+    const message = reason === "CONTENT_REPAIR_EXHAUSTED"
+      ? t("dailyItineraryContentInvalid")
+      : reason === "MODEL_TEMPORARILY_UNAVAILABLE"
+        ? t("dailyItineraryTemporarilyUnavailable")
+        : reason === "MODEL_CONTRACT_REJECTED" || reason === "CAPABILITY_NOT_CONFIGURED" || reason === "INTERNAL_ERROR"
+          ? t("dailyItinerarySystemUnavailable")
+          : t("dailyItineraryUnavailable");
+    return <section aria-label={t("dailyItinerary")} className="grid gap-1 bg-[var(--w-mist)] p-3 text-xs wanderly-edge-thin wanderly-r-xs">
+      <p className="font-bold">{t("dailyItinerary")}</p>
+      <p className="text-muted-foreground">{message}</p>
+    </section>;
+  }
   return <section aria-label={t("dailyItinerary")} className="grid gap-2">
     <p className="text-xs font-bold">{t("dailyItinerary")}</p>
     <div className="grid gap-2">
-      {payload.dailyItinerary.map((day, index) => <details key={`${day.date ?? "day"}-${index}`} open={index === 0} className="bg-[var(--w-mist)] wanderly-edge-thin wanderly-r-xs">
+      {days.map((day, index) => <details key={`${day.date ?? "day"}-${index}`} open={index === 0} className="bg-[var(--w-mist)] wanderly-edge-thin wanderly-r-xs">
         <summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-extrabold">{day.date ?? "—"}</summary>
         <ul className="grid gap-2 border-t-2 border-[var(--w-ink)] px-3 py-2 text-[12px]">
           {(day.items ?? []).map((item, itemIndex) => <li key={itemIndex} className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -220,54 +227,28 @@ function FlightLine({ offer }: { offer: FlightOffer }) {
   );
 }
 
-function StaysSection({ payload }: { payload: PlanPayload }) {
+function HotelsSection({ payload }: { payload: PlanPayload }) {
   const t = useTranslations("trips.sharedPlan.plan");
-  // Two different things, deliberately separate rows. `hotels` are priced
-  // quotes; `accommodations` is non-priced discovery — "somewhere to sleep
-  // exists here", with a source and a capture time but no rate. The legacy
-  // `stays` array is kept only for plans written before the discovery slot
-  // existed: its sole producer was a permanently stubbed provider.
-  const stays = [...(payload.accommodations ?? []), ...(payload.stays ?? [])];
   const hotels = payload.hotels ?? [];
-  if (stays.length === 0 && hotels.length === 0) {
-    return (
-      <>
-        <Section title={t("stays")} unavailable>
-          <></>
-        </Section>
-        <Section title={t("hotels")} unavailable>
-          <></>
-        </Section>
-      </>
-    );
+  if (hotels.length === 0) {
+    return <Section title={t("hotels")} unavailable />;
   }
   return (
-    <>
-      {stays.length > 0 ? (
-        <Section title={t("stays")}>
-          <ul className="grid gap-1">
-            {stays.map((stay, index) => <StayLine key={`${stay.name ?? "stay"}-${index}`} offer={stay} />)}
-          </ul>
-        </Section>
-      ) : null}
-      {hotels.length > 0 ? (
-        <Section title={t("hotels")}>
-          <ul className="grid gap-1">
-            {hotels.map((hotel, index) => <StayLine key={`${hotel.propertyName ?? hotel.name ?? "hotel"}-${index}`} offer={hotel} />)}
-          </ul>
-        </Section>
-      ) : null}
-    </>
+    <Section title={t("hotels")}>
+      <ul className="grid gap-1">
+        {hotels.map((hotel, index) => <HotelLine key={`${hotel.propertyName ?? hotel.name ?? "hotel"}-${index}`} offer={hotel} />)}
+      </ul>
+    </Section>
   );
 }
 
-function StayLine({ offer }: { offer: HotelOffer }) {
+function HotelLine({ offer }: { offer: HotelOffer }) {
   const t = useTranslations("trips.sharedPlan.plan");
-  const priceLabel = formatPrice(offer.totalPrice ?? offer.pricePerNight ?? offer.nightlyPrice, offer.currency);
+  const priceLabel = formatPrice(offer.totalPrice ?? offer.pricePerNight, offer.currency);
   const expired = isExpired(offer.expiresAt);
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
-      <span className="font-bold">{offer.propertyName ?? offer.name ?? offer.cityName ?? "—"}</span>
+      <span className="font-bold">{offer.propertyName ?? offer.name ?? "—"}</span>
       <span className="ml-auto font-bold">{priceLabel}</span>
       <span className="text-[10px] text-muted-foreground">{offer.source ?? "—"} · {formatTimestamp(offer.capturedAt)}</span>
       {expired ? (
@@ -412,21 +393,45 @@ function readPlanPayload(raw: Record<string, unknown>): PlanPayload {
   if (Array.isArray(raw.flights)) {
     out.flights = raw.flights.filter((entry): entry is FlightOffer => typeof entry === "object" && entry !== null);
   }
-  if (Array.isArray(raw.stays)) {
-    out.stays = raw.stays.filter((entry): entry is StayOffer => typeof entry === "object" && entry !== null);
-  }
   if (Array.isArray(raw.hotels)) {
     out.hotels = raw.hotels.filter((entry): entry is HotelOffer => typeof entry === "object" && entry !== null);
-  }
-  if (Array.isArray(raw.accommodations)) {
-    out.accommodations = raw.accommodations
-      .filter((entry): entry is AccommodationEvidence => typeof entry === "object" && entry !== null);
   }
   if (Array.isArray(raw.activities)) {
     out.activities = raw.activities.filter((entry): entry is ActivityEvidence => typeof entry === "object" && entry !== null);
   }
   if (Array.isArray(raw.dailyItinerary)) {
     out.dailyItinerary = raw.dailyItinerary.filter((entry): entry is DailyItineraryDay => typeof entry === "object" && entry !== null);
+  }
+  if (raw.dailyItineraryStatus === "READY" || raw.dailyItineraryStatus === "UNAVAILABLE") {
+    out.dailyItineraryStatus = raw.dailyItineraryStatus;
+  }
+  const outcome = raw.dailyItineraryOutcome;
+  if (outcome && typeof outcome === "object") {
+    const value = outcome as Record<string, unknown>;
+    if (value.status === "READY" && Array.isArray(value.days)
+      && typeof value.attempts === "number" && typeof value.checkedAt === "string") {
+      out.dailyItineraryOutcome = {
+        status: "READY",
+        days: value.days.filter((entry): entry is DailyItineraryDay => typeof entry === "object" && entry !== null),
+        attempts: value.attempts,
+        checkedAt: value.checkedAt,
+      };
+    }
+    const reasons: DailyItineraryUnavailableReason[] = [
+      "MODEL_CONTRACT_REJECTED", "MODEL_TEMPORARILY_UNAVAILABLE", "CONTENT_REPAIR_EXHAUSTED",
+      "CAPABILITY_NOT_CONFIGURED", "INTERNAL_ERROR", "LEGACY_UNKNOWN",
+    ];
+    if (value.status === "UNAVAILABLE" && typeof value.reason === "string"
+      && reasons.includes(value.reason as DailyItineraryUnavailableReason)
+      && typeof value.retryable === "boolean" && typeof value.attempts === "number" && typeof value.checkedAt === "string") {
+      out.dailyItineraryOutcome = {
+        status: "UNAVAILABLE",
+        reason: value.reason as DailyItineraryUnavailableReason,
+        retryable: value.retryable,
+        attempts: value.attempts,
+        checkedAt: value.checkedAt,
+      };
+    }
   }
   if (Array.isArray(raw.constraintReferences)) {
     out.constraintReferences = raw.constraintReferences.filter((ref): ref is string => typeof ref === "string");

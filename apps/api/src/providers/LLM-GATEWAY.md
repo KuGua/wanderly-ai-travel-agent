@@ -19,6 +19,21 @@ Gemini's OpenAI-compatible `json_object` response may put the JSON string in
 content only at this adapter boundary and still requires the same operation-
 specific Zod schema before returning any model output.
 
+Daily-itinerary composition uses `zodResponseFormat` structured output rather
+than `json_object`. Its provider wire contract contains only structural types,
+day keys, prose/times and short evidence aliases; it deliberately omits
+provider-fragile semantic JSON Schema keywords such as the outer nested-array
+`maxItems`. The response must then pass the independent canonical Zod schema
+before the planning service owns dates, timezone labels, verification labels
+and provider ids or accepts aliases. This preserves every business constraint
+without coupling it to a provider's JSON Schema dialect.
+
+Run `pnpm contract:daily-itinerary-provider` in staging or as a release gate to
+exercise the exact configured model and wire schema with synthetic aliases.
+The probe is intentionally not an API startup dependency because daily
+composition is optional; it emits only a bounded outcome, HTTP status and
+schema fingerprint.
+
 The invocation `AbortSignal` is passed as an OpenAI SDK request option, never
 serialized into the provider JSON body. This keeps cancellation bounded while
 remaining compatible with Gemini's strict request schema.

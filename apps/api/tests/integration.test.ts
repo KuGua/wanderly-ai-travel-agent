@@ -160,6 +160,27 @@ describe("Frontend API Contract", () => {
       { tripId: bobOnlyTrip.id, userId: bobId, role: "CREATOR", isRequired: true },
     ]);
 
+    const [activeSnapshot, proposedSnapshot] = await db.insert(constraintSnapshots).values([
+      {
+        tripId,
+        version: 1,
+        authorizedData: {},
+        departureCities: ["San Francisco", "Shanghai"],
+        destinationCandidates: ["Tokyo", "Bangkok"],
+      },
+      {
+        tripId: aliceNewestTrip.id,
+        version: 1,
+        authorizedData: {},
+        departureCities: ["San Francisco"],
+        destinationCandidates: ["Tokyo", "Seoul"],
+      },
+    ]).returning();
+    await db.insert(itineraryPlans).values([
+      { tripId, snapshotId: activeSnapshot.id, version: 1, status: "ACTIVE", planData: {} },
+      { tripId: aliceNewestTrip.id, snapshotId: proposedSnapshot.id, version: 1, status: "PROPOSED", planData: {} },
+    ]);
+
     const aliceResponse = await app.inject({
       method: "GET",
       url: "/api/v1/trips",
@@ -189,6 +210,11 @@ describe("Frontend API Contract", () => {
       travelDateStart: null,
       travelDateEnd: null,
       createdAt: "2030-01-01T00:00:00.000Z",
+      latestPlan: { version: 1, status: "PROPOSED" },
+    });
+    expect(aliceResponse.json().trips[1]).toMatchObject({
+      id: tripId,
+      latestPlan: { version: 1, status: "ACTIVE" },
     });
     expect(aliceResponse.json().trips[2]).toMatchObject({
       departureCities: ["San Francisco", "Shanghai"],

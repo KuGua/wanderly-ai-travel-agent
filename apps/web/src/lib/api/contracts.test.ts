@@ -7,6 +7,7 @@ import {
   explorationStartResponseSchema,
   locationReferenceResponseSchema,
   latestPlanResponseSchema,
+  latestPlanSummarySchema,
   ownerConversationResponseSchema,
   profileResponseSchema,
   researchResultSchema,
@@ -16,6 +17,15 @@ import {
 import { testProfileResponse, testTripsResponse } from "@/test/api-fixtures";
 
 describe("API contracts", () => {
+  it("accepts a latest plan awaiting votes", () => {
+    expect(latestPlanSummarySchema.parse({
+      id: "66666666-6666-4666-8666-666666666666",
+      version: 5,
+      status: "PROPOSED",
+      generatedAt: "2026-09-06T10:35:00.000Z",
+    }).status).toBe("PROPOSED");
+  });
+
   it("accepts the canonical nullable Profile and Trip fixture shapes", () => {
     expect(profileResponseSchema.parse(testProfileResponse)).toEqual(testProfileResponse);
     expect(tripsResponseSchema.parse(testTripsResponse)).toEqual(testTripsResponse);

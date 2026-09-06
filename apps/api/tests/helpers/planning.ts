@@ -140,24 +140,22 @@ export const testPlanningDependencies: PlanningDependencies = {
       };
     },
     async generateDailyItinerary(params) {
-      const dates: string[] = [];
-      for (let cursor = new Date(`${params.travelDateStart}T00:00:00.000Z`); cursor < new Date(`${params.travelDateEnd}T00:00:00.000Z`); cursor.setUTCDate(cursor.getUTCDate() + 1)) {
-        dates.push(cursor.toISOString().slice(0, 10));
-      }
-      return dates.map((date, index) => ({
-        date,
-        timeZone: "destination_local",
+      const days = Array.isArray(params.plan.days)
+        ? params.plan.days as Array<{ dayKey: string }>
+        : [];
+      const flights = Array.isArray(params.plan.flights)
+        ? params.plan.flights as Array<{ evidenceKey: string }>
+        : [];
+      return { days: days.map((day, index) => ({
+        dayKey: day.dayKey,
         items: [{
-          kind: index === 0 && Array.isArray(params.plan.flights) && params.plan.flights.length > 0 ? "FLIGHT" : "FREE_TIME",
+          kind: index === 0 && flights.length > 0 ? "FLIGHT" as const : "FREE_TIME" as const,
           startTimeLocal: "09:00",
           endTimeLocal: "10:00",
           title: index === 0 ? "Travel day" : "Free time",
-          verification: index === 0 && Array.isArray(params.plan.flights) && params.plan.flights.length > 0 ? "PROVIDER_BACKED" : "SUGGESTED",
-          ...(index === 0 && Array.isArray(params.plan.flights) && params.plan.flights.length > 0
-            ? { evidenceRef: { category: "flights", id: (params.plan.flights[0] as { id: string }).id } }
-            : {}),
+          evidenceKey: index === 0 && flights.length > 0 ? flights[0]!.evidenceKey : null,
         }],
-      }));
+      })) };
     },
     async explainPlanDiff() {
       return { added: [], removed: [], changed: [] };

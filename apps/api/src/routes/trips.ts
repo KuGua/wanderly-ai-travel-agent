@@ -228,7 +228,18 @@ export async function tripRoutes(app: FastifyInstance) {
       };
     });
 
-    return tripsResponseSchema.parse({ trips, nextCursor });
+    const response = tripsResponseSchema.safeParse({ trips, nextCursor });
+    if (!response.success) {
+      request.log.error({
+        component: "trip-list",
+        errorCode: "RESPONSE_CONTRACT_INVALID",
+        fieldPaths: [...new Set(response.error.issues.map(issue => issue.path.join(".") || "response"))]
+          .sort()
+          .slice(0, 16),
+      }, "Trip list response failed contract validation");
+      throw response.error;
+    }
+    return response.data;
   });
 
   // Create trip

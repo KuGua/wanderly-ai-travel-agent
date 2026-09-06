@@ -57,14 +57,7 @@ describe("bindPlanSelectionsToEvidence", () => {
     expect(result.generatedAt).toBe(stay.capturedAt);
   });
 
-  /**
-   * Hotels and accommodations were not bound here at all, so a model that
-   * selected one had its `{"id":…}` reference left as a bare reference and
-   * then failed the validator's exact-match check against the full record.
-   * The hotel slot could never be filled by any plan, whatever the run held —
-   * ten live Nuitee quotes still produced a card reading "no verifiable data".
-   */
-  it("binds hotel and accommodation selections like every other category", () => {
+  it("binds a hotel selection like every other final-plan category", () => {
     const hotel = {
       id: "22222222-2222-4222-8222-222222222222",
       providerOfferId: "nuitee-1", queryId: "33333333-3333-4333-8333-333333333333",
@@ -184,7 +177,7 @@ describe("preflightCategorySlots", () => {
 
   it("emits no violations when every candidate category is an empty array", () => {
     const violations = preflightCategorySlots({
-      candidate: { flights: [], stays: [], activities: [], hotels: [], accommodations: [] },
+      candidate: { flights: [], stays: [], activities: [], hotels: [] },
       flights: [flight], stays: [stay], activities: [],
     });
     expect(violations).toEqual([]);

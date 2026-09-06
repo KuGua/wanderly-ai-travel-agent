@@ -271,16 +271,15 @@ type ProjectSummary = {
   role: "CREATOR" | "MEMBER";
   createdAt: string;
   updatedAt: string;
-  displayState: "ACTION_REQUIRED" | "IN_PROGRESS" | "COMPLETED" | "ARCHIVED" | "CANCELLED";
+  displayState: "DRAFT" | "ACTION_REQUIRED" | "IN_PROGRESS" | "COMPLETED" | "ARCHIVED" | "CANCELLED";
   latestPlan: {
     id: string;
     version: number;
-    status: "DRAFT" | "ACTIVE" | "STALE" | "SUPERSEDED";
+    status: "DRAFT" | "PROPOSED" | "ACTIVE" | "STALE" | "SUPERSEDED";
     generatedAt: string;
-    isDemoData: boolean;
   } | null;
   nextAction: {
-    type: "REVIEW_PLAN" | "GRANT_CONSENT" | "CHECK_READINESS" | "CONFIRM_PLAN" | "VIEW_PROJECT" | "VIEW_HISTORY";
+    type: "EDIT_DRAFT" | "REVIEW_PLAN" | "GRANT_CONSENT" | "CHECK_READINESS" | "CONFIRM_PLAN" | "VIEW_PROJECT" | "VIEW_HISTORY";
     label: string;
     href: string;
   } | null;
@@ -294,6 +293,8 @@ type ProjectSummary = {
 - 所有时间使用 ISO 8601；前端以 `Intl.DateTimeFormat` 显示。
 - 不向列表返回他人的授权字段、国籍、私聊、证件、完整 audit payload 或 provider 凭据。
 - 列表需要 `limit`、cursor、`status`、`q` 的服务端分页/筛选契约；MVP fixture 数量小但不应锁死全量加载设计。
+- `PROPOSED` 是方案等待 adoption vote 的正常状态，必须与数据库 `plan_status` 保持一致；单条正常状态不得使整个列表响应失效。
+- 列表加载失败且没有缓存时，客户端必须显示数量未知（`—`），不得把“未取得数据”显示成“0 个行程”。
 
 ### 8.2 探索 API 后续缺口
 

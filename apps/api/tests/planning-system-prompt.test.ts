@@ -23,10 +23,10 @@ describe("shared-planning system prompts", () => {
     expect(SHARED_TOOL_PLANNING_SYSTEM_PROMPT).toContain(SLOT_CONTRACT_SENTINEL);
   });
 
-  it("both prompts retire stays and preserve the priced/discovery accommodation boundary", () => {
+  it("both prompts make hotels the only final-plan accommodation slot", () => {
     for (const prompt of [SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT, SHARED_TOOL_PLANNING_SYSTEM_PROMPT]) {
-      expect(prompt).toContain("`stays` is retired");
-      expect(prompt).toContain("`hotels` and `accommodations` are distinct");
+      expect(prompt).toContain("`stays` and `accommodations` are retired final-plan fields");
+      expect(prompt).toContain("`hotels` is the only final-plan accommodation selection");
     }
   });
 });

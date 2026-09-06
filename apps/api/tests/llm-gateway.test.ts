@@ -64,6 +64,7 @@ describe("LLM gateway", () => {
 
   afterEach(() => {
     __setModelGatewayForTests(null);
+    vi.unstubAllEnvs();
   });
 
   it("returns parsed plan on success and records SUCCESS run", async () => {
@@ -125,6 +126,140 @@ describe("LLM gateway", () => {
     await expect(gateway.generateStructuredPlan({
       destination: "Tokyo", flights: [], stays: [], memberPreferences: {},
     })).rejects.toMatchObject({ code: "SCHEMA_PARSE" });
+  });
+
+  it("fails closed when a new model completion emits accommodation discovery", async () => {
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "openai", modelName: "gpt-4o-mini", promptVersion: "1.1.0",
+      ctx: createRequestContext(),
+      client: { chat: { completions: { parse: vi.fn().mockResolvedValue({
+        choices: [{ message: { parsed: { plan: {
+          destination: "Tokyo", flights: [], accommodations: [{ id: "discovery-1" }],
+          generatedAt: "2026-08-23T00:00:00.000Z",
+        } } } }],
+      }) } } },
+      maxRetries: 0,
+    });
+
+    await expect(gateway.generateStructuredPlan({
+      destination: "Tokyo", flights: [], stays: [], memberPreferences: {},
+    })).rejects.toMatchObject({ code: "SCHEMA_PARSE" });
+  });
+
+  it("asks daily itinerary generation to cover both travel boundary dates", async () => {
+    const parse = vi.fn().mockResolvedValue({
+      choices: [{ message: { parsed: { days: [
+        { dayKey: "day_1", items: [] },
+        { dayKey: "day_2", items: [] },
+        { dayKey: "day_3", items: [] },
+      ] } } }],
+    });
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "openai", modelName: "gpt-4o-mini", promptVersion: "1.1.0",
+      ctx: createRequestContext(), client: { chat: { completions: { parse } } }, maxRetries: 0,
+    });
+
+    await expect(gateway.generateDailyItinerary!({
+      plan: {
+        destination: "Tokyo",
+        days: [
+          { dayKey: "day_1", date: "2026-10-01" },
+          { dayKey: "day_2", date: "2026-10-02" },
+          { dayKey: "day_3", date: "2026-10-03" },
+        ],
+        flights: [],
+        activities: [],
+        hotels: [],
+      },
+      travelDateStart: "2026-10-01",
+      travelDateEnd: "2026-10-03",
+      requiredDates: ["2026-10-01", "2026-10-02", "2026-10-03"],
+      repair: { attempt: 2, issues: [{ code: "DATE_COVERAGE_INVALID", fieldPaths: ["dailyItinerary"] }] },
+    })).resolves.toMatchObject({ days: [{ dayKey: "day_1" }, { dayKey: "day_2" }, { dayKey: "day_3" }] });
+
+    const messages = parse.mock.calls[0][0].messages as Array<{ content: string }>;
+    expect(messages[0]?.content).toContain("Copy every plan.days dayKey exactly once");
+    expect(messages[0]?.content).toContain("suggested sights or stops");
+    expect(messages[0]?.content).toContain("[DATE_COVERAGE_INVALID] dailyItinerary");
+    expect(messages[0]?.content).toContain("Return every listed plan.days dayKey exactly once");
+    expect(messages[1]?.content).toContain('"requiredDates":["2026-10-01","2026-10-02","2026-10-03"]');
+    expect(parse.mock.calls[0][0].response_format).toMatchObject({ type: "json_schema" });
+    const responseFormat = parse.mock.calls[0][0].response_format as {
+      json_schema: { schema: { properties: { days: Record<string, unknown> } } };
+    };
+    expect(responseFormat.json_schema.schema.properties.days).not.toHaveProperty("maxItems");
+  });
+
+  it("normalizes a daily itinerary provider rejection before it reaches planning", async () => {
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "gemini", modelName: "gemini-test", promptVersion: "1.1.0",
+      ctx: createRequestContext(), client: { chat: { completions: {
+        parse: vi.fn().mockRejectedValue(Object.assign(new Error("rate limited"), { status: 429 })),
+      } } }, maxRetries: 0,
+    });
+
+    await expect(gateway.generateDailyItinerary!({
+      plan: { destination: "Tokyo", flights: [], generatedAt: "2026-08-23T00:00:00.000Z" },
+      travelDateStart: "2026-10-01",
+      travelDateEnd: "2026-10-03",
+    })).rejects.toMatchObject({ name: "ModelGatewayError", code: "RATE_LIMITED" });
+  });
+
+  it("preserves HTTP status and schema identity for a provider contract rejection", async () => {
+    const parse = vi.fn().mockRejectedValue(Object.assign(new Error("invalid argument"), { status: 400 }));
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "gemini", modelName: "gemini-test", promptVersion: "1.1.0",
+      ctx: createRequestContext(), client: { chat: { completions: {
+        parse,
+      } } }, maxRetries: 2,
+    });
+
+    await expect(gateway.generateDailyItinerary!({
+      plan: { destination: "Tokyo", flights: [] },
+      travelDateStart: "2026-10-01",
+      travelDateEnd: "2026-10-03",
+    })).rejects.toMatchObject({
+      name: "ModelGatewayError",
+      code: "UPSTREAM_FAILURE",
+      details: { httpStatus: 400, schemaFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/) },
+    });
+    expect(parse).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps transient transport retries inside the gateway budget", async () => {
+    vi.stubEnv("MODEL_GATEWAY_BASE_BACKOFF_MS", "0");
+    vi.stubEnv("MODEL_GATEWAY_MAX_BACKOFF_MS", "0");
+    const parse = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("temporary"), { status: 503 }))
+      .mockResolvedValueOnce({ choices: [{ message: { parsed: { days: [{ dayKey: "day_1", items: [] }] } } }] });
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "gemini", modelName: "gemini-test", promptVersion: "1.1.0",
+      ctx: createRequestContext(), client: { chat: { completions: { parse } } }, maxRetries: 1,
+    });
+
+    await expect(gateway.generateDailyItinerary!({
+      plan: { destination: "Tokyo", days: [{ dayKey: "day_1" }], flights: [] },
+      travelDateStart: "2026-10-01",
+      travelDateEnd: "2026-10-01",
+    })).resolves.toMatchObject({ days: [{ dayKey: "day_1" }] });
+    expect(parse).toHaveBeenCalledTimes(2);
+  });
+
+  it("validates the permissive provider wire result against the canonical contract", async () => {
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "gemini", modelName: "gemini-test", promptVersion: "1.1.0",
+      ctx: createRequestContext(), client: { chat: { completions: {
+        parse: vi.fn().mockResolvedValue({ choices: [{ message: { parsed: {
+          days: [{ dayKey: "not-a-day", items: [] }],
+        } } }] }),
+      } } }, maxRetries: 0,
+    });
+
+    await expect(gateway.generateDailyItinerary!({
+      plan: { destination: "Tokyo", flights: [] },
+      travelDateStart: "2026-10-01",
+      travelDateEnd: "2026-10-03",
+    })).rejects.toMatchObject({ name: "ModelGatewayError", code: "SCHEMA_PARSE" });
   });
 
   it("loads the configured OpenAI client when no test client is injected", async () => {

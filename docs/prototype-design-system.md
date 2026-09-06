@@ -5,6 +5,7 @@
 本文记录当前静态原型已采用的设计语言，作为后续原型和前端实现的视觉参考：
 
 - `assets/projects-prototype.html`：项目列表；
+- `assets/projects-current-style-prototype.html`：独立的旅行节奏板原型，以不规则月份岛屿、路线与行程贴片展示年度概览；
 - `assets/project-workspace-prototype.html`：项目对话与工作区；
 - `assets/explore-map-prototype.html`：地图探索（宇宙变体）。
 

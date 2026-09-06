@@ -114,6 +114,7 @@
     "trips": {
       "heading": "计划簿",
       "showing": "共 {count} 项",
+      "countUnavailable": "共 — 项",
       "emptyTitle": "暂无行程",
       "emptyBody": "您账号下的行程会显示在这里。行程创建将在后续切片中提供。"
     },
@@ -665,6 +666,10 @@
         "hotels": "酒店",
         "activities": "活动",
         "dailyItinerary": "每日行程建议",
+        "dailyItineraryUnavailable": "共享方案已生成，但每日安排未能生成。",
+        "dailyItineraryContentInvalid": "共享方案已生成，但每日安排在修正后仍不符合行程约束。",
+        "dailyItineraryTemporarilyUnavailable": "共享方案已生成，但每日安排服务暂时不可用，可稍后重新生成。",
+        "dailyItinerarySystemUnavailable": "共享方案已生成，但每日安排因生成服务问题暂不可用。",
         "providerBacked": "已验证",
         "suggested": "建议，需核验",
         "unavailable": "本次运行未采集到该能力的可验证数据",

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { SpanKind, trace as otelTrace } from "@opentelemetry/api";
+import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { PlanValidationError } from "../policy/plan-output-validator.js";
 import type { FlightOffer, PlanDiff } from "../types/domain.js";
@@ -20,6 +21,11 @@ import type {
   TripBriefProposal,
   DestinationCueDecisionResult,
   SharedPlanningMemoryInput,
+} from "./model-gateway.js";
+import {
+  dailyItineraryModelCompletionSchema,
+  dailyItineraryWireCompletionSchema,
+  type DailyItineraryModelCompletion,
 } from "./model-gateway.js";
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace } from "../types/schemas.js";
@@ -80,26 +86,10 @@ const parsedCompletionSchema = z.object({
     flights: z.array(z.unknown()),
     activities: optionalArray(z.unknown()),
     hotels: optionalArray(z.unknown()),
-    accommodations: optionalArray(z.unknown()),
     generatedAt: z.string().min(1),
     constraintReferences: optionalArray(z.string().min(1)),
     publicExplanationTokens: optionalArray(z.string().min(1)),
   }).strict(),
-}).strict();
-
-const parsedDailyItinerarySchema = z.object({
-  dailyItinerary: z.array(z.object({
-    date: z.string().date(),
-    timeZone: z.literal("destination_local"),
-    items: z.array(z.object({
-      kind: z.enum(["FLIGHT", "BOOKED_ACTIVITY", "SUGGESTED_STOP", "FREE_TIME", "RETURN_TO_HOTEL"]),
-      startTimeLocal: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-      endTimeLocal: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
-      title: z.string().min(1).max(160),
-      verification: z.enum(["PROVIDER_BACKED", "SUGGESTED"]),
-      evidenceRef: z.object({ category: z.enum(["flights", "activities"]), id: z.string().min(1) }).strict().optional(),
-    }).strict()),
-  }).strict()),
 }).strict();
 
 const parsedConversationCompletionSchema = z.object({
@@ -681,6 +671,20 @@ function completionPayload(message: { parsed: unknown; content?: string | null }
   } catch {
     return null;
   }
+}
+
+function dailyItineraryRepairInstruction(issue: {
+  code: string;
+  fieldPaths: readonly string[];
+}): string {
+  const rule = issue.code === "DATE_COVERAGE_INVALID"
+    ? "Return every listed plan.days dayKey exactly once and in order."
+    : issue.code === "TIME_ORDER_INVALID"
+      ? "Use HH:mm times with end after start; sort items and do not overlap them."
+      : issue.code === "EVIDENCE_REFERENCE_INVALID"
+        ? "FLIGHT uses a listed flight_* key, BOOKED_ACTIVITY uses a listed activity_* key, and suggested kinds use null."
+        : "Return only the exact structured contract and include every required property.";
+  return `[${issue.code}] ${issue.fieldPaths.join(", ") || "dailyItinerary"}. ${rule}`;
 }
 
 /**
@@ -1289,25 +1293,170 @@ export class LLMGateway implements ModelGateway {
     plan: Record<string, unknown>;
     travelDateStart: string;
     travelDateEnd: string;
+    requiredDates?: readonly string[];
+    repair?: {
+      attempt: number;
+      issues: readonly { code: string; fieldPaths: readonly string[] }[];
+    };
     signal?: AbortSignal;
     ctx?: RequestContext;
-  }): Promise<unknown> {
+  }): Promise<DailyItineraryModelCompletion> {
     const ctx = params.ctx ?? this.options.ctx;
-    const client = await this.loadClient();
-    const response = await client.chat.completions.parse({
+    const startedAt = Date.now();
+    const responseFormat = zodResponseFormat(dailyItineraryWireCompletionSchema, "daily_itinerary");
+    const schemaFingerprint = createHash("sha256")
+      .update(JSON.stringify(responseFormat.json_schema.schema))
+      .digest("hex");
+    logSafeRuntimeEvent(ctx, {
+      component: "llm",
+      event: "request",
+      operation: "daily_itinerary",
+      outcome: "started",
+      schemaVersion: "1",
+      schemaFingerprint,
+    });
+    const span = getTracer().startSpan("llm.openai.parse", {
+      kind: SpanKind.CLIENT,
+      attributes: { "llm.method": "daily_itinerary" },
+    });
+    annotateLlmSpan(span, this.options.provider, this.options.modelName, this.options.promptVersion, "daily_itinerary");
+    safeSetAttribute(span, "llm.schema.version", "1");
+    safeSetAttribute(span, "llm.schema.fingerprint", schemaFingerprint);
+
+    let client: OpenAIClientLike;
+    try {
+      client = await this.loadClient();
+    } catch (error) {
+      const code = classifyError(error);
+      safeSetAttribute(span, "llm.outcome", code);
+      safeSetAttribute(span, "llm.error_code", code);
+      span.end();
+      metrics.observe("llm_request_latency_ms", Date.now() - startedAt, {
+        provider: this.options.provider,
+        outcome: "failure",
+      });
+      logSafeRuntimeEvent(ctx, {
+        component: "llm", event: "request", operation: "daily_itinerary", outcome: "failure",
+        errorCode: code, latencyMs: Date.now() - startedAt, schemaVersion: "1", schemaFingerprint,
+      });
+      throw new ModelGatewayError(code, "planning", { schemaFingerprint });
+    }
+
+    const request = {
       model: this.options.modelName,
       messages: [{
-        role: "system",
-        content: "You arrange a validated shared-trip plan into a daily, non-bookable suggestion. Return exactly {dailyItinerary:[...]}; every day must use timeZone: destination_local. Preserve selected flight/activity ids only in evidenceRef. FLIGHT and BOOKED_ACTIVITY must be PROVIDER_BACKED and cite their selected id. SUGGESTED_STOP, FREE_TIME, and RETURN_TO_HOTEL must be SUGGESTED and have no evidenceRef. Never claim prices, opening hours, bookings, addresses, routes, or travel durations. Use only HH:mm local times; items must not overlap. Do not change plan selections or include any other field.",
+        role: "system" as const,
+        content: [
+          "You arrange a validated shared-trip selection into a daily, non-bookable suggestion.",
+          "Return exactly the structured days contract; do not include markdown or any other key.",
+          "Copy every plan.days dayKey exactly once in the given order. The server owns real dates and timezone.",
+          "Every item must contain exactly kind, startTimeLocal, endTimeLocal, title, and evidenceKey.",
+          "FLIGHT must cite one listed flight_* evidenceKey. BOOKED_ACTIVITY must cite one listed activity_* evidenceKey.",
+          "SUGGESTED_STOP, FREE_TIME, and RETURN_TO_HOTEL must use evidenceKey: null.",
+          "You may add useful suggested sights or stops even when they were not selected from activities, but must label them SUGGESTED and make no provider-backed claim.",
+          "Never claim prices, opening hours, bookings, addresses, routes, or travel durations.",
+          "Use only HH:mm local times. Within each day, sort items by startTimeLocal and never overlap them.",
+          "Do not change plan selections or include any other field.",
+          params.repair
+            ? `This is repair attempt ${params.repair.attempt}. Regenerate the whole object and correct these validation issues: ${params.repair.issues.map(dailyItineraryRepairInstruction).join("; ")}`
+            : "",
+        ].filter(Boolean).join(" "),
       }, {
-        role: "user",
-        content: JSON.stringify({ plan: params.plan, travelDateStart: params.travelDateStart, travelDateEnd: params.travelDateEnd }),
+        role: "user" as const,
+        content: JSON.stringify({
+          plan: params.plan,
+          travelDateStart: params.travelDateStart,
+          travelDateEnd: params.travelDateEnd,
+          requiredDates: params.requiredDates,
+        }),
       }],
-      response_format: { type: "json_object" },
-    }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
-    const parsed = parsedDailyItinerarySchema.safeParse(completionPayload(response.choices[0]?.message));
-    if (!parsed.success) throw new ModelGatewayError("SCHEMA_PARSE");
-    return parsed.data.dailyItinerary;
+      response_format: responseFormat,
+    };
+
+    let response: Awaited<ReturnType<typeof client.chat.completions.parse>> | undefined;
+    let finalError: { code: string; httpStatus?: number } | undefined;
+    const maxRetries = this.options.maxRetries ?? 1;
+    for (let transportAttempt = 0; transportAttempt <= maxRetries; transportAttempt += 1) {
+      try {
+        response = await client.chat.completions.parse(
+          request,
+          { signal: params.signal, headers: outboundTraceHeaders(ctx) },
+        );
+        finalError = undefined;
+        break;
+      } catch (error) {
+        if (abortedByCaller(params.signal) || (error instanceof Error && error.name === "AbortError")) {
+          span.end();
+          throw error;
+        }
+        const code = classifyError(error);
+        const httpStatus = (error as { status?: number })?.status
+          ?? (error as { response?: { status?: number } })?.response?.status;
+        finalError = { code, ...(typeof httpStatus === "number" ? { httpStatus } : {}) };
+        safeRecordRetryableError(this.options.provider, code);
+        const nonRetryableClientError = typeof httpStatus === "number"
+          && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 429;
+        if (nonRetryableClientError || !isRetryableUpstreamError(code) || transportAttempt >= maxRetries) break;
+        await sleep(computeBackoffMs(transportAttempt, code));
+      }
+    }
+
+    if (!response) {
+      const code = finalError?.code ?? "UPSTREAM_FAILURE";
+      safeSetAttribute(span, "llm.outcome", code);
+      safeSetAttribute(span, "llm.error_code", code);
+      if (finalError?.httpStatus) safeSetAttribute(span, "http.response.status_code", finalError.httpStatus);
+      span.end();
+      metrics.observe("llm_request_latency_ms", Date.now() - startedAt, {
+        provider: this.options.provider,
+        outcome: "failure",
+      });
+      logSafeRuntimeEvent(ctx, {
+        component: "llm", event: "request", operation: "daily_itinerary", outcome: "failure",
+        errorCode: code, latencyMs: Date.now() - startedAt,
+        ...(finalError?.httpStatus ? { httpStatus: finalError.httpStatus } : {}),
+        schemaVersion: "1", schemaFingerprint,
+      });
+      throw new ModelGatewayError(code, "planning", {
+        ...(finalError?.httpStatus ? { httpStatus: finalError.httpStatus } : {}),
+        schemaFingerprint,
+      });
+    }
+    const parsed = dailyItineraryModelCompletionSchema.safeParse(completionPayload(response.choices[0]?.message));
+    if (!parsed.success) {
+      safeSetAttribute(span, "llm.outcome", "SCHEMA_PARSE");
+      safeSetAttribute(span, "llm.error_code", "SCHEMA_PARSE");
+      span.end();
+      metrics.observe("llm_request_latency_ms", Date.now() - startedAt, {
+        provider: this.options.provider,
+        outcome: "failure",
+      });
+      logSafeRuntimeEvent(ctx, {
+        component: "llm", event: "request", operation: "daily_itinerary", outcome: "failure",
+        errorCode: "SCHEMA_PARSE", latencyMs: Date.now() - startedAt,
+        schemaVersion: "1", schemaFingerprint,
+      });
+      throw new ModelGatewayError("SCHEMA_PARSE", "planning", {
+        fieldPaths: [...new Set(parsed.error.issues.map((issue) => issue.path.join(".") || "dailyItinerary"))].sort().slice(0, 16),
+        schemaFingerprint,
+      });
+    }
+    safeSetAttribute(span, "llm.outcome", "success");
+    span.end();
+    metrics.observe("llm_request_latency_ms", Date.now() - startedAt, {
+      provider: this.options.provider,
+      outcome: "success",
+    });
+    logSafeRuntimeEvent(ctx, {
+      component: "llm",
+      event: "request",
+      operation: "daily_itinerary",
+      outcome: "success",
+      latencyMs: Date.now() - startedAt,
+      schemaVersion: "1",
+      schemaFingerprint,
+    });
+    return parsed.data;
   }
 
   async generateStructuredPlanWithTools(params: {
@@ -1332,11 +1481,10 @@ export class LLMGateway implements ModelGateway {
     validateFinalPlan?: (candidate: Record<string, unknown>) => void | Promise<void>;
     maxTurns: number;
     /**
-     * P3 (planner-resilience §6): bounded repair budget on top of the
-     * convergence budget. `repairUsed` counts only critic-directed retries,
-     * while the effective model-call bound grows to
-     * `maxTurns + repairBudget`; the default reads
-     * `MODEL_GATEWAY_PLAN_REPAIR_BUDGET` (defaults to 2).
+     * Bounded repair budget on top of the normal model-call budget. The last
+     * normal call is reserved for synthesis: tools are closed on that call and
+     * on every repair call, so repair capacity cannot be consumed by more
+     * research.
      */
     repairBudget?: number;
     /**
@@ -1462,10 +1610,10 @@ export class LLMGateway implements ModelGateway {
           role: "system",
           content: "Authoritative flight research is complete. Do not call flight.search again. "
             + "Return exactly one JSON object with one top-level key named plan. "
-            + "The plan object may contain only destination, destinationCandidatesEvaluated, flights, activities, hotels, accommodations, generatedAt, constraintReferences, and publicExplanationTokens. `stays` is retired and must never be emitted. "
-            + "flights, activities, hotels and accommodations must contain only compact {\"id\":\"exact evidence id\"} selection objects; do not copy or summarize the remaining evidence fields. "
-            + "`hotels` are priced quotes and `accommodations` are non-priced discovery — select from whichever the Tool results actually contain, and never move an entry between them. "
-            + "destination, flights, and generatedAt are required keys. Return flights as an empty array when it produced no evidence; omit optional accommodation categories when they have no evidence. An unavailable capability is reported as a gap, and inventing an offer is a validation failure. Omit optional properties when they have no value; do not set them to null. "
+            + "The plan object may contain only destination, destinationCandidatesEvaluated, flights, activities, hotels, generatedAt, constraintReferences, and publicExplanationTokens. `stays` and `accommodations` are retired final-plan fields and must never be emitted. "
+            + "flights, activities, and hotels must contain only compact {\"id\":\"exact evidence id\"} selection objects; do not copy or summarize the remaining evidence fields. "
+            + "`hotels` is the only final-plan accommodation selection. accommodation.discover results are research-only coverage and must not be copied into the plan. "
+            + "destination, flights, and generatedAt are required keys. Return flights as an empty array when it produced no evidence; omit optional categories when they have no evidence. An unavailable capability is reported as a gap, and inventing an offer is a validation failure. Omit optional properties when they have no value; do not set them to null. "
             + "Use only the normalized Tool results already present in this conversation; never invent missing evidence.",
         });
         return;
@@ -1480,26 +1628,38 @@ export class LLMGateway implements ModelGateway {
         }),
       });
     };
-    // P3 (planner-resilience §6): bounded repair budget. `repairUsed` only
-    // counts critic-directed corrections, and `upperBound` grants one extra
-    // model call per allowed correction beyond the normal convergence limit.
-    //
-    // Default reads `MODEL_GATEWAY_PLAN_REPAIR_BUDGET` (defaults to 2 in
-    // production via the env file) but the in-process default is `0` so
-    // tests that don't pass a budget keep their original convergence-only
-    // shape — the planner opt-in is via `params.repairBudget` or env.
+    // The final normal turn belongs to synthesis, not research. Once the model
+    // emits any final candidate, synthesis remains sticky: a validation repair
+    // must correct that candidate and may not reopen tools. This prevents the
+    // incident where maxTurns=8 plus repairBudget=2 became ten ordinary search
+    // turns and the run ended without ever asking the model to write a plan.
     const repairBudget = params.repairBudget ?? Number(process.env.MODEL_GATEWAY_PLAN_REPAIR_BUDGET ?? 0);
     let repairUsed = 0;
+    let synthesisStarted = false;
+    let synthesisInstructionAdded = false;
+    const reservedSynthesisTurn = params.maxTurns - 1;
     const upperBound = params.maxTurns + repairBudget;
     for (let turn = 0; turn < upperBound; turn += 1) {
       if (params.signal?.aborted) throw params.signal.reason ?? new DOMException("Aborted", "AbortError");
-      const forceMissingFlightSearch = turn > 0
+      const availableTools = offeredTools();
+      const synthesisPhase = synthesisStarted
+        || turn >= reservedSynthesisTurn
+        || availableTools.length === 0
+        || (flightIsOnlyAvailableTool && missingFlightCells().length === 0);
+      const forceMissingFlightSearch = !synthesisPhase && turn > 0
         && flightToolAvailable
         && missingFlightCells().length > 0;
-      // Nothing left to call: either flight was the only tool and it is done,
-      // or every tool has been withdrawn. Ask for the plan itself.
-      const forceFinalPlan = offeredTools().length === 0
-        || (flightIsOnlyAvailableTool && missingFlightCells().length === 0);
+      if (synthesisPhase && !synthesisInstructionAdded) {
+        synthesisInstructionAdded = true;
+        messages.push({
+          role: "system",
+          content: "The research phase is closed. Do not call any tool. Return exactly one JSON object with one top-level plan key using only the evidence already gathered.",
+        });
+        logSafeRuntimeEvent(ctx, {
+          component: "llm", event: "synthesis_reserved", operation: "plan.comparison", outcome: "started",
+          attempt: turn + 1, promptVersion: this.options.promptVersion,
+        });
+      }
       let raw: {
         choices?: Array<{ message?: { content?: string | null; tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }> } }>;
       };
@@ -1508,7 +1668,7 @@ export class LLMGateway implements ModelGateway {
       // nothing left to offer and only needs the plan composed. An empty
       // `tools` array is rejected by the provider, so omit the field entirely
       // rather than sending one.
-      const turnTools = offeredTools();
+      const turnTools = synthesisPhase ? [] : availableTools;
       try {
         raw = await client.chat.completions.create({
           model: this.options.modelName,
@@ -1517,7 +1677,7 @@ export class LLMGateway implements ModelGateway {
             tools: turnTools.map((tool) => ({ type: "function", function: tool })),
             tool_choice: forceMissingFlightSearch
               ? { type: "function", function: { name: "flight.search" } }
-              : forceFinalPlan ? "none" : "auto",
+              : "auto",
           } : {}),
           // Gemini's OpenAI-compatible endpoint rejects forced function
           // calling when a JSON response MIME type is requested in the same
@@ -1541,13 +1701,14 @@ export class LLMGateway implements ModelGateway {
         // authoritative matrix. Keep the bounded model loop alive and require
         // another genuine flight.search call instead of failing the durable
         // task immediately or prefetching on the model's behalf.
-        if (flightToolAvailable && missingFlightCells().length > 0) {
+        if (!synthesisPhase && flightToolAvailable && missingFlightCells().length > 0) {
           // Keep provider compatibility metadata (for example Gemini thought
           // signatures) in memory for the next turn. Never log or persist it.
           messages.push({ ...message, role: "assistant", content: message?.content ?? null });
           appendFlightProgress();
           continue;
         }
+        synthesisStarted = true;
         // P3 repair branch. `beforeFinal` (the planner's gates) and the
         // final `safeParse` (this gateway's structural check) are the two
         // pre-commit validation points. When either throws, ask the
@@ -1560,17 +1721,15 @@ export class LLMGateway implements ModelGateway {
           const completion = parsedCompletionSchema.safeParse(completionPayload({ parsed: null, content: message?.content }));
           if (!completion.success) {
             finalSchemaFailed = true;
-            // Pre-existing schema retry — emit a structural fix-up prompt
-            // and let the next turn re-format. Counts against the convergence
-            // budget, not repair, because the model has not yet committed
-            // anything to a downstream validator.
+            if (repairUsed >= repairBudget) throw new ModelGatewayError("SCHEMA_PARSE");
+            repairUsed += 1;
             messages.push({ ...message, role: "assistant", content: message?.content ?? null });
             const issuePaths = [...new Set(completion.error.issues.map((issue) =>
               issue.path.join(".") || "response",
             ))].sort();
             messages.push({
               role: "system",
-              content: `The previous final JSON failed the required schema at: ${issuePaths.join(", ")}. Return a corrected JSON object with exactly one top-level plan key. Keep flights, activities, hotels, and accommodations compact by returning only {"id":"exact evidence id"} selection objects. Do not emit the retired stays field. Omit optional properties rather than setting them to null.`,
+              content: `The previous final JSON failed the required schema at: ${issuePaths.join(", ")}. Return a corrected JSON object with exactly one top-level plan key. Keep flights, activities, and hotels compact by returning only {"id":"exact evidence id"} selection objects. Do not emit the retired stays or accommodations fields. Omit optional properties rather than setting them to null.`,
             });
             continue;
           }
@@ -1616,7 +1775,35 @@ export class LLMGateway implements ModelGateway {
           });
           continue;
         }
-      }      // Gemini 3 requires the complete model message, including opaque
+      }
+      if (synthesisPhase) {
+        finalSchemaFailed = true;
+        if (repairUsed >= repairBudget) throw new ModelGatewayError("SCHEMA_PARSE");
+        repairUsed += 1;
+        // Preserve the provider's complete assistant message, then close every
+        // attempted call structurally without dispatching it. Stateless tool
+        // protocols require one response per call before the correction turn.
+        messages.push({ ...message, role: "assistant", content: message?.content ?? null, tool_calls: calls });
+        for (const call of calls) {
+          if (!call.id) throw new ModelGatewayError("SCHEMA_PARSE");
+          messages.push({
+            role: "tool",
+            tool_call_id: call.id,
+            content: JSON.stringify({
+              outcome: "UNAVAILABLE",
+              capability: call.function?.name ?? "unknown",
+              reason: "SYNTHESIS_PHASE",
+              message: "Research is closed. Return the final plan JSON using evidence already gathered.",
+            }),
+          });
+        }
+        messages.push({
+          role: "system",
+          content: "Research is closed and tools may not be called during synthesis or repair. Return exactly one JSON object with one top-level plan key using the evidence already gathered.",
+        });
+        continue;
+      }
+      // Gemini 3 requires the complete model message, including opaque
       // thought-signature metadata attached to a function call, to be sent
       // back unchanged on the next stateless turn. Reconstructing only the
       // OpenAI-standard fields can make the next Tool request fail with 400.
@@ -3182,7 +3369,15 @@ export class LLMGateway implements ModelGateway {
 
 export class ModelGatewayError extends Error {
   readonly code: string;
-  constructor(code: string, operation: "planning" | "conversation" = "planning") {
+  constructor(
+    code: string,
+    operation: "planning" | "conversation" = "planning",
+    readonly details?: {
+      fieldPaths?: readonly string[];
+      httpStatus?: number;
+      schemaFingerprint?: string;
+    },
+  ) {
     super(`The ${operation} model is temporarily unavailable. Please retry.`);
     this.name = "ModelGatewayError";
     this.code = code;
