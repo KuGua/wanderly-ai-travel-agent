@@ -164,7 +164,6 @@
   "profile": {
     "kicker": "Private Profile",
     "title": "Travel preference",
-    "subtitle": "Nothing here is shared with a trip unless a later consent flow records that choice. Passport numbers are never collected.",
     "backToPlanner": "Back to planner",
     "lastSaved": "Last saved {date}",
     "errorSummaryTitle": "Check the highlighted Profile fields.",

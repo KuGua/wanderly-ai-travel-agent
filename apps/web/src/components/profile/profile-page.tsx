@@ -25,9 +25,6 @@ export function ProfilePageContent() {
 
   return (
     <main className="mx-auto w-full max-w-[1240px] px-5 py-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
-      {/* Same header as the planner: brushed title, no kicker. The privacy line
-          survives the cut the dashboard's kickers did not — it states what the
-          page does with what you type, which nothing else here says. */}
       <header className="flex flex-wrap items-start justify-between gap-6">
         <h1 className="text-[clamp(1.75rem,3.6vw,2.35rem)] font-semibold leading-none tracking-[-0.04em] text-[var(--w-ink)]/85">
           <span className="wanderly-brush">{t("title")}</span>
@@ -39,7 +36,6 @@ export function ProfilePageContent() {
           {t("backToPlanner")}
         </Link>
       </header>
-      <p className="mt-[18px] max-w-[62ch] text-[13.5px] leading-[1.65] text-[var(--w-ink)]/58">{t("subtitle")}</p>
 
       <div className="mt-7">
         {profileQuery.isPending ? <LoadingState label={tCommon("loadingProfileCapital")} /> : null}
