@@ -57,7 +57,7 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `agent_task_duration_ms` | histogram | operation, outcome | operation ∈ `["conversation","plan","replan","research","personal_research"]`; outcome ∈ `["completed","completed_with_gaps","failed","cancelled"]`; buckets = `[100,250,500,1000,2000,5000,10000,30000,60000,300000]` |
 | `agent_task_outcomes_total` | counter | operation, outcome | operation ∈ `["conversation","plan","replan","research","personal_research"]`; outcome ∈ `["completed","completed_with_gaps","failed","cancelled","retrying"]` |
 | `agent_task_recoveries_total` | counter | outcome | `["retrying","failed","cancelled"]` |
-| `booking_callback_outcomes_total` | counter | callbackResult | `["processed","duplicate","failed"]` |
+| `booking_callback_outcomes_total` | counter | callbackResult | `["processed","duplicate","failed","stale"]` |
 | `booking_gate_denials_total` | counter | errorCategory | `["callback_auth","membership","quorum","plan_state","plan_unavailable","non_unanimous","snapshot_stale","offer_stale","unknown"]` |
 | `callback_verifications_total` | counter | callbackResult | `["valid","missing_header","malformed_timestamp","expired","bad_signature","configuration_error"]` |
 | `conversation_context_build_total` | counter | result | `["success","empty","denied","error"]` |
@@ -77,7 +77,7 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `flight_provider_latency_ms` | histogram | provider, outcome | provider ∈ `["amadeus","flightapi","serpapi"]`; outcome ∈ `["live","unavailable"]`; buckets = `[100,250,500,1000,2000,5000,8000,15000]` |
 | `flight_provider_requests_total` | counter | outcome, provider, error_category | outcome ∈ `["live","unavailable"]`; provider ∈ `["amadeus","flightapi","serpapi"]`; error_category ∈ `["none","rate_limited","upstream_timeout","upstream_failure","invalid_provider_response","no_results","provider_not_approved","search_constraints_incomplete","provider_request_rejected"]` |
 | `flight_tool_invocations_total` | counter | outcome, provider, error_category | outcome ∈ `["live","unavailable"]`; provider ∈ `["amadeus","flightapi","serpapi","unconfigured"]`; error_category ∈ `["none","not_configured","search_constraints_incomplete","no_results","rate_limited","upstream_timeout","upstream_failure","invalid_provider_response","provider_not_approved"]` |
-| `free_text_memory_writes_total` | counter | result | `["saved","too_long","list_full"]` |
+| `free_text_memory_writes_total` | counter | result | `["saved","too_long","list_full","archived"]` |
 | `hotel_provider_city_mismatch_total` | counter | provider, outcome | provider ∈ `["nuitee_connect","serpapi"]`; outcome ∈ `["partial","all_elsewhere","empty"]` |
 | `hotel_provider_latency_ms` | histogram | provider, outcome | provider ∈ `["nuitee_connect","serpapi_google_hotels","unconfigured"]`; outcome ∈ `["live","unavailable"]`; buckets = `[100,250,500,1000,2000,5000,8000,10000,15000,30000]` |
 | `hotel_provider_requests_total` | counter | outcome, provider, error_category | outcome ∈ `["live","unavailable"]`; provider ∈ `["nuitee_connect","serpapi_google_hotels","unconfigured"]`; error_category ∈ `["none","not_configured","search_constraints_incomplete","no_results","rate_limited","upstream_timeout","upstream_failure","invalid_provider_response","provider_not_approved"]` |

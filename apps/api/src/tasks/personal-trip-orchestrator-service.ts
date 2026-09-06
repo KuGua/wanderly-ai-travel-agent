@@ -168,7 +168,12 @@ export async function runResearch(params: {
           providerOverride: params.providerOverride,
         });
       } catch (err) {
-        metrics.inc("research_stage_total", { stage: "RESEARCHING", outcome: "failure" });
+        // Lowercase, like every other value this counter registers and like
+        // the five sibling call sites. As `RESEARCHING` it threw a
+        // MetricLabelError *before* the rethrow below, so coverage research
+        // never reported its own failure — the provider error was replaced by
+        // a metrics error on the way out.
+        metrics.inc("research_stage_total", { stage: "researching", outcome: "failure" });
         throw err;
       }
       if (coverage.missingDestinations.length > 0) {

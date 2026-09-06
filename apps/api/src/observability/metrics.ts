@@ -307,7 +307,12 @@ metrics.registerCounter("callback_verifications_total", "Sandbox callback signat
   ],
 });
 metrics.registerCounter("booking_callback_outcomes_total", "Authenticated booking callback outcomes.", {
-  callbackResult: ["processed", "duplicate", "failed"],
+  // `stale` is a real outcome the route reports: a callback that arrives after
+  // the booking reached a terminal state. It was not registered, so the
+  // `metrics.inc` threw before the intended 409 could be raised and the caller
+  // got a 500 instead — an unregistered label value is not a dropped sample,
+  // it is an exception on the request path.
+  callbackResult: ["processed", "duplicate", "failed", "stale"],
 });
 metrics.registerCounter("location_reference_requests_total", "Offline map location references by bounded outcome.", {
   outcome: ["reference", "no_reference", "unavailable", "rate_limited"],
@@ -513,7 +518,10 @@ metrics.registerCounter(
 metrics.registerCounter(
   "free_text_memory_writes_total",
   "Free-text memory writes by outcome (highlight fallback).",
-  { result: ["saved", "too_long", "list_full"] },
+  // `archived` was missing, and its call site sits after the row is already
+  // updated: the archive succeeded, then the counter threw, so the API
+  // reported a failure for work the database had committed.
+  { result: ["saved", "too_long", "list_full", "archived"] },
 );
 metrics.registerCounter("place_provider_requests_total", "Place provider requests by bounded outcome.", {
   outcome: ["live", "unavailable"],
