@@ -280,7 +280,10 @@ export function HomeDashboard() {
           stack, so the notes still read as pinned onto it rather than framed
           by a second heavy panel. */}
       <section
-        className="mt-8 rounded-[14px] border border-[var(--w-ink)]/10 bg-[color-mix(in_srgb,var(--w-card,#fff),var(--w-fog)_28%)] p-5 shadow-[0_1px_2px_rgb(42_42_40/.05),0_14px_30px_-24px_rgb(42_42_40/.5)] sm:p-6"
+        /* Felt, not a second sheet of paper. The pad above is the notebook;
+           this is the board its pages get pinned to, which is also why the
+           torn edge is here and the rounded card corner is not. */
+        className="wanderly-felt mt-8 px-6 pb-11 pt-9 sm:px-8"
         aria-labelledby="trips-heading"
       >
         {/* Trip grid. The filters live on this heading rather than beside the
@@ -289,7 +292,7 @@ export function HomeDashboard() {
             moment someone chose "archived" — the control removing itself. */}
         <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap items-center gap-3">
-            <h2 id="trips-heading" className="text-lg font-semibold tracking-[-0.025em] text-[var(--w-ink)]/80">
+            <h2 id="trips-heading" className="text-lg font-semibold tracking-[-0.025em] text-[var(--w-felt-ink)]">
               {tHome("trips.heading")}
             </h2>
           <div className="flex flex-wrap gap-2" role="group" aria-label={tHome("filter.ariaLabel")}>
@@ -303,10 +306,12 @@ export function HomeDashboard() {
                    press offset made choosing a filter feel like throwing a
                    switch, four of which sat in a row above a list that simply
                    redraws. */
-                className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-[10px] border border-[var(--w-ink)]/10 px-3.5 py-[6px] text-sm font-semibold text-[var(--w-ink)] transition-colors ${
+                /* Square, framed by a drawn box. Selection is still colour
+                   alone — it moves the frame's fill, not its weight. */
+                className={`wanderly-drawn inline-flex min-h-[36px] items-center gap-1.5 px-4 py-[7px] text-sm font-bold transition-colors ${
                   filter === key
-                    ? "bg-[var(--w-cal-run)]"
-                    : "bg-card hover:bg-[var(--w-mist)]"
+                    ? "text-[var(--w-ink)] [--w-drawn-fill:var(--w-cal-run)]"
+                    : "text-[#3a2c14] hover:[--w-drawn-fill:color-mix(in_srgb,var(--w-cal-run),var(--w-white)_55%)]"
                 }`}
               >
                 {tHome(`filter.${key}`)}
@@ -318,18 +323,18 @@ export function HomeDashboard() {
           </div>
           </div>
           <div className="flex items-center gap-4">
-          <label className="flex min-h-[42px] w-full items-center gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-card px-3 sm:w-[min(250px,100%)]">
-            <Search aria-hidden="true" className="size-[17px] text-[var(--w-ink)]" />
+          <label className="wanderly-drawn flex min-h-[42px] w-full items-center gap-2 px-3.5 sm:w-[min(250px,100%)]">
+            <Search aria-hidden="true" className="size-[17px] text-[#3a2c14]" />
             <input
               type="search"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={tHome("filter.searchPlaceholder")}
               aria-label={tHome("filter.searchPlaceholder")}
-              className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-[var(--w-ink)] placeholder:opacity-60"
+              className="min-w-0 flex-1 border-0 bg-transparent text-sm text-[#3a2c14] outline-none placeholder:text-[#3a2c14] placeholder:opacity-75"
             />
           </label>
-            <span className="shrink-0 text-[13px] font-bold text-muted-foreground" role="status" aria-atomic="true">
+            <span className="shrink-0 text-[13px] font-bold text-[var(--w-felt-ink)]" role="status" aria-atomic="true">
               {tHome("trips.showing", { count: filteredTrips.length })}
             </span>
           </div>

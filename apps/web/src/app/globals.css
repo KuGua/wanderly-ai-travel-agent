@@ -162,6 +162,9 @@
      this is the one fill on the paper surface that is meant to read as spoken
      rather than as stationery. */
   --w-bubble-user: color-mix(in srgb, var(--w-info), var(--w-white) 44%);
+  /* The pinboard the trips hang on, and the umber printed on it. */
+  --w-felt: #dec9b4;
+  --w-felt-ink: #4a3617;
   --sidebar-foreground: var(--w-ink);
   --sidebar-primary: var(--w-highlight);
   --sidebar-primary-foreground: var(--w-ink);
@@ -743,6 +746,63 @@
 }
 
 
+/* ---- pinboard ------------------------------------------------------------
+   The trips hang on felt rather than on a second sheet of paper. Everything is
+   drawn: three layers of fibre (a fine nap, a coarser clumping that makes it
+   read as pressed rather than sprayed, and a faint cross-weave) over the base
+   colour, so the board can be any width and follows the palette.
+
+   The torn edge is masked as three bands — a fixed 18px strip top and bottom
+   with a solid middle between them — rather than one mask stretched over the
+   whole height. A single stretched mask ties the wave's amplitude to the
+   section's height, so sixteen trips would have turned a torn edge into a
+   scallop six times too big. */
+.wanderly-felt {
+  position: relative;
+  background-color: var(--w-felt);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23f)' opacity='.5'/%3E%3C/svg%3E"),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.18' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23c)' opacity='.28'/%3E%3C/svg%3E"),
+    repeating-linear-gradient(46deg, rgb(90 66 34 / .045) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(-44deg, rgb(255 250 240 / .05) 0 1px, transparent 1px 4px),
+    radial-gradient(120% 90% at 16% 0%, rgb(255 255 255 / .22), transparent 62%),
+    radial-gradient(110% 85% at 92% 100%, rgb(96 70 34 / .13), transparent 64%);
+  background-size: 120px 120px, 300px 300px, auto, auto, auto, auto;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .34), inset 0 -2px 7px rgb(96 70 34 / .17);
+  --w-notch-ground: var(--w-felt);
+  -webkit-mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 1200 20'%3E%3Cpath fill='%23000' d='M0 7 C 90 1, 150 13, 240 6 C 330 0, 400 12, 496 5 C 560 1, 620 11, 700 5 C 790 0, 860 12, 950 6 C 1040 1, 1120 11, 1200 4 L1200 20 L0 20 Z'/%3E%3C/svg%3E"),
+    linear-gradient(#000, #000),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 1200 20'%3E%3Cpath fill='%23000' d='M0 0 L1200 0 L1200 13 C 1110 19, 1040 7, 950 14 C 860 20, 790 8, 700 15 C 610 20, 550 9, 470 15 C 380 20, 310 8, 220 15 C 130 20, 70 9, 0 16 Z'/%3E%3C/svg%3E");
+  mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 1200 20'%3E%3Cpath fill='%23000' d='M0 7 C 90 1, 150 13, 240 6 C 330 0, 400 12, 496 5 C 560 1, 620 11, 700 5 C 790 0, 860 12, 950 6 C 1040 1, 1120 11, 1200 4 L1200 20 L0 20 Z'/%3E%3C/svg%3E"),
+    linear-gradient(#000, #000),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 1200 20'%3E%3Cpath fill='%23000' d='M0 0 L1200 0 L1200 13 C 1110 19, 1040 7, 950 14 C 860 20, 790 8, 700 15 C 610 20, 550 9, 470 15 C 380 20, 310 8, 220 15 C 130 20, 70 9, 0 16 Z'/%3E%3C/svg%3E");
+  -webkit-mask-size: 100% 18px, 100% calc(100% - 36px), 100% 18px;
+  mask-size: 100% 18px, 100% calc(100% - 36px), 100% 18px;
+  -webkit-mask-position: top, 0 18px, bottom;
+  mask-position: top, 0 18px, bottom;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+/* A control framed by a drawn box rather than by a border: the frame is an SVG
+   stretched to the control's own size, so no two of them wobble alike, which
+   is the whole point of a hand-drawn line.
+
+   The fill is inset to sit inside that line. A full-bleed fill behind a path
+   drawn 3px in shows its own hard corners poking past the drawn ones. */
+.wanderly-drawn {
+  border: 0;
+  border-radius: 2px;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' preserveAspectRatio='none' viewBox='0 0 120 40'%3E%3Cpath d='M3.5 4.2 C 34 2.4, 72 5.6, 116.5 3.4 C 118 13, 115.6 27, 117 36.2 C 82 38.4, 40 35.2, 4.6 37 C 2.8 26, 5.2 14, 3.5 4.2 Z' fill='none' stroke='%236b5433' stroke-width='2.1' stroke-linejoin='round' stroke-linecap='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E"),
+    linear-gradient(var(--w-drawn-fill, rgb(255 253 248 / .9)), var(--w-drawn-fill, rgb(255 253 248 / .9)));
+  background-size: 100% 100%, calc(100% - 7px) calc(100% - 7px);
+  background-position: 0 0, 3.5px 3.5px;
+  background-repeat: no-repeat;
+}
+
 /* ---- paper desk ----------------------------------------------------------
    The home dashboard is a desk: ruled paper for the year, note stock for the
    trips, a clip on each. Every texture is drawn, so a card can be any width
@@ -806,7 +866,10 @@
    box-shadow offset was the first attempt and drew a single notch: box-shadow
    lengths do not take percentages. */
 .wanderly-notch::before, .wanderly-notch::after { content: ""; position: absolute; left: 12px;
-  width: 11px; height: 11px; border-radius: 999px; background: var(--w-page); }
+  width: 11px; height: 11px; border-radius: 999px;
+  /* Whatever the stub is lying on, not always the page: on the pinboard a
+     page-coloured disc reads as a sticker rather than as a bite. */
+  background: var(--w-notch-ground, var(--w-page)); }
 .wanderly-notch::before { top: -6px; }
 .wanderly-notch::after { bottom: -6px; }
 
