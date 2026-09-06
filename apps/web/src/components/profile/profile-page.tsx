@@ -24,7 +24,7 @@ export function ProfilePageContent() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1240px] px-5 pb-8 pt-14 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:pb-[42px] md:pt-[76px]">
+    <main className="mx-auto w-full max-w-[1240px] px-5 py-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
       <header className="flex flex-wrap items-start justify-between gap-6">
         <h1 className="text-[clamp(1.75rem,3.6vw,2.35rem)] font-semibold leading-none tracking-[-0.04em] text-[var(--w-ink)]/85">
           <span className="wanderly-brush">{t("title")}</span>
@@ -37,7 +37,7 @@ export function ProfilePageContent() {
         </Link>
       </header>
 
-      <div className="mt-10">
+      <div className="mt-7">
         {profileQuery.isPending ? <LoadingState label={tCommon("loadingProfileCapital")} /> : null}
         {profileQuery.isError ? <ErrorState error={profileQuery.error} title={t("errorSummaryTitle")} /> : null}
         {profileQuery.data?.profile ? (
@@ -60,10 +60,9 @@ export function ProfilePageContent() {
         ) : null}
       </div>
 
-      {/* What the assistant wants to ask about, below the form where facts are
-          stated. It renders nothing unless a suggestion is actually waiting —
-          the remembered-facts and kept-notes lists that used to live here are
-          gone from the page (the server still keeps both). */}
+      {/* Long-term memory sits below the form: the form is where facts are
+          stated, this is what the assistant has retained and what it wants to
+          ask about. */}
       <ProfileMemory />
     </main>
   );
