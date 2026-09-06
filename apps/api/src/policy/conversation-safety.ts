@@ -287,12 +287,19 @@ export function safeConversationRefusal(question?: string): ConversationReply {
 }
 
 /** A truthful replacement for an ordinary reply that claimed a Trip write. */
-export function pendingTripMutationReply(question?: string): ConversationReply {
+export function pendingTripMutationReply(
+  question?: string,
+  hasConfirmationCard = true,
+): ConversationReply {
   const chinese = question !== undefined && /[\p{Script=Han}]/u.test(question);
   return {
-    content: chinese
-      ? "我已经识别到这项行程修改；请在下方确认卡片后再保存到本次行程。"
-      : "I recognized that trip change. Please confirm the card below before it is saved to this trip.",
+    content: hasConfirmationCard
+      ? chinese
+        ? "我已经识别到这项行程修改；请在下方确认卡片后再保存到本次行程。"
+        : "I recognized that trip change. Please confirm the card below before it is saved to this trip."
+      : chinese
+        ? "我还没能把这段内容整理成可保存的行程修改。请明确写出城市或起止日期；识别成功后，我会先显示确认卡片。"
+        : "I couldn't turn that into a savable trip change yet. Please state the city or date range clearly; I'll show a confirmation card before anything is saved.",
     responseMode: "SAFE_REFUSAL",
   };
 }

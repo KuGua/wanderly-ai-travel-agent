@@ -425,6 +425,19 @@ const ISO_RANGE = new RegExp(
   `\\b(20\\d{2})-(1[0-2]|0[1-9])-(3[01]|[12]\\d|0[1-9])\\b\\s*(?:到|至|–|—|~|～|\\s-\\s|\\bto\\b|\\btill\\b|\\bthrough\\b)\\s*\\b(20\\d{2})-(1[0-2]|0[1-9])-(3[01]|[12]\\d|0[1-9])\\b`,
   "u",
 );
+/**
+ * Compact numeric notation used in chat, for example `2026.12.4-12.10`.
+ *
+ * This is deliberately separate from ISO parsing: a dot or slash is a date
+ * separator here, while the middle dash is the range separator. The end may
+ * omit the year because both dates are part of the same user-written range.
+ */
+const COMPACT_NUMERIC_RANGE = new RegExp(
+  "\\b(20\\d{2})[./](1[0-2]|0?[1-9])[./](3[01]|[12]\\d|0?[1-9])"
+  + "\\s*(?:到|至|–|—|~|～|-)\\s*"
+  + "(?:(20\\d{2})[./])?(?:(1[0-2]|0?[1-9])[./])?(3[01]|[12]\\d|0?[1-9])\\b",
+  "u",
+);
 const CHINESE_RANGE = new RegExp(
   "(?:(20\\d{2})\\s*年\\s*)?(1[0-2]|0?[1-9])\\s*月\\s*(3[01]|[12]\\d|0?[1-9])\\s*(?:日|号)?"
   + `\\s*${RANGE_CONNECTOR}\\s*`
@@ -490,6 +503,17 @@ function matchDateRange(question: string): { start: DateParts; end: DateParts } 
     return {
       start: { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) },
       end: { year: Number(iso[4]), month: Number(iso[5]), day: Number(iso[6]) },
+    };
+  }
+  const compact = question.match(COMPACT_NUMERIC_RANGE);
+  if (compact) {
+    return {
+      start: { year: Number(compact[1]), month: Number(compact[2]), day: Number(compact[3]) },
+      end: {
+        ...optionalYear(compact[4]),
+        ...(compact[5] ? { month: Number(compact[5]) } : {}),
+        day: Number(compact[6]),
+      },
     };
   }
   // A connector range is the more explicit statement, so it wins when both

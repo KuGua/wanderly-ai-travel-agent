@@ -1272,7 +1272,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 **Steps:**
 
 1. Send `我想要10月1号到10月7号去上海` — a range with no year stated — and inspect the proposal stored on the trip and the card rendered from it.
-2. Repeat with `10月1号到7号`, `12月28号到1月3号`, `October 1 to October 7`, and `2026-10-01 to 2026-10-07`.
+2. Repeat with `10月1号到7号`, `12月28号到1月3号`, `October 1 to October 7`, `2026-10-01 to 2026-10-07`, `2026.12.4-12.10`, and `2026/12/4-12/10`.
 3. Force the model extractor to return `travelDateEnd` in a past year while the parser reads a future start, and inspect what is persisted.
 4. Across two separate turns, settle a start date in one and let the model supply a contradicting end date in the other, so the pair is only assembled by the cross-turn merge.
 5. Click the confirmation card. Then submit a pair with `travelDateEnd` before `travelDateStart` directly to `PATCH /trips/:tripId/draft-brief`.
@@ -1280,11 +1280,12 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 **Expected outcomes:**
 
-- Every range yields both ends in the year that is still ahead: `2026-10-01`/`2026-10-07`, and the New Year range crosses into `2027-01-03`. A bare month/day is never dated into a past year, and the extractor's system prompt carries the current date.
+- Every range yields both ends in the year that is still ahead: `2026-10-01`/`2026-10-07`; compact dot/slash notation yields `2026-12-04`/`2026-12-10`; and the New Year range crosses into `2027-01-03`. A bare month/day is never dated into a past year, and the extractor's system prompt carries the current date.
 - A model end date that contradicts the parsed start is dropped before persistence; the destination and other candidates survive. The same holds when the contradiction is only visible after the cross-turn merge — the merge takes a row lock and rejects the combined pair rather than overwriting one key.
 - A pair that is internally consistent but already in the past is dropped too, and no trip is silently given past travel dates or a title derived from them.
 - `trip_brief_proposal_dates_total{result}` records `ok`, `end_before_start`, `in_past` or `malformed`. No date value, city or conversation text appears in the metric, the log or the trace.
 - The card shows the dates it is about to save alongside the destination, and a coherent proposal saves on the first click.
+- If the model claims a change was saved but neither deterministic parsing nor its structured proposal can produce a card, the safety replacement asks the traveller to restate the city or date range and never points to a nonexistent card.
 - The direct PATCH returns `400 BRIEF_DATES_INVALID`; the client renders copy that tells the traveller to restate the dates, never to refresh. The existing brief, title and pending proposal are unchanged.
 - The cleanup script is a dry run by default, is idempotent, strips only the incoherent date fields from stored proposals, and reports — never rewrites — confirmed trips whose travel dates are in the past.
 

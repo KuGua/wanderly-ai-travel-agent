@@ -951,6 +951,7 @@ export async function handleConversationTask(params: {
     responseConstraints?: readonly ConversationResponseConstraint[];
     hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
     flightSearchState?: import("../../providers/model-gateway.js").ConversationFlightSearchState | null;
+    hasPendingTripMutation?: boolean;
   } = {};
   // Server-side explicit confirmation detector. It accepts a standalone
   // confirmation at either end of a complete natural-language query (for
@@ -982,6 +983,7 @@ export async function handleConversationTask(params: {
     confirmed: flightSearchState.confirmed,
     version: flightSearchState.version,
   } : null;
+  toolContext.hasPendingTripMutation = directBriefProposal !== null;
   let evidenceDispatched = false;
   const dispatchers = new Map<string, ModelToolDispatcher>();
   const tools: ModelToolDefinition[] = [];

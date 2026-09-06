@@ -461,6 +461,15 @@ describe("a range stated by departure and return roles", () => {
     expect(proposeTripBriefFromTurn("10月1日到10月5日", undefined, now))
       .toMatchObject({ travelDateStart: "2026-10-01", travelDateEnd: "2026-10-05" });
   });
+
+  it.each([
+    ["2026.12.4-12.10", "2026-12-04", "2026-12-10"],
+    ["2026/12/4-12/10", "2026-12-04", "2026-12-10"],
+    ["2026.12.28-2027.1.3", "2026-12-28", "2027-01-03"],
+  ])("reads compact numeric date ranges: %s", (question, start, end) => {
+    expect(proposeTripBriefFromTurn(question, undefined, now))
+      .toMatchObject({ travelDateStart: start, travelDateEnd: end });
+  });
 });
 
 /**

@@ -163,6 +163,8 @@ export interface TravelConversationToolContext {
   userConfirmed?: boolean;
   hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
   flightSearchState?: import("../../providers/model-gateway.js").ConversationFlightSearchState | null;
+  /** Whether deterministic parsing already found a change that can produce a confirmation card. */
+  hasPendingTripMutation?: boolean;
 }
 
 export async function executeTravelConversation(
@@ -228,7 +230,11 @@ export async function executeTravelConversation(
       tripMutationBacked: input.intent === "brief_saved" || input.intent === "preferences_saved",
     })
   ) {
-    return pendingTripMutationReply(input.question);
+    return pendingTripMutationReply(
+      input.question,
+      toolContext.hasPendingTripMutation === true
+        || Boolean((reply as { tripBriefProposal?: unknown }).tripBriefProposal),
+    );
   }
   if (
     reply.responseMode === "MODEL"

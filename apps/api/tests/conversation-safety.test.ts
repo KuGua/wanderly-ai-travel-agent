@@ -579,6 +579,48 @@ describe("trip mutation completion claims", () => {
     expect(containsUnbackedTripMutationClaim(pendingTripMutationReply("change my origin").content)).toBe(false);
   });
 
+  it("never points to a confirmation card when no savable proposal exists", async () => {
+    const generateConversationReply = vi.fn().mockResolvedValue({
+      content: "I have updated your travel dates.",
+      responseMode: "MODEL",
+    });
+    __setModelGatewayForTests(buildGateway(generateConversationReply));
+
+    const result = await executeTravelConversation({
+      ctx: createRequestContext(),
+      policyGate: new DefaultPolicyGate("personal"),
+    }, {
+      question: "2026.12",
+      threadContext: [],
+      memoryContext: [],
+      researchEvidence: [],
+    }, new AbortController().signal, undefined, { hasPendingTripMutation: false });
+
+    expect(result).toMatchObject({ responseMode: "SAFE_REFUSAL" });
+    expect(result.content).toContain("state the city or date range clearly");
+    expect(result.content).not.toContain("card below");
+  });
+
+  it("keeps the confirmation-card instruction when parsing found a proposal", async () => {
+    const generateConversationReply = vi.fn().mockResolvedValue({
+      content: "I have updated your travel dates.",
+      responseMode: "MODEL",
+    });
+    __setModelGatewayForTests(buildGateway(generateConversationReply));
+
+    const result = await executeTravelConversation({
+      ctx: createRequestContext(),
+      policyGate: new DefaultPolicyGate("personal"),
+    }, {
+      question: "2026.12.4-12.10",
+      threadContext: [],
+      memoryContext: [],
+      researchEvidence: [],
+    }, new AbortController().signal, undefined, { hasPendingTripMutation: true });
+
+    expect(result.content).toContain("confirm the card below");
+  });
+
   it("still reads a completion marker attached to its own verb", () => {
     expect(containsUnbackedTripMutationClaim("已更新你的行程出发地。")).toBe(true);
     expect(containsUnbackedTripMutationClaim("出发地已改为北京。")).toBe(true);
