@@ -67,7 +67,7 @@ import { publishAgentStreamEvent } from "../task-stream-publisher.js";
 import type { AgentTaskRow } from "../task-repository.js";
 import { loadConversationTurnInput } from "../task-repository.js";
 import { buildProactiveIntro } from "../../i18n/proactive-intro.js";
-import { ToolCallDeduplicator } from "../../agents/personal-research-tool-policy.js";
+import { ToolCallDeduplicator, requiresOwnerConfirmation } from "../../agents/personal-research-tool-policy.js";
 import {
   personalResearchOperationCapabilitySchema,
   toolSettledEventSchema,
@@ -612,7 +612,12 @@ function buildFlightSearchDispatcher(params: {
       draft,
       confirmed: params.userConfirmed,
     });
-    if (!params.userConfirmed) {
+    // `TOOL_INVOCATION_MODE` is meant to have two readers — the loop decides
+    // whether a call may be attempted, the dispatcher whether it may execute —
+    // but this branch was hard-coded, so the table's flight entry was dead and
+    // flipping it would have changed nothing. Read it here and the comment on
+    // that table becomes true.
+    if (requiresOwnerConfirmation("flight.search") && !params.userConfirmed) {
       return { outcome: "CONFIRMATION_REQUIRED", capability: "flight.search", stateVersion: saved.version };
     }
     const fingerprint = createHash("sha256")
