@@ -1,7 +1,7 @@
-import "dotenv/config";
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { config as loadEnv } from "dotenv";
 import postgres from "postgres";
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "migrations");
@@ -52,6 +52,10 @@ export async function runMigrations(connectionString: string = buildConnectionSt
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  // The CLI should share the API/Worker's local configuration, but this file
+  // is also imported by test setup and migration tests. Loading `.env` at
+  // module scope leaks development provider settings into those callers.
+  loadEnv();
   runMigrations()
     .then(files => {
       if (files.length === 0) {
