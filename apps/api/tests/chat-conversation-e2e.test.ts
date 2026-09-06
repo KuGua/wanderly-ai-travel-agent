@@ -81,7 +81,10 @@ describe("durable owner-only Personal Agent conversation flow", () => {
     expect(created.statusCode).toBe(201);
     const threadId = (created.json() as { id: string }).id;
     try {
-      const accepted = await submitTurn(threadId, randomUUID(), "I am considering Tokyo and Kyoto");
+      // This suite exercises persistence of a multi-candidate cue. The
+      // production preflight intentionally rejects exploratory wording, so
+      // use the explicit command that is allowed to reach the stubbed model.
+      const accepted = await submitTurn(threadId, randomUUID(), "Set Tokyo as the destination");
       expect(accepted.statusCode).toBe(202);
       expect(await processNextAgentTask()).toBe(true);
 
