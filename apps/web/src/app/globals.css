@@ -163,7 +163,7 @@
      rather than as stationery. */
   --w-bubble-user: color-mix(in srgb, var(--w-info), var(--w-white) 44%);
   /* The pinboard the trips hang on, and the umber printed on it. */
-  --w-felt: #dec9b4;
+  --w-felt: #e7d5c1;
   --w-felt-ink: #4a3617;
   --sidebar-foreground: var(--w-ink);
   --sidebar-primary: var(--w-highlight);
