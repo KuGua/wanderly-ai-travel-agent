@@ -54,7 +54,7 @@ export function coherentBriefDates(
  * output is deliberately unable to create a place or departure fact.
  */
 export function mergeTripBriefProposal(
-  direct: TripBriefProposal | null,
+  direct: TripBriefProposal | null | undefined,
   assistantAcceptance: TripBriefProposal | undefined,
   now: Date = new Date(),
 ): TripBriefProposal | undefined {
@@ -67,6 +67,51 @@ export function mergeTripBriefProposal(
   // the two sources are side by side.
   const { proposal: merged } = coherentBriefDates({ ...schedulingOnly, ...direct }, now);
   return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+/**
+ * Removes a departure city unless the owner stated one in this exact turn.
+ *
+ * The brief extractor is best-effort model output, so it must never be able
+ * to turn a city mentioned for inspiration (for example a one-word "上海")
+ * into an origin. `mergeTripBriefProposal` already ignores model-supplied
+ * origins, but this final guard is intentionally adjacent to the persistence
+ * boundary as defence in depth: any future source that adds a departure field
+ * still has to pass the owner's explicit `从…出发` / route wording.
+ */
+export function withoutImplicitDeparture(
+  proposal: TripBriefProposal | undefined,
+  ownerText: string,
+): TripBriefProposal | undefined {
+  if (!proposal?.departureCities) return proposal;
+  const ownerProposal = proposeTripBriefFromTurn(ownerText);
+  // Reuse the deterministic value rather than merely checking for a phrase:
+  // the card must show the city the owner wrote, never an LLM paraphrase or a
+  // different city inferred from the assistant response. Canonicalize it on
+  // the way back in — this runs after `normalizeBriefProposalDepartures`, so
+  // handing back the raw 北京 would undo the resolver and leave the pending
+  // proposal holding a value the trip row can never equal. `withoutSettledFields`
+  // compares those two strings, so 北京 vs the saved Beijing reopened the
+  // origin card on every turn that mentioned an origin already confirmed.
+  const ownerDepartures = ownerProposal?.departureCities
+    ? normalizeBriefDestinations(ownerProposal.departureCities)
+    : null;
+  if (ownerDepartures?.length) {
+    return { ...proposal, departureCities: ownerDepartures };
+  }
+  const { departureCities, ...withoutDeparture } = proposal;
+  void departureCities;
+  return Object.keys(withoutDeparture).length > 0 ? withoutDeparture : undefined;
+}
+
+/** Destination confirmation belongs exclusively to Destination Cue. */
+export function withoutDestinationCandidates(
+  proposal: TripBriefProposal | null | undefined,
+): TripBriefProposal | undefined {
+  if (!proposal) return undefined;
+  const { destinationCandidates, ...withoutDestination } = proposal;
+  void destinationCandidates;
+  return Object.keys(withoutDestination).length > 0 ? withoutDestination : undefined;
 }
 
 /**
@@ -287,6 +332,26 @@ export function normalizeBriefProposalDestinations(
   return destinationCandidates ? { ...proposal, destinationCandidates } : null;
 }
 
+/**
+ * Canonicalizes explicit origin candidates before a generic card is stored.
+ *
+ * Scope-independent by contract (§3.3): an origin the catalogue cannot name is
+ * dropped on its own, and any dates or duration from the same turn survive.
+ * Dropping the whole proposal here meant "从瓦坎达去上海，玩三天" silently lost
+ * its three days to a city that was never the point of the sentence. Returns
+ * `null` only when the origin was the proposal's sole field.
+ */
+export function normalizeBriefProposalDepartures(
+  proposal: TripBriefProposal,
+): TripBriefProposal | null {
+  if (!proposal.departureCities) return proposal;
+  const departureCities = normalizeBriefDestinations(proposal.departureCities);
+  if (departureCities?.length) return { ...proposal, departureCities };
+  const { departureCities: unresolved, ...rest } = proposal;
+  void unresolved;
+  return Object.keys(rest).length > 0 ? rest : null;
+}
+
 /** True when a selected map label is a known country rather than one city. */
 export function isBriefDestinationCountry(value: string | undefined): boolean {
   const candidate = value?.trim();
@@ -312,6 +377,11 @@ function extractDestination(question: string): string | undefined {
 
 function extractDeparture(question: string): string | undefined {
   const english = question.match(/\bfrom\s+([A-Za-z][A-Za-z .'-]{0,63}?)(?=\s+(?:to|for|on)\b|[,.!?]|$)/iu);
+  // Explicit field-update language is not a route, but it is the clearest
+  // possible statement of role. Try it before the looser 出发/起飞 forms.
+  const explicitChinese = question.match(/(?:把|将)\s*(?:本次|这次|当前|该)?\s*(?:行程|旅行)?\s*(?:的)?\s*(?:出发地|出发城市)\s*(?:改|修改|更新|设|设置|定)(?:为|成|到)?\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*(?:[，。！？]|$))/u)
+    ?? question.match(/(?:本次|这次|当前|该)?\s*(?:行程|旅行)?\s*(?:的)?\s*(?:出发地|出发城市)\s*(?:是|为|改为|修改为|更新为|设为|设置为|定为)\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*(?:[，。！？]|$))/u)
+    ?? question.match(/(?:改成|改为|改从|换成|换为|换从|改)\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)\s*(?=(?:出发|走|起飞)|[，。！？]|$)/u);
   // "从上海出发" and the equally common "上海出发" — the 从 is optional in
   // speech, and requiring it silently dropped the departure city from the
   // acceptance case in docs/personal-and-planning-boundaries.md §9.
@@ -325,7 +395,7 @@ function extractDeparture(question: string): string | undefined {
     // whole route — 新加坡去纽约玩 — as the departure city, which then also put
     // the destination into the departure field on the brief card.
     ?? question.match(/从\s*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z .'-]{0,63}?)(?=\s*(?:走|去|到|往|飞)|[，。！？]|$)/u);
-  const value = (english?.[1] ?? chinese?.[1] ?? routeWithoutVerb(question)?.from)
+  const value = (english?.[1] ?? explicitChinese?.[1] ?? chinese?.[1] ?? routeWithoutVerb(question)?.from)
     ?.trim().replace(/\s+/g, " ");
   if (!value || value.length > 64) return undefined;
   // "就按 12 月 10 日出发" ends in 出发 too, and the bare form happily read the
@@ -355,10 +425,41 @@ const ISO_RANGE = new RegExp(
   `\\b(20\\d{2})-(1[0-2]|0[1-9])-(3[01]|[12]\\d|0[1-9])\\b\\s*(?:到|至|–|—|~|～|\\s-\\s|\\bto\\b|\\btill\\b|\\bthrough\\b)\\s*\\b(20\\d{2})-(1[0-2]|0[1-9])-(3[01]|[12]\\d|0[1-9])\\b`,
   "u",
 );
+/**
+ * Compact numeric notation used in chat, for example `2026.12.4-12.10`.
+ *
+ * This is deliberately separate from ISO parsing: a dot or slash is a date
+ * separator here, while the middle dash is the range separator. The end may
+ * omit the year because both dates are part of the same user-written range.
+ */
+const COMPACT_NUMERIC_RANGE = new RegExp(
+  "\\b(20\\d{2})[./](1[0-2]|0?[1-9])[./](3[01]|[12]\\d|0?[1-9])"
+  + "\\s*(?:到|至|–|—|~|～|-)\\s*"
+  + "(?:(20\\d{2})[./])?(?:(1[0-2]|0?[1-9])[./])?(3[01]|[12]\\d|0?[1-9])\\b",
+  "u",
+);
 const CHINESE_RANGE = new RegExp(
   "(?:(20\\d{2})\\s*年\\s*)?(1[0-2]|0?[1-9])\\s*月\\s*(3[01]|[12]\\d|0?[1-9])\\s*(?:日|号)?"
   + `\\s*${RANGE_CONNECTOR}\\s*`
   + "(?:(20\\d{2})\\s*年\\s*)?(?:(1[0-2]|0?[1-9])\\s*月\\s*)?(3[01]|[12]\\d|0?[1-9])\\s*(?:日|号)",
+  "u",
+);
+/**
+ * "9月27号出发，10月2号回程" — a range stated by the role of each date rather
+ * than by a connector between them. `CHINESE_RANGE` needs a 到/至/~/- in the
+ * middle, so this whole family produced a start date and silently dropped the
+ * return, and the card then offered a single date under a 往返日期 label.
+ *
+ * The return marker is what makes this a range rather than two loose dates, so
+ * it is required; the gap between the two is capped and digit-free so a second
+ * clause about something else cannot supply the end date.
+ */
+const CHINESE_ROLE_RANGE = new RegExp(
+  "(?:(20\\d{2})\\s*年\\s*)?(1[0-2]|0?[1-9])\\s*月\\s*(3[01]|[12]\\d|0?[1-9])\\s*(?:日|号)?"
+  + "\\s*(?:出发|启程|去程|动身|走|飞)"
+  + "[^0-9]{0,10}"
+  + "(?:(20\\d{2})\\s*年\\s*)?(?:(1[0-2]|0?[1-9])\\s*月\\s*)?(3[01]|[12]\\d|0?[1-9])\\s*(?:日|号)?"
+  + "\\s*(?:回程|返程|回来|返回|回国|回)",
   "u",
 );
 const ENGLISH_RANGE = new RegExp(
@@ -404,7 +505,20 @@ function matchDateRange(question: string): { start: DateParts; end: DateParts } 
       end: { year: Number(iso[4]), month: Number(iso[5]), day: Number(iso[6]) },
     };
   }
-  const chinese = question.match(CHINESE_RANGE);
+  const compact = question.match(COMPACT_NUMERIC_RANGE);
+  if (compact) {
+    return {
+      start: { year: Number(compact[1]), month: Number(compact[2]), day: Number(compact[3]) },
+      end: {
+        ...optionalYear(compact[4]),
+        ...(compact[5] ? { month: Number(compact[5]) } : {}),
+        day: Number(compact[6]),
+      },
+    };
+  }
+  // A connector range is the more explicit statement, so it wins when both
+  // could match ("10月1日到10月5日出发" is a range, not a role pair).
+  const chinese = question.match(CHINESE_RANGE) ?? question.match(CHINESE_ROLE_RANGE);
   if (chinese) {
     return {
       start: { ...optionalYear(chinese[1]), month: Number(chinese[2]), day: Number(chinese[3]) },

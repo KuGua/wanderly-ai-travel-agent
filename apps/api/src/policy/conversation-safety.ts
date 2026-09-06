@@ -172,11 +172,61 @@ export interface OperationalClaimOptions {
    * flight-status rules never consult this flag.
    */
   evidenceBacked?: boolean;
+  /**
+   * True only for a server-issued follow-up after a confirmed Trip mutation.
+   * Ordinary model conversation has no authority to claim that a requested
+   * origin, destination, date, flight, or hotel change already happened.
+   */
+  tripMutationBacked?: boolean;
+}
+
+/**
+ * Completion claims, matched against `normalizePolicyText` output.
+ *
+ * That normalizer strips every apostrophe and every sentence terminator, so
+ * these patterns must be written for the stripped form: `I've` arrives as
+ * `i ve`, and a `[^.!?]` window is really `.` — it spans the whole reply. Both
+ * mistakes were live: the English rule never fired at all, and the Chinese one
+ * matched across a full sentence, flagging 已经识别到这项行程修改 where 修改
+ * is the noun "change" rather than a verb that happened.
+ *
+ * The Chinese rule therefore accepts a completion marker only when the verb
+ * either follows it directly (已更新, 已为你保存) or carries a result marker
+ * of its own (更新为, 保存好, 记录到). A verb sitting loose in a noun phrase
+ * further along the sentence no longer counts.
+ *
+ * The window is `[^ ]` rather than `.` on purpose. The normalizer turns every
+ * 。！？；、 into a single space, so refusing to cross one is what remains of
+ * clause boundaries — without it the marker in 我已经识别到这项行程修改 reached
+ * the 保存到 two clauses later, and the gate rejected its own replacement text.
+ */
+const CHINESE_TRIP_COMPLETION =
+  /(?:已|已经|现已)(?:经)?(?:为你|帮你|替你|成功)?(?:把|将)?(?:(?:更新|修改|设置|保存|记录|设|改|列)|[^ ]{1,24}?(?:更新|修改|设置|保存|记录|设|改|列)(?:为|成|到|好|了|完))/u;
+const ENGLISH_TRIP_COMPLETION =
+  /\b(?:i|we)\s+(?:ve\s+|have\s+)?(?:now\s+|just\s+)?(?:updated|saved|set|recorded|changed)\b/u;
+const ENGLISH_TRIP_COMPLETION_PASSIVE =
+  /\b(?:trip|itinerary|destination|departure|origin|travel dates?|flight|hotel)\b.{0,80}?\b(?:has|have)\s+been\s+(?:updated|saved|set|recorded|changed)\b/u;
+
+export function containsUnbackedTripMutationClaim(
+  content: string,
+  opts?: OperationalClaimOptions,
+): boolean {
+  if (opts?.tripMutationBacked === true) return false;
+  const text = normalizePolicyText(content);
+  const namesTripField = hasAnyTerm(text, [
+    "trip", "itinerary", "destination", "departure", "origin", "travel date", "travel dates",
+    "flight", "hotel", "行程", "旅行", "目的地", "出发地", "出发城市", "日期", "天数", "航班", "酒店",
+  ]);
+  if (!namesTripField) return false;
+  return CHINESE_TRIP_COMPLETION.test(text) || ENGLISH_TRIP_COMPLETION.test(text)
+    || ENGLISH_TRIP_COMPLETION_PASSIVE.test(text);
 }
 
 export function containsUnsupportedOperationalClaim(content: string, opts?: OperationalClaimOptions): boolean {
   const text = normalizePolicyText(content);
   const evidenceBacked = opts?.evidenceBacked === true;
+
+  if (containsUnbackedTripMutationClaim(text, opts)) return true;
 
   // Chat has no authoritative visa provider, so it may not decide a visa
   // outcome. Naming one is fine — and necessary: travel preparation is part
@@ -232,6 +282,24 @@ export function safeConversationRefusal(question?: string): ConversationReply {
     content: chinese
       ? "这个我暂时没法在对话里给你一个靠得住的答案——就算给了也不一定准确，建议你再到官方渠道核实一下。行程本身我们可以继续往下聊。"
       : "I can't get you a reliable answer to that one here — anything I guessed might not be accurate, so it's worth confirming at the official source. We can keep going on the trip itself in the meantime.",
+    responseMode: "SAFE_REFUSAL",
+  };
+}
+
+/** A truthful replacement for an ordinary reply that claimed a Trip write. */
+export function pendingTripMutationReply(
+  question?: string,
+  hasConfirmationCard = true,
+): ConversationReply {
+  const chinese = question !== undefined && /[\p{Script=Han}]/u.test(question);
+  return {
+    content: hasConfirmationCard
+      ? chinese
+        ? "我已经识别到这项行程修改；请在下方确认卡片后再保存到本次行程。"
+        : "I recognized that trip change. Please confirm the card below before it is saved to this trip."
+      : chinese
+        ? "我还没能把这段内容整理成可保存的行程修改。请明确写出城市或起止日期；识别成功后，我会先显示确认卡片。"
+        : "I couldn't turn that into a savable trip change yet. Please state the city or date range clearly; I'll show a confirmation card before anything is saved.",
     responseMode: "SAFE_REFUSAL",
   };
 }

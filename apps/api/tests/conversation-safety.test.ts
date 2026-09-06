@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ModelGateway } from "../src/providers/model-gateway.js";
 import {
+  containsUnbackedTripMutationClaim,
   containsUnsupportedOperationalClaim,
+  pendingTripMutationReply,
   requestsUnsupportedOperationalFacts,
   resolveConversationPlace,
 } from "../src/policy/conversation-safety.js";
@@ -523,5 +525,105 @@ describe("a currency code is not a flight number", () => {
 
   it("still refuses a flight-status claim that names flights in words", () => {
     expect(containsUnsupportedOperationalClaim("你的航班已取消。", { evidenceBacked: true })).toBe(true);
+  });
+});
+
+describe("trip mutation completion claims", () => {
+  it.each([
+    "已为你将出发地更新为北京。",
+    "已经把上海设为这次旅行的目的地。",
+    "I have updated the trip origin to Beijing.",
+    "Your destination has been set to Shanghai.",
+  ])("rejects an ordinary model reply that claims a Trip write: %s", (content) => {
+    expect(containsUnbackedTripMutationClaim(content)).toBe(true);
+    expect(containsUnsupportedOperationalClaim(content)).toBe(true);
+  });
+
+  it("allows the server-triggered follow-up after a confirmed mutation", () => {
+    const content = "已为你将出发地更新为北京。";
+    expect(containsUnbackedTripMutationClaim(content, { tripMutationBacked: true })).toBe(false);
+    expect(containsUnsupportedOperationalClaim(content, { tripMutationBacked: true })).toBe(false);
+  });
+
+  it.each([
+    "我可以把上海列为这次旅行的目的地，请在下方确认。",
+    "可以将出发地改为北京，确认后再保存。",
+    "You can set Beijing as the destination using the card below.",
+  ])("keeps a pending proposal truthful: %s", (content) => {
+    expect(containsUnbackedTripMutationClaim(content)).toBe(false);
+  });
+
+  /**
+   * `normalizePolicyText` strips apostrophes, so a pattern written with one
+   * can never match: `I've` reaches the rule as `i ve`. The whole English
+   * active-voice branch was dead, leaving only the passive form covered.
+   */
+  it.each([
+    "I've updated your trip departure to Beijing.",
+    "We've now saved your travel dates.",
+    "I set your destination to Shanghai.",
+  ])("rejects an English completion claim written with an apostrophe: %s", (content) => {
+    expect(containsUnbackedTripMutationClaim(content)).toBe(true);
+    expect(containsUnsupportedOperationalClaim(content)).toBe(true);
+  });
+
+  /**
+   * The rule's own replacement text says 已经识别到这项行程修改 … 再保存到本次
+   * 行程 — a completion marker, and two clauses later a verb. Matching across
+   * that gap made the gate reject the answer it substitutes, and the streaming
+   * gate shares the predicate, so the traveller saw the reply vanish rather
+   * than be replaced.
+   */
+  it("does not flag its own pending-confirmation replacement", () => {
+    expect(containsUnbackedTripMutationClaim(pendingTripMutationReply("出发地改为北京").content)).toBe(false);
+    expect(containsUnbackedTripMutationClaim(pendingTripMutationReply("change my origin").content)).toBe(false);
+  });
+
+  it("never points to a confirmation card when no savable proposal exists", async () => {
+    const generateConversationReply = vi.fn().mockResolvedValue({
+      content: "I have updated your travel dates.",
+      responseMode: "MODEL",
+    });
+    __setModelGatewayForTests(buildGateway(generateConversationReply));
+
+    const result = await executeTravelConversation({
+      ctx: createRequestContext(),
+      policyGate: new DefaultPolicyGate("personal"),
+    }, {
+      question: "2026.12",
+      threadContext: [],
+      memoryContext: [],
+      researchEvidence: [],
+    }, new AbortController().signal, undefined, { hasPendingTripMutation: false });
+
+    expect(result).toMatchObject({ responseMode: "SAFE_REFUSAL" });
+    expect(result.content).toContain("state the city or date range clearly");
+    expect(result.content).not.toContain("card below");
+  });
+
+  it("keeps the confirmation-card instruction when parsing found a proposal", async () => {
+    const generateConversationReply = vi.fn().mockResolvedValue({
+      content: "I have updated your travel dates.",
+      responseMode: "MODEL",
+    });
+    __setModelGatewayForTests(buildGateway(generateConversationReply));
+
+    const result = await executeTravelConversation({
+      ctx: createRequestContext(),
+      policyGate: new DefaultPolicyGate("personal"),
+    }, {
+      question: "2026.12.4-12.10",
+      threadContext: [],
+      memoryContext: [],
+      researchEvidence: [],
+    }, new AbortController().signal, undefined, { hasPendingTripMutation: true });
+
+    expect(result.content).toContain("confirm the card below");
+  });
+
+  it("still reads a completion marker attached to its own verb", () => {
+    expect(containsUnbackedTripMutationClaim("已更新你的行程出发地。")).toBe(true);
+    expect(containsUnbackedTripMutationClaim("出发地已改为北京。")).toBe(true);
+    expect(containsUnbackedTripMutationClaim("行程已经保存好了。")).toBe(true);
   });
 });

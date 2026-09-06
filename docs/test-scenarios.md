@@ -1000,7 +1000,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - 未登录的 Home 会阻止 Profile 与 Trip 私人查询，并在两个区域显示“请先登录”及登录入口；服务不可达提示只在已认证会话的读取失败时显示。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
 - Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。
-- Explore 私聊首次提问通过幂等 start 命令创建当前用户的 Draft Trip 与默认 private thread，后续提问复用该 thread；站内路由切换只从内存探索会话恢复 owner-only history，整页刷新或新标签页不恢复 thread 指针，也不在浏览器持久化消息正文。
+- Explore 私聊首次提问通过幂等 start 命令创建当前用户的 Draft Trip 与默认 private thread，后续提问复用该 thread；站内路由切换只从内存探索会话恢复 owner-only history，整页刷新或新标签页不恢复 thread 指针，也不在浏览器持久化消息正文。失败必须更新会话错误状态并向实际调用方传播；不关心返回值的测试按钮需要显式消费 rejection，避免掩盖真正的未处理异步错误。
 - 每个新 turn 使用新的 UUID `requestId`；acceptance 网络结果不确定时必须复用原 request ID，发送期间禁止并发重复提交。接受成功后 UI 以 durable run status 为准，SSE 断线只降级为轮询；Worker 自动处理受控网络/5xx 重试。最终 `MODEL` 正常展示，terminal provider/model failure 保留 USER、不得持久化 partial ASSISTANT 或伪造 fallback。
   **已知缺口（202/SSE 切换引入）**：`SAFE_REFUSAL` 的核验提示当前不显示。旧的同步响应会返回 `responseMode`，acceptance 响应不再包含它，而 `responseMode` 目前只写入 idempotency `resultPayload` 与 audit summary，既不在 `chat_messages` 上，也不在 `AgentRunResponse` 或 `turn.completed` 事件中。恢复该提示需要先扩展契约，与后续的签证/拒答呈现设计一并处理。
 - 浏览器聊天请求在 Cognito 模式必须使用真实 Cognito access token；没有可用登录 token provider 时，三人真实 API 端到端演示属于显式阻塞项，不得硬编码 token 或退回 demo identity。`local-dev` 仅覆盖一个服务端固定身份的单人 smoke test；本地三用户隔离验收可使用 `custom-local` 的独立数据库账户，登录后必须确认 A 无法读取 B 的 Trip、私有 thread 与消息，且切换账号会清空前一账号的查询缓存。
@@ -1286,7 +1286,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 **Steps:**
 
 1. Send `我想要10月1号到10月7号去上海` — a range with no year stated — and inspect the proposal stored on the trip and the card rendered from it.
-2. Repeat with `10月1号到7号`, `12月28号到1月3号`, `October 1 to October 7`, and `2026-10-01 to 2026-10-07`.
+2. Repeat with `10月1号到7号`, `12月28号到1月3号`, `October 1 to October 7`, `2026-10-01 to 2026-10-07`, `2026.12.4-12.10`, and `2026/12/4-12/10`.
 3. Force the model extractor to return `travelDateEnd` in a past year while the parser reads a future start, and inspect what is persisted.
 4. Across two separate turns, settle a start date in one and let the model supply a contradicting end date in the other, so the pair is only assembled by the cross-turn merge.
 5. Click the confirmation card. Then submit a pair with `travelDateEnd` before `travelDateStart` directly to `PATCH /trips/:tripId/draft-brief`.
@@ -1294,11 +1294,12 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 **Expected outcomes:**
 
-- Every range yields both ends in the year that is still ahead: `2026-10-01`/`2026-10-07`, and the New Year range crosses into `2027-01-03`. A bare month/day is never dated into a past year, and the extractor's system prompt carries the current date.
+- Every range yields both ends in the year that is still ahead: `2026-10-01`/`2026-10-07`; compact dot/slash notation yields `2026-12-04`/`2026-12-10`; and the New Year range crosses into `2027-01-03`. A bare month/day is never dated into a past year, and the extractor's system prompt carries the current date.
 - A model end date that contradicts the parsed start is dropped before persistence; the destination and other candidates survive. The same holds when the contradiction is only visible after the cross-turn merge — the merge takes a row lock and rejects the combined pair rather than overwriting one key.
 - A pair that is internally consistent but already in the past is dropped too, and no trip is silently given past travel dates or a title derived from them.
 - `trip_brief_proposal_dates_total{result}` records `ok`, `end_before_start`, `in_past` or `malformed`. No date value, city or conversation text appears in the metric, the log or the trace.
 - The card shows the dates it is about to save alongside the destination, and a coherent proposal saves on the first click.
+- If the model claims a change was saved but neither deterministic parsing nor its structured proposal can produce a card, the safety replacement asks the traveller to restate the city or date range and never points to a nonexistent card.
 - The direct PATCH returns `400 BRIEF_DATES_INVALID`; the client renders copy that tells the traveller to restate the dates, never to refresh. The existing brief, title and pending proposal are unchanged.
 - The cleanup script is a dry run by default, is idempotent, strips only the incoherent date fields from stored proposals, and reports — never rewrites — confirmed trips whose travel dates are in the past.
 
@@ -3176,3 +3177,50 @@ return output the plan contract rejects, and to leave a research matrix cell
 4. 在 Billing/Cost Explorer 确认次日不再出现持续运行的 NAT、RDS、Fargate 或 App Runner 用量。
 
 期望：持续计费资源均被识别；保留项明确且不会被误认为已随 stack 自动删除。
+### TS-CUE-SCOPE-INDEPENDENCE — 目的地、出发地、机酒与通用 Brief 不串线
+
+**Objective:** Verify that every confirmation scope keeps its own trigger,
+state and write boundary.
+
+**Steps:**
+
+1. In a creator-owned DRAFT thread send `上海`.
+2. In a fresh DRAFT thread send `出发地改为北京`.
+3. Send `从上海去北京，玩三天` in one turn.
+4. With a Destination Cue and generic Brief both OPEN, dismiss the Brief and
+   reload the page.
+5. Submit a Trip preference card that changes only budget while a date/days
+   Brief proposal is pending; repeat with an explicit departure change.
+6. With one visible unexpired flight and hotel offer, make a unique selection;
+   repeat with comparison, inspection and ambiguous-reference wording.
+7. Open an older DRAFT trip whose preference card is already marked seen, whose
+   brief still has no departure, and whose profile provides a departure city.
+
+**Expected outcomes:**
+
+- Step 1 creates only a Shanghai Destination Cue. It never proposes Shanghai
+  as an origin.
+- Step 2 creates only a Beijing origin Brief proposal. The Assistant may ask
+  for card confirmation but cannot say the Trip was already updated.
+- Step 3 keeps both scopes: a Beijing Destination Cue and a generic Brief with
+  canonical Shanghai origin plus three days. UI order is Destination → Flight
+  → Hotel → Brief; no global confirmation flag discards another scope.
+- Step 4 calls the server dismissal endpoint, clears `pendingBriefProposal`,
+  changes no confirmed Trip fact, and does not resurrect after REST recovery.
+- Step 5 does not copy an inherited profile origin or clear unrelated pending
+  fields. An explicitly submitted origin updates only this Trip and clears
+  only the pending origin field.
+- Step 6 creates Flight/Hotel Cue only for a unique candidate previously
+  visible in the same owner/thread/trip and still unexpired. Accept writes only
+  owner-private selection; destination, origin, Brief, Shared Plan and booking
+  state do not change.
+- Step 7 reoffers the existing preference confirmation card with the inherited
+  departure visible. Merely opening it does not write the city; explicit submit
+  copies it into this draft only. A seen card stays closed when the draft
+  already has a departure or the profile has no confirmable departure.
+
+**Coverage:** `apps/api/tests/destination-cue-policy.test.ts`,
+`apps/api/tests/trip-brief-proposal-service.test.ts`,
+`apps/api/tests/trip-draft-brief.test.ts`,
+`apps/api/tests/trip-memory-routes.test.ts`,
+`apps/web/src/components/explore/travel-agent-chat.test.tsx`.

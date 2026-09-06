@@ -13,6 +13,8 @@
  * side. Matching only the canonical English spelling made the reference miss
  * airports it already had.
  */
+import { getLocationReferenceResolver } from "./location-reference-resolver.js";
+
 export interface AirportReference {
   id: string;
   iataCode: string;
@@ -399,5 +401,133 @@ export function resolveFlightRouteMatrix(params: {
     cells,
     citiesWithoutAirport,
     cityFor: (airportId: string) => cityByAirport.get(airportId) ?? null,
+  };
+}
+
+/* ── Nearest-airport fallback ──────────────────────────────────────────── */
+
+/**
+ * How far a traveller may reasonably be sent to reach a flight. Kyoto's own
+ * measured distance to Kansai is 43km and Nara's is 28km; Gero to Nagoya is
+ * 75km. 150 leaves room for the next tier without ever offering Tokyo (370km)
+ * to someone flying to Kyoto.
+ */
+const NEAREST_AIRPORT_MAX_KM = 150;
+const EARTH_RADIUS_KM = 6371;
+
+export interface AirportForCity {
+  /** Controlled airport ids, primary gateway first. */
+  airportIds: string[];
+  /**
+   * Set only when the city has no airport of its own. The traveller asked for
+   * `requestedCity` and is being flown via `servingCity`, so every surface
+   * that shows these offers has to be able to say so — a Kyoto search that
+   * silently returns Osaka departures reads as a bug, not a convenience.
+   */
+  substitution?: {
+    requestedCity: string;
+    servingCity: string;
+    distanceKm: number;
+  };
+}
+
+function haversineKm(
+  a: { latitude: number; longitude: number },
+  b: { latitude: number; longitude: number },
+): number {
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLon = toRad(b.longitude - a.longitude);
+  const lat1 = toRad(a.latitude);
+  const lat2 = toRad(b.latitude);
+  const h = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Coordinates for every airport's own city, resolved once per process.
+ *
+ * The airport table carries a city name, not a position, and the reference
+ * catalogue already knows where cities are — so "nearest" is computable
+ * without adding a coordinate to all 210 entries by hand, which is the kind
+ * of data change that is wrong in three places and silent about it. Measured
+ * 195 of 210 airport cities resolve; the rest simply never win a nearest
+ * lookup and stay reachable through their own aliases.
+ */
+interface LocatedAirport {
+  airport: AirportReference;
+  latitude: number;
+  longitude: number;
+}
+
+let airportCityIndex: LocatedAirport[] | null = null;
+
+function locatedAirports(): readonly LocatedAirport[] {
+  if (airportCityIndex) return airportCityIndex;
+  const resolver = getLocationReferenceResolver();
+  const located: LocatedAirport[] = [];
+  for (const airport of AIRPORTS) {
+    const reference = resolver.resolveDestinationReference({
+      destinationId: airport.id,
+      cityName: airport.city,
+    });
+    if (!reference) continue;
+    located.push({ airport, latitude: reference.latitude, longitude: reference.longitude });
+  }
+  airportCityIndex = located;
+  return located;
+}
+
+/**
+ * The airports a traveller can actually fly to for this city.
+ *
+ * Tries the curated aliases first, so a city that has its own airport is
+ * never routed through a neighbour. Only when it has none does this fall back
+ * to the closest controlled airport in the same country, and it reports that
+ * substitution rather than performing it silently.
+ *
+ * Returns no airports — and no substitution — when the city itself cannot be
+ * placed (below the catalogue's population floor, or ambiguous across
+ * countries). An unplaceable city is a gap to explain, not a guess to make.
+ */
+export function airportsForCity(city: string): AirportForCity {
+  const direct = airportIdsForCities([city]);
+  if (direct.length > 0) return { airportIds: direct };
+
+  let origin;
+  try {
+    origin = getLocationReferenceResolver().resolveDestinationReference({
+      destinationId: city,
+      cityName: city,
+    });
+  } catch {
+    // The dataset is an allow-list, never an availability dependency.
+    return { airportIds: [] };
+  }
+  if (!origin) return { airportIds: [] };
+
+  let best: { airport: AirportReference; distanceKm: number } | null = null;
+  for (const candidate of locatedAirports()) {
+    if (candidate.airport.countryCode !== origin.countryCode) continue;
+    const distanceKm = haversineKm(origin, candidate);
+    if (distanceKm > NEAREST_AIRPORT_MAX_KM) continue;
+    if (!best || distanceKm < best.distanceKm) {
+      best = { airport: candidate.airport, distanceKm };
+    }
+  }
+  if (!best) return { airportIds: [] };
+
+  // Every airport of the winning city, not just the closest one: KIX and ITM
+  // are both 43km from Kyoto, and the table's own order — primary
+  // international gateway first — is the right tie-break, not a rounding
+  // difference between two positions that are the same place.
+  return {
+    airportIds: airportIdsForCities([best.airport.city]),
+    substitution: {
+      requestedCity: city,
+      servingCity: best.airport.city,
+      distanceKm: Math.round(best.distanceKm),
+    },
   };
 }

@@ -4,7 +4,9 @@ import { z } from "zod";
 import type { Skill, SkillContext } from "../../agents/contracts.js";
 import { SkillError } from "../../agents/errors.js";
 import {
+  containsUnbackedTripMutationClaim,
   containsUnsupportedOperationalClaim,
+  pendingTripMutationReply,
   requestsUnsupportedOperationalFacts,
   safeConversationRefusal,
 } from "../../policy/conversation-safety.js";
@@ -161,6 +163,8 @@ export interface TravelConversationToolContext {
   userConfirmed?: boolean;
   hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
   flightSearchState?: import("../../providers/model-gateway.js").ConversationFlightSearchState | null;
+  /** Whether deterministic parsing already found a change that can produce a confirmation card. */
+  hasPendingTripMutation?: boolean;
 }
 
 export async function executeTravelConversation(
@@ -222,8 +226,21 @@ export async function executeTravelConversation(
   }
   if (
     reply.responseMode === "MODEL"
+    && containsUnbackedTripMutationClaim(reply.content, {
+      tripMutationBacked: input.intent === "brief_saved" || input.intent === "preferences_saved",
+    })
+  ) {
+    return pendingTripMutationReply(
+      input.question,
+      toolContext.hasPendingTripMutation === true
+        || Boolean((reply as { tripBriefProposal?: unknown }).tripBriefProposal),
+    );
+  }
+  if (
+    reply.responseMode === "MODEL"
     && containsUnsupportedOperationalClaim(reply.content, {
       evidenceBacked: toolContext.isEvidenceBacked?.() === true,
+      tripMutationBacked: input.intent === "brief_saved" || input.intent === "preferences_saved",
     })
   ) {
     // Diagnostic only: a refusal here discards a reply the model actually

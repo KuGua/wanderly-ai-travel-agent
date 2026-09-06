@@ -104,6 +104,101 @@ describe("personal overrides", () => {
     expect(untouchedTrip[0]?.departureCities).toEqual(["Shanghai"]);
   });
 
+  it("does not copy an inherited profile departure when no trip field changed", async () => {
+    await db.update(sharedTrips).set({
+      status: "DRAFT",
+      departureCities: ["Shanghai"],
+      pendingBriefProposal: { travelDays: 4 },
+    }).where(eq(sharedTrips.id, tripOne));
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripOne}/preference-card`,
+      headers: authHeaders(OWNER),
+      payload: { adjustments: [] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const [trip] = await db.select({
+      departureCities: sharedTrips.departureCities,
+      pendingBriefProposal: sharedTrips.pendingBriefProposal,
+    }).from(sharedTrips).where(eq(sharedTrips.id, tripOne)).limit(1);
+    expect(trip.departureCities).toEqual(["Shanghai"]);
+    expect(trip.pendingBriefProposal).toEqual({ travelDays: 4 });
+  });
+
+  /**
+   * The same resolver the draft-brief write boundary uses. Without it the card
+   * stored 上海 while the conversation stored Shanghai, and `withoutSettledFields`
+   * compares those two strings — so the origin card reopened for a city that
+   * was already saved.
+   */
+  it("stores the catalogue's name for the city, not the traveller's spelling", async () => {
+    await db.update(sharedTrips).set({ status: "DRAFT" }).where(eq(sharedTrips.id, tripOne));
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripOne}/preference-card`,
+      headers: authHeaders(OWNER),
+      payload: { adjustments: [{ fieldKey: "departure_city", value: "北京" }] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const [trip] = await db.select({ departureCities: sharedTrips.departureCities })
+      .from(sharedTrips).where(eq(sharedTrips.id, tripOne)).limit(1);
+    expect(trip.departureCities).toEqual(["Beijing"]);
+  });
+
+  /**
+   * The card carries its departure on every submit, unchanged or not, so a
+   * profile city the catalogue cannot name — Cambridge and Bellevue both fail
+   * it — must not take the rest of the form down with it. The preference is
+   * still the traveller's; only the brief copy, which has a city-only
+   * contract, is skipped.
+   */
+  it("keeps the rest of the form when the departure is not a nameable city", async () => {
+    await db.update(sharedTrips).set({ status: "DRAFT", departureCities: [] })
+      .where(eq(sharedTrips.id, tripOne));
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripOne}/preference-card`,
+      headers: authHeaders(OWNER),
+      payload: {
+        adjustments: [
+          { fieldKey: "departure_city", value: "Bellevue" },
+          { fieldKey: "trip_pace", value: "relaxed" },
+        ],
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ applied: ["departure_city", "trip_pace"] });
+    const [trip] = await db.select({ departureCities: sharedTrips.departureCities })
+      .from(sharedTrips).where(eq(sharedTrips.id, tripOne)).limit(1);
+    expect(trip.departureCities).toEqual([]);
+  });
+
+  it("clears only the confirmed origin from a pending generic brief", async () => {
+    await db.update(sharedTrips).set({
+      status: "DRAFT",
+      pendingBriefProposal: { departureCities: ["Beijing"], travelDays: 4 },
+    }).where(eq(sharedTrips.id, tripOne));
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripOne}/preference-card`,
+      headers: authHeaders(OWNER),
+      payload: { adjustments: [{ fieldKey: "departure_city", value: "San Francisco" }] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const [trip] = await db.select({
+      departureCities: sharedTrips.departureCities,
+      pendingBriefProposal: sharedTrips.pendingBriefProposal,
+    }).from(sharedTrips).where(eq(sharedTrips.id, tripOne)).limit(1);
+    expect(trip.departureCities).toEqual(["San Francisco"]);
+    expect(trip.pendingBriefProposal).toEqual({ travelDays: 4 });
+  });
+
   it("saves and reads back the caller's own override", async () => {
     const save = await app.inject({
       method: "PUT",

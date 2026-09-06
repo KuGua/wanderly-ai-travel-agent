@@ -104,7 +104,7 @@ function renderProvider(api: TravelApi) {
         <span data-testid="thread-id">{session.threadId ?? "null"}</span>
         <span data-testid="session-id">{session.sessionId}</span>
         <span data-testid="status">{session.status}</span>
-        <button type="button" onClick={() => void startIfNeeded()} data-testid="start">
+        <button type="button" onClick={() => void startIfNeeded().catch(() => {})} data-testid="start">
           start
         </button>
         <button type="button" onClick={reset} data-testid="reset">

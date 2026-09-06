@@ -145,7 +145,7 @@ describe("evidence signal", () => {
     }));
     const { createPersonalResearchDispatcher } = await import("../src/agents/personal-research-tools.js");
     const dispatch = createPersonalResearchDispatcher(base);
-    const result = await dispatch({ id: "1", name: "flight.search", arguments: SAMPLE["flight.search"] }) as {
+    const result = await dispatch({ id: "1", name: "activities.search", arguments: SAMPLE["activities.search"] }) as {
       outcome: string; providerDispatched?: unknown;
     };
     expect(result.outcome).toBe("NEEDS_CONFIRMATION");
@@ -204,6 +204,8 @@ describe("dispatcher", () => {
     expect(JSON.stringify(result)).not.toContain("999");
   });
 
+  // Exercised through `activities.search` rather than flights: flight search
+  // became AUTOMATIC on 2026-09-06, so it no longer demonstrates the hold.
   it("holds a metered search for the traveller instead of running it", async () => {
     vi.resetModules();
     vi.doMock("../src/db/database.js", () => ({
@@ -211,11 +213,11 @@ describe("dispatcher", () => {
     }));
     const { createPersonalResearchDispatcher } = await import("../src/agents/personal-research-tools.js");
     const dispatch = createPersonalResearchDispatcher(base);
-    const result = await dispatch({ id: "1", name: "flight.search", arguments: SAMPLE["flight.search"] }) as {
+    const result = await dispatch({ id: "1", name: "activities.search", arguments: SAMPLE["activities.search"] }) as {
       outcome: string; capability: string;
     };
     expect(result.outcome).toBe("NEEDS_CONFIRMATION");
-    expect(result.capability).toBe("flight.search");
+    expect(result.capability).toBe("activities.search");
     vi.doUnmock("../src/db/database.js");
     vi.resetModules();
   });
@@ -234,7 +236,7 @@ describe("dispatcher", () => {
     vi.doMock("../src/services/personal-research-service.js", () => ({ executePersonalResearch: executed }));
     const { createPersonalResearchDispatcher } = await import("../src/agents/personal-research-tools.js");
     const dispatch = createPersonalResearchDispatcher({ ...base, userConfirmed: true });
-    const result = await dispatch({ id: "1", name: "flight.search", arguments: SAMPLE["flight.search"] }) as {
+    const result = await dispatch({ id: "1", name: "activities.search", arguments: SAMPLE["activities.search"] }) as {
       outcome: string;
     };
     expect(executed).toHaveBeenCalledOnce();

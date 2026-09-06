@@ -150,13 +150,14 @@
   /* Still being worked out, as opposed to settled. A muted ochre rather than a
      saturated yellow: it shares a row with the blue and must not outrank it. */
   --w-cal-planning: color-mix(in srgb, #d4b483, var(--w-fog) 34%);
-  /* The binding margin, and the facing page beside it. Both mixed toward white,
+  /* The binding margin, and the facing page beside it — one tint for both, so
+     the spread reads as a single sheet with the calendar white in the middle.
+     An ochre facing page made it two sheets bound together. Mixed toward white,
      not toward the fog: the fog is a warm off-white, and pulling a muted colour
      into it at this strength cancels the hue outright — measured, 12% info in
      fog came out rgb(222 227 228), a cool grey with no blue left in it. The
-     year itself stays plain white; these tint what frames it. */
+     year itself stays plain white; this tints what frames it. */
   --w-sheet-blue: color-mix(in srgb, var(--w-info), var(--w-white) 80%);
-  --w-sheet-yellow: color-mix(in srgb, #d4b483, var(--w-white) 76%);
   /* The traveller's own message in the trip workspace. Mixed toward white
      rather than toward the fog for the same reason the sheet tints are: at a
      matched lightness the warm fog costs about nine points of saturation, and
@@ -673,7 +674,10 @@
    above the desk, where this needs to suggest sheets behind the top one. */
 .wanderly-pad {
   position: relative;
-  padding-left: 30px;
+  /* 1.5x the old 30px. The narrow margin left the punched edge visibly
+     inset from the pinboard below it, and with the page-stack shadow on top
+     the two left edges read as two different lines rather than one. */
+  padding-left: 45px;
   /* The same generous corner the profile card uses, all four sides. Squaring
      the left to "make room" for the binding was unnecessary — the rings sit
      inside the radius — and it left the pad looking clipped beside every other
@@ -716,7 +720,7 @@
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
-  width: 30px;
+  width: 45px;
   border-right: 1px dashed color-mix(in srgb, var(--w-ink), transparent 76%);
   background: var(--w-sheet-blue);
   border-radius: 17px 0 0 17px;
@@ -734,16 +738,38 @@
 .wanderly-pad::after {
   content: "";
   position: absolute;
-  inset: 18px auto 18px 4px;
-  width: 22px;
+  inset: 24px auto 24px 6px;
+  width: 33px;
   pointer-events: none;
   background-repeat: repeat-y;
-  background-size: 22px 54px;
+  /* Fewer, larger, further apart. At the old pitch a tall panel carried
+     seventeen small rings and the column read as a dotted rule; a punched
+     edge has holes you could thread, and there are not many of them. */
+  background-size: 33px 74px;
+  /* Tiled from the middle out. Anchored at the top, the leftover space all
+     collected at the bottom and the last ring was sliced against the pad's
+     edge — a hole punched half off the paper. */
+  background-position: 50% 50%;
   background-image:
-    radial-gradient(ellipse 11px 7px at 50% 27px,
-      transparent 0 3.5px,
-      color-mix(in srgb, var(--w-ink), transparent 22%) 3.9px 5.6px,
-      transparent 6px);
+    radial-gradient(ellipse 16px 11px at 50% 37px,
+      transparent 0 5.4px,
+      color-mix(in srgb, var(--w-ink), transparent 22%) 5.9px 8.2px,
+      transparent 8.8px);
+}
+
+/* Centring only halves the leftover; it does not remove it, and at some panel
+   heights each end still shows a sliver of ring. Trimming the run to a whole
+   number of tiles removes it outright, at any height. Behind @supports because
+   a browser without round() would resolve this height to zero and drop every
+   hole — the centred tiling above is the floor, this is the exact version. */
+@supports (height: round(down, 10px, 3px)) {
+  .wanderly-pad::after {
+    top: 50%;
+    bottom: auto;
+    height: round(down, calc(100% - 48px), 74px);
+    transform: translateY(-50%);
+    background-position: 50% 0;
+  }
 }
 
 

@@ -1,10 +1,10 @@
 # Assistant-Originated Cue Trigger Draft
 
-**状态：已按确认边界实施（2026-09-06）。**
+**状态：已按确认边界实施（2026-09-06）；跨 scope 冲突整改也已完成。** 统一 owner、出发地和通用 Brief 规则以 [Cue 与 Trip Brief 触发逻辑统一整改方案](cue-and-brief-trigger-remediation-plan.md) 为准。
 
 ## 实施说明
 
-本次没有扩展 Personal Agent 的写库权限，也没有新增数据库迁移。运行时先完成 USER Cue 决策；仅当它没有命中时，才以该 turn 的最终可见 Assistant 回复作为 fallback。Destination 仅接受明确“将/把 X 设为、列为目的地”的表达；裸城市、出发地、推荐、消歧问题与“是的”均不触发。Flight / Hotel 仍只使用当前 thread 已展示、未过期的安全 offer 投影。
+本次没有扩展 Personal Agent 的写库权限，也没有新增数据库迁移。运行时先完成 USER Cue 决策；仅当该 capability 没有命中时，才以该 turn 的最终可见 Assistant 回复作为 fallback。对 USER，单个可解析裸城市属于 Destination；明确出发地表达不属于 Destination。对 Assistant，Destination 仅接受明确“将/把 X 设为、列为目的地”的表达；裸城市、出发地、推荐、消歧问题与“是的”均不触发。Flight / Hotel 始终只使用当前 thread 已展示、未过期的安全 offer 投影。
 
 同一实体已有 OPEN 卡时，持久化层保持该卡但不产生新的 Cue 结果（因此不会再发送 `cue_ready`）；后续同实体的 USER/Assistant 文本不会造成重复展示，卡片仍是唯一的确认写入入口。
 
@@ -150,9 +150,9 @@ USER turn
 - `cue_trigger_arbitration_total{capability,result}`，结果例如 `user_wins`、`assistant_only`、`duplicate_suppressed`、`ambiguous_reference`
 - `cue_trigger_resolution_total{capability,provenance,outcome}`
 
-## 9. 待确认项
+## 9. 已确认决策
 
-1. 对“Assistant 先明确问 X、用户下一轮回答是”的场景，是否同意把该卡标为 **USER 触发**（本草案建议如此）？
-2. Assistant 已经明确说“把 X 设为目的地”时，是否一律弹卡，还是只在用户没有明确否定时弹？本草案建议只要实体唯一且无冲突，就弹卡。
-3. 机酒 Assistant 触发是否只限“当前唯一可见报价”，不为纯搜索条件、供应商结果或推荐文案弹卡？本草案建议严格限于此。
-4. 是否同意先完成 Destination，再分别灰度 Flight / Hotel，以便验证 Assistant 来源的误触发率？
+1. Assistant 先明确问 X、用户下一轮只回答“是”时，不凭历史 Assistant 文本自动写入；只有能建立唯一、可审计的当前确认引用时才创建 USER 来源 Cue。
+2. Assistant 明确说“把 X 设为目的地”且 USER 本轮没有同 capability 决策时，可产生 Assistant 来源 Cue；接受卡片前不写 Trip。
+3. Flight / Hotel Assistant fallback 严格限于当前唯一可见报价，不为纯搜索条件、供应商结果或推荐文案弹卡。
+4. USER 决策优先；已有同实体 OPEN Cue 时不再触发第二张卡，也不进行来源替换。

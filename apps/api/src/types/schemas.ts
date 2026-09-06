@@ -1718,6 +1718,9 @@ export const updateDraftTripBriefResponseSchema = z.object({
   }).strict(),
   replan: z.object({ runId: uuidSchema }).strict().optional(),
 });
+export const dismissDraftTripBriefProposalResponseSchema = z.object({
+  dismissed: z.literal(true),
+}).strict();
 
 export const updateTripTitleRequestSchema = z.object({
   name: z.string().trim().min(1).max(256),

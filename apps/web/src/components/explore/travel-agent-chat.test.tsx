@@ -140,6 +140,7 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
     rememberHighlight: vi.fn(),
     getPreferenceCard: vi.fn().mockResolvedValue({ show: false, fields: [] }),
     resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: [] }),
+    dismissDraftTripBriefProposal: vi.fn().mockResolvedValue({ dismissed: true }),
     getMemoryNotes: vi.fn().mockResolvedValue({ notes: [] }),
     deleteMemoryNote: vi.fn(),
     // Shared Plan Surface (Phase 1) — required on TravelApi.
@@ -234,7 +235,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     expect(explore).toHaveClass("wanderly-cosmos-control");
   });
 
-  it("keeps a broad trip-details save card hidden while a confirmation card is open", async () => {
+  it("keeps different destination and trip-detail confirmation scopes visible together", async () => {
     const api = createApi({
       subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
         onEvent({
@@ -257,7 +258,7 @@ describe("TravelAgentChat durable streaming flow", () => {
     await submitFromCapsule("Four days in Suzhou");
 
     expect(await screen.findByText("Set Suzhou as the destination?")).toBeInTheDocument();
-    expect(screen.queryByText("Save these trip details?")).not.toBeInTheDocument();
+    expect(screen.getByText("Save these trip details?")).toBeInTheDocument();
   });
 
   it("stacks destination, flight, then hotel confirmations", async () => {
@@ -433,6 +434,39 @@ describe("TravelAgentChat durable streaming flow", () => {
 
     // Intl collapses the shared month and year: "Oct 1 – 7, 2026".
     expect(await screen.findByText(/Oct 1\s*.\s*7, 2026/)).toBeInTheDocument();
+  });
+
+  it("keeps destination and generic brief scopes visible together and persists brief dismissal", async () => {
+    const dismissDraftTripBriefProposal = vi.fn().mockResolvedValue({ dismissed: true });
+    const api = createApi({
+      dismissDraftTripBriefProposal,
+      subscribeAgentRun: vi.fn().mockImplementation(async (_runId, signal, onEvent) => {
+        onEvent({
+          event: "destination.cue_ready",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          cue: { id: CUE_ID, version: 1, candidates: [{ id: CANDIDATE_ID, displayName: "Beijing", status: "PENDING" }] },
+        });
+        onEvent({
+          event: "trip.brief_proposed",
+          runId: RUN_ID,
+          generationAttempt: 1,
+          proposal: { departureCities: ["Shanghai"], travelDays: 3 },
+        });
+        await untilAborted(signal);
+      }),
+    });
+
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE", variant: "docked" });
+    await submitFromCapsule("From Shanghai to Beijing for three days");
+
+    expect(await screen.findByText("Set Beijing as the destination?")).toBeInTheDocument();
+    const briefSummary = screen.getByText("From Shanghai · 3 days");
+    expect(briefSummary).toBeInTheDocument();
+    const briefCard = briefSummary.closest("section");
+    expect(briefCard).not.toBeNull();
+    fireEvent.click(within(briefCard!).getByRole("button", { name: "Leave it as it is" }));
+    await waitFor(() => expect(dismissDraftTripBriefProposal).toHaveBeenCalledWith(TRIP_ID));
   });
 
   it("does not tell the traveller to refresh when the stored dates are the problem", async () => {
@@ -1187,6 +1221,108 @@ describe("the trip's preference card", () => {
     // profile edit would stop reaching a trip nobody meant to detach.
     const api = createApi({
       getPreferenceCard: vi.fn().mockResolvedValue(card),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: ["trip_pace"] }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    await screen.findByTestId("trip-preference-card");
+    fireEvent.change(screen.getByLabelText("trip_pace"), { target: { value: "packed" } });
+    fireEvent.click(screen.getByTestId("trip-preference-submit"));
+
+    await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(
+      TRIP_ID, [{ fieldKey: "trip_pace", value: "packed" }],
+    ));
+  });
+
+  /**
+   * Departure is not only a preference — it is one of the three facts the trip
+   * brief needs before planning can start. The server used to quietly copy it
+   * from the profile; that copy was removed as a silent write, and nothing
+   * replaced it, so an inherited "Shanghai" sat in the card while the trip
+   * overview said "Departure — Not set" and no screen explained the gap.
+   */
+  it("confirms the departure it is showing, even untouched", async () => {
+    const withDeparture = {
+      show: true,
+      fields: [
+        card.fields[0],
+        { fieldKey: "departure_city", category: "PREFERENCE" as const, value: "Shanghai", inherited: true, options: null, kind: "text" as const },
+      ],
+    };
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(withDeparture),
+      resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: ["departure_city"] }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    await screen.findByTestId("trip-preference-card");
+    fireEvent.click(screen.getByTestId("trip-preference-submit"));
+
+    await waitFor(() => expect(api.resolvePreferenceCard).toHaveBeenCalledWith(
+      TRIP_ID, [{ fieldKey: "departure_city", value: "Shanghai" }],
+    ));
+  });
+
+  it("reoffers a seen card when an older draft still needs its inherited departure confirmed", async () => {
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue({
+        show: false,
+        fields: [
+          { fieldKey: "departure_city", category: "PREFERENCE" as const, value: "Chengdu", inherited: true, options: null, kind: "text" as const },
+        ],
+      }),
+      getTrip: vi.fn().mockResolvedValue({
+        trip: {
+          id: TRIP_ID, name: "Dali", createdBy: OWNER_ID, status: "DRAFT",
+          departureCities: [], destinationCandidates: ["Dali"],
+          travelDateStart: "2026-12-04", travelDateEnd: "2026-12-10", travelDays: null,
+          createdAt: CREATED_AT, updatedAt: CREATED_AT,
+        },
+        callerRole: "CREATOR",
+        members: [],
+      }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const reopened = await screen.findByTestId("trip-preference-card");
+    expect(within(reopened).getByLabelText("departure_city")).toHaveValue("Chengdu");
+  });
+
+  it("keeps a seen card closed once the draft already has a departure", async () => {
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue({
+        show: false,
+        fields: [
+          { fieldKey: "departure_city", category: "PREFERENCE" as const, value: "Chengdu", inherited: true, options: null, kind: "text" as const },
+        ],
+      }),
+      getTrip: vi.fn().mockResolvedValue({
+        trip: {
+          id: TRIP_ID, name: "Dali", createdBy: OWNER_ID, status: "DRAFT",
+          departureCities: ["Chengdu"], destinationCandidates: ["Dali"],
+          travelDateStart: "2026-12-04", travelDateEnd: "2026-12-10", travelDays: null,
+          createdAt: CREATED_AT, updatedAt: CREATED_AT,
+        },
+        callerRole: "CREATOR",
+        members: [],
+      }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    await waitFor(() => expect(api.getPreferenceCard).toHaveBeenCalled());
+    expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument();
+  });
+
+  it("does not invent a departure the card has no value for", async () => {
+    const withoutDeparture = {
+      show: true,
+      fields: [
+        card.fields[0],
+        { fieldKey: "departure_city", category: "PREFERENCE" as const, value: null, inherited: true, options: null, kind: "text" as const },
+      ],
+    };
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue(withoutDeparture),
       resolvePreferenceCard: vi.fn().mockResolvedValue({ applied: ["trip_pace"] }),
     });
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });

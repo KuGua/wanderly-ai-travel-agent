@@ -19,6 +19,7 @@ import { sharedTrips, tripPreferenceCardViews } from "../db/schema.js";
 import { MEMORY_FIELD_CATALOG, memoryFieldDefinition } from "../memory/memory-field-catalog.js";
 import type { RequestContext } from "../utils/context.js";
 import { recordAudit } from "./audit-service.js";
+import { resolveBriefDestination } from "./trip-brief-proposal-service.js";
 import { listActiveFacts } from "./preference-fact-service.js";
 import { assertActiveMember, listOverridesForOwner, saveOverride } from "./trip-memory-service.js";
 
@@ -153,25 +154,40 @@ export async function resolvePreferenceCard(params: {
       applied.push(adjustment.fieldKey);
     }
 
-    // Unchanged fields are deliberately omitted by the card client. When the
-    // traveller accepts an inherited departure city, use that effective
-    // profile value to complete the current trip's draft brief as well.
-    if (!departureCity) {
-      const profileDeparture = (await listActiveFacts(params.userId, tx))
-        .find((fact) => fact.fieldKey === "departure_city")?.value;
-      if (typeof profileDeparture === "string") departureCity = profileDeparture;
-    }
-
     if (departureCity) {
-      const [trip] = await tx.select({ status: sharedTrips.status }).from(sharedTrips)
+      const [trip] = await tx.select({
+        status: sharedTrips.status,
+        pendingBriefProposal: sharedTrips.pendingBriefProposal,
+      }).from(sharedTrips)
         .where(eq(sharedTrips.id, params.tripId)).for("update");
       // The brief is editable only until planning begins. A preference card
       // answered later must not silently rewrite an activated shared plan.
-      if (trip?.status === "DRAFT") {
+      // The trip brief only accepts a city the catalogue can name — the same
+      // contract `PUT /trips/:id/draft-brief` enforces. Cambridge, Bellevue and
+      // Hakone all fail it, so refusing the whole request would stop a
+      // traveller saving their pace, interests and budget over a departure they
+      // did not touch in this submission: the form carries the departure on
+      // every submit precisely because it is usually unchanged. The preference
+      // override is still saved; only the brief copy is skipped.
+      const resolvedDeparture = resolveBriefDestination(departureCity);
+      if (resolvedDeparture && trip?.status === "DRAFT") {
         const now = new Date();
+        const pending = trip.pendingBriefProposal as Record<string, unknown> | null;
+        const remainingPending = pending
+          ? Object.fromEntries(Object.entries(pending).filter(([key]) => key !== "departureCities"))
+          : null;
         await tx.update(sharedTrips).set({
-          departureCities: [departureCity],
-          pendingBriefProposal: null,
+          // Through the same resolver the draft-brief write boundary uses. The
+          // card wrote the raw string, so confirming 上海 here and 上海 in the
+          // conversation left the trip holding two different spellings of one
+          // city, and `withoutSettledFields` then re-asked for an origin that
+          // was already saved.
+          departureCities: [resolvedDeparture],
+          // Saving one explicit field must not erase unrelated pending dates
+          // or duration from the conversation card.
+          pendingBriefProposal: remainingPending && Object.keys(remainingPending).length > 0
+            ? remainingPending
+            : null,
           updatedAt: now,
         }).where(eq(sharedTrips.id, params.tripId));
         await recordAudit({

@@ -26,7 +26,13 @@ export const TOOL_INVOCATION_MODE: Record<PersonalResearchOperationCapability, T
   "navigation.route": "AUTOMATIC",
   "accommodation.discovery": "AUTOMATIC",
   "activities.search": "CONFIRMED",
-  "flight.search": "CONFIRMED",
+  // Flight joined hotel on 2026-09-06. It meets the same test — read-only,
+  // bounded, deduplicated per turn and per run, unable to book or pay — and
+  // the confirmation it used to require was unreachable in practice: the
+  // confirm buttons only appear after a tool call the model never made, so
+  // the sole way to authorise a flight search was to type 确认搜索机票, an
+  // incantation nothing in the product mentions.
+  "flight.search": "AUTOMATIC",
   "hotel.search": "AUTOMATIC",
   "mobility.search": "CONFIRMED",
 });

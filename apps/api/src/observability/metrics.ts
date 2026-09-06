@@ -474,8 +474,8 @@ metrics.registerCounter(
   { result: ["ok", "end_before_start", "in_past", "malformed"] },
 );
 metrics.registerCounter(
-  "trip_brief_proposal_destination_resolution_total",
-  "Conversation brief proposals accepted or rejected by the city-only destination contract.",
+  "trip_brief_proposal_departure_resolution_total",
+  "Conversation brief proposals accepted or rejected by the city-only departure contract.",
   { result: ["accepted", "rejected"] },
 );
 

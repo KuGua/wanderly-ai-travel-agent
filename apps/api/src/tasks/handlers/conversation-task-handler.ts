@@ -21,6 +21,8 @@ import {
   isBriefDestinationCountry,
   mergeTripBriefProposal,
   proposeTripBriefFromTurn,
+  withoutDestinationCandidates,
+  withoutImplicitDeparture,
 } from "../../services/trip-brief-proposal-service.js";
 import { resolveTitleDestinationLabel } from "../../services/trip-title-destination-label.js";
 import { applyTitleDestinationLabel } from "../../services/trip-title-label-service.js";
@@ -65,7 +67,8 @@ import { publishAgentStreamEvent } from "../task-stream-publisher.js";
 import type { AgentTaskRow } from "../task-repository.js";
 import { loadConversationTurnInput } from "../task-repository.js";
 import { buildProactiveIntro } from "../../i18n/proactive-intro.js";
-import { ToolCallDeduplicator } from "../../agents/personal-research-tool-policy.js";
+import { ToolCallDeduplicator, requiresOwnerConfirmation } from "../../agents/personal-research-tool-policy.js";
+import { buildDeterministicFlightDraft } from "../../services/deterministic-flight-draft.js";
 import {
   personalResearchOperationCapabilitySchema,
   toolSettledEventSchema,
@@ -453,6 +456,120 @@ function canonicalizeForHash(value: unknown): string {
  *     the grounded context it needs.
  */
 /**
+ * How long the same brief goes unsearched after an attempt, whatever came back.
+ * Matches the 30 minutes `computeExpiresAt` gives AVAILABLE evidence, so a
+ * successful search is re-run exactly when its offers go stale and a failed one
+ * is retried on the same rhythm instead of on every message.
+ */
+const PREFETCH_REPEAT_WINDOW_MS = 30 * 60_000;
+
+/**
+ * Runs this trip's flight search from the brief alone, once per set of facts.
+ *
+ * Reuses `buildFlightSearchDispatcher` rather than reaching for the executor
+ * directly, so state persistence, the per-run dedup probe, the RESEARCHING
+ * phase event and evidence writing all stay on one path. The only difference
+ * from a model-issued call is who decided to make it.
+ *
+ * Three properties keep this safe to run on every turn:
+ *   - the draft comes from the confirmed brief, so it changes only when the
+ *     brief does, and `personal_research_evidence` is unique per (run,
+ *     capability) — a turn cannot double-charge itself;
+ *   - a gap is silent. Not every trip has an origin, a date, or an airport,
+ *     and a conversation about temples must not become a conversation about
+ *     why a search could not run;
+ *   - a failure is silent for the same reason, and never reaches the caller.
+ *     A supplier being down is not a reason the traveller cannot chat.
+ */
+async function prefetchDeterministicFlightEvidence(params: {
+  run: AgentTaskRow;
+  ctx: RequestContext;
+  signal: AbortSignal;
+  traceparent?: string;
+  tripContext: PersonalTripContext;
+}): Promise<void> {
+  if (!conversationToolDispatchEnabled("flight.search")) return;
+  if (!params.run.threadId || !params.run.tripId || !params.run.userMessageId) return;
+  const built = buildDeterministicFlightDraft(params.tripContext);
+  if (built.outcome !== "READY") {
+    logSafeRuntimeEvent(params.ctx, {
+      component: "worker", event: "flight_prefetch", operation: "conversation",
+      // "cancelled" is this vocabulary's word for "decided not to run".
+      outcome: "cancelled", errorCode: built.gap, relatedRunId: params.run.id,
+    });
+    return;
+  }
+  // Once per distinct set of facts, not once per turn. The dispatcher's own
+  // dedup probe is keyed on `(run_id, capability)`, which only collapses a
+  // repeat inside one turn — so every message was paying for a fresh supplier
+  // round-trip, including the ones about temples. `requestFingerprint` already
+  // records what was searched, so the same brief asked twice is a read.
+  const fingerprint = createHash("sha256")
+    .update(canonicalizeForHash(built.value.draft))
+    .digest("hex");
+  const [fresh] = await db.select({ id: personalResearchEvidence.id })
+    .from(personalResearchEvidence)
+    .where(and(
+      eq(personalResearchEvidence.tripId, params.run.tripId),
+      eq(personalResearchEvidence.capability, "flight.search"),
+      eq(personalResearchEvidence.requestFingerprint, fingerprint),
+      // On `capturedAt`, not `expiresAt`. Only AVAILABLE evidence is given an
+      // expiry — everything else stores null, and `expiresAt > now` never
+      // matches a null. So a trip whose search came back empty or whose
+      // supplier was down deduplicated against nothing and paid for a fresh
+      // round-trip on *every* later message, retrying a request already known
+      // to fail. The question this asks is "did we just try these exact
+      // facts", which has the same answer either way.
+      gt(personalResearchEvidence.capturedAt, new Date(Date.now() - PREFETCH_REPEAT_WINDOW_MS)),
+    ))
+    .limit(1);
+  if (fresh) return;
+
+  try {
+    const dispatch = buildFlightSearchDispatcher({
+      run: params.run,
+      ctx: params.ctx,
+      signal: params.signal,
+      traceparent: params.traceparent,
+      // The traveller is not being asked, so record that they did not confirm.
+      // The dispatcher consults `TOOL_INVOCATION_MODE`, which no longer
+      // requires one for flights; if that ever changes back, this prefetch
+      // correctly becomes a no-op instead of quietly spending on their behalf.
+      userConfirmed: false,
+    });
+    // `kind` is the draft's own discriminator; the tool's argument schema is
+    // strict and does not carry it, and the dispatcher re-adds it when it
+    // merges against persisted state. Passing it through failed the parse and
+    // returned INVALID_ARGUMENTS — which is why the outcome is logged below
+    // rather than dropped. A dispatcher that declines by *returning* is
+    // invisible to a try/catch, and this one went unnoticed through a full
+    // browser run.
+    const { kind: _kind, ...toolArguments } = built.value.draft;
+    void _kind;
+    const result = await dispatch({
+      id: `prefetch:${params.run.id}`,
+      name: "flight.search",
+      arguments: toolArguments,
+    }) as { outcome?: unknown };
+    logSafeRuntimeEvent(params.ctx, {
+      component: "worker", event: "flight_prefetch", operation: "conversation",
+      outcome: result?.outcome === "AVAILABLE" || result?.outcome === "UNAVAILABLE"
+        ? "success"
+        : "failure",
+      errorCode: typeof result?.outcome === "string" ? result.outcome : "INTERNAL",
+      relatedRunId: params.run.id,
+    });
+  } catch (error) {
+    logSafeRuntimeEvent(params.ctx, {
+      component: "worker", event: "flight_prefetch", operation: "conversation",
+      outcome: "failure",
+      errorCode: error instanceof Error ? error.name : "INTERNAL",
+      relatedRunId: params.run.id,
+    });
+  }
+}
+
+/**
  * Bookkeeping the model has no use for, removed before the result becomes a
  * tool message.
  *
@@ -610,7 +727,12 @@ function buildFlightSearchDispatcher(params: {
       draft,
       confirmed: params.userConfirmed,
     });
-    if (!params.userConfirmed) {
+    // `TOOL_INVOCATION_MODE` is meant to have two readers — the loop decides
+    // whether a call may be attempted, the dispatcher whether it may execute —
+    // but this branch was hard-coded, so the table's flight entry was dead and
+    // flipping it would have changed nothing. Read it here and the comment on
+    // that table becomes true.
+    if (requiresOwnerConfirmation("flight.search") && !params.userConfirmed) {
       return { outcome: "CONFIRMATION_REQUIRED", capability: "flight.search", stateVersion: saved.version };
     }
     const fingerprint = createHash("sha256")
@@ -706,6 +828,16 @@ export async function handleConversationTask(params: {
   // Scoped to this trip, so an adjustment made for it wins over the profile
   // without touching what any other trip inherits.
   const memoryContext = await buildConversationMemoryContext(params.run.createdByUserId, params.run.tripId);
+  // Run the trip's own flight search before reading evidence back, so this
+  // turn already has it. Deliberately ahead of the model and independent of
+  // what the traveller said: see `prefetchDeterministicFlightEvidence`.
+  await prefetchDeterministicFlightEvidence({
+    run: params.run,
+    ctx: params.ctx,
+    signal: params.signal,
+    traceparent: params.ctx.traceparent,
+    tripContext,
+  });
   // What this trip's own providers last returned. Without it the assistant
   // cannot refer to a search it ran itself: the offers were persisted and
   // never read back.
@@ -819,6 +951,7 @@ export async function handleConversationTask(params: {
     responseConstraints?: readonly ConversationResponseConstraint[];
     hotelSearchState?: import("../../providers/model-gateway.js").ConversationHotelSearchState | null;
     flightSearchState?: import("../../providers/model-gateway.js").ConversationFlightSearchState | null;
+    hasPendingTripMutation?: boolean;
   } = {};
   // Server-side explicit confirmation detector. It accepts a standalone
   // confirmation at either end of a complete natural-language query (for
@@ -850,6 +983,7 @@ export async function handleConversationTask(params: {
     confirmed: flightSearchState.confirmed,
     version: flightSearchState.version,
   } : null;
+  toolContext.hasPendingTripMutation = directBriefProposal !== null;
   let evidenceDispatched = false;
   const dispatchers = new Map<string, ModelToolDispatcher>();
   const tools: ModelToolDefinition[] = [];
@@ -1020,6 +1154,7 @@ export async function handleConversationTask(params: {
     params.run,
     params.ctx.traceparent,
     () => evidenceDispatched,
+    input.intent === "brief_saved" || input.intent === "preferences_saved",
   );
 
   let output;
@@ -1076,7 +1211,10 @@ export async function handleConversationTask(params: {
     : parsedReply;
   if (
     parsed.responseMode === "MODEL"
-    && containsUnsupportedOperationalClaim(parsed.content, { evidenceBacked: evidenceDispatched })
+    && containsUnsupportedOperationalClaim(parsed.content, {
+      evidenceBacked: evidenceDispatched,
+      tripMutationBacked: input.intent === "brief_saved" || input.intent === "preferences_saved",
+    })
   ) {
     throw new Error("Final conversation safety validation failed");
   }
@@ -1098,22 +1236,45 @@ export async function handleConversationTask(params: {
   // confirmation cards; never create the generic brief-review card from a
   // departure/date phrase embedded in one of them.
   const destinationCueDecision = await destinationCuePromise;
-  const tripBriefProposal = parsed.responseMode === "MODEL"
-    && (tripContext.tripStatus === "DRAFT" || tripContext.tripStatus === "PLANNING")
-    && !destinationCueDecision
+  // Each field scope is independent. A destination decision must not suppress
+  // an explicit origin/date/duration from the same owner turn (for example
+  // “从上海去北京三天”). Destination is stripped below and persists only via
+  // Destination Cue; the remaining brief fields keep their own confirmation.
+  // Not gated on `responseMode`. The two sources below have different
+  // authorities and only one of them is the assistant: `directBriefProposal`
+  // is deterministic parsing of the owner's own message, and it stays valid
+  // however the reply turned out. Gating both on MODEL made the trip-mutation
+  // guard self-defeating — a reply claiming "已更新" becomes a SAFE_REFUSAL
+  // reading "请在下方确认卡片", and the same branch then suppressed the card it
+  // had just told the traveller to confirm. That is exactly the turn on which
+  // the owner states a change, so the card was missing when it mattered most.
+  const generatedTripBriefProposal = tripContext.tripStatus === "DRAFT" || tripContext.tripStatus === "PLANNING"
     ? mergeTripBriefProposal(
       // Direct owner statements are parsed conservatively and destination
-      // values have already passed server-owned place resolution.
-      withoutDestination(directBriefProposal),
+      withoutDestinationCandidates(directBriefProposal),
       // The model extractor is retained only for an owner accepting a
       // concrete date/duration the assistant resolved in this same turn.
       // It can never introduce a destination, departure, or other free-text
       // trip fact from a reply — nor a date that contradicts the one parsed
       // above, which is how an end date two years before its start reached
       // the card and made it unsavable.
-      parsedReply.tripBriefProposal,
+      //
+      // This half *is* assistant-derived — it exists for the owner accepting a
+      // date the assistant resolved — so a withdrawn or fallback reply must
+      // not contribute one.
+      parsed.responseMode === "MODEL" ? parsedReply.tripBriefProposal : undefined,
     )
     : undefined;
+  // Do not let an assistant extractor (or a future proposal source) infer an
+  // origin from a bare city mention. The card can show a departure only when
+  // this owner turn explicitly states one.
+  const tripBriefProposal = withoutImplicitDeparture(
+    // Destination candidates have exactly one owner: Destination Cue. Never
+    // persist one on the generic brief card, where an origin guard could make
+    // its unrelated disappearance look like the destination was rejected.
+    withoutDestinationCandidates(generatedTripBriefProposal),
+    turnInput.question,
+  );
 
   // User-originated decisions always win for this turn. Only when the user
   // classifier found nothing do we inspect the final persisted reply as a
@@ -1251,13 +1412,6 @@ export async function handleConversationTask(params: {
   return { ...conversation, destinationCueDecision: assistantDestinationCueDecision, flightOfferCueDecision: assistantFlightOfferCueDecision, hotelOfferCueDecision: assistantHotelOfferCueDecision };
 }
 
-function withoutDestination(proposal: TripBriefProposal | null): TripBriefProposal | null {
-  if (!proposal) return null;
-  const { destinationCandidates, ...schedulingAndDeparture } = proposal;
-  void destinationCandidates;
-  return Object.keys(schedulingAndDeparture).length > 0 ? schedulingAndDeparture : null;
-}
-
 /**
  * Kept pure so the lifecycle boundary is directly regression-testable.
  *
@@ -1370,6 +1524,7 @@ class SafeConversationDeltaGate {
     private readonly run: AgentTaskRow,
     traceparent: string | undefined,
     getEvidenceBacked: () => boolean,
+    private readonly tripMutationBacked: boolean,
   ) {
     this.traceparent = traceparent;
     // Read lazily on every segment so the gate reflects the latest
@@ -1402,7 +1557,10 @@ class SafeConversationDeltaGate {
 
   private async approveAndPublish(segment: string): Promise<void> {
     const candidate = this.approved + segment;
-    if (containsUnsupportedOperationalClaim(candidate, { evidenceBacked: this.getEvidenceBacked() })) {
+    if (containsUnsupportedOperationalClaim(candidate, {
+      evidenceBacked: this.getEvidenceBacked(),
+      tripMutationBacked: this.tripMutationBacked,
+    })) {
       // Keep unsafe text in volatile Worker memory only. The final policy gate
       // will replace the whole answer with a deterministic safe refusal.
       return;

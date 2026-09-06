@@ -45,6 +45,7 @@ import {
 } from "../observability/tracing.js";
 import { agentTaskConfig } from "./config.js";
 import { publishAgentStreamEvent } from "./task-stream-publisher.js";
+import { requiresOwnerConfirmation } from "../agents/personal-research-tool-policy.js";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type AgentTaskRow = typeof agentTaskRuns.$inferSelect;
@@ -863,6 +864,13 @@ export async function getAuthorizedAgentRun(runId: string, userId: string): Prom
  * as the run-status fallback regardless of stream health.
  */
 async function isFlightSearchAwaitingConfirmation(run: AgentTaskRow): Promise<boolean> {
+  // Nothing can be awaiting a confirmation the capability no longer asks for.
+  // The saved state keeps `confirmed: false` on purpose — it records what the
+  // traveller actually did, and they were never asked — so reading that column
+  // alone left a "Ready to search for flights?" card sitting under a reply
+  // that had already listed the flights. Hotel shows no such card for exactly
+  // this reason; flights now match it.
+  if (!requiresOwnerConfirmation("flight.search")) return false;
   if (run.operation !== "CONVERSATION" || !run.threadId || !run.tripId) return false;
   const state = await loadConversationFlightSearchState({
     threadId: run.threadId,

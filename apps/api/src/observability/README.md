@@ -136,7 +136,7 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `trip_brief_destination_resolution_total` | counter | result | `["accepted","unresolved"]` |
 | `trip_constraint_mutation_total` | counter | operation, visibility, strength, result | operation ∈ `["propose","confirm","dismiss","upsert","revoke","handoff_confirm"]`; visibility ∈ `["team_visible","orchestrator_confidential","mixed","n_a"]`; strength ∈ `["hard","soft","mixed","n_a"]`; result ∈ `["success","replay","conflict","catalog_invalid"]` |
 | `trip_brief_proposal_dates_total` | counter | result | `["ok","end_before_start","in_past","malformed"]` |
-| `trip_brief_proposal_destination_resolution_total` | counter | result | `["accepted","rejected"]` |
+| `trip_brief_proposal_departure_resolution_total` | counter | result | `["accepted","rejected"]` |
 | `trip_draft_brief_update_total` | counter | result | `["success"]` |
 | `trip_brief_destination_resolution_total` | counter | result | `["accepted","unresolved"]` |
 | `trip_invitation_rejected_total` | counter | reason | `["terminal_trip"]` |
