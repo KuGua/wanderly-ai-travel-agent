@@ -238,7 +238,9 @@
         "no_red_eye": "Avoid red-eye flights",
         "interests": "Interests",
         "budget_max_usd": "Maximum budget",
-        "departure_city": "Departure city"
+        "departure_city": "Departure city",
+        "nationality": "Nationality",
+        "date_of_birth": "Date of birth"
       }
     }
   },

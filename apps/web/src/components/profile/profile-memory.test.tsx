@@ -84,6 +84,21 @@ describe("ProfileMemory", () => {
     expect(screen.getByText("You set this")).toBeInTheDocument();
   });
 
+  it("labels profile-only memory fields in Chinese without missing-message errors", async () => {
+    const api = createApi({
+      getProfileMemory: vi.fn().mockResolvedValue(memory({
+        facts: [
+          { ...memory().facts[0], id: "33333333-3333-4333-8333-333333333333", fieldKey: "nationality", value: "CN" },
+          { ...memory().facts[0], id: "44444444-4444-4444-8444-444444444444", fieldKey: "date_of_birth", value: "1990-01-01" },
+        ],
+      })),
+    });
+    renderWithIntl(<ProfileMemory />, { api, locale: "zh" });
+
+    expect(await screen.findByText("国籍")).toBeInTheDocument();
+    expect(screen.getByText("出生日期")).toBeInTheDocument();
+  });
+
   it("shows an empty state when nothing has been remembered", async () => {
     const api = createApi({
       getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),

@@ -238,7 +238,9 @@
         "no_red_eye": "避免红眼航班",
         "interests": "兴趣",
         "budget_max_usd": "预算上限",
-        "departure_city": "出发城市"
+        "departure_city": "出发城市",
+        "nationality": "国籍",
+        "date_of_birth": "出生日期"
       }
     }
   },
