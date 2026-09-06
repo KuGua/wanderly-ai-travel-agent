@@ -1402,6 +1402,14 @@ export const planningResearchResults = pgTable("planning_research_results", {
   status: researchResultStatusEnum("status").notNull(),
   serviceGaps: jsonb("service_gaps").$type<Array<Record<string, unknown>>>().notNull().default([]),
   resultPlanId: uuid("result_plan_id").references(() => itineraryPlans.id, { onDelete: "set null" }),
+  /**
+   * Why this run produced a summary rather than a plan. NULL on rows written
+   * before the column existed, and on rows that do carry a plan. Values are
+   * constrained by `planning_research_results_summary_reason_check`.
+   */
+  summaryReason: text("summary_reason").$type<
+    "NO_CITABLE_EVIDENCE" | "TOOL_BUDGET_EXHAUSTED" | "PLAN_SCHEMA_UNMET" | "RESEARCH_MATRIX_INCOMPLETE"
+  >(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => ({
   uniquePerTask: uniqueIndex("planning_research_results_unique_per_task").on(table.agentTaskRunId)

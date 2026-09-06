@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { ModelToolDefinition } from "../providers/model-gateway.js";
-import type { ProviderUnavailableCode } from "../types/domain.js";
+import type { ModelGateway, ModelToolDefinition, PlanningEvidenceCatalog } from "../providers/model-gateway.js";
+import type { ProviderUnavailableCode, ResearchSummaryReason } from "../types/domain.js";
 import { db } from "../db/database.js";
 import {
   constraintSnapshots,
@@ -34,7 +34,6 @@ import { withMemorySpan } from "../memory/memory-spans.js";
 import { metrics } from "../observability/metrics.js";
 import { createTravelProviders, resolveBoundHotelProvider } from "../providers/live-provider-factory.js";
 import { modelGateway, __setModelGatewayForTests } from "../providers/gateway-factory.js";
-import type { ModelGateway } from "../providers/model-gateway.js";
 import type {
   AccommodationDiscoveryProvider,
   ActivitiesProvider,
@@ -45,14 +44,14 @@ import type {
   PlaceSearchProvider,
   TransitJourneyProvider,
 } from "../providers/types.js";
-import { validatePlanOutput } from "../policy/plan-output-validator.js";
+import { PlanValidationError, validatePlanOutput } from "../policy/plan-output-validator.js";
 import { DefaultPolicyGate } from "../agents/policy-gate.js";
 import { SkillError } from "../agents/errors.js";
 import { invokeSkill } from "../agents/skill-registry.js";
 import { airportServesCity, resolveAirportReference, resolveFlightRouteMatrix } from "../location-reference/airport-reference.js";
 import { logSafeRuntimeEvent, pinoInstance } from "../observability/telemetry.js";
 import { resolveTripDestinationReference } from "./destination-reference-service.js";
-import { flightSearchModelArgumentsSchema } from "./flight-search-service.js";
+import { flightSearchModelArgumentsSchema, normalizeFlightProviderResult } from "./flight-search-service.js";
 import { activitiesSearchModelArgumentsSchema } from "./activities-search-service.js";
 import { placeSearchModelArgumentsSchema } from "./place-search-service.js";
 import { navigationRouteModelArgumentsSchema } from "./navigation-route-service.js";
@@ -74,11 +73,11 @@ import {
   AccommodationResearchIncompleteError,
 } from "./accommodation-research-matrix-service.js";
 import { recordAudit } from "./audit-service.js";
-import { serviceGapSchema, RECORD_RESEARCH_RESULT_MAX_GAPS } from "./planning-research-result-service.js";
+import { classifyError, serviceGapSchema, RECORD_RESEARCH_RESULT_MAX_GAPS } from "./planning-research-result-service.js";
 import { toCritiques } from "./plan-critique.js";
 import type { RequestContext } from "../utils/context.js";
-import type { AccommodationEvidence, ActivityEvidence, FlightOffer, StayOffer, HotelOffer, ServiceGap } from "../types/domain.js";
-import { bindPlanSelectionsToEvidence } from "./plan-evidence-binding.js";
+import type { AccommodationEvidence, ActivityEvidence, FlightOffer, StayOffer, HotelOffer, PlaceCandidate, ServiceGap } from "../types/domain.js";
+import { bindPlanSelectionsToEvidence, preflightCategorySlots } from "./plan-evidence-binding.js";
 
 export interface PlanningDependencies {
   flightProvider: FlightProvider;
@@ -141,13 +140,26 @@ export class PlanningDataUnavailableError extends Error {
  * Why a run produced a research summary instead of a plan.
  *
  * `NO_CITABLE_EVIDENCE` — every capability came up empty, so there is nothing
- * to build a plan on.
+ * to build a plan on. This one is a real refusal and must stay one: a card
+ * naming a destination and citing no verifiable fact is the "Demo data" shape
+ * `AGENTS.md` forbids, wearing a plan's clothes.
+ *
+ * The rest share one shape: the run did real work, that work is already
+ * persisted, and the only thing missing is the model's plan. Failing the run
+ * throws the evidence away and tells the traveller nothing about what their
+ * suppliers actually answered.
+ *
  * `TOOL_BUDGET_EXHAUSTED` — the model spent its turn budget without returning
- * one. The evidence it gathered on the way is already persisted and is exactly
- * what the summary reports; discarding the run because the model would not
- * stop asking throws away work the traveller's suppliers already did.
+ * a plan.
+ * `PLAN_SCHEMA_UNMET` — it returned one, repeatedly, in a shape the plan
+ * contract does not accept, and the repair budget ran out. Identical in
+ * substance to the budget case; it used to fail the whole run instead.
+ * `RESEARCH_MATRIX_INCOMPLETE` — a capability matrix still held a `MISSING`
+ * cell, meaning the planner never attempted it. That is our own scheduling
+ * defect, and the traveller should not be the one who pays for it with an
+ * empty run.
  */
-export type ResearchSummaryReason = "NO_CITABLE_EVIDENCE" | "TOOL_BUDGET_EXHAUSTED";
+export type { ResearchSummaryReason };
 
 export type PlanSynthesisOutcome =
   | { readonly outcome: "PLAN"; readonly planId: string; readonly gaps: ReadonlyArray<ServiceGap> }
@@ -332,12 +344,14 @@ async function persistResearchSummary(params: {
       status,
       serviceGaps: serviceGapsForDb,
       resultPlanId: null,
+      summaryReason: params.reason,
     }).onConflictDoUpdate({
       target: planningResearchResults.agentTaskRunId,
       set: {
         status,
         serviceGaps: serviceGapsForDb,
         resultPlanId: null,
+        summaryReason: params.reason,
       },
     }).returning({ id: planningResearchResults.id });
     await recordAudit({
@@ -353,7 +367,15 @@ async function persistResearchSummary(params: {
     });
     // `agent_task_runs.status` uses a different enum than
     // `planning_research_results.status` — COMPLETE maps to COMPLETED.
-    const taskTerminalStatus = status === "COMPLETED_WITH_GAPS" ? "COMPLETED_WITH_GAPS" : "COMPLETED";
+    // A row whose `resultPlanId` is NULL is by definition a research
+    // summary (a research summary is the only path that persists a row
+    // without a plan). A research summary is always a gap-bearing
+    // terminal state for the run, even when `serviceGaps` came back
+    // empty (a model that exhausts repair without producing a plan still
+    // surfaced something the traveller needs to know about). Collapsing
+    // this to `COMPLETED` would make the Shared Plan view render "plan
+    // ready" over an empty surface.
+    const taskTerminalStatus = "COMPLETED_WITH_GAPS" as const;
     const [completed] = await tx.update(agentTaskRuns).set({
       status: taskTerminalStatus,
       resultPlanId: null,
@@ -387,15 +409,6 @@ async function persistResearchSummary(params: {
 }
 
 /**
- * Control-flow signal for Gate B in §1.3 of the planner-resilience design.
- *
- * Research completeness says the tool loop covered every cell, but commercial
- * authority requires at least one LIVE cell on the destination we are about to
- * synthesize for. When it is missing we cannot produce a plan; the planner
- * switches to a research-summary branch instead. This class MUST be caught
- * inside `generatePlan` — it is not a worker-visible failure mode.
- */
-/**
  * Should this failure become a research summary rather than a failed run?
  *
  * Both cases share the same shape: the run did real work, that work is already
@@ -407,11 +420,24 @@ async function persistResearchSummary(params: {
  */
 function researchSummaryReasonFor(error: unknown): ResearchSummaryReason | null {
   if (error instanceof PlanEvidenceUnavailableError) return "NO_CITABLE_EVIDENCE";
+  if (error instanceof FlightResearchIncompleteError
+    || error instanceof HotelResearchIncompleteError
+    || error instanceof ActivitiesResearchIncompleteError
+    || error instanceof AccommodationResearchIncompleteError) {
+    return "RESEARCH_MATRIX_INCOMPLETE";
+  }
   const code = (error as { code?: unknown } | null)?.code;
   if (code === "TOOL_CALL_MAX_TURNS") return "TOOL_BUDGET_EXHAUSTED";
+  // The model's final output never satisfied the plan contract. The evidence
+  // behind it is already durable, so this reports what was gathered instead of
+  // discarding the round — the same reasoning the budget case already had.
+  if (error instanceof PlanValidationError || code === "PLAN_VALIDATION_FAILED" || code === "SCHEMA_PARSE") {
+    return "PLAN_SCHEMA_UNMET";
+  }
   return null;
 }
 
+/** Control-flow signal: zero citable provider evidence yields a summary, never a plan. */
 export class PlanEvidenceUnavailableError extends Error {
   readonly code = "PLANNING_DATA_UNAVAILABLE";
 
@@ -564,14 +590,19 @@ export async function researchCoverageForSnapshot(params: {
       const origin = originId;
       const destination = destinationId;
       {
-        const result = await deps.flightProvider.searchFlights({
+        const result = normalizeFlightProviderResult(await deps.flightProvider.searchFlights({
           origin,
           destination,
           dateStart: params.travelDateStart,
           dateEnd: params.travelDateEnd,
           snapshotId: params.snapshotId,
-        });
+        }));
+        // LIVE is evidence-bearing by definition. Some adapters can return an
+        // HTTP-success envelope with an empty normalized array; treating that
+        // as LIVE marked the matrix complete while leaving synthesis nothing
+        // to cite. Fail closed at this orchestration boundary as NO_RESULTS.
         if (result.outcome === "UNAVAILABLE") {
+          const unavailableReason = result.reason;
           if (params.agentTaskRunId) {
             await db.insert(providerSearchRuns).values({
               snapshotId: params.snapshotId,
@@ -587,7 +618,7 @@ export async function researchCoverageForSnapshot(params: {
               // flight searches came back INVALID_PROVIDER_RESPONSE was
               // reported to the traveller as "no verified results", which
               // reads as "there are no flights" for a route that has plenty.
-              errorCode: result.reason,
+              errorCode: unavailableReason,
             });
           }
           return; // UNAVAILABLE → no offer, but the attempted cell is durable
@@ -1052,6 +1083,289 @@ export function planningToolsFor(
   return tools.filter((tool) => !withdrawn.has(tool.name));
 }
 
+/**
+ * How many times one tool may have the model's arguments refused by its own
+ * declared schema before it stops being offered. Two: one is a stumble, and a
+ * second says the model cannot express what this tool wants — every further
+ * attempt costs a turn that the plan needs.
+ */
+export const TOOL_ARGUMENT_REJECTION_LIMIT = 2;
+
+/** Which `places.adopt` action each of the three place-mutation tools performs. */
+export const PLACE_MUTATION_ACTION_BY_TOOL: Readonly<Record<string, "propose" | "adopt" | "revoke" | undefined>> = {
+  "places.propose": "propose",
+  "places.adopt": "adopt",
+  "places.revoke": "revoke",
+};
+
+/**
+ * Parse the arguments a model produced for one tool.
+ *
+ * `INPUT_INVALID` is the whole point. A bare `.parse()` throws a `ZodError`,
+ * which is not a `SkillError`, so the dispatcher's catch fell through to
+ * `UPSTREAM_FAILURE` and the run reported "the provider was temporarily
+ * unavailable" for arguments no provider ever saw. On 2026-09-06 eight such
+ * gaps named `places` and `navigation` while every provider call in the run
+ * had succeeded.
+ */
+function parseToolArguments<T>(
+  schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } },
+  toolName: string,
+  args: unknown,
+): T {
+  const parsed = schema.safeParse(args);
+  if (!parsed.success) {
+    throw new SkillError("INPUT_INVALID", `Model arguments for ${toolName} do not match its declared schema`);
+  }
+  return parsed.data;
+}
+
+/** The candidates a `places.search` answer carries, or none if it was not LIVE. */
+function placeCandidatesOf(result: unknown): readonly PlaceCandidate[] {
+  const outcome = (result as { outcome?: unknown } | null)?.outcome;
+  if (outcome !== "LIVE") return [];
+  const data = (result as { data?: unknown }).data;
+  return Array.isArray(data) ? (data as PlaceCandidate[]) : [];
+}
+
+/**
+ * How a place-mutation tool is offered.
+ *
+ * `places.propose` / `places.adopt` / `places.revoke` are three tools rather
+ * than one `places.adopt` carrying an `action` discriminator. The single-tool
+ * shape advertised `{ action, candidateId, placeId }` while the server
+ * validated a discriminated union whose branches additionally require
+ * `visibility` + `kind` (propose) and `reason` (revoke) — so every one of the
+ * three actions was uncallable, and on 2026-09-06 a run spent its whole turn
+ * budget discovering that one rejection at a time. Splitting them removes the
+ * union entirely: each tool's advertised schema is a flat object that the
+ * server validates verbatim, and the model chooses by name instead of by
+ * assembling a field combination it was never shown.
+ */
+export interface PlanningToolCatalogOptions {
+  originAirports: readonly string[];
+  destinationAirports: readonly string[];
+  activitiesEnabled: boolean;
+  /**
+   * Places tools are offered only when `places.search` is itself on offer this
+   * run. A `candidateId` exists only inside the run that searched for it, so
+   * offering the mutation tools without the search is offering something the
+   * model cannot supply an argument for — which is exactly what happened when
+   * coverage research had already withdrawn `places.search`.
+   */
+  placesEnabled: boolean;
+  navigationEnabled: boolean;
+  hotelEnabled: boolean;
+  accommodationDiscoveryEnabled: boolean;
+}
+
+/**
+ * The tools offered to the planning model, before per-run withdrawal.
+ *
+ * Exported so `tests/planning-tool-contract.test.ts` can compare every
+ * advertised parameter schema against the Zod schema that actually validates
+ * the call. Nothing else may describe these tools: an advertised contract
+ * that no test holds against its validator is how the two drift apart.
+ */
+export function buildPlanningToolDefinitions(options: PlanningToolCatalogOptions): ModelToolDefinition[] {
+  const flightsSearchable = options.originAirports.length > 0 && options.destinationAirports.length > 0;
+  return [
+    {
+      name: "flight.search",
+      // The allowed codes are named in the description rather than as a
+      // JSON-schema `enum`: the provider's OpenAI-compatible endpoint
+      // answered 5xx to every request carrying one, so the constraint that
+      // was meant to keep the model on valid airports stopped it planning
+      // at all. The server still rejects anything outside the list.
+      description: flightsSearchable
+        ? `Search normalized flights between two controlled airports. originId must be one of: ${options.originAirports.join(", ")}. destinationId must be one of: ${options.destinationAirports.join(", ")}. Any other value is rejected.`
+        : "Unavailable for this trip: no controlled airport serves one of its cities. Do not call this tool.",
+      parameters: { type: "object", additionalProperties: false, required: ["originId", "destinationId"], properties: {
+        originId: { type: "string" }, destinationId: { type: "string" },
+      } },
+    },
+    ...(options.activitiesEnabled ? [{
+      name: "activities.search",
+      description: "Search live activity evidence for one controlled destination.",
+      parameters: { type: "object", additionalProperties: false, required: ["destinationId", "locale"], properties: {
+        destinationId: { type: "string" },
+        theme: { type: "string", enum: ["CULTURE", "FOOD", "OUTDOOR", "FAMILY"] },
+        locale: { type: "string", enum: ["en", "zh"] },
+      } },
+    }] : []),
+    ...(options.placesEnabled ? [{
+      name: "places.search",
+      description: "Search normalized POI candidates for one destination keyword and category. "
+        + "Only the first few candidates of each answer are shown; propose one of those.",
+      parameters: { type: "object", additionalProperties: false, required: ["destinationId", "keyword", "category"], properties: {
+        destinationId: { type: "string", description: "Must be one of the snapshot's destinationCandidates." },
+        keyword: { type: "string", description: "Free-text search term; never include private profile data." },
+        category: { type: "string", enum: ["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER"] },
+      } },
+    }, {
+      name: "places.propose",
+      description: "Record one POI candidate returned by places.search as a proposed trip place. "
+        + "candidateId must be a candidateId this run's places.search actually returned; "
+        + "the server holds the candidate's own details and will not accept them from you.",
+      parameters: { type: "object", additionalProperties: false, required: ["candidateId", "visibility", "kind"], properties: {
+        candidateId: { type: "string", format: "uuid", description: "candidateId from a places.search answer in this run." },
+        visibility: { type: "string", enum: ["OWNER_PRIVATE", "TEAM_VISIBLE", "ORCHESTRATOR_CONFIDENTIAL"] },
+        kind: { type: "string", enum: ["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER"] },
+      } },
+    }, {
+      name: "places.adopt",
+      description: "Promote a proposed trip place to ACTIVE. placeId must come from a places.propose answer in this run.",
+      parameters: { type: "object", additionalProperties: false, required: ["placeId"], properties: {
+        placeId: { type: "string", format: "uuid", description: "placeId returned by places.propose in this run." },
+      } },
+    }, {
+      name: "places.revoke",
+      description: "Withdraw a trip place this run created. placeId must come from a places.propose answer in this run.",
+      parameters: { type: "object", additionalProperties: false, required: ["placeId", "reason"], properties: {
+        placeId: { type: "string", format: "uuid", description: "placeId returned by places.propose in this run." },
+        reason: { type: "string", minLength: 1, maxLength: 256 },
+      } },
+    }] : []),
+    // A route joins two places this run adopted, so navigation without the
+    // places tools has nothing to name.
+    ...(options.navigationEnabled && options.placesEnabled ? [{
+      name: "navigation.route",
+      description: "Compute a walking/driving/cycling route between two ACTIVE trip places adopted in this run.",
+      parameters: { type: "object", additionalProperties: false, required: ["originPlaceId", "destinationPlaceId", "mode"], properties: {
+        originPlaceId: { type: "string", format: "uuid", description: "placeId of an ACTIVE trip place, from places.adopt." },
+        destinationPlaceId: { type: "string", format: "uuid", description: "placeId of a different ACTIVE trip place, from places.adopt." },
+        mode: { type: "string", enum: ["WALK", "DRIVE", "CYCLE"] },
+      } },
+    }] : []),
+    ...(options.hotelEnabled ? [{
+      name: "hotel.search",
+      description: "Search live hotel evidence for one controlled destination. Dates, occupancy, and currency are server-derived.",
+      parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
+    }] : []),
+    ...(options.accommodationDiscoveryEnabled ? [{
+      name: "accommodation.discover",
+      description: "Discover non-price accommodation candidates near one controlled destination. This is not availability or a quote.",
+      parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
+    }] : []),
+  ];
+}
+
+/**
+ * Maximum number of pre-researched candidates shown to the model per
+ * capability. This matches `boundToolResult` and keeps the initial prompt
+ * bounded while guaranteeing that every shown id remains resolvable from the
+ * complete server-side arrays.
+ */
+export const PLANNING_EVIDENCE_CATALOG_MAX_ITEMS = 5;
+
+/**
+ * Project complete provider records into the public comparison facts the
+ * model needs to choose an id. The projection deliberately excludes raw
+ * provider payloads, URLs and every member/profile field. Full evidence stays
+ * server-side and is restored only by `bindPlanSelectionsToEvidence`.
+ */
+export function buildPlanningEvidenceCatalog(params: {
+  flights: readonly FlightOffer[];
+  activities: readonly ActivityEvidence[];
+  hotels: readonly HotelOffer[];
+  accommodations: readonly AccommodationEvidence[];
+}): PlanningEvidenceCatalog {
+  const take = <T>(items: readonly T[]): readonly T[] => items.slice(0, PLANNING_EVIDENCE_CATALOG_MAX_ITEMS);
+  return {
+    flights: take(params.flights).map((offer) => ({
+      id: offer.id,
+      origin: offer.origin,
+      destination: offer.destination,
+      departureAt: offer.segments[0]?.departureAt ?? null,
+      arrivalAt: offer.segments.at(-1)?.arrivalAt ?? null,
+      totalDuration: offer.totalDuration,
+      totalPrice: offer.totalPrice,
+      currency: offer.currency,
+      cabin: offer.cabin,
+      source: offer.source,
+      capturedAt: offer.capturedAt,
+    })),
+    activities: take(params.activities).map((offer) => ({
+      id: offer.id,
+      destination: offer.destination,
+      title: offer.title,
+      rating: offer.rating,
+      reviewCount: offer.reviewCount,
+      durationMinutes: offer.durationMinutes,
+      fromPrice: offer.fromPrice,
+      currency: offer.currency,
+      freeCancellation: offer.freeCancellation,
+      source: offer.source,
+      capturedAt: offer.capturedAt,
+    })),
+    hotels: take(params.hotels).map((offer) => ({
+      id: offer.id,
+      destinationId: offer.destinationId,
+      propertyName: offer.propertyName,
+      checkIn: offer.checkIn,
+      checkOut: offer.checkOut,
+      totalPrice: offer.totalPrice,
+      pricePerNight: offer.pricePerNight,
+      currency: offer.currency,
+      cancellationSummary: offer.cancellationSummary,
+      source: offer.source,
+      capturedAt: offer.capturedAt,
+    })),
+    accommodations: take(params.accommodations).map((offer) => ({
+      id: offer.id,
+      destinationId: offer.destinationId,
+      name: offer.name,
+      kind: offer.kind,
+      distanceMeters: offer.distanceMeters,
+      popularityTier: offer.popularityTier,
+      source: offer.source,
+      capturedAt: offer.capturedAt,
+    })),
+  };
+}
+
+type PlanValidationMetricResult = "schema" | "authorization" | "route" | "provenance" | "evidence" | "unknown";
+
+function planValidationMetricResult(code: string): PlanValidationMetricResult {
+  switch (code) {
+    case "STRUCTURE_INVALID":
+      return "schema";
+    case "FIELD_NOT_AUTHORIZED":
+    case "CONFIDENTIAL_VALUE_LEAK":
+    case "EXPLANATION_TOKEN_NOT_ALLOWED":
+      return "authorization";
+    case "ORIGIN_NOT_ALLOWED":
+    case "ORIGIN_MISSING":
+    case "DESTINATION_NOT_ALLOWED":
+    case "DESTINATION_MISMATCH":
+    case "DESTINATION_CANDIDATES_INCOMPLETE":
+    case "HARD_CONSTRAINT_UNSATISFIED":
+      return "route";
+    case "SOURCE_REQUIRED":
+    case "PROVENANCE_REQUIRED":
+    case "GENERATED_AT_MISMATCH":
+      return "provenance";
+    case "EVIDENCE_NOT_FOUND":
+    case "EVIDENCE_MISMATCH":
+      return "evidence";
+    default:
+      return "unknown";
+  }
+}
+
+/** Record only stable validator codes and paths; never the rejected values. */
+function recordPlanValidationFailure(error: PlanValidationError): void {
+  const metricResults = new Set(error.violations.map((violation) => planValidationMetricResult(violation.code)));
+  for (const validationResult of metricResults) {
+    metrics.inc("plan_validation_failures_total", { validationResult });
+  }
+  pinoInstance.warn({
+    component: "plan-validation",
+    violationCodes: [...new Set(error.violations.map((violation) => violation.code))].sort(),
+    fieldPaths: [...new Set(error.violations.map((violation) => violation.fieldPath))].sort().slice(0, 16),
+  }, "Plan candidate rejected");
+}
+
 export async function generatePlan(params: {
   ctx: RequestContext;
   tripId: string;
@@ -1113,6 +1427,15 @@ export async function generatePlan(params: {
   const allActivities: ActivityEvidence[] = [];
   const allHotels: HotelOffer[] = [...(params.researchedEvidence?.hotels ?? [])];
   const allAccommodations: AccommodationEvidence[] = [...(params.researchedEvidence?.accommodations ?? [])];
+  /**
+   * Candidates this run's `places.search` returned, by `candidateId`.
+   *
+   * A candidateId is meaningful only inside the run that issued it, and the
+   * model must not be the one carrying the candidate's coordinates and source
+   * back to us. `places.propose` names an id; this map is what turns it into
+   * the provider record that gets persisted.
+   */
+  const placeCandidatesThisRun = new Map<string, PlaceCandidate>();
   const activitiesEnabled = process.env.PLAN_ENABLE_ACTIVITIES === "true";
   const placesEnabled = process.env.PLAN_ENABLE_PLACES === "true";
   const navigationEnabled = process.env.PLAN_ENABLE_NAVIGATION === "true";
@@ -1185,9 +1508,107 @@ export async function generatePlan(params: {
   const toolFailureGaps: Array<{ capability: string; code: string }> = [];
   /** Tool calls that already failed, keyed by name and arguments. */
   const failedToolCalls = new Map<string, { outcome: "UNAVAILABLE"; capability: string; reason: string; message: string }>();
+  /**
+   * How many times each tool's declared schema has refused the model's
+   * arguments this run. Counted per tool rather than per argument set: the
+   * model does not repeat one wrong shape, it produces a new one each turn,
+   * and eight of those spent an entire run's budget on 2026-09-06.
+   */
+  const argumentRejectionsByTool = new Map<string, number>();
+  /** Set once the gateway is entered; withdraws a tool from later turns. */
+  let withdrawTool: ((toolName: string) => void) | undefined;
+  const availableEvidence = buildPlanningEvidenceCatalog({
+    flights: allFlights,
+    activities: allActivities,
+    hotels: allHotels,
+    accommodations: allAccommodations,
+  });
+  for (const [category, entries] of Object.entries(availableEvidence)) {
+    logSafeRuntimeEvent(params.ctx, {
+      component: "planner",
+      event: "evidence_catalog",
+      operation: category,
+      outcome: "success",
+      itemCount: entries.length,
+      relatedRunId: params.agentTaskRunId,
+      relatedSnapshotId: params.snapshotId,
+    });
+  }
+
+  /**
+   * Bind compact model selections and run the same policy/evidence validation
+   * used at persistence. The gateway calls this inside its repair loop; this
+   * service calls it again after the gateway returns so no unvalidated model
+   * output can cross the authoritative boundary.
+   */
+  const validateCandidatePlan = (candidate: Record<string, unknown>) => {
+    // This must run on the raw model candidate, before evidence binding and
+    // before the strict output schema. A compact hotel `{ id }` placed in
+    // `stays[]` otherwise remains unbound and the stay schema reports only
+    // missing fields, hiding the actionable category mismatch from repair.
+    const slotViolations = preflightCategorySlots({
+      candidate,
+      flights: allFlights,
+      stays: allStays,
+      activities: allActivities,
+      hotels: allHotels,
+      accommodations: allAccommodations,
+    });
+    if (slotViolations.length > 0) {
+      const error = new PlanValidationError(slotViolations);
+      recordPlanValidationFailure(error);
+      throw error;
+    }
+    const bound = params.agentTaskRunId
+      ? bindPlanSelectionsToEvidence({
+        candidate,
+        flights: allFlights,
+        stays: allStays,
+        activities: allActivities,
+        hotels: allHotels,
+        accommodations: allAccommodations,
+      })
+      : candidate;
+    validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights });
+    try {
+      return validatePlanOutput({
+        planData: bound,
+        snapshot: {
+          authorizedData: snapshot.authorizedData,
+          departureCities: snapshot.departureCities,
+          destinationCandidates: snapshot.destinationCandidates,
+          travelDateStart: snapshot.travelDateStart ?? undefined,
+          travelDateEnd: snapshot.travelDateEnd ?? undefined,
+        },
+        evidence: {
+          flights: allFlights,
+          stays: allStays,
+          activities: allActivities,
+          hotels: allHotels,
+          accommodations: allAccommodations,
+        },
+        requireHotels: hotelEnabled && allHotels.some((hotel) => hotel.destinationId === params.destination),
+      });
+    } catch (error) {
+      if (error instanceof PlanValidationError) recordPlanValidationFailure(error);
+      throw error;
+    }
+  };
   let candidatePlanData: Record<string, unknown>;
+  let planData: ReturnType<typeof validatePlanOutput>;
   try {
   if (params.agentTaskRunId && params.flightSearchPreferencesVersion) {
+    /**
+     * The places execution context, carrying this run's candidate store so the
+     * skill can resolve a `candidateId` itself instead of trusting a caller to
+     * hand back the provider's own record.
+     */
+    const placeSkillContext = () => ({
+      tripId: params.tripId,
+      snapshotId: params.snapshotId,
+      agentTaskRunId: params.agentTaskRunId,
+      resolveCandidate: (candidateId: string) => placeCandidatesThisRun.get(candidateId),
+    });
     const dispatchPlanningTool = async (call: { name: string; arguments: unknown }) => {
         const snapshotContext = {
           authorizedData: memberPreferences,
@@ -1197,11 +1618,7 @@ export async function generatePlan(params: {
           travelDateEnd: snapshot.travelDateEnd ?? undefined,
         };
         if (call.name === "flight.search") {
-          const parsed = flightSearchModelArgumentsSchema.safeParse(call.arguments);
-          if (!parsed.success) {
-            throw new SkillError("INPUT_INVALID", "Model flight.search route arguments are invalid");
-          }
-          const modelArgs = parsed.data;
+          const modelArgs = parseToolArguments(flightSearchModelArgumentsSchema, call.name, call.arguments);
           const result = await invokeSkill("flight.search", {
             ctx: params.ctx,
             snapshot: snapshotContext,
@@ -1226,7 +1643,7 @@ export async function generatePlan(params: {
           return result;
         }
         if (call.name === "activities.search" && activitiesEnabled) {
-          const modelArgs = activitiesSearchModelArgumentsSchema.parse(call.arguments);
+          const modelArgs = parseToolArguments(activitiesSearchModelArgumentsSchema, call.name, call.arguments);
           const result = await invokeSkill("activities.search", {
             ctx: params.ctx,
             snapshot: snapshotContext,
@@ -1243,25 +1660,40 @@ export async function generatePlan(params: {
           return result;
         }
         if (call.name === "places.search" && placesEnabled) {
-          const modelArgs = placeSearchModelArgumentsSchema.parse(call.arguments);
-          return invokeSkill("places.search", {
+          const modelArgs = parseToolArguments(placeSearchModelArgumentsSchema, call.name, call.arguments);
+          const result = await invokeSkill("places.search", {
             ctx: params.ctx,
             snapshot: snapshotContext,
-            placeSearch: { tripId: params.tripId, snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId },
+            placeSearch: placeSkillContext(),
             policyGate: new DefaultPolicyGate("shared"),
           }, { ...modelArgs, snapshotId: params.snapshotId }, { signal: params.signal });
+          // Remember what the provider actually said. `places.propose` names a
+          // candidateId from here; nothing else may supply the record behind
+          // it, least of all the model that read a trimmed copy of it.
+          for (const candidate of placeCandidatesOf(result)) {
+            placeCandidatesThisRun.set(candidate.candidateId, candidate);
+          }
+          return result;
         }
-        if (call.name === "places.adopt" && placesEnabled) {
-          const rawArgs = tripPlaceModelArgumentsSchema.parse(call.arguments);
+        // One skill, three tools. The `action` is supplied here rather than
+        // asked of the model, so it can no longer pair an action with the
+        // wrong fields — the failure that consumed a whole run's turn budget.
+        const placeMutationAction = PLACE_MUTATION_ACTION_BY_TOOL[call.name];
+        if (placeMutationAction && placesEnabled) {
+          const rawArgs = parseToolArguments(
+            tripPlaceModelArgumentsSchema,
+            call.name,
+            { ...((call.arguments as Record<string, unknown> | null) ?? {}), action: placeMutationAction },
+          );
           return invokeSkill("places.adopt", {
             ctx: params.ctx,
             snapshot: snapshotContext,
-            placeSearch: { tripId: params.tripId, snapshotId: params.snapshotId, agentTaskRunId: params.agentTaskRunId },
+            placeSearch: placeSkillContext(),
             policyGate: new DefaultPolicyGate("shared"),
           }, rawArgs, { signal: params.signal });
         }
         if (call.name === "navigation.route" && navigationEnabled) {
-          const modelArgs = navigationRouteModelArgumentsSchema.parse(call.arguments);
+          const modelArgs = parseToolArguments(navigationRouteModelArgumentsSchema, call.name, call.arguments);
           return invokeSkill("navigation.route", {
             ctx: params.ctx,
             snapshot: snapshotContext,
@@ -1270,7 +1702,7 @@ export async function generatePlan(params: {
           }, { ...modelArgs, snapshotId: params.snapshotId }, { signal: params.signal });
         }
         if (call.name === "hotel.search" && hotelEnabled && stayPreferences) {
-          const modelArgs = hotelSearchModelArgumentsSchema.parse(call.arguments);
+          const modelArgs = parseToolArguments(hotelSearchModelArgumentsSchema, call.name, call.arguments);
           // Spec §3.1: pick the provider the task was bound to, not the
           // current env. Falls back to the env-resolved value when no run
           // row is in scope (legacy call paths, tests).
@@ -1291,7 +1723,7 @@ export async function generatePlan(params: {
           return result;
         }
         if (call.name === "accommodation.discover" && accommodationDiscoveryEnabled) {
-          const modelArgs = accommodationDiscoveryModelArgumentsSchema.parse(call.arguments);
+          const modelArgs = parseToolArguments(accommodationDiscoveryModelArgumentsSchema, call.name, call.arguments);
           const result = await invokeSkill("accommodation.discover", {
             ctx: params.ctx,
             snapshot: snapshotContext,
@@ -1331,7 +1763,7 @@ export async function generatePlan(params: {
         cabin: preferences.cabin as "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST",
         currency: preferences.currency,
       },
-      stays: allStays,
+      availableEvidence,
       memberPreferences,
       planningMemory: (memberPreferences.planningMemory ?? { members: {}, tripWidePreferences: {} }) as import("../providers/model-gateway.js").SharedPlanningMemoryInput,
       maxTurns: Number(process.env.MODEL_GATEWAY_TOOL_CALLING_MAX_TURNS ?? 8), signal: params.signal, ctx: params.ctx,
@@ -1344,9 +1776,13 @@ export async function generatePlan(params: {
       // not a fixable output defect) so the original error propagates and
       // `generatePlan` can switch to the research-summary branch instead.
       repairBudget: Number(process.env.MODEL_GATEWAY_PLAN_REPAIR_BUDGET ?? 2),
+      onToolControl: (control: { withdrawTool: (toolName: string) => void }) => { withdrawTool = control.withdrawTool; },
       onValidationFailure: (error: unknown) => {
         if (error instanceof PlanEvidenceUnavailableError) return null;
         return toCritiques(error);
+      },
+      validateFinalPlan: (candidate: Record<string, unknown>) => {
+        validateCandidatePlan(candidate);
       },
       beforeFinal: async () => {
         // Both gates below exist to stop the model finalizing while it could
@@ -1402,67 +1838,18 @@ export async function generatePlan(params: {
           if (!accommodationMatrix.complete) throw new AccommodationResearchIncompleteError(accommodationMatrix.cells);
         }
       },
-      tools: planningToolsFor(params.alreadyResearchedCapabilities ?? [], [
-        {
-          name: "flight.search",
-          // The allowed codes are named in the description rather than as a
-          // JSON-schema `enum`: the provider's OpenAI-compatible endpoint
-          // answered 5xx to every request carrying one, so the constraint that
-          // was meant to keep the model on valid airports stopped it planning
-          // at all. The server still rejects anything outside the list.
-          description: originAirports.length > 0 && destinationAirports.length > 0
-            ? `Search normalized flights between two controlled airports. originId must be one of: ${originAirports.join(", ")}. destinationId must be one of: ${destinationAirports.join(", ")}. Any other value is rejected.`
-            : "Unavailable for this trip: no controlled airport serves one of its cities. Do not call this tool.",
-          parameters: { type: "object", additionalProperties: false, required: ["originId", "destinationId"], properties: {
-            originId: { type: "string" }, destinationId: { type: "string" },
-          } },
-        },
-        ...(activitiesEnabled ? [{
-          name: "activities.search",
-          description: "Search live activity evidence for one controlled destination.",
-          parameters: { type: "object", additionalProperties: false, required: ["destinationId", "locale"], properties: {
-            destinationId: { type: "string" },
-            theme: { type: "string", enum: ["CULTURE", "FOOD", "OUTDOOR", "FAMILY"] },
-            locale: { type: "string", enum: ["en", "zh"] },
-          } },
-        }] : []),
-        ...(placesEnabled ? [{
-          name: "places.search",
-          description: "Search normalized POI candidates for one destination keyword and category.",
-          parameters: { type: "object", additionalProperties: false, required: ["destinationId", "keyword", "category"], properties: {
-            destinationId: { type: "string", description: "Must be one of the snapshot's destinationCandidates." },
-            keyword: { type: "string", description: "Free-text search term; never include private profile data." },
-            category: { type: "string", enum: ["ATTRACTION", "HOTEL", "RESTAURANT", "TRANSPORT_HUB", "OTHER"] },
-          } },
-        }, {
-          name: "places.adopt",
-          description: "Promote a POI candidate into a trip place, or update/revoke an existing trip place.",
-          parameters: { type: "object", additionalProperties: false, required: ["action"], properties: {
-            action: { type: "string", enum: ["propose", "adopt", "revoke"] },
-            candidateId: { type: "string" },
-            placeId: { type: "string" },
-          } },
-        }] : []),
-        ...(navigationEnabled ? [{
-          name: "navigation.route",
-          description: "Compute a walking/driving/cycling route between two ACTIVE trip places.",
-          parameters: { type: "object", additionalProperties: false, required: ["originPlaceId", "destinationPlaceId", "mode"], properties: {
-            originPlaceId: { type: "string", description: "placeId of an ACTIVE trip place." },
-            destinationPlaceId: { type: "string", description: "placeId of a different ACTIVE trip place." },
-            mode: { type: "string", enum: ["WALK", "DRIVE", "CYCLE"] },
-          } },
-        }] : []),
-        ...(hotelEnabled ? [{
-          name: "hotel.search",
-          description: "Search live hotel evidence for one controlled destination. Dates, occupancy, and currency are server-derived.",
-          parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
-        }] : []),
-        ...(accommodationDiscoveryEnabled ? [{
-          name: "accommodation.discover",
-          description: "Discover non-price accommodation candidates near one controlled destination. This is not availability or a quote.",
-          parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
-        }] : []),
-      ]),
+      tools: planningToolsFor(params.alreadyResearchedCapabilities ?? [], buildPlanningToolDefinitions({
+        originAirports,
+        destinationAirports,
+        activitiesEnabled,
+        // `places.search` is one-shot per run; once coverage research has spent
+        // it, the run can produce no new candidateId, so the whole places
+        // family goes with it rather than being offered unanswerable.
+        placesEnabled: placesEnabled && !(params.alreadyResearchedCapabilities ?? []).includes("places"),
+        navigationEnabled,
+        hotelEnabled,
+        accommodationDiscoveryEnabled,
+      })),
       dispatchTool: async (call) => {
         // A tool that fails must not end the run. The model asked for
         // something it could not have — a flight between airports missing
@@ -1488,8 +1875,24 @@ export async function generatePlan(params: {
           if (params.signal?.aborted) throw error;
           if (error instanceof Error && error.name === "AbortError") throw error;
           const capability = call.name.split(".")[0] ?? "unknown";
-          const code = error instanceof SkillError ? error.code : "UPSTREAM_FAILURE";
+          // `classifyError` and not `error.code`: the gap the traveller reads
+          // must say whose failure it was. A `ZodError` from the model's own
+          // arguments is not a `SkillError`, so the old fallback filed it as
+          // `UPSTREAM_FAILURE` and the run reported "the provider was
+          // temporarily unavailable" about calls no provider ever saw.
+          const code = classifyError(error);
           toolFailureGaps.push({ capability, code });
+          if (code === "SKILL_CONTRACT_VIOLATION") {
+            // A tool whose declared schema we keep rejecting arguments against
+            // is not going to start accepting them. Count it, and withdraw it
+            // once the model has demonstrated it cannot call it — keying the
+            // memo below on the exact arguments does not help here, because
+            // each attempt is wrong in a new way and so costs a fresh turn.
+            const rejections = (argumentRejectionsByTool.get(call.name) ?? 0) + 1;
+            argumentRejectionsByTool.set(call.name, rejections);
+            metrics.inc("planning_tool_args_rejected_total", { tool: call.name });
+            if (rejections >= TOOL_ARGUMENT_REJECTION_LIMIT) withdrawTool?.(call.name);
+          }
           logSafeRuntimeEvent(params.ctx, {
             component: "planner", event: "tool", operation: call.name,
             outcome: "failure", errorCode: String(code), toolContext: "planning",
@@ -1520,9 +1923,13 @@ export async function generatePlan(params: {
       },
     });
   } else {
-    validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights });
-    candidatePlanData = await dependencies.modelGateway.generateStructuredPlan({ destination: params.destination, flights: allFlights, stays: allStays, memberPreferences, ctx: params.ctx, signal: params.signal });
+    candidatePlanData = await dependencies.modelGateway.generateStructuredPlan({ destination: params.destination, flights: allFlights, memberPreferences, ctx: params.ctx, signal: params.signal });
   }
+
+  // This repeats the gateway's callback on purpose. The callback exists to
+  // support bounded model repair; this service-side check is the authoritative
+  // boundary and also covers gateway implementations without that capability.
+  planData = validateCandidatePlan(candidatePlanData);
 
   // Per §1.3 of the planner-resilience design, a destination that fails Gate B
   // (no commercial flight authority) must produce a research summary, not a
@@ -1562,37 +1969,6 @@ export async function generatePlan(params: {
     }
     throw error;
   }
-
-  if (params.agentTaskRunId) {
-    candidatePlanData = bindPlanSelectionsToEvidence({
-      candidate: candidatePlanData,
-      flights: allFlights,
-      stays: allStays,
-      activities: allActivities,
-      hotels: allHotels,
-      accommodations: allAccommodations,
-    });
-  }
-
-  validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights });
-
-  // The model output is untrusted until the deterministic control plane proves
-  // snapshot authorization and an exact match to run-scoped provider evidence.
-  const planData = validatePlanOutput({
-    planData: candidatePlanData,
-    snapshot: {
-      authorizedData: snapshot.authorizedData,
-      departureCities: snapshot.departureCities,
-      destinationCandidates: snapshot.destinationCandidates,
-      travelDateStart: snapshot.travelDateStart ?? undefined,
-      travelDateEnd: snapshot.travelDateEnd ?? undefined,
-    },
-    evidence: {
-      flights: allFlights, stays: allStays, activities: allActivities,
-      hotels: allHotels, accommodations: allAccommodations,
-    },
-    requireHotels: hotelEnabled && allHotels.some((hotel) => hotel.destinationId === params.destination),
-  });
 
   // Only validated output may cross the authoritative persistence boundary.
   // All four writes (plan, offers, evidence, audit) commit atomically; if

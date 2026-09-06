@@ -354,4 +354,70 @@ describe("plan-output-validator", () => {
       evidence: { flights: planData.flights, stays: [] },
     })).not.toThrow();
   });
+
+  /**
+   * 2026-09-06: a replan put a hotel id into `stays[]`. The deterministic
+   * preflight must surface that as `EVIDENCE_SLOT_MISMATCH` at `stays.0` —
+   * not as a generic `EVIDENCE_NOT_FOUND` against the wrong slot's evidence.
+   * The preflight's `reason` is a closed literal; the offending id must not
+   * appear in any violation text.
+   */
+  it("flags a hotel id placed in stays as EVIDENCE_SLOT_MISMATCH without leaking the id", () => {
+    const SENTINEL_HOTEL_ID = "22222222-2222-4222-8222-222222222222";
+    // This is the actual model emission: a compact hotel id in `stays[]`.
+    // It is not stay-shaped, so the preflight must run before strict schema
+    // parsing instead of reducing the fault to STRUCTURE_INVALID.
+    const planData = {
+      ...goodPlanData(),
+      stays: [{ id: SENTINEL_HOTEL_ID }],
+      hotels: [],
+    };
+    const hotelFixture = {
+      id: SENTINEL_HOTEL_ID,
+      providerOfferId: "nuitee-1",
+      queryId: "00000000-0000-4000-8000-000000000099",
+      providerName: "nuitee_connect" as const,
+      destinationId: "Tokyo",
+      propertyId: "p1",
+      propertyName: "Hotel Test",
+      checkIn: "2025-08-02",
+      checkOut: "2025-08-07",
+      nights: 5,
+      roomCount: 1,
+      adultsPerRoom: [1],
+      totalPrice: 1000,
+      pricePerNight: 200,
+      currency: "CNY",
+      taxesAndFees: { status: "INCLUDED" as const },
+      cancellationSummary: null,
+      roomSummary: null,
+      source: "Nuitee LiteAPI",
+      capturedAt: "2026-08-23T00:00:00.000Z",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    };
+    let caught: unknown;
+    try {
+      validatePlanOutput({
+        planData,
+        snapshot,
+        evidence: {
+          flights: planData.flights,
+          stays: [],
+          hotels: [hotelFixture],
+        },
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(PlanValidationError);
+    const violations = (caught as PlanValidationError).violations;
+    expect(violations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "EVIDENCE_SLOT_MISMATCH", fieldPath: "stays.0" }),
+      ]),
+    );
+    for (const violation of violations) {
+      expect(violation.reason).not.toContain(SENTINEL_HOTEL_ID);
+    }
+  });
 });

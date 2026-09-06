@@ -1,4 +1,4 @@
-import type { FlightOffer, StayOffer, PlanDiff } from "../types/domain.js";
+import type { FlightOffer, PlanDiff } from "../types/domain.js";
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace, ConversationResponseMode } from "../types/schemas.js";
 import type { PersonalTripContext } from "../skills/personal/personal-trip-context-schema.js";
@@ -148,6 +148,25 @@ export type ModelToolDispatcher = (call: {
   arguments: unknown;
 }) => Promise<unknown>;
 
+/**
+ * Bounded, non-private provider evidence that research completed before model
+ * synthesis began.  Every entry is a server-built selection projection: it
+ * contains the authoritative id and only the public facts needed to compare
+ * candidates.  The model returns ids; the planning service rebinds them to
+ * the full server-owned evidence before validation and persistence.
+ */
+export interface PlanningEvidenceCatalog {
+  flights: ReadonlyArray<Record<string, unknown>>;
+  /**
+   * Retained only so callers can deserialize catalogues recorded before the
+   * accommodation contract migration. New catalogues never populate it.
+   */
+  stays?: ReadonlyArray<Record<string, unknown>>;
+  activities: ReadonlyArray<Record<string, unknown>>;
+  hotels: ReadonlyArray<Record<string, unknown>>;
+  accommodations: ReadonlyArray<Record<string, unknown>>;
+}
+
 export interface LocationIntroductionResult {
   content: string;
   modelName: string;
@@ -163,7 +182,6 @@ export interface ModelGateway {
   generateStructuredPlan(params: {
     destination: string;
     flights: FlightOffer[];
-    stays: StayOffer[];
     memberPreferences: Record<string, unknown>;
     signal?: AbortSignal;
     ctx?: { correlationId: string };
@@ -192,14 +210,27 @@ export interface ModelGateway {
       cabin: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST";
       currency: string;
     };
-    stays: StayOffer[];
+    /** Evidence gathered by one-shot searches before their tools were withdrawn. */
+    availableEvidence: PlanningEvidenceCatalog;
     memberPreferences: Record<string, unknown>;
     planningMemory: SharedPlanningMemoryInput;
     tools: ModelToolDefinition[];
     dispatchTool: ModelToolDispatcher;
     /** Server-only gate evaluated before accepting a no-tool final response. */
     beforeFinal?: () => Promise<void>;
+    /**
+     * Runs the complete server-side evidence and policy validator before the
+     * gateway accepts a final plan. Throwing feeds the existing bounded critic
+     * loop; the planning service repeats the check at the commit boundary.
+     */
+    validateFinalPlan?: (candidate: Record<string, unknown>) => void | Promise<void>;
     maxTurns: number;
+    /** Bounded repair iterations on top of `maxTurns`; see the implementation. */
+    repairBudget?: number;
+    /** Turns a validation failure into a critique the model may repair from. */
+    onValidationFailure?: (error: unknown) => readonly { code: string; fieldPaths: readonly string[]; hint: string }[] | null;
+    /** Hands the caller a way to withdraw a tool from every later turn. */
+    onToolControl?: (control: { withdrawTool: (toolName: string) => void }) => void;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<Record<string, unknown>>;

@@ -2,19 +2,17 @@ import { z } from "zod";
 import type { Skill } from "../../agents/contracts.js";
 import { SkillError } from "../../agents/errors.js";
 import { validatePlanOutput } from "../../policy/plan-output-validator.js";
-import type { FlightOffer, StayOffer } from "../../types/domain.js";
+import type { FlightOffer } from "../../types/domain.js";
 
 export const planComparisonInputSchema = z.object({
   destination: z.string().min(1),
   flights: z.array(z.unknown()),
-  stays: z.array(z.unknown()),
   memberPreferences: z.record(z.string(), z.unknown()).default({}),
 }).strict();
 
 export const planComparisonOutputSchema = z.object({
   destination: z.string(),
   flights: z.array(z.unknown()),
-  stays: z.array(z.unknown()),
   generatedAt: z.string().optional(),
 }).strict();
 
@@ -39,11 +37,9 @@ export const planComparisonSkill: Skill<PlanComparisonInput, PlanComparisonOutpu
     const { modelGateway } = await import("../../providers/gateway-factory.js");
     const gateway = modelGateway();
     const flights = input.flights as FlightOffer[];
-    const stays = input.stays as StayOffer[];
     const candidatePlanData = await gateway.generateStructuredPlan({
       destination: input.destination,
       flights,
-      stays,
       memberPreferences: input.memberPreferences,
       signal,
       ctx: ctx.ctx,
@@ -52,7 +48,7 @@ export const planComparisonSkill: Skill<PlanComparisonInput, PlanComparisonOutpu
     return validatePlanOutput({
       planData: candidatePlanData,
       snapshot,
-      evidence: { flights, stays },
+      evidence: { flights, stays: [] },
     });
   },
 };

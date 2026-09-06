@@ -16,13 +16,14 @@
 
 3. **可见范围 = 当前 Trip 的 active member。** 授权判定完全由服务端既有检查承担（`requireRunAccess`、`listTripPlans` 的 membership 前置、`getLatestAuthorizedPlanningRun`、`assertMember`）。前端不做、也不得复制任何授权判断；成员被移除后所有读取 fail closed 为 `403`。
 
-4. **渲染数据源白名单。** 共享方案面只可渲染下列四个来源的字段：
+4. **渲染数据源白名单。** 共享方案面只可渲染下列来源的字段：
    - `GET /trips/:tripId/plans` 的响应（已经过 `redactPlanForViewer`）；
    - `GET /trips/:tripId/constraints` 的 `teamVisibleFacts`；
    - `GET /planning/:tripId/run/latest` 的 `run.{runId,operation,status,createdAt,updatedAt,finishedAt,errorCode,resultPlanId}`；
    - `GET /plans/:planId/adoption-votes` 的计数 DTO。
+   - 与上述最新共享 `RESEARCH` / `PROPOSE_PLAN` run 的 `agentTaskRunId` 精确匹配、且 `resultPlanId = null` 的 `GET /trips/:tripId/research/latest` 安全 summary：仅可显示闭合集合 `summaryReason`、`serviceGaps` 与详情链接。该接口须在服务端排除对当前成员无权读取的 owner-private Personal Research，不能由浏览器先收取再过滤。它用于说明“本轮没有可采用方案”，不提供任何个人研究正文或证据原文。
 
-   **禁止**渲染：`GET /trips/:tripId/constraints/owner` 的 `allFacts`、`trip.pendingBriefProposal`、`agent_task_runs.researchIntentDraft` 及其任何投影、`tripBriefProposal`、Personal Research 结果、任何 `chat_messages` 正文、任何模型自由文本理由。
+   **禁止**渲染：`GET /trips/:tripId/constraints/owner` 的 `allFacts`、`trip.pendingBriefProposal`、`agent_task_runs.researchIntentDraft` 及其任何投影、`tripBriefProposal`、owner-private Personal Research 结果、任何 `chat_messages` 正文、任何模型自由文本理由。上述 planless summary 不是 Personal Research 的例外授权。
 
 5. **不展示触发者身份。** 共享面文案只陈述状态（"正在生成最新共享方案" / "方案已更新"），不出现"由某成员触发"。约束面板仍按 `team-agent-orchestration-implementation.md` §1.3 只显示 `TEAM_VISIBLE` fact 的字段名与来源类别，不显示成员归属。
 

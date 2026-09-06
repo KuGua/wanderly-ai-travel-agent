@@ -137,8 +137,16 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `trip_draft_brief_update_total` | counter | result | `["success"]` |
 | `trip_brief_destination_resolution_total` | counter | result | `["accepted","unresolved"]` |
 | `trip_invitation_rejected_total` | counter | reason | `["terminal_trip"]` |
+| `planning_tool_args_rejected_total` | counter | tool | tool ∈ `["flight.search","activities.search","places.search","places.propose","places.adopt","places.revoke","navigation.route","hotel.search","accommodation.discover"]` |
 | `trip_place_actions_total` | counter | action, visibility | action ∈ `["proposed","adopted","revoked","stale_invalidated"]`; visibility ∈ `["owner_private","team_visible","orchestrator_confidential"]` |
 | `ui_diagnostic_events_total` | counter | action, outcome, error_category | action ∈ `["frontend.runtime","profile.save","trip.activate","trip.thread_create","conversation.submit","agent.run_cancel","invitation.accept","invitation.decline","plan.confirm","booking.confirm"]`; outcome ∈ `["success","failure"]`; error_category ∈ `["none","validation","network","http_4xx","http_5xx","timeout","aborted","invalid_response","render","unhandled"]` |
+
+Planning synthesis logs one `planner/evidence_catalog` safe runtime event per
+evidence category with only the bounded item count and correlation IDs. A
+deterministic plan rejection increments
+`plan_validation_failures_total{validationResult}` and logs only stable
+violation codes plus field paths; rejected values, provider payloads and
+member/Profile fields are never logged.
 
 `MetricProvider` is the type alias for the `provider` label on the LLM
 series: `"openai" \| "gemini" \| "openai-compatible"`.

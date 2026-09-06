@@ -115,37 +115,26 @@ export const testPlanningDependencies: PlanningDependencies = {
       return {
         destination: params.destination,
         flights: params.flights,
-        stays: params.stays,
         generatedAt: CAPTURED_AT,
       };
     },
     async generateStructuredPlanWithTools(params) {
       // Tool-loop path used by `generatePlan` when agentTaskRunId is set.
-      // `params.stays` is supplied; `params.flights` may be absent because the
+      // `params.flights` may be absent because the
       // planner re-validates flights via `evaluateFlightResearchCompleteness`
       // (DB read). The stub returns a fully-formed plan so the deterministic
       // validator accepts it; for tests where a flight exists upstream the
       // caller may pass `{ flights }` to inject one.
       const flights = params.flights ?? [];
-      const stays = params.stays ?? [];
-      // `stays` is now always empty in production: its only producer was a
-      // permanently stubbed provider, which has been deleted. Real
-      // accommodation reaches a plan as `hotels` (priced quotes) or
-      // `accommodations` (non-priced discovery). Demanding a stay here made
-      // this stub reject every plan the real planner can now produce.
-      const firstStay = stays[0];
-      const fallbackCapturedAt = firstStay?.capturedAt
-        ?? flights[0]?.capturedAt
+      const fallbackCapturedAt = flights[0]?.capturedAt
         ?? "2026-08-25T00:00:00.000Z";
       return {
         destination: params.destination,
         destinationCandidatesEvaluated: [params.destination],
         flights, // pass through — validatePlanOutput compares against provider_offers
-        stays: firstStay ? [firstStay] : [],
         activities: [],
         hotels: [],
         generatedAt: fallbackCapturedAt,
-        ...(firstStay ? { checkIn: firstStay.checkIn, checkOut: firstStay.checkOut } : {}),
         constraintReferences: [],
         publicExplanationTokens: ["baseline"],
       };

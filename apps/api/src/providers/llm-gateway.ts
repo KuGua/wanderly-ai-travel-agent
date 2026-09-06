@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { SpanKind, trace as otelTrace } from "@opentelemetry/api";
 import { z } from "zod";
-import type { FlightOffer, StayOffer, PlanDiff } from "../types/domain.js";
+import { PlanValidationError } from "../policy/plan-output-validator.js";
+import type { FlightOffer, PlanDiff } from "../types/domain.js";
 import type {
   ConversationMemoryFact,
   ResearchEvidenceOffer,
@@ -15,6 +16,7 @@ import type {
   ModelGateway,
   ModelToolDefinition,
   ModelToolDispatcher,
+  PlanningEvidenceCatalog,
   TripBriefProposal,
   DestinationCueDecisionResult,
   SharedPlanningMemoryInput,
@@ -76,13 +78,6 @@ const parsedCompletionSchema = z.object({
       z.array(z.string().min(1)).min(1).optional(),
     ),
     flights: z.array(z.unknown()),
-    stays: z.preprocess(
-      // Stay-provider unavailability is a Phase 4 service gap. Some models
-      // omit the empty category entirely; normalize it to the explicit empty
-      // selection consumed by deterministic planning validation.
-      (value) => value === null || value === undefined ? [] : value,
-      z.array(z.unknown()),
-    ),
     activities: optionalArray(z.unknown()),
     hotels: optionalArray(z.unknown()),
     accommodations: optionalArray(z.unknown()),
@@ -425,6 +420,15 @@ function classifyError(err: unknown): string {
   }
   if (!err) return "UNKNOWN";
   if (err instanceof ModelGatewayError) return err.code;
+  // Deterministic plan validation is our own boundary (slot-mismatch,
+  // evidence missing, evidence mismatch, schema-shape drift). It is not an
+  // upstream failure and must not be retried against the provider — fixing
+  // it requires the model's next emission to be shaped differently, which
+  // the repair loop handles on a separate budget. Classifying it as
+  // UPSTREAM_FAILURE would misattribute the run, mislabel the metric
+  // series, and burn the upstream retry budget on something the provider
+  // cannot change.
+  if (err instanceof PlanValidationError) return "PLAN_VALIDATION_FAILED";
   if ((err as { name?: string }).name === "AbortError") return "TIMEOUT";
   // Status first, because reading it out of the message text is guesswork that
   // has already been wrong: a 429 quota error whose body says
@@ -456,8 +460,12 @@ function classifyError(err: unknown): string {
  * Best-effort classification of an arbitrary repair-loop error for the
  * `logSafeRuntimeEvent` payload. The repair loop never inspects this; the
  * critic has already classified the error into a critique code.
+ *
+ * Exported for unit testing — pure, side-effect-free other than the
+ * internal `pinoInstance.warn` in `classifyError`, which is gated on
+ * `err not instanceof ModelGatewayError`.
  */
-function errorCodeForRepair(err: unknown): string {
+export function errorCodeForRepair(err: unknown): string {
   if (err instanceof ModelGatewayError) return err.code;
   return classifyError(err);
 }
@@ -526,6 +534,7 @@ type LlmMetricErrorCategory =
   | "schema_parse"
   | "tool_protocol"
   | "rate_limited"
+  | "plan_validation"
   | "unknown";
 
 /**
@@ -542,11 +551,14 @@ const LLM_ERROR_CATEGORY_MAP: Readonly<Record<string, LlmMetricErrorCategory>> =
   SCHEMA_PARSE: "schema_parse",
   TOOL_PROTOCOL: "tool_protocol",
   RATE_LIMITED: "rate_limited",
+  PLAN_VALIDATION_FAILED: "plan_validation",
 };
 
 function toLlmMetricErrorCategory(code: string): LlmMetricErrorCategory {
   return LLM_ERROR_CATEGORY_MAP[code] ?? "unknown";
 }
+
+export { toLlmMetricErrorCategory, isRetryableUpstreamError };
 
 function recordRetryableError(provider: MetricProvider, code: string): void {
   metrics.inc("llm_request_errors_total", {
@@ -1122,7 +1134,6 @@ export class LLMGateway implements ModelGateway {
   async generateStructuredPlan(params: {
     destination: string;
     flights: FlightOffer[];
-    stays: StayOffer[];
     memberPreferences: Record<string, unknown>;
     signal?: AbortSignal;
     ctx?: { correlationId: string };
@@ -1195,7 +1206,6 @@ export class LLMGateway implements ModelGateway {
               content: JSON.stringify({
                 destination: params.destination,
                 flights: params.flights,
-                stays: params.stays,
                 memberPreferences: params.memberPreferences,
               }),
             },
@@ -1278,21 +1288,29 @@ export class LLMGateway implements ModelGateway {
       cabin: "ECONOMY" | "PREMIUM_ECONOMY" | "BUSINESS" | "FIRST";
       currency: string;
     };
-    stays: StayOffer[];
+    availableEvidence: PlanningEvidenceCatalog;
     memberPreferences: Record<string, unknown>;
     planningMemory: SharedPlanningMemoryInput;
     tools: ModelToolDefinition[];
     dispatchTool: ModelToolDispatcher;
     beforeFinal?: () => Promise<void>;
+    validateFinalPlan?: (candidate: Record<string, unknown>) => void | Promise<void>;
     maxTurns: number;
     /**
      * P3 (planner-resilience §6): bounded repair budget on top of the
-     * convergence budget. Repair iterations increment `repairUsed`, not
-     * `turn`, so they never starve normal convergence. The effective upper
-     * bound is `maxTurns + repairBudget`; the default reads
+     * convergence budget. `repairUsed` counts only critic-directed retries,
+     * while the effective model-call bound grows to
+     * `maxTurns + repairBudget`; the default reads
      * `MODEL_GATEWAY_PLAN_REPAIR_BUDGET` (defaults to 2).
      */
     repairBudget?: number;
+    /**
+     * Handed to the caller on entry so its dispatcher can withdraw a tool from
+     * every later turn. A tool the server keeps refusing arguments for cannot
+     * be repaired by asking again, and each further attempt costs a turn the
+     * plan needs; the dispatcher knows that, this loop owns the tool list.
+     */
+    onToolControl?: (control: { withdrawTool: (toolName: string) => void }) => void;
     /**
      * Called after `beforeFinal` / final `safeParse` throws. Returning a
      * non-empty critique array triggers one repair iteration that pushes
@@ -1329,7 +1347,11 @@ export class LLMGateway implements ModelGateway {
           destination: params.destination,
           destinationCandidates: params.destinationCandidates ?? [params.destination],
           flightSearchConstraints: params.flightSearchConstraints,
-          stays: params.stays,
+          // The orchestrator performs one-shot research before synthesis and
+          // then withdraws those tools. Without this catalog the model saw
+          // neither the tools nor the evidence they returned, so it could not
+          // possibly name an authoritative id for the final plan.
+          availableEvidence: params.availableEvidence,
           memberPreferences: params.memberPreferences,
           planningMemory: params.planningMemory,
         }),
@@ -1373,9 +1395,14 @@ export class LLMGateway implements ModelGateway {
      * it had already completed, with the instruction not to in front of it
      * each time. A tool that is not offered cannot be called.
      */
+    const withdrawnTools = new Set<string>();
+    params.onToolControl?.({ withdrawTool: (toolName: string) => { withdrawnTools.add(toolName); } });
     const offeredTools = (): ModelToolDefinition[] => {
-      if (!flightToolAvailable || missingFlightCells().length > 0) return params.tools;
-      return params.tools.filter((tool) => tool.name !== "flight.search");
+      const available = withdrawnTools.size === 0
+        ? params.tools
+        : params.tools.filter((tool) => !withdrawnTools.has(tool.name));
+      if (!flightToolAvailable || missingFlightCells().length > 0) return available;
+      return available.filter((tool) => tool.name !== "flight.search");
     };
     /** The (origin, destination) a flight call names, or null for other tools. */
     const flightRouteOf = (name: string, args: unknown): { originId: string; destinationId: string } | null => {
@@ -1400,10 +1427,10 @@ export class LLMGateway implements ModelGateway {
           role: "system",
           content: "Authoritative flight research is complete. Do not call flight.search again. "
             + "Return exactly one JSON object with one top-level key named plan. "
-            + "The plan object may contain only destination, destinationCandidatesEvaluated, flights, stays, activities, hotels, accommodations, generatedAt, constraintReferences, and publicExplanationTokens. "
-            + "flights, stays, activities, hotels and accommodations must contain only compact {\"id\":\"exact evidence id\"} selection objects; do not copy or summarize the remaining evidence fields. "
+            + "The plan object may contain only destination, destinationCandidatesEvaluated, flights, activities, hotels, accommodations, generatedAt, constraintReferences, and publicExplanationTokens. `stays` is retired and must never be emitted. "
+            + "flights, activities, hotels and accommodations must contain only compact {\"id\":\"exact evidence id\"} selection objects; do not copy or summarize the remaining evidence fields. "
             + "`hotels` are priced quotes and `accommodations` are non-priced discovery — select from whichever the Tool results actually contain, and never move an entry between them. "
-            + "destination, flights, and generatedAt are required keys. Return flights or stays as an empty array when that capability produced no evidence — an unavailable capability is reported as a gap, and inventing an offer to fill the array is a validation failure. Omit optional properties when they have no value; do not set them to null. "
+            + "destination, flights, and generatedAt are required keys. Return flights as an empty array when it produced no evidence; omit optional accommodation categories when they have no evidence. An unavailable capability is reported as a gap, and inventing an offer is a validation failure. Omit optional properties when they have no value; do not set them to null. "
             + "Use only the normalized Tool results already present in this conversation; never invent missing evidence.",
         });
         return;
@@ -1419,8 +1446,8 @@ export class LLMGateway implements ModelGateway {
       });
     };
     // P3 (planner-resilience §6): bounded repair budget. `repairUsed` only
-    // increments on a repair iteration so the model's normal convergence
-    // budget is never consumed by re-expression attempts.
+    // counts critic-directed corrections, and `upperBound` grants one extra
+    // model call per allowed correction beyond the normal convergence limit.
     //
     // Default reads `MODEL_GATEWAY_PLAN_REPAIR_BUDGET` (defaults to 2 in
     // production via the env file) but the in-process default is `0` so
@@ -1491,8 +1518,8 @@ export class LLMGateway implements ModelGateway {
         // pre-commit validation points. When either throws, ask the
         // caller-provided critic for a structured critique. If the critic
         // returns one and we still have repair budget, push it as a system
-        // message and `continue` — the next loop iteration increments
-        // `repairUsed`, not `turn`.
+        // message and `continue`. `repairUsed` limits these corrections while
+        // `upperBound` reserves their additional model-call allowance.
         try {
           await params.beforeFinal?.();
           const completion = parsedCompletionSchema.safeParse(completionPayload({ parsed: null, content: message?.content }));
@@ -1508,10 +1535,16 @@ export class LLMGateway implements ModelGateway {
             ))].sort();
             messages.push({
               role: "system",
-              content: `The previous final JSON failed the required schema at: ${issuePaths.join(", ")}. Return a corrected JSON object with exactly one top-level plan key. Keep flights, stays, and activities compact by returning only {"id":"exact evidence id"} selection objects. Omit optional properties rather than setting them to null.`,
+              content: `The previous final JSON failed the required schema at: ${issuePaths.join(", ")}. Return a corrected JSON object with exactly one top-level plan key. Keep flights, activities, hotels, and accommodations compact by returning only {"id":"exact evidence id"} selection objects. Do not emit the retired stays field. Omit optional properties rather than setting them to null.`,
             });
             continue;
           }
+          // Structural JSON validity is not plan validity. Run the caller's
+          // full evidence/snapshot validator inside this repair boundary so a
+          // safe deterministic critique can be returned to the model. The
+          // caller re-runs the same validator before committing authoritative
+          // state; this check only decides whether another model turn helps.
+          await params.validateFinalPlan?.(completion.data.plan);
           logSafeRuntimeEvent(ctx, {
             component: "llm", event: "tool_loop", operation: "plan.comparison", outcome: "success",
             latencyMs: Date.now() - start, promptVersion: this.options.promptVersion,

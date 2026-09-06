@@ -196,6 +196,14 @@ describe("planningToolsFor", () => {
     expect(offered).toEqual([]);
   });
 
+  /**
+   * This function withdraws one-shot *searches* only. The place-mutation tools
+   * are held back a layer up instead: `generatePlan` stops building them at
+   * all once `places` has been researched, because a `candidateId` exists only
+   * inside the run that searched for it — see
+   * `tests/planning-tool-contract.test.ts`. Keeping the distinction here means
+   * a future one-shot capability cannot quietly take its write tools with it.
+   */
   it("keeps write tools, which are not one-shot searches", () => {
     const offered = planningToolsFor(["places"], tools).map((t) => t.name);
     expect(offered).not.toContain("places.search");

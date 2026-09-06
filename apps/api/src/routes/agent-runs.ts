@@ -58,6 +58,7 @@ export async function agentRunRoutes(
         status: research.status,
         serviceGaps: research.serviceGaps,
         resultPlanId: research.resultPlanId,
+        summaryReason: research.summaryReason,
         offers: [],
         createdAt: research.createdAt.toISOString(),
       } : null,

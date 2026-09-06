@@ -630,7 +630,9 @@
       "gaps": {
         "title": "A shared plan was not generated",
         "body": "The planner completed its research, but verified live data was incomplete. No itinerary was created.",
-        "detail": "View run details"
+        "detail": "View run details",
+        "planSchemaUnmetTitle": "Wanderly's draft did not meet the plan contract",
+        "planSchemaUnmetBody": "The repair attempts ran out. The evidence gathered is kept below and on the trip; the itinerary is not."
       },
       "status": {
         "queued": "Queued — waiting for the planner",

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { FlightOffer, StayOffer } from "../src/types/domain.js";
-import { bindPlanSelectionsToEvidence } from "../src/services/plan-evidence-binding.js";
+import type { FlightOffer, HotelOffer, StayOffer } from "../src/types/domain.js";
+import {
+  bindPlanSelectionsToEvidence,
+  preflightCategorySlots,
+} from "../src/services/plan-evidence-binding.js";
 
 const flight: FlightOffer = {
   id: "flight-1",
@@ -94,5 +97,129 @@ describe("bindPlanSelectionsToEvidence", () => {
     });
     expect(result.flights).toEqual([unknown]);
     expect(result.generatedAt).toBeUndefined();
+  });
+});
+
+const SENTINEL_HOTEL_ID = "22222222-2222-4222-8222-222222222222";
+
+function hotel(): HotelOffer {
+  const fixture = {
+    id: SENTINEL_HOTEL_ID,
+    providerOfferId: "nuitee-1",
+    queryId: "33333333-3333-4333-8333-333333333333",
+    providerName: "nuitee_connect" as const,
+    destinationId: "NRT",
+    propertyId: "p1",
+    propertyName: "Hotel Test",
+    checkIn: "2026-12-04",
+    checkOut: "2026-12-08",
+    nights: 4,
+    roomCount: 1,
+    adultsPerRoom: [1],
+    totalPrice: 1000,
+    pricePerNight: 250,
+    currency: "CNY",
+    taxesAndFees: { status: "INCLUDED" as const },
+    cancellationSummary: null,
+    roomSummary: null,
+    source: "Nuitee LiteAPI",
+    capturedAt: "2026-12-01T00:00:00.000Z",
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  };
+  return fixture as HotelOffer;
+}
+
+describe("preflightCategorySlots", () => {
+  it("reports a hotel id placed in stays as EVIDENCE_SLOT_MISMATCH and never leaks the id", () => {
+    const h = hotel();
+    const violations = preflightCategorySlots({
+      candidate: {
+        destination: "NRT",
+        flights: [],
+        stays: [{ id: h.id, destination: "NRT" }],
+        hotels: [],
+      },
+      flights: [], stays: [], activities: [],
+      hotels: [h],
+    });
+    expect(violations).toHaveLength(1);
+    expect(violations[0]).toEqual({
+      code: "EVIDENCE_SLOT_MISMATCH",
+      fieldPath: "stays.0",
+      reason: expect.any(String),
+    });
+    expect(violations[0].reason).not.toContain(h.id);
+    expect(violations[0].reason).not.toContain("22222222");
+  });
+
+  it("accepts the same hotel id when placed in hotels[] and binds it", () => {
+    const h = hotel();
+    const result = bindPlanSelectionsToEvidence({
+      candidate: {
+        flights: [], stays: [],
+        hotels: [{ id: h.id }],
+      },
+      flights: [], stays: [], activities: [],
+      hotels: [h],
+    });
+    expect(result.hotels).toEqual([h]);
+    expect(preflightCategorySlots({
+      candidate: result as unknown as Record<string, unknown>,
+      flights: [], stays: [], activities: [],
+      hotels: [h],
+    })).toEqual([]);
+  });
+
+  it("reports an id that exists in no slot as EVIDENCE_NOT_FOUND", () => {
+    const violations = preflightCategorySlots({
+      candidate: { flights: [], stays: [{ id: "ghost-stay-id" }], hotels: [] },
+      flights: [], stays: [], activities: [],
+    });
+    expect(violations).toEqual([{
+      code: "EVIDENCE_NOT_FOUND",
+      fieldPath: "stays.0",
+      reason: expect.any(String),
+    }]);
+  });
+
+  it("emits no violations when every candidate category is an empty array", () => {
+    const violations = preflightCategorySlots({
+      candidate: { flights: [], stays: [], activities: [], hotels: [], accommodations: [] },
+      flights: [flight], stays: [stay], activities: [],
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("skips non-record entries and lets the schema's STRUCTURE_INVALID handle them", () => {
+    const violations = preflightCategorySlots({
+      candidate: { flights: [], stays: [null, "string-not-record", 42] },
+      flights: [], stays: [], activities: [],
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("skips entries whose id is not a string", () => {
+    const violations = preflightCategorySlots({
+      candidate: { flights: [], stays: [{ id: 5 }, { id: null }, {}] },
+      flights: [], stays: [], activities: [],
+    });
+    expect(violations).toEqual([]);
+  });
+
+  it("does not auto-map across categories — the violation is reported, the candidate is not rewritten", () => {
+    const h = hotel();
+    const candidate = {
+      flights: [], stays: [{ id: h.id }], hotels: [],
+    };
+    const violations = preflightCategorySlots({
+      candidate,
+      flights: [], stays: [], activities: [],
+      hotels: [h],
+    });
+    expect(violations).toHaveLength(1);
+    // The candidate must still carry the offending compact reference; preflight
+    // reports the violation but does not silently move the id into hotels[].
+    expect(candidate.stays[0]).toEqual({ id: h.id });
+    expect(candidate.hotels).toEqual([]);
   });
 });

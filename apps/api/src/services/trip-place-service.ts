@@ -83,10 +83,13 @@ export class PlaceVisibilityDeniedError extends Error {
 }
 
 /**
- * Persist a candidate as a PROPOSED TripPlace bound to the current run. The
- * caller has already validated that `candidateId` originated from
- * `places.search` for the same `agentTaskRunId`. Phase 2 wires the run-bound
- * store; this service is pure and returns the persisted row id.
+ * Persist a candidate as a PROPOSED TripPlace bound to the current run.
+ *
+ * `candidate` MUST be a record this run's `places.search` actually returned —
+ * `trip-place-skill.ts` resolves it from the run's candidate store by id and
+ * refuses an id the run never issued. This service does not re-check that, so
+ * a caller that passes a caller-authored candidate persists a place with an
+ * invented `source` and coordinates; do not add one.
  */
 export async function proposeTripPlace(params: {
   ctx: RequestContext;

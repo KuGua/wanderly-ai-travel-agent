@@ -79,7 +79,9 @@ describe("coverage flight fan-out", () => {
             outcome: "LIVE",
             source: "Test flight provider",
             capturedAt: "2026-08-25T00:00:00.000Z",
-            data: [],
+            // The city-keying assertion only needs a non-empty evidence cell;
+            // the normalized offer contract itself is covered elsewhere.
+            data: [{} as never],
           };
         },
       },
@@ -96,5 +98,34 @@ describe("coverage flight fan-out", () => {
     // Every downstream consumer filters `destinationCandidates` by this set.
     expect(result.evaluatedDestinations).toContain("Shanghai");
     expect(result.evaluatedDestinations).not.toContain("PVG");
+  });
+
+  it("fails closed when a provider labels an empty offer list LIVE", async () => {
+    const deps: PlanningDependencies = {
+      ...testPlanningDependencies,
+      accommodationDiscoveryProvider: undefined,
+      flightProvider: {
+        async searchFlights() {
+          return {
+            outcome: "LIVE",
+            source: "Test flight provider",
+            capturedAt: "2026-08-25T00:00:00.000Z",
+            data: [],
+          };
+        },
+      },
+    };
+    const result = await researchCoverageForSnapshot({
+      snapshotId: randomUUID(),
+      tripId: randomUUID(),
+      departureCities: ["Singapore"],
+      destinationCandidates: ["Shanghai"],
+      travelDateStart: "2026-12-04",
+      travelDateEnd: "2026-12-08",
+      providerOverride: deps,
+    });
+
+    expect(result.allFlights).toHaveLength(0);
+    expect(result.evaluatedDestinations).not.toContain("Shanghai");
   });
 });

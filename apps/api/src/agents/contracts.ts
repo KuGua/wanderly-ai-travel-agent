@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { RequestContext } from "../utils/context.js";
-import type { ConstraintSnapshotData, PersonalResearchOperationCapability } from "../types/domain.js";
+import type { ConstraintSnapshotData, PersonalResearchOperationCapability, PlaceCandidate } from "../types/domain.js";
 import type { HotelProviderName, HotelProvider } from "../providers/types.js";
 import type { SkillErrorCode } from "./errors.js";
 
@@ -51,6 +51,18 @@ export interface PlaceSearchExecutionContext {
   tripId: string;
   snapshotId: string;
   agentTaskRunId?: string;
+  /**
+   * Look up a candidate this run's `places.search` returned.
+   *
+   * `places.propose` used to take the candidate's own fields — display name,
+   * coordinates, source, capturedAt — from whoever called the skill, which for
+   * the planning tool loop is the model. Nothing verified that the values had
+   * ever come from a provider, so a model could name a place that does not
+   * exist and have its invented coordinates and `source` persisted as trip
+   * evidence. The caller now supplies the run's candidate store and the skill
+   * resolves the id itself; a `candidateId` this run never issued is refused.
+   */
+  resolveCandidate?: (candidateId: string) => PlaceCandidate | undefined;
 }
 
 export interface NavigationRouteExecutionContext {

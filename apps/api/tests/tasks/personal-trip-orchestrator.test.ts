@@ -377,10 +377,18 @@ describe("personal-trip-orchestrator-service", () => {
         ...testPlanningDependencies,
         modelGateway: {
           ...testPlanningDependencies.modelGateway,
-          async generateStructuredPlanWithTools(params: { stays: unknown[] }) {
-            // Synthesis is reached with the loop's hotel evidence in hand.
-            seenHotels = 1;
-            void params;
+          async generateStructuredPlanWithTools(params: {
+            stays: unknown[];
+            availableEvidence: { hotels: ReadonlyArray<Record<string, unknown>> };
+          }) {
+            // The provider search already ran and its one-shot tool has been
+            // withdrawn. The model must still receive a selectable server id;
+            // merely retaining the quote in a local array is not a handoff.
+            seenHotels = params.availableEvidence.hotels.length;
+            expect(params.availableEvidence.hotels[0]).toMatchObject({
+              id: hotel.id,
+              propertyName: hotel.propertyName,
+            });
             throw new ModelGatewayError("TOOL_CALL_MAX_TURNS");
           },
         },

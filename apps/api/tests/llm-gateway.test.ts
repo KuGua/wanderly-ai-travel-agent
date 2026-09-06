@@ -12,7 +12,7 @@ vi.mock("openai", () => ({
     chat = {
       completions: {
         parse: async () => ({
-          choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+          choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
         }),
       },
     };
@@ -37,7 +37,7 @@ function buildClient(behavior: "ok" | "bad" | "abort" | "slow"): FakeClient {
         parse: async () => {
           if (behavior === "ok") {
             return {
-              choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+              choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
               usage: { prompt: 12, completion: 5, total: 17 },
             };
           }
@@ -93,7 +93,7 @@ describe("LLM gateway", () => {
 
   it("uses the non-conversational Shared planning boundary prompt", async () => {
     const parse = vi.fn().mockResolvedValue({
-      choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
+      choices: [{ message: { parsed: { plan: { destination: "Tokyo", flights: [], generatedAt: "2026-08-23T00:00:00.000Z" } } } }],
     });
     const gateway = new LLMGateway({
       apiKey: "test", provider: "openai", modelName: "gpt-4o-mini", promptVersion: "1.1.0",
@@ -107,6 +107,24 @@ describe("LLM gateway", () => {
     expect(SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT).toContain("not a user-facing assistant");
     expect(SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT).toContain("private conversations");
     expect(SHARED_STRUCTURED_PLANNING_SYSTEM_PROMPT).toContain("cannot confirm a plan");
+    expect(JSON.parse(String(messages[1]?.content))).not.toHaveProperty("stays");
+  });
+
+  it("fails closed when a new model completion emits the retired stays field", async () => {
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "openai", modelName: "gpt-4o-mini", promptVersion: "1.1.0",
+      ctx: createRequestContext(),
+      client: { chat: { completions: { parse: vi.fn().mockResolvedValue({
+        choices: [{ message: { parsed: { plan: {
+          destination: "Tokyo", flights: [], stays: [], generatedAt: "2026-08-23T00:00:00.000Z",
+        } } } }],
+      }) } } },
+      maxRetries: 0,
+    });
+
+    await expect(gateway.generateStructuredPlan({
+      destination: "Tokyo", flights: [], stays: [], memberPreferences: {},
+    })).rejects.toMatchObject({ code: "SCHEMA_PARSE" });
   });
 
   it("loads the configured OpenAI client when no test client is injected", async () => {
