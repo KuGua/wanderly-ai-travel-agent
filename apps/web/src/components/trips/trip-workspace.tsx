@@ -713,14 +713,10 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                 <h2 className="mb-1 mt-2 truncate text-base tracking-[-0.025em]">{trip.name}</h2>
                 <p className="text-xs">{datesLabel}</p>
                 <div className="mt-3 grid grid-cols-2 gap-[7px]">
-                  <DeparturesCell
-                    tripId={tripId}
-                    departures={trip.departureCities}
-                    label={departureLabel}
-                    editable={trip.status === "DRAFT" && callerRole === "CREATOR"}
-                    locale={locale === "zh" ? "zh" : "en"}
-                    t={t}
-                  />
+                  <div className="bg-[var(--w-mist)] p-2 text-[11px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
+                    <b className="block text-xs">{t("header.departure")}</b>
+                    {departureLabel}
+                  </div>
                   <DestinationsCell
                     tripId={tripId}
                     destinations={trip.destinationCandidates}
@@ -829,80 +825,6 @@ function ResearchGapBannerWrapper({ tripId }: { tripId: string }) {
 /** Accepts either separator so a list pasted from the card round-trips. */
 function splitDestinations(value: string): string[] {
   return value.split(/[,，·]/).map((part) => part.trim()).filter(Boolean).slice(0, 5);
-}
-
-/** The shared draft supports up to three distinct departure cities. */
-function splitDepartures(value: string): string[] {
-  return value.split(/[,，·]/).map((part) => part.trim()).filter(Boolean).slice(0, 3);
-}
-
-/** The departure counterpart to DestinationsCell, backed by the same draft-brief API. */
-function DeparturesCell({ tripId, departures, label, editable, locale, t }: {
-  tripId: string;
-  departures: string[];
-  label: string;
-  editable: boolean;
-  locale: "en" | "zh";
-  t: ReturnType<typeof useTranslations>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [failed, setFailed] = useState(false);
-  const update = useUpdateDraftTripBrief(tripId);
-
-  const cellClass = "bg-[var(--w-mist)] p-2 text-[11px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs";
-
-  if (!editing) {
-    return (
-      <div className={cellClass}>
-        <div className="flex items-start justify-between gap-1">
-          <b className="block text-xs">{t("header.departure")}</b>
-          {editable ? (
-            <button
-              type="button"
-              aria-label={t("workspace.departuresEdit")}
-              title={t("workspace.departuresEdit")}
-              onClick={() => { setDraft(departures.join(", ")); setFailed(false); setEditing(true); }}
-              className="-mr-0.5 -mt-0.5 grid size-[18px] shrink-0 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-            >
-              <Pencil aria-hidden="true" className="size-2.5" />
-            </button>
-          ) : null}
-        </div>
-        {label}
-      </div>
-    );
-  }
-
-  return (
-    <form
-      className={cellClass}
-      onSubmit={(event) => {
-        event.preventDefault();
-        const next = splitDepartures(draft);
-        if (next.length === 0) return;
-        setFailed(false);
-        void update.mutateAsync({ departureCities: next, titleLocale: locale })
-          .then(() => setEditing(false)).catch(() => setFailed(true));
-      }}
-    >
-      <b className="block text-xs">{t("header.departure")}</b>
-      <input
-        aria-label={t("workspace.departuresEditLabel")}
-        placeholder={t("workspace.departuresPlaceholder")}
-        autoFocus
-        maxLength={194}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        className="mt-1 w-full bg-card px-1.5 py-1 text-[11px] wanderly-edge-thin wanderly-r-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-      />
-      {failed ? <p role="alert" className="mt-1 text-[10px] font-bold text-destructive">{t("workspace.departuresSaveError")}</p> : null}
-      <div className="mt-1.5 flex gap-1">
-        <button type="submit" disabled={update.isPending} className="bg-primary px-1.5 py-1 text-[10px] font-black text-primary-foreground disabled:opacity-50 wanderly-edge-thin wanderly-r-xs">{t("title.save")}</button>
-        <button type="button" onClick={() => setEditing(false)} disabled={update.isPending} className="px-1.5 py-1 text-[10px] font-black text-[var(--w-ink)]">{t("title.cancel")}</button>
-      </div>
-    </form>
-  );
 }
 
 /**
