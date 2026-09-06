@@ -156,6 +156,12 @@
      year itself stays plain white; these tint what frames it. */
   --w-sheet-blue: color-mix(in srgb, var(--w-info), var(--w-white) 80%);
   --w-sheet-yellow: color-mix(in srgb, #d4b483, var(--w-white) 76%);
+  /* The traveller's own message in the trip workspace. Mixed toward white
+     rather than toward the fog for the same reason the sheet tints are: at a
+     matched lightness the warm fog costs about nine points of saturation, and
+     this is the one fill on the paper surface that is meant to read as spoken
+     rather than as stationery. */
+  --w-bubble-user: color-mix(in srgb, var(--w-info), var(--w-white) 44%);
   --sidebar-foreground: var(--w-ink);
   --sidebar-primary: var(--w-highlight);
   --sidebar-primary-foreground: var(--w-ink);
