@@ -46,13 +46,13 @@ flowchart LR
     next --> state
     next --> map
     state -->|"REST/JSON + fetch SSE"| api
-    api -->|"202 持久任务"| worker
+    api -->|"业务事务 + 202 durable task"| postgres
+    postgres -->|"SKIP LOCKED：租约领取"| worker
     api --> skills
     worker --> skills
     skills --> policy
     policy --> providers
-    api -->|"事务读写"| postgres
-    worker -->|"SKIP LOCKED 租约、结果与审计"| postgres
+    worker -->|"结果、审计与 outbox"| postgres
     api -.->|"JWT 验证"| cognito
     worker -.->|"受控模型调用"| llm
     api -.->|"地点介绍模型调用"| llm
@@ -106,7 +106,7 @@ flowchart TD
 ```mermaid
 flowchart TB
     internet["Internet"] --> amplify["Amplify Hosting：Next.js Web/PWA\n目标/外置，当前 CDK 未创建"]
-    amplify --> appRunner["App Runner：Fastify API\n0.25 vCPU / 1 GB"]
+    internet --> appRunner["App Runner 公网 HTTPS：Fastify API\n0.25 vCPU / 1 GB"]
 
     subgraph vpc["VPC 10.42.0.0/16，2 AZ"]
         subgraph public["Public subnets"]
@@ -171,21 +171,21 @@ flowchart TB
 | 地面交通报价 | Amadeus Transfer Search | 无凭据时不可用；可由 `PLAN_ENABLE_MOBILITY` 关闭 |
 | 住宿发现 | OpenTripMap（非价格 evidence） | `PLAN_ENABLE_ACCOMMODATION_DISCOVERY=false` |
 | 公共交通 | 仅保留 `TransitJourneyProvider` port | 无 live adapter，固定 `UNAVAILABLE` |
-| Visa readiness | 服务端 readiness 编排与 provider port | 只允许个人 checklist/缺口/官方核验下一步，不声称法律结论或获批 |
+| Visa readiness | 服务端 readiness 编排；`VisaProvider` 接口已定义，但尚无 live adapter 注入路径 | 当前只输出个人 checklist/缺口/官方核验下一步，不声称法律结论或获批 |
 
 所有 adapter 都遵循同一结果边界：`LIVE` 必须有来源与 `capturedAt`；其余状态不得携带伪造 data。模型和浏览器都不能选择 provider，durable task 在接受时绑定 provider，运行中配置变化不得静默切换供应商。
 
 ## 6. 当前状态与边界
 
 - **已经落地：** Web、Fastify API、独立 Worker、PostgreSQL schema/migrations、受限 Agent/Skill、ModelGateway、主要旅行 adapter、Cognito/KMS/Secrets/RDS/App Runner/Fargate CDK、日志/指标/trace 代码与 CI。
-- **当前 CDK 默认可运行主路径：** Cognito 身份、Fastify API、Worker、PostgreSQL、Gemini `gemini-3.1-flash-lite` 模型网关。
+- **当前 CDK 默认部署主路径：** Cognito 身份、Fastify API、Worker、PostgreSQL；模型网关指向 Gemini `gemini-3.1-flash-lite`。CDK 创建的是待替换的随机 secret，部署者必须写入有效模型 API key 后，真实模型路径才可用。
 - **当前 CDK 默认关闭：** hotel/place/navigation/accommodation discovery、Personal conversation tool dispatch、offer cue、OTel exporter；航班 provider 也因未选择而关闭。
 - **仓库外或需单独接入：** Amplify Hosting 配置、真实 provider 凭据/商业授权、Grafana Cloud endpoint/token 注入、生产 DNS/域名。
 - **明确不采用：** 自由多 Agent 群、Redis、独立消息队列、Temporal、Step Functions、WebSocket、真实支付/真实预订/签证申请、运行时 fixture fallback、客户端全局业务真相。
 
 ## 7. 本地开发拓扑
 
-`apps/api/docker-compose.yml` 提供 PostgreSQL、API、Worker，并可选启用 location-reference sidecar；`docker-compose.observability.yml` 可叠加 Tempo 与 Grafana。Web 由 `apps/web` 的 Next.js dev server 单独启动。API 与 Worker都先初始化 tracing，再加载可被自动 instrumentation patch 的模块。
+`apps/api/docker-compose.yml` 提供 PostgreSQL、API、Worker，并可选启用 location-reference sidecar；`docker-compose.observability.yml` 可叠加 Tempo、Prometheus 与 Grafana。Web 由 `apps/web` 的 Next.js dev server 单独启动。API 与 Worker 都先初始化 tracing，再加载可被自动 instrumentation patch 的模块。
 
 ## 8. 维护规则
 
