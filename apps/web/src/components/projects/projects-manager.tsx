@@ -112,7 +112,6 @@ export function ProjectsManager() {
       {current && <Link {...recordActions(current)} href={`/trips/${current.id}` as "/trips/[tripId]"} className={styles.platter} aria-label={t("open", {name: current.name})} title={current.name}>
         <span className={styles.rotatingRecord} style={{"--label":recordColor(current.id)} as CSSProperties}><span className={styles.recordLabel}>{current.name}</span></span>
       </Link>}
-      {current && <span className={styles.nameplate}>{current.name}</span>}
     </div>
       {viewer && <NewTripButton />}
       <WallCalendar />
