@@ -1456,6 +1456,7 @@ logs, spans or metric labels.
 - A provider response shaped `LIVE` with an empty offer list is normalized to `UNAVAILABLE / NO_RESULTS`; it cannot satisfy a research matrix cell, destination coverage or commercial-evidence gate.
 - After the flight matrix is complete, missing required flight-origin coverage fails as `PLANNING_DATA_UNAVAILABLE`; accommodation availability is represented only by the live `hotels` quote evidence and non-priced `accommodations` discovery evidence. Missing evidence is recorded as its provider capability gap, with no retired `stays` slot or runtime fixture substitution.
 - The browser never treats submitted preferences, a run ID, Tool result or plan as authoritative local state. It reloads the durable planning run and, only after completion, the server-activated plan.
+- A dated Shared plan performs evidence selection before daily-itinerary synthesis. The schedule model receives only the validated selections and date range; it cannot add a provider offer. Every date is present exactly once, local times are ordered/non-overlapping, and a flight/activity timeline item cites a selected ID. Extra stops and return-to-hotel rows render as “suggestion — verify”, never as provider facts, prices, opening hours, routes, or bookings.
 
 - A DRAFT-trip private-chat turn may emit only an in-memory brief candidate (departure, destination, explicit date and/or duration); raw conversation content is never included in the event, audit summary, or client persistence.
 - The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write. The client accumulates multiple unconfirmed turns into one review card rather than discarding earlier fields.
@@ -3078,3 +3079,15 @@ return output the plan contract rejects, and to leave a research matrix cell
 **Coverage:** `apps/api/tests/planning-run-outcome.test.ts`,
 `apps/web/src/components/trips/shared-plan/planning-run-detail-view.test.tsx`,
 `apps/api/tests/flight-research-matrix.test.ts` (the `NO_CITABLE_EVIDENCE` refusal).
+
+### TS-CONFIRMED-BRIEF-REPLAN — 已启动行程的日期变更必须确认并重规划
+
+**Objective:** 验证聊天提出日期或天数变更不会直接改写事实；创建者确认后，旧方案失效并只入队一个 `REPLAN`。
+
+**Expected outcomes:** `PLANNING` 行程的“改为 3 天”先显示确认卡片，模型不得称已更新或自动重跑；确认在单一事务内更新日期/天数、清除候选、将 `ACTIVE`/`PROPOSED` plan 与确认标记为 `STALE`，并创建一个关联新 snapshot 的 `REPLAN`。重复确认使用同一 client request ID 时不得创建第二个 run；取消或过期候选不得改变旧方案。
+
+### TS-DAILY-ITINERARY-DEGRADES — 每日建议失败不得丢弃共享方案
+
+**Objective:** 验证航班、酒店和活动选择已通过证据校验后，每日建议模型不可用、返回非 JSON 或产生无效时间区间时，仍持久化不带 `dailyItinerary` 的 `itinerary_plan`。
+
+**Expected outcomes:** run 产出 plan 与 `resultPlanId`，不会变成 `INTERNAL` 或触发第二轮 provider 查询；仅记录有限的 `daily_itinerary_generation_total` 失败结果与关联 trace/log。用户提示“新方案未生成”不得再宣称已确认的日期或其他 brief 变更没有发生。

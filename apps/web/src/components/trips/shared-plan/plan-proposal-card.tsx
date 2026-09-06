@@ -89,6 +89,12 @@ type ActivityEvidence = {
   capturedAt?: string;
 };
 
+type DailyItineraryDay = {
+  date?: string;
+  timeZone?: string;
+  items?: Array<{ startTimeLocal?: string; endTimeLocal?: string; title?: string; verification?: "PROVIDER_BACKED" | "SUGGESTED" }>;
+};
+
 type PlanPayload = {
   destination?: string;
   flights?: FlightOffer[];
@@ -96,6 +102,7 @@ type PlanPayload = {
   hotels?: HotelOffer[];
   accommodations?: AccommodationEvidence[];
   activities?: ActivityEvidence[];
+  dailyItinerary?: DailyItineraryDay[];
   constraintReferences?: string[];
   publicExplanationTokens?: string[];
   generatedAt?: string;
@@ -126,12 +133,33 @@ export function PlanProposalCard({ plan, tripId }: { plan: ListedPlan; tripId: s
       <FlightsSection payload={payload} />
       <StaysSection payload={payload} />
       <ActivitiesSection payload={payload} />
+      <DailyItinerarySection payload={payload} />
       <ExplanationSection tokens={payload.publicExplanationTokens} />
       <ConstraintCount count={payload.constraintReferences?.length ?? 0} />
 
       {plan.status === "PROPOSED" ? <VoteBlock planId={plan.id} tripId={tripId} /> : null}
     </article>
   );
+}
+
+function DailyItinerarySection({ payload }: { payload: PlanPayload }) {
+  const t = useTranslations("trips.sharedPlan.plan");
+  if (!payload.dailyItinerary?.length) return null;
+  return <section aria-label={t("dailyItinerary")} className="grid gap-2">
+    <p className="text-xs font-bold">{t("dailyItinerary")}</p>
+    <div className="grid gap-2">
+      {payload.dailyItinerary.map((day, index) => <details key={`${day.date ?? "day"}-${index}`} open={index === 0} className="bg-[var(--w-mist)] wanderly-edge-thin wanderly-r-xs">
+        <summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-extrabold">{day.date ?? "—"}</summary>
+        <ul className="grid gap-2 border-t-2 border-[var(--w-ink)] px-3 py-2 text-[12px]">
+          {(day.items ?? []).map((item, itemIndex) => <li key={itemIndex} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-mono">{item.startTimeLocal ?? "—"}–{item.endTimeLocal ?? "—"}</span>
+            <span className="font-bold">{item.title ?? "—"}</span>
+            <span className="text-[10px] text-muted-foreground">{item.verification === "PROVIDER_BACKED" ? t("providerBacked") : t("suggested")}</span>
+          </li>)}
+        </ul>
+      </details>)}
+    </div>
+  </section>;
 }
 
 function FlightsSection({ payload }: { payload: PlanPayload }) {
@@ -396,6 +424,9 @@ function readPlanPayload(raw: Record<string, unknown>): PlanPayload {
   }
   if (Array.isArray(raw.activities)) {
     out.activities = raw.activities.filter((entry): entry is ActivityEvidence => typeof entry === "object" && entry !== null);
+  }
+  if (Array.isArray(raw.dailyItinerary)) {
+    out.dailyItinerary = raw.dailyItinerary.filter((entry): entry is DailyItineraryDay => typeof entry === "object" && entry !== null);
   }
   if (Array.isArray(raw.constraintReferences)) {
     out.constraintReferences = raw.constraintReferences.filter((ref): ref is string => typeof ref === "string");

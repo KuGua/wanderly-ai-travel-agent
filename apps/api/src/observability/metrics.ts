@@ -294,6 +294,10 @@ metrics.registerCounter("agent_skill_retries_total", "Registry skill retry attem
 metrics.registerCounter("plan_validation_failures_total", "Plan validation failures by bounded result.", {
   validationResult: ["schema", "authorization", "route", "provenance", "evidence", "unknown"],
 });
+
+metrics.registerCounter("daily_itinerary_generation_total", "Optional daily itinerary generation outcomes.", {
+  result: ["validation_failed", "unavailable"],
+});
 metrics.registerCounter("booking_gate_denials_total", "Booking gate denials by bounded category.", {
   errorCategory: ["callback_auth", "membership", "quorum", "plan_state", "plan_unavailable", "non_unanimous", "snapshot_stale", "offer_stale", "unknown"],
 });
@@ -830,7 +834,7 @@ metrics.registerCounter(
   "plan_replan_total",
   "Auto REPLAN enqueues by trigger and outcome.",
   {
-    trigger: ["trip_constraint_confirmed", "trip_constraint_revoked", "trip_constraint_upsert", "consent", "change_event", "conversation_handoff"],
+    trigger: ["trip_constraint_confirmed", "trip_constraint_revoked", "trip_constraint_upsert", "consent", "change_event", "conversation_handoff", "confirmed_brief_change"],
     result: ["enqueued", "superseded", "missing_snapshot"],
   },
 );

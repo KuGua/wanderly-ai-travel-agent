@@ -87,6 +87,21 @@ const parsedCompletionSchema = z.object({
   }).strict(),
 }).strict();
 
+const parsedDailyItinerarySchema = z.object({
+  dailyItinerary: z.array(z.object({
+    date: z.string().date(),
+    timeZone: z.literal("destination_local"),
+    items: z.array(z.object({
+      kind: z.enum(["FLIGHT", "BOOKED_ACTIVITY", "SUGGESTED_STOP", "FREE_TIME", "RETURN_TO_HOTEL"]),
+      startTimeLocal: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      endTimeLocal: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      title: z.string().min(1).max(160),
+      verification: z.enum(["PROVIDER_BACKED", "SUGGESTED"]),
+      evidenceRef: z.object({ category: z.enum(["flights", "activities"]), id: z.string().min(1) }).strict().optional(),
+    }).strict()),
+  }).strict()),
+}).strict();
+
 const parsedConversationCompletionSchema = z.object({
   reply: z.object({
     content: z.string().trim().min(1).max(8000),
@@ -1030,6 +1045,7 @@ export function buildDraftHandoffProse(tripContext: PersonalTripContext | null):
         return [
           "本行程已有共享方案，可在共享方案面查看。",
           "不要让用户点「开始规划」——该按钮不在屏幕上。需要查看方案时，指向共享方案面。",
+          "用户若明确要求改日期、天数、出发地或目的地，只能说会先展示确认变更卡片；绝不能声称已经更新、会自动重跑或已经生成新方案。",
           "不得复述方案内容或声称其中的价格、航班、住宿细节；那些由共享方案面按来源与采集时间渲染。",
         ].join("\n");
       case "NOT_STARTED":
@@ -1267,6 +1283,31 @@ export class LLMGateway implements ModelGateway {
       outcome: "failure",
     });
     return recordFailure(lastError || "SCHEMA_PARSE");
+  }
+
+  async generateDailyItinerary(params: {
+    plan: Record<string, unknown>;
+    travelDateStart: string;
+    travelDateEnd: string;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<unknown> {
+    const ctx = params.ctx ?? this.options.ctx;
+    const client = await this.loadClient();
+    const response = await client.chat.completions.parse({
+      model: this.options.modelName,
+      messages: [{
+        role: "system",
+        content: "You arrange a validated shared-trip plan into a daily, non-bookable suggestion. Return exactly {dailyItinerary:[...]}; every day must use timeZone: destination_local. Preserve selected flight/activity ids only in evidenceRef. FLIGHT and BOOKED_ACTIVITY must be PROVIDER_BACKED and cite their selected id. SUGGESTED_STOP, FREE_TIME, and RETURN_TO_HOTEL must be SUGGESTED and have no evidenceRef. Never claim prices, opening hours, bookings, addresses, routes, or travel durations. Use only HH:mm local times; items must not overlap. Do not change plan selections or include any other field.",
+      }, {
+        role: "user",
+        content: JSON.stringify({ plan: params.plan, travelDateStart: params.travelDateStart, travelDateEnd: params.travelDateEnd }),
+      }],
+      response_format: { type: "json_object" },
+    }, { signal: params.signal, headers: outboundTraceHeaders(ctx) });
+    const parsed = parsedDailyItinerarySchema.safeParse(completionPayload(response.choices[0]?.message));
+    if (!parsed.success) throw new ModelGatewayError("SCHEMA_PARSE");
+    return parsed.data.dailyItinerary;
   }
 
   async generateStructuredPlanWithTools(params: {

@@ -1001,19 +1001,25 @@ export function TravelAgentChat({
     setIsConfirmingBrief(true);
     setRequestError(null);
     try {
-      await api.updateDraftTripBrief(tripId, {
+      const result = await api.updateDraftTripBrief(tripId, {
         ...proposal,
         titleLocale,
       });
       await trip.refetch();
       setBriefProposal(null);
+      if (result.replan) {
+        // The server has atomically staled the old plan and accepted this
+        // REPLAN. Hand the authoritative run id to the workspace instead of
+        // claiming that chat text itself changed the itinerary.
+        onSharedRunStarted?.({ runId: result.replan.runId, operation: "REPLAN" });
+      }
       // Saving used to end the exchange: the card vanished, a line said it was
       // stored, and nothing said what happens next — the same silence the
       // preference card left. Raised before navigating so the reply is already
       // on its way when the planner opens.
       void sendTurn({
         requestId: crypto.randomUUID(),
-        question: t("briefSavedTurnQuestion"),
+        question: result.replan ? t("briefChangeReplanTurnQuestion") : t("briefSavedTurnQuestion"),
         intent: "brief_saved",
       });
       // Saving the destination and then leaving the traveller on the globe
@@ -1330,11 +1336,12 @@ export function TravelAgentChat({
   // two saw the card offer to save a single destination they had not asked
   // for. `fmt.list` gives each locale its own conjunction.
   const actionableBriefProposal = withoutDestinationProposal(briefProposal);
+  const briefChangesLivePlan = trip.data?.trip.status === "PLANNING";
   const briefPrimaryLabel = isConfirmingBrief
     ? t(onGlobe ? "briefProposalOpening" : "briefProposalSaving")
     : onGlobe
       ? t("briefProposalPlanCompact")
-      : t("briefProposalSaveTitleNoDestination");
+      : briefChangesLivePlan ? t("briefProposalConfirmReplan") : t("briefProposalSaveTitleNoDestination");
   const briefSecondaryLabel = t(onGlobe ? "briefProposalExploreCompact" : "briefProposalKeepTitle");
   // The card used to name only the destination while carrying dates it never
   // showed. A conversation once proposed an end date two years before its
@@ -1852,7 +1859,7 @@ export function TravelAgentChat({
             >
               <div className={onGlobe ? "grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 py-1" : undefined}>
                 <p className={`${onGlobe ? "min-w-0 text-xs leading-4" : "mb-2 px-0.5 text-sm"} font-bold ${docked ? "text-[var(--w-ink)]" : "text-[var(--w-fog)]"}`}>
-                  {t("briefProposalDetailsQuestion")}
+                  {briefChangesLivePlan ? t("briefProposalReplanQuestion") : t("briefProposalDetailsQuestion")}
                   {briefDetails ? (
                     <span className={`block font-semibold ${onGlobe ? "text-[10px] leading-4" : "mt-0.5 text-xs"} ${docked ? "text-muted-foreground" : "text-[var(--w-space-muted)]"}`}>
                       {briefDetails}

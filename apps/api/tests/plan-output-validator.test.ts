@@ -105,6 +105,37 @@ describe("plan-output-validator", () => {
     expect(result.destination).toBe("Tokyo");
   });
 
+  it("accepts a dated daily itinerary only when provider items cite selected evidence", () => {
+    const data = goodPlanData();
+    data.dailyItinerary = ["2025-08-01", "2025-08-02", "2025-08-03", "2025-08-04", "2025-08-05", "2025-08-06"].map((date, index) => ({
+      date,
+      timeZone: "destination_local",
+      items: [{
+        kind: index === 0 ? "FLIGHT" : "SUGGESTED_STOP",
+        startTimeLocal: "09:00",
+        endTimeLocal: "10:00",
+        title: index === 0 ? "Arrival flight" : "Suggested stop",
+        verification: index === 0 ? "PROVIDER_BACKED" : "SUGGESTED",
+        ...(index === 0 ? { evidenceRef: { category: "flights", id: data.flights[0].id } } : {}),
+      }],
+    }));
+    expect(() => validatePlanOutput({
+      planData: data, snapshot, evidence: goodEvidence(), requireDailyItinerary: true,
+    })).not.toThrow();
+  });
+
+  it("rejects overlapping times and a fabricated provider-backed itinerary item", () => {
+    const data = goodPlanData();
+    data.dailyItinerary = [{ date: "2025-08-01", timeZone: "destination_local", items: [
+      { kind: "SUGGESTED_STOP", startTimeLocal: "09:00", endTimeLocal: "11:00", title: "Suggestion", verification: "SUGGESTED" },
+      { kind: "FLIGHT", startTimeLocal: "10:00", endTimeLocal: "12:00", title: "Invented flight", verification: "PROVIDER_BACKED", evidenceRef: { category: "flights", id: "missing" } },
+    ] }];
+    expect(violationsFor(data)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "STRUCTURE_INVALID", fieldPath: "dailyItinerary.0.items.1" }),
+      expect.objectContaining({ code: "EVIDENCE_NOT_FOUND", fieldPath: "dailyItinerary.0.items.1.evidenceRef" }),
+    ]));
+  });
+
   it("rejects flight origin not in snapshot.departureCities", () => {
     const data = goodPlanData();
     data.flights[0].origin = "Mars";

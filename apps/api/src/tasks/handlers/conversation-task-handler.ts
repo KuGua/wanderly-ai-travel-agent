@@ -1098,7 +1098,9 @@ export async function handleConversationTask(params: {
   // confirmation cards; never create the generic brief-review card from a
   // departure/date phrase embedded in one of them.
   const destinationCueDecision = await destinationCuePromise;
-  const tripBriefProposal = parsed.responseMode === "MODEL" && tripContext.tripStatus === "DRAFT" && !destinationCueDecision
+  const tripBriefProposal = parsed.responseMode === "MODEL"
+    && (tripContext.tripStatus === "DRAFT" || tripContext.tripStatus === "PLANNING")
+    && !destinationCueDecision
     ? mergeTripBriefProposal(
       // Direct owner statements are parsed conservatively and destination
       // values have already passed server-owned place resolution.
