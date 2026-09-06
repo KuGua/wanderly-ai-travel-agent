@@ -61,6 +61,7 @@
   --w-info: #599db5;
   --w-highlight: #65bbb0;
   --w-fog: #f1edea;
+  --w-highlight-soft: color-mix(in srgb, var(--w-highlight), var(--w-fog) 26%);
   --w-white: #fff;
   --w-ink: #1d1d1b;
   --w-muted: #414141;
@@ -813,7 +814,7 @@
    — at a fixed pixel height it looked right at one size and thin at the next.
    Not on a negative z-index: an ancestor's background paints over that. */
 .wanderly-brush { position: relative; display: inline-block;
-  --brush-ink: color-mix(in srgb, var(--w-highlight), var(--w-fog) 26%); }
+  --brush-ink: var(--w-highlight-soft); }
 .wanderly-brush::after {
   content: "";
   position: absolute;

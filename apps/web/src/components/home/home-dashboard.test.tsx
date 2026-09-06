@@ -103,9 +103,9 @@ describe("HomeDashboard", () => {
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith(`/trips/${TRIP_ID}?thread=${THREAD_ID}`));
   });
 
-  // The counts were two: once in the "continue planning" hero and once in the
-  // grid. The hero is gone — it repeated a card the grid already showed — so a
-  // Draft now appears once, and its own card carries the way back into it.
+  // The compact header shortcut and the card use different accessible names.
+  // Target the named card link so this assertion keeps covering the Draft in
+  // the active grid even while the header also points at the same trip.
   it("shows an unarchived Draft in the default active list", async () => {
     renderAuthenticatedDashboard(makeApi([planningTrip, draftTrip]));
 
@@ -114,7 +114,7 @@ describe("HomeDashboard", () => {
     });
 
     expect(screen.getByRole("button", { name: "Active2" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Continue planning" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Continue planning: Taipei exploration" })).toHaveAttribute(
       "href",
       "/trips/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     );

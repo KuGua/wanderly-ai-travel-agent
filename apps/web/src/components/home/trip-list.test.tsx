@@ -157,5 +157,6 @@ describe("TripList", () => {
       { api: apiWithDelete() },
     );
     expect(screen.queryByText("Destination city not set")).not.toBeInTheDocument();
+    expect(screen.getByText("Planning")).toHaveClass("bg-[var(--w-highlight-soft)]");
   });
 });

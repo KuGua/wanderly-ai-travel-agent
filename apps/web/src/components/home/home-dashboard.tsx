@@ -289,7 +289,7 @@ export function HomeDashboard() {
           aria-hidden="true"
           width={768}
           height={256}
-          className="pointer-events-none absolute -left-6 -top-9 z-10 h-auto w-[165px] select-none rotate-[-11deg] opacity-90 sm:-left-10 sm:-top-10 sm:w-[200px]"
+          className="pointer-events-none absolute -left-5 -top-3 z-10 h-auto w-[135px] select-none rotate-[-18deg] opacity-90 sm:-left-7 sm:-top-4 sm:w-[160px]"
         />
         <section
           /* Felt, not a second sheet of paper. The pad above is the notebook;
