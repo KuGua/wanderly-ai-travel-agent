@@ -46,6 +46,13 @@ and invoked only through the Skill Registry with expected version `1.2.0`.
   capability is in the personal-research allowed capabilities**. No profile
   writes, shared planning, bookings, or irreversible tools.
 
+Because ordinary conversation has no Trip mutation tool, a user instruction
+such as `出发地改为北京` is a request to propose a change, not proof that the
+change happened. Without a server action receipt the reply must not say
+`已更新`, `已保存`, `已设为` or otherwise describe destination, origin, dates,
+flight or hotel selection as persisted. Confirmation-success copy is produced
+from the corresponding Cue / Brief action result, not guessed by this Skill.
+
 The service re-resolves every client-supplied coordinate against the server
 location-reference source. A matching result becomes `REFERENCE`; otherwise it
 remains `INSPIRATION`. Client names and source IDs are never authoritative.
@@ -162,10 +169,15 @@ One short paragraph. Acknowledge that it landed, then move:
 It must not re-introduce the destination the traveller has just read about,
 restate the brief as a field list, or emit an itinerary.
 
-A destination reaches the brief only from what the traveller typed or pinned:
-`mergeTripBriefProposal` keeps scheduling fields from the model's own
-extraction and drops everything else, so a place the assistant merely offered
-as an example cannot become the trip's destination.
+Destination does not travel through the generic Brief. A destination reaches
+the Trip only through Destination Cue accept. The generic Brief owns explicit
+USER origin plus dates and duration; the model extractor may only supplement
+same-turn, explicitly accepted scheduling values and can never introduce an
+origin or destination. Bare cities belong to Destination Cue, while explicit
+origin forms such as `从北京出发`, `出发地是北京` and `把出发地改为北京`
+belong to the origin proposal. The two scopes are persisted and rendered
+independently; see
+[`docs/cue-and-brief-trigger-remediation-plan.md`](../../../../docs/cue-and-brief-trigger-remediation-plan.md).
 
 Nothing here is written in the client. What the reply says comes from
 `memoryContext` and the thread, so a field added to the catalogue is spoken

@@ -162,6 +162,7 @@ export interface TravelApi {
   /** Optional so existing test doubles keep compiling without a stub. */
   deleteTrip?(tripId: string): Promise<void>;
   updateDraftTripBrief?(tripId: string, input: UpdateDraftTripBriefInput): Promise<UpdateDraftTripBriefResponse>;
+  dismissDraftTripBriefProposal?(tripId: string): Promise<import("./contracts").DismissDraftTripBriefProposalResponse>;
   acceptDestinationCue?(threadId: string, cueId: string, candidateId: string, input: DestinationCueActionInput): Promise<DestinationCueActionResponse>;
   dismissDestinationCue?(threadId: string, cueId: string, candidateId: string, input: DestinationCueActionInput): Promise<DestinationCueActionResponse>;
   // Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,

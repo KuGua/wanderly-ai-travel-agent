@@ -5,8 +5,11 @@ import {
   mergePendingBriefProposal,
   mergeTripBriefProposal,
   normalizeBriefDestinations,
+  normalizeBriefProposalDepartures,
   normalizeBriefProposalDestinations,
   proposeTripBriefFromTurn,
+  withoutDestinationCandidates,
+  withoutImplicitDeparture,
   withoutSettledFields,
 } from "../src/services/trip-brief-proposal-service.js";
 
@@ -39,9 +42,52 @@ describe("proposeTripBriefFromTurn", () => {
   it("extracts an explicit Chinese departure city without treating it as a route plan", () => {
     expect(proposeTripBriefFromTurn("从上海走")).toEqual({ departureCities: ["上海"] });
   });
+  it.each([
+    "出发地改为北京",
+    "把出发地改为北京",
+    "出发城市设置为北京",
+    "改从北京走",
+  ])("extracts an explicit origin-field update: %s", (question) => {
+    expect(proposeTripBriefFromTurn(question)).toEqual({ departureCities: ["北京"] });
+  });
   it("extracts an explicit Chinese month/day as a reviewable trip date", () => {
     const proposal = proposeTripBriefFromTurn("我从上海出发，12月10号左右吧");
     expect(proposal).toMatchObject({ departureCities: ["上海"], travelDateStart: expect.stringMatching(/^\d{4}-12-10$/) });
+  });
+});
+
+describe("withoutImplicitDeparture", () => {
+  it("drops a model-supplied origin for a bare city detail request", () => {
+    expect(withoutImplicitDeparture({ departureCities: ["上海"] }, "上海")).toBeUndefined();
+  });
+
+  it("keeps an origin only when the owner explicitly states the departure", () => {
+    expect(withoutImplicitDeparture({ departureCities: ["北京"], travelDays: 3 }, "从上海出发，玩三天"))
+      .toEqual({ departureCities: ["Shanghai"], travelDays: 3 });
+  });
+
+  /**
+   * This runs after `normalizeBriefProposalDepartures`, so returning the raw
+   * owner text used to undo the resolver: the card carried 北京 while an
+   * accepted trip row carried Beijing, and `withoutSettledFields` compares the
+   * two — the origin card reopened on every later turn that named it.
+   */
+  it("canonicalizes the owner's own wording instead of undoing the resolver", () => {
+    expect(withoutImplicitDeparture({ departureCities: ["Beijing"] }, "出发地改为北京"))
+      .toEqual({ departureCities: ["Beijing"] });
+  });
+
+  it("drops an origin the catalogue cannot name without taking the dates", () => {
+    expect(withoutImplicitDeparture({ departureCities: ["Beijing"], travelDays: 3 }, "从瓦坎达出发，玩三天"))
+      .toEqual({ travelDays: 3 });
+  });
+
+  it("leaves a bare city with no generic brief fields at the final card boundary", () => {
+    const candidate = withoutDestinationCandidates({
+      departureCities: ["上海"],
+      destinationCandidates: ["Shanghai"],
+    });
+    expect(withoutImplicitDeparture(candidate, "上海")).toBeUndefined();
   });
 });
 
@@ -142,6 +188,22 @@ describe("normalizeBriefDestinations", () => {
   it("classifies a known country as exploration context, not a city", () => {
     expect(isBriefDestinationCountry("France")).toBe(true);
     expect(isBriefDestinationCountry("Paris")).toBe(false);
+  });
+});
+
+describe("normalizeBriefProposalDepartures", () => {
+  it("canonicalizes an explicit origin before persistence", () => {
+    expect(normalizeBriefProposalDepartures({ departureCities: ["北京"], travelDays: 3 }))
+      .toEqual({ departureCities: ["Beijing"], travelDays: 3 });
+  });
+
+  it("fails closed for an unresolved origin", () => {
+    expect(normalizeBriefProposalDepartures({ departureCities: ["Not a real city"] })).toBeNull();
+  });
+
+  it("drops only the unresolved origin, leaving the same turn's schedule", () => {
+    expect(normalizeBriefProposalDepartures({ departureCities: ["Not a real city"], travelDays: 3 }))
+      .toEqual({ travelDays: 3 });
   });
 });
 
@@ -313,8 +375,9 @@ describe("mergePendingBriefProposal", () => {
  * question to even name, because the turn mentioned "10天" a second time.
  */
 describe("withoutSettledFields", () => {
+  // Canonical, because that is what the draft-brief write boundary stores.
   const settled = {
-    departureCities: ["北京"],
+    departureCities: ["Beijing"],
     destinationCandidates: ["Gero"],
     travelDateStart: "2026-03-20",
     travelDateEnd: "2026-03-29",
@@ -324,7 +387,7 @@ describe("withoutSettledFields", () => {
   it("drops a proposal that repeats what the trip already holds", () => {
     expect(withoutSettledFields({ travelDays: 10 }, settled)).toBeNull();
     expect(withoutSettledFields({ destinationCandidates: ["Gero"] }, settled)).toBeNull();
-    expect(withoutSettledFields({ departureCities: ["北京"], travelDays: 10 }, settled)).toBeNull();
+    expect(withoutSettledFields({ departureCities: ["Beijing"], travelDays: 10 }, settled)).toBeNull();
   });
 
   it("ignores case when comparing place names", () => {
@@ -357,5 +420,88 @@ describe("withoutSettledFields", () => {
     };
     expect(withoutSettledFields({ destinationCandidates: ["Gero"], travelDays: 10 }, empty))
       .toEqual({ destinationCandidates: ["Gero"], travelDays: 10 });
+  });
+});
+
+/**
+ * "9月27号出发，10月2号回程" — the way people actually say a round trip. Only
+ * the connector form ("从9月27日到10月2日") was covered, so this whole family
+ * produced a start date and dropped the return, and the confirmation card
+ * offered a single date under a 往返日期 label.
+ */
+describe("a range stated by departure and return roles", () => {
+  const now = new Date("2026-09-06T12:00:00Z");
+
+  it.each([
+    ["九月27出发，10月一号回程", "2026-09-27", "2026-10-01"],
+    ["九月27出发，10月二号回程", "2026-09-27", "2026-10-02"],
+    ["9月27日出发，10月1日回程", "2026-09-27", "2026-10-01"],
+    ["9月27号出发，10月2号回来", "2026-09-27", "2026-10-02"],
+    ["我们9月27号飞，10月2号回", "2026-09-27", "2026-10-02"],
+  ])("reads both ends of %s", (question, start, end) => {
+    expect(proposeTripBriefFromTurn(question, undefined, now))
+      .toMatchObject({ travelDateStart: start, travelDateEnd: end });
+  });
+
+  it("carries the return into the next year when it falls before the departure", () => {
+    expect(proposeTripBriefFromTurn("12月28号出发，1月3号返程", undefined, now))
+      .toMatchObject({ travelDateStart: "2026-12-28", travelDateEnd: "2027-01-03" });
+  });
+
+  it("needs a real second date, not merely a return word", () => {
+    expect(proposeTripBriefFromTurn("9月27号出发", undefined, now))
+      .toEqual({ travelDateStart: "2026-09-27" });
+    // "玩三天后回" is a duration, and reading its 三 as a return day would put
+    // the trip back on the 3rd of the same month.
+    expect(proposeTripBriefFromTurn("10月1日出发，玩三天后回", undefined, now))
+      .toEqual({ travelDateStart: "2026-10-01", travelDays: 3 });
+  });
+
+  it("still prefers an explicit connector range", () => {
+    expect(proposeTripBriefFromTurn("10月1日到10月5日", undefined, now))
+      .toMatchObject({ travelDateStart: "2026-10-01", travelDateEnd: "2026-10-05" });
+  });
+});
+
+/**
+ * The worker's origin path end to end, in the order it actually runs:
+ * parse the owner turn → canonicalize → strip destination → re-derive the
+ * departure from the owner's own words → subtract what the trip already holds.
+ *
+ * Each step was individually correct while the sequence was not, so this
+ * covers §3.3 of docs/cue-and-brief-trigger-remediation-plan.md ("同一字段已
+ * 等于 Trip 当前值时不再弹卡") at the seam rather than in the parts.
+ */
+describe("origin proposal pipeline", () => {
+  const noSettledBrief = {
+    departureCities: [] as string[],
+    destinationCandidates: [] as string[],
+    travelDateStart: null,
+    travelDateEnd: null,
+    travelDays: null,
+  };
+
+  function pipeline(question: string) {
+    const direct = proposeTripBriefFromTurn(question);
+    const normalized = direct ? normalizeBriefProposalDepartures(direct) : null;
+    return withoutImplicitDeparture(withoutDestinationCandidates(normalized), question) ?? null;
+  }
+
+  it("carries the canonical city all the way to the card", () => {
+    expect(pipeline("出发地改为北京")).toEqual({ departureCities: ["Beijing"] });
+    expect(pipeline("改从北京走")).toEqual({ departureCities: ["Beijing"] });
+  });
+
+  it("stops asking once the trip already holds that origin", () => {
+    const settled = { ...noSettledBrief, departureCities: ["Beijing"] };
+    expect(withoutSettledFields(pipeline("出发地改为北京"), settled)).toBeNull();
+  });
+
+  it("keeps origin, destination and duration in their own scopes", () => {
+    expect(pipeline("从北京去上海，玩三天")).toEqual({ departureCities: ["Beijing"], travelDays: 3 });
+  });
+
+  it("loses only the unresolvable origin, never the duration beside it", () => {
+    expect(pipeline("从瓦坎达去上海，玩三天")).toEqual({ travelDays: 3 });
   });
 });

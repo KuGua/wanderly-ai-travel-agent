@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   airportIdsForCities,
   airportServesCity,
+  airportsForCity,
   controlledAirports,
   isControlledIata,
   resolveAirportReference,
@@ -76,5 +77,45 @@ describe("the controlled airport reference", () => {
     // for nearly every trip.
     expect(controlledAirports().length).toBeGreaterThan(150);
     expect(new Set(controlledAirports().map((a) => a.countryCode)).size).toBeGreaterThan(40);
+  });
+});
+
+/**
+ * Kyoto has no airport of its own, and the curated alias table therefore
+ * returned nothing for it — which read to the traveller as "we cannot find
+ * flights to Kyoto" for one of Japan's most-visited cities. Nearest is
+ * computed from the reference catalogue's own city coordinates rather than
+ * from a hand-added position on each of the 210 airports.
+ */
+describe("airportsForCity", () => {
+  it("prefers a city's own airports and reports no substitution", () => {
+    expect(airportsForCity("Singapore")).toEqual({ airportIds: ["SIN"] });
+    expect(airportsForCity("Tokyo")).toEqual({ airportIds: ["NRT", "HND"] });
+    expect(airportsForCity("东京")).toEqual({ airportIds: ["NRT", "HND"] });
+  });
+
+  it.each([
+    ["Kyoto", "Osaka", ["KIX", "ITM"]],
+    ["京都", "Osaka", ["KIX", "ITM"]],
+    ["Nara", "Osaka", ["KIX", "ITM"]],
+    ["Siena", "Florence", ["FLR"]],
+  ])("falls back to the nearest serving city for %s", (city, servingCity, airportIds) => {
+    const resolved = airportsForCity(city);
+    expect(resolved.airportIds).toEqual(airportIds);
+    expect(resolved.substitution).toMatchObject({ requestedCity: city, servingCity });
+    expect(resolved.substitution!.distanceKm).toBeLessThanOrEqual(150);
+  });
+
+  it("returns every airport of the serving city, in the table's own order", () => {
+    // KIX and ITM are the same distance from Kyoto. Ordering by a rounding
+    // difference between two positions that are the same place would be
+    // arbitrary; the table is already ordered by international primacy.
+    expect(airportsForCity("Kyoto").airportIds).toEqual(airportIdsForCities(["Osaka"]));
+  });
+
+  it("declines to guess when the city itself cannot be placed", () => {
+    // Below the catalogue's population floor, and an invented name.
+    expect(airportsForCity("Hakone")).toEqual({ airportIds: [] });
+    expect(airportsForCity("Wakanda")).toEqual({ airportIds: [] });
   });
 });

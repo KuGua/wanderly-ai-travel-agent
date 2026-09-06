@@ -1,8 +1,8 @@
 # Flight Offer Cue Decision Model
 
-**状态：** 已在 `develop` 落地为可开关能力：候选投影、additive migration、结构化模型、服务端 resolver/policy、REST/SSE、owner-only selection 与 Web 确认卡均已实现。运行时须将 `OFFER_CUE_ENABLED=true`，并可用 `OFFER_CUE_ENABLED_CAPABILITIES=flight,hotel` 按能力灰度；默认关闭时不会创建或推送 Flight/Hotel Cue。
+**状态：** 已落地为可开关能力：候选投影、additive migration、结构化模型、服务端 resolver/policy、REST/SSE、owner-only selection 与 Web 确认卡均已实现，跨 scope UI / Brief 仲裁整改也已完成。运行时须将 `OFFER_CUE_ENABLED=true`，并可用 `OFFER_CUE_ENABLED_CAPABILITIES=flight,hotel` 按能力灰度；默认关闭时不会创建或推送 Flight/Hotel Cue。
 **范围：** 在 owner 的私有聊天中，判断何时显示 `Take this flight?`，并安全保存用户已确认的航班选择。它不是机票搜索确认、目的地确认、整体 Plan adoption 或预订。
-**关联文档：** [Destination Cue Decision Model](destination-cue-model-draft.md)、[Hotel Offer Cue Decision Model](hotel-offer-cue-model-draft.md)、[DRAFT Personal Research](draft-personal-research-implementation.md)。
+**关联文档：** [Destination Cue Decision Model](destination-cue-model-draft.md)、[Hotel Offer Cue Decision Model](hotel-offer-cue-model-draft.md)、[DRAFT Personal Research](draft-personal-research-implementation.md)、[Cue 与 Trip Brief 触发逻辑统一整改方案](cue-and-brief-trigger-remediation-plan.md)。
 
 ## 1. 已确认产品语义
 
@@ -19,7 +19,9 @@
 
 确定性代码只承担非语义职责：确认当前消息来自 owner、存在 owner 已看见且未过期的航班结果集、结果集与 thread/trip 匹配、候选引用唯一、版本未过期、没有冲突中的 OPEN Cue，以及执行 cooldown/幂等/权限检查。模型输出永远只是建议，不写 Trip。
 
-模型只读当前 USER 消息和服务端投影的候选集合；不读取 Assistant 原文、完整历史、其他 thread、地图状态、Profile、原始 provider payload 或 provider URL。
+模型首先只读当前 USER 消息和服务端投影的候选集合。仅当 USER 决策为空时，resolver 才可用本轮**最终可见 Assistant 回复**调用同一模型作为 fallback；不得读取草稿 token、工具参数、完整历史、其他 thread、地图状态、Profile、原始 provider payload 或 provider URL。
+
+Assistant fallback 的门槛高于 USER：回复必须明确邀请确认或保存一个当前可见、可唯一引用的航班。介绍、比较、总结搜索结果、询问条件、泛称“当前机票”但存在多个候选时均不触发。USER 与 Assistant 同轮命中同一候选时只保留 USER 决策；已有相同 OPEN Cue 时不重新创建或替换。
 
 ## 3. 真实使用场景与决策
 
@@ -41,6 +43,7 @@
 ```ts
 type FlightOfferCueInput = {
   currentMessage: string;
+  messageSource: "USER_TURN" | "ASSISTANT_REPLY";
   locale: "en" | "zh";
   offerSetId: string;
   offers: Array<{
@@ -90,7 +93,8 @@ Flight provider result
 
 next USER message
   → latest visible, unexpired Flight offer set
-  → Flight Offer Cue model (parallel with normal reply)
+  → USER Flight Offer Cue decision (parallel with normal reply)
+  → USER 未命中时，对本轮最终可见 Assistant 回复运行受限 fallback
   → server resolver + policy
   → offer_cue_batches / offer_cue_candidates
   → `Take this flight?`
@@ -132,7 +136,7 @@ DELETE /api/v1/threads/:threadId/offer-selections/:selectionId
 
 - 对同一 owner + Trip + `flight`，dismiss 后 30 分钟内不自动弹 Flight Cue；同一用户本地自然日累计三次 dismiss 后静默到当日结束。
 - 仍由模型判定为明确选择的文本可以绕过静默，但服务端仍必须完成引用和有效期校验；不得用正则自行认定“明确”。
-- 同一聊天中同时存在多类开放确认时，呈现顺序固定为 **Destination → Flight → Hotel**。目的地卡可用自身的上/下一个箭头逐项浏览其候选；箭头只切换目的地候选，不指向、跳转或确认 Flight/Hotel 卡片。
+- 同一聊天中同时存在多类开放确认时，呈现顺序固定为 **Destination → Flight → Hotel → Brief**。不同 scope 独立恢复和操作，不得因为 Flight Cue OPEN 而删除目的地、出发地或 Brief 状态。
 - Destination、Flight、Hotel 仍是独立 action。接受航班不隐式接受目的地，也不接受酒店。
 - 同一航段的多个报价不使用轮播替代选择；模型应请求澄清。不同航段的候选可逐项确认，切换箭头只切换待确认项，不表示航线方向。
 
@@ -143,7 +147,7 @@ DELETE /api/v1/threads/:threadId/offer-selections/:selectionId
 3. **模型与 resolver：** Flight prompt/schema、并行调用、fail-closed、中文/英文 eval；模型不可用时只不显示 Cue，不阻断聊天。
 4. **后续 Shared 衔接：** 重新搜索、snapshot/plan/replan 的显式交接；不允许 Personal selection 绕过现有 Plan adoption 或 booking confirmation。
 
-必须覆盖：详情/比较/拒绝不弹、唯一选择正确弹、过期结果拒绝、跨 thread 拒绝、同航段互斥、重复 accept/dismiss、刷新恢复、3 次日静默、模型超时不影响对话、用户说“订”仍无订单。
+必须覆盖：详情/比较/拒绝不弹、唯一选择正确弹、Assistant 明确确认的唯一可见报价可 fallback、Assistant 泛推荐不弹、USER 优先与 OPEN 去重、过期结果拒绝、跨 thread 拒绝、同航段互斥、重复 accept/dismiss、刷新恢复、3 次日静默、模型超时不影响对话、用户说“订”仍无订单，以及 Flight Cue 不改变 destination/origin/Brief。
 
 ## 10. 可观测性与兼容
 

@@ -68,14 +68,24 @@ Shared 是内部的非对话规划能力，不直接与用户聊天。它只读�
 ### 3.1 简报收集与确认
 
 - 第一条提交的聊天消息才创建 `DRAFT` Trip、创建者 membership 和默认私有 thread。
-- 从聊天提取的内容只是候选，不能直接写为行程事实。
-- 前端会合并跨轮次候选。例如先说“去苏州玩三天”，后说“从上海出发，12 月 10 日左右”，会合并成同一张卡而不会互相覆盖。
-- 用户点击“确认行程信息”才调用 `PATCH /trips/:tripId/draft-brief` 写入 `shared_trips`。
+- 从聊天提取的内容只是候选，不能直接写为行程事实。Personal Agent 没有收到 action receipt 时不得声称“已更新 / 已保存 / 已设为”。
+- 目的地不属于通用 Brief：裸城市和目的地兴趣进入 Destination Cue；accept 后才写 `destinationCandidates`。通用 Brief 只收集出发地、日期和天数。
+- 出发地只接受当前 USER turn 的明确角色表达，包括“从上海出发 / 上海出发 / 出发地是上海 / 把出发地改为上海 / 改从上海走”。裸城市、Assistant 复述和机酒候选城市永远不是出发地。
+- 不同 scope 跨轮独立合并。例如先说“苏州”，再说“从上海出发，12 月 10 日左右”，前者产生 Destination Cue，后者产生 origin/date Brief；一张卡的 OPEN、dismiss 或 accept 不得删除另一张卡的状态。
+- 用户点击“确认行程信息”才调用 `PATCH /trips/:tripId/draft-brief` 写入 `shared_trips`。点击“先不改”必须调用服务端按字段清理 pending proposal；只清前端 React state 不算 dismiss，刷新不得复活。
 - **候选日期必须自洽，否则整对丢弃。** 一份提案由两个互不知情的来源拼成：`proposeTripBriefFromTurn` 解析用户自己的话，模型抽取器只补用户在同一轮接受的调度值。二者都可能给日期，因此合并后必须过 `coherentBriefDates`：`travelDateEnd` 早于 `travelDateStart`、日期不在日历上、或日期已经过去时，剥掉日期字段并保留其余候选。同轮合并与跨轮合并（提案存活在 trip 上，可由多轮拼成）都走这道闸；结果计入 `trip_brief_proposal_dates_total{result}`。
   该约束只作用于**候选**。创建者手工编辑 brief 是明确陈述而非推断，仅由路由自身校验。
 - 确认卡必须显示它将要写入的日期。2026-09-04 之前它只显示目的地，一份结束日期早于开始日期两年的提案因此在界面上与正常提案毫无区别，点击只会失败；排查见 [简报确认卡永远保存失败](investigations/2026-09-04-brief-proposal-date-year-drift.md)。
 - 路由拒绝日期时返回 `400` + `BRIEF_DATES_INVALID:`，与 `DESTINATION_UNRESOLVED:` 同一约定：前端必须能把它与普通的请求格式错误区分开，因为一份存在服务端的坏提案不会因为重发而改变。
 - “确认无误”“可以搜索”等自然语言不是开始完整规划的命令；开始规划必须通过清晰的 UI 动作，避免把酒店确认误当成整段旅行确认。
+
+### 3.1.1 卡片仲裁与偏好表
+
+- UI 恢复和展示顺序为 Destination → Flight → Hotel → Brief。不同 scope 可以同时存在；不得用一个全局 `hasOpenConfirmationCard` 丢弃其他 scope。
+- Flight / Hotel 只确认当前 owner/thread/trip 已展示且未过期的报价，accept 只写 owner-only selection；不得影响 destination、origin 或 Brief。
+- Trip 内偏好卡只写当前 Trip override，不写长期记忆。长期偏好页仍单独写长期记忆。
+- 偏好卡提交出发地时必须走与 Brief 相同的 typed mutation/审计边界。服务端不得因 Profile 存在默认出发地而在无关偏好提交中自行复制，也不得无条件清空整个 `pendingBriefProposal`；只清除已经写入的同字段 proposal。
+- 完整整改顺序和回归矩阵见 [Cue 与 Trip Brief 触发逻辑统一整改方案](cue-and-brief-trigger-remediation-plan.md)。
 
 ### 3.2 开始规划的原子语义
 
@@ -128,7 +138,7 @@ Shared 是内部的非对话规划能力，不直接与用户聊天。它只读�
 |---|---|
 | 私密对话边界与文案规则 | `apps/api/src/providers/llm-gateway.ts` |
 | 每轮注入哪些搜索 readiness 约束 | `apps/api/src/tasks/handlers/conversation-task-handler.ts` 的 `selectResponseConstraints` |
-| 简报候选抽取的取值来源规则 | `apps/api/src/providers/llm-gateway.ts` 的 `tripBriefExtractionSystemPrompt`（含 `currentDateRule` 的当前日期锚点） |
+| 简报候选抽取的取值来源规则 | 当前 USER 的 origin/date/days 由 `trip-brief-proposal-service.ts` 确定性解析；模型 extractor 仅补同轮明确追认的日期/天数，不得产出 destination/origin |
 | 简报候选提取与日期区间解析 | `apps/api/src/services/trip-brief-proposal-service.ts` 的 `proposeTripBriefFromTurn` / `extractDateRange` |
 | 候选日期自洽校验 | 同文件的 `coherentBriefDates`、`mergeTripBriefProposal`、`mergePendingBriefProposal` |
 | 候选提案落库（跨轮合并 + 行锁） | `apps/api/src/workers/agent-task-worker.ts` 的 `persistPendingBriefProposal` |
@@ -147,11 +157,11 @@ Shared 是内部的非对话规划能力，不直接与用户聊天。它只读�
 
 ## 9. 最小验收用例
 
-以“上海出发，12 月 10 日左右去苏州玩三天”为例：
+以“从上海出发，12 月 10 日左右去苏州玩三天”为例：
 
 1. 私密对话只介绍或澄清，不给 Day 1–3 行程，也不主动推销酒店或机票；
-2. 确认卡应合并显示上海、苏州、2026-12-10、3 天；
-3. 用户确认行程信息后，点击“开始规划”；
+2. Destination Cue 显示苏州；通用 Brief 显示上海、2026-12-10、3 天，两者互不遮挡；
+3. 用户分别确认目的地和行程信息后，点击“开始规划”；
 4. 后端应生成 `2026-12-12` 结束日期、snapshot 和唯一的 `PROPOSE_PLAN` task；
 5. 前端显示 Wanderly 正在规划，不出现内部 Agent 名称；
 6. 无论 provider 是否可用，都只能产生带来源的结果或 `UNAVAILABLE` gap，绝不生成伪造的实时价格/库存。

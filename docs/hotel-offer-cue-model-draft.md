@@ -1,8 +1,8 @@
 # Hotel Offer Cue Decision Model
 
-**状态：** 已在 `develop` 落地为可开关能力：候选投影、additive migration、结构化模型、服务端 resolver/policy、REST/SSE、owner-only selection 与 Web 确认卡均已实现。运行时须将 `OFFER_CUE_ENABLED=true`，并可用 `OFFER_CUE_ENABLED_CAPABILITIES=flight,hotel` 按能力灰度；默认关闭时不会创建或推送 Flight/Hotel Cue。
+**状态：** 已落地为可开关能力：候选投影、additive migration、结构化模型、服务端 resolver/policy、REST/SSE、owner-only selection 与 Web 确认卡均已实现，跨 scope UI / Brief 仲裁整改也已完成。运行时须将 `OFFER_CUE_ENABLED=true`，并可用 `OFFER_CUE_ENABLED_CAPABILITIES=flight,hotel` 按能力灰度；默认关闭时不会创建或推送 Flight/Hotel Cue。
 **范围：** 在 owner 的私有聊天中，判断何时显示 `Stay in this hotel?`，并安全保存用户已确认的住宿选择。它不是酒店搜索触发、目的地确认、整体 Plan adoption 或预订。
-**关联文档：** [Destination Cue Decision Model](destination-cue-model-draft.md)、[Flight Offer Cue Decision Model](flight-offer-cue-model-draft.md)、[Hotel Search Tool](hotel-search-tool-implementation.md)。
+**关联文档：** [Destination Cue Decision Model](destination-cue-model-draft.md)、[Flight Offer Cue Decision Model](flight-offer-cue-model-draft.md)、[Hotel Search Tool](hotel-search-tool-implementation.md)、[Cue 与 Trip Brief 触发逻辑统一整改方案](cue-and-brief-trigger-remediation-plan.md)。
 
 ## 1. 已确认产品语义
 
@@ -19,7 +19,9 @@
 
 确定性代码仅验证：当前 USER 消息、owner/thread/trip 归属、存在已展示且未过期的酒店候选集合、候选引用唯一、版本有效、没有冲突的 OPEN cue，以及 cooldown/幂等/权限。模型输出不能写入任何 Trip 或 provider 状态。
 
-模型输入只能是当前用户文字及服务端挑选的安全 hotel candidate projection，不含 Assistant 原文、私聊历史、raw provider response、provider URL、国籍、其他成员数据或 Profile。
+模型首先只读当前 USER 文字及服务端挑选的安全 hotel candidate projection。仅当 USER 决策为空时，resolver 才可用本轮**最终可见 Assistant 回复**调用同一模型作为 fallback；不读取草稿 token、工具参数、私聊历史、raw provider response、provider URL、国籍、其他成员数据或 Profile。
+
+Assistant fallback 的门槛高于 USER：回复必须明确邀请确认或保存一个当前可见、可唯一引用的酒店报价。推荐、介绍、比较、搜索总结、询问条件，以及存在多个酒店/房型/入住范围时的“这家”均不触发。USER 与 Assistant 同轮命中同一候选时只保留 USER 决策；已有相同 OPEN Cue 时不重新创建或替换。
 
 ## 3. 真实使用场景与决策
 
@@ -42,6 +44,7 @@ Phase 1 不保存“不住这家”作为长期排除。未来若要让后续搜
 ```ts
 type HotelOfferCueInput = {
   currentMessage: string;
+  messageSource: "USER_TURN" | "ASSISTANT_REPLY";
   locale: "en" | "zh";
   offerSetId: string;
   offers: Array<{
@@ -92,7 +95,8 @@ Hotel provider result
 
 next USER message
   → latest visible, unexpired Hotel offer set
-  → Hotel Offer Cue model (parallel with normal reply)
+  → USER Hotel Offer Cue decision (parallel with normal reply)
+  → USER 未命中时，对本轮最终可见 Assistant 回复运行受限 fallback
   → server resolver + policy
   → offer_cue_batches / offer_cue_candidates
   → `Stay in this hotel?`
@@ -124,7 +128,7 @@ DELETE /api/v1/threads/:threadId/offer-selections/:selectionId
 
 - `hotel` 独立应用 30 分钟 cooldown；同一 owner + Trip 的当日第三次 dismiss 后，静默到该用户本地自然日结束。
 - 被模型判为明确选择的文本允许绕过静默，但绝不允许服务端用关键词自行判为明确。
-- 同一聊天中同时存在多类开放确认时，呈现顺序固定为 **Destination → Flight → Hotel**。目的地卡可用自身的上/下一个箭头逐项浏览其候选；箭头只切换目的地候选，不指向、跳转或确认 Flight/Hotel 卡片。
+- 同一聊天中同时存在多类开放确认时，呈现顺序固定为 **Destination → Flight → Hotel → Brief**。不同 scope 独立恢复和操作，不得因为 Hotel Cue OPEN 而删除目的地、出发地或 Brief 状态。
 - Hotel Cue 与 Destination Cue 可以同屏编排，但永远是独立写入。接受酒店不会自动把酒店所在城市写为 Trip destination。
 - `dismiss` 只意味着“不显示这次采用确认”，不等同“不要这家酒店”，不影响未来用户重新搜索。
 - 本能力不改变酒店搜索本身的自动查询规则；`Stay in this hotel?` 只在用户看到结果、并在后续明确选择时出现。
@@ -136,7 +140,7 @@ DELETE /api/v1/threads/:threadId/offer-selections/:selectionId
 3. **模型与 resolver：** 建立 Hotel prompt/schema，当前 user turn 与 offer set 的并行分类及 fail-closed 行为。
 4. **Shared 衔接：** 后续在 `PLANNING`/`STALE` 中设计重新检索、replan 和成员确认，不允许跳过现有酒店 provider 和 Plan evidence 规则。
 
-验收至少覆盖：查询详情、比较、否定、无指代、单一采用、同区间多选、不同区间多选、刷新恢复、过期报价、跨 thread 访问、并发 accept、3 次日静默、模型失败不影响聊天、“订这家”不创建订单。
+验收至少覆盖：查询详情、比较、否定、无指代、单一采用、Assistant 明确确认的唯一可见报价可 fallback、Assistant 泛推荐不弹、USER 优先与 OPEN 去重、同区间多选、不同区间多选、刷新恢复、过期报价、跨 thread 访问、并发 accept、3 次日静默、模型失败不影响聊天、“订这家”不创建订单，以及 Hotel Cue 不改变 destination/origin/Brief。
 
 ## 9. 可观测性与发布
 

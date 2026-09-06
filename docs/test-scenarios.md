@@ -3132,3 +3132,45 @@ return output the plan contract rejects, and to leave a research matrix cell
 `LLMGateway` 能加载当前配置的 Gemini/OpenAI-compatible client；不得把方法解构后裸调用。
 回归测试必须使用依赖 receiver 状态的 gateway 并核对持久化 JSON，而不能只直接调用方法。
 模型 schema、日期覆盖、时间顺序、证据引用、provider 不可用、修复耗尽和本地调用错误分别计为闭合结果；日志只携带错误码、最多 16 个字段路径、attempt 与关联 ID。传给日程模型的 plan context 不含价格、来源、真实 provider evidence ID 或 provider 原始 payload；Abort 继续终止任务。
+
+### TS-CUE-SCOPE-INDEPENDENCE — 目的地、出发地、机酒与通用 Brief 不串线
+
+**Objective:** Verify that every confirmation scope keeps its own trigger,
+state and write boundary.
+
+**Steps:**
+
+1. In a creator-owned DRAFT thread send `上海`.
+2. In a fresh DRAFT thread send `出发地改为北京`.
+3. Send `从上海去北京，玩三天` in one turn.
+4. With a Destination Cue and generic Brief both OPEN, dismiss the Brief and
+   reload the page.
+5. Submit a Trip preference card that changes only budget while a date/days
+   Brief proposal is pending; repeat with an explicit departure change.
+6. With one visible unexpired flight and hotel offer, make a unique selection;
+   repeat with comparison, inspection and ambiguous-reference wording.
+
+**Expected outcomes:**
+
+- Step 1 creates only a Shanghai Destination Cue. It never proposes Shanghai
+  as an origin.
+- Step 2 creates only a Beijing origin Brief proposal. The Assistant may ask
+  for card confirmation but cannot say the Trip was already updated.
+- Step 3 keeps both scopes: a Beijing Destination Cue and a generic Brief with
+  canonical Shanghai origin plus three days. UI order is Destination → Flight
+  → Hotel → Brief; no global confirmation flag discards another scope.
+- Step 4 calls the server dismissal endpoint, clears `pendingBriefProposal`,
+  changes no confirmed Trip fact, and does not resurrect after REST recovery.
+- Step 5 does not copy an inherited profile origin or clear unrelated pending
+  fields. An explicitly submitted origin updates only this Trip and clears
+  only the pending origin field.
+- Step 6 creates Flight/Hotel Cue only for a unique candidate previously
+  visible in the same owner/thread/trip and still unexpired. Accept writes only
+  owner-private selection; destination, origin, Brief, Shared Plan and booking
+  state do not change.
+
+**Coverage:** `apps/api/tests/destination-cue-policy.test.ts`,
+`apps/api/tests/trip-brief-proposal-service.test.ts`,
+`apps/api/tests/trip-draft-brief.test.ts`,
+`apps/api/tests/trip-memory-routes.test.ts`,
+`apps/web/src/components/explore/travel-agent-chat.test.tsx`.

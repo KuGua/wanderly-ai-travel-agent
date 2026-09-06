@@ -28,9 +28,20 @@ describe("tool invocation mode", () => {
     expect(requiresOwnerConfirmation("hotel.search")).toBe(false);
   });
 
+  /**
+   * Flight joined that list on 2026-09-06. It meets the same test — read-only,
+   * bounded, deduplicated, unable to book or pay — and its confirmation was
+   * unreachable rather than protective: the confirm buttons only appear after
+   * a tool call the model never made, so the one way to authorise a flight
+   * search was to type 确认搜索机票, which nothing in the product mentions.
+   */
+  it("lets flight search run without a second confirmation", () => {
+    expect(requiresOwnerConfirmation("flight.search")).toBe(false);
+  });
+
   it("keeps explicit confirmation on the remaining gated suppliers", () => {
-    expect(requiresOwnerConfirmation("flight.search")).toBe(true);
     expect(requiresOwnerConfirmation("activities.search")).toBe(true);
+    expect(requiresOwnerConfirmation("mobility.search")).toBe(true);
   });
 });
 

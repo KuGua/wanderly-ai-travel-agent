@@ -9,10 +9,12 @@ import {
 } from "../observability/tracing.js";
 import { eq } from "drizzle-orm";
 import { db } from "../db/database.js";
-import { agentTaskRuns, sharedTrips } from "../db/schema.js";
+import { agentTaskRuns, chatMessages, sharedTrips } from "../db/schema.js";
 import {
   mergePendingBriefProposal,
-  normalizeBriefProposalDestinations,
+  normalizeBriefProposalDepartures,
+  withoutDestinationCandidates,
+  withoutImplicitDeparture,
   withoutSettledFields,
   type TripBriefProposal,
 } from "../services/trip-brief-proposal-service.js";
@@ -246,15 +248,31 @@ export async function processNextAgentTask(): Promise<boolean> {
         content: output.content,
         responseMode: output.responseMode,
       });
-      const briefProposal = output.tripBriefProposal
-        ? normalizeBriefProposalDestinations(output.tripBriefProposal)
+      const extractedBriefProposal = output.tripBriefProposal
+        ? normalizeBriefProposalDepartures(output.tripBriefProposal)
         : null;
-      if (output.tripBriefProposal && !briefProposal) {
-        metrics.inc("trip_brief_proposal_destination_resolution_total", { result: "rejected" });
+      // Count the origin scope alone. An unresolved origin now leaves the
+      // turn's dates and duration on the card, so the surviving proposal no
+      // longer says anything about whether the departure city resolved — and
+      // a dates-only proposal never had an origin to resolve in the first
+      // place.
+      if (output.tripBriefProposal?.departureCities) {
+        metrics.inc("trip_brief_proposal_departure_resolution_total", {
+          result: extractedBriefProposal?.departureCities ? "accepted" : "rejected",
+        });
       }
-      if (briefProposal) {
-        metrics.inc("trip_brief_proposal_destination_resolution_total", { result: "accepted" });
-      }
+      // The worker is the last writer before a generic brief reaches the
+      // database. Re-read only the owner's own turn here so a stale handler or
+      // future extractor can never turn a bare city into an origin. Destination
+      // confirmation is intentionally excluded: it has its own Cue tables.
+      const [ownerMessage] = run.userMessageId
+        ? await db.select({ body: chatMessages.body }).from(chatMessages)
+          .where(eq(chatMessages.id, run.userMessageId)).limit(1)
+        : [];
+      const briefProposal = withoutImplicitDeparture(
+        withoutDestinationCandidates(extractedBriefProposal),
+        ownerMessage?.body ?? "",
+      ) ?? null;
       if (output.destinationCueDecision) {
         try {
           const decision = await output.destinationCueDecision;

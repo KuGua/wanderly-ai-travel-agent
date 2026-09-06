@@ -119,6 +119,22 @@ export function TripPreferenceCard({
     const adjustments = fields
       .filter((field) => Object.hasOwn(draft, field.fieldKey) && draft[field.fieldKey] !== field.value)
       .map((field) => ({ fieldKey: field.fieldKey, value: draft[field.fieldKey] }));
+    // Departure is the exception, because it is not only a preference: it is
+    // one of the three facts the trip brief needs before planning can start.
+    // Submitting the form is the traveller confirming the departure they can
+    // see, so send it even when they did not retype it. Leaving it out meant
+    // an inherited "Shanghai" sat in the card while the trip overview said
+    // "Departure — Not set", and nothing on screen explained the difference.
+    const departure = fields.find((field) => field.fieldKey === "departure_city");
+    const departureValue = departure ? valueOf(departure) : undefined;
+    if (
+      departure
+      && typeof departureValue === "string"
+      && departureValue.trim().length > 0
+      && !adjustments.some((adjustment) => adjustment.fieldKey === "departure_city")
+    ) {
+      adjustments.push({ fieldKey: "departure_city", value: departureValue });
+    }
     onSubmit(adjustments);
   }
 
