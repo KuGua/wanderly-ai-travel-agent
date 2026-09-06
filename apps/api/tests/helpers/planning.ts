@@ -139,6 +139,26 @@ export const testPlanningDependencies: PlanningDependencies = {
         publicExplanationTokens: ["baseline"],
       };
     },
+    async generateDailyItinerary(params) {
+      const dates: string[] = [];
+      for (let cursor = new Date(`${params.travelDateStart}T00:00:00.000Z`); cursor < new Date(`${params.travelDateEnd}T00:00:00.000Z`); cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+        dates.push(cursor.toISOString().slice(0, 10));
+      }
+      return dates.map((date, index) => ({
+        date,
+        timeZone: "destination_local",
+        items: [{
+          kind: index === 0 && Array.isArray(params.plan.flights) && params.plan.flights.length > 0 ? "FLIGHT" : "FREE_TIME",
+          startTimeLocal: "09:00",
+          endTimeLocal: "10:00",
+          title: index === 0 ? "Travel day" : "Free time",
+          verification: index === 0 && Array.isArray(params.plan.flights) && params.plan.flights.length > 0 ? "PROVIDER_BACKED" : "SUGGESTED",
+          ...(index === 0 && Array.isArray(params.plan.flights) && params.plan.flights.length > 0
+            ? { evidenceRef: { category: "flights", id: (params.plan.flights[0] as { id: string }).id } }
+            : {}),
+        }],
+      }));
+    },
     async explainPlanDiff() {
       return { added: [], removed: [], changed: [] };
     },

@@ -214,6 +214,7 @@ async function resolveOfferCueForTurn(params: {
   capability: "flight" | "hotel";
   question: string;
   locale: "en" | "zh";
+  messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
   currentUserMessageSequence: number;
   signal: AbortSignal;
 }): Promise<ResolvedOfferCueDecision | null> {
@@ -271,6 +272,7 @@ async function resolveOfferCueForTurn(params: {
         offerSetId,
         candidates: inputCandidates as unknown as Parameters<typeof gateway.decideFlightOfferCue>[0]["candidates"],
         locale: params.locale,
+        messageSource: params.messageSource ?? "USER_TURN",
         signal,
         ctx: params.ctx.ctx,
       });
@@ -281,6 +283,7 @@ async function resolveOfferCueForTurn(params: {
         offerSetId,
         candidates: inputCandidates as unknown as Parameters<typeof gateway.decideHotelOfferCue>[0]["candidates"],
         locale: params.locale,
+        messageSource: params.messageSource ?? "USER_TURN",
         signal,
         ctx: params.ctx.ctx,
       });
@@ -762,6 +765,7 @@ export async function handleConversationTask(params: {
       capability: "flight",
       question: turnInput.question,
       locale: titleLocale ?? "en",
+      messageSource: "USER_TURN",
       currentUserMessageSequence: flightOfferCueCurrentSeq,
       signal: execution.signal,
     }).catch(() => null)
@@ -773,6 +777,7 @@ export async function handleConversationTask(params: {
       capability: "hotel",
       question: turnInput.question,
       locale: titleLocale ?? "en",
+      messageSource: "USER_TURN",
       currentUserMessageSequence: hotelOfferCueCurrentSeq,
       signal: execution.signal,
     }).catch(() => null)
@@ -1093,7 +1098,9 @@ export async function handleConversationTask(params: {
   // confirmation cards; never create the generic brief-review card from a
   // departure/date phrase embedded in one of them.
   const destinationCueDecision = await destinationCuePromise;
-  const tripBriefProposal = parsed.responseMode === "MODEL" && tripContext.tripStatus === "DRAFT" && !destinationCueDecision
+  const tripBriefProposal = parsed.responseMode === "MODEL"
+    && (tripContext.tripStatus === "DRAFT" || tripContext.tripStatus === "PLANNING")
+    && !destinationCueDecision
     ? mergeTripBriefProposal(
       // Direct owner statements are parsed conservatively and destination
       // values have already passed server-owned place resolution.
@@ -1107,6 +1114,55 @@ export async function handleConversationTask(params: {
       parsedReply.tripBriefProposal,
     )
     : undefined;
+
+  // User-originated decisions always win for this turn. Only when the user
+  // classifier found nothing do we inspect the final persisted reply as a
+  // narrow fallback. This keeps the Personal Agent's prose non-authoritative:
+  // it may request a confirmation card, but can never write the Trip itself.
+  const assistantDestinationCueDecision = destinationCueDecision
+    || parsed.responseMode !== "MODEL"
+    || tripContext.tripStatus !== "DRAFT"
+    || membership.role !== "CREATOR"
+    ? Promise.resolve(destinationCueDecision)
+    : decideDestinationCueForTurn({
+      ctx: { ctx: params.ctx, policyGate: new DefaultPolicyGate("personal") },
+      question: parsed.content,
+      currentDestinations: tripContext.destinationCandidates,
+      locale: titleLocale ?? "en",
+      messageSource: "ASSISTANT_REPLY",
+      signal: execution.signal,
+    }).catch(() => null);
+
+  const assistantFlightOfferCueDecision = flightOfferCuePromise.then((userDecision) => {
+    if (userDecision || parsed.responseMode !== "MODEL" || !canOfferCue || flightOfferCueCurrentSeq === null) {
+      return userDecision;
+    }
+    return resolveOfferCueForTurn({
+      ctx: { ctx: params.ctx, policyGate: new DefaultPolicyGate("personal") },
+      run: params.run,
+      capability: "flight",
+      question: parsed.content,
+      locale: titleLocale ?? "en",
+      messageSource: "ASSISTANT_REPLY",
+      currentUserMessageSequence: flightOfferCueCurrentSeq,
+      signal: execution.signal,
+    });
+  }).catch(() => null);
+  const assistantHotelOfferCueDecision = hotelOfferCuePromise.then((userDecision) => {
+    if (userDecision || parsed.responseMode !== "MODEL" || !canOfferCue || hotelOfferCueCurrentSeq === null) {
+      return userDecision;
+    }
+    return resolveOfferCueForTurn({
+      ctx: { ctx: params.ctx, policyGate: new DefaultPolicyGate("personal") },
+      run: params.run,
+      capability: "hotel",
+      question: parsed.content,
+      locale: titleLocale ?? "en",
+      messageSource: "ASSISTANT_REPLY",
+      currentUserMessageSequence: hotelOfferCueCurrentSeq,
+      signal: execution.signal,
+    });
+  }).catch(() => null);
   // Spec §7.1: derive a display-only destination label from this turn.
   // The label is country/region only — never a city — and lives in
   // shared_trips.title_destination_label, not in destinationCandidates or
@@ -1149,7 +1205,7 @@ export async function handleConversationTask(params: {
     parsed.responseMode, tripContext.tripStatus, params.run.conversationSurface,
   )) {
     const conversation = travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
-    return { ...conversation, destinationCueDecision: Promise.resolve(destinationCueDecision), flightOfferCueDecision: flightOfferCuePromise, hotelOfferCueDecision: hotelOfferCuePromise };
+    return { ...conversation, destinationCueDecision: assistantDestinationCueDecision, flightOfferCueDecision: assistantFlightOfferCueDecision, hotelOfferCueDecision: assistantHotelOfferCueDecision };
   }
 
   // Phase 6 / member conversation handoff — fire-and-forget candidate
@@ -1192,7 +1248,7 @@ export async function handleConversationTask(params: {
   }
 
   const conversation = travelConversationOutputSchema.parse({ ...parsed, ...(tripBriefProposal ? { tripBriefProposal } : {}) });
-  return { ...conversation, destinationCueDecision: Promise.resolve(destinationCueDecision), flightOfferCueDecision: flightOfferCuePromise, hotelOfferCueDecision: hotelOfferCuePromise };
+  return { ...conversation, destinationCueDecision: assistantDestinationCueDecision, flightOfferCueDecision: assistantFlightOfferCueDecision, hotelOfferCueDecision: assistantHotelOfferCueDecision };
 }
 
 function withoutDestination(proposal: TripBriefProposal | null): TripBriefProposal | null {

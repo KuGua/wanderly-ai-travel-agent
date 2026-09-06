@@ -1090,7 +1090,8 @@ export const updateDraftTripBriefInputSchema = z.object({
   titleLocale: z.enum(["en", "zh"]),
 }).strict().refine((value) => value.departureCities !== undefined || value.destinationCandidates !== undefined || value.travelDateStart !== undefined || value.travelDateEnd !== undefined || value.travelDays !== undefined);
 export const updateDraftTripBriefResponseSchema = z.object({
-  trip: z.object({ id: z.string().uuid(), name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"), departureCities: z.array(z.string()), destinationCandidates: z.array(z.string()), travelDateStart: dateSchema.nullable(), travelDateEnd: dateSchema.nullable(), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime() }).strict(),
+  trip: z.object({ id: z.string().uuid(), name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.enum(["DRAFT", "PLANNING"]), departureCities: z.array(z.string()), destinationCandidates: z.array(z.string()), travelDateStart: dateSchema.nullable(), travelDateEnd: dateSchema.nullable(), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime() }).strict(),
+  replan: z.object({ runId: z.string().uuid() }).strict().optional(),
 });
 export const updateTripTitleResponseSchema = z.object({
   trip: z.object({

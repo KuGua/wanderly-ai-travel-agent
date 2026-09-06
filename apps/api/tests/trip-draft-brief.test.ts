@@ -16,7 +16,7 @@ import type { FastifyInstance } from "fastify";
 
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { auditEvents, chatMessages, chatThreads, sharedTrips, tripMembers, users } from "../src/db/schema.js";
+import { agentTaskRuns, auditEvents, chatMessages, chatThreads, constraintSnapshots, itineraryPlans, sharedTrips, tripMembers, tripSearchPreferences, users } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 import { provisionTripAndMember } from "./helpers/trip.js";
@@ -147,5 +147,36 @@ describe("draft-brief travel dates", () => {
     expect(persisted.travelDateEnd).toBe("2026-10-07");
     // The candidate has become a fact, so the card has nothing left to offer.
     expect(persisted.pendingBriefProposal).toBeNull();
+  });
+
+  it("confirms a live duration change by staling the plan and accepting one REPLAN", async () => {
+    const { tripId } = await provisionTripAndMember({ ownerUserId: aliceId });
+    await db.update(sharedTrips).set({
+      travelDateStart: "2026-10-01", travelDateEnd: "2026-10-05", travelDays: 5,
+    }).where(eq(sharedTrips.id, tripId));
+    await db.insert(tripSearchPreferences).values({
+      tripId, version: 1, tripType: "ROUND_TRIP", currency: "CNY", adults: 1,
+      cabin: "ECONOMY", offerFreshnessMinutes: 60, confirmedBy: aliceId,
+    });
+    const [snapshot] = await db.insert(constraintSnapshots).values({
+      tripId, version: 1, authorizedData: {}, departureCities: ["San Francisco"],
+      destinationCandidates: ["City 1", "City 2"], travelDateStart: "2026-10-01", travelDateEnd: "2026-10-05",
+    }).returning();
+    const [plan] = await db.insert(itineraryPlans).values({
+      tripId, snapshotId: snapshot.id, version: 1, status: "ACTIVE", planData: {},
+    }).returning();
+
+    const res = await patchBrief(tripId, { travelDays: 3 });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      trip: { status: "PLANNING", travelDays: 3, travelDateEnd: "2026-10-03" },
+      replan: { runId: expect.any(String) },
+    });
+    const [staledPlan] = await db.select().from(itineraryPlans).where(eq(itineraryPlans.id, plan.id));
+    expect(staledPlan.status).toBe("STALE");
+    const runs = await db.select().from(agentTaskRuns).where(eq(agentTaskRuns.tripId, tripId));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ operation: "REPLAN", status: "QUEUED" });
   });
 });

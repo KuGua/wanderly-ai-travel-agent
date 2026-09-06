@@ -71,6 +71,31 @@ async function draftTripWith(destinations: string[]): Promise<{ tripId: string; 
   return { tripId, run };
 }
 
+async function nextRunFor(run: AgentTaskRow): Promise<AgentTaskRow> {
+  await db.update(agentTaskRuns).set({ status: "COMPLETED", finishedAt: new Date() })
+    .where(eq(agentTaskRuns.id, run.id));
+  const [message] = await db.insert(chatMessages).values({
+    threadId: run.threadId!,
+    senderUserId: run.createdByUserId,
+    role: "USER",
+    body: "京都，就这个",
+    markedSharedByOwner: false,
+    redactedSummary: null,
+  }).returning();
+  const [nextRun] = await db.insert(agentTaskRuns).values({
+    operation: "CONVERSATION",
+    status: "QUEUED",
+    createdByUserId: run.createdByUserId,
+    threadId: run.threadId!,
+    tripId: run.tripId!,
+    requestId: randomUUID(),
+    userMessageId: message.id,
+    contextMaxMessageSequence: message.messageSequence,
+    expiresAt: new Date(Date.now() + 300_000),
+  }).returning();
+  return nextRun;
+}
+
 function decision(
   names: string[],
   intent: "DESTINATION_INTEREST" | "EXPLICIT_SET_DESTINATION" = "EXPLICIT_SET_DESTINATION",
@@ -142,11 +167,25 @@ describe("destination cue — already on the trip", () => {
   });
 
   it("raises every candidate when the trip has settled none", async () => {
-    const { run } = await draftTripWith([]);
+    const { tripId, run } = await draftTripWith([]);
 
     const cue = await persistDestinationCue({ run, decision: decision(["Gero", "Kyoto"]) });
 
     expect(cue?.candidates).toHaveLength(2);
+  });
+
+  it("keeps the existing OPEN card when a later turn names the same city", async () => {
+    const { tripId, run } = await draftTripWith([]);
+    const first = await persistDestinationCue({ run, decision: decision(["Kyoto"]) });
+    const second = await persistDestinationCue({
+      run: await nextRunFor(run),
+      decision: decision(["Kyoto"]),
+    });
+
+    expect(first).not.toBeNull();
+    expect(second).toBeNull();
+    expect(await db.select().from(destinationCueBatches)
+      .where(eq(destinationCueBatches.tripId, tripId))).toHaveLength(1);
   });
 });
 

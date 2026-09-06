@@ -1709,11 +1709,12 @@ export const updateDraftTripBriefRequestSchema = z.object({
 
 export const updateDraftTripBriefResponseSchema = z.object({
   trip: z.object({
-    id: uuidSchema, name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"),
+    id: uuidSchema, name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.enum(["DRAFT", "PLANNING"]),
     departureCities: z.array(z.string()), destinationCandidates: z.array(z.string()),
     travelDateStart: dateStr.nullable(), travelDateEnd: dateStr.nullable(),
     travelDays: z.number().int().nullable(), updatedAt: z.string().datetime(),
   }).strict(),
+  replan: z.object({ runId: uuidSchema }).strict().optional(),
 });
 
 export const updateTripTitleRequestSchema = z.object({

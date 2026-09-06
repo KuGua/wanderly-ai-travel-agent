@@ -188,6 +188,19 @@ export interface ModelGateway {
   }): Promise<Record<string, unknown>>;
 
   /**
+   * Second planning stage. The selection plan has already passed deterministic
+   * evidence validation; this call may only arrange it into a non-bookable,
+   * explicitly-labelled daily suggestion.
+   */
+  generateDailyItinerary?(params: {
+    plan: Record<string, unknown>;
+    travelDateStart: string;
+    travelDateEnd: string;
+    signal?: AbortSignal;
+    ctx?: RequestContext;
+  }): Promise<unknown>;
+
+  /**
    * Optional capability used exclusively by Shared durable planning.  Older
    * deterministic test gateways can omit it; production planning fails
    * closed rather than silently prefetching flight data.
@@ -359,6 +372,9 @@ export interface ModelGateway {
     question: string;
     currentDestinations: string[];
     locale: "en" | "zh";
+    /** The visible message being classified. Assistant replies are only a
+     * fallback after the current user turn produced no cue. */
+    messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<DestinationCueDecisionResult | null>;
@@ -372,6 +388,7 @@ export interface ModelGateway {
     offerSetId: string;
     candidates: FlightOfferCueInputCandidate[];
     locale: "en" | "zh";
+    messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<FlightOfferCueDecisionResult | null>;
@@ -381,6 +398,7 @@ export interface ModelGateway {
     offerSetId: string;
     candidates: HotelOfferCueInputCandidate[];
     locale: "en" | "zh";
+    messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<HotelOfferCueDecisionResult | null>;

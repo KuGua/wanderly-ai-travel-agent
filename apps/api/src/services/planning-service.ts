@@ -1541,7 +1541,7 @@ export async function generatePlan(params: {
    * service calls it again after the gateway returns so no unvalidated model
    * output can cross the authoritative boundary.
    */
-  const validateCandidatePlan = (candidate: Record<string, unknown>) => {
+  const validateCandidatePlan = (candidate: Record<string, unknown>, requireDailyItinerary = false) => {
     // This must run on the raw model candidate, before evidence binding and
     // before the strict output schema. A compact hotel `{ id }` placed in
     // `stays[]` otherwise remains unbound and the stay schema reports only
@@ -1588,6 +1588,7 @@ export async function generatePlan(params: {
           accommodations: allAccommodations,
         },
         requireHotels: hotelEnabled && allHotels.some((hotel) => hotel.destinationId === params.destination),
+        requireDailyItinerary,
       });
     } catch (error) {
       if (error instanceof PlanValidationError) recordPlanValidationFailure(error);
@@ -1930,6 +1931,35 @@ export async function generatePlan(params: {
   // support bounded model repair; this service-side check is the authoritative
   // boundary and also covers gateway implementations without that capability.
   planData = validateCandidatePlan(candidatePlanData);
+
+  // Evidence selection is authoritative before the LLM is asked to arrange a
+  // day-by-day suggestion. That second call never receives the catalog or
+  // tools, so it cannot select a new offer or turn an unverified stop into a
+  // provider fact.
+  if (snapshot.travelDateStart && snapshot.travelDateEnd) {
+    const generateDailyItinerary = dependencies.modelGateway.generateDailyItinerary;
+    // A daily schedule is optional. Its model/schema failure must never
+    // discard the evidence-bound shared plan that was validated above.
+    try {
+      if (!generateDailyItinerary) throw new Error("Daily itinerary gateway capability is unavailable");
+      const dailyItinerary = await generateDailyItinerary({
+        plan: planData,
+        travelDateStart: snapshot.travelDateStart,
+        travelDateEnd: snapshot.travelDateEnd,
+        signal: params.signal,
+        ctx: params.ctx,
+      });
+      planData = validateCandidatePlan({ ...planData, dailyItinerary }, true);
+    } catch (error) {
+      const result = error instanceof PlanValidationError ? "validation_failed" : "unavailable";
+      metrics.inc("daily_itinerary_generation_total", { result });
+      logSafeRuntimeEvent(params.ctx, {
+        component: "planner", event: "daily_itinerary", operation: "generate", outcome: "failure",
+        errorCode: error instanceof PlanValidationError ? error.code : "UNAVAILABLE",
+        relatedRunId: params.agentTaskRunId,
+      });
+    }
+  }
 
   // Per §1.3 of the planner-resilience design, a destination that fails Gate B
   // (no commercial flight authority) must produce a research summary, not a

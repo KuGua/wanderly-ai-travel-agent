@@ -5,10 +5,10 @@ import { evaluateDestinationCuePromptPolicy } from "../src/services/destination-
 import { destinationCueDecisionSchema } from "../src/providers/llm-gateway.js";
 
 describe("destination cue preflight", () => {
-  it("sends flight, hotel, and bare-city language to the classifier", () => {
-    expect(destinationCuePreflight("帮我查一下北京到东京的机票")).toBe("MODEL");
-    expect(destinationCuePreflight("find hotels in Kyoto for next week")).toBe("MODEL");
-    expect(destinationCuePreflight("北京")).toBe("MODEL");
+  it("skips bare cities, origins, and exploration", () => {
+    expect(destinationCuePreflight("帮我查一下北京到东京的机票")).toBe("SKIP");
+    expect(destinationCuePreflight("find hotels in Kyoto for next week")).toBe("SKIP");
+    expect(destinationCuePreflight("北京")).toBe("SKIP");
   });
 
   it("lets an explicit destination command override search wording", () => {
@@ -16,12 +16,9 @@ describe("destination cue preflight", () => {
     expect(destinationCuePreflight("Set Kyoto as the destination and find a hotel")).toBe("MODEL");
   });
 
-  it("sends a genuine travel mention to the model", () => {
-    expect(destinationCuePreflight("我这次想去北京、成都和杭州")).toBe("MODEL");
-  });
-
-  it("also sends a multi-city list to the language classifier", () => {
-    expect(destinationCuePreflight("北京、成都和杭州")).toBe("MODEL");
+  it("recognizes both Chinese forms of explicitly listing a destination", () => {
+    expect(destinationCuePreflight("将东京列为目的地")).toBe("MODEL");
+    expect(destinationCuePreflight("把东京作为本次旅行的目的地")).toBe("MODEL");
   });
 });
 

@@ -221,6 +221,23 @@ export async function persistOfferCue(params: {
         eq(offerCueBatches.capability, capability),
         eq(offerCueBatches.status, "OPEN"),
       )).for("update");
+    // The same visible offer already has an OPEN card. Keep that card rather
+    // than superseding it when the user and final assistant reply both name
+    // the same flight/hotel in adjacent turns.
+    if (open.length > 0) {
+      const pending = await tx.select({ candidateRef: offerCueCandidates.personalOfferCandidateId })
+        .from(offerCueCandidates)
+        .where(and(
+          inArray(offerCueCandidates.batchId, open.map((row) => row.id)),
+          eq(offerCueCandidates.status, "PENDING"),
+        ));
+      if (eligible.some((candidate) => pending.some((existingCandidate) =>
+        existingCandidate.candidateRef === candidate.candidateRef))) {
+        // The existing card remains the sole action surface. Return no new
+        // outcome so the worker does not publish another cue-ready event.
+        return null;
+      }
+    }
     for (const row of open) {
       await tx.update(offerCueCandidates).set({
         status: "EXPIRED",

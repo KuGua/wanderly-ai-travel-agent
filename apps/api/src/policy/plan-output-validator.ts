@@ -109,6 +109,24 @@ const accommodationEvidenceSchema = z.object({
   capturedAt: z.string().datetime({ offset: true }), expiresAt: z.string().datetime({ offset: true }),
 }).strict();
 
+const localTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const itineraryItemSchema = z.object({
+  kind: z.enum(["FLIGHT", "BOOKED_ACTIVITY", "SUGGESTED_STOP", "FREE_TIME", "RETURN_TO_HOTEL"]),
+  startTimeLocal: localTimeSchema,
+  endTimeLocal: localTimeSchema,
+  title: z.string().min(1).max(160),
+  verification: z.enum(["PROVIDER_BACKED", "SUGGESTED"]),
+  evidenceRef: z.object({ category: z.enum(["flights", "activities"]), id: z.string().min(1) }).strict().optional(),
+}).strict();
+const dailyItinerarySchema = z.array(z.object({
+  date: z.string().date(),
+  // We intentionally do not let the model assert an IANA zone. The card says
+  // destination-local time; a future server-owned place-timezone resolver can
+  // replace this closed value without trusting model geography.
+  timeZone: z.literal("destination_local"),
+  items: z.array(itineraryItemSchema).max(12),
+}).strict()).max(31);
+
 export const planOutputSchema = z.object({
   destination: z.string().min(1),
   // Optional for legacy plans. New planners (Team Agent 协作编排 Phase 3) emit
@@ -128,6 +146,8 @@ export const planOutputSchema = z.object({
   activities: z.array(activityEvidenceSchema).optional(),
   hotels: z.array(hotelOfferSchema).optional(),
   accommodations: z.array(accommodationEvidenceSchema).optional(),
+  /** A non-bookable LLM schedule; provider-backed entries must reference a selected offer. */
+  dailyItinerary: dailyItinerarySchema.optional(),
   generatedAt: z.string().min(1),
   constraintReferences: z.array(z.string().min(1)).optional(),
   publicExplanationTokens: z.array(z.string().min(1)).optional(),
@@ -204,6 +224,57 @@ function addViolation(
   violations.push({ code, fieldPath, reason });
 }
 
+function dateRange(start: string, end: string): string[] {
+  const days: string[] = [];
+  for (let cursor = new Date(`${start}T00:00:00.000Z`); cursor < new Date(`${end}T00:00:00.000Z`); cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    days.push(cursor.toISOString().slice(0, 10));
+  }
+  return days;
+}
+
+function validateDailyItinerary(params: {
+  plan: ValidatedPlanOutput;
+  snapshot: ConstraintSnapshotData;
+  required: boolean;
+  violations: PlanValidationViolation[];
+}): void {
+  const itinerary = params.plan.dailyItinerary;
+  if (!itinerary) {
+    if (params.required) addViolation(params.violations, "STRUCTURE_INVALID", "dailyItinerary", "A daily itinerary is required for dated trips");
+    return;
+  }
+  const expectedDates = params.snapshot.travelDateStart && params.snapshot.travelDateEnd
+    ? dateRange(params.snapshot.travelDateStart, params.snapshot.travelDateEnd) : [];
+  if (expectedDates.length > 0 && itinerary.map((day) => day.date).join(",") !== expectedDates.join(",")) {
+    addViolation(params.violations, "STRUCTURE_INVALID", "dailyItinerary", "Daily itinerary dates must cover the trip date range exactly");
+  }
+  const flightIds = new Set(params.plan.flights.map((offer) => offer.id));
+  const activityIds = new Set((params.plan.activities ?? []).map((offer) => offer.id));
+  itinerary.forEach((day, dayIndex) => {
+    let previousEnd = "00:00";
+    day.items.forEach((item, itemIndex) => {
+      const path = `dailyItinerary.${dayIndex}.items.${itemIndex}`;
+      if (item.endTimeLocal <= item.startTimeLocal || item.startTimeLocal < previousEnd) {
+        addViolation(params.violations, "STRUCTURE_INVALID", path, "Daily itinerary items must be ordered and non-overlapping");
+      }
+      previousEnd = item.endTimeLocal;
+      const requiresEvidence = item.kind === "FLIGHT" || item.kind === "BOOKED_ACTIVITY";
+      if (requiresEvidence && (item.verification !== "PROVIDER_BACKED" || !item.evidenceRef)) {
+        addViolation(params.violations, "EVIDENCE_NOT_FOUND", path, "Provider-backed itinerary items must reference selected evidence");
+      }
+      if (!requiresEvidence && (item.verification !== "SUGGESTED" || item.evidenceRef)) {
+        addViolation(params.violations, "STRUCTURE_INVALID", path, "Suggested itinerary items must not claim provider evidence");
+      }
+      if (item.evidenceRef?.category === "flights" && (!requiresEvidence || !flightIds.has(item.evidenceRef.id))) {
+        addViolation(params.violations, "EVIDENCE_NOT_FOUND", `${path}.evidenceRef`, "Flight itinerary reference is not selected evidence");
+      }
+      if (item.evidenceRef?.category === "activities" && (item.kind !== "BOOKED_ACTIVITY" || !activityIds.has(item.evidenceRef.id))) {
+        addViolation(params.violations, "EVIDENCE_NOT_FOUND", `${path}.evidenceRef`, "Activity itinerary reference is not selected evidence");
+      }
+    });
+  });
+}
+
 function validateOfferEvidence<T extends {
   id: string;
   source: string;
@@ -246,6 +317,7 @@ export function validatePlanOutput(params: {
   evidence: PlanProviderEvidence;
   requireActivities?: boolean;
   requireHotels?: boolean;
+  requireDailyItinerary?: boolean;
 }): ValidatedPlanOutput {
   // Preflight the original candidate, before either schema parsing or
   // evidence binding. A compact `{id}` in the wrong category deliberately
@@ -273,6 +345,8 @@ export function validatePlanOutput(params: {
 
   const plan = parsed.data;
   const violations: PlanValidationViolation[] = [];
+
+  validateDailyItinerary({ plan, snapshot: params.snapshot, required: params.requireDailyItinerary ?? false, violations });
 
   (plan.constraintReferences ?? []).forEach((fieldPath, index) => {
     try {

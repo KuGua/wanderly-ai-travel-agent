@@ -67,6 +67,13 @@ describe("buildDraftHandoffProse", () => {
     expect(prose).toContain("不得复述方案内容");
   });
 
+  it("requires explicit confirmation before a live plan's dates or duration can change", () => {
+    const prose = buildDraftHandoffProse(makeContext({ ...activated, sharedPlanningState: "PLAN_AVAILABLE" }));
+    expect(prose).toContain("确认变更卡片");
+    expect(prose).toContain("绝不能声称已经更新");
+    expect(prose).toContain("会自动重跑");
+  });
+
   it("stays silent for a trip past planning with nothing to say", () => {
     expect(buildDraftHandoffProse(makeContext({
       tripStatus: "CONFIRMED",

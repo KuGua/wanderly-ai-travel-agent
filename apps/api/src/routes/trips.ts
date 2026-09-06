@@ -18,6 +18,8 @@ import {
   itineraryPlans,
   memberConfirmations,
   consentGrants,
+  tripSearchPreferences,
+  tripStaySearchPreferences,
 } from "../db/schema.js";
 import {
   createTripSchema,
@@ -44,13 +46,14 @@ import { loadAndAssertTripModeForBrief } from "../services/trip-mode-service.js"
 import { getOrCreateDefaultThread } from "../services/trip-invitation-service.js";
 import { metrics } from "../observability/metrics.js";
 import { createConstraintSnapshot } from "../services/planning-service.js";
-import { acceptResearchTask } from "../tasks/task-repository.js";
+import { acceptPlanningTask, acceptResearchTask } from "../tasks/task-repository.js";
 import { saveConfirmedSearchPreferences } from "../services/flight-search-preferences-service.js";
 import {
   normalizeBriefDestinations,
   normalizeBriefProposalDestinations,
   type TripBriefProposal,
 } from "../services/trip-brief-proposal-service.js";
+import { stalePlansAndConfirmationsForTrip } from "../services/consent-service.js";
 
 const tripIdParamSchema = z.object({ tripId: z.string().uuid() }).strict();
 
@@ -616,7 +619,7 @@ export async function tripRoutes(app: FastifyInstance) {
 
   app.patch("/trips/:tripId/draft-brief", {
     schema: {
-      description: "Apply a creator-confirmed private-chat update or creator-authored brief edit to a DRAFT trip.",
+      description: "Confirm a private-chat brief change. DRAFT updates the brief; a PLANNING trip stales the existing plan and queues one REPLAN.",
       tags: ["trips"], params: toJsonSchema(tripIdParamSchema),
       body: toJsonSchema(updateDraftTripBriefRequestSchema),
       response: { 200: toJsonSchema(updateDraftTripBriefResponseSchema), 403: toJsonSchema(errorResponseSchema), 404: toJsonSchema(errorResponseSchema), 409: toJsonSchema(errorResponseSchema), 422: toJsonSchema(errorResponseSchema) },
@@ -628,7 +631,9 @@ export async function tripRoutes(app: FastifyInstance) {
     const result = await db.transaction(async (tx) => {
       const [trip] = await tx.select().from(sharedTrips).where(eq(sharedTrips.id, tripId)).for("update").limit(1);
       if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
-      if (trip.status !== "DRAFT") throw new ApiError(409, "Conflict", "TRIP_NOT_DRAFT: trip brief can no longer be updated from chat");
+      if (trip.status !== "DRAFT" && trip.status !== "PLANNING") {
+        throw new ApiError(409, "Conflict", "TRIP_NOT_EDITABLE: trip brief can no longer be updated from chat");
+      }
       if (trip.createdBy !== request.user.id) throw new ApiError(403, "Forbidden", "Only the creator may confirm a draft brief update");
 
       const submittedDestinations = body.destinationCandidates === undefined
@@ -651,7 +656,11 @@ export async function tripRoutes(app: FastifyInstance) {
       if (nextDestinations.length > 5) throw new ApiError(409, "Conflict", "TRIP_DESTINATION_LIMIT: draft already has five destinations");
       const nextDepartures = body.departureCities ?? (trip.departureCities as string[]);
       const nextTravelDateStart = body.travelDateStart === undefined ? trip.travelDateStart : body.travelDateStart;
-      const nextTravelDateEnd = body.travelDateEnd === undefined ? trip.travelDateEnd : body.travelDateEnd;
+      const nextTravelDateEnd = body.travelDateEnd === undefined
+        ? body.travelDays !== undefined
+          ? deriveInclusiveEndDate(nextTravelDateStart, body.travelDays) ?? trip.travelDateEnd
+          : trip.travelDateEnd
+        : body.travelDateEnd;
       if ((nextTravelDateStart && !isValidTripDate(nextTravelDateStart))
         || (nextTravelDateEnd && !isValidTripDate(nextTravelDateEnd))
         || (nextTravelDateStart && nextTravelDateEnd && nextTravelDateEnd < nextTravelDateStart)) {
@@ -671,11 +680,35 @@ export async function tripRoutes(app: FastifyInstance) {
         pendingBriefProposal: null,
         ...(trip.nameSource === "AUTO" ? { name: autoTitle, titleLocale: body.titleLocale } : {}), updatedAt: now,
       })).where(eq(sharedTrips.id, tripId));
-      await recordAudit({ ctx, action: "TRIP_DRAFT_BRIEF_UPDATE", actorUserId: request.user.id, tripId, summary: { source: body.replaceDestinationCandidates ? "creator_brief_editor" : "conversation_confirmation", changedFields: [ ...(body.departureCities ? ["departureCities"] : []), ...(body.destinationCandidates ? ["destinationCandidates"] : []), ...(body.travelDateStart !== undefined ? ["travelDateStart"] : []), ...(body.travelDateEnd !== undefined ? ["travelDateEnd"] : []), ...(body.travelDays !== undefined ? ["travelDays"] : []) ] }, tx });
-      return { id: tripId, name: trip.nameSource === "AUTO" ? autoTitle : trip.name, nameSource: trip.nameSource, status: "DRAFT" as const, departureCities: nextDepartures, destinationCandidates: nextDestinations, travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays ?? null, updatedAt: now.toISOString() };
+      const changedFields = [ ...(body.departureCities ? ["departureCities"] : []), ...(body.destinationCandidates ? ["destinationCandidates"] : []), ...(body.travelDateStart !== undefined ? ["travelDateStart"] : []), ...(body.travelDateEnd !== undefined ? ["travelDateEnd"] : []), ...(body.travelDays !== undefined ? ["travelDays"] : []) ];
+      if (trip.status === "DRAFT") {
+        await recordAudit({ ctx, action: "TRIP_DRAFT_BRIEF_UPDATE", actorUserId: request.user.id, tripId, summary: { source: body.replaceDestinationCandidates ? "creator_brief_editor" : "conversation_confirmation", changedFields }, tx });
+        return { trip: { id: tripId, name: trip.nameSource === "AUTO" ? autoTitle : trip.name, nameSource: trip.nameSource, status: "DRAFT" as const, departureCities: nextDepartures, destinationCandidates: nextDestinations, travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays ?? null, updatedAt: now.toISOString() } };
+      }
+
+      // A confirmed change to a live brief invalidates every previous plan.
+      // The snapshot and REPLAN are created in this same transaction, so the
+      // UI cannot observe new dates paired with an executable old plan.
+      await stalePlansAndConfirmationsForTrip(tx, { tripId, reason: "confirmed_brief_change" });
+      const requiredMembers = await tx.select({ userId: tripMembers.userId }).from(tripMembers)
+        .where(and(eq(tripMembers.tripId, tripId), eq(tripMembers.isRequired, true)));
+      if (requiredMembers.length === 0) throw new ApiError(422, "Unprocessable Entity", "A replan requires at least one required trip member");
+      const [flightPreference] = await tx.select({ version: tripSearchPreferences.version }).from(tripSearchPreferences)
+        .where(eq(tripSearchPreferences.tripId, tripId)).orderBy(desc(tripSearchPreferences.version)).limit(1);
+      if (!flightPreference) throw new ApiError(422, "Unprocessable Entity", "Confirmed flight search preferences are required before replanning");
+      const [stayPreference] = process.env.PLAN_ENABLE_HOTEL === "true"
+        ? await tx.select({ version: tripStaySearchPreferences.version }).from(tripStaySearchPreferences)
+          .where(eq(tripStaySearchPreferences.tripId, tripId)).orderBy(desc(tripStaySearchPreferences.version)).limit(1)
+        : [];
+      if (process.env.PLAN_ENABLE_HOTEL === "true" && !stayPreference) throw new ApiError(422, "Unprocessable Entity", "Confirmed stay search preferences are required before replanning");
+      const snapshotId = await createConstraintSnapshot({ tripId, memberIds: requiredMembers.map((member) => member.userId), departureCities: nextDepartures, destinationCandidates: nextDestinations, travelDateStart: nextTravelDateStart ?? undefined, travelDateEnd: nextTravelDateEnd ?? undefined, tx });
+      const accepted = await acceptPlanningTask({ ctx, tripId, userId: request.user.id, snapshotId, flightSearchPreferencesVersion: flightPreference.version, staySearchPreferencesVersion: stayPreference?.version, operation: "REPLAN", requestId: request.clientRequestId ?? randomUUID(), tx });
+      await recordAudit({ ctx, action: "PLAN_REPLAN", actorUserId: request.user.id, tripId, summary: { trigger: "confirmed_brief_change", runId: accepted.runId, changedFields }, tx });
+      return { trip: { id: tripId, name: trip.nameSource === "AUTO" ? autoTitle : trip.name, nameSource: trip.nameSource, status: "PLANNING" as const, departureCities: nextDepartures, destinationCandidates: nextDestinations, travelDateStart: nextTravelDateStart, travelDateEnd: nextTravelDateEnd, travelDays: nextDays ?? null, updatedAt: now.toISOString() }, replan: { runId: accepted.runId } };
     });
-    metrics.inc("trip_draft_brief_update_total", { result: "success" });
-    return updateDraftTripBriefResponseSchema.parse({ trip: result });
+    if (!result.replan) metrics.inc("trip_draft_brief_update_total", { result: "success" });
+    else metrics.inc("plan_replan_total", { trigger: "confirmed_brief_change", result: "enqueued" });
+    return updateDraftTripBriefResponseSchema.parse(result);
   });
 
   // Get trip details

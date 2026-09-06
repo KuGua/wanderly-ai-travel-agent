@@ -93,3 +93,24 @@ Shared Plan 的“可用方案”判定必须依赖已读取的 plan 列表或�
 ## 6. 不需要同步变更的产品文档
 
 `TECH_STACK.md`、`docs/PRD.md` 和 `docs/backlog.md` 已要求服务端状态为权威、无证据不得编造方案、私有/团队约束隔离。本方案是在修正实现与读取契约，不改变产品边界或优先级，故不修改它们。
+
+## 7. 逐日行程建议（2026-09-06）
+
+Shared Agent 在完成并绑定航班、酒店和活动证据选择后，使用第二个无工具的模型调用生成 `dailyItinerary`。该调用只接收已验证的 plan 与行程日期，不能改变选择、调用 provider 或取得 catalog 中未选的项目。
+
+- `FLIGHT`、`BOOKED_ACTIVITY` 必须引用已选 evidence ID，并标为 `PROVIDER_BACKED`；
+- `SUGGESTED_STOP`、`FREE_TIME`、`RETURN_TO_HOTEL` 必须标为 `SUGGESTED`，且不得带 evidence ID、价格、营业时间、路线、交通耗时、地址或预订承诺；
+- 服务端拒绝日期不完整、时间倒置/重叠、伪造引用和把建议标为 provider-backed 的输出。当前时间统一标为目的地本地时间，模型不能声明 IANA 时区；
+- 页面按天折叠展示，首日默认展开，并用文字标签区分“已验证”和“建议，需核验”。历史 plan 没有该字段时保持可读。
+
+## 8. 已启动行程的 brief 变更与 REPLAN（2026-09-06）
+
+`pending_brief_proposal` 同时承载 DRAFT brief 和已启动行程的候选变更；它始终是候选，聊天模型不得将其称为已保存。`PATCH /trips/:tripId/draft-brief` 对 `PLANNING` 行程由创建者确认候选后，在同一事务中更新权威日期/天数、使现有 plan 与 confirmations 进入 `STALE`、创建新 snapshot 并接受一个 `REPLAN`。响应只在该路径携带 `replan.runId`。
+
+界面必须把该路径明确表述为“确认并重新生成”，而不是普通保存；确认前保持旧 plan 可读，确认后显示服务端返回的运行状态。无法确认、缺少 search preferences 或 hotel nationality 授权时，事务回滚，旧日期与 plan 均不变。
+
+## 9. 每日建议的降级边界（2026-09-06）
+
+`dailyItinerary` 是已验证共享方案的可选呈现增强，不是方案选择或证据绑定的一部分。主 plan 完成证据校验后，每日建议模型不可用、JSON/schema 无效或时间校验失败时，服务端保留不带 `dailyItinerary` 的 plan，并以低基数 `daily_itinerary_generation_total` 和安全关联日志记录失败；不得使 `PLAN`、`REPLAN` 或 `RESEARCH/PROPOSE_PLAN` 变为 `INTERNAL`。
+
+失败提示不得从任务失败反推“行程没有任何改动”。固定 UI 文案只说明新共享方案是否产生，并明确已确认的 brief 变更不会回退；这避免与服务端已写入的日期、`STALE` 状态相矛盾。

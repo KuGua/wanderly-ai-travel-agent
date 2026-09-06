@@ -124,6 +124,18 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
     expect(screen.getByText(/TestAir/)).toBeDefined();
   });
 
+  it("renders a daily schedule with verified and suggestion labels", () => {
+    renderCard(makePlan({ planData: { dailyItinerary: [{
+      date: "2026-10-01", timeZone: "destination_local", items: [
+        { startTimeLocal: "09:00", endTimeLocal: "11:00", title: "Verified activity", verification: "PROVIDER_BACKED" },
+        { startTimeLocal: "14:00", endTimeLocal: "16:00", title: "Suggested stop", verification: "SUGGESTED" },
+      ],
+    }] } }));
+    expect(screen.getByText("Daily itinerary suggestions")).toBeDefined();
+    expect(screen.getByText("Verified")).toBeDefined();
+    expect(screen.getByText("Suggestion — verify")).toBeDefined();
+  });
+
   it("marks expired offers", () => {
     renderCard(makePlan({
       planData: {
