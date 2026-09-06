@@ -215,7 +215,7 @@ export function HomeDashboard() {
             /* The facing page. Fog grey read as "the space left over beside
                the calendar"; a warm tint reads as a page of its own, and the
                year keeps the plain white it is printed on. */
-            className="min-w-0 border-t-2 border-[var(--w-ink)] bg-[var(--w-sheet-yellow)] p-4 lg:border-l-2 lg:border-t-0"
+            className="min-w-0 border-t-2 border-[var(--w-ink)] bg-[var(--w-sheet-blue)] p-4 lg:border-l-2 lg:border-t-0"
           >
             <div className="mb-3 flex items-end justify-between gap-3">
             {/* No kicker here. In a 268px column it wrapped to two lines and
