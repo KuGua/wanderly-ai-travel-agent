@@ -55,6 +55,7 @@ export function viewerScopedKey(base: string): string {
 }
 
 const VIEWER_SCOPED_PREFIXES = [
+  "wanderly.recentTrip.",
   "wanderly.privateChatActiveRunId.",
   "wanderly.sharedPlan.lastSeen.",
   "research.realProviderAcked.",

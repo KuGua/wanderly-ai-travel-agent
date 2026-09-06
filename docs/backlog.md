@@ -45,6 +45,15 @@
 3. The first submitted message atomically and idempotently creates one `DRAFT` Trip, creator membership and owner-only default thread, then enters the existing durable conversation flow.
 4. The visible “Start new exploration” action resets only the in-memory session; it never deletes or silently changes an existing Trip.
 5. Draft Trip collaboration commands, except invitation creation and acceptance, are rejected server-side until the creator explicitly activates a complete brief as `PLANNING`; private chats remain isolated after a Draft invitation is accepted.
+6. My program is only a sunlit pixel room, gramophone and real Trip records. The last
+   successfully opened, still-authorized Trip in the current account/tab spins on the
+   platter; others (including archives) sit below. Records open their workspace. No
+   filters or deletion panels appear here; the sidebar remains. A top-right New trip
+   button creates a Draft idempotently and opens its workspace; Explore also supports
+   creation. Signed-out sessions hide cached Trips and cannot create; failures are not empty collections.
+   Other Trips use square paper jackets with visible thickness; hover/focus lifts the
+   jacket and partially extracts its vinyl. A read-only wall calendar shows the local
+   current month and today. Reduced-motion disables spinning and jacket transitions.
 
 ### H2 — Join a shared trip and grant scoped consent
 

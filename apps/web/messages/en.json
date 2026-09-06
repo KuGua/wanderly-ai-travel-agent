@@ -25,6 +25,19 @@
       "coordinate": "{lat}°, {lng}°"
     }
   },
+  "recordRoom": {
+    "exploreGlobe": "Explore with the globe",
+    "newTrip": "New trip",
+    "creating": "Creating…",
+    "createError": "Could not create your trip. Select New trip to retry.",
+    "room": "Sunlit trip record room",
+    "collection": "Other trip records",
+    "open": "Open trip: {name}",
+    "signIn": "Sign in to your record collection",
+    "retry": "Could not load records · Retry",
+    "empty": "Explore your first journey",
+    "loading": "Getting your records…"
+  },
   "auth": {
     "checking": "Checking your session",
     "signIn": "Sign in",

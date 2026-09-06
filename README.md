@@ -9,6 +9,7 @@
 - `docs/frontend-ui-plan.md` — 登录后 UI 地图、前端技术栈决策与 API 就绪度方案。
 - `docs/frontend-prototype-handoff.md` — 探索首页与“我的项目”原型的前端开发交接、组件/API/验收要求。
 - `TECH_STACK.md` — 前后端、Agent、数据、AWS 部署与安全边界的推荐技术栈记录。
+- `infra/` — AWS CDK v2（TypeScript）基础设施；部署与销毁步骤见 [AWS Hackathon 部署手册](docs/aws-hackathon-deployment.md)。
 - `docs/flight-llm-tool-implementation.md` — Amadeus、FlightAPI、SerpAPI Google Flights 与受限 LLM Tool 的实施契约、模块拆分和验收标准。
 - `docs/draft-personal-research-implementation.md` — 已批准、待实现的 DRAFT Personal Research：Trip/thread 绑定、owner-only 真实查询与显式进入 Shared Planning 的研发合同。
 

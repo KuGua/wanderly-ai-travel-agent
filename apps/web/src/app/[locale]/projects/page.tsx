@@ -1,5 +1,5 @@
-import { HomeDashboard } from "@/components/home/home-dashboard";
+import { ProjectsManager } from "@/components/projects/projects-manager";
 
 export default function ProjectsPage() {
-  return <HomeDashboard />;
+  return <ProjectsManager />;
 }

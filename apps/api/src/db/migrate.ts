@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { config as loadEnv } from "dotenv";
 import postgres from "postgres";
+import { databaseConnectionOptions } from "./connection-options.js";
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "migrations");
 
@@ -17,7 +18,7 @@ function buildConnectionString(): string {
 }
 
 export async function runMigrations(connectionString: string = buildConnectionString()): Promise<string[]> {
-  const client = postgres(connectionString, { max: 1 });
+  const client = postgres(connectionString, { ...databaseConnectionOptions(), max: 1 });
   const applied: string[] = [];
 
   try {

@@ -1000,7 +1000,7 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - 未登录的 Home 会阻止 Profile 与 Trip 私人查询，并在两个区域显示“请先登录”及登录入口；服务不可达提示只在已认证会话的读取失败时显示。
 - Profile nullable 字段映射为空表单值；PUT 只提交已修改的可写非空字段，不包含只读字段，失败时保留输入。
 - Explore Map 选择已知演示目的地时只提交服务端规范的 fixture `sourceId`、名称与 `[longitude, latitude]`；动态灵感点和地理搜索结果必须标记为 `INSPIRATION`，浏览器不得提交 `role`、`senderUserId` 或伪造受信任来源。
-- Explore 私聊首次提问通过幂等 start 命令创建当前用户的 Draft Trip 与默认 private thread，后续提问复用该 thread；站内路由切换只从内存探索会话恢复 owner-only history，整页刷新或新标签页不恢复 thread 指针，也不在浏览器持久化消息正文。
+- Explore 私聊首次提问通过幂等 start 命令创建当前用户的 Draft Trip 与默认 private thread，后续提问复用该 thread；站内路由切换只从内存探索会话恢复 owner-only history，整页刷新或新标签页不恢复 thread 指针，也不在浏览器持久化消息正文。失败必须更新会话错误状态并向实际调用方传播；不关心返回值的测试按钮需要显式消费 rejection，避免掩盖真正的未处理异步错误。
 - 每个新 turn 使用新的 UUID `requestId`；acceptance 网络结果不确定时必须复用原 request ID，发送期间禁止并发重复提交。接受成功后 UI 以 durable run status 为准，SSE 断线只降级为轮询；Worker 自动处理受控网络/5xx 重试。最终 `MODEL` 正常展示，terminal provider/model failure 保留 USER、不得持久化 partial ASSISTANT 或伪造 fallback。
   **已知缺口（202/SSE 切换引入）**：`SAFE_REFUSAL` 的核验提示当前不显示。旧的同步响应会返回 `responseMode`，acceptance 响应不再包含它，而 `responseMode` 目前只写入 idempotency `resultPayload` 与 audit summary，既不在 `chat_messages` 上，也不在 `AgentRunResponse` 或 `turn.completed` 事件中。恢复该提示需要先扩展契约，与后续的签证/拒答呈现设计一并处理。
 - 浏览器聊天请求在 Cognito 模式必须使用真实 Cognito access token；没有可用登录 token provider 时，三人真实 API 端到端演示属于显式阻塞项，不得硬编码 token 或退回 demo identity。`local-dev` 仅覆盖一个服务端固定身份的单人 smoke test；本地三用户隔离验收可使用 `custom-local` 的独立数据库账户，登录后必须确认 A 无法读取 B 的 Trip、私有 thread 与消息，且切换账号会清空前一账号的查询缓存。
@@ -1131,25 +1131,39 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 - The first task derives the created thread's `trip_id`; start success plus turn failure/retry cannot create another Trip.
 - Client-side route changes preserve the same in-memory Trip/thread. Reloads, new tabs and post-logout sessions have no old in-memory context and create a distinct Trip only upon their first submitted message.
 - The explicit Trip Workspace → Home map handoff carries the current Trip/thread IDs but is not authorization: Home must re-query the caller's own Trip threads before rendering the history or accepting a turn. A matching, authorized handoff shows the same private messages in Home and Trip Planner and returns to the same `?thread=` route; missing, malformed, cross-Trip or unauthorized IDs show no prior messages and never create a replacement Trip/thread.
-- An unarchived, non-expired `DRAFT` owned by the authenticated member appears in the default `/projects` active list immediately after its creation, contributes to the active count, and is labelled as a draft needing completion. A Draft explicitly archived by the user, or one whose end date has elapsed, is excluded from that default list.
+- An authorized `DRAFT` appears as a record in `/projects` after creation. The room includes archived and past-end Trips; business status and activation remain in the workspace.
 - `Start new exploration` does not delete, archive or mutate the old Trip. Historical Trips are restored only through an explicit project route.
 - Draft commands for consent, snapshot/planning/replan, confirmation and booking return `409 TRIP_NOT_ACTIVE` without side effects. Draft invitation creation and acceptance are explicitly allowed: the creator can copy an email-bound invitation link, the invitee sees a minimal summary (trip name, `DRAFT` status, expiry and "joining grants only a blank private thread"), and accepting adds the invitee as a member while still hiding the creator's private conversation. Cancelled or archived trips reject both new invitations and acceptance with `409 TRIP_NOT_INVITABLE`. A Draft opens the same workspace as a `PLANNING` trip; only its creator sees the workspace activation control and the creator-authored draft brief editor, both of which are required to reach `PLANNING`. A creator's valid explicit activation changes status to `PLANNING`, after which the normal collaboration path works.
 
-### TS-EXPLORE-TRIP-1a — Create a Draft directly from My program and resize the planning workspace
+### TS-EXPLORE-TRIP-1a — Open a Trip from the record room and resize the workspace
 
-**Objective:** Verify the My program entry point creates one idempotent Draft Trip and opens its workspace directly. On desktop, the workspace order is thread list → trip/planning panel → Agent, and users can resize both boundaries without changing Trip state.
+2026-09-07 阳光唱片室回归：
+
+- 地球仪点击与键盘 Enter 进入当前语言 `/home`，中英文链接名称正确；未登录也可导航，既不创建行程也不显示缓存项目。
+
+- 方形纸套有前后纸板和侧边厚度；悬停、键盘聚焦或按下时抬起并抽出黑胶，名称可读，点击路由不变，减弱动效设置禁用过渡。
+- 房间陈设使用统一灰蓝材质与左侧窗光；在747×837、1440×900、1920×700下检查中央纸套选中后的顶部与机身铭牌分离。宽屏纸套不能仅随宽度放大，铭牌支持两行。
+- 月挂历使用浏览器本地日期，周一为首列，正确处理闰年二月、跨月和跨年，今天仅标记一次；挂历不代表出行日期。
+- 未登录不获取或显示缓存行程；登录后只使用真实 Trip API，失败只显示重试，不伪装空集合。
+- 成功打开项目后返回，最近项目在唱盘旋转，其他项目（含归档）横排；点击唱片进入正确项目。
+- 新标签页、存储禁用或指针对应已撤权/删除项目时留空唱盘；不同账号不复用最近访问记录，退出清除指针。
+- 375px/747px/1440px 检查长名称、横向滚动、键盘焦点、旋转；减弱动效关闭旋转，无音频。
+- 保留侧边栏；内容区只有房间、桌子、唱片机、唱片套、月挂历和右上角新增行程按钮，不显示年历、Profile、筛选或删除面板。
+- 已登录点击新增行程：仅创建一次并打开返回的 Trip/defaultThread；失败显示错误，重试复用 requestId；未登录不显示创建按钮。
+
+**Objective:** Verify records open existing workspaces. On desktop, the workspace order is thread list → trip/planning panel → Agent, and users can resize both boundaries without changing Trip state.
 
 **Steps:**
 
-1. From `/projects`, select **New trip** once; simulate a delayed response and repeat only after an error.
-2. Verify the resulting route is `/trips/:tripId?thread=:threadId`, the Trip is `DRAFT`, and the creator sees the bounded brief/activation controls in the right inspector.
+1. Create a Draft through the first Explore message, then open `/projects` and select its record.
+2. Verify the resulting route is `/trips/:tripId`, the Trip is `DRAFT`, and the creator sees the bounded brief/activation controls in the right inspector.
 3. On a desktop-width viewport, verify the thread list is on the left, trip overview/Shared planning is in the centre, and Agent conversation is on the right.
 4. Drag both vertical dividers and repeat with keyboard Left/Right arrows on each divider. Verify the thread rail can shrink to its bounded minimum and the planning panel can grow while keeping a usable Agent pane.
 5. Narrow the viewport below the desktop breakpoint and verify the existing inspector drawer remains usable.
 
 **Expected outcomes:**
 
-- New trip uses the existing idempotent exploration-start command; it never creates a second Trip after a response retry and never routes the user through the map merely to reach the Draft workspace.
+- Opening records never creates a Trip. Creation remains the existing idempotent Explore command.
 - Resizing changes only local layout. It neither writes browser-persisted business state nor changes the Trip, snapshot, preference, task or plan. The desktop bounds preserve a minimum usable width for all three panes.
 - Mobile/tablet keeps the existing explicit inspector open/close behavior.
 
@@ -3133,7 +3147,36 @@ return output the plan contract rejects, and to leave a research matrix cell
 `LLMGateway` 能加载当前配置的 Gemini/OpenAI-compatible client；不得把方法解构后裸调用。
 回归测试必须使用依赖 receiver 状态的 gateway 并核对持久化 JSON，而不能只直接调用方法。
 模型 schema、日期覆盖、时间顺序、证据引用、provider 不可用、修复耗尽和本地调用错误分别计为闭合结果；日志只携带错误码、最多 16 个字段路径、attempt 与关联 ID。传给日程模型的 plan context 不含价格、来源、真实 provider evidence ID 或 provider 原始 payload；Abort 继续终止任务。
+# AWS Hackathon deployment
 
+## AWS-DEPLOY-001 — CDK 合成保持最小、私有且不使用 Bedrock
+
+1. 在 `infra/` 运行 `npm ci && npm run build && npm test && npm run synth`。
+2. 检查 Foundation template：恰好一个 NAT Gateway；RDS 为 `db.t4g.micro`、20 GiB gp3、Single-AZ、非公开、存储加密。
+3. 检查 Runtime template：App Runner 为 `0.25 vCPU / 1 GB`，Fargate task 为 `256 CPU / 512 MiB`，Worker desired count 为 1，且没有 ALB。
+4. 搜索两个 template，确认没有 Bedrock resource；数据库密码、模型 key 与 HMAC secrets 仅为 Secrets Manager dynamic reference，不以明文环境变量出现。
+
+期望：合成和断言通过；构建 context 不包含 `.env`、`node_modules`、`cdk.out` 或前端产物。
+
+## AWS-DEPLOY-002 — 首次数据库 migration 与健康检查
+
+1. 部署 Foundation 并在 Secrets Manager 控制台设置模型 key。
+2. 部署 Runtime；使用输出的 task definition、private subnet 与 Worker security group 启动一次性 Fargate task，命令覆盖为 `node dist/db/migrate.js`。
+3. 等待 task exit code 0，并确认日志只包含 migration 文件名/状态，不含连接密码或个人数据。
+4. 确认 API、Worker 和 migration 均设置 `DB_SSL_MODE=require`；使用 `disable` 连接强制 TLS 的 RDS 时必须失败，不能静默降级为明文。
+5. 确认 Worker service 达到 `1/1`，App Runner `/health` 返回 200；重复运行 migration，确认安全报告 schema 已是最新。
+6. 使用无效模型 key 发起模型调用，确认请求受控失败且日志不输出 key；恢复 key 后重新验证。
+
+期望：数据库 schema 建立且重复 migration 幂等；API/Worker 健康，密钥不出现在模板、日志或客户端。
+
+## AWS-DEPLOY-003 — 演示结束后的费用停止检查
+
+1. 先删除 Runtime stack，确认 App Runner service、ECS service/task 与运行镜像引用不再活跃。
+2. 导出需保留的数据后删除 Foundation stack，确认 NAT Gateway 与 RDS instance 已删除。
+3. 检查 RDS snapshot、retained Cognito user pool、KMS key、Secrets Manager secrets、ECR/S3 bootstrap assets 与 CloudWatch logs，按保留策略人工处理。
+4. 在 Billing/Cost Explorer 确认次日不再出现持续运行的 NAT、RDS、Fargate 或 App Runner 用量。
+
+期望：持续计费资源均被识别；保留项明确且不会被误认为已随 stack 自动删除。
 ### TS-CUE-SCOPE-INDEPENDENCE — 目的地、出发地、机酒与通用 Brief 不串线
 
 **Objective:** Verify that every confirmation scope keeps its own trigger,

@@ -9,7 +9,10 @@ fixtures.
 
 - `/` is locale-detected by next-intl and redirects to the locale-aware Explore globe.
 - `/en/home` and `/zh/home` are the interactive Explore globe routes.
-- `/en/projects` and `/zh/projects` are My program and display the confirmed Trip List fields only.
+- `/en/projects` and `/zh/projects` are a sunlit pixel record room with the existing
+  sidebar navigation. The last opened Trip in this account/tab spins on the gramophone;
+  other authorized Trips are records below. Select a record to open its workspace.
+  See `../../docs/projects-record-collection.md` for states and limitations.
 - `/en/profile` and `/zh/profile` are Travel preference and retain Profile GET/PUT editing.
 
 There is no seeded-user selector. Production identity comes from the account

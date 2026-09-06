@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema.js";
+import { databaseConnectionOptions } from "./connection-options.js";
 
 const connectionString = process.env.DATABASE_URL ??
   `postgres://${process.env.DB_USER ?? "travelagent"}:${process.env.DB_PASSWORD ?? "travelagent"}@${process.env.DB_HOST ?? "127.0.0.1"}:${process.env.DB_PORT ?? "5432"}/${process.env.DB_NAME ?? "travelagent"}`;
@@ -16,13 +17,14 @@ const connectionString = process.env.DATABASE_URL ??
 // connection is reclaimed instead of held for the rest of the run, and pooled
 // connections reopen on demand, so nothing observable changes. Test-only —
 // the long-lived server wants its default pool.
+const connectionOptions = databaseConnectionOptions();
 const queryClient = process.env.NODE_ENV === "test"
-  ? postgres(connectionString, { max: 4, idle_timeout: 1 })
-  : postgres(connectionString);
+  ? postgres(connectionString, { ...connectionOptions, max: 4, idle_timeout: 1 })
+  : postgres(connectionString, connectionOptions);
 
 export const db = drizzle(queryClient, { schema });
 export const rawDb = queryClient;
 export function createDedicatedDatabaseClient() {
-  return postgres(connectionString, { max: 1 });
+  return postgres(connectionString, { ...connectionOptions, max: 1 });
 }
 export type DB = typeof db;

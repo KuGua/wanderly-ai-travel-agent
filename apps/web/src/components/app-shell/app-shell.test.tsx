@@ -8,6 +8,11 @@ describe("contentGridClass", () => {
   });
 
   it("keeps the desktop rail gutter for standard pages", () => {
-    expect(contentGridClass("/projects")).toBe("sm:col-start-2");
+    expect(contentGridClass("/profile")).toBe("sm:col-start-2");
+    expect(contentGridClass("/trips/example")).toBe("sm:col-start-2");
+  });
+
+  it("extends the record room behind the preserved floating sidebar", () => {
+    expect(contentGridClass("/projects")).toBe("sm:col-span-2 sm:col-start-1");
   });
 });
