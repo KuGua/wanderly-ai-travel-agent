@@ -53,7 +53,7 @@ Amazon RDS for PostgreSQL
 | Visa / entry | `VisaProvider` typed adapter；首选 Sherpa Requirements API（签约/验证后） | 全球覆盖采用两阶段：候选阶段仅核验目的地；选定具体航班后按完整中转航段核验。未配置、过期或失败时只显示 `UNAVAILABLE`/官方核验下一步。国籍只从当前授权 snapshot 在服务端使用；详情仅本人可见。 | RAG、规则网页抓取、浏览器直连 widget/API、LLM/Wikipedia 推断签证、代办、法律结论。 |
 | 异步与编排 | PostgreSQL 持久任务状态机、租约领取、idempotency key、transactional outbox、`agent_task_runs`；Fargate Worker；同步 booking sandbox | 对话、planning 与 replan 都以 `QUEUED → RUNNING → COMPLETED/FAILED/STALE/CANCELLED` 执行；显式 Stop 是唯一取消源。租约过期可恢复，最终提交按 lease token 和版本条件化；不把 partial 文本作为业务记录。 | Temporal Cloud、Step Functions、Redis 队列同时进入 MVP；把浏览器/SSE 断开视为取消。 |
 | 可观测性 | OpenTelemetry + CloudWatch；结构化日志和低基数业务指标 | 以 `trip_id`、`plan_version`、`run_id`、`orchestration_request_id` 关联结果；日志不含私聊、国籍明文、证件号、支付数据。 | 先建独立数据湖或全套企业 APM。 |
-| 密钥与部署 | AWS Secrets Manager、最小 IAM role、ECR、GitHub Actions OIDC、IaC | API keys 仅后端可读；GitHub OIDC 避免在 CI 保存长期 AWS 凭据。[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-cloud-providers) | 将 API key、数据库密码或 Cognito secret 放进浏览器、代码库或 demo fixture。 |
+| 密钥与部署 | AWS Secrets Manager、最小 IAM role、ECR、GitHub Actions OIDC、**AWS CDK v2（TypeScript）** | API keys 仅后端可读；CDK 固化 App Runner、Fargate Worker、RDS、Cognito、VPC 与 cost tags；GitHub OIDC 避免在 CI 保存长期 AWS 凭据。操作手册见 [AWS Hackathon 部署手册](docs/aws-hackathon-deployment.md)。[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-cloud-providers) | 将 API key、数据库密码或 Cognito secret 放进浏览器、代码库或 demo fixture。 |
 
 ### 探索会话与 Draft Trip 生命周期
 

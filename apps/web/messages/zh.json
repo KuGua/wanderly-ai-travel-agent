@@ -25,6 +25,19 @@
       "coordinate": "{lat}°, {lng}°"
     }
   },
+  "recordRoom": {
+    "exploreGlobe": "点击地球仪，去探索",
+    "newTrip": "新增行程",
+    "creating": "正在创建…",
+    "createError": "创建失败，请点击新增行程重试。",
+    "room": "阳光下的行程唱片室",
+    "collection": "其他行程唱片",
+    "open": "打开行程：{name}",
+    "signIn": "登录，取出你的唱片",
+    "retry": "唱片暂未取出 · 重试",
+    "empty": "去探索，收藏第一段旅程",
+    "loading": "正在取出唱片…"
+  },
   "auth": {
     "checking": "正在检查登录状态",
     "signIn": "登录",

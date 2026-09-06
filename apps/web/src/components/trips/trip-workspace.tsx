@@ -26,6 +26,8 @@ import {
 } from "@/lib/query/hooks";
 import { TravelApiError } from "@/lib/api/errors";
 import { readLastSeenVersion } from "@/lib/trips/shared-plan-read-state";
+import { rememberRecentTrip } from "@/lib/trips/recent-trip";
+import { useOptionalAuth } from "@/lib/auth/auth-provider";
 
 const DEFAULT_THREAD_QUERY = "thread";
 const SHARED_VIEW_QUERY = "view";
@@ -62,6 +64,11 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
   const querySharedView = searchParams.get(SHARED_VIEW_QUERY) === SHARED_VIEW_VALUE;
 
   const tripQuery = useTrip(tripId);
+  const recentAuth = useOptionalAuth();
+  const recentViewer = recentAuth?.status === "LOCAL_DEV" ? "local-dev" : recentAuth?.status === "SIGNED_IN" ? recentAuth.user?.username : null;
+  useEffect(() => {
+    if (recentViewer && tripQuery.isSuccess && tripQuery.data?.trip.id === tripId) rememberRecentTrip(recentViewer, tripId);
+  }, [recentViewer, tripQuery.isSuccess, tripQuery.data?.trip.id, tripId]);
   const threadsQuery = useTripThreads(tripId);
   const plansQuery = useTripPlans(tripId);
   const createThread = useCreateTripThread(tripId);

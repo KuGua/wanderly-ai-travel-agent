@@ -8,6 +8,7 @@
 .husky
 .next
 .claude
+infra
 docs
 assets
 README.md
@@ -33,3 +34,7 @@ apps/api/coverage
 **/dist
 **/.turbo
 **/.cache
+
+# Local configuration is never part of a deployable image build context.
+**/.env
+**/.env.*

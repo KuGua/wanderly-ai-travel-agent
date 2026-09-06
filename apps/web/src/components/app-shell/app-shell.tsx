@@ -22,9 +22,10 @@ const navigation: readonly NavEntry[] = [
 ] as const;
 
 export function contentGridClass(pathname: string): string {
-  // The Explore map is an immersive surface. Let the fixed rail float above
-  // it instead of reserving a page-colour gutter behind the navigation.
-  return pathname === "/home" ? "sm:col-span-2 sm:col-start-1" : "sm:col-start-2";
+  // Immersive scenes extend behind the floating rail without a page-colour gutter.
+  return pathname === "/home" || pathname === "/projects"
+    ? "sm:col-span-2 sm:col-start-1"
+    : "sm:col-start-2";
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
