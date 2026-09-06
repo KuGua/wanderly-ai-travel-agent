@@ -252,7 +252,7 @@ const TRIP_BRIEF_EXTRACTION_RULES = [
   "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
 ];
 
-const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v3";
+const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v4";
 
 // ─── Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
 //     docs/hotel-offer-cue-model-draft.md) ──────────────────────────────────
@@ -323,32 +323,34 @@ export interface FlightOfferCueDecisionResult {
 
 export type HotelOfferCueDecisionResult = FlightOfferCueDecisionResult;
 
-const FLIGHT_OFFER_CUE_PROMPT_VERSION = "flight-offer-cue/v1";
-const HOTEL_OFFER_CUE_PROMPT_VERSION = "hotel-offer-cue/v1";
+const FLIGHT_OFFER_CUE_PROMPT_VERSION = "flight-offer-cue/v2";
+const HOTEL_OFFER_CUE_PROMPT_VERSION = "hotel-offer-cue/v2";
 
 export const FLIGHT_OFFER_CUE_SYSTEM_PROMPT = [
-  "You decide whether the traveller's current message is selecting one specific flight offer from the bounded list the user has already seen.",
-  "Inputs: currentMessage (the traveller's text), offers (up to 5 flight options with carrierCode, flightNumber, departureAt, arrivalAt, totalDuration, totalPrice bucketed, stopCount, routeKey).",
+  "You decide whether one visible message selects one specific flight offer from the bounded list the traveller has already seen.",
+  "Inputs: currentMessage, messageSource (USER_TURN or ASSISTANT_REPLY), offers (up to 5 flight options with carrierCode, flightNumber, departureAt, arrivalAt, totalDuration, totalPrice bucketed, stopCount, routeKey).",
   "Output exactly one JSON object: { decision: PROPOSE|NO_CUE|NEEDS_CLARIFICATION, candidates: [{ candidateRef, intent: EXPLICIT_SELECT|STRONG_PREFERENCE }], reasonCode }.",
   "Constraints: candidates must come from the provided offers; same routeKey at most once; PROPOSE requires at least 1 candidate; NO_CUE and NEEDS_CLARIFICATION must carry zero candidates.",
   "Map EXPLICIT_SELECT (e.g. '订这班', 'first flight', 'CA1234 吧') and STRONG_PREFERENCE (e.g. 'the cheapest direct', 'the morning one') to PROPOSE.",
   "Map INSPECT_ONLY ('what time?', 'any baggage?'), COMPARE_ONLY ('which is cheaper?'), REJECTED ('too early'), SEARCH_AGAIN ('something else'), AMBIGUOUS_REFERENCE ('that one' with no resolvable ref), NO_SELECTION_INTENT ('great flight') to NO_CUE.",
   "NEEDS_CLARIFICATION is required when the message implies a selection but the candidates cannot disambiguate (e.g. 'first or second' when both share a routeKey, or 'the early one' with multiple matching candidates).",
+  "For USER_TURN, apply the selection rules normally. For ASSISTANT_REPLY, propose only when the final visible reply directly asks the traveller to confirm/select exactly one resolvable offer, or directly states that exactly one offer is confirmed. A recommendation, comparison, list, conditional statement, generic next-step prompt, or ambiguous question is NO_CUE.",
   "Never output free-text rationale, provider IDs, URLs, or fields not in the input.",
 ].join(" ");
 
 export const HOTEL_OFFER_CUE_SYSTEM_PROMPT = [
-  "You decide whether the traveller's current message is selecting one specific hotel offer from the bounded list the user has already seen.",
-  "Inputs: currentMessage (the traveller's text), offers (up to 5 hotel options with propertyName, checkIn, checkOut, pricePerNight, totalPrice bucketed, taxStatus, stayKey).",
+  "You decide whether one visible message selects one specific hotel offer from the bounded list the traveller has already seen.",
+  "Inputs: currentMessage, messageSource (USER_TURN or ASSISTANT_REPLY), offers (up to 5 hotel options with propertyName, checkIn, checkOut, pricePerNight, totalPrice bucketed, taxStatus, stayKey).",
   "Output exactly one JSON object: { decision: PROPOSE|NO_CUE|NEEDS_CLARIFICATION, candidates: [{ candidateRef, intent: EXPLICIT_SELECT|STRONG_PREFERENCE }], reasonCode }.",
   "Constraints: candidates must come from the provided offers; same stayKey at most once; PROPOSE requires at least 1 candidate; NO_CUE and NEEDS_CLARIFICATION must carry zero candidates.",
   "Map EXPLICIT_SELECT (e.g. '订这家', '第一家吧', '就住外滩那家') and STRONG_PREFERENCE (e.g. '带免费取消的那家最合适', '市中心那家就它') to PROPOSE.",
   "Map INSPECT_ONLY ('有早餐吗?', '离地铁多远?'), COMPARE_ONLY ('哪家更便宜?'), REJECTED ('太贵了'), SEARCH_AGAIN ('换个区域'), AMBIGUOUS_REFERENCE ('那家' with no resolvable ref), NO_SELECTION_INTENT ('这家不错') to NO_CUE.",
   "NEEDS_CLARIFICATION is required when the message implies a selection but the candidates cannot disambiguate (e.g. '第一家还是第二家' for the same stayKey, or '市中心那家' with multiple matching candidates).",
+  "For USER_TURN, apply the selection rules normally. For ASSISTANT_REPLY, propose only when the final visible reply directly asks the traveller to confirm/select exactly one resolvable offer, or directly states that exactly one offer is confirmed. A recommendation, comparison, list, conditional statement, generic next-step prompt, or ambiguous question is NO_CUE.",
   "Never output free-text rationale, provider IDs, URLs, or fields not in the input.",
 ].join(" ");
 const DESTINATION_CUE_SYSTEM_PROMPT = [
-  "Classify ONLY the owner's current message for owner-only destination confirmation or exclusion.",
+  "Classify one visible message for a private destination confirmation or exclusion cue.",
   "Return exactly one JSON object with candidates, isNeutralMultiCityList, and reasonCode.",
   "Each candidate is an object with mentionedText, ordinal, intent, and triggerContext.",
   "A bare single city, a question or introduction about one city, weak interest in one city, a hotel request in one city, and a flight request with one destination city all produce one candidate.",
@@ -358,7 +360,8 @@ const DESTINATION_CUE_SYSTEM_PROMPT = [
   "Use intent DESTINATION_INTEREST for ordinary interest, EXPLICIT_SET_DESTINATION for an explicit set command, and EXPLICIT_EXCLUDE_DESTINATION only for a direct owner instruction not to visit, arrange, consider, or include that city.",
   "Do not classify double negation, a hypothetical/conditional, quoted or third-party preference, general discussion, or unclear negation scope as EXPLICIT_EXCLUDE_DESTINATION.",
   "Use triggerContext BARE_CITY, CITY_EXPLORATION, FLIGHT_DESTINATION, HOTEL_DESTINATION, EXPLICIT_DESTINATION_COMMAND, or EXPLICIT_EXCLUSION_COMMAND.",
-  "Never infer from assistant text, history, a map selection, provider result, country, region, airport alone, or an unresolved pronoun.",
+  "For USER_TURN, classify the owner's current message. The optional previousAssistantReply may be used only when the current message is an unambiguous affirmation of exactly one city proposed there; treat that result as a user selection. Never otherwise infer from assistant text or history.",
+  "For ASSISTANT_REPLY, propose only when the final visible reply directly says a single resolved city has been set as the destination, or directly asks the owner to confirm a single resolved destination. Suggestions, comparisons, city lists, conditional statements, and disambiguation questions are NO_DESTINATION.",
   "Exclude cities already present in currentDestinations. Preserve textual order and return at most five unique candidates.",
   "Allowed reasonCode values: SINGLE_DESTINATION_INTEREST, EXPLICIT_DESTINATION_COMMAND, EXPLICIT_EXCLUSION_COMMAND, NEUTRAL_MULTI_CITY_LIST, NO_DESTINATION, AMBIGUOUS_REFERENCE.",
   "Example: {\"candidates\":[{\"mentionedText\":\"北京\",\"ordinal\":0,\"intent\":\"DESTINATION_INTEREST\",\"triggerContext\":\"BARE_CITY\"}],\"isNeutralMultiCityList\":false,\"reasonCode\":\"SINGLE_DESTINATION_INTEREST\"}.",
@@ -2449,6 +2452,8 @@ export class LLMGateway implements ModelGateway {
     question: string;
     currentDestinations: string[];
     locale: "en" | "zh";
+    messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
+    previousAssistantReply?: string;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<DestinationCueDecisionResult | null> {
@@ -2483,6 +2488,8 @@ export class LLMGateway implements ModelGateway {
               currentMessage: params.question,
               currentDestinations: params.currentDestinations,
               locale: params.locale,
+              messageSource: params.messageSource ?? "USER_TURN",
+              ...(params.previousAssistantReply ? { previousAssistantReply: params.previousAssistantReply } : {}),
             }),
           },
         ],
@@ -2505,6 +2512,7 @@ export class LLMGateway implements ModelGateway {
     offerSetId: string;
     candidates: FlightOfferCueInputCandidate[];
     locale: "en" | "zh";
+    messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<FlightOfferCueDecisionResult | null> {
@@ -2540,6 +2548,7 @@ export class LLMGateway implements ModelGateway {
               offerSetId: params.offerSetId,
               offers: params.candidates,
               locale: params.locale,
+              messageSource: params.messageSource ?? "USER_TURN",
             }),
           },
         ],
@@ -2562,6 +2571,7 @@ export class LLMGateway implements ModelGateway {
     offerSetId: string;
     candidates: HotelOfferCueInputCandidate[];
     locale: "en" | "zh";
+    messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<HotelOfferCueDecisionResult | null> {
@@ -2597,6 +2607,7 @@ export class LLMGateway implements ModelGateway {
               offerSetId: params.offerSetId,
               offers: params.candidates,
               locale: params.locale,
+              messageSource: params.messageSource ?? "USER_TURN",
             }),
           },
         ],

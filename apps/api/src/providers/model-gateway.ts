@@ -328,6 +328,12 @@ export interface ModelGateway {
     question: string;
     currentDestinations: string[];
     locale: "en" | "zh";
+    /** The visible message being classified. Assistant replies are only a
+     * fallback after the current user turn produced no cue. */
+    messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
+    /** Immediate preceding final assistant reply, supplied only to let an
+     * unambiguous user affirmation select the city it just proposed. */
+    previousAssistantReply?: string;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<DestinationCueDecisionResult | null>;
@@ -341,6 +347,7 @@ export interface ModelGateway {
     offerSetId: string;
     candidates: FlightOfferCueInputCandidate[];
     locale: "en" | "zh";
+    messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<FlightOfferCueDecisionResult | null>;
@@ -350,6 +357,7 @@ export interface ModelGateway {
     offerSetId: string;
     candidates: HotelOfferCueInputCandidate[];
     locale: "en" | "zh";
+    messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<HotelOfferCueDecisionResult | null>;

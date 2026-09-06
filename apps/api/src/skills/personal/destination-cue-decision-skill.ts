@@ -43,6 +43,8 @@ export const destinationCueDecisionInputSchema = z.object({
   question: z.string().trim().min(1).max(4000),
   currentDestinations: z.array(z.string().trim().min(1).max(128)).max(5),
   locale: z.enum(["en", "zh"]),
+  messageSource: z.enum(["USER_TURN", "ASSISTANT_REPLY"]).default("USER_TURN"),
+  previousAssistantReply: z.string().trim().min(1).max(4000).optional(),
 }).strict();
 
 export const destinationCueDecisionOutputSchema = z.object({
@@ -69,6 +71,8 @@ export async function decideDestinationCueForTurn(params: {
   question: string;
   currentDestinations: string[];
   locale: "en" | "zh";
+  messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
+  previousAssistantReply?: string;
   signal: AbortSignal;
 }): Promise<ResolvedDestinationCueDecision | null> {
   destinationCuePreflight(params.question);
@@ -84,6 +88,8 @@ export async function decideDestinationCueForTurn(params: {
     question: params.question,
     currentDestinations: params.currentDestinations,
     locale: params.locale,
+    messageSource: params.messageSource ?? "USER_TURN",
+    ...(params.previousAssistantReply ? { previousAssistantReply: params.previousAssistantReply } : {}),
     signal,
     ctx: params.ctx.ctx,
   });
@@ -93,7 +99,8 @@ export async function decideDestinationCueForTurn(params: {
   const seen = new Set<string>();
   const candidates: ResolvedDestinationCueDecision["candidates"] = [];
   const modelCandidates = [...result.decision.candidates].sort((a, b) => a.ordinal - b.ordinal);
-  const deterministicExplicitSet = EXPLICIT_DESTINATION_COMMAND.test(params.question)
+  const deterministicExplicitSet = params.messageSource !== "ASSISTANT_REPLY"
+    && EXPLICIT_DESTINATION_COMMAND.test(params.question)
     && modelCandidates.length === 1
     && modelCandidates[0]?.intent !== "EXPLICIT_EXCLUDE_DESTINATION";
   for (const candidate of modelCandidates) {

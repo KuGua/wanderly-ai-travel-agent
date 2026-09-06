@@ -102,6 +102,24 @@ export async function persistDestinationCue(params: {
       .from(destinationCueBatches)
       .where(and(eq(destinationCueBatches.threadId, threadId), eq(destinationCueBatches.status, "OPEN")))
       .for("update");
+    // A card for this exact canonical destination is already on screen. Do
+    // not replace it just because a later user turn or the assistant's reply
+    // reaches the same conclusion; the existing card remains the one action
+    // surface for that entity.
+    for (const row of open) {
+      const pending = await tx.select({ candidateKeyHash: destinationCueCandidates.candidateKeyHash })
+        .from(destinationCueCandidates)
+        .where(and(
+          eq(destinationCueCandidates.batchId, row.id),
+          eq(destinationCueCandidates.status, "PENDING"),
+        ));
+      if (eligible.some((candidate) => pending.some((existingCandidate) =>
+        existingCandidate.candidateKeyHash === candidate.candidateKeyHash))) {
+        // The client has already restored this OPEN card; returning null also
+        // prevents the worker from publishing another `cue_ready` event.
+        return null;
+      }
+    }
     for (const row of open) {
       await tx.update(destinationCueCandidates).set({ status: "SUPERSEDED", resolvedAt: now })
         .where(and(eq(destinationCueCandidates.batchId, row.id), eq(destinationCueCandidates.status, "PENDING")));
