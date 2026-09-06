@@ -678,8 +678,12 @@
   box-shadow:
     3px 3px 0 -1px var(--w-page),
     3px 3px 0 var(--w-ink),
-    7px 7px 0 -1px var(--w-page),
-    7px 7px 0 var(--w-ink);
+    8px 8px 0 -1px var(--w-page),
+    8px 8px 0 var(--w-ink),
+    /* The stack lands on a hard ink drop, the same kind the navigation rail
+       casts. Deepening the sheets alone only ever adds more paper; what gives
+       the block its height is something under it that is not paper. */
+    13px 13px 0 var(--w-ink);
 }
 
 /* The same sheet of paper, without the hardware. The profile page is one long
@@ -692,8 +696,10 @@
   box-shadow:
     3px 3px 0 -1px var(--w-page),
     3px 3px 0 var(--w-ink),
-    7px 7px 0 -1px var(--w-page),
-    7px 7px 0 var(--w-ink);
+    8px 8px 0 -1px var(--w-page),
+    8px 8px 0 var(--w-ink),
+    /* Same drop as the pad — see there. */
+    13px 13px 0 var(--w-ink);
 }
 
 /* The binding column: a strip of paper the holes are punched through. */
