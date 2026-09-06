@@ -362,9 +362,6 @@ export interface ModelGateway {
     /** The visible message being classified. Assistant replies are only a
      * fallback after the current user turn produced no cue. */
     messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
-    /** Immediate preceding final assistant reply, supplied only to let an
-     * unambiguous user affirmation select the city it just proposed. */
-    previousAssistantReply?: string;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<DestinationCueDecisionResult | null>;

@@ -4,7 +4,7 @@
 
 ## 实施说明
 
-本次没有扩展 Personal Agent 的写库权限，也没有新增数据库迁移。运行时先完成 USER Cue 决策；仅当它没有命中时，才以该 turn 的最终可见 Assistant 回复作为 fallback。Destination 的 USER 决策额外可读取紧邻上一条最终 Assistant 回复，以便把“是否以惠安为目的地？”后的“是的”识别为 USER 来源。Flight / Hotel 仍只使用当前 thread 已展示、未过期的安全 offer 投影。
+本次没有扩展 Personal Agent 的写库权限，也没有新增数据库迁移。运行时先完成 USER Cue 决策；仅当它没有命中时，才以该 turn 的最终可见 Assistant 回复作为 fallback。Destination 仅接受明确“将/把 X 设为、列为目的地”的表达；裸城市、出发地、推荐、消歧问题与“是的”均不触发。Flight / Hotel 仍只使用当前 thread 已展示、未过期的安全 offer 投影。
 
 同一实体已有 OPEN 卡时，持久化层保持该卡但不产生新的 Cue 结果（因此不会再发送 `cue_ready`）；后续同实体的 USER/Assistant 文本不会造成重复展示，卡片仍是唯一的确认写入入口。
 

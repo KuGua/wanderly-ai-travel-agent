@@ -247,7 +247,7 @@ const TRIP_BRIEF_EXTRACTION_RULES = [
   "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
 ];
 
-const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v4";
+const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v5";
 
 // ─── Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
 //     docs/hotel-offer-cue-model-draft.md) ──────────────────────────────────
@@ -348,18 +348,12 @@ const DESTINATION_CUE_SYSTEM_PROMPT = [
   "Classify one visible message for a private destination confirmation or exclusion cue.",
   "Return exactly one JSON object with candidates, isNeutralMultiCityList, and reasonCode.",
   "Each candidate is an object with mentionedText, ordinal, intent, and triggerContext.",
-  "A bare single city, a question or introduction about one city, weak interest in one city, a hotel request in one city, and a flight request with one destination city all produce one candidate.",
-  "For a route such as 'from Shanghai to Beijing', Shanghai is the origin and only Beijing is the destination candidate.",
-  "A neutral list or comparison containing two or more possible destination cities produces no candidates and isNeutralMultiCityList=true.",
-  "The neutral-list rule does not erase explicit per-city commands. 'Set Shanghai as destination, but exclude Beijing' produces two candidates with different intents.",
-  "Use intent DESTINATION_INTEREST for ordinary interest, EXPLICIT_SET_DESTINATION for an explicit set command, and EXPLICIT_EXCLUDE_DESTINATION only for a direct owner instruction not to visit, arrange, consider, or include that city.",
-  "Do not classify double negation, a hypothetical/conditional, quoted or third-party preference, general discussion, or unclear negation scope as EXPLICIT_EXCLUDE_DESTINATION.",
-  "Use triggerContext BARE_CITY, CITY_EXPLORATION, FLIGHT_DESTINATION, HOTEL_DESTINATION, EXPLICIT_DESTINATION_COMMAND, or EXPLICIT_EXCLUSION_COMMAND.",
-  "For USER_TURN, classify the owner's current message. The optional previousAssistantReply may be used only when the current message is an unambiguous affirmation of exactly one city proposed there; treat that result as a user selection. Never otherwise infer from assistant text or history.",
-  "For ASSISTANT_REPLY, propose only when the final visible reply directly says a single resolved city has been set as the destination, or directly asks the owner to confirm a single resolved destination. Suggestions, comparisons, city lists, conditional statements, and disambiguation questions are NO_DESTINATION.",
+  "Produce a candidate ONLY for a direct command or declaration that names a city and explicitly sets/lists/marks it as this trip's destination (for example '把东京列为目的地' or 'Set Kyoto as the destination'). Use EXPLICIT_SET_DESTINATION and EXPLICIT_DESTINATION_COMMAND.",
+  "A bare city, a city introduced as an origin, a question, exploration, recommendation, flight/hotel search, route, comparison, city list, conditional statement, disambiguation, or a bare affirmation is NO_DESTINATION. Never infer destination intent from those forms.",
+  "For ASSISTANT_REPLY, apply the same explicit-command requirement. '是否以惠安为目的地？' is a disambiguation question and is NO_DESTINATION; '已将惠安列为目的地' is eligible.",
   "Exclude cities already present in currentDestinations. Preserve textual order and return at most five unique candidates.",
   "Allowed reasonCode values: SINGLE_DESTINATION_INTEREST, EXPLICIT_DESTINATION_COMMAND, EXPLICIT_EXCLUSION_COMMAND, NEUTRAL_MULTI_CITY_LIST, NO_DESTINATION, AMBIGUOUS_REFERENCE.",
-  "Example: {\"candidates\":[{\"mentionedText\":\"北京\",\"ordinal\":0,\"intent\":\"DESTINATION_INTEREST\",\"triggerContext\":\"BARE_CITY\"}],\"isNeutralMultiCityList\":false,\"reasonCode\":\"SINGLE_DESTINATION_INTEREST\"}.",
+  "Example: {\"candidates\":[{\"mentionedText\":\"北京\",\"ordinal\":0,\"intent\":\"EXPLICIT_SET_DESTINATION\",\"triggerContext\":\"EXPLICIT_DESTINATION_COMMAND\"}],\"isNeutralMultiCityList\":false,\"reasonCode\":\"EXPLICIT_DESTINATION_COMMAND\"}.",
 ].join("\n");
 
 function canonicalize(value: unknown): string {
@@ -2486,7 +2480,6 @@ export class LLMGateway implements ModelGateway {
     currentDestinations: string[];
     locale: "en" | "zh";
     messageSource?: "USER_TURN" | "ASSISTANT_REPLY";
-    previousAssistantReply?: string;
     signal?: AbortSignal;
     ctx?: RequestContext;
   }): Promise<DestinationCueDecisionResult | null> {
@@ -2522,7 +2515,6 @@ export class LLMGateway implements ModelGateway {
               currentDestinations: params.currentDestinations,
               locale: params.locale,
               messageSource: params.messageSource ?? "USER_TURN",
-              ...(params.previousAssistantReply ? { previousAssistantReply: params.previousAssistantReply } : {}),
             }),
           },
         ],

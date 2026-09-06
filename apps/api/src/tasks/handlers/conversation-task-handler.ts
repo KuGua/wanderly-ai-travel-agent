@@ -700,12 +700,6 @@ export async function handleConversationTask(params: {
   // the read path stays pure and retryable (§3.1.4 / §6). Failures here
   // bubble up as a terminal task error before any model call.
   const context = await buildConversationContext(params.run);
-  // Only the immediately preceding final reply may disambiguate a bare user
-  // affirmation ("是的"). Older assistant prose is deliberately excluded.
-  const lastContextMessage = context.messages.at(-1);
-  const previousAssistantReply = lastContextMessage?.role === "ASSISTANT"
-    ? lastContextMessage.content.slice(0, 4000)
-    : undefined;
   // Cross-thread long-term memory for the owner. `buildConversationContext`
   // covers only this thread; without this the assistant restarts from zero
   // in every new thread even though the facts are already stored.
@@ -749,7 +743,6 @@ export async function handleConversationTask(params: {
       question: turnInput.question,
       currentDestinations: tripContext.destinationCandidates,
       locale: titleLocale ?? "en",
-      ...(previousAssistantReply ? { previousAssistantReply } : {}),
       signal: execution.signal,
     }).catch(() => null)
     : Promise.resolve(null);
