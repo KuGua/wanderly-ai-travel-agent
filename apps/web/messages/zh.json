@@ -176,7 +176,7 @@
       "nationality": "国籍",
       "nationalityPlaceholder": "必填",
       "dateOfBirth": "出生日期",
-      "dateOfBirthPlaceholder": "YYYY-MM-DD",
+      "dateOfBirthPlaceholder": "YYYY-MM-DD 或 YYYYMMDD",
       "interests": "兴趣",
       "interestsPlaceholder": "art, museums, local food",
       "accommodationStyle": "住宿风格",
@@ -200,7 +200,7 @@
     "emptyAction": "返回探索",
     "validation": {
       "max64": "请使用不超过 64 个字符",
-      "datePattern": "请使用 YYYY-MM-DD 格式",
+      "datePattern": "请使用 YYYY-MM-DD 或 YYYYMMDD 格式",
       "wholeNumber": "请输入整数",
       "required": "必填"
     },

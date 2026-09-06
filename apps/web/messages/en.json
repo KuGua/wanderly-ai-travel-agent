@@ -176,7 +176,7 @@
       "nationality": "Nationality",
       "nationalityPlaceholder": "Required",
       "dateOfBirth": "Date of birth",
-      "dateOfBirthPlaceholder": "YYYY-MM-DD",
+      "dateOfBirthPlaceholder": "YYYY-MM-DD or YYYYMMDD",
       "interests": "Interests",
       "interestsPlaceholder": "art, museums, local food",
       "accommodationStyle": "Accommodation style",
@@ -200,7 +200,7 @@
     "emptyAction": "Return to Explore",
     "validation": {
       "max64": "Use 64 characters or fewer",
-      "datePattern": "Use YYYY-MM-DD",
+      "datePattern": "Use YYYY-MM-DD or YYYYMMDD",
       "wholeNumber": "Enter a whole number",
       "required": "Required"
     },

@@ -42,4 +42,16 @@ describe("ProfileForm", () => {
     expect(input).not.toHaveProperty("createdAt");
     expect(input).not.toHaveProperty("updatedAt");
   });
+
+  it("accepts a compact birth date but sends the API its canonical ISO form", () => {
+    const profile = testProfileResponse.profile;
+    if (!profile) throw new Error("Fixture Profile is required");
+
+    const input = toUpdateProfileInput(
+      { ...profileToFormValues(profile), dateOfBirth: "19830717" },
+      { dateOfBirth: true },
+    );
+
+    expect(input).toEqual({ dateOfBirth: "1983-07-17" });
+  });
 });
