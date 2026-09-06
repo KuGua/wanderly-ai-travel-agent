@@ -76,44 +76,36 @@ function createApi(overrides: Partial<TravelApi> = {}): TravelApi {
 afterEach(cleanup);
 
 describe("ProfileMemory", () => {
-  it("renders nothing at all when no suggestion is waiting", async () => {
-    // The remembered-facts list and the kept-notes list were removed from the
-    // page; with no pending question this section has nothing to say, and an
-    // empty state for a list that no longer exists would be worse than silence.
-    const api = createApi();
-    const { container } = renderWithIntl(<ProfileMemory />, { api });
+  it("lists confirmed facts with their provenance", async () => {
+    renderWithIntl(<ProfileMemory />, { api: createApi() });
 
-    await waitFor(() => expect(api.getProfileMemory).toHaveBeenCalled());
-    await waitFor(() => expect(container).toBeEmptyDOMElement());
-    expect(screen.queryByText("Trip pace")).not.toBeInTheDocument();
-    expect(screen.queryByText("relaxed")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Delete this memory" })).not.toBeInTheDocument();
-  });
-
-  it("keeps the kept-notes list off the page", async () => {
-    const getMemoryNotes = vi.fn().mockResolvedValue({
-      notes: [{ id: "55555555-5555-4555-8555-555555555555", content: "explore other parts of Sumatra" }],
-    });
-    const api = createApi({ getMemoryNotes });
-    const { container } = renderWithIntl(<ProfileMemory />, { api });
-
-    await waitFor(() => expect(api.getProfileMemory).toHaveBeenCalled());
-    await waitFor(() => expect(container).toBeEmptyDOMElement());
-    expect(screen.queryByText("explore other parts of Sumatra")).not.toBeInTheDocument();
-    // The server side is untouched; the page simply stops asking.
-    expect(getMemoryNotes).not.toHaveBeenCalled();
+    expect(await screen.findByText("Trip pace")).toBeInTheDocument();
+    expect(screen.getByText("relaxed")).toBeInTheDocument();
+    expect(screen.getByText("You set this")).toBeInTheDocument();
   });
 
   it("labels profile-only memory fields in Chinese without missing-message errors", async () => {
     const api = createApi({
       getProfileMemory: vi.fn().mockResolvedValue(memory({
-        facts: [],
-        suggestions: [{ ...SUGGESTION, fieldKey: "nationality", value: "CN" }],
+        facts: [
+          { ...memory().facts[0], id: "33333333-3333-4333-8333-333333333333", fieldKey: "nationality", value: "CN" },
+          { ...memory().facts[0], id: "44444444-4444-4444-8444-444444444444", fieldKey: "date_of_birth", value: "1990-01-01" },
+        ],
       })),
     });
     renderWithIntl(<ProfileMemory />, { api, locale: "zh" });
 
-    expect(await screen.findByText(/国籍/)).toBeInTheDocument();
+    expect(await screen.findByText("国籍")).toBeInTheDocument();
+    expect(screen.getByText("出生日期")).toBeInTheDocument();
+  });
+
+  it("shows an empty state when nothing has been remembered", async () => {
+    const api = createApi({
+      getProfileMemory: vi.fn().mockResolvedValue({ facts: [], suggestions: [] }),
+    });
+    renderWithIntl(<ProfileMemory />, { api });
+
+    expect(await screen.findByText("Nothing remembered yet")).toBeInTheDocument();
   });
 
   it("contrasts the current setting against the candidate", async () => {
@@ -185,5 +177,15 @@ describe("ProfileMemory", () => {
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /Confirm update/ })).not.toBeInTheDocument();
     });
+  });
+
+  it("deletes a remembered fact", async () => {
+    const deleteMemoryFact = vi.fn().mockResolvedValue(undefined);
+    const api = createApi({ deleteMemoryFact });
+    renderWithIntl(<ProfileMemory />, { api });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete this memory" }));
+
+    await waitFor(() => expect(deleteMemoryFact).toHaveBeenCalledWith(FACT_ID));
   });
 });

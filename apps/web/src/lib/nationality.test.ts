@@ -1,37 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { QUOTE_NATIONALITIES, isQuoteNationality, nationalityLabel } from "./nationality";
+import { QUOTE_NATIONALITIES, countryLabel, isQuoteNationality } from "./nationality";
 
-describe("nationalityLabel", () => {
-  it("names an English reader's nationality, not their country", () => {
-    // "Nationality: Singapore" answers a question the field did not ask.
-    expect(nationalityLabel("SG", "en")).toBe("Singaporean");
-    expect(nationalityLabel("CN", "en")).toBe("Chinese");
-    expect(nationalityLabel("GB", "en")).toBe("British");
-    expect(nationalityLabel("AE", "en")).toBe("Emirati");
+describe("countryLabel", () => {
+  it("names the country, which is what the field asks for", () => {
+    // The field is labelled Nation, not Nationality: it takes the country a
+    // hotel quote is priced against, and "Singapore" is the right answer to it.
+    expect(countryLabel("SG", "en")).toBe("Singapore");
+    expect(countryLabel("CN", "en")).toBe("China");
+    expect(countryLabel("SG", "zh")).toBe("新加坡");
   });
 
   it("covers the whole list, so no option falls back to a bare code", () => {
     for (const code of QUOTE_NATIONALITIES) {
-      const label = nationalityLabel(code, "en");
-      expect(label).not.toBe(code);
-      expect(label.length).toBeGreaterThan(2);
+      expect(countryLabel(code, "en")).not.toBe(code);
+      expect(countryLabel(code, "zh")).not.toBe(code);
     }
   });
 
-  it("keeps the country form in Chinese, where a 国籍 field takes one", () => {
-    expect(nationalityLabel("SG", "zh")).toBe("新加坡");
-    expect(nationalityLabel("HK", "zh")).toBe("香港（中国）");
-    expect(nationalityLabel("TW", "zh")).toBe("台湾（中国）");
-  });
-
   it("keeps the territory notation the product fixed by hand", () => {
-    expect(nationalityLabel("HK", "en")).toBe("Hong Kong (China)");
-    expect(nationalityLabel("TW", "en")).toBe("Taiwan (China)");
+    expect(countryLabel("HK", "en")).toBe("Hong Kong (China)");
+    expect(countryLabel("TW", "zh")).toBe("台湾（中国）");
   });
 
   it("still answers for a value outside the list", () => {
     expect(isQuoteNationality("ZZ")).toBe(false);
-    expect(nationalityLabel("ZZ", "en")).toBeTruthy();
+    expect(countryLabel("ZZ", "en")).toBeTruthy();
   });
 });

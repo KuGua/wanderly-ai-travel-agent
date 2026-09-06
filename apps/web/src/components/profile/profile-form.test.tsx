@@ -30,7 +30,7 @@ describe("ProfileForm", () => {
     // The control is a listbox, so what it holds is the label it shows. A
     // `toHaveValue` here reads the trigger button's own empty `value` property
     // and would pass whatever the form state is.
-    expect(screen.getByLabelText("Nationality")).toHaveTextContent("Select nationality");
+    expect(screen.getByLabelText("Nation")).toHaveTextContent("Select nation");
     expect(screen.getByLabelText("Date of birth")).toHaveValue("");
     // Available departure dates is no longer an editable field on this form.
     expect(screen.queryByLabelText("Available departure dates")).toBeNull();
@@ -50,7 +50,7 @@ describe("ProfileForm", () => {
       <ProfileForm profile={{ ...baseProfile, nationality: "中国" }} onSave={vi.fn()} isSaving={false} saveError={null} saved={false} />,
     );
 
-    expect(screen.getByLabelText("Nationality")).toHaveTextContent("Select nationality");
+    expect(screen.getByLabelText("Nation")).toHaveTextContent("Select nation");
   });
 
   it("keeps a Profile nationality the provider accepts", () => {
@@ -63,8 +63,7 @@ describe("ProfileForm", () => {
 
     // Normalized on the way in, so the stored casing never decides whether the
     // value survives a round trip through this form.
-    // The demonym, not the country: the field asks what someone is.
-    expect(screen.getByLabelText("Nationality")).toHaveTextContent("Chinese");
+    expect(screen.getByLabelText("Nation")).toHaveTextContent("China");
   });
 
   it("builds a strict partial mutation without read-only Profile fields", () => {

@@ -11,7 +11,7 @@ import type { Profile, UpdateProfileInput } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
 import { Button } from "@/components/ui/button";
 import { SelectMenu } from "@/components/ui/select-menu";
-import { QUOTE_NATIONALITIES, nationalityLabel, isQuoteNationality } from "@/lib/nationality";
+import { QUOTE_NATIONALITIES, countryLabel, isQuoteNationality } from "@/lib/nationality";
 import { cn } from "@/lib/utils";
 
 const KNOWN_STATUS_KEYS = new Set([
@@ -197,7 +197,7 @@ export function ProfileForm({
                   )}
                   options={[
                     { value: "", label: t("fields.nationalityPlaceholder") },
-                    ...QUOTE_NATIONALITIES.map((code) => ({ value: code, label: nationalityLabel(code, locale) })),
+                    ...QUOTE_NATIONALITIES.map((code) => ({ value: code, label: countryLabel(code, locale) })),
                   ]}
                 />
               )}
