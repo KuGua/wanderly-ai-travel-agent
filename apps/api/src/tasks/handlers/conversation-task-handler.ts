@@ -68,6 +68,7 @@ import type { AgentTaskRow } from "../task-repository.js";
 import { loadConversationTurnInput } from "../task-repository.js";
 import { buildProactiveIntro } from "../../i18n/proactive-intro.js";
 import { ToolCallDeduplicator, requiresOwnerConfirmation } from "../../agents/personal-research-tool-policy.js";
+import { buildDeterministicFlightDraft } from "../../services/deterministic-flight-draft.js";
 import {
   personalResearchOperationCapabilitySchema,
   toolSettledEventSchema,
@@ -455,6 +456,105 @@ function canonicalizeForHash(value: unknown): string {
  *     the grounded context it needs.
  */
 /**
+ * Runs this trip's flight search from the brief alone, once per set of facts.
+ *
+ * Reuses `buildFlightSearchDispatcher` rather than reaching for the executor
+ * directly, so state persistence, the per-run dedup probe, the RESEARCHING
+ * phase event and evidence writing all stay on one path. The only difference
+ * from a model-issued call is who decided to make it.
+ *
+ * Three properties keep this safe to run on every turn:
+ *   - the draft comes from the confirmed brief, so it changes only when the
+ *     brief does, and `personal_research_evidence` is unique per (run,
+ *     capability) — a turn cannot double-charge itself;
+ *   - a gap is silent. Not every trip has an origin, a date, or an airport,
+ *     and a conversation about temples must not become a conversation about
+ *     why a search could not run;
+ *   - a failure is silent for the same reason, and never reaches the caller.
+ *     A supplier being down is not a reason the traveller cannot chat.
+ */
+async function prefetchDeterministicFlightEvidence(params: {
+  run: AgentTaskRow;
+  ctx: RequestContext;
+  signal: AbortSignal;
+  traceparent?: string;
+  tripContext: PersonalTripContext;
+}): Promise<void> {
+  if (!conversationToolDispatchEnabled("flight.search")) return;
+  if (!params.run.threadId || !params.run.tripId || !params.run.userMessageId) return;
+  const built = buildDeterministicFlightDraft(params.tripContext);
+  if (built.outcome !== "READY") {
+    logSafeRuntimeEvent(params.ctx, {
+      component: "worker", event: "flight_prefetch", operation: "conversation",
+      // "cancelled" is this vocabulary's word for "decided not to run".
+      outcome: "cancelled", errorCode: built.gap, relatedRunId: params.run.id,
+    });
+    return;
+  }
+  // Once per distinct set of facts, not once per turn. The dispatcher's own
+  // dedup probe is keyed on `(run_id, capability)`, which only collapses a
+  // repeat inside one turn — so every message was paying for a fresh supplier
+  // round-trip, including the ones about temples. `requestFingerprint` already
+  // records what was searched, so the same brief asked twice is a read.
+  const fingerprint = createHash("sha256")
+    .update(canonicalizeForHash(built.value.draft))
+    .digest("hex");
+  const [fresh] = await db.select({ id: personalResearchEvidence.id })
+    .from(personalResearchEvidence)
+    .where(and(
+      eq(personalResearchEvidence.tripId, params.run.tripId),
+      eq(personalResearchEvidence.capability, "flight.search"),
+      eq(personalResearchEvidence.requestFingerprint, fingerprint),
+      gt(personalResearchEvidence.expiresAt, new Date()),
+    ))
+    .limit(1);
+  if (fresh) return;
+
+  try {
+    const dispatch = buildFlightSearchDispatcher({
+      run: params.run,
+      ctx: params.ctx,
+      signal: params.signal,
+      traceparent: params.traceparent,
+      // The traveller is not being asked, so record that they did not confirm.
+      // The dispatcher consults `TOOL_INVOCATION_MODE`, which no longer
+      // requires one for flights; if that ever changes back, this prefetch
+      // correctly becomes a no-op instead of quietly spending on their behalf.
+      userConfirmed: false,
+    });
+    // `kind` is the draft's own discriminator; the tool's argument schema is
+    // strict and does not carry it, and the dispatcher re-adds it when it
+    // merges against persisted state. Passing it through failed the parse and
+    // returned INVALID_ARGUMENTS — which is why the outcome is logged below
+    // rather than dropped. A dispatcher that declines by *returning* is
+    // invisible to a try/catch, and this one went unnoticed through a full
+    // browser run.
+    const { kind: _kind, ...toolArguments } = built.value.draft;
+    void _kind;
+    const result = await dispatch({
+      id: `prefetch:${params.run.id}`,
+      name: "flight.search",
+      arguments: toolArguments,
+    }) as { outcome?: unknown };
+    logSafeRuntimeEvent(params.ctx, {
+      component: "worker", event: "flight_prefetch", operation: "conversation",
+      outcome: result?.outcome === "AVAILABLE" || result?.outcome === "UNAVAILABLE"
+        ? "success"
+        : "failure",
+      errorCode: typeof result?.outcome === "string" ? result.outcome : "INTERNAL",
+      relatedRunId: params.run.id,
+    });
+  } catch (error) {
+    logSafeRuntimeEvent(params.ctx, {
+      component: "worker", event: "flight_prefetch", operation: "conversation",
+      outcome: "failure",
+      errorCode: error instanceof Error ? error.name : "INTERNAL",
+      relatedRunId: params.run.id,
+    });
+  }
+}
+
+/**
  * Bookkeeping the model has no use for, removed before the result becomes a
  * tool message.
  *
@@ -713,6 +813,16 @@ export async function handleConversationTask(params: {
   // Scoped to this trip, so an adjustment made for it wins over the profile
   // without touching what any other trip inherits.
   const memoryContext = await buildConversationMemoryContext(params.run.createdByUserId, params.run.tripId);
+  // Run the trip's own flight search before reading evidence back, so this
+  // turn already has it. Deliberately ahead of the model and independent of
+  // what the traveller said: see `prefetchDeterministicFlightEvidence`.
+  await prefetchDeterministicFlightEvidence({
+    run: params.run,
+    ctx: params.ctx,
+    signal: params.signal,
+    traceparent: params.ctx.traceparent,
+    tripContext,
+  });
   // What this trip's own providers last returned. Without it the assistant
   // cannot refer to a search it ran itself: the offers were persisted and
   // never read back.
