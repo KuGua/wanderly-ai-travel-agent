@@ -94,21 +94,6 @@ const hotelOfferSchema = z.object({
   source: z.string().min(1), capturedAt: z.string().datetime(), expiresAt: z.string().datetime(),
 }).strict();
 
-/**
- * Non-priced accommodation discovered near a destination (OpenTripMap). It
- * answers "could someone stay here at all", not "here is a rate", so it is a
- * separate slot from `hotels`, whose entries are quotes. Sixteen of these were
- * collected on every run and had nowhere in the plan to go.
- */
-const accommodationEvidenceSchema = z.object({
-  id: z.string().uuid(), queryId: z.string().uuid(), providerPlaceId: z.string().min(1),
-  destinationId: z.string().min(1), name: z.string().min(1), kind: z.string().min(1),
-  longitude: z.number(), latitude: z.number(),
-  distanceMeters: z.number().int().nullable(), popularityTier: z.number().int().nullable(),
-  source: z.literal("OpenTripMap"), attribution: z.literal("© OpenStreetMap contributors"),
-  capturedAt: z.string().datetime({ offset: true }), expiresAt: z.string().datetime({ offset: true }),
-}).strict();
-
 const localTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const itineraryItemSchema = z.object({
   kind: z.enum(["FLIGHT", "BOOKED_ACTIVITY", "SUGGESTED_STOP", "FREE_TIME", "RETURN_TO_HOTEL"]),
@@ -127,6 +112,33 @@ const dailyItinerarySchema = z.array(z.object({
   items: z.array(itineraryItemSchema).max(12),
 }).strict()).max(31);
 
+export const dailyItineraryUnavailableReasonSchema = z.enum([
+  "MODEL_CONTRACT_REJECTED",
+  "MODEL_TEMPORARILY_UNAVAILABLE",
+  "CONTENT_REPAIR_EXHAUSTED",
+  "CAPABILITY_NOT_CONFIGURED",
+  "INTERNAL_ERROR",
+  "LEGACY_UNKNOWN",
+]);
+
+export const dailyItineraryOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("READY"),
+    days: dailyItinerarySchema,
+    attempts: z.number().int().positive().max(3),
+    checkedAt: z.string().datetime(),
+  }).strict(),
+  z.object({
+    status: z.literal("UNAVAILABLE"),
+    reason: dailyItineraryUnavailableReasonSchema,
+    retryable: z.boolean(),
+    attempts: z.number().int().nonnegative().max(3),
+    checkedAt: z.string().datetime(),
+  }).strict(),
+]);
+
+export type DailyItineraryOutcome = z.infer<typeof dailyItineraryOutcomeSchema>;
+
 export const planOutputSchema = z.object({
   destination: z.string().min(1),
   // Optional for legacy plans. New planners (Team Agent 协作编排 Phase 3) emit
@@ -140,14 +152,17 @@ export const planOutputSchema = z.object({
   // never permitted is inventing a flight to satisfy a schema — the offers
   // here are cross-checked against run-scoped provider evidence below.
   flights: z.array(flightOfferSchema),
-  // Legacy-only read compatibility. New model output is rejected at the
-  // gateway contract and uses hotels/accommodations instead.
+  // Legacy-only compatibility for callers that still construct the old
+  // in-memory shape. New model output is rejected at the gateway contract.
   stays: z.array(stayOfferSchema).optional(),
   activities: z.array(activityEvidenceSchema).optional(),
   hotels: z.array(hotelOfferSchema).optional(),
-  accommodations: z.array(accommodationEvidenceSchema).optional(),
   /** A non-bookable LLM schedule; provider-backed entries must reference a selected offer. */
   dailyItinerary: dailyItinerarySchema.optional(),
+  /** Legacy server-owned presentation state; new plans use the discriminated outcome. */
+  dailyItineraryStatus: z.enum(["READY", "UNAVAILABLE"]).optional(),
+  /** Server-owned result. New model output cannot set this field. */
+  dailyItineraryOutcome: dailyItineraryOutcomeSchema.optional(),
   generatedAt: z.string().min(1),
   constraintReferences: z.array(z.string().min(1)).optional(),
   publicExplanationTokens: z.array(z.string().min(1)).optional(),
@@ -168,6 +183,9 @@ export type PlanViolationCode =
   | "EVIDENCE_NOT_FOUND"
   | "EVIDENCE_MISMATCH"
   | "EVIDENCE_SLOT_MISMATCH"
+  | "DAILY_ITINERARY_DATE_COVERAGE"
+  | "DAILY_ITINERARY_TIME_ORDER"
+  | "DAILY_ITINERARY_EVIDENCE_REFERENCE"
   | "GENERATED_AT_MISMATCH"
   | "CONFIDENTIAL_VALUE_LEAK"
   | "EXPLANATION_TOKEN_NOT_ALLOWED"
@@ -226,7 +244,10 @@ function addViolation(
 
 function dateRange(start: string, end: string): string[] {
   const days: string[] = [];
-  for (let cursor = new Date(`${start}T00:00:00.000Z`); cursor < new Date(`${end}T00:00:00.000Z`); cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+  // Trip dates are inclusive: travelDateEnd is the return day. Hotel search
+  // may use it as a checkout boundary, but it remains a real travel day and
+  // must be represented in the user-facing schedule.
+  for (let cursor = new Date(`${start}T00:00:00.000Z`); cursor <= new Date(`${end}T00:00:00.000Z`); cursor.setUTCDate(cursor.getUTCDate() + 1)) {
     days.push(cursor.toISOString().slice(0, 10));
   }
   return days;
@@ -238,15 +259,29 @@ function validateDailyItinerary(params: {
   required: boolean;
   violations: PlanValidationViolation[];
 }): void {
-  const itinerary = params.plan.dailyItinerary;
+  const outcome = params.plan.dailyItineraryOutcome;
+  const hasLegacyState = params.plan.dailyItinerary !== undefined || params.plan.dailyItineraryStatus !== undefined;
+  if (outcome && hasLegacyState) {
+    addViolation(params.violations, "STRUCTURE_INVALID", "dailyItineraryOutcome", "New and legacy daily itinerary states cannot coexist");
+  }
+  const itinerary = outcome?.status === "READY" ? outcome.days : params.plan.dailyItinerary;
   if (!itinerary) {
     if (params.required) addViolation(params.violations, "STRUCTURE_INVALID", "dailyItinerary", "A daily itinerary is required for dated trips");
+    if (params.plan.dailyItineraryStatus === "READY") {
+      addViolation(params.violations, "STRUCTURE_INVALID", "dailyItineraryStatus", "A ready daily itinerary must contain days");
+    }
     return;
+  }
+  if (outcome?.status === "UNAVAILABLE") {
+    addViolation(params.violations, "STRUCTURE_INVALID", "dailyItineraryOutcome", "An unavailable daily itinerary must not contain days");
+  }
+  if (params.plan.dailyItineraryStatus === "UNAVAILABLE") {
+    addViolation(params.violations, "STRUCTURE_INVALID", "dailyItineraryStatus", "An unavailable daily itinerary must not contain days");
   }
   const expectedDates = params.snapshot.travelDateStart && params.snapshot.travelDateEnd
     ? dateRange(params.snapshot.travelDateStart, params.snapshot.travelDateEnd) : [];
   if (expectedDates.length > 0 && itinerary.map((day) => day.date).join(",") !== expectedDates.join(",")) {
-    addViolation(params.violations, "STRUCTURE_INVALID", "dailyItinerary", "Daily itinerary dates must cover the trip date range exactly");
+    addViolation(params.violations, "DAILY_ITINERARY_DATE_COVERAGE", "dailyItinerary", "Daily itinerary dates must cover the trip date range exactly");
   }
   const flightIds = new Set(params.plan.flights.map((offer) => offer.id));
   const activityIds = new Set((params.plan.activities ?? []).map((offer) => offer.id));
@@ -255,21 +290,21 @@ function validateDailyItinerary(params: {
     day.items.forEach((item, itemIndex) => {
       const path = `dailyItinerary.${dayIndex}.items.${itemIndex}`;
       if (item.endTimeLocal <= item.startTimeLocal || item.startTimeLocal < previousEnd) {
-        addViolation(params.violations, "STRUCTURE_INVALID", path, "Daily itinerary items must be ordered and non-overlapping");
+        addViolation(params.violations, "DAILY_ITINERARY_TIME_ORDER", path, "Daily itinerary items must be ordered and non-overlapping");
       }
       previousEnd = item.endTimeLocal;
       const requiresEvidence = item.kind === "FLIGHT" || item.kind === "BOOKED_ACTIVITY";
       if (requiresEvidence && (item.verification !== "PROVIDER_BACKED" || !item.evidenceRef)) {
-        addViolation(params.violations, "EVIDENCE_NOT_FOUND", path, "Provider-backed itinerary items must reference selected evidence");
+        addViolation(params.violations, "DAILY_ITINERARY_EVIDENCE_REFERENCE", path, "Provider-backed itinerary items must reference selected evidence");
       }
       if (!requiresEvidence && (item.verification !== "SUGGESTED" || item.evidenceRef)) {
-        addViolation(params.violations, "STRUCTURE_INVALID", path, "Suggested itinerary items must not claim provider evidence");
+        addViolation(params.violations, "DAILY_ITINERARY_EVIDENCE_REFERENCE", path, "Suggested itinerary items must not claim provider evidence");
       }
       if (item.evidenceRef?.category === "flights" && (!requiresEvidence || !flightIds.has(item.evidenceRef.id))) {
-        addViolation(params.violations, "EVIDENCE_NOT_FOUND", `${path}.evidenceRef`, "Flight itinerary reference is not selected evidence");
+        addViolation(params.violations, "DAILY_ITINERARY_EVIDENCE_REFERENCE", `${path}.evidenceRef`, "Flight itinerary reference is not selected evidence");
       }
       if (item.evidenceRef?.category === "activities" && (item.kind !== "BOOKED_ACTIVITY" || !activityIds.has(item.evidenceRef.id))) {
-        addViolation(params.violations, "EVIDENCE_NOT_FOUND", `${path}.evidenceRef`, "Activity itinerary reference is not selected evidence");
+        addViolation(params.violations, "DAILY_ITINERARY_EVIDENCE_REFERENCE", `${path}.evidenceRef`, "Activity itinerary reference is not selected evidence");
       }
     });
   });
@@ -280,7 +315,7 @@ function validateOfferEvidence<T extends {
   source: string;
   capturedAt: string;
 }>(params: {
-  category: "flights" | "stays" | "ground" | "activities" | "hotels" | "accommodations";
+  category: "flights" | "stays" | "ground" | "activities" | "hotels";
   offers: T[];
   evidence: T[];
   violations: PlanValidationViolation[];
@@ -435,16 +470,6 @@ export function validatePlanOutput(params: {
     if (hotel.destinationId !== plan.destination) addViolation(violations, "DESTINATION_MISMATCH", `hotels.${index}.destinationId`, "Hotel destination does not match the plan");
     if (Date.parse(hotel.expiresAt) <= Date.now()) addViolation(violations, "PROVENANCE_REQUIRED", `hotels.${index}.expiresAt`, "Hotel evidence has expired");
   });
-  (plan.accommodations ?? []).forEach((stay, index) => {
-    if (stay.destinationId !== plan.destination) {
-      addViolation(violations, "DESTINATION_MISMATCH", `accommodations.${index}.destinationId`, "Accommodation destination does not match the plan");
-    }
-    // Discovery evidence is cheap to refresh and carries a short TTL; an
-    // expired one is stale coverage, not a usable fact.
-    if (Date.parse(stay.expiresAt) <= Date.now()) {
-      addViolation(violations, "PROVENANCE_REQUIRED", `accommodations.${index}.expiresAt`, "Accommodation evidence has expired");
-    }
-  });
   if (params.requireActivities && (plan.activities?.length ?? 0) === 0) {
     addViolation(violations, "EVIDENCE_NOT_FOUND", "activities", "A provider-backed activity is required for the selected destination");
   }
@@ -456,7 +481,6 @@ export function validatePlanOutput(params: {
   validateOfferEvidence({ category: "stays", offers: plan.stays ?? [], evidence: params.evidence.stays, violations });
   validateOfferEvidence({ category: "activities", offers: plan.activities ?? [], evidence: params.evidence.activities ?? [], violations });
   validateOfferEvidence({ category: "hotels", offers: plan.hotels ?? [], evidence: params.evidence.hotels ?? [], violations });
-  validateOfferEvidence({ category: "accommodations", offers: plan.accommodations ?? [], evidence: params.evidence.accommodations ?? [], violations });
 
   for (const hardViolation of evaluateHardConstraints({ snapshot: params.snapshot, flights: plan.flights })) {
     addViolation(violations, hardViolation.code, "constraints", hardViolation.publicReason);
@@ -477,7 +501,7 @@ export function validatePlanOutput(params: {
   // that cites nothing has no such time and must not be persisted at all —
   // that is a distinct violation from a wrong one, and saying so is what keeps
   // an evidence-free shell from passing as a plan.
-  const citedOffers = [...plan.flights, ...(plan.stays ?? []), ...(plan.activities ?? []), ...(plan.hotels ?? []), ...(plan.accommodations ?? [])];
+  const citedOffers = [...plan.flights, ...(plan.stays ?? []), ...(plan.activities ?? []), ...(plan.hotels ?? [])];
   if (citedOffers.length === 0) {
     addViolation(violations, "EVIDENCE_NOT_FOUND", "generatedAt", "A plan must cite at least one piece of provider evidence");
   } else {

@@ -11,18 +11,19 @@
  * Spec: docs/personal-and-planning-boundaries.md §3.1.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 
 import { buildApp } from "../src/app.js";
 import { db } from "../src/db/database.js";
-import { agentTaskRuns, auditEvents, chatMessages, chatThreads, constraintSnapshots, itineraryPlans, sharedTrips, tripMembers, tripSearchPreferences, users } from "../src/db/schema.js";
+import { agentTaskRuns, auditEvents, constraintSnapshots, itineraryPlans, sharedTrips, tripSearchPreferences, users } from "../src/db/schema.js";
 import { eq } from "drizzle-orm";
 import { authHeaders, verifyTestAccessToken } from "./helpers/auth.js";
 import { provisionTripAndMember } from "./helpers/trip.js";
 
 let app: FastifyInstance;
 let aliceId: string;
+const testTripIds = new Set<string>();
 
 beforeAll(async () => {
   app = await buildApp({ verifyAccessToken: verifyTestAccessToken });
@@ -37,19 +38,20 @@ afterAll(async () => {
   await app.close();
 });
 
-beforeEach(async () => {
-  // The test database is shared across files in one run, and `chat_threads`
-  // has a NOT NULL trip_id — so a sibling file's threads block the parent
-  // delete unless they go first.
-  await db.delete(auditEvents);
-  await db.delete(chatMessages);
-  await db.delete(chatThreads);
-  await db.delete(tripMembers);
-  await db.delete(sharedTrips);
+afterEach(async () => {
+  // Vitest deliberately shares one disposable schema across files. Restrict
+  // cleanup to this suite's trips so preceding suites can retain their own
+  // foreign-key graphs without making this suite order-dependent.
+  for (const tripId of testTripIds) {
+    await db.delete(auditEvents).where(eq(auditEvents.tripId, tripId));
+    await db.delete(sharedTrips).where(eq(sharedTrips.id, tripId));
+  }
+  testTripIds.clear();
 });
 
 async function draftTrip(): Promise<string> {
   const { tripId } = await provisionTripAndMember({ ownerUserId: aliceId });
+  testTripIds.add(tripId);
   // The helper's column default is PLANNING; this route only serves a DRAFT.
   await db.update(sharedTrips).set({ status: "DRAFT" }).where(eq(sharedTrips.id, tripId));
   return tripId;
@@ -151,6 +153,7 @@ describe("draft-brief travel dates", () => {
 
   it("confirms a live duration change by staling the plan and accepting one REPLAN", async () => {
     const { tripId } = await provisionTripAndMember({ ownerUserId: aliceId });
+    testTripIds.add(tripId);
     await db.update(sharedTrips).set({
       travelDateStart: "2026-10-01", travelDateEnd: "2026-10-05", travelDays: 5,
     }).where(eq(sharedTrips.id, tripId));

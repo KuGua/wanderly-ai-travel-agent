@@ -171,6 +171,26 @@ describe("HomeDashboard", () => {
     expect(screen.queryByRole("link", { name: /Continue current plan/ })).not.toBeInTheDocument();
   });
 
+  it("does not present a failed trip-list request as zero trips", async () => {
+    const api = {
+      getMyProfile: vi.fn().mockResolvedValue({ profile: null }),
+      getTrips: vi.fn().mockRejectedValue(new Error("trip list unavailable")),
+    } as unknown as TravelApi;
+
+    renderAuthenticatedDashboard(api);
+
+    expect(
+      await screen.findByRole(
+        "heading",
+        { name: "Trips unavailable" },
+        { timeout: 3_000 },
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Showing —")).toBeInTheDocument();
+    expect(screen.queryByText("Showing 0")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Active—" })).toBeInTheDocument();
+  });
+
   it("asks a signed-out visitor to sign in instead of requesting private Home data", () => {
     const api = makeApi([]);
     renderWithIntl(

@@ -136,7 +136,9 @@ export const projectDisplayStateSchema = z.enum([
   "CANCELLED",
 ]);
 
-export const latestPlanStatusSchema = z.enum(["DRAFT", "ACTIVE", "STALE", "SUPERSEDED"]);
+// Keep this projection aligned with db/schema.ts planStatusEnum. PROPOSED is
+// the normal, user-visible state while a generated plan is awaiting votes.
+export const latestPlanStatusSchema = z.enum(["DRAFT", "PROPOSED", "ACTIVE", "STALE", "SUPERSEDED"]);
 
 export const nextActionTypeSchema = z.enum([
   "EDIT_DRAFT",

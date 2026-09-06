@@ -28,7 +28,7 @@ describe("planning evidence catalog", () => {
     }));
 
     const catalog = buildPlanningEvidenceCatalog({
-      flights: [], activities: [], accommodations: [], hotels: hotels as never,
+      flights: [], activities: [], hotels: hotels as never,
     });
 
     expect(catalog.hotels).toHaveLength(PLANNING_EVIDENCE_CATALOG_MAX_ITEMS);
@@ -40,5 +40,6 @@ describe("planning evidence catalog", () => {
     });
     expect(catalog.hotels[0]).not.toHaveProperty("providerSecret");
     expect(catalog).not.toHaveProperty("stays");
+    expect(catalog).not.toHaveProperty("accommodations");
   });
 });

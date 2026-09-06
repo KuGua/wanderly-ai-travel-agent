@@ -114,6 +114,7 @@
     "trips": {
       "heading": "Planner",
       "showing": "Showing {count}",
+      "countUnavailable": "Showing —",
       "emptyTitle": "No trips yet",
       "emptyBody": "Trips from your account will appear here. Trip creation is a later slice."
     },
@@ -665,6 +666,10 @@
         "hotels": "Hotels",
         "activities": "Activities",
         "dailyItinerary": "Daily itinerary suggestions",
+        "dailyItineraryUnavailable": "The shared plan is ready, but its daily schedule could not be generated.",
+        "dailyItineraryContentInvalid": "The shared plan is ready, but its daily schedule still did not satisfy the trip constraints after correction.",
+        "dailyItineraryTemporarilyUnavailable": "The shared plan is ready, but the daily schedule service is temporarily unavailable. You can try generating it again later.",
+        "dailyItinerarySystemUnavailable": "The shared plan is ready, but its daily schedule is unavailable because of a generation service problem.",
         "providerBacked": "Verified",
         "suggested": "Suggestion — verify",
         "unavailable": "This capability returned was not collected in this run",

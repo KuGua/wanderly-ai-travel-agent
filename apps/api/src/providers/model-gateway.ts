@@ -1,4 +1,5 @@
 import type { FlightOffer, PlanDiff } from "../types/domain.js";
+import { z } from "zod";
 import type { RequestContext } from "../utils/context.js";
 import type { ConversationPlace, ConversationResponseMode } from "../types/schemas.js";
 import type { PersonalTripContext } from "../skills/personal/personal-trip-context-schema.js";
@@ -157,15 +158,62 @@ export type ModelToolDispatcher = (call: {
  */
 export interface PlanningEvidenceCatalog {
   flights: ReadonlyArray<Record<string, unknown>>;
-  /**
-   * Retained only so callers can deserialize catalogues recorded before the
-   * accommodation contract migration. New catalogues never populate it.
-   */
-  stays?: ReadonlyArray<Record<string, unknown>>;
   activities: ReadonlyArray<Record<string, unknown>>;
   hotels: ReadonlyArray<Record<string, unknown>>;
-  accommodations: ReadonlyArray<Record<string, unknown>>;
 }
+
+export type DailyItineraryRepairIssueCode =
+  | "SCHEMA_INVALID"
+  | "DATE_COVERAGE_INVALID"
+  | "TIME_ORDER_INVALID"
+  | "EVIDENCE_REFERENCE_INVALID";
+
+export interface DailyItineraryRepairIssue {
+  code: DailyItineraryRepairIssueCode;
+  /** Stable schema paths only; never rejected values or model text. */
+  fieldPaths: readonly string[];
+}
+
+/**
+ * Provider-facing transport contract. Keep this deliberately structural:
+ * OpenAI-compatible providers do not implement the same JSON-Schema subset,
+ * and Gemini currently rejects `maxItems` on the outer nested `days` array.
+ * The canonical schema below remains the authoritative application boundary.
+ */
+export const dailyItineraryWireCompletionSchema = z.object({
+  days: z.array(z.object({
+    dayKey: z.string(),
+    items: z.array(z.object({
+      kind: z.enum(["FLIGHT", "BOOKED_ACTIVITY", "SUGGESTED_STOP", "FREE_TIME", "RETURN_TO_HOTEL"]),
+      startTimeLocal: z.string(),
+      endTimeLocal: z.string(),
+      title: z.string(),
+      evidenceKey: z.string().nullable(),
+    }).strict()),
+  }).strict()),
+}).strict();
+
+/**
+ * Canonical model-owned daily schedule contract. Dates, timezone, provenance
+ * labels and provider ids are deliberately absent: the planning service owns
+ * those facts and enriches this draft only after this full validation passes.
+ */
+export const dailyItineraryModelCompletionSchema = z.object({
+  days: z.array(z.object({
+    dayKey: z.string().regex(/^day_[1-9]\d*$/),
+    items: z.array(z.object({
+      kind: z.enum(["FLIGHT", "BOOKED_ACTIVITY", "SUGGESTED_STOP", "FREE_TIME", "RETURN_TO_HOTEL"]),
+      startTimeLocal: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      endTimeLocal: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+      title: z.string().min(1).max(160),
+      // Required-but-nullable is more portable across strict structured-output
+      // providers than an optional property. Suggested items must use null.
+      evidenceKey: z.string().regex(/^(flight|activity)_[1-9]\d*$/).nullable(),
+    }).strict()).max(12),
+  }).strict()).max(31),
+}).strict();
+
+export type DailyItineraryModelCompletion = z.infer<typeof dailyItineraryModelCompletionSchema>;
 
 export interface LocationIntroductionResult {
   content: string;
@@ -193,12 +241,20 @@ export interface ModelGateway {
    * explicitly-labelled daily suggestion.
    */
   generateDailyItinerary?(params: {
+    /** Price-free selections with server-issued day/evidence aliases only. */
     plan: Record<string, unknown>;
     travelDateStart: string;
     travelDateEnd: string;
+    /** Server-derived inclusive range retained as composition context. */
+    requiredDates?: readonly string[];
+    /** Content-free feedback for a bounded, tool-free regeneration attempt. */
+    repair?: {
+      attempt: number;
+      issues: readonly DailyItineraryRepairIssue[];
+    };
     signal?: AbortSignal;
     ctx?: RequestContext;
-  }): Promise<unknown>;
+  }): Promise<DailyItineraryModelCompletion>;
 
   /**
    * Optional capability used exclusively by Shared durable planning.  Older

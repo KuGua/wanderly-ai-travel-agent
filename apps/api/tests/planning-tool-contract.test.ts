@@ -2,8 +2,10 @@ import { describe, it, expect } from "vitest";
 import { z } from "zod";
 
 import {
+  PLACE_TOOL_FAMILY,
   PLACE_MUTATION_ACTION_BY_TOOL,
   buildPlanningToolDefinitions,
+  placeCandidatesOf,
 } from "../src/services/planning-service.js";
 import { flightSearchModelArgumentsSchema } from "../src/services/flight-search-service.js";
 import { activitiesSearchModelArgumentsSchema } from "../src/services/activities-search-service.js";
@@ -89,6 +91,35 @@ function isOptional(schema: z.ZodType): boolean {
 }
 
 describe("planning tool contract", () => {
+  it("indexes candidates from the public places.search output field", () => {
+    const candidate = {
+      candidateId: "11111111-1111-4111-8111-111111111111",
+      displayName: "The Bund",
+      kind: "ATTRACTION" as const,
+      countryCode: "CN",
+      cityName: "Shanghai",
+      longitude: 121.4904,
+      latitude: 31.2417,
+      confidence: 0.99,
+      needsUserConfirmation: false,
+      source: "OpenTripMap",
+      capturedAt: "2026-09-06T10:00:00.000Z",
+    };
+
+    expect(placeCandidatesOf({
+      outcome: "LIVE",
+      queryId: "22222222-2222-4222-8222-222222222222",
+      candidates: [candidate],
+    })).toEqual([candidate]);
+    expect(placeCandidatesOf({ outcome: "UNAVAILABLE", code: "NO_RESULTS" })).toEqual([]);
+  });
+
+  it("defines one convergence boundary for the dependent places tool family", () => {
+    expect(PLACE_TOOL_FAMILY).toEqual([
+      "places.search", "places.propose", "places.adopt", "places.revoke", "navigation.route",
+    ]);
+  });
+
   describe.each(DIRECTLY_VALIDATED)("%s", (name, schema) => {
     it("advertises every field its validator requires", () => {
       const shape = zodShapeOf(schema);

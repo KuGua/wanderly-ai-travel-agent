@@ -9,7 +9,7 @@ const oldEnabled = process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED;
 afterEach(() => { process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = oldEnabled; });
 
 const EMPTY_EVIDENCE = {
-  flights: [], stays: [], activities: [], hotels: [], accommodations: [],
+  flights: [], stays: [], activities: [], hotels: [],
 };
 
 describe("LLMGateway planning tools", () => {
@@ -330,7 +330,8 @@ describe("LLMGateway planning tools", () => {
     });
 
     await expect(gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 3,
+      destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 2,
+      repairBudget: 1,
       flightSearchConstraints: {
         originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY",
         departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD",
@@ -347,13 +348,53 @@ describe("LLMGateway planning tools", () => {
     )).toBe(true);
   });
 
-  it("fails without an extra tool dispatch when the turn limit is exhausted", async () => {
+  it("reserves the last normal turn for synthesis and never spends repair turns on tools", async () => {
+    process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = "true";
+    const toolCall = (id: string) => ({
+      id,
+      function: { name: "activities.search", arguments: "{}" },
+    });
+    const create = vi.fn()
+      .mockResolvedValueOnce({ choices: [{ message: { tool_calls: [toolCall("research")] } }] })
+      // The provider disobeys the tool-free synthesis request. The gateway
+      // must close the call locally and use the repair turn for JSON only.
+      .mockResolvedValueOnce({ choices: [{ message: { tool_calls: [toolCall("late-tool")] } }] })
+      .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({
+        plan: { destination: "NRT", flights: [], generatedAt: "2026-01-01T00:00:00Z" },
+      }) } }] });
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "openai", modelName: "test", promptVersion: "test",
+      ctx: createRequestContext(), client: { chat: { completions: { create, parse: vi.fn() } } },
+    });
+    const dispatchTool = vi.fn().mockResolvedValue({ outcome: "LIVE", activities: [] });
+
+    await expect(gateway.generateStructuredPlanWithTools!({
+      destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {},
+      maxTurns: 2, repairBudget: 1,
+      flightSearchConstraints: {
+        originIds: [], destinationIds: [], tripType: "ONE_WAY", departureDate: "2026-10-01",
+        adults: 1, cabin: "ECONOMY", currency: "USD",
+      },
+      tools: [{ name: "activities.search", description: "test", parameters: {} }],
+      dispatchTool,
+    })).resolves.toMatchObject({ destination: "NRT" });
+
+    expect(dispatchTool).toHaveBeenCalledOnce();
+    expect(create).toHaveBeenCalledTimes(3);
+    expect(create.mock.calls[1][0]).not.toHaveProperty("tools");
+    expect(create.mock.calls[2][0]).not.toHaveProperty("tools");
+    const repairMessages = create.mock.calls[2][0].messages as Array<Record<string, unknown>>;
+    expect(repairMessages.some((message) => String(message.content).includes("Research is closed"))).toBe(true);
+  });
+
+  it("uses a one-turn budget for synthesis instead of dispatching a tool", async () => {
     process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = "true";
     const create = vi.fn().mockResolvedValue({ choices: [{ message: { tool_calls: [{ id: "call-1", function: { name: "flight.search", arguments: "{}" } }] } }] });
     const gateway = new LLMGateway({ apiKey: "test", provider: "openai", modelName: "test", promptVersion: "test", ctx: createRequestContext(), client: { chat: { completions: { create, parse: vi.fn() } } } });
     const dispatchTool = vi.fn().mockResolvedValue({ outcome: "UNAVAILABLE", code: "NO_RESULTS" });
-    await expect(gateway.generateStructuredPlanWithTools!({ destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 1, flightSearchConstraints: { originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD" }, tools: [{ name: "flight.search", description: "test", parameters: {} }], dispatchTool })).rejects.toMatchObject<ModelGatewayError>({ code: "TOOL_CALL_MAX_TURNS" });
-    expect(dispatchTool).toHaveBeenCalledOnce();
+    await expect(gateway.generateStructuredPlanWithTools!({ destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 1, flightSearchConstraints: { originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD" }, tools: [{ name: "flight.search", description: "test", parameters: {} }], dispatchTool })).rejects.toMatchObject<ModelGatewayError>({ code: "SCHEMA_PARSE" });
+    expect(dispatchTool).not.toHaveBeenCalled();
+    expect(create.mock.calls[0][0]).not.toHaveProperty("tools");
   });
 
   it("requires every flight matrix cell and serves duplicate calls from the loop cache", async () => {

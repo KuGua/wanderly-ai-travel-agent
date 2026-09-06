@@ -9,7 +9,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-type CategorySlot = "flights" | "stays" | "activities" | "hotels" | "accommodations";
+type CategorySlot = "flights" | "stays" | "activities" | "hotels";
+type EvidenceCategory = CategorySlot | "accommodations";
 
 const SLOT_REASONS = {
   slotMismatch: "Offer id does not belong to this slot's provider evidence",
@@ -22,7 +23,7 @@ function buildIdSets(params: {
   activities: readonly ActivityEvidence[];
   hotels?: readonly HotelOffer[];
   accommodations?: readonly AccommodationEvidence[];
-}): Record<CategorySlot, Set<string>> {
+}): Record<EvidenceCategory, Set<string>> {
   return {
     flights: new Set(params.flights.map((value) => value.id)),
     stays: new Set(params.stays.map((value) => value.id)),
@@ -63,11 +64,9 @@ export function preflightCategorySlots(params: {
     stays: sets.stays,
     activities: sets.activities,
     hotels: sets.hotels,
-    accommodations: sets.accommodations,
   };
-  const allSets: Record<CategorySlot, Set<string>> = ownSets;
   const violations: PlanValidationViolation[] = [];
-  const slots: CategorySlot[] = ["flights", "stays", "activities", "hotels", "accommodations"];
+  const slots: CategorySlot[] = ["flights", "stays", "activities", "hotels"];
   for (const slot of slots) {
     const raw = params.candidate[slot];
     if (!Array.isArray(raw)) continue;
@@ -78,8 +77,8 @@ export function preflightCategorySlots(params: {
       const fieldPath = `${slot}.${index}`;
       if (ownSets[slot].has(entryId)) return;
       // Cross-slot detection: id belongs to one of the other four slots.
-      const otherSlots: CategorySlot[] = ["flights", "stays", "activities", "hotels", "accommodations"];
-      const belongsToOtherSlot = otherSlots.some((candidate) => candidate !== slot && allSets[candidate].has(entryId));
+      const otherCategories: EvidenceCategory[] = ["flights", "stays", "activities", "hotels", "accommodations"];
+      const belongsToOtherSlot = otherCategories.some((candidate) => candidate !== slot && sets[candidate].has(entryId));
       if (belongsToOtherSlot) {
         violations.push({ code: "EVIDENCE_SLOT_MISMATCH", fieldPath, reason: SLOT_REASONS.slotMismatch });
       } else {
@@ -126,17 +125,9 @@ export function bindPlanSelectionsToEvidence(params: {
   flights: readonly FlightOffer[];
   stays: readonly StayOffer[];
   activities: readonly ActivityEvidence[];
-  /**
-   * Hotels and accommodations were absent here, so a model that selected one
-   * had its `{"id":…}` reference left as-is and then failed the validator's
-   * exact-match check against the full record. The hotel slot could never be
-   * filled by any plan, whatever evidence the run held.
-   */
   hotels?: readonly HotelOffer[];
-  accommodations?: readonly AccommodationEvidence[];
 }): Record<string, unknown> {
   const hotels = params.hotels ?? [];
-  const accommodations = params.accommodations ?? [];
   const bound = {
     ...params.candidate,
     flights: bindSelections(params.candidate.flights, params.flights),
@@ -147,15 +138,12 @@ export function bindPlanSelectionsToEvidence(params: {
     ...(Object.hasOwn(params.candidate, "hotels")
       ? { hotels: bindSelections(params.candidate.hotels, hotels) }
       : {}),
-    ...(Object.hasOwn(params.candidate, "accommodations")
-      ? { accommodations: bindSelections(params.candidate.accommodations, accommodations) }
-      : {}),
   };
-  const selected = [bound.flights, bound.stays, bound.activities, bound.hotels, bound.accommodations]
+  const selected = [bound.flights, bound.stays, bound.activities, bound.hotels]
     .flatMap((value) => Array.isArray(value) ? value : [])
     .filter(isRecord);
   const authoritativeById = new Map<string, Evidence>(
-    [...params.flights, ...params.stays, ...params.activities, ...hotels, ...accommodations]
+    [...params.flights, ...params.stays, ...params.activities, ...hotels]
       .map((value) => [value.id, value]),
   );
   const authoritativeTimestamps: string[] = [];

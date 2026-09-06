@@ -49,6 +49,9 @@ type PlanViolationCode =
   | "EVIDENCE_NOT_FOUND"
   | "EVIDENCE_MISMATCH"
   | "EVIDENCE_SLOT_MISMATCH"
+  | "DAILY_ITINERARY_DATE_COVERAGE"
+  | "DAILY_ITINERARY_TIME_ORDER"
+  | "DAILY_ITINERARY_EVIDENCE_REFERENCE"
   | "GENERATED_AT_MISMATCH"
   | "CONFIDENTIAL_VALUE_LEAK"
   | "EXPLANATION_TOKEN_NOT_ALLOWED"
@@ -87,12 +90,21 @@ interface PlanViolation {
 | `PROVENANCE_REQUIRED` | An offer's `capturedAt` is empty or unparseable. |
 | `EVIDENCE_NOT_FOUND` | An offer's `id` is not present in the provider evidence. |
 | `EVIDENCE_MISMATCH` | An offer with the same `id` does not `isDeepStrictEqual` match the evidence. |
-| `EVIDENCE_SLOT_MISMATCH` | An evidence id exists but belongs to another route, date, destination, or capability slot. |
+| `EVIDENCE_SLOT_MISMATCH` | An evidence id or compact selection ID belongs to another route, date, destination, capability, or evidence-category slot; only the stable field path is reported. |
+| `DAILY_ITINERARY_DATE_COVERAGE` | Daily itinerary dates do not exactly match the inclusive server-owned trip date list. |
+| `DAILY_ITINERARY_TIME_ORDER` | A day's local-time items are reversed, unsorted, or overlapping. |
+| `DAILY_ITINERARY_EVIDENCE_REFERENCE` | A provider-backed row does not cite a selected flight/activity, or a suggested row claims provider evidence. |
 | `GENERATED_AT_MISMATCH` | `plan.generatedAt` does not equal the latest `capturedAt` across all selected offers. |
 | `DESTINATION_CANDIDATES_INCOMPLETE` | Spec §6.1 — `plan.destinationCandidatesEvaluated` does not cover every entry in `snapshot.destinationCandidates`, or names a destination not in the snapshot. |
 | `CONFIDENTIAL_VALUE_LEAK` | Spec §6.1 — `assertConfidentialFree` found a confidential value or field-key reference in the plan JSON. |
 | `HARD_CONSTRAINT_UNSATISFIED` | Deterministic evidence-backed evaluator rejected a selected offer; the message is a safe public token and never contains the protected value. |
 | `EXPLANATION_TOKEN_NOT_ALLOWED` | Spec §6.1 — `plan.publicExplanationTokens` contains a token not on the safe allow-list derived from the v2 snapshot projection. |
+
+New plans store daily composition as a `dailyItineraryOutcome` discriminated
+union: `READY` requires canonical `days`; `UNAVAILABLE` requires a closed
+reason, retryability, attempt count and check time and cannot contain days.
+Legacy `dailyItinerary` / `dailyItineraryStatus` remain read-compatible, but a
+plan containing both legacy fields and the new outcome is rejected.
 
 ## `validatePlanOutput` signature and behaviour
 

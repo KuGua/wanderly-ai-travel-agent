@@ -29,7 +29,8 @@
     "test:watch": "vitest",
     "lint": "eslint src/ tests/ scripts/ vitest.config.ts",
     "typecheck": "tsc --noEmit",
-    "docs:verify": "tsx scripts/verify-docs.ts"
+    "docs:verify": "tsx scripts/verify-docs.ts",
+    "contract:daily-itinerary-provider": "tsx scripts/verify-daily-itinerary-provider-contract.ts"
   },
   "dependencies": {
     "@aws-sdk/client-kms": "^3.1121.0",

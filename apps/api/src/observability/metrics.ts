@@ -295,9 +295,30 @@ metrics.registerCounter("plan_validation_failures_total", "Plan validation failu
   validationResult: ["schema", "authorization", "route", "provenance", "evidence", "unknown"],
 });
 
-metrics.registerCounter("daily_itinerary_generation_total", "Optional daily itinerary generation outcomes.", {
-  result: ["validation_failed", "unavailable"],
+metrics.registerCounter("daily_itinerary_attempt_total", "Individual optional daily-itinerary generation attempts.", {
+  outcome: [
+    "success", "schema_invalid", "date_coverage_invalid", "time_order_invalid",
+    "evidence_reference_invalid", "model_contract_rejected", "model_temporarily_unavailable",
+    "capability_not_configured", "internal_error",
+  ],
 });
+metrics.registerCounter("daily_itinerary_run_total", "Final optional daily-itinerary generation outcomes.", {
+  finalOutcome: [
+    "success", "model_contract_rejected", "model_temporarily_unavailable",
+    "content_repair_exhausted", "capability_not_configured", "internal_error",
+  ],
+});
+metrics.registerHistogram(
+  "daily_itinerary_duration_ms",
+  "End-to-end optional daily-itinerary generation duration in milliseconds.",
+  [100, 250, 500, 1_000, 2_500, 5_000, 10_000, 20_000],
+  {
+    finalOutcome: [
+      "success", "model_contract_rejected", "model_temporarily_unavailable",
+      "content_repair_exhausted", "capability_not_configured", "internal_error",
+    ],
+  },
+);
 metrics.registerCounter("booking_gate_denials_total", "Booking gate denials by bounded category.", {
   errorCategory: ["callback_auth", "membership", "quorum", "plan_state", "plan_unavailable", "non_unanimous", "snapshot_stale", "offer_stale", "unknown"],
 });

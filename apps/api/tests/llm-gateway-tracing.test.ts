@@ -28,7 +28,7 @@ function buildCapturingClient(behavior: "ok" | "schema-bad" = "ok"): {
   const respond = async (): Promise<unknown> => ({
     choices: [{
       message: behavior === "ok"
-        ? { parsed: { plan: { destination: "Tokyo", flights: [], stays: [], generatedAt: "2026-08-23T00:00:00.000Z" } } }
+        ? { parsed: { plan: { destination: "Tokyo", flights: [], hotels: [], generatedAt: "2026-08-23T00:00:00.000Z" } } }
         : { content: "{\"reply\":{\"content\":\"hi\"}}" },
     }],
     usage: { prompt: 12, completion: 5, total: 17 },

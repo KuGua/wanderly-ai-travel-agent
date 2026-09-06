@@ -170,3 +170,75 @@ hotels、activities、accommodations 交给模型。模型既不能再次调用�
 这不是“没有酒店数据”、重新规划按钮或团队约束的问题。根因是最终输出 contract 缺少**ID 与槽位类别一一对应**的 preflight，且当前无 plan summary 因零 `serviceGaps` 落成 `COMPLETED`。Shared Plan 只识别 `COMPLETED_WITH_GAPS` 的无方案状态，因而错误显示“方案已就绪”；latest research route 还遗漏了已定义的 `summaryReason`。
 
 后续研发以 [规划证据槽位校正与无方案终态实施方案](../planning-evidence-slot-and-planless-state-implementation.md) 为准：增加 `EVIDENCE_SLOT_MISMATCH` 的无敏感预检/repair、把所有无 plan summary 终态统一为 `COMPLETED_WITH_GAPS`、透传 summary reason，并按 `resultPlanId` 而非单独 run status 呈现 Shared Plan。团队约束保持仅显示已确认 `TEAM_VISIBLE` facts 的既有隐私边界。
+
+## 同日第三次复测：候选已返回但无法 propose，repair 被当成检索预算
+
+运行 `995ff516-580e-4490-ba36-48abaad7dc53` 中，flight、activities、accommodation 和五次
+places provider search 均留下 LIVE 结果；hotel 单独为 `NO_RESULTS`。两次
+`places.propose` 在 provider 之外被拒绝，原始错误均为
+`candidateId was not returned by places.search in this run`。因此 hotel 空结果不是没有方案的主因。
+
+dispatcher 对 `places.search` 的返回值读取了不存在的 `data[]`，但 Skill 公开输出字段是
+`candidates[]`，导致本轮候选 map 永远为空。随后 gateway 又把
+`maxTurns + repairBudget` 当成统一工具循环上限，两个 repair 回合也能继续搜索，最终在写 plan
+之前耗尽十轮。
+
+落地修复读取并严格校验 `PlaceSearchOutput.candidates`；places contract 连续失败时撤下整个依赖
+工具族；最后一个正常回合固定关闭 tools 进入 synthesis，repair 回合继续保持关闭。research
+summary 在持久化前按 capability/code/destination 去重。完整行为与验收以
+[实施方案第 10 节](../planning-evidence-slot-and-planless-state-implementation.md#10-places-候选交接与最终成稿预算2026-09-06)
+为准。
+
+## v3 每日行程未展示：请求没有到达 Gemini
+
+v3 plan `f6542afa-be95-4c15-96e7-6f9ccc652be1` 已正常激活，但数据库
+`plan_data` 没有 `dailyItinerary`。对应 run `dc3125ef-1016-4473-b31f-484629ad7360`
+在主方案合成成功后的下一毫秒记录 `daily_itinerary / failure / UNAVAILABLE`，期间没有每日行程
+模型请求。页面只在字段为非空数组时渲染，因此不是前端漏展示。
+
+根因是 planning service 解构并裸调用 `generateDailyItinerary`，使类方法的 `this` 丢失；真实
+`LLMGateway` 在 `this.loadClient()` 处抛错，Gemini client 尚未加载。测试 gateway 使用对象字面量
+且方法不依赖 `this`，所以旧测试错误通过。修复改为经实例调用，并新增服务层 receiver/persistence
+回归；同时将本地调用错误从 provider `unavailable` 中拆为 `internal_call_error`。
+
+后续 v4/v5 已证明请求进入 Gemini，但每日行程在约 4 秒后被确定性校验拒绝；旧遥测只保留
+`VALIDATION_FAILED`，无法区分日期、时间和引用。修复采用最多三次的独立日程生成预算，使用
+服务端日期数组、精简证据上下文和仅含错误码/schema path 的修复提示。耗尽后保留共享方案并写入
+`dailyItineraryStatus=UNAVAILABLE`，不重新执行航班、酒店、活动或地点检索。
+
+## v7 每日行程未通过：Gemini 拒绝外层数组上限契约
+
+v7 plan `72b5d1f2-9184-429c-b376-c412fb5a2b68` 对应 replan run
+`a245b089-2f45-482b-8fcc-91d91296e47e`。主方案合成、两条航班检索、酒店和活动检索均成功；
+每日行程请求随后被 Gemini OpenAI-compatible endpoint 以 HTTP 400 `INVALID_ARGUMENT` 拒绝。
+安全遥测将其分类为 `PROVIDER_UNAVAILABLE`，`attempt=1`、`fieldPaths=[]`。因此本次没有发生内容
+校验，也没有进入第 2/3 次内容修复；页面统一显示的 “did not pass validation after retrying” 与实际
+失败阶段不符。
+
+同一模型、同一 endpoint 的最小 schema 对照复现把拒绝条件收敛到
+`dailyItineraryModelCompletionSchema` 最外层 `days` 数组的 `.max(31)`，即生成 JSON Schema 中的
+`properties.days.maxItems=31`：
+
+- 完整 schema：HTTP 400；
+- 删除所有 `pattern`：仍为 HTTP 400；
+- 删除 `minLength`/`maxLength`：仍为 HTTP 400；
+- 删除内层 `items.maxItems`：仍为 HTTP 400；
+- 改写 nullable 表达：仍为 HTTP 400；
+- 只删除外层 `days.maxItems`：请求成功；保留其余正则、长度、nullable 和内层数组上限；
+- 将外层上限分别改为 4、7、14、21、30：均为 HTTP 400。
+
+所以根因不是 v7 的行程内容、价格、酒店、活动为空或前端漏渲染，而是当前 Gemini 模型/兼容端点
+拒绝“该嵌套日程结构上的外层 `maxItems`”这一 structured-output schema 组合。Google 文档将
+`maxItems` 列为受支持子集，同时也说明复杂或深层 schema 可能被拒绝；本次实测表现为位置/组合
+兼容限制，而不是数值 31 超过某个阈值。修复时应移除 provider-facing 外层上限、继续在服务端按
+旅行日期执行确定性覆盖校验，并为真实 provider schema acceptance 增加契约探测；另需让 UI 根据
+`provider_unavailable` 与 `repair_exhausted` 显示不同原因。
+
+### 落地结果
+
+实现已拆分 provider wire schema 与 canonical Zod schema：前者移除 provider-fragile 的外层
+`maxItems`，后者继续执行 31 日、每日 12 项、格式、长度和别名约束。新 plan 使用互斥的
+`dailyItineraryOutcome` 保存 `READY` days 或闭合的 `UNAVAILABLE` 原因、retryable、attempts 与
+checkedAt；旧字段只读兼容。指标拆为实际 attempt、单一 run 终态和耗时，日志携带内容安全的 schema
+fingerprint。前端按失败原因区分内容修复耗尽、临时不可用与系统契约问题，并新增真实配置 provider
+的 synthetic contract probe，避免再次只在用户 replan 后发现 schema 方言漂移。

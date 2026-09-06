@@ -13,10 +13,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  latestPlanSchema,
   tripDetailsResponseSchema,
   tripPinnedSessionSchema,
   tripSummarySchema,
 } from "../../src/types/schemas.js";
+
+it("accepts PROPOSED as the latest plan while it awaits adoption votes", () => {
+  expect(latestPlanSchema.safeParse({
+    id: "00000000-0000-4000-8000-000000000020",
+    version: 5,
+    status: "PROPOSED",
+    generatedAt: "2026-10-01T00:00:00.000Z",
+  }).success).toBe(true);
+});
 
 const basePinned = {
   agentTaskRunId: "00000000-0000-4000-8000-000000000001",

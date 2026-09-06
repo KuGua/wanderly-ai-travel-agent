@@ -54,6 +54,22 @@ export const tripArchiveReasonSchema = z.enum(["USER_ARCHIVED", "DATE_ELAPSED"])
 
 export const tripRoleSchema = z.enum(["CREATOR", "MEMBER"]);
 
+export const projectDisplayStateSchema = z.enum([
+  "DRAFT", "ACTION_REQUIRED", "IN_PROGRESS", "COMPLETED", "ARCHIVED", "CANCELLED",
+]);
+export const latestPlanStatusSchema = z.enum(["DRAFT", "PROPOSED", "ACTIVE", "STALE", "SUPERSEDED"]);
+export const latestPlanSummarySchema = z.object({
+  id: z.string().uuid(),
+  version: z.number().int().nonnegative(),
+  status: latestPlanStatusSchema,
+  generatedAt: z.string().datetime(),
+});
+export const nextActionSchema = z.object({
+  type: z.enum(["EDIT_DRAFT", "REVIEW_PLAN", "GRANT_CONSENT", "CHECK_READINESS", "CONFIRM_PLAN", "VIEW_PROJECT", "VIEW_HISTORY"]),
+  label: z.string().min(1).max(128),
+  href: z.string().min(1).max(512),
+});
+
 export const tripPinnedSessionSchema = z.object({
   agentTaskRunId: z.string().uuid(),
   operation: z.enum(["CONVERSATION", "PLAN", "REPLAN", "RESEARCH"]),
@@ -82,6 +98,10 @@ export const tripSummarySchema = z.object({
   memberCount: z.number().int().nonnegative(),
   role: tripRoleSchema,
   createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime().optional(),
+  displayState: projectDisplayStateSchema.optional(),
+  latestPlan: latestPlanSummarySchema.nullable().optional(),
+  nextAction: nextActionSchema.nullable().optional(),
   pinnedSession: tripPinnedSessionSchema.nullable().optional(),
 });
 

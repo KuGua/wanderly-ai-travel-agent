@@ -145,7 +145,14 @@ export async function recordPlanningResearchResult(input: RecordResearchResultIn
     throw new Error(`recordPlanningResearchResult: too many serviceGaps (${input.serviceGaps.length} > ${RECORD_RESEARCH_RESULT_MAX_GAPS})`);
   }
   // Validate gaps up front; never persist malformed data.
-  const gaps = input.serviceGaps.map((g) => serviceGapSchema.parse(g));
+  const parsedGaps = input.serviceGaps.map((g) => serviceGapSchema.parse(g));
+  const seenGapKeys = new Set<string>();
+  const gaps = parsedGaps.filter((gap) => {
+    const key = `${gap.capability}\u0000${gap.code}\u0000${gap.destinationId ?? ""}`;
+    if (seenGapKeys.has(key)) return false;
+    seenGapKeys.add(key);
+    return true;
+  });
   const [row] = await db.transaction(async (tx) => {
     const insertValues = {
       tripId: input.tripId,

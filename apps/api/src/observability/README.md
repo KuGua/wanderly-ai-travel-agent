@@ -122,7 +122,9 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `place_search_tool_invocations_total` | counter | outcome, provider, error_category | outcome ∈ `["live","unavailable"]`; provider ∈ `["openrouteservice"]`; error_category ∈ `["none","not_configured","search_constraints_incomplete","no_results","rate_limited","upstream_timeout","upstream_failure","invalid_provider_response","provider_not_approved","policy_denied","per_run_cap_exceeded"]` |
 | `plan_adoption_vote_total` | counter | decision, result | decision ∈ `["accept","needs_changes"]`; result ∈ `["cast","adopted","blocked","stale_plan"]` |
 | `plan_replan_total` | counter | trigger, result | trigger ∈ `["trip_constraint_confirmed","trip_constraint_revoked","trip_constraint_upsert","consent","change_event","conversation_handoff","confirmed_brief_change"]`; result ∈ `["enqueued","superseded","missing_snapshot"]` |
-| `daily_itinerary_generation_total` | counter | result | `["validation_failed","unavailable"]`; optional daily-itinerary enhancement failure that does not invalidate the evidence-bound shared plan. |
+| `daily_itinerary_attempt_total` | counter | outcome | outcome ∈ `["success","schema_invalid","date_coverage_invalid","time_order_invalid","evidence_reference_invalid","model_contract_rejected","model_temporarily_unavailable","capability_not_configured","internal_error"]`; one count per content-generation attempt. Transport retries remain inside the gateway budget and are represented by the existing LLM request error/latency signals. |
+| `daily_itinerary_run_total` | counter | finalOutcome | finalOutcome ∈ `["success","model_contract_rejected","model_temporarily_unavailable","content_repair_exhausted","capability_not_configured","internal_error"]`; exactly one terminal result per dated plan. |
+| `daily_itinerary_duration_ms` | histogram | finalOutcome | finalOutcome ∈ `["success","model_contract_rejected","model_temporarily_unavailable","content_repair_exhausted","capability_not_configured","internal_error"]`; end-to-end optional composition latency, with buckets `[100,250,500,1000,2500,5000,10000,20000]`. A failure never invalidates the evidence-bound shared plan. |
 | `plan_validation_failures_total` | counter | validationResult | `["schema","authorization","route","provenance","evidence","unknown"]` |
 | `provider_search_cache_total` | counter | category, outcome | category ∈ `["hotel","activity","accommodation"]`; outcome ∈ `["hit_live","hit_unavailable","miss","wait_timeout"]` |
 | `research_auto_accept_total` | counter | outcome | `["adopted","stale_plan","already_adopted","not_solo","error"]` |
@@ -148,6 +150,11 @@ deterministic plan rejection increments
 `plan_validation_failures_total{validationResult}` and logs only stable
 violation codes plus field paths; rejected values, provider payloads and
 member/Profile fields are never logged.
+
+The planning model loop emits one `llm/synthesis_reserved` safe runtime event
+when it closes research and spends the reserved final normal call on tool-free
+synthesis. Its `attempt` is event context only, never a metric label. Repair
+turns keep tools closed; provider dispatch after this event is a regression.
 
 `MetricProvider` is the type alias for the `provider` label on the LLM
 series: `"openai" \| "gemini" \| "openai-compatible"`.

@@ -1,5 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { ModelGateway, ModelToolDefinition, PlanningEvidenceCatalog } from "../providers/model-gateway.js";
+import type {
+  DailyItineraryRepairIssue,
+  ModelGateway,
+  ModelToolDefinition,
+  PlanningEvidenceCatalog,
+} from "../providers/model-gateway.js";
+import { dailyItineraryModelCompletionSchema } from "../providers/model-gateway.js";
 import type { ProviderUnavailableCode, ResearchSummaryReason } from "../types/domain.js";
 import { db } from "../db/database.js";
 import {
@@ -53,7 +59,7 @@ import { logSafeRuntimeEvent, pinoInstance } from "../observability/telemetry.js
 import { resolveTripDestinationReference } from "./destination-reference-service.js";
 import { flightSearchModelArgumentsSchema, normalizeFlightProviderResult } from "./flight-search-service.js";
 import { activitiesSearchModelArgumentsSchema } from "./activities-search-service.js";
-import { placeSearchModelArgumentsSchema } from "./place-search-service.js";
+import { placeSearchModelArgumentsSchema, placeSearchOutputSchema } from "./place-search-service.js";
 import { navigationRouteModelArgumentsSchema } from "./navigation-route-service.js";
 import { tripPlaceModelArgumentsSchema } from "../skills/shared/trip-place-skill.js";
 import { hotelSearchModelArgumentsSchema } from "./hotel-search-service.js";
@@ -89,6 +95,220 @@ export interface PlanningDependencies {
   hotelProvider?: HotelProvider;
   accommodationDiscoveryProvider?: AccommodationDiscoveryProvider;
   modelGateway: ModelGateway;
+}
+
+export type DailyItineraryGenerationResult =
+  | "success"
+  | "schema_invalid"
+  | "date_coverage_invalid"
+  | "time_order_invalid"
+  | "evidence_reference_invalid"
+  | "model_contract_rejected"
+  | "model_temporarily_unavailable"
+  | "content_repair_exhausted"
+  | "capability_not_configured"
+  | "internal_error";
+
+const DAILY_ITINERARY_MAX_ATTEMPTS = 3;
+
+function inclusiveDates(start: string, end: string): string[] {
+  const dates: string[] = [];
+  for (let cursor = new Date(`${start}T00:00:00.000Z`); cursor <= new Date(`${end}T00:00:00.000Z`); cursor.setUTCDate(cursor.getUTCDate() + 1)) {
+    dates.push(cursor.toISOString().slice(0, 10));
+  }
+  return dates;
+}
+
+/**
+ * Build the bounded, price-free context used only for schedule composition.
+ * Short aliases keep provider ids out of model-owned output; the service maps
+ * them back after the structured response has passed its provider contract.
+ */
+export function buildDailyItineraryModelContext(
+  plan: ReturnType<typeof validatePlanOutput>,
+  requiredDates: readonly string[],
+): Record<string, unknown> {
+  return {
+    destination: plan.destination,
+    days: requiredDates.map((date, index) => ({ dayKey: `day_${index + 1}`, date })),
+    flights: plan.flights.map((flight, index) => ({
+      evidenceKey: `flight_${index + 1}`,
+      origin: flight.origin,
+      destination: flight.destination,
+      segments: flight.segments.map((segment) => ({
+        origin: segment.origin,
+        destination: segment.destination,
+        departureAt: segment.departureAt,
+        arrivalAt: segment.arrivalAt,
+        carrierCode: segment.carrierCode,
+        flightNumber: segment.flightNumber,
+      })),
+    })),
+    hotels: (plan.hotels ?? []).map((hotel) => ({
+      propertyName: hotel.propertyName,
+      checkIn: hotel.checkIn,
+      checkOut: hotel.checkOut,
+    })),
+    activities: (plan.activities ?? []).map((activity, index) => ({
+      evidenceKey: `activity_${index + 1}`,
+      title: activity.title,
+      destination: activity.destination,
+      durationMinutes: activity.durationMinutes,
+    })),
+  };
+}
+
+/**
+ * Rebuild the authoritative persisted schedule from model-owned prose/times.
+ * No model value can choose a real date, timezone, verification label or
+ * provider id; unknown aliases fail closed and enter the bounded repair path.
+ */
+export function bindDailyItineraryModelCompletion(params: {
+  completion: unknown;
+  plan: ReturnType<typeof validatePlanOutput>;
+  requiredDates: readonly string[];
+}): NonNullable<ReturnType<typeof validatePlanOutput>["dailyItinerary"]> {
+  const parsed = dailyItineraryModelCompletionSchema.safeParse(params.completion);
+  if (!parsed.success) {
+    throw new PlanValidationError(parsed.error.issues.map((issue) => ({
+      code: "STRUCTURE_INVALID" as const,
+      fieldPath: issue.path.join(".") || "dailyItinerary",
+      reason: "Daily itinerary model output does not match the structured contract",
+    })));
+  }
+
+  const expectedDayKeys = params.requiredDates.map((_, index) => `day_${index + 1}`);
+  const actualDayKeys = parsed.data.days.map((day) => day.dayKey);
+  if (actualDayKeys.join(",") !== expectedDayKeys.join(",")) {
+    throw new PlanValidationError([{
+      code: "DAILY_ITINERARY_DATE_COVERAGE",
+      fieldPath: "dailyItinerary",
+      reason: `Daily itinerary must contain exactly ${expectedDayKeys.join(", ")} in order`,
+    }]);
+  }
+
+  const evidenceByAlias = new Map<string, { category: "flights" | "activities"; id: string }>();
+  params.plan.flights.forEach((flight, index) => {
+    evidenceByAlias.set(`flight_${index + 1}`, { category: "flights", id: flight.id });
+  });
+  (params.plan.activities ?? []).forEach((activity, index) => {
+    evidenceByAlias.set(`activity_${index + 1}`, { category: "activities", id: activity.id });
+  });
+
+  const violations: Array<{
+    code: "DAILY_ITINERARY_EVIDENCE_REFERENCE";
+    fieldPath: string;
+    reason: string;
+  }> = [];
+  const days = parsed.data.days.map((day, dayIndex) => ({
+    date: params.requiredDates[dayIndex]!,
+    timeZone: "destination_local" as const,
+    items: day.items.map((item, itemIndex) => {
+      const path = `dailyItinerary.${dayIndex}.items.${itemIndex}.evidenceKey`;
+      const providerBacked = item.kind === "FLIGHT" || item.kind === "BOOKED_ACTIVITY";
+      const evidence = item.evidenceKey ? evidenceByAlias.get(item.evidenceKey) : undefined;
+      const expectedCategory = item.kind === "FLIGHT" ? "flights"
+        : item.kind === "BOOKED_ACTIVITY" ? "activities" : undefined;
+
+      if (providerBacked && (!evidence || evidence.category !== expectedCategory)) {
+        violations.push({
+          code: "DAILY_ITINERARY_EVIDENCE_REFERENCE",
+          fieldPath: path,
+          reason: `${item.kind} must cite a selected ${expectedCategory === "flights" ? "flight_*" : "activity_*"} alias`,
+        });
+      }
+      if (!providerBacked && item.evidenceKey !== null) {
+        violations.push({
+          code: "DAILY_ITINERARY_EVIDENCE_REFERENCE",
+          fieldPath: path,
+          reason: "Suggested itinerary items must use evidenceKey: null",
+        });
+      }
+
+      return {
+        kind: item.kind,
+        startTimeLocal: item.startTimeLocal,
+        endTimeLocal: item.endTimeLocal,
+        title: item.title,
+        verification: providerBacked ? "PROVIDER_BACKED" as const : "SUGGESTED" as const,
+        ...(providerBacked && evidence ? { evidenceRef: evidence } : {}),
+      };
+    }),
+  }));
+
+  if (violations.length > 0) throw new PlanValidationError(violations);
+  return days;
+}
+
+function dailyItineraryRepairIssues(error: unknown): DailyItineraryRepairIssue[] {
+  if (error instanceof PlanValidationError) {
+    const groups = new Map<DailyItineraryRepairIssue["code"], Set<string>>();
+    for (const violation of error.violations) {
+      const code: DailyItineraryRepairIssue["code"] = violation.code === "DAILY_ITINERARY_DATE_COVERAGE"
+        ? "DATE_COVERAGE_INVALID"
+        : violation.code === "DAILY_ITINERARY_TIME_ORDER"
+          ? "TIME_ORDER_INVALID"
+          : violation.code === "DAILY_ITINERARY_EVIDENCE_REFERENCE"
+            ? "EVIDENCE_REFERENCE_INVALID"
+            : "SCHEMA_INVALID";
+      const paths = groups.get(code) ?? new Set<string>();
+      paths.add(violation.fieldPath);
+      groups.set(code, paths);
+    }
+    return [...groups].map(([code, paths]) => ({ code, fieldPaths: [...paths].sort().slice(0, 16) }));
+  }
+  if (error instanceof Error && error.name === "ModelGatewayError" && (error as Error & { code?: unknown }).code === "SCHEMA_PARSE") {
+    const fieldPaths = (error as Error & { details?: { fieldPaths?: readonly string[] } }).details?.fieldPaths ?? ["dailyItinerary"];
+    return [{ code: "SCHEMA_INVALID", fieldPaths: [...new Set(fieldPaths)].sort().slice(0, 16) }];
+  }
+  return [];
+}
+
+/**
+ * Keep provider/schema failures distinct from local orchestration defects.
+ * The latter used to be reported as `unavailable`, which blamed Gemini even
+ * when an unbound method threw before the client was loaded.
+ */
+export function classifyDailyItineraryFailure(error: unknown): Exclude<DailyItineraryGenerationResult, "success"> {
+  if (error instanceof PlanValidationError) {
+    if (error.violations.some((violation) => violation.code === "DAILY_ITINERARY_DATE_COVERAGE")) return "date_coverage_invalid";
+    if (error.violations.some((violation) => violation.code === "DAILY_ITINERARY_TIME_ORDER")) return "time_order_invalid";
+    if (error.violations.some((violation) => violation.code === "DAILY_ITINERARY_EVIDENCE_REFERENCE")) return "evidence_reference_invalid";
+    return "schema_invalid";
+  }
+  if (error instanceof Error && error.name === "ModelGatewayError") {
+    const gatewayError = error as Error & {
+      code?: unknown;
+      details?: { httpStatus?: number };
+    };
+    if (gatewayError.code === "SCHEMA_PARSE") return "schema_invalid";
+    const status = gatewayError.details?.httpStatus;
+    if (gatewayError.code === "NOT_CONFIGURED" || status === 401 || status === 403 || status === 404) {
+      return "capability_not_configured";
+    }
+    if (typeof status === "number" && status >= 400 && status < 500 && status !== 429) {
+      return "model_contract_rejected";
+    }
+    return "model_temporarily_unavailable";
+  }
+  return "internal_error";
+}
+
+function dailyItineraryUnavailableReason(result: Exclude<DailyItineraryGenerationResult, "success">):
+  "MODEL_CONTRACT_REJECTED"
+  | "MODEL_TEMPORARILY_UNAVAILABLE"
+  | "CONTENT_REPAIR_EXHAUSTED"
+  | "CAPABILITY_NOT_CONFIGURED"
+  | "INTERNAL_ERROR" {
+  if (result === "model_contract_rejected") return "MODEL_CONTRACT_REJECTED";
+  if (result === "model_temporarily_unavailable") return "MODEL_TEMPORARILY_UNAVAILABLE";
+  if (result === "content_repair_exhausted"
+    || result === "schema_invalid"
+    || result === "date_coverage_invalid"
+    || result === "time_order_invalid"
+    || result === "evidence_reference_invalid") return "CONTENT_REPAIR_EXHAUSTED";
+  if (result === "capability_not_configured") return "CAPABILITY_NOT_CONFIGURED";
+  return "INTERNAL_ERROR";
 }
 
 const configuredProviders = createTravelProviders();
@@ -1121,12 +1341,28 @@ function parseToolArguments<T>(
 }
 
 /** The candidates a `places.search` answer carries, or none if it was not LIVE. */
-function placeCandidatesOf(result: unknown): readonly PlaceCandidate[] {
-  const outcome = (result as { outcome?: unknown } | null)?.outcome;
-  if (outcome !== "LIVE") return [];
-  const data = (result as { data?: unknown }).data;
-  return Array.isArray(data) ? (data as PlaceCandidate[]) : [];
+export function placeCandidatesOf(result: unknown): readonly PlaceCandidate[] {
+  const parsed = placeSearchOutputSchema.safeParse(result);
+  if (!parsed.success) {
+    throw new SkillError("OUTPUT_INVALID", "places.search returned an invalid public Skill result");
+  }
+  return parsed.data.outcome === "LIVE" ? parsed.data.candidates : [];
 }
+
+/**
+ * Place mutation and route tools depend on candidates produced by
+ * `places.search`. When the model cannot satisfy one place contract, keeping
+ * the dependent family on offer merely spends later turns on ids the server
+ * cannot resolve. Withdraw the family together and let synthesis continue
+ * with the independently verified flight, hotel and activity evidence.
+ */
+export const PLACE_TOOL_FAMILY = [
+  "places.search",
+  "places.propose",
+  "places.adopt",
+  "places.revoke",
+  "navigation.route",
+] as const;
 
 /**
  * How a place-mutation tool is offered.
@@ -1289,7 +1525,6 @@ export function buildPlanningEvidenceCatalog(params: {
   flights: readonly FlightOffer[];
   activities: readonly ActivityEvidence[];
   hotels: readonly HotelOffer[];
-  accommodations: readonly AccommodationEvidence[];
 }): PlanningEvidenceCatalog {
   const take = <T>(items: readonly T[]): readonly T[] => items.slice(0, PLANNING_EVIDENCE_CATALOG_MAX_ITEMS);
   return {
@@ -1332,16 +1567,6 @@ export function buildPlanningEvidenceCatalog(params: {
       source: offer.source,
       capturedAt: offer.capturedAt,
     })),
-    accommodations: take(params.accommodations).map((offer) => ({
-      id: offer.id,
-      destinationId: offer.destinationId,
-      name: offer.name,
-      kind: offer.kind,
-      distanceMeters: offer.distanceMeters,
-      popularityTier: offer.popularityTier,
-      source: offer.source,
-      capturedAt: offer.capturedAt,
-    })),
   };
 }
 
@@ -1350,6 +1575,8 @@ type PlanValidationMetricResult = "schema" | "authorization" | "route" | "proven
 function planValidationMetricResult(code: string): PlanValidationMetricResult {
   switch (code) {
     case "STRUCTURE_INVALID":
+    case "DAILY_ITINERARY_DATE_COVERAGE":
+    case "DAILY_ITINERARY_TIME_ORDER":
       return "schema";
     case "FIELD_NOT_AUTHORIZED":
     case "CONFIDENTIAL_VALUE_LEAK":
@@ -1368,6 +1595,7 @@ function planValidationMetricResult(code: string): PlanValidationMetricResult {
       return "provenance";
     case "EVIDENCE_NOT_FOUND":
     case "EVIDENCE_MISMATCH":
+    case "DAILY_ITINERARY_EVIDENCE_REFERENCE":
       return "evidence";
     default:
       return "unknown";
@@ -1496,10 +1724,10 @@ export async function generatePlan(params: {
   // read that emptiness as "no accommodation was found". Runs holding ten live
   // Nuitee quotes and sixteen discovered stays reported `stay: NO_RESULTS`.
   //
-  // Real accommodation reaches the plan as `hotels` (Nuitee / SerpApi quotes)
-  // and is discovered through `accommodation.discover`; the stay gap is now
-  // computed from that evidence. `allStays` stays as the plan contract's
-  // `stays` slot, empty until something can genuinely fill it.
+  // Real accommodation reaches the plan only as `hotels` (Nuitee / SerpApi
+  // quotes); `accommodation.discover` is research-only. `allStays` remains
+  // empty solely for compatibility with the legacy validator/evidence API and
+  // must never become a model-selectable final-plan slot.
   // The flight tool takes controlled airport ids, and the snapshot holds city
   // names. Nothing translated between them, so the model dutifully passed
   // "Shanghai" and "Tokyo" and the search rejected them as uncontrolled — every
@@ -1542,7 +1770,6 @@ export async function generatePlan(params: {
     flights: allFlights,
     activities: allActivities,
     hotels: allHotels,
-    accommodations: allAccommodations,
   });
   for (const [category, entries] of Object.entries(availableEvidence)) {
     logSafeRuntimeEvent(params.ctx, {
@@ -1587,7 +1814,6 @@ export async function generatePlan(params: {
         stays: allStays,
         activities: allActivities,
         hotels: allHotels,
-        accommodations: allAccommodations,
       })
       : candidate;
     validateProviderCoverage({ requiredOrigins: snapshot.departureCities, flights: allFlights });
@@ -1914,7 +2140,13 @@ export async function generatePlan(params: {
             const rejections = (argumentRejectionsByTool.get(call.name) ?? 0) + 1;
             argumentRejectionsByTool.set(call.name, rejections);
             metrics.inc("planning_tool_args_rejected_total", { tool: call.name });
-            if (rejections >= TOOL_ARGUMENT_REJECTION_LIMIT) withdrawTool?.(call.name);
+            if (rejections >= TOOL_ARGUMENT_REJECTION_LIMIT) {
+              if (PLACE_TOOL_FAMILY.includes(call.name as (typeof PLACE_TOOL_FAMILY)[number])) {
+                for (const toolName of PLACE_TOOL_FAMILY) withdrawTool?.(toolName);
+              } else {
+                withdrawTool?.(call.name);
+              }
+            }
           }
           logSafeRuntimeEvent(params.ctx, {
             component: "planner", event: "tool", operation: call.name,
@@ -1959,27 +2191,101 @@ export async function generatePlan(params: {
   // tools, so it cannot select a new offer or turn an unverified stop into a
   // provider fact.
   if (snapshot.travelDateStart && snapshot.travelDateEnd) {
-    const generateDailyItinerary = dependencies.modelGateway.generateDailyItinerary;
+    const dailyStartedAt = Date.now();
+    const gateway = dependencies.modelGateway;
+    const requiredDates = inclusiveDates(snapshot.travelDateStart, snapshot.travelDateEnd);
+    const dailyPlanContext = buildDailyItineraryModelContext(planData, requiredDates);
     // A daily schedule is optional. Its model/schema failure must never
     // discard the evidence-bound shared plan that was validated above.
-    try {
-      if (!generateDailyItinerary) throw new Error("Daily itinerary gateway capability is unavailable");
-      const dailyItinerary = await generateDailyItinerary({
-        plan: planData,
-        travelDateStart: snapshot.travelDateStart,
-        travelDateEnd: snapshot.travelDateEnd,
-        signal: params.signal,
-        ctx: params.ctx,
-      });
-      planData = validateCandidatePlan({ ...planData, dailyItinerary }, true);
-    } catch (error) {
-      const result = error instanceof PlanValidationError ? "validation_failed" : "unavailable";
-      metrics.inc("daily_itinerary_generation_total", { result });
+    let repairIssues: DailyItineraryRepairIssue[] | undefined;
+    let finalResult: Exclude<DailyItineraryGenerationResult, "success"> | undefined;
+    let attempts = 0;
+    if (!gateway.generateDailyItinerary) {
+      finalResult = "capability_not_configured";
       logSafeRuntimeEvent(params.ctx, {
         component: "planner", event: "daily_itinerary", operation: "generate", outcome: "failure",
-        errorCode: error instanceof PlanValidationError ? error.code : "UNAVAILABLE",
-        relatedRunId: params.agentTaskRunId,
+        errorCode: "CAPABILITY_NOT_CONFIGURED", attempt: 0, relatedRunId: params.agentTaskRunId,
       });
+    }
+    for (let attempt = 1; gateway.generateDailyItinerary && attempt <= DAILY_ITINERARY_MAX_ATTEMPTS; attempt += 1) {
+      attempts = attempt;
+      try {
+        // Keep the gateway as the call receiver. `LLMGateway` uses `this` to
+        // load its configured Gemini/OpenAI-compatible client.
+        const dailyDraft = await gateway.generateDailyItinerary({
+          plan: dailyPlanContext,
+          travelDateStart: snapshot.travelDateStart,
+          travelDateEnd: snapshot.travelDateEnd,
+          requiredDates,
+          ...(repairIssues ? { repair: { attempt, issues: repairIssues } } : {}),
+          signal: params.signal,
+          ctx: params.ctx,
+        });
+        const dailyItinerary = bindDailyItineraryModelCompletion({
+          completion: dailyDraft,
+          plan: planData,
+          requiredDates,
+        });
+        planData = validateCandidatePlan({
+          ...planData,
+          dailyItineraryOutcome: {
+            status: "READY",
+            days: dailyItinerary,
+            attempts,
+            checkedAt: new Date().toISOString(),
+          },
+        }, true);
+        metrics.inc("daily_itinerary_attempt_total", { outcome: "success" });
+        metrics.inc("daily_itinerary_run_total", { finalOutcome: "success" });
+        metrics.observe("daily_itinerary_duration_ms", Date.now() - dailyStartedAt, { finalOutcome: "success" });
+        finalResult = undefined;
+        break;
+      } catch (error) {
+        if (params.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw error;
+        const result = classifyDailyItineraryFailure(error);
+        const issues = dailyItineraryRepairIssues(error);
+        const isRepairable = issues.length > 0;
+        metrics.inc("daily_itinerary_attempt_total", { outcome: result });
+        if (isRepairable && attempt < DAILY_ITINERARY_MAX_ATTEMPTS) {
+          repairIssues = issues;
+          logSafeRuntimeEvent(params.ctx, {
+            component: "planner", event: "daily_itinerary", operation: "generate", outcome: "retrying",
+            errorCode: result.toUpperCase(), validationCode: issues[0]?.code,
+            fieldPaths: issues.flatMap((issue) => issue.fieldPaths).slice(0, 16),
+            attempt, relatedRunId: params.agentTaskRunId,
+          });
+          continue;
+        }
+        finalResult = isRepairable ? "content_repair_exhausted" : result;
+        const finalIssues = issues.length > 0 ? issues : repairIssues ?? [];
+        const gatewayDetails = error instanceof Error && error.name === "ModelGatewayError"
+          ? (error as Error & { details?: { httpStatus?: number; schemaFingerprint?: string } }).details
+          : undefined;
+        logSafeRuntimeEvent(params.ctx, {
+          component: "planner", event: "daily_itinerary", operation: "generate", outcome: "failure",
+          errorCode: finalResult.toUpperCase(), validationCode: finalIssues[0]?.code,
+          fieldPaths: finalIssues.flatMap((issue) => issue.fieldPaths).slice(0, 16),
+          attempt, relatedRunId: params.agentTaskRunId,
+          ...(gatewayDetails?.httpStatus ? { httpStatus: gatewayDetails.httpStatus } : {}),
+          ...(gatewayDetails?.schemaFingerprint ? { schemaFingerprint: gatewayDetails.schemaFingerprint } : {}),
+        });
+        break;
+      }
+    }
+    if (finalResult) {
+      const reason = dailyItineraryUnavailableReason(finalResult);
+      planData = validateCandidatePlan({
+        ...planData,
+        dailyItineraryOutcome: {
+          status: "UNAVAILABLE",
+          reason,
+          retryable: reason === "MODEL_TEMPORARILY_UNAVAILABLE",
+          attempts,
+          checkedAt: new Date().toISOString(),
+        },
+      });
+      metrics.inc("daily_itinerary_run_total", { finalOutcome: finalResult });
+      metrics.observe("daily_itinerary_duration_ms", Date.now() - dailyStartedAt, { finalOutcome: finalResult });
     }
   }
 

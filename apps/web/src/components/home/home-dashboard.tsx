@@ -124,11 +124,12 @@ export function HomeDashboard() {
       .filter((trip) => matchesSearch(trip, searchQuery));
   }, [trips, filter, searchQuery]);
 
-  const filters: { key: StatusFilter; count: number }[] = [
-    { key: "active", count: statusCounts.active },
-    { key: "all", count: trips.length },
-    { key: "completed", count: statusCounts.completed },
-    { key: "archived", count: statusCounts.archived },
+  const listUnavailable = tripsQuery.isError && !tripsQuery.data;
+  const filters: { key: StatusFilter; count: number | string }[] = [
+    { key: "active", count: listUnavailable ? "—" : statusCounts.active },
+    { key: "all", count: listUnavailable ? "—" : trips.length },
+    { key: "completed", count: listUnavailable ? "—" : statusCounts.completed },
+    { key: "archived", count: listUnavailable ? "—" : statusCounts.archived },
   ];
 
   return (
@@ -347,7 +348,9 @@ export function HomeDashboard() {
             />
           </label>
             <span className="shrink-0 text-[13px] font-bold text-[var(--w-felt-ink)]" role="status" aria-atomic="true">
-              {tHome("trips.showing", { count: filteredTrips.length })}
+              {listUnavailable
+                ? tHome("trips.countUnavailable")
+                : tHome("trips.showing", { count: filteredTrips.length })}
             </span>
           </div>
         </div>

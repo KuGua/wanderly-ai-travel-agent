@@ -253,6 +253,10 @@ memberships overlap only where explicitly configured.
   Users endpoint is not published and private routes reject missing/invalid JWTs.
 - Each trip list contains only server-verified memberships, with stable order,
   stored route/date fields, server-derived `memberCount`, and the caller's role.
+- A list containing both `ACTIVE` and vote-pending `PROPOSED` latest plans returns
+  `200` and includes every authorized trip; the normal `PROPOSED` database state
+  cannot invalidate the whole response. If the browser has no cached list and
+  loading fails, counts render as unknown (`—`) rather than the false value zero.
 - Trip details expose safe member `displayName` but not other members' private
   Profile data; unrelated access is denied.
 - Profile PUT preserves omitted fields, permits owner nationality edits, rejects
@@ -1449,15 +1453,15 @@ logs, spans or metric labels.
 - A structurally invalid final model response receives a content-free schema-path correction and is retried inside the existing bounded loop; exhaustion fails closed as `SCHEMA_PARSE`.
 - Final Shared-plan evidence selections are treated as ids, rebound to complete server-owned normalized evidence, and assigned a server-derived `generatedAt`; unknown ids remain unbound and fail deterministic validation.
 - The final model contract returns compact `{id}` references rather than copying full provider evidence, keeping multi-offer responses bounded while the server remains authoritative for all normalized fields.
-- When the orchestrator has already completed a one-shot flight/hotel/activity/accommodation search and withdraws that Tool, final synthesis receives a bounded `availableEvidence` catalog containing the safe comparison fields and exact server-owned ids. It receives no raw payload, URL, member/Profile field or other private value.
+- When the orchestrator has already completed a one-shot flight/hotel/activity/accommodation search and withdraws that Tool, final synthesis receives a bounded selectable `availableEvidence` catalog for flights, hotels and activities. Accommodation discovery remains server-side research/gap evidence and is not a final-plan selection. The model receives no raw payload, URL, member/Profile field or other private value.
 - An unknown catalog id is rejected inside the same bounded repair loop as structural errors. The correction contains only a stable critique code and field path; a repaired response may select an exact catalog id, while repair exhaustion records `PLAN_SCHEMA_UNMET` as a research summary instead of discarding already persisted evidence.
-- New synthesis must never emit the retired `stays` field: gateway schema rejects it inside the bounded repair loop. A catalog ID is valid only in its own final-plan slot: placing a hotel ID in `accommodations[]` (or any other cross-category placement) yields `EVIDENCE_SLOT_MISMATCH` and a field path, never an automatic conversion. A repaired response using `hotels[]` may persist; exhaustion creates no plan, records `PLAN_SCHEMA_UNMET`, and terminates `COMPLETED_WITH_GAPS` even if provider `serviceGaps` is empty. Historical stored `stays[]` remains readable only.
+- New synthesis must never emit the retired `stays` or `accommodations` fields: gateway schema rejects them inside the bounded repair loop. `hotels[]` is the only final-plan accommodation slot and its IDs must resolve to hotel quote evidence. A repaired response using `hotels[]` may persist; exhaustion creates no plan, records `PLAN_SCHEMA_UNMET`, and terminates `COMPLETED_WITH_GAPS` even if provider `serviceGaps` is empty. Historical fields do not crash the reader but are not rendered as a second accommodation choice.
 - `GET /trips/:tripId/research/latest` and run detail both preserve nullable `summaryReason`. Latest research filters owner-private Personal Research at the server boundary before responding to another member. A Shared Plan with no plan and a terminal null `resultPlanId` must show a planless state, never “Plan ready”, including legacy `COMPLETED` rows; it may render a reason only for the matching member-visible planning summary. Empty team constraints must not expose brief, private conversation, or Personal Research content.
 - The shared planning path is `RESEARCH` with `researchMode=PROPOSE_PLAN`; `GET /trips/:tripId/research/latest` returns its summary to trip members. Rows with no linked run have no provable visibility authority and fail closed. A genuinely `FAILED` run is rendered as a failed run with its stable code, never as a research-gap summary.
 - A provider response shaped `LIVE` with an empty offer list is normalized to `UNAVAILABLE / NO_RESULTS`; it cannot satisfy a research matrix cell, destination coverage or commercial-evidence gate.
-- After the flight matrix is complete, missing required flight-origin coverage fails as `PLANNING_DATA_UNAVAILABLE`; accommodation availability is represented only by the live `hotels` quote evidence and non-priced `accommodations` discovery evidence. Missing evidence is recorded as its provider capability gap, with no retired `stays` slot or runtime fixture substitution.
+- After the flight matrix is complete, missing required flight-origin coverage fails as `PLANNING_DATA_UNAVAILABLE`; final accommodation selection is represented only by live `hotels` quote evidence. Non-priced discovery may still contribute to research coverage/gap diagnostics but never enters `itinerary_plan`. Missing evidence is recorded as its provider capability gap, with no retired slot or runtime fixture substitution.
 - The browser never treats submitted preferences, a run ID, Tool result or plan as authoritative local state. It reloads the durable planning run and, only after completion, the server-activated plan.
-- A dated Shared plan performs evidence selection before daily-itinerary synthesis. The schedule model receives only the validated selections and date range; it cannot add a provider offer. Every date is present exactly once, local times are ordered/non-overlapping, and a flight/activity timeline item cites a selected ID. Extra stops and return-to-hotel rows render as “suggestion — verify”, never as provider facts, prices, opening hours, routes, or bookings.
+- A dated Shared plan performs evidence selection before daily-itinerary synthesis. The schedule model receives only the validated selections and date range; it cannot add a provider offer. Every calendar date from `travelDateStart` through `travelDateEnd` (both inclusive) is present exactly once, local times are ordered/non-overlapping, and a flight/activity timeline item cites a selected ID. Extra sights, stops and return-to-hotel rows may be added without an Activities selection but render as “suggestion — verify”, never as provider facts, prices, opening hours, routes, or bookings.
 
 - A DRAFT-trip private-chat turn may emit only an in-memory brief candidate (departure, destination, explicit date and/or duration); raw conversation content is never included in the event, audit summary, or client persistence.
 - The creator must explicitly confirm the candidate. Confirmation updates the DRAFT brief and AUTO title; ignoring it performs no write. The client accumulates multiple unconfirmed turns into one review card rather than discarding earlier fields.
@@ -2577,7 +2581,7 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
 **Steps:**
 
 1. 能力循环拿到酒店/活动/住宿证据后进入合成，检查合成侧是否收到。
-2. 检查提示词允许的 plan key 是否包含 `hotels` / `accommodations`。
+2. 检查提示词和严格 schema 是否仅允许 `hotels` 作为最终住宿 key。
 3. 让模型选一条酒店（`{"id":…}`），检查证据绑定与校验。
 4. 检查 `stay` 缺口是否随真实证据消失。
 5. 一轮里所有能力都已研究时，检查提供给模型的工具列表。
@@ -2586,19 +2590,17 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
 
 - 编排层的 `ResearchedEvidence` 经 `researchedEvidence` 入参进入 `generatePlan`，
   种进 `allHotels` / `allActivities` / `allAccommodations`。
-- 提示词的 allowed keys 含 `hotels` 与 `accommodations`，并说明前者是带价报价、
-  后者是非报价发现，两者不得互换。
-- `bindPlanSelectionsToEvidence` 绑定 `hotels` 与 `accommodations`；未绑定时模型的
-  `{"id":…}` 引用会在校验器的逐条比对里失败，**酒店格永远填不上**。
-- `planOutputSchema` 有 `accommodations` 槽位，校验规则与 hotels 同构
-  （目的地一致、未过期、逐条命中本轮证据）。
+- 提示词与 gateway allowed keys 仅含 `hotels`；`stays` / `accommodations`
+  都是退役的 final-plan 字段，OpenTripMap 发现仅保留为服务端研究证据。
+- `bindPlanSelectionsToEvidence` 只将 `hotels` 选择绑定为最终住宿；未绑定的
+  `{"id":…}` 引用会在校验器的逐条比对里失败。
+- `planOutputSchema` 不接受 `accommodations`，即使它引用了本轮 discovery 证据也不得落库。
 - 有真实住宿证据时不再报 `stay` 缺口；完全没有时仍如实报。
 - 工具可以被全部撤下：完全研究过的一轮只需合成，此时**不发送 `tools` 字段**
   （空数组会被供应商拒绝），模型无从调用。
 - `flight.search` 一并撤下：coverage 已按规范矩阵搜完并交接了 offer，留着只会
   把同样两次搜索再买一遍。
-- 方案卡按真实字段渲染：报价用 `propertyName` 与价格，发现只显示名称与来源、
-  **不得显示价格**。
+- 方案卡只渲染一个“酒店”区块，使用 `propertyName`、价格、币种、来源和采集时间；不另列 discovery “住宿”。
 
 ### TS-NO-REOFFER-RESEARCHED-TOOLS — 已经跑过的能力不再交给模型
 
@@ -3046,6 +3048,31 @@ plan, and reported all eight as `places` / `navigation` provider outages.
 `apps/api/tests/trip-place-skill-candidate-authority.test.ts`,
 `apps/api/tests/planning-tool-list.test.ts`.
 
+### TS-PLACES-CANDIDATE-HANDOFF — 地点检索结果必须可被同轮 mutation 使用
+
+**Objective:** 验证 Shared planner 读取的是 `places.search` Skill 的公开
+`candidates[]` 契约，并且地点能力失败不会耗尽最终成稿与 repair 回合。
+
+**Steps:**
+
+1. 让 `places.search` 返回一个 `LIVE` 结果和一个合成 `candidateId`，随后用该 ID 调用 `places.propose`。
+2. 使用不在本轮结果中的 ID 调用 `places.propose`。
+3. 让同一个 places 工具以不同错误参数连续触发两次 `SKILL_CONTRACT_VIOLATION`。
+4. 以 `maxTurns=2, repairBudget=1` 运行：第一轮调用工具，第二轮仍尝试调用工具，第三轮返回合法 plan。
+5. 记录两个完全相同和一个 destination 不同的 service gap。
+
+**Expected outcomes:**
+
+- Step 1 从服务端当前 run 候选索引解析并持久化 provider 候选；不得误读不存在的 `data[]`，也不得采用模型自报的地点事实。
+- Step 2 fail closed 为 `INPUT_INVALID`，不写 `trip_places`。
+- Step 3 撤下 `places.search`、`places.propose`、`places.adopt`、`places.revoke` 与 `navigation.route`；其他已验证能力仍可进入方案。
+- Step 4 的第二、三次模型请求都不携带 tools；迟到的 tool call 不执行 provider，repair 只纠正最终 JSON，最终 plan 可返回。
+- Step 5 只持久化两条 gap：完全相同项去重，不同 destination 保留。
+
+**Coverage:** `apps/api/tests/planning-tool-contract.test.ts`,
+`apps/api/tests/llm-tool-calling-gateway.test.ts`,
+`apps/api/tests/planning-research-result-service.test.ts`.
+
 ### TS-RUN-OUTCOME-HONESTY — 有证据的运行不得什么都不给，也不得谎报原因
 
 **Objective:** Verify that a round which gathered evidence always reports it,
@@ -3074,6 +3101,8 @@ return output the plan contract rejects, and to leave a research matrix cell
   carries the gathered evidence and `summary_reason` of `TOOL_BUDGET_EXHAUSTED`
   / `PLAN_SCHEMA_UNMET` / `RESEARCH_MATRIX_INCOMPLETE`. None of them fails the
   run and discards the round.
+- Step 1 只能耗尽检索预算；最后一个正常回合必须在 tools 关闭的情况下进入
+  synthesis，repair 回合也不得重新开放或调用 provider tool。
 - Step 4 is the one refusal: `NO_CITABLE_EVIDENCE`, no plan. A card naming a
   destination and citing no verifiable fact is never written, and no fixture or
   invented value fills the gap.
@@ -3097,4 +3126,9 @@ return output the plan contract rejects, and to leave a research matrix cell
 
 **Objective:** 验证航班、酒店和活动选择已通过证据校验后，每日建议模型不可用、返回非 JSON 或产生无效时间区间时，仍持久化不带 `dailyItinerary` 的 `itinerary_plan`。
 
-**Expected outcomes:** run 产出 plan 与 `resultPlanId`，不会变成 `INTERNAL` 或触发第二轮 provider 查询；仅记录有限的 `daily_itinerary_generation_total` 失败结果与关联 trace/log。用户提示“新方案未生成”不得再宣称已确认的日期或其他 brief 变更没有发生。
+**Expected outcomes:** run 产出 plan 与 `resultPlanId`，不会变成 `INTERNAL` 或触发第二轮 provider 查询；`daily_itinerary_attempt_total` 只计内容生成/修复尝试，gateway 内部的有限传输重试使用既有 LLM 错误与耗时信号，`daily_itinerary_run_total` 恰好记录一次终态，并关联安全 trace/log。Provider wire schema 不含外层 `properties.days.maxItems`，但 canonical schema 仍保持最多 31 日、每日 12 项、格式和长度限制。对 `2026-10-01`–`2026-10-05` 的 5 天行程，模型只接收 `day_1..day_5`、`flight_1`、`activity_1` 等短别名并返回 structured output；持久化结果必须由服务端恰好映射至 1–5 日、固定 `destination_local` 并恢复真实 evidence ID。遗漏/乱序日期、未知或跨类别别名必须失败关闭；第一次失败时，第二次模型调用只收到闭合错误码、schema path 与对应规则，并可在不开放任何 Tool 的情况下修复成功。三次均失败时仍保存主方案，并写 `dailyItineraryOutcome={status:UNAVAILABLE,reason:CONTENT_REPAIR_EXHAUSTED,...}`；HTTP 400 契约拒绝不得重试并记录 `MODEL_CONTRACT_REJECTED`，429/网络/5xx 只在 gateway 传输预算内重试，不得显示“重试后校验失败”。旧 `dailyItinerary` / `dailyItineraryStatus` 仍可读取，但不得与新 outcome 同时写入。可添加未选入 Activities 的 `SUGGESTED_STOP`，但其 `evidenceKey` 必须为 null，且不得伪装为 provider-backed。发布前以 synthetic aliases 运行真实 configured-provider contract probe。
+
+服务层必须通过 gateway 实例调用 `generateDailyItinerary`，使依赖 `this` 的真实
+`LLMGateway` 能加载当前配置的 Gemini/OpenAI-compatible client；不得把方法解构后裸调用。
+回归测试必须使用依赖 receiver 状态的 gateway 并核对持久化 JSON，而不能只直接调用方法。
+模型 schema、日期覆盖、时间顺序、证据引用、provider 不可用、修复耗尽和本地调用错误分别计为闭合结果；日志只携带错误码、最多 16 个字段路径、attempt 与关联 ID。传给日程模型的 plan context 不含价格、来源、真实 provider evidence ID 或 provider 原始 payload；Abort 继续终止任务。
