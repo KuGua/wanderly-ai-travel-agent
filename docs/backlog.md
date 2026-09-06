@@ -48,7 +48,7 @@
 6. My program is only a sunlit pixel room, gramophone and real Trip records. The last
    successfully opened, still-authorized Trip in the current account/tab spins on the
    platter; others (including archives) sit below. Records open their workspace. No
-   filters or deletion panels appear here; the sidebar remains. A top-right New trip
+   filters appear here; the sidebar remains. A matching desktop wastebasket accepts creator-owned records by drag/drop or click selection (keyboard Delete also opens confirmation). Only explicit confirmation calls the creator-authorized permanent-delete endpoint; cancellation and failures preserve the collection. A top-right New trip
    button creates a Draft idempotently and opens its workspace; Explore also supports
    creation. Signed-out sessions hide cached Trips and cannot create; failures are not empty collections.
    Other Trips use square paper jackets with visible thickness; hover/focus lifts the

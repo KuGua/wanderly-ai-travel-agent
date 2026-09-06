@@ -1,4 +1,24 @@
 .room { position:relative; min-height:100dvh; overflow:hidden; background:#69747a; }
+.trash { position:absolute; right:clamp(24px,8vw,140px); bottom:clamp(210px,29dvh,320px); width:clamp(64px,7vw,94px); padding:0; border:0; background:none; cursor:pointer; z-index:2; isolation:isolate; }
+.trash::before { content:""; position:absolute; left:13%; right:-20%; bottom:-3%; height:14%; border-radius:50%; background:#392f2466; filter:blur(4px); transform:rotate(8deg); z-index:-1; pointer-events:none; }
+.trash svg { display:block; width:100%; overflow:visible; pointer-events:none; transition:transform 180ms ease,filter 180ms ease; }
+.trash[data-dragging="true"] svg { filter:drop-shadow(0 0 5px #dfdac0); }
+.trash[data-over="true"] svg { transform:translateY(-5px) scale(1.08); filter:drop-shadow(0 0 8px #aecbd1); }
+.trashHint { position:absolute; top:100%; left:50%; transform:translateX(-50%); width:max-content; max-width:190px; border:1px solid #6b7775; border-radius:3px; padding:6px 9px; background:#e5dfcfee; color:#2c393c; font-size:12px; line-height:1.4; opacity:0; pointer-events:none; box-shadow:2px 3px 4px #343e3c33; }
+.trash:hover .trashHint,.trash:focus-visible .trashHint,.trash[data-dragging="true"] .trashHint { opacity:1; }
+.deleteDialog { margin:auto; width:min(440px,calc(100vw - 32px)); max-height:80dvh; overflow:auto; padding:28px; border:2px solid #586665; border-radius:4px; color:#273438; background:linear-gradient(110deg,#ede8d9,#d1d2c9); box-shadow:6px 9px 0 #35424366,12px 20px 40px #26343644; }
+.deleteDialog::backdrop { background:#202d32a6; }
+.deleteDialog h2 { margin:0 0 14px; font-size:21px; font-weight:650; }
+.deleteDialog p { margin:0 0 20px; font-size:15px; line-height:1.6; overflow-wrap:anywhere; }
+.deleteDialog p[role="alert"] { color:#7a302a; margin-top:16px; }
+.deleteActions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:12px; margin-top:24px; }
+.deleteActions button,.deleteChoices button { min-height:44px; padding:10px 15px; border:1px solid #586665; border-radius:5px; background:#eeeae0; cursor:pointer; }
+.deleteActions button:last-child:not(:first-child) { background:#78443c; color:#fff8ef; border-color:#633931; }
+.deleteActions button:disabled { opacity:.6; cursor:wait; }
+.deleteChoices { display:flex; flex-direction:column; gap:8px; max-height:35dvh; overflow:auto; }
+.deleteChoices button { text-align:left; overflow-wrap:anywhere; }
+.deleteChoices button:hover { background:#afcbd4; }
+@media(prefers-reduced-motion:reduce) { .trash svg { transition:none; } }
 .newTripAction { position:absolute; top:24px; right:24px; z-index:2; max-width:240px; }
 .newTripButton { display:flex; align-items:center; justify-content:center; gap:8px; margin-left:auto; min-height:44px; padding:10px 18px; border:2px solid #1d1d1b; border-radius:12px; background:#afcbd4; color:#1d1d1b; box-shadow:3px 4px 0 #1d1d1b; font-size:14px; font-weight:600; cursor:pointer; }
 .newTripButton:hover { background:#c5d9df; }
@@ -14,8 +34,9 @@
 .rotatingRecord::before,.vinyl::before { content:""; position:absolute; inset:0; border-radius:50%; background:conic-gradient(transparent 15%,#e6d6ab30 20%,transparent 28%,transparent 65%,#e6d6ab20 70%,transparent 78%); }
 .recordLabel { position:absolute; inset:32%; display:flex; align-items:center; justify-content:center; border-radius:50%; background:var(--label,#c1a16c); color:#29271f; text-align:center; padding:10%; font-size:clamp(9px,1vw,15px); line-height:1.35; font-weight:600; overflow:hidden; overflow-wrap:anywhere; }
 .nameplate { position:absolute; left:43%; top:60.2%; width:13%; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere; text-align:center; color:#f1edea; font-size:clamp(12px,1.1vw,16px); line-height:1.25; text-shadow:1px 2px #392815; }
-.collection { position:absolute; bottom:8px; left:0; width:100%; display:flex; justify-content:safe center; align-items:center; gap:24px; overflow-x:auto; padding:110px 32px 28px 104px; scroll-padding-inline:104px 32px; scrollbar-width:none; pointer-events:none; }
+.collection { position:absolute; bottom:8px; left:0; width:100%; display:flex; justify-content:flex-start; align-items:center; overflow-x:auto; overscroll-behavior-inline:contain; padding:110px 0 28px; scrollbar-width:none; pointer-events:none; }
 .collection::-webkit-scrollbar { display:none; }
+.collectionSet { display:flex; align-items:center; gap:24px; flex:none; padding-right:24px; pointer-events:none; }
 .sleeve { position:relative; width:clamp(112px,18dvh,190px); aspect-ratio:1; flex:none; pointer-events:auto; transition:transform 260ms cubic-bezier(.2,.8,.2,1); filter:drop-shadow(6px 12px 5px #34221370); }
 .vinyl { display:block; position:absolute; inset:4%; border-radius:50%; border:3px solid #1d1b17; background:repeating-radial-gradient(circle,#26251f 0 2px,#454236 3px,#23221e 4px 6px); transition:transform 300ms cubic-bezier(.2,.8,.2,1); }
 .sleeve .recordLabel { inset:22%; font-size:clamp(11px,.9vw,13px); padding:5%; }
@@ -26,7 +47,7 @@
 .quietState { position:absolute; top:83%; left:50%; transform:translateX(-50%); color:#f9e9c4; background:#4a301dd9; padding:10px 18px; border-radius:2px; font-size:13px; text-align:center; cursor:pointer; }
 @media(prefers-reduced-motion:no-preference) { .rotatingRecord { animation:turn 9s linear infinite; } }
 @keyframes turn { from { transform:scaleY(.274) rotate(0deg); } to { transform:scaleY(.274) rotate(360deg); } }
-@media(max-width:639px) { .room { min-height:calc(100dvh - 62px); } .scene { width:max(100%,calc((100dvh - 62px)*1.5)); } .collection { padding-inline:24px; scroll-padding-inline:24px; gap:20px; } .sleeve { width:clamp(112px,18dvh,150px); } .nameplate { font-size:12px; } }
+@media(max-width:639px) { .room { min-height:calc(100dvh - 62px); } .scene { width:max(100%,calc((100dvh - 62px)*1.5)); } .collectionSet { gap:20px; padding-right:20px; } .sleeve { width:clamp(112px,18dvh,150px); } .nameplate { font-size:12px; } }
 @media(prefers-reduced-motion:reduce) { .sleeve,.vinyl { transition:none; } }
 
 /* Square paper jackets stand at an angle; the disk slides behind the opaque front. */
