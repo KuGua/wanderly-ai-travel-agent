@@ -26,6 +26,18 @@
     }
   },
   "recordRoom": {
+    "trash": "Delete a trip record",
+    "trashHint": "Drag a record here, or click to choose",
+    "dropToDelete": "Release to review deletion",
+    "chooseRecord": "Choose a record",
+    "chooseHint": "Only trips you created can be deleted. You will confirm next.",
+    "noOwnedRecords": "There are no trips you can delete. Only the creator can delete a shared trip.",
+    "deleteTitle": "Delete this trip?",
+    "deleteWarning": "“{name}” and its itinerary, conversations and messages will be permanently deleted for all members. This cannot be undone.",
+    "confirmDelete": "Permanently delete",
+    "cancelDelete": "Cancel",
+    "deleting": "Deleting…",
+    "deleteError": "Deletion was not confirmed. Check your connection and creator permissions, then retry or cancel.",
     "exploreGlobe": "Explore with the globe",
     "newTrip": "New trip",
     "creating": "Creating…",

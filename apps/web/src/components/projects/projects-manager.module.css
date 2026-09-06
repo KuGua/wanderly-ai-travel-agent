@@ -1,4 +1,24 @@
 .room { position:relative; min-height:100dvh; overflow:hidden; background:#69747a; }
+.trash { position:absolute; right:clamp(24px,8vw,140px); bottom:clamp(210px,29dvh,320px); width:clamp(64px,7vw,94px); padding:0; border:0; background:none; cursor:pointer; z-index:2; isolation:isolate; }
+.trash::before { content:""; position:absolute; left:13%; right:-20%; bottom:-3%; height:14%; border-radius:50%; background:#392f2466; filter:blur(4px); transform:rotate(8deg); z-index:-1; pointer-events:none; }
+.trash svg { display:block; width:100%; overflow:visible; pointer-events:none; transition:transform 180ms ease,filter 180ms ease; }
+.trash[data-dragging="true"] svg { filter:drop-shadow(0 0 5px #dfdac0); }
+.trash[data-over="true"] svg { transform:translateY(-5px) scale(1.08); filter:drop-shadow(0 0 8px #aecbd1); }
+.trashHint { position:absolute; top:100%; left:50%; transform:translateX(-50%); width:max-content; max-width:190px; border:1px solid #6b7775; border-radius:3px; padding:6px 9px; background:#e5dfcfee; color:#2c393c; font-size:12px; line-height:1.4; opacity:0; pointer-events:none; box-shadow:2px 3px 4px #343e3c33; }
+.trash:hover .trashHint,.trash:focus-visible .trashHint,.trash[data-dragging="true"] .trashHint { opacity:1; }
+.deleteDialog { margin:auto; width:min(440px,calc(100vw - 32px)); max-height:80dvh; overflow:auto; padding:28px; border:2px solid #586665; border-radius:4px; color:#273438; background:linear-gradient(110deg,#ede8d9,#d1d2c9); box-shadow:6px 9px 0 #35424366,12px 20px 40px #26343644; }
+.deleteDialog::backdrop { background:#202d32a6; }
+.deleteDialog h2 { margin:0 0 14px; font-size:21px; font-weight:650; }
+.deleteDialog p { margin:0 0 20px; font-size:15px; line-height:1.6; overflow-wrap:anywhere; }
+.deleteDialog p[role="alert"] { color:#7a302a; margin-top:16px; }
+.deleteActions { display:flex; justify-content:flex-end; flex-wrap:wrap; gap:12px; margin-top:24px; }
+.deleteActions button,.deleteChoices button { min-height:44px; padding:10px 15px; border:1px solid #586665; border-radius:5px; background:#eeeae0; cursor:pointer; }
+.deleteActions button:last-child:not(:first-child) { background:#78443c; color:#fff8ef; border-color:#633931; }
+.deleteActions button:disabled { opacity:.6; cursor:wait; }
+.deleteChoices { display:flex; flex-direction:column; gap:8px; max-height:35dvh; overflow:auto; }
+.deleteChoices button { text-align:left; overflow-wrap:anywhere; }
+.deleteChoices button:hover { background:#afcbd4; }
+@media(prefers-reduced-motion:reduce) { .trash svg { transition:none; } }
 .newTripAction { position:absolute; top:24px; right:24px; z-index:2; max-width:240px; }
 .newTripButton { display:flex; align-items:center; justify-content:center; gap:8px; margin-left:auto; min-height:44px; padding:10px 18px; border:2px solid #1d1d1b; border-radius:12px; background:#afcbd4; color:#1d1d1b; box-shadow:3px 4px 0 #1d1d1b; font-size:14px; font-weight:600; cursor:pointer; }
 .newTripButton:hover { background:#c5d9df; }

@@ -26,6 +26,18 @@
     }
   },
   "recordRoom": {
+    "trash": "删除行程唱片",
+    "trashHint": "拖入唱片，或点击选择",
+    "dropToDelete": "松手后确认删除",
+    "chooseRecord": "选择一张唱片",
+    "chooseHint": "仅可删除你创建的行程，选择后还需确认。",
+    "noOwnedRecords": "暂无可删除的行程。只有创建者能删除共享行程。",
+    "deleteTitle": "删除这段行程？",
+    "deleteWarning": "「{name}」及其行程计划、对话和消息将对所有成员永久删除，无法恢复。",
+    "confirmDelete": "永久删除",
+    "cancelDelete": "取消",
+    "deleting": "正在删除…",
+    "deleteError": "尚未确认删除成功。请检查网络及创建者权限后重试，或取消。",
     "exploreGlobe": "点击地球仪，去探索",
     "newTrip": "新增行程",
     "creating": "正在创建…",

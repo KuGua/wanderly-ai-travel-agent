@@ -11,7 +11,7 @@ const state = vi.hoisted(() => ({
   useTrips: vi.fn(),
 }));
 vi.mock("@/lib/auth/auth-provider", () => ({ useOptionalAuth: () => state.auth }));
-vi.mock("@/lib/query/hooks", () => ({ useTrips: (options: unknown) => { state.useTrips(options); return state.query; } }));
+vi.mock("@/lib/query/hooks", async (importOriginal) => ({ ...await importOriginal<typeof import("@/lib/query/hooks")>(), useTrips: (options: unknown) => { state.useTrips(options); return state.query; } }));
 
 beforeEach(() => {
   sessionStorage.clear();

@@ -3225,3 +3225,10 @@ state and write boundary.
 `apps/api/tests/trip-draft-brief.test.ts`,
 `apps/api/tests/trip-memory-routes.test.ts`,
 `apps/web/src/components/explore/travel-agent-chat.test.tsx`.
+
+## 桌面垃圾桶删除回归
+
+- CREATOR 唱片（含循环副本和当前唱盘）拖入垃圾桶后显示名称、永久删除及影响所有成员的确认；松手不发送 DELETE，取消或 Escape 不改变行程。
+- 点击桶可选自己创建的行程；键盘聚焦唱片后 Delete 打开相同确认。MEMBER、外部拖放、已失效 ID 不可触发删除；退出/切换账号不继承目标。
+- 显式确认只发送一次既有 DELETE，等待时禁止重复提交；成功刷新真实列表并移除唱盘/所有副本。403 或网络失败显示错误，不假装成功，仍可取消或重试。
+- 确认焦点初始在取消，Tab 留在原生 dialog；关闭回到桶。减弱动态效果时禁用桶的过渡。浏览器实测仅确认后取消，删除成功/失败路径使用测试 API，不删除真实用户数据。
