@@ -9,6 +9,7 @@ import { metrics } from "../observability/metrics.js";
 import type { ActivitiesProvider, ProviderResult } from "../providers/types.js";
 import type { ActivityEvidence, ConstraintSnapshotData } from "../types/domain.js";
 import type { RequestContext } from "../utils/context.js";
+import { matchesSnapshotDestination } from "./destination-candidate-match.js";
 import { recordAudit } from "./audit-service.js";
 import {
   claimProviderSearchCache,
@@ -83,7 +84,7 @@ export function validateSnapshotBoundActivitiesSearch(params: {
   if (input.snapshotId !== params.snapshotId) {
     throw new Error("activities search snapshot does not match task snapshot");
   }
-  if (!params.snapshot.destinationCandidates.includes(input.destinationId)) {
+  if (!matchesSnapshotDestination(params.snapshot.destinationCandidates, input.destinationId)) {
     throw new Error("activities search destination is not in snapshot candidates");
   }
   if (!params.snapshot.travelDateStart || !params.snapshot.travelDateEnd) {

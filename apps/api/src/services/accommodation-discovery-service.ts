@@ -9,6 +9,7 @@ import { metrics } from "../observability/metrics.js";
 import type { AccommodationDiscoveryProvider, ProviderResult } from "../providers/types.js";
 import type { AccommodationEvidence, ConstraintSnapshotData } from "../types/domain.js";
 import type { RequestContext } from "../utils/context.js";
+import { matchesSnapshotDestination } from "./destination-candidate-match.js";
 import { recordAudit } from "./audit-service.js";
 import { resolveTripDestinationReference } from "./destination-reference-service.js";
 import {
@@ -76,7 +77,7 @@ export function validateSnapshotBoundAccommodationDiscovery(params: {
 }): AccommodationDiscoveryInput {
   const input = accommodationDiscoveryInputSchema.parse(params.input);
   if (input.snapshotId !== params.snapshotId) throw new Error("accommodation discovery snapshot does not match task snapshot");
-  if (!params.snapshot.destinationCandidates.includes(input.destinationId)) {
+  if (!matchesSnapshotDestination(params.snapshot.destinationCandidates, input.destinationId)) {
     throw new Error("accommodation discovery destination is not in snapshot candidates");
   }
   return input;

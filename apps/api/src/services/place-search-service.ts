@@ -7,6 +7,7 @@ import type { ConstraintSnapshotData, PlaceCandidate } from "../types/domain.js"
 import { recordAudit } from "./audit-service.js";
 import type { RequestContext } from "../utils/context.js";
 import { metrics } from "../observability/metrics.js";
+import { matchesSnapshotDestination } from "./destination-candidate-match.js";
 import { resolveTripDestinationReference } from "./destination-reference-service.js";
 
 /**
@@ -105,7 +106,7 @@ export function validateSnapshotBoundPlaceSearch(params: {
   if (input.snapshotId !== params.snapshotId) {
     throw new Error("place search snapshot does not match task snapshot");
   }
-  if (!params.snapshot.destinationCandidates.includes(input.destinationId)) {
+  if (!matchesSnapshotDestination(params.snapshot.destinationCandidates, input.destinationId)) {
     throw new Error("place search destination is not in snapshot candidates");
   }
   if (/\b(private|owner-only|do-not-share)\b/i.test(input.keyword)) {

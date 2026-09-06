@@ -1145,6 +1145,20 @@ function placeCandidatesOf(result: unknown): readonly PlaceCandidate[] {
 export interface PlanningToolCatalogOptions {
   originAirports: readonly string[];
   destinationAirports: readonly string[];
+  /**
+   * The snapshot's destination candidates, verbatim.
+   *
+   * Every destination-taking tool validates `destinationId` by exact string
+   * membership in this list, but only `flight.search` used to say what the
+   * list was. The others advertised "one controlled destination" and left the
+   * model to spell the city itself — so a snapshot holding `Xi’an` (U+2019,
+   * written by the place resolver) met a model writing `Xi'an` (U+0027) and
+   * refused it on every turn until the run spent its whole tool budget.
+   *
+   * Naming the values is also what makes this work in either language: the
+   * model copies whatever is stored, Chinese or Latin, instead of translating.
+   */
+  destinationCandidates: readonly string[];
   activitiesEnabled: boolean;
   /**
    * Places tools are offered only when `places.search` is itself on offer this
@@ -1169,6 +1183,12 @@ export interface PlanningToolCatalogOptions {
  */
 export function buildPlanningToolDefinitions(options: PlanningToolCatalogOptions): ModelToolDefinition[] {
   const flightsSearchable = options.originAirports.length > 0 && options.destinationAirports.length > 0;
+  // Named in the description rather than as a JSON-schema `enum`, for the same
+  // reason `flight.search` does it below: the provider's OpenAI-compatible
+  // endpoint answers 5xx to any request carrying one.
+  const destinationClause = options.destinationCandidates.length > 0
+    ? ` destinationId must be one of: ${options.destinationCandidates.join(", ")}. Copy one of these exactly, including punctuation; any other value is rejected.`
+    : "";
   return [
     {
       name: "flight.search",
@@ -1186,7 +1206,7 @@ export function buildPlanningToolDefinitions(options: PlanningToolCatalogOptions
     },
     ...(options.activitiesEnabled ? [{
       name: "activities.search",
-      description: "Search live activity evidence for one controlled destination.",
+      description: `Search live activity evidence for one controlled destination.${destinationClause}`,
       parameters: { type: "object", additionalProperties: false, required: ["destinationId", "locale"], properties: {
         destinationId: { type: "string" },
         theme: { type: "string", enum: ["CULTURE", "FOOD", "OUTDOOR", "FAMILY"] },
@@ -1196,7 +1216,8 @@ export function buildPlanningToolDefinitions(options: PlanningToolCatalogOptions
     ...(options.placesEnabled ? [{
       name: "places.search",
       description: "Search normalized POI candidates for one destination keyword and category. "
-        + "Only the first few candidates of each answer are shown; propose one of those.",
+        + "Only the first few candidates of each answer are shown; propose one of those."
+        + destinationClause,
       parameters: { type: "object", additionalProperties: false, required: ["destinationId", "keyword", "category"], properties: {
         destinationId: { type: "string", description: "Must be one of the snapshot's destinationCandidates." },
         keyword: { type: "string", description: "Free-text search term; never include private profile data." },
@@ -1239,12 +1260,12 @@ export function buildPlanningToolDefinitions(options: PlanningToolCatalogOptions
     }] : []),
     ...(options.hotelEnabled ? [{
       name: "hotel.search",
-      description: "Search live hotel evidence for one controlled destination. Dates, occupancy, and currency are server-derived.",
+      description: `Search live hotel evidence for one controlled destination. Dates, occupancy, and currency are server-derived.${destinationClause}`,
       parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
     }] : []),
     ...(options.accommodationDiscoveryEnabled ? [{
       name: "accommodation.discover",
-      description: "Discover non-price accommodation candidates near one controlled destination. This is not availability or a quote.",
+      description: `Discover non-price accommodation candidates near one controlled destination. This is not availability or a quote.${destinationClause}`,
       parameters: { type: "object", additionalProperties: false, required: ["destinationId"], properties: { destinationId: { type: "string" } } },
     }] : []),
   ];
@@ -1842,6 +1863,7 @@ export async function generatePlan(params: {
       tools: planningToolsFor(params.alreadyResearchedCapabilities ?? [], buildPlanningToolDefinitions({
         originAirports,
         destinationAirports,
+        destinationCandidates: snapshot.destinationCandidates as string[],
         activitiesEnabled,
         // `places.search` is one-shot per run; once coverage research has spent
         // it, the run can produce no new candidateId, so the whole places

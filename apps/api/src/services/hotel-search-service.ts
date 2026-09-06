@@ -9,6 +9,7 @@ import { metrics } from "../observability/metrics.js";
 import type { HotelOfferProviderName, HotelProvider, ProviderResult } from "../providers/types.js";
 import type { ConstraintSnapshotData, DestinationReference, HotelOffer } from "../types/domain.js";
 import type { RequestContext } from "../utils/context.js";
+import { matchesSnapshotDestination } from "./destination-candidate-match.js";
 import { recordAudit } from "./audit-service.js";
 import { resolveTripDestinationReference } from "./destination-reference-service.js";
 import {
@@ -98,7 +99,7 @@ export function validateSnapshotBoundHotelSearch(params: {
 }): HotelSearchInput {
   const input = hotelSearchInputSchema.parse(params.input);
   if (input.snapshotId !== params.snapshotId) throw new Error("hotel search snapshot does not match task snapshot");
-  if (!params.snapshot.destinationCandidates.includes(input.destinationId)) {
+  if (!matchesSnapshotDestination(params.snapshot.destinationCandidates, input.destinationId)) {
     throw new Error("hotel search destination is not in snapshot candidates");
   }
   if (!params.snapshot.travelDateStart || !params.snapshot.travelDateEnd) {

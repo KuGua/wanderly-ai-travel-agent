@@ -35,6 +35,10 @@ import { tripPlaceModelArgumentsSchema } from "../src/skills/shared/trip-place-s
 const ALL_TOOLS = buildPlanningToolDefinitions({
   originAirports: ["SIN"],
   destinationAirports: ["PVG"],
+  // The typographic apostrophe on purpose: this is what the place resolver
+  // writes, and it is the exact value every destination-taking tool has to
+  // put in front of the model.
+  destinationCandidates: ["Xi\u2019an"],
   activitiesEnabled: true,
   placesEnabled: true,
   navigationEnabled: true,
@@ -165,6 +169,7 @@ describe("planning tool contract", () => {
     it("offers no place mutation tool when places search is off", () => {
       const names = buildPlanningToolDefinitions({
         originAirports: ["SIN"], destinationAirports: ["PVG"],
+        destinationCandidates: ["Shanghai"],
         activitiesEnabled: false, placesEnabled: false, navigationEnabled: true,
         hotelEnabled: false, accommodationDiscoveryEnabled: false,
       }).map((tool) => tool.name);
@@ -181,5 +186,31 @@ describe("planning tool contract", () => {
         "places.search", "places.propose", "places.adopt", "places.revoke", "navigation.route",
       ]));
     });
+  });
+});
+
+/**
+ * Every destination-taking tool must name the candidates it will accept.
+ *
+ * `flight.search` always did; the other four said "one controlled destination"
+ * and left the model to spell the city. A snapshot holding `Xi’an` (U+2019)
+ * then met a model writing `Xi'an` (U+0027), and the tool was refused on every
+ * turn until the run spent its whole budget and produced no plan.
+ *
+ * Named in the description rather than as a JSON-schema `enum` because the
+ * provider's OpenAI-compatible endpoint answers 5xx to any request carrying
+ * one — the same reason recorded on `flight.search`.
+ */
+describe("destination-taking tools advertise the candidates they accept", () => {
+  for (const name of ["hotel.search", "accommodation.discover", "activities.search", "places.search"]) {
+    it(`${name} names the snapshot's destinations verbatim`, () => {
+      const description = toolByName(name).description;
+      expect(description).toContain("destinationId must be one of:");
+      expect(description).toContain("Xi\u2019an");
+    });
+  }
+
+  it("flight.search keeps naming its airports", () => {
+    expect(toolByName("flight.search").description).toContain("destinationId must be one of: PVG");
   });
 });
