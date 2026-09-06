@@ -679,11 +679,16 @@
     3px 3px 0 -1px var(--w-page),
     3px 3px 0 var(--w-ink),
     8px 8px 0 -1px var(--w-page),
-    8px 8px 0 var(--w-ink),
-    /* The stack lands on a hard ink drop, the same kind the navigation rail
-       casts. Deepening the sheets alone only ever adds more paper; what gives
-       the block its height is something under it that is not paper. */
-    13px 13px 0 var(--w-ink);
+    8px 8px 0 color-mix(in srgb, var(--w-ink), var(--w-page) 26%),
+    /* The stack lands on a hard drop, the same kind the navigation rail casts.
+       Deepening the sheets alone only ever adds more paper; what gives the
+       block its height is something under it that is not paper.
+
+       Not pure ink, though. At full strength a 13px slab of #1d1d1b is the
+       darkest object on a page whose heaviest real mark is a 2px outline, and
+       it read as a hole rather than as a shadow. Mixed toward the page ground
+       it stays a hard, unblurred edge without becoming the loudest thing. */
+    13px 13px 0 color-mix(in srgb, var(--w-ink), var(--w-page) 52%);
 }
 
 /* The same sheet of paper, without the hardware. The profile page is one long
@@ -697,9 +702,9 @@
     3px 3px 0 -1px var(--w-page),
     3px 3px 0 var(--w-ink),
     8px 8px 0 -1px var(--w-page),
-    8px 8px 0 var(--w-ink),
+    8px 8px 0 color-mix(in srgb, var(--w-ink), var(--w-page) 26%),
     /* Same drop as the pad — see there. */
-    13px 13px 0 var(--w-ink);
+    13px 13px 0 color-mix(in srgb, var(--w-ink), var(--w-page) 52%);
 }
 
 /* The binding column: a strip of paper the holes are punched through. */
