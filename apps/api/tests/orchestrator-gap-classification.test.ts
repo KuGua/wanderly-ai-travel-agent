@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { SkillError } from "../src/agents/errors.js";
-import { classifyError } from "../src/tasks/personal-trip-orchestrator-service.js";
+import { classifyError } from "../src/services/planning-research-result-service.js";
 import { serviceGapSchema } from "../src/services/planning-research-result-service.js";
 
 /**

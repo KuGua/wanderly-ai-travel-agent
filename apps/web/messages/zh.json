@@ -630,7 +630,9 @@
       "gaps": {
         "title": "本次未生成共享方案",
         "body": "规划器已完成研究，但实时可验证数据不完整，因此没有创建不可靠的行程方案。",
-        "detail": "查看运行详情"
+        "detail": "查看运行详情",
+        "planSchemaUnmetTitle": "Wanderly 给出的草稿不符合方案约定",
+        "planSchemaUnmetBody": "修复次数已用完。它查到的证据保留在下方和行程里;行程没有生成。"
       },
       "status": {
         "queued": "已排队 — 等待规划器",

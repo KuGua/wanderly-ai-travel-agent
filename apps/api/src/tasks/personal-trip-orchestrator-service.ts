@@ -20,7 +20,6 @@ import {
   type ConstraintSnapshotData,
   type HotelOffer,
   type ServiceGap,
-  type ServiceGapCode,
 } from "../types/domain.js";
 import type { AgentTaskRow } from "../tasks/task-repository.js";
 import { publishAgentStreamEvent } from "../tasks/task-stream-publisher.js";
@@ -29,13 +28,12 @@ import {
   researchCoverageForSnapshot,
   type CoverageResearchResult,
 } from "../services/planning-service.js";
-import { recordPlanningResearchResult } from "../services/planning-research-result-service.js";
+import { classifyError, recordPlanningResearchResult } from "../services/planning-research-result-service.js";
 import { assertSnapshotManifestStable, hashProjectionManifest } from "../services/snapshot-manifest-guard.js";
 import { PlanAdoptionServiceError, soloAdoptProposedPlan } from "../services/plan-adoption-service.js";
 import { recordAudit } from "../services/audit-service.js";
 import { metrics } from "../observability/metrics.js";
 import { logSafeRuntimeEvent } from "../observability/telemetry.js";
-import { SkillError } from "../agents/errors.js";
 import { resolveBoundHotelProvider } from "../providers/live-provider-factory.js";
 import type { RequestContext } from "../utils/context.js";
 
@@ -733,60 +731,6 @@ function capabilityToService(cap: string): ServiceGap["capability"] {
   }
 }
 
-/**
- * Turn a failed capability invocation into the gap code the traveller will
- * eventually read.
- *
- * `SkillError` carries a typed code, so classify on that first and treat the
- * message only as a last resort for foreign errors. Reading the text was how
- * this produced its worst answers: nothing in "Output validation failed for
- * accommodation.discover" matches any of the substrings below, so a Skill
- * rejecting its own valid output fell through to the default and told the
- * traveller a healthy supplier was down. It is the same failure as
- * `docs/shared-agent-findings.md` #21, where a quota message containing
- * "limit: 25000" was read as a 5xx by a regex over the message.
- *
- * The default stays `UPSTREAM_FAILURE` — an unclassifiable foreign error is
- * more likely an upstream one — but every code we can actually name now gets
- * named before we reach it.
- */
-export function classifyError(err: unknown): ServiceGapCode {
-  if (err instanceof SkillError) {
-    switch (err.code) {
-      case "TIMEOUT":
-        return "UPSTREAM_TIMEOUT";
-      case "RATE_LIMITED":
-        return "RATE_LIMITED";
-      case "NETWORK":
-      case "UPSTREAM_5XX":
-      case "UPSTREAM_FAILURE":
-        return "UPSTREAM_FAILURE";
-      // Our contract, not the supplier's health. The provider may well have
-      // answered correctly and had its answer refused on the way out.
-      case "INPUT_INVALID":
-      case "OUTPUT_INVALID":
-      case "SCHEMA_PARSE":
-      case "SKILL_VERSION_MISMATCH":
-      case "PLAN_VALIDATION_FAILED":
-      case "UNKNOWN_SKILL":
-        return "SKILL_CONTRACT_VIOLATION";
-      // The call was refused before it left: authority, scope, or a missing
-      // snapshot. Repaired by completing the request, not by retrying.
-      case "POLICY_DENIED":
-      case "TOOL_NOT_ALLOWED":
-      case "SNAPSHOT_REQUIRED":
-      case "SEARCH_PREFERENCES_STALE":
-        return "SEARCH_CONSTRAINTS_INCOMPLETE";
-    }
-  }
-  const message = err instanceof Error ? err.message.toLowerCase() : "";
-  if (message.includes("timeout")) return "UPSTREAM_TIMEOUT";
-  if (message.includes("rate")) return "RATE_LIMITED";
-  if (message.includes("upstream")) return "UPSTREAM_FAILURE";
-  if (message.includes("not_configured") || message.includes("not configured")) return "NOT_CONFIGURED";
-  if (message.includes("policy")) return "SEARCH_CONSTRAINTS_INCOMPLETE";
-  return "UPSTREAM_FAILURE";
-}
 
 /**
  * Idempotent server-managed pin write — called on terminal research.stage

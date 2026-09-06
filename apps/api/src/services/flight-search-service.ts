@@ -103,6 +103,15 @@ export class FlightSearchAlreadyAttemptedError extends Error {
   }
 }
 
+/** A LIVE provider result must carry at least one citable normalized offer. */
+export function normalizeFlightProviderResult(
+  result: ProviderResult<FlightOffer[]>,
+): ProviderResult<FlightOffer[]> {
+  return result.outcome === "LIVE" && result.data.length === 0
+    ? { outcome: "UNAVAILABLE", reason: "NO_RESULTS" }
+    : result;
+}
+
 export async function executeAndPersistFlightSearch(params: {
   ctx: RequestContext;
   tripId: string;
@@ -167,7 +176,7 @@ export async function executeAndPersistFlightSearch(params: {
   } satisfies Partial<SafeRuntimeEvent>;
   logSafeRuntimeEvent(params.ctx, { ...providerLogFields, outcome: "started" });
   const startedAt = Date.now();
-  const result = await params.provider.searchFlights({
+  const providerResult = await params.provider.searchFlights({
     origin: origin.iataCode,
     destination: destination.iataCode,
     dateStart: params.input.departureDate,
@@ -179,6 +188,11 @@ export async function executeAndPersistFlightSearch(params: {
     currency: params.input.currency,
     signal: params.signal,
   });
+  // `LIVE` means there is at least one citable supplier fact. Recording an
+  // empty array as LIVE made the research matrix claim success while the plan
+  // had no flight evidence to select. Normalize that contradictory provider
+  // shape at the service boundary and fail closed as NO_RESULTS.
+  const result = normalizeFlightProviderResult(providerResult);
   const [searchRun] = await db.transaction(async (tx) => {
     const [run] = await tx.update(providerSearchRuns).set({
       outcome: result.outcome,

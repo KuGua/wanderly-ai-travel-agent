@@ -196,4 +196,206 @@ describe("SharedPlanView — Phase 1 states", () => {
     // And never the line that made an empty page look like a finished one.
     expect(queryByText("Plan is ready")).toBeNull();
   });
+
+  // 2026-09-06: a replan exhausted repair with `serviceGaps: []`, the run
+  // terminal status collapsed to `COMPLETED`, and the Shared Plan page
+  // rendered "Plan is ready" over an empty surface. The planless-terminal
+  // gate must fire for any terminal status whose `resultPlanId` is null —
+  // including `COMPLETED` — and surface the gap panel instead.
+  it("renders the gaps panel for a COMPLETED run with no plan", async () => {
+    const runId = "00000000-0000-4000-8000-000000000201";
+    const api = buildApi({
+      getLatestPlanningRun: vi.fn().mockResolvedValue({
+        run: {
+          runId,
+          operation: "RESEARCH",
+          status: "COMPLETED",
+          generationAttempt: 0,
+          attemptCount: 1,
+          createdAt: "2026-09-06T00:00:00.000Z",
+          updatedAt: "2026-09-06T00:01:00.000Z",
+          finishedAt: "2026-09-06T00:01:00.000Z",
+          errorCode: null,
+          assistantMessageId: null,
+          resultPlanId: null,
+          researchIntentDraft: null,
+          researchIntentState: null,
+        },
+      }),
+      getLatestResearchResult: vi.fn().mockResolvedValue({ result: null }),
+    });
+    const { findByTestId, queryByText } = renderWithIntl(<SharedPlanView tripId={TRIP_ID} />, { api });
+    expect(await findByTestId("shared-plan-gaps")).toBeDefined();
+    expect(queryByText("Plan is ready")).toBeNull();
+  });
+
+  it("keeps a FAILED run out of the planless research-summary state", async () => {
+    const api = buildApi({
+      getLatestPlanningRun: vi.fn().mockResolvedValue({
+        run: {
+          runId: "00000000-0000-4000-8000-000000000211",
+          operation: "RESEARCH",
+          status: "FAILED",
+          generationAttempt: 0,
+          attemptCount: 1,
+          createdAt: "2026-09-06T00:00:00.000Z",
+          updatedAt: "2026-09-06T00:01:00.000Z",
+          finishedAt: "2026-09-06T00:01:00.000Z",
+          errorCode: "PLANNING_DATA_UNAVAILABLE",
+          assistantMessageId: null,
+          resultPlanId: null,
+          researchIntentDraft: null,
+          researchIntentState: null,
+        },
+      }),
+      getLatestResearchResult: vi.fn().mockResolvedValue({ result: null }),
+    });
+    const { findByTestId, findByText, queryByTestId } = renderWithIntl(<SharedPlanView tripId={TRIP_ID} />, { api });
+    expect(await findByTestId("shared-plan-failed")).toBeDefined();
+    expect(await findByText("PLANNING_DATA_UNAVAILABLE")).toBeDefined();
+    expect(queryByTestId("shared-plan-gaps")).toBeNull();
+  });
+
+  it("renders the planSchemaUnmet copy when a matching summaryReason explains the no-plan terminal state", async () => {
+    const runId = "00000000-0000-4000-8000-000000000202";
+    const api = buildApi({
+      getLatestPlanningRun: vi.fn().mockResolvedValue({
+        run: {
+          runId,
+          operation: "REPLAN",
+          status: "COMPLETED",
+          generationAttempt: 0,
+          attemptCount: 1,
+          createdAt: "2026-09-06T00:00:00.000Z",
+          updatedAt: "2026-09-06T00:01:00.000Z",
+          finishedAt: "2026-09-06T00:01:00.000Z",
+          errorCode: null,
+          assistantMessageId: null,
+          resultPlanId: null,
+          researchIntentDraft: null,
+          researchIntentState: null,
+        },
+      }),
+      getLatestResearchResult: vi.fn().mockResolvedValue({
+        result: {
+          id: "00000000-0000-4000-8000-000000000203",
+          tripId: TRIP_ID,
+          snapshotId: "00000000-0000-4000-8000-000000000204",
+          agentTaskRunId: runId,
+          status: "COMPLETED_WITH_GAPS",
+          serviceGaps: [],
+          resultPlanId: null,
+          summaryReason: "PLAN_SCHEMA_UNMET",
+          createdAt: "2026-09-06T00:01:00.000Z",
+        },
+      }),
+    });
+    const { findByTestId, findByText } = renderWithIntl(<SharedPlanView tripId={TRIP_ID} />, { api });
+    expect(await findByTestId("shared-plan-gaps")).toBeDefined();
+    expect(await findByText("Wanderly's draft did not meet the plan contract")).toBeDefined();
+  });
+
+  it("renders the status bar (not the gaps panel) when the run carries a plan", async () => {
+    const runId = "00000000-0000-4000-8000-000000000205";
+    const api = buildApi({
+      getLatestPlanningRun: vi.fn().mockResolvedValue({
+        run: {
+          runId,
+          operation: "REPLAN",
+          status: "COMPLETED",
+          generationAttempt: 0,
+          attemptCount: 1,
+          createdAt: "2026-09-06T00:00:00.000Z",
+          updatedAt: "2026-09-06T00:01:00.000Z",
+          finishedAt: "2026-09-06T00:01:00.000Z",
+          errorCode: null,
+          assistantMessageId: null,
+          resultPlanId: "00000000-0000-4000-8000-000000000206",
+          researchIntentDraft: null,
+          researchIntentState: null,
+        },
+      }),
+      getLatestResearchResult: vi.fn().mockResolvedValue({ result: null }),
+    });
+    const { findByText, queryByTestId } = renderWithIntl(<SharedPlanView tripId={TRIP_ID} />, { api });
+    expect(await findByText("Plan is ready")).toBeDefined();
+    expect(queryByTestId("shared-plan-gaps")).toBeNull();
+  });
+
+  it("keeps the in-progress status bar when the run is non-terminal and has no plan", async () => {
+    const runId = "00000000-0000-4000-8000-000000000207";
+    const api = buildApi({
+      getLatestPlanningRun: vi.fn().mockResolvedValue({
+        run: {
+          runId,
+          operation: "REPLAN",
+          status: "RUNNING",
+          generationAttempt: 0,
+          attemptCount: 1,
+          createdAt: "2026-09-06T00:00:00.000Z",
+          updatedAt: "2026-09-06T00:01:00.000Z",
+          finishedAt: null,
+          errorCode: null,
+          assistantMessageId: null,
+          resultPlanId: null,
+          researchIntentDraft: null,
+          researchIntentState: null,
+        },
+      }),
+      getLatestResearchResult: vi.fn().mockResolvedValue({ result: null }),
+    });
+    const { findByText, queryByTestId } = renderWithIntl(<SharedPlanView tripId={TRIP_ID} />, { api });
+    expect(await findByText("Researching options…")).toBeDefined();
+    expect(queryByTestId("shared-plan-gaps")).toBeNull();
+  });
+
+  it("does not render the gaps panel when the server returns null for an owner-private research summary", async () => {
+    // Server-side owner-private filter returns `result: null` for non-owners
+    // rather than 403 — see `apps/api/src/routes/research.ts`. The matching
+    // predicate therefore cannot fire; the gaps panel must stay hidden so a
+    // non-owner does not see the creator's personal research reason.
+    const runId = "00000000-0000-4000-8000-000000000208";
+    const api = buildApi({
+      getLatestPlanningRun: vi.fn().mockResolvedValue({
+        run: {
+          runId,
+          operation: "RESEARCH",
+          status: "COMPLETED_WITH_GAPS",
+          generationAttempt: 0,
+          attemptCount: 1,
+          createdAt: "2026-09-06T00:00:00.000Z",
+          updatedAt: "2026-09-06T00:01:00.000Z",
+          finishedAt: "2026-09-06T00:01:00.000Z",
+          errorCode: null,
+          assistantMessageId: null,
+          // resultPlanId is null here, but the run is COMPLETED_WITH_GAPS
+          // — the run itself is member-visible (Shared planner). Without a
+          // matching research row the panel stays hidden.
+          resultPlanId: null,
+          researchIntentDraft: null,
+          researchIntentState: null,
+        },
+      }),
+      // Different agentTaskRunId — server already filtered owner-private
+      // rows out, so this is the "no matching research" case.
+      getLatestResearchResult: vi.fn().mockResolvedValue({
+        result: {
+          id: "00000000-0000-4000-8000-000000000209",
+          tripId: TRIP_ID,
+          snapshotId: "00000000-0000-4000-8000-00000000020a",
+          agentTaskRunId: "00000000-0000-4000-8000-00000000020b",
+          status: "COMPLETED_WITH_GAPS",
+          serviceGaps: [],
+          resultPlanId: null,
+          summaryReason: "PLAN_SCHEMA_UNMET",
+          createdAt: "2026-09-06T00:01:00.000Z",
+        },
+      }),
+    });
+    const { queryByTestId, findByText } = renderWithIntl(<SharedPlanView tripId={TRIP_ID} />, { api });
+    // Gaps panel is still rendered because the run itself is terminal with
+    // a null resultPlanId; the matching research row is decorative.
+    expect(await findByText("A shared plan was not generated")).toBeDefined();
+    expect(queryByTestId("shared-plan-gaps")).not.toBeNull();
+  });
 });

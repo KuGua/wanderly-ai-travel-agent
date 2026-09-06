@@ -1423,6 +1423,17 @@ export const researchResultResponseSchema = z.object({
   status: z.enum(["COMPLETE", "COMPLETED_WITH_GAPS"]),
   serviceGaps: z.array(z.record(z.string(), z.unknown())).max(64),
   resultPlanId: uuidSchema.nullable(),
+  /**
+   * Why this run produced a summary rather than a plan. Null when it produced
+   * a plan, and on rows written before the reason was recorded — a reader must
+   * treat null as "not stated", never as a particular cause.
+   */
+  summaryReason: z.enum([
+    "NO_CITABLE_EVIDENCE",
+    "TOOL_BUDGET_EXHAUSTED",
+    "PLAN_SCHEMA_UNMET",
+    "RESEARCH_MATRIX_INCOMPLETE",
+  ]).nullable().default(null),
   offers: z.array(researchEvidenceOfferSchema).max(32).default([]),
   createdAt: z.string().datetime(),
 }).strict();

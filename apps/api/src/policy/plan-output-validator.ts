@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { airportServesCity, resolveAirportReference } from "../location-reference/airport-reference.js";
+import { preflightCategorySlots } from "../services/plan-evidence-binding.js";
 import type {
   AccommodationEvidence,
   ConstraintSnapshotData,
@@ -121,9 +122,9 @@ export const planOutputSchema = z.object({
   // never permitted is inventing a flight to satisfy a schema — the offers
   // here are cross-checked against run-scoped provider evidence below.
   flights: z.array(flightOfferSchema),
-  // A missing stay provider/result is persisted as a Phase 4 service gap; it
-  // must not force the LLM to invent a hotel offer.
-  stays: z.array(stayOfferSchema),
+  // Legacy-only read compatibility. New model output is rejected at the
+  // gateway contract and uses hotels/accommodations instead.
+  stays: z.array(stayOfferSchema).optional(),
   activities: z.array(activityEvidenceSchema).optional(),
   hotels: z.array(hotelOfferSchema).optional(),
   accommodations: z.array(accommodationEvidenceSchema).optional(),
@@ -146,6 +147,7 @@ export type PlanViolationCode =
   | "PROVENANCE_REQUIRED"
   | "EVIDENCE_NOT_FOUND"
   | "EVIDENCE_MISMATCH"
+  | "EVIDENCE_SLOT_MISMATCH"
   | "GENERATED_AT_MISMATCH"
   | "CONFIDENTIAL_VALUE_LEAK"
   | "EXPLANATION_TOKEN_NOT_ALLOWED"
@@ -245,6 +247,21 @@ export function validatePlanOutput(params: {
   requireActivities?: boolean;
   requireHotels?: boolean;
 }): ValidatedPlanOutput {
+  // Preflight the original candidate, before either schema parsing or
+  // evidence binding. A compact `{id}` in the wrong category deliberately
+  // lacks the target slot's full fields, so waiting for the strict schema
+  // would reduce the actionable mismatch to generic STRUCTURE_INVALID.
+  if (typeof params.planData === "object" && params.planData !== null && !Array.isArray(params.planData)) {
+    const preflight = preflightCategorySlots({
+      candidate: params.planData as Record<string, unknown>,
+      flights: params.evidence.flights,
+      stays: params.evidence.stays,
+      activities: params.evidence.activities ?? [],
+      hotels: params.evidence.hotels,
+      accommodations: params.evidence.accommodations,
+    });
+    if (preflight.length > 0) throw new PlanValidationError(preflight);
+  }
   const parsed = planOutputSchema.safeParse(params.planData);
   if (!parsed.success) {
     throw new PlanValidationError(parsed.error.issues.map(issue => ({
@@ -327,7 +344,7 @@ export function validatePlanOutput(params: {
     }
   }
 
-  plan.stays.forEach((stay, index) => {
+  (plan.stays ?? []).forEach((stay, index) => {
     if (stay.destination !== plan.destination) {
       addViolation(violations, "DESTINATION_MISMATCH", `stays.${index}.destination`, "Offer destination does not match the plan");
     }
@@ -362,7 +379,7 @@ export function validatePlanOutput(params: {
   }
 
   validateOfferEvidence({ category: "flights", offers: plan.flights, evidence: params.evidence.flights, violations });
-  validateOfferEvidence({ category: "stays", offers: plan.stays, evidence: params.evidence.stays, violations });
+  validateOfferEvidence({ category: "stays", offers: plan.stays ?? [], evidence: params.evidence.stays, violations });
   validateOfferEvidence({ category: "activities", offers: plan.activities ?? [], evidence: params.evidence.activities ?? [], violations });
   validateOfferEvidence({ category: "hotels", offers: plan.hotels ?? [], evidence: params.evidence.hotels ?? [], violations });
   validateOfferEvidence({ category: "accommodations", offers: plan.accommodations ?? [], evidence: params.evidence.accommodations ?? [], violations });
@@ -386,7 +403,7 @@ export function validatePlanOutput(params: {
   // that cites nothing has no such time and must not be persisted at all —
   // that is a distinct violation from a wrong one, and saying so is what keeps
   // an evidence-free shell from passing as a plan.
-  const citedOffers = [...plan.flights, ...plan.stays, ...(plan.activities ?? []), ...(plan.hotels ?? []), ...(plan.accommodations ?? [])];
+  const citedOffers = [...plan.flights, ...(plan.stays ?? []), ...(plan.activities ?? []), ...(plan.hotels ?? []), ...(plan.accommodations ?? [])];
   if (citedOffers.length === 0) {
     addViolation(violations, "EVIDENCE_NOT_FOUND", "generatedAt", "A plan must cite at least one piece of provider evidence");
   } else {

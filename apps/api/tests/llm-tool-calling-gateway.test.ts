@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { LLMGateway, ModelGatewayError } from "../src/providers/llm-gateway.js";
 import { SHARED_TOOL_PLANNING_SYSTEM_PROMPT } from "../src/providers/shared-planning-prompts.js";
+import { PlanValidationError } from "../src/policy/plan-output-validator.js";
+import { toCritiques } from "../src/services/plan-critique.js";
 import { createRequestContext } from "../src/utils/context.js";
 
 const oldEnabled = process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED;
 afterEach(() => { process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = oldEnabled; });
+
+const EMPTY_EVIDENCE = {
+  flights: [], stays: [], activities: [], hotels: [], accommodations: [],
+};
 
 describe("LLMGateway planning tools", () => {
   it("feeds a registered tool result into a final model turn", async () => {
@@ -15,12 +21,12 @@ describe("LLMGateway planning tools", () => {
     const gateway = new LLMGateway({ apiKey: "test", provider: "openai", modelName: "test", promptVersion: "test", ctx: createRequestContext(), client: { chat: { completions: { create, parse: vi.fn() } } } });
     const dispatchTool = vi.fn().mockResolvedValue({ outcome: "LIVE", queryId: "11111111-1111-4111-8111-111111111111", offers: [] });
     const result = await gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 2,
+      destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 2,
       flightSearchConstraints: { originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD" },
       tools: [{ name: "flight.search", description: "test", parameters: {} }], dispatchTool,
     });
     expect(result.destination).toBe("NRT");
-    expect(result.stays).toEqual([]);
+    expect(result).not.toHaveProperty("stays");
     expect(dispatchTool).toHaveBeenCalledOnce();
     expect(create).toHaveBeenCalledTimes(2);
     const finalMessages = create.mock.calls[1][0].messages as Array<Record<string, unknown>>;
@@ -32,6 +38,68 @@ describe("LLMGateway planning tools", () => {
     expect(SHARED_TOOL_PLANNING_SYSTEM_PROMPT).toContain("cannot contact a traveller");
     expect(SHARED_TOOL_PLANNING_SYSTEM_PROMPT).toContain("do not request a second hotel-tool confirmation");
     expect(String(initialMessages[1]?.content)).toContain('"originIds":["SFO"]');
+  });
+
+  it("shows pre-researched evidence when its one-shot tools are withdrawn and repairs an unbound id", async () => {
+    process.env.MODEL_GATEWAY_TOOL_CALLING_ENABLED = "true";
+    const hotelId = "22222222-2222-4222-8222-222222222222";
+    const plan = (selectedHotelId: string) => ({
+      plan: {
+        destination: "NRT",
+        destinationCandidatesEvaluated: ["NRT"],
+        flights: [],
+        hotels: [{ id: selectedHotelId }],
+        generatedAt: "2026-01-01T00:00:00Z",
+      },
+    });
+    const create = vi.fn()
+      .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify(plan("invented")) } }] })
+      .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify(plan(hotelId)) } }] });
+    const gateway = new LLMGateway({
+      apiKey: "test", provider: "openai", modelName: "test", promptVersion: "test",
+      ctx: createRequestContext(), client: { chat: { completions: { create, parse: vi.fn() } } },
+    });
+    const validateFinalPlan = vi.fn((candidate: Record<string, unknown>) => {
+      const selectedId = ((candidate.hotels as Array<{ id?: string }> | undefined) ?? [])[0]?.id;
+      if (selectedId !== hotelId) {
+        throw new PlanValidationError([{
+          code: "EVIDENCE_NOT_FOUND",
+          fieldPath: "hotels.0",
+          reason: "Selected hotel is not in this run's evidence",
+        }]);
+      }
+    });
+    const dispatchTool = vi.fn();
+
+    await expect(gateway.generateStructuredPlanWithTools!({
+      destination: "NRT",
+      stays: [],
+      availableEvidence: {
+        ...EMPTY_EVIDENCE,
+        hotels: [{ id: hotelId, propertyName: "Server-owned hotel", totalPrice: 1000, currency: "USD" }],
+      },
+      memberPreferences: {},
+      maxTurns: 1,
+      repairBudget: 1,
+      flightSearchConstraints: {
+        originIds: [], destinationIds: [], tripType: "ONE_WAY",
+        departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD",
+      },
+      tools: [],
+      dispatchTool,
+      validateFinalPlan,
+      onValidationFailure: toCritiques,
+    })).resolves.toMatchObject({ hotels: [{ id: hotelId }] });
+
+    expect(dispatchTool).not.toHaveBeenCalled();
+    expect(validateFinalPlan).toHaveBeenCalledTimes(2);
+    const initialPayload = JSON.parse(String((create.mock.calls[0][0].messages as Array<Record<string, unknown>>)[1]?.content));
+    expect(initialPayload.availableEvidence.hotels).toEqual([
+      expect.objectContaining({ id: hotelId, propertyName: "Server-owned hotel" }),
+    ]);
+    const repairMessages = create.mock.calls[1][0].messages as Array<Record<string, unknown>>;
+    expect(repairMessages.some((message) => message.role === "system"
+      && String(message.content).includes("[EVIDENCE_UNBOUND]"))).toBe(true);
   });
 
   /**
@@ -60,7 +128,7 @@ describe("LLMGateway planning tools", () => {
       outcome: "LIVE", queryId: "11111111-1111-4111-8111-111111111111", offers: [],
     });
     await gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 4,
+      destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 4,
       flightSearchConstraints: {
         originIds: ["SFO"], destinationIds: ["NRT", "HND"],
         tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD",
@@ -112,7 +180,7 @@ describe("LLMGateway planning tools", () => {
       outcome: "LIVE", queryId: "11111111-1111-4111-8111-111111111111", offers: [],
     });
     const result = await gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 4,
+      destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 4,
       flightSearchConstraints: {
         originIds: ["SFO"], destinationIds: ["NRT"],
         tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD",
@@ -155,7 +223,7 @@ describe("LLMGateway planning tools", () => {
       outcome: "LIVE", queryId: "11111111-1111-4111-8111-111111111111", offers: [],
     });
     await gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 3,
+      destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 3,
       flightSearchConstraints: {
         originIds: ["SFO"], destinationIds: ["NRT"],
         tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD",
@@ -186,7 +254,7 @@ describe("LLMGateway planning tools", () => {
     });
     const dispatchTool = vi.fn().mockResolvedValue({ outcome: "LIVE", offers: [] });
     const result = await gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 3,
+      destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 3,
       flightSearchConstraints: {
         originIds: [], destinationIds: [],
         tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD",
@@ -213,7 +281,6 @@ describe("LLMGateway planning tools", () => {
           destination: "NRT",
           destinationCandidatesEvaluated: null,
           flights: [],
-          stays: [],
           activities: null,
           generatedAt: "2026-01-01T00:00:00Z",
           constraintReferences: null,
@@ -226,7 +293,7 @@ describe("LLMGateway planning tools", () => {
     });
 
     await expect(gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 2,
+      destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 2,
       flightSearchConstraints: {
         originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY",
         departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD",
@@ -239,7 +306,6 @@ describe("LLMGateway planning tools", () => {
       destination: "NRT",
       destinationCandidatesEvaluated: undefined,
       flights: [],
-      stays: [],
       activities: undefined,
       generatedAt: "2026-01-01T00:00:00Z",
       constraintReferences: undefined,
@@ -256,7 +322,7 @@ describe("LLMGateway planning tools", () => {
       }] } }] })
       .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({ plan: { destination: "NRT" } }) } }] })
       .mockResolvedValueOnce({ choices: [{ message: { content: JSON.stringify({
-        plan: { destination: "NRT", flights: [], stays: [], generatedAt: "2026-01-01T00:00:00Z" },
+        plan: { destination: "NRT", flights: [], generatedAt: "2026-01-01T00:00:00Z" },
       }) } }] });
     const gateway = new LLMGateway({
       apiKey: "test", provider: "gemini", modelName: "test", promptVersion: "test",
@@ -264,7 +330,7 @@ describe("LLMGateway planning tools", () => {
     });
 
     await expect(gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 3,
+      destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 3,
       flightSearchConstraints: {
         originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY",
         departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD",
@@ -286,7 +352,7 @@ describe("LLMGateway planning tools", () => {
     const create = vi.fn().mockResolvedValue({ choices: [{ message: { tool_calls: [{ id: "call-1", function: { name: "flight.search", arguments: "{}" } }] } }] });
     const gateway = new LLMGateway({ apiKey: "test", provider: "openai", modelName: "test", promptVersion: "test", ctx: createRequestContext(), client: { chat: { completions: { create, parse: vi.fn() } } } });
     const dispatchTool = vi.fn().mockResolvedValue({ outcome: "UNAVAILABLE", code: "NO_RESULTS" });
-    await expect(gateway.generateStructuredPlanWithTools!({ destination: "NRT", stays: [], memberPreferences: {}, maxTurns: 1, flightSearchConstraints: { originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD" }, tools: [{ name: "flight.search", description: "test", parameters: {} }], dispatchTool })).rejects.toMatchObject<ModelGatewayError>({ code: "TOOL_CALL_MAX_TURNS" });
+    await expect(gateway.generateStructuredPlanWithTools!({ destination: "NRT", stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 1, flightSearchConstraints: { originIds: ["SFO"], destinationIds: ["NRT"], tripType: "ONE_WAY", departureDate: "2026-10-01", adults: 1, cabin: "ECONOMY", currency: "USD" }, tools: [{ name: "flight.search", description: "test", parameters: {} }], dispatchTool })).rejects.toMatchObject<ModelGatewayError>({ code: "TOOL_CALL_MAX_TURNS" });
     expect(dispatchTool).toHaveBeenCalledOnce();
   });
 
@@ -301,7 +367,7 @@ describe("LLMGateway planning tools", () => {
     const prematureFinal = { choices: [{ message: { content: JSON.stringify({ plan: { destination: "NRT" } }) } }] };
     const finalPlan = {
       choices: [{ message: { content: JSON.stringify({
-        plan: { destination: "NRT", flights: [], stays: [], generatedAt: "2026-01-01T00:00:00Z" },
+        plan: { destination: "NRT", flights: [], generatedAt: "2026-01-01T00:00:00Z" },
       }) } }],
     };
     const create = vi.fn()
@@ -323,7 +389,7 @@ describe("LLMGateway planning tools", () => {
     const beforeFinal = vi.fn(async () => undefined);
 
     await expect(gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", destinationCandidates: ["NRT", "LIS"], stays: [], memberPreferences: {}, maxTurns: 5,
+      destination: "NRT", destinationCandidates: ["NRT", "LIS"], stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 5,
       flightSearchConstraints: {
         originIds: ["SIN"], destinationIds: ["NRT", "LIS"], tripType: "ROUND_TRIP",
         departureDate: "2026-10-10", returnDate: "2026-10-17", adults: 1, cabin: "ECONOMY", currency: "USD",
@@ -382,7 +448,7 @@ describe("LLMGateway planning tools", () => {
     }));
 
     await expect(gateway.generateStructuredPlanWithTools!({
-      destination: "NRT", destinationCandidates: ["NRT", "LIS"], stays: [], memberPreferences: {}, maxTurns: 5,
+      destination: "NRT", destinationCandidates: ["NRT", "LIS"], stays: [], availableEvidence: EMPTY_EVIDENCE, memberPreferences: {}, maxTurns: 5,
       flightSearchConstraints: {
         originIds: ["SIN"], destinationIds: ["NRT", "LIS"], tripType: "ROUND_TRIP",
         departureDate: "2026-10-10", returnDate: "2026-10-17", adults: 1, cabin: "ECONOMY", currency: "USD",

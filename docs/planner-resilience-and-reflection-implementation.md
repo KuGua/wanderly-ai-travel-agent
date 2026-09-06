@@ -13,7 +13,7 @@
 
 1. **研究完整性与商业依据是两个独立门禁。** 「这一格搜过没有」与「这个方案有没有可引用的商业证据」不得由同一个布尔值表达。
 2. **一个 provider 不可用不终结整轮规划。** 已尝试但 `UNAVAILABLE` 的能力降级为 `service_gap`，任务终态为 `COMPLETED_WITH_GAPS`。
-3. **零商业证据的目的地不产出 plan。** 它产出不带商业 authority 的 research summary（`planning_research_results`，`result_plan_id = NULL`），不进入 `PROPOSED`，因而不进入 adoption vote、confirmation 与 booking sandbox。代码注释中反复引用的「Spec §10.6 —— 不给盲飞分支出方案」在 `docs/` 下已无对应章节（悬空引用）；**该规则自本文件起由 §1.3 与 §3.1 承载**，实施时应把相关注释的引用改指本文件。
+3. **任何没有可采用 plan 的终态不产出 plan。** 零商业证据、工具预算耗尽与 `PLAN_SCHEMA_UNMET` 都产出不带商业 authority 的 research summary（`planning_research_results`，`result_plan_id = NULL`），并使 run 为 `COMPLETED_WITH_GAPS`，不进入 `PROPOSED`，因而不进入 adoption vote、confirmation 与 booking sandbox。代码注释中反复引用的「Spec §10.6 —— 不给盲飞分支出方案」在 `docs/` 下已无对应章节（悬空引用）；**该规则自本文件起由 §1.3 与 §3.1 承载**，实施时应把相关注释的引用改指本文件。
 4. **反思是确定性的。** critique 由服务端校验器产出，模型只负责按 critique 修正输出。模型的自我评价不得成为事实、授权或安全判断的来源。
 5. **repair 预算与 tool 预算相互独立。** repair 轮次不消耗 `MODEL_GATEWAY_TOOL_CALLING_MAX_TURNS`，反之亦然。
 6. **重试只发生在无副作用的读路径。** 声明了 `retry` 策略的 Skill 不得持有任何写 scope；注册期强制。
@@ -440,14 +440,26 @@ export function renderCritiqueMessage(critiques: readonly PlanCritique[]): strin
 ```ts
 repairBudget?: number;                                   // 默认 MODEL_GATEWAY_PLAN_REPAIR_BUDGET
 onValidationFailure?: (error: unknown) => PlanCritique[] | null;
+availableEvidence: PlanningEvidenceCatalog;               // 预取的一次性研究证据，五类各最多 5 条
+validateFinalPlan?: (candidate: Record<string, unknown>) => void | Promise<void>;
 ```
 
 循环改动：
 
 1. 循环上界由 `maxTurns` 改为 `maxTurns + repairBudget`；
-2. 维护 `repairUsed`，**repair 迭代递增 `repairUsed` 而不递增 `turn`** —— 保证 repair 不侵占正常收敛预算；
-3. `await params.beforeFinal?.()` 与最终输出校验包在 try/catch 中：捕获后调用 `onValidationFailure`；返回非空且 `repairUsed < repairBudget` 时，push 一条 system 消息（`renderCritiqueMessage` 的输出）、`repairUsed++`、`continue`；否则原样抛出；
+2. 维护 `repairUsed`，它只统计 critic 驱动的修复；总模型调用上界扩展为
+   `maxTurns + repairBudget`，为每次允许的修复预留一个额外调用；
+3. `await params.beforeFinal?.()`、最终 Zod schema 校验与 `await params.validateFinalPlan?.(plan)` 包在同一
+   try/catch 中：捕获后调用 `onValidationFailure`；返回非空且 `repairUsed < repairBudget` 时，push 一条
+   system 消息（`renderCritiqueMessage` 的输出）、`repairUsed++`、`continue`；否则原样抛出；
 4. 每次 repair 记录 `logSafeRuntimeEvent`：`component: "llm"`, `event: "repair"`, `errorCode: critique.code`。
+
+`availableEvidence` 解决「orchestrator 已经完成研究，因此撤下 one-shot tool，但 synthesis 模型也随之
+失去结果」的问题。它与工具结果遵守同一选择规则：模型只能返回 catalog 中存在的紧凑 `{id}`，完整记录
+仍由服务端重新绑定。catalog 不包含原始 payload、provider URL 或任何成员/Profile 数据。
+
+`validateFinalPlan` 只负责把确定性校验放进 repair 边界；`planning-service.ts` 在 gateway 返回后仍会
+重复执行同一校验，后一次才是进入持久化前不可绕过的权威边界。
 
 **注意：** repair 后模型可能重新调用工具。既有的失败调用记忆（`planning-service.ts` 的 `failedToolCalls`）与 flight cell 缓存继续生效，repair 不会放大 provider 调用量。
 
@@ -459,11 +471,13 @@ onValidationFailure?: (error: unknown) => PlanCritique[] | null;
 
 ## 7. 数据模型
 
-**本方案不新增任何数据库迁移。** 全部复用：
+本方案的研究摘要原本复用既有表；实现阶段为避免 Web 把所有失败都误报成「实时数据不足」，新增迁移
+`0079_research_summary_reason.sql`，以受约束的 `summary_reason` 保存稳定、非敏感的降级原因。其余状态仍
+复用既有表与枚举：
 
 | 表 / 枚举 | 用法 | 是否改动 |
 |---|---|---|
-| `planning_research_results` | research summary；`result_plan_id` 可空 | 否（既有列已支持） |
+| `planning_research_results` | research summary；`result_plan_id` 可空；新增受 CHECK 约束的 `summary_reason` | 是（迁移 `0079`） |
 | `research_result_status` | `COMPLETE` / `COMPLETED_WITH_GAPS` | 否 |
 | `provider_search_runs` | 矩阵单元格来源 | 否 |
 | `agent_task_runs.expires_at` | retry 时续期，上限自 `created_at` 计 | 仅写入行为变化 |
@@ -485,7 +499,7 @@ onValidationFailure?: (error: unknown) => PlanCritique[] | null;
 | `generatePlan()` | 返回 `PlanSynthesisOutcome` | `personal-trip-orchestrator-service.ts`、`planning-task-handler.ts` |
 | `Skill.retry` | 新增可选字段 | 全部 skill 定义（可选，默认不重试即现有行为） |
 | `invokeSkill()` | 内部增加 attempt 循环 | 无签名变化 |
-| `generateStructuredPlanWithTools()` | 新增 `repairBudget` / `onValidationFailure` | `planning-service.ts` |
+| `generateStructuredPlanWithTools()` | 新增 `repairBudget` / `onValidationFailure` / `availableEvidence` / `validateFinalPlan` | `planning-service.ts` |
 
 ### 8.2 HTTP 接口
 

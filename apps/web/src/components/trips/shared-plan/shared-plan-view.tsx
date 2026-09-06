@@ -116,18 +116,47 @@ export function SharedPlanView({ tripId }: { tripId: string }) {
   // a status bar over an empty surface. The list degrades to a summary line
   // when the detail has not arrived (or the row is missing) rather than
   // taking the explanation away with it.
-  const completedWithGaps = empty
-    && feed.run?.status === "COMPLETED_WITH_GAPS"
-    && !feed.run.resultPlanId;
-  if (completedWithGaps && feed.run) {
+  //
+  // 2026-09-06: a replan persisted `serviceGaps: []`, so the run terminal
+  // status collapsed to `COMPLETED` and the Shared Plan view rendered
+  // "方案已就绪" over an empty surface. The planless-terminal check must
+  // fire for any terminal status whose `resultPlanId` is null, not just
+  // `COMPLETED_WITH_GAPS`. Mirror the `hasPlan` predicate used by the run
+  // detail view so both surfaces agree.
+  const hasPlan = (feed.run?.resultPlanId ?? matchingResearch?.resultPlanId) != null;
+  if (empty && feed.run?.status === "FAILED") {
+    return (
+      <section
+        data-testid="shared-plan-failed"
+        role="alert"
+        className="grid gap-2 border-2 border-destructive bg-destructive/5 p-6 text-left wanderly-edge wanderly-r-md"
+      >
+        <p className="text-base font-bold text-destructive">{t("status.failed")}</p>
+        {feed.run.errorCode ? <p className="text-sm text-muted-foreground">{feed.run.errorCode}</p> : null}
+        <Link href={`/trips/${tripId}/runs/${feed.run.runId}`} className="w-fit text-sm font-bold text-sky-800 hover:underline">
+          {t("gaps.detail")}
+        </Link>
+      </section>
+    );
+  }
+  const terminalRun = feed.run != null
+    && (feed.run.status === "COMPLETED"
+      || feed.run.status === "COMPLETED_WITH_GAPS");
+  const noPlanTerminal = terminalRun && !hasPlan;
+  const explainPlanless = matchingResearch?.summaryReason === "PLAN_SCHEMA_UNMET";
+  if (noPlanTerminal && feed.run) {
     return (
       <section
         data-testid="shared-plan-gaps"
-        aria-label={t("gaps.title")}
+        aria-label={explainPlanless ? t("gaps.planSchemaUnmetTitle") : t("gaps.title")}
         className="grid gap-3 border-2 border-amber-400 bg-amber-50 p-6 text-left wanderly-edge wanderly-r-md"
       >
-        <p className="text-base font-bold text-amber-950">{t("gaps.title")}</p>
-        <p className="text-sm text-amber-950">{t("gaps.body")}</p>
+        <p className="text-base font-bold text-amber-950">
+          {explainPlanless ? t("gaps.planSchemaUnmetTitle") : t("gaps.title")}
+        </p>
+        <p className="text-sm text-amber-950">
+          {explainPlanless ? t("gaps.planSchemaUnmetBody") : t("gaps.body")}
+        </p>
         {matchingResearch ? (
           <ul className="grid gap-1 text-sm text-amber-950">
             {matchingResearch.serviceGaps.map((gap, index) => (
