@@ -275,31 +275,34 @@ export function containsUnsupportedOperationalClaim(content: string, opts?: Oper
  * Reaching this at all means the model's own attempt was withheld, so the
  * prompt asks the model to say this in its own words first — see the
  * unverifiable-question rule in the conversation prompt.
+ *
+ * English, whatever the question was written in: user-visible replies have one
+ * output language now (see `USER_VISIBLE_REPLY_LANGUAGE_RULE`), and a fallback
+ * that answered in a different language from the model replies around it would
+ * be the one turn that gave the switch away. `question` stays in the signature
+ * — callers pass it, and it is what the language choice would key on again.
  */
 export function safeConversationRefusal(question?: string): ConversationReply {
-  const chinese = question !== undefined && /[\p{Script=Han}]/u.test(question);
+  void question;
   return {
-    content: chinese
-      ? "这个我暂时没法在对话里给你一个靠得住的答案——就算给了也不一定准确，建议你再到官方渠道核实一下。行程本身我们可以继续往下聊。"
-      : "I can't get you a reliable answer to that one here — anything I guessed might not be accurate, so it's worth confirming at the official source. We can keep going on the trip itself in the meantime.",
+    content: "I can't get you a reliable answer to that one here — anything I guessed might not be accurate, so it's worth confirming at the official source. We can keep going on the trip itself in the meantime.",
     responseMode: "SAFE_REFUSAL",
   };
 }
 
-/** A truthful replacement for an ordinary reply that claimed a Trip write. */
+/**
+ * A truthful replacement for an ordinary reply that claimed a Trip write.
+ * English for the same reason as `safeConversationRefusal` above.
+ */
 export function pendingTripMutationReply(
   question?: string,
   hasConfirmationCard = true,
 ): ConversationReply {
-  const chinese = question !== undefined && /[\p{Script=Han}]/u.test(question);
+  void question;
   return {
     content: hasConfirmationCard
-      ? chinese
-        ? "我已经识别到这项行程修改；请在下方确认卡片后再保存到本次行程。"
-        : "I recognized that trip change. Please confirm the card below before it is saved to this trip."
-      : chinese
-        ? "我还没能把这段内容整理成可保存的行程修改。请明确写出城市或起止日期；识别成功后，我会先显示确认卡片。"
-        : "I couldn't turn that into a savable trip change yet. Please state the city or date range clearly; I'll show a confirmation card before anything is saved.",
+      ? "I recognized that trip change. Please confirm the card below before it is saved to this trip."
+      : "I couldn't turn that into a savable trip change yet. Please state the city or date range clearly; I'll show a confirmation card before anything is saved.",
     responseMode: "SAFE_REFUSAL",
   };
 }
