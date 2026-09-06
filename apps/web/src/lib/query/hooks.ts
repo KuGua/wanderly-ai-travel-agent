@@ -240,8 +240,13 @@ export function useUpdateMyProfile() {
 
   return useMutation({
     mutationFn: (input: UpdateProfileInput) => api.updateMyProfile(input),
-    onSuccess: ({ profile }) => {
+    onSuccess: async ({ profile }) => {
       queryClient.setQueryData(profileKeys.me, { profile });
+      // The Profile endpoint mirrors stated preferences into preference facts
+      // in the same server transaction. The form cache was updated here, but
+      // the visible long-term-memory query was left fresh with its old data,
+      // so a successful budget change appeared not to have been remembered.
+      await queryClient.invalidateQueries({ queryKey: profileKeys.memory });
     },
   });
 }

@@ -176,7 +176,7 @@
       "nationality": "Nationality",
       "nationalityPlaceholder": "Required",
       "dateOfBirth": "Date of birth",
-      "dateOfBirthPlaceholder": "YYYY-MM-DD",
+      "dateOfBirthPlaceholder": "YYYY-MM-DD or YYYYMMDD",
       "interests": "Interests",
       "interestsPlaceholder": "art, museums, local food",
       "accommodationStyle": "Accommodation style",
@@ -200,7 +200,7 @@
     "emptyAction": "Return to Explore",
     "validation": {
       "max64": "Use 64 characters or fewer",
-      "datePattern": "Use YYYY-MM-DD",
+      "datePattern": "Use YYYY-MM-DD or YYYYMMDD",
       "wholeNumber": "Enter a whole number",
       "required": "Required"
     },
@@ -238,7 +238,9 @@
         "no_red_eye": "Avoid red-eye flights",
         "interests": "Interests",
         "budget_max_usd": "Maximum budget",
-        "departure_city": "Departure city"
+        "departure_city": "Departure city",
+        "nationality": "Nationality",
+        "date_of_birth": "Date of birth"
       }
     }
   },
@@ -801,10 +803,6 @@
         "MEMBER": "Member"
       },
       "openPinAria": "View {name} on the full map",
-      "destinationsEdit": "Edit destinations",
-      "destinationsEditLabel": "Destinations, separated by commas",
-      "destinationsPlaceholder": "Tokyo, Kyoto",
-      "destinationsSaveError": "Could not save the destinations. Please retry.",
       "routeLegAria": "Route from {from} to {to}",
       "mobility": {
         "title": "Mobility offers",

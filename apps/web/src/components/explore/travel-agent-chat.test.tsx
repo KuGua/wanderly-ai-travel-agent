@@ -1243,6 +1243,7 @@ describe("the trip's preference card", () => {
     renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
 
     await screen.findByTestId("trip-preference-card");
+    expect(screen.getByLabelText("budget_max_usd")).toHaveAttribute("step", "1000");
     fireEvent.click(screen.getByLabelText("no_red_eye"));
     fireEvent.change(screen.getByLabelText("budget_max_usd"), { target: { value: "2500" } });
     fireEvent.click(screen.getByTestId("trip-preference-submit"));

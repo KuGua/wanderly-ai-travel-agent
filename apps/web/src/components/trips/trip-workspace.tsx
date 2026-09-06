@@ -22,7 +22,6 @@ import {
   useTrip,
   useTripPlans,
   useTripThreads,
-  useUpdateDraftTripBrief,
   useUpdateTripTitle,
 } from "@/lib/query/hooks";
 import { TravelApiError } from "@/lib/api/errors";
@@ -717,17 +716,10 @@ export function TripWorkspace({ tripId }: { tripId: string }) {
                     <b className="block text-xs">{t("header.departure")}</b>
                     {departureLabel}
                   </div>
-                  <DestinationsCell
-                    tripId={tripId}
-                    destinations={trip.destinationCandidates}
-                    label={destinationsLabel}
-                    // The draft-brief route is the only writer for this field
-                    // and it accepts DRAFT trips only, so the pencil appears
-                    // exactly where the save can succeed.
-                    editable={trip.status === "DRAFT" && callerRole === "CREATOR"}
-                    locale={locale === "zh" ? "zh" : "en"}
-                    t={t}
-                  />
+                  <div className="bg-[var(--w-mist)] p-2 text-[11px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs">
+                    <b className="block text-xs">{t("header.destinations")}</b>
+                    {destinationsLabel}
+                  </div>
                 </div>
                 {/* A country-only brief gets a display label so the trip has a
                     usable name (e.g. 法国行程规划), but the label is never a
@@ -820,88 +812,4 @@ function ResearchGapBannerWrapper({ tripId }: { tripId: string }) {
   const research = useLatestResearchResult(tripId);
   if (!research.data || research.isLoading) return null;
   return <ResearchGapBanner result={research.data.result} />;
-}
-
-/** Accepts either separator so a list pasted from the card round-trips. */
-function splitDestinations(value: string): string[] {
-  return value.split(/[,，·]/).map((part) => part.trim()).filter(Boolean).slice(0, 5);
-}
-
-/**
- * The destinations cell, editable in place while the trip is still a DRAFT.
- *
- * A destination arrives here from two directions — the model's brief proposal
- * and a place pinned on the globe — and neither is guaranteed to be what the
- * traveller meant, so the field they land in has to be correctable without
- * going back through the conversation.
- */
-function DestinationsCell({ tripId, destinations, label, editable, locale, t }: {
-  tripId: string;
-  destinations: string[];
-  label: string;
-  editable: boolean;
-  locale: "en" | "zh";
-  t: ReturnType<typeof useTranslations>;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [failed, setFailed] = useState(false);
-  const update = useUpdateDraftTripBrief(tripId);
-
-  const cellClass = "bg-[var(--w-mist)] p-2 text-[11px] text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs";
-
-  if (!editing) {
-    return (
-      <div className={cellClass}>
-        <div className="flex items-start justify-between gap-1">
-          <b className="block text-xs">{t("header.destinations")}</b>
-          {editable ? (
-            <button
-              type="button"
-              aria-label={t("workspace.destinationsEdit")}
-              title={t("workspace.destinationsEdit")}
-              onClick={() => { setDraft(destinations.join(", ")); setFailed(false); setEditing(true); }}
-              className="-mr-0.5 -mt-0.5 grid size-[18px] shrink-0 place-items-center bg-card text-[var(--w-ink)] wanderly-edge-thin wanderly-r-xs wanderly-press focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-            >
-              <Pencil aria-hidden="true" className="size-2.5" />
-            </button>
-          ) : null}
-        </div>
-        {label}
-      </div>
-    );
-  }
-
-  return (
-    <form
-      className={cellClass}
-      onSubmit={(event) => {
-        event.preventDefault();
-        const next = splitDestinations(draft);
-        if (next.length === 0) return;
-        setFailed(false);
-        void update.mutateAsync({
-          destinationCandidates: next,
-          replaceDestinationCandidates: true,
-          titleLocale: locale,
-        }).then(() => setEditing(false)).catch(() => setFailed(true));
-      }}
-    >
-      <b className="block text-xs">{t("header.destinations")}</b>
-      <input
-        aria-label={t("workspace.destinationsEditLabel")}
-        placeholder={t("workspace.destinationsPlaceholder")}
-        autoFocus
-        maxLength={330}
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        className="mt-1 w-full bg-card px-1.5 py-1 text-[11px] wanderly-edge-thin wanderly-r-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-      />
-      {failed ? <p role="alert" className="mt-1 text-[10px] font-bold text-destructive">{t("workspace.destinationsSaveError")}</p> : null}
-      <div className="mt-1.5 flex gap-1">
-        <button type="submit" disabled={update.isPending} className="bg-primary px-1.5 py-1 text-[10px] font-black text-primary-foreground disabled:opacity-50 wanderly-edge-thin wanderly-r-xs">{t("title.save")}</button>
-        <button type="button" onClick={() => setEditing(false)} disabled={update.isPending} className="px-1.5 py-1 text-[10px] font-black text-[var(--w-ink)]">{t("title.cancel")}</button>
-      </div>
-    </form>
-  );
 }
