@@ -25,7 +25,7 @@ export function SharedPlanStatusBar({ run }: { run: AgentRun | null }) {
   const t = useTranslations("trips.sharedPlan.status");
   if (!run) return null;
 
-  const statusKey = statusToTranslationKey(run.status);
+  const statusKey = statusToTranslationKey(run);
   // Format updatedAt as a relative-time / locale string best-effort. The
   // value is a server-generated ISO timestamp; Intl.DateTimeFormat will
   // throw on malformed input, so guard with try/catch.
@@ -57,20 +57,19 @@ export function SharedPlanStatusBar({ run }: { run: AgentRun | null }) {
   );
 }
 
-function statusToTranslationKey(status: AgentRun["status"]): string {
-  switch (status) {
+function statusToTranslationKey(run: AgentRun): string {
+  switch (run.status) {
     case "QUEUED":
       return "queued";
     case "RUNNING":
       return "researching";
     case "COMPLETED":
       return "completed";
-    // Deliberately not folded into `completed`. A run that finished with gaps
-    // produced no plan, so "Plan is ready" over an empty surface is the most
-    // misleading line the page can show — it reads as a broken page rather
-    // than as the honest outcome it is.
+    // Gaps describe provider coverage, not whether persistence produced a
+    // plan. Keep the planless explanation for a null result pointer and use
+    // an honest success-with-gaps label when a plan was saved.
     case "COMPLETED_WITH_GAPS":
-      return "completedWithGaps";
+      return run.resultPlanId ? "completedWithGapsPlan" : "completedWithGaps";
     case "FAILED":
     case "STALE":
       return "failed";

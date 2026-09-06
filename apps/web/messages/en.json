@@ -645,6 +645,7 @@
         "retrying": "Retrying after a transient failure…",
         "completed": "Plan is ready",
         "completedWithGaps": "Research finished, but key data was missing — no plan was created",
+        "completedWithGapsPlan": "Plan is ready with gaps to review",
         "failed": "This run did not produce a plan",
         "cancelled": "This run was cancelled",
         "lastUpdated": "Last updated {value}"
