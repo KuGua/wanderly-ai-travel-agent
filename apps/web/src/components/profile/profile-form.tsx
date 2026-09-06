@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Save } from "lucide-react";
-import { useFormatter, useTranslations } from "next-intl";
+import { useFormatter, useLocale, useTranslations } from "next-intl";
 import { useEffect, useMemo } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { z } from "zod";
@@ -11,6 +11,7 @@ import type { Profile, UpdateProfileInput } from "@/lib/api/contracts";
 import { TravelApiError } from "@/lib/api/errors";
 import { Button } from "@/components/ui/button";
 import { SelectMenu } from "@/components/ui/select-menu";
+import { QUOTE_NATIONALITIES, countryLabel, isQuoteNationality } from "@/lib/nationality";
 import { cn } from "@/lib/utils";
 
 const KNOWN_STATUS_KEYS = new Set([
@@ -32,7 +33,7 @@ const datePattern = /^(?:\d{4}-\d{2}-\d{2}|\d{8})$/;
  * messages come from the active locale's `validation.*` keys.
  */
 export const profileFormSchema = z.object({
-  nationality: z.string().trim().min(1, "Required").max(64, "Use 64 characters or fewer"),
+  nationality: z.string().trim().refine(isQuoteNationality, "Required"),
   dateOfBirth: z.union([z.literal(""), z.string().regex(datePattern, "Use YYYY-MM-DD")]),
   interests: z.string(),
   accommodationStyle: z.enum(["", "city_center", "budget", "luxury"]),
@@ -53,7 +54,10 @@ export function makeProfileFormSchema(t: Translator) {
     // stay search returns nothing, the destination counts as uncovered, and the
     // whole trip is refused a plan. Asking here once is the only place this
     // belongs — the planning card should not have to stop and ask.
-    nationality: z.string().trim().min(1, t("validation.required")).max(64, t("validation.max64")),
+    // A code the provider accepts, not a country name. The two used to
+    // disagree: this field asked for a name and activation demanded
+    // ISO-3166-1 alpha-2, so 中国 saved cleanly here and 422'd there.
+    nationality: z.string().trim().refine(isQuoteNationality, t("validation.required")),
     dateOfBirth: z.union([z.literal(""), z.string().regex(datePattern, t("validation.datePattern"))]),
     interests: z.string(),
     accommodationStyle: z.enum(["", "city_center", "budget", "luxury"]),
@@ -66,7 +70,10 @@ export function makeProfileFormSchema(t: Translator) {
 
 export function profileToFormValues(profile: Profile): ProfileFormValues {
   return {
-    nationality: profile.nationality ?? "",
+    // A Profile written before this was a picker can hold anything. Showing
+    // an unusable value as if it were set is what left people unable to fix
+    // their own record; starting empty asks them to choose once.
+    nationality: isQuoteNationality(profile.nationality) ? profile.nationality!.trim().toUpperCase() : "",
     dateOfBirth: profile.dateOfBirth ?? "",
     interests: profile.interests?.join(", ") ?? "",
     accommodationStyle: profile.accommodationStyle ?? "",
@@ -119,6 +126,7 @@ export function ProfileForm({
   const t = useTranslations("profile");
   const tErrors = useTranslations("errors");
   const fmt = useFormatter();
+  const locale = useLocale() === "zh" ? "zh" : "en";
   const schema = useMemo(() => makeProfileFormSchema(t), [t]);
   const {
     register,
@@ -174,7 +182,26 @@ export function ProfileForm({
             <input id="departure-city" {...register("departureCity")} className={inputClass(Boolean(errors.departureCity))} autoComplete="address-level2" />
           </Field>
           <Field id="nationality" label={t("fields.nationality")} error={errors.nationality?.message}>
-            <input id="nationality" {...register("nationality")} className={inputClass(Boolean(errors.nationality))} placeholder={t("fields.nationalityPlaceholder")} autoComplete="country-name" />
+            <Controller
+              control={control}
+              name="nationality"
+              render={({ field }) => (
+                <SelectMenu
+                  id="nationality"
+                  value={field.value}
+                  onChange={field.onChange}
+                  invalid={Boolean(errors.nationality)}
+                  triggerClassName={cn(
+                    "flex min-h-[42px] w-full items-center justify-between gap-2 rounded-[10px] border border-[var(--w-ink)]/10 bg-card px-3 text-left text-base outline-none focus-visible:ring-4 focus-visible:ring-[var(--w-info)]/30 sm:text-sm",
+                    errors.nationality && "border-destructive",
+                  )}
+                  options={[
+                    { value: "", label: t("fields.nationalityPlaceholder") },
+                    ...QUOTE_NATIONALITIES.map((code) => ({ value: code, label: countryLabel(code, locale) })),
+                  ]}
+                />
+              )}
+            />
           </Field>
           <Field id="date-of-birth" label={t("fields.dateOfBirth")} error={errors.dateOfBirth?.message}>
             <input id="date-of-birth" {...register("dateOfBirth")} className={inputClass(Boolean(errors.dateOfBirth))} placeholder={t("fields.dateOfBirthPlaceholder")} inputMode="numeric" />

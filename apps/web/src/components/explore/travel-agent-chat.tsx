@@ -34,6 +34,7 @@ import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBa
 import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { useTravelApi } from "@/lib/query/provider";
 import { Link, useRouter } from "@/i18n/navigation";
+import { QUOTE_NATIONALITIES, countryLabel, isQuoteNationality } from "@/lib/nationality";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
 type PendingTurn = ConversationTurnRequest;
@@ -1186,7 +1187,11 @@ export function TravelAgentChat({
   // A failed read counts as "no nationality": asking someone a question they
   // could have skipped is a smaller cost than a rejected activation.
   const profileSettled = profile.isSuccess || profile.isError;
-  const needsGuestNationality = profileSettled && !profile.data?.profile?.nationality;
+  // A Profile value the provider cannot use is not a nationality for this
+  // purpose. Treating any non-empty string as set is what hid this picker from
+  // the one person who needed it — someone whose Profile says 中国, which
+  // activation refuses with a 422 they cannot act on.
+  const needsGuestNationality = profileSettled && !isQuoteNationality(profile.data?.profile?.nationality);
 
   const canStartSharedPlanning = trip.data?.trip.status === "DRAFT"
     && trip.data.trip.departureCities.length > 0
@@ -2461,32 +2466,6 @@ function formatBriefDates(
   return single ? fmt.dateTime(single, day) : null;
 }
 
-/**
- * A short list rather than every ISO code: this asks a traveller for the
- * nationality their hotel prices are quoted against, and a 250-entry select is
- * a worse answer to that than the markets the product actually serves. Anyone
- * outside it sets the value in their profile, which the server prefers over
- * this field.
- */
-const QUOTE_NATIONALITIES = [
-  "CN", "HK", "TW", "SG", "MY", "JP", "KR", "TH", "ID", "PH", "VN",
-  "AU", "NZ", "IN", "GB", "US", "CA", "DE", "FR", "IT", "ES", "NL", "AE",
-];
-
-/** The country's own name in the reader's language, not an English label. */
-function countryLabel(code: string, locale: "en" | "zh"): string {
-  // Browser locale data varies in how it names these territories. The quote
-  // selector uses the product's explicit China notation in both languages.
-  if (code === "HK") return locale === "zh" ? "香港（中国）" : "Hong Kong (China)";
-  if (code === "TW") return locale === "zh" ? "台湾（中国）" : "Taiwan (China)";
-  try {
-    return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code;
-  } catch {
-    // `DisplayNames` is absent in some runtimes (older jsdom included); the
-    // code is still a usable answer and the select still works.
-    return code;
-  }
-}
 
 /** Reopen only for the phrase the dismissal notice explicitly advertises. */
 function opensStartPlanningCard(text: string): boolean {

@@ -175,7 +175,7 @@
     "fields": {
       "departureCity": "出发城市",
       "nationality": "国籍",
-      "nationalityPlaceholder": "必填",
+      "nationalityPlaceholder": "请选择国籍",
       "dateOfBirth": "出生日期",
       "dateOfBirthPlaceholder": "YYYY-MM-DD 或 YYYYMMDD",
       "interests": "兴趣",

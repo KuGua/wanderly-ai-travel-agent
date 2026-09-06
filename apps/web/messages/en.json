@@ -175,7 +175,7 @@
     "fields": {
       "departureCity": "Departure city",
       "nationality": "Nationality",
-      "nationalityPlaceholder": "Required",
+      "nationalityPlaceholder": "Select nationality",
       "dateOfBirth": "Date of birth",
       "dateOfBirthPlaceholder": "YYYY-MM-DD or YYYYMMDD",
       "interests": "Interests",
