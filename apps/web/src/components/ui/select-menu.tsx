@@ -19,6 +19,11 @@ export type SelectMenuOption<T extends string> = { value: T; label: string };
  * The trigger is replaceable so the same list can sit under a full-width form
  * control or under a square icon tile.
  */
+/** Eight rows of options; past that a list is a page, not a menu. */
+const LIST_MAX_HEIGHT = 288;
+/** Below this a cramped viewport would leave a sliver rather than a menu. */
+const LIST_MIN_HEIGHT = 132;
+
 export function SelectMenu<T extends string>({
   value,
   options,
@@ -53,7 +58,9 @@ export function SelectMenu<T extends string>({
   // Measured after opening rather than guessed: this list also hangs off a
   // 44px tile at the bottom of the left rail, where opening downward ran past
   // the viewport and right-aligning pushed it off the left edge entirely.
-  const [placement, setPlacement] = useState<{ up: boolean; shiftX: number }>({ up: false, shiftX: 0 });
+  const [placement, setPlacement] = useState<{ up: boolean; shiftX: number; maxHeight: number }>(
+    { up: false, shiftX: 0, maxHeight: LIST_MAX_HEIGHT },
+  );
   // What the transform is applying right now, readable during measurement.
   const shiftXRef = useRef(0);
 
@@ -92,10 +99,19 @@ export function SelectMenu<T extends string>({
     const margin = 8;
     const listRect = list.getBoundingClientRect();
     const triggerRect = trigger.getBoundingClientRect();
-    // Flip up only when below genuinely does not fit and above does.
     const spaceBelow = window.innerHeight - triggerRect.bottom;
     const spaceAbove = triggerRect.top;
-    const up = spaceBelow < listRect.height + margin && spaceAbove > spaceBelow;
+    // The list scrolls, so what has to fit is the capped height, not the
+    // natural one. Twenty-three nationalities are seven hundred pixels of
+    // options: measured uncapped, this flipped upward and then covered the
+    // form it belongs to, and there was no way to reach the entries past the
+    // viewport because the list did not scroll either.
+    const wanted = Math.min(listRect.height, LIST_MAX_HEIGHT);
+    const up = spaceBelow < wanted + margin && spaceAbove > spaceBelow;
+    // Never taller than the side it opens on. A floor keeps a cramped viewport
+    // from collapsing the list to a sliver — it scrolls instead.
+    const available = (up ? spaceAbove : spaceBelow) - margin * 2;
+    const maxHeight = Math.max(LIST_MIN_HEIGHT, Math.min(LIST_MAX_HEIGHT, available));
     // `listRect` already carries the previous shift, because the transform is
     // still applied when this runs. Measuring it as-is made each reopen add a
     // fresh correction on top of the old one, so the second open drifted and
@@ -107,8 +123,16 @@ export function SelectMenu<T extends string>({
     if (naturalLeft < margin) shiftX = margin - naturalLeft;
     else if (naturalRight > window.innerWidth - margin) shiftX = window.innerWidth - margin - naturalRight;
     shiftXRef.current = shiftX;
-    setPlacement({ up, shiftX });
+    setPlacement({ up, shiftX, maxHeight });
   }, [open]);
+
+  // Once the list scrolls, the active option can sit outside it — so arrow
+  // keys would move a highlight nobody can see. Follow it.
+  useEffect(() => {
+    if (!open) return;
+    const active = listRef.current?.querySelector<HTMLElement>(`#${CSS.escape(`${listId}-${activeIndex}`)}`);
+    active?.scrollIntoView({ block: "nearest" });
+  }, [open, activeIndex, listId]);
 
   useEffect(() => {
     if (!open) return;
@@ -200,9 +224,14 @@ export function SelectMenu<T extends string>({
           tabIndex={-1}
           aria-activedescendant={`${listId}-${activeIndex}`}
           onKeyDown={onListKeyDown}
-          style={placement.shiftX ? { transform: `translateX(${placement.shiftX}px)` } : undefined}
+          style={{
+            maxHeight: placement.maxHeight,
+            ...(placement.shiftX ? { transform: `translateX(${placement.shiftX}px)` } : {}),
+          }}
           className={cn(
-            "absolute z-50 min-w-full overflow-hidden bg-card p-1 outline-none wanderly-edge wanderly-r-md wanderly-shadow",
+            // Scrolls rather than growing: `overflow-hidden` clipped the rounded
+            // corners and hid every option past the fold with it.
+            "absolute z-50 min-w-full max-w-[min(20rem,calc(100vw-1rem))] overflow-y-auto overflow-x-hidden overscroll-contain bg-card p-1 outline-none wanderly-edge wanderly-r-md wanderly-shadow",
             align === "end" ? "right-0" : "left-0",
             placement.up ? "bottom-full mb-1" : "top-full mt-1",
           )}
@@ -223,7 +252,10 @@ export function SelectMenu<T extends string>({
                   // it does not rest on colour alone; `aria-selected` above is
                   // what a screen reader reads.
                   isSelected && "font-semibold",
-                  index === activeIndex && "bg-[var(--w-highlight)]",
+                  // The same blue every other chosen thing wears — the selected
+                  // filter chip, the new-plan button, Save Profile. The mint it
+                  // used to be was the last of the old accent in this control.
+                  index === activeIndex && "bg-[var(--w-cal-run)]",
                 )}
               >
                 {option.label}
