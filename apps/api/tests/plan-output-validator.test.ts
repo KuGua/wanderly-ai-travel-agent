@@ -248,6 +248,51 @@ describe("plan-output-validator", () => {
     );
   });
 
+  /**
+   * Sixteen OpenTripMap stays were collected on every run and had nowhere in
+   * the plan to go: `hotels` is for priced quotes, and there was no slot for
+   * non-priced discovery. The card's "住宿" row could not be filled by
+   * anything, so it always read "no verifiable data for this capability".
+   */
+  it("accepts non-priced accommodation discovery as its own evidence slot", () => {
+    const accommodation = {
+      id: "00000000-0000-4000-8000-000000000040",
+      queryId: "00000000-0000-4000-8000-000000000041",
+      providerPlaceId: "W488780173",
+      destinationId: "Tokyo",
+      name: "Jinjiang Hotel",
+      kind: "hotels",
+      longitude: 121.458, latitude: 31.222,
+      distanceMeters: 43, popularityTier: 7,
+      source: "OpenTripMap" as const,
+      attribution: "© OpenStreetMap contributors" as const,
+      capturedAt: "2026-08-23T00:00:00.000Z",
+      expiresAt: "2099-08-23T00:00:00.000Z",
+    };
+    const plan = { ...goodPlanData(), accommodations: [accommodation] };
+    const result = validatePlanOutput({
+      planData: plan,
+      snapshot,
+      evidence: { ...goodEvidence(), accommodations: [accommodation] },
+    });
+    expect(result.accommodations).toHaveLength(1);
+  });
+
+  it("refuses accommodation the run never collected", () => {
+    const invented = {
+      id: "00000000-0000-4000-8000-000000000042",
+      queryId: "00000000-0000-4000-8000-000000000043",
+      providerPlaceId: "W1", destinationId: "Tokyo", name: "Invented Inn", kind: "hotels",
+      longitude: 1, latitude: 1, distanceMeters: null, popularityTier: null,
+      source: "OpenTripMap" as const,
+      attribution: "© OpenStreetMap contributors" as const,
+      capturedAt: "2026-08-23T00:00:00.000Z",
+      expiresAt: "2099-08-23T00:00:00.000Z",
+    };
+    const violations = violationsFor({ ...goodPlanData(), accommodations: [invented] });
+    expect(violations.some((v) => v.fieldPath.startsWith("accommodations"))).toBe(true);
+  });
+
   it("accepts a plan with no flights when other evidence is cited", () => {
     const activity = goodActivity();
     const plan = {

@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { airportServesCity, resolveAirportReference } from "../location-reference/airport-reference.js";
 import type {
+  AccommodationEvidence,
   ConstraintSnapshotData,
   ActivityEvidence,
   FlightOffer,
@@ -92,6 +93,21 @@ const hotelOfferSchema = z.object({
   source: z.string().min(1), capturedAt: z.string().datetime(), expiresAt: z.string().datetime(),
 }).strict();
 
+/**
+ * Non-priced accommodation discovered near a destination (OpenTripMap). It
+ * answers "could someone stay here at all", not "here is a rate", so it is a
+ * separate slot from `hotels`, whose entries are quotes. Sixteen of these were
+ * collected on every run and had nowhere in the plan to go.
+ */
+const accommodationEvidenceSchema = z.object({
+  id: z.string().uuid(), queryId: z.string().uuid(), providerPlaceId: z.string().min(1),
+  destinationId: z.string().min(1), name: z.string().min(1), kind: z.string().min(1),
+  longitude: z.number(), latitude: z.number(),
+  distanceMeters: z.number().int().nullable(), popularityTier: z.number().int().nullable(),
+  source: z.literal("OpenTripMap"), attribution: z.literal("© OpenStreetMap contributors"),
+  capturedAt: z.string().datetime({ offset: true }), expiresAt: z.string().datetime({ offset: true }),
+}).strict();
+
 export const planOutputSchema = z.object({
   destination: z.string().min(1),
   // Optional for legacy plans. New planners (Team Agent 协作编排 Phase 3) emit
@@ -110,6 +126,7 @@ export const planOutputSchema = z.object({
   stays: z.array(stayOfferSchema),
   activities: z.array(activityEvidenceSchema).optional(),
   hotels: z.array(hotelOfferSchema).optional(),
+  accommodations: z.array(accommodationEvidenceSchema).optional(),
   generatedAt: z.string().min(1),
   constraintReferences: z.array(z.string().min(1)).optional(),
   publicExplanationTokens: z.array(z.string().min(1)).optional(),
@@ -145,6 +162,7 @@ export interface PlanProviderEvidence {
   stays: StayOffer[];
   activities?: ActivityEvidence[];
   hotels?: HotelOffer[];
+  accommodations?: AccommodationEvidence[];
 }
 
 export class PlanValidationError extends Error {
@@ -189,7 +207,7 @@ function validateOfferEvidence<T extends {
   source: string;
   capturedAt: string;
 }>(params: {
-  category: "flights" | "stays" | "ground" | "activities" | "hotels";
+  category: "flights" | "stays" | "ground" | "activities" | "hotels" | "accommodations";
   offers: T[];
   evidence: T[];
   violations: PlanValidationViolation[];
@@ -326,6 +344,16 @@ export function validatePlanOutput(params: {
     if (hotel.destinationId !== plan.destination) addViolation(violations, "DESTINATION_MISMATCH", `hotels.${index}.destinationId`, "Hotel destination does not match the plan");
     if (Date.parse(hotel.expiresAt) <= Date.now()) addViolation(violations, "PROVENANCE_REQUIRED", `hotels.${index}.expiresAt`, "Hotel evidence has expired");
   });
+  (plan.accommodations ?? []).forEach((stay, index) => {
+    if (stay.destinationId !== plan.destination) {
+      addViolation(violations, "DESTINATION_MISMATCH", `accommodations.${index}.destinationId`, "Accommodation destination does not match the plan");
+    }
+    // Discovery evidence is cheap to refresh and carries a short TTL; an
+    // expired one is stale coverage, not a usable fact.
+    if (Date.parse(stay.expiresAt) <= Date.now()) {
+      addViolation(violations, "PROVENANCE_REQUIRED", `accommodations.${index}.expiresAt`, "Accommodation evidence has expired");
+    }
+  });
   if (params.requireActivities && (plan.activities?.length ?? 0) === 0) {
     addViolation(violations, "EVIDENCE_NOT_FOUND", "activities", "A provider-backed activity is required for the selected destination");
   }
@@ -337,6 +365,7 @@ export function validatePlanOutput(params: {
   validateOfferEvidence({ category: "stays", offers: plan.stays, evidence: params.evidence.stays, violations });
   validateOfferEvidence({ category: "activities", offers: plan.activities ?? [], evidence: params.evidence.activities ?? [], violations });
   validateOfferEvidence({ category: "hotels", offers: plan.hotels ?? [], evidence: params.evidence.hotels ?? [], violations });
+  validateOfferEvidence({ category: "accommodations", offers: plan.accommodations ?? [], evidence: params.evidence.accommodations ?? [], violations });
 
   for (const hardViolation of evaluateHardConstraints({ snapshot: params.snapshot, flights: plan.flights })) {
     addViolation(violations, hardViolation.code, "constraints", hardViolation.publicReason);
@@ -357,7 +386,7 @@ export function validatePlanOutput(params: {
   // that cites nothing has no such time and must not be persisted at all —
   // that is a distinct violation from a wrong one, and saying so is what keeps
   // an evidence-free shell from passing as a plan.
-  const citedOffers = [...plan.flights, ...plan.stays, ...(plan.activities ?? []), ...(plan.hotels ?? [])];
+  const citedOffers = [...plan.flights, ...plan.stays, ...(plan.activities ?? []), ...(plan.hotels ?? []), ...(plan.accommodations ?? [])];
   if (citedOffers.length === 0) {
     addViolation(violations, "EVIDENCE_NOT_FOUND", "generatedAt", "A plan must cite at least one piece of provider evidence");
   } else {
