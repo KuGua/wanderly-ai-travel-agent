@@ -4,75 +4,165 @@
 **事实来源：** `TECH_STACK.md`、`apps/api/ARCHITECTURE.md`、`apps/api/src/`、`apps/web/`、`infra/`、`.github/workflows/`。  
 **阅读约定：** “已实现”表示仓库已有生产代码；“默认关闭”表示 adapter 已实现，但当前 CDK 生产环境变量不会启用；“目标/外置”表示技术决策已确定，但不由当前 CDK stack 创建。
 
-## 1. 一图总览
+## 1. 前后端端到端架构总图
+
+### 中文版
 
 ```mermaid
 flowchart LR
-    user["旅行者浏览器"]
-
-    subgraph web["Browser + Next.js Web"]
-        amplify["AWS Amplify Hosting\n目标/外置"]
-        router["Next.js 16 App Router\nlocale-aware Server layouts/pages"]
-        surfaces["Client Surfaces\nExplore / Projects / Trip / Profile / Auth"]
-        webproviders["AuthProvider → QueryProvider\n→ ExplorationSessionProvider"]
-        ui["React 19 + Tailwind CSS 4\nshadcn/Radix + Lucide"]
-        state["TanStack Query + React state\nURL state + viewer-scoped pointers"]
-        contracts["Zod browser contracts\nREST client + fetch SSE parser"]
-        map["MapLibre Globe\nremote tiles + versioned local overlays"]
+    subgraph client ["前端应用：Next.js 16 + React 19"]
+        traveler["旅行者"]
+        appRouter["App Router + Server layout + next-intl 路由"]
+        surfaces["Explore / Projects / Profile / Trip Workspace / Auth"]
+        providerTree["AuthProvider → QueryProvider → ExplorationSessionProvider"]
+        clientState["TanStack Query cache + React state/ref + URL state + viewer-scoped pointers"]
+        apiClient["TravelApi + HttpTravelApi + Zod contracts + fetch SSE parser"]
+        mapRuntime["MapLibre globe + camera/marker state + local SVG/GeoJSON overlays"]
     end
 
-    subgraph runtime["Node.js 模块化单体：同一镜像、两个进程"]
-        api["Fastify 5 API\nAWS App Runner"]
-        worker["Durable Agent Worker\nECS Fargate"]
-        skills["受限 Agent + Skill Registry"]
-        policy["Policy Gate + Zod + Plan Validator"]
-        providers["类型化 Provider Adapters"]
+    subgraph gateway ["托管与公网入口"]
+        webHosting["AWS Amplify Hosting：目标/外置，当前 CDK 未创建"]
+        apiIngress["AWS App Runner public HTTPS ingress"]
     end
 
-    subgraph data["权威状态与安全基础设施"]
-        postgres[("Amazon RDS for PostgreSQL 16\nDrizzle ORM + SQL migrations")]
-        secrets["AWS Secrets Manager"]
-        kms["AWS KMS\n国籍字段加密"]
+    subgraph service ["后端：同一 Node.js 镜像的模块化单体"]
+        apiProcess["Fastify 5 API：JWT、OpenAPI routes、REST commands/queries、SSE relay"]
+        controlPlane["业务控制面：Consent、Snapshot、Plan、STALE、Confirmation、Idempotency、Booking sandbox"]
+        workerProcess["ECS Fargate Worker：claim、lease、retry、cancel、terminal persistence"]
+        agentRuntime["Personal Agent + Shared Trip Agent + bounded loops"]
+        skillRuntime["Skill Registry + Policy Gate + version/scope/timeout + Zod + audit"]
+        modelGateway["ModelGateway + turn-scoped tools + structured output validation"]
+        providerPorts["Typed provider ports + resilience policy + evidence normalization"]
     end
 
-    subgraph external["外部服务"]
-        cognito["Amazon Cognito"]
-        llm["Gemini / OpenAI / OpenAI-compatible"]
-        travel["Flight / Hotel / Activity / Ground APIs"]
-        maps["OpenFreeMap + GEBCO"]
-        telemetry["CloudWatch + Grafana Cloud\n或本地 Tempo/Grafana"]
+    subgraph datastore ["权威数据与密钥"]
+        postgres[("RDS PostgreSQL 16：business state + agent tasks + stream journal + audit + outbox")]
+        secrets["AWS Secrets Manager：runtime/provider secrets"]
+        kms["AWS KMS：敏感字段加密"]
     end
 
-    user -->|"HTTPS"| amplify
-    amplify --> router
-    router --> surfaces
-    surfaces --> webproviders
-    surfaces --> ui
-    webproviders --> state
-    surfaces --> map
-    state --> contracts
-    contracts -->|"Bearer REST/JSON + authenticated fetch SSE"| api
-    api -->|"业务事务 + 202 durable task"| postgres
-    postgres -->|"SKIP LOCKED：租约领取"| worker
-    api --> skills
-    worker --> skills
-    skills --> policy
-    policy --> providers
-    worker -->|"结果、审计与 outbox"| postgres
-    api -.->|"JWT 验证"| cognito
-    worker -.->|"受控模型调用"| llm
-    api -.->|"地点介绍模型调用"| llm
-    providers -.->|"启用后调用；失败即 UNAVAILABLE"| travel
-    map -.->|"公开底图/地势"| maps
-    api -.-> secrets
-    worker -.-> secrets
-    api -.-> kms
-    worker -.-> kms
-    api -.-> telemetry
-    worker -.-> telemetry
+    subgraph external ["外部依赖与观测"]
+        cognito["Amazon Cognito User Pool"]
+        models["Gemini / OpenAI / OpenAI-compatible models"]
+        travelProviders["Flight / Hotel / Activity / Place / Route / Mobility APIs"]
+        mapProviders["OpenFreeMap + GEBCO WMS"]
+        observability["CloudWatch + OpenTelemetry + Grafana Cloud 或本地 Tempo/Grafana"]
+    end
+
+    traveler -->|"使用"| appRouter
+    appRouter -->|"组合"| surfaces
+    surfaces -->|"读取上下文"| providerTree
+    providerTree -->|"管理"| clientState
+    clientState -->|"类型化读写"| apiClient
+    surfaces -->|"渲染与交互"| mapRuntime
+
+    traveler -->|"HTTPS 加载 Web"| webHosting
+    appRouter <---|"交付 Web 构建"| webHosting
+    apiClient <-->|"Bearer REST/JSON + authenticated fetch SSE"| apiIngress
+    apiIngress -->|"转发"| apiProcess
+
+    apiProcess -->|"调用"| controlPlane
+    controlPlane -->|"事务读写"| postgres
+    apiProcess -->|"创建 task、查询结果、LISTEN/NOTIFY、回放 journal"| postgres
+    workerProcess -->|"SKIP LOCKED claim、lease、结果、事件、审计、outbox"| postgres
+    workerProcess -->|"执行"| agentRuntime
+    agentRuntime -->|"受限调用"| skillRuntime
+    skillRuntime -->|"模型生成与工具协议"| modelGateway
+    skillRuntime -->|"旅行能力调用"| providerPorts
+    apiProcess -.->|"Cognito：JWT 验证"| cognito
+    modelGateway -.->|"模型 completion/stream"| models
+    providerPorts -.->|"查询；失败归一化为 UNAVAILABLE"| travelProviders
+    mapRuntime -.->|"公开底图与地势"| mapProviders
+    apiProcess -->|"读取 runtime secret"| secrets
+    workerProcess -->|"读取 provider/model secret"| secrets
+    apiProcess -->|"敏感字段加解密"| kms
+    workerProcess -->|"敏感字段加解密"| kms
+    apiProcess -.->|"logs、metrics、traces"| observability
+    workerProcess -.->|"logs、metrics、traces"| observability
 ```
 
+图中实线表示项目内部的同步调用、持久读写或事件回传，虚线表示第三方/平台依赖。Amplify 是已选定但尚未由当前 CDK 创建的 Web 托管目标；App Runner API 和 Fargate Worker 是当前 CDK 中两个可独立运行和伸缩的进程。Secrets Manager 与 KMS 的连线只表达后端进程使用这些安全设施，并不表示 secret 或明文敏感数据进入浏览器。
+
 核心判断：系统是一个共享代码库和数据库的**模块化单体**，前端是独立的 Next.js 应用。浏览器负责交互、短暂展示状态与缓存，不拥有业务真相；HTTP API 负责认证、命令接收和结果读取；已接受的 Agent 任务写入 PostgreSQL，由独立 Worker 通过租约执行，因此页面切换、浏览器刷新或 SSE 断线不会取消任务。
+
+### English version
+
+```mermaid
+flowchart LR
+    subgraph client ["Frontend Application: Next.js 16 + React 19"]
+        traveler["Traveler"]
+        appRouter["App Router + Server layout + next-intl routing"]
+        surfaces["Explore / Projects / Profile / Trip Workspace / Auth"]
+        providerTree["AuthProvider → QueryProvider → ExplorationSessionProvider"]
+        clientState["TanStack Query cache + React state/refs + URL state + viewer-scoped pointers"]
+        apiClient["TravelApi + HttpTravelApi + Zod contracts + fetch-based SSE parser"]
+        mapRuntime["MapLibre globe + camera/marker state + local SVG/GeoJSON overlays"]
+    end
+
+    subgraph gateway ["Hosting and Public Ingress"]
+        webHosting["AWS Amplify Hosting: selected external target, not provisioned by the current CDK stacks"]
+        apiIngress["AWS App Runner public HTTPS ingress"]
+    end
+
+    subgraph service ["Backend: Modular Monolith from One Node.js Image"]
+        apiProcess["Fastify 5 API: JWT, OpenAPI routes, REST commands/queries, SSE relay"]
+        controlPlane["Business control plane: Consent, Snapshot, Plan, STALE, Confirmation, Idempotency, Booking sandbox"]
+        workerProcess["ECS Fargate Worker: claim, lease, retry, cancel, terminal persistence"]
+        agentRuntime["Personal Agent + Shared Trip Agent + bounded loops"]
+        skillRuntime["Skill Registry + Policy Gate + version/scope/timeout + Zod + audit"]
+        modelGateway["ModelGateway + turn-scoped tools + structured-output validation"]
+        providerPorts["Typed provider ports + resilience policy + evidence normalization"]
+    end
+
+    subgraph datastore ["Authoritative Data and Secrets"]
+        postgres[("RDS PostgreSQL 16: business state + agent tasks + stream journal + audit + outbox")]
+        secrets["AWS Secrets Manager: runtime and provider secrets"]
+        kms["AWS KMS: sensitive-field encryption"]
+    end
+
+    subgraph external ["External Dependencies and Observability"]
+        cognito["Amazon Cognito User Pool"]
+        models["Gemini / OpenAI / OpenAI-compatible models"]
+        travelProviders["Flight / Hotel / Activity / Place / Route / Mobility APIs"]
+        mapProviders["OpenFreeMap + GEBCO WMS"]
+        observability["CloudWatch + OpenTelemetry + Grafana Cloud or local Tempo/Grafana"]
+    end
+
+    traveler -->|"Uses"| appRouter
+    appRouter -->|"Composes"| surfaces
+    surfaces -->|"Reads context"| providerTree
+    providerTree -->|"Manages"| clientState
+    clientState -->|"Typed reads and writes"| apiClient
+    surfaces -->|"Renders and interacts"| mapRuntime
+
+    traveler -->|"Loads Web over HTTPS"| webHosting
+    appRouter <---|"Delivers Web build"| webHosting
+    apiClient <-->|"Bearer REST/JSON + authenticated fetch SSE"| apiIngress
+    apiIngress -->|"Forwards"| apiProcess
+
+    apiProcess -->|"Invokes"| controlPlane
+    controlPlane -->|"Transactional reads and writes"| postgres
+    apiProcess -->|"Creates tasks, queries results, LISTEN/NOTIFY, replays journal"| postgres
+    workerProcess -->|"SKIP LOCKED claim, lease, results, events, audit, outbox"| postgres
+    workerProcess -->|"Executes"| agentRuntime
+    agentRuntime -->|"Invokes within policy"| skillRuntime
+    skillRuntime -->|"Model generation and tool protocol"| modelGateway
+    skillRuntime -->|"Travel capability calls"| providerPorts
+    apiProcess -.->|"Cognito: validates JWT"| cognito
+    modelGateway -.->|"Model completion and streaming"| models
+    providerPorts -.->|"Queries; failures normalize to UNAVAILABLE"| travelProviders
+    mapRuntime -.->|"Public basemap and terrain"| mapProviders
+    apiProcess -->|"Reads runtime secrets"| secrets
+    workerProcess -->|"Reads provider and model secrets"| secrets
+    apiProcess -->|"Encrypts and decrypts sensitive fields"| kms
+    workerProcess -->|"Encrypts and decrypts sensitive fields"| kms
+    apiProcess -.->|"Logs, metrics, traces"| observability
+    workerProcess -.->|"Logs, metrics, traces"| observability
+```
+
+Solid arrows represent internal synchronous calls, durable reads/writes, or event delivery. Dotted arrows represent third-party or platform dependencies. Amplify is the selected Web hosting target but is not created by the current CDK stacks. The App Runner API and Fargate Worker are separate processes that can run and scale independently. Secrets Manager and KMS are backend-only facilities; their connections do not imply that secrets or plaintext sensitive data enter the browser.
+
+The system is a **modular monolith** sharing one codebase and one authoritative database, with a separate Next.js frontend. The browser owns interaction state and disposable caches, not business truth. Accepted Agent tasks are persisted in PostgreSQL and executed by a leased Worker, so navigation, refreshes, and SSE disconnects do not cancel durable work.
 
 ## 2. 端到端业务与控制流
 
