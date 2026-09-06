@@ -81,7 +81,12 @@ describe("durable owner-only Personal Agent conversation flow", () => {
     expect(created.statusCode).toBe(201);
     const threadId = (created.json() as { id: string }).id;
     try {
-      const accepted = await submitTurn(threadId, randomUUID(), "I am considering Tokyo and Kyoto");
+      // The stubbed gateway supplies both candidates; this phrasing only has to
+      // clear the preflight. "I am considering …" no longer does — §3.1 makes a
+      // multi-city comparison an exploration turn — and this test is about
+      // persisting and restoring a two-candidate cue, not about how one is
+      // raised, so it states the command the classifier is meant to see.
+      const accepted = await submitTurn(threadId, randomUUID(), "Set Tokyo as the destination");
       expect(accepted.statusCode).toBe(202);
       expect(await processNextAgentTask()).toBe(true);
 
@@ -402,6 +407,53 @@ describe("durable owner-only Personal Agent conversation flow", () => {
       }
       await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
       await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, `chat_turn:${threadId}:${requestId}`));
+    }
+  });
+
+  /**
+   * The generic brief card used to be built only when the reply came back as
+   * `MODEL`. A reply claiming "已更新" is replaced by the trip-mutation guard
+   * with a SAFE_REFUSAL reading "请在下方确认卡片", and the very same condition
+   * then suppressed the card it had just pointed at — on precisely the turn
+   * where the owner states a change. The dates below come from deterministic
+   * parsing of the owner's own message, so the reply's fate is irrelevant.
+   */
+  it("keeps the owner's brief card when the guard withdraws the reply", async () => {
+    const provisioned = await provisionTripAndMember({ ownerUserId: aliceId, destinationCount: 0 });
+    await db.update(sharedTrips).set({ status: "DRAFT", nameSource: "AUTO", titleLocale: "zh" })
+      .where(eq(sharedTrips.id, provisioned.tripId));
+    const gateway: ModelGateway = {
+      ...successfulConversationGateway,
+      async generateConversationReply() {
+        // The claim the guard exists to catch.
+        return { content: "已为你把出发日期更新为 9 月 27 日。", responseMode: "MODEL" };
+      },
+    };
+    __setModelGatewayForTests(gateway);
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/threads",
+      headers: { ...authHeaders("alice"), "content-type": "application/json" },
+      payload: { title: `Guarded brief ${randomUUID()}`, tripId: provisioned.tripId },
+    });
+    expect(created.statusCode).toBe(201);
+    const threadId = (created.json() as { id: string }).id;
+    try {
+      expect((await submitTurn(threadId, randomUUID(), "9月27号出发，10月2号回程")).statusCode).toBe(202);
+      expect(await processNextAgentTask()).toBe(true);
+
+      const [trip] = await db.select({ pending: sharedTrips.pendingBriefProposal })
+        .from(sharedTrips).where(eq(sharedTrips.id, provisioned.tripId)).limit(1);
+      // Month/day only: the parser resolves a bare 9月27号 against today, so
+      // pinning the year would make this test expire on 2026-09-28.
+      expect(trip?.pending).toMatchObject({
+        travelDateStart: expect.stringMatching(/^\d{4}-09-27$/),
+        travelDateEnd: expect.stringMatching(/^\d{4}-10-02$/),
+      });
+    } finally {
+      __setModelGatewayForTests(successfulConversationGateway);
+      await db.delete(agentTaskRuns).where(eq(agentTaskRuns.threadId, threadId));
+      await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
     }
   });
 

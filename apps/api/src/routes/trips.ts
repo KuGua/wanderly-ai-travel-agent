@@ -27,6 +27,7 @@ import {
   tripActivationResponseSchema,
   updateDraftTripBriefRequestSchema,
   updateDraftTripBriefResponseSchema,
+  dismissDraftTripBriefProposalResponseSchema,
   updateTripTitleRequestSchema,
   updateTripTitleResponseSchema,
   tripDetailsResponseSchema,
@@ -634,6 +635,12 @@ export async function tripRoutes(app: FastifyInstance) {
       const submittedDestinations = body.destinationCandidates === undefined
         ? undefined
         : normalizeBriefDestinations(body.destinationCandidates);
+      const submittedDepartures = body.departureCities === undefined
+        ? undefined
+        : normalizeBriefDestinations(body.departureCities);
+      if (submittedDepartures === null) {
+        throw new ApiError(422, "Unprocessable Entity", "DEPARTURE_UNRESOLVED: use an unambiguous supported city name");
+      }
       if (submittedDestinations === null) {
         metrics.inc("trip_brief_destination_resolution_total", { result: "unresolved" });
         throw new ApiError(422, "Unprocessable Entity", "DESTINATION_UNRESOLVED: use an unambiguous supported city name");
@@ -649,7 +656,7 @@ export async function tripRoutes(app: FastifyInstance) {
         }
       }
       if (nextDestinations.length > 5) throw new ApiError(409, "Conflict", "TRIP_DESTINATION_LIMIT: draft already has five destinations");
-      const nextDepartures = body.departureCities ?? (trip.departureCities as string[]);
+      const nextDepartures = submittedDepartures ?? (trip.departureCities as string[]);
       const nextTravelDateStart = body.travelDateStart === undefined ? trip.travelDateStart : body.travelDateStart;
       const nextTravelDateEnd = body.travelDateEnd === undefined ? trip.travelDateEnd : body.travelDateEnd;
       if ((nextTravelDateStart && !isValidTripDate(nextTravelDateStart))
@@ -676,6 +683,43 @@ export async function tripRoutes(app: FastifyInstance) {
     });
     metrics.inc("trip_draft_brief_update_total", { result: "success" });
     return updateDraftTripBriefResponseSchema.parse({ trip: result });
+  });
+
+  app.delete("/trips/:tripId/draft-brief-proposal", {
+    schema: {
+      description: "Dismiss the creator's pending generic draft-brief proposal without changing confirmed trip facts.",
+      tags: ["trips"],
+      params: toJsonSchema(tripIdParamSchema),
+      response: {
+        200: toJsonSchema(dismissDraftTripBriefProposalResponseSchema),
+        403: toJsonSchema(errorResponseSchema),
+        404: toJsonSchema(errorResponseSchema),
+        409: toJsonSchema(errorResponseSchema),
+      },
+    },
+  }, async (request) => {
+    const { tripId } = tripIdParamSchema.parse(request.params);
+    const ctx = createRequestContext(request.user.id, request.correlationId, request.traceId, request.clientRequestId, request.traceparent, request.tracestate, request.spanId);
+    await db.transaction(async (tx) => {
+      const [trip] = await tx.select({
+        status: sharedTrips.status,
+        createdBy: sharedTrips.createdBy,
+      }).from(sharedTrips).where(eq(sharedTrips.id, tripId)).for("update").limit(1);
+      if (!trip) throw new ApiError(404, "Not Found", "Trip not found");
+      if (trip.status !== "DRAFT") throw new ApiError(409, "Conflict", "TRIP_NOT_DRAFT: trip brief proposal can no longer be dismissed");
+      if (trip.createdBy !== request.user.id) throw new ApiError(403, "Forbidden", "Only the creator may dismiss a draft brief proposal");
+      await tx.update(sharedTrips).set({ pendingBriefProposal: null, updatedAt: new Date() })
+        .where(eq(sharedTrips.id, tripId));
+      await recordAudit({
+        ctx,
+        action: "TRIP_DRAFT_BRIEF_UPDATE",
+        actorUserId: request.user.id,
+        tripId,
+        summary: { source: "conversation_proposal_dismiss", changedFields: ["pendingBriefProposal"] },
+        tx,
+      });
+    });
+    return dismissDraftTripBriefProposalResponseSchema.parse({ dismissed: true });
   });
 
   // Get trip details

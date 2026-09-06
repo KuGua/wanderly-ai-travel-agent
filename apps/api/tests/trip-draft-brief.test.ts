@@ -148,4 +148,32 @@ describe("draft-brief travel dates", () => {
     // The candidate has become a fact, so the card has nothing left to offer.
     expect(persisted.pendingBriefProposal).toBeNull();
   });
+
+  it("canonicalizes an explicitly confirmed departure city", async () => {
+    const tripId = await draftTrip();
+    const res = await patchBrief(tripId, { departureCities: ["北京"] });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().trip.departureCities).toEqual(["Beijing"]);
+  });
+
+  it("persists proposal dismissal without changing confirmed trip facts", async () => {
+    const tripId = await draftTrip();
+    await db.update(sharedTrips).set({
+      departureCities: ["San Francisco"],
+      pendingBriefProposal: { departureCities: ["Beijing"], travelDays: 3 },
+    }).where(eq(sharedTrips.id, tripId));
+
+    const res = await app.inject({
+      method: "DELETE",
+      url: `/api/v1/trips/${tripId}/draft-brief-proposal`,
+      headers: authHeaders("alice"),
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ dismissed: true });
+    const [persisted] = await db.select().from(sharedTrips).where(eq(sharedTrips.id, tripId)).limit(1);
+    expect(persisted.departureCities).toEqual(["San Francisco"]);
+    expect(persisted.pendingBriefProposal).toBeNull();
+  });
 });

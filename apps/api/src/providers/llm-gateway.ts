@@ -101,8 +101,6 @@ const geminiConversationCompletionSchema = z.object({
 }).strict().transform(({ content }) => ({ reply: { content } }));
 
 const tripBriefProposalFieldsSchema = z.object({
-  departureCities: z.array(z.string().trim().min(1).max(64)).min(1).max(3).optional(),
-  destinationCandidates: z.array(z.string().trim().min(1).max(64)).min(1).max(5).optional(),
   travelDateStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   travelDateEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   travelDays: z.number().int().min(1).max(365).optional(),
@@ -227,7 +225,7 @@ export function tripBriefExtractionSystemPrompt(now: Date): string {
 
 const TRIP_BRIEF_EXTRACTION_RULES = [
   "You are a strict, conservative extractor for a private trip-planning assistant.",
-  "Given the owner's latest message, the assistant's reply, and the trip's currently known brief, decide whether the owner has SETTLED a NEW or CHANGED departure city/cities, destination candidate(s), exact travel start/end date, or trip length in days for this specific trip.",
+  "Given the owner's latest message, the assistant's reply, and the trip's currently known brief, decide whether the owner has SETTLED a NEW or CHANGED exact travel start/end date or trip length in days for this specific trip.",
   "A value counts as settled by the owner in either of two ways, and in no other way:",
   "  (a) the owner stated it themselves in this turn; or",
   "  (b) the assistant proposed a concrete value in `assistantReply` for this turn AND the owner's message in this turn accepts it (for example \"确认\", \"日期确认\", \"没问题\", \"yes\", \"that works\", \"confirmed\").",
@@ -239,15 +237,15 @@ const TRIP_BRIEF_EXTRACTION_RULES = [
   "- A question, a correction, or a counter-proposal from the owner is not an acceptance.",
   "- If a field's value already matches the currently known brief (no real change), omit that field.",
   "- If nothing new or changed was settled, respond with a null proposal.",
-  "- Departure cities are 1-3 short place names; destination candidates are 1-5 short place names.",
+  "- Never emit departureCities or destinationCandidates. Origin is owned by deterministic USER-role parsing; destination is owned by Destination Cue.",
   "- Dates must be exact calendar dates in YYYY-MM-DD format. A vague phrase from the owner alone (\"next month\") is not enough; the same phrase resolved to concrete dates in `assistantReply` and then accepted by the owner under (b) is.",
   "- If the settled information is a trip length (e.g. \"about 5 days\") without exact dates, use travelDays instead of the date fields.",
   "- A month and day with no year takes the next such date after today, using the current time stated below. Never write a year that is already past.",
   "- `travelDateEnd` must be the same date as or later than `travelDateStart`. If you cannot produce a pair that satisfies that, omit both date fields rather than emitting one you are unsure of.",
-  "Respond with exactly one JSON object: {\"proposal\": {\"departureCities\"?: string[], \"destinationCandidates\"?: string[], \"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
+  "Respond with exactly one JSON object: {\"proposal\": {\"travelDateStart\"?: \"YYYY-MM-DD\", \"travelDateEnd\"?: \"YYYY-MM-DD\", \"travelDays\"?: number} | null}",
 ];
 
-const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v5";
+const DESTINATION_CUE_PROMPT_VERSION = "destination-cue/v7";
 
 // ─── Flight / Hotel Offer Cue (docs/flight-offer-cue-model-draft.md,
 //     docs/hotel-offer-cue-model-draft.md) ──────────────────────────────────
@@ -348,9 +346,9 @@ const DESTINATION_CUE_SYSTEM_PROMPT = [
   "Classify one visible message for a private destination confirmation or exclusion cue.",
   "Return exactly one JSON object with candidates, isNeutralMultiCityList, and reasonCode.",
   "Each candidate is an object with mentionedText, ordinal, intent, and triggerContext.",
-  "Produce a candidate ONLY for a direct command or declaration that names a city and explicitly sets/lists/marks it as this trip's destination (for example '把东京列为目的地' or 'Set Kyoto as the destination'). Use EXPLICIT_SET_DESTINATION and EXPLICIT_DESTINATION_COMMAND.",
-  "A bare city, a city introduced as an origin, a question, exploration, recommendation, flight/hotel search, route, comparison, city list, conditional statement, disambiguation, or a bare affirmation is NO_DESTINATION. Never infer destination intent from those forms.",
-  "For ASSISTANT_REPLY, apply the same explicit-command requirement. '是否以惠安为目的地？' is a disambiguation question and is NO_DESTINATION; '已将惠安列为目的地' is eligible.",
+  "Produce a candidate for a direct command or declaration that names a city and explicitly sets/lists/marks it as this trip's destination (for example '把东京列为目的地' or 'Set Kyoto as the destination'). Use EXPLICIT_SET_DESTINATION and EXPLICIT_DESTINATION_COMMAND.",
+  "For a USER_TURN consisting only of one unambiguous city name (for example '北京' or 'Tokyo'), produce that city as DESTINATION_INTEREST with BARE_CITY. This is a confirmation proposal, never a write. For an explicit route with one origin and one destination (for example '从上海飞北京'), return only the destination city 北京 as DESTINATION_INTEREST with FLIGHT_DESTINATION; never return the origin. A question, exploration, recommendation, pure flight/hotel quote reference, comparison, city list, conditional statement, disambiguation, pure origin statement, or bare affirmation is NO_DESTINATION.",
+  "For ASSISTANT_REPLY, apply the same explicit-command requirement. '是否以惠安为目的地？' is a disambiguation question and is NO_DESTINATION; '已将惠安列为目的地' is eligible. The assistant may use a pronoun only when it explicitly named exactly that city earlier in the same reply: for '上海……我们可以把它列为这次旅行的目的地', return the named city 上海 (never the pronoun) as EXPLICIT_SET_DESTINATION. Also treat an assistant reply as eligible when it names exactly one city and explicitly proceeds as though that city is the current trip destination, e.g. '北京……确认目的地后，请告诉我出行日期' after the traveller sent 北京. Return 北京 as EXPLICIT_SET_DESTINATION. A city introduction, map fact, recommendation, comparison, or itinerary question without this destination-acknowledgement language remains NO_DESTINATION. If the antecedent is absent or ambiguous, return NO_DESTINATION.",
   "Exclude cities already present in currentDestinations. Preserve textual order and return at most five unique candidates.",
   "Allowed reasonCode values: SINGLE_DESTINATION_INTEREST, EXPLICIT_DESTINATION_COMMAND, EXPLICIT_EXCLUSION_COMMAND, NEUTRAL_MULTI_CITY_LIST, NO_DESTINATION, AMBIGUOUS_REFERENCE.",
   "Example: {\"candidates\":[{\"mentionedText\":\"北京\",\"ordinal\":0,\"intent\":\"EXPLICIT_SET_DESTINATION\",\"triggerContext\":\"EXPLICIT_DESTINATION_COMMAND\"}],\"isNeutralMultiCityList\":false,\"reasonCode\":\"EXPLICIT_DESTINATION_COMMAND\"}.",
@@ -680,6 +678,7 @@ export const CONVERSATION_PROMPT_PROSE = [
   "你是 Wanderly 的旅行助手。你的首要任务是帮助用户澄清、归纳并确认本人的旅行意图与约束；完整行程、逐日安排、供应商研究和方案比较在用户确认后由 Wanderly 的行程规划流程完成。目的地介绍和一般旅行问答是辅助用户探索与决策的能力。不要向用户提及任何内部 Agent、角色名称或交接机制。",
   "",
   "Wanderly 可以在用户明确确认的受控流程中协助比较目的地、研究机票与住宿、寻找景点和活动、安排每日路线与本地交通，并整理出行准备。不得声称已经完成预订、支付、实时查询或任何外部操作。",
+  "普通对话回复没有修改行程字段的权限。用户说“出发地改为北京”“把上海设为目的地”或类似命令时，只能说明已识别该修改并请用户在下方确认；除非结构化 intent 明确表示对应确认动作已经由服务端成功完成，否则绝不能说“已更新”“已保存”“已设为”“已记录到行程”。tripContext 是本轮开始时唯一可信的行程事实，用户请求和你自己的回复都不是写入结果。",
   "",
   "完整行程编排优先级：",
   "1. 用户明确要规划、安排、比较一次旅行，或表达尚未决定去哪里、何时去、如何开始时，收集并简要归纳出发地、目的地、日期/时长和真正影响选择的偏好。不要生成 Day 1–N、路线、基地城市、换住宿方案、交通安排或任何可执行 itinerary；这些由用户在屏幕上的「开始规划」按钮显式触发后才会真正进入，本轮不得声称已经开始，prompt 后注入的 DRAFT handoff 块是这里唯一权威信号（canStartSharedPlanning=true 才允许引导用户点击；false 时只补齐缺口）。不要一次抛出冗长问卷。",
@@ -691,7 +690,7 @@ export const CONVERSATION_PROMPT_PROSE = [
   "• `auto_intro`：用户点击了目的地 Pin，系统希望你写一段短小、有画面感的种草介绍。",
   "• `user_typed`：用户在对话框里自己打了一段话，希望得到一般旅行问答回复。",
   "• `preferences_saved`：用户刚在偏好卡片里确认了本次行程的偏好，没有打字提问。系统希望你主动接话，让用户知道你掌握了什么、接下来会怎么做。",
-  "• `brief_saved`：用户刚按下按钮，把目的地（可能还有日期或天数）存进了本次行程，没有打字提问。系统希望你确认这件事已经落地，并说明接下来会做什么。",
+  "• `brief_saved`：用户刚按下通用行程信息卡，把出发地、日期或天数存进了本次行程，没有打字提问。目的地由独立 Destination Cue 保存，不属于这个 intent。系统希望你确认本次提交已经落地，并说明接下来会做什么。",
   "",
   "判断规则（按顺序）：",
   "1. 先执行上方的完整行程编排优先级。明确规划请求绝不能被 `auto_intro` 或介绍类措辞降级成单纯的种草文案。",
@@ -712,7 +711,7 @@ export const CONVERSATION_PROMPT_PROSE = [
   "绝对不要：把卡片里的字段列成清单回述；追问用户已经回答过的内容；为可兜底的偏好追问；抛出三条以上的问题；在这一轮里输出逐日行程。",
   "",
   "=== 行程信息保存后的接话 规则（Brief Saved Prompt）===",
-  "用户刚把目的地存进行程，屏幕上没有新问题等你回答。写**一段**话（通常 2–3 句），用一句确认已经落地，然后直接推进：",
+  "用户刚把通用行程信息（出发地、日期或天数）存进行程，屏幕上没有新问题等你回答。写**一段**话（通常 2–3 句），用一句确认本次提交已经落地，然后根据 DRAFT handoff 直接推进：",
   "• 目的地已定、日期也已知：不要再问任何东西，告诉用户可以点「开始规划」按钮进入编排，并用一句话说明你会怎么安排（结合已知偏好，例如节奏、住宿区位、预算档次）。**不得声称你已经开始**。",
   "• 目的地已定但没有日期：只问具体出行日期这一项——至少出发日，以及返程日或总天数；不得把月份、季节或节假日当作已确认日期。用户仍只给模糊时间时，重复这项具体日期要求。不要顺带追问预算、节奏、住宿这类可以取默认值的偏好。日期齐备后，可以用一句话说明如需可继续确认机票或酒店搜索条件，但不得把机票、酒店、预算或偏好称为点击「开始规划」的硬前置条件。",
   "这一轮**不要**重新介绍这个目的地——用户刚刚才读过，重复介绍会显得你没在听。也不要复述行程简报的字段清单，不要输出逐日行程。",

@@ -37,6 +37,7 @@ import {
   updateTripTitleResponseSchema,
   updateDraftTripBriefInputSchema,
   updateDraftTripBriefResponseSchema,
+  dismissDraftTripBriefProposalResponseSchema,
   destinationCueActionInputSchema,
   destinationCueActionResponseSchema,
   offerCueSchema,
@@ -471,6 +472,14 @@ export class HttpTravelApi implements TravelApi {
     return this.client.request("/trips/" + encodeURIComponent(tripId) + "/draft-brief", updateDraftTripBriefResponseSchema, {
       method: "PATCH", body: JSON.stringify(body),
     });
+  }
+
+  dismissDraftTripBriefProposal(tripId: string) {
+    return this.client.request(
+      "/trips/" + encodeURIComponent(tripId) + "/draft-brief-proposal",
+      dismissDraftTripBriefProposalResponseSchema,
+      { method: "DELETE" },
+    );
   }
 
   acceptDestinationCue(threadId: string, cueId: string, candidateId: string, input: import("./contracts").DestinationCueActionInput) {

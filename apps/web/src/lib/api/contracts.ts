@@ -1092,6 +1092,9 @@ export const updateDraftTripBriefInputSchema = z.object({
 export const updateDraftTripBriefResponseSchema = z.object({
   trip: z.object({ id: z.string().uuid(), name: z.string(), nameSource: z.enum(["AUTO", "MANUAL"]), status: z.literal("DRAFT"), departureCities: z.array(z.string()), destinationCandidates: z.array(z.string()), travelDateStart: dateSchema.nullable(), travelDateEnd: dateSchema.nullable(), travelDays: z.number().int().nullable(), updatedAt: z.string().datetime() }).strict(),
 });
+export const dismissDraftTripBriefProposalResponseSchema = z.object({
+  dismissed: z.literal(true),
+}).strict();
 export const updateTripTitleResponseSchema = z.object({
   trip: z.object({
     id: z.string().uuid(), name: z.string(), nameSource: z.literal("MANUAL"), titleLocale: z.null(), updatedAt: z.string().datetime(),
@@ -1300,6 +1303,7 @@ export type UpdateTripTitleInput = z.infer<typeof updateTripTitleInputSchema>;
 export type UpdateTripTitleResponse = z.infer<typeof updateTripTitleResponseSchema>;
 export type UpdateDraftTripBriefInput = z.infer<typeof updateDraftTripBriefInputSchema>;
 export type UpdateDraftTripBriefResponse = z.infer<typeof updateDraftTripBriefResponseSchema>;
+export type DismissDraftTripBriefProposalResponse = z.infer<typeof dismissDraftTripBriefProposalResponseSchema>;
 export type Thread = z.infer<typeof threadSchema>;
 export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
 export type CreateTripThreadInput = z.infer<typeof createTripThreadInputSchema>;

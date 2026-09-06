@@ -4,7 +4,9 @@ import { z } from "zod";
 import type { Skill, SkillContext } from "../../agents/contracts.js";
 import { SkillError } from "../../agents/errors.js";
 import {
+  containsUnbackedTripMutationClaim,
   containsUnsupportedOperationalClaim,
+  pendingTripMutationReply,
   requestsUnsupportedOperationalFacts,
   safeConversationRefusal,
 } from "../../policy/conversation-safety.js";
@@ -222,8 +224,17 @@ export async function executeTravelConversation(
   }
   if (
     reply.responseMode === "MODEL"
+    && containsUnbackedTripMutationClaim(reply.content, {
+      tripMutationBacked: input.intent === "brief_saved" || input.intent === "preferences_saved",
+    })
+  ) {
+    return pendingTripMutationReply(input.question);
+  }
+  if (
+    reply.responseMode === "MODEL"
     && containsUnsupportedOperationalClaim(reply.content, {
       evidenceBacked: toolContext.isEvidenceBacked?.() === true,
+      tripMutationBacked: input.intent === "brief_saved" || input.intent === "preferences_saved",
     })
   ) {
     // Diagnostic only: a refusal here discards a reply the model actually

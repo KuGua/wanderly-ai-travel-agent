@@ -1,15 +1,15 @@
 # Destination Cue Decision Model
 
-**状态：** v2 触发分类与提示疲劳策略已合入 `develop`。目的地确认卡与 Flight/Hotel Offer 确认卡已实现；目的地排除确认/撤销仍待实现。
+**状态：** v7 触发分类、提示疲劳和 origin / generic brief 跨 scope 整改已实现；统一边界见 [Cue 与 Trip Brief 触发逻辑统一整改方案](cue-and-brief-trigger-remediation-plan.md)。目的地排除确认/撤销仍待实现。
 **范围：** 决定何时显示 `Set {city} as the destination?`、何时进入目的地排除确认，以及如何为后续机票/酒店 combination card 提供触发上下文。航班采用与酒店采用由独立模型和独立 offer resolver 负责，实施契约见 [Flight Offer Cue Decision Model](flight-offer-cue-model-draft.md) 与 [Hotel Offer Cue Decision Model](hotel-offer-cue-model-draft.md)。
 
 ## 1. 产品语义
 
-Destination Cue 是对**单个、可唯一解析的城市兴趣**进行轻量确认，不要求用户已经表达“确定要去”。以下当前 USER 消息均应产生候选：
+Destination Cue 是对**单个、可唯一解析的城市兴趣**进行轻量确认，不要求用户已经表达“确定要去”。以下当前 USER 消息均可产生候选；最终仍需唯一城市解析、Trip 状态、去重与提示策略校验：
 
 - 裸城市名：`北京`；
 - 城市探索：`北京怎么样？`、`介绍一下北京`；
-- 城市机酒需求：`北京有哪些酒店？`、`帮我查去北京的机票`；
+- 城市机酒需求：仅当句子表达对该城市本身的目的地兴趣时可产生；纯粹的报价、酒店详情或路线查询不产生目的地 Cue；
 - 出发地与目的地同时存在：`从上海飞北京` 只产生北京；
 - 弱意向：`我在考虑北京`；
 - 明确指令：`把北京设为目的地`。
@@ -20,7 +20,9 @@ Destination Cue 是对**单个、可唯一解析的城市兴趣**进行轻量确
 - 一次机票或酒店查询包含多个目的城市；
 - 只有国家、区域、机场或不能唯一解析的地点；
 - `那里`、`这个地方` 等仅凭当前消息不能解析的代词；
-- Assistant、历史消息、地图选择或供应商结果提到的城市；
+- 历史消息、地图选择或供应商结果提到的城市；
+- Assistant 的推荐、介绍、列举、消歧问题或条件性建议；只有本轮 USER 没命中时，当前最终可见 Assistant 回复中明确“把/将 X 设为、列为、确认为目的地”的动作表达才可作为受限 fallback；
+- `出发地是北京`、`把出发地改为北京`、`从北京出发` 等明确 origin 表达；
 - 当前 USER 消息明确表达不想去、不要安排或排除该城市。
 
 “多个城市不提示”只适用于中性列举/比较。明确逐项指令仍按指令处理，例如 `把上海设为目的地，北京不要去` 必须分别生成上海的目的地确认和北京的排除确认。
@@ -29,8 +31,8 @@ Destination Cue 是对**单个、可唯一解析的城市兴趣**进行轻量确
 
 本能力不得是纯 hard-coded 关键词系统，也不得让模型独自决定业务状态。职责分层如下：
 
-1. **确定性前置规则**只负责不需要语言推断的边界：仅 DRAFT creator 的当前 USER turn 可触发，空输入、重复任务和无权限请求直接结束。常见明确指令可用规则做 fast path，但规则命中不是识别明确指令的唯一方式。
-2. **独立语言模型**只理解当前 USER 消息中的自然语言关系：识别城市提及、出发地/目的地角色、机票/酒店上下文、弱兴趣、中性多城市列表、明确设置和明确排除。模型必须能识别未命中 fast path 的自然表达，因此静默状态也不能在语言分类前直接跳过模型。模型不接收 Assistant 回复、历史原文、地图状态、Profile、供应商结果或同行对话。
+1. **确定性前置规则**只负责不需要语言推断的边界：仅 DRAFT creator 可触发，空输入、重复任务和无权限请求直接结束；明确 origin / route 角色先被标记，不能因含城市名而回流为目的地。常见明确指令可用规则做 fast path，但规则命中不是识别明确指令的唯一方式。
+2. **独立语言模型**先判断当前 USER 消息中的自然语言关系：识别城市提及、出发地/目的地角色、机票/酒店上下文、弱兴趣、中性多城市列表、明确设置和明确排除。模型不读取历史原文、地图状态、Profile、供应商结果或同行对话。只有 USER 决策为空时，才可对本轮最终可见 Assistant 回复运行第二次分类；Assistant 来源只接受明确目的地设置动作，不接受裸城市或弱兴趣。
 3. **服务端后校验**通过 `LocationReferenceResolver` 将每个候选唯一解析为规范城市；未知、歧义、国家/区域、错误角色和重复候选一律 fail closed。模型输出只能建议，不能写 Trip。
 4. **持久策略层**在分类和解析后应用 30 分钟 cooldown、每日拒绝上限、幂等和乐观锁；模型或 fast path 判定为明确设置指令时绕过自动静默，其他候选受静默限制。
 
@@ -44,6 +46,7 @@ type Input = {
   currentDestinations: string[];
   currentExcludedDestinations?: string[]; // 排除状态落地后启用；当前实现不发送
   locale: "en" | "zh";
+  messageSource: "USER_TURN" | "ASSISTANT_REPLY";
 };
 
 type CandidateIntent =
@@ -129,14 +132,18 @@ POST /api/v1/threads/:threadId/destination-exclusions/:proposalId/confirm
 DELETE /api/v1/trips/:tripId/destination-exclusions/:exclusionId
 ```
 
-## 8. 与 Trip Brief 的关系
+## 8. 与出发地和 Trip Brief 的关系
 
-Trip Brief review 继续只负责出发地、日期和天数。目的地只通过 Destination Cue accept 写入；明确排除只通过 exclusion confirm 写入。模型、机酒解析器和地图状态都不得直接创建、删除或排除目的地事实。
+Trip Brief review 只负责出发地、日期和天数。目的地只通过 Destination Cue accept 写入；明确排除只通过 exclusion confirm 写入。模型、机酒解析器和地图状态都不得直接创建、删除或排除目的地事实。
+
+裸城市归 Destination Cue，绝不能作为出发地。明确 route 可以同时产生两个独立 scope：例如 `从上海去北京三天` 产生北京 Destination Cue，以及上海 + 3 天 Brief proposal；任一 scope 的成功、失败、静默或 OPEN 状态不得删除另一个 scope。UI 按 Destination → Flight → Hotel → Brief 编排，而不是用一个全局布尔值隐藏全部其他确认。
 
 ## 9. 必测场景
 
 - 裸城市、城市介绍、弱意向、单城市酒店查询和单目的地机票查询均显示具体城市 Cue。
-- `从上海飞北京` 只提示北京；已有目的地、Assistant-only 提及、代词、未知/歧义地点不提示。
+- `从上海飞北京` 只把北京作为目的地；上海可独立进入 origin proposal。已有目的地、Assistant 推荐、代词、未知/歧义地点不提示。
+- `上海` 只产生目的地 Cue；`出发地改为北京` 只产生 origin proposal；两者不得串线。
+- USER 与当前 Assistant 最终回复同轮命中同一城市时只保留 USER 来源；已有同城 OPEN 卡时不重复创建或替换。
 - 中性列举或比较多个城市不提示；混合明确设置/排除指令仍逐项确认。
 - dismiss 后 30 分钟全局静默；同一 Trip 当日本地日期第 3 次 dismiss 后静默到次日；明确设置命令始终绕过。
 - 明确否定、条件句、双重否定、他人意向和混合肯定/否定的作用域正确；未确认 exclusion 永不进入 planning。

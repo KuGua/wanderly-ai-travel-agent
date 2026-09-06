@@ -8,7 +8,40 @@ describe("destination cue preflight", () => {
   it("skips bare cities, origins, and exploration", () => {
     expect(destinationCuePreflight("帮我查一下北京到东京的机票")).toBe("SKIP");
     expect(destinationCuePreflight("find hotels in Kyoto for next week")).toBe("SKIP");
-    expect(destinationCuePreflight("北京")).toBe("SKIP");
+    expect(destinationCuePreflight("从北京出发")).toBe("SKIP");
+  });
+
+  it("sends a standalone user city to the destination confirmation model", () => {
+    expect(destinationCuePreflight("北京")).toBe("MODEL");
+    expect(destinationCuePreflight("Shanghai")).toBe("MODEL");
+  });
+
+  /**
+   * Han script has no word delimiter, so a shape-only bare-city test — two to
+   * twelve Han characters — matched every short Chinese turn in the product.
+   * Each one then cost a classifier call and could raise a destination card,
+   * and the flight/hotel confirmations of §3.4/§3.5 were classified as
+   * destinations. Only the reference catalogue can tell these apart.
+   */
+  it.each([
+    "帮我看看", "太贵了", "换一个", "再想想", "不用了", "有点远",
+    "预算多少", "怎么去", "第一班吧", "就住这家", "取消搜索", "谢谢你",
+    "我想想", "都可以", "不喜欢",
+  ])("does not mistake a short Chinese turn for a bare city: %s", (question) => {
+    expect(destinationCuePreflight(question)).toBe("SKIP");
+  });
+
+  it("routes every origin wording in §3.2 away from the destination model", () => {
+    expect(destinationCuePreflight("改从北京走")).toBe("SKIP");
+    expect(destinationCuePreflight("换成上海出发")).toBe("SKIP");
+    expect(destinationCuePreflight("出发地是北京")).toBe("SKIP");
+    expect(destinationCuePreflight("把出发地改为北京")).toBe("SKIP");
+  });
+
+  it("sends a route to the model so its destination can be classified independently", () => {
+    expect(destinationCuePreflight("从上海飞北京")).toBe("MODEL");
+    expect(destinationCuePreflight("从上海去北京玩三天")).toBe("MODEL");
+    expect(destinationCuePreflight("出发地改为北京")).toBe("SKIP");
   });
 
   it("lets an explicit destination command override search wording", () => {
@@ -19,6 +52,18 @@ describe("destination cue preflight", () => {
   it("recognizes both Chinese forms of explicitly listing a destination", () => {
     expect(destinationCuePreflight("将东京列为目的地")).toBe("MODEL");
     expect(destinationCuePreflight("把东京作为本次旅行的目的地")).toBe("MODEL");
+  });
+
+  it("allows an assistant-only pronoun when its reply explicitly sets a destination", () => {
+    const reply = "上海很适合建筑与美食探索。我们可以把它列为这次旅行的目的地。";
+    expect(destinationCuePreflight(reply, "ASSISTANT_REPLY")).toBe("MODEL");
+    expect(destinationCuePreflight("把它列为这次旅行的目的地")).toBe("SKIP");
+  });
+
+  it("allows an assistant acknowledgement to turn a bare city into a destination cue", () => {
+    const reply = "北京是一座历史与现代交融的城市。确认目的地后，请告诉我你的出行日期。";
+    expect(destinationCuePreflight(reply, "ASSISTANT_REPLY")).toBe("MODEL");
+    expect(destinationCuePreflight(reply)).toBe("SKIP");
   });
 });
 

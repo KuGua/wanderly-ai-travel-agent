@@ -104,6 +104,51 @@ describe("personal overrides", () => {
     expect(untouchedTrip[0]?.departureCities).toEqual(["Shanghai"]);
   });
 
+  it("does not copy an inherited profile departure when no trip field changed", async () => {
+    await db.update(sharedTrips).set({
+      status: "DRAFT",
+      departureCities: ["Shanghai"],
+      pendingBriefProposal: { travelDays: 4 },
+    }).where(eq(sharedTrips.id, tripOne));
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripOne}/preference-card`,
+      headers: authHeaders(OWNER),
+      payload: { adjustments: [] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const [trip] = await db.select({
+      departureCities: sharedTrips.departureCities,
+      pendingBriefProposal: sharedTrips.pendingBriefProposal,
+    }).from(sharedTrips).where(eq(sharedTrips.id, tripOne)).limit(1);
+    expect(trip.departureCities).toEqual(["Shanghai"]);
+    expect(trip.pendingBriefProposal).toEqual({ travelDays: 4 });
+  });
+
+  it("clears only the confirmed origin from a pending generic brief", async () => {
+    await db.update(sharedTrips).set({
+      status: "DRAFT",
+      pendingBriefProposal: { departureCities: ["Beijing"], travelDays: 4 },
+    }).where(eq(sharedTrips.id, tripOne));
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripOne}/preference-card`,
+      headers: authHeaders(OWNER),
+      payload: { adjustments: [{ fieldKey: "departure_city", value: "San Francisco" }] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const [trip] = await db.select({
+      departureCities: sharedTrips.departureCities,
+      pendingBriefProposal: sharedTrips.pendingBriefProposal,
+    }).from(sharedTrips).where(eq(sharedTrips.id, tripOne)).limit(1);
+    expect(trip.departureCities).toEqual(["San Francisco"]);
+    expect(trip.pendingBriefProposal).toEqual({ travelDays: 4 });
+  });
+
   it("saves and reads back the caller's own override", async () => {
     const save = await app.inject({
       method: "PUT",

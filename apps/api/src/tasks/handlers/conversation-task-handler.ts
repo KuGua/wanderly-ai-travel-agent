@@ -21,6 +21,8 @@ import {
   isBriefDestinationCountry,
   mergeTripBriefProposal,
   proposeTripBriefFromTurn,
+  withoutDestinationCandidates,
+  withoutImplicitDeparture,
 } from "../../services/trip-brief-proposal-service.js";
 import { resolveTitleDestinationLabel } from "../../services/trip-title-destination-label.js";
 import { applyTitleDestinationLabel } from "../../services/trip-title-label-service.js";
@@ -1020,6 +1022,7 @@ export async function handleConversationTask(params: {
     params.run,
     params.ctx.traceparent,
     () => evidenceDispatched,
+    input.intent === "brief_saved" || input.intent === "preferences_saved",
   );
 
   let output;
@@ -1076,7 +1079,10 @@ export async function handleConversationTask(params: {
     : parsedReply;
   if (
     parsed.responseMode === "MODEL"
-    && containsUnsupportedOperationalClaim(parsed.content, { evidenceBacked: evidenceDispatched })
+    && containsUnsupportedOperationalClaim(parsed.content, {
+      evidenceBacked: evidenceDispatched,
+      tripMutationBacked: input.intent === "brief_saved" || input.intent === "preferences_saved",
+    })
   ) {
     throw new Error("Final conversation safety validation failed");
   }
@@ -1098,20 +1104,45 @@ export async function handleConversationTask(params: {
   // confirmation cards; never create the generic brief-review card from a
   // departure/date phrase embedded in one of them.
   const destinationCueDecision = await destinationCuePromise;
-  const tripBriefProposal = parsed.responseMode === "MODEL" && tripContext.tripStatus === "DRAFT" && !destinationCueDecision
+  // Each field scope is independent. A destination decision must not suppress
+  // an explicit origin/date/duration from the same owner turn (for example
+  // “从上海去北京三天”). Destination is stripped below and persists only via
+  // Destination Cue; the remaining brief fields keep their own confirmation.
+  // Not gated on `responseMode`. The two sources below have different
+  // authorities and only one of them is the assistant: `directBriefProposal`
+  // is deterministic parsing of the owner's own message, and it stays valid
+  // however the reply turned out. Gating both on MODEL made the trip-mutation
+  // guard self-defeating — a reply claiming "已更新" becomes a SAFE_REFUSAL
+  // reading "请在下方确认卡片", and the same branch then suppressed the card it
+  // had just told the traveller to confirm. That is exactly the turn on which
+  // the owner states a change, so the card was missing when it mattered most.
+  const generatedTripBriefProposal = tripContext.tripStatus === "DRAFT"
     ? mergeTripBriefProposal(
       // Direct owner statements are parsed conservatively and destination
-      // values have already passed server-owned place resolution.
-      withoutDestination(directBriefProposal),
+      withoutDestinationCandidates(directBriefProposal),
       // The model extractor is retained only for an owner accepting a
       // concrete date/duration the assistant resolved in this same turn.
       // It can never introduce a destination, departure, or other free-text
       // trip fact from a reply — nor a date that contradicts the one parsed
       // above, which is how an end date two years before its start reached
       // the card and made it unsavable.
-      parsedReply.tripBriefProposal,
+      //
+      // This half *is* assistant-derived — it exists for the owner accepting a
+      // date the assistant resolved — so a withdrawn or fallback reply must
+      // not contribute one.
+      parsed.responseMode === "MODEL" ? parsedReply.tripBriefProposal : undefined,
     )
     : undefined;
+  // Do not let an assistant extractor (or a future proposal source) infer an
+  // origin from a bare city mention. The card can show a departure only when
+  // this owner turn explicitly states one.
+  const tripBriefProposal = withoutImplicitDeparture(
+    // Destination candidates have exactly one owner: Destination Cue. Never
+    // persist one on the generic brief card, where an origin guard could make
+    // its unrelated disappearance look like the destination was rejected.
+    withoutDestinationCandidates(generatedTripBriefProposal),
+    turnInput.question,
+  );
 
   // User-originated decisions always win for this turn. Only when the user
   // classifier found nothing do we inspect the final persisted reply as a
@@ -1249,13 +1280,6 @@ export async function handleConversationTask(params: {
   return { ...conversation, destinationCueDecision: assistantDestinationCueDecision, flightOfferCueDecision: assistantFlightOfferCueDecision, hotelOfferCueDecision: assistantHotelOfferCueDecision };
 }
 
-function withoutDestination(proposal: TripBriefProposal | null): TripBriefProposal | null {
-  if (!proposal) return null;
-  const { destinationCandidates, ...schedulingAndDeparture } = proposal;
-  void destinationCandidates;
-  return Object.keys(schedulingAndDeparture).length > 0 ? schedulingAndDeparture : null;
-}
-
 /**
  * Kept pure so the lifecycle boundary is directly regression-testable.
  *
@@ -1368,6 +1392,7 @@ class SafeConversationDeltaGate {
     private readonly run: AgentTaskRow,
     traceparent: string | undefined,
     getEvidenceBacked: () => boolean,
+    private readonly tripMutationBacked: boolean,
   ) {
     this.traceparent = traceparent;
     // Read lazily on every segment so the gate reflects the latest
@@ -1400,7 +1425,10 @@ class SafeConversationDeltaGate {
 
   private async approveAndPublish(segment: string): Promise<void> {
     const candidate = this.approved + segment;
-    if (containsUnsupportedOperationalClaim(candidate, { evidenceBacked: this.getEvidenceBacked() })) {
+    if (containsUnsupportedOperationalClaim(candidate, {
+      evidenceBacked: this.getEvidenceBacked(),
+      tripMutationBacked: this.tripMutationBacked,
+    })) {
       // Keep unsafe text in volatile Worker memory only. The final policy gate
       // will replace the whole answer with a deterministic safe refusal.
       return;

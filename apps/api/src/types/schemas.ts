@@ -1715,6 +1715,9 @@ export const updateDraftTripBriefResponseSchema = z.object({
     travelDays: z.number().int().nullable(), updatedAt: z.string().datetime(),
   }).strict(),
 });
+export const dismissDraftTripBriefProposalResponseSchema = z.object({
+  dismissed: z.literal(true),
+}).strict();
 
 export const updateTripTitleRequestSchema = z.object({
   name: z.string().trim().min(1).max(256),

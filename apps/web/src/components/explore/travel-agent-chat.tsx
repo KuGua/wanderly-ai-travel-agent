@@ -1039,6 +1039,24 @@ export function TravelAgentChat({
     }
   }
 
+  async function dismissBriefProposal() {
+    if (!tripId || !api.dismissDraftTripBriefProposal) {
+      setRequestError(new Error("Draft brief dismissal is unavailable"));
+      return;
+    }
+    setIsConfirmingBrief(true);
+    setRequestError(null);
+    try {
+      await api.dismissDraftTripBriefProposal(tripId);
+      setBriefProposal(null);
+      await trip.refetch();
+    } catch (error) {
+      setRequestError(error instanceof Error ? error : new Error("Could not dismiss the draft brief"));
+    } finally {
+      setIsConfirmingBrief(false);
+    }
+  }
+
   async function resolveDestinationCue(action: "accept" | "dismiss") {
     const cue = destinationCue;
     const candidate = cue?.candidates[destinationCueIndex];
@@ -1351,8 +1369,8 @@ export function TravelAgentChat({
       : null,
   ].filter((detail): detail is string => Boolean(detail)).join(" · ");
   const activeDestinationCandidate = destinationCue?.candidates[destinationCueIndex] ?? null;
-  // A broad brief review must never compete with an already-open precise
-  // confirmation. Resolve destination, flight, and hotel cards first.
+  // Precise confirmations still block the Start Planning CTA, but they no
+  // longer suppress the independent origin/date/duration Brief below.
   const hasOpenConfirmationCard = Boolean(
     (destinationCue && activeDestinationCandidate && effectiveThreadId)
     || ((flightOfferCue || hotelOfferCue) && effectiveThreadId),
@@ -1838,7 +1856,7 @@ export function TravelAgentChat({
               ) : null}
             </div>
           ) : null}
-          {actionableBriefProposal && tripId && !hasOpenConfirmationCard ? (
+          {actionableBriefProposal && tripId ? (
             /* A question with two answers. The primary carries the weight
                because one of them is the decision being invited; the other is
                a way to decline it, not a symmetrical alternative. */
@@ -1872,7 +1890,7 @@ export function TravelAgentChat({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setBriefProposal(null)}
+                    onClick={() => void dismissBriefProposal()}
                     disabled={isConfirmingBrief}
                     className={onGlobe
                       ? "bg-transparent px-0 py-1 text-xs font-extrabold text-[var(--w-fog)] underline decoration-1 underline-offset-4 transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--w-highlight)] disabled:opacity-50"
