@@ -1025,11 +1025,6 @@ const ONE_SHOT_TOOL_BY_CAPABILITY: Readonly<Record<string, string>> = {
   activities: "activities.search",
   hotel: "hotel.search",
   places: "places.search",
-  // Coverage research fans out over the whole canonical route matrix before
-  // synthesis starts, and hands the offers forward. Leaving the tool on offer
-  // simply bought the same two searches a second time — the run that finally
-  // produced a plan paid SerpApi twice for `SIN→PVG` and `SIN→SHA`.
-  flight: "flight.search",
 };
 
 /**
@@ -1080,18 +1075,6 @@ export async function generatePlan(params: {
    * collecting refusals. It read those as new failures and asked again.
    */
   alreadyResearchedCapabilities?: readonly string[];
-  /**
-   * What those already-researched capabilities returned. Withdrawing their
-   * tools without carrying their results forward left synthesis with flights
-   * and nothing else: the model cited none of the ten live hotel quotes or
-   * four activities the run was holding, and the stay gap — which is computed
-   * from this evidence — still reported NO_RESULTS.
-   */
-  researchedEvidence?: {
-    hotels?: readonly HotelOffer[];
-    activities?: readonly ActivityEvidence[];
-    accommodations?: readonly AccommodationEvidence[];
-  };
 }, dependencies: PlanningDependencies = resolvePlanningDependencies()): Promise<PlanSynthesisOutcome> {
   // Get snapshot
   const [snapshot] = await db.select().from(constraintSnapshots)
@@ -1111,8 +1094,8 @@ export async function generatePlan(params: {
   const allFlights: FlightOffer[] = [];
   const allStays: StayOffer[] = [];
   const allActivities: ActivityEvidence[] = [];
-  const allHotels: HotelOffer[] = [...(params.researchedEvidence?.hotels ?? [])];
-  const allAccommodations: AccommodationEvidence[] = [...(params.researchedEvidence?.accommodations ?? [])];
+  const allHotels: HotelOffer[] = [];
+  const allAccommodations: AccommodationEvidence[] = [];
   const activitiesEnabled = process.env.PLAN_ENABLE_ACTIVITIES === "true";
   const placesEnabled = process.env.PLAN_ENABLE_PLACES === "true";
   const navigationEnabled = process.env.PLAN_ENABLE_NAVIGATION === "true";
@@ -1128,7 +1111,6 @@ export async function generatePlan(params: {
   // Phase 3: when the handler pre-collected research via `researchCoverageForSnapshot`,
   // honor it as the canonical evidence; otherwise fall back to in-line per-origin
   // research. The validator's `EVIDENCE_*` checks operate identically on either source.
-  allActivities.push(...(params.researchedEvidence?.activities ?? []));
   if (params.coverage) {
     allFlights.push(...params.coverage.allFlights);
     allStays.push(...params.coverage.allStays);
@@ -1569,8 +1551,6 @@ export async function generatePlan(params: {
       flights: allFlights,
       stays: allStays,
       activities: allActivities,
-      hotels: allHotels,
-      accommodations: allAccommodations,
     });
   }
 
@@ -1587,10 +1567,7 @@ export async function generatePlan(params: {
       travelDateStart: snapshot.travelDateStart ?? undefined,
       travelDateEnd: snapshot.travelDateEnd ?? undefined,
     },
-    evidence: {
-      flights: allFlights, stays: allStays, activities: allActivities,
-      hotels: allHotels, accommodations: allAccommodations,
-    },
+    evidence: { flights: allFlights, stays: allStays, activities: allActivities, hotels: allHotels },
     requireHotels: hotelEnabled && allHotels.some((hotel) => hotel.destinationId === params.destination),
   });
 

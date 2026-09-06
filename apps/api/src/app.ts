@@ -67,21 +67,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
     loggerInstance: pinoInstance,
     genReqId: () => randomUUID(),
     trustProxy: false,
-    // Fastify's default AJV runs with `removeAdditional: true`, which edits the
-    // request body in place while validating it. Inside a `oneOf` that is
-    // destructive rather than tidy: AJV evaluates the branches in order, and
-    // the first branch's `additionalProperties: false` deletes every key that
-    // branch does not declare *before* the remaining branches are tried. The
-    // PROFILE branch of `quoteNationalityDecision` therefore stripped `value`
-    // and `saveToProfile` off an INPUT decision, and `POST /trips/:tripId/
-    // activate` rejected every hand-entered nationality with "must have
-    // required property 'value'" — a 400 no client could avoid.
-    //
-    // Validation must not rewrite the payload the handler then re-parses with
-    // Zod. Unknown keys are still refused, just one layer later and loudly:
-    // every request schema is `.strict()`, which `removeAdditional` had been
-    // quietly pre-empting by deleting the offending keys first.
-    ajv: { customOptions: { removeAdditional: false } },
   });
   const agentStreamRelay = options.agentStreamRelay ?? new AgentStreamRelay();
   if (!options.agentStreamRelay) {

@@ -60,27 +60,7 @@ type StayOffer = {
   expiresAt?: string;
 };
 
-/**
- * A priced quote. Its name field is `propertyName`, not `name` — reading only
- * `name` rendered every real Nuitee quote as "—".
- */
-type HotelOffer = StayOffer & {
-  propertyName?: string;
-  pricePerNight?: number;
-};
-
-/**
- * Non-priced accommodation discovered near the destination. It answers "could
- * someone stay here at all", so it carries no price and must not be shown as
- * though it were a quote.
- */
-type AccommodationEvidence = {
-  name?: string;
-  kind?: string;
-  source?: string;
-  capturedAt?: string;
-  expiresAt?: string;
-};
+type HotelOffer = StayOffer;
 
 type ActivityEvidence = {
   name?: string;
@@ -94,7 +74,6 @@ type PlanPayload = {
   flights?: FlightOffer[];
   stays?: StayOffer[];
   hotels?: HotelOffer[];
-  accommodations?: AccommodationEvidence[];
   activities?: ActivityEvidence[];
   constraintReferences?: string[];
   publicExplanationTokens?: string[];
@@ -194,12 +173,9 @@ function FlightLine({ offer }: { offer: FlightOffer }) {
 
 function StaysSection({ payload }: { payload: PlanPayload }) {
   const t = useTranslations("trips.sharedPlan.plan");
-  // Two different things, deliberately separate rows. `hotels` are priced
-  // quotes; `accommodations` is non-priced discovery — "somewhere to sleep
-  // exists here", with a source and a capture time but no rate. The legacy
-  // `stays` array is kept only for plans written before the discovery slot
-  // existed: its sole producer was a permanently stubbed provider.
-  const stays = [...(payload.accommodations ?? []), ...(payload.stays ?? [])];
+  // Spec §4.2: schema permits both `stays` and `hotels`; render whichever
+  // is non-empty. Empty array on either means "no offer was collected".
+  const stays = payload.stays ?? [];
   const hotels = payload.hotels ?? [];
   if (stays.length === 0 && hotels.length === 0) {
     return (
@@ -218,14 +194,14 @@ function StaysSection({ payload }: { payload: PlanPayload }) {
       {stays.length > 0 ? (
         <Section title={t("stays")}>
           <ul className="grid gap-1">
-            {stays.map((stay, index) => <StayLine key={`${stay.name ?? "stay"}-${index}`} offer={stay} />)}
+            {stays.map((stay) => <StayLine key={stay.name ?? stay.cityName ?? "stay"} offer={stay} />)}
           </ul>
         </Section>
       ) : null}
       {hotels.length > 0 ? (
         <Section title={t("hotels")}>
           <ul className="grid gap-1">
-            {hotels.map((hotel, index) => <StayLine key={`${hotel.propertyName ?? hotel.name ?? "hotel"}-${index}`} offer={hotel} />)}
+            {hotels.map((hotel) => <StayLine key={hotel.name ?? hotel.cityName ?? "hotel"} offer={hotel} />)}
           </ul>
         </Section>
       ) : null}
@@ -233,13 +209,13 @@ function StaysSection({ payload }: { payload: PlanPayload }) {
   );
 }
 
-function StayLine({ offer }: { offer: HotelOffer }) {
+function StayLine({ offer }: { offer: StayOffer | HotelOffer }) {
   const t = useTranslations("trips.sharedPlan.plan");
-  const priceLabel = formatPrice(offer.totalPrice ?? offer.pricePerNight ?? offer.nightlyPrice, offer.currency);
+  const priceLabel = formatPrice(offer.totalPrice ?? offer.nightlyPrice, offer.currency);
   const expired = isExpired(offer.expiresAt);
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
-      <span className="font-bold">{offer.propertyName ?? offer.name ?? offer.cityName ?? "—"}</span>
+      <span className="font-bold">{offer.name ?? offer.cityName ?? "—"}</span>
       <span className="ml-auto font-bold">{priceLabel}</span>
       <span className="text-[10px] text-muted-foreground">{offer.source ?? "—"} · {formatTimestamp(offer.capturedAt)}</span>
       {expired ? (
@@ -389,10 +365,6 @@ function readPlanPayload(raw: Record<string, unknown>): PlanPayload {
   }
   if (Array.isArray(raw.hotels)) {
     out.hotels = raw.hotels.filter((entry): entry is HotelOffer => typeof entry === "object" && entry !== null);
-  }
-  if (Array.isArray(raw.accommodations)) {
-    out.accommodations = raw.accommodations
-      .filter((entry): entry is AccommodationEvidence => typeof entry === "object" && entry !== null);
   }
   if (Array.isArray(raw.activities)) {
     out.activities = raw.activities.filter((entry): entry is ActivityEvidence => typeof entry === "object" && entry !== null);

@@ -39,14 +39,9 @@ const unavailableTransitProvider: TransitJourneyProvider = {
 export const testPlanningDependencies: PlanningDependencies = {
   flightProvider: {
     async searchFlights(params) {
-      // Coverage research resolves cities to controlled airports before it
-      // calls a provider, so this fixture has to answer to both spellings of
-      // the same origin — it used to know only the city names and reported
-      // every post-resolution search as UNAVAILABLE.
       if (
-        !new Set(["San Francisco", "Shanghai", "SFO", "PVG", "SHA"]).has(params.origin)
+        !new Set(["San Francisco", "Shanghai"]).has(params.origin)
         || params.destination === "Singapore"
-        || params.destination === "SIN"
       ) {
         return { outcome: "UNAVAILABLE", reason: "NO_RESULTS" };
       }
@@ -128,24 +123,23 @@ export const testPlanningDependencies: PlanningDependencies = {
       // caller may pass `{ flights }` to inject one.
       const flights = params.flights ?? [];
       const stays = params.stays ?? [];
-      // `stays` is now always empty in production: its only producer was a
-      // permanently stubbed provider, which has been deleted. Real
-      // accommodation reaches a plan as `hotels` (priced quotes) or
-      // `accommodations` (non-priced discovery). Demanding a stay here made
-      // this stub reject every plan the real planner can now produce.
       const firstStay = stays[0];
-      const fallbackCapturedAt = firstStay?.capturedAt
-        ?? flights[0]?.capturedAt
-        ?? "2026-08-25T00:00:00.000Z";
+      if (!firstStay) {
+        throw new Error(
+          `testPlanningDependencies requires at least one stay (got stays=${stays.length})`,
+        );
+      }
+      const fallbackCapturedAt = firstStay.capturedAt ?? "2026-08-25T00:00:00.000Z";
       return {
         destination: params.destination,
         destinationCandidatesEvaluated: [params.destination],
         flights, // pass through — validatePlanOutput compares against provider_offers
-        stays: firstStay ? [firstStay] : [],
+        stays: [firstStay],
         activities: [],
         hotels: [],
         generatedAt: fallbackCapturedAt,
-        ...(firstStay ? { checkIn: firstStay.checkIn, checkOut: firstStay.checkOut } : {}),
+        checkIn: firstStay.checkIn,
+        checkOut: firstStay.checkOut,
         constraintReferences: [],
         publicExplanationTokens: ["baseline"],
       };

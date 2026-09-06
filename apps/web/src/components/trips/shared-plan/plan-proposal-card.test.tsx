@@ -196,41 +196,6 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
     expect(flightSection.textContent).toMatch(/This capability returned was not collected/i);
   });
 
-  /**
-   * The two accommodation slots carry different shapes, and the card read
-   * neither correctly: a Nuitee quote names itself `propertyName`, so every
-   * real hotel rendered as "—", and non-priced discovery had no slot at all,
-   * leaving the 住宿 row permanently empty over sixteen collected stays.
-   */
-  it("renders a priced quote by its property name and discovery without a price", () => {
-    renderCard(makePlan({
-      planData: {
-        flights: [],
-        hotels: [{
-          propertyName: "remm Roppongi",
-          totalPrice: 3066.24,
-          currency: "CNY",
-          source: "Nuitee LiteAPI",
-          capturedAt: "2026-09-01T00:00:00.000Z",
-        }],
-        accommodations: [{
-          name: "Jinjiang Hotel",
-          kind: "hotels",
-          source: "OpenTripMap",
-          capturedAt: "2026-09-01T00:00:00.000Z",
-        }],
-      },
-    }));
-    const card = screen.getByTestId(`plan-proposal-card-${PLAN_ID}`);
-    expect(card.textContent).toContain("remm Roppongi");
-    expect(card.textContent).toContain("CNY 3066.24");
-    expect(card.textContent).toContain("Jinjiang Hotel");
-    // Discovery carries no rate, and must not be dressed up as one.
-    const stays = screen.getByRole("region", { name: "Stays" });
-    expect(stays.textContent).toContain("OpenTripMap");
-    expect(stays.textContent).not.toMatch(/CNY \d/);
-  });
-
   it("renders explanation tokens as localized copy", () => {
     renderCard(makePlan({
       planData: {

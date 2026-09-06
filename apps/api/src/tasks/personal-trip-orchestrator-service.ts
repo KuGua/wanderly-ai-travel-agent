@@ -15,10 +15,7 @@ import {
   invokeSkill,
 } from "../agents/skill-registry.js";
 import {
-  type AccommodationEvidence,
-  type ActivityEvidence,
   type ConstraintSnapshotData,
-  type HotelOffer,
   type ServiceGap,
   type ServiceGapCode,
 } from "../types/domain.js";
@@ -146,10 +143,6 @@ export async function runResearch(params: {
   });
 
   const gaps: ServiceGap[] = [];
-  // What the capability loop obtains, carried into synthesis. Its tools are
-  // one-shot per run and are not offered to the model again, so this is the
-  // only path by which a hotel quote or an activity can reach the plan.
-  const researched: ResearchedEvidence = { hotels: [], activities: [], accommodations: [] };
 
   // 3a. Coverage research (flights + stays) — emits `provider_search_runs`.
   let coverage: CoverageResearchResult | null = null;
@@ -194,7 +187,6 @@ export async function runResearch(params: {
         latestStayPref: latestStayPref ?? null,
         memberIds,
         gaps,
-        researched,
         signal: params.signal,
       });
     } catch (err) {
@@ -342,7 +334,6 @@ export async function runResearch(params: {
         // one-shot per run, so re-offering them hands the model a refusal
         // rather than a second chance.
         alreadyResearchedCapabilities: requiredCapabilities,
-        researchedEvidence: researched,
       }, params.providerOverride!);
     } finally {
       clearTimeout(runDeadlineTimer);
@@ -371,12 +362,7 @@ export async function runResearch(params: {
     // makes it visible. Forwarded without solo auto-accept: there is no plan
     // to adopt.
     if (synthesis.outcome === "RESEARCH_SUMMARY") {
-      // `research_summary` is not a registered value for this label — the
-      // counter allows success/failure — so incrementing it threw. The branch
-      // was unreachable until the Worker lease started being passed, which is
-      // why a label bug survived this long. A summary is a completion with
-      // gaps, and both halves of that are registered.
-      metrics.inc("research_stage_total", { stage: "completed_with_gaps", outcome: "success" });
+      metrics.inc("research_stage_total", { stage: "completed", outcome: "research_summary" });
       return { outcome: "COMPLETED_WITH_GAPS", researchResultId: synthesis.researchResultId };
     }
 
@@ -459,21 +445,6 @@ function dedupeGaps(gaps: ReadonlyArray<ServiceGap>): ServiceGap[] {
   });
 }
 
-/**
- * What the capability loop actually obtained, kept so synthesis can cite it.
- *
- * These searches are one-shot per run, so the plan's tool loop is not offered
- * them a second time — and their results used to be discarded here, which left
- * synthesis with nothing but flights. A run holding ten live hotel quotes and
- * four activities produced a plan that cited none of them, and reported
- * `stay: NO_RESULTS` on top.
- */
-export interface ResearchedEvidence {
-  hotels: HotelOffer[];
-  activities: ActivityEvidence[];
-  accommodations: AccommodationEvidence[];
-}
-
 interface InvokeCapabilityArgs {
   run: AgentTaskRow;
   snapshotData: ConstraintSnapshotData;
@@ -486,12 +457,11 @@ interface InvokeCapabilityArgs {
   latestStayPref: typeof tripStaySearchPreferences.$inferSelect | null;
   memberIds: string[];
   gaps: ServiceGap[];
-  researched: ResearchedEvidence;
   signal: AbortSignal;
 }
 
 async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promise<void> {
-  const { run, snapshotData, baseCtx, latestFlightPref, latestStayPref, memberIds, gaps, researched, signal } = args;
+  const { run, snapshotData, baseCtx, latestFlightPref, latestStayPref, memberIds, gaps, signal } = args;
   const snapshotId = run.snapshotId!;
   const tripId = run.tripId!;
   const destinationCandidates = snapshotData.destinationCandidates;
@@ -508,12 +478,9 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
           },
           { snapshotId, destinationId: dest },
           { expectedVersion: "1.0.0", signal },
-        ) as { outcome: "LIVE" | "UNAVAILABLE"; code?: ServiceGap["code"]; accommodations?: AccommodationEvidence[] };
+        ) as { outcome: "LIVE" | "UNAVAILABLE"; code?: ServiceGap["code"] };
         if (result.outcome === "UNAVAILABLE" && result.code) {
           gaps.push({ capability: "accommodation", code: result.code, destinationId: dest });
-        }
-        if (result.outcome === "LIVE" && result.accommodations) {
-          researched.accommodations.push(...result.accommodations);
         }
       }
       return;
@@ -566,12 +533,9 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
           },
           { snapshotId, destinationId: dest },
           { expectedVersion: "1.0.0", signal },
-        ) as { outcome: "LIVE" | "UNAVAILABLE"; code?: ServiceGap["code"]; hotels?: HotelOffer[] };
+        ) as { outcome: "LIVE" | "UNAVAILABLE"; code?: ServiceGap["code"] };
         if (result.outcome === "UNAVAILABLE" && result.code) {
           gaps.push({ capability: "hotel", code: result.code, destinationId: dest });
-        }
-        if (result.outcome === "LIVE" && result.hotels) {
-          researched.hotels.push(...result.hotels);
         }
       }
       return;
@@ -596,12 +560,9 @@ async function invokeCapability(cap: string, args: InvokeCapabilityArgs): Promis
           },
           { snapshotId, destinationId: dest, locale: "en" },
           { expectedVersion: "1.0.0", signal },
-        ) as { outcome: "LIVE" | "UNAVAILABLE"; code?: ServiceGap["code"]; activities?: ActivityEvidence[] };
+        ) as { outcome: "LIVE" | "UNAVAILABLE"; code?: ServiceGap["code"] };
         if (result.outcome === "UNAVAILABLE" && result.code) {
           gaps.push({ capability: "activities", code: result.code, destinationId: dest });
-        }
-        if (result.outcome === "LIVE" && result.activities) {
-          researched.activities.push(...result.activities);
         }
       }
       return;

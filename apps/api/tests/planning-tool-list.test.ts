@@ -177,25 +177,6 @@ describe("planningToolsFor", () => {
     expect(offered).toContain("flight.search");
   });
 
-  /**
-   * Coverage research fans out over the whole canonical route matrix before
-   * synthesis and hands the offers forward, so leaving the flight tool on
-   * offer bought the same searches twice — the run that finally produced a
-   * plan paid SerpApi for `SIN→PVG` and `SIN→SHA` a second time.
-   */
-  it("withdraws flight.search once coverage has run the matrix", () => {
-    const offered = planningToolsFor(["flight"], tools).map((t) => t.name);
-    expect(offered).not.toContain("flight.search");
-  });
-
-  it("can withdraw everything — a fully researched round only composes", () => {
-    const offered = planningToolsFor(
-      ["flight", "accommodation", "activities", "hotel", "places"],
-      tools.filter((t) => t.name !== "places.adopt"),
-    );
-    expect(offered).toEqual([]);
-  });
-
   it("keeps write tools, which are not one-shot searches", () => {
     const offered = planningToolsFor(["places"], tools).map((t) => t.name);
     expect(offered).not.toContain("places.search");

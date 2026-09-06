@@ -338,12 +338,7 @@ describe("LLMGateway planning tools", () => {
     expect(create.mock.calls[1][0].tool_choice).toEqual({ type: "function", function: { name: "flight.search" } });
     expect(create.mock.calls[1][0]).not.toHaveProperty("response_format");
     expect(create.mock.calls[4][0].response_format).toEqual({ type: "json_object" });
-    // Every cell answered, so the only tool is withdrawn and the list is
-    // empty. `tools: []` is rejected by the provider, so the field is omitted
-    // rather than sent — which says the same thing `tool_choice: "none"` used
-    // to: there is nothing left to call, return the plan.
-    expect(create.mock.calls[4][0]).not.toHaveProperty("tools");
-    expect(create.mock.calls[4][0]).not.toHaveProperty("tool_choice");
+    expect(create.mock.calls[4][0].tool_choice).toBe("none");
     const firstAssistantToolMessage = (create.mock.calls[1][0].messages as Array<Record<string, unknown>>)
       .find((message) => message.role === "assistant" && Array.isArray(message.tool_calls));
     expect(firstAssistantToolMessage).toMatchObject({

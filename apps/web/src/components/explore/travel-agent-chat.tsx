@@ -2524,9 +2524,9 @@ function errorMessage(error: unknown, t: ReturnType<typeof useTranslations>) {
   if (error instanceof TravelApiError) {
     if (error.statusCode === null) return t("networkError");
     if (error.message.startsWith("DESTINATION_UNRESOLVED:")) return t("destinationUnresolved");
-    // Ahead of the 400 branch below, which can only say "the server refused
-    // this". These dates live on the trip, so the traveller has to restate
-    // them in the chat before anything changes — worth saying outright.
+    // Ahead of the 400 branch below, which would otherwise tell the traveller
+    // to refresh — advice that cannot work, because the dates it is refusing
+    // are stored on the trip and come back unchanged.
     if (error.message.startsWith("BRIEF_DATES_INVALID:")) return t("briefDatesInvalid");
     if (error.statusCode === 401 || error.statusCode === 403) return t("authenticationRequired");
     if (error.statusCode === 502 || error.statusCode === 504) return t("providerUnavailable");
