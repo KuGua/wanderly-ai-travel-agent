@@ -3150,6 +3150,8 @@ state and write boundary.
    Brief proposal is pending; repeat with an explicit departure change.
 6. With one visible unexpired flight and hotel offer, make a unique selection;
    repeat with comparison, inspection and ambiguous-reference wording.
+7. Open an older DRAFT trip whose preference card is already marked seen, whose
+   brief still has no departure, and whose profile provides a departure city.
 
 **Expected outcomes:**
 
@@ -3169,6 +3171,10 @@ state and write boundary.
   visible in the same owner/thread/trip and still unexpired. Accept writes only
   owner-private selection; destination, origin, Brief, Shared Plan and booking
   state do not change.
+- Step 7 reoffers the existing preference confirmation card with the inherited
+  departure visible. Merely opening it does not write the city; explicit submit
+  copies it into this draft only. A seen card stays closed when the draft
+  already has a departure or the profile has no confirmable departure.
 
 **Coverage:** `apps/api/tests/destination-cue-policy.test.ts`,
 `apps/api/tests/trip-brief-proposal-service.test.ts`,

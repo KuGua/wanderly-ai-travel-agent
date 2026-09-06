@@ -1412,16 +1412,36 @@ export function TravelAgentChat({
   // and a DRAFT trip exists at that moment only because the first message
   // created one. Asking there interrupts browsing with a form about a trip the
   // traveller has not decided to take.
+  const needsDepartureConfirmation = trip.data?.trip.status === "DRAFT"
+    && trip.data.trip.departureCities.length === 0;
+
   useEffect(() => {
     if (surface !== "TRIP_WORKSPACE") return;
     if (!tripId || !api.getPreferenceCard) return;
     let active = true;
     void api.getPreferenceCard(tripId)
-      .then((card) => { if (active && card.show) setPreferenceCard(card); })
+      .then((card) => {
+        if (!active) return;
+        const hasConfirmableDeparture = card.fields.some((field) => (
+          field.fieldKey === "departure_city"
+          && typeof field.value === "string"
+          && field.value.trim().length > 0
+        ));
+        // Older clients recorded the one-time preference card as seen without
+        // copying its inherited departure into the draft brief. Those trips
+        // are now stuck: the overview still says "Not set", while the model
+        // asks the traveller to click a confirmation control that no longer
+        // exists. Re-offer the existing consent surface only for that missing
+        // required field. The city remains private and is not written until
+        // the traveller presses the card's explicit submit action.
+        if (card.show || (needsDepartureConfirmation && hasConfirmableDeparture)) {
+          setPreferenceCard(card);
+        }
+      })
       // A card that cannot be fetched is not worth failing the chat over.
       .catch(() => undefined);
     return () => { active = false; };
-  }, [tripId, api, surface]);
+  }, [tripId, api, surface, needsDepartureConfirmation]);
 
   /**
    * Typing past the card is an answer too.

@@ -1263,6 +1263,56 @@ describe("the trip's preference card", () => {
     ));
   });
 
+  it("reoffers a seen card when an older draft still needs its inherited departure confirmed", async () => {
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue({
+        show: false,
+        fields: [
+          { fieldKey: "departure_city", category: "PREFERENCE" as const, value: "Chengdu", inherited: true, options: null, kind: "text" as const },
+        ],
+      }),
+      getTrip: vi.fn().mockResolvedValue({
+        trip: {
+          id: TRIP_ID, name: "Dali", createdBy: OWNER_ID, status: "DRAFT",
+          departureCities: [], destinationCandidates: ["Dali"],
+          travelDateStart: "2026-12-04", travelDateEnd: "2026-12-10", travelDays: null,
+          createdAt: CREATED_AT, updatedAt: CREATED_AT,
+        },
+        callerRole: "CREATOR",
+        members: [],
+      }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    const reopened = await screen.findByTestId("trip-preference-card");
+    expect(within(reopened).getByLabelText("departure_city")).toHaveValue("Chengdu");
+  });
+
+  it("keeps a seen card closed once the draft already has a departure", async () => {
+    const api = createApi({
+      getPreferenceCard: vi.fn().mockResolvedValue({
+        show: false,
+        fields: [
+          { fieldKey: "departure_city", category: "PREFERENCE" as const, value: "Chengdu", inherited: true, options: null, kind: "text" as const },
+        ],
+      }),
+      getTrip: vi.fn().mockResolvedValue({
+        trip: {
+          id: TRIP_ID, name: "Dali", createdBy: OWNER_ID, status: "DRAFT",
+          departureCities: ["Chengdu"], destinationCandidates: ["Dali"],
+          travelDateStart: "2026-12-04", travelDateEnd: "2026-12-10", travelDays: null,
+          createdAt: CREATED_AT, updatedAt: CREATED_AT,
+        },
+        callerRole: "CREATOR",
+        members: [],
+      }),
+    });
+    renderChat(api, { tripId: TRIP_ID, surface: "TRIP_WORKSPACE" });
+
+    await waitFor(() => expect(api.getPreferenceCard).toHaveBeenCalled());
+    expect(screen.queryByTestId("trip-preference-card")).not.toBeInTheDocument();
+  });
+
   it("does not invent a departure the card has no value for", async () => {
     const withoutDeparture = {
       show: true,
