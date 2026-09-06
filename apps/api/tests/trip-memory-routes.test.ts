@@ -82,6 +82,28 @@ beforeEach(async () => {
 });
 
 describe("personal overrides", () => {
+  it("copies a preference-card departure into this draft trip's brief only", async () => {
+    await db.update(sharedTrips).set({ status: "DRAFT" }).where(eq(sharedTrips.id, tripOne));
+    const response = await app.inject({
+      method: "POST",
+      url: `/api/v1/trips/${tripOne}/preference-card`,
+      headers: authHeaders(OWNER),
+      payload: { adjustments: [{ fieldKey: "departure_city", value: "San Francisco" }] },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ applied: ["departure_city"] });
+
+    const [updatedTrip, untouchedTrip] = await Promise.all([
+      db.select({ departureCities: sharedTrips.departureCities }).from(sharedTrips)
+        .where(eq(sharedTrips.id, tripOne)).limit(1),
+      db.select({ departureCities: sharedTrips.departureCities }).from(sharedTrips)
+        .where(eq(sharedTrips.id, tripTwo)).limit(1),
+    ]);
+    expect(updatedTrip[0]?.departureCities).toEqual(["San Francisco"]);
+    expect(untouchedTrip[0]?.departureCities).toEqual(["Shanghai"]);
+  });
+
   it("saves and reads back the caller's own override", async () => {
     const save = await app.inject({
       method: "PUT",

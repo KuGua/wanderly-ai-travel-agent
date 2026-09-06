@@ -15,9 +15,10 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../db/database.js";
-import { tripPreferenceCardViews } from "../db/schema.js";
+import { sharedTrips, tripPreferenceCardViews } from "../db/schema.js";
 import { MEMORY_FIELD_CATALOG, memoryFieldDefinition } from "../memory/memory-field-catalog.js";
 import type { RequestContext } from "../utils/context.js";
+import { recordAudit } from "./audit-service.js";
 import { listActiveFacts } from "./preference-fact-service.js";
 import { assertActiveMember, listOverridesForOwner, saveOverride } from "./trip-memory-service.js";
 
@@ -127,25 +128,67 @@ export async function resolvePreferenceCard(params: {
 }): Promise<{ applied: string[] }> {
   await assertActiveMember(params.tripId, params.userId);
 
-  const applied: string[] = [];
-  for (const adjustment of params.adjustments) {
-    const definition = memoryFieldDefinition(adjustment.fieldKey);
-    // A field the card never offered cannot be set through it, whatever the
-    // request says — `FORM_ONLY` most of all.
-    if (!definition || definition.sensitivity !== "STANDARD") continue;
-    await saveOverride({
-      ctx: params.ctx,
-      tripId: params.tripId,
-      userId: params.userId,
-      fieldKey: adjustment.fieldKey,
-      value: adjustment.value,
-    });
-    applied.push(adjustment.fieldKey);
-  }
+  return db.transaction(async (tx) => {
+    const applied: string[] = [];
+    let departureCity: string | null = null;
+    for (const adjustment of params.adjustments) {
+      const definition = memoryFieldDefinition(adjustment.fieldKey);
+      // A field the card never offered cannot be set through it, whatever the
+      // request says — `FORM_ONLY` most of all.
+      if (!definition || definition.sensitivity !== "STANDARD") continue;
+      const saved = await saveOverride({
+        ctx: params.ctx,
+        tripId: params.tripId,
+        userId: params.userId,
+        fieldKey: adjustment.fieldKey,
+        value: adjustment.value,
+        tx,
+      });
+      // Departure is both a per-member trip preference and a required piece of
+      // the draft's shared brief. Keep the two in sync for this trip only; it
+      // must never be promoted into the user's long-term profile memory.
+      if (adjustment.fieldKey === "departure_city" && typeof saved.value === "string") {
+        departureCity = saved.value;
+      }
+      applied.push(adjustment.fieldKey);
+    }
 
-  await db.insert(tripPreferenceCardViews)
-    .values({ tripId: params.tripId, userId: params.userId })
-    .onConflictDoNothing({ target: [tripPreferenceCardViews.tripId, tripPreferenceCardViews.userId] });
+    // Unchanged fields are deliberately omitted by the card client. When the
+    // traveller accepts an inherited departure city, use that effective
+    // profile value to complete the current trip's draft brief as well.
+    if (!departureCity) {
+      const profileDeparture = (await listActiveFacts(params.userId, tx))
+        .find((fact) => fact.fieldKey === "departure_city")?.value;
+      if (typeof profileDeparture === "string") departureCity = profileDeparture;
+    }
 
-  return { applied };
+    if (departureCity) {
+      const [trip] = await tx.select({ status: sharedTrips.status }).from(sharedTrips)
+        .where(eq(sharedTrips.id, params.tripId)).for("update");
+      // The brief is editable only until planning begins. A preference card
+      // answered later must not silently rewrite an activated shared plan.
+      if (trip?.status === "DRAFT") {
+        const now = new Date();
+        await tx.update(sharedTrips).set({
+          departureCities: [departureCity],
+          pendingBriefProposal: null,
+          updatedAt: now,
+        }).where(eq(sharedTrips.id, params.tripId));
+        await recordAudit({
+          ctx: params.ctx,
+          action: "TRIP_DRAFT_BRIEF_UPDATE",
+          actorUserId: params.userId,
+          tripId: params.tripId,
+          summary: { source: "preference_card", changedFields: ["departureCities"] },
+          tx,
+        });
+      }
+    }
+
+    await tx.insert(tripPreferenceCardViews)
+      .values({ tripId: params.tripId, userId: params.userId })
+      .onConflictDoNothing({ target: [tripPreferenceCardViews.tripId, tripPreferenceCardViews.userId] });
+
+    return { applied };
+  });
 }
