@@ -36,6 +36,29 @@ const gapLabels: Record<string, Record<string, string>> = {
 };
 
 /**
+ * Why no plan came out of this run.
+ *
+ * This used to be one fixed sentence blaming live data, printed whatever the
+ * cause. On 2026-09-06 it told a traveller their suppliers were short of data
+ * for a run whose every provider call had succeeded and which was stopped by
+ * its own turn budget. Only `NO_CITABLE_EVIDENCE` is actually about the data.
+ */
+const summaryReasonLabels: Record<string, Record<string, string>> = {
+  en: {
+    NO_CITABLE_EVIDENCE: "No verifiable supplier fact came back for this destination, so no itinerary was created — an itinerary citing nothing is not a plan.",
+    TOOL_BUDGET_EXHAUSTED: "Wanderly ran out of research turns before it wrote the plan. What it did verify is kept below and on the trip; nothing was invented to fill the rest.",
+    PLAN_SCHEMA_UNMET: "Wanderly's draft did not meet the plan contract, and the repair attempts ran out. The evidence it gathered is kept; the itinerary is not.",
+    RESEARCH_MATRIX_INCOMPLETE: "Part of the research was never attempted, so the round stopped short of a plan. This is ours to fix, not a supplier problem.",
+  },
+  zh: {
+    NO_CITABLE_EVIDENCE: "这个目的地没有拿到任何可核验的供应商事实，因此没有生成行程——一份什么都引用不了的行程不是方案。",
+    TOOL_BUDGET_EXHAUSTED: "Wanderly 在写出方案之前用完了检索回合。已经核验到的内容保留在下方和行程里；缺的部分没有用编造的内容补上。",
+    PLAN_SCHEMA_UNMET: "Wanderly 给出的草稿不符合方案约定，修复次数也用完了。它查到的证据保留了下来，行程没有生成。",
+    RESEARCH_MATRIX_INCOMPLETE: "有一部分检索根本没有被执行，这一轮因此停在了方案之前。这是我们要修的问题，不是服务提供方的问题。",
+  },
+};
+
+/**
  * Safe read-only outcome for one shared planning run. It is deliberately not
  * a plan renderer: a run with gaps and no `resultPlanId` must explain that
  * no itinerary was produced instead of making the research summary look like
@@ -52,6 +75,14 @@ export function PlanningRunDetailView({ tripId, runId }: { tripId: string; runId
 
   const { run, research } = detail.data;
   const hasPlan = Boolean(run.resultPlanId ?? research?.resultPlanId);
+  // Runs recorded before the reason was kept report none. Say nothing rather
+  // than the old fixed sentence: "we did not record why" is honest, and
+  // naming a cause we do not have is what this replaced.
+  const noPlanExplanation = research?.summaryReason
+    ? summaryReasonLabels[locale][research.summaryReason]
+    : (locale === "zh"
+      ? "本次运行没有生成行程。这一轮没有记录具体原因；下方列出的是它遇到的缺口。"
+      : "This run produced no itinerary. The specific reason was not recorded for this round; the gaps it hit are listed below.");
   const title = hasPlan
     ? (locale === "zh" ? "共享方案已生成" : "Shared plan generated")
     : (locale === "zh" ? "本次规划未生成共享方案" : "This run did not generate a shared plan");
@@ -69,7 +100,7 @@ export function PlanningRunDetailView({ tripId, runId }: { tripId: string; runId
         <p className="mt-2 text-sm text-slate-600">
           {hasPlan
             ? (locale === "zh" ? "该运行已生成可在共享方案中查看的计划版本。" : "This run produced a plan version visible in Shared plan.")
-            : (locale === "zh" ? "实时数据未满足生成计划的条件；系统没有创建不可靠的行程。" : "Live data did not meet the threshold for a plan, so no unreliable itinerary was created.")}
+            : noPlanExplanation}
         </p>
         <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-2">
           <div><dt className="text-slate-500">{locale === "zh" ? "状态" : "Status"}</dt><dd className="font-semibold text-slate-900">{run.status}</dd></div>

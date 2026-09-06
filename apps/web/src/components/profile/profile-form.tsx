@@ -24,7 +24,7 @@ const KNOWN_STATUS_KEYS = new Set([
   "503",
 ]);
 
-const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+const datePattern = /^(?:\d{4}-\d{2}-\d{2}|\d{8})$/;
 
 /**
  * Default schema factory used when no translator is available (tests, server
@@ -84,7 +84,7 @@ export function toUpdateProfileInput(
   const input: UpdateProfileInput = {};
 
   if (dirtyFields.nationality && values.nationality.trim()) input.nationality = values.nationality.trim();
-  if (dirtyFields.dateOfBirth && values.dateOfBirth) input.dateOfBirth = values.dateOfBirth;
+  if (dirtyFields.dateOfBirth && values.dateOfBirth) input.dateOfBirth = normalizeDateOfBirth(values.dateOfBirth);
   if (dirtyFields.interests && splitList(values.interests).length) input.interests = splitList(values.interests);
   if (dirtyFields.accommodationStyle && values.accommodationStyle) input.accommodationStyle = values.accommodationStyle;
   if (dirtyFields.budgetMaxUsd && values.budgetMaxUsd) input.budgetMaxUsd = Number(values.budgetMaxUsd);
@@ -93,6 +93,14 @@ export function toUpdateProfileInput(
   if (dirtyFields.departureCity && values.departureCity.trim()) input.departureCity = values.departureCity.trim();
 
   return input;
+}
+
+/** The API stores ISO dates; accept the compact form without leaking a second
+ * representation into Profile, memory, or downstream consent flows. */
+function normalizeDateOfBirth(value: string): string {
+  return /^\d{8}$/.test(value)
+    ? `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`
+    : value;
 }
 
 export function ProfileForm({

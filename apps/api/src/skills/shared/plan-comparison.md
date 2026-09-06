@@ -28,13 +28,11 @@ Shared planning 中调用 LLM 的 Skill。结合约束快照中已授权的成�
 const planComparisonInputSchema = z.object({
   destination: z.string().min(1),
   flights: z.array(z.unknown()),
-  stays: z.array(z.unknown()),
-  ground: z.array(z.unknown()),
   memberPreferences: z.record(z.string(), z.unknown()).default({}),
 }).strict();
 ```
 
-`flights/stays/ground` 在生产中已强转为 `FlightOffer[]` 等；schema 接受 `unknown[]` 是为了 validator 能与原始 provider 证据做 deep-strict-equal。
+`flights` 在生产中强转为 `FlightOffer[]`；schema 接受 `unknown[]` 是为了 validator 能与原始 provider 证据做 deep-strict-equal。新规划的住宿由 durable planning path 的 `hotels[]`（报价）与 `accommodations[]`（发现）表达，已退役的 `stays` 不会进入模型契约。
 
 `memberPreferences` 是 snapshot 的 `authorizedData` 投影，已经过 `consent-service.buildAuthorizedData` 过滤。它不是 Personal Agent 对话的转发：私聊正文、未经确认的候选和 Personal Research evidence 永不进入该输入。敏感字段只有通过专用表单、字段级 consent 和服务端 projection 才可能以最小必要形式出现在 Shared planning Worker 内部；模型不得自行推断或请求它们。
 
@@ -46,8 +44,6 @@ const planComparisonInputSchema = z.object({
 const planComparisonOutputSchema = z.object({
   destination: z.string(),
   flights: z.array(z.unknown()),
-  stays: z.array(z.unknown()),
-  ground: z.array(z.unknown()),
   generatedAt: z.string().optional(),
 }).strict();
 ```
@@ -58,8 +54,8 @@ Skill 实际返回的是经过 validator 校验的 `planOutputSchema`（见 [../
 
 1. 要求 `ctx.snapshot`（shared Skill 不变量）。
 2. 从 `providers/gateway-factory.ts` 获取 `modelGateway()`。
-3. 调用 `gateway.generateStructuredPlan({ destination, flights, stays, ground, memberPreferences, signal, ctx: ctx.ctx })`。Gateway 只返回经过结构校验的真实模型响应；provider、超时或 schema 失败时抛受控错误。
-4. 调用 `validatePlanOutput({ planData: candidatePlanData, snapshot, evidence: { flights, stays, ground } })`。
+3. 调用 `gateway.generateStructuredPlan({ destination, flights, memberPreferences, signal, ctx: ctx.ctx })`。Gateway 只返回经过结构校验的真实模型响应；provider、超时或 schema 失败时抛受控错误。
+4. 调用 `validatePlanOutput({ planData: candidatePlanData, snapshot, evidence: { flights, stays: [] } })`。
 5. 通过则返回 validated plan；任意 violation 抛 `SkillError('PLAN_VALIDATION_FAILED', 422, violations)`。
 
 ## 强制约束

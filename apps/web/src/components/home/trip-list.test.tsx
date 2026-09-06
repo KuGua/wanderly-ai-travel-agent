@@ -70,7 +70,16 @@ describe("TripList", () => {
     const control = screen.getByRole("button", { name: "Delete Tokyo trip" });
     expect(control).not.toHaveClass("opacity-0", "absolute", "bg-destructive", "text-white");
     // Beside the member line rather than over it.
-    expect(control.parentElement?.textContent).toContain("1 member");
+    expect(control.parentElement?.parentElement?.textContent).toContain("1 member");
+  });
+
+  it("opens the trip from the whole note while keeping the delete control separate", () => {
+    renderWithIntl(<TripList trips={[trip()]} />, { api: apiWithDelete() });
+
+    const cardLink = screen.getByRole("link", { name: "Open: Tokyo trip" });
+    expect(cardLink).toHaveAttribute("href", `/trips/${TRIP_ID}`);
+    expect(cardLink).toHaveClass("absolute", "inset-0");
+    expect(screen.getByRole("button", { name: "Delete Tokyo trip" })).toBeInTheDocument();
   });
 
   it("deletes once the confirmation is taken", async () => {

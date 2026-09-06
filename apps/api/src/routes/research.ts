@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, desc, eq, inArray, ne, or } from "drizzle-orm";
 import { loadOffersForSnapshot } from "../services/research-evidence-service.js";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
@@ -19,6 +19,7 @@ import { createConstraintSnapshot } from "../services/planning-service.js";
 import { requireResearchEligible } from "../services/trip-status-guard.js";
 import { acceptResearchTask, findResearchTaskByRequestId, transitionResearchIntentState } from "../tasks/task-repository.js";
 import { publishAgentStreamEvent } from "../tasks/task-stream-publisher.js";
+import { toResearchResultDto } from "../services/planning-research-result-service.js";
 import {
   errorResponseSchema,
   latestResearchResultResponseSchema,
@@ -230,28 +231,65 @@ export async function researchRoutes(app: FastifyInstance): Promise<void> {
     )).limit(1);
     if (!membership) throw new ApiError(403, "Forbidden", "Not a member of this trip");
 
-    const [latest] = await db.select().from(planningResearchResults)
-      .where(eq(planningResearchResults.tripId, tripId))
+    // Owner-private filter: a `PERSONAL_RESEARCH` summary created by another
+    // trip member must not surface through the Shared `/research/latest`
+    // route. The filter is applied at the row level (rather than after the
+    // SELECT) so the offending row never enters the response body. The normal
+    // shared-planning workflow uses `RESEARCH + PROPOSE_PLAN`; older PLAN /
+    // REPLAN rows are also member-visible. A legacy row without a linked run
+    // has no provable visibility authority and must fail closed. Non-owners
+    // simply receive `result: null` rather than a 403 — "no plan to share" is
+    // a non-error.
+    const [latest] = await db.select({
+      row: planningResearchResults,
+    }).from(planningResearchResults)
+      .leftJoin(agentTaskRuns, eq(agentTaskRuns.id, planningResearchResults.agentTaskRunId))
+      .where(and(
+        eq(planningResearchResults.tripId, tripId),
+        or(
+          eq(agentTaskRuns.operation, "PLAN"),
+          eq(agentTaskRuns.operation, "REPLAN"),
+          and(
+            eq(agentTaskRuns.operation, "RESEARCH"),
+            eq(agentTaskRuns.researchMode, "PROPOSE_PLAN"),
+          ),
+          // Owner-private Personal Research rows are only visible to their
+          // creator. For a non-creator this filter is unsatisfiable and the
+          // row is excluded; for the creator the row is included.
+          and(
+            eq(agentTaskRuns.operation, "PERSONAL_RESEARCH"),
+            eq(agentTaskRuns.createdByUserId, request.user.id),
+          ),
+        ),
+      ))
       .orderBy(desc(planningResearchResults.createdAt))
       .limit(1);
 
+    const selected = latest?.row ?? null;
+
     // Offers are keyed by the run's snapshot, so this read stays inside the
     // trip the membership check above authorized.
-    const offers = latest ? await loadOffersForSnapshot(latest.snapshotId) : [];
+    const offers = selected ? await loadOffersForSnapshot(selected.snapshotId) : [];
 
-    const payload = latestResearchResultResponseSchema.parse({
-      result: latest ? {
-        id: latest.id,
-        tripId: latest.tripId,
-        snapshotId: latest.snapshotId,
-        agentTaskRunId: latest.agentTaskRunId,
-        status: latest.status as "COMPLETE" | "COMPLETED_WITH_GAPS",
-        serviceGaps: latest.serviceGaps,
-        resultPlanId: latest.resultPlanId,
+    // Validate the complete body, including bounded safe offer summaries.
+    // Parsing before appending `offers` would bypass the DTO's item cap and
+    // shape checks on the actual response.
+    const responseBody = latestResearchResultResponseSchema.parse({
+      result: selected ? {
+        ...toResearchResultDto({
+          id: selected.id,
+          tripId: selected.tripId,
+          snapshotId: selected.snapshotId,
+          agentTaskRunId: selected.agentTaskRunId,
+          status: selected.status as "COMPLETE" | "COMPLETED_WITH_GAPS",
+          serviceGaps: selected.serviceGaps as Parameters<typeof toResearchResultDto>[0]["serviceGaps"],
+          resultPlanId: selected.resultPlanId,
+          summaryReason: selected.summaryReason,
+          createdAt: selected.createdAt,
+        }),
         offers,
-        createdAt: latest.createdAt.toISOString(),
       } : null,
     });
-    return reply.code(200).send(payload);
+    return reply.code(200).send(responseBody);
   });
 }

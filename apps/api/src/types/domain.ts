@@ -299,6 +299,18 @@ export type NavigationRouteMode = "WALK" | "DRIVE" | "CYCLE";
 export type MobilityServiceType = "TAXI" | "TRANSFER" | "CHARTER" | "RENTAL";
 export type ResearchResultStatus = "COMPLETE" | "COMPLETED_WITH_GAPS";
 
+/**
+ * Why a planning run produced a research summary instead of a plan.
+ * Mirrors the SQL CHECK constraint `planning_research_results_summary_reason_check`.
+ * Duplicated as a literal union (not imported from `planning-service.ts`)
+ * because the type-graph here has to remain a leaf for shared consumers.
+ */
+export type ResearchSummaryReason =
+  | "NO_CITABLE_EVIDENCE"
+  | "TOOL_BUDGET_EXHAUSTED"
+  | "PLAN_SCHEMA_UNMET"
+  | "RESEARCH_MATRIX_INCOMPLETE";
+
 export interface PlaceCandidate {
   candidateId: string;
   displayName: string;
@@ -421,5 +433,10 @@ export interface PlanningResearchResult {
   status: ResearchResultStatus;
   serviceGaps: ServiceGap[];
   resultPlanId: string | null;
+  /**
+   * Why this run produced a summary rather than a plan. NULL on rows written
+   * before the column existed and on rows that did carry a plan.
+   */
+  summaryReason: ResearchSummaryReason | null;
   createdAt: string;
 }

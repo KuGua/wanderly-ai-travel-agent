@@ -177,7 +177,7 @@
       "nationality": "国籍",
       "nationalityPlaceholder": "必填",
       "dateOfBirth": "出生日期",
-      "dateOfBirthPlaceholder": "YYYY-MM-DD",
+      "dateOfBirthPlaceholder": "YYYY-MM-DD 或 YYYYMMDD",
       "interests": "兴趣",
       "interestsPlaceholder": "art, museums, local food",
       "accommodationStyle": "住宿风格",
@@ -201,7 +201,7 @@
     "emptyAction": "返回探索",
     "validation": {
       "max64": "请使用不超过 64 个字符",
-      "datePattern": "请使用 YYYY-MM-DD 格式",
+      "datePattern": "请使用 YYYY-MM-DD 或 YYYYMMDD 格式",
       "wholeNumber": "请输入整数",
       "required": "必填"
     },
@@ -239,7 +239,9 @@
         "no_red_eye": "避免红眼航班",
         "interests": "兴趣",
         "budget_max_usd": "预算上限",
-        "departure_city": "出发城市"
+        "departure_city": "出发城市",
+        "nationality": "国籍",
+        "date_of_birth": "出生日期"
       }
     }
   },
@@ -629,7 +631,9 @@
       "gaps": {
         "title": "本次未生成共享方案",
         "body": "规划器已完成研究，但实时可验证数据不完整，因此没有创建不可靠的行程方案。",
-        "detail": "查看运行详情"
+        "detail": "查看运行详情",
+        "planSchemaUnmetTitle": "Wanderly 给出的草稿不符合方案约定",
+        "planSchemaUnmetBody": "修复次数已用完。它查到的证据保留在下方和行程里;行程没有生成。"
       },
       "status": {
         "queued": "已排队 — 等待规划器",
@@ -802,10 +806,6 @@
         "MEMBER": "成员"
       },
       "openPinAria": "在完整地图中查看 {name}",
-      "destinationsEdit": "编辑目的地",
-      "destinationsEditLabel": "目的地，用逗号分隔",
-      "destinationsPlaceholder": "东京，京都",
-      "destinationsSaveError": "目的地保存失败，请重试。",
       "routeLegAria": "从 {from} 到 {to} 的航线",
       "mobility": {
         "title": "出行报价",

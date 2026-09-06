@@ -71,9 +71,14 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
               stock === "band" ? "pt-[26px]" : stock === "holes" ? "pl-[18px]" : "pl-[16px]"
             }`}
           >
-            <span aria-hidden="true" className="wanderly-clip" />
-            {stock === "ticket" ? <span aria-hidden="true" className="wanderly-notch" /> : null}
-            <div className="flex flex-1 flex-col p-4">
+            <Link
+              href={`/trips/${trip.id}` as "/trips/[tripId]"}
+              aria-label={`${trip.status === "DRAFT" ? t("trip.draft.continueCta") : t("trip.open")}: ${trip.name}`}
+              className="absolute inset-0 z-[1] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--ring)]/30"
+            />
+            <span aria-hidden="true" className="pointer-events-none wanderly-clip" />
+            {stock === "ticket" ? <span aria-hidden="true" className="pointer-events-none wanderly-notch" /> : null}
+            <div className="pointer-events-none relative z-[2] flex flex-1 flex-col p-4">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="text-[19px] font-bold tracking-[-0.035em]">{trip.name}</h3>
                 <span
@@ -120,20 +125,17 @@ export function TripList({ trips }: { trips: TripSummary[] }) {
                       and always present: revealing it on hover put it on top of
                       this line, and a control nobody can see is one nobody can
                       reach on a touch screen. */}
-                  {trip.role === "CREATOR" ? <DeleteTripControl trip={trip} t={t} /> : null}
+                  {trip.role === "CREATOR" ? <span className="pointer-events-auto"><DeleteTripControl trip={trip} t={t} /></span> : null}
                   <UsersRound aria-hidden="true" className="size-3.5" />
                   {t("trip.members", { count: trip.memberCount })} ·{" "}
                   {trip.role === "CREATOR"
                     ? t("trip.membersRoleOrganizer")
                     : t("trip.membersRoleMember")}
                 </span>
-                <Link
-                  href={`/trips/${trip.id}` as "/trips/[tripId]"}
-                  className="inline-flex min-h-11 items-center gap-1 font-black text-[var(--w-ink)] wanderly-underline hover:decoration-[var(--w-ink)]"
-                >
+                <span className="inline-flex min-h-11 items-center gap-1 font-black text-[var(--w-ink)] wanderly-underline">
                   {trip.status === "DRAFT" ? t("trip.draft.continueCta") : t("trip.open")}
                   <ArrowRight aria-hidden="true" className="size-3.5" />
-                </Link>
+                </span>
               </div>
             </div>
           </article>

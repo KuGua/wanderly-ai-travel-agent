@@ -28,7 +28,7 @@ import { FlightOfferCard } from "@/components/trips/flight-offer-card";
 import { SearchHotelOfferCard } from "@/components/trips/search-hotel-offer-card";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { threadKeys } from "@/lib/query/keys";
+import { threadKeys, tripKeys } from "@/lib/query/keys";
 import { TravelApiError } from "@/lib/api/errors";
 import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBatch, useMyProfile, useOwnerConversation, useStartPlanning, useStaySearchAuthorizations, useSubmitConversationTurn, useTrip, useTripPin } from "@/lib/query/hooks";
 import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
@@ -1416,6 +1416,10 @@ export function TravelAgentChat({
     setSavingPreferences(true);
     try {
       await api.resolvePreferenceCard(tripId, adjustments);
+      // A departure entered in the trip card also completes the current
+      // trip's draft brief. Refresh the workspace overview before the
+      // assistant's follow-up turn reads that same brief.
+      await queryClient.invalidateQueries({ queryKey: tripKeys.detail(tripId) });
       // The card is meant to go once it is answered, but going *silently*
       // reads exactly like the failure it used to be: the traveller fills it
       // in, it vanishes, and nothing says whether anything was kept.

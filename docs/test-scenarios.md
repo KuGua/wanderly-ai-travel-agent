@@ -1448,7 +1448,13 @@ logs, spans or metric labels.
 - A structurally invalid final model response receives a content-free schema-path correction and is retried inside the existing bounded loop; exhaustion fails closed as `SCHEMA_PARSE`.
 - Final Shared-plan evidence selections are treated as ids, rebound to complete server-owned normalized evidence, and assigned a server-derived `generatedAt`; unknown ids remain unbound and fail deterministic validation.
 - The final model contract returns compact `{id}` references rather than copying full provider evidence, keeping multi-offer responses bounded while the server remains authoritative for all normalized fields.
-- After the flight matrix is complete, missing required flight-origin coverage fails as `PLANNING_DATA_UNAVAILABLE`; unavailable stay evidence is normalized to `stays: []` and persisted as the Phase 4 `stay:NO_RESULTS` service gap, with no runtime fixture substitution.
+- When the orchestrator has already completed a one-shot flight/hotel/activity/accommodation search and withdraws that Tool, final synthesis receives a bounded `availableEvidence` catalog containing the safe comparison fields and exact server-owned ids. It receives no raw payload, URL, member/Profile field or other private value.
+- An unknown catalog id is rejected inside the same bounded repair loop as structural errors. The correction contains only a stable critique code and field path; a repaired response may select an exact catalog id, while repair exhaustion records `PLAN_SCHEMA_UNMET` as a research summary instead of discarding already persisted evidence.
+- New synthesis must never emit the retired `stays` field: gateway schema rejects it inside the bounded repair loop. A catalog ID is valid only in its own final-plan slot: placing a hotel ID in `accommodations[]` (or any other cross-category placement) yields `EVIDENCE_SLOT_MISMATCH` and a field path, never an automatic conversion. A repaired response using `hotels[]` may persist; exhaustion creates no plan, records `PLAN_SCHEMA_UNMET`, and terminates `COMPLETED_WITH_GAPS` even if provider `serviceGaps` is empty. Historical stored `stays[]` remains readable only.
+- `GET /trips/:tripId/research/latest` and run detail both preserve nullable `summaryReason`. Latest research filters owner-private Personal Research at the server boundary before responding to another member. A Shared Plan with no plan and a terminal null `resultPlanId` must show a planless state, never “Plan ready”, including legacy `COMPLETED` rows; it may render a reason only for the matching member-visible planning summary. Empty team constraints must not expose brief, private conversation, or Personal Research content.
+- The shared planning path is `RESEARCH` with `researchMode=PROPOSE_PLAN`; `GET /trips/:tripId/research/latest` returns its summary to trip members. Rows with no linked run have no provable visibility authority and fail closed. A genuinely `FAILED` run is rendered as a failed run with its stable code, never as a research-gap summary.
+- A provider response shaped `LIVE` with an empty offer list is normalized to `UNAVAILABLE / NO_RESULTS`; it cannot satisfy a research matrix cell, destination coverage or commercial-evidence gate.
+- After the flight matrix is complete, missing required flight-origin coverage fails as `PLANNING_DATA_UNAVAILABLE`; accommodation availability is represented only by the live `hotels` quote evidence and non-priced `accommodations` discovery evidence. Missing evidence is recorded as its provider capability gap, with no retired `stays` slot or runtime fixture substitution.
 - The browser never treats submitted preferences, a run ID, Tool result or plan as authoritative local state. It reloads the durable planning run and, only after completion, the server-activated plan.
 
 - A DRAFT-trip private-chat turn may emit only an in-memory brief candidate (departure, destination, explicit date and/or duration); raw conversation content is never included in the event, audit summary, or client persistence.
@@ -2544,6 +2550,10 @@ schema 收紧仍会以同样的方式说谎：编排层的 `classifyError` 按�
   解析失败，把整页变成一句「出错了，请重试」。
 - 每一次能力失败在 worker 日志里留下一条受控诊断（能力/skill 名、类型码、
   attempt、耗时），且不含异常消息原文。
+- **Shared 规划的工具派发走同一条分类**（2026-09-06 回归）：模型参数被工具自己的
+  Zod schema 拒绝时抛 `INPUT_INVALID` 而不是裸 `ZodError`，落到
+  `SKILL_CONTRACT_VIOLATION`，绝不出现在一次 provider 调用都没失败的运行里报
+  `places: 服务提供方暂时不可用`。计数进 `planning_tool_args_rejected_total{tool}`。
 - 跨源可读性：`x-correlation-id` 在 CORS `exposedHeaders` 中，界面「技术详情」
   不再恒为 `null`。
 - Web 的 `researchResultSchema` 能解析服务端**实际**发送的整个 DTO，包括恒定
@@ -2973,3 +2983,98 @@ option was also swallowing unknown fields before each schema's `.strict()`
 could refuse them.
 
 **Coverage:** `apps/api/tests/trip-activate.test.ts`.
+
+### TS-PLANNING-TOOL-CONTRACT — 公开给模型的工具签名必须等于校验它的 schema
+
+**Objective:** Verify that every planning tool advertises exactly the arguments
+its validator accepts, that a tool the model cannot supply arguments for is not
+offered at all, and that a tool whose arguments we keep refusing stops costing
+the run turns.
+
+**Starting conditions:** A solo Trip in `PLANNING` with a complete brief and a
+snapshot. `PLAN_ENABLE_PLACES` / `PLAN_ENABLE_NAVIGATION` on. A model double
+that can be told what tool calls to emit.
+
+**Steps:**
+
+1. For every tool in `buildPlanningToolDefinitions`, compare the advertised
+   `parameters` JSON Schema against the Zod schema the dispatcher parses the
+   call with: required sets, property names, and declared `format`.
+2. Call `places.propose` / `places.adopt` / `places.revoke` with exactly the
+   arguments each advertises.
+3. Run a round in which `places` has already been researched by coverage, so
+   `places.search` is withdrawn.
+4. Have the model call one tool with arguments that fail its schema, twice,
+   each time in a different way; then let it keep calling that tool.
+5. Have the model call `places.propose` with a `candidateId` no `places.search`
+   in this run returned.
+
+**Expected outcomes:**
+
+- Step 1 finds no difference. A uuid-constrained argument is advertised with
+  `format: "uuid"`, never as a bare string.
+- Step 2 is accepted by the validator for all three tools, and none of the
+  three asks the model for an `action` — the dispatcher supplies it.
+- Step 3 offers neither the three place-mutation tools nor `navigation.route`:
+  a `candidateId` exists only inside the run that issued it, so those tools
+  would have no answerable argument.
+- Step 4 records `SKILL_CONTRACT_VIOLATION` gaps (never a provider code),
+  increments `planning_tool_args_rejected_total{tool}`, and withdraws the tool
+  from every later turn. Withdrawing the last tool forces final synthesis
+  instead of spending the remaining budget.
+- Step 5 is refused with `INPUT_INVALID` and writes no `trip_places` row. The
+  model's own account of a place — display name, coordinates, `source`,
+  `capturedAt` — is never what gets persisted; the run's stored provider record
+  is.
+
+**Regression guarded:** `places.adopt` advertised `{ action, candidateId,
+placeId }` while the server validated a discriminated union additionally
+requiring `visibility` + `kind` (propose) and `reason` (revoke), so all three
+actions were uncallable. On 2026-09-06 a run whose every provider call had
+succeeded spent its whole turn budget on eight such rejections, produced no
+plan, and reported all eight as `places` / `navigation` provider outages.
+
+**Coverage:** `apps/api/tests/planning-tool-contract.test.ts`,
+`apps/api/tests/trip-place-skill-candidate-authority.test.ts`,
+`apps/api/tests/planning-tool-list.test.ts`.
+
+### TS-RUN-OUTCOME-HONESTY — 有证据的运行不得什么都不给，也不得谎报原因
+
+**Objective:** Verify that a round which gathered evidence always reports it,
+that only a genuinely evidence-free round refuses a plan, and that the run page
+states the actual reason.
+
+**Starting conditions:** A solo Trip in `PLANNING` whose hotel search returns
+live quotes. A model double that can be made to exhaust its turn budget, to
+return output the plan contract rejects, and to leave a research matrix cell
+`MISSING`.
+
+**Steps:**
+
+1. Exhaust the tool-turn budget with live hotel evidence already gathered.
+2. Return final output the plan contract rejects until the repair budget is
+   spent.
+3. Finish with a `MISSING` cell in the flight / hotel / activities /
+   accommodation matrix.
+4. Run a round in which every capability returns nothing at all.
+5. Open `/trips/:tripId/runs/:runId` for each of the four, and for a run
+   recorded before `summary_reason` existed.
+
+**Expected outcomes:**
+
+- Steps 1–3 terminate as `COMPLETED_WITH_GAPS` with a research summary that
+  carries the gathered evidence and `summary_reason` of `TOOL_BUDGET_EXHAUSTED`
+  / `PLAN_SCHEMA_UNMET` / `RESEARCH_MATRIX_INCOMPLETE`. None of them fails the
+  run and discards the round.
+- Step 4 is the one refusal: `NO_CITABLE_EVIDENCE`, no plan. A card naming a
+  destination and citing no verifiable fact is never written, and no fixture or
+  invented value fills the gap.
+- Step 5 renders the reason that was recorded. A run stopped by its own turn
+  budget is never described as live data falling short. The pre-column run says
+  the reason was not recorded rather than asserting one.
+- `summary_reason` accepts only the four values; the database refuses anything
+  else at the write.
+
+**Coverage:** `apps/api/tests/planning-run-outcome.test.ts`,
+`apps/web/src/components/trips/shared-plan/planning-run-detail-view.test.tsx`,
+`apps/api/tests/flight-research-matrix.test.ts` (the `NO_CITABLE_EVIDENCE` refusal).

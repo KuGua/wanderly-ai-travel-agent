@@ -130,11 +130,48 @@ describe("planning-research-result-service", () => {
       status: "COMPLETED_WITH_GAPS",
       serviceGaps: [{ capability: "flight", code: "UPSTREAM_FAILURE", destinationId: "tokyo" }],
       resultPlanId: null,
+      summaryReason: null,
       createdAt,
     });
     expect(dto.status).toBe("COMPLETED_WITH_GAPS");
     expect(dto.createdAt).toBe(createdAt.toISOString());
     expect(dto.serviceGaps).toHaveLength(1);
+    expect(dto.summaryReason).toBeNull();
+  });
+
+  it("toResearchResultDto propagates a non-null summaryReason through", () => {
+    const dto = toResearchResultDto({
+      id: "11111111-1111-4111-8111-111111111111",
+      tripId, snapshotId, agentTaskRunId: taskId,
+      status: "COMPLETED_WITH_GAPS",
+      serviceGaps: [],
+      resultPlanId: null,
+      summaryReason: "PLAN_SCHEMA_UNMET",
+      createdAt: new Date(),
+    });
+    expect(dto.summaryReason).toBe("PLAN_SCHEMA_UNMET");
+  });
+
+  it("recordPlanningResearchResult round-trips summaryReason through insert and onConflict", async () => {
+    const id = await recordPlanningResearchResult({
+      ctx: createRequestContext(userId, randomUUID(), randomUUID()),
+      tripId, snapshotId, agentTaskRunId: taskId,
+      status: "COMPLETED_WITH_GAPS", serviceGaps: [],
+      summaryReason: "PLAN_SCHEMA_UNMET",
+    });
+    const rows = await db.select().from(planningResearchResults).where(eq(planningResearchResults.id, id));
+    expect(rows[0].summaryReason).toBe("PLAN_SCHEMA_UNMET");
+
+    // A second write to the same agentTaskRunId (idempotent path) must keep
+    // the reason — it is part of the durable row, not the diff.
+    await recordPlanningResearchResult({
+      ctx: createRequestContext(userId, randomUUID(), randomUUID()),
+      tripId, snapshotId, agentTaskRunId: taskId,
+      status: "COMPLETED_WITH_GAPS", serviceGaps: [],
+      summaryReason: "TOOL_BUDGET_EXHAUSTED",
+    });
+    const after = await db.select().from(planningResearchResults).where(eq(planningResearchResults.id, id));
+    expect(after[0].summaryReason).toBe("TOOL_BUDGET_EXHAUSTED");
   });
 
   it("isGapOnlyStatus returns true when any gap is present", () => {

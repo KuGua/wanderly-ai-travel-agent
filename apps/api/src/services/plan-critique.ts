@@ -28,6 +28,7 @@ import { PlanValidationError } from "../policy/plan-output-validator.js";
 export type PlanCritiqueCode =
   | "COVERAGE_INCOMPLETE"
   | "EVIDENCE_UNBOUND"
+  | "EVIDENCE_SLOT_MISMATCH"
   | "SNAPSHOT_FIELD_UNAUTHORIZED"
   | "SCHEMA_INVALID";
 
@@ -53,6 +54,8 @@ const HINTS: Record<PlanCritiqueCode, string> = {
     "Some required capabilities have no result. Re-run the missing tool with the destinations already covered and reference at least one offer per capability.",
   EVIDENCE_UNBOUND:
     "Every selected offer must reference a `providerSearchRuns` row from this run. Do not invent offers; if a capability has no offer, mark it as a gap.",
+  EVIDENCE_SLOT_MISMATCH:
+    "Each id must reference evidence from the matching category. Move the entry to the slot whose catalog contains it, or remove it; do not duplicate or summarize fields.",
   SNAPSHOT_FIELD_UNAUTHORIZED:
     "Only fields present in the snapshot's authorized data may be referenced. Use the snapshot's projection manifest to find the canonical member id and field name.",
   SCHEMA_INVALID:
@@ -104,6 +107,8 @@ function mapViolationToCode(violationCode: string): PlanCritiqueCode | null {
     case "EVIDENCE_NOT_FOUND":
     case "EVIDENCE_MISMATCH":
       return "EVIDENCE_UNBOUND";
+    case "EVIDENCE_SLOT_MISMATCH":
+      return "EVIDENCE_SLOT_MISMATCH";
     case "FIELD_NOT_AUTHORIZED":
     case "ORIGIN_NOT_ALLOWED":
     case "DESTINATION_NOT_ALLOWED":

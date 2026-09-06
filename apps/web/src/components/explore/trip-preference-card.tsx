@@ -193,6 +193,7 @@ export function TripPreferenceCard({
                       aria-label={field.fieldKey}
                       type={field.kind === "number" ? "number" : "text"}
                       inputMode={field.kind === "number" ? "numeric" : undefined}
+                      step={field.fieldKey === "budget_max_usd" ? 1000 : undefined}
                       value={Array.isArray(current) ? current.join("、") : String(current ?? "")}
                       // Keyed off the field's declared kind, not the value on
                       // screen. Every field is null until it is first set, so

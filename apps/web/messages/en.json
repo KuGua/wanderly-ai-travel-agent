@@ -177,7 +177,7 @@
       "nationality": "Nationality",
       "nationalityPlaceholder": "Required",
       "dateOfBirth": "Date of birth",
-      "dateOfBirthPlaceholder": "YYYY-MM-DD",
+      "dateOfBirthPlaceholder": "YYYY-MM-DD or YYYYMMDD",
       "interests": "Interests",
       "interestsPlaceholder": "art, museums, local food",
       "accommodationStyle": "Accommodation style",
@@ -201,7 +201,7 @@
     "emptyAction": "Return to Explore",
     "validation": {
       "max64": "Use 64 characters or fewer",
-      "datePattern": "Use YYYY-MM-DD",
+      "datePattern": "Use YYYY-MM-DD or YYYYMMDD",
       "wholeNumber": "Enter a whole number",
       "required": "Required"
     },
@@ -239,7 +239,9 @@
         "no_red_eye": "Avoid red-eye flights",
         "interests": "Interests",
         "budget_max_usd": "Maximum budget",
-        "departure_city": "Departure city"
+        "departure_city": "Departure city",
+        "nationality": "Nationality",
+        "date_of_birth": "Date of birth"
       }
     }
   },
@@ -629,7 +631,9 @@
       "gaps": {
         "title": "A shared plan was not generated",
         "body": "The planner completed its research, but verified live data was incomplete. No itinerary was created.",
-        "detail": "View run details"
+        "detail": "View run details",
+        "planSchemaUnmetTitle": "Wanderly's draft did not meet the plan contract",
+        "planSchemaUnmetBody": "The repair attempts ran out. The evidence gathered is kept below and on the trip; the itinerary is not."
       },
       "status": {
         "queued": "Queued — waiting for the planner",
@@ -802,10 +806,6 @@
         "MEMBER": "Member"
       },
       "openPinAria": "View {name} on the full map",
-      "destinationsEdit": "Edit destinations",
-      "destinationsEditLabel": "Destinations, separated by commas",
-      "destinationsPlaceholder": "Tokyo, Kyoto",
-      "destinationsSaveError": "Could not save the destinations. Please retry.",
       "routeLegAria": "Route from {from} to {to}",
       "mobility": {
         "title": "Mobility offers",

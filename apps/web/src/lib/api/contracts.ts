@@ -1716,6 +1716,14 @@ export const researchEvidenceOfferSchema = z.object({
 }).strict();
 export type ResearchEvidenceOffer = z.infer<typeof researchEvidenceOfferSchema>;
 
+export const researchSummaryReasonSchema = z.enum([
+  "NO_CITABLE_EVIDENCE",
+  "TOOL_BUDGET_EXHAUSTED",
+  "PLAN_SCHEMA_UNMET",
+  "RESEARCH_MATRIX_INCOMPLETE",
+]);
+export type ResearchSummaryReason = z.infer<typeof researchSummaryReasonSchema>;
+
 export const researchResultSchema = z.object({
   id: z.string().uuid(),
   tripId: z.string().uuid(),
@@ -1724,6 +1732,12 @@ export const researchResultSchema = z.object({
   status: researchResultStatusSchema,
   serviceGaps: z.array(serviceGapSchema),
   resultPlanId: z.string().uuid().nullable(),
+  /**
+   * Why the run produced a summary rather than a plan. Null when it produced a
+   * plan and on rows recorded before the reason was kept — "not stated", never
+   * a particular cause. `/research/latest` does not send it, hence the default.
+   */
+  summaryReason: researchSummaryReasonSchema.nullable().default(null),
   // Both `GET /trips/:id/research/latest` and `GET /trips/:id/runs/:runId`
   // always send this array (the API schema defaults it to `[]`), and this
   // object is `.strict()`, so omitting it here rejected *every* response from

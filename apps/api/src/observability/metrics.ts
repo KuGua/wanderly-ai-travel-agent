@@ -525,6 +525,16 @@ metrics.registerCounter("place_search_tool_invocations_total", "places.search sk
   provider: ["openrouteservice"],
   error_category: ["none", "not_configured", "search_constraints_incomplete", "no_results", "rate_limited", "upstream_timeout", "upstream_failure", "invalid_provider_response", "provider_not_approved", "policy_denied", "per_run_cap_exceeded"],
 });
+/**
+ * A planning tool whose declared parameter schema refused the model's
+ * arguments. Low cardinality by construction — the label is the tool name, a
+ * fixed list. This is our contract failing, not a supplier's: it exists so a
+ * schema that drifts out of sync with what the model is told is alerted on
+ * rather than found by reading a run's logs after someone reports no plan.
+ */
+metrics.registerCounter("planning_tool_args_rejected_total", "Planning tool calls whose model arguments failed the tool's own schema.", {
+  tool: ["flight.search", "activities.search", "places.search", "places.propose", "places.adopt", "places.revoke", "navigation.route", "hotel.search", "accommodation.discover"],
+});
 metrics.registerCounter("trip_place_actions_total", "Server-authoritative TripPlace lifecycle actions.", {
   action: ["proposed", "adopted", "revoked", "stale_invalidated"],
   visibility: ["owner_private", "team_visible", "orchestrator_confidential"],
