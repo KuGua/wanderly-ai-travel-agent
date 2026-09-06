@@ -740,21 +740,20 @@
 .wanderly-brush::after {
   content: "";
   position: absolute;
-  left: -.22em; right: -.6em; bottom: -.24em; height: .4em;
-  border-radius: 60% 40% 55% 45% / 70% 60% 40% 30%;
-  transform: rotate(-.5deg);
-  filter: blur(.02em);
-  opacity: .8;
-  /* The kicker above it is underlined in `--w-highlight`; a blue brush under a
-     teal rule read as two different marks. Same hue, pulled back toward the
-     paper so the brush stays quieter than the rule it echoes. */
-  background: linear-gradient(90deg,
-    transparent 0,
-    color-mix(in srgb, var(--brush-ink), transparent 52%) 7%,
-    color-mix(in srgb, var(--brush-ink), transparent 26%) 26%,
-    color-mix(in srgb, var(--brush-ink), transparent 38%) 62%,
-    color-mix(in srgb, var(--brush-ink), transparent 62%) 88%,
-    transparent 100%);
+  left: -.14em; right: -.28em; bottom: -.2em; height: .3em;
+  /* A hatched rule rather than a brush stroke: hard edges, flat colour, no
+     blur and no rotation. Everything is in `em`, so the band and its stripes
+     scale with whatever size the heading is set at — the first version of this
+     mark used fixed pixels and was a smear at 40px and a hairline at 20px.
+     `--brush-ink` is unchanged: the same mint the brush used, pulled back
+     toward the paper so the rule stays quieter than the words above it. */
+  background: repeating-linear-gradient(62deg,
+    var(--brush-ink) 0 .1em,
+    transparent .1em .17em,
+    var(--brush-ink) .17em .27em,
+    transparent .27em .3em,
+    var(--brush-ink) .3em .44em,
+    transparent .44em .52em);
 }
 
 /* Note stock. The three differ by tint and by one borrowed motif each: a
