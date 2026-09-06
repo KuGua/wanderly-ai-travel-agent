@@ -23,9 +23,34 @@ beforeEach(() => {
   state.query.data.trips = [{ id: "kyoto", name: "Kyoto" }, { id: "paris", name: "Paris" }];
   vi.clearAllMocks();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+});
 
 describe("record room", () => {
+  it("wraps the record collection seamlessly in both directions", () => {
+    renderWithIntl(<ProjectsManager />);
+    const collection = screen.getByLabelText("Other trip records");
+    const middleSet = collection.children[1] as HTMLElement;
+    Object.defineProperty(middleSet, "offsetWidth", { configurable: true, value: 300 });
+    Object.defineProperty(collection, "scrollLeft", { configurable: true, writable: true, value: 100 });
+
+    fireEvent.scroll(collection);
+    expect(collection.scrollLeft).toBe(400);
+    collection.scrollLeft = 500;
+    fireEvent.scroll(collection);
+    expect(collection.scrollLeft).toBe(200);
+  });
+
+  it("keeps loop copies out of the keyboard and accessibility order", () => {
+    renderWithIntl(<ProjectsManager />);
+    const collection = screen.getByLabelText("Other trip records");
+    expect(screen.getAllByRole("link", { name: /^Open trip:/ })).toHaveLength(2);
+    expect(screen.getAllByTitle("Paris")).toHaveLength(3);
+    expect(collection.children[0]).toHaveAttribute("aria-hidden", "true");
+    expect(collection.children[2]).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getAllByTitle("Paris").map((link) => link.getAttribute("tabindex"))).toEqual(["-1", null, "-1"]);
+  });
   it.each(["en", "zh"] as const)("links the globe to home in %s", (locale) => {
     renderWithIntl(<ProjectsManager />, { locale });
     expect(screen.getByRole("link", { name: locale === "zh" ? "点击地球仪，去探索" : "Explore with the globe" })).toHaveAttribute("href", "/home");
