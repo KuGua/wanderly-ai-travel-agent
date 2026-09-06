@@ -1624,7 +1624,7 @@ export function TravelAgentChat({
     return (
       <>
         {conversationLaunchPhase !== "landing" ? (
-          <button type="button" onClick={openConversationWithLaunch} data-wanderly-avoid aria-label={t("history")} title={t("history")} className="wanderly-chat-rocket-button absolute bottom-[201px] right-[25px] z-40 grid size-[44px] place-items-center md:right-[49px]">
+          <button type="button" onClick={openConversationWithLaunch} data-wanderly-avoid aria-label={t("history")} title={t("history")} className="wanderly-chat-rocket-button absolute bottom-[201px] right-[25.6px] z-40 grid size-[44px] place-items-center md:right-[49.6px]">
             <span aria-hidden="true" className="wanderly-chat-rocket-body" />
           </button>
         ) : <RocketLaunchOverlay phase="landing" />}

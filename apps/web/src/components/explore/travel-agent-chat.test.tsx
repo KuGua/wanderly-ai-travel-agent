@@ -911,6 +911,7 @@ describe("TravelAgentChat durable streaming flow", () => {
   it("shows the collapsed composer as the terminal's prompt line", async () => {
     renderChat(createApi(), { initiallyOpen: false });
 
+    expect(screen.getByRole("button", { name: "Chat history" })).toHaveClass("right-[25.6px]", "md:right-[49.6px]");
     const collapsedComposer = screen.getByRole("form", { name: "Start a conversation with Wanderly Agent" });
     expect(collapsedComposer).toHaveClass("wanderly-crt", "wanderly-crt--prompt");
     expect(collapsedComposer).not.toHaveClass("wanderly-cosmos-surface", "wanderly-r-lg", "wanderly-shadow", "bg-card", "wanderly-edge");

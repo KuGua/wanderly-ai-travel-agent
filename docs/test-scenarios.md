@@ -2933,12 +2933,13 @@ recognizable invented values.
 - Duplicate actions are idempotent; stale, cross-owner/thread, expired and superseded actions fail closed. REST recovery restores the same OPEN cue after refresh.
 - Flight and Hotel cooldown/daily counters are independent. Three Flight dismissals mute Flight only until the owner's local midnight; a model-classified explicit Flight choice may bypass mute but still cannot accept an expired or unowned candidate.
 
-## 地球页目的地抽屉深海玻璃回归（2026-09-06）
+## 地球页目的地胶片卡片回归（2026-09-07）
 
-- 在地球亮区、暗区和星空背景上分别打开目的地抽屉：深海蓝背景保持半透明，淡扫描纹理不干扰正文、次要资料和链接；外框为 6px 圆角，按钮为 4px 圆角，边框与主操作为冷蓝色，界面不出现青绿色主按钮。
-- “仅限本次会话的灵感”以无投影、2px 圆角、左侧蓝色状态线融入抽屉，不呈现为独立厚卡片或胶囊按钮。
-- 关闭、查看灵感、管理图钉和删除仍调用原有行为；删除文字与图标保持红色。按钮 hover、disabled、键盘 focus 状态清晰，主按钮 disabled 时不位移。
-- 开启 `prefers-reduced-transparency` 后抽屉回退为深色实底，文字对比度不依赖 backdrop blur。移动竖屏抽屉仍限制在 70dvh 并可滚动，横屏仍停靠右侧。
+- 在地球亮区、暗区和星空背景上分别打开目的地卡片：黑色胶片外框、左右连续齿孔和三块独立内格均可辨识，正文、次要资料和来源链接保持可读。
+- 三格依次承载地点身份、离线地图说明与来源、操作；“仅限本次会话的灵感”保留原有标签样式。
+- “查看此灵感”为白底黑字；管理图钉维持深色次操作，“删除此项”的文字与图标为白色并保留红色 hover 提示。关闭、查看灵感、管理图钉和删除仍调用原有行为。
+- 移动竖屏卡片仍限制在 70dvh 并可滚动，横屏仍停靠右侧；恢复胶片不得回退之后加入的地图相机避让逻辑。
+- 收起态火箭的静止位置相对恢复胶片时的版本累计向左移动 0.6px；点击后发射层从同一横向坐标开始，不能出现起步跳动，既有升空与回落轨迹保持不变。
 
 ## 首页计划簿胶带回归（2026-09-06）
 
