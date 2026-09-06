@@ -22,12 +22,59 @@ export const QUOTE_NATIONALITIES = [
 
 export type QuoteNationality = (typeof QUOTE_NATIONALITIES)[number];
 
-/** The country's own name in the reader's language, not an English label. */
-export function countryLabel(code: string, locale: "en" | "zh"): string {
+/**
+ * English demonyms. The field asks what someone *is*, not where a place is,
+ * and "Nationality: Singapore" answers the wrong question — a passport says
+ * Singaporean. `Intl.DisplayNames` has no demonym type in any runtime, so the
+ * list is written out; it is 23 entries and it changes when the market list
+ * changes, which is the same moment `QUOTE_NATIONALITIES` changes.
+ *
+ * Hong Kong and Taiwan keep the product's explicit China notation rather than
+ * a demonym. That notation is a deliberate decision recorded below, and there
+ * is no demonym form of it that stays neutral.
+ */
+const EN_DEMONYMS: Record<QuoteNationality, string> = {
+  CN: "Chinese",
+  HK: "Hong Kong (China)",
+  TW: "Taiwan (China)",
+  SG: "Singaporean",
+  MY: "Malaysian",
+  JP: "Japanese",
+  KR: "South Korean",
+  TH: "Thai",
+  ID: "Indonesian",
+  PH: "Filipino",
+  VN: "Vietnamese",
+  AU: "Australian",
+  NZ: "New Zealander",
+  IN: "Indian",
+  GB: "British",
+  US: "American",
+  CA: "Canadian",
+  DE: "German",
+  FR: "French",
+  IT: "Italian",
+  ES: "Spanish",
+  NL: "Dutch",
+  AE: "Emirati",
+};
+
+/**
+ * How this nationality is named to the reader.
+ *
+ * English uses the demonym. Chinese does not: a 国籍 field there takes the
+ * country — 新加坡, not 新加坡人 — so the Chinese branch stays the region name,
+ * with the two territory labels the product fixed by hand.
+ */
+export function nationalityLabel(code: string, locale: "en" | "zh"): string {
   // Browser locale data varies in how it names these territories. The quote
   // selector uses the product's explicit China notation in both languages.
-  if (code === "HK") return locale === "zh" ? "香港（中国）" : "Hong Kong (China)";
-  if (code === "TW") return locale === "zh" ? "台湾（中国）" : "Taiwan (China)";
+  if (code === "HK") return locale === "zh" ? "香港（中国）" : EN_DEMONYMS.HK;
+  if (code === "TW") return locale === "zh" ? "台湾（中国）" : EN_DEMONYMS.TW;
+  if (locale === "en") {
+    const demonym = EN_DEMONYMS[code.toUpperCase() as QuoteNationality];
+    if (demonym) return demonym;
+  }
   try {
     return new Intl.DisplayNames([locale], { type: "region" }).of(code) ?? code;
   } catch {

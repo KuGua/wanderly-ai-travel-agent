@@ -63,7 +63,8 @@ describe("ProfileForm", () => {
 
     // Normalized on the way in, so the stored casing never decides whether the
     // value survives a round trip through this form.
-    expect(screen.getByLabelText("Nationality")).toHaveTextContent("China");
+    // The demonym, not the country: the field asks what someone is.
+    expect(screen.getByLabelText("Nationality")).toHaveTextContent("Chinese");
   });
 
   it("builds a strict partial mutation without read-only Profile fields", () => {

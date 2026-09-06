@@ -24,7 +24,7 @@ export function ProfilePageContent() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1240px] px-5 py-8 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:py-[42px]">
+    <main className="mx-auto w-full max-w-[1240px] px-5 pb-8 pt-14 sm:px-8 md:px-[clamp(2rem,4vw,3.5rem)] md:pb-[42px] md:pt-[76px]">
       <header className="flex flex-wrap items-start justify-between gap-6">
         <h1 className="text-[clamp(1.75rem,3.6vw,2.35rem)] font-semibold leading-none tracking-[-0.04em] text-[var(--w-ink)]/85">
           <span className="wanderly-brush">{t("title")}</span>
@@ -37,7 +37,7 @@ export function ProfilePageContent() {
         </Link>
       </header>
 
-      <div className="mt-7">
+      <div className="mt-10">
         {profileQuery.isPending ? <LoadingState label={tCommon("loadingProfileCapital")} /> : null}
         {profileQuery.isError ? <ErrorState error={profileQuery.error} title={t("errorSummaryTitle")} /> : null}
         {profileQuery.data?.profile ? (

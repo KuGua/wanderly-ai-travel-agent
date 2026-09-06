@@ -34,7 +34,7 @@ import { useActivateTrip, useAgentRun, useCancelAgentRun, useConstraintHandoffBa
 import { viewerScopedKey } from "@/lib/auth/viewer-scoped-storage";
 import { useTravelApi } from "@/lib/query/provider";
 import { Link, useRouter } from "@/i18n/navigation";
-import { QUOTE_NATIONALITIES, countryLabel, isQuoteNationality } from "@/lib/nationality";
+import { QUOTE_NATIONALITIES, nationalityLabel, isQuoteNationality } from "@/lib/nationality";
 
 export const CHAT_ACTIVE_RUN_STORAGE_KEY = "wanderly.privateChatActiveRunId.v1";
 type PendingTurn = ConversationTurnRequest;
@@ -1977,7 +1977,7 @@ export function TravelAgentChat({
                   >
                     <option value="">{t("startSharedPlanNationalityPlaceholder")}</option>
                     {QUOTE_NATIONALITIES.map((code) => (
-                      <option key={code} value={code}>{countryLabel(code, titleLocale)}</option>
+                      <option key={code} value={code}>{nationalityLabel(code, titleLocale)}</option>
                     ))}
                   </select>
                   <label className="mt-2 flex min-h-11 cursor-pointer items-center gap-2 text-xs font-semibold text-foreground">

@@ -7,7 +7,7 @@
     "langChinese": "中文",
     "navExplore": "Explore",
     "navProgram": "My program",
-    "navProfile": "Travel preference",
+    "navProfile": "Travel Preference",
     "primaryNavAriaLabel": "Primary navigation",
     "exploreAriaLabel": "Wanderly Explore",
     "accountAriaLabel": "Account",
@@ -191,7 +191,7 @@
   },
   "profile": {
     "kicker": "Private Profile",
-    "title": "Travel preference",
+    "title": "Travel Preference",
     "backToPlanner": "Back to planner",
     "lastSaved": "Last saved {date}",
     "errorSummaryTitle": "Check the highlighted Profile fields.",
