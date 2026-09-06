@@ -18,7 +18,6 @@ import { db } from "../db/database.js";
 import { sharedTrips, tripPreferenceCardViews } from "../db/schema.js";
 import { MEMORY_FIELD_CATALOG, memoryFieldDefinition } from "../memory/memory-field-catalog.js";
 import type { RequestContext } from "../utils/context.js";
-import { ApiError } from "../middleware/error-handler.js";
 import { recordAudit } from "./audit-service.js";
 import { resolveBriefDestination } from "./trip-brief-proposal-service.js";
 import { listActiveFacts } from "./preference-fact-service.js";
@@ -163,14 +162,15 @@ export async function resolvePreferenceCard(params: {
         .where(eq(sharedTrips.id, params.tripId)).for("update");
       // The brief is editable only until planning begins. A preference card
       // answered later must not silently rewrite an activated shared plan.
-      // A city the catalogue cannot name is not a departure. Fail the request
-      // rather than storing something planning will reject later, when the
-      // traveller is no longer looking at the field they typed it into.
+      // The trip brief only accepts a city the catalogue can name — the same
+      // contract `PUT /trips/:id/draft-brief` enforces. Cambridge, Bellevue and
+      // Hakone all fail it, so refusing the whole request would stop a
+      // traveller saving their pace, interests and budget over a departure they
+      // did not touch in this submission: the form carries the departure on
+      // every submit precisely because it is usually unchanged. The preference
+      // override is still saved; only the brief copy is skipped.
       const resolvedDeparture = resolveBriefDestination(departureCity);
-      if (!resolvedDeparture) {
-        throw new ApiError(422, "Unprocessable Entity", "DEPARTURE_UNRESOLVED: use an unambiguous supported city name");
-      }
-      if (trip?.status === "DRAFT") {
+      if (resolvedDeparture && trip?.status === "DRAFT") {
         const now = new Date();
         const pending = trip.pendingBriefProposal as Record<string, unknown> | null;
         const remainingPending = pending

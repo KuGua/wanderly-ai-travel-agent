@@ -456,6 +456,14 @@ function canonicalizeForHash(value: unknown): string {
  *     the grounded context it needs.
  */
 /**
+ * How long the same brief goes unsearched after an attempt, whatever came back.
+ * Matches the 30 minutes `computeExpiresAt` gives AVAILABLE evidence, so a
+ * successful search is re-run exactly when its offers go stale and a failed one
+ * is retried on the same rhythm instead of on every message.
+ */
+const PREFETCH_REPEAT_WINDOW_MS = 30 * 60_000;
+
+/**
  * Runs this trip's flight search from the brief alone, once per set of facts.
  *
  * Reuses `buildFlightSearchDispatcher` rather than reaching for the executor
@@ -505,7 +513,14 @@ async function prefetchDeterministicFlightEvidence(params: {
       eq(personalResearchEvidence.tripId, params.run.tripId),
       eq(personalResearchEvidence.capability, "flight.search"),
       eq(personalResearchEvidence.requestFingerprint, fingerprint),
-      gt(personalResearchEvidence.expiresAt, new Date()),
+      // On `capturedAt`, not `expiresAt`. Only AVAILABLE evidence is given an
+      // expiry — everything else stores null, and `expiresAt > now` never
+      // matches a null. So a trip whose search came back empty or whose
+      // supplier was down deduplicated against nothing and paid for a fresh
+      // round-trip on *every* later message, retrying a request already known
+      // to fail. The question this asks is "did we just try these exact
+      // facts", which has the same answer either way.
+      gt(personalResearchEvidence.capturedAt, new Date(Date.now() - PREFETCH_REPEAT_WINDOW_MS)),
     ))
     .limit(1);
   if (fresh) return;

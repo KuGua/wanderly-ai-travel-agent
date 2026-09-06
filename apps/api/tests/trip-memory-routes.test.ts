@@ -148,16 +148,33 @@ describe("personal overrides", () => {
     expect(trip.departureCities).toEqual(["Beijing"]);
   });
 
-  it("refuses a departure the catalogue cannot name", async () => {
-    await db.update(sharedTrips).set({ status: "DRAFT" }).where(eq(sharedTrips.id, tripOne));
+  /**
+   * The card carries its departure on every submit, unchanged or not, so a
+   * profile city the catalogue cannot name — Cambridge and Bellevue both fail
+   * it — must not take the rest of the form down with it. The preference is
+   * still the traveller's; only the brief copy, which has a city-only
+   * contract, is skipped.
+   */
+  it("keeps the rest of the form when the departure is not a nameable city", async () => {
+    await db.update(sharedTrips).set({ status: "DRAFT", departureCities: [] })
+      .where(eq(sharedTrips.id, tripOne));
     const response = await app.inject({
       method: "POST",
       url: `/api/v1/trips/${tripOne}/preference-card`,
       headers: authHeaders(OWNER),
-      payload: { adjustments: [{ fieldKey: "departure_city", value: "Wakanda" }] },
+      payload: {
+        adjustments: [
+          { fieldKey: "departure_city", value: "Bellevue" },
+          { fieldKey: "trip_pace", value: "relaxed" },
+        ],
+      },
     });
 
-    expect(response.statusCode).toBe(422);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ applied: ["departure_city", "trip_pace"] });
+    const [trip] = await db.select({ departureCities: sharedTrips.departureCities })
+      .from(sharedTrips).where(eq(sharedTrips.id, tripOne)).limit(1);
+    expect(trip.departureCities).toEqual([]);
   });
 
   it("clears only the confirmed origin from a pending generic brief", async () => {
