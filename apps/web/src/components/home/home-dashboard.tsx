@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight, Heart, LockKeyhole, MapPinned, Search, Settings2 } from "lucide-react";
+import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -279,13 +280,24 @@ export function HomeDashboard() {
           hairline and a soft drop rather than the pad's ink edge and page
           stack, so the notes still read as pinned onto it rather than framed
           by a second heavy panel. */}
-      <section
-        /* Felt, not a second sheet of paper. The pad above is the notebook;
-           this is the board its pages get pinned to, which is also why the
-           torn edge is here and the rounded card corner is not. */
-        className="wanderly-felt mt-8 px-6 pb-11 pt-9 sm:px-8"
-        aria-labelledby="trips-heading"
-      >
+      <div className="relative mt-8">
+        {/* A real translucent fibre texture, placed outside the masked felt so
+            its torn ends can cross the board edge without being clipped. */}
+        <Image
+          src="/images/washi-tape-blue.png"
+          alt=""
+          aria-hidden="true"
+          width={768}
+          height={256}
+          className="pointer-events-none absolute -left-5 -top-3 z-10 h-auto w-[135px] select-none rotate-[-18deg] opacity-90 sm:-left-7 sm:-top-4 sm:w-[160px]"
+        />
+        <section
+          /* Felt, not a second sheet of paper. The pad above is the notebook;
+             this is the board its pages get pinned to, which is also why the
+             torn edge is here and the rounded card corner is not. */
+          className="wanderly-felt px-6 pb-11 pt-9 sm:px-8"
+          aria-labelledby="trips-heading"
+        >
         {/* Trip grid. The filters live on this heading rather than beside the
             "continue planning" card: that card only renders for the active
             filter with no search, so filters placed there would disappear the
@@ -345,7 +357,8 @@ export function HomeDashboard() {
           <ErrorState error={tripsQuery.error} title={tHome("errorStateTripsUnavailable")} />
         ) : null}
         {isAuthenticated && tripsQuery.data ? <TripList trips={filteredTrips} /> : null}
-      </section>
+        </section>
+      </div>
     </main>
   );
 }

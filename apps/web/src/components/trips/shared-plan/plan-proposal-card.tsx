@@ -291,8 +291,8 @@ function ActivitiesSection({ payload }: { payload: PlanPayload }) {
   return (
     <Section title={t("activities")}>
       <ul className="grid gap-1 text-[12px]">
-        {payload.activities.map((act) => (
-          <li key={act.name ?? act.cityName ?? "activity"} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {payload.activities.map((act, index) => (
+          <li key={`${act.name ?? act.cityName ?? "activity"}-${index}`} className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="font-bold">{act.name ?? act.cityName ?? "—"}</span>
             <span className="ml-auto text-[10px] text-muted-foreground">{act.source ?? "—"} · {formatTimestamp(act.capturedAt)}</span>
           </li>

@@ -7,7 +7,7 @@ import { SharedPlanStatusBar } from "./shared-plan-status-bar";
 
 afterEach(cleanup);
 
-function run(status: string) {
+function run(status: string, resultPlanId: string | null = null) {
   return {
     runId: "00000000-0000-4000-8000-000000000001",
     operation: "PLAN" as const,
@@ -19,7 +19,7 @@ function run(status: string) {
     finishedAt: "2026-09-01T00:01:00.000Z",
     errorCode: null,
     assistantMessageId: null,
-    resultPlanId: null,
+    resultPlanId,
     researchIntentDraft: null,
     researchIntentState: null,
   } as never;
@@ -31,12 +31,19 @@ describe("SharedPlanStatusBar", () => {
     expect(screen.getByText("Plan is ready")).toBeInTheDocument();
   });
 
-  // These two shared a translation key. A run that finished with gaps makes no
-  // plan, so "Plan is ready" sat above an empty surface and read as a broken
-  // page rather than the honest outcome.
-  it("does not reuse that line for a run that finished with gaps", () => {
+  it("explains when a run finished with gaps and no plan", () => {
     renderWithIntl(<SharedPlanStatusBar run={run("COMPLETED_WITH_GAPS")} />);
     expect(screen.queryByText("Plan is ready")).not.toBeInTheDocument();
     expect(screen.getByText(/no plan was created/i)).toBeInTheDocument();
+  });
+
+  it("reports a saved plan with gaps without claiming that no plan exists", () => {
+    renderWithIntl(
+      <SharedPlanStatusBar
+        run={run("COMPLETED_WITH_GAPS", "00000000-0000-4000-8000-000000000002")}
+      />,
+    );
+    expect(screen.getByText("Plan is ready with gaps to review")).toBeInTheDocument();
+    expect(screen.queryByText(/no plan was created/i)).not.toBeInTheDocument();
   });
 });

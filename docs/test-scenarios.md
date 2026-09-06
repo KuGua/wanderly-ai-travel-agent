@@ -1004,7 +1004,8 @@ loopback 主机，并要求数据库名或 `search_path` schema 以 `_test` 结�
 
 ### 数据库与 Seed 回归
 
-- `npm run db:migrate` 至少连续运行两次幂等：第二次必须报"schema already up to date"且不产生未应用 migration。
+- `npm run db:migrate` 必须自动读取 `apps/api/.env`，将 migration 应用到与 API/Worker 相同的开发数据库；至少连续运行两次幂等，第二次必须报"schema already up to date"且不产生未应用 migration。
+- `COMPLETED_WITH_GAPS` 且带 `resultPlanId` 的规划在共享方案页显示“方案已生成，仍有缺口需要确认”并渲染方案；只有 `resultPlanId` 为空时才显示“未生成方案”。
 - `npm run db:seed` 至少连续运行两次幂等：第二次必须成功，**不**重复插入 `users` 或 `user_profiles` 行；调用方已通过 API 修改过的 Profile 必须被保留（seed 不覆盖）。
 - 新增 unique 索引 `user_profiles(user_id)`、`trip_members(trip_id,user_id)`、`constraint_snapshots(trip_id,version)`、`itinerary_plans(trip_id,version)`、`member_confirmations(plan_id,user_id)`、`booking_executions(orchestration_request_id)` 在生产部署前必须先走数据预去重（见 `apps/api/migrations/0005_hardening_constraints.sql` 注释与 `docs/mvp-readiness-review.md`）。
 - `audit_events.correlation_id` 上存在索引；按 correlation id 查询审计链的 EXPLAIN 不应触发顺序扫描。
@@ -2935,6 +2936,12 @@ recognizable invented values.
 - “仅限本次会话的灵感”以无投影、2px 圆角、左侧蓝色状态线融入抽屉，不呈现为独立厚卡片或胶囊按钮。
 - 关闭、查看灵感、管理图钉和删除仍调用原有行为；删除文字与图标保持红色。按钮 hover、disabled、键盘 focus 状态清晰，主按钮 disabled 时不位移。
 - 开启 `prefers-reduced-transparency` 后抽屉回退为深色实底，文字对比度不依赖 backdrop blur。移动竖屏抽屉仍限制在 70dvh 并可滚动，横屏仍停靠右侧。
+
+## 首页计划簿胶带回归（2026-09-06）
+
+- 桌面与移动宽度下，浅蓝和纸胶带斜贴在行程毛毡板左上角，跨过板面撕边但不遮挡“计划簿”标题、状态筛选、搜索框或第一张行程卡。
+- 胶带使用透明底位图并保留纤维、皱褶、轻微透底和手撕边缘；加载失败时不影响布局或任何操作，装饰图不进入无障碍树且不能接收指针事件。
+- 行程卡的 `Planning` 标签与页面标题下方斜纹使用同一 `--w-highlight-soft` 青绿色，并继续保留可读的文字状态。
 
 ### TS-ACTIVATE-QUOTE-NATIONALITY — 手填国籍必须能通过请求校验
 

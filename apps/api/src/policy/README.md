@@ -19,7 +19,7 @@ generates passes through here before becoming a database row.
 
 ## How to read this directory
 
-1. Read [VALIDATOR.md](./VALIDATOR.md) for the 11 `PlanViolationCode` values,
+1. Read [VALIDATOR.md](./VALIDATOR.md) for the 16 `PlanViolationCode` values,
  the `validatePlanOutput` flow, and what the validator throws vs returns.
 2. The validator is invoked by `apps/api/src/skills/shared/plan-comparison-skill.ts`
  after the LLM gateway returns; the Skill catches `PlanValidationError` and

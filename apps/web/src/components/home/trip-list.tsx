@@ -34,7 +34,7 @@ type StatusStyle = { bg: string; text: string };
 
 const STATUS_STYLES: Record<TripSummary["status"], StatusStyle> = {
   DRAFT: { bg: "bg-[var(--w-fog)]", text: "text-[var(--w-ink)]" },
-  PLANNING: { bg: "bg-[var(--w-highlight)]", text: "text-[var(--w-ink)]" },
+  PLANNING: { bg: "bg-[var(--w-highlight-soft)]", text: "text-[var(--w-ink)]" },
   STALE: { bg: "bg-[var(--w-fog)]", text: "text-[var(--w-ink)]" },
   CONFIRMED: { bg: "bg-[var(--w-mist)]", text: "text-[var(--w-ink)]" },
   BOOKED: { bg: "bg-[var(--w-mist)]", text: "text-[var(--w-ink)]" },

@@ -122,7 +122,7 @@ rather than visibly broken; keep the table generated, not hand-edited.
 | `place_search_tool_invocations_total` | counter | outcome, provider, error_category | outcome ∈ `["live","unavailable"]`; provider ∈ `["openrouteservice"]`; error_category ∈ `["none","not_configured","search_constraints_incomplete","no_results","rate_limited","upstream_timeout","upstream_failure","invalid_provider_response","provider_not_approved","policy_denied","per_run_cap_exceeded"]` |
 | `plan_adoption_vote_total` | counter | decision, result | decision ∈ `["accept","needs_changes"]`; result ∈ `["cast","adopted","blocked","stale_plan"]` |
 | `plan_replan_total` | counter | trigger, result | trigger ∈ `["trip_constraint_confirmed","trip_constraint_revoked","trip_constraint_upsert","consent","change_event","conversation_handoff","confirmed_brief_change"]`; result ∈ `["enqueued","superseded","missing_snapshot"]` |
-| `daily_itinerary_generation_total` | counter | result | Optional daily-itinerary enhancement failures: `validation_failed` or `unavailable`. A failure does not invalidate the evidence-bound shared plan. |
+| `daily_itinerary_generation_total` | counter | result | `["validation_failed","unavailable"]`; optional daily-itinerary enhancement failure that does not invalidate the evidence-bound shared plan. |
 | `plan_validation_failures_total` | counter | validationResult | `["schema","authorization","route","provenance","evidence","unknown"]` |
 | `provider_search_cache_total` | counter | category, outcome | category ∈ `["hotel","activity","accommodation"]`; outcome ∈ `["hit_live","hit_unavailable","miss","wait_timeout"]` |
 | `research_auto_accept_total` | counter | outcome | `["adopted","stale_plan","already_adopted","not_solo","error"]` |
