@@ -1,29 +1,26 @@
 "use client";
 
-import { Check, Sparkles, Trash2, X } from "lucide-react";
+import { Check, Sparkles, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 
-import { ErrorState, LoadingState } from "@/components/ui/data-state";
 import type { MemoryFact, MemorySuggestion } from "@/lib/api/contracts";
 import {
   useConfirmMemoryProposal,
-  useDeleteMemoryFact,
-  useDeleteMemoryNote,
   useDismissMemoryProposal,
-  useMemoryNotes,
   useProfileMemory,
 } from "@/lib/query/hooks";
 
 /**
- * The cap the server enforces on free-text notes. Shown so a full list explains
- * itself rather than silently refusing the next highlight.
- */
-const FREE_TEXT_MEMORY_MAX_ENTRIES = 20;
-
-/**
- * Profile memory: what the assistant has remembered, and what it would like to
- * ask about.
+ * What the assistant would like to ask about.
+ *
+ * This used to also list every remembered fact and every free-text note the
+ * owner had kept. Both lists are gone from the page: they restated what the
+ * form above already shows, and the notes turned a handful of highlights into
+ * a wall of one-line cards. Nothing was removed from the server — the facts,
+ * the notes, their endpoints and their delete routes are all still there, and
+ * so are the client hooks that reach them, so putting either list back is a
+ * matter of rendering it again.
  *
  * Per docs/long-term-memory-implementation.md §5.4 a suggestion card shows only
  * the current setting, the candidate value, and how many independent
@@ -46,7 +43,6 @@ function formatValue(value: unknown): string {
 export function ProfileMemory() {
   const t = useTranslations("profile.memory");
   const memoryQuery = useProfileMemory();
-  const deleteFact = useDeleteMemoryFact();
   const confirmProposal = useConfirmMemoryProposal();
   const dismissProposal = useDismissMemoryProposal();
 
@@ -62,138 +58,30 @@ export function ProfileMemory() {
     }
   }
 
-  if (memoryQuery.isPending) return <LoadingState label={t("loading")} />;
-  if (memoryQuery.isError) return <ErrorState error={memoryQuery.error} title={t("errorTitle")} />;
+  // A question nobody asked for is not worth a loading row or an error box on
+  // the profile page: with no pending suggestion this section is silent, so a
+  // slow or failed fetch is silent too.
+  if (memoryQuery.isPending || memoryQuery.isError) return null;
 
   const { facts, suggestions } = memoryQuery.data;
+  if (suggestions.length === 0) return null;
+
   const activeFacts = facts.filter((fact) => fact.status === "ACTIVE");
   const currentByField = new Map(activeFacts.map((fact) => [fact.fieldKey, fact]));
 
   return (
-    <section className="mt-5" aria-labelledby="memory-heading">
-      <div className="mb-3">
-        <p className="text-[11px] font-black uppercase tracking-[0.11em] wanderly-underline">
-          {t("kicker")}
-        </p>
-        <h2 id="memory-heading" className="mt-1 text-xl font-bold tracking-[-0.035em]">
-          {t("heading")}
-        </h2>
-        <p className="mt-2 max-w-2xl text-sm text-[var(--w-muted)]">{t("body")}</p>
-      </div>
-
-      {suggestions.length > 0 ? (
-        <ul className="mb-5 grid gap-3" role="list" aria-label={t("suggestionsAriaLabel")}>
-          {suggestions.map((suggestion) => (
-            <SuggestionCard
-              key={suggestion.id}
-              suggestion={suggestion}
-              current={currentByField.get(suggestion.fieldKey) ?? null}
-              busy={busyId === suggestion.id}
-              onConfirm={() => run(suggestion.id, () => confirmProposal.mutateAsync(suggestion.id))}
-              onDismiss={() => run(suggestion.id, () => dismissProposal.mutateAsync(suggestion.id))}
-            />
-          ))}
-        </ul>
-      ) : null}
-
-      {activeFacts.length === 0 ? (
-        <div className="border-2 border-dashed border-[var(--w-ink)] bg-card p-[9px] text-center wanderly-r-lg">
-          <p className="font-bold">{t("emptyTitle")}</p>
-          <p className="mt-1 text-sm text-[var(--w-muted)]">{t("emptyBody")}</p>
-        </div>
-      ) : (
-        <ul className="grid gap-2.5 sm:grid-cols-2" role="list" aria-label={t("factsAriaLabel")}>
-          {activeFacts.map((fact) => (
-            <li
-              key={fact.id}
-              className="flex items-start justify-between gap-3 bg-card p-4 wanderly-edge wanderly-r-md wanderly-shadow-sm"
-            >
-              <div className="min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-[0.09em] text-[var(--w-muted)]">
-                  {t(`fields.${fact.fieldKey}` as "fields.trip_pace", { fallback: fact.fieldKey })}
-                </p>
-                <p className="mt-0.5 break-words font-bold">{formatValue(fact.value)}</p>
-                <p className="mt-1 text-[11px] text-[var(--w-muted)]">
-                  {fact.source === "PROFILE_FORM" ? t("sourceStated") : t("sourceConfirmed")}
-                </p>
-              </div>
-              <button
-                type="button"
-                aria-label={t("deleteAria")}
-                disabled={busyId === fact.id}
-                onClick={() => run(fact.id, () => deleteFact.mutateAsync(fact.id))}
-                className="grid size-9 shrink-0 place-items-center bg-card text-[var(--w-ink)] disabled:opacity-50 wanderly-edge-thin wanderly-r-xs wanderly-press"
-              >
-                <Trash2 aria-hidden="true" className="size-4" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <MemoryNotes />
-    </section>
-  );
-}
-
-/**
- * Free-text notes: what a highlight became when the extractor could not fit it
- * to a catalogue field. They are listed apart from typed facts because that is
- * what they are — the owner's own words, kept verbatim, and the only control
- * that matters for them is being able to take one back.
- */
-function MemoryNotes() {
-  const t = useTranslations("profile.memory");
-  const notesQuery = useMemoryNotes();
-  const deleteNote = useDeleteMemoryNote();
-  const [busyId, setBusyId] = useState<string | null>(null);
-
-  // A failure here must not take the facts above down with it.
-  if (notesQuery.isPending || notesQuery.isError) return null;
-
-  const notes = notesQuery.data.notes;
-
-  return (
-    <div className="mt-8">
-      <h3 className="text-base font-bold tracking-[-0.02em]">{t("notesHeading")}</h3>
-      <p className="mt-1 max-w-2xl text-sm text-[var(--w-muted)]">{t("notesBody")}</p>
-
-      {notes.length === 0 ? (
-        <p className="mt-3 text-sm text-[var(--w-muted)]">{t("notesEmpty")}</p>
-      ) : (
-        <>
-          <ul className="mt-3 grid gap-2.5" role="list" aria-label={t("notesAriaLabel")}>
-            {notes.map((note) => (
-              <li
-                key={note.id}
-                className="flex items-start justify-between gap-3 bg-card p-4 wanderly-edge wanderly-r-md wanderly-shadow-sm"
-              >
-                <p className="min-w-0 break-words text-sm">{note.content}</p>
-                <button
-                  type="button"
-                  aria-label={t("notesDeleteAria")}
-                  disabled={busyId === note.id}
-                  onClick={async () => {
-                    setBusyId(note.id);
-                    try {
-                      await deleteNote.mutateAsync(note.id);
-                    } finally {
-                      setBusyId(null);
-                    }
-                  }}
-                  className="grid size-9 shrink-0 place-items-center bg-card text-[var(--w-ink)] disabled:opacity-50 wanderly-edge-thin wanderly-r-xs wanderly-press"
-                >
-                  <Trash2 aria-hidden="true" className="size-4" />
-                </button>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-2 text-[11px] text-[var(--w-muted)]">
-            {t("notesCount", { count: notes.length, max: FREE_TEXT_MEMORY_MAX_ENTRIES })}
-          </p>
-        </>
-      )}
-    </div>
+    <ul className="mt-5 grid gap-3" role="list" aria-label={t("suggestionsAriaLabel")}>
+      {suggestions.map((suggestion) => (
+        <SuggestionCard
+          key={suggestion.id}
+          suggestion={suggestion}
+          current={currentByField.get(suggestion.fieldKey) ?? null}
+          busy={busyId === suggestion.id}
+          onConfirm={() => run(suggestion.id, () => confirmProposal.mutateAsync(suggestion.id))}
+          onDismiss={() => run(suggestion.id, () => dismissProposal.mutateAsync(suggestion.id))}
+        />
+      ))}
+    </ul>
   );
 }
 

@@ -60,9 +60,10 @@ export function ProfilePageContent() {
         ) : null}
       </div>
 
-      {/* Long-term memory sits below the form: the form is where facts are
-          stated, this is what the assistant has retained and what it wants to
-          ask about. */}
+      {/* What the assistant wants to ask about, below the form where facts are
+          stated. It renders nothing unless a suggestion is actually waiting —
+          the remembered-facts and kept-notes lists that used to live here are
+          gone from the page (the server still keeps both). */}
       <ProfileMemory />
     </main>
   );
