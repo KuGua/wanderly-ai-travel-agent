@@ -48,9 +48,11 @@ type PlanViolationCode =
   | "PROVENANCE_REQUIRED"
   | "EVIDENCE_NOT_FOUND"
   | "EVIDENCE_MISMATCH"
+  | "EVIDENCE_SLOT_MISMATCH"
   | "GENERATED_AT_MISMATCH"
   | "CONFIDENTIAL_VALUE_LEAK"
-  | "EXPLANATION_TOKEN_NOT_ALLOWED";
+  | "EXPLANATION_TOKEN_NOT_ALLOWED"
+  | "HARD_CONSTRAINT_UNSATISFIED";
 ```
 
 ## `PlanViolation` shape
@@ -85,6 +87,7 @@ interface PlanViolation {
 | `PROVENANCE_REQUIRED` | An offer's `capturedAt` is empty or unparseable. |
 | `EVIDENCE_NOT_FOUND` | An offer's `id` is not present in the provider evidence. |
 | `EVIDENCE_MISMATCH` | An offer with the same `id` does not `isDeepStrictEqual` match the evidence. |
+| `EVIDENCE_SLOT_MISMATCH` | An evidence id exists but belongs to another route, date, destination, or capability slot. |
 | `GENERATED_AT_MISMATCH` | `plan.generatedAt` does not equal the latest `capturedAt` across all selected offers. |
 | `DESTINATION_CANDIDATES_INCOMPLETE` | Spec §6.1 — `plan.destinationCandidatesEvaluated` does not cover every entry in `snapshot.destinationCandidates`, or names a destination not in the snapshot. |
 | `CONFIDENTIAL_VALUE_LEAK` | Spec §6.1 — `assertConfidentialFree` found a confidential value or field-key reference in the plan JSON. |
@@ -133,6 +136,6 @@ The prefix `authorizedData` is exported as
 
 ## Verification
 
-- `npx vitest run tests/plan-output-validator.test.ts` — covers all 11 codes.
+- `npx vitest run tests/plan-output-validator.test.ts` — covers all 16 codes.
 - `npx vitest run tests/plan-validator.test.ts` — integration: end-to-end
   flow including `generatePlan` reject-on-invalid path.
