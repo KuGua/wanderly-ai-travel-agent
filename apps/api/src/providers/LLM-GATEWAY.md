@@ -51,12 +51,20 @@ safety policy rejects unsupported operational claims.
 ### User-visible language contract
 
 The language rule applies only to natural-language content displayed to a
-traveller. Its order is: an explicit language or translation request in the
-current turn; otherwise, the dominant language of that current question.
-Thread context, long-term memory, destination country, and provider evidence
-are context only and cannot change that choice. Proper nouns may retain their
-usual local spelling. The shared rule is injected once into both structured
-and streamed `travel.conversation` prompts.
+traveller. Every such reply is written in **English**, whatever language the
+traveller wrote in and whatever language the surrounding prompt, thread
+context, long-term memory, destination country, or provider evidence are in.
+The single exception is an explicit request for another language or for a
+translation in the current turn. Proper nouns may retain their usual local
+spelling. The shared rule is injected once into both structured and streamed
+`travel.conversation` prompts, and it is placed **last** in each so it is not
+read as one more rule among the Chinese ones above it.
+
+This replaces the earlier "mirror the dominant language of the current
+question" rule, which lost to the Chinese prompt around it often enough to
+reach travellers: an English turn on 2026-09-07 came back in Chinese. The
+deterministic replies in `policy/conversation-safety.ts` follow the same
+single output language, so a fallback cannot betray the switch.
 
 This is not a rule for every model operation: plan candidates, extraction
 results, evidence, tool arguments, IDs, enums, and other machine-consumed

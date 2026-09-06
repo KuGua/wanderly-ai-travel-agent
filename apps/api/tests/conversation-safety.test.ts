@@ -111,7 +111,7 @@ describe("conversation operational fact boundary", () => {
     expect(result.responseMode).toBe("MODEL");
   });
 
-  it("says it cannot confirm rather than reciting the policy, and localizes", async () => {
+  it("says it cannot confirm rather than reciting the policy, in English whatever was asked", async () => {
     const generateConversationReply = vi.fn().mockResolvedValue({
       content: "你需要办理签证。",
       responseMode: "MODEL",
@@ -124,8 +124,11 @@ describe("conversation operational fact boundary", () => {
     expect(result.content).not.toContain("Agent");
     // Speaks to the question asked; does not list what the product refuses to
     // claim, which read as an accusation to anyone who had not asked for it.
-    expect(result.content).toContain("不一定准确");
-    expect(result.content).toContain("核实");
+    expect(result.content).toContain("might not be accurate");
+    expect(result.content).toContain("official source");
+    // The question is Chinese and the reply is not: user-visible replies have
+    // one output language, and the fallbacks follow the model.
+    expect(result.content).not.toMatch(/[\u4e00-\u9fff]/);
     expect(result.content).not.toContain("签证结论");
     expect(result.content).not.toContain("查询条件已收到");
   });

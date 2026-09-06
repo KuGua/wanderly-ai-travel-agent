@@ -781,15 +781,27 @@ export const CONVERSATION_PROMPT_PROSE = [
  * The one language policy for every user-visible prose reply produced by the
  * private conversation gateway. It deliberately excludes model outputs that
  * are consumed as structured data, evidence, tool arguments, or identifiers.
+ *
+ * The reply language is fixed to English rather than mirroring the traveller's
+ * own language. Mirroring is what shipped first, and it did not hold: the rest
+ * of this system prompt is written in Chinese, so an English question came back
+ * as a Chinese reply (thread `New chat 2`, 2026-09-07 — "I would like to go to
+ * taipei for 4 days" answered in Chinese). A rule that competes with the
+ * language of the prompt around it loses often enough that the traveller sees
+ * it. One fixed output language does not.
+ *
+ * Comprehension is unchanged: the traveller may write in any language, and an
+ * explicit request for another language still wins — declining to answer in the
+ * language someone asked for would be worse than any consistency this buys.
  */
 const USER_VISIBLE_REPLY_LANGUAGE_RULE = [
   "",
-  "User-visible language (higher priority than history)",
-  "Apply this rule to every natural-language reply shown to the traveller, regardless of whether it is a destination introduction or general travel guidance.",
-  "1. If the traveller explicitly requests a translation or another language, use that language.",
-  "2. Otherwise, use the dominant language of the current `question` field.",
-  "3. `threadContext`, `memoryContext`, destination country, and provider evidence are context only; they never select the reply language.",
-  "For one mixed-language message, identify its dominant communication language. Proper nouns and established place or brand names may retain their usual or local spelling.",
+  "User-visible language (overrides the language of everything else in this prompt)",
+  "Write EVERY natural-language reply shown to the traveller in English. This applies to destination introductions, travel guidance, questions you ask back, and any other prose the traveller reads.",
+  "This holds no matter what language the traveller writes in, and no matter what language `question`, `threadContext`, `memoryContext`, provider evidence, the destination country, or these instructions themselves are written in. None of them selects the reply language.",
+  "Read and understand the traveller's message in whatever language it arrives in — only your reply is fixed to English.",
+  "The one exception: if the traveller explicitly asks you to answer in another language, or asks for a translation, use the language they asked for.",
+  "Proper nouns and established place or brand names may retain their usual or local spelling.",
 ].join("\n");
 
 const STRUCTURED_CONVERSATION_OUTPUT_RULE = [
@@ -1002,6 +1014,14 @@ function buildConversationSystemPrompt(params: {
     params.base + currentDateRule(params.now ?? new Date()),
     draftBlock,
     ...constraints,
+    // Deliberately the last thing the model reads. Everything above — persona,
+    // safety boundary, the date rule, the DRAFT handoff block, every selected
+    // response constraint — is written in Chinese, and a language rule sitting
+    // among them was outvoted by them: an English question came back in
+    // Chinese. Appending here (rather than inside the two base prompts) is what
+    // keeps it last for both the structured and the streamed path, since both
+    // of them append server-authored blocks after the base.
+    USER_VISIBLE_REPLY_LANGUAGE_RULE,
   ].filter(Boolean).join("\n\n");
 }
 
@@ -1110,9 +1130,12 @@ const highlightMemoryExtractionSchema = z.object({
   value: z.unknown(),
 }).passthrough();
 
+// The language rule is not in either base prompt: `buildConversationSystemPrompt`
+// appends it after these blocks and after the server-authored ones, so it is the
+// last thing the model reads. The ordering that is security-relevant
+// (threadContext / memory after the safety boundary) is untouched.
 const STRUCTURED_CONVERSATION_SYSTEM_PROMPT = [
   CONVERSATION_PROMPT_PROSE,
-  USER_VISIBLE_REPLY_LANGUAGE_RULE,
   STRUCTURED_CONVERSATION_OUTPUT_RULE,
   CONVERSATION_SAFETY_BOUNDARY,
   CONVERSATION_THREAD_CONTEXT_RULE,
@@ -1122,7 +1145,6 @@ const STRUCTURED_CONVERSATION_SYSTEM_PROMPT = [
 
 const STREAMED_CONVERSATION_SYSTEM_PROMPT = [
   CONVERSATION_PROMPT_PROSE,
-  USER_VISIBLE_REPLY_LANGUAGE_RULE,
   STREAMED_CONVERSATION_OUTPUT_RULE,
   CONVERSATION_SAFETY_BOUNDARY,
   CONVERSATION_THREAD_CONTEXT_RULE,
