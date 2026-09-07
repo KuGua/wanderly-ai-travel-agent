@@ -21,11 +21,13 @@ import { claimIdempotency } from "../services/idempotency-service.js";
 import {
   agentRunErrorCodeSchema,
   agentRunResponseSchema,
+  conversationIntentSchema,
   conversationTurnAcceptedResponseSchema,
   persistedResearchIntentDraftSchema,
   personalResearchOwnerDraftSchema,
   researchIntentStateSchema,
   type AgentRunResponse,
+  type ConversationIntent,
   type ConversationPlace,
   type ConversationTurnAcceptedResponse,
   type ConversationTurnRequest,
@@ -1257,15 +1259,29 @@ export async function taskCancellationRequested(runId: string, leaseToken: strin
 export async function loadConversationTurnInput(run: AgentTaskRow): Promise<{
   question: string;
   place?: ConversationPlace;
-  intent?: "auto_intro" | "user_typed";
+  intent?: ConversationIntent;
 }> {
   if (!run.threadId || !run.userMessageId) throw new Error("Conversation task references are incomplete");
   const [message] = await db.select().from(chatMessages)
     .where(and(eq(chatMessages.id, run.userMessageId), eq(chatMessages.threadId, run.threadId)))
     .limit(1);
   if (!message || message.role !== "USER") throw new Error("Conversation USER message is unavailable");
-  const intent = run.intent === "auto_intro" || run.intent === "user_typed" ? run.intent : undefined;
-  return { question: message.body, place: taskPlace(run), intent };
+  // Every value the route accepts, not two of them.
+  //
+  // This used to narrow to `auto_intro | user_typed`, so `brief_saved` and
+  // `preferences_saved` — written on the run row by the route, and the whole
+  // reason those two enum members exist — arrived at the Skill as `undefined`.
+  // Two things depend on them and both were dead: the prompt rule that tells
+  // the model the save already landed, and `tripMutationBacked`, which is what
+  // permits the model to say so. The result was the one turn where a
+  // completion claim is true being replaced by "I couldn't turn that into a
+  // savable trip change yet" — the traveller had just watched the card save.
+  const parsedIntent = conversationIntentSchema.safeParse(run.intent);
+  return {
+    question: message.body,
+    place: taskPlace(run),
+    ...(parsedIntent.success ? { intent: parsedIntent.data } : {}),
+  };
 }
 
 export async function completeConversationTask(params: {

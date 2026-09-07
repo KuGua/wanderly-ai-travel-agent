@@ -155,7 +155,10 @@ function DailyItinerarySection({ payload }: { payload: PlanPayload }) {
   return <section aria-label={t("dailyItinerary")} className="grid gap-2">
     <p className="text-xs font-bold">{t("dailyItinerary")}</p>
     <div className="grid gap-2">
-      {days.map((day, index) => <details key={`${day.date ?? "day"}-${index}`} open={index === 0} className="bg-[var(--w-mist)] wanderly-edge-thin wanderly-r-xs">
+      {/* Every day open. Only the first one was, so reading the itinerary meant
+          opening each remaining day by hand — and a collapsed row shows a date
+          and nothing else, which is not enough to decide whether to open it. */}
+      {days.map((day, index) => <details key={`${day.date ?? "day"}-${index}`} open className="bg-[var(--w-mist)] wanderly-edge-thin wanderly-r-xs">
         <summary className="min-h-11 cursor-pointer px-3 py-2 text-xs font-extrabold">{day.date ?? "—"}</summary>
         <ul className="grid gap-2 border-t-2 border-[var(--w-ink)] px-3 py-2 text-[12px]">
           {(day.items ?? []).map((item, itemIndex) => <li key={itemIndex} className="flex flex-wrap items-center gap-x-2 gap-y-1">

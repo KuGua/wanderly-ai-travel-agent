@@ -7,7 +7,7 @@
     "langChinese": "中文",
     "navExplore": "Explore",
     "navProgram": "My program",
-    "navProfile": "Travel preference",
+    "navProfile": "Travel Preference",
     "primaryNavAriaLabel": "Primary navigation",
     "exploreAriaLabel": "Wanderly Explore",
     "accountAriaLabel": "Account",
@@ -191,7 +191,7 @@
   },
   "profile": {
     "kicker": "Private Profile",
-    "title": "Travel preference",
+    "title": "Travel Preference",
     "backToPlanner": "Back to planner",
     "lastSaved": "Last saved {date}",
     "errorSummaryTitle": "Check the highlighted Profile fields.",
@@ -202,8 +202,8 @@
     "sectionPrefsDescription": "Stable preferences can shape later recommendations without becoming shared trip data automatically.",
     "fields": {
       "departureCity": "Departure city",
-      "nationality": "Nationality",
-      "nationalityPlaceholder": "Select nationality",
+      "nationality": "Nation",
+      "nationalityPlaceholder": "Select nation",
       "dateOfBirth": "Date of birth",
       "dateOfBirthPlaceholder": "YYYY-MM-DD or YYYYMMDD",
       "interests": "Interests",
@@ -268,7 +268,7 @@
         "interests": "Interests",
         "budget_max_usd": "Maximum budget",
         "departure_city": "Departure city",
-        "nationality": "Nationality",
+        "nationality": "Nation",
         "date_of_birth": "Date of birth"
       }
     }

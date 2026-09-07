@@ -527,7 +527,10 @@ describe("TravelAgentChat durable streaming flow", () => {
       "href",
       `/trips/${TRIP_ID}?thread=${THREAD_ID}`,
     );
-    expect(link).toHaveTextContent("Go to Trip Planner");
+    // Named for a screen reader and on hover, not with drawn text: the tooltip
+    // that used to sit under this button covered the first message bubble.
+    expect(link).toHaveAttribute("title", "Go to Trip Planner");
+    expect(link.querySelector("[role='tooltip']")).toBeNull();
   });
 
   it("collapses the floating conversation from its header control", () => {

@@ -1665,15 +1665,20 @@ export function TravelAgentChat({
               the control keeps its meaning for a screen reader and on hover. */}
           {onStartNewExploration ? <button type="button" onClick={startNewExploration} disabled={isSending} aria-label={t("startNewExploration")} title={t("startNewExploration")} className="grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press disabled:cursor-not-allowed disabled:opacity-50"><Plus aria-hidden="true" className="size-4" /></button> : null}
           {tripId && effectiveThreadId ? (
+            /* The hand-drawn tooltip this used to carry hung below the button,
+               where the first message bubble already is, so a bordered box sat
+               on top of the conversation. Its two siblings above never had one
+               — they name themselves with `title` and let the browser place
+               it, clear of the panel — and there is no room to move a drawn
+               one above: the header is the first row inside an
+               `overflow-hidden` column. */
             <Link
               href={`/trips/${tripId}?thread=${effectiveThreadId}` as "/trips/[tripId]"}
               aria-label={t("goToTripPlanner")}
-              className="group relative grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press"
+              title={t("goToTripPlanner")}
+              className="grid size-8 shrink-0 place-items-center wanderly-cosmos-control wanderly-r-xs wanderly-press"
             >
               <ArrowRight aria-hidden="true" className="size-4" />
-              <span role="tooltip" className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-10 w-max px-2 py-1 text-[11px] font-semibold opacity-0 wanderly-cosmos-surface wanderly-r-xs wanderly-shadow-xs transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                {t("goToTripPlanner")}
-              </span>
             </Link>
           ) : null}
         </header>

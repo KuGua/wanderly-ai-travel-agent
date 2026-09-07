@@ -112,6 +112,49 @@ describe("agent_task_runs.intent persistence", () => {
     }
   });
 
+  it.each(["brief_saved", "preferences_saved"] as const)(
+    "carries %s through to the Skill, so the turn may say the save landed",
+    async (intent) => {
+      const requestId = randomUUID();
+      let threadId: string | undefined;
+      const idempotencyKey = `chat_turn:${requestId}:${randomUUID()}`;
+
+      try {
+        const created = await app.inject({
+          method: "POST",
+          url: "/api/v1/threads",
+          headers: { ...authHeaders("alice"), "content-type": "application/json" },
+          payload: { title: `Intent ${intent} ${randomUUID()}`, tripId },
+        });
+        expect(created.statusCode).toBe(201);
+        threadId = (created.json() as { id: string }).id;
+
+        const accepted = await app.inject({
+          method: "POST",
+          url: `/api/v1/threads/${threadId}/turns`,
+          headers: { ...authHeaders("alice"), "content-type": "application/json" },
+          payload: { requestId, question: "I've just saved this to the trip.", intent },
+        });
+        expect(accepted.statusCode).toBe(202);
+        const runId = (accepted.json() as { runId: string }).runId;
+
+        const [fullRun] = await db.select().from(agentTaskRuns)
+          .where(eq(agentTaskRuns.id, runId))
+          .limit(1);
+        expect(fullRun.intent).toBe(intent);
+        // The loader used to narrow to auto_intro | user_typed, which dropped
+        // exactly the two intents that authorize a completion claim: the reply
+        // to a card the traveller had just saved was replaced by "I couldn't
+        // turn that into a savable trip change yet".
+        const input = await loadConversationTurnInput(fullRun);
+        expect(input.intent).toBe(intent);
+      } finally {
+        if (threadId) await db.delete(chatThreads).where(eq(chatThreads.id, threadId));
+        await db.delete(idempotencyRecords).where(eq(idempotencyRecords.idempotencyKey, idempotencyKey));
+      }
+    },
+  );
+
   it("roundtripures undefined intent as null without throwing", async () => {
     const requestId = randomUUID();
     let threadId: string | undefined;

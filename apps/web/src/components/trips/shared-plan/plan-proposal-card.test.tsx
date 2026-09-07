@@ -136,6 +136,25 @@ describe("PlanProposalCard — rendering rules (§7.3, §10.2)", () => {
     expect(screen.getByText("Suggestion — verify")).toBeDefined();
   });
 
+  it("opens every day, not only the first", () => {
+    const { container } = renderCard(makePlan({ planData: { dailyItinerary: [
+      { date: "2026-10-01", timeZone: "destination_local", items: [
+        { startTimeLocal: "09:00", endTimeLocal: "11:00", title: "Day one item", verification: "PROVIDER_BACKED" },
+      ] },
+      { date: "2026-10-02", timeZone: "destination_local", items: [
+        { startTimeLocal: "09:00", endTimeLocal: "11:00", title: "Day two item", verification: "PROVIDER_BACKED" },
+      ] },
+      { date: "2026-10-03", timeZone: "destination_local", items: [
+        { startTimeLocal: "09:00", endTimeLocal: "11:00", title: "Day three item", verification: "PROVIDER_BACKED" },
+      ] },
+    ] } }));
+    const days = [...container.querySelectorAll("details")];
+    expect(days).toHaveLength(3);
+    // A collapsed day shows its date and nothing else, so reading the plan
+    // meant opening each one by hand.
+    expect(days.every((day) => day.open)).toBe(true);
+  });
+
   it("shows an explicit daily-schedule degradation without hiding the shared plan", () => {
     renderCard(makePlan({ planData: {
       destination: "Tokyo",

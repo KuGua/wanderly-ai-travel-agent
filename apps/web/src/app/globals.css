@@ -310,11 +310,13 @@
 .wanderly-chat-scroll-thumb {
   /* Narrower than its track, and centred in it — the drawn part is a hairline,
    * the part you can hit is not. */
-  width: 6.5px;
+  width: 5px;
   min-height: 34px;
   cursor: grab;
   border-radius: 999px;
-  background: var(--w-moss);
+  /* Ink, like every other drawn line on the page. The blue-grey read as a
+     third colour on a surface that otherwise only holds paper and ink. */
+  background: var(--w-ink);
 }
 
 .wanderly-chat-scroll-thumb:active {
