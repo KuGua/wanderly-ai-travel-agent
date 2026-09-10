@@ -95,7 +95,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     openapi: {
       info: {
         title: "AI Travel Agent API",
-        description: "Hackathon MVP — collaborative international trip planning with consent-based data sharing",
+        description: "Wanderly engineering prototype — collaborative international trip planning with consent-based data sharing",
         version: "0.1.0",
       },
       servers: [{ url: "http://localhost:3000" }],

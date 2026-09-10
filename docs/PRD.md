@@ -1,6 +1,6 @@
-# PRD — Personal Agents + Shared Trip Workspace Hackathon MVP
+# PRD — Wanderly Personal Agents + Shared Trip Workspace
 
-**状态：** 可开发的 Hackathon MVP；所有需求价值均待验证  
+**状态：** 可开发的工程原型；所有需求价值均待验证
 **输入：** [Product Strategy](product-strategy.md) · [Discovery](discovery.md)
 
 ## 1. 概述

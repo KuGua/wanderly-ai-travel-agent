@@ -9,7 +9,7 @@ different audience.
 
 | Folder | Purpose | Audience |
 | --- | --- | --- |
-| `docs/PRD.md`, `docs/backlog.md`, … | What we are building and why. | Product, hackathon judges, new team members. |
+| `docs/PRD.md`, `docs/backlog.md`, … | What we are building and why. | Product reviewers, interviewers, and new team members. |
 | `docs/CONSTRAINTS.md` (this file) | Where the LLM constraint surface lives and how to read it. | Engineers + AI agents who touch `apps/api/src/`. |
 
 The actual constraint documents are **collocated** with the `.ts` files

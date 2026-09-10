@@ -1,6 +1,7 @@
 # Wanderly Web
 
-Next.js 16 App Router frontend for the AI Travel Agent Hackathon. The current
+Next.js 16 App Router frontend for Wanderly, a privacy-first collaborative
+travel-planning engineering prototype. The current
 slice contains a globe-first Explore page, My program, Travel preference, a
 shared responsive rail, the unified API client, and contract-validated local
 fixtures.

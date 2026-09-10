@@ -1,7 +1,7 @@
 # Trip 绑定私有对话线程实施方案
 
 **状态：** Approved for implementation  
-**适用范围：** Hackathon MVP  
+**适用范围：** 当前工程原型
 **实施边界：** 本文只定义 Trip 范围内的私有 Personal Agent 对话、邮箱绑定邀请和成员线程初始化。不改变 consent、snapshot、Shared Trip planning、确认或 booking sandbox 的权威状态边界。
 
 ## 1. 决策与不变量

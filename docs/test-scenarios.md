@@ -3149,7 +3149,7 @@ return output the plan contract rejects, and to leave a research matrix cell
 `LLMGateway` 能加载当前配置的 Gemini/OpenAI-compatible client；不得把方法解构后裸调用。
 回归测试必须使用依赖 receiver 状态的 gateway 并核对持久化 JSON，而不能只直接调用方法。
 模型 schema、日期覆盖、时间顺序、证据引用、provider 不可用、修复耗尽和本地调用错误分别计为闭合结果；日志只携带错误码、最多 16 个字段路径、attempt 与关联 ID。传给日程模型的 plan context 不含价格、来源、真实 provider evidence ID 或 provider 原始 payload；Abort 继续终止任务。
-# AWS Hackathon deployment
+# AWS prototype deployment
 
 ## AWS-DEPLOY-001 — CDK 合成保持最小、私有且不使用 Bedrock
 

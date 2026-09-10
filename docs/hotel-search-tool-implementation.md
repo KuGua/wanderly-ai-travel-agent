@@ -46,9 +46,9 @@ Nuitee 报价国籍授权继续作为独立的显式边界。
 
 不新增运行时技术栈：Node.js LTS、TypeScript、Fastify、PostgreSQL、Drizzle、Zod、OpenTelemetry、Pino、现有 PostgreSQL durable Worker 与 ModelGateway 均复用。
 
-2026-08-29 的 supplier spike 确认 Booking.com Demand 要求 Managed Affiliate Partner、合同及 Account Manager 开通，团队无法在 Hackathon 时限内取得；Amadeus 也已被项目既有准入结论排除。因此首发 adapter 改为 `SerpApiHotelProvider`，但 provider port 保持供应商无关。SerpApi 提供即时 self-service key 与每月免费额度；它聚合 Google Hotels 公开搜索结果而非 Google 官方合作 API，故必须显示 `SerpApi Google Hotels` 来源，禁止暗示由 Google/OTA 背书。无 key、额度耗尽、上游失败或字段漂移均严格 `UNAVAILABLE`。
+2026-08-29 的 supplier spike 确认 Booking.com Demand 要求 Managed Affiliate Partner、合同及 Account Manager 开通，团队无法在原型交付周期内取得；Amadeus 也已被项目既有准入结论排除。因此首发 adapter 改为 `SerpApiHotelProvider`，但 provider port 保持供应商无关。SerpApi 提供即时 self-service key 与每月免费额度；它聚合 Google Hotels 公开搜索结果而非 Google 官方合作 API，故必须显示 `SerpApi Google Hotels` 来源，禁止暗示由 Google/OTA 背书。无 key、额度耗尽、上游失败或字段漂移均严格 `UNAVAILABLE`。
 
-2026-08-30 的 live spike 同时确认：openrouteservice geocoder 不存在 `accommodation` layer，不能承担住宿类别发现；OpenTripMap `places/radius?kinds=accomodations` 可通过目的地中心坐标返回住宿 POI。因此非价格发现使用 `OpenTripMapAccommodationProvider`。免费计划适合本次非商业 Hackathon，但有 5,000 次/日、10 次/秒、无 SLA 和非商业限制；运行时必须保留 `© OpenStreetMap contributors` 归因。商业化或正式生产前必须重新审查许可和供应商方案。
+2026-08-30 的 live spike 同时确认：openrouteservice geocoder 不存在 `accommodation` layer，不能承担住宿类别发现；OpenTripMap `places/radius?kinds=accomodations` 可通过目的地中心坐标返回住宿 POI。因此非价格发现使用 `OpenTripMapAccommodationProvider`。免费计划适合当前非商业工程原型，但有 5,000 次/日、10 次/秒、无 SLA 和非商业限制；运行时必须保留 `© OpenStreetMap contributors` 归因。商业化或正式生产前必须重新审查许可和供应商方案。
 
 Spike 依据（2026-08-30 复核）：[Booking Demand prerequisites](https://developers.booking.com/demand/docs/getting-started/prerequisites)、[SerpApi Google Hotels contract](https://serpapi.com/google-hotels-api)、[SerpApi free quota](https://serpapi.com/use-cases/web-search-api)、[SerpApi terms](https://serpapi.com/legal)。当前 SerpApi contract 没有可验证的多房参数，因此首发只接受 `room_count=1`；多房请求返回 `SEARCH_CONSTRAINTS_INCOMPLETE`，绝不把单房价乘算成多房实时价。
 

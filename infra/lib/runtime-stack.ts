@@ -147,8 +147,8 @@ export class RuntimeStack extends cdk.Stack {
       circuitBreaker: { rollback: true },
     });
     cdk.Tags.of(this).add("project", "ai-travel-agent");
-    cdk.Tags.of(this).add("environment", "hackathon");
-    cdk.Tags.of(this).add("cost-owner", "ignite-2026-team");
+    cdk.Tags.of(this).add("environment", "prototype");
+    cdk.Tags.of(this).add("cost-owner", "wanderly-team");
 
     new cdk.CfnOutput(this, "ApiUrl", { value: `https://${api.attrServiceUrl}` });
     new cdk.CfnOutput(this, "ClusterName", { value: cluster.clusterName });

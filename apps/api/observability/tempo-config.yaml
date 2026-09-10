@@ -1,5 +1,5 @@
 # Local-dev Tempo configuration. Single binary mode with filesystem
-# storage — adequate for a hackathon MVP. The trace block storage is
+# storage — adequate for a single-node prototype. The trace block storage is
 # kept under /var/tempo/traces inside the container; the volume mount
 # in docker-compose.observability.yml persists it across restarts.
 server:

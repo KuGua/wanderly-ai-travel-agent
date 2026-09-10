@@ -15,7 +15,7 @@ function synthesize() {
   };
 }
 
-describe("hackathon infrastructure", () => {
+describe("prototype infrastructure", () => {
   it("keeps PostgreSQL private, single-AZ, and smallest approved class", () => {
     const { foundation } = synthesize();
     foundation.hasResourceProperties("AWS::RDS::DBInstance", {

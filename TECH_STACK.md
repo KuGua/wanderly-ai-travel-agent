@@ -1,4 +1,4 @@
-# AI Travel Agent 技术栈（Hackathon 收敛版）
+# Wanderly 技术栈与工程边界
 
 **状态：** 真实身份与服务端模型是唯一运行路径；旅行 provider 尚待配置。无可验证的 provider 数据时，系统返回 `UNAVAILABLE`，绝不生成替代报价、库存或 Demo data。
 
@@ -6,7 +6,7 @@
 
 ## 1. 决策摘要
 
-本项目的优先级是 **Hackathon 稳定 Hero Journey > 生产级覆盖度**。最终方案部署到 AWS，但赛事原话只说明“solutions to AWS”，**不构成必须使用 Bedrock 原生 Agent、Bedrock 模型或全套 AWS 专有组件的证据**。
+本项目的优先级是 **可验证的核心旅程 > 生产级覆盖度**。参考部署位于 AWS，但系统不以 Bedrock 原生 Agent、Bedrock 模型或全套 AWS 专有组件为前提；技术选型以明确的业务不变量、可测试性和可替换边界为准。
 
 推荐的 MVP 基线：
 
@@ -53,7 +53,7 @@ Amazon RDS for PostgreSQL
 | Visa / entry | `VisaProvider` typed adapter；首选 Sherpa Requirements API（签约/验证后） | 全球覆盖采用两阶段：候选阶段仅核验目的地；选定具体航班后按完整中转航段核验。未配置、过期或失败时只显示 `UNAVAILABLE`/官方核验下一步。国籍只从当前授权 snapshot 在服务端使用；详情仅本人可见。 | RAG、规则网页抓取、浏览器直连 widget/API、LLM/Wikipedia 推断签证、代办、法律结论。 |
 | 异步与编排 | PostgreSQL 持久任务状态机、租约领取、idempotency key、transactional outbox、`agent_task_runs`；Fargate Worker；同步 booking sandbox | 对话、planning 与 replan 都以 `QUEUED → RUNNING → COMPLETED/FAILED/STALE/CANCELLED` 执行；显式 Stop 是唯一取消源。租约过期可恢复，最终提交按 lease token 和版本条件化；不把 partial 文本作为业务记录。 | Temporal Cloud、Step Functions、Redis 队列同时进入 MVP；把浏览器/SSE 断开视为取消。 |
 | 可观测性 | OpenTelemetry + CloudWatch；结构化日志和低基数业务指标 | 以 `trip_id`、`plan_version`、`run_id`、`orchestration_request_id` 关联结果；日志不含私聊、国籍明文、证件号、支付数据。 | 先建独立数据湖或全套企业 APM。 |
-| 密钥与部署 | AWS Secrets Manager、最小 IAM role、ECR、GitHub Actions OIDC、**AWS CDK v2（TypeScript）** | API keys 仅后端可读；CDK 固化 App Runner、Fargate Worker、RDS、Cognito、VPC 与 cost tags；GitHub OIDC 避免在 CI 保存长期 AWS 凭据。操作手册见 [AWS Hackathon 部署手册](docs/aws-hackathon-deployment.md)。[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-cloud-providers) | 将 API key、数据库密码或 Cognito secret 放进浏览器、代码库或 demo fixture。 |
+| 密钥与部署 | AWS Secrets Manager、最小 IAM role、ECR、GitHub Actions OIDC、**AWS CDK v2（TypeScript）** | API keys 仅后端可读；CDK 固化 App Runner、Fargate Worker、RDS、Cognito、VPC 与 cost tags；GitHub OIDC 避免在 CI 保存长期 AWS 凭据。操作手册见 [AWS 部署手册](docs/aws-deployment.md)。[GitHub OIDC](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-cloud-providers) | 将 API key、数据库密码或 Cognito secret 放进浏览器、代码库或 demo fixture。 |
 
 ### 探索会话与 Draft Trip 生命周期
 
@@ -132,7 +132,7 @@ Nuitee 报价国籍采用显式、服务端权威的 `quoteNationalityDecision`�
 |---|---|---|---|
 | Flight | Amadeus Self-Service、FlightAPI.io 或 SerpAPI Google Flights adapter | 每个目的地候选仅使用由 `FLIGHT_PROVIDER` 显式选择的可验证 provider 查询结果；自动化测试只用 mock HTTP，失败则返回 `UNAVAILABLE` | 供应商覆盖、商业条款、报价过期和模型 Tool-calling 兼容性必须在启用前验证；供应商 key/完整 URL 不进入遥测或持久化。 |
 | Activities | Viator 官方 Experiences MCP adapter | Shared Agent 可在 PLAN/REPLAN durable task 内为 snapshot 中每个候选目的地调用 provider-neutral `activities.search`。服务端注入 snapshot/run/date authority，adapter 严格验证 MCP 响应并丢弃 click-off link 与无币种 `fromPrice`。失败、超时、限流、空数据或 schema drift 返回 `UNAVAILABLE`，不以 fixture 或模型内容替代。Personal Tool-loop 暂缓，直到 owner-scoped streaming tool boundary 单独实施。 | 公开 MCP 当前无需 key，但未公布固定配额或 SLA；默认 feature flag 关闭。协议/字段漂移必须 fail closed，并以 adapter contract test 监控。 |
-| Accommodation / hotel | OpenTripMap accommodation discovery + Nuitee Connect / LiteAPI Rates（默认）+ SerpApi Google Hotels（可切换） | `accommodation.discover` 以 server-owned 城市中心坐标返回无价格住宿骨架；确认日期、房间/住客数、币种后才开放 `hotel.search` 实时报价。Nuitee 另需当前用户显式授权的 provider-only quote nationality（服务端 KMS 加密，`value_encrypted` 列只允许服务端读取）；两者均先解析完整 `DestinationReference`，歧义时 fail closed。每个 task 固定一个 provider（持久化到 `agent_task_runs.hotel_provider`），缓存/evidence 不跨 provider 复用，不能自动 fallback。通过 `HOTEL_PROVIDER=nuitee|serpapi|disabled` env 切换；切换只影响新接受的 task，老 task/run 不被重写或回滚。Provider 选择 runbook 见 [docs/hotel-provider-switching-runbook.md](docs/hotel-provider-switching-runbook.md)。 | OpenTripMap 免费计划仅适合非商业 Hackathon（5,000 次/日、10 次/秒、无 SLA），必须显示 OSM attribution；Nuitee Rates 受账号条款和 reasonable look-to-book 约束，SerpApi 额度有限且只支持单房。商业发布前重新审核许可/额度，不得将 discovery 当作价格、库存或可预订性。 |
+| Accommodation / hotel | OpenTripMap accommodation discovery + Nuitee Connect / LiteAPI Rates（默认）+ SerpApi Google Hotels（可切换） | `accommodation.discover` 以 server-owned 城市中心坐标返回无价格住宿骨架；确认日期、房间/住客数、币种后才开放 `hotel.search` 实时报价。Nuitee 另需当前用户显式授权的 provider-only quote nationality（服务端 KMS 加密，`value_encrypted` 列只允许服务端读取）；两者均先解析完整 `DestinationReference`，歧义时 fail closed。每个 task 固定一个 provider（持久化到 `agent_task_runs.hotel_provider`），缓存/evidence 不跨 provider 复用，不能自动 fallback。通过 `HOTEL_PROVIDER=nuitee|serpapi|disabled` env 切换；切换只影响新接受的 task，老 task/run 不被重写或回滚。Provider 选择 runbook 见 [docs/hotel-provider-switching-runbook.md](docs/hotel-provider-switching-runbook.md)。 | OpenTripMap 免费计划仅适合非商业工程原型（5,000 次/日、10 次/秒、无 SLA），必须显示 OSM attribution；Nuitee Rates 受账号条款和 reasonable look-to-book 约束，SerpApi 额度有限且只支持单房。商业发布前重新审核许可/额度，不得将 discovery 当作价格、库存或可预订性。 |
 | Ground place/navigation | openrouteservice Geocoding/POI + Directions；`TripPlace` server-owned reference | Shared Agent 可受限关键词搜索并在两个已授权 POI 之间生成步行/驾车/骑行路线；显示 geometry、距离、时长、步骤、source/captured_at 与归因。缺失仅形成 gap，不阻断其他 research。 | 全球查询不等于全球覆盖或实时交通；关键词、名称、地址、坐标和 geometry 是受保护 Trip 数据，不进 telemetry。 |
 | Ground commercial mobility | Amadeus Transfer Search adapter（可选启用） | 可显示 taxi、接送、包车等真实报价或估价及其来源/有效期；不下单、不透传 booking link。 | 租车、公共交通实时和全球商业覆盖必须由独立 port/provider 验证；不能从 ORS 路线推导价格或班次。 |
 | Budget | Frankfurter adapter | 归一化候选总预算；显示汇率日期与“参考汇率” | 不能被当作支付或结算汇率；API 不可用时显示不可用。 |
@@ -160,11 +160,11 @@ AWS AgentCore 的确支持多种框架，但这只能说明它是将来的可选
 
 `ModelGateway` 对上提供结构化生成和受限 Tool-calling 能力，对下隐藏 OpenAI-compatible LLM 的差异。provider 层按语义提供 `FlightProvider`、`ActivitiesProvider`、`PlaceResolver`、`NavigationProvider`、`TransitJourneyProvider`、`MobilityOfferProvider` 与 readiness port；`GroundCapabilityRouter` 在服务端固定选择 provider，adapter 隐藏 Amadeus、Viator MCP 与 openrouteservice 的返回格式。
 
-这不是为多云做抽象秀：它保护两个已知的真实变化点——hackathon live API 可能失效，后续模型/赛事限制可能变化。
+这不是为多云做抽象秀：它保护两个已知的真实变化点——live API 可能失效，模型与供应商约束也可能变化。
 
 ## 7. MVP 与未来阶段
 
-| 维度 | Hackathon MVP | Pilot / 未来 |
+| 维度 | Engineering Prototype | Pilot / 未来 |
 |---|---|---|
 | 用户与路线 | 三个 seed 用户、两个出发地、两到三个预设目的地；每个目的地下支持 LLM 关键词 POI 搜索和已授权 POI 间路线 | 真实注册用户、更多 provider 与受验证的实时 transit/rental 覆盖 |
 | 数据 | 已配置 provider 的可验证结果；失败明确 `UNAVAILABLE` | 正式供应商合同、SLAs、监控与多 provider routing |

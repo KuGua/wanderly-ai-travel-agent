@@ -3,7 +3,7 @@
 > **A privacy-first, agentic workspace for planning international trips—individually and together.**
 
 <p>
-  <img alt="Project status: Hackathon MVP" src="https://img.shields.io/badge/status-Hackathon%20MVP-7c3aed?style=flat-square" />
+  <img alt="Project status: Engineering prototype" src="https://img.shields.io/badge/status-Engineering%20Prototype-7c3aed?style=flat-square" />
   <img alt="Node.js 20 or later" src="https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white" />
   <img alt="Next.js" src="https://img.shields.io/badge/Next.js-16-000000?style=flat-square&logo=nextdotjs&logoColor=white" />
   <img alt="Fastify" src="https://img.shields.io/badge/Fastify-5-000000?style=flat-square&logo=fastify&logoColor=white" />
@@ -143,7 +143,7 @@ flowchart LR
 
 ## Safety and product boundaries
 
-Wanderly is a planning MVP, not an online travel agency or legal service.
+Wanderly is an engineering prototype, not an online travel agency or legal service.
 
 - **Private by default.** Profiles, passports/nationality, and private chats
   are not shared automatically and must not enter logs, metrics, traces,
@@ -160,7 +160,7 @@ Wanderly is a planning MVP, not an online travel agency or legal service.
 - **Credentials stay server-side.** Fixtures are for tests and adapter-contract
   validation only; they never supply the user-facing product path.
 
-Read the full MVP constraints in [TECH_STACK.md](TECH_STACK.md) and
+Read the full prototype constraints in [TECH_STACK.md](TECH_STACK.md) and
 [docs/PRD.md](docs/PRD.md).
 
 ## Architecture
@@ -177,11 +177,11 @@ flowchart LR
   D --> R
 ```
 
-The Hackathon deployment target is Next.js on AWS Amplify Hosting, Fastify on
+The reference AWS deployment runs Next.js on AWS Amplify Hosting, Fastify on
 AWS App Runner, a durable Worker on ECS Fargate, PostgreSQL on Amazon RDS,
 Cognito for production identity, and AWS Secrets Manager/KMS for secrets.
 Infrastructure is defined with AWS CDK v2 in [`infra/`](infra/). See the
-[deployment guide](docs/aws-hackathon-deployment.md).
+[deployment guide](docs/aws-deployment.md).
 
 ## Evidence index
 
@@ -218,7 +218,7 @@ team should still verify wording before using the table in a public portfolio.
 ## Demo media
 
 The Mermaid diagrams above are architecture media, not product screenshots.
-For a public recruiting or Hackathon release, publish media captured from a
+For a public portfolio or recruiting release, publish media captured from a
 configured, authenticated run—not from a static prototype or fixture-only
 screen—and keep the claims in the caption narrow.
 
@@ -343,7 +343,7 @@ not use production provider credentials in tests.
 - [Runtime data and evidence policy](docs/runtime-data-policy.md)
 - [Observability SLOs](docs/observability-slo.md)
 - [Test scenarios](docs/test-scenarios.md)
-- [AWS deployment guide](docs/aws-hackathon-deployment.md)
+- [AWS deployment guide](docs/aws-deployment.md)
 
 ---
 
@@ -354,8 +354,8 @@ not use production provider credentials in tests.
 
 > 面向国际旅行协作规划的、隐私优先的 Agentic 工作空间。
 
-Wanderly 是 AWS Hackathon 的 MVP。它将分散在聊天、搜索页和表格中的国际旅行
-协作，收敛为一个可追溯的规划工作流。每位旅行者拥有私有 Profile 和 Personal
+Wanderly 是一个面向国际多人旅行协作的工程原型。它将分散在聊天、搜索页和表格中的
+规划过程，收敛为一个可追溯的工作流。每位旅行者拥有私有 Profile 和 Personal
 Agent 对话；在共享行程中，成员仅授权本次规划所需的最少信息。Shared Agent
 基于来源与检查时间，对航班、住宿、地面交通、活动以及签证/入境准备事项进行
 协同规划。
@@ -491,7 +491,7 @@ flowchart TD
 
 ### 演示媒体
 
-上方的 Mermaid 图是架构媒体，不是产品截图。面向招聘或 Hackathon 的公开发布，应
+上方的 Mermaid 图是架构媒体，不是产品截图。面向作品集或招聘的公开发布，应
 使用经过配置和身份验证的真实运行录制素材，而不是静态原型或仅 fixture 的界面；图注
 必须限制在实际可验证的范围内。
 
@@ -517,6 +517,6 @@ flowchart TD
 
 完整产品边界、架构、验收和部署说明见 [PRD](docs/PRD.md)、
 [TECH_STACK.md](TECH_STACK.md)、[测试场景](docs/test-scenarios.md) 与
-[AWS 部署手册](docs/aws-hackathon-deployment.md)。
+[AWS 部署手册](docs/aws-deployment.md)。
 
 </details>

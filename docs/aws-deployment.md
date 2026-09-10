@@ -1,4 +1,4 @@
-# AWS Hackathon 部署手册
+# Wanderly AWS 部署手册
 
 本手册部署现有架构，不迁移业务框架，也不使用 Amazon Bedrock。基础设施由 `infra/` 中的 AWS CDK v2（TypeScript）管理，目标区域固定为 `us-east-1`。
 
@@ -74,7 +74,7 @@ NEXT_PUBLIC_API_BASE_URL=<app-runner-url>
 
 ## 已知限制
 
-- 当前只开一个 NAT Gateway，AZ 故障时无冗余，适用于 Hackathon，不适用于生产 SLA。
+- 当前只开一个 NAT Gateway，AZ 故障时无冗余，适用于工程原型，不适用于生产 SLA。
 - Worker 固定一个 task；数据库租约保证逻辑不依赖单副本，但此配置没有高可用余量。
 - OpenTelemetry export 暂时关闭，仍保留结构化 CloudWatch logs；上线前应补齐 dashboard、alarm 与 trace exporter。
 - Amplify 仓库授权是独立的第三方 OAuth 操作，不由 CDK 自动完成。

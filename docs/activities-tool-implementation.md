@@ -11,7 +11,7 @@
 
 ## 1. Provider 决策
 
-Viator Affiliate REST 注册流程当前要求账户身份验证，可能包括证件与自拍。该流程对 hackathon 的只读活动发现并不相称，因此不作为本阶段依赖。
+Viator Affiliate REST 注册流程当前要求账户身份验证，可能包括证件与自拍。该流程对当前原型的只读活动发现并不相称，因此不作为本阶段依赖。
 
 Viator 官方 Experiences MCP 文档公开以下 endpoint，当前无需 Affiliate API key：
 

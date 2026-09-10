@@ -91,8 +91,8 @@ export class FoundationStack extends cdk.Stack {
     });
 
     cdk.Tags.of(this).add("project", "ai-travel-agent");
-    cdk.Tags.of(this).add("environment", "hackathon");
-    cdk.Tags.of(this).add("cost-owner", "ignite-2026-team");
+    cdk.Tags.of(this).add("environment", "prototype");
+    cdk.Tags.of(this).add("cost-owner", "wanderly-team");
 
     new cdk.CfnOutput(this, "UserPoolId", { value: this.userPool.userPoolId });
     new cdk.CfnOutput(this, "UserPoolClientId", { value: this.userPoolClient.userPoolClientId });

@@ -7,7 +7,7 @@
 ## 1. 实施约束
 
 1. 运行时只有已配置、可验证的 provider 数据可成为报价事实；provider 无数据、超时、限流、认证失败、字段不完整或结果过期时，统一返回 `UNAVAILABLE`。不得创建替代 offer、plan、source evidence 或 booking reference。
-2. Amadeus Test 仅用于本地和 CI 的 adapter 集成验证；它的有限数据不得作为产品运行路径的实时结果。FlightAPI.io 与 SerpAPI Google Flights 都是可显式选择的 local/hackathon live provider，使用真实 credits；自动化测试必须 mock HTTP。产品环境只在被 `FLIGHT_PROVIDER` 显式选择、其凭据已配置且启动校验通过的 provider 上启用机票查询。
+2. Amadeus Test 仅用于本地和 CI 的 adapter 集成验证；它的有限数据不得作为产品运行路径的实时结果。FlightAPI.io 与 SerpAPI Google Flights 都是可显式选择的 local/prototype live provider，使用真实 credits；自动化测试必须 mock HTTP。产品环境只在被 `FLIGHT_PROVIDER` 显式选择、其凭据已配置且启动校验通过的 provider 上启用机票查询。
 3. LLM 可以请求 `flight.search`，但不拥有 HTTP、数据库、密钥、授权或持久化权限。模型面对的 function 参数仅为受控 `originId` 和 `destinationId`；服务端从不可变 snapshot 和已确认 preference version 绑定日期、往返类型、乘客、舱等、币种与 snapshot ID，再以完整 Skill 契约校验、调用 provider、归一化和持久化。这样模型不能覆盖规划约束。
 4. 模型从当前会话中提炼的航班偏好只产生 `SearchPreferencesProposal`；用户必须确认或编辑后，才可以写入 trip override 并进入新的 `constraint_snapshot`。
 5. 不依赖 OpenAI 或 OpenAI Agents SDK。通过现有 `ModelGateway` 支持具备 function-calling 能力的 OpenAI-compatible LLM；每种新模型必须先完成兼容性验证。
@@ -69,7 +69,7 @@ Authenticated user
 |---|---|
 | `src/providers/amadeus-flight-provider.ts` | 取得 OAuth token、调用 Flight Offers Search、处理 deadline/429/5xx、归一化 provider 返回；`expiresAt` 优先取真实的 `lastTicketingDate`，缺失时回退为 `capturedAt+15min` 的本地启发式。 |
 | `src/providers/amadeus-flight-schemas.ts` | Amadeus 外部请求/响应的最小 Zod schema；不得把未验证 raw payload 传入模型。 |
-| `src/providers/flightapi-flight-provider.ts` | FlightAPI.io Flight Price API adapter；与 SerpAPI 同为可显式选择的 local/hackathon live provider，`expiresAt` 始终是 `capturedAt+15min` 的本地启发式（该供应商不提供任何票价保留/开票截止日期字段）。 |
+| `src/providers/flightapi-flight-provider.ts` | FlightAPI.io Flight Price API adapter；与 SerpAPI 同为可显式选择的 local/prototype live provider，`expiresAt` 始终是 `capturedAt+15min` 的本地启发式（该供应商不提供任何票价保留/开票截止日期字段）。 |
 | `src/providers/serpapi-flight-provider.ts`、`serpapi-flight-schemas.ts` | SerpAPI Google Flights adapter；`expiresAt` 同样始终是 `capturedAt+15min` 的本地启发式，Google Flights 结果本身没有票价保留概念。 |
 | `src/skills/shared/flight-search-skill.ts` | `flight.search` 的输入/输出 schema、scope、timeout、handler。 |
 | `src/services/flight-search-service.ts` | snapshot 参数解析、机场/IATA allow-list、搜索覆盖、evidence 写入与 `UNAVAILABLE` 映射。 |

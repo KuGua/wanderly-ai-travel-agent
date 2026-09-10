@@ -1,6 +1,6 @@
 # Agent Architecture
 
-**状态：** 当前 Hackathon MVP 的推荐实现架构  
+**状态：** 当前工程原型的推荐实现架构
 **范围：** 仅定义 Agent、Skill、工具、状态与控制边界；产品范围与安全约束仍以 TECH_STACK.md、docs/PRD.md 和 AGENTS.md 为准。
 
 ## 1. 架构总览

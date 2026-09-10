@@ -1,6 +1,6 @@
 # AI Travel Agent — Personal Agents + Shared Trips 待办清单
 
-**状态：** Hackathon MVP；对应 [PRD](PRD.md) 与 [测试场景](test-scenarios.md)
+**状态：** 工程原型；对应 [PRD](PRD.md) 与 [测试场景](test-scenarios.md)
 **边界：** 使用已认证用户、用户创建的出发地与目的地候选、来源化旅行工具与 booking sandbox；不接真实支付。Live API 不可用时明确显示不可用，绝不伪装为实时结果。
 
 ## 1. 反向审查门槛
@@ -333,7 +333,7 @@
 
 | Capability | Reason deferred |
 |---|---|
-| Real money movement, refunds, supplier settlement and automatic booking | Requires legal, payment and operating ownership beyond Hackathon proof. |
+| Real money movement, refunds, supplier settlement and automatic booking | Requires legal, payment and operating ownership beyond the current prototype. |
 | Global providers, broad GDS inventory, price guarantee | Reduces reliability and focus. |
 | Visa filing/approval or legal advice | High-stakes domain; readiness support is the safe boundary. |
 | Native group chat, payment splitting, social features | Shared workspace already solves coordination without copy/paste friction. |

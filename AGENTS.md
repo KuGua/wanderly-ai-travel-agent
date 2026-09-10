@@ -52,7 +52,7 @@
 ### 测试与技术栈收敛
 
 - 任何影响功能行为、授权、状态转换、provider fallback 或用户可见事实的变更，必须同步更新 `docs/test-scenarios.md`，并覆盖适用的未授权访问、授权撤回、数据缺失、live API fallback、plan 过期、成员拒绝确认、重复 callback 与乱序 callback。
-- 以 `TECH_STACK.md` 的 Hackathon MVP 边界为准。未经先行更新相关产品和技术文档并说明取舍，不得引入自由多 Agent、Redis、Temporal、Step Functions、WebSocket、真实支付、额外旅行数据 API 或全局客户端业务真相状态。
+- 以 `TECH_STACK.md` 的工程原型边界为准。未经先行更新相关产品和技术文档并说明取舍，不得引入自由多 Agent、Redis、Temporal、Step Functions、WebSocket、真实支付、额外旅行数据 API 或全局客户端业务真相状态。
 
 ## 面向对象设计
 

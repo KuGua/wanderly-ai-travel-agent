@@ -5,7 +5,7 @@
 
 ## 结论
 
-该架构方向适合 Hackathon：TypeScript/Fastify 模块化单体、作为权威记录的 PostgreSQL、以 fixture 支撑的提供方适配器和模型网关，均可作为继续开发的合适基础。
+该架构方向适合工程原型：TypeScript/Fastify 模块化单体、作为权威记录的 PostgreSQL、以 fixture 支撑的提供方适配器和模型网关，均可作为继续开发的合适基础。
 
 当前实现**尚未达到可演示或可安全使用的标准**。它可以构建并通过类型检查，但由于 PostgreSQL 和本地 Docker daemon 均不可用，未执行依赖数据库的测试。更重要的是，若干已实现路径不符合文档中的隐私与规划要求。
 
