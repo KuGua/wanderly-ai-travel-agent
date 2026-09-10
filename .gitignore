@@ -16,6 +16,11 @@ cdk.out/
 .env.*
 !.env.example
 !.env.*.example
+*.key
+*.p12
+*.pfx
+*.keystore
+credentials.json
 
 # Package-manager and application logs
 npm-debug.log*
